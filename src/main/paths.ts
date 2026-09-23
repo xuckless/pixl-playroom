@@ -1,0 +1,24 @@
+/** Where Playroom keeps what it makes. Everything under userData is a cache or an index — the truth lives beside the photos. */
+import { app } from 'electron'
+import { mkdirSync } from 'fs'
+import { join } from 'path'
+
+function dir(...parts: string[]): string {
+  const p = join(app.getPath('userData'), ...parts)
+  mkdirSync(p, { recursive: true })
+  return p
+}
+
+export const paths = {
+  db: (): string => join(dir(), 'playroom.db'),
+  /** Per-photo working files: proxies, renders, mask planes. */
+  photoCache: (photoId: number): string => dir('cache', 'photos', String(photoId)),
+  thumbs: (): string => dir('cache', 'thumbs'),
+  luts: (): string => dir('luts'),
+  cacheRoot: (): string => dir('cache'),
+  /** The bundled AI runtime and model: resources/ai/<platform>-<arch>. */
+  ai: (): string =>
+    app.isPackaged
+      ? join(process.resourcesPath, 'ai')
+      : join(app.getAppPath(), 'resources', 'ai', `${process.platform}-${process.arch}`)
+}
