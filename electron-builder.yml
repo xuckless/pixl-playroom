@@ -1,0 +1,132 @@
+# electron-builder configuration for Pixl Playroom.
+# https://www.electron.build/configuration
+appId: com.xuckless.pixlplayroom
+productName: Pixl Playroom
+copyright: Copyright © 2026 xuckless
+# No ${version} in any artifact name, so `releases/latest/download/<name>`
+# links keep working from release to release (release-please cannot stamp a
+# version into these names either). The version lives in the app, in
+# `latest*.yml` and in the release tag.
+artifactName: ${name}-${os}-${arch}.${ext}
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!scripts/*'
+  - '!tests/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,CHANGELOG.md,README.md,TODO.md,CLAUDE.md}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml,pnpm-workspace.yaml}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{.github,release-please-config.json,.release-please-manifest.json}'
+  - '!resources/ai/**'
+
+# Native addons cannot be loaded from inside the asar archive. The engine
+# binding ships as `@xuckless/pixl-engine` plus one platform package
+# (`@xuckless/pixl-engine-darwin-arm64`, `-darwin-x64`, `-win32-x64-msvc`)
+# holding the `.node` file. Only the platform package matching the build host
+# is installed, and electron-builder bundles just that one, so a job must
+# never package an arch other than its own (see `mac.target`), which
+# `afterPack` enforces.
+asarUnpack:
+  - resources/**
+  - '**/*.node'
+  - 'node_modules/@xuckless/pixl-engine*/**'
+
+# pnpm hoists nothing; electron-builder must follow the symlinks in
+# node_modules/.pnpm to collect production dependencies.
+npmRebuild: false
+nodeGypRebuild: false
+
+# Fails the build before anything is signed, zipped or uploaded when the
+# packaged app carries a binding for the wrong platform or arch, or more than
+# one of them.
+afterPack: ./build/after-pack.mjs
+
+# Enhance → Super Resolution: the ONNX Runtime and Real-ESRGAN model fetched
+# per target by `pnpm fetch-ai <platform>-<arch>` into resources/ai/, carried
+# outside the asar as `resources/ai` (src/main/paths.ts reads it there).
+mac:
+  category: public.app-category.photography
+  target:
+    # zip is what electron-updater downloads; dmg is what people install from.
+    # No `arch` list on purpose: one would override the CLI flag and package
+    # both arches from one runner, each around the host's binding. Arch comes
+    # from the CLI (`--arm64` / `--x64`), one per job.
+    - target: dmg
+    - target: zip
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Notarization runs when APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and
+  # APPLE_TEAM_ID are set; the Developer ID certificate comes from CSC_LINK /
+  # CSC_KEY_PASSWORD. Without them the build is unsigned.
+  notarize: true
+  extraResources:
+    - from: resources/ai/darwin-${arch}
+      to: ai
+  extendInfo:
+    NSPhotoLibraryUsageDescription: Pixl Playroom opens the photos you choose to develop.
+    NSDesktopFolderUsageDescription: Pixl Playroom opens folders of photos you choose.
+    NSDocumentsFolderUsageDescription: Pixl Playroom opens folders of photos you choose.
+    NSDownloadsFolderUsageDescription: Pixl Playroom opens folders of photos you choose.
+
+dmg:
+  artifactName: ${name}-mac-${arch}.${ext}
+
+win:
+  executableName: pixl-playroom
+  target:
+    - target: nsis
+      arch: [x64]
+  extraResources:
+    - from: resources/ai/win32-${arch}
+      to: ai
+  # Signed when WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD are set; otherwise the
+  # installer ships unsigned and SmartScreen warns on first launch.
+  signtoolOptions:
+    publisherName: xuckless
+
+nsis:
+  artifactName: ${name}-win-x64-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+  oneClick: true
+  perMachine: false
+  differentialPackage: true
+
+# Linux is a local testing target, not a shipped one: nothing publishes it and
+# the engine ships no Linux platform package. A Linux build of the binding
+# dropped beside the installed package is carried in by `asarUnpack` above.
+linux:
+  executableName: pixl-playroom
+  category: Graphics
+  icon: build/icon.png
+  synopsis: A photo developer built on the PIXL engine.
+  target:
+    - target: AppImage
+      arch: [x64]
+  extraResources:
+    - from: resources/ai/linux-${arch}
+      to: ai
+
+appImage:
+  artifactName: ${name}-linux-${arch}.${ext}
+
+# Installers and update manifests are attached to the GitHub release of the
+# tag being built. release-please has already published that release when the
+# build runs, so `releaseType: release` makes electron-builder upload to it
+# instead of drafting a new one (release.yml sets EP_GH_IGNORE_TIME for older
+# releases). The channel is derived from the version: 0.2.0 → latest.yml,
+# 0.2.0-beta.1 → beta.yml on a prerelease.
+publish:
+  provider: github
+  owner: xuckless
+  repo: pixl-playroom
+  releaseType: release

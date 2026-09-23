@@ -1,0 +1,173 @@
+name: Release
+
+# Builds, signs and publishes installers for one tag on every platform, and
+# attaches them to the tag's GitHub release, which is also the update feed
+# installed apps poll. Called by release-please.yml after a release is cut,
+# or by hand for a tag.
+#
+# Channel: electron-builder derives it from the version. 0.3.0 publishes
+# latest.yml / latest-mac.yml; 0.3.0-beta.1 publishes beta.yml / beta-mac.yml.
+# Stable users never see a prerelease.
+#
+# All jobs run on GitHub-hosted runners (free for a public repository).
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Git tag to build (e.g. v0.2.0)
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Git tag to build (e.g. v0.2.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write # upload assets to the release
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # One architecture per job, and never any other: the engine binding is
+        # a platform package that pnpm installs for the runner it runs on, so
+        # a job that packages another arch ships that arch's app with this
+        # arch's binding. `electron-builder.yml` leaves `arch` out of
+        # `mac.target` so these flags decide, and `build/after-pack.mjs`
+        # refuses a mismatch.
+        include:
+          - name: macOS arm64
+            runner: macos-15
+            args: --mac --arm64
+            arch: arm64
+            ai: darwin-arm64
+          - name: macOS x64
+            # Intel runners: macos-13 was retired; macos-15-intel is the
+            # current Intel label. Adjust if GitHub renames it.
+            runner: macos-15-intel
+            args: --mac --x64
+            arch: x64
+            ai: darwin-x64
+          - name: Windows x64
+            runner: windows-latest
+            args: --win --x64
+            arch: x64
+            ai: win32-x64
+    env:
+      # actions/setup-node writes ~/.npmrc with an auth placeholder that pnpm
+      # expands from this variable (pnpm ignores ${ENV} in a project .npmrc).
+      NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: '@xuckless'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Enhance → Super Resolution bundles Microsoft's ONNX Runtime and the
+      # Real-ESRGAN model for this job's own target (resources/ai/<target>,
+      # which electron-builder.yml carries as `ai`). The default shell on
+      # Windows is PowerShell, whose `tar` is bsdtar and unpacks the .zip.
+      - name: Enhance bundle
+        run: pnpm fetch-ai ${{ matrix.ai }}
+
+      - name: Build renderer, preload and main
+        run: pnpm exec electron-vite build
+
+      - name: Signing credentials (only those that exist)
+        # electron-builder treats an empty CSC_LINK as a certificate path and
+        # fails with "not a file", so unset secrets must stay unset. Without a
+        # macOS identity the build is unsigned; Squirrel.Mac will not accept
+        # such an update, but the pipeline itself is exercised end to end.
+        shell: bash
+        run: |
+          add() { if [ -n "$2" ]; then echo "$1=$2" >> "$GITHUB_ENV"; else echo "::notice::$1 not set"; fi; }
+          add CSC_LINK "$CSC_LINK_IN"
+          add CSC_KEY_PASSWORD "$CSC_KEY_PASSWORD_IN"
+          add APPLE_ID "$APPLE_ID_IN"
+          add APPLE_APP_SPECIFIC_PASSWORD "$APPLE_APP_SPECIFIC_PASSWORD_IN"
+          add APPLE_TEAM_ID "$APPLE_TEAM_ID_IN"
+          add WIN_CSC_LINK "$WIN_CSC_LINK_IN"
+          add WIN_CSC_KEY_PASSWORD "$WIN_CSC_KEY_PASSWORD_IN"
+        env:
+          CSC_LINK_IN: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD_IN: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID_IN: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD_IN: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID_IN: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK_IN: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD_IN: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      - name: Package and publish to the GitHub release
+        run: pnpm exec electron-builder ${{ matrix.args }} --publish always
+        env:
+          # electron-builder's GitHub publisher uploads with this token to the
+          # release release-please created for the tag (electron-builder.yml
+          # sets releaseType: release so the published release is accepted).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # By default the publisher refuses a release published more than
+          # two hours ago; a manual run for an older tag must still upload.
+          EP_GH_IGNORE_TIME: 'true'
+          # Look for a Developer ID identity in the keychain when no CSC_LINK
+          # is given; finding none yields an unsigned build with a warning.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' && 'true' || 'false' }}
+
+      # Each macOS job's latest-mac.yml lists only the arch it packaged, and
+      # the two jobs overwrite each other's copy on the release. Keep both so
+      # `mac-channel` below can publish one feed covering both.
+      - name: Save this arch's macOS update manifest
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-channel-${{ matrix.arch }}
+          path: dist/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 7
+
+  mac-channel:
+    name: macOS update feed
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mac-channel-*
+          path: mac-channel
+
+      # Both arches in one feed. electron-updater keeps the arm64 file on
+      # Apple Silicon and drops every arm64 file on Intel, so a feed carrying
+      # one arch leaves the other unable to update. The script fails the job
+      # rather than publish such a feed.
+      - name: Merge the per-arch manifests
+        run: |
+          node build/merge-mac-channel.mjs \
+            mac-channel/mac-channel-x64/latest-mac.yml \
+            mac-channel/mac-channel-arm64/latest-mac.yml > latest-mac.yml
+          cat latest-mac.yml
+
+      - name: Replace the manifest on the release
+        run: gh release upload "${{ inputs.tag }}" latest-mac.yml --clobber --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
