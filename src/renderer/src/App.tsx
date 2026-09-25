@@ -1,7 +1,10 @@
 import { MotionConfig } from 'motion/react'
 import { memo, useEffect } from 'react'
 import { RECIPE_GROUPS } from '../../shared/recipe'
-import { api } from './lib/api'
+import { api, errorText } from './lib/api'
+import { runJob } from './state/busy'
+import { ProcessingOverlay } from './fx/ProcessingOverlay'
+import { usePrefetchFx } from './fx/prefetch'
 import { Scopes } from './develop/Scopes'
 import { ToolDial } from './develop/ToolDial'
 import { ToolPanelHost } from './develop/ToolPanelHost'
@@ -34,6 +37,7 @@ const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
           <div className="stage">
             <Loupe />
             <FloatingToolbar />
+            <ProcessingOverlay />
             <FilmToggle />
           </div>
           <Filmstrip />
@@ -235,9 +239,15 @@ function useShortcuts(): void {
       if (k === '[') return dev.setBrush({ size: Math.max(4, Math.round(dev.brush.size / 1.15)) })
       if (k === ']') return dev.setBrush({ size: Math.min(500, Math.round(dev.brush.size * 1.15)) })
       if (k === 'A' && e.shiftKey && dev.session && dev.recipe) {
-        void api.develop
-          .autoTone(dev.session.key)
-          .then((basic) => dev.replace({ ...dev.recipe!, basic }, 'Auto tone'))
+        const key = dev.session.key
+        void runJob('Auto tone', () => api.develop.autoTone(key), {
+          detail: 'Measuring the picture with the tone sliders at zero'
+        })
+          .then((basic) => {
+            const r = useDevelop.getState().recipe
+            if (r) useDevelop.getState().replace({ ...r, basic }, 'Auto tone')
+          })
+          .catch((err) => lib.say(errorText(err), 'error'))
       }
     }
     window.addEventListener('keydown', onKey)
@@ -247,6 +257,7 @@ function useShortcuts(): void {
 
 export default function App(): React.JSX.Element {
   useShortcuts()
+  usePrefetchFx()
   useEffect(() => {
     const offs = [
       api.library.onThumb(({ key, url }) => {

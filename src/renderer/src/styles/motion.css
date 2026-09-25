@@ -234,3 +234,46 @@
       0 0 30px -4px var(--glow);
   }
 }
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.04) translateY(-4px);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ringSpin {
+  to {
+    transform: rotate(270deg);
+  }
+}
+@keyframes driftA {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(140px, 90px) scale(1.15);
+  }
+}
+@keyframes driftB {
+  from {
+    transform: translate(0, 0) scale(1.1);
+  }
+  to {
+    transform: translate(-160px, -60px) scale(0.9);
+  }
+}
+@keyframes driftC {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    transform: translate(90px, -120px) scale(1.2);
+  }
+}

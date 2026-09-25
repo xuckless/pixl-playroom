@@ -23,6 +23,7 @@ import { LoupeHud } from './LoupeHud'
 import { RegionView } from './RegionView'
 import { regionCentre } from './regionCentre'
 import { useSize } from './useSize'
+import { Ambient } from '../../fx'
 
 /** How long the loupe must keep a size before the renderer is asked for that many pixels. */
 const EDGE_SETTLE_MS = 250
@@ -157,8 +158,19 @@ export function Loupe(): React.JSX.Element {
     [session, recipe, g, rect, tool, picture, layerId, replace, setTool]
   )
 
-  if (loading) return <div className="loupe empty">Developing…</div>
-  if (!session || !recipe) return <div className="loupe empty">{error ?? 'Choose a photo'}</div>
+  // Opening: the processing sphere covers the stage; the loupe waits under it.
+  if (loading) return <div className="loupe" />
+  if (!session || !recipe)
+    return (
+      <div className="loupe-idle">
+        <Ambient intensity={0.8} />
+        <div className="idle-card">
+          <span className="micro">Develop</span>
+          <h2>{error ? 'The photo could not be opened' : 'Choose a photo'}</h2>
+          <p>{error ?? 'Pick one in the library or the filmstrip.'}</p>
+        </div>
+      </div>
+    )
   if (zoom === 1) {
     return (
       <div ref={boxRef} className="loupe">

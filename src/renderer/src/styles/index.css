@@ -11,4 +11,5 @@
 @import './panels.css' layer(views);
 @import './library.css' layer(views);
 @import './dialogs.css' layer(views);
+@import './fx.css' layer(fx);
 @import './motion.css' layer(motion);

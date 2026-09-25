@@ -29,6 +29,13 @@ export default defineConfig(
     }
   },
   {
+    // react-three-fiber scenes: JSX props there are three.js object props.
+    files: ['src/renderer/src/fx/**/*.tsx'],
+    rules: {
+      'react/no-unknown-property': 'off'
+    }
+  },
+  {
     // electron-builder imports the hooks in build/ as plain JavaScript at
     // package time, so they cannot carry type annotations.
     files: ['build/**/*.mjs', 'scripts/**/*.mjs'],

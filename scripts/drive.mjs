@@ -38,7 +38,7 @@ const COMMANDS = {
       BrowserWindow.getAllWindows()[0]?.setContentSize(1600, 1000)
     )
     page.on('console', (m) => {
-      if (m.type() === 'error') console.log('[console]', m.text())
+      if (m.type() === 'error' || m.type() === 'warning') console.log('[console]', m.text())
     })
     await page.waitForSelector('.app', { timeout: 20_000 })
     console.log('launched. profile:', PROFILE)
