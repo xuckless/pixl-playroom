@@ -513,3 +513,107 @@ input.mf-rename {
 .mask-pin::after {
   display: none;
 }
+
+/* ── gradient handles ──────────────────────────────────────────── */
+.tool-layer.gradients {
+  pointer-events: none;
+  z-index: 6;
+}
+.tool-layer.gradients.drawing {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+.grad-lines {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.gl {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 1.2;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+}
+.gl.dashed {
+  stroke-dasharray: 5 4;
+  stroke: rgba(255, 255, 255, 0.75);
+}
+.gl.faint {
+  stroke: rgba(255, 255, 255, 0.5);
+}
+.gl.axis {
+  stroke: rgba(157, 139, 234, 0.5);
+  stroke-dasharray: 2 4;
+}
+.grad-handle,
+.grad-knob {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 10px -2px var(--glow);
+  pointer-events: auto;
+  cursor: grab;
+  transition: transform 0.3s var(--spring);
+}
+.grad-handle {
+  transform: rotate(45deg);
+}
+.grad-handle:hover {
+  transform: rotate(45deg) scale(1.4);
+  background: var(--acc);
+}
+.grad-knob {
+  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: var(--acc);
+  cursor: alias;
+}
+.grad-knob:hover {
+  transform: scale(1.4);
+}
+.grad-pin {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  cursor: move;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 0 16px -2px var(--glow);
+  animation: pinIn 0.5s var(--spring) both;
+}
+.grad-pin i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--acc);
+}
+.grad-pin::after {
+  display: none;
+}
+.grad-pin:hover {
+  transform: scale(1.2);
+}
+.tool-layer.gradients.pins-auto:not(.drawing) .grad-lines,
+.tool-layer.gradients.pins-auto:not(.drawing) .grad-handle,
+.tool-layer.gradients.pins-auto:not(.drawing) .grad-knob {
+  opacity: 0;
+  transition: opacity 0.3s var(--ease);
+}
+.stage:hover .tool-layer.gradients.pins-auto .grad-lines,
+.stage:hover .tool-layer.gradients.pins-auto .grad-handle,
+.stage:hover .tool-layer.gradients.pins-auto .grad-knob {
+  opacity: 1;
+}

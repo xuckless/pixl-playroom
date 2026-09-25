@@ -144,6 +144,14 @@ const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
     title: 'Lasso',
     hint: 'Click points · click the first or double-click to close · Alt subtracts · Esc cancels'
   },
+  linear: {
+    title: 'Linear gradient',
+    hint: 'Drag to draw · Shift keeps to 45° · drag the pin to move, the ends to reshape, the knob to turn'
+  },
+  radial: {
+    title: 'Radial gradient',
+    hint: 'Drag out from the centre · Shift draws a circle · the handles reshape, the knob turns'
+  },
   'wb-picker': { title: 'White balance', hint: 'Click something that should be neutral grey' },
   'range-picker': { title: 'Range', hint: 'Click the colour or tone the mask should select' }
 }
