@@ -8,9 +8,10 @@ import App from './App'
 import { useDevelop } from './state/develop'
 import { useLibrary } from './state/library'
 import { useUi } from './state/ui'
+import { useBusy } from './state/busy'
 
 // The stores, for automation and the devtools console.
-;(window as unknown as { __playroom: unknown }).__playroom = { useLibrary, useDevelop, useUi }
+;(window as unknown as { __playroom: unknown }).__playroom = { useLibrary, useDevelop, useUi, useBusy }
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

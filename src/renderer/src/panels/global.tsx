@@ -15,6 +15,7 @@ import { Section, Select, Slider, Tabs, Toggle, ToolPanel } from '../components/
 import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
+import { runJob } from '../state/busy'
 import { ASPECTS, aspectValue } from '../lib/aspects'
 import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../lib/geometry'
 import { Icon } from '../components/icons'
@@ -201,7 +202,9 @@ function WhiteBalanceRows(): React.JSX.Element | null {
       )
     else if (v === 'auto') {
       try {
-        const wb = await api.develop.autoWb(session.key)
+        const wb = await runJob('Auto white balance', () => api.develop.autoWb(session.key), {
+          detail: 'Finding the neutral greys'
+        })
         if (!wb)
           return useLibrary
             .getState()
@@ -352,8 +355,11 @@ export function BasicPanel(): React.JSX.Element | null {
   if (!session || !recipe) return null
   const auto = async (): Promise<void> => {
     try {
-      const basic = await api.develop.autoTone(session.key)
-      replace({ ...recipe, basic }, 'Auto tone')
+      const basic = await runJob('Auto tone', () => api.develop.autoTone(session.key), {
+        detail: 'Measuring the picture with the tone sliders at zero'
+      })
+      const now = useDevelop.getState().recipe ?? recipe
+      replace({ ...now, basic }, 'Auto tone')
     } catch (err) {
       useLibrary.getState().say(errorText(err), 'error')
     }
@@ -740,7 +746,9 @@ export function DetailPanel(): React.JSX.Element | null {
             disabled={measuring}
             onClick={() => {
               setMeasuring(true)
-              void measure().finally(() => setMeasuring(false))
+              void runJob('Measuring noise', () => measure(), {
+                detail: 'Estimating σ̂ on each plane, as the denoiser does'
+              }).finally(() => setMeasuring(false))
             }}
           >
             {measuring ? 'Measuring…' : 'Measure noise'}

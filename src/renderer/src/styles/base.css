@@ -117,3 +117,21 @@ img {
 .note {
   color: var(--warn);
 }
+
+/* line icons */
+.icon-svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+.icon-svg .fill-cur {
+  fill: currentColor;
+}
+.icon-svg .fill-acc {
+  fill: rgba(157, 139, 234, 0.35);
+}
