@@ -207,6 +207,21 @@ const COMMANDS = {
       Math.round(by)
     )
   },
+  /** wheel <selector> <deltaY> — a mouse-wheel turn over an element. */
+  async wheel(arg) {
+    const [sel, dy] = arg.split(/\s+/)
+    const box = await page.evaluate((s) => {
+      const r = document.querySelector(s)?.getBoundingClientRect()
+      return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null
+    }, sel)
+    if (!box) return console.log('NOT_FOUND')
+    await page.mouse.move(box.x, box.y)
+    await page.mouse.wheel(0, Number(dy) || 100)
+  },
+  /** panel <id> — show a tool on the thumb-wheel. */
+  async panel(id) {
+    await page.evaluate((id) => window.__playroom.useUi.getState().setPanel(id), id)
+  },
   async wait(ms) {
     await sleep(Number(ms) || 1000)
   },

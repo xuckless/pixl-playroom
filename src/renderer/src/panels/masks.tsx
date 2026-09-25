@@ -8,7 +8,7 @@ import {
   type MaskComponentSetting,
   type Recipe
 } from '../../../shared/recipe'
-import { Section, Select, Slider, Toggle } from '../components/ui'
+import { Select, Slider, Toggle, ToolPanel } from '../components/ui'
 import { emptyRange } from '../lib/helpers'
 import { useDevelop } from '../state/develop'
 
@@ -331,10 +331,12 @@ export function MasksPanel(): React.JSX.Element | null {
     ? report?.gradeLines.find((line) => line.includes(`▸ ${layer.name} `))
     : undefined
   return (
-    <Section
-      id="masks"
-      title="Masks & local adjustments"
-      right={<button onClick={add}>+ New</button>}
+    <ToolPanel
+      actions={
+        <button className="sm" onClick={add}>
+          + New mask
+        </button>
+      }
     >
       <div className="layer-list">
         {recipe.layers.map((l) => (
@@ -443,6 +445,6 @@ export function MasksPanel(): React.JSX.Element | null {
           <Adjustments />
         </div>
       )}
-    </Section>
+    </ToolPanel>
   )
 }

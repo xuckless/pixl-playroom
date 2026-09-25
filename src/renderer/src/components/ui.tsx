@@ -50,6 +50,25 @@ export function Section({
   )
 }
 
+/**
+ * The body of the one tool the right column shows. Its name and glyph are on
+ * the dial above; `actions` (tabs, a mode switch) sit on a row of their own.
+ */
+export function ToolPanel({
+  actions,
+  children
+}: {
+  actions?: ReactNode
+  children: ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="tool-panel">
+      {actions && <div className="tool-actions">{actions}</div>}
+      {children}
+    </div>
+  )
+}
+
 export interface SliderProps {
   label: string
   value: number

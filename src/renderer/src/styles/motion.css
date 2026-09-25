@@ -211,3 +211,26 @@
 .stagger > *:nth-child(n + 8) {
   animation-delay: 0.23s;
 }
+@keyframes glyphIn {
+  from {
+    opacity: 0;
+    transform: rotate(-30deg) scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes notch {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 0 18px -8px var(--glow);
+  }
+  50% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 0 30px -4px var(--glow);
+  }
+}

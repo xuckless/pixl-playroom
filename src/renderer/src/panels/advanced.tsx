@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { compile, orientedFrame } from '../../../shared/compile'
 import type { GradeLayer } from '../../../shared/engine-types'
 import { newId } from '../../../shared/recipe'
-import { Section } from '../components/ui'
+import { Section, ToolPanel } from '../components/ui'
 import { useDevelop } from '../state/develop'
 
 const TEMPLATE: GradeLayer = {
@@ -151,15 +151,12 @@ export function AdvancedPanel(): React.JSX.Element | null {
   }, [session, recipe, show])
   if (!session || !recipe) return null
   return (
-    <Section id="advanced" title="Advanced (engine)" defaultOpen={false}>
+    <ToolPanel>
       {report && (
-        <div className="report">
-          <div className="row between">
-            <span className="group-label">Last render</span>
-            <span className="muted small">
-              {report.totalMs} ms · decode {report.decodeMs} · colour {report.colorMs} · encode{' '}
-              {report.encodeMs}
-            </span>
+        <Section id="advanced.report" title="Last render">
+          <div className="muted small">
+            {report.totalMs} ms · decode {report.decodeMs} · colour {report.colorMs} · encode{' '}
+            {report.encodeMs}
           </div>
           <div className="muted small">
             out: {report.colorSpace} · {report.loss.source_bits}→{report.loss.output_bits} bits ·{' '}
@@ -175,28 +172,36 @@ export function AdvancedPanel(): React.JSX.Element | null {
           <pre className="report-lines">
             {report.gradeLines.join('\n') || 'no grade — the fast path'}
           </pre>
-        </div>
+        </Section>
       )}
-      <span className="group-label">Custom layers</span>
-      <CustomLayers />
-      <div className="row between">
-        <span className="group-label">Compiled grade (export, full resolution)</span>
-        <button onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'}</button>
-      </div>
-      {compiled && (
-        <>
-          <pre className="json">
-            {JSON.stringify({ framing: compiled.framing, grade: compiled.grade }, null, 2)}
-          </pre>
-          <button
-            onClick={() =>
-              void navigator.clipboard.writeText(JSON.stringify(compiled.grade, null, 2))
-            }
-          >
-            Copy grade JSON
+      <Section id="advanced.custom" title="Custom layers">
+        <CustomLayers />
+      </Section>
+      <Section
+        id="advanced.compiled"
+        title="Compiled grade"
+        right={
+          <button className="sm" onClick={() => setShow(!show)}>
+            {show ? 'Hide' : 'Show'}
           </button>
-        </>
-      )}
-    </Section>
+        }
+      >
+        <p className="muted small">What an export at full resolution sends to the engine.</p>
+        {compiled && (
+          <>
+            <pre className="json">
+              {JSON.stringify({ framing: compiled.framing, grade: compiled.grade }, null, 2)}
+            </pre>
+            <button
+              onClick={() =>
+                void navigator.clipboard.writeText(JSON.stringify(compiled.grade, null, 2))
+              }
+            >
+              Copy grade JSON
+            </button>
+          </>
+        )}
+      </Section>
+    </ToolPanel>
   )
 }

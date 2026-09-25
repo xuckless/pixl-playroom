@@ -452,3 +452,310 @@ fieldset::before {
 .range-axis {
   margin: 4px 0;
 }
+
+/* ── the dial: the chosen tool beside the thumb-wheel ──────────── */
+.dial {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  height: 128px;
+  position: relative;
+  flex: none;
+  background: var(--s1);
+  border-bottom: 1px solid transparent;
+  border-image: var(--hl-x) 1;
+}
+.dial-info {
+  padding: 14px 8px 12px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+}
+.dial-name {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: nameIn 0.5s var(--spring) both;
+  white-space: nowrap;
+}
+.dial-name > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dial-glyph {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(157, 139, 234, 0.45);
+  border-radius: var(--r);
+  background: linear-gradient(160deg, rgba(157, 139, 234, 0.2), rgba(157, 139, 234, 0.04));
+  box-shadow:
+    0 0 22px -8px var(--glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  color: var(--acc);
+  animation: glyphIn 0.6s var(--spring) both;
+}
+.dial-glyph svg {
+  width: 17px;
+  height: 17px;
+}
+.dial-desc {
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  line-height: 1.45;
+  animation: nameIn 0.6s var(--spring) both;
+  animation-delay: 0.05s;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.dial-index {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+.dial-index button {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  position: relative;
+}
+.dial-index button::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 4px;
+  height: 2px;
+  background: var(--hair2);
+  transition:
+    background 0.35s var(--ease),
+    box-shadow 0.35s;
+}
+.dial-index button:hover:not(:disabled) {
+  transform: none;
+  background: transparent;
+}
+.dial-index button:hover::before {
+  background: var(--hair3);
+}
+.dial-index button.on {
+  width: 22px;
+  transition: width var(--dur-toggle) var(--spring);
+}
+.dial-index button.on::before {
+  background: var(--acc);
+  box-shadow: 0 0 8px var(--acc);
+}
+.dial-index button.on::after {
+  display: none;
+}
+
+/* the thumb-wheel */
+.tw {
+  position: relative;
+  height: 100%;
+  border-left: 1px solid var(--hair);
+  outline: none;
+  user-select: none;
+  overflow: hidden;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.015),
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0.015)
+  );
+}
+.tw:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--acc);
+}
+.tw-drum {
+  position: absolute;
+  inset: 0;
+  perspective: 360px;
+  perspective-origin: 50% 50%;
+  cursor: ns-resize;
+  touch-action: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent 2%, #000 20%, #000 80%, transparent 98%);
+  mask-image: linear-gradient(180deg, transparent 2%, #000 20%, #000 80%, transparent 98%);
+}
+.tw.dragging .tw-drum {
+  cursor: grabbing;
+}
+.tw-stack {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+.tw-item {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 26px;
+  margin-top: -13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transform-origin: 50% 50% -40px;
+  backface-visibility: hidden;
+  transition:
+    transform 0.55s var(--spring),
+    opacity 0.45s var(--ease),
+    color 0.35s var(--ease),
+    filter 0.45s var(--ease);
+  cursor: pointer;
+}
+.tw.dragging .tw-item {
+  transition:
+    color 0.2s,
+    opacity 0.1s linear;
+}
+.tw-item .tick {
+  width: 7px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.6;
+  transition:
+    background 0.3s,
+    box-shadow 0.3s;
+}
+.tw-item:hover {
+  color: var(--text2);
+}
+.tw-item.on {
+  color: #fff;
+  text-shadow: 0 0 14px var(--glow);
+}
+.tw-item.on .tick {
+  background: var(--acc);
+  box-shadow: 0 0 6px var(--acc);
+  opacity: 1;
+}
+/* frosted liquid glass over the rolling ends */
+.tw-cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 30px;
+  pointer-events: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  z-index: 2;
+}
+.tw-cap.liquid,
+.tw-cap.liquid.refracting {
+  background: linear-gradient(180deg, rgba(9, 9, 11, 0.35), rgba(9, 9, 11, 0));
+}
+.tw-cap.top {
+  top: 0;
+  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
+  mask-image: linear-gradient(180deg, #000 30%, transparent);
+}
+.tw-cap.bottom {
+  bottom: 0;
+  transform: scaleY(-1);
+  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
+  mask-image: linear-gradient(180deg, #000 30%, transparent);
+}
+.tw-cap::after {
+  display: none;
+}
+/* the magnifying crystal over the chosen name */
+.tw-notch {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  height: 28px;
+  transform: translateY(-50%);
+  pointer-events: none;
+  z-index: 3;
+  border-color: rgba(157, 139, 234, 0.5);
+  animation: notch 3.2s ease-in-out infinite;
+}
+.tw-notch.liquid,
+.tw-notch.liquid.refracting {
+  background: linear-gradient(90deg, rgba(157, 139, 234, 0.14), rgba(157, 139, 234, 0.03));
+}
+.tw-notch::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: var(--acc);
+  box-shadow: 0 0 8px var(--acc);
+}
+.tw-arrows {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  z-index: 4;
+  pointer-events: none;
+}
+.tw-arrows.up {
+  top: 2px;
+}
+.tw-arrows.down {
+  bottom: 2px;
+}
+.tw-arrows button {
+  pointer-events: auto;
+  width: 24px;
+  height: 16px;
+  border: none;
+  color: var(--muted);
+}
+.tw-arrows button:hover:not(:disabled) {
+  color: var(--acc);
+  background: transparent;
+  transform: scale(1.3);
+}
+.tw-arrows svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 1.8;
+}
+
+/* ── the one tool panel ────────────────────────────────────────── */
+.panel-motion {
+  will-change: transform, opacity;
+}
+.tool-panel {
+  padding-bottom: 12px;
+}
+.tool-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 0 2px;
+}
+.tool-panel > .section:first-of-type > header,
+.tool-actions + .section > header {
+  margin-top: 4px;
+}

@@ -11,7 +11,7 @@ import {
 } from '../../../shared/recipe'
 import { WB_PRESETS } from '../../../shared/wb'
 import { ColorWheel, CurveEditor } from '../components/editors'
-import { Section, Select, Slider, Tabs, Toggle } from '../components/ui'
+import { Section, Select, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
@@ -359,10 +359,8 @@ export function BasicPanel(): React.JSX.Element | null {
     }
   }
   return (
-    <Section
-      id="basic"
-      title="Basic"
-      right={
+    <ToolPanel
+      actions={
         <Tabs
           value={recipe.treatment}
           tabs={[
@@ -375,63 +373,70 @@ export function BasicPanel(): React.JSX.Element | null {
         />
       }
     >
-      <ProfileRow />
-      <WhiteBalanceRows />
-      <div className="row between">
-        <span className="group-label">Tone</span>
-        <button onClick={() => void auto()} title="Auto tone (Shift+A)">
-          Auto
-        </button>
-      </div>
-      <RS
-        label="Exposure"
-        read={(r) => r.basic.exposure}
-        write={(r, v) => (r.basic.exposure = v)}
-        min={-5}
-        max={5}
-        step={0.01}
-        format={(v) => (v > 0 ? '+' : '') + v.toFixed(2)}
-      />
-      <RS
-        label="Contrast"
-        read={(r) => r.basic.contrast}
-        write={(r, v) => (r.basic.contrast = v)}
-      />
-      <RS
-        label="Highlights"
-        read={(r) => r.basic.highlights}
-        write={(r, v) => (r.basic.highlights = v)}
-      />
-      <RS label="Shadows" read={(r) => r.basic.shadows} write={(r, v) => (r.basic.shadows = v)} />
-      <RS label="Whites" read={(r) => r.basic.whites} write={(r, v) => (r.basic.whites = v)} />
-      <RS label="Blacks" read={(r) => r.basic.blacks} write={(r, v) => (r.basic.blacks = v)} />
-      <span className="group-label">Presence</span>
-      <RS
-        label="Texture"
-        read={(r) => r.presence.texture}
-        write={(r, v) => (r.presence.texture = v)}
-      />
-      <RS
-        label="Clarity"
-        read={(r) => r.presence.clarity}
-        write={(r, v) => (r.presence.clarity = v)}
-      />
-      <RS
-        label="Dehaze"
-        read={(r) => r.presence.dehaze}
-        write={(r, v) => (r.presence.dehaze = v)}
-      />
-      <RS
-        label="Vibrance"
-        read={(r) => r.presence.vibrance}
-        write={(r, v) => (r.presence.vibrance = v)}
-      />
-      <RS
-        label="Saturation"
-        read={(r) => r.presence.saturation}
-        write={(r, v) => (r.presence.saturation = v)}
-      />
-    </Section>
+      <Section id="basic.wb" title="Profile & white balance">
+        <ProfileRow />
+        <WhiteBalanceRows />
+      </Section>
+      <Section
+        id="basic.tone"
+        title="Tone"
+        right={
+          <button className="sm" onClick={() => void auto()} title="Auto tone (Shift+A)">
+            Auto
+          </button>
+        }
+      >
+        <RS
+          label="Exposure"
+          read={(r) => r.basic.exposure}
+          write={(r, v) => (r.basic.exposure = v)}
+          min={-5}
+          max={5}
+          step={0.01}
+          format={(v) => (v > 0 ? '+' : '') + v.toFixed(2)}
+        />
+        <RS
+          label="Contrast"
+          read={(r) => r.basic.contrast}
+          write={(r, v) => (r.basic.contrast = v)}
+        />
+        <RS
+          label="Highlights"
+          read={(r) => r.basic.highlights}
+          write={(r, v) => (r.basic.highlights = v)}
+        />
+        <RS label="Shadows" read={(r) => r.basic.shadows} write={(r, v) => (r.basic.shadows = v)} />
+        <RS label="Whites" read={(r) => r.basic.whites} write={(r, v) => (r.basic.whites = v)} />
+        <RS label="Blacks" read={(r) => r.basic.blacks} write={(r, v) => (r.basic.blacks = v)} />
+      </Section>
+      <Section id="basic.presence" title="Presence">
+        <RS
+          label="Texture"
+          read={(r) => r.presence.texture}
+          write={(r, v) => (r.presence.texture = v)}
+        />
+        <RS
+          label="Clarity"
+          read={(r) => r.presence.clarity}
+          write={(r, v) => (r.presence.clarity = v)}
+        />
+        <RS
+          label="Dehaze"
+          read={(r) => r.presence.dehaze}
+          write={(r, v) => (r.presence.dehaze = v)}
+        />
+        <RS
+          label="Vibrance"
+          read={(r) => r.presence.vibrance}
+          write={(r, v) => (r.presence.vibrance = v)}
+        />
+        <RS
+          label="Saturation"
+          read={(r) => r.presence.saturation}
+          write={(r, v) => (r.presence.saturation = v)}
+        />
+      </Section>
+    </ToolPanel>
   )
 }
 
@@ -457,61 +462,70 @@ export function ToneCurvePanel(): React.JSX.Element | null {
       ? stats?.luma_histogram.counts
       : stats?.histograms[{ red: 0, green: 1, blue: 2 }[channel]]?.counts
   return (
-    <Section id="curve" title="Tone curve" defaultOpen={false}>
-      <span className="group-label">Region</span>
-      <RS
-        label="Highlights"
-        read={(r) => r.toneCurve.highlights}
-        write={(r, v) => (r.toneCurve.highlights = v)}
-      />
-      <RS
-        label="Lights"
-        read={(r) => r.toneCurve.lights}
-        write={(r, v) => (r.toneCurve.lights = v)}
-      />
-      <RS label="Darks" read={(r) => r.toneCurve.darks} write={(r, v) => (r.toneCurve.darks = v)} />
-      <RS
-        label="Shadows"
-        read={(r) => r.toneCurve.shadows}
-        write={(r, v) => (r.toneCurve.shadows = v)}
-      />
-      <div className="row between">
-        <span className="group-label">Point curve</span>
-        <Tabs
-          value={channel}
-          onChange={setChannel}
-          tabs={[
-            { value: 'master', label: 'RGB' },
-            { value: 'red', label: 'R' },
-            { value: 'green', label: 'G' },
-            { value: 'blue', label: 'B' }
-          ]}
+    <ToolPanel>
+      <Section id="curve.region" title="Region">
+        <RS
+          label="Highlights"
+          read={(r) => r.toneCurve.highlights}
+          write={(r, v) => (r.toneCurve.highlights = v)}
         />
-      </div>
-      <CurveEditor
-        points={recipe.toneCurve[channel]}
-        colour={colours[channel]}
-        histogram={hist}
-        onChange={(p: CurvePointSetting[], live) => edit((r) => (r.toneCurve[channel] = p), live)}
-        onCommit={() => commit(`Curve (${channel})`)}
-      />
-      <div className="row">
-        <button
-          onClick={() => {
-            edit(
-              (r) =>
-                (r.toneCurve[channel] = [
-                  { x: 0, y: 0 },
-                  { x: 1, y: 1 }
-                ])
-            )
-            commit(`Reset curve (${channel})`)
-          }}
-        >
-          Reset {channel}
-        </button>
-      </div>
-    </Section>
+        <RS
+          label="Lights"
+          read={(r) => r.toneCurve.lights}
+          write={(r, v) => (r.toneCurve.lights = v)}
+        />
+        <RS
+          label="Darks"
+          read={(r) => r.toneCurve.darks}
+          write={(r, v) => (r.toneCurve.darks = v)}
+        />
+        <RS
+          label="Shadows"
+          read={(r) => r.toneCurve.shadows}
+          write={(r, v) => (r.toneCurve.shadows = v)}
+        />
+      </Section>
+      <Section
+        id="curve.point"
+        title="Point curve"
+        right={
+          <Tabs
+            value={channel}
+            onChange={setChannel}
+            tabs={[
+              { value: 'master', label: 'RGB' },
+              { value: 'red', label: 'R' },
+              { value: 'green', label: 'G' },
+              { value: 'blue', label: 'B' }
+            ]}
+          />
+        }
+      >
+        <CurveEditor
+          points={recipe.toneCurve[channel]}
+          colour={colours[channel]}
+          histogram={hist}
+          onChange={(p: CurvePointSetting[], live) => edit((r) => (r.toneCurve[channel] = p), live)}
+          onCommit={() => commit(`Curve (${channel})`)}
+        />
+        <div className="row">
+          <button
+            onClick={() => {
+              edit(
+                (r) =>
+                  (r.toneCurve[channel] = [
+                    { x: 0, y: 0 },
+                    { x: 1, y: 1 }
+                  ])
+              )
+              commit(`Reset curve (${channel})`)
+            }}
+          >
+            Reset {channel}
+          </button>
+        </div>
+      </Section>
+    </ToolPanel>
   )
 }
 
@@ -524,30 +538,42 @@ export function HslPanel(): React.JSX.Element | null {
   const tab = useDevelop((s) => s.hslTab)
   const setTab = useDevelop((s) => s.setHslTab)
   const focus = useDevelop((s) => s.hslFocus)
+  // A band chosen from the colour-concentration chart scrolls into view.
+  useEffect(() => {
+    if (!focus) return
+    const t = setTimeout(
+      () =>
+        document
+          .querySelector('.tool-panel .focused')
+          ?.scrollIntoView({ block: 'center', behavior: 'smooth' }),
+      320
+    )
+    return () => clearTimeout(t)
+  }, [focus, tab])
   if (!recipe) return null
   const bw = recipe.treatment === 'bw' || recipe.profile.kind === 'monochrome'
   if (bw) {
     return (
-      <Section id="hsl" title="B&W mix">
-        {HSL_BANDS.map((b) => (
-          <RS
-            key={b}
-            label={BAND_LABEL(b)}
-            read={(r) => r.bwMix[b]}
-            write={(r, v) => (r.bwMix[b] = v)}
-            track={`linear-gradient(90deg,#000,hsl(${HSL_BAND_CENTRES[b]} 70% 50%),#fff)`}
-          />
-        ))}
-      </Section>
+      <ToolPanel>
+        <Section id="hsl.bw" title="B&W mix">
+          {HSL_BANDS.map((b) => (
+            <RS
+              key={b}
+              label={BAND_LABEL(b)}
+              read={(r) => r.bwMix[b]}
+              write={(r, v) => (r.bwMix[b] = v)}
+              track={`linear-gradient(90deg,#000,hsl(${HSL_BAND_CENTRES[b]} 70% 50%),#fff)`}
+            />
+          ))}
+        </Section>
+      </ToolPanel>
     )
   }
   const axes: ('hue' | 'saturation' | 'luminance')[] =
     tab === 'all' ? ['hue', 'saturation', 'luminance'] : [tab]
   return (
-    <Section
-      id="hsl"
-      title="HSL / Colour"
-      right={
+    <ToolPanel
+      actions={
         <Tabs
           value={tab}
           onChange={setTab}
@@ -561,8 +587,7 @@ export function HslPanel(): React.JSX.Element | null {
       }
     >
       {axes.map((axis) => (
-        <div key={axis}>
-          {tab === 'all' && <span className="group-label">{axis}</span>}
+        <Section key={axis} id={`hsl.${axis}`} title={axis}>
           {HSL_BANDS.map((b) => {
             const c = HSL_BAND_CENTRES[b]
             const track =
@@ -582,9 +607,9 @@ export function HslPanel(): React.JSX.Element | null {
               </div>
             )
           })}
-        </div>
+        </Section>
       ))}
-    </Section>
+    </ToolPanel>
   )
 }
 
@@ -609,7 +634,7 @@ export function ColorGradePanel(): React.JSX.Element | null {
     />
   )
   return (
-    <Section id="grade" title="Colour grading" defaultOpen={false}>
+    <ToolPanel>
       <div className="wheels">
         {wheel('shadows', 'Shadows')}
         {wheel('midtones', 'Midtones')}
@@ -629,7 +654,7 @@ export function ColorGradePanel(): React.JSX.Element | null {
         read={(r) => r.colorGrade.balance}
         write={(r, v) => (r.colorGrade.balance = v)}
       />
-    </Section>
+    </ToolPanel>
   )
 }
 
@@ -644,93 +669,95 @@ export function DetailPanel(): React.JSX.Element | null {
   if (!recipe) return null
   const seen = report?.gradeLines.filter((l) => l.includes('denoise')) ?? []
   return (
-    <Section id="detail" title="Detail" defaultOpen={false}>
-      <span className="group-label">Sharpening</span>
-      <RS
-        label="Amount"
-        read={(r) => r.detail.sharpenAmount}
-        write={(r, v) => (r.detail.sharpenAmount = v)}
-        min={0}
-        max={150}
-      />
-      <RS
-        label="Radius"
-        read={(r) => r.detail.sharpenRadius}
-        write={(r, v) => (r.detail.sharpenRadius = v)}
-        min={0.5}
-        max={3}
-        step={0.1}
-        def={1}
-        format={(v) => v.toFixed(1)}
-      />
-      <RS
-        label="Detail"
-        read={(r) => r.detail.sharpenDetail}
-        write={(r, v) => (r.detail.sharpenDetail = v)}
-        min={0}
-        max={100}
-        def={25}
-      />
-      <RS
-        label="Masking"
-        read={(r) => r.detail.sharpenMasking}
-        write={(r, v) => (r.detail.sharpenMasking = v)}
-        min={0}
-        max={100}
-      />
-      <span className="group-label">Noise reduction</span>
-      <RS
-        label="Luminance"
-        read={(r) => r.detail.noiseLuminance}
-        write={(r, v) => (r.detail.noiseLuminance = v)}
-        min={0}
-        max={100}
-      />
-      <RS
-        label="Detail"
-        read={(r) => r.detail.noiseLuminanceDetail}
-        write={(r, v) => (r.detail.noiseLuminanceDetail = v)}
-        min={0}
-        max={100}
-        def={50}
-      />
-      <RS
-        label="Colour"
-        read={(r) => r.detail.noiseColor}
-        write={(r, v) => (r.detail.noiseColor = v)}
-        min={0}
-        max={100}
-      />
-      <RS
-        label="Detail"
-        read={(r) => r.detail.noiseColorDetail}
-        write={(r, v) => (r.detail.noiseColorDetail = v)}
-        min={0}
-        max={100}
-        def={50}
-      />
-      <div className="noise-readout">
-        <button
-          disabled={measuring}
-          onClick={() => {
-            setMeasuring(true)
-            void measure().finally(() => setMeasuring(false))
-          }}
-        >
-          {measuring ? 'Measuring…' : 'Measure noise'}
-        </button>
-        {noise && (
-          <span title="σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values">
-            σ̂ luma {(noise.luminance * 255).toFixed(2)} · chroma{' '}
-            {noise.color.map((c) => (c * 255).toFixed(2)).join(' / ')}
-          </span>
+    <ToolPanel>
+      <Section id="detail.sharpen" title="Sharpening">
+        <RS
+          label="Amount"
+          read={(r) => r.detail.sharpenAmount}
+          write={(r, v) => (r.detail.sharpenAmount = v)}
+          min={0}
+          max={150}
+        />
+        <RS
+          label="Radius"
+          read={(r) => r.detail.sharpenRadius}
+          write={(r, v) => (r.detail.sharpenRadius = v)}
+          min={0.5}
+          max={3}
+          step={0.1}
+          def={1}
+          format={(v) => v.toFixed(1)}
+        />
+        <RS
+          label="Detail"
+          read={(r) => r.detail.sharpenDetail}
+          write={(r, v) => (r.detail.sharpenDetail = v)}
+          min={0}
+          max={100}
+          def={25}
+        />
+        <RS
+          label="Masking"
+          read={(r) => r.detail.sharpenMasking}
+          write={(r, v) => (r.detail.sharpenMasking = v)}
+          min={0}
+          max={100}
+        />
+      </Section>
+      <Section id="detail.noise" title="Noise reduction">
+        <RS
+          label="Luminance"
+          read={(r) => r.detail.noiseLuminance}
+          write={(r, v) => (r.detail.noiseLuminance = v)}
+          min={0}
+          max={100}
+        />
+        <RS
+          label="Detail"
+          read={(r) => r.detail.noiseLuminanceDetail}
+          write={(r, v) => (r.detail.noiseLuminanceDetail = v)}
+          min={0}
+          max={100}
+          def={50}
+        />
+        <RS
+          label="Colour"
+          read={(r) => r.detail.noiseColor}
+          write={(r, v) => (r.detail.noiseColor = v)}
+          min={0}
+          max={100}
+        />
+        <RS
+          label="Detail"
+          read={(r) => r.detail.noiseColorDetail}
+          write={(r, v) => (r.detail.noiseColorDetail = v)}
+          min={0}
+          max={100}
+          def={50}
+        />
+        <div className="noise-readout">
+          <button
+            disabled={measuring}
+            onClick={() => {
+              setMeasuring(true)
+              void measure().finally(() => setMeasuring(false))
+            }}
+          >
+            {measuring ? 'Measuring…' : 'Measure noise'}
+          </button>
+          {noise && (
+            <span title="σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values">
+              σ̂ luma {(noise.luminance * 255).toFixed(2)} · chroma{' '}
+              {noise.color.map((c) => (c * 255).toFixed(2)).join(' / ')}
+            </span>
+          )}
+        </div>
+        {seen.length > 0 && (
+          <pre className="report-lines">{seen.map((l) => l.trim()).join('\n')}</pre>
         )}
-      </div>
-      {seen.length > 0 && (
-        <pre className="report-lines">{seen.map((l) => l.trim()).join('\n')}</pre>
-      )}
-      <p className="muted small">Sharpening and noise reduction read true at 100% (Z).</p>
-    </Section>
+        <p className="muted small">Sharpening and noise reduction read true at 100% (Z).</p>
+      </Section>
+    </ToolPanel>
   )
 }
 
@@ -738,66 +765,68 @@ export function DetailPanel(): React.JSX.Element | null {
 
 export function EffectsPanel(): React.JSX.Element {
   return (
-    <Section id="effects" title="Effects" defaultOpen={false}>
-      <span className="group-label">Post-crop vignette</span>
-      <RS
-        label="Amount"
-        read={(r) => r.effects.vignetteAmount}
-        write={(r, v) => (r.effects.vignetteAmount = v)}
-      />
-      <RS
-        label="Midpoint"
-        read={(r) => r.effects.vignetteMidpoint}
-        write={(r, v) => (r.effects.vignetteMidpoint = v)}
-        min={0}
-        max={100}
-        def={50}
-      />
-      <RS
-        label="Roundness"
-        read={(r) => r.effects.vignetteRoundness}
-        write={(r, v) => (r.effects.vignetteRoundness = v)}
-      />
-      <RS
-        label="Feather"
-        read={(r) => r.effects.vignetteFeather}
-        write={(r, v) => (r.effects.vignetteFeather = v)}
-        min={0}
-        max={100}
-        def={50}
-      />
-      <RS
-        label="Highlights"
-        read={(r) => r.effects.vignetteHighlights}
-        write={(r, v) => (r.effects.vignetteHighlights = v)}
-        min={0}
-        max={100}
-      />
-      <span className="group-label">Grain</span>
-      <RS
-        label="Amount"
-        read={(r) => r.effects.grainAmount}
-        write={(r, v) => (r.effects.grainAmount = v)}
-        min={0}
-        max={100}
-      />
-      <RS
-        label="Size"
-        read={(r) => r.effects.grainSize}
-        write={(r, v) => (r.effects.grainSize = v)}
-        min={0}
-        max={100}
-        def={25}
-      />
-      <RS
-        label="Roughness"
-        read={(r) => r.effects.grainRoughness}
-        write={(r, v) => (r.effects.grainRoughness = v)}
-        min={0}
-        max={100}
-        def={50}
-      />
-    </Section>
+    <ToolPanel>
+      <Section id="effects.vignette" title="Post-crop vignette">
+        <RS
+          label="Amount"
+          read={(r) => r.effects.vignetteAmount}
+          write={(r, v) => (r.effects.vignetteAmount = v)}
+        />
+        <RS
+          label="Midpoint"
+          read={(r) => r.effects.vignetteMidpoint}
+          write={(r, v) => (r.effects.vignetteMidpoint = v)}
+          min={0}
+          max={100}
+          def={50}
+        />
+        <RS
+          label="Roundness"
+          read={(r) => r.effects.vignetteRoundness}
+          write={(r, v) => (r.effects.vignetteRoundness = v)}
+        />
+        <RS
+          label="Feather"
+          read={(r) => r.effects.vignetteFeather}
+          write={(r, v) => (r.effects.vignetteFeather = v)}
+          min={0}
+          max={100}
+          def={50}
+        />
+        <RS
+          label="Highlights"
+          read={(r) => r.effects.vignetteHighlights}
+          write={(r, v) => (r.effects.vignetteHighlights = v)}
+          min={0}
+          max={100}
+        />
+      </Section>
+      <Section id="effects.grain" title="Grain">
+        <RS
+          label="Amount"
+          read={(r) => r.effects.grainAmount}
+          write={(r, v) => (r.effects.grainAmount = v)}
+          min={0}
+          max={100}
+        />
+        <RS
+          label="Size"
+          read={(r) => r.effects.grainSize}
+          write={(r, v) => (r.effects.grainSize = v)}
+          min={0}
+          max={100}
+          def={25}
+        />
+        <RS
+          label="Roughness"
+          read={(r) => r.effects.grainRoughness}
+          write={(r, v) => (r.effects.grainRoughness = v)}
+          min={0}
+          max={100}
+          def={50}
+        />
+      </Section>
+    </ToolPanel>
   )
 }
 
@@ -805,53 +834,58 @@ export function EffectsPanel(): React.JSX.Element {
 
 export function CalibrationPanel(): React.JSX.Element {
   return (
-    <Section id="calibration" title="Calibration" defaultOpen={false}>
-      <RS
-        label="Shadows tint"
-        read={(r) => r.calibration.shadowsTint}
-        write={(r, v) => (r.calibration.shadowsTint = v)}
-        track="linear-gradient(90deg,#4dff6a,#888,#ff4de1)"
-      />
-      <span className="group-label">Red primary</span>
-      <RS
-        label="Hue"
-        read={(r) => r.calibration.redHue}
-        write={(r, v) => (r.calibration.redHue = v)}
-        track="linear-gradient(90deg,#ff2d7a,#ff2d2d,#ff7a2d)"
-      />
-      <RS
-        label="Saturation"
-        read={(r) => r.calibration.redSaturation}
-        write={(r, v) => (r.calibration.redSaturation = v)}
-        track="linear-gradient(90deg,#a88,#f22)"
-      />
-      <span className="group-label">Green primary</span>
-      <RS
-        label="Hue"
-        read={(r) => r.calibration.greenHue}
-        write={(r, v) => (r.calibration.greenHue = v)}
-        track="linear-gradient(90deg,#b8ff2d,#2dff4d,#2dffb8)"
-      />
-      <RS
-        label="Saturation"
-        read={(r) => r.calibration.greenSaturation}
-        write={(r, v) => (r.calibration.greenSaturation = v)}
-        track="linear-gradient(90deg,#8a8,#2f4)"
-      />
-      <span className="group-label">Blue primary</span>
-      <RS
-        label="Hue"
-        read={(r) => r.calibration.blueHue}
-        write={(r, v) => (r.calibration.blueHue = v)}
-        track="linear-gradient(90deg,#2dd7ff,#2d4dff,#8a2dff)"
-      />
-      <RS
-        label="Saturation"
-        read={(r) => r.calibration.blueSaturation}
-        write={(r, v) => (r.calibration.blueSaturation = v)}
-        track="linear-gradient(90deg,#88a,#24f)"
-      />
-    </Section>
+    <ToolPanel>
+      <Section id="calibration.shadows" title="Shadows">
+        <RS
+          label="Shadows tint"
+          read={(r) => r.calibration.shadowsTint}
+          write={(r, v) => (r.calibration.shadowsTint = v)}
+          track="linear-gradient(90deg,#4dff6a,#888,#ff4de1)"
+        />
+      </Section>
+      <Section id="calibration.red" title="Red primary">
+        <RS
+          label="Hue"
+          read={(r) => r.calibration.redHue}
+          write={(r, v) => (r.calibration.redHue = v)}
+          track="linear-gradient(90deg,#ff2d7a,#ff2d2d,#ff7a2d)"
+        />
+        <RS
+          label="Saturation"
+          read={(r) => r.calibration.redSaturation}
+          write={(r, v) => (r.calibration.redSaturation = v)}
+          track="linear-gradient(90deg,#a88,#f22)"
+        />
+      </Section>
+      <Section id="calibration.green" title="Green primary">
+        <RS
+          label="Hue"
+          read={(r) => r.calibration.greenHue}
+          write={(r, v) => (r.calibration.greenHue = v)}
+          track="linear-gradient(90deg,#b8ff2d,#2dff4d,#2dffb8)"
+        />
+        <RS
+          label="Saturation"
+          read={(r) => r.calibration.greenSaturation}
+          write={(r, v) => (r.calibration.greenSaturation = v)}
+          track="linear-gradient(90deg,#8a8,#2f4)"
+        />
+      </Section>
+      <Section id="calibration.blue" title="Blue primary">
+        <RS
+          label="Hue"
+          read={(r) => r.calibration.blueHue}
+          write={(r, v) => (r.calibration.blueHue = v)}
+          track="linear-gradient(90deg,#2dd7ff,#2d4dff,#8a2dff)"
+        />
+        <RS
+          label="Saturation"
+          read={(r) => r.calibration.blueSaturation}
+          write={(r, v) => (r.calibration.blueSaturation = v)}
+          track="linear-gradient(90deg,#88a,#24f)"
+        />
+      </Section>
+    </ToolPanel>
   )
 }
 
@@ -866,7 +900,7 @@ export function GeometryPanel(): React.JSX.Element | null {
   if (!recipe || !session) return null
   const g = recipe.geometry
   return (
-    <Section id="geometry" title="Crop & rotate" defaultOpen={false}>
+    <ToolPanel>
       <div className="row">
         <Toggle
           on={tool === 'crop'}
@@ -907,6 +941,6 @@ export function GeometryPanel(): React.JSX.Element | null {
         format={(v) => `${v.toFixed(2)}°`}
         onGesture={(on) => setGesture(on ? 'straighten' : null)}
       />
-    </Section>
+    </ToolPanel>
   )
 }

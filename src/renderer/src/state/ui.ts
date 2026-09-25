@@ -17,6 +17,18 @@ export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
 
 export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
 
+export type ToolId =
+  | 'basic'
+  | 'curve'
+  | 'hsl'
+  | 'grade'
+  | 'detail'
+  | 'effects'
+  | 'masks'
+  | 'crop'
+  | 'calibration'
+  | 'advanced'
+
 interface UiState {
   /** Which pane the left rail shows, and whether it is open or folded to its spine. */
   rail: Rail
@@ -24,6 +36,11 @@ interface UiState {
   /** The filmstrip under the loupe; hidden until asked for. */
   filmstrip: boolean
   cropGuide: CropGuide
+  /** The one tool the right column shows, chosen on the thumb-wheel. */
+  panel: ToolId
+  /** The tool before the last change, for a shortcut that toggles back. */
+  previousPanel: ToolId
+  setPanel(p: ToolId): void
   /** A spine glyph: open its pane, or fold the rail when it is already showing. */
   pickRail(r: Rail): void
   setRailOpen(open: boolean): void
@@ -48,6 +65,12 @@ export const useUi = create<UiState>()(
       railOpen: true,
       filmstrip: false,
       cropGuide: 'thirds',
+      panel: 'basic',
+      previousPanel: 'basic',
+      setPanel: (panel) => {
+        const cur = get().panel
+        if (cur !== panel) set({ panel, previousPanel: cur })
+      },
       pickRail: (rail) => {
         const s = get()
         if (s.rail === rail && s.railOpen) set({ railOpen: false })
