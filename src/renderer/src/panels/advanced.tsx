@@ -143,7 +143,9 @@ export function AdvancedPanel(): React.JSX.Element | null {
       seed: session.seed,
       brushPaths: Object.fromEntries(
         recipe.layers.flatMap((l) =>
-          l.components.filter((c) => c.kind === 'brush').map((c) => [c.id, `<brush ${c.id}>`])
+          l.components
+            .filter((c) => c.kind === 'brush' || c.kind === 'linear' || c.kind === 'radial')
+            .map((c) => [c.id, `<${c.kind} plane ${c.id}>`])
         )
       ),
       applyCrop: true
