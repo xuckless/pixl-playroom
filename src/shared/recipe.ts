@@ -191,9 +191,46 @@ export interface RangeComponent extends ComponentBase {
   hue: KeyBand | null
   saturation: KeyBand | null
   luma: KeyBand | null
+  /** 0…100: blurs the selection's edges (the key's blur, up to 1% of the short side). */
+  smoothness: number
 }
 
-export type MaskComponentSetting = BrushComponent | PolygonComponent | RangeComponent
+/**
+ * A linear gradient (Lightroom's), in normalised base-frame coordinates: the
+ * full effect at `start`, fading to nothing at `end`, across lines at right
+ * angles to start→end. It reaches the engine as a raster plane of
+ * `width × height` (the base frame's aspect), drawn from these numbers.
+ */
+export interface LinearComponent extends ComponentBase {
+  kind: 'linear'
+  start: { x: number; y: number }
+  end: { x: number; y: number }
+  width: number
+  height: number
+}
+
+/**
+ * A radial gradient: an ellipse centred at `centre` (normalised base frame)
+ * with semi-axes as fractions of the frame's shorter side, turned by `angle`
+ * degrees. Full effect inside, fading out over the outer `softness`% of the
+ * radius. `invert` on the component selects the outside instead.
+ */
+export interface RadialComponent extends ComponentBase {
+  kind: 'radial'
+  centre: { x: number; y: number }
+  radiusX: number
+  radiusY: number
+  angle: number
+  softness: number
+  width: number
+  height: number
+}
+
+export type MaskComponentSetting =
+  BrushComponent | PolygonComponent | RangeComponent | LinearComponent | RadialComponent
+
+/** Components drawn into a raster plane before they reach the engine. */
+export type RasterComponent = BrushComponent | LinearComponent | RadialComponent
 
 export interface LocalAdjust {
   temperature: number
@@ -226,6 +263,8 @@ export interface LocalLayer {
   invert: boolean
   components: MaskComponentSetting[]
   adjust: LocalAdjust
+  /** 0…200: scales every adjustment of the mask at once (Lightroom's Amount). */
+  amount: number
 }
 
 /**
@@ -397,10 +436,90 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   }
   r.layers = (r.layers ?? []).map((l) => ({
     ...l,
+    amount: num(l.amount, 100, 0, 200),
     adjust: fill(ZERO_LOCAL, l.adjust),
-    components: Array.isArray(l.components) ? l.components : []
+    components: (Array.isArray(l.components) ? (l.components as unknown[]) : [])
+      .map(normaliseComponent)
+      .filter((c): c is MaskComponentSetting => c !== null)
   }))
   return r
+}
+
+function num(v: unknown, def: number, lo = -Infinity, hi = Infinity): number {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def
+}
+
+function point(v: unknown, def: { x: number; y: number }): { x: number; y: number } {
+  return isObject(v) ? { x: num(v.x, def.x), y: num(v.y, def.y) } : def
+}
+
+const MASK_MODES = ['Add', 'Subtract', 'Intersect'] as const
+
+/**
+ * One mask component from a sidecar: fills what an older version did not
+ * write, and drops what this version cannot draw (so an unknown kind never
+ * reaches the compiler).
+ */
+export function normaliseComponent(value: unknown): MaskComponentSetting | null {
+  if (!isObject(value)) return null
+  const c = value
+  const base = {
+    id: typeof c.id === 'string' && c.id ? c.id : newId(),
+    mode: MASK_MODES.includes(c.mode as MaskMode) ? (c.mode as MaskMode) : ('Add' as MaskMode),
+    opacity: num(c.opacity, 100, 0, 100),
+    invert: c.invert === true,
+    feather: num(c.feather, 0, 0, 100)
+  }
+  switch (c.kind) {
+    case 'brush':
+      if (typeof c.png !== 'string') return null
+      return {
+        ...base,
+        kind: 'brush',
+        png: c.png,
+        width: num(c.width, 1),
+        height: num(c.height, 1)
+      }
+    case 'polygon':
+      if (!Array.isArray(c.points)) return null
+      return {
+        ...base,
+        kind: 'polygon',
+        points: (c.points as unknown[]).map((p) => point(p, { x: 0, y: 0 }))
+      }
+    case 'range':
+      return {
+        ...base,
+        kind: 'range',
+        hue: (c.hue as KeyBand | null) ?? null,
+        saturation: (c.saturation as KeyBand | null) ?? null,
+        luma: (c.luma as KeyBand | null) ?? null,
+        smoothness: num(c.smoothness, 0, 0, 100)
+      }
+    case 'linear':
+      return {
+        ...base,
+        kind: 'linear',
+        start: point(c.start, { x: 0.5, y: 0.25 }),
+        end: point(c.end, { x: 0.5, y: 0.75 }),
+        width: num(c.width, 512, 1),
+        height: num(c.height, 512, 1)
+      }
+    case 'radial':
+      return {
+        ...base,
+        kind: 'radial',
+        centre: point(c.centre, { x: 0.5, y: 0.5 }),
+        radiusX: num(c.radiusX, 0.3, 0.001),
+        radiusY: num(c.radiusY, 0.3, 0.001),
+        angle: num(c.angle, 0),
+        softness: num(c.softness, 50, 0, 100),
+        width: num(c.width, 512, 1),
+        height: num(c.height, 512, 1)
+      }
+    default:
+      return null
+  }
 }
 
 // ── Groups: what copy, paste, sync and presets move ─────────────────────────
@@ -543,7 +662,8 @@ export function newLocalLayer(name: string): LocalLayer {
     blend: 'Normal',
     invert: false,
     components: [],
-    adjust: { ...ZERO_LOCAL }
+    adjust: { ...ZERO_LOCAL },
+    amount: 100
   }
 }
 

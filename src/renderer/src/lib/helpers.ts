@@ -35,6 +35,7 @@ export function emptyRange(kind: 'color' | 'luminance'): MaskComponentSetting {
     feather: 5,
     hue: kind === 'color' ? { centre: 210, width: 40, softness: 25 } : null,
     saturation: kind === 'color' ? { centre: 0.6, width: 0.8, softness: 0.2 } : null,
-    luma: kind === 'luminance' ? { centre: 0.5, width: 0.4, softness: 0.15 } : null
+    luma: kind === 'luminance' ? { centre: 0.5, width: 0.4, softness: 0.15 } : null,
+    smoothness: 0
   }
 }

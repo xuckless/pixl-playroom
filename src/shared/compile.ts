@@ -34,6 +34,7 @@ import { compose, swapsAxes, transformPoint, userOrientation } from './orientati
 import {
   HSL_BANDS,
   type CurvePointSetting,
+  type LocalAdjust,
   type LocalLayer,
   type MaskComponentSetting,
   type Recipe
@@ -81,8 +82,9 @@ export interface CompileContext {
   /** Reproducible grain for this photo. */
   seed: number
   /**
-   * The painted planes, by component id, as grey PNG paths already turned into
-   * the user-oriented frame (the main process writes them).
+   * The raster planes (painted brushes and drawn gradients), by component id,
+   * as grey PNG paths already turned into the user-oriented frame (the main
+   * process writes them).
    */
   brushPaths: Record<string, string>
   /** False while the crop tool is open: show the whole, unrotated frame. */
@@ -420,10 +422,47 @@ export function vignettePlacement(
 
 // ── Masks ────────────────────────────────────────────────────────────────────
 
+/** How a range mask's smoothness becomes the key's blur: the render's buffer size decides the pixels. */
+export interface KeyScale {
+  /** The user-oriented frame at full resolution. */
+  width: number
+  height: number
+  /** Buffer pixels per full-resolution pixel. */
+  scale: number
+}
+
+/**
+ * The key's blur radius in buffer pixels for a smoothness of 0…100: up to 1%
+ * of the frame's shorter side, and never past what the engine accepts (under
+ * half the buffer's shorter side).
+ */
+export function smoothnessRadius(smoothness: number, k: KeyScale): number {
+  const short = Math.min(k.width, k.height) * k.scale
+  const r = Math.round((clamp(smoothness, 0, 100) / 100) * 0.01 * short)
+  return Math.max(0, Math.min(r, Math.floor(short / 2) - 1))
+}
+
+/**
+ * A mask's Amount: every adjustment scaled by amount/100 (the tint's hue is
+ * a direction, not a strength, and stays). The sliders' own clamps bound the
+ * 200% end.
+ */
+export function scaleLocalAdjust(a: LocalAdjust, amount: number): LocalAdjust {
+  const k = clamp(amount, 0, 200) / 100
+  if (k === 1) return a
+  const out = { ...a }
+  for (const key of Object.keys(out) as (keyof LocalAdjust)[]) {
+    if (key === 'tintHue') continue
+    out[key] = a[key] * k
+  }
+  return out
+}
+
 function maskComponent(
   c: MaskComponentSetting,
   user: Orientation,
-  brushPaths: Record<string, string>
+  brushPaths: Record<string, string>,
+  keyScale: KeyScale
 ): MaskComponent | null {
   const base = {
     mode: c.mode,
@@ -432,7 +471,10 @@ function maskComponent(
     feather: { radius: round4(clamp((c.feather / 100) * 0.1, 0, 0.5)), edge: 'Zero' as const }
   }
   switch (c.kind) {
-    case 'brush': {
+    case 'brush':
+    case 'linear':
+    case 'radial': {
+      // Painted and gradient planes alike: written to disk by the main process.
       const path = brushPaths[c.id]
       if (!path) return null
       return { ...base, shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } } }
@@ -454,22 +496,26 @@ function maskComponent(
             hue: c.hue,
             saturation: c.saturation,
             luma: c.luma,
-            blur_radius: 0,
+            blur_radius: smoothnessRadius(c.smoothness ?? 0, keyScale),
             invert: false
           }
         }
       }
     }
+    default:
+      // A kind this version cannot draw never reaches the engine.
+      return null
   }
 }
 
 export function layerMask(
   l: LocalLayer,
   user: Orientation,
-  brushPaths: Record<string, string>
+  brushPaths: Record<string, string>,
+  keyScale: KeyScale = { width: 1, height: 1, scale: 0 }
 ): Mask | null {
   const components = l.components
-    .map((c) => maskComponent(c, user, brushPaths))
+    .map((c) => maskComponent(c, user, brushPaths, keyScale))
     .filter((c): c is MaskComponent => c !== null)
   if (components.length === 0) return null
   // The engine refuses a first component that is not Add (it would select nothing).
@@ -829,10 +875,15 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
       stages: base
     })
   }
+  const keyScale: KeyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }
   for (const l of r.layers) {
-    const mask = layerMask(l, oriented.user, ctx.brushPaths)
+    const mask = layerMask(l, oriented.user, ctx.brushPaths, keyScale)
     if (!mask) continue
-    let stages = localStages(l, ctx.scale, notes)
+    let stages = localStages(
+      { ...l, adjust: scaleLocalAdjust(l.adjust, l.amount ?? 100) },
+      ctx.scale,
+      notes
+    )
     // A layer with nothing to do is still a valid place to look at its mask.
     if (stages.length === 0)
       stages = [{ space: 'LinearWorking', ops: [{ Primary: primary({ contrast_pivot: 0.18 }) }] }]
