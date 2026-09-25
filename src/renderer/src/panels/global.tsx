@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { absoluteWb } from '../../../shared/compile'
+import { absoluteWb, orientedFrame } from '../../../shared/compile'
 import type { LutProfile } from '../../../shared/ipc'
 import {
   HSL_BANDS,
@@ -925,8 +925,9 @@ export function GeometryPanel(): React.JSX.Element | null {
         options={ASPECTS.map((a) => ({ value: a.value, label: a.label }))}
         onChange={(v) => {
           const a = ASPECTS.find((x) => x.value === v)
-          const ratio =
-            a?.ratio === -1 ? session.frameWidth / session.frameHeight : (a?.ratio ?? null)
+          // "Original" is the frame as the user has turned it, not the file's.
+          const o = orientedFrame(recipe, session.frameWidth, session.frameHeight)
+          const ratio = a?.ratio === -1 ? o.width / o.height : (a?.ratio ?? null)
           replace(
             { ...recipe, geometry: { ...g, aspect: ratio, crop: null } },
             `Aspect ${a?.label}`

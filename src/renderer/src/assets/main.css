@@ -1051,3 +1051,7 @@ legend {
   z-index: 40;
   font-size: 12px;
 }
+.crop-stage {
+  position: absolute;
+  inset: 0;
+}
