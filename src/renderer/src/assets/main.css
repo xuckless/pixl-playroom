@@ -293,10 +293,21 @@ aside.right .panels {
   transform-origin: center;
 }
 .picture img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: block;
+  object-fit: contain;
   user-select: none;
+}
+.picture img.decoded-prev {
+  animation: decoded-out 140ms ease-out forwards;
+}
+@keyframes decoded-out {
+  to {
+    opacity: 0;
+  }
 }
 .split-before {
   position: absolute;
@@ -322,6 +333,11 @@ aside.right .panels {
 .overlay-canvas {
   position: absolute;
   pointer-events: none;
+}
+.overlay-canvas.fill {
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 .loupe-status {
   position: absolute;

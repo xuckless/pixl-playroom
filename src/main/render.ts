@@ -118,6 +118,16 @@ class Session {
   private slot = 0
   private regionSlot = 0
   private beforeKey = ''
+  /**
+   * What each kind of picture was last rendered from, and the event sent for
+   * it. An edit that compiles to the same engine request (a straighten while
+   * the crop tool shows the unrotated frame, a slider dragged back to where
+   * it was) re-sends the last event instead of rendering again, so the loupe
+   * keeps its image and nothing downstream reloads.
+   */
+  private lastSig: Record<Kind, string> = { draft: '', full: '' }
+  private lastEvent: Record<Kind, RenderEvent | null> = { draft: null, full: null }
+  private maskSig = ''
   private readonly dir: string
   closed = false
 
@@ -225,8 +235,19 @@ class Session {
   private async renderPicture(kind: Kind): Promise<void> {
     const t0 = performance.now()
     const src = this.source(kind)
-    const compiled = this.compileFor(this.recipe, src, !this.view.cropMode)
+    // The view is read once, here: the event says which view it was made for.
+    const cropMode = this.view.cropMode
+    const compiled = this.compileFor(this.recipe, src, !cropMode)
     const seq = ++this.seq
+    const sig = String(
+      hash32(JSON.stringify([src.path, cropMode, compiled.grade, compiled.framing]))
+    )
+    const last = this.lastEvent[kind]
+    if (last && sig === this.lastSig[kind]) {
+      if (kind === 'full') this.lastFull = this.lastFullFor[sig] ?? this.lastFull
+      if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq })
+      return
+    }
     const ext = kind === 'draft' ? 'jpg' : 'png'
     const out = this.nextFile('view', ext)
     const report = await this.owner.engine.convert({
@@ -245,18 +266,24 @@ class Session {
     const stats = await this.owner.engine.analyze(
       analyzeRequest(out, kind === 'draft' ? 'Jpeg' : 'Png', kind === 'draft' ? 2 : 1)
     )
-    if (kind === 'full') this.lastFull = out
+    if (kind === 'full') {
+      this.lastFull = out
+      this.lastFullFor = { [sig]: out }
+    }
     if (this.closed) return
     const event: RenderEvent = {
       key: this.key,
       seq,
       kind,
+      cropMode,
       url: cacheUrl(out, seq),
       width: report.width,
       height: report.height,
       stats,
       report: reportOf(report, Math.round(performance.now() - t0), compiled.notes)
     }
+    this.lastSig[kind] = sig
+    this.lastEvent[kind] = event
     this.owner.send(IPC.develop.rendered, event)
   }
 
@@ -267,6 +294,11 @@ class Session {
     const layerId = this.view.maskLayer
     const index = layerId ? compiled.layerIndex[layerId] : undefined
     if (index === undefined || !compiled.grade) return
+    const sig = String(
+      hash32(JSON.stringify([src.path, index, compiled.grade, compiled.framing, this.lastFull]))
+    )
+    // The same plane over the same picture: the overlay already has it.
+    if (sig === this.maskSig) return
     const out = this.nextFile('mask', 'png')
     const report = await this.owner.engine.convert({
       ...blankRequest(src.path, out, src.input),
@@ -295,10 +327,12 @@ class Session {
       log.info('masked analysis unavailable', (err as Error).message)
     }
     if (this.closed) return
+    this.maskSig = sig
     this.owner.send(IPC.develop.rendered, {
       key: this.key,
       seq: this.seq,
       kind: 'mask',
+      cropMode: this.view.cropMode,
       url: cacheUrl(out, `${this.seq}-m`),
       width: report.width,
       height: report.height,
@@ -308,15 +342,18 @@ class Session {
 
   /** The most recent full render's file: what the masked hue chart measures. */
   private lastFull = ''
+  private lastFullFor: Record<string, string> = {}
 
   /** The default recipe with the same framing: the "before", and the ghost bars. */
   private async renderBefore(): Promise<void> {
     const before = defaultRecipe(this.isRaw)
     before.geometry = structuredClone(this.recipe.geometry)
     const src = this.source('full')
-    const key = JSON.stringify([before.geometry, src.path, this.view.cropMode])
-    if (key === this.beforeKey) return
     const compiled = this.compileFor(before, src, !this.view.cropMode)
+    // Keyed on what the engine is asked for, not on the raw geometry: a
+    // straighten in the crop tool changes the recipe but not this picture.
+    const key = JSON.stringify([compiled.framing, src.path, this.view.cropMode])
+    if (key === this.beforeKey) return
     const out = join(this.dir, `before-${hash32(key).toString(16)}.png`)
     const report = await this.owner.engine.convert({
       ...blankRequest(src.path, out, src.input),
@@ -334,7 +371,8 @@ class Session {
       key: this.key,
       seq: this.seq,
       kind: 'before',
-      url: cacheUrl(out, key.length),
+      cropMode: this.view.cropMode,
+      url: cacheUrl(out, hash32(key)),
       width: report.width,
       height: report.height,
       stats

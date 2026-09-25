@@ -6,6 +6,7 @@ import * as readline from 'node:readline'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
+import { createRequire } from 'node:module'
 
 const APP_DIR = path.resolve(import.meta.dirname, '..')
 const SHOT_DIR = process.env.SCREENSHOT_DIR || path.join(os.tmpdir(), 'playroom-shots')
@@ -15,7 +16,8 @@ fs.mkdirSync(SHOT_DIR, { recursive: true })
 
 let app = null
 let page = null
-const bin = path.join(APP_DIR, 'node_modules/electron/dist/electron')
+// The electron package exports its binary's path for this platform.
+const bin = createRequire(import.meta.url)('electron')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const COMMANDS = {

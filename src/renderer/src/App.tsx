@@ -20,7 +20,7 @@ import { useDevelop } from './state/develop'
 import { useLibrary } from './state/library'
 import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { Filmstrip, LibraryView, Toolbar } from './views/Library'
-import { Loupe } from './views/Loupe'
+import { Loupe } from './views/loupe/Loupe'
 import { Toggle } from './components/ui'
 
 function DevelopBar(): React.JSX.Element {

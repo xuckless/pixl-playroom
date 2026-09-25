@@ -67,7 +67,13 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
   const meta = join(dir, `proxies-${s}.json`)
   if (existsSync(meta)) {
     const known = JSON.parse(readFileSync(meta, 'utf8')) as Proxies
-    if (existsSync(known.proxy.path) && existsSync(known.draft.path)) return known
+    if (
+      existsSync(known.proxy.path) &&
+      existsSync(known.draft.path) &&
+      Number.isFinite(known.frameWidth) &&
+      Number.isFinite(known.frameHeight)
+    )
+      return known
   }
   // An older version of the file: clear its working copies.
   for (const f of readdirSync(dir)) {
@@ -138,8 +144,14 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
   const out: Proxies = {
     proxy,
     draft,
-    frameWidth: report.frame_width,
-    frameHeight: report.frame_height
+    // An engine build that does not report the frame gets it from the proxy,
+    // scaled back up: close enough for geometry, and never NaN.
+    frameWidth: Number.isFinite(report.frame_width)
+      ? report.frame_width
+      : Math.round(report.width / factor),
+    frameHeight: Number.isFinite(report.frame_height)
+      ? report.frame_height
+      : Math.round(report.height / factor)
   }
   writeFileSync(meta, JSON.stringify(out))
   return out
