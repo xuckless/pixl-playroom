@@ -17,6 +17,7 @@ import { BrushLayer } from './BrushTool'
 import { ClippingOverlay } from './ClippingOverlay'
 import { CropTool } from './CropTool'
 import { DecodedImage } from './DecodedImage'
+import { Guides } from './Guides'
 import { PolygonLayer } from './LassoTool'
 import { LoupeHud } from './LoupeHud'
 import { RegionView } from './RegionView'
@@ -44,6 +45,7 @@ export function Loupe(): React.JSX.Element {
   const setZoom = useDevelop((s) => s.setZoom)
   const replace = useDevelop((s) => s.replace)
   const setTargetEdge = useDevelop((s) => s.setTargetEdge)
+  const gesture = useDevelop((s) => s.gesture)
   const [boxRef, size] = useSize()
   const [split, setSplit] = useState(0.5)
 
@@ -225,6 +227,15 @@ export function Loupe(): React.JSX.Element {
         />
       )}
       {tool === 'crop' && rect && g && <CropTool rect={rect} g={g} />}
+      {gesture === 'straighten' && tool !== 'crop' && rect && (
+        // Straightening from the panel: a fine grid over the picture to line a horizon up against.
+        <div
+          className="straighten-grid"
+          style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
+        >
+          <Guides kind="grid" w={rect.w} h={rect.h} fine strong />
+        </div>
+      )}
       {tool === 'brush' && rect && g && <BrushLayer rect={rect} g={g} />}
       {tool === 'polygon' && rect && g && <PolygonLayer rect={rect} g={g} />}
       <LoupeHud />

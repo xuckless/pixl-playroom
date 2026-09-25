@@ -30,11 +30,14 @@ function RS({
   def = 0,
   format,
   track,
-  title
+  title,
+  onGesture
 }: {
   label: string
   read: Read
   write: Write
+  /** Told when a drag of this slider starts (true) and settles (false). */
+  onGesture?: (active: boolean) => void
   min?: number
   max?: number
   step?: number
@@ -58,8 +61,14 @@ function RS({
       format={format}
       track={track}
       title={title}
-      onChange={(v, live) => edit((r) => write(r, v), live)}
-      onCommit={() => commit(label)}
+      onChange={(v, live) => {
+        if (live) onGesture?.(true)
+        edit((r) => write(r, v), live)
+      }}
+      onCommit={() => {
+        onGesture?.(false)
+        commit(label)
+      }}
     />
   )
 }
@@ -863,6 +872,7 @@ export function GeometryPanel(): React.JSX.Element | null {
   const replace = useDevelop((s) => s.replace)
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
+  const setGesture = useDevelop((s) => s.setGesture)
   if (!recipe || !session) return null
   const g = recipe.geometry
   const aspectValue =
@@ -942,6 +952,7 @@ export function GeometryPanel(): React.JSX.Element | null {
         max={45}
         step={0.05}
         format={(v) => `${v.toFixed(2)}°`}
+        onGesture={(on) => setGesture(on ? 'straighten' : null)}
       />
     </Section>
   )

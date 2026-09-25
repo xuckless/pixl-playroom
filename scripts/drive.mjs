@@ -194,10 +194,18 @@ const COMMANDS = {
     }
     const during = await page.evaluate(() => {
       const b = document.querySelector('.crop-box')?.getBoundingClientRect()
-      return b ? [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)] : null
+      return b
+        ? [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)]
+        : null
     })
     await page.mouse.up()
-    console.log('box before release:', JSON.stringify(during), 'pointer at', Math.round(bx), Math.round(by))
+    console.log(
+      'box before release:',
+      JSON.stringify(during),
+      'pointer at',
+      Math.round(bx),
+      Math.round(by)
+    )
   },
   async wait(ms) {
     await sleep(Number(ms) || 1000)
