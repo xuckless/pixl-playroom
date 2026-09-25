@@ -15,22 +15,46 @@ way. Grouped by area; roughly in priority order within each.
       (electron-updater against the release feed, as space-pixl has).
 - [ ] **Windows DirectML**: bundle a DirectML build of ONNX Runtime (the
       GitHub zip is CPU-only; the provider falls back to the CPU and says so).
-- [ ] UI/UX pass (explicitly out of scope for this pass).
+- [x] UI/UX pass: the OLED/purple design system, two-tier bars, the spine
+      rail, the thumb-wheel with one tool at a time, liquid glass, the
+      three.js processing sphere and ambient gradient, Lightroom-style masks.
+- [ ] Design polish still open: a light theme; user-reorderable tools on the
+      wheel; remembering the wheel's tool per photo; keyboard focus rings
+      audited across the glass popovers.
 
-## Masks and local tools (industry standard, not in this pass)
+## Masks and local tools
 
-- [ ] Linear gradient and radial gradient masks (the engine's `MaskShape` is
-      shaped for them; needs the variants in the engine).
-- [ ] AI masks: Select Subject, Select Sky, Select Background, Select People
-      (face/skin/hair/eyes/lips/teeth/clothes), Object selection by
-      brush/box — a segmentation model through the engine's `enhance` seam
-      producing a raster plane.
-- [ ] Depth range mask (needs a depth map: iPhone HEIC/ProRAW auxiliary
-      images, or a monocular depth model).
-- [ ] Brush: auto-mask (edge-aware), density vs flow, pen pressure,
-      separate A/B brushes, mask intersect-with brushes.
-- [ ] Mask refinement: edge-aware refine (guided filter), per-component
-      overlay colour, show all masks, mask presets.
+Done in the UI pass: the Lightroom masks panel (thumbnails, components with
+Add / Subtract / Intersect, the tool picker), linear and radial gradients
+with on-canvas pins, per-mask Amount, range Smoothness, overlay modes and
+colour, show all masks, pins Auto/Always/Never, the overlay at 1:1, brushes
+A/B/erase with flow, density and pen pressure, a colour Auto Mask, and
+editable lasso points.
+
+- [ ] **Engine-native gradient shapes.** Linear and radial gradients are
+      drawn by the host into 512 px raster planes (`src/shared/gradients.ts`,
+      cached in the photo's cache) and reach the engine as `Raster` masks.
+      Add `MaskShape::Linear { start, end }` and `MaskShape::Radial { centre,
+    radii, angle, softness }` to the engine so they are resolution-free at
+      export, then retire the planes and their cache.
+- [ ] **AI masks**: Select Subject, Select Sky, Select Background (their
+      entries are in the tool picker, disabled until a model ships), Select
+      People (face/skin/hair/eyes/lips/teeth/clothes), Objects by brush or
+      box. A segmentation model (e.g. U²-Net/ISNet for subject, a sky model)
+      fetched by `pnpm fetch-ai`, run on the bundled ONNX Runtime (a mask
+      seam beside the engine's `enhance` upscaler, or in the host), producing
+      a grey plane stored as a raster component.
+- [ ] **Depth range mask** (its picker entry is disabled): a depth map from
+      iPhone HEIC/ProRAW auxiliary images or a monocular depth model, and a
+      `MaskShape::DepthRange` in the engine.
+- [ ] Other engine mask shapes: a luminance/colour range keyed on a smoothed
+      plane (guided-filter refine) rather than a box blur; an edge-aware
+      brush (Auto Mask is colour-only today, host-side on the preview).
+- [ ] Brush: intersect-with brushes; Auto Mask off the main thread (a worker
+      over the picture in Lab) for very large brushes.
+- [ ] Mask presets; per-component overlay colour; renaming components.
+- [ ] Brush planes travel inside every recipe update; send them once and
+      refer to them by hash.
 - [ ] Healing / clone / content-aware remove (spot removal, generative
       remove), with visualise spots.
 - [ ] Red-eye / pet-eye correction.
