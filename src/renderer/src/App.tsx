@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { memo, useEffect } from 'react'
 import { newLocalLayer, RECIPE_GROUPS } from '../../shared/recipe'
 import { Histogram, HueChart } from './components/charts'
-import { api, errorText } from './lib/api'
+import { api } from './lib/api'
+import { emptyRange } from './lib/helpers'
 import { AdvancedPanel } from './panels/advanced'
 import {
   BasicPanel,
@@ -13,89 +14,20 @@ import {
   HslPanel,
   ToneCurvePanel
 } from './panels/global'
-import { HistoryPanel, InfoPanel, PresetsPanel, SnapshotsPanel } from './panels/left'
-import { BrushOptions, MasksPanel } from './panels/masks'
-import { emptyRange } from './lib/helpers'
+import { MasksPanel } from './panels/masks'
+import { DevelopToolbar } from './shell/DevelopToolbar'
+import { DevelopIdentity } from './shell/IdentityBar'
+import { LeftRail } from './shell/LeftRail'
 import { useDevelop } from './state/develop'
-import { useUi } from './state/ui'
 import { useLibrary } from './state/library'
+import { useUi } from './state/ui'
 import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
-import { Filmstrip, LibraryView, Toolbar } from './views/Library'
+import { FilmToggle, Filmstrip } from './views/Filmstrip'
+import { LibraryView, Toolbar } from './views/Library'
+import { FloatingToolbar } from './views/loupe/FloatingToolbar'
 import { Loupe } from './views/loupe/Loupe'
-import { Toggle } from './components/ui'
 
-function DevelopBar(): React.JSX.Element {
-  const compare = useDevelop((s) => s.compare)
-  const setCompare = useDevelop((s) => s.setCompare)
-  const clipping = useDevelop((s) => s.clipping)
-  const setClipping = useDevelop((s) => s.setClipping)
-  const zoom = useDevelop((s) => s.zoom)
-  const setZoom = useDevelop((s) => s.setZoom)
-  const undo = useDevelop((s) => s.undo)
-  const redo = useDevelop((s) => s.redo)
-  const session = useDevelop((s) => s.session)
-  const setView = useLibrary((s) => s.setView)
-  const setDialog = useLibrary((s) => s.setDialog)
-  const refresh = useLibrary((s) => s.refresh)
-  const say = useLibrary((s) => s.say)
-  return (
-    <div className="toolbar">
-      <button onClick={() => setView('library')} title="Library (G)">
-        ▦ Library
-      </button>
-      <span className="muted">{session?.item.name}</span>
-      {session?.item.copyName && <span className="copy-badge">{session.item.copyName}</span>}
-      <span className="spacer" />
-      <button onClick={undo} title="Undo (Ctrl+Z)">
-        ↶
-      </button>
-      <button onClick={redo} title="Redo (Ctrl+Shift+Z)">
-        ↷
-      </button>
-      <Toggle
-        on={compare === 'before'}
-        onChange={(on) => setCompare(on ? 'before' : 'off')}
-        title="Before (\\)"
-      >
-        Before
-      </Toggle>
-      <Toggle
-        on={compare === 'split'}
-        onChange={(on) => setCompare(on ? 'split' : 'off')}
-        title="Before/after split (Y)"
-      >
-        Split
-      </Toggle>
-      <Toggle on={clipping} onChange={setClipping} title="Clipping (J)">
-        Clipping
-      </Toggle>
-      <Toggle on={zoom === 1} onChange={(on) => setZoom(on ? 1 : 'fit')} title="100% (Z)">
-        1:1
-      </Toggle>
-      <button
-        onClick={async () => {
-          if (!session) return
-          try {
-            await api.library.createCopy(session.key)
-            await refresh()
-            say('Virtual copy created')
-          } catch (err) {
-            say(errorText(err), 'error')
-          }
-        }}
-        title="Virtual copy (Ctrl+')"
-      >
-        ⧉ Copy
-      </button>
-      <button onClick={() => setDialog('enhance')}>✨ Enhance</button>
-      <button onClick={() => setDialog('export')} title="Export (Ctrl+Shift+E)">
-        ⤓ Export
-      </button>
-    </div>
-  )
-}
-
-function DevelopView(): React.JSX.Element {
+function Scopes(): React.JSX.Element {
   const stats = useDevelop((s) => s.stats)
   const before = useDevelop((s) => s.before)
   const mask = useDevelop((s) => s.mask)
@@ -105,48 +37,58 @@ function DevelopView(): React.JSX.Element {
   const setHslFocus = useDevelop((s) => s.setHslFocus)
   const setHslTab = useDevelop((s) => s.setHslTab)
   return (
+    <div className="scopes">
+      <Histogram stats={stats} clipping={clipping} onClipping={setClipping} />
+      <HueChart
+        stats={stats}
+        before={before?.stats ?? null}
+        masked={layerId ? (mask?.maskStats ?? null) : null}
+        onPick={(hue, band, newMask) => {
+          if (newMask) {
+            const d = useDevelop.getState()
+            if (!d.recipe) return
+            const comp = emptyRange('color')
+            if (comp.kind === 'range')
+              comp.hue = { centre: Math.round(hue), width: 20, softness: 15 }
+            const layer = newLocalLayer(`${band} range`)
+            layer.components.push(comp)
+            d.replace(
+              { ...d.recipe, layers: [...d.recipe.layers, layer] },
+              `Colour mask at ${Math.round(hue)}°`
+            )
+            d.setLayer(layer.id)
+          } else {
+            setHslFocus(band)
+            setHslTab('all')
+          }
+        }}
+      />
+    </div>
+  )
+}
+
+/**
+ * Develop: identity and tools across the top; the rail, the loupe and the
+ * tools below. It is memoised, so a toast, a dialog or the engine's status
+ * changing elsewhere never re-renders what is under the pointer.
+ */
+const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
+  return (
     <div className="develop">
-      <DevelopBar />
+      <DevelopIdentity />
+      <DevelopToolbar />
       <div className="develop-body">
-        <aside className="left">
-          <PresetsPanel />
-          <SnapshotsPanel />
-          <HistoryPanel />
-          <InfoPanel />
-        </aside>
+        <LeftRail />
         <main className="centre">
-          <BrushOptions />
-          <Loupe />
+          <div className="stage">
+            <Loupe />
+            <FloatingToolbar />
+            <FilmToggle />
+          </div>
           <Filmstrip />
         </main>
         <aside className="right">
-          <div className="scopes">
-            <Histogram stats={stats} clipping={clipping} onClipping={setClipping} />
-            <HueChart
-              stats={stats}
-              before={before?.stats ?? null}
-              masked={layerId ? (mask?.maskStats ?? null) : null}
-              onPick={(hue, band, newMask) => {
-                if (newMask) {
-                  const d = useDevelop.getState()
-                  if (!d.recipe) return
-                  const comp = emptyRange('color')
-                  if (comp.kind === 'range')
-                    comp.hue = { centre: Math.round(hue), width: 20, softness: 15 }
-                  const layer = newLocalLayer(`${band} range`)
-                  layer.components.push(comp)
-                  d.replace(
-                    { ...d.recipe, layers: [...d.recipe.layers, layer] },
-                    `Colour mask at ${Math.round(hue)}°`
-                  )
-                  d.setLayer(layer.id)
-                } else {
-                  setHslFocus(band)
-                  setHslTab('all')
-                }
-              }}
-            />
-          </div>
+          <Scopes />
           <div className="panels">
             <BasicPanel />
             <ToneCurvePanel />
@@ -163,6 +105,57 @@ function DevelopView(): React.JSX.Element {
       </div>
     </div>
   )
+})
+
+const LibraryScreen = memo(function LibraryScreen(): React.JSX.Element {
+  return (
+    <div className="library">
+      <Toolbar />
+      <LibraryView />
+    </div>
+  )
+})
+
+function Screens(): React.JSX.Element {
+  const view = useLibrary((s) => s.view)
+  return view === 'library' ? <LibraryScreen /> : <DevelopScreen />
+}
+
+function DialogHost(): React.JSX.Element | null {
+  const dialog = useLibrary((s) => s.dialog)
+  if (dialog === 'export') return <ExportDialog />
+  if (dialog === 'sync') return <SyncDialog />
+  if (dialog === 'preset') return <SavePresetDialog />
+  if (dialog === 'enhance') return <EnhanceDialog />
+  return null
+}
+
+function Toast(): React.JSX.Element | null {
+  const toast = useLibrary((s) => s.toast)
+  if (!toast) return null
+  return (
+    <div className={`toast ${toast.tone}`} key={toast.text} role="status">
+      {toast.text}
+    </div>
+  )
+}
+
+function EngineBanner(): React.JSX.Element | null {
+  const engine = useLibrary((s) => s.engine)
+  if (!engine || engine.status === 'ready') return null
+  return (
+    <div className="engine-banner" role="alert">
+      Engine {engine.status}
+      {engine.reason ? `: ${engine.reason}` : ''}
+    </div>
+  )
+}
+
+/** Poll the engine's status, storing it only when it changed, so nothing re-renders every tick. */
+async function refreshEngine(): Promise<void> {
+  const engine = await api.app.engineStatus()
+  const prev = useLibrary.getState().engine
+  if (JSON.stringify(prev) !== JSON.stringify(engine)) useLibrary.setState({ engine })
 }
 
 function useShortcuts(): void {
@@ -287,9 +280,6 @@ function useShortcuts(): void {
 }
 
 export default function App(): React.JSX.Element {
-  const view = useLibrary((s) => s.view)
-  const dialog = useLibrary((s) => s.dialog)
-  const toast = useLibrary((s) => s.toast)
   useShortcuts()
   useEffect(() => {
     const offs = [
@@ -309,44 +299,23 @@ export default function App(): React.JSX.Element {
       })
     ]
     void (async () => {
-      useLibrary.setState({
-        recent: await api.library.recentFolders(),
-        engine: await api.app.engineStatus()
-      })
+      useLibrary.setState({ recent: await api.library.recentFolders() })
+      await refreshEngine()
       const last = await api.app.getSetting<string>('library.lastFolder')
       if (last) await useLibrary.getState().openFolder(last)
     })()
-    const t = setInterval(
-      () => void api.app.engineStatus().then((engine) => useLibrary.setState({ engine })),
-      5000
-    )
+    const t = setInterval(() => void refreshEngine(), 5000)
     return () => {
       offs.forEach((off) => off())
       clearInterval(t)
     }
   }, [])
-  const engine = useLibrary((s) => s.engine)
   return (
     <div className="app">
-      {view === 'library' ? (
-        <div className="library">
-          <Toolbar />
-          <LibraryView />
-        </div>
-      ) : (
-        <DevelopView />
-      )}
-      {dialog === 'export' && <ExportDialog />}
-      {dialog === 'sync' && <SyncDialog />}
-      {dialog === 'preset' && <SavePresetDialog />}
-      {dialog === 'enhance' && <EnhanceDialog />}
-      {toast && <div className={`toast ${toast.tone}`}>{toast.text}</div>}
-      {engine && engine.status !== 'ready' && (
-        <div className="engine-banner">
-          Engine {engine.status}
-          {engine.reason ? `: ${engine.reason}` : ''}
-        </div>
-      )}
+      <Screens />
+      <DialogHost />
+      <Toast />
+      <EngineBanner />
     </div>
   )
 }

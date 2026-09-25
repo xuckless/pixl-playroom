@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { absoluteWb, orientedFrame } from '../../../shared/compile'
+import { absoluteWb } from '../../../shared/compile'
 import type { LutProfile } from '../../../shared/ipc'
 import {
   HSL_BANDS,
@@ -15,6 +15,9 @@ import { Section, Select, Slider, Tabs, Toggle } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
+import { ASPECTS, aspectValue } from '../lib/aspects'
+import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../lib/geometry'
+import { Icon } from '../components/icons'
 
 type Read = (r: Recipe) => number
 type Write = (r: Recipe, v: number) => void
@@ -854,33 +857,14 @@ export function CalibrationPanel(): React.JSX.Element {
 
 // ── Crop & geometry ──────────────────────────────────────────────────────────
 
-const ASPECTS: { value: string; label: string; ratio: number | null }[] = [
-  { value: 'free', label: 'Free', ratio: null },
-  { value: 'original', label: 'Original', ratio: -1 },
-  { value: '1:1', label: '1 : 1', ratio: 1 },
-  { value: '4:5', label: '4 : 5', ratio: 4 / 5 },
-  { value: '5:4', label: '5 : 4', ratio: 5 / 4 },
-  { value: '3:2', label: '3 : 2', ratio: 3 / 2 },
-  { value: '2:3', label: '2 : 3', ratio: 2 / 3 },
-  { value: '16:9', label: '16 : 9', ratio: 16 / 9 },
-  { value: '9:16', label: '9 : 16', ratio: 9 / 16 }
-]
-
 export function GeometryPanel(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
   const recipe = useDevelop((s) => s.recipe)
-  const replace = useDevelop((s) => s.replace)
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
   const setGesture = useDevelop((s) => s.setGesture)
   if (!recipe || !session) return null
   const g = recipe.geometry
-  const aspectValue =
-    g.aspect === null
-      ? 'free'
-      : (ASPECTS.find(
-          (a) => a.ratio !== null && a.ratio > 0 && Math.abs(a.ratio - (g.aspect as number)) < 1e-3
-        )?.value ?? 'original')
   return (
     <Section id="geometry" title="Crop & rotate" defaultOpen={false}>
       <div className="row">
@@ -889,60 +873,29 @@ export function GeometryPanel(): React.JSX.Element | null {
           onChange={(on) => setTool(on ? 'crop' : 'none')}
           title="Crop tool (R)"
         >
-          ✂ Crop
+          <Icon name="crop" />
+          Crop
         </Toggle>
-        <button
-          title="Rotate left"
-          onClick={() =>
-            replace(
-              { ...recipe, geometry: { ...g, quarterTurns: (g.quarterTurns + 3) % 4, crop: null } },
-              'Rotate left'
-            )
-          }
-        >
-          ⟲
+        <button className="icon" title="Rotate left" onClick={rotateLeft}>
+          <Icon name="rotateLeft" />
         </button>
-        <button
-          title="Rotate right"
-          onClick={() =>
-            replace(
-              { ...recipe, geometry: { ...g, quarterTurns: (g.quarterTurns + 1) % 4, crop: null } },
-              'Rotate right'
-            )
-          }
-        >
-          ⟳
+        <button className="icon" title="Rotate right" onClick={rotateRight}>
+          <Icon name="rotateRight" />
         </button>
-        <button
-          title="Flip horizontal"
-          onClick={() =>
-            replace({ ...recipe, geometry: { ...g, flipHorizontal: !g.flipHorizontal } }, 'Flip')
-          }
-        >
-          ⇋
+        <button className="icon" title="Flip horizontal" onClick={flip}>
+          <Icon name="flip" />
         </button>
-        <button
-          onClick={() =>
-            replace({ ...recipe, geometry: { ...g, crop: null, straighten: 0 } }, 'Reset crop')
-          }
-        >
+        <span className="spacer" />
+        <button onClick={resetCrop} title="Clear the crop and the straighten">
+          <Icon name="reset" />
           Reset
         </button>
       </div>
       <Select
         label="Aspect"
-        value={aspectValue}
+        value={aspectValue(g.aspect)}
         options={ASPECTS.map((a) => ({ value: a.value, label: a.label }))}
-        onChange={(v) => {
-          const a = ASPECTS.find((x) => x.value === v)
-          // "Original" is the frame as the user has turned it, not the file's.
-          const o = orientedFrame(recipe, session.frameWidth, session.frameHeight)
-          const ratio = a?.ratio === -1 ? o.width / o.height : (a?.ratio ?? null)
-          replace(
-            { ...recipe, geometry: { ...g, aspect: ratio, crop: null } },
-            `Aspect ${a?.label}`
-          )
-        }}
+        onChange={setAspect}
       />
       <RS
         label="Straighten"
