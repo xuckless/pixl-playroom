@@ -1,0 +1,397 @@
+.loupe {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  min-height: 0;
+}
+.loupe.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+}
+.loupe.tool-wb-picker,
+.loupe.tool-range-picker {
+  cursor: crosshair;
+}
+.picture {
+  position: absolute;
+  transform-origin: center;
+  box-shadow:
+    0 40px 80px -30px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
+  transition: transform 0.12s linear;
+}
+.picture img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  user-select: none;
+}
+.picture img.decoded-prev {
+  animation: decodedOut 140ms ease-out forwards;
+}
+.split-before {
+  position: absolute;
+  inset: 0;
+}
+.split-handle {
+  position: absolute;
+  width: 15px;
+  margin-left: -7px;
+  cursor: ew-resize;
+  z-index: 3;
+}
+.split-handle::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+}
+.split-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  transform: translateY(-50%) rotate(45deg);
+  border: 1px solid #fff;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+  transition: transform 0.35s var(--spring);
+}
+.split-handle:hover::after {
+  transform: translateY(-50%) rotate(45deg) scale(1.2);
+}
+.mask-overlay {
+  position: absolute;
+  inset: 0;
+  background: #ff2d5a;
+  opacity: 0.45;
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+  mask-mode: luminance;
+  pointer-events: none;
+  animation: fadeIn 0.3s var(--ease);
+}
+.overlay-canvas {
+  position: absolute;
+  pointer-events: none;
+}
+.overlay-canvas.fill {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.loupe-status {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text2);
+  pointer-events: none;
+}
+.loupe-status:empty {
+  display: none;
+}
+
+/* ── tool layers ───────────────────────────────────────────────── */
+.tool-layer {
+  position: absolute;
+}
+.tool-layer.brush {
+  cursor: none;
+}
+.tool-layer.polygon {
+  cursor: crosshair;
+}
+.tool-layer svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.poly {
+  fill: rgba(157, 139, 234, 0.16);
+  stroke: var(--acc);
+  stroke-width: 1.5;
+}
+.poly.subtract {
+  fill: rgba(255, 107, 122, 0.12);
+  stroke: var(--danger);
+  stroke-dasharray: 4 3;
+}
+.poly.drawing {
+  fill: none;
+  stroke: #fff;
+  stroke-dasharray: 4 3;
+  animation: dash 0.8s linear infinite;
+}
+.poly-point {
+  fill: #fff;
+  stroke: #000;
+}
+.brush-cursor {
+  position: absolute;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 16px -4px var(--glow);
+  pointer-events: none;
+}
+.brush-cursor.erase {
+  border-style: dashed;
+  border-color: var(--danger);
+}
+.tool-hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  font-size: 11.5px;
+  color: var(--text2);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.tool-options {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  height: 40px;
+  padding: 0 14px;
+  background: var(--s2);
+  border-bottom: 1px solid var(--hair);
+}
+.tool-options label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--text2);
+}
+
+/* ── crop ──────────────────────────────────────────────────────── */
+.crop-stage {
+  position: absolute;
+  inset: 0;
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.6'%3E%3Cpath d='M5 12a7 7 0 0 1 12-5l2 2'/%3E%3Cpath d='M19 4v5h-5'/%3E%3Cpath d='M19 12a7 7 0 0 1-12 5l-2-2'/%3E%3Cpath d='M5 20v-5h5'/%3E%3C/svg%3E")
+      12 12,
+    alias;
+}
+.crop-layer {
+  position: absolute;
+}
+.crop-shade {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  pointer-events: none;
+  transition: background 0.3s var(--ease);
+}
+.crop-stage.dragging .crop-shade,
+.crop-stage.turning .crop-shade {
+  background: rgba(0, 0, 0, 0.45);
+}
+.crop-box {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  cursor: move;
+}
+.crop-handle {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background: transparent;
+}
+.crop-handle::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 0 10px -2px var(--glow);
+  transition: transform 0.3s var(--spring);
+}
+.crop-handle:hover::before {
+  transform: scale(1.35);
+  background: var(--acc);
+}
+.crop-handle.n,
+.crop-handle.s {
+  left: calc(50% - 8px);
+  cursor: ns-resize;
+}
+.crop-handle.e,
+.crop-handle.w {
+  top: calc(50% - 8px);
+  cursor: ew-resize;
+}
+.crop-handle.n,
+.crop-handle.ne,
+.crop-handle.nw {
+  top: -8px;
+}
+.crop-handle.s,
+.crop-handle.se,
+.crop-handle.sw {
+  bottom: -8px;
+}
+.crop-handle.e,
+.crop-handle.ne,
+.crop-handle.se {
+  right: -8px;
+}
+.crop-handle.w,
+.crop-handle.nw,
+.crop-handle.sw {
+  left: -8px;
+}
+.crop-handle.ne,
+.crop-handle.sw {
+  cursor: nesw-resize;
+}
+.crop-handle.nw,
+.crop-handle.se {
+  cursor: nwse-resize;
+}
+.guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  animation: fadeIn 0.3s var(--ease);
+}
+.guides line {
+  stroke: rgba(255, 255, 255, 0.26);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+  transition: stroke 0.25s ease;
+}
+.guides.strong line {
+  stroke: rgba(255, 255, 255, 0.5);
+}
+.guides.fine line {
+  stroke: rgba(255, 255, 255, 0.2);
+}
+.straighten-grid {
+  position: absolute;
+  pointer-events: none;
+}
+.crop-angle {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(157, 139, 234, 0.45);
+  backdrop-filter: blur(12px);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: nameIn 0.35s var(--spring);
+}
+
+/* ── 1:1 ───────────────────────────────────────────────────────── */
+.region-view {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+}
+.region-view:active {
+  cursor: grabbing;
+}
+.region-img {
+  position: absolute;
+  image-rendering: pixelated;
+  user-select: none;
+}
+.region-badge {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  padding: 5px 10px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--text2);
+}
+
+/* ── filmstrip ─────────────────────────────────────────────────── */
+.filmstrip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 12px;
+  height: 100px;
+  align-items: center;
+  background: var(--s1);
+  border-top: 1px solid transparent;
+  border-image: var(--hl-x) 1;
+  flex-shrink: 0;
+}
+.film {
+  position: relative;
+  flex: 0 0 auto;
+  width: 104px;
+  height: 72px;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hair);
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  transition:
+    transform 0.4s var(--spring),
+    border-color 0.25s,
+    box-shadow 0.35s;
+}
+.film:hover {
+  transform: translateY(-3px);
+  border-color: var(--hair3);
+}
+.film img {
+  max-width: 100%;
+  max-height: 100%;
+}
+.film.selected {
+  border-color: var(--acc-a55);
+}
+.film.focus {
+  border-color: var(--acc);
+  box-shadow:
+    0 0 0 1px rgba(157, 139, 234, 0.35),
+    0 8px 24px -8px var(--glow);
+}
+.film-rating {
+  position: absolute;
+  right: 5px;
+  bottom: 3px;
+  font-size: 9px;
+  color: var(--star);
+  text-shadow: 0 1px 2px #000;
+}

@@ -37,7 +37,7 @@ export function Histogram({
     // Ignore the end bins when scaling: a clipped end would flatten the rest.
     const inner = (c: number[]): number => Math.max(1, ...c.slice(1, -1))
     const max = Math.max(...chans.map(inner), inner(luma))
-    const colours = ['#ff4d4d', '#4dff6a', '#4d8dff']
+    const colours = ['#ff5a6e', '#5ee08a', '#6d8cff']
     return (
       <>
         <g style={{ mixBlendMode: 'screen' }}>
@@ -48,8 +48,8 @@ export function Histogram({
         <path
           d={areaPath(luma, w, h, max, log)}
           fill="none"
-          stroke="#ddd"
-          strokeOpacity={0.6}
+          stroke="#ebe9f3"
+          strokeOpacity={0.55}
           strokeWidth={1}
         />
       </>
@@ -65,9 +65,8 @@ export function Histogram({
         className="histogram"
         onDoubleClick={() => setLog(!log)}
       >
-        <rect width={w} height={h} fill="#111" />
         {[0.25, 0.5, 0.75].map((f) => (
-          <line key={f} x1={f * w} x2={f * w} y1={0} y2={h} stroke="#2a2a2a" />
+          <line key={f} x1={f * w} x2={f * w} y1={0} y2={h} stroke="rgba(255,255,255,0.06)" />
         ))}
         {content}
       </svg>

@@ -36,11 +36,14 @@ export function Section({
   return (
     <section className={`section ${open ? 'open' : ''}`}>
       <header onClick={toggle}>
-        <span className="caret">{open ? '▾' : '▸'}</span>
         <span className="title">{title}</span>
+        <span className="line" />
         <span className="right" onClick={(e) => e.stopPropagation()}>
           {right}
         </span>
+        <svg className="caret" viewBox="0 0 10 10" aria-hidden>
+          <path d="M2 3.5 5 6.5 8 3.5" />
+        </svg>
       </header>
       {open && <div className="body">{children}</div>}
     </section>
@@ -66,7 +69,18 @@ export interface SliderProps {
   title?: string
 }
 
-/** A slider that renders live while dragging and records history when released. */
+/** Where `v` sits along `min…max`, as a percentage. */
+const pct = (v: number, min: number, max: number): number =>
+  max > min ? ((Math.min(max, Math.max(min, v)) - min) / (max - min)) * 100 : 0
+
+/**
+ * A slider that renders live while dragging and records history when
+ * released. The label and the value sit above a hairline rail; the purple
+ * fill runs from the slider's resting value to the current one, so a
+ * bipolar slider fills out from its centre. The value is an input: type a
+ * number and press Enter (Escape cancels). Double-click the label or the
+ * rail to reset.
+ */
 export function Slider({
   label,
   value,
@@ -82,17 +96,23 @@ export function Slider({
   title
 }: SliderProps): React.JSX.Element {
   const [text, setText] = useState<string | null>(null)
-  const dragging = useRef(false)
+  const [dragging, setDragging] = useState(false)
+  const drag = useRef(false)
   const end = (): void => {
-    if (dragging.current) {
-      dragging.current = false
+    if (drag.current) {
+      drag.current = false
+      setDragging(false)
       onCommit()
     }
   }
   useEffect(() => {
     const up = (): void => end()
     window.addEventListener('pointerup', up)
-    return () => window.removeEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    return () => {
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
   })
   const reset = (): void => {
     onChange(def, false)
@@ -100,52 +120,77 @@ export function Slider({
   }
   const commitText = (): void => {
     if (text === null) return
-    const n = Number(text)
+    // Units shown with the value ("5500 K", "3.00°") may be typed along with it.
+    const cleaned = text.replace(/[^0-9eE+\-.]/g, '')
+    const n = Number(cleaned)
     setText(null)
-    if (Number.isFinite(n)) {
+    if (cleaned !== '' && Number.isFinite(n)) {
       onChange(Math.min(max, Math.max(min, n)), false)
       onCommit()
     }
   }
+  const at = pct(value, min, max)
+  const rest = pct(def, min, max)
+  const lo = Math.min(at, rest)
+  const showZero = !track && def > min && def < max
   return (
     <div
-      className={`slider ${disabled ? 'disabled' : ''} ${value !== def ? 'changed' : ''}`}
+      className={`slider${disabled ? ' disabled' : ''}${value !== def ? ' changed' : ''}${dragging ? ' dragging' : ''}`}
       title={title}
     >
-      <label onDoubleClick={reset} title="Double-click to reset">
-        {label}
-      </label>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        disabled={disabled}
-        style={track ? { background: track } : undefined}
-        onPointerDown={() => (dragging.current = true)}
-        onChange={(e) => {
-          const v = Number(e.target.value)
-          if (!dragging.current) {
-            // keyboard or a click without a drag
-            onChange(v, false)
-            onCommit()
-          } else onChange(v, true)
-        }}
-        onDoubleClick={reset}
-      />
-      <input
-        className="num"
-        value={text ?? format(value)}
-        disabled={disabled}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commitText}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-          if (e.key === 'Escape') setText(null)
-          e.stopPropagation()
-        }}
-      />
+      <div className="sl-head">
+        <label onDoubleClick={reset} title="Double-click to reset">
+          {label}
+        </label>
+        <input
+          className="num"
+          aria-label={`${label} value`}
+          value={text ?? format(value)}
+          disabled={disabled}
+          onChange={(e) => setText(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          onBlur={commitText}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            if (e.key === 'Escape') {
+              setText(null)
+              ;(e.target as HTMLInputElement).blur()
+            }
+            e.stopPropagation()
+          }}
+        />
+      </div>
+      <div className="sl-track" onDoubleClick={reset}>
+        <div
+          className={`sl-rail${track ? ' grad' : ''}`}
+          style={track ? { background: track } : undefined}
+        />
+        {showZero && <div className="sl-zero" style={{ left: `${rest}%` }} />}
+        {!track && (
+          <div className="sl-fill" style={{ left: `${lo}%`, width: `${Math.abs(at - rest)}%` }} />
+        )}
+        <input
+          type="range"
+          aria-label={label}
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          disabled={disabled}
+          onPointerDown={() => {
+            drag.current = true
+            setDragging(true)
+          }}
+          onChange={(e) => {
+            const v = Number(e.target.value)
+            if (!drag.current) {
+              // keyboard or a click without a drag
+              onChange(v, false)
+              onCommit()
+            } else onChange(v, true)
+          }}
+        />
+      </div>
     </div>
   )
 }

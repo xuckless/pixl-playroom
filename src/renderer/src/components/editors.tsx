@@ -125,7 +125,6 @@ export function CurveEditor({
         }
       }}
     >
-      <rect width={size} height={size} fill="#141414" />
       {histogram &&
         histogram.map((c, i) => {
           const hgt = (Math.log1p(c) / Math.log1p(hmax)) * size * 0.9
@@ -136,17 +135,24 @@ export function CurveEditor({
               y={size - hgt}
               width={size / histogram.length + 0.5}
               height={hgt}
-              fill="#333"
+              fill="rgba(157,139,234,0.14)"
             />
           )
         })}
       {[0.25, 0.5, 0.75].map((g) => (
-        <g key={g} stroke="#2c2c2c">
+        <g key={g} stroke="rgba(255,255,255,0.06)">
           <line x1={g * size} x2={g * size} y1={0} y2={size} />
           <line y1={g * size} y2={g * size} x1={0} x2={size} />
         </g>
       ))}
-      <line x1={0} y1={size} x2={size} y2={0} stroke="#444" strokeDasharray="3 3" />
+      <line
+        x1={0}
+        y1={size}
+        x2={size}
+        y2={0}
+        stroke="rgba(255,255,255,0.16)"
+        strokeDasharray="3 3"
+      />
       <polyline points={path.join(' ')} fill="none" stroke={colour} strokeWidth={1.8} />
       {sorted.map((p, i) => (
         <circle
@@ -154,7 +160,7 @@ export function CurveEditor({
           cx={p.x * size}
           cy={(1 - p.y) * size}
           r={4.5}
-          fill={drag === i ? colour : '#111'}
+          fill={drag === i ? colour : '#000'}
           stroke={colour}
           strokeWidth={1.5}
         />
