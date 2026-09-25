@@ -17,6 +17,7 @@ import { HistoryPanel, InfoPanel, PresetsPanel, SnapshotsPanel } from './panels/
 import { BrushOptions, MasksPanel } from './panels/masks'
 import { emptyRange } from './lib/helpers'
 import { useDevelop } from './state/develop'
+import { useUi } from './state/ui'
 import { useLibrary } from './state/library'
 import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { Filmstrip, LibraryView, Toolbar } from './views/Library'
@@ -267,7 +268,11 @@ function useShortcuts(): void {
       if (k === 'l' || k === 'L') return dev.setTool(dev.tool === 'polygon' ? 'none' : 'polygon')
       if (k === 'w' || k === 'W')
         return dev.setTool(dev.tool === 'wb-picker' ? 'none' : 'wb-picker')
-      if (k === 'o' || k === 'O') return dev.setOverlay(!dev.overlay)
+      if (k === 'o' || k === 'O') {
+        // In the crop tool O cycles the composition guides, as in Lightroom.
+        if (dev.tool === 'crop') return useUi.getState().cycleCropGuide()
+        return dev.setOverlay(!dev.overlay)
+      }
       if (k === '[') return dev.setBrush({ size: Math.max(4, Math.round(dev.brush.size / 1.15)) })
       if (k === ']') return dev.setBrush({ size: Math.min(500, Math.round(dev.brush.size * 1.15)) })
       if (k === 'A' && e.shiftKey && dev.session && dev.recipe) {

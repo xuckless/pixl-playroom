@@ -14,6 +14,8 @@ import { useLibrary } from './library'
 
 export type Tool = 'none' | 'crop' | 'brush' | 'polygon' | 'wb-picker' | 'range-picker'
 export type Compare = 'off' | 'before' | 'split'
+/** A geometry gesture in progress: the loupe draws its grid while one runs. */
+export type Gesture = 'straighten' | 'crop' | 'rotate' | null
 
 export interface BrushSettings {
   /** Diameter in screen pixels. */
@@ -43,6 +45,7 @@ interface DevelopState {
   error: string | null
   rendering: boolean
   tool: Tool
+  gesture: Gesture
   layerId: string | null
   overlay: boolean
   compare: Compare
@@ -66,6 +69,7 @@ interface DevelopState {
   redo(): void
   goto(index: number): void
   setTool(tool: Tool): void
+  setGesture(g: Gesture): void
   setLayer(id: string | null): void
   setOverlay(on: boolean): void
   setCompare(c: Compare): void
@@ -126,6 +130,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   error: null,
   rendering: false,
   tool: 'none',
+  gesture: null,
   layerId: null,
   overlay: true,
   compare: 'off',
@@ -243,6 +248,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     const shown = tool === 'crop' ? pictures.crop : pictures.framed
     set({ tool, picture: shown ?? picture })
     get().pushView()
+  },
+
+  setGesture(gesture) {
+    if (get().gesture !== gesture) set({ gesture })
   },
 
   setLayer(layerId) {
