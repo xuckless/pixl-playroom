@@ -126,6 +126,8 @@ function useShortcuts(): void {
       if (t.tagName === 'INPUT' && e.key.startsWith('Arrow')) return
       const lib = useLibrary.getState()
       const dev = useDevelop.getState()
+      // An open dialog has the keyboard (it closes itself on Escape).
+      if (lib.dialog) return
       const mod = e.ctrlKey || e.metaKey
       const inDevelop = lib.view === 'develop'
       const k = e.key

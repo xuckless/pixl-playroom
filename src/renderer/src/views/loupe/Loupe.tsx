@@ -231,6 +231,19 @@ export function Loupe(): React.JSX.Element {
         </div>
       )}
       {compare === 'split' && rect && (
+        <>
+          <span className="split-tag" style={{ left: rect.x + 14, top: rect.y + 14 }}>
+            Before
+          </span>
+          <span
+            className="split-tag"
+            style={{ left: rect.x + rect.w - 14, top: rect.y + 14, transform: 'translateX(-100%)' }}
+          >
+            After
+          </span>
+        </>
+      )}
+      {compare === 'split' && rect && (
         <div
           className="split-handle"
           style={{ left: rect.x + rect.w * split, top: rect.y, height: rect.h }}

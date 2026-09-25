@@ -229,6 +229,10 @@ const COMMANDS = {
       await sleep(60)
     }
   },
+  /** reduced on|off — emulate the reduced-motion preference. */
+  async reduced(arg) {
+    await page.emulateMedia({ reducedMotion: arg === 'off' ? 'no-preference' : 'reduce' })
+  },
   /** wheel <selector> <deltaY> — a mouse-wheel turn over an element. */
   async wheel(arg) {
     const [sel, dy] = arg.split(/\s+/)
