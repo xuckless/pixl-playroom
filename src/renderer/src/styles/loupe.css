@@ -204,7 +204,7 @@
 }
 .tool-hint {
   position: absolute;
-  top: 12px;
+  bottom: 56px;
   left: 50%;
   transform: translateX(-50%);
   padding: 5px 12px;
@@ -381,13 +381,8 @@
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  padding: 10px 12px;
-  height: 100px;
+  padding: 0 12px;
   align-items: center;
-  background: var(--s1);
-  border-top: 1px solid transparent;
-  border-image: var(--hl-x) 1;
-  flex-shrink: 0;
 }
 .film {
   position: relative;

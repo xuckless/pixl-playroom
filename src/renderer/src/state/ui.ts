@@ -15,8 +15,19 @@ export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
   { value: 'none', label: 'None' }
 ]
 
+export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
+
 interface UiState {
+  /** Which pane the left rail shows, and whether it is open or folded to its spine. */
+  rail: Rail
+  railOpen: boolean
+  /** The filmstrip under the loupe; hidden until asked for. */
+  filmstrip: boolean
   cropGuide: CropGuide
+  /** A spine glyph: open its pane, or fold the rail when it is already showing. */
+  pickRail(r: Rail): void
+  setRailOpen(open: boolean): void
+  setFilmstrip(open: boolean): void
   setCropGuide(g: CropGuide): void
   cycleCropGuide(): void
 }
@@ -33,7 +44,17 @@ const storage = createJSONStorage(() => {
 export const useUi = create<UiState>()(
   persist(
     (set, get) => ({
+      rail: 'presets',
+      railOpen: true,
+      filmstrip: false,
       cropGuide: 'thirds',
+      pickRail: (rail) => {
+        const s = get()
+        if (s.rail === rail && s.railOpen) set({ railOpen: false })
+        else set({ rail, railOpen: true })
+      },
+      setRailOpen: (railOpen) => set({ railOpen }),
+      setFilmstrip: (filmstrip) => set({ filmstrip }),
       setCropGuide: (cropGuide) => set({ cropGuide }),
       cycleCropGuide: () => {
         const i = CROP_GUIDES.findIndex((g) => g.value === get().cropGuide)

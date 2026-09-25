@@ -207,33 +207,3 @@ export function LibraryView(): React.JSX.Element {
     </div>
   )
 }
-
-export function Filmstrip(): React.JSX.Element {
-  const items = useVisible()
-  const focus = useLibrary((s) => s.focus)
-  const selection = useLibrary((s) => s.selection)
-  const select = useLibrary((s) => s.select)
-  const open = useDevelop((s) => s.open)
-  return (
-    <div className="filmstrip">
-      {items.map((it) => (
-        <div
-          key={it.key}
-          className={`film ${it.key === focus ? 'focus' : ''} ${selection.includes(it.key) ? 'selected' : ''}`}
-          onClick={(e) => {
-            if (e.ctrlKey || e.metaKey || e.shiftKey) {
-              select(it.key, e.shiftKey ? 'range' : 'toggle')
-              return
-            }
-            select(it.key, 'only')
-            void open(it.key)
-          }}
-          title={it.name}
-        >
-          {it.thumbUrl ? <img src={it.thumbUrl} draggable={false} /> : <span>{it.ext}</span>}
-          {it.rating > 0 && <span className="film-rating">{'★'.repeat(it.rating)}</span>}
-        </div>
-      ))}
-    </div>
-  )
-}

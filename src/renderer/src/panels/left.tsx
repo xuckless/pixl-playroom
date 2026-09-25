@@ -1,130 +1,182 @@
 import { useState } from 'react'
-import { usePresets } from '../lib/hooks'
 import { applyGroups } from '../../../shared/recipe'
-import { Section } from '../components/ui'
+import { Icon } from '../components/icons'
 import { api, errorText } from '../lib/api'
+import { usePresets } from '../lib/hooks'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 
-export function PresetsPanel(): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
-  const replace = useDevelop((s) => s.replace)
+/**
+ * The left rail's panes. Each shows one list at a time under the rail's
+ * head; the head's actions come from the pane's `Actions` component.
+ */
+
+export function PresetsActions(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
-  const [presets, reload] = usePresets(4000)
-  const [hover, setHover] = useState<string | null>(null)
-  if (!recipe) return null
-  const groups = [...new Set(presets.map((p) => p.group))]
   return (
-    <Section
-      id="presets"
-      title="Presets"
-      right={<button onClick={() => setDialog('preset')}>+ Save</button>}
-    >
-      {groups.map((g) => (
-        <div key={g} className="preset-group">
-          <span className="group-label">{g}</span>
-          {presets
-            .filter((p) => p.group === g)
-            .map((p) => (
-              <div
-                key={p.id}
-                className={`preset ${hover === p.id ? 'hover' : ''}`}
-                onMouseEnter={() => setHover(p.id)}
-                onMouseLeave={() => setHover(null)}
-                onClick={() =>
-                  replace(applyGroups(recipe, p.recipe, p.groups), `Preset: ${p.name}`)
-                }
-                title={`Carries: ${p.groups.join(', ')}`}
-              >
-                <span>{p.name}</span>
-                {!p.builtin && (
-                  <button
-                    className="icon"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      void api.presets.remove(p.id).then(reload)
-                    }}
-                  >
-                    🗑
-                  </button>
-                )}
-              </div>
-            ))}
-        </div>
-      ))}
-    </Section>
+    <button className="sm ghost" onClick={() => setDialog('preset')} title="Save a preset">
+      <Icon name="plus" />
+      Save
+    </button>
   )
 }
 
-export function SnapshotsPanel(): React.JSX.Element | null {
+export function PresetsPane(): React.JSX.Element | null {
+  const recipe = useDevelop((s) => s.recipe)
+  const replace = useDevelop((s) => s.replace)
+  const [presets, reload] = usePresets(4000)
+  const [applied, setApplied] = useState<string | null>(null)
+  if (!recipe) return <p className="rail-empty">Open a photo to use presets.</p>
+  // Presets keep the groups they were saved under.
+  const groups = [...new Set(presets.map((p) => p.group))]
+  return (
+    <div className="rail-list">
+      {groups.map((g) => (
+        <div key={g} className="preset-group">
+          <div className="rail-group">
+            <span className="micro">{g}</span>
+            <span className="line" />
+          </div>
+          <div className="stagger">
+            {presets
+              .filter((p) => p.group === g)
+              .map((p) => (
+                <div
+                  key={p.id}
+                  role="button"
+                  tabIndex={0}
+                  className={`preset rail-item${applied === p.id ? ' on' : ''}`}
+                  onClick={() => {
+                    setApplied(p.id)
+                    replace(applyGroups(recipe, p.recipe, p.groups), `Preset: ${p.name}`)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setApplied(p.id)
+                      replace(applyGroups(recipe, p.recipe, p.groups), `Preset: ${p.name}`)
+                    }
+                  }}
+                  title={`Carries: ${p.groups.join(', ')}`}
+                >
+                  <span className="rail-label">
+                    <i className="dot" />
+                    {p.name}
+                  </span>
+                  {p.builtin ? (
+                    <span className="t">{p.groups.length}</span>
+                  ) : (
+                    <button
+                      className="icon sm"
+                      title="Delete preset"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void api.presets.remove(p.id).then(reload)
+                      }}
+                    >
+                      <Icon name="trash" />
+                    </button>
+                  )}
+                </div>
+              ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function SnapshotsPane(): React.JSX.Element {
   const snapshots = useDevelop((s) => s.snapshots)
   const save = useDevelop((s) => s.saveSnapshot)
   const remove = useDevelop((s) => s.removeSnapshot)
   const replace = useDevelop((s) => s.replace)
+  const session = useDevelop((s) => s.session)
   const [name, setName] = useState('')
+  const add = (): void => {
+    void save(name.trim() || new Date().toLocaleString())
+    setName('')
+  }
   return (
-    <Section id="snapshots" title="Snapshots" defaultOpen={false}>
-      <div className="row">
+    <div className="rail-list">
+      <div className="rail-form">
         <input
           className="name"
           placeholder="Snapshot name"
           value={name}
+          disabled={!session}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.stopPropagation()}
-        />
-        <button
-          onClick={() => {
-            void save(name.trim() || new Date().toLocaleString())
-            setName('')
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter') add()
           }}
-        >
-          + Save
+        />
+        <button className="sm" disabled={!session} onClick={add} title="Save a snapshot">
+          <Icon name="plus" />
+          Save
         </button>
       </div>
-      {snapshots.map((s) => (
-        <div
-          key={s.id}
-          className="preset"
-          onClick={() => replace(structuredClone(s.recipe), `Snapshot: ${s.name}`)}
-        >
-          <span>{s.name}</span>
-          <button
-            className="icon"
-            onClick={(e) => {
-              e.stopPropagation()
-              void remove(s.id)
-            }}
+      {snapshots.length === 0 && (
+        <p className="rail-empty">A snapshot keeps the recipe as it is now, to come back to.</p>
+      )}
+      <div className="stagger">
+        {snapshots.map((s) => (
+          <div
+            key={s.id}
+            role="button"
+            tabIndex={0}
+            className="preset rail-item"
+            onClick={() => replace(structuredClone(s.recipe), `Snapshot: ${s.name}`)}
+            title={new Date(s.at).toLocaleString()}
           >
-            🗑
-          </button>
-        </div>
-      ))}
-    </Section>
+            <span className="rail-label">
+              <i className="dot" />
+              {s.name}
+            </span>
+            <button
+              className="icon sm"
+              title="Delete snapshot"
+              onClick={(e) => {
+                e.stopPropagation()
+                void remove(s.id)
+              }}
+            >
+              <Icon name="trash" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
-export function HistoryPanel(): React.JSX.Element {
+export function HistoryPane(): React.JSX.Element {
   const history = useDevelop((s) => s.history)
   const cursor = useDevelop((s) => s.cursor)
   const goto = useDevelop((s) => s.goto)
+  if (history.length === 0) return <p className="rail-empty">Nothing has happened yet.</p>
   return (
-    <Section id="history" title="History" defaultOpen={false}>
-      <div className="history">
-        {[...history]
-          .map((h, i) => ({ h, i }))
-          .reverse()
-          .map(({ h, i }) => (
-            <div
-              key={h.seq}
-              className={`history-row ${i === cursor ? 'on' : ''} ${i > cursor ? 'future' : ''}`}
-              onClick={() => goto(i)}
-            >
-              <span>{h.label}</span>
-              <span className="muted small">{new Date(h.at).toLocaleTimeString()}</span>
-            </div>
-          ))}
-      </div>
-    </Section>
+    <div className="rail-list history">
+      {[...history]
+        .map((h, i) => ({ h, i }))
+        .reverse()
+        .map(({ h, i }) => (
+          <div
+            key={h.seq}
+            role="button"
+            tabIndex={0}
+            className={`history-row rail-item${i === cursor ? ' on' : ''}${i > cursor ? ' future' : ''}`}
+            onClick={() => goto(i)}
+          >
+            <span className="rail-label">
+              <i className="dot" />
+              {h.label}
+            </span>
+            <span className="t">
+              {new Date(h.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+        ))}
+    </div>
   )
 }
 
@@ -133,13 +185,13 @@ function fmtShutter(t: number | null): string {
   return t >= 1 ? `${t}s` : `1/${Math.round(1 / t)}s`
 }
 
-export function InfoPanel(): React.JSX.Element | null {
+export function InfoPane(): React.JSX.Element {
   const session = useDevelop((s) => s.session)
-  if (!session) return null
+  if (!session) return <p className="rail-empty">Open a photo to see its details.</p>
   const { info, item } = session
   const c = item.camera
   return (
-    <Section id="info" title="Info" defaultOpen={false}>
+    <div className="rail-list">
       <dl className="kv">
         <dt>File</dt>
         <dd>{item.name}</dd>
@@ -183,14 +235,16 @@ export function InfoPanel(): React.JSX.Element | null {
         </dd>
       </dl>
       <button
+        className="sm"
         onClick={() =>
           void api.app
             .reveal(item.path)
             .catch((e) => useLibrary.getState().say(errorText(e), 'error'))
         }
       >
+        <Icon name="folder" />
         Show in folder
       </button>
-    </Section>
+    </div>
   )
 }
