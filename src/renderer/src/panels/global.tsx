@@ -444,7 +444,7 @@ export function ToneCurvePanel(): React.JSX.Element | null {
   const [channel, setChannel] = useState<CurveChannel>('master')
   if (!recipe) return null
   const colours: Record<CurveChannel, string> = {
-    master: '#eee',
+    master: '#c9bdf7',
     red: '#ff5a5a',
     green: '#5aff78',
     blue: '#5a8cff'

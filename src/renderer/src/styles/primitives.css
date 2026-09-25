@@ -1,0 +1,719 @@
+/* ── hairlines with purple light-ends ──────────────────────────── */
+.hl-b {
+  border-bottom: 1px solid transparent;
+  border-image: var(--hl-x) 1;
+}
+.hl-b.rev {
+  border-image: var(--hl-x-rev) 1;
+}
+.hl-t {
+  border-top: 1px solid transparent;
+  border-image: var(--hl-x) 1;
+}
+.hl-r {
+  border-right: 1px solid transparent;
+  border-image: var(--hl-y) 1;
+}
+.hl-l {
+  border-left: 1px solid transparent;
+  border-image: var(--hl-y) 1;
+}
+.rule {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--acc) 0px,
+    rgba(157, 139, 234, 0.3) 36px,
+    var(--hair) 110px,
+    var(--hair) 100%
+  );
+}
+/* a slow light travelling along the top edge of the active surface */
+.sweep {
+  position: relative;
+}
+.sweep::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 35%,
+    var(--acc) 50%,
+    transparent 65%,
+    transparent 100%
+  );
+  background-size: 300% 100%;
+  animation: sweep 5.5s linear infinite;
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ── buttons ───────────────────────────────────────────────────────
+   Every <button> is a quiet hairline control; .primary, .on and .icon
+   are the variants. */
+:where(button),
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 11px;
+  background: transparent;
+  border: 1px solid var(--hair2);
+  border-radius: var(--r);
+  color: var(--text2);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  position: relative;
+  transition:
+    color var(--dur-hover) var(--ease),
+    border-color 0.25s var(--ease),
+    background 0.25s var(--ease),
+    transform var(--dur-toggle) var(--spring),
+    box-shadow var(--dur-toggle) var(--ease);
+}
+:where(button):hover:not(:disabled),
+.btn:hover {
+  color: var(--text);
+  border-color: var(--hair3);
+  background: rgba(255, 255, 255, 0.03);
+  transform: translateY(-1px);
+}
+:where(button):active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px var(--acc),
+    0 0 18px var(--glow-soft);
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+button svg,
+.btn svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+button.lg {
+  height: 32px;
+  padding: 0 13px;
+}
+button.sm {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+button.icon {
+  width: 28px;
+  padding: 0;
+  border-color: transparent;
+}
+button.icon:hover:not(:disabled) {
+  border-color: var(--hair2);
+}
+button.icon.lg {
+  width: 32px;
+}
+button.ghost {
+  border-color: transparent;
+}
+button.ghost:hover:not(:disabled) {
+  border-color: var(--hair2);
+}
+button.danger {
+  color: var(--danger);
+}
+button.primary {
+  background: var(--primary-grad);
+  border-color: rgba(157, 139, 234, 0.6);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 6px 22px -8px var(--glow);
+  overflow: hidden;
+}
+button.primary:hover:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 10px 28px -8px var(--glow);
+  border-color: var(--acc);
+  background: var(--primary-grad);
+}
+/* a glint crossing the primary action every few seconds */
+button.primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.28) 48%,
+    rgba(255, 255, 255, 0.05) 56%,
+    transparent 66%
+  );
+  background-size: 260% 100%;
+  animation: glint 6.5s var(--ease) infinite;
+  pointer-events: none;
+}
+button.toggle.on,
+button.on,
+.btn.on {
+  color: var(--text);
+  border-color: var(--acc-a55);
+  background: linear-gradient(180deg, rgba(157, 139, 234, 0.16), rgba(157, 139, 234, 0.06));
+  box-shadow:
+    inset 0 0 0 1px rgba(157, 139, 234, 0.12),
+    0 0 16px -6px var(--glow);
+}
+button.toggle.on::after,
+button.on:not(.icon):not(.chip)::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  width: 18px;
+  height: 1px;
+  transform: translateX(-50%);
+  background: var(--acc);
+  box-shadow: 0 0 8px var(--acc);
+  animation: segIn 0.45s var(--spring);
+}
+.kbd {
+  font-family: var(--font);
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  padding: 1px 5px;
+  letter-spacing: 0.06em;
+  line-height: 1.3;
+}
+.badge,
+.copy-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--acc);
+  border: 1px solid rgba(157, 139, 234, 0.45);
+  padding: 2px 7px;
+  border-radius: var(--r);
+  background: rgba(157, 139, 234, 0.08);
+  white-space: nowrap;
+}
+.chip {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.chip.on {
+  color: var(--acc);
+}
+
+/* ── segmented tabs ────────────────────────────────────────────── */
+.tabs,
+.seg {
+  display: inline-flex;
+  align-items: stretch;
+  height: 28px;
+  border: 1px solid var(--hair2);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  flex: none;
+}
+.tabs button,
+.seg button {
+  height: auto;
+  border: none;
+  border-right: 1px solid var(--hair);
+  border-radius: 0;
+  padding: 0 11px;
+  color: var(--muted);
+  background: transparent;
+  letter-spacing: 0.03em;
+}
+.tabs button:last-child,
+.seg button:last-child {
+  border-right: none;
+}
+.tabs button:hover:not(:disabled),
+.seg button:hover:not(:disabled) {
+  color: var(--text2);
+  background: rgba(255, 255, 255, 0.02);
+  transform: none;
+  border-color: var(--hair);
+}
+.tabs button.on,
+.seg button.on {
+  color: #fff;
+  background: linear-gradient(180deg, rgba(157, 139, 234, 0.32), rgba(123, 104, 216, 0.16));
+  text-shadow: 0 0 12px var(--glow);
+  box-shadow: none;
+}
+.tabs button.on::after,
+.seg button.on::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: 0;
+  width: auto;
+  transform: none;
+  height: 1px;
+  background: var(--acc);
+  box-shadow: 0 0 10px var(--acc);
+  animation: segIn 0.45s var(--spring);
+}
+.seg .k {
+  margin-left: 7px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* ── inputs ────────────────────────────────────────────────────── */
+:where(input:not([type='range']):not([type='checkbox']):not([type='radio'])),
+:where(select),
+:where(textarea) {
+  background: var(--s1);
+  border: 1px solid var(--hair2);
+  border-radius: var(--r);
+  color: var(--text);
+  padding: 0 9px;
+  height: 28px;
+  font-family: var(--font-body);
+  outline: none;
+  transition:
+    border-color 0.25s var(--ease),
+    box-shadow var(--dur-toggle) var(--ease);
+}
+textarea {
+  height: auto;
+  padding: 7px 9px;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+}
+:where(input:not([type='range']):not([type='checkbox'])):hover,
+:where(select):hover,
+:where(textarea):hover {
+  border-color: var(--hair3);
+}
+:where(input:not([type='range']):not([type='checkbox'])):focus,
+:where(select):focus,
+:where(textarea):focus {
+  border-color: rgba(157, 139, 234, 0.7);
+  box-shadow:
+    0 0 0 1px rgba(157, 139, 234, 0.25),
+    0 0 20px -6px var(--glow);
+}
+input::placeholder {
+  color: var(--muted);
+}
+input:disabled,
+select:disabled {
+  opacity: 0.45;
+}
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 26px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%237a7790' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+}
+select:hover {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%239d8bea' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5'/%3E%3C/svg%3E");
+}
+option {
+  background: #101012;
+  color: var(--text);
+}
+input.name {
+  flex: 1;
+  min-width: 0;
+}
+.select {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  flex: 1;
+  min-width: 0;
+}
+.select > span {
+  color: var(--text2);
+  font-weight: 500;
+}
+.select select {
+  width: 100%;
+  min-width: 0;
+}
+
+/* checkbox */
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--text2);
+  cursor: pointer;
+  user-select: none;
+  margin-right: 10px;
+  transition: color var(--dur-hover);
+}
+.check:hover {
+  color: var(--text);
+}
+input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex: none;
+  border: 1px solid var(--hair3);
+  border-radius: var(--r);
+  background: var(--s1);
+  position: relative;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.3s var(--spring),
+    transform 0.3s var(--spring),
+    box-shadow 0.3s;
+}
+input[type='checkbox']:checked {
+  border-color: var(--acc);
+  background: var(--primary-grad);
+  box-shadow: 0 0 12px -3px var(--glow);
+  transform: scale(1.06);
+}
+input[type='checkbox']:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+  animation: tickIn 0.3s var(--spring);
+}
+input[type='checkbox']:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── slider: hairline rail, purple fill from its resting point, a glass
+   knob, and a large typed value that can be edited in place ──────── */
+.slider {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 9px;
+}
+.sl-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+.sl-head label {
+  color: var(--text2);
+  font-weight: 500;
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+  transition:
+    color 0.25s var(--ease),
+    text-shadow 0.25s;
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slider.changed .sl-head label {
+  color: var(--text);
+}
+.slider input.num {
+  width: 76px;
+  height: 22px;
+  padding: 0 2px;
+  border-color: transparent;
+  background: transparent;
+  text-align: right;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text2);
+  transition:
+    color 0.25s,
+    transform 0.4s var(--spring),
+    text-shadow 0.4s,
+    border-color 0.25s,
+    background 0.25s;
+  transform-origin: right center;
+}
+.slider.changed input.num {
+  color: var(--acc);
+  text-shadow: 0 0 14px var(--glow-soft);
+}
+.slider:hover input.num {
+  transform: scale(1.06);
+  color: var(--text);
+}
+.slider input.num:hover {
+  border-color: var(--hair);
+}
+.slider input.num:focus {
+  transform: none;
+  color: var(--text);
+  background: var(--s1);
+  border-color: rgba(157, 139, 234, 0.7);
+  text-shadow: none;
+}
+.sl-track {
+  position: relative;
+  height: 18px;
+  display: flex;
+  align-items: center;
+}
+.sl-rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--hair2);
+  pointer-events: none;
+}
+.sl-rail.grad {
+  height: 4px;
+  opacity: 0.8;
+  transition: opacity 0.25s;
+}
+.slider:hover .sl-rail.grad {
+  opacity: 1;
+}
+.sl-zero {
+  position: absolute;
+  top: 3px;
+  width: 1px;
+  height: 12px;
+  background: var(--hair3);
+  transform: translateX(-0.5px);
+  pointer-events: none;
+}
+.sl-fill {
+  position: absolute;
+  height: 2px;
+  background: linear-gradient(90deg, var(--acc2), var(--acc));
+  box-shadow: 0 0 10px -2px var(--glow);
+  pointer-events: none;
+  /* a typed value or a reset springs into place; a drag follows at once */
+  transition:
+    left 0.45s var(--spring),
+    width 0.45s var(--spring),
+    opacity 0.3s;
+}
+.slider.dragging .sl-fill {
+  transition: none;
+}
+.slider input[type='range'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: ew-resize;
+  outline: none;
+}
+.slider input[type='range']::-webkit-slider-runnable-track {
+  height: 18px;
+  background: transparent;
+}
+.slider input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    rgba(255, 255, 255, 0.95),
+    rgba(255, 255, 255, 0.35) 40%,
+    rgba(180, 170, 230, 0.25) 70%,
+    rgba(120, 100, 200, 0.2)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 0 0 1px rgba(157, 139, 234, 0.35),
+    0 0 0 3px rgba(0, 0, 0, 0.6),
+    0 0 14px -2px var(--glow);
+  backdrop-filter: blur(4px);
+  transition:
+    transform var(--dur-toggle) var(--spring),
+    box-shadow var(--dur-toggle) var(--ease);
+}
+.slider input[type='range']:hover::-webkit-slider-thumb,
+.slider input[type='range']:focus-visible::-webkit-slider-thumb {
+  transform: scale(1.25);
+  box-shadow:
+    inset 0 0 0 1px rgba(157, 139, 234, 0.5),
+    0 0 0 3px rgba(0, 0, 0, 0.6),
+    0 0 22px 0 var(--glow);
+}
+.slider input[type='range']:active::-webkit-slider-thumb {
+  transform: scale(1.1);
+}
+.slider.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+/* an HSL band chosen from the colour-concentration chart */
+.focused .slider .sl-head label {
+  color: var(--acc);
+  text-shadow: 0 0 12px var(--glow-soft);
+}
+.focused .slider .sl-track::after {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  transform: translateY(-50%) rotate(45deg);
+  background: var(--acc);
+  box-shadow: 0 0 8px var(--acc);
+  animation: pulseDot 1.8s ease-in-out infinite;
+}
+
+/* ── sections: a micro heading with a fading line; click to fold ──── */
+.section {
+  position: relative;
+}
+.section > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  margin-top: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.section > header .title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--acc);
+  white-space: nowrap;
+}
+.section > header .line {
+  flex: 1;
+  height: 1px;
+  min-width: 12px;
+  background: linear-gradient(90deg, rgba(157, 139, 234, 0.45), var(--hair) 40%, transparent);
+}
+.section > header .caret {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  stroke: var(--muted);
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  transition:
+    transform var(--dur-toggle) var(--spring),
+    stroke 0.2s;
+  transform: rotate(-90deg);
+}
+.section.open > header .caret {
+  transform: none;
+}
+.section > header:hover .caret {
+  stroke: var(--acc);
+}
+.section > header .right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.section > header .right:empty {
+  display: none;
+}
+.section .body {
+  animation: bodyIn 0.45s var(--spring) both;
+  transform-origin: top;
+}
+
+/* ── glass: the frosted fallback every liquid-glass surface sits on ── */
+.glass {
+  background: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.075),
+    rgba(255, 255, 255, 0.02) 45%,
+    rgba(157, 139, 234, 0.05)
+  );
+  backdrop-filter: blur(22px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: var(--r);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 1px 0 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(157, 139, 234, 0.22),
+    inset -1px 0 0 rgba(157, 139, 234, 0.1),
+    0 20px 50px -20px rgba(0, 0, 0, 0.8);
+}
+
+/* stars */
+.stars {
+  display: inline-flex;
+  gap: 1px;
+  letter-spacing: 0;
+}
+.stars span {
+  color: rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  font-size: 11px;
+  transition:
+    color 0.2s,
+    transform 0.3s var(--spring);
+}
+.stars span:hover {
+  transform: scale(1.3);
+}
+.stars span.on {
+  color: var(--star);
+  text-shadow: 0 0 8px rgba(232, 197, 107, 0.5);
+}

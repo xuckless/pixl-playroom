@@ -1,0 +1,90 @@
+/* Near-black OLED surfaces, one matte purple accent, hairlines that end in
+   light. Surfaces have square corners; controls round by at most 2px. */
+:root {
+  color-scheme: dark;
+
+  /* surfaces, darkest first */
+  --bg: #000000;
+  --s1: #09090b;
+  --s2: #0f0f12;
+  --s3: #151518;
+  --s4: #1c1c21;
+
+  /* hairlines */
+  --hair: rgba(255, 255, 255, 0.08);
+  --hair2: rgba(255, 255, 255, 0.14);
+  --hair3: rgba(255, 255, 255, 0.22);
+
+  /* ink */
+  --text: #ebe9f3;
+  --text2: #b8b5c7;
+  --muted: #7a7790;
+
+  /* the accent */
+  --acc: #9d8bea;
+  --acc2: #7b68d8;
+  --acc-deep: #4c3d9e;
+  --acc-ink: #17122b;
+  --acc-a10: rgba(157, 139, 234, 0.1);
+  --acc-a20: rgba(157, 139, 234, 0.2);
+  --acc-a35: rgba(157, 139, 234, 0.35);
+  --acc-a55: rgba(157, 139, 234, 0.55);
+  --glow: rgba(157, 139, 234, 0.55);
+  --glow-soft: rgba(157, 139, 234, 0.22);
+  --primary-grad: linear-gradient(180deg, #8b78e6, #6c5ad0);
+
+  /* signals */
+  --danger: #ff6b7a;
+  --ok: #7fd8a0;
+  --warn: #e8c56b;
+  --star: #e8c56b;
+  --clip-hi: #ff3c5a;
+  --clip-lo: #5a78ff;
+
+  /* type */
+  --font: 'Space Grotesk Variable', 'Space Grotesk', 'Manrope Variable', system-ui, sans-serif;
+  --font-body: 'Manrope Variable', 'Manrope', 'Space Grotesk Variable', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+
+  /* shape */
+  --r: 2px;
+
+  /* motion */
+  --spring: cubic-bezier(0.22, 1.25, 0.36, 1);
+  --spring-soft: cubic-bezier(0.3, 1.12, 0.4, 1);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-hover: 200ms;
+  --dur-toggle: 350ms;
+  --dur-panel: 550ms;
+  --dur-dialog: 600ms;
+
+  /* the hairline gradients: a purple light at one end fading to a plain line */
+  --hl-x: linear-gradient(
+    90deg,
+    var(--acc) 0px,
+    rgba(157, 139, 234, 0.35) 40px,
+    var(--hair) 120px,
+    var(--hair) 100%
+  );
+  --hl-x-rev: linear-gradient(
+    270deg,
+    var(--acc) 0px,
+    rgba(157, 139, 234, 0.35) 40px,
+    var(--hair) 120px,
+    var(--hair) 100%
+  );
+  --hl-y: linear-gradient(
+    180deg,
+    var(--acc) 0px,
+    rgba(157, 139, 234, 0.35) 40px,
+    var(--hair) 140px,
+    var(--hair) 100%
+  );
+
+  /* layout */
+  --bar1: 36px;
+  --bar2: 48px;
+  --spine: 48px;
+  --rail: 232px;
+  --right: 360px;
+}
