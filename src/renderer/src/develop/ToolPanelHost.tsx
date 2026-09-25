@@ -44,7 +44,11 @@ export function ToolPanelHost(): React.JSX.Element {
           initial={{ opacity: 0, y: 16, filter: 'blur(6px)' }}
           animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
           exit={{ opacity: 0, y: -10, filter: 'blur(4px)', transition: { duration: 0.14 } }}
-          transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.8 }}
+          transition={{
+            default: { type: 'spring', stiffness: 420, damping: 32, mass: 0.8 },
+            // A spring would overshoot the blur below zero.
+            filter: { type: 'tween', duration: 0.28, ease: 'easeOut' }
+          }}
         >
           <Panel />
         </motion.div>
