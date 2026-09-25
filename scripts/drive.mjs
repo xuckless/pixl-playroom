@@ -158,6 +158,47 @@ const COMMANDS = {
     await page.mouse.up()
     console.log('stroked', pts.length, 'points')
   },
+  /**
+   * drag x1,y1 x2,y2 [--render] — a pointer drag across the crop frame (or the
+   * picture), in fractions of it. --render forces full engine renders while
+   * the pointer is held, to prove a drag survives them.
+   */
+  async drag(arg) {
+    const render = arg.includes('--render')
+    const pts = arg
+      .replace('--render', '')
+      .trim()
+      .split(/\s+/)
+      .map((p) => p.split(',').map(Number))
+    const box = await page.evaluate(() => {
+      const el = document.querySelector('.crop-layer') ?? document.querySelector('.picture')
+      const r = el?.getBoundingClientRect()
+      return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null
+    })
+    if (!box) return console.log('nothing to drag on')
+    const at = ([x, y]) => [box.x + x * box.w, box.y + y * box.h]
+    const [ax, ay] = at(pts[0])
+    const [bx, by] = at(pts[1])
+    await page.mouse.move(ax, ay)
+    await page.mouse.down()
+    for (let k = 1; k <= 24; k++) {
+      await page.mouse.move(ax + ((bx - ax) * k) / 24, ay + ((by - ay) * k) / 24)
+      if (render && k % 6 === 0) {
+        await page.evaluate(() => {
+          const d = window.__playroom.useDevelop.getState()
+          d.edit((r) => (r.basic.exposure = Math.round((r.basic.exposure + 0.05) * 100) / 100))
+          d.commit('driver render')
+        })
+        await sleep(250)
+      }
+    }
+    const during = await page.evaluate(() => {
+      const b = document.querySelector('.crop-box')?.getBoundingClientRect()
+      return b ? [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)] : null
+    })
+    await page.mouse.up()
+    console.log('box before release:', JSON.stringify(during), 'pointer at', Math.round(bx), Math.round(by))
+  },
   async wait(ms) {
     await sleep(Number(ms) || 1000)
   },

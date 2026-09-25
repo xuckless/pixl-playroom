@@ -1,120 +1,96 @@
-import { useRef, useState } from 'react'
-import { cropFits, effectiveCrop, fitCrop } from '../../../../shared/compile'
+import { memo, useRef, useState } from 'react'
+import { fitCrop } from '../../../../shared/compile'
+import { CROP_HANDLES, dragCrop, type CropHandle } from '../../../../shared/crop'
 import type { CropRect } from '../../../../shared/engine-types'
-import type { Recipe } from '../../../../shared/recipe'
 import { normalisedIn, type P, type Rect, type ViewGeometry } from '../../../../shared/view'
 import { useDevelop } from '../../state/develop'
 
-// ── Crop tool ────────────────────────────────────────────────────────────────
+const FULL: CropRect = { x: 0, y: 0, width: 1, height: 1 }
 
-type Handle = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
-
-export function CropOverlay({
+/**
+ * The crop box. What it shows is always the recipe's crop, except while a
+ * handle is being dragged, when it shows the drag. Nothing keys or remounts
+ * it: a straighten, an undo, a reset or a paste simply moves the box, and a
+ * render arriving mid-drag changes nothing under the pointer. The whole
+ * loupe holds the pointer capture, so a drag survives leaving the picture.
+ */
+export const CropTool = memo(function CropTool({
   rect,
   g
 }: {
   rect: Rect
   g: ViewGeometry
-}): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe) as Recipe
+}): React.JSX.Element {
   const edit = useDevelop((s) => s.edit)
   const commit = useDevelop((s) => s.commit)
-  const start = effectiveCrop(recipe, g.width, g.height) ?? { x: 0, y: 0, width: 1, height: 1 }
-  const [crop, setCrop] = useState<CropRect>(start)
-  const drag = useRef<{ handle: Handle; from: P; orig: CropRect } | null>(null)
-  const aspect = recipe.geometry.aspect
+  const aspect = useDevelop((s) => s.recipe?.geometry.aspect ?? null)
+  const [draft, setDraft] = useState<CropRect | null>(null)
+  const frame = useRef<HTMLDivElement>(null)
+  const drag = useRef<{ handle: CropHandle; from: P; orig: CropRect } | null>(null)
+  const crop = draft ?? g.crop ?? FULL
   // Normalised width over height that holds the aspect in pixels.
   const nAspect = aspect ? aspect * (g.height / g.width) : null
-  const layer = useRef<HTMLDivElement>(null)
+
   const toN = (e: React.PointerEvent): P => {
-    const b = layer.current?.getBoundingClientRect()
+    const b = frame.current?.getBoundingClientRect()
     return b ? normalisedIn(e.clientX, e.clientY, b) : { x: 0, y: 0 }
   }
-  const onMove = (e: React.PointerEvent): void => {
+  const begin = (e: React.PointerEvent, handle: CropHandle): void => {
+    e.stopPropagation()
+    const stage = e.currentTarget.closest('.crop-stage') as HTMLElement | null
+    stage?.setPointerCapture(e.pointerId)
+    drag.current = { handle, from: toN(e), orig: crop }
+    setDraft(crop)
+  }
+  const move = (e: React.PointerEvent): void => {
     const d = drag.current
     if (!d) return
     const p = toN(e)
-    const dx = p.x - d.from.x
-    const dy = p.y - d.from.y
-    let { x, y, width, height } = d.orig
-    if (d.handle === 'move') {
-      x = Math.min(1 - width, Math.max(0, x + dx))
-      y = Math.min(1 - height, Math.max(0, y + dy))
-    } else {
-      if (d.handle.includes('w')) {
-        x = Math.min(x + width - 0.02, Math.max(0, x + dx))
-        width = d.orig.x + d.orig.width - x
-      }
-      if (d.handle.includes('e')) width = Math.min(1 - x, Math.max(0.02, width + dx))
-      if (d.handle.includes('n')) {
-        y = Math.min(y + height - 0.02, Math.max(0, y + dy))
-        height = d.orig.y + d.orig.height - y
-      }
-      if (d.handle.includes('s')) height = Math.min(1 - y, Math.max(0.02, height + dy))
-      if (nAspect) {
-        if (d.handle === 'n' || d.handle === 's') width = height * nAspect
-        else height = width / nAspect
-        if (d.handle.includes('n')) y = d.orig.y + d.orig.height - height
-        if (d.handle.includes('w')) x = d.orig.x + d.orig.width - width
-        if (x + width > 1 || y + height > 1 || x < 0 || y < 0) return
-      }
-    }
-    const next = { x, y, width, height }
-    if (!cropFits(next, g.straighten, g.width, g.height)) return
-    setCrop(next)
+    const next = dragCrop(d.handle, d.orig, { x: p.x - d.from.x, y: p.y - d.from.y }, nAspect, g)
+    if (next) setDraft(next)
   }
   const end = (): void => {
-    if (!drag.current) return
+    const d = drag.current
     drag.current = null
-    const fitted = fitCrop(crop, g.straighten, g.width, g.height)
+    if (!d || !draft) return setDraft(null)
+    const fitted = fitCrop(draft, g.straighten, g.width, g.height)
     edit((r) => (r.geometry.crop = fitted))
     commit('Crop')
+    setDraft(null)
   }
+
   const box = {
     left: crop.x * rect.w,
     top: crop.y * rect.h,
     width: crop.width * rect.w,
     height: crop.height * rect.h
   }
-  const handles: Handle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
   return (
     <div
-      ref={layer}
-      className="crop-layer"
-      style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
-      onPointerMove={onMove}
+      className={`crop-stage${draft ? ' dragging' : ''}`}
+      onPointerMove={move}
       onPointerUp={end}
-      onPointerLeave={end}
+      onPointerCancel={end}
+      onLostPointerCapture={end}
     >
       <div
-        className="crop-shade"
-        style={{
-          clipPath: `polygon(0 0,100% 0,100% 100%,0 100%,0 0,${box.left}px ${box.top}px,${box.left}px ${box.top + box.height}px,${box.left + box.width}px ${box.top + box.height}px,${box.left + box.width}px ${box.top}px,${box.left}px ${box.top}px)`
-        }}
-      />
-      <div
-        className="crop-box"
-        style={box}
-        onPointerDown={(e) => {
-          ;(e.currentTarget.parentElement as HTMLElement).setPointerCapture(e.pointerId)
-          drag.current = { handle: 'move', from: toN(e), orig: crop }
-        }}
+        ref={frame}
+        className="crop-layer"
+        style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
       >
-        <div className="thirds" />
-        {handles.map((h) => (
-          <div
-            key={h}
-            className={`crop-handle ${h}`}
-            onPointerDown={(e) => {
-              e.stopPropagation()
-              ;(e.currentTarget.parentElement?.parentElement as HTMLElement).setPointerCapture(
-                e.pointerId
-              )
-              drag.current = { handle: h, from: toN(e), orig: crop }
-            }}
-          />
-        ))}
+        <div
+          className="crop-shade"
+          style={{
+            clipPath: `polygon(0 0,100% 0,100% 100%,0 100%,0 0,${box.left}px ${box.top}px,${box.left}px ${box.top + box.height}px,${box.left + box.width}px ${box.top + box.height}px,${box.left + box.width}px ${box.top}px,${box.left}px ${box.top}px)`
+          }}
+        />
+        <div className="crop-box" style={box} onPointerDown={(e) => begin(e, 'move')}>
+          <div className="thirds" />
+          {CROP_HANDLES.map((h) => (
+            <div key={h} className={`crop-handle ${h}`} onPointerDown={(e) => begin(e, h)} />
+          ))}
+        </div>
       </div>
     </div>
   )
-}
+})

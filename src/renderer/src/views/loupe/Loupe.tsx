@@ -15,7 +15,7 @@ import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { BrushLayer } from './BrushTool'
 import { ClippingOverlay } from './ClippingOverlay'
-import { CropOverlay } from './CropTool'
+import { CropTool } from './CropTool'
 import { DecodedImage } from './DecodedImage'
 import { PolygonLayer } from './LassoTool'
 import { LoupeHud } from './LoupeHud'
@@ -224,14 +224,7 @@ export function Loupe(): React.JSX.Element {
           }}
         />
       )}
-      {tool === 'crop' && rect && g && (
-        // Keyed on the framing, so a new straighten or aspect starts a fresh crop box.
-        <CropOverlay
-          key={`${recipe.geometry.straighten}:${recipe.geometry.aspect}:${recipe.geometry.quarterTurns}:${recipe.geometry.flipHorizontal}`}
-          rect={rect}
-          g={g}
-        />
-      )}
+      {tool === 'crop' && rect && g && <CropTool rect={rect} g={g} />}
       {tool === 'brush' && rect && g && <BrushLayer rect={rect} g={g} />}
       {tool === 'polygon' && rect && g && <PolygonLayer rect={rect} g={g} />}
       <LoupeHud />
