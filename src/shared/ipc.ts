@@ -198,6 +198,8 @@ export interface RenderEvent {
   seq: number
   kind: 'draft' | 'full' | 'before' | 'mask'
   url: string
+  /** The view the render was made for: the crop tool's whole frame, or the framed picture. */
+  cropMode?: boolean
   width: number
   height: number
   /** Present for picture renders: the measurements behind the histogram and hue chart. */

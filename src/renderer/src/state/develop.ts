@@ -32,7 +32,10 @@ interface DevelopState {
   history: HistoryEntry[]
   cursor: number
   snapshots: Snapshot[]
+  /** The picture on screen: the latest render for the current view. */
   picture: RenderEvent | null
+  /** The latest render for each view, so opening or closing the crop tool swaps at once. */
+  pictures: Pictures
   before: RenderEvent | null
   mask: RenderEvent | null
   report: RenderReport | null
@@ -80,6 +83,33 @@ interface DevelopState {
   measureNoise(): Promise<void>
 }
 
+/**
+ * Interactive edits (a slider or handle moving) reach the main process at
+ * most once per frame: the store holds the newest recipe at once, so the
+ * controls follow the pointer, and the engine only ever sees the latest one.
+ * Anything that settles an edit sends straight away and drops what waits.
+ */
+let queued: { key: string; recipe: Recipe } | null = null
+let frame = 0
+
+function flushQueued(onError: (message: string) => void): void {
+  cancelAnimationFrame(frame)
+  frame = 0
+  const q = queued
+  queued = null
+  if (q) void api.develop.update(q.key, q.recipe, true).catch((err) => onError(errorText(err)))
+}
+
+function sendNow(key: string, recipe: Recipe, onError: (message: string) => void): void {
+  cancelAnimationFrame(frame)
+  frame = 0
+  queued = null
+  void api.develop.update(key, recipe, false).catch((err) => onError(errorText(err)))
+}
+
+/** The last picture made for a view: the framed picture, or the crop tool's whole frame. */
+type Pictures = { framed: RenderEvent | null; crop: RenderEvent | null }
+
 export const useDevelop = create<DevelopState>((set, get) => ({
   session: null,
   loading: false,
@@ -88,6 +118,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   cursor: -1,
   snapshots: [],
   picture: null,
+  pictures: { framed: null, crop: null },
   before: null,
   mask: null,
   report: null,
@@ -113,6 +144,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       loading: true,
       error: null,
       picture: null,
+      pictures: { framed: null, crop: null },
       before: null,
       mask: null,
       stats: null,
@@ -145,7 +177,15 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   async close() {
     const s = get().session
     if (s) await api.develop.close(s.key)
-    set({ session: null, recipe: null, picture: null, before: null, mask: null })
+    queued = null
+    set({
+      session: null,
+      recipe: null,
+      picture: null,
+      pictures: { framed: null, crop: null },
+      before: null,
+      mask: null
+    })
   },
 
   edit(change, interactive = false) {
@@ -154,18 +194,17 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     const next = structuredClone(recipe)
     change(next)
     set({ recipe: next, rendering: true })
-    void api.develop
-      .update(session.key, next, interactive)
-      .catch((err) => get().onError(errorText(err)))
+    const onError = (m: string): void => get().onError(m)
+    if (!interactive) return sendNow(session.key, next, onError)
+    queued = { key: session.key, recipe: next }
+    if (!frame) frame = requestAnimationFrame(() => flushQueued(onError))
   },
 
   commit(label) {
     const { session, recipe } = get()
     if (!session || !recipe) return
     set({ rendering: true })
-    void api.develop
-      .update(session.key, recipe, false)
-      .catch((err) => get().onError(errorText(err)))
+    sendNow(session.key, recipe, (m) => get().onError(m))
     void api.develop.historyAppend(session.key, label, recipe).then((entry) => {
       set((s) => ({ history: [...s.history, entry], cursor: s.history.length }))
     })
@@ -193,13 +232,17 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     const entry = history[index]
     if (!session || !entry) return
     set({ recipe: entry.recipe, cursor: index, rendering: true })
-    void api.develop.update(session.key, entry.recipe, false)
+    sendNow(session.key, entry.recipe, (m) => get().onError(m))
   },
 
   setTool(tool) {
     const prev = get().tool
-    set({ tool })
-    if ((prev === 'crop') !== (tool === 'crop')) get().pushView()
+    if ((prev === 'crop') === (tool === 'crop')) return set({ tool })
+    // Show the other view's last picture at once; a fresh one follows.
+    const { pictures, picture } = get()
+    const shown = tool === 'crop' ? pictures.crop : pictures.framed
+    set({ tool, picture: shown ?? picture })
+    get().pushView()
   },
 
   setLayer(layerId) {
@@ -264,11 +307,22 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     if (e.kind === 'before') set({ before: e })
     else if (e.kind === 'mask') set({ mask: e })
     else {
-      const cur = get().picture
+      const slot: keyof Pictures = e.cropMode ? 'crop' : 'framed'
+      const { pictures, tool } = get()
+      const cur = pictures[slot]
       // A late draft must not replace a newer render.
       if (cur && e.seq < cur.seq) return
+      const next = { ...pictures, [slot]: e }
+      const forView = (tool === 'crop') === Boolean(e.cropMode)
+      // Only the view on screen changes the picture, the scopes and the busy
+      // state; a render made for the other view is kept for when it returns.
+      if (!forView) return set({ pictures: next })
+      // The same file again (an edit that changed nothing the engine sees)
+      // keeps the event object, so nothing that shows it re-renders.
+      const same = get().picture?.url === e.url
       set({
-        picture: e,
+        pictures: next,
+        picture: same ? get().picture : e,
         stats: e.stats ?? null,
         report: e.report ?? null,
         error: null,

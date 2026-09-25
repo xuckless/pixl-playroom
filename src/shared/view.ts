@@ -93,3 +93,42 @@ export function displaySize(g: ViewGeometry): { width: number; height: number } 
   if (g.whole || !g.crop) return { width: g.width, height: g.height }
   return { width: g.crop.width * g.width, height: g.crop.height * g.height }
 }
+
+/** A rectangle inside a box, in the box's pixels. */
+export interface Rect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * A `width × height` picture fitted and centred in a `box`, never enlarged
+ * past `maxScale` of the box-fitting size. Laying the loupe out from the
+ * geometry rather than from whichever render arrived last keeps the frame
+ * still while renders come and go.
+ */
+export function fitRect(
+  box: { w: number; h: number },
+  width: number,
+  height: number,
+  maxScale = Infinity
+): Rect | null {
+  if (!(box.w > 0 && box.h > 0 && width > 0 && height > 0)) return null
+  const k = Math.min(box.w / width, box.h / height, maxScale)
+  const w = width * k
+  const h = height * k
+  return { x: (box.w - w) / 2, y: (box.h - h) / 2, w, h }
+}
+
+/** A pointer's position over an element, normalised to the element's box. */
+export function normalisedIn(
+  clientX: number,
+  clientY: number,
+  box: { left: number; top: number; width: number; height: number }
+): P {
+  return {
+    x: box.width > 0 ? (clientX - box.left) / box.width : 0,
+    y: box.height > 0 ? (clientY - box.top) / box.height : 0
+  }
+}
