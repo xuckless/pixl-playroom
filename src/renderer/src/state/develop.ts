@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ImageStats, NoiseEstimate } from '../../../shared/engine-types'
+import type { ImageStats, MaskMode, NoiseEstimate } from '../../../shared/engine-types'
 import type {
   DevelopSession,
   HistoryEntry,
@@ -11,8 +11,10 @@ import type {
 import { newId, type HslBand, type Recipe } from '../../../shared/recipe'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from './library'
+import { useUi } from './ui'
 
-export type Tool = 'none' | 'crop' | 'brush' | 'polygon' | 'wb-picker' | 'range-picker'
+export type Tool =
+  'none' | 'crop' | 'brush' | 'polygon' | 'linear' | 'radial' | 'wb-picker' | 'range-picker'
 export type Compare = 'off' | 'before' | 'split'
 /** A geometry gesture in progress: the loupe draws its grid while one runs. */
 export type Gesture = 'straighten' | 'crop' | 'rotate' | null
@@ -47,6 +49,15 @@ interface DevelopState {
   tool: Tool
   gesture: Gesture
   layerId: string | null
+  /** The selected component of the selected mask. */
+  compId: string | null
+  /**
+   * How the next component the user makes joins the selected mask: set by
+   * the masks panel's Add / Subtract / Intersect, cleared once it is made.
+   */
+  addMode: MaskMode | null
+  /** Every mask, small (the masks panel's thumbnails), by layer id. */
+  maskThumbs: Record<string, RenderEvent>
   overlay: boolean
   compare: Compare
   clipping: boolean
@@ -70,6 +81,8 @@ interface DevelopState {
   goto(index: number): void
   setTool(tool: Tool): void
   setGesture(g: Gesture): void
+  setComp(id: string | null): void
+  setAddMode(m: MaskMode | null): void
   setLayer(id: string | null): void
   setOverlay(on: boolean): void
   setCompare(c: Compare): void
@@ -132,6 +145,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   tool: 'none',
   gesture: null,
   layerId: null,
+  compId: null,
+  addMode: null,
+  maskThumbs: {},
   overlay: true,
   compare: 'off',
   clipping: false,
@@ -150,6 +166,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       error: null,
       picture: null,
       pictures: { framed: null, crop: null },
+      maskThumbs: {},
+      compId: null,
+      addMode: null,
       before: null,
       mask: null,
       stats: null,
@@ -255,8 +274,17 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   },
 
   setLayer(layerId) {
-    set({ layerId })
+    if (layerId === get().layerId) return
+    set({ layerId, compId: null, addMode: null })
     get().pushView()
+  },
+
+  setComp(compId) {
+    set({ compId })
+  },
+
+  setAddMode(addMode) {
+    set({ addMode })
   },
 
   setOverlay(overlay) {
@@ -304,6 +332,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       // A selected layer's mask is rendered whether or not the overlay shows:
       // the hue chart measures inside it.
       maskLayer: layerId,
+      // Thumbnails of every mask while the masks panel is open or all show.
+      maskThumbs: useUi.getState().panel === 'masks' || useUi.getState().maskOverlay.showAll,
       targetEdge
     }
     set({ rendering: true })
@@ -315,7 +345,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     if (!session || e.key !== session.key) return
     if (e.kind === 'before') set({ before: e })
     else if (e.kind === 'mask') set({ mask: e })
-    else {
+    else if (e.kind === 'mask-thumb') {
+      if (e.layerId) set((s) => ({ maskThumbs: { ...s.maskThumbs, [e.layerId as string]: e } }))
+    } else {
       const slot: keyof Pictures = e.cropMode ? 'crop' : 'framed'
       const { pictures, tool } = get()
       const cur = pictures[slot]

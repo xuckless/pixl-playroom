@@ -11,7 +11,7 @@ import {
   HslPanel,
   ToneCurvePanel
 } from '../panels/global'
-import { MasksPanel } from '../panels/masks'
+import { MasksPanel } from '../panels/masks/MaskTool'
 import { useUi, type ToolId } from '../state/ui'
 
 const PANELS: Record<ToolId, ComponentType> = {

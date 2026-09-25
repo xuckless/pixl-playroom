@@ -11,6 +11,7 @@ import { api, errorText } from '../../lib/api'
 import { loadImage } from '../../lib/image'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
+import { madeComponent, modeForNew } from '../../panels/masks/model'
 
 // ── Brush ────────────────────────────────────────────────────────────────────
 
@@ -133,10 +134,18 @@ export const BrushLayer = memo(function BrushLayer({
     const layer = recipe.layers.find((l) => l.id === layerId)
     if (!layer) return
     const erase = brush.erase || e.altKey
-    // Paint into the layer's last brush component; erasing needs one to erase from.
-    const existing = [...layer.components]
-      .reverse()
-      .find((c): c is BrushComponent => c.kind === 'brush')
+    // Paint into the selected brush component, else the layer's last one —
+    // unless Add / Subtract / Intersect asked for a new one. Erasing needs a
+    // brush to erase from.
+    const { compId, addMode } = useDevelop.getState()
+    const selected = layer.components.find(
+      (c): c is BrushComponent => c.id === compId && c.kind === 'brush'
+    )
+    const existing =
+      addMode !== null
+        ? undefined
+        : (selected ??
+          [...layer.components].reverse().find((c): c is BrushComponent => c.kind === 'brush'))
     if (!existing && erase) return
     const plane = await planeCanvas(existing, planeW, planeH)
     stroke.current = { plane, compId: existing?.id ?? newId(), isNew: !existing, last: null, erase }
@@ -168,7 +177,7 @@ export const BrushLayer = memo(function BrushLayer({
           l.components.push({
             id: s.compId,
             kind: 'brush',
-            mode: 'Add',
+            mode: modeForNew(l),
             opacity: 100,
             invert: false,
             feather: 0,
@@ -178,6 +187,7 @@ export const BrushLayer = memo(function BrushLayer({
           })
       })
       commit(s.erase ? 'Brush erase' : 'Brush stroke')
+      madeComponent(s.compId)
     } catch (err) {
       useLibrary.getState().say(errorText(err), 'error')
     }

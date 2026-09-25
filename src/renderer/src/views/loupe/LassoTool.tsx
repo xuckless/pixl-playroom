@@ -9,6 +9,7 @@ import {
   type ViewGeometry
 } from '../../../../shared/view'
 import { useDevelop } from '../../state/develop'
+import { madeComponent, modeForNew } from '../../panels/masks/model'
 
 // ── Lasso ────────────────────────────────────────────────────────────────────
 
@@ -33,13 +34,14 @@ export const PolygonLayer = memo(function PolygonLayer({
       const b = displayToBase(g, p)
       return { x: Math.min(1, Math.max(0, b.x)), y: Math.min(1, Math.max(0, b.y)) }
     })
+    const id = newId()
     edit((r) => {
       const l = r.layers.find((x) => x.id === layerId)
       if (!l) return
       l.components.push({
-        id: newId(),
+        id,
         kind: 'polygon',
-        mode: subtract && l.components.length > 0 ? 'Subtract' : 'Add',
+        mode: subtract && l.components.length > 0 ? 'Subtract' : modeForNew(l),
         opacity: 100,
         invert: false,
         feather: 3,
@@ -47,6 +49,7 @@ export const PolygonLayer = memo(function PolygonLayer({
       })
     })
     commit(subtract ? 'Lasso subtract' : 'Lasso')
+    madeComponent(id)
     setPts([])
   }
   useEffect(() => {

@@ -128,6 +128,8 @@ class Session {
   private lastSig: Record<Kind, string> = { draft: '', full: '' }
   private lastEvent: Record<Kind, RenderEvent | null> = { draft: null, full: null }
   private maskSig = ''
+  /** Per layer, what its thumbnail was last rendered from. */
+  private thumbSig: Record<string, string> = {}
   private readonly dir: string
   closed = false
 
@@ -203,6 +205,7 @@ class Session {
       if (kind === 'full' && !this.closed) {
         if (this.view.maskLayer) await this.renderMask()
         if (this.view.before) await this.renderBefore()
+        if (this.view.maskThumbs) await this.renderMaskThumbs()
       }
     } catch (err) {
       const e = err as EngineError
@@ -340,6 +343,66 @@ class Session {
     } satisfies RenderEvent)
   }
 
+  /**
+   * Every local layer's mask, small, from the draft proxy: the masks panel's
+   * thumbnails and the "show all" overlay. A thumbnail is redrawn only when
+   * what shapes its mask changed (not its sliders), and the loop yields to a
+   * newer edit waiting behind it.
+   */
+  private async renderMaskThumbs(): Promise<void> {
+    const src = this.px.draft
+    const compiled = this.compileFor(this.recipe, src, !this.view.cropMode)
+    if (!compiled.grade) return
+    const live = new Set<string>()
+    for (const layer of this.recipe.layers) {
+      live.add(layer.id)
+      if (this.pending || this.closed) return
+      const index = compiled.layerIndex[layer.id]
+      if (index === undefined) continue
+      const sig = String(
+        hash32(
+          JSON.stringify([
+            src.path,
+            layer.components,
+            layer.invert,
+            compiled.framing,
+            this.view.cropMode,
+            // A range keys on the graded colours, so the grade under it counts too.
+            layer.components.some((c) => c.kind === 'range') ? compiled.grade : null
+          ])
+        )
+      )
+      if (this.thumbSig[layer.id] === sig) continue
+      const out = join(this.dir, `mthumb-${layer.id}-${sig}.png`)
+      const report = await this.owner.engine.convert({
+        ...blankRequest(src.path, out, src.input),
+        pixel: { depth: 'Eight', channels: 1 },
+        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        metadata: STRIP_ALL,
+        color: 'Preserve',
+        grade: compiled.grade,
+        framing: compiled.framing,
+        inspect: { LayerMask: { layer: index } },
+        hdr: this.info.is_hdr
+          ? { reference_white_nits: 203, peak_nits: this.info.peak_nits ?? 1000 }
+          : null
+      })
+      this.thumbSig[layer.id] = sig
+      if (this.closed) return
+      this.owner.send(IPC.develop.rendered, {
+        key: this.key,
+        seq: this.seq,
+        kind: 'mask-thumb',
+        layerId: layer.id,
+        cropMode: this.view.cropMode,
+        url: cacheUrl(out, sig),
+        width: report.width,
+        height: report.height
+      } satisfies RenderEvent)
+    }
+    for (const id of Object.keys(this.thumbSig)) if (!live.has(id)) delete this.thumbSig[id]
+  }
+
   /** The most recent full render's file: what the masked hue chart measures. */
   private lastFull = ''
   private lastFullFor: Record<string, string> = {}
@@ -426,7 +489,32 @@ class Session {
       framing: compiled.framing ? { ...compiled.framing, rotate_degrees: 0, crop: null } : null,
       region: { x, y, width: w, height: h, margin: 96 }
     })
+    // The overlay at 1:1: the same region through the layer's mask.
+    let maskUrl: string | undefined
+    const index = req.maskLayer ? compiled.layerIndex[req.maskLayer] : undefined
+    if (index !== undefined && compiled.grade) {
+      const maskOut = join(this.dir, `region-mask-${this.regionSlot}.png`)
+      try {
+        await this.owner.engine.convert({
+          ...blankRequest(src.path, maskOut, src.input),
+          raw: null,
+          resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
+          pixel: { depth: 'Eight', channels: 1 },
+          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+          metadata: STRIP_ALL,
+          color: 'Preserve',
+          grade: compiled.grade,
+          framing: compiled.framing ? { ...compiled.framing, rotate_degrees: 0, crop: null } : null,
+          region: { x, y, width: w, height: h, margin: 96 },
+          inspect: { LayerMask: { layer: index } }
+        })
+        maskUrl = cacheUrl(maskOut, `${Date.now()}`)
+      } catch (err) {
+        log.info('region mask unavailable', (err as Error).message)
+      }
+    }
     return {
+      maskUrl,
       url: cacheUrl(out, `${Date.now()}`),
       x,
       y,

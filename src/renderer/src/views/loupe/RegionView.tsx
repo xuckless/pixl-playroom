@@ -4,6 +4,8 @@ import { viewGeometry, type P } from '../../../../shared/view'
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { api, errorText } from '../../lib/api'
 import { regionCentre } from './regionCentre'
+import { MaskPlane } from './MaskOverlay'
+import { useUi } from '../../state/ui'
 import { useDevelop } from '../../state/develop'
 
 function useRegionCentre(): { get: () => P; set: (p: P) => void } {
@@ -19,6 +21,9 @@ export function RegionView({ size }: { size: { w: number; h: number } }): React.
   const session = useDevelop((s) => s.session)
   const recipe = useDevelop((s) => s.recipe)
   const setZoom = useDevelop((s) => s.setZoom)
+  const layerId = useDevelop((s) => s.layerId)
+  const showMask = useDevelop((s) => s.overlay && s.layerId !== null)
+  const o = useUi((s) => s.maskOverlay)
   const centre = useRegionCentre()
   const [region, setRegion] = useState<RegionResult | null>(null)
   const [busy, setBusy] = useState(false)
@@ -45,7 +50,8 @@ export function RegionView({ size }: { size: { w: number; h: number } }): React.
           y: Math.max(0, y),
           width: vw,
           height: vh,
-          zoom: 1
+          zoom: 1,
+          maskLayer: showMask ? layerId : null
         })
         .then((r) => {
           if (id === request.current) {
@@ -58,7 +64,7 @@ export function RegionView({ size }: { size: { w: number; h: number } }): React.
     }, 120)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [c.x, c.y, vw, vh, recipe, session?.key])
+  }, [c.x, c.y, vw, vh, recipe, session?.key, showMask, layerId])
   if (!g) return <div />
   const left = region ? (region.x - (c.x * g.width - vw / 2)) / dpr : 0
   const top = region ? (region.y - (c.y * g.height - vh / 2)) / dpr : 0
@@ -89,12 +95,15 @@ export function RegionView({ size }: { size: { w: number; h: number } }): React.
       }}
     >
       {region && (
-        <img
-          className="region-img"
-          src={region.url}
+        <div
+          className="region-frame"
           style={{ left, top, width: region.width / dpr, height: region.height / dpr }}
-          draggable={false}
-        />
+        >
+          <img className="region-img" src={region.url} draggable={false} alt="" />
+          {showMask && region.maskUrl && !o.showAll && (
+            <MaskPlane url={region.maskUrl} mode={o.mode} hue={o.hue} opacity={o.opacity} />
+          )}
+        </div>
       )}
       <LiquidGlass className="hud region-badge" radius={2} bezel={8}>
         <span className="hud-item accent">100%</span>
