@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RegionResult } from '../../../../shared/ipc'
 import { viewGeometry, type P } from '../../../../shared/view'
+import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { api, errorText } from '../../lib/api'
 import { regionCentre } from './regionCentre'
 import { useDevelop } from '../../state/develop'
@@ -95,11 +96,12 @@ export function RegionView({ size }: { size: { w: number; h: number } }): React.
           draggable={false}
         />
       )}
-      <div className="region-badge">
-        100% · {busy ? 'rendering…' : region ? `${region.ms} ms` : ''} · uncropped frame · drag to
-        pan, click to fit
-        {err && <span className="error"> {err}</span>}
-      </div>
+      <LiquidGlass className="hud region-badge" radius={2} bezel={8}>
+        <span className="hud-item accent">100%</span>
+        <span className="hud-item">{busy ? 'Rendering' : region ? `${region.ms} ms` : ''}</span>
+        <span className="hud-item muted">uncropped frame · drag to pan · click to fit</span>
+        {err && <span className="hud-item error">{err}</span>}
+      </LiquidGlass>
     </div>
   )
 }
