@@ -717,3 +717,49 @@ input[type='checkbox']:disabled {
   color: var(--star);
   text-shadow: 0 0 8px rgba(232, 197, 107, 0.5);
 }
+
+/* ── liquid glass ──────────────────────────────────────────────────
+   .glass above is the frosted base; a refracting surface replaces its blur
+   with the lens filter set inline, keeps the rim lights, and adds a slow
+   glint. */
+.liquid {
+  position: relative;
+  isolation: isolate;
+}
+.liquid.refracting {
+  background: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.015) 45%,
+    rgba(157, 139, 234, 0.045)
+  );
+}
+.liquid::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.07) 45%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.05) 55%,
+    transparent 70%
+  );
+  background-size: 250% 100%;
+  background-position: 120% 0;
+  transition: background-position 1.1s var(--ease);
+  z-index: 0;
+}
+.liquid:hover::after {
+  background-position: -60% 0;
+}
+.lg-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}

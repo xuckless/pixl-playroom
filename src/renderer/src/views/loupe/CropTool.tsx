@@ -3,6 +3,7 @@ import { fitCrop } from '../../../../shared/compile'
 import { CROP_HANDLES, dragCrop, type CropHandle } from '../../../../shared/crop'
 import type { CropRect } from '../../../../shared/engine-types'
 import { normalisedIn, type P, type Rect, type ViewGeometry } from '../../../../shared/view'
+import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { useDevelop } from '../../state/develop'
 import { useUi } from '../../state/ui'
 import { Guides } from './Guides'
@@ -159,7 +160,11 @@ export const CropTool = memo(function CropTool({
           ))}
         </div>
       </div>
-      {turning && <div className="crop-angle">{g.straighten.toFixed(2)}°</div>}
+      {turning && (
+        <LiquidGlass className="crop-angle" radius={2} bezel={10} magnify>
+          {g.straighten.toFixed(2)}°
+        </LiquidGlass>
+      )}
     </div>
   )
 })
