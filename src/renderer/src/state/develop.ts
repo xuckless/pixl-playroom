@@ -19,16 +19,6 @@ export type Compare = 'off' | 'before' | 'split'
 /** A geometry gesture in progress: the loupe draws its grid while one runs. */
 export type Gesture = 'straighten' | 'crop' | 'rotate' | null
 
-export interface BrushSettings {
-  /** Diameter in screen pixels. */
-  size: number
-  /** 0…100: how soft the dab's edge is. */
-  softness: number
-  /** 0…100: how much one pass lays down. */
-  flow: number
-  erase: boolean
-}
-
 interface DevelopState {
   session: DevelopSession | null
   loading: boolean
@@ -64,7 +54,6 @@ interface DevelopState {
   zoom: 'fit' | 1
   hslFocus: HslBand | null
   hslTab: 'hue' | 'saturation' | 'luminance' | 'all'
-  brush: BrushSettings
   noise: NoiseEstimate | null
   targetEdge: number
 
@@ -90,7 +79,6 @@ interface DevelopState {
   setZoom(z: 'fit' | 1): void
   setHslFocus(b: HslBand | null): void
   setHslTab(t: DevelopState['hslTab']): void
-  setBrush(b: Partial<BrushSettings>): void
   setTargetEdge(n: number): void
   pushView(): void
   onRendered(e: RenderEvent): void
@@ -154,7 +142,6 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   zoom: 'fit',
   hslFocus: null,
   hslTab: 'all',
-  brush: { size: 80, softness: 60, flow: 60, erase: false },
   noise: null,
   targetEdge: 2560,
 
@@ -309,10 +296,6 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   setHslTab(hslTab) {
     set({ hslTab })
-  },
-
-  setBrush(b) {
-    set((s) => ({ brush: { ...s.brush, ...b } }))
   },
 
   setTargetEdge(targetEdge) {

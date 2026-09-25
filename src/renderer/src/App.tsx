@@ -267,8 +267,15 @@ function useShortcuts(): void {
         if (dev.tool === 'crop') return ui.cycleCropGuide()
         return dev.setOverlay(!dev.overlay)
       }
-      if (k === '[') return dev.setBrush({ size: Math.max(4, Math.round(dev.brush.size / 1.15)) })
-      if (k === ']') return dev.setBrush({ size: Math.min(500, Math.round(dev.brush.size * 1.15)) })
+      if (k === '[' || k === ']') {
+        const size = ui.brushes[ui.brushSlot].size
+        return ui.setBrush({
+          size:
+            k === '['
+              ? Math.max(4, Math.round(size / 1.15))
+              : Math.min(500, Math.round(size * 1.15))
+        })
+      }
       if (k === 'A' && e.shiftKey && dev.session && dev.recipe) {
         const key = dev.session.key
         void runJob('Auto tone', () => api.develop.autoTone(key), {

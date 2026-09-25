@@ -453,3 +453,21 @@
   color: var(--text2);
   opacity: 0.8;
 }
+.brush-cursor .brush-core {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 255, 255, 0.55);
+}
+.brush-cursor .brush-slot {
+  position: absolute;
+  left: 100%;
+  top: 100%;
+  margin: 2px 0 0 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 3px #000;
+}
+.floating-toolbar .bar-track {
+  width: 64px;
+}

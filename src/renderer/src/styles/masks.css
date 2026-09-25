@@ -617,3 +617,51 @@ input.mf-rename {
 .stage:hover .tool-layer.gradients.pins-auto .grad-knob {
   opacity: 1;
 }
+
+/* ── lasso editing ─────────────────────────────────────────────── */
+.lasso-editor {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 6;
+}
+.lasso-edge {
+  stroke: rgba(157, 139, 234, 0.9);
+  stroke-width: 1.4;
+  pointer-events: stroke;
+  cursor: copy;
+}
+.lasso-edge:hover {
+  stroke-width: 3;
+}
+.lasso-vertex {
+  fill: #fff;
+  stroke: #000;
+  stroke-width: 1;
+  pointer-events: all;
+  cursor: grab;
+  transition: r 0.25s var(--spring);
+}
+.lasso-vertex:hover {
+  r: 7;
+  fill: var(--acc);
+}
+.lasso-editor.pins-auto {
+  opacity: 0;
+  transition: opacity 0.3s var(--ease);
+}
+.stage:hover .lasso-editor.pins-auto {
+  opacity: 1;
+}
+.floating-toolbar .bar-hint {
+  min-width: 0;
+}
+/* With the masks panel at the right edge, the tool bar centres in what is left. */
+.stage:has(.masks-float) .masks-float {
+  top: 14px;
+  max-height: calc(100% - 80px);
+}
+.stage:has(.masks-float) .floating-toolbar {
+  left: calc((100% - 296px) / 2);
+  max-width: calc(100% - 324px);
+}
