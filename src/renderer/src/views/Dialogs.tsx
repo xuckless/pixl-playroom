@@ -7,7 +7,7 @@ import {
   type ExportSettings,
   type ResizeMode
 } from '../../../shared/export'
-import type { ExportPreset, ExportProgress } from '../../../shared/ipc'
+import type { EnhanceProgress, ExportPreset, ExportProgress } from '../../../shared/ipc'
 import {
   changedGroups,
   defaultRecipe,
@@ -16,6 +16,7 @@ import {
   type RecipeGroup
 } from '../../../shared/recipe'
 import { Modal } from '../components/ui'
+import { ProgressRing, Sphere } from '../fx'
 import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useLibrary, useTargets } from '../state/library'
@@ -92,18 +93,29 @@ export function ExportDialog(): React.JSX.Element {
       title={`Export ${targets.length} photo${targets.length === 1 ? '' : 's'}`}
       onClose={() => setDialog(null)}
       wide
+      icon="export"
       footer={
         <>
           {progress && (
             <span className="progress">
-              {progress.done}/{progress.total}{' '}
-              {progress.current ? `· ${progress.current}` : progress.finished ? '· done' : ''}
-              {progress.errors.length > 0 && (
-                <span className="error">
-                  {' '}
-                  · {progress.errors.length} failed: {progress.errors[0].message}
-                </span>
-              )}
+              <span className="mini-ring">
+                <ProgressRing
+                  progress={progress.total > 0 ? progress.done / progress.total : null}
+                />
+              </span>
+              <span className="big">
+                {progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0}%
+              </span>
+              <span>
+                {progress.done}/{progress.total}{' '}
+                {progress.current ? `· ${progress.current}` : progress.finished ? '· done' : ''}
+                {progress.errors.length > 0 && (
+                  <span className="error">
+                    {' '}
+                    · {progress.errors.length} failed: {progress.errors[0].message}
+                  </span>
+                )}
+              </span>
             </span>
           )}
           {running ? (
@@ -568,6 +580,7 @@ export function SyncDialog(): React.JSX.Element {
     <Modal
       title={`Apply settings to ${keys.length} photo${keys.length === 1 ? '' : 's'}`}
       onClose={() => setDialog(null)}
+      icon="copy"
       footer={
         <button
           className="primary"
@@ -599,11 +612,22 @@ export function SyncDialog(): React.JSX.Element {
       }
     >
       {!source && <p>Copy settings from a photo first (Ctrl+C in Develop).</p>}
-      <div className="row wrap">
-        <button onClick={() => setGroups(new Set(RECIPE_GROUPS))}>All</button>
-        <button onClick={() => setGroups(new Set())}>None</button>
-        <button onClick={() => setGroups(new Set(['whiteBalance']))}>White balance only</button>
+      <p>
+        Chosen groups overwrite the same groups on each target. Everything else on the targets is
+        kept.
+      </p>
+      <div className="quick-row">
+        <button className="chip" onClick={() => setGroups(new Set(RECIPE_GROUPS))}>
+          All
+        </button>
+        <button className="chip" onClick={() => setGroups(new Set())}>
+          None
+        </button>
+        <button className="chip" onClick={() => setGroups(new Set(['whiteBalance']))}>
+          White balance only
+        </button>
       </div>
+      <div className="rule" />
       <div className="group-checks">
         {RECIPE_GROUPS.map((g) => (
           <label key={g} className="check">
@@ -644,6 +668,7 @@ export function SavePresetDialog(): React.JSX.Element {
     <Modal
       title="Save preset"
       onClose={() => setDialog(null)}
+      icon="presets"
       footer={
         <button
           className="primary"
@@ -708,41 +733,87 @@ export function SavePresetDialog(): React.JSX.Element {
 export function EnhanceDialog(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
   const targets = useTargets()
-  const say = useLibrary((s) => s.say)
   const [avail, setAvail] = useState<{ available: boolean; reason?: string } | null>(null)
   const [cpu, setCpu] = useState(false)
+  const [runs, setRuns] = useState<Record<string, EnhanceProgress>>({})
+  const [started, setStarted] = useState<string[]>([])
   useEffect(() => {
     void api.enhance.available().then(setAvail)
+    return api.enhance.onProgress((p) => setRuns((r) => ({ ...r, [p.key]: p })))
   }, [])
+  const list = started.map((k) => runs[k]).filter(Boolean)
+  const running =
+    started.length > 0 && list.filter((p) => p.phase !== 'running').length < started.length
+  const done = list.filter((p) => p.phase === 'done').length
+  const failed = list.filter((p) => p.phase === 'error')
+  const latest = list.at(-1)
   return (
     <Modal
       title="Enhance → Super Resolution"
       onClose={() => setDialog(null)}
+      icon="enhance"
       footer={
-        <button
-          className="primary"
-          disabled={!avail?.available || targets.length === 0}
-          onClick={() => {
-            for (const k of targets) void api.enhance.run(k, cpu ? 'cpu' : 'auto')
-            say(
-              `Enhancing ${targets.length} photo${targets.length === 1 ? '' : 's'} in the background`
-            )
-            setDialog(null)
-          }}
-        >
-          Enhance
-        </button>
+        started.length === 0 ? (
+          <button
+            className="primary"
+            disabled={!avail?.available || targets.length === 0}
+            onClick={() => {
+              for (const k of targets) void api.enhance.run(k, cpu ? 'cpu' : 'auto')
+              setStarted(targets)
+            }}
+          >
+            Enhance {targets.length > 1 ? `${targets.length} photos` : ''}
+          </button>
+        ) : running ? (
+          <button
+            onClick={() => setDialog(null)}
+            title="Keep working; progress shows in the top bar"
+          >
+            Run in the background
+          </button>
+        ) : (
+          <button className="primary" onClick={() => setDialog(null)}>
+            Done
+          </button>
+        )
       }
     >
-      <p>
-        Doubles the resolution with the bundled Real-ESRGAN ×2 model, before any edit, into a new
-        16-bit TIFF beside the original. The new file starts with this photo&apos;s settings.
-      </p>
-      {avail && !avail.available && <p className="error">{avail.reason}</p>}
-      <label className="check">
-        <input type="checkbox" checked={cpu} onChange={(e) => setCpu(e.target.checked)} /> Run on
-        the CPU (slower, always available)
-      </label>
+      {started.length === 0 ? (
+        <>
+          <p>
+            Doubles the resolution with the bundled Real-ESRGAN ×2 model, before any edit, into a
+            new 16-bit TIFF beside the original. The new file starts with this photo&apos;s
+            settings.
+          </p>
+          {avail && !avail.available && <p className="error">{avail.reason}</p>}
+          <label className="check">
+            <input type="checkbox" checked={cpu} onChange={(e) => setCpu(e.target.checked)} /> Run
+            on the CPU (slower, always available)
+          </label>
+        </>
+      ) : (
+        <div className="enhance-stage">
+          <div className="sphere-wrap">
+            <Sphere active={running} />
+            <ProgressRing progress={running ? null : 1} />
+          </div>
+          <div className="enhance-log" role="status" aria-live="polite">
+            <span className="micro">
+              {running ? 'Enhancing' : failed.length ? 'Finished with errors' : 'Finished'}
+            </span>
+            <span className="phase">
+              {done}/{started.length} done
+              {failed.length > 0 ? ` · ${failed.length} failed` : ''}
+            </span>
+            {latest && (
+              <span className={`msg${latest.phase === 'error' ? ' error' : ''}`}>
+                {latest.message}
+              </span>
+            )}
+            {!latest && <span className="msg">Starting the upscaler…</span>}
+          </div>
+        </div>
+      )}
     </Modal>
   )
 }

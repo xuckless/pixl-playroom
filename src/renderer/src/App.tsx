@@ -1,8 +1,8 @@
-import { MotionConfig } from 'motion/react'
+import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect } from 'react'
 import { RECIPE_GROUPS } from '../../shared/recipe'
 import { api, errorText } from './lib/api'
-import { runJob } from './state/busy'
+import { runJob, useBusy } from './state/busy'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
 import { usePrefetchFx } from './fx/prefetch'
 import { Scopes } from './develop/Scopes'
@@ -17,7 +17,7 @@ import { useLibrary } from './state/library'
 import { useUi } from './state/ui'
 import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
-import { LibraryView, Toolbar } from './views/Library'
+import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
 import { FloatingToolbar } from './views/loupe/FloatingToolbar'
 import { Loupe } from './views/loupe/Loupe'
 
@@ -55,8 +55,10 @@ const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
 const LibraryScreen = memo(function LibraryScreen(): React.JSX.Element {
   return (
     <div className="library">
+      <LibraryIdentity />
       <Toolbar />
       <LibraryView />
+      <LibraryStatus />
     </div>
   )
 })
@@ -66,13 +68,16 @@ function Screens(): React.JSX.Element {
   return view === 'library' ? <LibraryScreen /> : <DevelopScreen />
 }
 
-function DialogHost(): React.JSX.Element | null {
+function DialogHost(): React.JSX.Element {
   const dialog = useLibrary((s) => s.dialog)
-  if (dialog === 'export') return <ExportDialog />
-  if (dialog === 'sync') return <SyncDialog />
-  if (dialog === 'preset') return <SavePresetDialog />
-  if (dialog === 'enhance') return <EnhanceDialog />
-  return null
+  return (
+    <AnimatePresence>
+      {dialog === 'export' && <ExportDialog key="export" />}
+      {dialog === 'sync' && <SyncDialog key="sync" />}
+      {dialog === 'preset' && <SavePresetDialog key="preset" />}
+      {dialog === 'enhance' && <EnhanceDialog key="enhance" />}
+    </AnimatePresence>
+  )
 }
 
 function Toast(): React.JSX.Element | null {
@@ -271,7 +276,13 @@ export default function App(): React.JSX.Element {
         useDevelop.getState().onError(e.field ? `${e.message} (${e.field})` : e.message)
       ),
       api.enhance.onProgress((p) => {
-        useLibrary.getState().say(p.message, p.phase === 'error' ? 'error' : 'info')
+        // A run in the background shows in the identity bar until it ends.
+        const id = `enhance:${p.key}`
+        if (p.phase === 'running')
+          useBusy.getState().begin({ id, title: 'Enhancing', detail: p.message, scope: 'global' })
+        else useBusy.getState().end(id)
+        if (p.phase !== 'running' || useLibrary.getState().dialog !== 'enhance')
+          useLibrary.getState().say(p.message, p.phase === 'error' ? 'error' : 'info')
         if (p.phase === 'done') void useLibrary.getState().refresh()
       })
     ]
