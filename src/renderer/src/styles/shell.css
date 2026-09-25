@@ -601,3 +601,20 @@ aside.right .panels {
   color: var(--text2);
   border-color: var(--hair2);
 }
+.bg-jobs {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--acc);
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  animation: nameIn 0.5s var(--spring);
+}
+.bg-jobs .orb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #e9e2ff, #9d8bea 45%, #4c3d9e);
+  box-shadow: 0 0 12px var(--glow);
+  animation: breathe 1.8s ease-in-out infinite;
+}

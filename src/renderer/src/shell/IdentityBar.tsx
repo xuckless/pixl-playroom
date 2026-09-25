@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import { useShallow } from 'zustand/react/shallow'
+import { useBusy } from '../state/busy'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 
@@ -14,6 +16,20 @@ export function EngineStatus(): React.JSX.Element {
       <i className={`status-dot${rendering ? ' busy' : ''}${ok ? '' : ' bad'}`} />
       Engine {status}
       {ok && ms !== null && <span className="t-num"> · {ms} ms</span>}
+    </span>
+  )
+}
+
+/** Work running in the background (an enhance), as a small orb and its latest word. */
+export function BackgroundJobs(): React.JSX.Element | null {
+  const jobs = useBusy(useShallow((s) => s.jobs.filter((j) => j.scope === 'global')))
+  if (jobs.length === 0) return null
+  const last = jobs[jobs.length - 1]
+  return (
+    <span className="bg-jobs micro" title={last.detail ?? last.title}>
+      <i className="orb" />
+      {last.title}
+      {jobs.length > 1 ? ` ×${jobs.length}` : ''}
     </span>
   )
 }
@@ -40,6 +56,7 @@ export function IdentityBar({
           <span className="vsep" />
         </>
       )}
+      <BackgroundJobs />
       <EngineStatus />
     </header>
   )

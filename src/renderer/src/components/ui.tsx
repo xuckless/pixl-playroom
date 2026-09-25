@@ -1,4 +1,8 @@
+import { motion } from 'motion/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { DialogBackdrop } from '../fx/DialogBackdrop'
+import { LiquidGlass } from './glass/LiquidGlass'
+import { Icon, type IconName } from './icons'
 
 /** A panel section that remembers whether it was open. */
 export function Section({
@@ -288,13 +292,15 @@ export function Modal({
   onClose,
   children,
   footer,
-  wide
+  wide,
+  icon
 }: {
   title: string
   onClose: () => void
   children: ReactNode
   footer?: ReactNode
   wide?: boolean
+  icon?: IconName
 }): React.JSX.Element {
   useEffect(() => {
     const k = (e: KeyboardEvent): void => {
@@ -304,18 +310,49 @@ export function Modal({
     return () => window.removeEventListener('keydown', k)
   }, [onClose])
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <div className={`modal ${wide ? 'wide' : ''}`} onMouseDown={(e) => e.stopPropagation()}>
-        <header>
-          <h2>{title}</h2>
-          <button className="icon" onClick={onClose}>
-            ✕
-          </button>
-        </header>
-        <div className="modal-body">{children}</div>
-        {footer && <footer>{footer}</footer>}
-      </div>
-    </div>
+    <motion.div
+      className="modal-backdrop"
+      onMouseDown={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 0.2 } }}
+    >
+      <DialogBackdrop />
+      <motion.div
+        className="modal-wrap"
+        initial={{ opacity: 0, y: 22, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 12, scale: 0.97, transition: { duration: 0.18 } }}
+        transition={{ type: 'spring', stiffness: 360, damping: 30, mass: 0.9 }}
+      >
+        <LiquidGlass
+          className={`modal${wide ? ' wide' : ''}`}
+          radius={2}
+          bezel={18}
+          strength={0.7}
+          frost={6}
+          role="dialog"
+          aria-label={title}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <header>
+            <h2>
+              {icon && (
+                <span className="dlg-glyph">
+                  <Icon name={icon} />
+                </span>
+              )}
+              {title}
+            </h2>
+            <button className="icon" onClick={onClose} aria-label="Close" title="Close (Esc)">
+              <Icon name="close" />
+            </button>
+          </header>
+          <div className="modal-body">{children}</div>
+          {footer && <footer>{footer}</footer>}
+        </LiquidGlass>
+      </motion.div>
+    </motion.div>
   )
 }
 
