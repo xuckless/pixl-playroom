@@ -10,6 +10,7 @@ import {
 } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
+import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { samplePatch } from '../../lib/image'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
@@ -20,6 +21,9 @@ import { DecodedImage } from './DecodedImage'
 import { Guides } from './Guides'
 import { PolygonLayer } from './LassoTool'
 import { LoupeHud } from './LoupeHud'
+import { MaskPins } from './MaskPins'
+import { MaskOverlay } from './MaskOverlay'
+import { useGreyUnderOverlay } from './useGreyUnderOverlay'
 import { RegionView } from './RegionView'
 import { regionCentre } from './regionCentre'
 import { useSize } from './useSize'
@@ -33,12 +37,10 @@ export function Loupe(): React.JSX.Element {
   const recipe = useDevelop((s) => s.recipe)
   const picture = useDevelop((s) => s.picture)
   const before = useDevelop((s) => s.before)
-  const mask = useDevelop((s) => s.mask)
   const tool = useDevelop((s) => s.tool)
   const compare = useDevelop((s) => s.compare)
   const clipping = useDevelop((s) => s.clipping)
   const zoom = useDevelop((s) => s.zoom)
-  const overlay = useDevelop((s) => s.overlay)
   const layerId = useDevelop((s) => s.layerId)
   const loading = useDevelop((s) => s.loading)
   const error = useDevelop((s) => s.error)
@@ -49,6 +51,7 @@ export function Loupe(): React.JSX.Element {
   const gesture = useDevelop((s) => s.gesture)
   const [boxRef, size] = useSize()
   const [split, setSplit] = useState(0.5)
+  const grey = useGreyUnderOverlay()
 
   // A loupe being resized (a panel sliding open, the window dragged) asks
   // for new pixels once it has settled, not on every frame of the change.
@@ -136,13 +139,17 @@ export function Loupe(): React.JSX.Element {
         const next = structuredClone(recipe)
         const l = next.layers.find((x) => x.id === layerId)
         if (!l) return
-        let comp: MaskComponentSetting | undefined = [...l.components]
-          .reverse()
-          .find((x) => x.kind === 'range')
+        // The selected range, else the mask's last range, else a new one.
+        const compId = useDevelop.getState().compId
+        let comp: MaskComponentSetting | undefined =
+          l.components.find((x) => x.id === compId && x.kind === 'range') ??
+          [...l.components].reverse().find((x) => x.kind === 'range')
         if (!comp) {
           comp = emptyRange(sat > 0.15 ? 'color' : 'luminance')
+          comp.mode = modeForNew(l)
           l.components.push(comp)
         }
+        const madeId = comp.id
         if (comp.kind === 'range') {
           if (comp.hue || sat > 0.15)
             comp.hue = { centre: Math.round(hue), width: 30, softness: 20 }
@@ -152,6 +159,7 @@ export function Loupe(): React.JSX.Element {
             comp.luma = { centre: Math.round(luma * 100) / 100, width: 0.25, softness: 0.12 }
         }
         replace(next, 'Pick range')
+        madeComponent(madeId)
         setTool('none')
       }
     },
@@ -205,7 +213,7 @@ export function Loupe(): React.JSX.Element {
     >
       {shown && rect && (
         <div
-          className="picture"
+          className={`picture${grey ? ' ov-bw' : ''}`}
           style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, transform: rotate }}
         >
           <DecodedImage src={shown.url} />
@@ -217,12 +225,7 @@ export function Loupe(): React.JSX.Element {
               <DecodedImage src={before.url} />
             </div>
           )}
-          {mask && overlay && layerId && tool !== 'crop' && (
-            <div
-              className="mask-overlay"
-              style={{ maskImage: `url("${mask.url}")`, WebkitMaskImage: `url("${mask.url}")` }}
-            />
-          )}
+          <MaskOverlay />
           {clipping && picture && <ClippingOverlay url={picture.url} />}
         </div>
       )}
@@ -248,6 +251,7 @@ export function Loupe(): React.JSX.Element {
           <Guides kind="grid" w={rect.w} h={rect.h} fine strong />
         </div>
       )}
+      {rect && <MaskPins rect={rect} />}
       {tool === 'brush' && rect && g && <BrushLayer rect={rect} g={g} />}
       {tool === 'polygon' && rect && g && <PolygonLayer rect={rect} g={g} />}
       <LoupeHud />

@@ -89,7 +89,7 @@ const CROP_SETTLE_MS = 260
 let cropTimer: ReturnType<typeof setTimeout> | undefined
 
 /** Canvas tools that belong to the Masks panel. */
-export const MASK_TOOLS: Tool[] = ['brush', 'polygon', 'range-picker']
+export const MASK_TOOLS: Tool[] = ['brush', 'polygon', 'linear', 'radial', 'range-picker']
 
 /**
  * Show a tool in the right column, and keep the canvas in step: choosing
@@ -100,7 +100,11 @@ export function selectPanel(id: ToolId, opts: { tool?: Tool } = {}): void {
   const ui = useUi.getState()
   const dev = useDevelop.getState()
   const from = ui.panel
-  if (from !== id) ui.setPanel(id)
+  if (from !== id) {
+    ui.setPanel(id)
+    // Entering or leaving Masks starts or stops the mask thumbnails.
+    if ((from === 'masks') !== (id === 'masks')) dev.pushView()
+  }
   if (opts.tool !== undefined) {
     clearTimeout(cropTimer)
     dev.setTool(opts.tool)

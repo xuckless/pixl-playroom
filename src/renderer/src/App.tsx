@@ -9,6 +9,7 @@ import { Scopes } from './develop/Scopes'
 import { ToolDial } from './develop/ToolDial'
 import { ToolPanelHost } from './develop/ToolPanelHost'
 import { selectPanel, stepPanel, TOOLS } from './develop/tools'
+import { startMaskTool } from './panels/masks/model'
 import { DevelopToolbar } from './shell/DevelopToolbar'
 import { DevelopIdentity } from './shell/IdentityBar'
 import { LeftRail } from './shell/LeftRail'
@@ -19,6 +20,7 @@ import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './vie
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
 import { FloatingToolbar } from './views/loupe/FloatingToolbar'
+import { MasksFloat } from './panels/masks/MasksFloat'
 import { Loupe } from './views/loupe/Loupe'
 
 /**
@@ -37,6 +39,7 @@ const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
           <div className="stage">
             <Loupe />
             <FloatingToolbar />
+            <MasksFloat />
             <ProcessingOverlay />
             <FilmToggle />
           </div>
@@ -230,10 +233,33 @@ function useShortcuts(): void {
         }
         return selectPanel('crop', { tool: 'crop' })
       }
-      if (k === 'b' || k === 'B' || k === 'k' || k === 'K')
-        return selectPanel('masks', { tool: dev.tool === 'brush' ? 'none' : 'brush' })
-      if (k === 'l' || k === 'L')
-        return selectPanel('masks', { tool: dev.tool === 'polygon' ? 'none' : 'polygon' })
+      // Brush and lasso: into the selected mask, or (as in Lightroom) a new one.
+      if (k === 'b' || k === 'B' || k === 'k' || k === 'K') {
+        if (dev.tool === 'brush') return dev.setTool('none')
+        if (!dev.layerId) return startMaskTool('brush')
+        return selectPanel('masks', { tool: 'brush' })
+      }
+      if (k === 'l' || k === 'L') {
+        if (dev.tool === 'polygon') return dev.setTool('none')
+        if (!dev.layerId) return startMaskTool('polygon')
+        return selectPanel('masks', { tool: 'polygon' })
+      }
+      // M: linear gradient, Shift+M: radial gradient (into the selected mask, or a new one).
+      if (k === 'm' || k === 'M') {
+        const t = e.shiftKey ? 'radial' : 'linear'
+        if (dev.tool === t) return dev.setTool('none')
+        if (!dev.layerId) {
+          startMaskTool(t)
+          return
+        }
+        return selectPanel('masks', { tool: t })
+      }
+      // H: the pins cycle Auto → Always → Never.
+      if (k === 'h' || k === 'H') {
+        const order = ['auto', 'always', 'never'] as const
+        const cur = order.indexOf(ui.maskOverlay.pins)
+        return ui.setMaskOverlay({ pins: order[(cur + 1) % order.length] })
+      }
       if (k === 'w' || k === 'W')
         return dev.setTool(dev.tool === 'wb-picker' ? 'none' : 'wb-picker')
       if (k === 'o' || k === 'O') {

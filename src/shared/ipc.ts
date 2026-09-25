@@ -177,6 +177,8 @@ export interface ViewState {
   before: boolean
   /** Render this local layer's mask as an overlay, and measure inside it. */
   maskLayer: string | null
+  /** Also render every mask small (the masks panel's thumbnails, "show all"). */
+  maskThumbs?: boolean
   /** Longest edge wanted from the renderer, in device pixels. */
   targetEdge: number
 }
@@ -196,8 +198,10 @@ export interface RenderReport {
 export interface RenderEvent {
   key: string
   seq: number
-  kind: 'draft' | 'full' | 'before' | 'mask'
+  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb'
   url: string
+  /** A mask thumbnail's layer. */
+  layerId?: string
   /** The view the render was made for: the crop tool's whole frame, or the framed picture. */
   cropMode?: boolean
   width: number
@@ -218,6 +222,8 @@ export interface RegionRequest {
   height: number
   /** Output pixels per frame pixel (1 for 100%). */
   zoom: number
+  /** Also render this layer's mask over the same region (the overlay at 1:1). */
+  maskLayer?: string | null
 }
 
 export interface RegionResult {
@@ -227,6 +233,8 @@ export interface RegionResult {
   width: number
   height: number
   ms: number
+  /** The requested layer's mask over the same region, when asked for. */
+  maskUrl?: string
 }
 
 export interface SampleResult {
