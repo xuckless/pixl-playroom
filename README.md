@@ -5,7 +5,9 @@ pixel on screen is a real engine render of the photo with its recipe, through
 the same compiler an export uses; the histogram and the colour-concentration
 chart are the engine's `analyze` of exactly what is shown.
 
-First pass: features first, UI/UX later.
+A near-black, matte-purple interface built around the photo: two slim bars,
+a rail that folds to a spine, one tool at a time chosen on a thumb-wheel, and
+liquid-glass controls floating over the picture.
 
 ## What it does
 
@@ -17,21 +19,21 @@ export, Enhance.
 
 **Develop**
 
-| Panel          | What                                                                                                                                                                                        | Engine                                              |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Profile        | Neutral, Playroom Standard, Vivid, Monochrome, any imported `.cube` (with amount)                                                                                                           | `Curves`, `Vibrance`, `Lut`                         |
-| White balance  | As shot / Auto / eyedropper / Custom / saved presets; RAWs show absolute Kelvin from the camera's as-shot white and offer Daylight, Cloudy…; copy to a batch with Sync → White balance only | `WhiteBalance` (Bradford), `probe().as_shot_white`  |
-| Tone           | Exposure (with a highlight shoulder for positive values), Contrast, Highlights, Shadows, Whites, Blacks, Auto                                                                               | `Primary`, 1D `Lut`, `Tone`                         |
-| Presence       | Texture, Clarity, Dehaze, Vibrance, Saturation                                                                                                                                              | `LocalContrast` ×2, `Dehaze`, `Vibrance`, `Primary` |
-| Tone curve     | Parametric (4 regions, movable splits) and point curves (RGB, R, G, B)                                                                                                                      | `Curves`                                            |
-| HSL / B&W mix  | 8 bands × hue/sat/lum; B&W mix                                                                                                                                                              | `HslBands`, `Primary`                               |
-| Colour grading | Shadows/midtones/highlights/global wheels, blending, balance                                                                                                                                | `ColorGrade`                                        |
-| Detail         | Sharpening (amount, radius, detail, masking); noise reduction (luminance/colour + detail); measured noise σ̂                                                                                 | `Sharpen`, `Denoise`, `analyze(noise)`              |
-| Effects        | Post-crop vignette (fitted to the crop, follows the straighten), grain (seeded)                                                                                                             | `Vignette`, `Grain`                                 |
-| Calibration    | Shadows tint; red/green/blue primary hue & saturation                                                                                                                                       | `ChannelMixer`, `Primary`                           |
-| Crop & rotate  | Crop tool with aspect presets, straighten, rotate left/right, flip                                                                                                                          | `Framing`                                           |
-| Masks          | Layers with brush (paint/erase), lasso (add/subtract), colour & luminance ranges (with a picker); per-layer blend mode, opacity, invert, 17 local sliders; engine-rendered red overlay      | `GradeLayer`, `Mask`, `Inspect::LayerMask`          |
-| Advanced       | The last render's engine report line by line, the compiled grade JSON, and custom layers written directly in the engine's terms (any op, any stage space, CDL, qualifiers)                  | the whole `Grade` model                             |
+| Panel          | What                                                                                                                                                                                                                                                                                                                                | Engine                                              |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Profile        | Neutral, Playroom Standard, Vivid, Monochrome, any imported `.cube` (with amount)                                                                                                                                                                                                                                                   | `Curves`, `Vibrance`, `Lut`                         |
+| White balance  | As shot / Auto / eyedropper / Custom / saved presets; RAWs show absolute Kelvin from the camera's as-shot white and offer Daylight, Cloudy…; copy to a batch with Sync → White balance only                                                                                                                                         | `WhiteBalance` (Bradford), `probe().as_shot_white`  |
+| Tone           | Exposure (with a highlight shoulder for positive values), Contrast, Highlights, Shadows, Whites, Blacks, Auto                                                                                                                                                                                                                       | `Primary`, 1D `Lut`, `Tone`                         |
+| Presence       | Texture, Clarity, Dehaze, Vibrance, Saturation                                                                                                                                                                                                                                                                                      | `LocalContrast` ×2, `Dehaze`, `Vibrance`, `Primary` |
+| Tone curve     | Parametric (4 regions, movable splits) and point curves (RGB, R, G, B)                                                                                                                                                                                                                                                              | `Curves`                                            |
+| HSL / B&W mix  | 8 bands × hue/sat/lum; B&W mix                                                                                                                                                                                                                                                                                                      | `HslBands`, `Primary`                               |
+| Colour grading | Shadows/midtones/highlights/global wheels, blending, balance                                                                                                                                                                                                                                                                        | `ColorGrade`                                        |
+| Detail         | Sharpening (amount, radius, detail, masking); noise reduction (luminance/colour + detail); measured noise σ̂                                                                                                                                                                                                                         | `Sharpen`, `Denoise`, `analyze(noise)`              |
+| Effects        | Post-crop vignette (fitted to the crop, follows the straighten), grain (seeded)                                                                                                                                                                                                                                                     | `Vignette`, `Grain`                                 |
+| Calibration    | Shadows tint; red/green/blue primary hue & saturation                                                                                                                                                                                                                                                                               | `ChannelMixer`, `Primary`                           |
+| Crop & rotate  | Crop tool with aspect presets, straighten, rotate left/right, flip                                                                                                                                                                                                                                                                  | `Framing`                                           |
+| Masks          | Lightroom's masks panel (thumbnails; components joined by Add / Subtract / Intersect); brush A/B/erase with flow, density, pressure and Auto Mask; linear and radial gradients with pins; editable lasso; colour & luminance ranges with smoothness; Amount, blend, opacity, invert, 17 local sliders; five overlay modes, show all | `GradeLayer`, `Mask`, `Inspect::LayerMask`          |
+| Advanced       | The last render's engine report line by line, the compiled grade JSON, and custom layers written directly in the engine's terms (any op, any stage space, CDL, qualifiers)                                                                                                                                                          | the whole `Grade` model                             |
 
 **Scopes** — RGB histogram with clipping markers and overlay (J), and the
 **colour-concentration chart**: 36 hue bins (10° each), bars coloured by hue
@@ -40,8 +42,21 @@ masked-region mode that measures inside the selected mask, click a bar to
 focus its HSL band, Shift-click to make a colour-range mask there.
 
 **Viewing** — before (\\), split before/after (Y), 1:1 (Z) rendered by the
-engine as a region of the full-resolution frame, crop overlay, clipping
-overlay, brush cursor, lasso outlines.
+engine as a region of the full-resolution frame (with the mask overlay),
+crop with composition guides (thirds, grid, golden, diagonal) and
+drag-outside-to-straighten, a fine grid while straightening, clipping
+overlay, brush cursor, lasso and gradient handles.
+
+**Interface** — two tiers (identity: photo, frame, engine status; tools:
+library, history, view modes, copy, enhance, export). The left rail is a
+spine of Presets, Snapshots, History and Info, one pane at a time, folding to
+the spine. The right column pins the scopes above a thumb-wheel that turns
+through the ten tools (scroll, drag, click, arrows, Ctrl+1…9) and shows one
+at a time. The filmstrip waits under the loupe until its glass chip is
+clicked. Liquid glass (an SVG refraction filter as the backdrop filter) on
+the loupe's badges and bars, the wheel, dialogs, pins and popovers; a
+three.js processing sphere over long operations and a shader gradient behind
+empty views, with CSS fallbacks and reduced-motion stills.
 
 **Workflow** — undo/redo and a history list (per photo, kept in the index),
 snapshots (in the sidecar), presets (built-in and saved, each carrying chosen
@@ -108,28 +123,33 @@ pnpm typecheck && pnpm lint && pnpm build
 `node scripts/drive.mjs` drives the built app for automation: a hidden,
 offscreen-rendered window with a throwaway profile (`PLAYROOM_HIDDEN=1`,
 `PLAYROOM_USER_DATA`), commands on stdin (`launch`, `folder <path>`,
-`open <name>`, `edit <js on r>`, `stroke x,y x,y…`, `ss <name>`, `eval <js>`).
+`open <name>`, `edit <js on r>`, `stroke x,y x,y…`, `drag x,y x,y [--render]`,
+`tap x,y… [--dbl]`, `wheel <selector> <dy>`, `panel <tool>`, `ss <name>`,
+`eval <js>`).
 
 ## Keys
 
-| Key                   | Where          | Does                                                 |
-| --------------------- | -------------- | ---------------------------------------------------- |
-| G / Esc               | develop        | back to the library (Esc first leaves a tool or 1:1) |
-| Enter / D             | library        | develop the focused photo                            |
-| ← →                   | both           | previous / next photo                                |
-| 0–5, P X U, 6–9       | both           | rating, pick / reject / unflag, colour label         |
-| Ctrl+Z / Ctrl+Shift+Z | develop        | undo / redo                                          |
-| Ctrl+C / Ctrl+V       | develop / both | copy settings / paste onto the selection             |
-| Ctrl+Shift+S          | both           | sync settings (choose groups)                        |
-| Ctrl+Shift+E          | both           | export                                               |
-| Ctrl+'                | develop        | virtual copy                                         |
-| \\ , Y                | develop        | before, split before/after                           |
-| J                     | develop        | clipping overlay                                     |
-| Z                     | develop        | 1:1 (double-click the photo too)                     |
-| R, B/K, L, W          | develop        | crop, brush, lasso, white-balance picker             |
-| O                     | develop        | mask overlay                                         |
-| [ ]                   | develop        | brush size                                           |
-| Shift+A               | develop        | auto tone                                            |
+| Key                   | Where          | Does                                                                   |
+| --------------------- | -------------- | ---------------------------------------------------------------------- |
+| G / Esc               | develop        | back to the library (Esc first leaves a tool or 1:1)                   |
+| Enter / D             | library        | develop the focused photo                                              |
+| ← →                   | both           | previous / next photo                                                  |
+| 0–5, P X U, 6–9       | both           | rating, pick / reject / unflag, colour label                           |
+| Ctrl+Z / Ctrl+Shift+Z | develop        | undo / redo                                                            |
+| Ctrl+C / Ctrl+V       | develop / both | copy settings / paste onto the selection                               |
+| Ctrl+Shift+S          | both           | sync settings (choose groups)                                          |
+| Ctrl+Shift+E          | both           | export                                                                 |
+| Ctrl+'                | develop        | virtual copy                                                           |
+| \\ , Y                | develop        | before, split before/after                                             |
+| J                     | develop        | clipping overlay                                                       |
+| Z                     | develop        | 1:1 (double-click the photo too)                                       |
+| Ctrl+1…9, Ctrl+↑/↓    | develop        | pick / turn the tool wheel                                             |
+| R, W                  | develop        | crop tool, white-balance picker                                        |
+| B/K, L, M, Shift+M    | develop        | brush, lasso, linear, radial gradient (a new mask if none is selected) |
+| O                     | develop        | mask overlay (in the crop tool: cycle guides)                          |
+| H                     | develop        | mask pins: auto, always, never                                         |
+| [ ], Alt              | develop        | brush size, erase while held                                           |
+| Shift+A               | develop        | auto tone                                                              |
 
 See `TODO.md` for everything not in this pass.
 
