@@ -3,7 +3,7 @@ import { Icon } from '../../components/icons'
 import { ASPECTS, aspectValue } from '../../lib/aspects'
 import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../../lib/geometry'
 import { useDevelop } from '../../state/develop'
-import { CROP_GUIDES, useUi } from '../../state/ui'
+import { CROP_GUIDES, useUi, type BrushSlot } from '../../state/ui'
 
 /** A compact range for the floating bar: label, rail and value. */
 export function BarRange({
@@ -99,11 +99,25 @@ function CropBar(): React.JSX.Element | null {
 }
 
 function BrushBar(): React.JSX.Element {
-  const brush = useDevelop((s) => s.brush)
-  const setBrush = useDevelop((s) => s.setBrush)
+  const slot = useUi((s) => s.brushSlot)
+  const setSlot = useUi((s) => s.setBrushSlot)
+  const brush = useUi((s) => s.brushes[s.brushSlot])
+  const setBrush = useUi((s) => s.setBrush)
   return (
     <>
       <span className="bar-title micro">Brush</span>
+      <div className="seg" role="group" aria-label="Brush">
+        {(['A', 'B', 'erase'] as BrushSlot[]).map((b) => (
+          <button
+            key={b}
+            className={slot === b ? 'on' : ''}
+            onClick={() => setSlot(b)}
+            title={b === 'erase' ? 'Erase (or hold Alt)' : `Brush ${b}`}
+          >
+            {b === 'erase' ? 'Erase' : b}
+          </button>
+        ))}
+      </div>
       <BarRange
         label="Size"
         value={brush.size}
@@ -125,12 +139,26 @@ function BrushBar(): React.JSX.Element {
         max={100}
         onChange={(flow) => setBrush({ flow })}
       />
+      <BarRange
+        label="Density"
+        value={brush.density}
+        min={1}
+        max={100}
+        onChange={(density) => setBrush({ density })}
+      />
       <button
-        className={brush.erase ? 'on sm' : 'sm'}
-        onClick={() => setBrush({ erase: !brush.erase })}
-        title="Erase (hold Alt)"
+        className={brush.autoMask ? 'on sm' : 'sm'}
+        onClick={() => setBrush({ autoMask: !brush.autoMask })}
+        title="Auto Mask: paint only where the colour matches the colour under the brush"
       >
-        Erase
+        Auto Mask
+      </button>
+      <button
+        className={brush.pressure ? 'on sm' : 'sm'}
+        onClick={() => setBrush({ pressure: !brush.pressure })}
+        title="A pen's pressure sets size and flow"
+      >
+        Pressure
       </button>
       <span className="bar-hint">
         <span className="kbd">[</span> <span className="kbd">]</span> size · Alt erases

@@ -207,6 +207,28 @@ const COMMANDS = {
       Math.round(by)
     )
   },
+  /** tap x,y [x,y …] [--dbl] — real mouse clicks at fractions of the picture (--dbl double-clicks the last). */
+  async tap(arg) {
+    const dbl = arg.includes('--dbl')
+    const pts = arg
+      .replace('--dbl', '')
+      .trim()
+      .split(/\s+/)
+      .map((p) => p.split(',').map(Number))
+    const box = await page.evaluate(() => {
+      const r = document.querySelector('.picture')?.getBoundingClientRect()
+      return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null
+    })
+    if (!box) return console.log('no picture')
+    for (let i = 0; i < pts.length; i++) {
+      const [x, y] = pts[i]
+      const px = box.x + x * box.w
+      const py = box.y + y * box.h
+      if (dbl && i === pts.length - 1) await page.mouse.dblclick(px, py)
+      else await page.mouse.click(px, py)
+      await sleep(60)
+    }
+  },
   /** wheel <selector> <deltaY> — a mouse-wheel turn over an element. */
   async wheel(arg) {
     const [sel, dy] = arg.split(/\s+/)
