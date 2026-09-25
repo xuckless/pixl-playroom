@@ -1,20 +1,11 @@
+import { MotionConfig } from 'motion/react'
 import { memo, useEffect } from 'react'
-import { newLocalLayer, RECIPE_GROUPS } from '../../shared/recipe'
-import { Histogram, HueChart } from './components/charts'
+import { RECIPE_GROUPS } from '../../shared/recipe'
 import { api } from './lib/api'
-import { emptyRange } from './lib/helpers'
-import { AdvancedPanel } from './panels/advanced'
-import {
-  BasicPanel,
-  CalibrationPanel,
-  ColorGradePanel,
-  DetailPanel,
-  EffectsPanel,
-  GeometryPanel,
-  HslPanel,
-  ToneCurvePanel
-} from './panels/global'
-import { MasksPanel } from './panels/masks'
+import { Scopes } from './develop/Scopes'
+import { ToolDial } from './develop/ToolDial'
+import { ToolPanelHost } from './develop/ToolPanelHost'
+import { selectPanel, stepPanel, TOOLS } from './develop/tools'
 import { DevelopToolbar } from './shell/DevelopToolbar'
 import { DevelopIdentity } from './shell/IdentityBar'
 import { LeftRail } from './shell/LeftRail'
@@ -26,46 +17,6 @@ import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryView, Toolbar } from './views/Library'
 import { FloatingToolbar } from './views/loupe/FloatingToolbar'
 import { Loupe } from './views/loupe/Loupe'
-
-function Scopes(): React.JSX.Element {
-  const stats = useDevelop((s) => s.stats)
-  const before = useDevelop((s) => s.before)
-  const mask = useDevelop((s) => s.mask)
-  const layerId = useDevelop((s) => s.layerId)
-  const clipping = useDevelop((s) => s.clipping)
-  const setClipping = useDevelop((s) => s.setClipping)
-  const setHslFocus = useDevelop((s) => s.setHslFocus)
-  const setHslTab = useDevelop((s) => s.setHslTab)
-  return (
-    <div className="scopes">
-      <Histogram stats={stats} clipping={clipping} onClipping={setClipping} />
-      <HueChart
-        stats={stats}
-        before={before?.stats ?? null}
-        masked={layerId ? (mask?.maskStats ?? null) : null}
-        onPick={(hue, band, newMask) => {
-          if (newMask) {
-            const d = useDevelop.getState()
-            if (!d.recipe) return
-            const comp = emptyRange('color')
-            if (comp.kind === 'range')
-              comp.hue = { centre: Math.round(hue), width: 20, softness: 15 }
-            const layer = newLocalLayer(`${band} range`)
-            layer.components.push(comp)
-            d.replace(
-              { ...d.recipe, layers: [...d.recipe.layers, layer] },
-              `Colour mask at ${Math.round(hue)}°`
-            )
-            d.setLayer(layer.id)
-          } else {
-            setHslFocus(band)
-            setHslTab('all')
-          }
-        }}
-      />
-    </div>
-  )
-}
 
 /**
  * Develop: identity and tools across the top; the rail, the loupe and the
@@ -89,18 +40,8 @@ const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
         </main>
         <aside className="right">
           <Scopes />
-          <div className="panels">
-            <BasicPanel />
-            <ToneCurvePanel />
-            <HslPanel />
-            <ColorGradePanel />
-            <DetailPanel />
-            <EffectsPanel />
-            <MasksPanel />
-            <GeometryPanel />
-            <CalibrationPanel />
-            <AdvancedPanel />
-          </div>
+          <ToolDial />
+          <ToolPanelHost />
         </aside>
       </div>
     </div>
@@ -212,12 +153,28 @@ function useShortcuts(): void {
       }
       // ── develop ──
       if (k === 'g' || k === 'G' || k === 'Escape') {
-        if (k === 'Escape' && dev.tool !== 'none') return dev.setTool('none')
+        if (k === 'Escape' && dev.tool !== 'none') {
+          const wasCrop = dev.tool === 'crop'
+          dev.setTool('none')
+          const u = useUi.getState()
+          if (wasCrop && u.panel === 'crop') u.setPanel(u.previousPanel)
+          return
+        }
         if (k === 'Escape' && dev.zoom === 1) return dev.setZoom('fit')
         return lib.setView('library')
       }
       if (mod && !e.shiftKey && (k === 'z' || k === 'Z')) return dev.undo()
       if (mod && e.shiftKey && (k === 'z' || k === 'Z')) return dev.redo()
+      // The thumb-wheel: Ctrl/Cmd+1…9 jump to a tool, Ctrl/Cmd+↑/↓ turn it.
+      if (mod && !e.shiftKey && k >= '1' && k <= '9') {
+        const t = TOOLS[Number(k) - 1]
+        if (t) selectPanel(t.id)
+        return e.preventDefault()
+      }
+      if (mod && (k === 'ArrowUp' || k === 'ArrowDown')) {
+        stepPanel(k === 'ArrowUp' ? -1 : 1)
+        return e.preventDefault()
+      }
       if (mod && (k === 'c' || k === 'C') && dev.recipe) {
         const groups = RECIPE_GROUPS.filter(
           (g) => g !== 'crop' && g !== 'orientation' && g !== 'localAdjustments'
@@ -255,15 +212,24 @@ function useShortcuts(): void {
       if (k === 'y' || k === 'Y') return dev.setCompare(dev.compare === 'split' ? 'off' : 'split')
       if (k === 'j' || k === 'J') return dev.setClipping(!dev.clipping)
       if (k === 'z' || k === 'Z') return dev.setZoom(dev.zoom === 1 ? 'fit' : 1)
-      if (k === 'r' || k === 'R') return dev.setTool(dev.tool === 'crop' ? 'none' : 'crop')
+      const ui = useUi.getState()
+      if (k === 'r' || k === 'R') {
+        // R toggles the crop tool, returning to the tool that was showing.
+        if (dev.tool === 'crop') {
+          dev.setTool('none')
+          return selectPanel(ui.panel === 'crop' ? ui.previousPanel : ui.panel)
+        }
+        return selectPanel('crop', { tool: 'crop' })
+      }
       if (k === 'b' || k === 'B' || k === 'k' || k === 'K')
-        return dev.setTool(dev.tool === 'brush' ? 'none' : 'brush')
-      if (k === 'l' || k === 'L') return dev.setTool(dev.tool === 'polygon' ? 'none' : 'polygon')
+        return selectPanel('masks', { tool: dev.tool === 'brush' ? 'none' : 'brush' })
+      if (k === 'l' || k === 'L')
+        return selectPanel('masks', { tool: dev.tool === 'polygon' ? 'none' : 'polygon' })
       if (k === 'w' || k === 'W')
         return dev.setTool(dev.tool === 'wb-picker' ? 'none' : 'wb-picker')
       if (k === 'o' || k === 'O') {
         // In the crop tool O cycles the composition guides, as in Lightroom.
-        if (dev.tool === 'crop') return useUi.getState().cycleCropGuide()
+        if (dev.tool === 'crop') return ui.cycleCropGuide()
         return dev.setOverlay(!dev.overlay)
       }
       if (k === '[') return dev.setBrush({ size: Math.max(4, Math.round(dev.brush.size / 1.15)) })
@@ -311,11 +277,13 @@ export default function App(): React.JSX.Element {
     }
   }, [])
   return (
-    <div className="app">
-      <Screens />
-      <DialogHost />
-      <Toast />
-      <EngineBanner />
-    </div>
+    <MotionConfig reducedMotion="user">
+      <div className="app">
+        <Screens />
+        <DialogHost />
+        <Toast />
+        <EngineBanner />
+      </div>
+    </MotionConfig>
   )
 }
