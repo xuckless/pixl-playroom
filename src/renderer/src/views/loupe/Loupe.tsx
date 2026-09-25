@@ -21,6 +21,7 @@ import { DecodedImage } from './DecodedImage'
 import { Guides } from './Guides'
 import { PolygonLayer } from './LassoTool'
 import { LoupeHud } from './LoupeHud'
+import { GradientTools } from './GradientTools'
 import { MaskPins } from './MaskPins'
 import { MaskOverlay } from './MaskOverlay'
 import { useGreyUnderOverlay } from './useGreyUnderOverlay'
@@ -254,6 +255,7 @@ export function Loupe(): React.JSX.Element {
       {rect && <MaskPins rect={rect} />}
       {tool === 'brush' && rect && g && <BrushLayer rect={rect} g={g} />}
       {tool === 'polygon' && rect && g && <PolygonLayer rect={rect} g={g} />}
+      {tool !== 'crop' && rect && g && <GradientTools rect={rect} g={g} />}
       <LoupeHud />
     </div>
   )
