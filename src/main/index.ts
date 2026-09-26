@@ -4,11 +4,13 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { Store } from './db'
+import { bootScale, onRenderScale, settleScale, watchDisplay } from './display'
 import { EngineClient } from './engine/client'
 import { Enhancer } from './enhance'
 import { Exporter } from './exporter'
 import { registerIpc } from './ipc'
 import { Library } from './library'
+import { buildMenu } from './menu'
 import { paths } from './paths'
 import { registerProtocol, registerSchemePrivileges } from './protocol'
 import { DevelopSessions } from './render'
@@ -22,6 +24,11 @@ registerSchemePrivileges()
 if (process.env['PLAYROOM_USER_DATA']) app.setPath('userData', process.env['PLAYROOM_USER_DATA'])
 /** Automation: never show the window; render offscreen so it can still be captured. */
 const hidden = process.env['PLAYROOM_HIDDEN'] === '1'
+
+// A Retina Mac in Performance mode needs its scale on the command line; a
+// build started without it starts again with it (see display.ts).
+const relaunching = bootScale({ canRelaunch: app.isPackaged && !hidden })
+if (relaunching) app.exit(0)
 
 /** Previews and the develop view's measurements. */
 const engine = new EngineClient('interactive', 8)
@@ -65,9 +72,12 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  watchDisplay(mainWindow)
 }
 
 app.whenReady().then(() => {
+  if (relaunching) return
+  if (settleScale()) return app.exit(0)
   electronApp.setAppUserModelId('com.xuckless.pixlplayroom')
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -83,6 +93,8 @@ app.whenReady().then(() => {
   const enhancer = new Enhancer(library, bgEngine)
   registerIpc({ store, library, sessions, exporter, enhancer, engine, bgEngine })
 
+  buildMenu()
+  onRenderScale(buildMenu)
   createWindow()
 
   app.on('activate', function () {

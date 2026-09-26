@@ -1,5 +1,6 @@
 import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect } from 'react'
+import type { RenderScale } from '../../shared/ipc'
 import { RECIPE_GROUPS } from '../../shared/recipe'
 import { api, errorText } from './lib/api'
 import { runJob, useBusy } from './state/busy'
@@ -89,6 +90,17 @@ function Toast(): React.JSX.Element | null {
   return (
     <div className={`toast ${toast.tone}`} key={toast.text} role="status">
       {toast.text}
+      {toast.action && (
+        <button
+          className="primary"
+          onClick={() => {
+            useLibrary.setState({ toast: null })
+            toast.action?.run()
+          }}
+        >
+          {toast.action.label}
+        </button>
+      )}
     </div>
   )
 }
@@ -102,6 +114,29 @@ function EngineBanner(): React.JSX.Element | null {
       {engine.reason ? `: ${engine.reason}` : ''}
     </div>
   )
+}
+
+let restartText: string | null = null
+
+/**
+ * A display that wants another scale than the app started with (the mode
+ * was changed, or the window moved) offers a restart; moving back takes the
+ * offer away.
+ */
+function onRenderScale(s: RenderScale): void {
+  const lib = useLibrary.getState()
+  if (!s.restartNeeded) {
+    if (restartText && lib.toast?.text === restartText) useLibrary.setState({ toast: null })
+    restartText = null
+    return
+  }
+  const text =
+    s.mode === 'performance' && s.native !== null && s.native > 1.5
+      ? 'Performance rendering (1.5×) starts after a restart'
+      : `Native rendering${s.native ? ` (${Number(s.native.toFixed(2))}×)` : ''} starts after a restart`
+  if (text === restartText && lib.toast?.text === text) return
+  restartText = text
+  lib.say(text, 'info', { label: 'Restart', run: () => void api.app.restart() })
 }
 
 /** Poll the engine's status, storing it only when it changed, so nothing re-renders every tick. */
@@ -307,6 +342,7 @@ export default function App(): React.JSX.Element {
       }),
       api.library.onChanged(() => void useLibrary.getState().refresh()),
       api.develop.onRendered((e) => useDevelop.getState().onRendered(e)),
+      api.app.onRenderScale(onRenderScale),
       api.develop.onRenderError((e) =>
         useDevelop.getState().onError(e.field ? `${e.message} (${e.field})` : e.message)
       ),
@@ -324,6 +360,7 @@ export default function App(): React.JSX.Element {
     void (async () => {
       useLibrary.setState({ recent: await api.library.recentFolders() })
       await refreshEngine()
+      onRenderScale(await api.app.renderScale())
       const last = await api.app.getSetting<string>('library.lastFolder')
       if (last) await useLibrary.getState().openFolder(last)
     })()

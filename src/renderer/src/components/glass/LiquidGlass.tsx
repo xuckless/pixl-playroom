@@ -49,7 +49,9 @@ export interface LiquidGlassProps extends HTMLAttributes<HTMLElement> {
  * edge that faces the light. It is a real lens over the backdrop (an SVG
  * displacement filter used as the element's backdrop-filter), sized to the
  * element and redrawn when the element changes size. With reduced
- * transparency, or where the filter cannot run, it is frosted glass.
+ * transparency, or where the filter cannot run, it is frosted glass. While a
+ * live edit re-renders the photo under it, it is clear glass without the
+ * bend, so the lens is not recomputed on every frame of the drag.
  */
 export const LiquidGlass = forwardRef<HTMLElement, LiquidGlassProps>(function LiquidGlass(
   {
@@ -105,6 +107,8 @@ export const LiquidGlass = forwardRef<HTMLElement, LiquidGlassProps>(function Li
   const glassStyle: CSSProperties = maps
     ? {
         ...style,
+        // The frost a live edit falls back to (primitives.css).
+        ['--lg-frost' as string]: `${frost}px`,
         backdropFilter: `url(#${filterId}) blur(${frost * 0.5}px)`,
         WebkitBackdropFilter: `url(#${filterId}) blur(${frost * 0.5}px)`
       }

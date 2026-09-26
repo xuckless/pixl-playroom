@@ -95,13 +95,21 @@ renderer (React)  ──IPC──>  main process ──postMessage──> utilit
   (≤ 1280 px); every preview grades those. Masks and radii are fractions of
   the frame, so a preview and an export select and blur the same things.
 - **Render sessions** (`src/main/render.ts`): coalesced renders (a moving
-  slider renders the draft, the full proxy follows when it settles), each
-  followed by `analyze`; the before render; mask planes via `Inspect`; 1:1
+  slider renders the draft, the full proxy follows when it settles; both
+  JPEG), each followed by `analyze`; the before render; mask planes via `Inspect`; 1:1
   regions via `Region`; the eyedropper via a 5×5 region in linear sRGB.
 - **Sidecars** (`<photo>.playroom.json`, `src/main/sidecar.ts`) are the
   truth: recipe, snapshots, virtual copies, rating, flag, label. The index
   (`node:sqlite`, `src/main/db.ts`) mirrors them for speed and keeps history,
   presets, export presets and settings. The original is never written.
+- **Rendering scale** (`src/main/display.ts`): on a Mac display finer than
+  1.5× (Retina), View ▸ Rendering chooses Performance (the app drawn at 1.5×
+  and scaled by macOS: every blur and glass filter costs about half as many
+  pixels) or Native. Performance is the default. Chromium takes the scale
+  only from its command line, so a packaged build starts itself again with
+  it; in dev pass it yourself: `pnpm dev -- --force-device-scale-factor=1.5`.
+  While a live edit re-renders the photo, the liquid glass drops its lens
+  (`data-interacting` on the root) and the loupe swaps pictures unfaded.
 - **White balance** (`src/shared/wb.ts`) mirrors the engine's locus model
   exactly, so absolute RAW Kelvin, relative sliders, Auto (grey pixels ∩ grey
   world) and the eyedropper all become the one `WhiteBalance` op.

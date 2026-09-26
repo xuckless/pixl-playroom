@@ -11,6 +11,8 @@ function dir(...parts: string[]): string {
 
 export const paths = {
   db: (): string => join(dir(), 'playroom.db'),
+  /** The rendering mode and the last display's scale, read before the app is ready. */
+  displayState: (): string => join(dir(), 'display.json'),
   /** Per-photo working files: proxies, renders, mask planes. */
   photoCache: (photoId: number): string => dir('cache', 'photos', String(photoId)),
   thumbs: (): string => dir('cache', 'thumbs'),

@@ -1,9 +1,11 @@
 import { memo, useEffect, useState } from 'react'
+import { isInteracting } from '../../lib/interacting'
 
 /**
  * An image that swaps to a new `src` only once the new picture is decoded,
  * so a render arriving never blanks, half-paints or stalls the loupe: the
- * previous picture stays until the next is ready, then fades across.
+ * previous picture stays until the next is ready, then fades across (or,
+ * during a live edit, swaps at once).
  */
 export const DecodedImage = memo(function DecodedImage({
   src,
@@ -26,7 +28,8 @@ export const DecodedImage = memo(function DecodedImage({
       .catch(() => undefined)
       .then(() => {
         if (!live) return
-        setPrev(shown)
+        // Mid-drag the next picture is already on its way: swap, don't fade.
+        setPrev(isInteracting() ? null : shown)
         setShown(src)
       })
     return () => {

@@ -19,6 +19,7 @@ import {
   type RegionRequest,
   type RegionResult,
   type RenderEvent,
+  type RenderScale,
   type SampleResult,
   type Snapshot,
   type ViewState
@@ -48,6 +49,9 @@ const api = {
     getSetting: <T>(key: string) => call<T | null>(IPC.app.getSetting, key),
     setSetting: (key: string, value: unknown) => call<void>(IPC.app.setSetting, key, value),
     reveal: (path: string) => call<void>(IPC.app.reveal, path),
+    renderScale: () => call<RenderScale>(IPC.app.renderScale),
+    restart: () => call<void>(IPC.app.restart),
+    onRenderScale: (cb: (s: RenderScale) => void) => on(IPC.app.renderScaleChanged, cb),
     pathOf: (file: File) => webUtils.getPathForFile(file)
   },
   library: {

@@ -575,6 +575,10 @@ aside.right .panels {
   background: var(--acc);
   box-shadow: 0 0 10px var(--acc);
 }
+.toast button {
+  height: 24px;
+  margin: -4px -6px -4px 4px;
+}
 .toast.error {
   box-shadow:
     0 20px 40px -20px rgba(0, 0, 0, 0.9),
