@@ -6,7 +6,7 @@
  * anything renders or saves it; sidecars always get the PNGs themselves.
  */
 import { slimRecipe, type Recipe } from '../shared/recipe'
-import type { Store } from './db'
+import type { IndexClient } from './indexer/client'
 
 /** Planes kept in memory; the rest are a query away. */
 const KEEP = 48
@@ -14,22 +14,23 @@ const KEEP = 48
 export class PlaneStore {
   private mem = new Map<string, string>()
 
-  constructor(private readonly store: Store) {}
+  constructor(private readonly index: IndexClient) {}
 
+  /** Kept at once; the index is told in passing (it answers in order, so a later `get` finds it). */
   put(ref: string, png: string): void {
     if (this.mem.has(ref)) {
       this.mem.delete(ref)
       this.mem.set(ref, png)
       return
     }
-    this.store.putPlane(ref, png)
+    this.index.putPlane(ref, png).catch(() => {})
     this.remember(ref, png)
   }
 
-  get(ref: string): string | undefined {
+  async get(ref: string): Promise<string | undefined> {
     const hit = this.mem.get(ref)
     if (hit !== undefined) return hit
-    const png = this.store.plane(ref)
+    const png = await this.index.plane(ref)
     if (png !== undefined) this.remember(ref, png)
     return png
   }
@@ -45,24 +46,29 @@ export class PlaneStore {
   }
 
   /** Coming in: every referenced plane filled in, the references dropped. */
-  hydrate(recipe: Recipe): Recipe {
+  async hydrate(recipe: Recipe): Promise<Recipe> {
     const wants = recipe.layers.some((l) =>
       l.components.some((c) => c.kind === 'brush' && !c.png && c.ref)
     )
     if (!wants) return recipe
     return {
       ...recipe,
-      layers: recipe.layers.map((l) => ({
-        ...l,
-        components: l.components.map((c) => {
-          if (c.kind !== 'brush' || c.png || !c.ref) return c
-          const png = this.get(c.ref)
-          if (png === undefined) throw new Error('a painted mask is missing from the plane store')
-          const { ref: _ref, ...rest } = c
-          void _ref
-          return { ...rest, png }
-        })
-      }))
+      layers: await Promise.all(
+        recipe.layers.map(async (l) => ({
+          ...l,
+          components: await Promise.all(
+            l.components.map(async (c) => {
+              if (c.kind !== 'brush' || c.png || !c.ref) return c
+              const png = await this.get(c.ref)
+              if (png === undefined)
+                throw new Error('a painted mask is missing from the plane store')
+              const { ref: _ref, ...rest } = c
+              void _ref
+              return { ...rest, png }
+            })
+          )
+        }))
+      )
     }
   }
 }

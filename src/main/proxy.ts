@@ -14,10 +14,11 @@
  * HDR sources keep their PQ/HLG signal in a 16-bit PNG (which carries CICP);
  * everything else is an uncompressed 16-bit TIFF, the fastest to decode.
  */
-import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'fs'
+import { readFile, readdir, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import type { InputFormat, SourceInfo } from '../shared/engine-types'
 import type { EngineClient } from './engine/client'
+import { exists } from './exists'
 import type { PhotoRow } from './db'
 import { paths } from './paths'
 import { blankRequest, RAW_DEVELOP, sourceOrientation } from './source'
@@ -65,18 +66,18 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
   const dir = paths.photoCache(photo.id)
   const s = stamp(photo)
   const meta = join(dir, `proxies-${s}.json`)
-  if (existsSync(meta)) {
-    const known = JSON.parse(readFileSync(meta, 'utf8')) as Proxies
+  if (await exists(meta)) {
+    const known = JSON.parse(await readFile(meta, 'utf8')) as Proxies
     if (
-      existsSync(known.proxy.path) &&
-      existsSync(known.draft.path) &&
+      (await exists(known.proxy.path)) &&
+      (await exists(known.draft.path)) &&
       Number.isFinite(known.frameWidth) &&
       Number.isFinite(known.frameHeight)
     )
       return known
   }
   // An older version of the file: clear its working copies.
-  for (const f of readdirSync(dir)) {
+  for (const f of await readdir(dir)) {
     if (
       f.startsWith('proxies-') ||
       f.startsWith('proxy-') ||
@@ -84,7 +85,7 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
       f.startsWith('master-')
     ) {
       try {
-        unlinkSync(join(dir, f))
+        await unlink(join(dir, f))
       } catch {
         // in use on Windows; it will be replaced next time
       }
@@ -153,7 +154,7 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
       ? report.frame_height
       : Math.round(report.height / factor)
   }
-  writeFileSync(meta, JSON.stringify(out))
+  await writeFile(meta, JSON.stringify(out))
   return out
 }
 
@@ -170,8 +171,8 @@ export function ensureMaster(engine: EngineClient, photo: PhotoRow): Promise<Pro
     p = (async (): Promise<ProxyFile> => {
       const path = join(paths.photoCache(photo.id), `master-${stamp(photo)}.tiff`)
       const meta = `${path}.json`
-      if (existsSync(path) && existsSync(meta))
-        return JSON.parse(readFileSync(meta, 'utf8')) as ProxyFile
+      if ((await exists(path)) && (await exists(meta)))
+        return JSON.parse(await readFile(meta, 'utf8')) as ProxyFile
       const report = await engine.convert({
         ...blankRequest(photo.path, path, 'Raw'),
         raw: RAW_DEVELOP,
@@ -181,7 +182,7 @@ export function ensureMaster(engine: EngineClient, photo: PhotoRow): Promise<Pro
         color: 'Preserve'
       })
       const out: ProxyFile = { path, input: 'Tiff', width: report.width, height: report.height }
-      writeFileSync(meta, JSON.stringify(out))
+      await writeFile(meta, JSON.stringify(out))
       return out
     })().finally(() => mastering.delete(key))
     mastering.set(key, p)

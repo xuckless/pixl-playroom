@@ -11,7 +11,9 @@ export default defineConfig({
           // the app
           index: resolve('src/main/index.ts'),
           // the engine host, forked as an Electron utilityProcess
-          'engine-host': resolve('src/main/engine/host.ts')
+          'engine-host': resolve('src/main/engine/host.ts'),
+          // the index (SQLite and sidecars), forked as an Electron utilityProcess
+          'index-host': resolve('src/main/indexer/host.ts')
         },
         // The native binding is required by name at runtime inside the
         // utility process; it must never be bundled.

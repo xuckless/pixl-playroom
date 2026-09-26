@@ -7,7 +7,6 @@ import log from 'electron-log/main'
 import { availableParallelism } from 'os'
 import type { Worker } from 'worker_threads'
 import type { Orientation } from '../../shared/engine-types'
-import type { CameraInfo } from '../../shared/ipc'
 import type { LinearComponent, RadialComponent } from '../../shared/recipe'
 import createPixels from './pixels.worker?nodeWorker'
 
@@ -20,7 +19,6 @@ export type PixelsJob =
       user: Orientation
     }
   | { op: 'brush'; file: string; png: string; user: Orientation }
-  | { op: 'camera'; path: string }
 
 type Reply = { id: number; value?: unknown; error?: string }
 
@@ -75,15 +73,11 @@ class Pool {
     })
   }
 
-  camera(path: string): Promise<CameraInfo> {
-    return this.run<CameraInfo>({ op: 'camera', path })
-  }
-
   close(): void {
     for (const w of this.threads) void w?.terminate()
     this.threads.fill(null)
   }
 }
 
-/** Two threads: planes for a render and exif for a folder rarely need more. */
+/** Two threads: the planes for a render rarely need more. */
 export const pixels = new Pool(Math.min(2, Math.max(1, availableParallelism() - 1)))

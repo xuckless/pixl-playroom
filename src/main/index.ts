@@ -3,17 +3,16 @@ import log from 'electron-log/main'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { Store } from './db'
 import { bootScale, onRenderScale, settleScale, watchDisplay } from './display'
 import { EngineClient } from './engine/client'
 import { Enhancer } from './enhance'
 import { Exporter } from './exporter'
+import { openIndex } from './indexer/client'
 import { registerIpc } from './ipc'
 import { Library } from './library'
 import { buildMenu } from './menu'
 import { PlaneStore } from './planestore'
 import { pixels } from './workers/pool'
-import { paths } from './paths'
 import { registerProtocol, registerSchemePrivileges } from './protocol'
 import { DevelopSessions } from './render'
 
@@ -36,7 +35,8 @@ if (relaunching) app.exit(0)
 const engine = new EngineClient('interactive', 8)
 /** Thumbnails, exports, enhancement, the full-resolution masters. */
 const bgEngine = new EngineClient('background', 4)
-let store: Store | undefined
+/** The SQLite index and the sidecars, in their own process. */
+const index = openIndex()
 let sessions: DevelopSessions | undefined
 
 function createWindow(): void {
@@ -86,15 +86,15 @@ app.whenReady().then(() => {
   })
 
   registerProtocol()
-  store = Store.open(paths.db())
+  index.start()
   engine.start()
   bgEngine.start()
-  const library = new Library(store, bgEngine)
+  const library = new Library(index, bgEngine)
   sessions = new DevelopSessions(library, engine, bgEngine)
   const exporter = new Exporter(library, sessions, bgEngine)
   const enhancer = new Enhancer(library, bgEngine)
-  const planes = new PlaneStore(store)
-  registerIpc({ store, planes, library, sessions, exporter, enhancer, engine, bgEngine })
+  const planes = new PlaneStore(index)
+  registerIpc({ index, planes, library, sessions, exporter, enhancer, engine, bgEngine })
 
   buildMenu()
   onRenderScale(buildMenu)
@@ -111,10 +111,28 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
-  sessions?.closeAll()
-  engine.stop()
-  bgEngine.stop()
-  pixels.close()
-  store?.close()
+/** The longest a quit waits for pending edits to reach their sidecars. */
+const QUIT_DRAIN_MS = 3000
+let drained = false
+
+app.on('before-quit', (e) => {
+  if (drained) return
+  // Pending edits go to the index host, and it closes the database, before
+  // anything stops: once, and never for longer than QUIT_DRAIN_MS.
+  e.preventDefault()
+  drained = true
+  const drain = (async (): Promise<void> => {
+    await sessions?.closeAll()
+    await index.stop()
+  })().catch((err) => log.warn('quit: draining the index failed', err))
+  let timer: NodeJS.Timeout | undefined
+  void Promise.race([drain, new Promise((r) => (timer = setTimeout(r, QUIT_DRAIN_MS)))]).then(
+    () => {
+      clearTimeout(timer)
+      engine.stop()
+      bgEngine.stop()
+      pixels.close()
+      app.quit()
+    }
+  )
 })

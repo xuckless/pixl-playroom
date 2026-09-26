@@ -4,11 +4,12 @@
  * are served; anything else is a 404.
  */
 import { net, protocol } from 'electron'
-import { relative, resolve, sep } from 'path'
+import { resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
+import { cacheUrlIn, SCHEME } from './cache-url'
 import { paths } from './paths'
 
-export const SCHEME = 'pixl'
+export { SCHEME }
 
 /** Must run before `app.whenReady()`. */
 export function registerSchemePrivileges(): void {
@@ -48,6 +49,5 @@ export function registerProtocol(): void {
 
 /** The URL of a cache file; `version` busts the renderer's image cache. */
 export function cacheUrl(file: string, version: string | number): string {
-  const rel = relative(paths.cacheRoot(), file).split(sep).map(encodeURIComponent).join('/')
-  return `${SCHEME}://c/${rel}?v=${encodeURIComponent(String(version))}`
+  return cacheUrlIn(paths.cacheRoot(), file, version)
 }

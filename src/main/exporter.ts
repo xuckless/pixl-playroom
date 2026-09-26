@@ -7,7 +7,7 @@
  */
 import { BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
-import { existsSync, mkdirSync } from 'fs'
+import { mkdir } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import { compile, orientedFrame } from '../shared/compile'
 import {
@@ -22,6 +22,7 @@ import {
 import { IPC, type ExportProgress } from '../shared/ipc'
 import { hash32 } from '../shared/recipe'
 import { brushPlanes } from './brushes'
+import { exists } from './exists'
 import type { EngineClient } from './engine/client'
 import type { Library } from './library'
 import type { DevelopSessions } from './render'
@@ -75,7 +76,7 @@ export class Exporter {
     }
     for (const [i, key] of keys.entries()) {
       if (job.cancelled) break
-      const item = this.library.item(key)
+      const item = await this.library.item(key)
       progress.current = item?.name ?? key
       this.send(progress)
       try {
@@ -96,10 +97,10 @@ export class Exporter {
 
   /** Export one item. Returns the written path, or null when skipped. */
   private async one(key: string, s: ExportSettings, seq: number): Promise<string | null> {
-    this.sessions.flush(key)
-    const row = this.library.photoRow(key)
-    const item = this.library.item(key)
-    const recipe = this.sessions.liveRecipe(key) ?? this.library.recipe(key)
+    await this.sessions.flush(key)
+    const row = await this.library.photoRow(key)
+    const item = await this.library.item(key)
+    const recipe = this.sessions.liveRecipe(key) ?? (await this.library.recipe(key))
     const info = await this.library.probe(row)
     const raw = info.input === 'Raw' ? RAW_DEVELOP : null
     const srcOrientation = sourceOrientation(info, raw)
@@ -127,7 +128,7 @@ export class Exporter {
 
     const folder = s.folder ?? dirname(row.path)
     const target = s.subfolder ? join(folder, s.subfolder) : folder
-    mkdirSync(target, { recursive: true })
+    await mkdir(target, { recursive: true })
     const stem = expandTemplate(s.template, {
       name: basename(row.name, extname(row.name)),
       ext: row.ext,
@@ -138,11 +139,11 @@ export class Exporter {
     })
     const ext = FORMAT_EXT[s.format]
     let out = join(target, `${stem}.${ext}`)
-    if (existsSync(out)) {
+    if (await exists(out)) {
       if (s.collision === 'skip') return null
       if (s.collision === 'suffix') {
         let n = 2
-        while (existsSync(join(target, `${stem}-${n}.${ext}`))) n++
+        while (await exists(join(target, `${stem}-${n}.${ext}`))) n++
         out = join(target, `${stem}-${n}.${ext}`)
       }
     }

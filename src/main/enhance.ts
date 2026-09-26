@@ -8,7 +8,7 @@
  */
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import { existsSync, readdirSync } from 'fs'
+import { readdir } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import type { ExecutionProvider, UpscalerRef } from '../shared/engine-types'
 import { PRESERVE_ALL } from '../shared/engine-types'
@@ -16,23 +16,23 @@ import { IPC, type EnhanceProgress } from '../shared/ipc'
 import { baseWhite } from '../shared/compile'
 import { relativeFromOp } from '../shared/wb'
 import type { EngineClient } from './engine/client'
+import { exists } from './exists'
 import type { Library } from './library'
 import { paths } from './paths'
-import { writeSidecar, readSidecar } from './sidecar'
 import { BACKGROUND_THREADS, blankRequest, RAW_DEVELOP, sourceOrientation } from './source'
 
 export const MODEL_FILE = 'real_esrgan_x2.onnx'
 
-function runtimeLibrary(dir: string): string | null {
+async function runtimeLibrary(dir: string): Promise<string | null> {
   const lib = join(dir, 'onnxruntime', 'lib')
-  if (!existsSync(lib)) return null
+  if (!(await exists(lib))) return null
   const want =
     process.platform === 'win32'
       ? /^onnxruntime\.dll$/
       : process.platform === 'darwin'
         ? /^libonnxruntime\.\d.*\.dylib$|^libonnxruntime\.dylib$/
         : /^libonnxruntime\.so(\.\d+)*$/
-  const hit = readdirSync(lib).find((f) => want.test(f))
+  const hit = (await readdir(lib)).find((f) => want.test(f))
   return hit ? join(lib, hit) : null
 }
 
@@ -43,14 +43,14 @@ export interface EnhanceAvailability {
   runtime?: string
 }
 
-export function enhanceAvailability(engineHasEnhance: boolean): EnhanceAvailability {
+export async function enhanceAvailability(engineHasEnhance: boolean): Promise<EnhanceAvailability> {
   if (!engineHasEnhance)
     return { available: false, reason: 'this build of the engine has no generative upscaler' }
   const dir = paths.ai()
   const model = join(dir, MODEL_FILE)
-  if (!existsSync(model))
+  if (!(await exists(model)))
     return { available: false, reason: `the model is not bundled (${model}); run pnpm fetch-ai` }
-  const runtime = runtimeLibrary(dir)
+  const runtime = await runtimeLibrary(dir)
   if (!runtime)
     return { available: false, reason: `ONNX Runtime is not bundled in ${dir}; run pnpm fetch-ai` }
   return { available: true, model, runtime }
@@ -60,10 +60,10 @@ export function enhanceAvailability(engineHasEnhance: boolean): EnhanceAvailabil
  * The provider the bundled runtime offers: CoreML in Apple's builds; DirectML
  * only when a DirectML build of the runtime was bundled; otherwise the CPU.
  */
-function provider(choice: 'auto' | 'cpu', runtime: string): ExecutionProvider {
+async function provider(choice: 'auto' | 'cpu', runtime: string): Promise<ExecutionProvider> {
   if (choice === 'cpu') return 'Cpu'
   if (process.platform === 'darwin') return 'CoreMl'
-  if (process.platform === 'win32' && existsSync(join(dirname(runtime), 'DirectML.dll'))) {
+  if (process.platform === 'win32' && (await exists(join(dirname(runtime), 'DirectML.dll')))) {
     return { DirectMl: { device: 0 } }
   }
   return 'Cpu'
@@ -81,16 +81,16 @@ export class Enhancer {
 
   async run(key: string, choice: 'auto' | 'cpu'): Promise<void> {
     const status = this.engine.getStatus()
-    const avail = enhanceAvailability(status.enhance === true)
+    const avail = await enhanceAvailability(status.enhance === true)
     if (!avail.available || !avail.model || !avail.runtime) {
       this.send({ key, phase: 'error', message: avail.reason ?? 'unavailable' })
       return
     }
-    const row = this.library.photoRow(key)
+    const row = await this.library.photoRow(key)
     const info = await this.library.probe(row)
     const stem = basename(row.name, extname(row.name))
     const out = join(dirname(row.path), `${stem}-Enhanced-SR.tif`)
-    if (existsSync(out)) {
+    if (await exists(out)) {
       this.send({ key, phase: 'error', message: `${basename(out)} already exists` })
       return
     }
@@ -100,7 +100,7 @@ export class Enhancer {
     const upscaler: UpscalerRef = {
       model_path: avail.model,
       runtime_library: avail.runtime,
-      provider: provider(choice, avail.runtime),
+      provider: await provider(choice, avail.runtime),
       threads: BACKGROUND_THREADS * 2,
       scale: 2,
       tile: 256,
@@ -143,7 +143,7 @@ export class Enhancer {
         } else throw err
       }
       // The enhanced file starts with the source's look.
-      const recipe = structuredClone(this.library.recipe(key))
+      const recipe = await this.library.recipe(key)
       recipe.geometry = { ...recipe.geometry, quarterTurns: 0, flipHorizontal: false }
       // A RAW's absolute white balance becomes the same white as relative
       // sliders: the enhanced file was developed with the as-shot white.
@@ -157,10 +157,8 @@ export class Enhancer {
           preset: null
         }
       }
-      const { sidecar } = readSidecar(out, false)
-      sidecar.photo.recipe = recipe
-      writeSidecar(out, sidecar)
-      this.library.openFolder(dirname(row.path))
+      await this.library.index.seedRecipe(out, recipe)
+      await this.library.openFolder(dirname(row.path))
       this.send({ key, phase: 'done', message: `Wrote ${basename(out)}`, output: out })
     } catch (err) {
       log.warn('enhance failed', err)

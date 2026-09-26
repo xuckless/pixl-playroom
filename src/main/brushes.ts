@@ -6,11 +6,11 @@
  * grades, so each plane is written once per (content, turn) into the
  * photo's cache, by the pixels worker.
  */
-import { existsSync } from 'fs'
 import { join } from 'path'
 import type { Orientation } from '../shared/engine-types'
 import { gradientKey } from '../shared/gradients'
 import { hash32, type Recipe } from '../shared/recipe'
+import { exists } from './exists'
 import { paths } from './paths'
 import { pruneGradients, writeBrushPlane, writeGradientPlane } from './planes'
 import { pixels, type PixelsJob } from './workers/pool'
@@ -19,12 +19,10 @@ import { pixels, type PixelsJob } from './workers/pool'
 const writing = new Map<string, Promise<void>>()
 
 function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Promise<void> {
-  if (existsSync(file)) return Promise.resolve()
   const running = writing.get(file)
   if (running) return running
-  const p = pixels
-    .run<null>(job)
-    .then(() => undefined)
+  const p = exists(file)
+    .then((there) => (there ? undefined : pixels.run<null>(job).then(() => undefined)))
     .catch(() => {
       // The worker is gone: draw it here rather than fail the render.
       if (job.op === 'gradient') {

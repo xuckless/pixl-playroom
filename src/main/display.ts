@@ -43,6 +43,8 @@ let canRelaunch = false
 let current: number | null = null
 const listeners: (() => void)[] = []
 
+// Sync on purpose: read before the app is ready (the scale goes on the
+// command line), and written only when the mode or the display changes.
 function read(): State {
   try {
     const s = JSON.parse(readFileSync(paths.displayState(), 'utf8')) as Partial<State>
