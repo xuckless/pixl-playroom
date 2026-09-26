@@ -373,30 +373,6 @@
 }
 
 /* ── 1:1 ───────────────────────────────────────────────────────── */
-.region-view {
-  position: absolute;
-  inset: 0;
-  cursor: grab;
-}
-.region-view:active {
-  cursor: grabbing;
-}
-.region-frame {
-  position: absolute;
-}
-.region-img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  image-rendering: pixelated;
-  user-select: none;
-}
-.region-badge {
-  left: 14px;
-  top: 14px;
-}
-
 /* ── filmstrip ─────────────────────────────────────────────────── */
 .filmstrip {
   display: flex;
@@ -486,4 +462,33 @@
   backdrop-filter: blur(8px);
   pointer-events: none;
   animation: nameIn 0.4s var(--spring);
+}
+
+/* ── zoom ──────────────────────────────────────────────────────── */
+/* everything laid out from the picture's rect; a wheel or pinch moves it on
+   the compositor until the gesture rests */
+.zoom-layer {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+.loupe.zoomed .picture {
+  box-shadow: none;
+}
+.loupe.zoomed.tool-none .picture {
+  cursor: grab;
+}
+.loupe[data-pan],
+.loupe[data-pan] * {
+  cursor: grab !important;
+}
+.loupe[data-pan]:active,
+.loupe[data-pan]:active * {
+  cursor: grabbing !important;
+}
+/* the engine's render of the part in view, over the enlarged preview */
+.picture img.sharp-tile {
+  inset: auto;
+  object-fit: fill;
+  pointer-events: none;
 }

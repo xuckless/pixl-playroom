@@ -1,6 +1,7 @@
 /**
- * The macOS menu bar: Electron's default menus, with View ▸ Rendering where
- * the window's display offers a choice. Elsewhere the default menu stays.
+ * The menu bar: Electron's default menus, less page zoom (⌘+ / ⌘− / ⌘0 zoom
+ * the loupe instead), with View ▸ Rendering where the window's display offers
+ * a choice (macOS).
  */
 import { Menu, type MenuItemConstructorOptions } from 'electron'
 import type { RenderMode } from '../shared/ipc'
@@ -9,16 +10,12 @@ import { PERFORMANCE_SCALE, renderScale, setRenderMode, ULTRA_SCALE } from './di
 const times = (n: number): string => `${Number(n.toFixed(2))}×`
 
 export function buildMenu(): void {
-  if (process.platform !== 'darwin') return
+  const mac = process.platform === 'darwin'
   const s = renderScale()
   const view: MenuItemConstructorOptions[] = [
     { role: 'reload' },
     { role: 'forceReload' },
     { role: 'toggleDevTools' },
-    { type: 'separator' },
-    { role: 'resetZoom' },
-    { role: 'zoomIn' },
-    { role: 'zoomOut' },
     { type: 'separator' },
     { role: 'togglefullscreen' }
   ]
@@ -46,7 +43,7 @@ export function buildMenu(): void {
   }
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
-      { role: 'appMenu' },
+      ...(mac ? [{ role: 'appMenu' as const }] : []),
       { role: 'fileMenu' },
       { role: 'editMenu' },
       { label: 'View', submenu: view },

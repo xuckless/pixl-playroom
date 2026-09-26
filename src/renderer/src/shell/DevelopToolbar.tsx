@@ -3,6 +3,7 @@ import { Icon } from '../components/icons'
 import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
+import { loupeZoom } from '../views/loupe/zoom'
 
 /** The second tier in Develop: back to the library, history, how to look, and what to do with the photo. */
 export function DevelopToolbar(): React.JSX.Element {
@@ -10,8 +11,7 @@ export function DevelopToolbar(): React.JSX.Element {
   const setCompare = useDevelop((s) => s.setCompare)
   const clipping = useDevelop((s) => s.clipping)
   const setClipping = useDevelop((s) => s.setClipping)
-  const zoom = useDevelop((s) => s.zoom)
-  const setZoom = useDevelop((s) => s.setZoom)
+  const zoomed = useDevelop((s) => s.zoom.scale !== 'fit')
   const undo = useDevelop((s) => s.undo)
   const redo = useDevelop((s) => s.redo)
   const canUndo = useDevelop((s) => s.cursor > 0)
@@ -46,9 +46,9 @@ export function DevelopToolbar(): React.JSX.Element {
     {
       label: '1:1',
       k: 'Z',
-      on: zoom === 1,
-      toggle: () => setZoom(zoom === 1 ? 'fit' : 1),
-      title: '100% (Z)'
+      on: zoomed,
+      toggle: () => loupeZoom.toggle(),
+      title: 'Fit ↔ 100% (Z) · pinch or scroll to zoom, Space+drag to pan'
     }
   ]
   return (

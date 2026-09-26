@@ -22,6 +22,7 @@ import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Li
 import { FloatingToolbar } from './views/loupe/FloatingToolbar'
 import { MasksFloat } from './panels/masks/MasksFloat'
 import { Loupe } from './views/loupe/Loupe'
+import { loupeZoom, setSpace } from './views/loupe/zoom'
 
 /**
  * Develop: identity and tools across the top; the rail, the loupe and the
@@ -208,8 +209,21 @@ function useShortcuts(): void {
           if (wasCrop && u.panel === 'crop') u.setPanel(u.previousPanel)
           return
         }
-        if (k === 'Escape' && dev.zoom === 1) return dev.setZoom('fit')
+        if (k === 'Escape' && dev.zoom.scale !== 'fit') return loupeZoom.fit()
         return lib.setView('library')
+      }
+      // ⌘+ / ⌘− / ⌘0 zoom the loupe (the page itself does not zoom).
+      if (mod && (k === '=' || k === '+')) {
+        loupeZoom.in()
+        return e.preventDefault()
+      }
+      if (mod && (k === '-' || k === '_')) {
+        loupeZoom.out()
+        return e.preventDefault()
+      }
+      if (mod && k === '0') {
+        loupeZoom.fit()
+        return e.preventDefault()
       }
       if (mod && !e.shiftKey && (k === 'z' || k === 'Z')) return dev.undo()
       if (mod && e.shiftKey && (k === 'z' || k === 'Z')) return dev.redo()
@@ -259,7 +273,12 @@ function useShortcuts(): void {
       if (k === '\\') return dev.setCompare(dev.compare === 'before' ? 'off' : 'before')
       if (k === 'y' || k === 'Y') return dev.setCompare(dev.compare === 'split' ? 'off' : 'split')
       if (k === 'j' || k === 'J') return dev.setClipping(!dev.clipping)
-      if (k === 'z' || k === 'Z') return dev.setZoom(dev.zoom === 1 ? 'fit' : 1)
+      if (k === 'z' || k === 'Z') return loupeZoom.toggle()
+      // Space held: drag to pan the zoomed picture.
+      if (k === ' ') {
+        setSpace(true)
+        return e.preventDefault()
+      }
       const ui = useUi.getState()
       if (k === 'r' || k === 'R') {
         // R toggles the crop tool, returning to the tool that was showing.
@@ -324,8 +343,18 @@ function useShortcuts(): void {
           .catch((err) => lib.say(errorText(err), 'error'))
       }
     }
+    const onKeyUp = (e: KeyboardEvent): void => {
+      if (e.key === ' ') setSpace(false)
+    }
+    const onBlur = (): void => setSpace(false)
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+    }
   }, [])
 }
 

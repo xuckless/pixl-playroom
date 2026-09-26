@@ -9,6 +9,7 @@ import type {
   ViewState
 } from '../../../shared/ipc'
 import { newId, type HslBand, type Recipe } from '../../../shared/recipe'
+import { FIT, type ZoomView } from '../../../shared/view'
 import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
 import { useLibrary } from './library'
@@ -52,7 +53,8 @@ interface DevelopState {
   overlay: boolean
   compare: Compare
   clipping: boolean
-  zoom: 'fit' | 1
+  /** How the loupe looks at the picture: fitted, or zoomed about a point. */
+  zoom: ZoomView
   hslFocus: HslBand | null
   hslTab: 'hue' | 'saturation' | 'luminance' | 'all'
   noise: NoiseEstimate | null
@@ -77,7 +79,7 @@ interface DevelopState {
   setOverlay(on: boolean): void
   setCompare(c: Compare): void
   setClipping(on: boolean): void
-  setZoom(z: 'fit' | 1): void
+  setZoom(z: ZoomView): void
   setHslFocus(b: HslBand | null): void
   setHslTab(t: DevelopState['hslTab']): void
   setTargetEdge(n: number): void
@@ -140,7 +142,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   overlay: true,
   compare: 'off',
   clipping: false,
-  zoom: 'fit',
+  zoom: FIT,
   hslFocus: null,
   hslTab: 'all',
   noise: null,
@@ -164,7 +166,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       noise: null,
       layerId: null,
       tool: 'none',
-      zoom: 'fit'
+      zoom: FIT
     })
     try {
       const session = await api.develop.open(key)
@@ -254,7 +256,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     // Show the other view's last picture at once; a fresh one follows.
     const { pictures, picture } = get()
     const shown = tool === 'crop' ? pictures.crop : pictures.framed
-    set({ tool, picture: shown ?? picture })
+    // The crop tool works on the whole fitted frame.
+    set({ tool, picture: shown ?? picture, ...(tool === 'crop' ? { zoom: FIT } : {}) })
     get().pushView()
   },
 

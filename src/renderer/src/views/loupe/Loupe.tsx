@@ -1,12 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { type MaskComponentSetting } from '../../../../shared/recipe'
 import {
   displaySize,
   displayToOriented,
   fitRect,
   normalisedIn,
+  panBy,
+  scaleOf,
   viewGeometry,
-  type Rect
+  zoomAt,
+  zoomedRect,
+  type Rect,
+  type Viewport,
+  type ZoomView
 } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
@@ -25,13 +31,33 @@ import { GradientTools } from './GradientTools'
 import { MaskPins } from './MaskPins'
 import { MaskOverlay } from './MaskOverlay'
 import { useGreyUnderOverlay } from './useGreyUnderOverlay'
-import { RegionView } from './RegionView'
-import { regionCentre } from './regionCentre'
+import { SharpTile } from './SharpTile'
 import { useSize } from './useSize'
+import { loupeZoom, setLoupeElement, setPointer, setViewport, spaceHeld } from './zoom'
 import { Ambient } from '../../fx'
 
 /** How long the loupe must keep a size before the renderer is asked for that many pixels. */
 const EDGE_SETTLE_MS = 250
+/** How long a wheel or pinch gesture rests before its view is laid out for real. */
+const GESTURE_SETTLE_MS = 120
+/** One notch of a mouse wheel. */
+const WHEEL_STEP = 1.2
+
+/**
+ * A mouse wheel, as opposed to a trackpad: whole notches (Chromium reports
+ * 120 per notch) with no sideways part, or scrolling by lines. A stream of
+ * events already seen to come from a trackpad stays a trackpad.
+ */
+let trackpadUntil = 0
+function isMouseWheel(e: WheelEvent): boolean {
+  const now = performance.now()
+  const notch = (e as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY ?? 0
+  const mouse =
+    e.deltaMode !== 0 ||
+    (e.deltaX === 0 && notch !== 0 && notch % 120 === 0 && Math.abs(e.deltaY) >= 50)
+  if (!mouse) trackpadUntil = now + 250
+  return mouse && now > trackpadUntil
+}
 
 export function Loupe(): React.JSX.Element {
   const session = useDevelop((s) => s.session)
@@ -50,7 +76,8 @@ export function Loupe(): React.JSX.Element {
   const replace = useDevelop((s) => s.replace)
   const setTargetEdge = useDevelop((s) => s.setTargetEdge)
   const gesture = useDevelop((s) => s.gesture)
-  const [boxRef, size] = useSize()
+  const [boxRef, size, boxEl] = useSize()
+  const layer = useRef<HTMLDivElement>(null)
   const [split, setSplit] = useState(0.5)
   const grey = useGreyUnderOverlay()
 
@@ -90,15 +117,105 @@ export function Loupe(): React.JSX.Element {
     return fromGeometry() ?? (picture ? fitRect(size, picture.width, picture.height, 4) : null)
   }, [picture, size, g, tool])
 
+  // The picture at the loupe's zoom: the fitted rect, or the zoomed one.
+  const viewport: Viewport | null = useMemo(() => {
+    if (!g || size.w === 0) return null
+    const d = displaySize(g)
+    return { box: size, width: d.width, height: d.height, dpr: window.devicePixelRatio || 1 }
+  }, [g, size])
+  const vrect: Rect | null = useMemo(
+    () => (zoom.scale === 'fit' || !viewport ? rect : (zoomedRect(viewport, zoom) ?? rect)),
+    [zoom, viewport, rect]
+  )
+  useEffect(() => {
+    setViewport(viewport)
+    return () => setViewport(null)
+  }, [viewport])
+  useEffect(() => {
+    setLoupeElement(boxEl)
+    return () => setLoupeElement(null)
+  }, [boxEl])
+
+  // A gesture moves the layer on the compositor; its view is laid out (and
+  // the tools follow) once it rests. `live` is the view mid-gesture.
+  const live = useRef<ZoomView | null>(null)
+  const settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const laidOut = useRef<Rect | null>(null)
+  const preview = useCallback(
+    (next: ZoomView, commitNow = false) => {
+      const el = layer.current
+      const from = laidOut.current
+      const to = viewport ? zoomedRect(viewport, next) : null
+      live.current = next
+      if (el && from && to) {
+        const k = to.w / from.w
+        el.style.willChange = 'transform'
+        el.style.transform = `translate(${to.x - from.x * k}px, ${to.y - from.y * k}px) scale(${k})`
+      }
+      clearTimeout(settle.current)
+      const commit = (): void => {
+        const v = live.current
+        live.current = null
+        if (v) setZoom(v)
+      }
+      if (commitNow) commit()
+      else settle.current = setTimeout(commit, GESTURE_SETTLE_MS)
+    },
+    [viewport, setZoom]
+  )
+  // The laid-out view replaces the gesture's transform before it paints.
+  useLayoutEffect(() => {
+    laidOut.current = vrect
+    const el = layer.current
+    if (!el || live.current) return
+    el.style.transform = ''
+    el.style.willChange = ''
+  }, [vrect])
+
+  // Pinch and the mouse wheel zoom at the pointer; a trackpad's two-finger
+  // scroll pans. The listener is native: React's wheel events are passive.
+  useEffect(() => {
+    if (!boxEl || !viewport) return
+    const onWheel = (e: WheelEvent): void => {
+      if (useDevelop.getState().tool === 'crop') return
+      const box = boxEl.getBoundingClientRect()
+      const at = { x: e.clientX - box.left, y: e.clientY - box.top }
+      const from = live.current ?? useDevelop.getState().zoom
+      let next: ZoomView
+      if (e.ctrlKey) next = zoomAt(viewport, from, Math.exp(-e.deltaY * 0.01), at)
+      else if (isMouseWheel(e))
+        next = zoomAt(viewport, from, e.deltaY < 0 ? WHEEL_STEP : 1 / WHEEL_STEP, at)
+      else if (from.scale !== 'fit') next = panBy(viewport, from, -e.deltaX, -e.deltaY)
+      else return
+      e.preventDefault()
+      preview(next)
+    }
+    boxEl.addEventListener('wheel', onWheel, { passive: false })
+    return () => boxEl.removeEventListener('wheel', onWheel)
+  }, [boxEl, viewport, preview])
+
+  // Dragging pans a zoomed picture: with Space held over anything, or with
+  // no tool on the picture itself.
+  const pan = useRef<{ x: number; y: number; from: ZoomView; moved: boolean } | null>(null)
+  const startPan = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (e.button !== 0 || zoom.scale === 'fit' || tool === 'crop') return
+    const t = e.target as HTMLElement
+    const onPicture = t.closest('.picture') !== null || t === layer.current
+    if (!spaceHeld() && !(tool === 'none' && onPicture)) return
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    pan.current = { x: e.clientX, y: e.clientY, from: zoom, moved: false }
+  }
+
   const pick = useCallback(
     async (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!session || !recipe || !g || !rect) return
+      if (!session || !recipe || !g || !vrect) return
       const box = e.currentTarget.getBoundingClientRect()
       const p = normalisedIn(e.clientX, e.clientY, {
-        left: box.left + rect.x,
-        top: box.top + rect.y,
-        width: rect.w,
-        height: rect.h
+        left: box.left + vrect.x,
+        top: box.top + vrect.y,
+        width: vrect.w,
+        height: vrect.h
       })
       if (p.x < 0 || p.y < 0 || p.x > 1 || p.y > 1) return
       if (tool === 'wb-picker') {
@@ -164,7 +281,7 @@ export function Loupe(): React.JSX.Element {
         setTool('none')
       }
     },
-    [session, recipe, g, rect, tool, picture, layerId, replace, setTool]
+    [session, recipe, g, vrect, tool, picture, layerId, replace, setTool]
   )
 
   // Opening: the processing sphere covers the stage; the loupe waits under it.
@@ -180,97 +297,120 @@ export function Loupe(): React.JSX.Element {
         </div>
       </div>
     )
-  if (zoom === 1) {
-    return (
-      <div ref={boxRef} className="loupe">
-        {size.w > 0 && <RegionView size={size} />}
-      </div>
-    )
-  }
   const shown = compare === 'before' && before ? before : picture
   const rotate =
     tool === 'crop' && recipe.geometry.straighten !== 0
       ? `rotate(${recipe.geometry.straighten}deg)`
       : undefined
+  const scale = viewport && zoom.scale !== 'fit' ? scaleOf(viewport, zoom) : null
   return (
     <div
       ref={boxRef}
-      className={`loupe tool-${tool}`}
+      className={`loupe tool-${tool}${scale ? ' zoomed' : ''}`}
+      onPointerDownCapture={(e) => {
+        if (spaceHeld()) startPan(e)
+      }}
+      onPointerDown={startPan}
+      onPointerMove={(e) => {
+        const box = e.currentTarget.getBoundingClientRect()
+        setPointer({ x: e.clientX - box.left, y: e.clientY - box.top })
+        const p = pan.current
+        if (!p || !viewport) return
+        if (Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y) > 3) p.moved = true
+        preview(panBy(viewport, p.from, e.clientX - p.x, e.clientY - p.y))
+      }}
+      onPointerUp={() => {
+        const p = pan.current
+        pan.current = null
+        if (p && live.current) preview(live.current, true)
+      }}
+      onPointerLeave={() => setPointer(null)}
       onClick={(e) => {
         if (tool === 'wb-picker' || tool === 'range-picker') void pick(e)
       }}
       onDoubleClick={(e) => {
-        if (tool !== 'none' || !g || !rect) return
+        if (tool !== 'none') return
         const box = e.currentTarget.getBoundingClientRect()
-        const p = normalisedIn(e.clientX, e.clientY, {
-          left: box.left + rect.x,
-          top: box.top + rect.y,
-          width: rect.w,
-          height: rect.h
-        })
-        regionCentre.value = displayToOriented(g, p)
-        setZoom(1)
+        loupeZoom.toggle({ x: e.clientX - box.left, y: e.clientY - box.top })
       }}
     >
-      {shown && rect && (
-        <div
-          className={`picture${grey ? ' ov-bw' : ''}`}
-          style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, transform: rotate }}
-        >
-          <DecodedImage src={shown.url} />
-          {compare === 'split' && before && (
-            <div
-              className="split-before"
-              style={{ clipPath: `inset(0 ${(1 - split) * 100}% 0 0)` }}
-            >
-              <DecodedImage src={before.url} />
-            </div>
-          )}
-          <MaskOverlay />
-          {clipping && picture && <ClippingOverlay url={picture.url} />}
-        </div>
-      )}
-      {compare === 'split' && rect && (
-        <>
-          <span className="split-tag" style={{ left: rect.x + 14, top: rect.y + 14 }}>
-            Before
-          </span>
-          <span
-            className="split-tag"
-            style={{ left: rect.x + rect.w - 14, top: rect.y + 14, transform: 'translateX(-100%)' }}
+      <div ref={layer} className="zoom-layer">
+        {shown && vrect && (
+          <div
+            className={`picture${grey ? ' ov-bw' : ''}`}
+            style={{
+              left: vrect.x,
+              top: vrect.y,
+              width: vrect.w,
+              height: vrect.h,
+              transform: rotate
+            }}
           >
-            After
-          </span>
-        </>
-      )}
-      {compare === 'split' && rect && (
-        <div
-          className="split-handle"
-          style={{ left: rect.x + rect.w * split, top: rect.y, height: rect.h }}
-          onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
-          onPointerMove={(e) => {
-            if (e.buttons !== 1) return
-            const box = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect()
-            setSplit(Math.min(1, Math.max(0, (e.clientX - box.left - rect.x) / rect.w)))
-          }}
-        />
-      )}
-      {tool === 'crop' && rect && g && <CropTool rect={rect} g={g} />}
-      {gesture === 'straighten' && tool !== 'crop' && rect && (
-        // Straightening from the panel: a fine grid over the picture to line a horizon up against.
-        <div
-          className="straighten-grid"
-          style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
-        >
-          <Guides kind="grid" w={rect.w} h={rect.h} fine strong />
-        </div>
-      )}
-      {rect && <MaskPins rect={rect} />}
-      {tool === 'brush' && rect && g && <BrushLayer rect={rect} g={g} />}
-      {tool === 'polygon' && rect && g && <PolygonLayer rect={rect} g={g} />}
-      {tool !== 'crop' && rect && g && <GradientTools rect={rect} g={g} />}
-      {tool !== 'crop' && rect && g && <LassoEditor rect={rect} g={g} />}
-      <LoupeHud />
+            <DecodedImage src={shown.url} />
+            {scale && g && picture && compare === 'off' && (
+              <SharpTile rect={vrect} box={size} g={g} scale={scale} previewWidth={picture.width} />
+            )}
+            {compare === 'split' && before && (
+              <div
+                className="split-before"
+                style={{ clipPath: `inset(0 ${(1 - split) * 100}% 0 0)` }}
+              >
+                <DecodedImage src={before.url} />
+              </div>
+            )}
+            <MaskOverlay />
+            {clipping && picture && <ClippingOverlay url={picture.url} />}
+          </div>
+        )}
+        {compare === 'split' && vrect && (
+          <>
+            <span className="split-tag" style={{ left: vrect.x + 14, top: vrect.y + 14 }}>
+              Before
+            </span>
+            <span
+              className="split-tag"
+              style={{
+                left: vrect.x + vrect.w - 14,
+                top: vrect.y + 14,
+                transform: 'translateX(-100%)'
+              }}
+            >
+              After
+            </span>
+          </>
+        )}
+        {compare === 'split' && vrect && (
+          <div
+            className="split-handle"
+            style={{ left: vrect.x + vrect.w * split, top: vrect.y, height: vrect.h }}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              e.currentTarget.setPointerCapture(e.pointerId)
+            }}
+            onPointerMove={(e) => {
+              if (e.buttons !== 1) return
+              const box = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect()
+              setSplit(Math.min(1, Math.max(0, (e.clientX - box.left - vrect.x) / vrect.w)))
+            }}
+          />
+        )}
+        {tool === 'crop' && rect && g && <CropTool rect={rect} g={g} />}
+        {gesture === 'straighten' && tool !== 'crop' && vrect && (
+          // Straightening from the panel: a fine grid over the picture to line a horizon up against.
+          <div
+            className="straighten-grid"
+            style={{ left: vrect.x, top: vrect.y, width: vrect.w, height: vrect.h }}
+          >
+            <Guides kind="grid" w={vrect.w} h={vrect.h} fine strong />
+          </div>
+        )}
+        {vrect && <MaskPins rect={vrect} />}
+        {tool === 'brush' && vrect && g && <BrushLayer rect={vrect} box={size} g={g} />}
+        {tool === 'polygon' && vrect && g && <PolygonLayer rect={vrect} g={g} />}
+        {tool !== 'crop' && vrect && g && <GradientTools rect={vrect} g={g} />}
+        {tool !== 'crop' && vrect && g && <LassoEditor rect={vrect} g={g} />}
+      </div>
+      <LoupeHud scale={scale} />
     </div>
   )
 }
