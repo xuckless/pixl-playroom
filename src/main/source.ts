@@ -14,6 +14,7 @@ import type {
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
 import { fromExif } from '../shared/orientation'
+import { execFileSync } from 'child_process'
 import { cpus } from 'os'
 
 export const RAW_EXTENSIONS = [
@@ -102,8 +103,26 @@ export function displayPolicy(info: SourceInfo, to: 'DisplayP3' | 'Srgb'): Color
   return { ConvertTo: { to, intent: 'RelativeColorimetric', black_point_compensation: false } }
 }
 
-/** Threads for interactive work: every core. */
-export const INTERACTIVE_THREADS = Math.max(1, cpus().length)
+/**
+ * The cores interactive work can use without starving the UI: on Apple
+ * silicon the performance cores (work split evenly across efficiency cores
+ * waits on the slowest), elsewhere all but two, for the renderer and GPU
+ * processes.
+ */
+function interactiveThreads(): number {
+  if (process.platform === 'darwin') {
+    try {
+      const n = parseInt(execFileSync('sysctl', ['-n', 'hw.perflevel0.physicalcpu']).toString(), 10)
+      if (n > 0) return n
+    } catch {
+      // Intel Macs have no performance levels.
+    }
+  }
+  return Math.max(1, cpus().length - 2)
+}
+
+/** Threads for interactive work: the performance cores. */
+export const INTERACTIVE_THREADS = interactiveThreads()
 /** Threads for background work: a few, so the UI stays responsive. */
 export const BACKGROUND_THREADS = Math.max(1, Math.min(4, Math.floor(cpus().length / 2)))
 

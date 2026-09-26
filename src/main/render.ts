@@ -6,7 +6,9 @@
  *
  * Renders are coalesced: while one is in flight only the newest recipe waits,
  * and a moving slider renders the small draft proxy; the full proxy follows
- * once the slider settles.
+ * once the slider settles (longer when that is the large proxy a Retina
+ * loupe asks for), or at once when it is let go. Both are JPEGs, quick to
+ * write and to read back for the histogram and the loupe.
  */
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
@@ -57,6 +59,12 @@ type Kind = 'draft' | 'full'
 
 /** How long a slider must rest before the full proxy renders. */
 const SETTLE_MS = 180
+/**
+ * How long it must rest when the full render is the large proxy: pausing
+ * mid-drag should not start a render four times the draft's size that the
+ * next move then waits behind.
+ */
+const SETTLE_LARGE_MS = 500
 /** How long an edit must rest before the sidecar is written. */
 const SAVE_MS = 600
 
@@ -190,7 +198,10 @@ class Session {
 
   schedule(kind: Kind): void {
     clearTimeout(this.settle)
-    if (kind === 'draft') this.settle = setTimeout(() => this.schedule('full'), SETTLE_MS)
+    if (kind === 'draft') {
+      const wait = this.source('full') === this.px.proxy ? SETTLE_LARGE_MS : SETTLE_MS
+      this.settle = setTimeout(() => this.schedule('full'), wait)
+    }
     if (this.inflight) {
       this.pending = this.pending === 'full' || kind === 'full' ? 'full' : 'draft'
       return
@@ -251,15 +262,13 @@ class Session {
       if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq })
       return
     }
-    const ext = kind === 'draft' ? 'jpg' : 'png'
-    const out = this.nextFile('view', ext)
+    const out = this.nextFile('view', 'jpg')
     const report = await this.owner.engine.convert({
       ...blankRequest(src.path, out, src.input),
       pixel: { depth: 'Eight', channels: 3 },
-      encode:
-        kind === 'draft'
-          ? { Jpeg: { quality: 92, subsampling: 'None', optimize: false } }
-          : { Png: { compression: 'Fast', filter: 'Sub' } },
+      encode: {
+        Jpeg: { quality: kind === 'draft' ? 92 : 95, subsampling: 'None', optimize: false }
+      },
       metadata: { exif: false, icc: true, xmp: false, iptc: false },
       color: displayPolicy(this.info, 'DisplayP3'),
       grade: compiled.grade,
@@ -267,7 +276,7 @@ class Session {
       threads: INTERACTIVE_THREADS
     })
     const stats = await this.owner.engine.analyze(
-      analyzeRequest(out, kind === 'draft' ? 'Jpeg' : 'Png', kind === 'draft' ? 2 : 1)
+      analyzeRequest(out, 'Jpeg', kind === 'draft' ? 2 : 1)
     )
     if (kind === 'full') {
       this.lastFull = out
@@ -323,7 +332,7 @@ class Session {
     try {
       const picture = this.lastFull
       maskStats = await this.owner.engine.analyze({
-        ...analyzeRequest(picture, 'Png', 1),
+        ...analyzeRequest(picture, 'Jpeg', 1),
         weights: { source: { Png: out }, resampler: 'Bilinear' }
       })
     } catch (err) {

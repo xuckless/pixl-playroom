@@ -97,6 +97,15 @@ editable lasso points.
       straighten); needs a canvas-space region in the engine.
 - [ ] Cancellation of an in-flight render (the engine is synchronous; a
       stale render finishes and is dropped).
+- [ ] **Preview round trip.** Each preview is written to disk as a JPEG,
+      decoded again by `analyze` for the histogram, and a third time by the
+      loupe. Have `convert` return the histogram itself (an engine change),
+      and in time hand the renderer raw RGBA over a `MessagePort` into a
+      canvas, with no file and no decode.
+- [ ] A ~1920 px proxy between the draft and the 2560 proxy, if a Retina
+      loupe in Native mode still waits on settled renders.
+- [ ] Re-check the engine hosts' libuv pools (8 interactive, 4 background)
+      against the calls actually in flight.
 
 ## Library and workflow
 

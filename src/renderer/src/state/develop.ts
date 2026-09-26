@@ -10,6 +10,7 @@ import type {
 } from '../../../shared/ipc'
 import { newId, type HslBand, type Recipe } from '../../../shared/recipe'
 import { api, errorText } from '../lib/api'
+import { touchInteracting } from '../lib/interacting'
 import { useLibrary } from './library'
 import { useUi } from './ui'
 
@@ -207,6 +208,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     set({ recipe: next, rendering: true })
     const onError = (m: string): void => get().onError(m)
     if (!interactive) return sendNow(session.key, next, onError)
+    touchInteracting()
     queued = { key: session.key, recipe: next }
     if (!frame) frame = requestAnimationFrame(() => flushQueued(onError))
   },

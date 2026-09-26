@@ -16,6 +16,11 @@ export interface Filter {
   text: string
 }
 
+export interface ToastAction {
+  label: string
+  run: () => void
+}
+
 interface LibraryState {
   folder: string | null
   items: LibraryItem[]
@@ -27,7 +32,7 @@ interface LibraryState {
   thumbSize: number
   recent: string[]
   engine: EngineStatus | null
-  toast: { text: string; tone: 'info' | 'error' } | null
+  toast: { text: string; tone: 'info' | 'error'; action?: ToastAction } | null
   dialog: null | 'export' | 'sync' | 'preset' | 'enhance'
   clipboard: { recipe: Recipe; groups: RecipeGroup[]; source: string | null } | null
 
@@ -46,7 +51,8 @@ interface LibraryState {
     patch: { rating?: number; flag?: Flag; label?: ColorLabel },
     keys?: string[]
   ): Promise<void>
-  say(text: string, tone?: 'info' | 'error'): void
+  /** A toast; one with an action stays until it is used or replaced. */
+  say(text: string, tone?: 'info' | 'error', action?: ToastAction): void
   setDialog(d: LibraryState['dialog']): void
   setClipboard(c: LibraryState['clipboard']): void
   visible(): LibraryItem[]
@@ -172,8 +178,9 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     }
   },
 
-  say(text, tone = 'info') {
-    set({ toast: { text, tone } })
+  say(text, tone = 'info', action) {
+    set({ toast: { text, tone, action } })
+    if (action) return
     setTimeout(
       () => {
         if (get().toast?.text === text) set({ toast: null })

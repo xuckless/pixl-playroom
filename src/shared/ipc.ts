@@ -9,7 +9,11 @@ export const IPC = {
     engineStatus: 'app:engine-status',
     getSetting: 'app:get-setting',
     setSetting: 'app:set-setting',
-    reveal: 'app:reveal'
+    reveal: 'app:reveal',
+    renderScale: 'app:render-scale',
+    restart: 'app:restart',
+    /** main → renderer: the display or the rendering mode changed */
+    renderScaleChanged: 'app:render-scale-changed'
   },
   library: {
     chooseFolder: 'library:choose-folder',
@@ -84,6 +88,23 @@ export interface EngineStatus {
   enhance?: boolean
   reason?: string
   restarts: number
+}
+
+/** Performance draws a scaled display at 1.5×; Native at the display's own scale. */
+export type RenderMode = 'performance' | 'native'
+
+export interface RenderScale {
+  /** There is a choice: a Mac display finer than Performance draws. */
+  available: boolean
+  mode: RenderMode
+  /** The window's display: its pixels per point, when known. */
+  native: number | null
+  /** The scale this process draws at (forced at launch, else the display's). */
+  active: number | null
+  /** The display wants another scale than this process was started with. */
+  restartNeeded: boolean
+  /** The app can restart itself (a packaged build). */
+  canRestart: boolean
 }
 
 // ── Library ──────────────────────────────────────────────────────────────────

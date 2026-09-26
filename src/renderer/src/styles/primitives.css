@@ -734,6 +734,13 @@ input[type='checkbox']:disabled {
     rgba(157, 139, 234, 0.045)
   );
 }
+/* A live edit re-renders the photo every frame; the lens over it would be
+   recomputed every frame too. Until it rests: the same clear, lifted glass
+   without the bend (the inline url() filter loses to !important). */
+:root[data-interacting] .liquid.refracting {
+  backdrop-filter: blur(var(--lg-frost)) saturate(1.45) !important;
+  -webkit-backdrop-filter: blur(var(--lg-frost)) saturate(1.45) !important;
+}
 .liquid::after {
   content: '';
   position: absolute;

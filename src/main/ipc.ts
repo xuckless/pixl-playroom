@@ -21,6 +21,7 @@ import { absoluteFromOp, relativeFromOp } from '../shared/wb'
 import { BUILTIN_PRESETS } from '../shared/presets'
 import { applyGroups, defaultRecipe, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
 import type { Store } from './db'
+import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
 import { enhanceAvailability, type Enhancer } from './enhance'
 import type { Exporter } from './exporter'
@@ -100,6 +101,8 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.getSetting, (key: string) => s.store.getSetting(key) ?? null)
   handle(IPC.app.setSetting, (key: string, value: unknown) => s.store.setSetting(key, value))
   handle(IPC.app.reveal, (path: string) => shell.showItemInFolder(path))
+  handle(IPC.app.renderScale, () => renderScale())
+  handle(IPC.app.restart, () => restart())
 
   // ── library ──
   handle(IPC.library.chooseFolder, async () => {
