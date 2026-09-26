@@ -1,6 +1,8 @@
-import { memo } from 'react'
+import { memo, useRef, useState } from 'react'
+import type { LibraryItem } from '../../../shared/ipc'
 import { LiquidGlass } from '../components/glass/LiquidGlass'
 import { Icon } from '../components/icons'
+import { useThumbFirst } from '../lib/thumbs'
 import { useDevelop } from '../state/develop'
 import { useLibrary, useVisible } from '../state/library'
 import { useUi } from '../state/ui'
@@ -17,15 +19,22 @@ export const Filmstrip = memo(function Filmstrip(): React.JSX.Element {
   const select = useLibrary((s) => s.select)
   const open = useDevelop((s) => s.open)
   const shown = useUi((s) => s.filmstrip)
+  // Once opened, its pictures stay loaded.
+  const [loaded, setLoaded] = useState(shown)
+  if (shown && !loaded) setLoaded(true)
   return (
     <div className={`filmstrip-wrap${shown ? ' open' : ''}`} aria-hidden={!shown}>
       <div className="filmstrip">
         {items.map((it, i) => (
-          <div
+          <FilmTile
             key={it.key}
-            className={`film${it.key === focus ? ' focus' : ''}${selection.includes(it.key) ? ' selected' : ''}`}
-            style={{ animationDelay: `${Math.min(i, 14) * 25}ms` }}
-            onClick={(e) => {
+            item={it}
+            index={i}
+            focus={it.key === focus}
+            selected={selection.includes(it.key)}
+            // Folded away, it loads no pictures.
+            load={loaded}
+            onPick={(e) => {
               if (e.ctrlKey || e.metaKey || e.shiftKey) {
                 select(it.key, e.shiftKey ? 'range' : 'toggle')
                 return
@@ -33,17 +42,44 @@ export const Filmstrip = memo(function Filmstrip(): React.JSX.Element {
               select(it.key, 'only')
               void open(it.key)
             }}
-            title={it.name}
-          >
-            {it.thumbUrl ? (
-              <img src={it.thumbUrl} draggable={false} alt="" />
-            ) : (
-              <span>{it.ext.toUpperCase()}</span>
-            )}
-            {it.rating > 0 && <span className="film-rating">{'★'.repeat(it.rating)}</span>}
-          </div>
+          />
         ))}
       </div>
+    </div>
+  )
+})
+
+const FilmTile = memo(function FilmTile({
+  item,
+  index,
+  focus,
+  selected,
+  load,
+  onPick
+}: {
+  item: LibraryItem
+  index: number
+  focus: boolean
+  selected: boolean
+  load: boolean
+  onPick: (e: React.MouseEvent) => void
+}): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  useThumbFirst(ref, item.key, load && !item.thumbUrl && !item.unreadable)
+  return (
+    <div
+      ref={ref}
+      className={`film${focus ? ' focus' : ''}${selected ? ' selected' : ''}`}
+      style={{ animationDelay: `${Math.min(index, 14) * 25}ms` }}
+      onClick={onPick}
+      title={item.name}
+    >
+      {load && item.thumbUrl ? (
+        <img src={item.thumbUrl} loading="lazy" decoding="async" draggable={false} alt="" />
+      ) : (
+        <span>{item.unreadable ? '—' : item.ext.toUpperCase()}</span>
+      )}
+      {item.rating > 0 && <span className="film-rating">{'★'.repeat(item.rating)}</span>}
     </div>
   )
 })

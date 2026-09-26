@@ -691,7 +691,8 @@ fieldset::before {
   pointer-events: none;
   z-index: 3;
   border-color: rgba(157, 139, 234, 0.5);
-  animation: notch 3.2s ease-in-out infinite;
+  /* a couple of breaths when it lands, then still: it sits over a lens */
+  animation: notch 3.2s ease-in-out 2;
 }
 .tw-notch.liquid,
 .tw-notch.liquid.refracting {

@@ -28,9 +28,22 @@
   height: 220px;
   display: grid;
   place-items: center;
-  filter: drop-shadow(0 0 40px rgba(157, 139, 234, 0.45))
-    drop-shadow(0 0 90px rgba(123, 104, 216, 0.25));
   animation: breathe 3.8s ease-in-out infinite;
+}
+/* the glow is a still gradient behind the sphere, not a drop-shadow filter
+   re-run over every frame the sphere draws */
+.sphere-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -90px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(157, 139, 234, 0.4) 0%,
+    rgba(123, 104, 216, 0.18) 38%,
+    transparent 68%
+  );
+  pointer-events: none;
 }
 .sphere-wrap .fx-canvas,
 .sphere-wrap .css-sphere {

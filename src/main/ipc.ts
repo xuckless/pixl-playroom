@@ -141,31 +141,41 @@ export function registerIpc(s: Services): void {
       if (groups.includes('whiteBalance') && recipe.wb.mode === 'custom' && sourceKey) {
         sourceWb = await wbContext(s.library, sourceKey)
       }
+      const from = new Map<string, Recipe>()
       for (const key of keys) {
         s.sessions.flush(key)
-        let from = recipe
-        if (sourceWb) {
-          const target = await wbContext(s.library, key)
-          from = { ...recipe, wb: convertWb(recipe.wb, sourceWb, target) }
-        }
-        const next = applyGroups(s.sessions.liveRecipe(key) ?? s.library.recipe(key), from, groups)
-        s.library.saveRecipe(key, next)
-        if (s.sessions.liveRecipe(key)) s.sessions.update(key, next, false)
-        const { photoId, copyId } = parseKey(key)
-        s.library.queueThumb(photoId, copyId, true)
+        const target = sourceWb ? await wbContext(s.library, key) : null
+        from.set(
+          key,
+          sourceWb && target ? { ...recipe, wb: convertWb(recipe.wb, sourceWb, target) } : recipe
+        )
       }
+      // The writes in one transaction: a batch commits once.
+      s.store.tx(() => {
+        for (const key of keys) {
+          const live = s.sessions.liveRecipe(key)
+          const next = applyGroups(live ?? s.library.recipe(key), from.get(key) ?? recipe, groups)
+          s.library.saveRecipe(key, next)
+          if (live) s.sessions.update(key, next, false)
+          const { photoId, copyId } = parseKey(key)
+          s.library.queueThumb(photoId, copyId, true)
+        }
+      })
       return keys.map((k) => s.library.item(k))
     }
   )
+  handle(IPC.library.prioritize, (keys: string[]) => s.library.prioritize(keys))
   handle(IPC.library.resetRecipe, (keys: string[]) => {
-    for (const key of keys) {
-      const raw = s.library.photoRow(key).is_raw === 1
-      const fresh = defaultRecipe(raw)
-      s.library.saveRecipe(key, fresh)
-      if (s.sessions.liveRecipe(key)) s.sessions.update(key, fresh, false)
-      const { photoId, copyId } = parseKey(key)
-      s.library.queueThumb(photoId, copyId, true)
-    }
+    s.store.tx(() => {
+      for (const key of keys) {
+        const raw = s.library.photoRow(key).is_raw === 1
+        const fresh = defaultRecipe(raw)
+        s.library.saveRecipe(key, fresh)
+        if (s.sessions.liveRecipe(key)) s.sessions.update(key, fresh, false)
+        const { photoId, copyId } = parseKey(key)
+        s.library.queueThumb(photoId, copyId, true)
+      }
+    })
     return keys.map((k) => s.library.item(k))
   })
 

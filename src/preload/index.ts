@@ -67,7 +67,9 @@ const api = {
       call<(LibraryItem | undefined)[]>(IPC.library.applyRecipe, keys, recipe, groups, sourceKey),
     resetRecipe: (keys: string[]) =>
       call<(LibraryItem | undefined)[]>(IPC.library.resetRecipe, keys),
-    onThumb: (cb: (p: { key: string; url: string }) => void) => on(IPC.library.thumb, cb),
+    prioritize: (keys: string[]) => call<void>(IPC.library.prioritize, keys),
+    onThumb: (cb: (p: { key: string; url: string | null; unreadable?: boolean }) => void) =>
+      on(IPC.library.thumb, cb),
     onChanged: (cb: (p: { folder: string }) => void) => on(IPC.library.changed, cb)
   },
   develop: {

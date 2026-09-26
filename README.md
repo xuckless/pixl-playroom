@@ -102,10 +102,10 @@ renderer (React)  ──IPC──>  main process ──postMessage──> utilit
   truth: recipe, snapshots, virtual copies, rating, flag, label. The index
   (`node:sqlite`, `src/main/db.ts`) mirrors them for speed and keeps history,
   presets, export presets and settings. The original is never written.
-- **Rendering scale** (`src/main/display.ts`): on a Mac display finer than
-  1.5× (Retina), View ▸ Rendering chooses Performance (the app drawn at 1.5×
-  and scaled by macOS: every blur and glass filter costs about half as many
-  pixels) or Native. Performance is the default. Chromium takes the scale
+- **Rendering scale** (`src/main/display.ts`): on a scaled Mac display
+  (Retina), View ▸ Rendering chooses Ultra (the app and the picture at 1×),
+  Performance (1.5×, scaled by macOS: every blur and glass filter costs about
+  half as many pixels) or Native. Performance is the default. Chromium takes the scale
   only from its command line, so a packaged build starts itself again with
   it; in dev pass it yourself: `pnpm dev -- --force-device-scale-factor=1.5`.
   While a live edit re-renders the photo, the liquid glass drops its lens

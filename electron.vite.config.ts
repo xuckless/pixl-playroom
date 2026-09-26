@@ -28,6 +28,11 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react()]
+    plugins: [react()],
+    build: {
+      // Less to parse at start: three.js and the app ship minified.
+      minify: 'esbuild',
+      sourcemap: false
+    }
   }
 })

@@ -1,6 +1,7 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { Color, type ShaderMaterial } from 'three'
+import { useFrameLimit } from './frames'
 import { watchContext } from './mode'
 import { SIMPLEX_3D } from './shaders/noise'
 
@@ -52,7 +53,6 @@ void main() {
 function Surface({ intensity }: { intensity: number }): React.JSX.Element {
   const mat = useRef<ShaderMaterial>(null)
   const size = useThree((s) => s.size)
-  const invalidate = useThree((s) => s.invalidate)
   const uniforms = useMemo(
     () => ({
       uTime: { value: START_TIME },
@@ -68,18 +68,7 @@ function Surface({ intensity }: { intensity: number }): React.JSX.Element {
     []
   )
   // A slow scene: thirty frames a second is plenty, and nothing while hidden.
-  useEffect(() => {
-    let raf = 0
-    let last = 0
-    const tick = (now: number): void => {
-      raf = requestAnimationFrame(tick)
-      if (document.visibilityState !== 'visible' || now - last < 33) return
-      last = now
-      invalidate()
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [invalidate])
+  useFrameLimit(30)
   useFrame((state, dt) => {
     const m = mat.current
     if (!m) return

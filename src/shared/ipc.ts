@@ -24,6 +24,8 @@ export const IPC = {
     deleteCopy: 'library:delete-copy',
     applyRecipe: 'library:apply-recipe',
     resetRecipe: 'library:reset-recipe',
+    /** Thumbnails of these keys first (they are on screen). */
+    prioritize: 'library:prioritize',
     /** main → renderer: a thumbnail (re)rendered */
     thumb: 'library:thumb',
     /** main → renderer: the folder's items changed (new file, new copy) */
@@ -90,13 +92,17 @@ export interface EngineStatus {
   restarts: number
 }
 
-/** Performance draws a scaled display at 1.5×; Native at the display's own scale. */
-export type RenderMode = 'performance' | 'native'
+/** Ultra draws a scaled display at 1×, Performance at 1.5×, Native at the display's own scale. */
+export type RenderMode = 'ultra' | 'performance' | 'native'
 
 export interface RenderScale {
-  /** There is a choice: a Mac display finer than Performance draws. */
+  /** There is a choice: a Mac display finer than 1×. */
   available: boolean
+  /** The modes that differ on this display (Performance is gone at 1.5× and below). */
+  modes: RenderMode[]
   mode: RenderMode
+  /** The scale this display wants in the chosen mode (null: native). */
+  target: number | null
   /** The window's display: its pixels per point, when known. */
   native: number | null
   /** The scale this process draws at (forced at launch, else the display's). */
@@ -143,6 +149,8 @@ export interface LibraryItem {
   label: ColorLabel
   edited: boolean
   thumbUrl: string | null
+  /** Its thumbnail failed: the file cannot be read (until it changes). */
+  unreadable?: boolean
   camera: CameraInfo
 }
 

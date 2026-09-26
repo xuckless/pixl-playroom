@@ -84,6 +84,9 @@
     border-color 0.25s,
     box-shadow 0.4s var(--ease);
   animation: thumbIn 0.7s var(--spring) both;
+  /* off-screen tiles skip layout and paint; `auto` remembers their size */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px;
 }
 .thumb:hover {
   transform: translateY(-4px);
@@ -130,6 +133,11 @@
   letter-spacing: 0.14em;
   font-size: 11px;
   animation: statusPulse 1.6s ease-in-out infinite;
+}
+.thumb-wait.unreadable {
+  animation: none;
+  opacity: 0.6;
+  text-transform: uppercase;
 }
 .thumb-meta {
   display: flex;

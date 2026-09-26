@@ -5,7 +5,7 @@
  * home: edit history, presets, export presets, settings and the thumbnail
  * cache's bookkeeping. Deleting it loses nothing a sidecar holds.
  */
-import { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import type {
   CameraInfo,
   ColorLabel,
@@ -104,7 +104,47 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 const HISTORY_LIMIT = 200
 
 export class Store {
+  private readonly statements = new Map<string, StatementSync>()
+  private depth = 0
+
   private constructor(private readonly db: DatabaseSync) {}
+
+  /** A statement, prepared once and reused: preparing costs more than most runs. */
+  private prepare(sql: string): StatementSync {
+    let st = this.statements.get(sql)
+    if (!st) {
+      st = this.db.prepare(sql)
+      this.statements.set(sql, st)
+    }
+    return st
+  }
+
+  /**
+   * Run `fn` as one transaction: a folder scan or a batch edit commits once
+   * instead of once per row. Nested calls join the outer transaction.
+   */
+  tx<T>(fn: () => T): T {
+    if (this.depth > 0) {
+      this.depth++
+      try {
+        return fn()
+      } finally {
+        this.depth--
+      }
+    }
+    this.depth = 1
+    this.db.exec('BEGIN')
+    try {
+      const out = fn()
+      this.db.exec('COMMIT')
+      return out
+    } catch (err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    } finally {
+      this.depth = 0
+    }
+  }
 
   static open(file: string): Store {
     const db = new DatabaseSync(file)
@@ -119,16 +159,14 @@ export class Store {
 
   // ── folders ──
   touchFolder(path: string): void {
-    this.db
-      .prepare(
-        'INSERT INTO folders(path, opened_at) VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET opened_at = excluded.opened_at'
-      )
-      .run(path, new Date().toISOString())
+    this.prepare(
+      'INSERT INTO folders(path, opened_at) VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET opened_at = excluded.opened_at'
+    ).run(path, new Date().toISOString())
   }
 
   recentFolders(limit = 12): string[] {
     return (
-      this.db.prepare('SELECT path FROM folders ORDER BY opened_at DESC LIMIT ?').all(limit) as {
+      this.prepare('SELECT path FROM folders ORDER BY opened_at DESC LIMIT ?').all(limit) as {
         path: string
       }[]
     ).map((r) => r.path)
@@ -136,18 +174,18 @@ export class Store {
 
   // ── photos ──
   photosIn(folder: string): PhotoRow[] {
-    return this.db
-      .prepare('SELECT * FROM photos WHERE folder = ? ORDER BY name')
-      .all(folder) as unknown as PhotoRow[]
+    return this.prepare('SELECT * FROM photos WHERE folder = ? ORDER BY name').all(
+      folder
+    ) as unknown as PhotoRow[]
   }
 
   photo(id: number): PhotoRow | undefined {
-    return this.db.prepare('SELECT * FROM photos WHERE id = ?').get(id) as unknown as
+    return this.prepare('SELECT * FROM photos WHERE id = ?').get(id) as unknown as
       PhotoRow | undefined
   }
 
   photoByPath(path: string): PhotoRow | undefined {
-    return this.db.prepare('SELECT * FROM photos WHERE path = ?').get(path) as unknown as
+    return this.prepare('SELECT * FROM photos WHERE path = ?').get(path) as unknown as
       PhotoRow | undefined
   }
 
@@ -160,20 +198,18 @@ export class Store {
     mtime: number
     isRaw: boolean
   }): PhotoRow {
-    this.db
-      .prepare(
-        `INSERT INTO photos(path, folder, name, ext, size, mtime, is_raw) VALUES (?, ?, ?, ?, ?, ?, ?)
+    this.prepare(
+      `INSERT INTO photos(path, folder, name, ext, size, mtime, is_raw) VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(path) DO UPDATE SET size = excluded.size, mtime = excluded.mtime`
-      )
-      .run(p.path, p.folder, p.name, p.ext, p.size, p.mtime, p.isRaw ? 1 : 0)
+    ).run(p.path, p.folder, p.name, p.ext, p.size, p.mtime, p.isRaw ? 1 : 0)
     return this.photoByPath(p.path) as PhotoRow
   }
 
   removeMissing(folder: string, present: Set<string>): void {
     for (const row of this.photosIn(folder)) {
       if (!present.has(row.path)) {
-        this.db.prepare('DELETE FROM photos WHERE id = ?').run(row.id)
-        this.db.prepare('DELETE FROM copies WHERE photo_id = ?').run(row.id)
+        this.prepare('DELETE FROM photos WHERE id = ?').run(row.id)
+        this.prepare('DELETE FROM copies WHERE photo_id = ?').run(row.id)
       }
     }
   }
@@ -182,40 +218,42 @@ export class Store {
     id: number,
     meta: { rating: number; flag: Flag; label: ColorLabel; edited: boolean }
   ): void {
-    this.db
-      .prepare('UPDATE photos SET rating = ?, flag = ?, label = ?, edited = ? WHERE id = ?')
-      .run(meta.rating, meta.flag, meta.label, meta.edited ? 1 : 0, id)
+    this.prepare('UPDATE photos SET rating = ?, flag = ?, label = ?, edited = ? WHERE id = ?').run(
+      meta.rating,
+      meta.flag,
+      meta.label,
+      meta.edited ? 1 : 0,
+      id
+    )
   }
 
   setSidecarMtime(id: number, mtime: number | null): void {
-    this.db.prepare('UPDATE photos SET sidecar_mtime = ? WHERE id = ?').run(mtime, id)
+    this.prepare('UPDATE photos SET sidecar_mtime = ? WHERE id = ?').run(mtime, id)
   }
 
   setCamera(id: number, camera: CameraInfo): void {
-    this.db
-      .prepare('UPDATE photos SET camera_json = ? WHERE id = ?')
-      .run(JSON.stringify(camera), id)
+    this.prepare('UPDATE photos SET camera_json = ? WHERE id = ?').run(JSON.stringify(camera), id)
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, key: string): void {
     if (copyId === null) {
-      this.db
-        .prepare('UPDATE photos SET thumb_path = ?, thumb_key = ? WHERE id = ?')
-        .run(path, key, photoId)
+      this.prepare('UPDATE photos SET thumb_path = ?, thumb_key = ? WHERE id = ?').run(
+        path,
+        key,
+        photoId
+      )
     } else {
-      this.db
-        .prepare(
-          'UPDATE copies SET thumb_path = ?, thumb_key = ? WHERE photo_id = ? AND copy_id = ?'
-        )
-        .run(path, key, photoId, copyId)
+      this.prepare(
+        'UPDATE copies SET thumb_path = ?, thumb_key = ? WHERE photo_id = ? AND copy_id = ?'
+      ).run(path, key, photoId, copyId)
     }
   }
 
   // ── copies ──
   copiesOf(photoId: number): CopyRow[] {
-    return this.db
-      .prepare('SELECT * FROM copies WHERE photo_id = ? ORDER BY name')
-      .all(photoId) as unknown as CopyRow[]
+    return this.prepare('SELECT * FROM copies WHERE photo_id = ? ORDER BY name').all(
+      photoId
+    ) as unknown as CopyRow[]
   }
 
   replaceCopies(
@@ -230,8 +268,8 @@ export class Store {
     }[]
   ): void {
     const existing = new Map(this.copiesOf(photoId).map((c) => [c.copy_id, c]))
-    this.db.prepare('DELETE FROM copies WHERE photo_id = ?').run(photoId)
-    const ins = this.db.prepare(
+    this.prepare('DELETE FROM copies WHERE photo_id = ?').run(photoId)
+    const ins = this.prepare(
       'INSERT INTO copies(photo_id, copy_id, name, rating, flag, label, edited, thumb_path, thumb_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
     for (const c of copies) {
@@ -253,9 +291,9 @@ export class Store {
   // ── history ──
   history(itemKey: string): HistoryEntry[] {
     return (
-      this.db
-        .prepare('SELECT seq, label, at, recipe FROM history WHERE item_key = ? ORDER BY seq')
-        .all(itemKey) as {
+      this.prepare(
+        'SELECT seq, label, at, recipe FROM history WHERE item_key = ? ORDER BY seq'
+      ).all(itemKey) as {
         seq: number
         label: string
         at: string
@@ -265,26 +303,27 @@ export class Store {
   }
 
   appendHistory(itemKey: string, label: string, recipe: Recipe): HistoryEntry {
-    const last = this.db
-      .prepare('SELECT MAX(seq) AS s FROM history WHERE item_key = ?')
-      .get(itemKey) as {
+    const last = this.prepare('SELECT MAX(seq) AS s FROM history WHERE item_key = ?').get(
+      itemKey
+    ) as {
       s: number | null
     }
     const seq = (last.s ?? 0) + 1
     const at = new Date().toISOString()
-    this.db
-      .prepare('INSERT INTO history(item_key, seq, label, at, recipe) VALUES (?, ?, ?, ?, ?)')
-      .run(itemKey, seq, label, at, JSON.stringify(recipe))
-    this.db
-      .prepare('DELETE FROM history WHERE item_key = ? AND seq <= ?')
-      .run(itemKey, seq - HISTORY_LIMIT)
+    this.prepare(
+      'INSERT INTO history(item_key, seq, label, at, recipe) VALUES (?, ?, ?, ?, ?)'
+    ).run(itemKey, seq, label, at, JSON.stringify(recipe))
+    this.prepare('DELETE FROM history WHERE item_key = ? AND seq <= ?').run(
+      itemKey,
+      seq - HISTORY_LIMIT
+    )
     return { seq, label, at, recipe }
   }
 
   // ── presets ──
   presets(): Preset[] {
     return (
-      this.db.prepare('SELECT * FROM presets ORDER BY grp, name').all() as {
+      this.prepare('SELECT * FROM presets ORDER BY grp, name').all() as {
         id: string
         name: string
         grp: string
@@ -302,20 +341,18 @@ export class Store {
   }
 
   savePreset(p: Preset): void {
-    this.db
-      .prepare(
-        'INSERT INTO presets(id, name, grp, groups, recipe) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, grp = excluded.grp, groups = excluded.groups, recipe = excluded.recipe'
-      )
-      .run(p.id, p.name, p.group, JSON.stringify(p.groups), JSON.stringify(p.recipe))
+    this.prepare(
+      'INSERT INTO presets(id, name, grp, groups, recipe) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, grp = excluded.grp, groups = excluded.groups, recipe = excluded.recipe'
+    ).run(p.id, p.name, p.group, JSON.stringify(p.groups), JSON.stringify(p.recipe))
   }
 
   removePreset(id: string): void {
-    this.db.prepare('DELETE FROM presets WHERE id = ?').run(id)
+    this.prepare('DELETE FROM presets WHERE id = ?').run(id)
   }
 
   exportPresets(): ExportPreset[] {
     return (
-      this.db.prepare('SELECT * FROM export_presets ORDER BY name').all() as {
+      this.prepare('SELECT * FROM export_presets ORDER BY name').all() as {
         id: string
         name: string
         settings: string
@@ -324,29 +361,25 @@ export class Store {
   }
 
   saveExportPreset(p: ExportPreset): void {
-    this.db
-      .prepare(
-        'INSERT INTO export_presets(id, name, settings) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, settings = excluded.settings'
-      )
-      .run(p.id, p.name, JSON.stringify(p.settings))
+    this.prepare(
+      'INSERT INTO export_presets(id, name, settings) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, settings = excluded.settings'
+    ).run(p.id, p.name, JSON.stringify(p.settings))
   }
 
   removeExportPreset(id: string): void {
-    this.db.prepare('DELETE FROM export_presets WHERE id = ?').run(id)
+    this.prepare('DELETE FROM export_presets WHERE id = ?').run(id)
   }
 
   // ── settings ──
   getSetting<T>(key: string): T | undefined {
-    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+    const row = this.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
       { value: string } | undefined
     return row ? (JSON.parse(row.value) as T) : undefined
   }
 
   setSetting(key: string, value: unknown): void {
-    this.db
-      .prepare(
-        'INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-      )
-      .run(key, JSON.stringify(value))
+    this.prepare(
+      'INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    ).run(key, JSON.stringify(value))
   }
 }

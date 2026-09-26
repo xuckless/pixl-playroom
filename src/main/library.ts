@@ -47,6 +47,9 @@ export function parseKey(key: string): { photoId: number; copyId: string | null 
   return { photoId: Number(id), copyId: copy ?? null }
 }
 
+/** A file's version: its path, size and modification time. */
+const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.size}`
+
 export function keyOf(photoId: number, copyId: string | null): string {
   return copyId === null ? String(photoId) : `${photoId}:${copyId}`
 }
@@ -109,6 +112,8 @@ interface ThumbJob {
 
 export class Library {
   private probes = new Map<string, SourceInfo>()
+  /** Files whose thumbnail failed, per version, with why. */
+  private failed = new Map<string, string>()
   private queue: ThumbJob[] = []
   private queued = new Set<string>()
   private running = 0
@@ -124,7 +129,7 @@ export class Library {
 
   /** A photo's probe, cached per file version. */
   async probe(photo: PhotoRow): Promise<SourceInfo> {
-    const k = `${photo.path}:${photo.mtime}:${photo.size}`
+    const k = versionOf(photo)
     const hit = this.probes.get(k)
     if (hit) return hit
     const info = await this.engine.probe(photo.path)
@@ -143,30 +148,35 @@ export class Library {
     } catch (err) {
       log.warn('cannot read folder', folder, err)
     }
-    for (const name of names) {
-      const ext = extname(name).slice(1).toLowerCase()
-      if (!IMAGE_EXTENSIONS.includes(ext)) continue
-      const path = join(folder, name)
-      let st
-      try {
-        st = statSync(path)
-      } catch {
-        continue
+    this.store.tx(() => {
+      for (const name of names) {
+        // Hidden files, and the `._` AppleDouble files macOS leaves beside
+        // every photo on a FAT or exFAT card, are not photos.
+        if (name.startsWith('.')) continue
+        const ext = extname(name).slice(1).toLowerCase()
+        if (!IMAGE_EXTENSIONS.includes(ext)) continue
+        const path = join(folder, name)
+        let st
+        try {
+          st = statSync(path)
+        } catch {
+          continue
+        }
+        if (!st.isFile()) continue
+        present.add(path)
+        const row = this.store.upsertPhoto({
+          path,
+          folder,
+          name,
+          ext,
+          size: st.size,
+          mtime: st.mtimeMs,
+          isRaw: isRawExt(ext)
+        })
+        this.syncSidecar(row)
       }
-      if (!st.isFile()) continue
-      present.add(path)
-      const row = this.store.upsertPhoto({
-        path,
-        folder,
-        name,
-        ext,
-        size: st.size,
-        mtime: st.mtimeMs,
-        isRaw: isRawExt(ext)
-      })
-      this.syncSidecar(row)
-    }
-    this.store.removeMissing(folder, present)
+      this.store.removeMissing(folder, present)
+    })
     const items = this.items(folder)
     for (const it of items) {
       this.queueThumb(it.photoId, it.copyId)
@@ -208,12 +218,16 @@ export class Library {
   }
 
   private async fillCameras(folder: string): Promise<void> {
+    let filled = 0
     for (const row of this.store.photosIn(folder)) {
       if (row.camera_json) continue
       const camera = await readCamera(row.path)
       this.store.setCamera(row.id, camera)
+      filled++
     }
-    this.broadcast(IPC.library.changed, { folder })
+    // Only news is broadcast: the renderer answers `changed` by reopening
+    // the folder, which calls this again.
+    if (filled > 0) this.broadcast(IPC.library.changed, { folder })
   }
 
   items(folder: string): LibraryItem[] {
@@ -253,6 +267,7 @@ export class Library {
       label: ((copy ? copy.label : row.label) as ColorLabel) ?? null,
       edited: (copy ? copy.edited : row.edited) === 1,
       thumbUrl: thumbPath && existsSync(thumbPath) ? cacheUrl(thumbPath, thumbKey ?? '') : null,
+      unreadable: this.failed.has(versionOf(row)),
       camera: row.camera_json ? (JSON.parse(row.camera_json) as CameraInfo) : emptyCamera()
     }
   }
@@ -296,16 +311,18 @@ export class Library {
   }
 
   setMeta(keys: string[], patch: MetaPatch): void {
-    for (const key of keys) {
-      const { copyId } = parseKey(key)
-      this.update(key, (s) => {
-        const it = itemOf(s, copyId)
-        if (!it) return
-        if (patch.rating !== undefined) it.rating = Math.max(0, Math.min(5, patch.rating))
-        if (patch.flag !== undefined) it.flag = patch.flag
-        if (patch.label !== undefined) it.label = patch.label
-      })
-    }
+    this.store.tx(() => {
+      for (const key of keys) {
+        const { copyId } = parseKey(key)
+        this.update(key, (s) => {
+          const it = itemOf(s, copyId)
+          if (!it) return
+          if (patch.rating !== undefined) it.rating = Math.max(0, Math.min(5, patch.rating))
+          if (patch.flag !== undefined) it.flag = patch.flag
+          if (patch.label !== undefined) it.label = patch.label
+        })
+      }
+    })
   }
 
   createCopy(key: string): string {
@@ -349,12 +366,32 @@ export class Library {
     this.pump()
   }
 
+  /** Move these keys' waiting thumbnails to the front of the queue. */
+  prioritize(keys: string[]): void {
+    const want = new Set(keys)
+    const first = this.queue.filter((j) => want.has(keyOf(j.photoId, j.copyId)))
+    if (first.length === 0) return
+    this.queue = [...first, ...this.queue.filter((j) => !want.has(keyOf(j.photoId, j.copyId)))]
+  }
+
   private pump(): void {
     while (this.running < 2 && this.queue.length > 0) {
       const job = this.queue.shift() as ThumbJob
       this.running++
       this.thumb(job)
-        .catch((err) => log.warn('thumbnail failed', job, err?.message ?? err))
+        .catch((err) => {
+          log.warn('thumbnail failed', job, err?.message ?? err)
+          // Once per version of the file: a photo that cannot be read is not
+          // tried again until it changes.
+          const row = this.store.photo(job.photoId)
+          if (!row) return
+          this.failed.set(versionOf(row), String(err?.message ?? err))
+          this.broadcast(IPC.library.thumb, {
+            key: keyOf(job.photoId, job.copyId),
+            url: null,
+            unreadable: true
+          })
+        })
         .finally(() => {
           this.running--
           this.queued.delete(keyOf(job.photoId, job.copyId))
@@ -365,7 +402,7 @@ export class Library {
 
   private async thumb(job: ThumbJob): Promise<void> {
     const row = this.store.photo(job.photoId)
-    if (!row) return
+    if (!row || this.failed.has(versionOf(row))) return
     const key = keyOf(row.id, job.copyId)
     const recipe = this.recipe(key)
     const raw = row.is_raw === 1
