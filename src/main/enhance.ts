@@ -18,7 +18,6 @@ import { relativeFromOp } from '../shared/wb'
 import type { EngineClient } from './engine/client'
 import type { Library } from './library'
 import { paths } from './paths'
-import { writeSidecar, readSidecar } from './sidecar'
 import { BACKGROUND_THREADS, blankRequest, RAW_DEVELOP, sourceOrientation } from './source'
 
 export const MODEL_FILE = 'real_esrgan_x2.onnx'
@@ -86,7 +85,7 @@ export class Enhancer {
       this.send({ key, phase: 'error', message: avail.reason ?? 'unavailable' })
       return
     }
-    const row = this.library.photoRow(key)
+    const row = await this.library.photoRow(key)
     const info = await this.library.probe(row)
     const stem = basename(row.name, extname(row.name))
     const out = join(dirname(row.path), `${stem}-Enhanced-SR.tif`)
@@ -143,7 +142,7 @@ export class Enhancer {
         } else throw err
       }
       // The enhanced file starts with the source's look.
-      const recipe = structuredClone(this.library.recipe(key))
+      const recipe = await this.library.recipe(key)
       recipe.geometry = { ...recipe.geometry, quarterTurns: 0, flipHorizontal: false }
       // A RAW's absolute white balance becomes the same white as relative
       // sliders: the enhanced file was developed with the as-shot white.
@@ -157,10 +156,8 @@ export class Enhancer {
           preset: null
         }
       }
-      const { sidecar } = readSidecar(out, false)
-      sidecar.photo.recipe = recipe
-      writeSidecar(out, sidecar)
-      this.library.openFolder(dirname(row.path))
+      await this.library.index.seedRecipe(out, recipe)
+      await this.library.openFolder(dirname(row.path))
       this.send({ key, phase: 'done', message: `Wrote ${basename(out)}`, output: out })
     } catch (err) {
       log.warn('enhance failed', err)
