@@ -15,21 +15,11 @@ way. Grouped by area; roughly in priority order within each.
       (electron-updater against the release feed, as space-pixl has).
 - [ ] **Windows DirectML**: bundle a DirectML build of ONNX Runtime (the
       GitHub zip is CPU-only; the provider falls back to the CPU and says so).
-- [x] UI/UX pass: the OLED/purple design system, two-tier bars, the spine
-      rail, the thumb-wheel with one tool at a time, liquid glass, the
-      three.js processing sphere and ambient gradient, Lightroom-style masks.
 - [ ] Design polish still open: a light theme; user-reorderable tools on the
       wheel; remembering the wheel's tool per photo; keyboard focus rings
       audited across the glass popovers.
 
 ## Masks and local tools
-
-Done in the UI pass: the Lightroom masks panel (thumbnails, components with
-Add / Subtract / Intersect, the tool picker), linear and radial gradients
-with on-canvas pins, per-mask Amount, range Smoothness, overlay modes and
-colour, show all masks, pins Auto/Always/Never, the overlay at 1:1, brushes
-A/B/erase with flow, density and pen pressure, a colour Auto Mask, and
-editable lasso points.
 
 - [ ] **Engine-native gradient shapes.** Linear and radial gradients are
       drawn by the host into 512 px raster planes (`src/shared/gradients.ts`,
@@ -61,12 +51,22 @@ editable lasso points.
 
 ## Develop
 
+- [ ] **Layer-based editing.** Every manipulation can be its own layer:
+      the user adds a layer (exposure, a curve, an HSL move, a colour
+      grade, a LUT…), and each layer has a name, visibility, opacity, a
+      blend mode, an optional mask and a place in an ordered stack that can
+      be reordered, duplicated, grouped and deleted. Today the global panels
+      are one flat set of sliders per recipe, and only masked local
+      adjustments (`LocalLayer`) are layers. Needs a layer stack in the
+      recipe (with a migration of today's global settings to a base layer),
+      the compiler emitting one engine stage per layer in stack order, a
+      layers panel in develop, and per-layer copy/paste, sync and presets.
 - [ ] **Industry-standard white balance fixer**: learned auto WB (a colour
       constancy model, e.g. FFCC or a small CNN) beside today's grey-pixel ∩
       grey-world estimate; per-photo auto WB across a batch (today a batch
       gets one photo's WB copied: Ctrl+Shift+S → White balance only); saved
-      WB presets are done (WB menu → Save current as preset…), but are kept
-      per kind (absolute for RAWs, relative otherwise) with no conversion.
+      WB presets converted across kinds (today they are kept per kind:
+      absolute for RAWs, relative otherwise).
 - [ ] Auto tone heuristics tuning (currently strong on overcast frames:
       highlights −80, blacks −60 on the CR2 fixture); an adaptive/learned auto.
 - [ ] Highlight recovery on RAW: rawler clips at sensor white; reconstruct
@@ -106,16 +106,10 @@ editable lasso points.
       loupe in Native mode still waits on settled renders.
 - [ ] Re-check the engine hosts' libuv pools (8 interactive, 4 background)
       against the calls actually in flight.
-- [ ] **An index worker**, as VS Code keeps its shared process: the SQLite
-      index and all sidecar reads and writes in a `worker_threads` worker
-      that owns the `DatabaseSync`, with `Library` and `Store` async across
-      the bridge. Today they run on the main process (in transactions, with
-      prepared statements reused), so a large folder scan or batch edit
-      still holds up IPC while it runs.
 - [ ] Edit history stored as diffs against the previous entry rather than
       whole recipes.
-- [ ] Prune the index's `planes` table: planes no history entry, preset or
-      open session refers to any more are never removed today.
+- [ ] Folder watching in the index host (today a folder is rescanned when it
+      is opened or refreshed; changes made outside the app appear then).
 
 ## Library and workflow
 
