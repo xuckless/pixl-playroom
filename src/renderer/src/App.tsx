@@ -5,7 +5,6 @@ import { RECIPE_GROUPS } from '../../shared/recipe'
 import { api, errorText } from './lib/api'
 import { runJob, useBusy } from './state/busy'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
-import { usePrefetchFx } from './fx/prefetch'
 import { Scopes } from './develop/Scopes'
 import { ToolDial } from './develop/ToolDial'
 import { ToolPanelHost } from './develop/ToolPanelHost'
@@ -130,10 +129,10 @@ function onRenderScale(s: RenderScale): void {
     restartText = null
     return
   }
-  const text =
-    s.mode === 'performance' && s.native !== null && s.native > 1.5
-      ? 'Performance rendering (1.5×) starts after a restart'
-      : `Native rendering${s.native ? ` (${Number(s.native.toFixed(2))}×)` : ''} starts after a restart`
+  const times = (n: number): string => `${Number(n.toFixed(2))}×`
+  const name = s.target === null ? 'Native' : s.mode === 'ultra' ? 'Ultra' : 'Performance'
+  const scale = s.target ?? s.native
+  const text = `${name} rendering${scale ? ` (${times(scale)})` : ''} starts after a restart`
   if (text === restartText && lib.toast?.text === text) return
   restartText = text
   lib.say(text, 'info', { label: 'Restart', run: () => void api.app.restart() })
@@ -332,13 +331,15 @@ function useShortcuts(): void {
 
 export default function App(): React.JSX.Element {
   useShortcuts()
-  usePrefetchFx()
   useEffect(() => {
     const offs = [
-      api.library.onThumb(({ key, url }) => {
+      api.library.onThumb(({ key, url, unreadable }) => {
         const items = useLibrary.getState().items
         const it = items.find((i) => i.key === key)
-        if (it) useLibrary.getState().patchItems([{ ...it, thumbUrl: url }])
+        if (it)
+          useLibrary
+            .getState()
+            .patchItems([{ ...it, thumbUrl: url ?? it.thumbUrl, unreadable: !!unreadable }])
       }),
       api.library.onChanged(() => void useLibrary.getState().refresh()),
       api.develop.onRendered((e) => useDevelop.getState().onRendered(e)),

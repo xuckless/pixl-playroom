@@ -410,6 +410,8 @@
   flex: 0 0 auto;
   width: 104px;
   height: 72px;
+  content-visibility: auto;
+  contain-intrinsic-size: 104px 72px;
   background: #000;
   display: flex;
   align-items: center;

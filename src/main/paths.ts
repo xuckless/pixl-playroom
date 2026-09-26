@@ -3,9 +3,15 @@ import { app } from 'electron'
 import { mkdirSync } from 'fs'
 import { join } from 'path'
 
+const made = new Set<string>()
+
+/** A directory under userData, made the first time it is asked for (the protocol asks per request). */
 function dir(...parts: string[]): string {
   const p = join(app.getPath('userData'), ...parts)
-  mkdirSync(p, { recursive: true })
+  if (!made.has(p)) {
+    mkdirSync(p, { recursive: true })
+    made.add(p)
+  }
   return p
 }
 

@@ -5,6 +5,7 @@ import { Icon } from '../components/icons'
 import { Stars } from '../components/ui'
 import { Ambient } from '../fx'
 import { LABEL_COLOURS } from '../lib/helpers'
+import { useThumbFirst } from '../lib/thumbs'
 import { IdentityBar } from '../shell/IdentityBar'
 import { useDevelop } from '../state/develop'
 import { useLibrary, useVisible, type FlagFilter, type SortKey } from '../state/library'
@@ -25,6 +26,7 @@ const Thumb = memo(function Thumb({
   const select = useLibrary((s) => s.select)
   const setMeta = useLibrary((s) => s.setMeta)
   const ref = useRef<HTMLDivElement>(null)
+  useThumbFirst(ref, item.key, !item.thumbUrl && !item.unreadable)
   useEffect(() => {
     if (focus) ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [focus])
@@ -40,7 +42,11 @@ const Thumb = memo(function Thumb({
     >
       <div className="thumb-img" style={{ height: size * 0.72 }}>
         {item.thumbUrl ? (
-          <img src={item.thumbUrl} draggable={false} alt="" />
+          <img src={item.thumbUrl} loading="lazy" decoding="async" draggable={false} alt="" />
+        ) : item.unreadable ? (
+          <div className="thumb-wait unreadable" title="This file cannot be read">
+            Can’t read
+          </div>
         ) : (
           <div className="thumb-wait">{item.ext.toUpperCase()}</div>
         )}

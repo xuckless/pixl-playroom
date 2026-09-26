@@ -106,6 +106,14 @@ editable lasso points.
       loupe in Native mode still waits on settled renders.
 - [ ] Re-check the engine hosts' libuv pools (8 interactive, 4 background)
       against the calls actually in flight.
+- [ ] **An index worker**, as VS Code keeps its shared process: the SQLite
+      index and all sidecar reads and writes in a `worker_threads` worker
+      that owns the `DatabaseSync`, with `Library` and `Store` async across
+      the bridge. Today they run on the main process (in transactions, with
+      prepared statements reused), so a large folder scan or batch edit
+      still holds up IPC while it runs.
+- [ ] Edit history stored as diffs against the previous entry rather than
+      whole recipes.
 
 ## Library and workflow
 

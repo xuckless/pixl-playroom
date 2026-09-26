@@ -28,7 +28,9 @@
     var(--hair) 100%
   );
 }
-/* a slow light travelling along the top edge of the active surface */
+/* a slow light travelling along the top edge of the active surface: a few
+   passes when it arrives, then again while hovered, so an idle window draws
+   no frames */
 .sweep {
   position: relative;
 }
@@ -48,10 +50,13 @@
     transparent 100%
   );
   background-size: 300% 100%;
-  animation: sweep 5.5s linear infinite;
+  animation: sweep 5.5s linear 2;
   opacity: 0.9;
   pointer-events: none;
   z-index: 2;
+}
+.sweep:hover::before {
+  animation-iteration-count: infinite;
 }
 
 /* ── buttons ───────────────────────────────────────────────────────
@@ -157,7 +162,7 @@ button.primary:hover:not(:disabled) {
   border-color: var(--acc);
   background: var(--primary-grad);
 }
-/* a glint crossing the primary action every few seconds */
+/* a glint crossing the primary action as the pointer arrives */
 button.primary::before {
   content: '';
   position: absolute;
@@ -170,8 +175,11 @@ button.primary::before {
     transparent 66%
   );
   background-size: 260% 100%;
-  animation: glint 6.5s var(--ease) infinite;
+  background-position: 130% 0;
   pointer-events: none;
+}
+button.primary:hover:not(:disabled)::before {
+  animation: glintOnce 0.9s var(--ease);
 }
 button.toggle.on,
 button.on,
@@ -615,7 +623,7 @@ input[type='checkbox']:disabled {
   transform: translateY(-50%) rotate(45deg);
   background: var(--acc);
   box-shadow: 0 0 8px var(--acc);
-  animation: pulseDot 1.8s ease-in-out infinite;
+  animation: pulseDot 1.8s ease-in-out 3;
 }
 
 /* ── sections: a micro heading with a fading line; click to fold ──── */

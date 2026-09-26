@@ -1,6 +1,7 @@
 import { Canvas, useFrame } from '@react-three/fiber'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Color, type Mesh, type ShaderMaterial } from 'three'
+import { useFrameLimit } from './frames'
 import { watchContext } from './mode'
 import { SIMPLEX_3D } from './shaders/noise'
 
@@ -83,9 +84,20 @@ function Blob({ active }: { active: boolean }): React.JSX.Element {
     }),
     []
   )
-  useFrame((_, dt) => {
+  // Thirty frames a second while it works and for a moment after, while the
+  // ripples settle; then it holds still and draws nothing.
+  const [still, setStill] = useState(!active)
+  if (active && still) setStill(false)
+  useEffect(() => {
+    if (active) return
+    const t = setTimeout(() => setStill(true), 2000)
+    return () => clearTimeout(t)
+  }, [active])
+  useFrameLimit(30, active || !still)
+  useFrame((_, delta) => {
     const m = mat.current
     if (!m) return
+    const dt = Math.min(delta, 0.05)
     m.uniforms.uTime.value += dt * (active ? 1.1 : 0.45)
     // The ripples swell while work runs and settle when it stops.
     const target = active ? 0.15 : 0.07
@@ -97,7 +109,7 @@ function Blob({ active }: { active: boolean }): React.JSX.Element {
   })
   return (
     <mesh ref={mesh}>
-      <icosahedronGeometry args={[1, 64]} />
+      <icosahedronGeometry args={[1, 28]} />
       <shaderMaterial
         ref={mat}
         uniforms={uniforms}
@@ -117,9 +129,10 @@ export default function ProcessingSphere({
   return (
     <Canvas
       className="fx-canvas"
-      dpr={[1, 2]}
+      frameloop="demand"
+      dpr={[1, 1.5]}
       camera={{ position: [0, 0, 3.1], fov: 40 }}
-      gl={{ alpha: true, antialias: true, powerPreference: 'low-power' }}
+      gl={{ alpha: true, antialias: false, powerPreference: 'low-power' }}
       onCreated={({ gl }) => {
         gl.setClearColor(0x000000, 0)
         watchContext(gl.domElement)

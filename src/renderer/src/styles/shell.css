@@ -77,10 +77,11 @@
   border-radius: 50%;
   background: var(--ok);
   box-shadow: 0 0 10px var(--ok);
-  animation: statusPulse 2.6s ease-in-out infinite;
   flex: none;
 }
+/* only work in progress breathes; an idle window draws no frames */
 .status-dot.busy {
+  animation: statusPulse 2.6s ease-in-out infinite;
   background: var(--acc);
   box-shadow: 0 0 10px var(--acc);
   animation-duration: 0.9s;

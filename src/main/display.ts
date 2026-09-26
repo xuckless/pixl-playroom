@@ -2,7 +2,9 @@
  * How finely the window is drawn on a scaled Mac display. Performance draws
  * a Retina display at 1.5× and lets macOS scale it to the panel: every
  * layer, blur and backdrop filter costs about half as many pixels, for UI a
- * little softer than native. Native draws at the display's own scale.
+ * little softer than native. Ultra draws at 1× (a quarter of the pixels,
+ * and the loupe asks for a 1× picture too), softer still. Native draws at
+ * the display's own scale.
  *
  * Chromium reads the scale once, from the command line it was started with
  * (`app.commandLine.appendSwitch` is too late for it), so a packaged build
@@ -21,6 +23,7 @@ import { IPC, type RenderMode, type RenderScale } from '../shared/ipc'
 import { paths } from './paths'
 
 export const PERFORMANCE_SCALE = 1.5
+export const ULTRA_SCALE = 1
 const SWITCH = 'force-device-scale-factor'
 
 const mac = process.platform === 'darwin'
@@ -44,7 +47,7 @@ function read(): State {
   try {
     const s = JSON.parse(readFileSync(paths.displayState(), 'utf8')) as Partial<State>
     return {
-      mode: s.mode === 'native' ? 'native' : 'performance',
+      mode: s.mode === 'native' || s.mode === 'ultra' ? s.mode : 'performance',
       scale: typeof s.scale === 'number' && s.scale > 0 ? s.scale : null
     }
   } catch {
@@ -60,11 +63,16 @@ function write(): void {
   }
 }
 
+/** The scale a mode draws at, where it is below the display's own. */
+function scaleOf(mode: RenderMode, native: number | null): number | null {
+  if (!mac || native === null) return null
+  const s = mode === 'ultra' ? ULTRA_SCALE : mode === 'performance' ? PERFORMANCE_SCALE : null
+  return s !== null && native > s ? s : null
+}
+
 /** The scale to force for a display of this native scale, or null for native. */
 function wanted(native: number | null): number | null {
-  return mac && state.mode === 'performance' && native !== null && native > PERFORMANCE_SCALE
-    ? PERFORMANCE_SCALE
-    : null
+  return scaleOf(state.mode, native)
 }
 
 function relaunch(): void {
@@ -169,8 +177,12 @@ async function nativeScale(d: Display): Promise<number | null> {
 export function renderScale(): RenderScale {
   const w = wanted(current)
   return {
-    available: mac && current !== null && current > PERFORMANCE_SCALE,
+    available: scaleOf('ultra', current) !== null,
+    modes: (['ultra', 'performance', 'native'] as const).filter(
+      (m) => m === 'native' || scaleOf(m, current) !== null
+    ),
     mode: state.mode,
+    target: w,
     native: current,
     active: forced ?? current,
     restartNeeded: canRelaunch && w !== forced,
@@ -196,7 +208,7 @@ export function setRenderMode(mode: RenderMode): void {
   if (!canRelaunch && wanted(current) !== forced)
     log.info(
       `rendering: ${mode} applies from the next start` +
-        (wanted(current) ? ` (in dev: pnpm dev -- --${SWITCH}=${PERFORMANCE_SCALE})` : '')
+        (wanted(current) !== null ? ` (in dev: pnpm dev -- --${SWITCH}=${wanted(current)})` : '')
     )
   publish()
 }

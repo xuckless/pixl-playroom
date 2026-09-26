@@ -7,12 +7,11 @@
     background-position: -100% 0;
   }
 }
-@keyframes glint {
-  0%,
-  70% {
+@keyframes glintOnce {
+  from {
     background-position: 130% 0;
   }
-  100% {
+  to {
     background-position: -40% 0;
   }
 }

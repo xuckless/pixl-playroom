@@ -3,7 +3,8 @@
  * the window's display offers a choice. Elsewhere the default menu stays.
  */
 import { Menu, type MenuItemConstructorOptions } from 'electron'
-import { PERFORMANCE_SCALE, renderScale, setRenderMode } from './display'
+import type { RenderMode } from '../shared/ipc'
+import { PERFORMANCE_SCALE, renderScale, setRenderMode, ULTRA_SCALE } from './display'
 
 const times = (n: number): string => `${Number(n.toFixed(2))}×`
 
@@ -21,27 +22,28 @@ export function buildMenu(): void {
     { type: 'separator' },
     { role: 'togglefullscreen' }
   ]
-  if (s.available && s.native !== null)
+  if (s.available && s.native !== null) {
+    const native = s.native
+    const label: Record<RenderMode, string> = {
+      ultra: `Ultra (${times(ULTRA_SCALE)})`,
+      performance: `Performance (${times(PERFORMANCE_SCALE)})`,
+      native: `Native (${times(native)})`
+    }
+    // A mode that draws no coarser here than native is native.
+    const shown = s.modes.includes(s.mode) ? s.mode : 'native'
     view.push(
       { type: 'separator' },
       {
         label: 'Rendering',
-        submenu: [
-          {
-            label: `Performance (${times(PERFORMANCE_SCALE)})`,
-            type: 'radio',
-            checked: s.mode === 'performance',
-            click: () => setRenderMode('performance')
-          },
-          {
-            label: `Native (${times(s.native)})`,
-            type: 'radio',
-            checked: s.mode === 'native',
-            click: () => setRenderMode('native')
-          }
-        ]
+        submenu: s.modes.map((m) => ({
+          label: label[m],
+          type: 'radio' as const,
+          checked: m === shown,
+          click: () => setRenderMode(m)
+        }))
       }
     )
+  }
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       { role: 'appMenu' },
