@@ -2,6 +2,8 @@
  * The library: a folder of photos, as they are on disk, with no import step.
  * Files stay where they are; each photo's edits, rating, flag, label and
  * virtual copies live in its sidecar, and the index mirrors them for speed.
+ * Both are the index host's (indexer/): this side asks it, probes files and
+ * keeps the thumbnail queue, which needs the engine.
  *
  * Thumbnails are rendered in the background engine: a RAW's embedded preview
  * until it has been edited, the photo's own pixels otherwise, and the graded
@@ -9,51 +11,28 @@
  */
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import { readdirSync, statSync, existsSync } from 'fs'
-import { basename, extname, join } from 'path'
+import { join } from 'path'
 import { compile } from '../shared/compile'
 import type { SourceInfo } from '../shared/engine-types'
-import {
-  IPC,
-  type CameraInfo,
-  type ColorLabel,
-  type Flag,
-  type LibraryItem,
-  type MetaPatch
-} from '../shared/ipc'
+import { IPC, type LibraryItem } from '../shared/ipc'
 import { orientedFrame } from '../shared/compile'
-import { defaultRecipe, hash32, isEdited, newId, type Recipe } from '../shared/recipe'
+import { hash32, type Recipe } from '../shared/recipe'
 import type { EngineClient } from './engine/client'
-import type { PhotoRow, Store } from './db'
+import type { PhotoRow } from './db'
+import type { IndexClient } from './indexer/client'
 import { brushPlanes } from './brushes'
-import { emptyCamera } from './camera'
-import { pixels } from './workers/pool'
+import { keyOf } from './keys'
 import { paths } from './paths'
 import { ensureProxies } from './proxy'
 import { cacheUrl } from './protocol'
-import { itemOf, readSidecar, writeSidecar, type Sidecar } from './sidecar'
-import {
-  BACKGROUND_THREADS,
-  blankRequest,
-  displayPolicy,
-  IMAGE_EXTENSIONS,
-  isRawExt,
-  sourceOrientation
-} from './source'
+import { BACKGROUND_THREADS, blankRequest, displayPolicy, sourceOrientation } from './source'
+
+export { keyOf, parseKey } from './keys'
 
 export const THUMB_EDGE = 400
 
-export function parseKey(key: string): { photoId: number; copyId: string | null } {
-  const [id, copy] = key.split(':')
-  return { photoId: Number(id), copyId: copy ?? null }
-}
-
 /** A file's version: its path, size and modification time. */
 const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.size}`
-
-export function keyOf(photoId: number, copyId: string | null): string {
-  return copyId === null ? String(photoId) : `${photoId}:${copyId}`
-}
 
 interface ThumbJob {
   photoId: number
@@ -62,16 +41,18 @@ interface ThumbJob {
 
 export class Library {
   private probes = new Map<string, SourceInfo>()
-  /** Files whose thumbnail failed, per version, with why. */
-  private failed = new Map<string, string>()
   private queue: ThumbJob[] = []
   private queued = new Set<string>()
   private running = 0
 
   constructor(
-    private readonly store: Store,
+    readonly index: IndexClient,
     private readonly engine: EngineClient
-  ) {}
+  ) {
+    index.on((e) => {
+      if (e.name === 'changed') this.broadcast(IPC.library.changed, { folder: e.folder })
+    })
+  }
 
   private broadcast(channel: string, payload: unknown): void {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload)
@@ -87,223 +68,27 @@ export class Library {
     return info
   }
 
-  // ── folders ──
-
-  openFolder(folder: string): LibraryItem[] {
-    this.store.touchFolder(folder)
-    const present = new Set<string>()
-    let names: string[] = []
-    try {
-      names = readdirSync(folder)
-    } catch (err) {
-      log.warn('cannot read folder', folder, err)
-    }
-    this.store.tx(() => {
-      for (const name of names) {
-        // Hidden files, and the `._` AppleDouble files macOS leaves beside
-        // every photo on a FAT or exFAT card, are not photos.
-        if (name.startsWith('.')) continue
-        const ext = extname(name).slice(1).toLowerCase()
-        if (!IMAGE_EXTENSIONS.includes(ext)) continue
-        const path = join(folder, name)
-        let st
-        try {
-          st = statSync(path)
-        } catch {
-          continue
-        }
-        if (!st.isFile()) continue
-        present.add(path)
-        const row = this.store.upsertPhoto({
-          path,
-          folder,
-          name,
-          ext,
-          size: st.size,
-          mtime: st.mtimeMs,
-          isRaw: isRawExt(ext)
-        })
-        this.syncSidecar(row)
-      }
-      this.store.removeMissing(folder, present)
-    })
-    const items = this.items(folder)
-    for (const it of items) {
-      this.queueThumb(it.photoId, it.copyId)
-    }
-    void this.fillCameras(folder)
+  /** A folder's items as the index has them; its thumbnails are queued. */
+  async openFolder(folder: string): Promise<LibraryItem[]> {
+    const items = await this.index.listFolder(folder)
+    for (const it of items) this.queueThumb(it.photoId, it.copyId)
     return items
   }
 
-  /** Re-read a sidecar into the index when it changed on disk. */
-  private syncSidecar(row: PhotoRow): void {
-    const file = row.path + '.playroom.json'
-    const mtime = existsSync(file) ? statSync(file).mtimeMs : null
-    if (mtime === row.sidecar_mtime) return
-    const { sidecar } = readSidecar(row.path, row.is_raw === 1)
-    this.mirror(row, sidecar, mtime)
+  item(key: string): Promise<LibraryItem | undefined> {
+    return this.index.item(key)
   }
 
-  private mirror(row: PhotoRow, sidecar: Sidecar, mtime: number | null): void {
-    const raw = row.is_raw === 1
-    const p = sidecar.photo
-    this.store.setPhotoMeta(row.id, {
-      rating: p.rating,
-      flag: p.flag,
-      label: p.label,
-      edited: p.recipe !== null && isEdited(p.recipe, raw)
-    })
-    this.store.replaceCopies(
-      row.id,
-      sidecar.copies.map((c) => ({
-        id: c.id,
-        name: c.name,
-        rating: c.rating,
-        flag: c.flag,
-        label: c.label,
-        edited: c.recipe !== null && isEdited(c.recipe, raw)
-      }))
-    )
-    this.store.setSidecarMtime(row.id, mtime)
+  photoRow(key: string): Promise<PhotoRow> {
+    return this.index.row(key)
   }
 
-  private async fillCameras(folder: string): Promise<void> {
-    let filled = 0
-    for (const row of this.store.photosIn(folder)) {
-      if (row.camera_json) continue
-      // Exif is parsed off the main thread.
-      const camera = await pixels.camera(row.path)
-      this.store.setCamera(row.id, camera)
-      filled++
-    }
-    // Only news is broadcast: the renderer answers `changed` by reopening
-    // the folder, which calls this again.
-    if (filled > 0) this.broadcast(IPC.library.changed, { folder })
+  recipe(key: string): Promise<Recipe> {
+    return this.index.recipe(key)
   }
 
-  items(folder: string): LibraryItem[] {
-    const out: LibraryItem[] = []
-    for (const row of this.store.photosIn(folder)) {
-      out.push(this.itemFromRow(row, null))
-      for (const c of this.store.copiesOf(row.id)) out.push(this.itemFromRow(row, c.copy_id))
-    }
-    return out
-  }
-
-  item(key: string): LibraryItem | undefined {
-    const { photoId, copyId } = parseKey(key)
-    const row = this.store.photo(photoId)
-    if (!row) return undefined
-    return this.itemFromRow(row, copyId)
-  }
-
-  itemFromRow(row: PhotoRow, copyId: string | null): LibraryItem {
-    const copy =
-      copyId === null ? undefined : this.store.copiesOf(row.id).find((c) => c.copy_id === copyId)
-    const thumbPath = copy ? copy.thumb_path : row.thumb_path
-    const thumbKey = copy ? copy.thumb_key : row.thumb_key
-    return {
-      key: keyOf(row.id, copyId),
-      photoId: row.id,
-      copyId,
-      copyName: copy?.name ?? null,
-      path: row.path,
-      name: row.name,
-      ext: row.ext,
-      size: row.size,
-      mtime: row.mtime,
-      isRaw: row.is_raw === 1,
-      rating: copy ? copy.rating : row.rating,
-      flag: ((copy ? copy.flag : row.flag) as Flag) ?? null,
-      label: ((copy ? copy.label : row.label) as ColorLabel) ?? null,
-      edited: (copy ? copy.edited : row.edited) === 1,
-      thumbUrl: thumbPath && existsSync(thumbPath) ? cacheUrl(thumbPath, thumbKey ?? '') : null,
-      unreadable: this.failed.has(versionOf(row)),
-      camera: row.camera_json ? (JSON.parse(row.camera_json) as CameraInfo) : emptyCamera()
-    }
-  }
-
-  // ── sidecar-backed state ──
-
-  photoRow(key: string): PhotoRow {
-    const row = this.store.photo(parseKey(key).photoId)
-    if (!row) throw new Error(`no photo ${key}`)
-    return row
-  }
-
-  sidecar(key: string): Sidecar {
-    const row = this.photoRow(key)
-    return readSidecar(row.path, row.is_raw === 1).sidecar
-  }
-
-  /** Change a sidecar and keep the index in step. */
-  update(key: string, change: (s: Sidecar) => void): Sidecar {
-    const row = this.photoRow(key)
-    const { sidecar } = readSidecar(row.path, row.is_raw === 1)
-    change(sidecar)
-    const mtime = writeSidecar(row.path, sidecar)
-    this.mirror(row, sidecar, mtime)
-    return sidecar
-  }
-
-  recipe(key: string): Recipe {
-    const row = this.photoRow(key)
-    const it = itemOf(this.sidecar(key), parseKey(key).copyId)
-    return it?.recipe ?? defaultRecipe(row.is_raw === 1)
-  }
-
-  saveRecipe(key: string, recipe: Recipe): void {
-    const { copyId } = parseKey(key)
-    const raw = this.photoRow(key).is_raw === 1
-    this.update(key, (s) => {
-      const it = itemOf(s, copyId)
-      if (it) it.recipe = isEdited(recipe, raw) || copyId !== null ? recipe : null
-    })
-  }
-
-  setMeta(keys: string[], patch: MetaPatch): void {
-    this.store.tx(() => {
-      for (const key of keys) {
-        const { copyId } = parseKey(key)
-        this.update(key, (s) => {
-          const it = itemOf(s, copyId)
-          if (!it) return
-          if (patch.rating !== undefined) it.rating = Math.max(0, Math.min(5, patch.rating))
-          if (patch.flag !== undefined) it.flag = patch.flag
-          if (patch.label !== undefined) it.label = patch.label
-        })
-      }
-    })
-  }
-
-  createCopy(key: string): string {
-    const { photoId, copyId } = parseKey(key)
-    const id = newId()
-    const source = this.recipe(key)
-    this.update(key, (s) => {
-      const n = s.copies.length + 1
-      s.copies.push({
-        id,
-        name: `Copy ${n}`,
-        rating: 0,
-        flag: null,
-        label: null,
-        recipe: structuredClone(source),
-        snapshots: []
-      })
-      void copyId
-    })
-    const newKey = keyOf(photoId, id)
-    this.queueThumb(photoId, id)
-    return newKey
-  }
-
-  deleteCopy(key: string): void {
-    const { copyId } = parseKey(key)
-    if (copyId === null) return
-    this.update(key, (s) => {
-      s.copies = s.copies.filter((c) => c.id !== copyId)
-    })
+  saveRecipe(key: string, recipe: Recipe): Promise<void> {
+    return this.index.saveRecipe(key, recipe)
   }
 
   // ── thumbnails ──
@@ -334,9 +119,7 @@ export class Library {
           log.warn('thumbnail failed', job, err?.message ?? err)
           // Once per version of the file: a photo that cannot be read is not
           // tried again until it changes.
-          const row = this.store.photo(job.photoId)
-          if (!row) return
-          this.failed.set(versionOf(row), String(err?.message ?? err))
+          void this.index.markFailed(job.photoId, String(err?.message ?? err)).catch(() => {})
           this.broadcast(IPC.library.thumb, {
             key: keyOf(job.photoId, job.copyId),
             url: null,
@@ -352,17 +135,11 @@ export class Library {
   }
 
   private async thumb(job: ThumbJob): Promise<void> {
-    const row = this.store.photo(job.photoId)
-    if (!row || this.failed.has(versionOf(row))) return
+    const work = await this.index.thumbJob(job.photoId, job.copyId)
+    if (!work) return
+    const { row, recipe, edited, stamp } = work
     const key = keyOf(row.id, job.copyId)
-    const recipe = this.recipe(key)
     const raw = row.is_raw === 1
-    const edited = isEdited(recipe, raw)
-    const stamp = `${Math.round(row.mtime)}-${row.size}-${edited ? hash32(JSON.stringify(recipe)).toString(16) : 'plain'}`
-    const existing =
-      job.copyId === null ? row : this.store.copiesOf(row.id).find((c) => c.copy_id === job.copyId)
-    if (existing?.thumb_key === stamp && existing.thumb_path && existsSync(existing.thumb_path))
-      return
 
     const info = await this.probe(row)
     const out = join(
@@ -402,7 +179,7 @@ export class Library {
     } else {
       await this.graded(row, info, recipe, out, base)
     }
-    this.store.setThumb(row.id, job.copyId, out, stamp)
+    await this.index.setThumb(row.id, job.copyId, out, stamp)
     this.broadcast(IPC.library.thumb, { key, url: cacheUrl(out, stamp) })
   }
 
@@ -441,8 +218,4 @@ export class Library {
       framing: compiled.framing
     })
   }
-}
-
-export function folderOf(path: string): string {
-  return path.slice(0, path.length - basename(path).length - 1)
 }

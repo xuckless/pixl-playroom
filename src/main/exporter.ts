@@ -75,7 +75,7 @@ export class Exporter {
     }
     for (const [i, key] of keys.entries()) {
       if (job.cancelled) break
-      const item = this.library.item(key)
+      const item = await this.library.item(key)
       progress.current = item?.name ?? key
       this.send(progress)
       try {
@@ -96,10 +96,10 @@ export class Exporter {
 
   /** Export one item. Returns the written path, or null when skipped. */
   private async one(key: string, s: ExportSettings, seq: number): Promise<string | null> {
-    this.sessions.flush(key)
-    const row = this.library.photoRow(key)
-    const item = this.library.item(key)
-    const recipe = this.sessions.liveRecipe(key) ?? this.library.recipe(key)
+    await this.sessions.flush(key)
+    const row = await this.library.photoRow(key)
+    const item = await this.library.item(key)
+    const recipe = this.sessions.liveRecipe(key) ?? (await this.library.recipe(key))
     const info = await this.library.probe(row)
     const raw = info.input === 'Raw' ? RAW_DEVELOP : null
     const srcOrientation = sourceOrientation(info, raw)

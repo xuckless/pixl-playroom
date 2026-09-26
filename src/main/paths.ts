@@ -16,7 +16,7 @@ function dir(...parts: string[]): string {
 }
 
 export const paths = {
-  db: (): string => join(dir(), 'playroom.db'),
+  // The index (playroom.db) is the index host's: see indexer/service.ts.
   /** The rendering mode and the last display's scale, read before the app is ready. */
   displayState: (): string => join(dir(), 'display.json'),
   /** Per-photo working files: proxies, renders, mask planes. */

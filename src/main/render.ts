@@ -12,7 +12,7 @@
  */
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import { mkdirSync } from 'fs'
+import { mkdir } from 'fs/promises'
 import { join } from 'path'
 import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020, wbSliders } from '../shared/auto'
 import { compile, orientedFrame, type Compiled } from '../shared/compile'
@@ -40,13 +40,12 @@ import type { Vec3 } from '../shared/wb'
 import { brushPlanes } from './brushes'
 import type { PhotoRow } from './db'
 import { EngineError, type EngineClient } from './engine/client'
+import { parseKey } from './keys'
 import type { Library } from './library'
-import { parseKey } from './library'
 import { paths } from './paths'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
 import { ensureMaster, ensureProxies, type Proxies, type ProxyFile } from './proxy'
-import { itemOf } from './sidecar'
 import {
   blankRequest,
   displayPolicy,
@@ -151,8 +150,7 @@ class Session {
     public recipe: Recipe,
     private readonly owner: DevelopSessions
   ) {
-    this.dir = join(paths.photoCache(row.id), 'renders')
-    mkdirSync(this.dir, { recursive: true })
+    this.dir = rendersDir(row.id)
   }
 
   get isRaw(): boolean {
@@ -181,16 +179,15 @@ class Session {
     this.schedule(interactive ? 'draft' : 'full')
   }
 
-  persist(): void {
+  /** Save the recipe now. The index answers in order, so what is asked of it next sees this. */
+  persist(): Promise<void> {
     clearTimeout(this.save)
     this.save = undefined
-    try {
-      this.owner.library.saveRecipe(this.key, this.recipe)
-      const { photoId, copyId } = parseKey(this.key)
-      this.owner.library.queueThumb(photoId, copyId, true)
-    } catch (err) {
-      log.error('saving recipe failed', err)
-    }
+    const { photoId, copyId } = parseKey(this.key)
+    return this.owner.library.saveRecipe(this.key, this.recipe).then(
+      () => this.owner.library.queueThumb(photoId, copyId, true),
+      (err) => log.error('saving recipe failed', err)
+    )
   }
 
   setView(view: ViewState): void {
@@ -754,12 +751,15 @@ class Session {
     return s.noise
   }
 
-  close(): void {
+  /** Stop, writing a pending edit; resolves once it is saved. */
+  close(): Promise<void> {
     this.closed = true
     clearTimeout(this.settle)
-    if (this.save) this.persist()
+    return this.save ? this.persist() : Promise.resolve()
   }
 }
+
+const rendersDir = (photoId: number): string => join(paths.photoCache(photoId), 'renders')
 
 export class DevelopSessions {
   private sessions = new Map<string, Session>()
@@ -784,21 +784,19 @@ export class DevelopSessions {
     // One photo at a time: closing the others writes their pending edits.
     for (const [k, s] of this.sessions) {
       if (k !== key) {
-        s.close()
+        void s.close()
         this.sessions.delete(k)
       }
     }
-    const row = this.library.photoRow(key)
+    const { row, recipe, item, snapshots } = await this.library.index.openData(key)
     const info = await this.library.probe(row)
     const px = await ensureProxies(this.engine, row, info)
+    await mkdir(rendersDir(row.id), { recursive: true })
     let session = this.sessions.get(key)
     if (!session) {
-      session = new Session(key, row, info, px, this.library.recipe(key), this)
+      session = new Session(key, row, info, px, recipe, this)
       this.sessions.set(key, session)
     }
-    const item = this.library.item(key)
-    if (!item) throw new Error(`no item ${key}`)
-    const side = itemOf(this.library.sidecar(key), parseKey(key).copyId)
     return {
       key,
       item,
@@ -811,21 +809,20 @@ export class DevelopSessions {
       proxyWidth: px.proxy.width,
       proxyHeight: px.proxy.height,
       recipe: session.recipe,
-      snapshots: side?.snapshots ?? [],
+      snapshots,
       seed: hash32(row.path)
     }
   }
 
-  close(key: string): void {
+  close(key: string): Promise<void> {
     const s = this.sessions.get(key)
-    if (s) {
-      s.close()
-      this.sessions.delete(key)
-    }
+    if (!s) return Promise.resolve()
+    this.sessions.delete(key)
+    return s.close()
   }
 
-  closeAll(): void {
-    for (const k of [...this.sessions.keys()]) this.close(k)
+  closeAll(): Promise<void> {
+    return Promise.all([...this.sessions.keys()].map((k) => this.close(k))).then(() => undefined)
   }
 
   update(key: string, recipe: Recipe, interactive: boolean): void {
@@ -861,8 +858,9 @@ export class DevelopSessions {
     return this.sessions.get(key)?.recipe
   }
 
-  flush(key: string): void {
-    this.sessions.get(key)?.persist()
+  /** Save an open session's recipe now; resolves once it is saved. */
+  flush(key: string): Promise<void> {
+    return this.sessions.get(key)?.persist() ?? Promise.resolve()
   }
 }
 

@@ -1,7 +1,7 @@
 /**
  * What the camera wrote: make, model, lens, exposure, when and where. Read
  * with exifr from the file's own tags; nothing here needs Electron, so the
- * pixels worker can run it off the main thread.
+ * index host runs it, off the main process.
  */
 import exifr from 'exifr'
 import type { CameraInfo } from '../shared/ipc'

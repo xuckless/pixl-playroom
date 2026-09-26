@@ -105,10 +105,13 @@ CREATE TABLE IF NOT EXISTS planes (ref TEXT PRIMARY KEY, png TEXT NOT NULL);
 const HISTORY_LIMIT = 200
 
 export class Store {
+  private readonly db: DatabaseSync
   private readonly statements = new Map<string, StatementSync>()
   private depth = 0
 
-  private constructor(private readonly db: DatabaseSync) {}
+  private constructor(db: DatabaseSync) {
+    this.db = db
+  }
 
   /** A statement, prepared once and reused: preparing costs more than most runs. */
   private prepare(sql: string): StatementSync {
@@ -206,13 +209,21 @@ export class Store {
     return this.photoByPath(p.path) as PhotoRow
   }
 
-  removeMissing(folder: string, present: Set<string>): void {
+  /** Forget the folder's photos that are no longer on disk. Returns how many went. */
+  removeMissing(folder: string, present: Set<string>): number {
+    let removed = 0
     for (const row of this.photosIn(folder)) {
       if (!present.has(row.path)) {
         this.prepare('DELETE FROM photos WHERE id = ?').run(row.id)
         this.prepare('DELETE FROM copies WHERE photo_id = ?').run(row.id)
+        removed++
       }
     }
+    return removed
+  }
+
+  hasPhotosIn(folder: string): boolean {
+    return this.prepare('SELECT 1 FROM photos WHERE folder = ? LIMIT 1').get(folder) !== undefined
   }
 
   setPhotoMeta(
@@ -255,6 +266,13 @@ export class Store {
     return this.prepare('SELECT * FROM copies WHERE photo_id = ? ORDER BY name').all(
       photoId
     ) as unknown as CopyRow[]
+  }
+
+  /** Every copy of every photo in a folder, in one query. */
+  copiesIn(folder: string): CopyRow[] {
+    return this.prepare(
+      'SELECT c.* FROM copies c JOIN photos p ON p.id = c.photo_id WHERE p.folder = ? ORDER BY c.name'
+    ).all(folder) as unknown as CopyRow[]
   }
 
   replaceCopies(
@@ -330,6 +348,30 @@ export class Store {
     const row = this.prepare('SELECT png FROM planes WHERE ref = ?').get(ref) as
       { png: string } | undefined
     return row?.png
+  }
+
+  /** Every stored recipe that may name a plane by reference: the edit history's. */
+  *historyRecipes(): Generator<string> {
+    const rows = this.prepare(
+      `SELECT recipe FROM history WHERE recipe LIKE '%"ref":%'`
+    ).iterate() as Iterable<{ recipe: string }>
+    for (const r of rows) yield r.recipe
+  }
+
+  /** Drop the planes not in `keep`. Returns how many went. */
+  prunePlanes(keep: Set<string>): number {
+    const refs = (this.prepare('SELECT ref FROM planes').all() as { ref: string }[]).map(
+      (r) => r.ref
+    )
+    let removed = 0
+    this.tx(() => {
+      for (const ref of refs) {
+        if (keep.has(ref)) continue
+        this.prepare('DELETE FROM planes WHERE ref = ?').run(ref)
+        removed++
+      }
+    })
+    return removed
   }
 
   // ── presets ──
