@@ -114,6 +114,8 @@ editable lasso points.
       still holds up IPC while it runs.
 - [ ] Edit history stored as diffs against the previous entry rather than
       whole recipes.
+- [ ] Prune the index's `planes` table: planes no history entry, preset or
+      open session refers to any more are never removed today.
 
 ## Library and workflow
 

@@ -1,11 +1,33 @@
 .library-bar {
   gap: 8px;
+  min-width: 0;
 }
+/* A narrow window squeezes the filters, never the actions at the end. */
 .library-bar select {
+  flex: 0 1 auto;
+  min-width: 64px;
   max-width: 150px;
+  text-overflow: ellipsis;
 }
 .library-bar select.recent {
+  min-width: 84px;
   max-width: 200px;
+}
+.library-bar .size-range,
+.library-bar .count,
+.library-bar > button,
+.library-bar > .primary {
+  flex: none;
+}
+@media (max-width: 1280px) {
+  .library-bar .size-range {
+    display: none;
+  }
+}
+@media (max-width: 1120px) {
+  .library-bar .kbd {
+    display: none;
+  }
 }
 .search-field {
   display: inline-flex;
@@ -13,7 +35,8 @@
   gap: 8px;
   height: 32px;
   padding: 0 10px;
-  width: 250px;
+  flex: 0 1 250px;
+  min-width: 96px;
   background: var(--s1);
   border: 1px solid var(--hair2);
   border-radius: var(--r);
@@ -61,6 +84,9 @@
   flex: 1;
   overflow-y: auto;
   display: grid;
+  /* Rows as tall as their tiles: `auto` rows shrink to nothing once the
+     tiles (which clip their overflow) no longer fit the height. */
+  grid-auto-rows: max-content;
   gap: 16px;
   padding: 20px 22px 28px;
   align-content: start;

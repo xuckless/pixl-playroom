@@ -332,9 +332,17 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     const { session } = get()
     if (!session || e.key !== session.key) return
     if (e.kind === 'before') set({ before: e })
-    else if (e.kind === 'mask') set({ mask: e })
+    // A mask event without a picture: the mask is empty now.
+    else if (e.kind === 'mask') set({ mask: e.url ? e : null })
     else if (e.kind === 'mask-thumb') {
-      if (e.layerId) set((s) => ({ maskThumbs: { ...s.maskThumbs, [e.layerId as string]: e } }))
+      const id = e.layerId
+      if (!id) return
+      set((s) => {
+        const next = { ...s.maskThumbs }
+        if (e.url) next[id] = e
+        else delete next[id]
+        return { maskThumbs: next }
+      })
     } else {
       const slot: keyof Pictures = e.cropMode ? 'crop' : 'framed'
       const { pictures, tool } = get()

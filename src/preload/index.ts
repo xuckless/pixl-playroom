@@ -84,8 +84,8 @@ const api = {
     autoTone: (key: string) => call<BasicSetting>(IPC.develop.autoTone, key),
     autoWb: (key: string) => call<SampleResult['wb']>(IPC.develop.autoWb, key),
     noise: (key: string) => call<NoiseEstimate | null>(IPC.develop.noise, key),
-    encodeMask: (data: Uint8Array, w: number, h: number) =>
-      call<string>(IPC.develop.encodeMask, data, w, h),
+    putPlane: (png: string) => call<string>(IPC.develop.putPlane, png),
+    getPlane: (ref: string) => call<string>(IPC.develop.getPlane, ref),
     saveSnapshots: (key: string, snapshots: Snapshot[]) =>
       call<void>(IPC.develop.saveSnapshots, key, snapshots),
     historyList: (key: string) => call<HistoryEntry[]>(IPC.develop.historyList, key),

@@ -4,75 +4,62 @@
  * linear or radial gradient lives there as its geometry and is drawn into a
  * plane here. The engine reads raster masks from a PNG path in the frame it
  * grades, so each plane is written once per (content, turn) into the
- * photo's cache.
+ * photo's cache, by the pixels worker.
  */
-import { existsSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'fs'
+import { existsSync } from 'fs'
 import { join } from 'path'
 import type { Orientation } from '../shared/engine-types'
-import { gradientKey, rasteriseGradient } from '../shared/gradients'
-import { orientPlane } from '../shared/orientation'
-import { hash32, type LinearComponent, type RadialComponent, type Recipe } from '../shared/recipe'
+import { gradientKey } from '../shared/gradients'
+import { hash32, type Recipe } from '../shared/recipe'
 import { paths } from './paths'
-import { decodePng, encodeGreyPng } from './pngio'
+import { pruneGradients, writeBrushPlane, writeGradientPlane } from './planes'
+import { pixels, type PixelsJob } from './workers/pool'
 
-/** Gradient planes kept per photo: dragging a gradient writes a new one per settled position. */
-const KEEP_GRADIENTS = 64
+/** Planes being written now, by file: two renders asking for one plane share the work. */
+const writing = new Map<string, Promise<void>>()
 
-function gradientPlane(
-  dir: string,
-  c: LinearComponent | RadialComponent,
-  user: Orientation
-): string {
-  const file = join(dir, `grad-${gradientKey(c)}-${user}.png`)
-  if (existsSync(file)) return file
-  const w = Math.max(1, Math.round(c.width))
-  const h = Math.max(1, Math.round(c.height))
-  const turned = orientPlane(user, rasteriseGradient(c), w, h)
-  writeFileSync(file, encodeGreyPng(turned.data, turned.width, turned.height))
-  pruneGradients(dir)
-  return file
+function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Promise<void> {
+  if (existsSync(file)) return Promise.resolve()
+  const running = writing.get(file)
+  if (running) return running
+  const p = pixels
+    .run<null>(job)
+    .then(() => undefined)
+    .catch(() => {
+      // The worker is gone: draw it here rather than fail the render.
+      if (job.op === 'gradient') {
+        writeGradientPlane(file, job.c, job.user)
+        pruneGradients(job.dir)
+      } else writeBrushPlane(file, job.png, job.user)
+    })
+    .finally(() => writing.delete(file))
+  writing.set(file, p)
+  return p
 }
 
-/** Keep the newest gradient planes, drop the rest. */
-function pruneGradients(dir: string): void {
-  try {
-    const files = readdirSync(dir)
-      .filter((f) => f.startsWith('grad-'))
-      .map((f) => ({ f, t: statSync(join(dir, f)).mtimeMs }))
-    if (files.length <= KEEP_GRADIENTS) return
-    files.sort((a, b) => b.t - a.t)
-    for (const { f } of files.slice(KEEP_GRADIENTS)) unlinkSync(join(dir, f))
-  } catch {
-    // another process may hold one open (Windows); it goes next time
-  }
-}
-
-export function brushPlanes(
+/** Each brush or gradient component's plane file, by component id. */
+export async function brushPlanes(
   photoId: number,
   recipe: Recipe,
   user: Orientation
-): Record<string, string> {
+): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
   const dir = paths.photoCache(photoId)
+  const work: Promise<void>[] = []
   for (const layer of recipe.layers) {
     for (const c of layer.components) {
       if (c.kind === 'linear' || c.kind === 'radial') {
-        out[c.id] = gradientPlane(dir, c, user)
+        const file = join(dir, `grad-${gradientKey(c)}-${user}.png`)
+        work.push(ensure(file, { op: 'gradient', file, dir, c, user }))
+        out[c.id] = file
         continue
       }
       if (c.kind !== 'brush' || !c.png) continue
       const file = join(dir, `brush-${hash32(c.png).toString(16)}-${c.png.length}-${user}.png`)
-      if (!existsSync(file)) {
-        const png = Buffer.from(c.png, 'base64')
-        if (user === 'Normal') writeFileSync(file, png)
-        else {
-          const d = decodePng(png)
-          const turned = orientPlane(user, new Uint8Array(d.rows), d.width, d.height)
-          writeFileSync(file, encodeGreyPng(turned.data, turned.width, turned.height))
-        }
-      }
+      work.push(ensure(file, { op: 'brush', file, png: c.png, user }))
       out[c.id] = file
     }
   }
+  await Promise.all(work)
   return out
 }

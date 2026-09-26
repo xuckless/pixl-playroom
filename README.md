@@ -111,6 +111,13 @@ renderer (React)  ──IPC──>  main process ──postMessage──> utilit
   it; in dev pass it yourself: `pnpm dev -- --force-device-scale-factor=1.5`.
   While a live edit re-renders the photo, the liquid glass drops its lens
   (`data-interacting` on the root) and the loupe swaps pictures unfaded.
+- **Off the main threads**, as VS Code keeps its UI thread free: mask planes
+  (gradients rasterised, brush planes turned) and exif parsing run in a
+  `worker_threads` pool (`src/main/workers/`); the brush paints in a worker on
+  the GPU (WebGL2 on the loupe's transferred canvas, `workers/brush.worker.ts`);
+  the liquid glass's lens maps are drawn in a worker; the clipping overlay is
+  a shader. Brush planes cross IPC by reference (`src/main/planestore.ts`), so
+  a slider drag sends kilobytes whatever is painted.
 - **White balance** (`src/shared/wb.ts`) mirrors the engine's locus model
   exactly, so absolute RAW Kelvin, relative sliders, Auto (grey pixels ∩ grey
   world) and the eyedropper all become the one `WhiteBalance` op.

@@ -9,6 +9,9 @@
  * (Snell's law, glass index ~1.5) and lands displaced towards the inside;
  * the flat middle passes light straight through. A "magnify" lens bulges
  * across its whole face instead, like the loupe of a watch crystal.
+ *
+ * The per-pixel work and the PNG encoding run in the glass worker; a
+ * surface shows its last maps (or frost) until new ones arrive.
  */
 
 export interface GlassShape {
@@ -31,7 +34,6 @@ export interface GlassMaps {
   scale: number
 }
 
-const cache = new Map<string, GlassMaps>()
 const IOR = 1.5
 
 /** The bevel's height at `t` (0 at the outer edge, 1 where the flat top starts). */
@@ -71,19 +73,32 @@ function sdf(
   return { d, nx: nx * Math.sign(px || 1), ny: ny * Math.sign(py || 1) }
 }
 
-function toUrl(canvas: HTMLCanvasElement): string {
-  return canvas.toDataURL('image/png')
-}
-
-export function glassMaps(shape: GlassShape): GlassMaps | null {
+/** A shape's size, rounding and key: shapes with the same key share their maps. */
+export function shapeKey(
+  shape: GlassShape
+): { key: string; w: number; h: number; r: number; bez: number } | null {
   const w = Math.max(1, Math.round(shape.width))
   const h = Math.max(1, Math.round(shape.height))
   if (w < 4 || h < 4) return null
   const r = Math.min(shape.radius, w / 2, h / 2)
   const bez = Math.max(1, Math.min(shape.bezel, w / 2, h / 2))
-  const key = `${w}x${h}:${r}:${bez}:${shape.strength}:${shape.magnify ? 1 : 0}`
-  const hit = cache.get(key)
-  if (hit) return hit
+  return { key: `${w}x${h}:${r}:${bez}:${shape.strength}:${shape.magnify ? 1 : 0}`, w, h, r, bez }
+}
+
+export interface LensPixels {
+  w: number
+  h: number
+  /** RGBA rows: the displacement map, then the specular map. */
+  displacement: Uint8ClampedArray<ArrayBuffer>
+  specular: Uint8ClampedArray<ArrayBuffer>
+  scale: number
+}
+
+/** The maps' pixels: pure arithmetic, run by the glass worker. */
+export function lensPixels(shape: GlassShape): LensPixels | null {
+  const k = shapeKey(shape)
+  if (!k) return null
+  const { w, h, r, bez } = k
 
   // The largest offset the rim produces: a ray through the steepest part of
   // the bevel, bent by the glass, travelling the slab's thickness.
@@ -91,18 +106,8 @@ export function glassMaps(shape: GlassShape): GlassMaps | null {
   const lensK = shape.magnify ? 0.18 * shape.strength : 0
   const maxD = Math.max(1, thickness * 0.9 + lensK * Math.max(w, h) * 0.5)
 
-  const disp = document.createElement('canvas')
-  disp.width = w
-  disp.height = h
-  const spec = document.createElement('canvas')
-  spec.width = w
-  spec.height = h
-  const dctx = disp.getContext('2d') as CanvasRenderingContext2D
-  const sctx = spec.getContext('2d') as CanvasRenderingContext2D
-  const dimg = dctx.createImageData(w, h)
-  const simg = sctx.createImageData(w, h)
-  const dd = dimg.data
-  const sd = simg.data
+  const dd = new Uint8ClampedArray(w * h * 4)
+  const sd = new Uint8ClampedArray(w * h * 4)
   const hw = w / 2
   const hh = h / 2
   // Light from the upper left, a little in front.
@@ -142,8 +147,8 @@ export function glassMaps(shape: GlassShape): GlassMaps | null {
         ox -= px * lensK * fall
         oy -= py * lensK * fall
       }
-      dd[i] = Math.max(0, Math.min(255, Math.round(128 + (ox / maxD) * 127)))
-      dd[i + 1] = Math.max(0, Math.min(255, Math.round(128 + (oy / maxD) * 127)))
+      dd[i] = Math.round(128 + (ox / maxD) * 127)
+      dd[i + 1] = Math.round(128 + (oy / maxD) * 127)
       dd[i + 2] = 128
       dd[i + 3] = 255
       sd[i] = 255
@@ -152,10 +157,87 @@ export function glassMaps(shape: GlassShape): GlassMaps | null {
       sd[i + 3] = Math.round(lit * 200)
     }
   }
-  dctx.putImageData(dimg, 0, 0)
-  sctx.putImageData(simg, 0, 0)
-  const maps = { displacement: toUrl(disp), specular: toUrl(spec), scale: maxD * 2 }
-  if (cache.size > 96) cache.delete(cache.keys().next().value as string)
-  cache.set(key, maps)
-  return maps
+  return { w, h, displacement: dd, specular: sd, scale: maxD * 2 }
+}
+
+// ── the maps, made in the glass worker ───────────────────────────────────────
+
+const cache = new Map<string, GlassMaps>()
+const making = new Map<string, Promise<GlassMaps | null>>()
+let worker: Worker | null | undefined
+let nextId = 0
+const replies = new Map<number, (m: GlassMaps | null) => void>()
+
+function glassWorker(): Worker | null {
+  if (worker !== undefined) return worker
+  try {
+    worker = new Worker(new URL('../../workers/glass.worker.ts', import.meta.url), {
+      type: 'module'
+    })
+    worker.onmessage = (e: MessageEvent<{ id: number; maps: GlassMaps | null }>) => {
+      replies.get(e.data.id)?.(e.data.maps)
+      replies.delete(e.data.id)
+    }
+    worker.onerror = () => {
+      worker = null
+      for (const [, done] of replies) done(null)
+      replies.clear()
+    }
+  } catch {
+    worker = null
+  }
+  return worker
+}
+
+/** Where no worker can run: the same pixels, drawn here. */
+function drawHere(shape: GlassShape): GlassMaps | null {
+  const px = lensPixels(shape)
+  if (!px) return null
+  const url = (data: Uint8ClampedArray<ArrayBuffer>): string => {
+    const c = document.createElement('canvas')
+    c.width = px.w
+    c.height = px.h
+    ;(c.getContext('2d') as CanvasRenderingContext2D).putImageData(
+      new ImageData(data, px.w, px.h),
+      0,
+      0
+    )
+    return c.toDataURL('image/png')
+  }
+  return { displacement: url(px.displacement), specular: url(px.specular), scale: px.scale }
+}
+
+/** The maps for a shape if they are made already. */
+export function cachedGlassMaps(shape: GlassShape): GlassMaps | null {
+  const k = shapeKey(shape)
+  return k ? (cache.get(k.key) ?? null) : null
+}
+
+/** The maps for a shape, made off the main thread once and kept. */
+export function glassMaps(shape: GlassShape): Promise<GlassMaps | null> {
+  const k = shapeKey(shape)
+  if (!k) return Promise.resolve(null)
+  const hit = cache.get(k.key)
+  if (hit) return Promise.resolve(hit)
+  const running = making.get(k.key)
+  if (running) return running
+  const w = glassWorker()
+  const p = (
+    w
+      ? new Promise<GlassMaps | null>((resolve) => {
+          const id = ++nextId
+          replies.set(id, resolve)
+          w.postMessage({ id, shape })
+        })
+      : Promise.resolve(drawHere(shape))
+  ).then((maps) => {
+    making.delete(k.key)
+    if (maps) {
+      if (cache.size > 96) cache.delete(cache.keys().next().value as string)
+      cache.set(k.key, maps)
+    }
+    return maps
+  })
+  making.set(k.key, p)
+  return p
 }

@@ -11,7 +11,7 @@ import {
   type HTMLAttributes,
   type ReactNode
 } from 'react'
-import { glassMaps } from './maps'
+import { cachedGlassMaps, glassMaps, type GlassMaps } from './maps'
 
 /** Sizes are measured in 4px steps, so a surface that grows by a pixel reuses its maps. */
 const BUCKET = 4
@@ -87,13 +87,22 @@ export const LiquidGlass = forwardRef<HTMLElement, LiquidGlassProps>(function Li
   }, [el])
 
   const refract = !flat && !reduced && size.w > 0
-  const maps = useMemo(
-    () =>
-      refract
-        ? glassMaps({ width: size.w, height: size.h, radius, bezel, strength, magnify })
-        : null,
-    [refract, size.w, size.h, radius, bezel, strength, magnify]
+  const shape = useMemo(
+    () => ({ width: size.w, height: size.h, radius, bezel, strength, magnify }),
+    [size.w, size.h, radius, bezel, strength, magnify]
   )
+  // The maps are made in the glass worker; until they arrive a surface keeps
+  // the ones it had (or stays frosted).
+  const [made, setMade] = useState<GlassMaps | null>(null)
+  useEffect(() => {
+    if (!refract) return
+    let live = true
+    void glassMaps(shape).then((m) => live && m && setMade(m))
+    return () => {
+      live = false
+    }
+  }, [refract, shape])
+  const maps = refract ? (cachedGlassMaps(shape) ?? made) : null
 
   const setRefs = useCallback(
     (node: HTMLElement | null): void => {

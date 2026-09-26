@@ -9,7 +9,6 @@
  */
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import exifr from 'exifr'
 import { readdirSync, statSync, existsSync } from 'fs'
 import { basename, extname, join } from 'path'
 import { compile } from '../shared/compile'
@@ -27,6 +26,8 @@ import { defaultRecipe, hash32, isEdited, newId, type Recipe } from '../shared/r
 import type { EngineClient } from './engine/client'
 import type { PhotoRow, Store } from './db'
 import { brushPlanes } from './brushes'
+import { emptyCamera } from './camera'
+import { pixels } from './workers/pool'
 import { paths } from './paths'
 import { ensureProxies } from './proxy'
 import { cacheUrl } from './protocol'
@@ -52,57 +53,6 @@ const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.siz
 
 export function keyOf(photoId: number, copyId: string | null): string {
   return copyId === null ? String(photoId) : `${photoId}:${copyId}`
-}
-
-function emptyCamera(): CameraInfo {
-  return {
-    make: null,
-    model: null,
-    lens: null,
-    iso: null,
-    exposureTime: null,
-    fNumber: null,
-    focalLength: null,
-    capturedAt: null,
-    gps: null
-  }
-}
-
-export async function readCamera(path: string): Promise<CameraInfo> {
-  try {
-    const t = (await exifr.parse(path, {
-      tiff: true,
-      exif: true,
-      gps: true,
-      xmp: false,
-      icc: false,
-      iptc: false,
-      interop: false,
-      translateValues: true,
-      reviveValues: true
-    })) as Record<string, unknown> | undefined
-    if (!t) return emptyCamera()
-    const num = (v: unknown): number | null =>
-      typeof v === 'number' && Number.isFinite(v) ? v : null
-    const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null)
-    const date = t.DateTimeOriginal ?? t.CreateDate ?? t.ModifyDate
-    return {
-      make: str(t.Make),
-      model: str(t.Model),
-      lens: str(t.LensModel) ?? str(t.Lens),
-      iso: num(t.ISO) ?? num(t.ISOSpeedRatings),
-      exposureTime: num(t.ExposureTime),
-      fNumber: num(t.FNumber),
-      focalLength: num(t.FocalLength),
-      capturedAt: date instanceof Date ? date.toISOString() : str(date),
-      gps:
-        num(t.latitude) !== null && num(t.longitude) !== null
-          ? { lat: t.latitude as number, lon: t.longitude as number }
-          : null
-    }
-  } catch {
-    return emptyCamera()
-  }
 }
 
 interface ThumbJob {
@@ -221,7 +171,8 @@ export class Library {
     let filled = 0
     for (const row of this.store.photosIn(folder)) {
       if (row.camera_json) continue
-      const camera = await readCamera(row.path)
+      // Exif is parsed off the main thread.
+      const camera = await pixels.camera(row.path)
       this.store.setCamera(row.id, camera)
       filled++
     }
@@ -473,7 +424,7 @@ export class Library {
       frameHeight: px.frameHeight,
       scale: px.proxy.width / px.frameWidth,
       seed: hash32(row.path),
-      brushPaths: brushPlanes(row.id, recipe, user),
+      brushPaths: await brushPlanes(row.id, recipe, user),
       applyCrop: true
     })
     const cropW = (compiled.crop?.width ?? 1) * width

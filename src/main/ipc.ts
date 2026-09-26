@@ -19,14 +19,21 @@ import { absoluteWb, baseWhite } from '../shared/compile'
 import type { WhitePoint } from '../shared/engine-types'
 import { absoluteFromOp, relativeFromOp } from '../shared/wb'
 import { BUILTIN_PRESETS } from '../shared/presets'
-import { applyGroups, defaultRecipe, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
+import {
+  applyGroups,
+  defaultRecipe,
+  newId,
+  planeRef,
+  type Recipe,
+  type RecipeGroup
+} from '../shared/recipe'
 import type { Store } from './db'
+import type { PlaneStore } from './planestore'
 import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
 import { enhanceAvailability, type Enhancer } from './enhance'
 import type { Exporter } from './exporter'
 import { parseKey, type Library } from './library'
-import { encodeGreyPng } from './pngio'
 import { paths } from './paths'
 import type { DevelopSessions } from './render'
 import { itemOf } from './sidecar'
@@ -83,6 +90,7 @@ function convertWb(wb: Recipe['wb'], from: WbContext, to: WbContext): Recipe['wb
 
 export interface Services {
   store: Store
+  planes: PlaneStore
   library: Library
   sessions: DevelopSessions
   exporter: Exporter
@@ -133,7 +141,8 @@ export function registerIpc(s: Services): void {
   /** Copy groups of `recipe` onto every key's recipe (paste, sync, presets on a selection). */
   handle(
     IPC.library.applyRecipe,
-    async (keys: string[], recipe: Recipe, groups: RecipeGroup[], sourceKey?: string) => {
+    async (keys: string[], slim: Recipe, groups: RecipeGroup[], sourceKey?: string) => {
+      const recipe = s.planes.hydrate(slim)
       // A white balance means different numbers on a RAW (absolute Kelvin from
       // its as-shot white) and anything else (relative sliders); crossing
       // kinds goes through the engine's white itself.
@@ -180,10 +189,19 @@ export function registerIpc(s: Services): void {
   })
 
   // ── develop ──
-  handle(IPC.develop.open, (key: string) => s.sessions.open(key))
+  // Recipes go out with their brush planes by reference and come back in
+  // hydrated (planestore.ts): the renderer never holds the PNGs in its state.
+  handle(IPC.develop.open, async (key: string) => {
+    const d = await s.sessions.open(key)
+    return {
+      ...d,
+      recipe: s.planes.slim(d.recipe),
+      snapshots: d.snapshots.map((sn) => ({ ...sn, recipe: s.planes.slim(sn.recipe) }))
+    }
+  })
   handle(IPC.develop.close, (key: string) => s.sessions.close(key))
   handle(IPC.develop.update, (key: string, recipe: Recipe, interactive: boolean) =>
-    s.sessions.update(key, recipe, interactive)
+    s.sessions.update(key, s.planes.hydrate(recipe), interactive)
   )
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))
@@ -191,25 +209,44 @@ export function registerIpc(s: Services): void {
   handle(IPC.develop.autoTone, (key: string) => s.sessions.autoTone(key))
   handle(IPC.develop.autoWb, (key: string) => s.sessions.autoWb(key))
   handle(IPC.develop.noise, (key: string) => s.sessions.noise(key))
-  handle(IPC.develop.encodeMask, (data: Uint8Array, w: number, h: number) =>
-    encodeGreyPng(data, w, h).toString('base64')
-  )
+  handle(IPC.develop.putPlane, (png: string) => {
+    const ref = planeRef(png)
+    s.planes.put(ref, png)
+    return ref
+  })
+  handle(IPC.develop.getPlane, (ref: string) => {
+    const png = s.planes.get(ref)
+    if (png === undefined) throw new Error('a painted mask is missing from the plane store')
+    return png
+  })
   handle(IPC.develop.saveSnapshots, (key: string, snapshots: Snapshot[]) => {
     const { copyId } = parseKey(key)
     s.library.update(key, (sc) => {
       const it = itemOf(sc, copyId)
-      if (it) it.snapshots = snapshots
+      if (it) it.snapshots = snapshots.map((sn) => ({ ...sn, recipe: s.planes.hydrate(sn.recipe) }))
     })
   })
-  handle(IPC.develop.historyList, (key: string) => s.store.history(key))
+  handle(IPC.develop.historyList, (key: string) =>
+    s.store.history(key).map((e) => ({ ...e, recipe: s.planes.slim(e.recipe) }))
+  )
   handle(IPC.develop.historyAppend, (key: string, label: string, recipe: Recipe) =>
-    s.store.appendHistory(key, label, recipe)
+    s.store.appendHistory(key, label, s.planes.slim(recipe))
   )
 
   // ── presets and profiles ──
-  handle(IPC.presets.list, (): Preset[] => [...BUILTIN_PRESETS, ...s.store.presets()])
+  handle(IPC.presets.list, (): Preset[] =>
+    [...BUILTIN_PRESETS, ...s.store.presets()].map((p) => ({
+      ...p,
+      recipe: s.planes.slim(p.recipe)
+    }))
+  )
   handle(IPC.presets.save, (p: Omit<Preset, 'id' | 'builtin'> & { id?: string }) => {
-    const preset: Preset = { ...p, id: p.id ?? newId(), builtin: false }
+    const preset: Preset = {
+      ...p,
+      recipe: s.planes.hydrate(p.recipe),
+      id: p.id ?? newId(),
+      builtin: false
+    }
     s.store.savePreset(preset)
     return preset
   })
