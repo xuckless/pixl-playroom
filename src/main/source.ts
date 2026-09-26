@@ -107,7 +107,7 @@ export function displayPolicy(info: SourceInfo, to: 'DisplayP3' | 'Srgb'): Color
  * The cores interactive work can use without starving the UI: on Apple
  * silicon the performance cores (work split evenly across efficiency cores
  * waits on the slowest), elsewhere all but two, for the renderer and GPU
- * processes.
+ * processes. Sync on purpose: asked once, as the module loads.
  */
 function interactiveThreads(): number {
   if (process.platform === 'darwin') {

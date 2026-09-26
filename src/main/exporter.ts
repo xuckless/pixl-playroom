@@ -7,7 +7,7 @@
  */
 import { BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
-import { existsSync, mkdirSync } from 'fs'
+import { mkdir } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import { compile, orientedFrame } from '../shared/compile'
 import {
@@ -22,6 +22,7 @@ import {
 import { IPC, type ExportProgress } from '../shared/ipc'
 import { hash32 } from '../shared/recipe'
 import { brushPlanes } from './brushes'
+import { exists } from './exists'
 import type { EngineClient } from './engine/client'
 import type { Library } from './library'
 import type { DevelopSessions } from './render'
@@ -127,7 +128,7 @@ export class Exporter {
 
     const folder = s.folder ?? dirname(row.path)
     const target = s.subfolder ? join(folder, s.subfolder) : folder
-    mkdirSync(target, { recursive: true })
+    await mkdir(target, { recursive: true })
     const stem = expandTemplate(s.template, {
       name: basename(row.name, extname(row.name)),
       ext: row.ext,
@@ -138,11 +139,11 @@ export class Exporter {
     })
     const ext = FORMAT_EXT[s.format]
     let out = join(target, `${stem}.${ext}`)
-    if (existsSync(out)) {
+    if (await exists(out)) {
       if (s.collision === 'skip') return null
       if (s.collision === 'suffix') {
         let n = 2
-        while (existsSync(join(target, `${stem}-${n}.${ext}`))) n++
+        while (await exists(join(target, `${stem}-${n}.${ext}`))) n++
         out = join(target, `${stem}-${n}.${ext}`)
       }
     }

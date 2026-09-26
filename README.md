@@ -80,9 +80,11 @@ which starts with the source's recipe.
 
 ```
 renderer (React)  ──IPC──>  main process ──postMessage──> utility process "interactive" ─> @xuckless/pixl-engine
-   panels, loupe             library, sidecars, index        (previews, analysis)
+   panels, loupe             library, thumbnails,            (previews, analysis)
    tools, charts             render sessions, export,     utility process "background" ─> @xuckless/pixl-engine
                              enhance, pixl:// cache          (thumbnails, exports, masters, enhance)
+                                                          utility process "index" ─> node:sqlite, sidecars
+                                                             (folder scans, exif, history, presets, settings)
 ```
 
 - **The recipe** (`src/shared/recipe.ts`) is what the sliders hold, in
@@ -103,6 +105,12 @@ renderer (React)  ──IPC──>  main process ──postMessage──> utilit
   truth: recipe, snapshots, virtual copies, rating, flag, label. The index
   (`node:sqlite`, `src/main/db.ts`) mirrors them for speed and keeps history,
   presets, export presets and settings. The original is never written.
+- **The index host** (`src/main/indexer/`), as VS Code keeps its shared
+  process: every index query and sidecar read or write runs in a utility
+  process, one request at a time in the order sent, so batches are one
+  transaction and main never blocks on a folder scan. Opening a folder
+  answers from the index at once and rescans after, announcing only
+  changes. A crash restarts it; calls wait for it.
 - **Rendering scale** (`src/main/display.ts`): on a scaled Mac display
   (Retina), View ▸ Rendering chooses Ultra (the app and the picture at 1×),
   Performance (1.5×, scaled by macOS: every blur and glass filter costs about
@@ -112,8 +120,8 @@ renderer (React)  ──IPC──>  main process ──postMessage──> utilit
   While a live edit re-renders the photo, the liquid glass drops its lens
   (`data-interacting` on the root) and the loupe swaps pictures unfaded.
 - **Off the main threads**, as VS Code keeps its UI thread free: mask planes
-  (gradients rasterised, brush planes turned) and exif parsing run in a
-  `worker_threads` pool (`src/main/workers/`); the brush paints in a worker on
+  (gradients rasterised, brush planes turned) run in a `worker_threads`
+  pool (`src/main/workers/`); the brush paints in a worker on
   the GPU (WebGL2 on the loupe's transferred canvas, `workers/brush.worker.ts`);
   the liquid glass's lens maps are drawn in a worker; the clipping overlay is
   a shader. Brush planes cross IPC by reference (`src/main/planestore.ts`), so

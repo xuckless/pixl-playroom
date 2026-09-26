@@ -5,7 +5,10 @@ import { join } from 'path'
 
 const made = new Set<string>()
 
-/** A directory under userData, made the first time it is asked for (the protocol asks per request). */
+/**
+ * A directory under userData, made the first time it is asked for (the
+ * protocol asks per request). Sync on purpose: once per directory per run.
+ */
 function dir(...parts: string[]): string {
   const p = join(app.getPath('userData'), ...parts)
   if (!made.has(p)) {
