@@ -118,7 +118,7 @@ export class Exporter {
       frameHeight: frameH,
       scale: 1,
       seed: hash32(row.path),
-      brushPaths: brushPlanes(row.id, recipe, user),
+      brushPaths: await brushPlanes(row.id, recipe, user),
       applyCrop: true
     })
     const cw = Math.round((compiled.crop?.width ?? 1) * width)

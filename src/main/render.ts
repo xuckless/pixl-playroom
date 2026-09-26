@@ -65,6 +65,8 @@ const SETTLE_MS = 180
  * next move then waits behind.
  */
 const SETTLE_LARGE_MS = 500
+/** The signature of a mask that compiles to nothing (its event has no picture). */
+const EMPTY = 'empty'
 /** How long an edit must rest before the sidecar is written. */
 const SAVE_MS = 600
 
@@ -157,7 +159,7 @@ class Session {
     return this.row.is_raw === 1
   }
 
-  compileFor(recipe: Recipe, source: ProxyFile, applyCrop: boolean): Compiled {
+  async compileFor(recipe: Recipe, source: ProxyFile, applyCrop: boolean): Promise<Compiled> {
     const { user } = orientedFrame(recipe, this.px.frameWidth, this.px.frameHeight)
     return compile(recipe, {
       isRaw: this.isRaw,
@@ -167,7 +169,7 @@ class Session {
       frameHeight: this.px.frameHeight,
       scale: source.width / this.px.frameWidth,
       seed: hash32(this.row.path),
-      brushPaths: brushPlanes(this.row.id, recipe, user),
+      brushPaths: await brushPlanes(this.row.id, recipe, user),
       applyCrop
     })
   }
@@ -251,7 +253,7 @@ class Session {
     const src = this.source(kind)
     // The view is read once, here: the event says which view it was made for.
     const cropMode = this.view.cropMode
-    const compiled = this.compileFor(this.recipe, src, !cropMode)
+    const compiled = await this.compileFor(this.recipe, src, !cropMode)
     const seq = ++this.seq
     const sig = String(
       hash32(JSON.stringify([src.path, cropMode, compiled.grade, compiled.framing]))
@@ -302,10 +304,26 @@ class Session {
   /** The chosen layer's mask as a grey plane, and the picture measured inside it. */
   private async renderMask(): Promise<void> {
     const src = this.source('full')
-    const compiled = this.compileFor(this.recipe, src, !this.view.cropMode)
+    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
     const layerId = this.view.maskLayer
     const index = layerId ? compiled.layerIndex[layerId] : undefined
-    if (index === undefined || !compiled.grade) return
+    if (index === undefined || !compiled.grade) {
+      // Nothing left in the mask (its last component undone or deleted): the
+      // overlay is told once, or it would go on showing the old plane.
+      if (this.maskSig !== EMPTY && !this.closed) {
+        this.maskSig = EMPTY
+        this.owner.send(IPC.develop.rendered, {
+          key: this.key,
+          seq: this.seq,
+          kind: 'mask',
+          cropMode: this.view.cropMode,
+          url: '',
+          width: 0,
+          height: 0
+        } satisfies RenderEvent)
+      }
+      return
+    }
     const sig = String(
       hash32(JSON.stringify([src.path, index, compiled.grade, compiled.framing, this.lastFull]))
     )
@@ -360,14 +378,29 @@ class Session {
    */
   private async renderMaskThumbs(): Promise<void> {
     const src = this.px.draft
-    const compiled = this.compileFor(this.recipe, src, !this.view.cropMode)
-    if (!compiled.grade) return
+    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
     const live = new Set<string>()
     for (const layer of this.recipe.layers) {
       live.add(layer.id)
       if (this.pending || this.closed) return
-      const index = compiled.layerIndex[layer.id]
-      if (index === undefined) continue
+      const index = compiled.grade ? compiled.layerIndex[layer.id] : undefined
+      if (index === undefined || !compiled.grade) {
+        // An empty mask's thumbnail goes blank, once.
+        if (this.thumbSig[layer.id] !== EMPTY) {
+          this.thumbSig[layer.id] = EMPTY
+          this.owner.send(IPC.develop.rendered, {
+            key: this.key,
+            seq: this.seq,
+            kind: 'mask-thumb',
+            layerId: layer.id,
+            cropMode: this.view.cropMode,
+            url: '',
+            width: 0,
+            height: 0
+          } satisfies RenderEvent)
+        }
+        continue
+      }
       const sig = String(
         hash32(
           JSON.stringify([
@@ -421,7 +454,7 @@ class Session {
     const before = defaultRecipe(this.isRaw)
     before.geometry = structuredClone(this.recipe.geometry)
     const src = this.source('full')
-    const compiled = this.compileFor(before, src, !this.view.cropMode)
+    const compiled = await this.compileFor(before, src, !this.view.cropMode)
     // Keyed on what the engine is asked for, not on the raw geometry: a
     // straighten in the crop tool changes the recipe but not this picture.
     const key = JSON.stringify([compiled.framing, src.path, this.view.cropMode])
@@ -477,7 +510,7 @@ class Session {
       frameHeight: this.px.frameHeight,
       scale: zoom,
       seed: hash32(this.row.path),
-      brushPaths: brushPlanes(this.row.id, this.recipe, user),
+      brushPaths: await brushPlanes(this.row.id, this.recipe, user),
       applyCrop: false
     })
     const x = Math.max(0, Math.min(width - 1, Math.floor(req.x)))
@@ -592,7 +625,7 @@ class Session {
     flat.basic = { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 }
     flat.layers = []
     const src = this.px.draft
-    const compiled = this.compileFor(flat, src, true)
+    const compiled = await this.compileFor(flat, src, true)
     const out = join(this.dir, 'auto-tone.png')
     await this.owner.engine.convert({
       ...blankRequest(src.path, out, src.input),

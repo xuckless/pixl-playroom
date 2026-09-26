@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS presets (
 );
 CREATE TABLE IF NOT EXISTS export_presets (id TEXT PRIMARY KEY, name TEXT NOT NULL, settings TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS planes (ref TEXT PRIMARY KEY, png TEXT NOT NULL);
 `
 
 /** History entries kept per item; older ones fall off. */
@@ -318,6 +319,17 @@ export class Store {
       seq - HISTORY_LIMIT
     )
     return { seq, label, at, recipe }
+  }
+
+  // ── painted planes, by reference (see planestore.ts) ──
+  putPlane(ref: string, png: string): void {
+    this.prepare('INSERT OR IGNORE INTO planes(ref, png) VALUES (?, ?)').run(ref, png)
+  }
+
+  plane(ref: string): string | undefined {
+    const row = this.prepare('SELECT png FROM planes WHERE ref = ?').get(ref) as
+      { png: string } | undefined
+    return row?.png
   }
 
   // ── presets ──

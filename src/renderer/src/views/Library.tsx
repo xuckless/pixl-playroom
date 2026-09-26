@@ -34,7 +34,12 @@ const Thumb = memo(function Thumb({
     <div
       ref={ref}
       className={`thumb${selected ? ' selected' : ''}${focus ? ' focus' : ''}${item.flag === 'reject' ? ' rejected' : ''}`}
-      style={{ width: size, animationDelay: `${Math.min(index, 24) * 18}ms` }}
+      style={{
+        width: size,
+        animationDelay: `${Math.min(index, 24) * 18}ms`,
+        // An off-screen tile skips layout at about its real height (picture and caption).
+        containIntrinsicSize: `auto ${Math.round(size * 0.72 + 34)}px`
+      }}
       onClick={(e) =>
         select(item.key, e.shiftKey ? 'range' : e.metaKey || e.ctrlKey ? 'toggle' : 'only')
       }

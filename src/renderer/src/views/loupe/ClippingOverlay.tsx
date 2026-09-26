@@ -56,7 +56,106 @@ function clippingBitmap(url: string): Promise<ImageBitmap> {
   })
 }
 
-/** Red over blown highlights, blue over crushed shadows, worked out off the main thread. */
+// ── on the GPU ───────────────────────────────────────────────────────────────
+
+const VS = `#version 300 es
+in vec2 aPos;
+out vec2 vUv;
+void main() {
+  vUv = aPos;
+  gl_Position = vec4(aPos * 2.0 - 1.0, 0.0, 1.0);
+}`
+
+/** The thresholds of lib/clipping.ts: a channel at 254+ is blown, all at 1 or below crushed. */
+const FS = `#version 300 es
+precision mediump float;
+uniform sampler2D uPicture;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec3 c = texelFetch(uPicture, ivec2(vUv * vec2(textureSize(uPicture, 0))), 0).rgb * 255.0;
+  float hi = max(c.r, max(c.g, c.b));
+  float a = 220.0 / 255.0;
+  if (hi >= 253.5) o = vec4(vec3(255.0, 60.0, 90.0) / 255.0 * a, a);
+  else if (hi <= 1.5) o = vec4(vec3(90.0, 120.0, 255.0) / 255.0 * a, a);
+  else o = vec4(0.0);
+}`
+
+interface Gl {
+  gl: WebGL2RenderingContext
+  tex: WebGLTexture
+}
+const contexts = new WeakMap<HTMLCanvasElement, Gl | null>()
+
+function glFor(c: HTMLCanvasElement): Gl | null {
+  if (contexts.has(c)) return contexts.get(c) ?? null
+  let out: Gl | null = null
+  const gl = c.getContext('webgl2', { premultipliedAlpha: true, antialias: false })
+  if (gl) {
+    const p = gl.createProgram() as WebGLProgram
+    let ok = true
+    for (const [type, src] of [
+      [gl.VERTEX_SHADER, VS],
+      [gl.FRAGMENT_SHADER, FS]
+    ] as const) {
+      const sh = gl.createShader(type) as WebGLShader
+      gl.shaderSource(sh, src)
+      gl.compileShader(sh)
+      ok &&= !!gl.getShaderParameter(sh, gl.COMPILE_STATUS)
+      gl.attachShader(p, sh)
+    }
+    gl.bindAttribLocation(p, 0, 'aPos')
+    gl.linkProgram(p)
+    if (ok && gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      gl.useProgram(p)
+      gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer())
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW)
+      gl.enableVertexAttribArray(0)
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+      const tex = gl.createTexture() as WebGLTexture
+      gl.bindTexture(gl.TEXTURE_2D, tex)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+      gl.uniform1i(gl.getUniformLocation(p, 'uPicture'), 0)
+      out = { gl, tex }
+    }
+  }
+  contexts.set(c, out)
+  return out
+}
+
+/** Mark the picture's clipping on the canvas with a shader; false where WebGL2 cannot. */
+async function drawOnGpu(c: HTMLCanvasElement, url: string, live: () => boolean): Promise<boolean> {
+  const g = glFor(c)
+  if (!g) return false
+  // Decoded off the main thread, the file's own values (clipping is in its encoding).
+  const bmp = await createImageBitmap(await (await fetch(url)).blob(), {
+    premultiplyAlpha: 'none',
+    colorSpaceConversion: 'none'
+  })
+  if (!live()) {
+    bmp.close()
+    return true
+  }
+  const { gl, tex } = g
+  c.width = bmp.width
+  c.height = bmp.height
+  gl.viewport(0, 0, c.width, c.height)
+  gl.bindTexture(gl.TEXTURE_2D, tex)
+  // Rows as the file stores them, top first: the quad draws them the right way up.
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bmp)
+  bmp.close()
+  gl.clearColor(0, 0, 0, 0)
+  gl.clear(gl.COLOR_BUFFER_BIT)
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+  return true
+}
+
+/**
+ * Red over blown highlights, blue over crushed shadows: marked by a shader
+ * over the picture on the GPU, or (without WebGL2) worked out in a worker.
+ */
 export const ClippingOverlay = memo(function ClippingOverlay({
   url
 }: {
@@ -65,10 +164,13 @@ export const ClippingOverlay = memo(function ClippingOverlay({
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     let live = true
-    void clippingBitmap(url)
-      .then((bmp) => {
-        const c = ref.current
-        if (!live || !c) return bmp.close()
+    const c = ref.current
+    if (!c) return
+    void drawOnGpu(c, url, () => live)
+      .then(async (done) => {
+        if (done) return
+        const bmp = await clippingBitmap(url)
+        if (!live) return bmp.close()
         c.width = bmp.width
         c.height = bmp.height
         const ctx = c.getContext('2d') as CanvasRenderingContext2D

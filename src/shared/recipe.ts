@@ -171,12 +171,18 @@ interface ComponentBase {
   feather: number
 }
 
-/** A painted plane: 8-bit grey PNG, base64, in the base frame's aspect. */
+/**
+ * A painted plane: 8-bit grey PNG, base64, in the base frame's aspect. Across
+ * IPC (and in the renderer's state and the edit history) the plane travels
+ * by reference: `png` is empty and `ref` names it in the main process's
+ * plane store. Sidecars always hold the PNG itself.
+ */
 export interface BrushComponent extends ComponentBase {
   kind: 'brush'
   width: number
   height: number
   png: string
+  ref?: string
 }
 
 /** A lasso or pen outline, in normalised base-frame coordinates. */
@@ -668,6 +674,32 @@ export function newLocalLayer(name: string): LocalLayer {
 }
 
 /** A small, stable 32-bit hash for seeds (grain) and cache keys. */
+/** A brush plane's reference: its content hash and length. */
+export function planeRef(png: string): string {
+  return `${hash32(png).toString(16)}-${png.length}`
+}
+
+/**
+ * The recipe with its brush planes as references, the PNGs left out: what
+ * crosses IPC. `known` receives each PNG it takes out, by reference. The same
+ * recipe comes back when it holds no PNG.
+ */
+export function slimRecipe(r: Recipe, known?: (ref: string, png: string) => void): Recipe {
+  if (!r.layers.some((l) => l.components.some((c) => c.kind === 'brush' && c.png))) return r
+  return {
+    ...r,
+    layers: r.layers.map((l) => ({
+      ...l,
+      components: l.components.map((c) => {
+        if (c.kind !== 'brush' || !c.png) return c
+        const ref = c.ref ?? planeRef(c.png)
+        known?.(ref, c.png)
+        return { ...c, png: '', ref }
+      })
+    }))
+  }
+}
+
 export function hash32(text: string): number {
   let h = 0x811c9dc5
   for (let i = 0; i < text.length; i++) {

@@ -195,15 +195,29 @@ const VIVID_CURVE: CurvePointSetting[] = [
   { x: 1, y: 1 }
 ]
 
+const shoulders = new Map<string, string>()
+
 /**
  * Highlight protection for a positive exposure: a 1D shaper over
  * `[0, 2^exposure]` that is the identity up to a knee at 0.75 and rolls the
  * rest smoothly onto `[0.75, 1]` (a rational shoulder, slope-continuous at the
  * knee, reaching 1 exactly at the new white). Without it, a stop of exposure
  * carries everything above half-white past 1.0 through the look stage and
- * clips it hard at the output.
+ * clips it hard at the output. Built once per exposure: a drag revisits the
+ * same few values.
  */
 export function shoulderCube(exposure: number, size = 1024): string {
+  const key = `${exposure}:${size}`
+  let cube = shoulders.get(key)
+  if (cube === undefined) {
+    cube = buildShoulder(exposure, size)
+    if (shoulders.size >= 64) shoulders.delete(shoulders.keys().next().value as string)
+    shoulders.set(key, cube)
+  }
+  return cube
+}
+
+function buildShoulder(exposure: number, size: number): string {
   const top = 2 ** exposure
   const knee = 0.75
   const a = (top - knee) / (1 - knee)

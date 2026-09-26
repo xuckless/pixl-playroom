@@ -40,7 +40,9 @@ export const IPC = {
     sample: 'develop:sample',
     autoTone: 'develop:auto-tone',
     autoWb: 'develop:auto-wb',
-    encodeMask: 'develop:encode-mask',
+    /** A painted plane (grey PNG, base64) into the plane store; its reference back. */
+    putPlane: 'develop:put-plane',
+    getPlane: 'develop:get-plane',
     saveSnapshots: 'develop:save-snapshots',
     historyList: 'develop:history-list',
     historyAppend: 'develop:history-append',

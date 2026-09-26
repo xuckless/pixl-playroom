@@ -11,6 +11,8 @@ import { Exporter } from './exporter'
 import { registerIpc } from './ipc'
 import { Library } from './library'
 import { buildMenu } from './menu'
+import { PlaneStore } from './planestore'
+import { pixels } from './workers/pool'
 import { paths } from './paths'
 import { registerProtocol, registerSchemePrivileges } from './protocol'
 import { DevelopSessions } from './render'
@@ -91,7 +93,8 @@ app.whenReady().then(() => {
   sessions = new DevelopSessions(library, engine, bgEngine)
   const exporter = new Exporter(library, sessions, bgEngine)
   const enhancer = new Enhancer(library, bgEngine)
-  registerIpc({ store, library, sessions, exporter, enhancer, engine, bgEngine })
+  const planes = new PlaneStore(store)
+  registerIpc({ store, planes, library, sessions, exporter, enhancer, engine, bgEngine })
 
   buildMenu()
   onRenderScale(buildMenu)
@@ -112,5 +115,6 @@ app.on('before-quit', () => {
   sessions?.closeAll()
   engine.stop()
   bgEngine.stop()
+  pixels.close()
   store?.close()
 })

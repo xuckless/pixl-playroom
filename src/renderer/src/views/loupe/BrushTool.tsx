@@ -1,11 +1,4 @@
-import { memo, useRef, useState } from 'react'
-import {
-  autoMaskWeight,
-  composeStroke,
-  deltaE,
-  srgbToLab,
-  stampDab
-} from '../../../../shared/brush'
+import { memo, useEffect, useRef, useState } from 'react'
 import { newId, type BrushComponent } from '../../../../shared/recipe'
 import {
   baseToDisplay,
@@ -17,85 +10,37 @@ import {
   type ViewGeometry
 } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
-import { loadImage } from '../../lib/image'
+import { planePng, rememberPlane } from '../../lib/planes'
+import type { Affine, Dab } from '../../workers/brush.worker'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { useUi, type BrushSettings } from '../../state/ui'
+import { brushWorker } from './brushWorker'
 
 /** Painted planes are this many pixels on their long edge, in the base frame. */
 const BRUSH_EDGE = 1024
 /** What one dab lays down at full flow (dabs overlap every eighth of a diameter). */
 const FLOW_PER_DAB = 0.35
 
-/** A painted plane as coverage 0…1 (a new plane is empty). */
-async function planeOf(c: BrushComponent | undefined, w: number, h: number): Promise<Float32Array> {
-  const out = new Float32Array(w * h)
-  if (!c?.png) return out
-  const img = await loadImage(`data:image/png;base64,${c.png}`)
-  const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
-  const ctx = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D
-  ctx.drawImage(img, 0, 0, w, h)
-  const d = ctx.getImageData(0, 0, w, h).data
-  for (let i = 0; i < out.length; i++) out[i] = d[i * 4] / 255
-  return out
-}
-
-interface Sampler {
-  w: number
-  h: number
-  lab: Float32Array
-}
-const samplers = new Map<string, Promise<Sampler>>()
-
-/** The picture on screen, small, in Lab: what Auto Mask compares colours in. */
-function samplerFor(url: string): Promise<Sampler> {
-  let s = samplers.get(url)
-  if (!s) {
-    s = (async () => {
-      const img = await loadImage(url)
-      const k = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight))
-      const w = Math.max(1, Math.round(img.naturalWidth * k))
-      const h = Math.max(1, Math.round(img.naturalHeight * k))
-      const c = document.createElement('canvas')
-      c.width = w
-      c.height = h
-      const ctx = c.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D
-      ctx.drawImage(img, 0, 0, w, h)
-      const d = ctx.getImageData(0, 0, w, h).data
-      const lab = new Float32Array(w * h * 3)
-      for (let i = 0; i < w * h; i++) {
-        const [L, a, b] = srgbToLab(d[i * 4], d[i * 4 + 1], d[i * 4 + 2])
-        lab[i * 3] = L
-        lab[i * 3 + 1] = a
-        lab[i * 3 + 2] = b
-      }
-      return { w, h, lab }
-    })()
-    samplers.clear()
-    samplers.set(url, s)
-  }
-  return s
-}
-
-function labAt(s: Sampler, p: P): [number, number, number] {
-  const x = Math.min(s.w - 1, Math.max(0, Math.floor(p.x * s.w)))
-  const y = Math.min(s.h - 1, Math.max(0, Math.floor(p.y * s.h)))
-  const i = (y * s.w + x) * 3
-  return [s.lab[i], s.lab[i + 1], s.lab[i + 2]]
+/** An affine map of normalised points, from where it takes three of them. */
+function affine(f: (p: P) => P): Affine {
+  const o = f({ x: 0, y: 0 })
+  const x = f({ x: 1, y: 0 })
+  const y = f({ x: 0, y: 1 })
+  return [x.x - o.x, y.x - o.x, o.x, x.y - o.y, y.y - o.y, o.y]
 }
 
 interface Stroke {
-  plane: Float32Array
-  stroke: Float32Array
   compId: string
   isNew: boolean
   last: P | null
   erase: boolean
   set: BrushSettings
-  sampler: Sampler | null
+  /** Dabs made since the last message to the worker. */
+  pending: Dab[]
+  /** The worker has the stroke (its plane is loaded): dabs may go. */
+  started: boolean
 }
 
 /**
@@ -103,7 +48,8 @@ interface Stroke {
  * with its size, feather, flow and density; a pen's pressure; Auto Mask to
  * keep a stroke to similar colours. It paints the selected brush component,
  * or the mask's last, or a new one in the pending Add / Subtract /
- * Intersect mode.
+ * Intersect mode. The painting itself runs in the brush worker, on the GPU;
+ * here the pointer becomes dabs.
  */
 export const BrushLayer = memo(function BrushLayer({
   rect,
@@ -121,7 +67,7 @@ export const BrushLayer = memo(function BrushLayer({
   const commit = useDevelop((s) => s.commit)
   const slot = useUi((s) => s.brushSlot)
   const brush = useUi((s) => s.brushes[s.brushSlot])
-  const screen = useRef<HTMLCanvasElement>(null)
+  const worker = brushWorker()
   const stroke = useRef<Stroke | null>(null)
   const [cursor, setCursor] = useState<P | null>(null)
   const [altDown, setAltDown] = useState(false)
@@ -140,6 +86,24 @@ export const BrushLayer = memo(function BrushLayer({
     return Math.hypot((b.x - a.x) * planeW, (b.y - a.y) * planeH)
   }
 
+  // The worker's canvas covers the part of the picture in view; it learns
+  // where that is whenever the view moves.
+  useEffect(() => {
+    worker.post({
+      t: 'screen',
+      screen: {
+        w: vis.w,
+        h: vis.h,
+        dpr: window.devicePixelRatio || 1,
+        ox: vis.x,
+        oy: vis.y,
+        rw: rect.w,
+        rh: rect.h,
+        toBase: affine((p) => displayToBase(g, p))
+      }
+    })
+  }, [worker, vis.x, vis.y, vis.w, vis.h, rect.w, rect.h, g])
+
   const dab = (s: Stroke, q: P, pressure: number): void => {
     const set = s.set
     const pr = set.pressure ? pressure : 1
@@ -147,24 +111,17 @@ export const BrushLayer = memo(function BrushLayer({
     const r = (set.size / 2) * k * (set.pressure ? 0.25 + 0.75 * pr : 1)
     const flow = (set.flow / 100) * FLOW_PER_DAB * pr
     const b = displayToBase(g, q)
-    let weight: ((x: number, y: number) => number) | undefined
-    if (set.autoMask && s.sampler) {
-      const sm = s.sampler
-      const centre = labAt(sm, q)
-      weight = (x, y) => {
-        const d = baseToDisplay(g, { x: (x + 0.5) / planeW, y: (y + 0.5) / planeH })
-        return autoMaskWeight(deltaE(centre, labAt(sm, d)))
-      }
-    }
-    stampDab(s.stroke, planeW, planeH, b.x * planeW, b.y * planeH, r, set.softness, flow, weight)
-    const sctx = screen.current?.getContext('2d')
-    if (sctx) {
-      sctx.globalCompositeOperation = 'source-over'
-      sctx.fillStyle = s.erase ? 'rgba(10,10,14,0.22)' : 'rgba(157,139,234,0.16)'
-      sctx.beginPath()
-      sctx.arc(q.x * rect.w - vis.x, q.y * rect.h - vis.y, (r / k) * 0.9, 0, Math.PI * 2)
-      sctx.fill()
-    }
+    s.pending.push({
+      x: b.x * planeW,
+      y: b.y * planeH,
+      r,
+      flow,
+      dx: q.x,
+      dy: q.y,
+      sx: q.x * rect.w - vis.x,
+      sy: q.y * rect.h - vis.y,
+      sr: (r / k) * 0.9
+    })
   }
 
   const paint = (p: P, pressure: number): void => {
@@ -189,6 +146,14 @@ export const BrushLayer = memo(function BrushLayer({
     s.last = p
   }
 
+  /** Send what the pointer painted since the last event. */
+  const flush = (): void => {
+    const s = stroke.current
+    if (!s || !s.started || s.pending.length === 0) return
+    worker.post({ t: 'dabs', dabs: s.pending })
+    s.pending = []
+  }
+
   const begin = async (e: React.PointerEvent<HTMLDivElement>): Promise<void> => {
     const d = useDevelop.getState()
     const recipe = d.recipe
@@ -211,46 +176,64 @@ export const BrushLayer = memo(function BrushLayer({
     if (!existing && erase) return
     const p = toDisplay(e, e.currentTarget)
     const pressure = e.pointerType === 'pen' ? e.pressure || 0.5 : 1
-    const picture = d.picture?.url
-    const [plane, sampler] = await Promise.all([
-      planeOf(existing, planeW, planeH),
-      set.autoMask && picture ? samplerFor(picture).catch(() => null) : Promise.resolve(null)
-    ])
     stroke.current = {
-      plane,
-      stroke: new Float32Array(planeW * planeH),
       compId: existing?.id ?? newId(),
       isNew: !existing,
       last: null,
       erase,
       set,
-      sampler
-    }
-    const sc = screen.current
-    if (sc) {
-      sc.width = Math.ceil(vis.w)
-      sc.height = Math.ceil(vis.h)
+      pending: [],
+      started: false
     }
     paint(p, pressure)
+    let png: string | null = null
+    try {
+      if (existing && (existing.png || existing.ref)) png = await planePng(existing)
+    } catch (err) {
+      stroke.current = null
+      return useLibrary.getState().say(errorText(err), 'error')
+    }
+    worker.post({
+      t: 'begin',
+      w: planeW,
+      h: planeH,
+      png,
+      softness: set.softness,
+      erase,
+      picture: set.autoMask ? (d.picture?.url ?? null) : null,
+      toDisplay: affine((q) => baseToDisplay(g, q))
+    })
+    const s = stroke.current
+    if (!s) return
+    s.started = true
+    flush()
   }
 
   const end = async (): Promise<void> => {
     const s = stroke.current
+    if (!s) return
+    // A stroke let go before the worker had it: it starts first, then ends.
+    while (!s.started) {
+      if (stroke.current !== s) return
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    flush()
     stroke.current = null
-    const sc = screen.current
-    if (sc) sc.getContext('2d')?.clearRect(0, 0, sc.width, sc.height)
-    if (!s || !session) return
-    const out = composeStroke(s.plane, s.stroke, s.set.density / 100, s.erase)
-    const grey = new Uint8Array(out.length)
-    for (let i = 0; i < out.length; i++) grey[i] = Math.round(out[i] * 255)
+    if (!session) return worker.post({ t: 'cancel' })
     try {
-      const png = await api.develop.encodeMask(grey, planeW, planeH)
+      const png = await worker.finish(s.set.density / 100)
+      if (!png) return
+      const ref = await api.develop.putPlane(png)
+      rememberPlane(ref, png)
       edit((r) => {
         const l = r.layers.find((x) => x.id === layerId)
         if (!l) return
         const c = l.components.find((x) => x.id === s.compId)
-        if (c && c.kind === 'brush') c.png = png
-        else
+        // The recipe holds the plane by reference; the pixels stay in the plane stores.
+        if (c && c.kind === 'brush') {
+          c.png = ''
+          c.ref = ref
+        } else
           l.components.push({
             id: s.compId,
             kind: 'brush',
@@ -260,7 +243,8 @@ export const BrushLayer = memo(function BrushLayer({
             feather: 0,
             width: planeW,
             height: planeH,
-            png
+            png: '',
+            ref
           })
       })
       commit(s.erase ? 'Brush erase' : 'Brush stroke')
@@ -289,13 +273,14 @@ export const BrushLayer = memo(function BrushLayer({
         const samples = e.nativeEvent.getCoalescedEvents?.() ?? [e.nativeEvent]
         for (const ev of samples.length ? samples : [e.nativeEvent])
           paint(toDisplay(ev, el), ev.pointerType === 'pen' ? ev.pressure || 0.5 : 1)
+        flush()
       }}
       onPointerUp={() => void end()}
       onPointerCancel={() => void end()}
       onPointerLeave={() => setCursor(null)}
     >
       <canvas
-        ref={screen}
+        ref={worker.attach}
         className="overlay-canvas"
         style={{ left: vis.x, top: vis.y, width: vis.w, height: vis.h }}
       />
