@@ -11,6 +11,7 @@ import {
   baseToDisplay,
   displayToBase,
   normalisedIn,
+  visiblePart,
   type P,
   type Rect,
   type ViewGeometry
@@ -106,9 +107,12 @@ interface Stroke {
  */
 export const BrushLayer = memo(function BrushLayer({
   rect,
+  box,
   g
 }: {
   rect: Rect
+  /** The loupe's size: the stroke's canvas covers only the part of the picture in view. */
+  box: { w: number; h: number }
   g: ViewGeometry
 }): React.JSX.Element {
   const session = useDevelop((s) => s.session)
@@ -121,6 +125,7 @@ export const BrushLayer = memo(function BrushLayer({
   const stroke = useRef<Stroke | null>(null)
   const [cursor, setCursor] = useState<P | null>(null)
   const [altDown, setAltDown] = useState(false)
+  const vis = visiblePart(box, rect)
   // The base frame's size in pixels (the file upright, before the user's turns).
   const baseW = session?.frameWidth ?? 1
   const baseH = session?.frameHeight ?? 1
@@ -157,7 +162,7 @@ export const BrushLayer = memo(function BrushLayer({
       sctx.globalCompositeOperation = 'source-over'
       sctx.fillStyle = s.erase ? 'rgba(10,10,14,0.22)' : 'rgba(157,139,234,0.16)'
       sctx.beginPath()
-      sctx.arc(q.x * rect.w, q.y * rect.h, (r / k) * 0.9, 0, Math.PI * 2)
+      sctx.arc(q.x * rect.w - vis.x, q.y * rect.h - vis.y, (r / k) * 0.9, 0, Math.PI * 2)
       sctx.fill()
     }
   }
@@ -223,8 +228,8 @@ export const BrushLayer = memo(function BrushLayer({
     }
     const sc = screen.current
     if (sc) {
-      sc.width = rect.w
-      sc.height = rect.h
+      sc.width = Math.ceil(vis.w)
+      sc.height = Math.ceil(vis.h)
     }
     paint(p, pressure)
   }
@@ -289,7 +294,11 @@ export const BrushLayer = memo(function BrushLayer({
       onPointerCancel={() => void end()}
       onPointerLeave={() => setCursor(null)}
     >
-      <canvas ref={screen} className="overlay-canvas fill" />
+      <canvas
+        ref={screen}
+        className="overlay-canvas"
+        style={{ left: vis.x, top: vis.y, width: vis.w, height: vis.h }}
+      />
       {cursor && (
         <div
           className={`brush-cursor${erasing ? ' erase' : ''}`}

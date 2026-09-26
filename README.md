@@ -41,8 +41,9 @@ and mean saturation, the _before_ picture's bars as dashed ghosts behind, a
 masked-region mode that measures inside the selected mask, click a bar to
 focus its HSL band, Shift-click to make a colour-range mask there.
 
-**Viewing** — before (\\), split before/after (Y), 1:1 (Z) rendered by the
-engine as a region of the full-resolution frame (with the mask overlay),
+**Viewing** — before (\\), split before/after (Y), zoom from fit to 400%
+(pinch, wheel, Z for 100%) with every tool still on the photo, the part in
+view rendered sharp by the engine from the full-resolution frame,
 crop with composition guides (thirds, grid, golden, diagonal) and
 drag-outside-to-straighten, a fine grid while straightening, clipping
 overlay, brush cursor, lasso and gradient handles.
@@ -137,27 +138,30 @@ offscreen-rendered window with a throwaway profile (`PLAYROOM_HIDDEN=1`,
 
 ## Keys
 
-| Key                   | Where          | Does                                                                   |
-| --------------------- | -------------- | ---------------------------------------------------------------------- |
-| G / Esc               | develop        | back to the library (Esc first leaves a tool or 1:1)                   |
-| Enter / D             | library        | develop the focused photo                                              |
-| ← →                   | both           | previous / next photo                                                  |
-| 0–5, P X U, 6–9       | both           | rating, pick / reject / unflag, colour label                           |
-| Ctrl+Z / Ctrl+Shift+Z | develop        | undo / redo                                                            |
-| Ctrl+C / Ctrl+V       | develop / both | copy settings / paste onto the selection                               |
-| Ctrl+Shift+S          | both           | sync settings (choose groups)                                          |
-| Ctrl+Shift+E          | both           | export                                                                 |
-| Ctrl+'                | develop        | virtual copy                                                           |
-| \\ , Y                | develop        | before, split before/after                                             |
-| J                     | develop        | clipping overlay                                                       |
-| Z                     | develop        | 1:1 (double-click the photo too)                                       |
-| Ctrl+1…9, Ctrl+↑/↓    | develop        | pick / turn the tool wheel                                             |
-| R, W                  | develop        | crop tool, white-balance picker                                        |
-| B/K, L, M, Shift+M    | develop        | brush, lasso, linear, radial gradient (a new mask if none is selected) |
-| O                     | develop        | mask overlay (in the crop tool: cycle guides)                          |
-| H                     | develop        | mask pins: auto, always, never                                         |
-| [ ], Alt              | develop        | brush size, erase while held                                           |
-| Shift+A               | develop        | auto tone                                                              |
+| Key                      | Where          | Does                                                                   |
+| ------------------------ | -------------- | ---------------------------------------------------------------------- |
+| G / Esc                  | develop        | back to the library (Esc first leaves a tool, then the zoom)           |
+| Enter / D                | library        | develop the focused photo                                              |
+| ← →                      | both           | previous / next photo                                                  |
+| 0–5, P X U, 6–9          | both           | rating, pick / reject / unflag, colour label                           |
+| Ctrl+Z / Ctrl+Shift+Z    | develop        | undo / redo                                                            |
+| Ctrl+C / Ctrl+V          | develop / both | copy settings / paste onto the selection                               |
+| Ctrl+Shift+S             | both           | sync settings (choose groups)                                          |
+| Ctrl+Shift+E             | both           | export                                                                 |
+| Ctrl+'                   | develop        | virtual copy                                                           |
+| \\ , Y                   | develop        | before, split before/after                                             |
+| J                        | develop        | clipping overlay                                                       |
+| Z                        | develop        | fit ↔ 100% at the pointer (double-click the photo too)                 |
+| Pinch, wheel             | develop        | zoom at the pointer, fit to 400%                                       |
+| Two fingers, Space+drag  | develop        | pan the zoomed photo (a plain drag too, with no tool)                  |
+| Ctrl+= / Ctrl+- / Ctrl+0 | develop        | zoom in / out / fit                                                    |
+| Ctrl+1…9, Ctrl+↑/↓       | develop        | pick / turn the tool wheel                                             |
+| R, W                     | develop        | crop tool, white-balance picker                                        |
+| B/K, L, M, Shift+M       | develop        | brush, lasso, linear, radial gradient (a new mask if none is selected) |
+| O                        | develop        | mask overlay (in the crop tool: cycle guides)                          |
+| H                        | develop        | mask pins: auto, always, never                                         |
+| [ ], Alt                 | develop        | brush size, erase while held                                           |
+| Shift+A                  | develop        | auto tone                                                              |
 
 See `TODO.md` for everything not in this pass.
 

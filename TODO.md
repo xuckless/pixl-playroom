@@ -92,9 +92,9 @@ editable lasso points.
 - [ ] ProRAW and DNG gain maps (engine).
 - [ ] Sharpening/NR previews at fit size (today sharpening is shown only when
       its radius is ≥ half a proxy pixel, i.e. at 1:1).
-- [ ] 1:1 view of a straightened/cropped photo: the region view shows the
-      uncropped, unrotated frame (the engine refuses a region with a
-      straighten); needs a canvas-space region in the engine.
+- [ ] Sharp zoom of a straightened photo: the zoomed loupe enlarges the
+      preview instead (the engine refuses a region with a straighten);
+      needs a canvas-space region in the engine.
 - [ ] Cancellation of an in-flight render (the engine is synchronous; a
       stale render finishes and is dropped).
 - [ ] **Preview round trip.** Each preview is written to disk as a JPEG,

@@ -132,3 +132,108 @@ export function normalisedIn(
     y: box.height > 0 ? (clientY - box.top) / box.height : 0
   }
 }
+
+// ── zoom ─────────────────────────────────────────────────────────────────────
+
+/** The furthest the loupe zooms: four device pixels per photo pixel. */
+export const MAX_ZOOM = 4
+
+/**
+ * How the loupe looks at the picture: fitted, or at `scale` device pixels
+ * per photo pixel (1 is 100%) with display point (`cx`, `cy`) at the centre.
+ */
+export interface ZoomView {
+  scale: number | 'fit'
+  cx: number
+  cy: number
+}
+
+export const FIT: ZoomView = { scale: 'fit', cx: 0.5, cy: 0.5 }
+
+/** The loupe box, the displayed picture's size in photo pixels, and the screen's pixel ratio. */
+export interface Viewport {
+  box: { w: number; h: number }
+  width: number
+  height: number
+  dpr: number
+}
+
+const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
+
+/** The fitted picture's scale, in device pixels per photo pixel. */
+export function fitScale(v: Viewport): number {
+  const r = fitRect(v.box, v.width, v.height, 4)
+  return r ? (r.w * v.dpr) / v.width : 1
+}
+
+/** A view's scale as a number (the fitted scale for Fit). */
+export function scaleOf(v: Viewport, view: ZoomView): number {
+  return view.scale === 'fit' ? fitScale(v) : Math.max(view.scale, fitScale(v))
+}
+
+/**
+ * Where the picture lies in the loupe box for a view: the fitted rect for
+ * Fit, else the picture at its scale around the view's centre, kept over the
+ * box (and centred on an axis where it is smaller than the box).
+ */
+export function zoomedRect(v: Viewport, view: ZoomView): Rect | null {
+  const fit = fitRect(v.box, v.width, v.height, 4)
+  if (!fit || view.scale === 'fit' || view.scale <= fitScale(v)) return fit
+  const k = view.scale / v.dpr
+  const w = v.width * k
+  const h = v.height * k
+  const x = w > v.box.w ? clamp(v.box.w / 2 - view.cx * w, v.box.w - w, 0) : (v.box.w - w) / 2
+  const y = h > v.box.h ? clamp(v.box.h / 2 - view.cy * h, v.box.h - h, 0) : (v.box.h - h) / 2
+  return { x, y, w, h }
+}
+
+/** The view that puts the picture at `r` (its centre read back from the rect, so it stays in bounds). */
+function viewOf(v: Viewport, scale: number, r: Rect): ZoomView {
+  if (scale <= fitScale(v) * 1.0001) return FIT
+  return { scale, cx: (v.box.w / 2 - r.x) / r.w, cy: (v.box.h / 2 - r.y) / r.h }
+}
+
+/** Zoom by `factor` about a point of the loupe box, which stays under the pointer. */
+export function zoomAt(v: Viewport, view: ZoomView, factor: number, at: P): ZoomView {
+  const r = zoomedRect(v, view)
+  if (!r) return view
+  const fit = fitScale(v)
+  const next = clamp(scaleOf(v, view) * factor, fit, Math.max(fit, MAX_ZOOM))
+  if (next <= fit * 1.0001) return FIT
+  const u = (at.x - r.x) / r.w
+  const w = (v.width * next) / v.dpr
+  const h = (v.height * next) / v.dpr
+  const raw = { scale: next, cx: (v.box.w / 2 - (at.x - u * w)) / w, cy: 0 }
+  raw.cy = (v.box.h / 2 - (at.y - ((at.y - r.y) / r.h) * h)) / h
+  const placed = zoomedRect(v, raw)
+  return placed ? viewOf(v, next, placed) : raw
+}
+
+/** A view at `scale` with display point `p` under box point `at` (Z and double-click to 100%). */
+export function zoomTo(v: Viewport, view: ZoomView, scale: number, at: P): ZoomView {
+  return zoomAt(v, view, scale / scaleOf(v, view), at)
+}
+
+/** Move a zoomed view by (`dx`, `dy`) box pixels, as a drag or a two-finger scroll would. */
+export function panBy(v: Viewport, view: ZoomView, dx: number, dy: number): ZoomView {
+  const r = zoomedRect(v, view)
+  if (!r || view.scale === 'fit') return view
+  const moved = zoomedRect(v, {
+    scale: view.scale,
+    cx: (v.box.w / 2 - (r.x + dx)) / r.w,
+    cy: (v.box.h / 2 - (r.y + dy)) / r.h
+  })
+  return moved ? viewOf(v, view.scale, moved) : view
+}
+
+/** The part of a picture rect that shows in the box, in the rect's own pixels. */
+export function visiblePart(box: { w: number; h: number }, r: Rect): Rect {
+  const x = Math.max(0, -r.x)
+  const y = Math.max(0, -r.y)
+  return {
+    x,
+    y,
+    w: Math.max(0, Math.min(r.w, box.w - r.x) - x),
+    h: Math.max(0, Math.min(r.h, box.h - r.y) - y)
+  }
+}
