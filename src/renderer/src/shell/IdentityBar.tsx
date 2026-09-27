@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { Mark } from '../components/Mark'
+import { Spinner } from '../fx'
 import { useBusy } from '../state/busy'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
@@ -20,14 +22,14 @@ export function EngineStatus(): React.JSX.Element {
   )
 }
 
-/** Work running in the background (an enhance), as a small orb and its latest word. */
+/** Work running in the background (an enhance), as the inline loader and its latest word. */
 export function BackgroundJobs(): React.JSX.Element | null {
   const jobs = useBusy(useShallow((s) => s.jobs.filter((j) => j.scope === 'global')))
   if (jobs.length === 0) return null
   const last = jobs[jobs.length - 1]
   return (
     <span className="bg-jobs micro" title={last.detail ?? last.title}>
-      <i className="orb" />
+      <Spinner size={14} />
       {last.title}
       {jobs.length > 1 ? ` ×${jobs.length}` : ''}
     </span>
@@ -44,8 +46,11 @@ export function IdentityBar({
 }): React.JSX.Element {
   return (
     <header className="identity-bar">
-      <span className="wordmark">
-        PIXL <em>PLAYROOM</em>
+      <span className="brand">
+        <Mark size={16} detail="small" />
+        <span className="wordmark">
+          PIXL <em>PLAYROOM</em>
+        </span>
       </span>
       <span className="vsep" />
       <span className="identity">{children}</span>

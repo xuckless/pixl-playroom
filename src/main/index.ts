@@ -3,6 +3,7 @@ import log from 'electron-log/main'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import dockIcon from '../../resources/icon-dock.png?asset'
 import { bootScale, onRenderScale, settleScale, watchDisplay } from './display'
 import { EngineClient } from './engine/client'
 import { Enhancer } from './enhance'
@@ -46,10 +47,12 @@ function createWindow(): void {
     minWidth: 1000,
     minHeight: 640,
     show: false,
-    backgroundColor: '#141414',
+    // The launch splash's black, so the window never flashes another colour first.
+    backgroundColor: '#000000',
     autoHideMenuBar: true,
     title: 'Pixl Playroom',
-    ...(process.platform === 'linux' ? { icon } : {}),
+    // macOS takes the bundle's .icns; elsewhere the window carries the mark.
+    ...(process.platform !== 'darwin' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -77,10 +80,23 @@ function createWindow(): void {
   watchDisplay(mainWindow)
 }
 
+/** About Pixl Playroom: the app's version and the engine it runs on. */
+function setAbout(engineVersion?: string): void {
+  app.setAboutPanelOptions({
+    applicationName: 'Pixl Playroom',
+    applicationVersion: app.getVersion(),
+    credits: engineVersion ? `Powered by PIXL Engine ${engineVersion}` : 'Powered by PIXL Engine',
+    copyright: 'Copyright © 2026 xuckless',
+    iconPath: icon
+  })
+}
+
 app.whenReady().then(() => {
   if (relaunching) return
   if (settleScale()) return app.exit(0)
   electronApp.setAppUserModelId('com.xuckless.pixlplayroom')
+  // A packaged app's dock shows its bundle icon; `pnpm dev` would show Electron's.
+  if (!app.isPackaged) app.dock?.setIcon(dockIcon)
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
@@ -89,6 +105,7 @@ app.whenReady().then(() => {
   index.start()
   engine.start()
   bgEngine.start()
+  void engine.whenStarted().then(() => setAbout(engine.getStatus().version))
   const library = new Library(index, bgEngine)
   sessions = new DevelopSessions(library, engine, bgEngine)
   const exporter = new Exporter(library, sessions, bgEngine)

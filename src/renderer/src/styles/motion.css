@@ -242,6 +242,17 @@
     transform: scale(1.04) translateY(-4px);
   }
 }
+@keyframes markDrift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(6px, -8px);
+    opacity: 0.7;
+  }
+}
 @keyframes spin {
   to {
     transform: rotate(360deg);

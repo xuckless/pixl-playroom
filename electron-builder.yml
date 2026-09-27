@@ -76,8 +76,20 @@ mac:
     NSDocumentsFolderUsageDescription: Pixl Playroom opens folders of photos you choose.
     NSDownloadsFolderUsageDescription: Pixl Playroom opens folders of photos you choose.
 
+# The window is the size of build/background.png (660×400; the @2x copy is
+# merged in for Retina), drawn from build/brand/dmg.html by
+# scripts/brand-art.mjs. Icon positions are their centres on that art.
 dmg:
   artifactName: ${name}-mac-${arch}.${ext}
+  iconSize: 128
+  contents:
+    - x: 165
+      y: 180
+      type: file
+    - x: 495
+      y: 180
+      type: link
+      path: /Applications
 
 win:
   executableName: pixl-playroom
@@ -107,7 +119,8 @@ nsis:
 linux:
   executableName: pixl-playroom
   category: Graphics
-  icon: build/icon.png
+  # hicolor sizes, named NxN.png
+  icon: build/icons
   synopsis: A photo developer built on the PIXL engine.
   target:
     - target: AppImage

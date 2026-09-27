@@ -127,20 +127,6 @@
   font-weight: 600;
   color: var(--text);
 }
-.mini-ring {
-  width: 34px;
-  height: 34px;
-  flex: none;
-  position: relative;
-}
-.mini-ring .proc-ring {
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-.mini-ring .proc-ring circle {
-  stroke-width: 10;
-}
 .export-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
