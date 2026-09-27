@@ -1,6 +1,7 @@
 /** IPC channel names and the app-level types both sides of the bridge share. */
 import type { ConvertReport, ImageStats, LossReport, SourceInfo, WhitePoint } from './engine-types'
 import type { ExportSettings } from './export'
+import type { Step } from './history'
 import type { BasicSetting, Recipe, RecipeGroup } from './recipe'
 
 export const IPC = {
@@ -46,6 +47,8 @@ export const IPC = {
     saveSnapshots: 'develop:save-snapshots',
     historyList: 'develop:history-list',
     historyAppend: 'develop:history-append',
+    historySetHidden: 'develop:history-set-hidden',
+    historyDelete: 'develop:history-delete',
     noise: 'develop:noise',
     /** main → renderer: a render finished */
     rendered: 'develop:rendered',
@@ -91,6 +94,8 @@ export interface EngineStatus {
   version?: string
   enhance?: boolean
   reason?: string
+  /** Why the engine is unavailable, when the load named it (e.g. `VersionMismatch`). */
+  code?: string
   restarts: number
 }
 
@@ -176,11 +181,23 @@ export interface Snapshot {
   recipe: Recipe
 }
 
-export interface HistoryEntry {
+/** Where a photo's history starts: the recipe it had when first opened. */
+export interface HistoryBase {
   seq: number
   label: string
   at: string
   recipe: Recipe
+}
+
+/**
+ * A photo's edit history: its base, and every settled edit since as a step
+ * holding only what it changed (see `shared/history.ts`). The recipe is the
+ * base with every visible step replayed; `base` is null before the first
+ * open.
+ */
+export interface HistoryLog {
+  base: HistoryBase | null
+  steps: Step[]
 }
 
 export interface DevelopSession {
@@ -241,6 +258,12 @@ export interface RenderEvent {
   stats?: ImageStats
   /** Present for a mask render with the masked-region hue chart. */
   maskStats?: ImageStats
+  /**
+   * Present for a settled render of a PQ/HLG photo: the graded picture as an
+   * HDR export would hold it, measured in linear light (1.0 is reference
+   * white; the histograms span `0…range_max`).
+   */
+  hdrStats?: ImageStats
   report?: RenderReport
 }
 

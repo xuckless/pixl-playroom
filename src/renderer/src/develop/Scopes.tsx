@@ -11,6 +11,7 @@ import { selectPanel } from './tools'
  */
 export function Scopes(): React.JSX.Element {
   const stats = useDevelop((s) => s.stats)
+  const hdrStats = useDevelop((s) => s.hdrStats)
   const before = useDevelop((s) => s.before)
   const mask = useDevelop((s) => s.mask)
   const layerId = useDevelop((s) => s.layerId)
@@ -20,7 +21,7 @@ export function Scopes(): React.JSX.Element {
   const setHslTab = useDevelop((s) => s.setHslTab)
   return (
     <div className="scopes">
-      <Histogram stats={stats} clipping={clipping} onClipping={setClipping} />
+      <Histogram stats={stats} hdr={hdrStats} clipping={clipping} onClipping={setClipping} />
       <HueChart
         stats={stats}
         before={before?.stats ?? null}

@@ -2,12 +2,13 @@ import { create } from 'zustand'
 import type { ImageStats, MaskMode, NoiseEstimate } from '../../../shared/engine-types'
 import type {
   DevelopSession,
-  HistoryEntry,
+  HistoryLog,
   RenderEvent,
   RenderReport,
   Snapshot,
   ViewState
 } from '../../../shared/ipc'
+import { replay } from '../../../shared/history'
 import { newId, type HslBand, type Recipe } from '../../../shared/recipe'
 import { FIT, type ZoomView } from '../../../shared/view'
 import { api, errorText } from '../lib/api'
@@ -25,8 +26,10 @@ interface DevelopState {
   session: DevelopSession | null
   loading: boolean
   recipe: Recipe | null
-  history: HistoryEntry[]
-  cursor: number
+  /** The photo's edit history: the recipe is its base with every visible step replayed. */
+  history: HistoryLog
+  /** Steps Undo hid, newest last: what Redo shows again. A new edit clears it. */
+  redo: number[]
   snapshots: Snapshot[]
   /** The picture on screen: the latest render for the current view. */
   picture: RenderEvent | null
@@ -36,6 +39,8 @@ interface DevelopState {
   mask: RenderEvent | null
   report: RenderReport | null
   stats: ImageStats | null
+  /** For a PQ/HLG photo, the last settled render measured as HDR (see `RenderEvent.hdrStats`). */
+  hdrStats: ImageStats | null
   error: string | null
   rendering: boolean
   tool: Tool
@@ -68,9 +73,14 @@ interface DevelopState {
   commit(label: string): void
   /** Replace the recipe wholesale (paste, preset, snapshot) and record it. */
   replace(recipe: Recipe, label: string): void
+  /** Hide the newest visible step. */
   undo(): void
-  redo(): void
-  goto(index: number): void
+  /** Show the step Undo last hid. */
+  redoStep(): void
+  /** Hide or show steps; the caller has already added any dependents. */
+  setStepsHidden(seqs: number[], hidden: boolean): Promise<void>
+  /** Delete steps; the caller has already added any dependents. */
+  deleteSteps(seqs: number[]): Promise<void>
   setTool(tool: Tool): void
   setGesture(g: Gesture): void
   setComp(id: string | null): void
@@ -115,6 +125,24 @@ function sendNow(key: string, recipe: Recipe, onError: (message: string) => void
   void api.develop.update(key, recipe, false).catch((err) => onError(errorText(err)))
 }
 
+/**
+ * Show what a changed history describes: its replayed recipe becomes the
+ * photo's (rendered and saved like any settled edit).
+ */
+function applyLog(key: string, history: HistoryLog): void {
+  const { session } = useDevelop.getState()
+  if (!session || session.key !== key || !history.base) return
+  const recipe = replay(history.base.recipe, history.steps)
+  useDevelop.setState({ history, recipe, rendering: true })
+  sendNow(session.key, recipe, (m) => useDevelop.getState().onError(m))
+}
+
+/** Undo and Redo, one at a time: each reads the history the one before left. */
+let historyOps: Promise<void> = Promise.resolve()
+function queueHistoryOp(op: () => Promise<void>): void {
+  historyOps = historyOps.then(op).catch((err) => useDevelop.getState().onError(errorText(err)))
+}
+
 /** The last picture made for a view: the framed picture, or the crop tool's whole frame. */
 type Pictures = { framed: RenderEvent | null; crop: RenderEvent | null }
 
@@ -122,8 +150,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   session: null,
   loading: false,
   recipe: null,
-  history: [],
-  cursor: -1,
+  history: { base: null, steps: [] },
+  redo: [],
   snapshots: [],
   picture: null,
   pictures: { framed: null, crop: null },
@@ -131,6 +159,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   mask: null,
   report: null,
   stats: null,
+  hdrStats: null,
   error: null,
   rendering: false,
   tool: 'none',
@@ -162,6 +191,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       before: null,
       mask: null,
       stats: null,
+      hdrStats: null,
       report: null,
       noise: null,
       layerId: null,
@@ -171,14 +201,21 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     try {
       const session = await api.develop.open(key)
       let history = await api.develop.historyList(key)
-      if (history.length === 0) {
-        history = [await api.develop.historyAppend(key, 'Opened', session.recipe)]
+      if (!history.base) {
+        history = await api.develop.historyAppend(key, 'Opened', session.recipe)
+      } else if (
+        JSON.stringify(replay(history.base.recipe, history.steps)) !==
+        JSON.stringify(session.recipe)
+      ) {
+        // Changed where no history is written (a paste or sync in the
+        // library, an older version's undo): record where it stands now.
+        history = await api.develop.historyAppend(key, 'Opened as saved', session.recipe)
       }
       set({
         session,
         recipe: session.recipe,
         history,
-        cursor: history.length - 1,
+        redo: [],
         snapshots: session.snapshots,
         loading: false
       })
@@ -220,8 +257,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     if (!session || !recipe) return
     set({ rendering: true })
     sendNow(session.key, recipe, (m) => get().onError(m))
-    void api.develop.historyAppend(session.key, label, recipe).then((entry) => {
-      set((s) => ({ history: [...s.history, entry], cursor: s.history.length }))
+    void api.develop.historyAppend(session.key, label, recipe).then((history) => {
+      if (get().session?.key === session.key) set({ history, redo: [] })
     })
     const item = useLibrary.getState().items.find((i) => i.key === session.key)
     if (item && !item.edited) useLibrary.getState().patchItems([{ ...item, edited: true }])
@@ -233,21 +270,35 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   },
 
   undo() {
-    const { cursor } = get()
-    if (cursor > 0) get().goto(cursor - 1)
+    queueHistoryOp(async () => {
+      const last = get().history.steps.findLast((s) => !s.hidden)
+      if (!last) return
+      await get().setStepsHidden([last.seq], true)
+      set({ redo: [...get().redo, last.seq] })
+    })
   },
 
-  redo() {
-    const { cursor, history } = get()
-    if (cursor < history.length - 1) get().goto(cursor + 1)
+  redoStep() {
+    queueHistoryOp(async () => {
+      const { redo, history } = get()
+      // Skip what was shown again by hand since.
+      const stack = redo.filter((seq) => history.steps.some((s) => s.seq === seq && s.hidden))
+      const seq = stack.pop()
+      if (seq !== undefined) await get().setStepsHidden([seq], false)
+      set({ redo: stack })
+    })
   },
 
-  goto(index) {
-    const { session, history } = get()
-    const entry = history[index]
-    if (!session || !entry) return
-    set({ recipe: entry.recipe, cursor: index, rendering: true })
-    sendNow(session.key, entry.recipe, (m) => get().onError(m))
+  async setStepsHidden(seqs, hidden) {
+    const session = get().session
+    if (!session || seqs.length === 0) return
+    applyLog(session.key, await api.develop.historySetHidden(session.key, seqs, hidden))
+  },
+
+  async deleteSteps(seqs) {
+    const session = get().session
+    if (!session || seqs.length === 0) return
+    applyLog(session.key, await api.develop.historyDelete(session.key, seqs))
   },
 
   setTool(tool) {
@@ -361,6 +412,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         pictures: next,
         picture: same ? get().picture : e,
         stats: e.stats ?? null,
+        // Drafts carry no HDR measurement; keep the last settled one meanwhile.
+        hdrStats: e.kind === 'full' ? (e.hdrStats ?? null) : get().hdrStats,
         report: e.report ?? null,
         error: null,
         rendering: e.kind === 'draft'

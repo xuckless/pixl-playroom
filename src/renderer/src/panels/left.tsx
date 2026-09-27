@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { dependents, patchSummary, prerequisites, type Step } from '../../../shared/history'
 import { applyGroups } from '../../../shared/recipe'
 import { Icon } from '../components/icons'
 import { api, errorText } from '../lib/api'
@@ -149,33 +150,140 @@ export function SnapshotsPane(): React.JSX.Element {
   )
 }
 
+const clock = (at: string): string =>
+  new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+/** A hide or delete that takes later steps with it, waiting for a yes. */
+interface Cascade {
+  kind: 'hide' | 'delete'
+  seq: number
+  /** The step and its dependents. */
+  seqs: number[]
+}
+
+/**
+ * The edit history as steps, newest first. Every step can be hidden (the
+ * photo shows without it; the eye), shown again, or deleted. A step that made
+ * a mask takes the later steps that use that mask with it, after asking.
+ * Selecting a step shows what it changed.
+ */
 export function HistoryPane(): React.JSX.Element {
   const history = useDevelop((s) => s.history)
-  const cursor = useDevelop((s) => s.cursor)
-  const goto = useDevelop((s) => s.goto)
-  if (history.length === 0) return <p className="rail-empty">Nothing has happened yet.</p>
+  const setStepsHidden = useDevelop((s) => s.setStepsHidden)
+  const deleteSteps = useDevelop((s) => s.deleteSteps)
+  const [selected, setSelected] = useState<number | null>(null)
+  const [ask, setAsk] = useState<Cascade | null>(null)
+  const { base, steps } = history
+  if (!base) return <p className="rail-empty">Nothing has happened yet.</p>
+  const labelOf = (seq: number): string => steps.find((s) => s.seq === seq)?.label ?? ''
+  const toggle = (step: Step): void => {
+    setAsk(null)
+    if (step.hidden) {
+      void setStepsHidden([step.seq, ...prerequisites(steps, step.seq)], false)
+      return
+    }
+    const deps = dependents(steps, step.seq, (s) => !s.hidden)
+    if (deps.length > 0) setAsk({ kind: 'hide', seq: step.seq, seqs: [step.seq, ...deps] })
+    else void setStepsHidden([step.seq], true)
+  }
+  const remove = (step: Step): void => {
+    setAsk(null)
+    const deps = dependents(steps, step.seq)
+    if (deps.length > 0) setAsk({ kind: 'delete', seq: step.seq, seqs: [step.seq, ...deps] })
+    else void deleteSteps([step.seq])
+  }
+  const confirm = (): void => {
+    if (!ask) return
+    setAsk(null)
+    if (ask.kind === 'hide') void setStepsHidden(ask.seqs, true)
+    else void deleteSteps(ask.seqs)
+  }
   return (
     <div className="rail-list history">
-      {[...history]
-        .map((h, i) => ({ h, i }))
-        .reverse()
-        .map(({ h, i }) => (
-          <div
-            key={h.seq}
-            role="button"
-            tabIndex={0}
-            className={`history-row rail-item${i === cursor ? ' on' : ''}${i > cursor ? ' future' : ''}`}
-            onClick={() => goto(i)}
-          >
-            <span className="rail-label">
-              <i className="dot" />
-              {h.label}
-            </span>
-            <span className="t">
-              {new Date(h.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
+      {ask && (
+        <div className="history-ask" role="alertdialog" aria-label="Confirm">
+          <p>
+            {ask.kind === 'hide' ? 'Hiding' : 'Deleting'} “{labelOf(ask.seq)}” also{' '}
+            {ask.kind === 'hide' ? 'hides' : 'deletes'} {ask.seqs.length - 1} later{' '}
+            {ask.seqs.length === 2 ? 'step that uses' : 'steps that use'} what it made:
+          </p>
+          <ul>
+            {ask.seqs.slice(1).map((seq) => (
+              <li key={seq}>{labelOf(seq)}</li>
+            ))}
+          </ul>
+          <div className="row">
+            <button className={ask.kind === 'delete' ? 'danger' : 'primary'} onClick={confirm}>
+              {ask.kind === 'hide' ? 'Hide' : 'Delete'} {ask.seqs.length} steps
+            </button>
+            <button className="ghost" onClick={() => setAsk(null)}>
+              Cancel
+            </button>
           </div>
-        ))}
+        </div>
+      )}
+      {[...steps].reverse().map((step) => {
+        const on = selected === step.seq
+        const pick = (): void => setSelected(on ? null : step.seq)
+        return (
+          <div key={step.seq} className="history-step">
+            <div
+              role="button"
+              tabIndex={0}
+              aria-expanded={on}
+              className={`history-row rail-item${on ? ' on' : ''}${step.hidden ? ' hidden' : ''}`}
+              onClick={pick}
+              onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  pick()
+                }
+              }}
+            >
+              <span className="rail-label">
+                <i className="dot" />
+                {step.label}
+              </span>
+              <span className="t">{clock(step.at)}</span>
+              <button
+                className="icon sm eye"
+                title={step.hidden ? 'Show this step' : 'Hide this step'}
+                aria-pressed={!step.hidden}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggle(step)
+                }}
+              >
+                <Icon name={step.hidden ? 'eyeOff' : 'eye'} />
+              </button>
+              <button
+                className="icon sm"
+                title="Delete this step"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  remove(step)
+                }}
+              >
+                <Icon name="trash" />
+              </button>
+            </div>
+            {on && (
+              <p className="history-changed">
+                {patchSummary(step.patch).join(' · ') || 'No visible change'}
+                {step.hidden ? ' — hidden' : ''}
+              </p>
+            )}
+          </div>
+        )
+      })}
+      <div className="history-row rail-item base" title="Where the history starts">
+        <span className="rail-label">
+          <i className="dot" />
+          {base.label}
+        </span>
+        <span className="t">{clock(base.at)}</span>
+      </div>
     </div>
   )
 }

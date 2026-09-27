@@ -174,6 +174,10 @@ input.mf-rename {
   background: rgba(255, 255, 255, 0.04);
   padding-left: 9px;
 }
+.mf-comp:focus-visible {
+  border-color: rgba(157, 139, 234, 0.55);
+  box-shadow: 0 0 12px -4px var(--glow);
+}
 .mf-comp.on {
   border-color: rgba(157, 139, 234, 0.4);
   background: rgba(157, 139, 234, 0.1);
@@ -237,6 +241,19 @@ input.mf-rename {
 .mf-foot .check {
   margin: 0;
 }
+.mf-swatch-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border-color: transparent;
+}
+.mf-swatch-btn .mf-swatch {
+  width: 10px;
+  height: 10px;
+}
 .mf-swatch {
   width: 14px;
   height: 14px;
@@ -285,7 +302,8 @@ input.mf-rename {
   color: var(--text2);
   font-family: var(--font-body);
 }
-.menu-item:hover:not(:disabled) {
+.menu-item:hover:not(:disabled),
+.menu-item:focus-visible {
   transform: none;
   background: rgba(157, 139, 234, 0.14);
   border-color: transparent;

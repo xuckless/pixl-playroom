@@ -16,8 +16,11 @@ way. Grouped by area; roughly in priority order within each.
 - [ ] **Windows DirectML**: bundle a DirectML build of ONNX Runtime (the
       GitHub zip is CPU-only; the provider falls back to the CPU and says so).
 - [ ] Design polish still open: a light theme; user-reorderable tools on the
-      wheel; remembering the wheel's tool per photo; keyboard focus rings
-      audited across the glass popovers.
+      wheel.
+- [x] Remembering the wheel's tool per photo (index setting
+      `wheel.byPhoto`, `src/renderer/src/develop/wheelMemory.ts`; Crop is
+      never restored). Keyboard focus in the glass popovers: focus moves in
+      on open and back on close, menus take arrow keys, Home and End.
 
 ## Masks and local tools
 
@@ -39,12 +42,17 @@ way. Grouped by area; roughly in priority order within each.
       `MaskShape::DepthRange` in the engine.
 - [ ] Other engine mask shapes: a luminance/colour range keyed on a smoothed
       plane (guided-filter refine) rather than a box blur; an edge-aware
-      brush (Auto Mask is colour-only today, host-side on the preview).
-- [ ] Brush: intersect-with brushes; Auto Mask off the main thread (a worker
-      over the picture in Lab) for very large brushes.
-- [ ] Mask presets; per-component overlay colour; renaming components.
-- [ ] Brush planes travel inside every recipe update; send them once and
-      refer to them by hash.
+      brush (Auto Mask is colour-only today).
+- [ ] Brush: intersect-with brushes.
+- [x] Auto Mask off the main thread: it runs on the brush worker
+      (`src/renderer/src/workers/brush.worker.ts`), on the GPU with a CPU
+      fallback.
+- [x] Mask presets (a mask's sliders and Amount, index setting
+      `mask.presets`); renaming components; an overlay colour per mask.
+- [ ] Per-component overlay colour: needs a rendered plane per component
+      (the overlay is one plane per mask today).
+- [x] Brush planes by reference: `src/main/planestore.ts` swaps PNGs for
+      refs across IPC; the index keeps them in its `planes` table.
 - [ ] Healing / clone / content-aware remove (spot removal, generative
       remove), with visualise spots.
 - [ ] Red-eye / pet-eye correction.
@@ -106,8 +114,13 @@ way. Grouped by area; roughly in priority order within each.
       loupe in Native mode still waits on settled renders.
 - [ ] Re-check the engine hosts' libuv pools (8 interactive, 4 background)
       against the calls actually in flight.
-- [ ] Edit history stored as diffs against the previous entry rather than
-      whole recipes.
+- [x] **Interactive edit history.** Every step can be hidden, shown or
+      deleted from any position (`src/shared/history.ts`, the History pane);
+      hiding or deleting a step that made a mask takes the steps that use it
+      along, after asking; Undo hides the newest visible step and Redo shows
+      it again.
+- [x] Edit history stored as diffs: the index keeps a base recipe and a
+      patch per step; older whole-recipe rows convert when first read.
 - [ ] Folder watching in the index host (today a folder is rescanned when it
       is opened or refreshed; changes made outside the app appear then).
 
@@ -130,10 +143,33 @@ way. Grouped by area; roughly in priority order within each.
       it; moving a folder to another machine keeps snapshots but not
       history).
 
+## Upgrade to pixl-engine 0.13.0 (done)
+
+- [x] Pinned 0.13.0; `AnalyzeRequest.hdr`, `ImageStats.range_max` and
+      `bindingVersion()` mirrored in `src/shared/engine-types.ts`.
+- [x] Version guard: a `VersionMismatch` at load reaches the engine banner
+      by name; `build/after-pack.mjs` fails a build whose platform package
+      version differs from the base package's.
+- [x] Qualifier blur: `smoothnessRadius` already clamps against the full
+      frame, so region renders are unaffected; an oversize radius in an
+      Advanced layer shows the engine's field in the render error.
+- [x] HDR: auto white balance works on PQ/HLG photos (linear analysis with
+      `hdr`; before, the fallback would have been refused by 0.13), and a
+      settled render of an HDR photo carries an HDR histogram (the graded
+      draft as an HDR export holds it, drawn in stops, reference white
+      marked, headroom shaded; the HDR chip switches views).
+- [x] Enhance on HDR: refused up front with a reason per photo; the dialog
+      lists every failure.
+- [ ] Enhance on HDR by tone mapping to SDR first, then upscaling as a
+      second conversion (output SDR).
+
 ## Engine gaps found while building this
 
-- [ ] Grading a single-channel source fails in the engine. Playroom's
-      proxies are always RGB, so it only bites a grey export.
-- [ ] Region + straighten; qualifier blur edges inside a region (engine).
+- [x] Grading a single-channel source: fixed in engine 0.13.0 (grey
+      sources are graded through a grey profile). Playroom has no grey
+      export yet; check one when it gets one.
+- [ ] Region + straighten (engine). Still open in 0.13.0.
+- [x] Qualifier blur edges inside a region: fixed in engine 0.13.0 (the
+      key's blur is exact inside a region, at any thread count).
 - [ ] Dehaze memory (~580 MB at 24 MP), vignette styles beyond highlight
       priority, calibrating the new ops' constants against a reference.

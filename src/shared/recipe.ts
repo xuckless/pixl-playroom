@@ -163,6 +163,8 @@ export interface GeometrySetting {
 
 interface ComponentBase {
   id: string
+  /** The user's name for it; unset, the list shows the kind's own label. */
+  name?: string
   mode: MaskMode
   /** 0…100 */
   opacity: number
@@ -271,6 +273,8 @@ export interface LocalLayer {
   adjust: LocalAdjust
   /** 0…200: scales every adjustment of the mask at once (Lightroom's Amount). */
   amount: number
+  /** The mask's own overlay colour, a hue in 0…360; unset uses the overlay's colour. */
+  overlayHue?: number
 }
 
 /**
@@ -440,8 +444,11 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   if (!isObject(value) || !isObject((value as Record<string, unknown>).profile)) {
     r.profile = base.profile
   }
-  r.layers = (r.layers ?? []).map((l) => ({
+  r.layers = (r.layers ?? []).map(({ overlayHue, ...l }) => ({
     ...l,
+    ...(typeof overlayHue === 'number' && Number.isFinite(overlayHue)
+      ? { overlayHue: ((overlayHue % 360) + 360) % 360 }
+      : {}),
     amount: num(l.amount, 100, 0, 200),
     adjust: fill(ZERO_LOCAL, l.adjust),
     components: (Array.isArray(l.components) ? (l.components as unknown[]) : [])
@@ -474,7 +481,8 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
     mode: MASK_MODES.includes(c.mode as MaskMode) ? (c.mode as MaskMode) : ('Add' as MaskMode),
     opacity: num(c.opacity, 100, 0, 100),
     invert: c.invert === true,
-    feather: num(c.feather, 0, 0, 100)
+    feather: num(c.feather, 0, 0, 100),
+    ...(typeof c.name === 'string' && c.name.trim() ? { name: c.name.trim() } : {})
   }
   switch (c.kind) {
     case 'brush':

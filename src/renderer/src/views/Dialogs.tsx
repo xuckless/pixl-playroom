@@ -805,11 +805,12 @@ export function EnhanceDialog(): React.JSX.Element {
               {done}/{started.length} done
               {failed.length > 0 ? ` · ${failed.length} failed` : ''}
             </span>
-            {latest && (
-              <span className={`msg${latest.phase === 'error' ? ' error' : ''}`}>
-                {latest.message}
+            {latest && latest.phase !== 'error' && <span className="msg">{latest.message}</span>}
+            {failed.map((p) => (
+              <span key={p.key} className="msg error">
+                {p.message}
               </span>
-            )}
+            ))}
             {!latest && <span className="msg">Starting the upscaler…</span>}
           </div>
         </div>

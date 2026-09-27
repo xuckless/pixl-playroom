@@ -582,6 +582,12 @@ export interface AnalyzeRequest {
   threads: number
   weights: RasterMask | null
   noise: boolean
+  /**
+   * How a PQ/HLG source enters the `Linear` domain (1.0 is the reference
+   * white; the measurement spans to the peak). Required exactly for a PQ/HLG
+   * source measured in `Linear`, refused otherwise.
+   */
+  hdr: HdrWorking | null
 }
 
 // ── Reports ──────────────────────────────────────────────────────────────────
@@ -783,6 +789,12 @@ export interface ImageStats {
   depth: Depth
   domain: AnalysisDomain
   space: string
+  /**
+   * The top of every histogram and percentile, and what `clip_low`/`clip_high`
+   * are fractions of: 1 in `Encoded` and for an SDR source; `peak_nits /
+   * reference_white_nits` for a PQ/HLG source measured in `Linear` with `hdr`.
+   */
+  range_max: number
   pixels_measured: number
   histograms: Histogram[]
   luma_histogram: Histogram
@@ -809,7 +821,11 @@ export type PixlErrorDetail = Record<string, Record<string, unknown>>
 /** What an engine error looks like once it crosses into JS. */
 export interface EngineErrorShape {
   message: string
-  /** A `PixlError` variant, or one of the app's own: EngineUnavailable, EngineCrashed, BadRequest, Cancelled, Unknown. */
+  /**
+   * A `PixlError` variant, `VersionMismatch` (the loaded addon is not the
+   * installed package's release), or one of the app's own: EngineUnavailable,
+   * EngineCrashed, BadRequest, Cancelled, Unknown.
+   */
   code: string
   detail?: PixlErrorDetail
 }
@@ -818,7 +834,10 @@ export interface EngineErrorShape {
 
 /** The contract the Node binding fulfils. */
 export interface PixlEngineModule {
+  /** The version of the engine compiled into the loaded addon. */
   engineVersion(): string
+  /** The binding's own version; equal to `engineVersion()`, or the load fails. */
+  bindingVersion(): string
   hasEnhance(): boolean
   probe(path: string): Promise<SourceInfo>
   convert(request: ConvertRequest): Promise<ConvertReport>
@@ -843,6 +862,8 @@ export interface EngineHelloMessage {
   version?: string
   enhance?: boolean
   reason?: string
+  /** The load error's code when the engine is unavailable, e.g. `VersionMismatch`. */
+  code?: string
 }
 
 export interface EngineResponseMessage {

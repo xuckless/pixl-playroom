@@ -1,9 +1,14 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { LiquidGlass } from './glass/LiquidGlass'
 
+const FOCUSABLE =
+  'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+
 /**
  * A glass popover under (or beside) whatever opened it. A click outside or
  * Escape closes it; it keeps Escape from reaching the app's own shortcuts.
+ * Opening moves keyboard focus into it (unless something inside already took
+ * it), and closing hands focus back to whatever had it before.
  */
 export function Popover({
   onClose,
@@ -17,6 +22,20 @@ export function Popover({
   align?: 'left' | 'right'
 }): React.JSX.Element {
   const ref = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null
+    const box = ref.current
+    if (box && !box.contains(document.activeElement)) {
+      box.querySelector<HTMLElement>(FOCUSABLE)?.focus({ preventScroll: true })
+    }
+    return () => {
+      // Only when focus was inside (or nowhere): a click elsewhere keeps its focus.
+      const now = document.activeElement
+      if (opener?.isConnected && (!now || now === document.body || box?.contains(now))) {
+        opener.focus({ preventScroll: true })
+      }
+    }
+  }, [])
   useEffect(() => {
     const down = (e: PointerEvent): void => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose()
@@ -59,7 +78,10 @@ export interface MenuItem {
   hint?: string
 }
 
-/** A list of actions in a popover. */
+/**
+ * A list of actions in a popover. Arrow keys, Home and End move between the
+ * items (wrapping); Enter or Space runs the focused one.
+ */
 export function Menu({
   items,
   onClose,
@@ -71,7 +93,27 @@ export function Menu({
 }): React.JSX.Element {
   return (
     <Popover onClose={onClose} className="menu" align={align}>
-      <div role="menu">
+      <div
+        role="menu"
+        onKeyDown={(e) => {
+          const moves: Record<string, number> = { ArrowDown: 1, ArrowUp: -1, Home: 0, End: 0 }
+          if (!(e.key in moves)) return
+          e.preventDefault()
+          e.stopPropagation()
+          const list = [
+            ...e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)')
+          ]
+          if (list.length === 0) return
+          const at = list.indexOf(document.activeElement as HTMLElement)
+          const next =
+            e.key === 'Home' || (at < 0 && e.key === 'ArrowDown')
+              ? 0
+              : e.key === 'End' || at < 0
+                ? list.length - 1
+                : (at + moves[e.key] + list.length) % list.length
+          list[next].focus()
+        }}
+      >
         {items.map((it, i) =>
           it === 'sep' ? (
             <div key={i} className="menu-sep" />
