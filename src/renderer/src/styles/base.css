@@ -86,6 +86,11 @@ img {
   text-transform: uppercase;
   color: var(--muted);
 }
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .wordmark {
   font-weight: 700;
   letter-spacing: 0.28em;

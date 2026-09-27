@@ -73,10 +73,14 @@
   stroke: rgba(255, 255, 255, 0.1);
 }
 .proc-ring .fg {
-  stroke: var(--acc);
+  /* the stroke is the ring's own gradient, set on the element */
   transform: rotate(-90deg);
   transform-origin: 50% 50%;
   transition: stroke-dashoffset 0.4s var(--ease);
+  filter: drop-shadow(0 0 6px var(--acc));
+}
+.proc-ring .head {
+  fill: #fff;
   filter: drop-shadow(0 0 6px var(--acc));
 }
 .proc-ring.spinning .fg {
@@ -107,6 +111,47 @@
 .proc-detail {
   color: var(--text2);
   font-size: 12.5px;
+}
+
+/* the highlight pixel on the sphere's lit side (see SpherePixel): --sr is
+   the sphere's radius as a share of the box */
+.sphere-pixel {
+  position: absolute;
+  left: calc(50% - var(--sr) * 42% - var(--sr) * 12%);
+  top: calc(50% - var(--sr) * 44% - var(--sr) * 12%);
+  width: calc(var(--sr) * 24%);
+  aspect-ratio: 1;
+  background: #fff;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+/* ── the inline loader ─────────────────────────────────────────── */
+.spinner {
+  flex: none;
+  display: block;
+  overflow: visible;
+}
+.spinner circle.track,
+.spinner circle.arc {
+  fill: none;
+  stroke-width: 20;
+}
+.spinner .track {
+  stroke: rgba(255, 255, 255, 0.12);
+}
+.spinner .arc {
+  transition: stroke-dashoffset 0.4s var(--ease);
+}
+.spinner .turning {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: spin 1.4s linear infinite;
+}
+
+/* the mark's loose pixels, drifting off the corner (the splash) */
+.mark-drift {
+  animation: markDrift 6s ease-in-out infinite;
 }
 
 /* ── ambient gradient ──────────────────────────────────────────── */

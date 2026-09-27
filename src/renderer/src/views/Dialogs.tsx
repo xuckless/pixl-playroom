@@ -16,7 +16,7 @@ import {
   type RecipeGroup
 } from '../../../shared/recipe'
 import { Modal } from '../components/ui'
-import { ProgressRing, Sphere } from '../fx'
+import { ProgressRing, Sphere, Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useLibrary, useTargets } from '../state/library'
@@ -98,11 +98,10 @@ export function ExportDialog(): React.JSX.Element {
         <>
           {progress && (
             <span className="progress">
-              <span className="mini-ring">
-                <ProgressRing
-                  progress={progress.total > 0 ? progress.done / progress.total : null}
-                />
-              </span>
+              <Spinner
+                size={34}
+                progress={progress.total > 0 ? progress.done / progress.total : null}
+              />
               <span className="big">
                 {progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0}%
               </span>

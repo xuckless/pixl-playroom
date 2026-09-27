@@ -14,7 +14,9 @@ import { startMaskTool } from './panels/masks/model'
 import { DevelopToolbar } from './shell/DevelopToolbar'
 import { DevelopIdentity } from './shell/IdentityBar'
 import { LeftRail } from './shell/LeftRail'
+import { Splash } from './shell/Splash'
 import { useDevelop } from './state/develop'
+import { useBoot } from './state/boot'
 import { useLibrary } from './state/library'
 import { useUi } from './state/ui'
 import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
@@ -147,6 +149,20 @@ async function refreshEngine(): Promise<void> {
   const engine = await api.app.engineStatus()
   const prev = useLibrary.getState().engine
   if (JSON.stringify(prev) !== JSON.stringify(engine)) useLibrary.setState({ engine })
+}
+
+/** The longest the launch waits on an engine that never says hello. */
+const ENGINE_BOOT_MS = 20_000
+
+/** Poll quickly until the engine has started (ready or not), for the splash. */
+async function waitForEngine(): Promise<void> {
+  const until = performance.now() + ENGINE_BOOT_MS
+  for (;;) {
+    await refreshEngine()
+    if (useLibrary.getState().engine?.status !== 'starting') return
+    if (performance.now() > until) return
+    await new Promise((r) => setTimeout(r, 150))
+  }
 }
 
 function useShortcuts(): void {
@@ -391,13 +407,19 @@ export default function App(): React.JSX.Element {
         if (p.phase === 'done') void useLibrary.getState().refresh()
       })
     ]
-    void (async () => {
+    // The launch, side by side: the engine coming up, and the index then the
+    // last folder. The splash follows both and leaves when they are done.
+    const boot = useBoot.getState()
+    const engineUp = waitForEngine().then(() => boot.finish('engine'))
+    const libraryUp = (async () => {
       useLibrary.setState({ recent: await api.library.recentFolders() })
-      await refreshEngine()
+      boot.finish('index')
       onRenderScale(await api.app.renderScale())
       const last = await api.app.getSetting<string>('library.lastFolder')
       if (last) await useLibrary.getState().openFolder(last)
+      boot.finish('folder')
     })()
+    void Promise.allSettled([engineUp, libraryUp]).then(() => boot.end())
     const t = setInterval(() => void refreshEngine(), 5000)
     return () => {
       offs.forEach((off) => off())
@@ -411,6 +433,7 @@ export default function App(): React.JSX.Element {
         <DialogHost />
         <Toast />
         <EngineBanner />
+        <Splash />
       </div>
     </MotionConfig>
   )

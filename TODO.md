@@ -142,6 +142,28 @@ way. Grouped by area; roughly in priority order within each.
 - [ ] History persisted with the recipe in the sidecar (today the index keeps
       it; moving a folder to another machine keeps snapshots but not
       history).
+- [ ] **Open with Pixl Playroom**: right-click any image in Finder or
+      Explorer and open it in Playroom. Register the image types (RAW,
+      JPEG, TIFF, HEIC, PNG) through electron-builder `fileAssociations`
+      (`LSHandlerRank: Alternate`, so Playroom never takes over as the
+      default), handle `open-file` (macOS) and the argv of a second instance
+      (Windows, Linux), and open the photo's folder with the photo in
+      Develop.
+
+## Branding
+
+The PIXL Brand Kit design canvas holds the source for all of this; the SVG
+masters are in `build/brand/`.
+
+- [ ] Document icons (optional branding), from the kit's "Files Playroom
+      opens" board: a folded page with the mark, and the format on a lit
+      hairline (source formats in purple, outputs in white). Render them to
+      `.icns`/`.ico` and hand them to `fileAssociations` together with
+      "Open with Pixl Playroom" above.
+- [ ] Windows installer art: the kit's installer sidebar (164×314) and
+      banner (150×57) are unused while the NSIS installer is one-click, which
+      shows neither. They need rendering to BMP if the installer becomes
+      assisted (`oneClick: false`).
 
 ## Upgrade to pixl-engine 0.13.0 (done)
 
