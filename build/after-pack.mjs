@@ -123,6 +123,17 @@ export default async function afterPack(context) {
   }
 
   const version = JSON.parse(readFileSync(path.join(bindingDir, 'package.json'), 'utf8')).version
+  // The binding refuses to load an addon from another release (VersionMismatch
+  // at require time), so a skew here would ship an app with no engine.
+  const baseVersion = JSON.parse(
+    readFileSync(path.join(scopeDir, 'pixl-engine', 'package.json'), 'utf8')
+  ).version
+  if (version !== baseVersion) {
+    throw new Error(
+      `engine binding check failed for ${target}: ${expected}@${version} does not match ` +
+        `@xuckless/pixl-engine@${baseVersion}; the binding would refuse to load`
+    )
+  }
   console.log(
     `  • engine binding ok  target=${target} package=${expected}@${version} addon=${addons[0]}`
   )

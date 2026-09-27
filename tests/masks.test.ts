@@ -171,3 +171,21 @@ test('an older sidecar gets Amount and Smoothness; unknown kinds are dropped', (
   assert.equal(c.smoothness, 0)
   assert.equal(l.adjust.contrast, 0)
 })
+
+test('component names and mask overlay colours survive normalising', () => {
+  const r = defaultRecipe(false)
+  const layer = newLocalLayer('Sky')
+  layer.overlayHue = 400
+  layer.components.push({ ...range(20), name: '  Blue sky  ' })
+  r.layers.push(layer)
+  const back = normaliseRecipe(JSON.parse(JSON.stringify(r)), false)
+  assert.equal(back.layers[0].overlayHue, 40)
+  assert.equal(back.layers[0].components[0].name, 'Blue sky')
+  // Unnamed and uncoloured stay so.
+  const plain = defaultRecipe(false)
+  plain.layers.push(newLocalLayer('Plain'))
+  plain.layers[0].components.push(range(0))
+  const p = normaliseRecipe(JSON.parse(JSON.stringify(plain)), false)
+  assert.equal('overlayHue' in p.layers[0], false)
+  assert.equal('name' in p.layers[0].components[0], false)
+})

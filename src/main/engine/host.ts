@@ -32,7 +32,7 @@ function causeChain(err: unknown, depth = 0): string[] {
   })
 }
 
-function loadNative(): { engine: PixlEngineModule } | { reason: string } {
+function loadNative(): { engine: PixlEngineModule } | { reason: string; code?: string } {
   try {
     const require = createRequire(__filename)
     const mod = require(ENGINE_PACKAGE) as Partial<PixlEngineModule>
@@ -41,12 +41,18 @@ function loadNative(): { engine: PixlEngineModule } | { reason: string } {
       return { reason: `${ENGINE_PACKAGE} loaded but lacks: ${missing.join(', ')}` }
     }
     if (typeof mod.hasEnhance !== 'function') mod.hasEnhance = () => false
+    if (typeof mod.bindingVersion !== 'function') mod.bindingVersion = mod.engineVersion
     return { engine: mod as PixlEngineModule }
   } catch (err) {
     const e = err as NodeJS.ErrnoException
     const where = `${process.platform}-${process.arch}`
     if (e.code === 'MODULE_NOT_FOUND') {
       return { reason: `${ENGINE_PACKAGE} is not installed for ${where}` }
+    }
+    // The binding refuses an addon that is not its own release (a stale local
+    // build, a platform package from another version); its message names both.
+    if (e.code === 'VersionMismatch') {
+      return { reason: `version mismatch on ${where}: ${e.message}`, code: e.code }
     }
     const detail = causeChain(e)
     return {
@@ -83,7 +89,12 @@ if (engine) {
     enhance: engine.hasEnhance()
   })
 } else {
-  send({ kind: 'hello', status: 'unavailable', reason: 'reason' in loaded ? loaded.reason : '' })
+  send({
+    kind: 'hello',
+    status: 'unavailable',
+    reason: 'reason' in loaded ? loaded.reason : '',
+    code: 'code' in loaded ? loaded.code : undefined
+  })
 }
 
 process.parentPort.on('message', (e) => {

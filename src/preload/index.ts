@@ -11,7 +11,7 @@ import {
   type ExportPreset,
   type ExportProgress,
   type FolderListing,
-  type HistoryEntry,
+  type HistoryLog,
   type LibraryItem,
   type LutProfile,
   type MetaPatch,
@@ -88,9 +88,13 @@ const api = {
     getPlane: (ref: string) => call<string>(IPC.develop.getPlane, ref),
     saveSnapshots: (key: string, snapshots: Snapshot[]) =>
       call<void>(IPC.develop.saveSnapshots, key, snapshots),
-    historyList: (key: string) => call<HistoryEntry[]>(IPC.develop.historyList, key),
+    historyList: (key: string) => call<HistoryLog>(IPC.develop.historyList, key),
     historyAppend: (key: string, label: string, recipe: Recipe) =>
-      call<HistoryEntry>(IPC.develop.historyAppend, key, label, recipe),
+      call<HistoryLog>(IPC.develop.historyAppend, key, label, recipe),
+    historySetHidden: (key: string, seqs: number[], hidden: boolean) =>
+      call<HistoryLog>(IPC.develop.historySetHidden, key, seqs, hidden),
+    historyDelete: (key: string, seqs: number[]) =>
+      call<HistoryLog>(IPC.develop.historyDelete, key, seqs),
     onRendered: (cb: (e: RenderEvent) => void) => on(IPC.develop.rendered, cb),
     onRenderError: (
       cb: (e: { key: string; message: string; code: string; field?: string }) => void

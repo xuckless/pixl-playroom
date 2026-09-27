@@ -9,6 +9,7 @@ import { Scopes } from './develop/Scopes'
 import { ToolDial } from './develop/ToolDial'
 import { ToolPanelHost } from './develop/ToolPanelHost'
 import { selectPanel, stepPanel, TOOLS } from './develop/tools'
+import { startWheelMemory } from './develop/wheelMemory'
 import { startMaskTool } from './panels/masks/model'
 import { DevelopToolbar } from './shell/DevelopToolbar'
 import { DevelopIdentity } from './shell/IdentityBar'
@@ -110,7 +111,9 @@ function EngineBanner(): React.JSX.Element | null {
   if (!engine || engine.status === 'ready') return null
   return (
     <div className="engine-banner" role="alert">
-      Engine {engine.status}
+      {engine.code === 'VersionMismatch'
+        ? 'Engine version mismatch — reinstall the app (or run pnpm install in a checkout)'
+        : `Engine ${engine.status}`}
       {engine.reason ? `: ${engine.reason}` : ''}
     </div>
   )
@@ -226,7 +229,7 @@ function useShortcuts(): void {
         return e.preventDefault()
       }
       if (mod && !e.shiftKey && (k === 'z' || k === 'Z')) return dev.undo()
-      if (mod && e.shiftKey && (k === 'z' || k === 'Z')) return dev.redo()
+      if (mod && e.shiftKey && (k === 'z' || k === 'Z')) return dev.redoStep()
       // The thumb-wheel: Ctrl/Cmd+1…9 jump to a tool, Ctrl/Cmd+↑/↓ turn it.
       if (mod && !e.shiftKey && k >= '1' && k <= '9') {
         const t = TOOLS[Number(k) - 1]
@@ -372,6 +375,7 @@ export default function App(): React.JSX.Element {
       }),
       api.library.onChanged(() => void useLibrary.getState().refresh()),
       api.develop.onRendered((e) => useDevelop.getState().onRendered(e)),
+      startWheelMemory(),
       api.app.onRenderScale(onRenderScale),
       api.develop.onRenderError((e) =>
         useDevelop.getState().onError(e.field ? `${e.message} (${e.field})` : e.message)

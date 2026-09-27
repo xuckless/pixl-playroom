@@ -32,13 +32,29 @@ function MaskRow({
   const compId = useDevelop((s) => s.compId)
   const setComp = useDevelop((s) => s.setComp)
   const thumb = useDevelop((s) => s.maskThumbs[layer.id]?.url ?? null)
+  const hue = useUi((s) => layer.overlayHue ?? s.maskOverlay.hue)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [menu, setMenu] = useState(false)
   const [compMenu, setCompMenu] = useState<string | null>(null)
+  const [compRename, setCompRename] = useState<{ id: string; value: string } | null>(null)
+  const [colour, setColour] = useState(false)
   const rename = (): void => {
     const name = renaming?.trim()
     setRenaming(null)
     if (name && name !== layer.name) patchMask(layer.id, 'Rename mask', (l) => (l.name = name))
+  }
+  const renameComp = (): void => {
+    if (!compRename) return
+    const { id, value } = compRename
+    setCompRename(null)
+    const c = layer.components.find((x) => x.id === id)
+    const name = value.trim()
+    if (!c || name === (c.name ?? '')) return
+    // An empty name goes back to the kind's own label.
+    patchComponent(id, name ? 'Rename component' : 'Clear component name', (x) => {
+      if (name) x.name = name
+      else delete x.name
+    })
   }
   return (
     <div className={`mf-mask${selected ? ' on' : ''}${layer.enabled ? '' : ' off'}`}>
@@ -81,6 +97,54 @@ function MaskRow({
             {layer.name}
           </span>
         )}
+        <span className="mf-menu-anchor" onClick={(e) => e.stopPropagation()}>
+          <button
+            className="mf-swatch-btn"
+            title="This mask's overlay colour"
+            aria-label="Overlay colour"
+            onClick={() => setColour(!colour)}
+          >
+            <span className="mf-swatch" style={{ background: `hsl(${hue} 90% 58%)` }} />
+          </button>
+          {colour && (
+            <Popover onClose={() => setColour(false)} align="right" className="overlay-pop">
+              <span className="micro">Overlay colour</span>
+              <input
+                type="range"
+                className="hue-range"
+                aria-label="Overlay colour"
+                min={0}
+                max={359}
+                value={hue}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  useDevelop.getState().edit((r) => {
+                    const l = r.layers.find((x) => x.id === layer.id)
+                    if (l) l.overlayHue = v
+                  }, true)
+                }}
+                onPointerUp={() => useDevelop.getState().commit(`${layer.name}: overlay colour`)}
+                onKeyUp={(e) => {
+                  e.stopPropagation()
+                  useDevelop.getState().commit(`${layer.name}: overlay colour`)
+                }}
+                onKeyDown={(e) => e.stopPropagation()}
+              />
+              {layer.overlayHue !== undefined && (
+                <button
+                  className="sm ghost"
+                  onClick={() =>
+                    patchMask(layer.id, `${layer.name}: overlay colour reset`, (l) => {
+                      delete l.overlayHue
+                    })
+                  }
+                >
+                  Use the overlay&apos;s colour
+                </button>
+              )}
+            </Popover>
+          )}
+        </span>
         <button
           className="icon sm"
           title={layer.enabled ? 'Hide this mask' : 'Show this mask'}
@@ -145,7 +209,34 @@ function MaskRow({
                 {MODE_MARK[i === 0 ? 'Add' : c.mode]}
               </span>
               <Icon name={componentIcon(c)} />
-              <span className="mf-comp-name">{componentLabel(c)}</span>
+              {compRename?.id === c.id ? (
+                <input
+                  className="mf-rename"
+                  autoFocus
+                  aria-label="Component name"
+                  placeholder={componentLabel({ ...c, name: undefined })}
+                  value={compRename.value}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => setCompRename({ id: c.id, value: e.target.value })}
+                  onBlur={renameComp}
+                  onKeyDown={(e) => {
+                    e.stopPropagation()
+                    if (e.key === 'Enter') renameComp()
+                    if (e.key === 'Escape') setCompRename(null)
+                  }}
+                />
+              ) : (
+                <span
+                  className="mf-comp-name"
+                  title="Double-click to rename"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation()
+                    setCompRename({ id: c.id, value: c.name ?? '' })
+                  }}
+                >
+                  {componentLabel(c)}
+                </span>
+              )}
               {c.invert && <span className="mf-inv-tag">inv</span>}
               <span className="mf-menu-anchor" onClick={(e) => e.stopPropagation()}>
                 <button
@@ -173,6 +264,10 @@ function MaskRow({
                         checked: c.invert,
                         onSelect: () =>
                           patchComponent(c.id, 'Invert component', (x) => (x.invert = !x.invert))
+                      },
+                      {
+                        label: 'Rename',
+                        onSelect: () => setCompRename({ id: c.id, value: c.name ?? '' })
                       },
                       { label: 'Duplicate', onSelect: () => duplicateComponent(c.id) },
                       'sep',

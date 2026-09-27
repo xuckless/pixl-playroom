@@ -6,15 +6,9 @@
  * cache's bookkeeping. Deleting it loses nothing a sidecar holds.
  */
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
-import type {
-  CameraInfo,
-  ColorLabel,
-  ExportPreset,
-  Flag,
-  HistoryEntry,
-  Preset
-} from '../shared/ipc'
+import type { CameraInfo, ColorLabel, ExportPreset, Flag, HistoryLog, Preset } from '../shared/ipc'
 import type { ExportSettings } from '../shared/export'
+import { applyPatch, diffRecipe, replay, type Patch, type Step } from '../shared/history'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 
 export interface PhotoRow {
@@ -101,8 +95,17 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS planes (ref TEXT PRIMARY KEY, png TEXT NOT NULL);
 `
 
-/** History entries kept per item; older ones fall off. */
+/** History entries kept per item (the base and its steps); older steps fold into the base. */
 const HISTORY_LIMIT = 200
+
+interface HistoryRow {
+  seq: number
+  label: string
+  at: string
+  recipe: string
+  patch: string | null
+  hidden: number
+}
 
 export class Store {
   private readonly db: DatabaseSync
@@ -154,6 +157,14 @@ export class Store {
     const db = new DatabaseSync(file)
     db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;')
     db.exec(SCHEMA)
+    // History became steps: each row past the base holds the patch it made,
+    // and can be hidden. Older rows are converted when their item is read.
+    const cols = (db.prepare('PRAGMA table_info(history)').all() as { name: string }[]).map(
+      (c) => c.name
+    )
+    if (!cols.includes('patch')) db.exec('ALTER TABLE history ADD COLUMN patch TEXT')
+    if (!cols.includes('hidden'))
+      db.exec('ALTER TABLE history ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0')
     return new Store(db)
   }
 
@@ -308,35 +319,116 @@ export class Store {
   }
 
   // ── history ──
-  history(itemKey: string): HistoryEntry[] {
-    return (
-      this.prepare(
-        'SELECT seq, label, at, recipe FROM history WHERE item_key = ? ORDER BY seq'
-      ).all(itemKey) as {
-        seq: number
-        label: string
-        at: string
-        recipe: string
-      }[]
-    ).map((r) => ({ seq: r.seq, label: r.label, at: r.at, recipe: JSON.parse(r.recipe) as Recipe }))
+  private historyRows(itemKey: string): HistoryRow[] {
+    return this.prepare(
+      'SELECT seq, label, at, recipe, patch, hidden FROM history WHERE item_key = ? ORDER BY seq'
+    ).all(itemKey) as unknown as HistoryRow[]
   }
 
-  appendHistory(itemKey: string, label: string, recipe: Recipe): HistoryEntry {
-    const last = this.prepare('SELECT MAX(seq) AS s FROM history WHERE item_key = ?').get(
-      itemKey
-    ) as {
-      s: number | null
-    }
-    const seq = (last.s ?? 0) + 1
-    const at = new Date().toISOString()
-    this.prepare(
-      'INSERT INTO history(item_key, seq, label, at, recipe) VALUES (?, ?, ?, ?, ?)'
-    ).run(itemKey, seq, label, at, JSON.stringify(recipe))
-    this.prepare('DELETE FROM history WHERE item_key = ? AND seq <= ?').run(
+  /**
+   * An item's history as its base and steps. Rows written before history
+   * became steps hold whole recipes; they are turned into patches here, once.
+   */
+  history(itemKey: string): HistoryLog {
+    return this.tx(() => {
+      const rows = this.historyRows(itemKey)
+      if (rows.length === 0) return { base: null, steps: [] }
+      const [first, ...rest] = rows
+      if (rest.some((r) => r.patch === null)) {
+        const update = this.prepare(
+          "UPDATE history SET patch = ?, recipe = '' WHERE item_key = ? AND seq = ?"
+        )
+        let prev = JSON.parse(first.recipe) as Recipe
+        for (const r of rest) {
+          if (r.patch !== null) continue
+          const cur = JSON.parse(r.recipe) as Recipe
+          r.patch = JSON.stringify(diffRecipe(prev, cur))
+          update.run(r.patch, itemKey, r.seq)
+          prev = cur
+        }
+      }
+      return {
+        base: {
+          seq: first.seq,
+          label: first.label,
+          at: first.at,
+          recipe: JSON.parse(first.recipe) as Recipe
+        },
+        steps: rest.map((r): Step => ({
+          seq: r.seq,
+          label: r.label,
+          at: r.at,
+          patch: JSON.parse(r.patch ?? '[]') as Patch,
+          hidden: r.hidden !== 0
+        }))
+      }
+    })
+  }
+
+  /**
+   * Record a settled edit: the first becomes the base, every later one a
+   * step holding what changed against the history's current recipe. An edit
+   * that changed nothing records nothing.
+   */
+  appendHistory(itemKey: string, label: string, recipe: Recipe): HistoryLog {
+    return this.tx(() => {
+      const log = this.history(itemKey)
+      const at = new Date().toISOString()
+      const insert = this.prepare(
+        'INSERT INTO history(item_key, seq, label, at, recipe, patch, hidden) VALUES (?, ?, ?, ?, ?, ?, 0)'
+      )
+      if (!log.base) {
+        insert.run(itemKey, 1, label, at, JSON.stringify(recipe), null)
+        return this.history(itemKey)
+      }
+      const patch = diffRecipe(replay(log.base.recipe, log.steps), recipe)
+      if (patch.length === 0) return log
+      const seq = (log.steps.at(-1)?.seq ?? log.base.seq) + 1
+      insert.run(itemKey, seq, label, at, '', JSON.stringify(patch))
+      this.foldHistory(itemKey)
+      return this.history(itemKey)
+    })
+  }
+
+  /** Past the limit, the oldest steps fold into the base (a hidden one is dropped). */
+  private foldHistory(itemKey: string): void {
+    const log = this.history(itemKey)
+    const excess = log.steps.length + 1 - HISTORY_LIMIT
+    if (!log.base || excess <= 0) return
+    const old = log.steps.slice(0, excess)
+    const base = old.reduce((r, s) => (s.hidden ? r : applyPatch(r, s.patch)), log.base.recipe)
+    this.prepare('UPDATE history SET recipe = ? WHERE item_key = ? AND seq = ?').run(
+      JSON.stringify(base),
       itemKey,
-      seq - HISTORY_LIMIT
+      log.base.seq
     )
-    return { seq, label, at, recipe }
+    this.prepare('DELETE FROM history WHERE item_key = ? AND seq > ? AND seq <= ?').run(
+      itemKey,
+      log.base.seq,
+      old[old.length - 1].seq
+    )
+  }
+
+  /** Hide or show steps (never the base). */
+  setHistoryHidden(itemKey: string, seqs: number[], hidden: boolean): HistoryLog {
+    return this.tx(() => {
+      const st = this.prepare(
+        'UPDATE history SET hidden = ? WHERE item_key = ? AND seq = ? AND patch IS NOT NULL'
+      )
+      for (const seq of seqs) st.run(hidden ? 1 : 0, itemKey, seq)
+      return this.history(itemKey)
+    })
+  }
+
+  /** Delete steps (never the base). */
+  deleteHistory(itemKey: string, seqs: number[]): HistoryLog {
+    return this.tx(() => {
+      const st = this.prepare(
+        'DELETE FROM history WHERE item_key = ? AND seq = ? AND patch IS NOT NULL'
+      )
+      for (const seq of seqs) st.run(itemKey, seq)
+      return this.history(itemKey)
+    })
   }
 
   // ── painted planes, by reference (see planestore.ts) ──
@@ -350,12 +442,13 @@ export class Store {
     return row?.png
   }
 
-  /** Every stored recipe that may name a plane by reference: the edit history's. */
+  /** Every stored recipe or patch that may name a plane by reference: the edit history's. */
   *historyRecipes(): Generator<string> {
     const rows = this.prepare(
-      `SELECT recipe FROM history WHERE recipe LIKE '%"ref":%'`
-    ).iterate() as Iterable<{ recipe: string }>
-    for (const r of rows) yield r.recipe
+      `SELECT recipe || ' ' || COALESCE(patch, '') AS json FROM history
+       WHERE recipe LIKE '%"ref":%' OR patch LIKE '%"ref":%'`
+    ).iterate() as Iterable<{ json: string }>
+    for (const r of rows) yield r.json
   }
 
   /** Drop the planes not in `keep`. Returns how many went. */

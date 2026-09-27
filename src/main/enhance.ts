@@ -88,6 +88,16 @@ export class Enhancer {
     }
     const row = await this.library.photoRow(key)
     const info = await this.library.probe(row)
+    // The model wants display-referred SDR; the engine refuses PQ/HLG pixels
+    // for it by name. Say so up front rather than failing mid-run.
+    if (info.is_hdr) {
+      this.send({
+        key,
+        phase: 'error',
+        message: `${row.name}: HDR photos can't be enhanced yet — export an SDR copy and enhance that`
+      })
+      return
+    }
     const stem = basename(row.name, extname(row.name))
     const out = join(dirname(row.path), `${stem}-Enhanced-SR.tif`)
     if (await exists(out)) {

@@ -92,7 +92,7 @@ export function MaskOverlay(): React.JSX.Element | null {
               key={l.id}
               url={t}
               mode="color"
-              hue={l.id === layerId ? o.hue : hueFor(i + 1, o.hue)}
+              hue={l.overlayHue ?? (l.id === layerId ? o.hue : hueFor(i + 1, o.hue))}
               opacity={l.id === layerId ? o.opacity : o.opacity * 0.7}
             />
           )
@@ -101,5 +101,6 @@ export function MaskOverlay(): React.JSX.Element | null {
     )
   }
   if (!mask || !layerId) return null
-  return <MaskPlane url={mask.url} mode={o.mode} hue={o.hue} opacity={o.opacity} />
+  const hue = layers.find((l) => l.id === layerId)?.overlayHue ?? o.hue
+  return <MaskPlane url={mask.url} mode={o.mode} hue={hue} opacity={o.opacity} />
 }

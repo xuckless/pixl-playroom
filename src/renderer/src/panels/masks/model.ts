@@ -87,6 +87,7 @@ export function componentIcon(c: MaskComponentSetting): IconName {
 }
 
 export function componentLabel(c: MaskComponentSetting): string {
+  if (c.name) return c.name
   if (c.kind === 'range') return c.hue ? 'Colour range' : 'Luminance range'
   if (c.kind === 'polygon') return `Lasso · ${c.points.length} points`
   return COMPONENT_LABEL[c.kind]

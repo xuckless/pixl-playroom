@@ -18,6 +18,7 @@ import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020, wbSliders } from '../s
 import { compile, orientedFrame, type Compiled } from '../shared/compile'
 import type {
   AnalyzeRequest,
+  HdrWorking,
   ConvertReport,
   ImageStats,
   NoiseEstimate,
@@ -113,7 +114,8 @@ function analyzeRequest(
     transparent: 'Include',
     threads: INTERACTIVE_THREADS,
     weights: null,
-    noise: false
+    noise: false,
+    hdr: null
   }
 }
 
@@ -141,6 +143,13 @@ class Session {
   private thumbSig: Record<string, string> = {}
   private readonly dir: string
   closed = false
+
+  /** How a PQ/HLG source is graded and measured: 1.0 is 203-nit reference white. */
+  get hdrWorking(): HdrWorking | null {
+    return this.info.is_hdr
+      ? { reference_white_nits: 203, peak_nits: this.info.peak_nits ?? 1000 }
+      : null
+  }
 
   constructor(
     readonly key: string,
@@ -262,6 +271,7 @@ class Session {
       return
     }
     const out = this.nextFile('view', 'jpg')
+    const hdrStats = kind === 'full' ? this.measureHdr(cropMode) : Promise.resolve(undefined)
     const report = await this.owner.engine.convert({
       ...blankRequest(src.path, out, src.input),
       pixel: { depth: 'Eight', channels: 3 },
@@ -281,6 +291,7 @@ class Session {
       this.lastFull = out
       this.lastFullFor = { [sig]: out }
     }
+    const hdr = await hdrStats
     if (this.closed) return
     const event: RenderEvent = {
       key: this.key,
@@ -291,11 +302,52 @@ class Session {
       width: report.width,
       height: report.height,
       stats,
+      hdrStats: hdr,
       report: reportOf(report, Math.round(performance.now() - t0), compiled.notes)
     }
     this.lastSig[kind] = sig
     this.lastEvent[kind] = event
     this.owner.send(IPC.develop.rendered, event)
+  }
+
+  /**
+   * For a PQ/HLG photo, the graded draft kept HDR (as an HDR export would
+   * hold it) and measured in linear light, so the histogram can show the
+   * highlights above reference white. Runs beside the preview; a failure
+   * only loses the HDR histogram.
+   */
+  private async measureHdr(cropMode: boolean): Promise<ImageStats | undefined> {
+    const hdr = this.hdrWorking
+    if (!hdr) return undefined
+    try {
+      const src = this.px.draft
+      const compiled = await this.compileFor(this.recipe, src, !cropMode)
+      const out = join(this.dir, 'hdr-stats.png')
+      await this.owner.engine.convert({
+        ...blankRequest(src.path, out, src.input),
+        pixel: { depth: 'Sixteen', channels: 3 },
+        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        color: 'Preserve',
+        grade: compiled.grade,
+        framing: compiled.framing,
+        // Without a grade the signal passes through as it is; the engine
+        // refuses a working space nothing would use.
+        hdr: compiled.grade ? hdr : null,
+        threads: INTERACTIVE_THREADS
+      })
+      return await this.owner.engine.analyze({
+        ...analyzeRequest(out, 'Png', 1),
+        domain: 'Linear',
+        // Fine bins: the chart re-bins them onto a stops axis, where the
+        // shadows need the resolution.
+        bins: 4096,
+        hdr
+      })
+    } catch (err) {
+      log.info('HDR histogram unavailable', (err as Error).message)
+      return undefined
+    }
   }
 
   /** The chosen layer's mask as a grey plane, and the picture measured inside it. */
@@ -336,9 +388,7 @@ class Session {
       grade: compiled.grade,
       framing: compiled.framing,
       inspect: { LayerMask: { layer: index } },
-      hdr: this.info.is_hdr
-        ? { reference_white_nits: 203, peak_nits: this.info.peak_nits ?? 1000 }
-        : null
+      hdr: this.hdrWorking
     })
     // The picture the renderer shows is the last full render; measure it
     // through the plane. `weights` is an engine feature that may be missing
@@ -422,9 +472,7 @@ class Session {
         grade: compiled.grade,
         framing: compiled.framing,
         inspect: { LayerMask: { layer: index } },
-        hdr: this.info.is_hdr
-          ? { reference_white_nits: 203, peak_nits: this.info.peak_nits ?? 1000 }
-          : null
+        hdr: this.hdrWorking
       })
       this.thumbSig[layer.id] = sig
       if (this.closed) return
@@ -644,88 +692,90 @@ class Session {
    */
   async autoWb(): Promise<SampleResult['wb']> {
     const src = this.px.draft
+    // A PQ/HLG draft is measured in linear light as `convert` grades it
+    // (1.0 = reference white); the engine refuses it in Linear without `hdr`.
     const linearReq: AnalyzeRequest = {
       ...analyzeRequest(src.path, src.input === 'Png' ? 'Png' : 'Tiff', 1),
-      domain: 'Linear'
+      domain: 'Linear',
+      hdr: this.hdrWorking
     }
     let means: number[] | null = null
-    if (!this.info.is_hdr) {
-      try {
-        const layer = newLocalLayer('neutral')
-        const maskOut = join(this.dir, 'auto-wb-mask.png')
-        await this.owner.engine.convert({
-          ...blankRequest(src.path, maskOut, src.input),
-          pixel: { depth: 'Eight', channels: 1 },
-          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-          metadata: STRIP_ALL,
-          color: 'Preserve',
-          grade: {
-            layers: [
-              {
-                name: layer.name,
-                enabled: true,
-                opacity: 1,
-                blend: { mode: 'Normal', space: 'LinearWorking' },
-                mask: {
-                  components: [
-                    {
-                      shape: {
-                        Range: {
-                          hue: null,
-                          saturation: { centre: 0, width: 0.3, softness: 0.1 },
-                          luma: { centre: 0.5, width: 0.8, softness: 0.08 },
-                          blur_radius: 0,
-                          invert: false
-                        }
-                      },
-                      mode: 'Add',
-                      opacity: 1,
-                      invert: false,
-                      feather: { radius: 0, edge: 'Zero' }
-                    }
-                  ],
-                  invert: false,
-                  space: {
-                    Encoded: {
-                      space: 'Srgb',
-                      intent: 'RelativeColorimetric',
-                      black_point_compensation: false
-                    }
-                  }
-                },
-                stages: [
+    try {
+      const layer = newLocalLayer('neutral')
+      const maskOut = join(this.dir, 'auto-wb-mask.png')
+      await this.owner.engine.convert({
+        ...blankRequest(src.path, maskOut, src.input),
+        pixel: { depth: 'Eight', channels: 1 },
+        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        metadata: STRIP_ALL,
+        color: 'Preserve',
+        grade: {
+          layers: [
+            {
+              name: layer.name,
+              enabled: true,
+              opacity: 1,
+              blend: { mode: 'Normal', space: 'LinearWorking' },
+              mask: {
+                components: [
                   {
-                    space: 'LinearWorking',
-                    ops: [
-                      {
-                        Primary: {
-                          exposure: 0,
-                          lift: { r: 0, g: 0, b: 0 },
-                          gamma: { r: 1, g: 1, b: 1 },
-                          gain: { r: 1, g: 1, b: 1 },
-                          contrast: 1,
-                          contrast_pivot: 0.18,
-                          saturation: 1,
-                          hue_shift: 0
-                        }
+                    shape: {
+                      Range: {
+                        hue: null,
+                        saturation: { centre: 0, width: 0.3, softness: 0.1 },
+                        luma: { centre: 0.5, width: 0.8, softness: 0.08 },
+                        blur_radius: 0,
+                        invert: false
                       }
-                    ]
+                    },
+                    mode: 'Add',
+                    opacity: 1,
+                    invert: false,
+                    feather: { radius: 0, edge: 'Zero' }
                   }
-                ]
-              }
-            ]
-          },
-          inspect: { LayerMask: { layer: 0 } }
-        })
-        const s = await this.owner.engine.analyze({
-          ...linearReq,
-          weights: { source: { Png: maskOut }, resampler: 'Bilinear' }
-        })
-        const total = src.width * src.height
-        if (s.pixels_measured > total * 0.02) means = s.channel_mean
-      } catch (err) {
-        log.info('grey-pixel white balance unavailable, using grey world', (err as Error).message)
-      }
+                ],
+                invert: false,
+                space: {
+                  Encoded: {
+                    space: 'Srgb',
+                    intent: 'RelativeColorimetric',
+                    black_point_compensation: false
+                  }
+                }
+              },
+              stages: [
+                {
+                  space: 'LinearWorking',
+                  ops: [
+                    {
+                      Primary: {
+                        exposure: 0,
+                        lift: { r: 0, g: 0, b: 0 },
+                        gamma: { r: 1, g: 1, b: 1 },
+                        gain: { r: 1, g: 1, b: 1 },
+                        contrast: 1,
+                        contrast_pivot: 0.18,
+                        saturation: 1,
+                        hue_shift: 0
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        inspect: { LayerMask: { layer: 0 } },
+        hdr: this.hdrWorking
+      })
+      const s = await this.owner.engine.analyze({
+        ...linearReq,
+        weights: { source: { Png: maskOut }, resampler: 'Bilinear' }
+      })
+      const total = src.width * src.height
+      if (s.pixels_measured > total * 0.02) means = s.channel_mean
+    } catch (err) {
+      log.info('grey-pixel white balance unavailable, using grey world', (err as Error).message)
     }
     if (!means) {
       const s = await this.owner.engine.analyze(linearReq)

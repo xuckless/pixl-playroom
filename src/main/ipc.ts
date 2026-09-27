@@ -8,6 +8,7 @@ import {
   IPC,
   type AppError,
   type ExportPreset,
+  type HistoryLog,
   type LutProfile,
   type MetaPatch,
   type Preset,
@@ -212,11 +213,20 @@ export function registerIpc(s: Services): void {
     )
     await s.index.saveSnapshots(key, full)
   })
-  handle(IPC.develop.historyList, async (key: string) =>
-    (await s.index.history(key)).map((e) => ({ ...e, recipe: s.planes.slim(e.recipe) }))
+  // Stored recipes and patches hold planes by reference; the base crosses slim.
+  const slimLog = (log: HistoryLog): HistoryLog => ({
+    ...log,
+    base: log.base && { ...log.base, recipe: s.planes.slim(log.base.recipe) }
+  })
+  handle(IPC.develop.historyList, async (key: string) => slimLog(await s.index.history(key)))
+  handle(IPC.develop.historyAppend, async (key: string, label: string, recipe: Recipe) =>
+    slimLog(await s.index.appendHistory(key, label, s.planes.slim(recipe)))
   )
-  handle(IPC.develop.historyAppend, (key: string, label: string, recipe: Recipe) =>
-    s.index.appendHistory(key, label, s.planes.slim(recipe))
+  handle(IPC.develop.historySetHidden, async (key: string, seqs: number[], hidden: boolean) =>
+    slimLog(await s.index.setHistoryHidden(key, seqs, hidden))
+  )
+  handle(IPC.develop.historyDelete, async (key: string, seqs: number[]) =>
+    slimLog(await s.index.deleteHistory(key, seqs))
   )
 
   // ── presets and profiles ──

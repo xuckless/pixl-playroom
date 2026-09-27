@@ -11,6 +11,7 @@ import {
   layerOf,
   MODE_MARK
 } from './model'
+import { MaskPresets } from './MaskPresets'
 import { ToolPicker } from './ToolPicker'
 
 const BLENDS: BlendMode[] = [
@@ -158,6 +159,9 @@ function Adjustments(): React.JSX.Element | null {
   )
   return (
     <>
+      <Section id="masks.presets" title="Presets">
+        <MaskPresets layer={layer} />
+      </Section>
       {ADJUST_GROUPS.map((g) => (
         <Section
           key={g.id}

@@ -16,7 +16,7 @@ import type {
   ColorLabel,
   ExportPreset,
   Flag,
-  HistoryEntry,
+  HistoryLog,
   LibraryItem,
   MetaPatch,
   Preset,
@@ -486,12 +486,20 @@ export class IndexService {
 
   // ── history ──
 
-  history(key: string): HistoryEntry[] {
+  history(key: string): HistoryLog {
     return this.store.history(key)
   }
 
-  appendHistory(key: string, label: string, recipe: Recipe): HistoryEntry {
+  appendHistory(key: string, label: string, recipe: Recipe): HistoryLog {
     return this.store.appendHistory(key, label, recipe)
+  }
+
+  setHistoryHidden(key: string, seqs: number[], hidden: boolean): HistoryLog {
+    return this.store.setHistoryHidden(key, seqs, hidden)
+  }
+
+  deleteHistory(key: string, seqs: number[]): HistoryLog {
+    return this.store.deleteHistory(key, seqs)
   }
 
   // ── painted planes, by reference (see planestore.ts) ──

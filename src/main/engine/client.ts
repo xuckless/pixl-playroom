@@ -143,7 +143,12 @@ export class EngineClient {
               enhance: msg.enhance,
               restarts: this.status.restarts
             }
-          : { status: 'unavailable', reason: msg.reason, restarts: this.status.restarts }
+          : {
+              status: 'unavailable',
+              reason: msg.reason,
+              code: msg.code,
+              restarts: this.status.restarts
+            }
       log.info(`engine ${this.name}`, this.status)
       for (const w of this.readyWaiters.splice(0)) w()
       return

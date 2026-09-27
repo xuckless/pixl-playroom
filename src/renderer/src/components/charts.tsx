@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { HueBin, ImageStats } from '../../../shared/engine-types'
 import type { HslBand } from '../../../shared/recipe'
+import { stopsBins, stopsX } from '../../../shared/scopes'
 import { bandOfHue } from '../lib/helpers'
 
 function areaPath(counts: number[], w: number, h: number, max: number, log: boolean): string {
@@ -17,23 +18,35 @@ function areaPath(counts: number[], w: number, h: number, max: number, log: bool
  * The histogram of what is on screen: red, green and blue added together
  * where they overlap, luma as a line, clipping marked at both ends. Clicking
  * a clipping marker toggles the clipping overlay.
+ *
+ * For a PQ/HLG photo `hdr` is the graded picture as an HDR export holds it;
+ * the HDR chip switches to it, drawn in stops with reference white marked and
+ * the headroom above it shaded.
  */
 export function Histogram({
   stats,
+  hdr = null,
   clipping,
   onClipping
 }: {
   stats: ImageStats | null
+  hdr?: ImageStats | null
   clipping: boolean
   onClipping: (on: boolean) => void
 }): React.JSX.Element {
   const [log, setLog] = useState(true)
+  const [wantHdr, setWantHdr] = useState(true)
+  const showHdr = wantHdr && hdr !== null
+  const shown = showHdr ? hdr : stats
   const w = 300
   const h = 110
+  // Reference white on the stops axis; everything right of it is headroom.
+  const whiteX = showHdr ? stopsX(1, hdr.range_max) * w : null
   const content = useMemo(() => {
-    if (!stats) return null
-    const chans = stats.histograms.slice(0, 3).map((x) => x.counts)
-    const luma = stats.luma_histogram.counts
+    if (!shown) return null
+    const bin = (c: number[]): number[] => (showHdr ? stopsBins(c, shown.range_max) : c)
+    const chans = shown.histograms.slice(0, 3).map((x) => bin(x.counts))
+    const luma = bin(shown.luma_histogram.counts)
     // Ignore the end bins when scaling: a clipped end would flatten the rest.
     const inner = (c: number[]): number => Math.max(1, ...c.slice(1, -1))
     const max = Math.max(...chans.map(inner), inner(luma))
@@ -54,9 +67,10 @@ export function Histogram({
         />
       </>
     )
-  }, [stats, log])
-  const lowClip = stats ? Math.max(...stats.clipped_low) : 0
-  const highClip = stats ? Math.max(...stats.clipped_high) : 0
+  }, [shown, showHdr, log])
+  const lowClip = shown ? Math.max(...shown.clipped_low) : 0
+  const highClip = shown ? Math.max(...shown.clipped_high) : 0
+  const peak = hdr ? hdr.range_max : 1
   return (
     <div className="histogram-box">
       <svg
@@ -65,10 +79,14 @@ export function Histogram({
         className="histogram"
         onDoubleClick={() => setLog(!log)}
       >
-        {[0.25, 0.5, 0.75].map((f) => (
+        {whiteX !== null && (
+          <rect className="hdr-headroom" x={whiteX} y={0} width={w - whiteX} height={h} />
+        )}
+        {(whiteX === null ? [0.25, 0.5, 0.75] : []).map((f) => (
           <line key={f} x1={f * w} x2={f * w} y1={0} y2={h} stroke="rgba(255,255,255,0.06)" />
         ))}
         {content}
+        {whiteX !== null && <line className="hdr-white" x1={whiteX} x2={whiteX} y1={0} y2={h} />}
       </svg>
       <button
         className={`clip-marker low ${lowClip > 0.001 ? 'hot' : ''} ${clipping ? 'on' : ''}`}
@@ -79,16 +97,42 @@ export function Histogram({
       </button>
       <button
         className={`clip-marker high ${highClip > 0.001 ? 'hot' : ''} ${clipping ? 'on' : ''}`}
-        title={`Highlights clipped: ${(highClip * 100).toFixed(2)}% — click to show (J)`}
+        title={
+          showHdr
+            ? `Above the ${peak.toFixed(1)}× peak: ${(highClip * 100).toFixed(2)}% — click to show (J)`
+            : `Highlights clipped: ${(highClip * 100).toFixed(2)}% — click to show (J)`
+        }
         onClick={() => onClipping(!clipping)}
       >
         ◢
       </button>
-      {stats && (
+      {shown && (
         <div className="histogram-foot">
-          <span>μ {stats.luma_mean.toFixed(3)}</span>
-          <span>σ {stats.luma_stddev.toFixed(3)}</span>
-          <span>sat {stats.mean_saturation.toFixed(2)}</span>
+          {showHdr ? (
+            <span title="Headroom above reference white (203 nits) up to the photo's peak">
+              +{Math.log2(peak).toFixed(1)} EV headroom
+            </span>
+          ) : (
+            <>
+              <span>μ {shown.luma_mean.toFixed(3)}</span>
+              <span>σ {shown.luma_stddev.toFixed(3)}</span>
+              <span>sat {shown.mean_saturation.toFixed(2)}</span>
+            </>
+          )}
+          {hdr && (
+            <button
+              className={`hdr-chip${showHdr ? ' on' : ''}`}
+              aria-pressed={showHdr}
+              title={
+                showHdr
+                  ? 'HDR: the graded photo as an HDR export holds it, in stops. Click for the screen (SDR) view.'
+                  : 'Show the HDR histogram'
+              }
+              onClick={() => setWantHdr(!showHdr)}
+            >
+              HDR
+            </button>
+          )}
           <span className="muted">{log ? 'log' : 'linear'} · double-click</span>
         </div>
       )}
