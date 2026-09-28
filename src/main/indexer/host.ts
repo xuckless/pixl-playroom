@@ -5,8 +5,10 @@
  * main-process side is `client.ts`; the work itself is `service.ts`.
  *
  * `--user-data <dir>` says where the index lives; `--prune` (first start
- * only) clears painted planes nothing refers to before any request.
+ * only) clears painted planes nothing refers to before any request;
+ * `--exiftool <path>` is the ExifTool the main process found (for `.xmp`).
  */
+import { setExiftoolPath } from '../exiftool'
 import type { HostToMain, MainToHost } from './protocol'
 import { IndexService } from './service'
 
@@ -21,6 +23,7 @@ function arg(name: string): string | undefined {
 
 const userData = arg('--user-data')
 if (!userData) throw new Error('index host: --user-data is required')
+setExiftoolPath(arg('--exiftool'))
 
 const service = new IndexService({
   userData,

@@ -11,10 +11,12 @@
  */
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
+import { existsSync } from 'fs'
 import { join } from 'path'
 import { compile } from '../shared/compile'
+import { dhashFromGrey } from '../shared/dupes'
 import type { SourceInfo } from '../shared/engine-types'
-import { IPC, type LibraryItem } from '../shared/ipc'
+import { IPC, type LibraryItem, type LibrarySource, type SourceListing } from '../shared/ipc'
 import { orientedFrame } from '../shared/compile'
 import { hash32, type Recipe } from '../shared/recipe'
 import type { EngineClient } from './engine/client'
@@ -24,6 +26,7 @@ import { brushPlanes } from './brushes'
 import { keyOf } from './keys'
 import { paths } from './paths'
 import { ensureProxies } from './proxy'
+import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
 import { BACKGROUND_THREADS, blankRequest, displayPolicy, sourceOrientation } from './source'
 
@@ -51,6 +54,7 @@ export class Library {
   ) {
     index.on((e) => {
       if (e.name === 'changed') this.broadcast(IPC.library.changed, { folder: e.folder })
+      else if (e.name === 'sources') this.broadcast(IPC.library.sourcesChanged, null)
     })
   }
 
@@ -73,6 +77,73 @@ export class Library {
     const items = await this.index.listFolder(folder)
     for (const it of items) this.queueThumb(it.photoId, it.copyId)
     return items
+  }
+
+  /**
+   * Any source's items (a collection's come from many folders); thumbnails
+   * are queued for those that are there. Thumbnails belong to photos, not
+   * folders, so one rendered for a folder serves every collection too.
+   */
+  async openSource(src: LibrarySource): Promise<SourceListing> {
+    const listing =
+      src.kind === 'duplicates'
+        ? await this.duplicates(src.folder, src.threshold)
+        : await this.index.listSource(src)
+    for (const it of listing.items) if (!it.offline) this.queueThumb(it.photoId, it.copyId)
+    return listing
+  }
+
+  /**
+   * Exact and near duplicates in a folder or the whole library. Near ones
+   * need each photo's picture hash, made here from its thumbnail (rendered
+   * first where there is none) since this side has the engine.
+   */
+  async duplicates(folder: string | null, threshold = 6): Promise<SourceListing> {
+    const work = await this.index.dhashWork(folder)
+    let next = 0
+    const worker = async (): Promise<void> => {
+      while (next < work.length) {
+        const w = work[next++]
+        try {
+          await this.hashPicture(w.photoId, w.thumbPath)
+        } catch (err) {
+          const message = (err as Error)?.message ?? String(err)
+          log.warn('picture hash failed', w.photoId, message)
+          void this.index.markFailed(w.photoId, message).catch(() => {})
+        }
+      }
+    }
+    // Two at a time, as the thumbnail queue runs.
+    await Promise.all([worker(), worker()])
+    return this.index.duplicates(folder, threshold)
+  }
+
+  /** A photo's 64-bit dHash, of its thumbnail shrunk to 9×8 by the engine. */
+  private async hashPicture(photoId: number, thumbPath: string | null): Promise<void> {
+    if (!thumbPath) await this.thumb({ photoId, copyId: null })
+    const row = await this.index.row(keyOf(photoId, null))
+    if (!row.thumb_path || !row.thumb_key || !existsSync(row.thumb_path)) return
+    const report = await this.engine.convert({
+      ...blankRequest(row.thumb_path, '', 'Jpeg'),
+      sink: 'Bytes',
+      resize: { Exact: { width: 9, height: 8 } },
+      resampler: 'Bilinear',
+      pixel: { depth: 'Eight', channels: 3 },
+      encode: { Png: { compression: 'Fast', filter: 'NoFilter' } },
+      threads: 1
+    })
+    if (!report.output) throw new Error('the engine returned no pixels')
+    const px = pngToFloats(Buffer.from(report.output))
+    const grey = new Uint8Array(px.width * px.height)
+    for (let i = 0; i < grey.length; i++) {
+      const o = i * px.channels
+      const y =
+        px.channels >= 3
+          ? 0.299 * px.data[o] + 0.587 * px.data[o + 1] + 0.114 * px.data[o + 2]
+          : px.data[o]
+      grey[i] = Math.round(y * 255)
+    }
+    await this.index.setDhash(row.id, dhashFromGrey(grey, px.width, px.height), row.thumb_key)
   }
 
   item(key: string): Promise<LibraryItem | undefined> {
