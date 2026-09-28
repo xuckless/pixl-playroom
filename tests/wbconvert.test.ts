@@ -5,7 +5,14 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { Store } from '../src/main/db'
 import { defaultRecipe, type Recipe } from '../src/shared/recipe'
-import { convertWb, opOf, wbFromOp, type WbContext } from '../src/shared/wbconvert'
+import {
+  convertWb,
+  opOf,
+  savedWhite,
+  wbFromOp,
+  wbFromSaved,
+  type WbContext
+} from '../src/shared/wbconvert'
 
 const RAW: WbContext = {
   isRaw: true,
@@ -64,7 +71,7 @@ test('a develop preset keeps its engine white through the index', () => {
   try {
     const store = Store.open(join(dir, 'playroom.db'))
     const recipe = { ...defaultRecipe(true), wb: custom(4300, 8) }
-    const wbOp = opOf(recipe.wb, RAW)
+    const wbOp = savedWhite(recipe.wb, RAW)
     const base = { name: 'Warm', group: 'Mine', builtin: false, groups: ['whiteBalance' as const] }
     store.savePreset({ ...base, id: 'a', recipe, wbOp })
     store.savePreset({ ...base, id: 'b', name: 'Plain', recipe })
@@ -72,10 +79,23 @@ test('a develop preset keeps its engine white through the index', () => {
     assert.deepEqual(a?.wbOp, wbOp)
     assert.equal(b?.wbOp, undefined)
     // Below the RAW's as-shot 5300 K is a cooler picture: negative on a JPEG.
-    const onJpeg = wbFromOp(a!.wbOp!, JPEG)
+    const onJpeg = wbFromSaved(a!.recipe.wb, a!.wbOp!, JPEG)
     assert.ok(onJpeg.temperature < 0, `temperature ${onJpeg.temperature}`)
     store.close()
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('a saved white keeps its numbers on its own kind and converts across', () => {
+  const other: WbContext = {
+    isRaw: true,
+    asShot: { x: 0.44, y: 0.4, temperature_kelvin: 3100, tint: 0 }
+  }
+  const wb = { ...custom(5600, 5), preset: 'mine:Sun' }
+  const saved = savedWhite(wb, RAW)
+  // Another RAW, whatever its as-shot white, takes the same absolute Kelvin.
+  assert.deepEqual(wbFromSaved(wb, saved, other), wb)
+  const onJpeg = wbFromSaved(wb, saved, JPEG)
+  assert.deepEqual(onJpeg, { ...convertWb(wb, RAW, JPEG), preset: 'mine:Sun' })
 })

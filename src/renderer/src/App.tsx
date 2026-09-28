@@ -3,6 +3,7 @@ import { memo, useEffect } from 'react'
 import type { RenderScale } from '../../shared/ipc'
 import { RECIPE_GROUPS } from '../../shared/recipe'
 import { api, errorText } from './lib/api'
+import { autoWbBatch } from './lib/autowb'
 import { runJob, useBusy } from './state/busy'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
 import { Scopes } from './develop/Scopes'
@@ -197,6 +198,7 @@ function useShortcuts(): void {
       if (!mod && (k === 'u' || k === 'U')) return void lib.setMeta({ flag: null })
       if (mod && e.shiftKey && (k === 'e' || k === 'E')) return lib.setDialog('export')
       if (mod && e.shiftKey && (k === 's' || k === 'S')) return lib.setDialog('sync')
+      if (mod && e.shiftKey && (k === 'u' || k === 'U')) return void autoWbBatch(lib.targets())
       if (k === 'ArrowRight' || k === 'ArrowLeft') {
         const vis = lib.visible()
         const i = vis.findIndex((it) => it.key === lib.focus)

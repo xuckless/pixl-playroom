@@ -422,9 +422,11 @@ export interface Preset {
   recipe: Recipe
   /**
    * A custom white balance as the engine's white (`opOf`), so the preset can
-   * be converted onto a photo of the other kind (RAW ↔ anything else).
+   * be converted onto a photo of the other kind (RAW ↔ anything else);
+   * `absolute` says which kind `recipe.wb` is in (absolute Kelvin on a RAW),
+   * and a photo of that kind takes the numbers as they are.
    */
-  wbOp?: { kelvin: number; tint: number }
+  wbOp?: { kelvin: number; tint: number; absolute: boolean }
 }
 
 export interface LutProfile {

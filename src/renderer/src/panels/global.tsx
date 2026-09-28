@@ -10,6 +10,7 @@ import {
   type Recipe
 } from '../../../shared/recipe'
 import { WB_PRESETS } from '../../../shared/wb'
+import { opOf, wbFromSaved } from '../../../shared/wbconvert'
 import { ColorWheel, CurveEditor } from '../components/editors'
 import { Section, Select, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
 import { api, errorText } from '../lib/api'
@@ -86,6 +87,12 @@ interface SavedWb {
   absolute: boolean
   temperature: number
   tint: number
+  /**
+   * The engine's white (`opOf`), so the preset converts onto photos of the
+   * other kind. Presets saved before it existed lack it and stay with their
+   * own kind.
+   */
+  op?: { kelvin: number; tint: number }
 }
 
 const WB_PRESETS_KEY = 'wb.presets'
@@ -166,18 +173,32 @@ function WhiteBalanceRows(): React.JSX.Element | null {
     void api.app.getSetting<SavedWb[]>(WB_PRESETS_KEY).then((v) => setSaved(v ?? []))
   }, [])
   if (!session || !recipe) return null
-  const abs = absoluteWb({ isRaw: session.isRaw, asShot: session.asShot })
+  const ctx = { isRaw: session.isRaw, asShot: session.asShot }
+  const abs = absoluteWb(ctx)
   // Saved presets are in the units they were made in: absolute Kelvin for a
-  // RAW with an as-shot white, relative sliders for everything else.
-  const mine = saved.filter((p) => p.absolute === abs)
+  // RAW with an as-shot white, relative sliders for everything else. One
+  // that also kept the engine's white is offered on both kinds, converted.
+  const mine = saved.filter((p) => p.op || p.absolute === abs)
+  const wbOfSaved = (p: SavedWb, preset: string): Recipe['wb'] => {
+    const wb: Recipe['wb'] = { mode: 'custom', temperature: p.temperature, tint: p.tint, preset }
+    return p.op ? wbFromSaved(wb, { ...p.op, absolute: p.absolute }, ctx) : wb
+  }
   const saveCurrent = async (name: string): Promise<void> => {
+    const shown: Recipe['wb'] = {
+      mode: 'custom',
+      temperature: Math.round(shownTemp),
+      tint: Math.round(shownTint),
+      preset: null
+    }
     const entry: SavedWb = {
       name,
       absolute: abs,
-      temperature: Math.round(shownTemp),
-      tint: Math.round(shownTint)
+      temperature: shown.temperature,
+      tint: shown.tint,
+      op: opOf(shown, ctx)
     }
-    const next = [...saved.filter((p) => !(p.name === name && p.absolute === abs)), entry]
+    // A name is one preset: this replaces a converting one of either kind.
+    const next = [...saved.filter((p) => !(p.name === name && (p.op || p.absolute === abs))), entry]
     setSaved(next)
     await api.app.setSetting(WB_PRESETS_KEY, next)
     useLibrary.getState().say(`Saved white balance "${name}"`)
@@ -222,14 +243,7 @@ function WhiteBalanceRows(): React.JSX.Element | null {
       }
     } else if (v.startsWith('mine:')) {
       const p = mine.find((x) => x.name === v.slice(5))
-      if (p)
-        replace(
-          {
-            ...recipe,
-            wb: { mode: 'custom', temperature: p.temperature, tint: p.tint, preset: v }
-          },
-          `White balance: ${p.name}`
-        )
+      if (p) replace({ ...recipe, wb: wbOfSaved(p, v) }, `White balance: ${p.name}`)
     } else if (v === 'save') {
       setNaming('')
     } else {
