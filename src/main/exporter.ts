@@ -7,15 +7,19 @@
  */
 import { BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
-import { mkdir } from 'fs/promises'
+import { randomUUID } from 'crypto'
+import { mkdir, unlink } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import { compile, orientedFrame } from '../shared/compile'
+import type { ConvertRequest, Dither } from '../shared/engine-types'
 import {
   buildColor,
   buildEncode,
   buildResize,
   expandTemplate,
   FORMAT_EXT,
+  outputSharpen,
+  outputSharpenGrade,
   supportsHdr,
   type ExportSettings
 } from '../shared/export'
@@ -25,6 +29,7 @@ import { brushPlanes } from './brushes'
 import { exists } from './exists'
 import type { EngineClient } from './engine/client'
 import type { Library } from './library'
+import { paths } from './paths'
 import type { DevelopSessions } from './render'
 import {
   BACKGROUND_THREADS,
@@ -165,7 +170,9 @@ export class Exporter {
       floatWork ||
       (resize !== 'None' && !hdrKeep) ||
       (typeof color === 'object' && ('ToneMap' in color || 'Expand' in color))
-    await this.engine.convert({
+    const dither: Dither =
+      s.dither && depth === 'Eight' ? { TriangularNoise: { seed: hash32(row.path) } } : 'None'
+    const request: ConvertRequest = {
       ...blankRequest(row.path, out, info.input),
       raw,
       resize,
@@ -179,16 +186,60 @@ export class Exporter {
       color,
       grade: compiled.grade,
       framing: compiled.framing,
-      dither:
-        s.dither && depth === 'Eight' && floatPath
-          ? { TriangularNoise: { seed: hash32(row.path) } }
-          : 'None',
+      dither: floatPath ? dither : 'None',
       hdr:
         hdrKeep && floatWork
           ? { reference_white_nits: s.hdr.referenceWhite, peak_nits: info.peak_nits ?? s.hdr.peak }
           : null,
       threads: BACKGROUND_THREADS * 2
-    })
+    }
+    // Only an SDR file is sharpened for output.
+    const sdrOut = typeof color === 'object' && ('ConvertTo' in color || 'ToneMap' in color)
+    const sharpen = sdrOut ? outputSharpen(s) : null
+    if (!sharpen) {
+      await this.engine.convert(request)
+      return out
+    }
+
+    // Output sharpening belongs after the resize, which the engine does after
+    // the grade: so the picture is developed as always into a lossless 16-bit
+    // TIFF in the output space, then sharpened on its way into the file.
+    const dir = join(paths.cacheRoot(), 'export-tmp')
+    await mkdir(dir, { recursive: true })
+    const tmp = join(dir, `${randomUUID()}.tif`)
+    try {
+      await this.engine.convert({
+        ...request,
+        sink: { Path: tmp },
+        pixel: { depth: 'Sixteen', channels: 3 },
+        encode: { Tiff: { compression: 'None' } },
+        // Pass 2 reads the space from the profile, so it is always written.
+        metadata: { ...s.metadata, icc: true },
+        dither: 'None'
+      })
+      // Converting into the space it is already in changes nothing. Pass 1
+      // wrote upright pixels and reset the orientation, so the EXIF it
+      // carried over is copied on as it is.
+      await this.engine.convert({
+        ...blankRequest(tmp, out, 'Tiff'),
+        pixel: { depth, channels: 3 },
+        encode,
+        metadata: s.metadata,
+        color: {
+          ConvertTo: {
+            to: s.colorSpace,
+            intent: s.intent,
+            black_point_compensation: s.blackPointCompensation
+          }
+        },
+        grade: outputSharpenGrade(s, sharpen),
+        // The sharpen is a float pass of its own, so dither always applies.
+        dither,
+        threads: BACKGROUND_THREADS * 2
+      })
+    } finally {
+      await unlink(tmp).catch(() => {})
+    }
     return out
   }
 }
