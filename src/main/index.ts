@@ -12,10 +12,12 @@ import { openIndex } from './indexer/client'
 import { registerIpc } from './ipc'
 import { Library } from './library'
 import { buildMenu } from './menu'
+import { onOpenPaths, openable, pathsFromArgv, queueOpen, rendererGone } from './open'
 import { PlaneStore } from './planestore'
 import { pixels } from './workers/pool'
 import { registerProtocol, registerSchemePrivileges } from './protocol'
 import { DevelopSessions } from './render'
+import { IPC } from '../shared/ipc'
 
 log.initialize()
 log.transports.file.level = 'info'
@@ -32,6 +34,47 @@ const hidden = process.env['PLAYROOM_HIDDEN'] === '1'
 const relaunching = bootScale({ canRelaunch: app.isPackaged && !hidden })
 if (relaunching) app.exit(0)
 
+// One Playroom per profile: a second launch (Explorer's "Open With", a path
+// on the command line) hands its arguments to the first and leaves. The lock
+// is per userData, so PLAYROOM_USER_DATA runs stand apart; automation never
+// takes it. An `open-file` that arrives while bootScale relaunches is lost.
+const secondary = !relaunching && !hidden && !app.requestSingleInstanceLock({ argv: process.argv })
+if (secondary) app.exit(0)
+
+/** Opens are sent here; undefined while every window is closed (macOS). */
+let mainWindow: BrowserWindow | undefined
+
+function focusWindow(): void {
+  if (!mainWindow || hidden) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+/** The executable, and in development the app path Electron was given. */
+const ARGV_SKIP = app.isPackaged ? 1 : 2
+
+// macOS delivers Finder's "Open With" and Dock drops as `open-file`, possibly
+// before ready: queue them, and bring a window back if all were closed.
+app.on('open-file', (e, path) => {
+  e.preventDefault()
+  const p = openable(path)
+  if (p) queueOpen([p])
+  if (!app.isReady() || relaunching || secondary) return
+  if (!mainWindow) createWindow()
+  else focusWindow()
+})
+
+app.on('second-instance', (_e, argv, cwd, data) => {
+  // Electron's own `argv` can be rewritten by Chromium; the launch's is in `data`.
+  queueOpen(pathsFromArgv((data as { argv?: string[] } | undefined)?.argv ?? argv, cwd, ARGV_SKIP))
+  if (!app.isReady()) return
+  if (!mainWindow) createWindow()
+  else focusWindow()
+})
+
+queueOpen(pathsFromArgv(process.argv, process.cwd(), ARGV_SKIP))
+
 /** Previews and the develop view's measurements. */
 const engine = new EngineClient('interactive', 8)
 /** Thumbnails, exports, enhancement, the full-resolution masters. */
@@ -41,7 +84,7 @@ const index = openIndex()
 let sessions: DevelopSessions | undefined
 
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1480,
     height: 940,
     minWidth: 1000,
@@ -63,21 +106,28 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => {
-    if (!hidden) mainWindow.show()
+  mainWindow = win
+  win.on('ready-to-show', () => {
+    if (!hidden) win.show()
+  })
+  // A closed window or a reload boots a new renderer: opens queue until it takes them.
+  win.webContents.on('did-start-loading', rendererGone)
+  win.on('closed', () => {
+    rendererGone()
+    if (mainWindow === win) mainWindow = undefined
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'))
   }
-  watchDisplay(mainWindow)
+  watchDisplay(win)
 }
 
 /** About Pixl Playroom: the app's version and the engine it runs on. */
@@ -92,7 +142,7 @@ function setAbout(engineVersion?: string): void {
 }
 
 app.whenReady().then(() => {
-  if (relaunching) return
+  if (relaunching || secondary) return
   if (settleScale()) return app.exit(0)
   electronApp.setAppUserModelId('com.xuckless.pixlplayroom')
   // A packaged app's dock shows its bundle icon; `pnpm dev` would show Electron's.
@@ -112,6 +162,7 @@ app.whenReady().then(() => {
   const enhancer = new Enhancer(library, bgEngine)
   const planes = new PlaneStore(index)
   registerIpc({ index, planes, library, sessions, exporter, enhancer, engine, bgEngine })
+  onOpenPaths((paths) => mainWindow?.webContents.send(IPC.app.openPaths, paths))
 
   buildMenu()
   onRenderScale(buildMenu)

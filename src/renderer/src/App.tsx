@@ -165,6 +165,34 @@ async function waitForEngine(): Promise<void> {
   }
 }
 
+/**
+ * Photos opened from outside (Finder's and Explorer's "Open With", a second
+ * launch): their folder opens with them selected, and the first goes to
+ * Develop. A folder (main sends it with a trailing separator) just opens.
+ */
+async function openPaths(paths: string[]): Promise<void> {
+  const isDir = (p: string): boolean => /[\\/]$/.test(p)
+  const files = paths.filter((p) => !isDir(p))
+  // A folder loses its separator again, unless it is a root.
+  const dir = paths.find(isDir)?.replace(/(?<=[^\\/:])[\\/]$/, '') ?? null
+  try {
+    const { folder, keys } = files.length
+      ? await api.library.resolvePaths(files)
+      : { folder: dir, keys: [] }
+    if (!folder) return
+    await useLibrary.getState().openFolder(folder)
+    const lib = useLibrary.getState()
+    const known = new Set(lib.items.map((i) => i.key))
+    const picked = keys.filter((k) => known.has(k))
+    if (!picked[0]) return
+    useLibrary.setState({ selection: picked, focus: picked[0] })
+    lib.setView('develop')
+    await useDevelop.getState().open(picked[0])
+  } catch (err) {
+    useLibrary.getState().say(errorText(err), 'error')
+  }
+}
+
 function useShortcuts(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -393,6 +421,7 @@ export default function App(): React.JSX.Element {
       api.develop.onRendered((e) => useDevelop.getState().onRendered(e)),
       startWheelMemory(),
       api.app.onRenderScale(onRenderScale),
+      api.app.onOpenPaths((paths) => void openPaths(paths)),
       api.develop.onRenderError((e) =>
         useDevelop.getState().onError(e.field ? `${e.message} (${e.field})` : e.message)
       ),
@@ -415,8 +444,11 @@ export default function App(): React.JSX.Element {
       useLibrary.setState({ recent: await api.library.recentFolders() })
       boot.finish('index')
       onRenderScale(await api.app.renderScale())
-      const last = await api.app.getSetting<string>('library.lastFolder')
-      if (last) await useLibrary.getState().openFolder(last)
+      // Photos opened from outside take the place of the last folder.
+      const opens = await api.app.takeOpens().catch(() => [])
+      const last = opens.length ? null : await api.app.getSetting<string>('library.lastFolder')
+      if (opens.length) await openPaths(opens)
+      else if (last) await useLibrary.getState().openFolder(last)
       boot.finish('folder')
     })()
     void Promise.allSettled([engineUp, libraryUp]).then(() => boot.end())
