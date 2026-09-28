@@ -100,6 +100,8 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     const folder = get().folder
     if (!folder) return
     const listing = await api.library.openFolder(folder)
+    // Another folder opened meanwhile: this listing is no longer the one shown.
+    if (get().folder !== folder) return
     const keep = new Set(listing.items.map((i) => i.key))
     set((s) => ({
       items: listing.items,
