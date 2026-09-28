@@ -53,6 +53,14 @@ electron-builder upload to an older published release.
 this repository. Forks and Dependabot PRs cannot install the private engine package, so their
 checks fail.
 
+**File associations.** Playroom is offered in "Open With" for every format it reads and never
+made the default. On macOS that is `mac.fileAssociations` (`rank: Alternate`). On Windows
+it is `build/installer.nsh` (ProgIds plus `OpenWithProgids`, per user). The document icons
+in `build/doc-icons/` come from `pnpm doc-icons`; rerun it when `build/brand/doc-icon.html`
+changes. **Windows file associations are untested.** Before relying on them, check on a
+Windows machine that the installer builds, that Explorer's "Open with" lists Playroom with
+the icons, that the default apps stay as they were, and that uninstalling removes the keys.
+
 ## Secrets
 
 | Name                                                         | Purpose                                                      |
