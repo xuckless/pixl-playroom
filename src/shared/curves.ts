@@ -141,3 +141,35 @@ export const BUILTIN_CURVES: CurvePreset[] = [
     }
   }
 ]
+
+const samePoints = (a: CurvePointSetting[], b: CurvePointSetting[]): boolean =>
+  a.length === b.length && a.every((p, i) => p.x === b[i].x && p.y === b[i].y)
+
+/** Whether two tone curves draw the same: every region, split and point. */
+export function sameCurve(a: ToneCurveSetting, b: ToneCurveSetting): boolean {
+  return (
+    a.highlights === b.highlights &&
+    a.lights === b.lights &&
+    a.darks === b.darks &&
+    a.shadows === b.shadows &&
+    a.splits.length === b.splits.length &&
+    a.splits.every((v, i) => v === b.splits[i]) &&
+    samePoints(a.master, b.master) &&
+    samePoints(a.red, b.red) &&
+    samePoints(a.green, b.green) &&
+    samePoints(a.blue, b.blue)
+  )
+}
+
+/** The whole tone curve a preset makes, what it leaves out reset: a copy, never the preset's own points. */
+export function presetCurve(p: CurvePreset): ToneCurveSetting {
+  return { ...defaultToneCurve(), ...structuredClone(p.curve) }
+}
+
+/** The first preset that makes exactly `curve`, if any: what the preset menu shows. */
+export function matchingPreset<T extends CurvePreset>(
+  curve: ToneCurveSetting,
+  presets: readonly T[]
+): T | undefined {
+  return presets.find((p) => sameCurve(presetCurve(p), curve))
+}

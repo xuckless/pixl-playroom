@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { BUILTIN_CURVES, defaultToneCurve, type CurvePreset } from '../../../shared/curves'
+import {
+  BUILTIN_CURVES,
+  matchingPreset,
+  presetCurve,
+  type CurvePreset
+} from '../../../shared/curves'
 import type { ToneCurveSetting } from '../../../shared/recipe'
 import { Select } from '../components/ui'
 import { api } from '../lib/api'
@@ -18,9 +23,12 @@ const CURVE_PRESETS_KEY = 'curve.presets'
 /**
  * Apply a built-in or saved tone curve, save the current one, or delete a
  * saved one. A preset replaces the whole tone curve, regions and channels.
+ * The menu shows the preset the curve is now (a saved one before a built-in
+ * of the same shape), or that it is a curve of its own.
  */
 export function CurvePresets(): React.JSX.Element {
   const replace = useDevelop((s) => s.replace)
+  const toneCurve = useDevelop((s) => s.recipe?.toneCurve)
   const [saved, setSaved] = useState<SavedCurve[]>([])
   const [naming, setNaming] = useState<string | null>(null)
   useEffect(() => {
@@ -36,10 +44,7 @@ export function CurvePresets(): React.JSX.Element {
     const recipe = useDevelop.getState().recipe
     if (!recipe) return
     // Fill from the untouched curve, so what a preset leaves out is reset.
-    replace(
-      { ...recipe, toneCurve: { ...defaultToneCurve(), ...structuredClone(p.curve) } },
-      `Curve preset: ${p.name}`
-    )
+    replace({ ...recipe, toneCurve: presetCurve(p) }, `Curve preset: ${p.name}`)
   }
   const saveCurrent = async (name: string): Promise<void> => {
     const recipe = useDevelop.getState().recipe
@@ -69,15 +74,19 @@ export function CurvePresets(): React.JSX.Element {
     if (name) void saveCurrent(name)
     setNaming(null)
   }
+  const mine = toneCurve && matchingPreset(toneCurve, saved)
+  const builtin = toneCurve && !mine ? matchingPreset(toneCurve, BUILTIN_CURVES) : undefined
+  const current = mine ? `use:${mine.name}` : builtin ? `builtin:${builtin.name}` : ''
   return (
     <>
       <div className="row">
         <Select
           label="Preset"
-          value=""
+          value={current}
           onChange={choose}
           options={[
-            { value: '', label: 'Apply a curve…' },
+            // Only a curve no preset makes lands here; choosing a preset never does.
+            ...(current === '' ? [{ value: '', label: 'Custom curve' }] : []),
             ...BUILTIN_CURVES.map((p) => ({ value: `builtin:${p.name}`, label: p.name })),
             ...saved.map((p) => ({ value: `use:${p.name}`, label: `★ ${p.name}` })),
             { value: 'save', label: 'Save this curve as a preset…' },

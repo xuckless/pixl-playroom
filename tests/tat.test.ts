@@ -1,6 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { BUILTIN_CURVES, defaultToneCurve, monotone } from '../src/shared/curves'
+import {
+  BUILTIN_CURVES,
+  defaultToneCurve,
+  matchingPreset,
+  monotone,
+  presetCurve
+} from '../src/shared/curves'
 import { defaultRecipe, HSL_BANDS } from '../src/shared/recipe'
 import { applyHslDelta, bandWeights, curveInput, mainBand, nudgeCurve } from '../src/shared/tat'
 
@@ -98,4 +104,19 @@ test('the built-in curves are valid point curves', () => {
       assert.ok(pts[i].y >= pts[i - 1].y, c.name)
     }
   }
+})
+
+test('the preset menu names the preset a curve is, and none once it is edited', () => {
+  const strong = BUILTIN_CURVES.find((c) => c.name === 'Strong contrast')!
+  assert.equal(matchingPreset(presetCurve(strong), BUILTIN_CURVES)?.name, 'Strong contrast')
+  // An untouched curve is the Linear preset.
+  assert.equal(matchingPreset(defaultToneCurve(), BUILTIN_CURVES)?.name, 'Linear')
+  const edited = presetCurve(strong)
+  edited.master[1] = { ...edited.master[1], y: edited.master[1].y + 0.013 }
+  assert.equal(matchingPreset(edited, BUILTIN_CURVES), undefined)
+  const regions = { ...presetCurve(strong), shadows: 10 }
+  assert.equal(matchingPreset(regions, BUILTIN_CURVES), undefined)
+  // A saved curve is matched whole, the way it was stored.
+  const mine = { name: 'Mine', curve: { ...defaultToneCurve(), highlights: -20 } }
+  assert.equal(matchingPreset({ ...defaultToneCurve(), highlights: -20 }, [mine])?.name, 'Mine')
 })
