@@ -18,6 +18,7 @@ import {
   buildResize,
   expandTemplate,
   FORMAT_EXT,
+  metadataPlan,
   outputSharpen,
   outputSharpenGrade,
   supportsHdr,
@@ -26,6 +27,7 @@ import {
 import { IPC, type ExportProgress } from '../shared/ipc'
 import { hash32 } from '../shared/recipe'
 import { brushPlanes } from './brushes'
+import { embedMetadata } from './exiftool'
 import { exists } from './exists'
 import type { EngineClient } from './engine/client'
 import type { Library } from './library'
@@ -85,12 +87,15 @@ export class Exporter {
       const item = await this.library.item(key)
       progress.current = item?.name ?? key
       this.send(progress)
+      const name = item?.name ?? key
       try {
-        const out = await this.one(key, s, i + 1)
+        const out = await this.one(key, s, i + 1, (message) =>
+          progress.errors.push({ name, message, warning: true })
+        )
         if (out) progress.outputs.push(out)
       } catch (err) {
         log.warn('export failed', key, err)
-        progress.errors.push({ name: item?.name ?? key, message: (err as Error).message })
+        progress.errors.push({ name, message: (err as Error).message })
       }
       progress.done = i + 1
       this.send(progress)
@@ -101,8 +106,16 @@ export class Exporter {
     if (s.reveal && progress.outputs.length > 0) shell.showItemInFolder(progress.outputs[0])
   }
 
-  /** Export one item. Returns the written path, or null when skipped. */
-  private async one(key: string, s: ExportSettings, seq: number): Promise<string | null> {
+  /**
+   * Export one item. Returns the written path, or null when skipped. What
+   * goes wrong after the file is written (its metadata) is a `warn`.
+   */
+  private async one(
+    key: string,
+    s: ExportSettings,
+    seq: number,
+    warn: (message: string) => void
+  ): Promise<string | null> {
     await this.sessions.flush(key)
     const row = await this.library.photoRow(key)
     const item = await this.library.item(key)
@@ -177,6 +190,7 @@ export class Exporter {
       (typeof color === 'object' && ('ToneMap' in color || 'Expand' in color))
     const dither: Dither =
       s.dither && depth === 'Eight' ? { TriangularNoise: { seed: hash32(row.path) } } : 'None'
+    const plan = metadataPlan(s, item ?? null)
     const request: ConvertRequest = {
       ...blankRequest(row.path, out, info.input),
       raw,
@@ -187,7 +201,7 @@ export class Exporter {
       linear_resample: hdrKeep ? floatWork : true,
       pixel: { depth, channels: 3 },
       encode,
-      metadata: s.metadata,
+      metadata: plan.policy,
       color,
       grade: compiled.grade,
       framing: compiled.framing,
@@ -203,47 +217,60 @@ export class Exporter {
     const sharpen = sdrOut ? outputSharpen(s) : null
     if (!sharpen) {
       await this.engine.convert(request)
-      return out
+    } else {
+      // Output sharpening belongs after the resize, which the engine does
+      // after the grade: so the picture is developed as always into a
+      // lossless 16-bit TIFF in the output space, then sharpened on its way
+      // into the file.
+      const dir = join(paths.cacheRoot(), 'export-tmp')
+      await mkdir(dir, { recursive: true })
+      const tmp = join(dir, `${randomUUID()}.tif`)
+      try {
+        await this.engine.convert({
+          ...request,
+          sink: { Path: tmp },
+          pixel: { depth: 'Sixteen', channels: 3 },
+          encode: { Tiff: { compression: 'None' } },
+          // Pass 2 reads the space from the profile, so it is always written.
+          metadata: { ...plan.policy, icc: true },
+          dither: 'None'
+        })
+        // Converting into the space it is already in changes nothing. Pass 1
+        // wrote upright pixels and reset the orientation, so the EXIF it
+        // carried over is copied on as it is.
+        await this.engine.convert({
+          ...blankRequest(tmp, out, 'Tiff'),
+          pixel: { depth, channels: 3 },
+          encode,
+          metadata: plan.policy,
+          color: {
+            ConvertTo: {
+              to: s.colorSpace,
+              intent: s.intent,
+              black_point_compensation: s.blackPointCompensation
+            }
+          },
+          grade: outputSharpenGrade(s, sharpen),
+          // The sharpen is a float pass of its own, so dither always applies.
+          dither,
+          threads: BACKGROUND_THREADS * 2
+        })
+      } finally {
+        await unlink(tmp).catch(() => {})
+      }
     }
 
-    // Output sharpening belongs after the resize, which the engine does after
-    // the grade: so the picture is developed as always into a lossless 16-bit
-    // TIFF in the output space, then sharpened on its way into the file.
-    const dir = join(paths.cacheRoot(), 'export-tmp')
-    await mkdir(dir, { recursive: true })
-    const tmp = join(dir, `${randomUUID()}.tif`)
+    // The engine copies blocks as they are; the photo's own fields, the
+    // copyright and the location are ExifTool's. The picture is written by
+    // now, so a format ExifTool cannot write only costs the metadata.
     try {
-      await this.engine.convert({
-        ...request,
-        sink: { Path: tmp },
-        pixel: { depth: 'Sixteen', channels: 3 },
-        encode: { Tiff: { compression: 'None' } },
-        // Pass 2 reads the space from the profile, so it is always written.
-        metadata: { ...s.metadata, icc: true },
-        dither: 'None'
+      await embedMetadata(out, plan.tags, {
+        removeLocation: plan.removeLocation,
+        source: row.path
       })
-      // Converting into the space it is already in changes nothing. Pass 1
-      // wrote upright pixels and reset the orientation, so the EXIF it
-      // carried over is copied on as it is.
-      await this.engine.convert({
-        ...blankRequest(tmp, out, 'Tiff'),
-        pixel: { depth, channels: 3 },
-        encode,
-        metadata: s.metadata,
-        color: {
-          ConvertTo: {
-            to: s.colorSpace,
-            intent: s.intent,
-            black_point_compensation: s.blackPointCompensation
-          }
-        },
-        grade: outputSharpenGrade(s, sharpen),
-        // The sharpen is a float pass of its own, so dither always applies.
-        dither,
-        threads: BACKGROUND_THREADS * 2
-      })
-    } finally {
-      await unlink(tmp).catch(() => {})
+    } catch (err) {
+      log.warn('export metadata failed', out, err)
+      warn(`metadata not written: ${(err as Error).message}`)
     }
     return out
   }

@@ -6,6 +6,7 @@ import icon from '../../resources/icon.png?asset'
 import dockIcon from '../../resources/icon-dock.png?asset'
 import { bootScale, onRenderScale, settleScale, watchDisplay } from './display'
 import { EngineClient } from './engine/client'
+import { endExiftool } from './exiftool'
 import { Enhancer } from './enhance'
 import { Exporter } from './exporter'
 import { openIndex } from './indexer/client'
@@ -206,10 +207,14 @@ app.on('before-quit', (e) => {
   // anything stops: once, and never for longer than QUIT_DRAIN_MS.
   e.preventDefault()
   drained = true
-  const drain = (async (): Promise<void> => {
-    await sessions?.closeAll()
-    await index.stop()
-  })().catch((err) => log.warn('quit: draining the index failed', err))
+  const drain = Promise.all([
+    (async (): Promise<void> => {
+      await sessions?.closeAll()
+      await index.stop()
+    })().catch((err) => log.warn('quit: draining the index failed', err)),
+    // The exporter's perl processes.
+    endExiftool().catch((err) => log.warn('quit: stopping exiftool failed', err))
+  ])
   let timer: NodeJS.Timeout | undefined
   void Promise.race([drain, new Promise((r) => (timer = setTimeout(r, QUIT_DRAIN_MS)))]).then(
     () => {
