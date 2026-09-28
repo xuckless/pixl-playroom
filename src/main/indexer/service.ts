@@ -315,7 +315,13 @@ export class IndexService {
           ? cacheUrlIn(this.cacheRoot, thumbPath, thumbKey ?? '')
           : null,
       unreadable: this.failed.has(versionOf(row)),
-      camera: row.camera_json ? (JSON.parse(row.camera_json) as CameraInfo) : emptyCamera()
+      camera: row.camera_json ? (JSON.parse(row.camera_json) as CameraInfo) : emptyCamera(),
+      folder: row.folder,
+      title: row.title ?? null,
+      caption: row.caption ?? null,
+      copyright: row.copyright ?? null,
+      keywords: [],
+      stack: null
     }
   }
 

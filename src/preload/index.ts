@@ -4,7 +4,9 @@ import type { ExportSettings } from '../shared/export'
 import {
   IPC,
   type AppError,
+  type AutoWbResult,
   type BasicSetting,
+  type Collection,
   type DevelopSession,
   type EngineStatus,
   type EnhanceProgress,
@@ -12,9 +14,12 @@ import {
   type ExportProgress,
   type FolderListing,
   type HistoryLog,
+  type KeywordNode,
   type LibraryItem,
+  type LibrarySource,
   type LutProfile,
   type MetaPatch,
+  type MetaTextPatch,
   type Preset,
   type RegionRequest,
   type RegionResult,
@@ -22,6 +27,7 @@ import {
   type RenderScale,
   type SampleResult,
   type Snapshot,
+  type SourceListing,
   type ViewState
 } from '../shared/ipc'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
@@ -52,6 +58,8 @@ const api = {
     renderScale: () => call<RenderScale>(IPC.app.renderScale),
     restart: () => call<void>(IPC.app.restart),
     onRenderScale: (cb: (s: RenderScale) => void) => on(IPC.app.renderScaleChanged, cb),
+    takeOpens: () => call<string[]>(IPC.app.takeOpens),
+    onOpenPaths: (cb: (paths: string[]) => void) => on(IPC.app.openPaths, cb),
     pathOf: (file: File) => webUtils.getPathForFile(file)
   },
   library: {
@@ -70,7 +78,35 @@ const api = {
     prioritize: (keys: string[]) => call<void>(IPC.library.prioritize, keys),
     onThumb: (cb: (p: { key: string; url: string | null; unreadable?: boolean }) => void) =>
       on(IPC.library.thumb, cb),
-    onChanged: (cb: (p: { folder: string }) => void) => on(IPC.library.changed, cb)
+    onChanged: (cb: (p: { folder: string }) => void) => on(IPC.library.changed, cb),
+    openSource: (source: LibrarySource) => call<SourceListing>(IPC.library.openSource, source),
+    resolvePaths: (paths: string[]) =>
+      call<{ folder: string | null; keys: string[] }>(IPC.library.resolvePaths, paths),
+    setMetadata: (keys: string[], patch: MetaTextPatch) =>
+      call<(LibraryItem | undefined)[]>(IPC.library.setMetadata, keys, patch),
+    keywordTree: () => call<KeywordNode[]>(IPC.library.keywordTree),
+    collections: () => call<Collection[]>(IPC.library.collections),
+    saveCollection: (c: Omit<Collection, 'id' | 'count'> & { id?: string }) =>
+      call<Collection>(IPC.library.saveCollection, c),
+    removeCollection: (id: string) => call<void>(IPC.library.removeCollection, id),
+    collectionItems: (id: string, keys: string[], action: 'add' | 'remove') =>
+      call<void>(IPC.library.collectionItems, id, keys, action),
+    /** Asks where to save; null when cancelled. */
+    exportCollections: (ids: string[]) => call<string | null>(IPC.library.exportCollections, ids),
+    /** Asks for a file; the collections it added. */
+    importCollections: () => call<Collection[]>(IPC.library.importCollections),
+    stack: (keys: string[], cover: string) =>
+      call<(LibraryItem | undefined)[]>(IPC.library.stack, keys, cover),
+    unstack: (keys: string[]) => call<(LibraryItem | undefined)[]>(IPC.library.unstack, keys),
+    stackTop: (key: string) => call<(LibraryItem | undefined)[]>(IPC.library.stackTop, key),
+    autoStack: (folder: string, seconds: number) =>
+      call<number>(IPC.library.autoStack, folder, seconds),
+    duplicates: (folder: string | null, threshold: number) =>
+      call<SourceListing>(IPC.library.duplicates, folder, threshold),
+    autoWb: (keys: string[]) => call<AutoWbResult>(IPC.library.autoWb, keys),
+    setWb: (pairs: { key: string; wb: Recipe['wb'] }[]) =>
+      call<(LibraryItem | undefined)[]>(IPC.library.setWb, pairs),
+    onSourcesChanged: (cb: () => void) => on(IPC.library.sourcesChanged, cb)
   },
   develop: {
     open: (key: string) => call<DevelopSession>(IPC.develop.open, key),

@@ -28,6 +28,23 @@ export interface PhotoRow {
   thumb_path: string | null
   thumb_key: string | null
   sidecar_mtime: number | null
+  title: string | null
+  caption: string | null
+  copyright: string | null
+  xmp_mtime: number | null
+  content_hash: string | null
+  hash_key: string | null
+  dhash: string | null
+  dhash_key: string | null
+  captured_at: string | null
+  iso: number | null
+  focal: number | null
+  fnumber: number | null
+  exposure: number | null
+  camera: string | null
+  lens: string | null
+  stack_id: string | null
+  stack_pos: number | null
 }
 
 export interface CopyRow {
@@ -95,6 +112,138 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS planes (ref TEXT PRIMARY KEY, png TEXT NOT NULL);
 `
 
+const columnsOf = (db: DatabaseSync, table: string): string[] =>
+  (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name)
+
+/** Add the columns `table` lacks: a migration re-run after a crash finds some already there. */
+function addColumns(db: DatabaseSync, table: string, cols: Record<string, string>): void {
+  const have = columnsOf(db, table)
+  for (const [name, type] of Object.entries(cols)) {
+    if (!have.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`)
+  }
+}
+
+/**
+ * Schema changes, in order; `PRAGMA user_version` says how many have run.
+ * Each runs in its own transaction and must be safe on a database that
+ * already has part of it (every index made before versioning is at 0).
+ */
+export const MIGRATIONS: ((db: DatabaseSync) => void)[] = [
+  // 1. History became steps: each row past the base holds the patch it made,
+  // and can be hidden. Older rows are converted when their item is read.
+  (db) => addColumns(db, 'history', { patch: 'TEXT', hidden: 'INTEGER NOT NULL DEFAULT 0' }),
+  // 2. The library: descriptive metadata (mirrored from .xmp sidecars), the
+  // camera fields as columns so they can be searched, content and picture
+  // hashes for duplicates, stacks (mirrored from the sidecar), keywords and
+  // collections; a preset's white balance as the engine's white.
+  (db) => {
+    addColumns(db, 'photos', {
+      title: 'TEXT',
+      caption: 'TEXT',
+      copyright: 'TEXT',
+      xmp_mtime: 'REAL',
+      content_hash: 'TEXT',
+      hash_key: 'TEXT',
+      dhash: 'TEXT',
+      dhash_key: 'TEXT',
+      captured_at: 'TEXT',
+      iso: 'REAL',
+      focal: 'REAL',
+      fnumber: 'REAL',
+      exposure: 'REAL',
+      camera: 'TEXT',
+      lens: 'TEXT',
+      stack_id: 'TEXT',
+      stack_pos: 'INTEGER'
+    })
+    addColumns(db, 'presets', { wb_op: 'TEXT' })
+    db.exec(`
+CREATE TABLE IF NOT EXISTS photo_keywords (
+  photo_id INTEGER NOT NULL,
+  path TEXT NOT NULL,
+  PRIMARY KEY (photo_id, path)
+);
+CREATE INDEX IF NOT EXISTS photo_keywords_path ON photo_keywords(path);
+CREATE TABLE IF NOT EXISTS collections (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('manual', 'smart', 'set')),
+  parent TEXT,
+  rules TEXT,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS collection_items (
+  collection_id TEXT NOT NULL,
+  photo_id INTEGER NOT NULL,
+  copy_id TEXT NOT NULL DEFAULT '',
+  added_at TEXT NOT NULL,
+  PRIMARY KEY (collection_id, photo_id, copy_id)
+);
+CREATE INDEX IF NOT EXISTS collection_items_photo ON collection_items(photo_id);
+CREATE INDEX IF NOT EXISTS photos_captured ON photos(captured_at);
+CREATE INDEX IF NOT EXISTS photos_size ON photos(size);
+CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
+`)
+    // The camera fields, from the JSON already read.
+    const rows = db
+      .prepare('SELECT id, camera_json FROM photos WHERE camera_json IS NOT NULL')
+      .all() as { id: number; camera_json: string }[]
+    const set = db.prepare(
+      'UPDATE photos SET captured_at = ?, iso = ?, focal = ?, fnumber = ?, exposure = ?, camera = ?, lens = ? WHERE id = ?'
+    )
+    for (const r of rows) {
+      let c: Partial<CameraInfo>
+      try {
+        c = JSON.parse(r.camera_json) as Partial<CameraInfo>
+      } catch {
+        continue
+      }
+      set.run(...cameraColumns(c), r.id)
+    }
+  }
+]
+
+/** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
+export function cameraColumns(
+  c: Partial<CameraInfo> | null
+): [
+  string | null,
+  number | null,
+  number | null,
+  number | null,
+  number | null,
+  string | null,
+  string | null
+] {
+  const camera = [c?.make, c?.model].filter((x): x is string => !!x).join(' ') || null
+  return [
+    c?.capturedAt ?? null,
+    c?.iso ?? null,
+    c?.focalLength ?? null,
+    c?.fNumber ?? null,
+    c?.exposureTime ?? null,
+    camera,
+    c?.lens ?? null
+  ]
+}
+
+export function migrate(db: DatabaseSync): void {
+  let version = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
+  while (version < MIGRATIONS.length) {
+    db.exec('BEGIN')
+    try {
+      MIGRATIONS[version](db)
+      db.exec(`PRAGMA user_version = ${version + 1}`)
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    }
+    version++
+  }
+}
+
 /** History entries kept per item (the base and its steps); older steps fold into the base. */
 const HISTORY_LIMIT = 200
 
@@ -157,14 +306,7 @@ export class Store {
     const db = new DatabaseSync(file)
     db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;')
     db.exec(SCHEMA)
-    // History became steps: each row past the base holds the patch it made,
-    // and can be hidden. Older rows are converted when their item is read.
-    const cols = (db.prepare('PRAGMA table_info(history)').all() as { name: string }[]).map(
-      (c) => c.name
-    )
-    if (!cols.includes('patch')) db.exec('ALTER TABLE history ADD COLUMN patch TEXT')
-    if (!cols.includes('hidden'))
-      db.exec('ALTER TABLE history ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0')
+    migrate(db)
     return new Store(db)
   }
 
@@ -255,7 +397,9 @@ export class Store {
   }
 
   setCamera(id: number, camera: CameraInfo): void {
-    this.prepare('UPDATE photos SET camera_json = ? WHERE id = ?').run(JSON.stringify(camera), id)
+    this.prepare(
+      'UPDATE photos SET camera_json = ?, captured_at = ?, iso = ?, focal = ?, fnumber = ?, exposure = ?, camera = ?, lens = ? WHERE id = ?'
+    ).run(JSON.stringify(camera), ...cameraColumns(camera), id)
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, key: string): void {

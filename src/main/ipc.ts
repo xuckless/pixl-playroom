@@ -16,9 +16,7 @@ import {
   type Snapshot,
   type ViewState
 } from '../shared/ipc'
-import { absoluteWb, baseWhite } from '../shared/compile'
-import type { WhitePoint } from '../shared/engine-types'
-import { absoluteFromOp, relativeFromOp } from '../shared/wb'
+import { convertWb, type WbContext } from '../shared/wbconvert'
 import { BUILTIN_PRESETS } from '../shared/presets'
 import { applyGroups, newId, planeRef, type Recipe, type RecipeGroup } from '../shared/recipe'
 import type { IndexClient } from './indexer/client'
@@ -50,11 +48,6 @@ function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => Pro
   })
 }
 
-interface WbContext {
-  isRaw: boolean
-  asShot: WhitePoint | null
-}
-
 async function wbContext(library: Library, key: string): Promise<WbContext> {
   const row = await library.photoRow(key)
   const isRaw = row.is_raw === 1
@@ -62,26 +55,8 @@ async function wbContext(library: Library, key: string): Promise<WbContext> {
   return { isRaw, asShot: info?.as_shot_white ?? null }
 }
 
-/** The same white, in the target's slider units. */
-function convertWb(wb: Recipe['wb'], from: WbContext, to: WbContext): Recipe['wb'] {
-  if (absoluteWb(from) === absoluteWb(to)) return wb
-  const op = baseWhite({ wb } as Recipe, from) ?? { kelvin: 6504, tint: 0 }
-  if (absoluteWb(to) && to.asShot) {
-    const abs = absoluteFromOp(op, to.asShot)
-    return {
-      mode: 'custom',
-      temperature: Math.round(abs.kelvin),
-      tint: Math.round(abs.tint * 3000),
-      preset: null
-    }
-  }
-  const rel = relativeFromOp(op)
-  return {
-    mode: 'custom',
-    temperature: Math.round(rel.temperature),
-    tint: Math.round(rel.tint),
-    preset: null
-  }
+function notImplemented(channel: string): never {
+  throw new Error(`${channel} is not implemented yet`)
 }
 
 export interface Services {
@@ -107,6 +82,9 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.reveal, (path: string) => shell.showItemInFolder(path))
   handle(IPC.app.renderScale, () => renderScale())
   handle(IPC.app.restart, () => restart())
+
+  // ── opens (Open With, second launch) ── workstream E fills these in
+  handle(IPC.app.takeOpens, (): string[] => [])
 
   // ── library ──
   handle(IPC.library.chooseFolder, async () => {
@@ -175,6 +153,31 @@ export function registerIpc(s: Services): void {
     }
     return items
   })
+
+  // ── library sources, metadata, collections, stacks, duplicates ── workstream D1
+  for (const channel of [
+    IPC.library.openSource,
+    IPC.library.resolvePaths,
+    IPC.library.setMetadata,
+    IPC.library.keywordTree,
+    IPC.library.collections,
+    IPC.library.saveCollection,
+    IPC.library.removeCollection,
+    IPC.library.collectionItems,
+    IPC.library.exportCollections,
+    IPC.library.importCollections,
+    IPC.library.stack,
+    IPC.library.unstack,
+    IPC.library.stackTop,
+    IPC.library.autoStack,
+    IPC.library.duplicates
+  ]) {
+    handle(channel, () => notImplemented(channel))
+  }
+
+  // ── batch auto white balance ── workstream B
+  handle(IPC.library.autoWb, () => notImplemented(IPC.library.autoWb))
+  handle(IPC.library.setWb, () => notImplemented(IPC.library.setWb))
 
   // ── develop ──
   // Recipes go out with their brush planes by reference and come back in

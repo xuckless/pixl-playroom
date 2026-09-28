@@ -36,6 +36,10 @@ asarUnpack:
   - resources/**
   - '**/*.node'
   - 'node_modules/@xuckless/pixl-engine*/**'
+  # ExifTool is a Perl script (macOS, Linux) or an .exe (Windows) run as a
+  # child process: it cannot live inside the asar.
+  - 'node_modules/exiftool-vendored.pl/**'
+  - 'node_modules/exiftool-vendored.exe/**'
 
 # pnpm hoists nothing; electron-builder must follow the symlinks in
 # node_modules/.pnpm to collect production dependencies.

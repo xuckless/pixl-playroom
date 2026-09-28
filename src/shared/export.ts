@@ -33,6 +33,13 @@ export const FORMAT_EXT: Record<ExportFormat, string> = {
 
 export type ResizeMode = 'none' | 'long' | 'short' | 'width' | 'height' | 'megapixels' | 'percent'
 
+/** Output sharpening: after the resize, for where the picture will be seen. */
+export interface OutputSharpenSetting {
+  enabled: boolean
+  media: 'screen' | 'matte' | 'glossy'
+  amount: 'low' | 'standard' | 'high'
+}
+
 export interface ExportSettings {
   /** null exports beside each original. */
   folder: string | null
@@ -60,6 +67,13 @@ export interface ExportSettings {
   blackPointCompensation: boolean
   resize: { mode: ResizeMode; value: number; enlarge: boolean }
   metadata: MetadataPolicy
+  /** all: the photo's metadata plus its title, caption, keywords; copyrightOnly: only the copyright. */
+  metaMode: 'all' | 'copyrightOnly'
+  /** Strip GPS from what is written. */
+  removeLocation: boolean
+  /** Written when the photo has no copyright of its own ("" writes nothing). */
+  copyright: string
+  outputSharpen: OutputSharpenSetting
   dither: boolean
   hdr: {
     /** sdr: an SDR file (HDR sources are tone mapped); keep: stay PQ/HLG; expand: SDR → PQ/HLG. */
@@ -102,6 +116,10 @@ export function defaultExportSettings(): ExportSettings {
     blackPointCompensation: true,
     resize: { mode: 'none', value: 2048, enlarge: false },
     metadata: { exif: true, icc: true, xmp: true, iptc: true },
+    metaMode: 'all',
+    removeLocation: false,
+    copyright: '',
+    outputSharpen: { enabled: false, media: 'screen', amount: 'standard' },
     dither: true,
     hdr: {
       mode: 'sdr',
