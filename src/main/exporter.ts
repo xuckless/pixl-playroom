@@ -30,6 +30,7 @@ import { exists } from './exists'
 import type { EngineClient } from './engine/client'
 import type { Library } from './library'
 import { paths } from './paths'
+import { ensureProxies } from './proxy'
 import type { DevelopSessions } from './render'
 import {
   BACKGROUND_THREADS,
@@ -109,12 +110,16 @@ export class Exporter {
     const info = await this.library.probe(row)
     const raw = info.input === 'Raw' ? RAW_DEVELOP : null
     const srcOrientation = sourceOrientation(info, raw)
-    // The full-resolution frame, upright: probe's size turned by the file's
-    // orientation (a RAW's developed frame is a little smaller than its
-    // mosaic; the crop is normalised, so only the aspect has to be right).
+    // The full-resolution frame, upright. A RAW's developed frame is smaller
+    // than its mosaic and not always the same shape (a Canon's masked borders
+    // make 6288×4056 of a 6000×4000 picture), and an exact resize takes the
+    // shape as given, so a RAW's comes from the engine's own report on the
+    // proxies (made once, cached); anything else is probe's size, turned by
+    // the file's orientation.
     const swap = ['Transpose', 'Rotate90', 'Transverse', 'Rotate270'].includes(srcOrientation)
-    const frameW = swap ? info.height : info.width
-    const frameH = swap ? info.width : info.height
+    const developed = raw ? await ensureProxies(this.engine, row, info) : null
+    const frameW = developed?.frameWidth ?? (swap ? info.height : info.width)
+    const frameH = developed?.frameHeight ?? (swap ? info.width : info.height)
     const { user, width, height } = orientedFrame(recipe, frameW, frameH)
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
