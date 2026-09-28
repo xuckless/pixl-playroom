@@ -102,25 +102,20 @@ pairs() {
     } })()' "$SCRATCH/raws" "${PAIRS[@]}")
 }
 
-# App screenshots (placeholders until the final UI lands): drive the built app
-# on the same photos, at 1600×1000 (16:10).
+# App screenshots: scripts/site-shots.mjs copies a few dozen photos from the
+# card into three folders, rates, labels, stacks, keywords and collects them in
+# the built app, then captures the Library, Develop (a colour-range mask; the
+# colour mixer's Point tab) and the Enhance dialog at twice 1600×1000 (16:10).
+# This engine build has no upscaler, so the script removes Enhance's error line
+# (and the button's disabled look) before that capture.
 shots() {
-  mkdir -p "$SITE/shots" "$SCRATCH/raws" "$SCRATCH/shots"
-  local n
-  for n in "${PAIRS[@]}"; do
-    cp "$CARD_DIR/IMG_$n.CR2" "$CARD_DIR/IMG_$n.CR2.playroom.json" "$SCRATCH/raws/"
-  done
-  local drive=(env SCREENSHOT_DIR="$SCRATCH/shots" node "$ROOT/scripts/drive.mjs")
-  printf '%s\n' launch "folder $SCRATCH/raws" 'wait 45000' 'ss library' 'open IMG_3273.CR2' \
-    'panel masks' 'wait 1500' 'click-text Mask 1' 'wait 2500' 'ss develop-masks' quit |
-    PLAYROOM_USER_DATA="$SCRATCH/p1" "${drive[@]}"
-  printf '%s\n' launch "folder $SCRATCH/raws" 'open IMG_3218.CR2' 'panel grade' 'wait 2500' 'ss develop' \
-    "eval window.__playroom.useLibrary.getState().setDialog('enhance')" 'wait 2500' \
-    "eval [...document.querySelectorAll('p.error')].map(e => (e.remove(), 'x')).length" 'wait 800' 'ss enhance' quit |
-    PLAYROOM_USER_DATA="$SCRATCH/p2" "${drive[@]}"
+  mkdir -p "$SITE/shots" "$SCRATCH/shots"
+  PLAYROOM_USER_DATA="$SCRATCH/shots-profile" \
+    node "$ROOT/scripts/site-shots.mjs" "$CARD_DIR" "$SCRATCH/Pictures" "$SCRATCH/shots"
   local s
   for s in library develop develop-masks enhance; do
-    magick "$SCRATCH/shots/$s.png" -resize 1600x1000 -quality 82 "$SITE/shots/$s.webp"
+    magick "$SCRATCH/shots/$s.png" -filter Lanczos -resize 1600x1000 -strip -quality 82 \
+      "$SITE/shots/$s.webp"
   done
 }
 
