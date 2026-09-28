@@ -75,6 +75,11 @@ interface UiState {
   railOpen: boolean
   /** The filmstrip under the loupe; hidden until asked for. */
   filmstrip: boolean
+  /** The library's sources down the left, and its info drawer on the right. */
+  librarySidebar: boolean
+  libraryInfo: boolean
+  setLibrarySidebar(open: boolean): void
+  setLibraryInfo(open: boolean): void
   cropGuide: CropGuide
   maskOverlay: MaskOverlaySettings
   setMaskOverlay(p: Partial<MaskOverlaySettings>): void
@@ -111,6 +116,10 @@ export const useUi = create<UiState>()(
       rail: 'presets',
       railOpen: true,
       filmstrip: false,
+      librarySidebar: true,
+      libraryInfo: false,
+      setLibrarySidebar: (librarySidebar) => set({ librarySidebar }),
+      setLibraryInfo: (libraryInfo) => set({ libraryInfo }),
       cropGuide: 'thirds',
       maskOverlay: { mode: 'color', hue: 350, opacity: 45, showAll: false, pins: 'auto' },
       setMaskOverlay: (p) => set((s) => ({ maskOverlay: { ...s.maskOverlay, ...p } })),
