@@ -2,6 +2,10 @@
 import type { MaskComponentSetting } from '../../../shared/recipe'
 import { HSL_BANDS, HSL_BAND_CENTRES, newId, type HslBand } from '../../../shared/recipe'
 
+/** The shortcut modifier as the platform writes it: ⌘ on a Mac, Ctrl+ elsewhere. */
+export const MOD =
+  typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+'
+
 export const LABEL_COLOURS: Record<string, string> = {
   red: '#d9534f',
   yellow: '#e8c547',

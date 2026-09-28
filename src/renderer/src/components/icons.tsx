@@ -222,7 +222,44 @@ const PATHS = {
       <circle cx="12" cy="12" r="3" />
       <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2" />
     </>
-  )
+  ),
+  /** A manual collection: a list. */
+  collection: (
+    <>
+      <rect x="4" y="4" width="16" height="16" />
+      <path d="M8 9h8M8 12h8M8 15h5" />
+    </>
+  ),
+  /** A smart collection: a spark. */
+  smart: (
+    <path d="M12 3c.8 4.6 2.4 6.2 7 7-4.6.8-6.2 2.4-7 7-.8-4.6-2.4-6.2-7-7 4.6-.8 6.2-2.4 7-7z" />
+  ),
+  /** A collection set: collections filed together. */
+  set: (
+    <>
+      <path d="M3 8h18v12H3z" />
+      <path d="M5 5h14M7 2h10" />
+    </>
+  ),
+  tag: (
+    <>
+      <path d="M3 3h8l10 10-8 8L3 11z" />
+      <circle cx="7.5" cy="7.5" r="1.5" />
+    </>
+  ),
+  stack: (
+    <>
+      <rect x="3" y="8" width="13" height="13" />
+      <path d="M7 5h12v12M10 2h11v11" />
+    </>
+  ),
+  sidebar: (
+    <>
+      <rect x="3" y="4" width="18" height="16" />
+      <path d="M9 4v16" />
+    </>
+  ),
+  filter: <path d="M3 5h18l-7 8v6l-4 2v-8z" />
 } as const
 
 export type IconName = keyof typeof PATHS
