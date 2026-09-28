@@ -1,6 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyFilter, DEFAULT_FILTER, extraFilterCount, filterRules } from '../src/shared/filter'
+import {
+  applyFilter,
+  clearedFilters,
+  DEFAULT_FILTER,
+  extraFilterCount,
+  filterRules
+} from '../src/shared/filter'
 import type { LibraryItem } from '../src/shared/ipc'
 import { item } from './items'
 
@@ -98,10 +104,34 @@ test('camera, lens, kind, ranges, dates and keyword', () => {
   assert.deepEqual(run({ keyword: 'Places|Can' }), [])
 })
 
-test('extraFilterCount counts the popover’s filters only', () => {
-  assert.equal(extraFilterCount({ ...DEFAULT_FILTER, text: 'x', minRating: 3 }), 0)
+test('extraFilterCount counts the popover’s filters, not the search text', () => {
+  assert.equal(extraFilterCount(DEFAULT_FILTER), 0)
+  assert.equal(extraFilterCount({ ...DEFAULT_FILTER, text: 'x' }), 0)
+  assert.equal(
+    extraFilterCount({
+      ...DEFAULT_FILTER,
+      minRating: 3,
+      flag: 'all',
+      label: 'red',
+      edited: 'edited'
+    }),
+    4
+  )
   assert.equal(
     extraFilterCount({ ...DEFAULT_FILTER, kind: 'raw', iso: [1, 2], to: '2026-01-01' }),
     3
   )
+})
+
+test('clearedFilters resets everything but the search text', () => {
+  const f = {
+    ...DEFAULT_FILTER,
+    text: 'lake',
+    minRating: 4,
+    flag: 'pick' as const,
+    camera: 'Canon'
+  }
+  const cleared = { ...f, ...clearedFilters() }
+  assert.equal(cleared.text, 'lake')
+  assert.equal(extraFilterCount(cleared), 0)
 })

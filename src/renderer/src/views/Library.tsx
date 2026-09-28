@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef } from 'react'
-import type { ColorLabel, DuplicateGroup, LibraryItem } from '../../../shared/ipc'
+import type { DuplicateGroup, LibraryItem } from '../../../shared/ipc'
 import { LiquidGlass } from '../components/glass/LiquidGlass'
 import { Icon } from '../components/icons'
 import { Stars } from '../components/ui'
@@ -10,7 +10,7 @@ import { folderName, KEYS_MIME, sourceTrail } from '../lib/sources'
 import { useThumbFirst } from '../lib/thumbs'
 import { IdentityBar } from '../shell/IdentityBar'
 import { useDevelop } from '../state/develop'
-import { useLibrary, useTargets, useVisible, type FlagFilter, type SortKey } from '../state/library'
+import { useLibrary, useTargets, useVisible, type SortKey } from '../state/library'
 import { useUi } from '../state/ui'
 import { DuplicateControls, FilterButton, OrganiseMenu } from './library/ToolbarMenus'
 
@@ -237,51 +237,14 @@ export function Toolbar(): React.JSX.Element {
         />
       </label>
       <FilterButton />
-      <select
-        value={filter.minRating}
-        onChange={(e) => setFilter({ minRating: Number(e.target.value) })}
-        title="Minimum rating"
-      >
-        {[0, 1, 2, 3, 4, 5].map((n) => (
-          <option key={n} value={n}>
-            {n === 0 ? 'Any rating' : `≥ ${'★'.repeat(n)}`}
-          </option>
-        ))}
-      </select>
-      <select
-        value={filter.flag}
-        onChange={(e) => setFilter({ flag: e.target.value as FlagFilter })}
-        title="Flag"
-      >
-        <option value="notRejected">Hide rejected</option>
-        <option value="all">All flags</option>
-        <option value="pick">Picks</option>
-        <option value="unflagged">Unflagged</option>
-        <option value="reject">Rejected</option>
-      </select>
-      <select
-        value={filter.label ?? 'all'}
-        onChange={(e) => setFilter({ label: e.target.value as ColorLabel | 'all' })}
-        title="Colour label"
-      >
-        <option value="all">Any label</option>
-        {Object.keys(LABEL_COLOURS).map((l) => (
-          <option key={l} value={l}>
-            {l[0].toUpperCase() + l.slice(1)}
-          </option>
-        ))}
-      </select>
-      <select
-        value={filter.edited}
-        onChange={(e) => setFilter({ edited: e.target.value as 'all' | 'edited' | 'unedited' })}
-        title="Edited"
-      >
-        <option value="all">Edited or not</option>
-        <option value="edited">Edited</option>
-        <option value="unedited">Unedited</option>
-      </select>
       {!dupes && (
-        <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} title="Sort by">
+        <select
+          className="sort-select"
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortKey)}
+          title="Sort by"
+          aria-label="Sort by"
+        >
           <option value="name">Name</option>
           <option value="captured">Capture time</option>
           <option value="rating">Rating</option>

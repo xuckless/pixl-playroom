@@ -2,16 +2,13 @@
   gap: 8px;
   min-width: 0;
 }
-/* A narrow window squeezes the filters, never the actions at the end. */
-.library-bar select {
-  flex: 0 1 auto;
-  min-width: 64px;
-  max-width: 150px;
-  text-overflow: ellipsis;
-}
-.library-bar select.recent {
-  min-width: 84px;
-  max-width: 200px;
+/* The quick filters live in the Filters popover; the bar keeps the search
+   and the sort, which is only as wide as the order it names. */
+.library-bar select.sort-select {
+  flex: none;
+  field-sizing: content;
+  min-width: 0;
+  max-width: none;
 }
 .library-bar .size-range,
 .library-bar .count,
@@ -25,7 +22,7 @@
   gap: 8px;
   height: 32px;
   padding: 0 10px;
-  flex: 0 1 250px;
+  flex: 0 1 320px;
   min-width: 96px;
   background: var(--s1);
   border: 1px solid var(--hair2);
@@ -526,14 +523,14 @@
 
 /* ── toolbar pop-overs ─────────────────────────────────────────── */
 .filter-pop {
-  width: 340px;
+  width: 360px;
   display: flex;
   flex-direction: column;
   padding: 10px 14px 12px;
 }
 .filter-pop .field {
   min-height: 36px;
-  grid-template-columns: 88px minmax(0, 1fr);
+  grid-template-columns: 84px minmax(0, 1fr);
 }
 .filter-pop select {
   width: 100%;
@@ -541,6 +538,63 @@
 }
 .filter-pop .seg {
   justify-self: start;
+}
+.rating-seg button {
+  padding: 0 7px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.seg-star {
+  margin-left: 2px;
+  font-size: 10px;
+  color: var(--acc);
+}
+.label-pick {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.label-pick > button.sm {
+  margin-right: 4px;
+}
+.label-pick .swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-color: transparent;
+  background: transparent;
+}
+.label-pick .swatch i {
+  width: 10px;
+  height: 10px;
+  background: currentColor;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  opacity: 0.75;
+  transition:
+    opacity 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+.label-pick .swatch:hover:not(:disabled) i,
+.label-pick .swatch.on i {
+  opacity: 1;
+}
+.label-pick .swatch.on {
+  border-color: var(--hair3);
+}
+.label-pick .swatch.on i {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 10px currentColor;
+}
+.label-pick .swatch.on::after {
+  display: none;
+}
+.pop-rule {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--hair);
 }
 .range-pair {
   display: flex;
@@ -979,23 +1033,20 @@ select.rule-value {
   font-size: 20px;
 }
 
-/* The bar keeps its filters readable as the window narrows: the size
-   slider goes first, then the key hints, then the action labels. */
-@media (max-width: 1700px) {
+/* As the window narrows the size slider goes first, then the key hints,
+   then the action labels; the search and the sort stay whole. */
+@media (max-width: 1400px) {
   .library-bar .size-range,
   .library-bar .kbd {
     display: none;
   }
-  .library-bar .search-field {
-    flex-basis: 210px;
-  }
 }
-@media (max-width: 1500px) {
+@media (max-width: 1100px) {
   .library-bar .lbl {
     display: none;
   }
 }
-@media (max-width: 1800px) {
+@media (max-width: 1500px) {
   .library-bar.dupes .lbl {
     display: none;
   }
