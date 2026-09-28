@@ -10,10 +10,12 @@ import type {
   Depth,
   Encode,
   GamutMap,
+  Grade,
   MetadataPolicy,
   PngCompression,
   RenderingIntent,
   Resize,
+  Sharpen,
   Subsampling,
   TiffCompression,
   ToneMapOperator
@@ -287,6 +289,69 @@ export function buildColor(
   }
   return {
     ConvertTo: { to, intent: s.intent, black_point_compensation: s.blackPointCompensation }
+  }
+}
+
+/**
+ * Output sharpening's radius in output pixels: a screen shows every pixel,
+ * gloss keeps a print's edges, and matte paper softens them the most.
+ */
+const OUTPUT_RADIUS: Record<OutputSharpenSetting['media'], number> = {
+  screen: 0.6,
+  glossy: 1,
+  matte: 1.3
+}
+const OUTPUT_AMOUNT: Record<OutputSharpenSetting['amount'], number> = {
+  low: 0.45,
+  standard: 0.75,
+  high: 1.1
+}
+
+/**
+ * The sharpening applied after the resize, in engine units (the recipe's
+ * default RAW sharpening compiles to amount 0.8, radius 1), or null when
+ * there is none: switched off, or an HDR delivery, whose values above SDR
+ * white a display-referred sharpen would clip.
+ */
+export function outputSharpen(s: ExportSettings): Sharpen | null {
+  const o = s.outputSharpen
+  if (!o?.enabled || s.hdr.mode === 'keep' || s.hdr.mode === 'expand') return null
+  const matte = o.media === 'matte'
+  return {
+    amount: Math.round(OUTPUT_AMOUNT[o.amount] * (matte ? 1.2 : 1) * 1e4) / 1e4,
+    radius: OUTPUT_RADIUS[o.media],
+    detail: matte ? 0.4 : 0.3,
+    masking: 0
+  }
+}
+
+/**
+ * The grade of output sharpening's own pass: the one op, in the export's
+ * colour space as encoded, so it acts on the values the file will hold.
+ */
+export function outputSharpenGrade(s: ExportSettings, sharpen: Sharpen): Grade {
+  return {
+    layers: [
+      {
+        name: 'output-sharpen',
+        enabled: true,
+        opacity: 1,
+        mask: null,
+        blend: { mode: 'Normal', space: 'LinearWorking' },
+        stages: [
+          {
+            space: {
+              Encoded: {
+                space: s.colorSpace,
+                intent: s.intent,
+                black_point_compensation: s.blackPointCompensation
+              }
+            },
+            ops: [{ Sharpen: sharpen }]
+          }
+        ]
+      }
+    ]
   }
 }
 

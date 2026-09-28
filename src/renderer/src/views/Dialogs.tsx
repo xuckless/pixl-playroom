@@ -88,6 +88,8 @@ export function ExportDialog(): React.JSX.Element {
   }
   const running = progress !== null && !progress.finished
   const depths = depthsFor(s.format)
+  // As `outputSharpen` decides: HDR delivery is never sharpened.
+  const hdrOut = s.hdr.mode !== 'sdr'
   return (
     <Modal
       title={`Export ${targets.length} photo${targets.length === 1 ? '' : 's'}`}
@@ -449,17 +451,95 @@ export function ExportDialog(): React.JSX.Element {
           </label>
         </fieldset>
         <fieldset>
+          <legend>Output sharpening</legend>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={s.outputSharpen.enabled}
+              disabled={hdrOut}
+              onChange={(e) =>
+                up('outputSharpen', { ...s.outputSharpen, enabled: e.target.checked })
+              }
+            />{' '}
+            Sharpen for output
+          </label>
+          <Field label="Media">
+            <select
+              value={s.outputSharpen.media}
+              disabled={hdrOut || !s.outputSharpen.enabled}
+              onChange={(e) =>
+                up('outputSharpen', {
+                  ...s.outputSharpen,
+                  media: e.target.value as ExportSettings['outputSharpen']['media']
+                })
+              }
+            >
+              <option value="screen">Screen</option>
+              <option value="matte">Matte paper</option>
+              <option value="glossy">Glossy paper</option>
+            </select>
+          </Field>
+          <Field label="Amount">
+            <select
+              value={s.outputSharpen.amount}
+              disabled={hdrOut || !s.outputSharpen.enabled}
+              onChange={(e) =>
+                up('outputSharpen', {
+                  ...s.outputSharpen,
+                  amount: e.target.value as ExportSettings['outputSharpen']['amount']
+                })
+              }
+            >
+              <option value="low">Low</option>
+              <option value="standard">Standard</option>
+              <option value="high">High</option>
+            </select>
+          </Field>
+          <p className="muted small">
+            {hdrOut
+              ? 'Not applied to HDR output.'
+              : 'Applied after the resize, at the size the picture will be seen.'}
+          </p>
+        </fieldset>
+        <fieldset>
           <legend>Metadata</legend>
+          <Field label="Include">
+            <select
+              value={s.metaMode}
+              onChange={(e) => up('metaMode', e.target.value as ExportSettings['metaMode'])}
+            >
+              <option value="all">All</option>
+              <option value="copyrightOnly">Copyright only</option>
+            </select>
+          </Field>
           {(['exif', 'icc', 'xmp', 'iptc'] as const).map((k) => (
             <label key={k} className="check">
               <input
                 type="checkbox"
                 checked={s.metadata[k]}
+                // Copyright only keeps the profile and writes the copyright alone.
+                disabled={s.metaMode === 'copyrightOnly' && k !== 'icc'}
                 onChange={(e) => up('metadata', { ...s.metadata, [k]: e.target.checked })}
               />{' '}
               {k.toUpperCase()}
             </label>
           ))}
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={s.removeLocation}
+              onChange={(e) => up('removeLocation', e.target.checked)}
+            />{' '}
+            Remove location
+          </label>
+          <Field label="Copyright">
+            <input
+              value={s.copyright}
+              placeholder="Used when a photo has none"
+              onChange={(e) => up('copyright', e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+          </Field>
           <p className="muted small">
             Blocks are copied verbatim or not at all; the engine never edits them.
           </p>
