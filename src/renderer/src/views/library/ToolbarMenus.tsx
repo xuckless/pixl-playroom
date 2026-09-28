@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState } from 'react'
-import { extraFilterCount, type Filter } from '../../../../shared/filter'
+import { clearedFilters, extraFilterCount, type FlagFilter } from '../../../../shared/filter'
+import type { ColorLabel } from '../../../../shared/ipc'
 import { keywordLabel, keywordPaths } from '../../../../shared/keywords'
 import { cameraName } from '../../../../shared/smart'
 import { Icon } from '../../components/icons'
 import { Menu, Popover, type MenuItem } from '../../components/Popover'
-import { MOD } from '../../lib/helpers'
+import { LABEL_COLOURS, MOD } from '../../lib/helpers'
 import { useLibrary, useTargets } from '../../state/library'
 
 const stop = (e: React.KeyboardEvent): void => e.stopPropagation()
@@ -66,21 +67,20 @@ function Range({
   )
 }
 
-const CLEARED: Partial<Filter> = {
-  camera: '',
-  lens: '',
-  kind: 'all',
-  iso: null,
-  focal: null,
-  from: '',
-  to: '',
-  keyword: ''
-}
+const FLAGS: [FlagFilter, string][] = [
+  ['notRejected', 'Hide rejected'],
+  ['all', 'All photos'],
+  ['pick', 'Picks'],
+  ['unflagged', 'Unflagged'],
+  ['reject', 'Rejected only']
+]
+
+const cap = (s: string): string => s[0].toUpperCase() + s.slice(1)
 
 /**
- * The filters beyond the bar's own: camera, lens, file kind, ISO and focal
- * ranges, capture dates and a keyword. The button counts those narrowing
- * the view.
+ * Every filter but the search: rating, flag, colour label and edits first
+ * (the quick ones), then camera, lens, file kind, ISO and focal ranges,
+ * capture dates and a keyword. The button counts those narrowing the view.
  */
 export function FilterButton(): React.JSX.Element {
   const [open, setOpen] = useState(false)
@@ -90,7 +90,8 @@ export function FilterButton(): React.JSX.Element {
     <span className="menu-anchor">
       <button
         className={`lg${n ? ' on' : ''}`}
-        title="More filters: camera, lens, kind, ISO, focal length, date, keyword"
+        title="Filter by rating, flag, label, edits, camera, lens, kind, ISO, focal length, date or keyword"
+        aria-label={n ? `Filters, ${n} on` : 'Filters'}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
@@ -115,6 +116,90 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
     v && !list.includes(v) ? [v, ...list] : list
   return (
     <Popover onClose={onClose} className="filter-pop">
+      <div className="field">
+        <span>Rating</span>
+        <div className="seg rating-seg" role="group" aria-label="Minimum rating">
+          {[0, 1, 2, 3, 4, 5].map((r) => (
+            <button
+              key={r}
+              className={filter.minRating === r ? 'on' : ''}
+              aria-pressed={filter.minRating === r}
+              title={r === 0 ? 'Any rating' : `${r} star${r === 1 ? '' : 's'} or more`}
+              onClick={() => setFilter({ minRating: r })}
+            >
+              {r === 0 ? (
+                'Any'
+              ) : (
+                <>
+                  {r}
+                  <span className="seg-star">★</span>
+                </>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <span>Flag</span>
+        <select
+          value={filter.flag}
+          onChange={(e) => setFilter({ flag: e.target.value as FlagFilter })}
+          aria-label="Flag"
+        >
+          {FLAGS.map(([v, label]) => (
+            <option key={v} value={v}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <span>Label</span>
+        <div className="label-pick" role="group" aria-label="Colour label">
+          <button
+            className={`sm${filter.label === 'all' ? ' on' : ''}`}
+            aria-pressed={filter.label === 'all'}
+            onClick={() => setFilter({ label: 'all' })}
+          >
+            Any
+          </button>
+          {Object.keys(LABEL_COLOURS).map((l) => (
+            <button
+              key={l}
+              className={`swatch${filter.label === l ? ' on' : ''}`}
+              aria-pressed={filter.label === l}
+              aria-label={cap(l)}
+              title={cap(l)}
+              style={{ color: LABEL_COLOURS[l] }}
+              onClick={() => setFilter({ label: filter.label === l ? 'all' : (l as ColorLabel) })}
+            >
+              <i />
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <span>Edits</span>
+        <div className="seg" role="group" aria-label="Edited">
+          {(
+            [
+              ['all', 'Any'],
+              ['edited', 'Edited'],
+              ['unedited', 'Unedited']
+            ] as const
+          ).map(([v, label]) => (
+            <button
+              key={v}
+              className={filter.edited === v ? 'on' : ''}
+              aria-pressed={filter.edited === v}
+              onClick={() => setFilter({ edited: v })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="pop-rule" />
       <div className="field">
         <span>Camera</span>
         <select value={filter.camera} onChange={(e) => setFilter({ camera: e.target.value })}>
@@ -197,7 +282,7 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
       </div>
       <div className="row between pop-foot">
         <span className="muted small">Search also finds titles, captions and keywords.</span>
-        <button className="sm" onClick={() => setFilter(CLEARED)}>
+        <button className="sm" onClick={() => setFilter(clearedFilters())}>
           Clear
         </button>
       </div>

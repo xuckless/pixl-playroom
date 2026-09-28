@@ -80,9 +80,30 @@ export function applyFilter(items: LibraryItem[], f: Filter, now = new Date()): 
   return items.filter((it) => matchSmart(it, g, ctx))
 }
 
-/** How many of the popover's filters (beyond the bar's own) are narrowing the view. */
+/**
+ * How many of the Filters popover's filters (everything but the search text)
+ * differ from the defaults. Showing rejects counts too: it widens the view,
+ * but it is still a choice someone made and may want to find again.
+ */
 export function extraFilterCount(f: Filter): number {
-  return [f.camera, f.lens, f.kind !== 'all', f.iso, f.focal, f.from || f.to, f.keyword].filter(
-    Boolean
-  ).length
+  return [
+    f.minRating > 0,
+    f.flag !== DEFAULT_FILTER.flag,
+    f.label !== 'all',
+    f.edited !== 'all',
+    f.camera,
+    f.lens,
+    f.kind !== 'all',
+    f.iso,
+    f.focal,
+    f.from || f.to,
+    f.keyword
+  ].filter(Boolean).length
+}
+
+/** The popover's filters back at their defaults; the search text is left alone. */
+export function clearedFilters(): Partial<Filter> {
+  const rest: Partial<Filter> = { ...DEFAULT_FILTER }
+  delete rest.text
+  return rest
 }
