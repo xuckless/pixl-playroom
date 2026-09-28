@@ -42,6 +42,27 @@ export interface BandSetting {
   luminance: number
 }
 
+/**
+ * A colour picked off the photo and moved on its own (the colour mixer's
+ * Point tab): the sample in look-space HSV, the shift, and how wide a range
+ * of similar colours follows it.
+ */
+export interface PointColorSetting {
+  id: string
+  /** The sampled colour: hue 0…360, saturation and luminance 0…1. */
+  hue: number
+  saturation: number
+  luminance: number
+  /** −100…100 */
+  shiftHue: number
+  shiftSat: number
+  shiftLum: number
+  /** 0…100: how far from the sample the shift reaches. */
+  range: number
+}
+
+export const MAX_POINT_COLORS = 8
+
 export type ProfileRef =
   | { kind: 'neutral' }
   | { kind: 'standard' }
@@ -300,6 +321,7 @@ export interface Recipe {
   toneCurve: ToneCurveSetting
   hsl: Record<HslBand, BandSetting>
   bwMix: Record<HslBand, number>
+  pointColors: PointColorSetting[]
   colorGrade: ColorGradeSetting
   detail: DetailSetting
   effects: EffectsSetting
@@ -374,6 +396,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     },
     hsl: zeroBands(),
     bwMix: zeroMix(),
+    pointColors: [],
     colorGrade: {
       shadows: zeroWheel(),
       midtones: zeroWheel(),
@@ -455,7 +478,26 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
       .map(normaliseComponent)
       .filter((c): c is MaskComponentSetting => c !== null)
   }))
+  r.pointColors = (Array.isArray(r.pointColors) ? (r.pointColors as unknown[]) : [])
+    .map(normalisePointColor)
+    .filter((p): p is PointColorSetting => p !== null)
+    .slice(0, MAX_POINT_COLORS)
   return r
+}
+
+function normalisePointColor(value: unknown): PointColorSetting | null {
+  if (!isObject(value)) return null
+  const v = value
+  return {
+    id: typeof v.id === 'string' && v.id ? v.id : newId(),
+    hue: ((num(v.hue, 0) % 360) + 360) % 360,
+    saturation: num(v.saturation, 0, 0, 1),
+    luminance: num(v.luminance, 0.5, 0, 1),
+    shiftHue: num(v.shiftHue, 0, -100, 100),
+    shiftSat: num(v.shiftSat, 0, -100, 100),
+    shiftLum: num(v.shiftLum, 0, -100, 100),
+    range: num(v.range, 50, 0, 100)
+  }
 }
 
 function num(v: unknown, def: number, lo = -Infinity, hi = Infinity): number {
@@ -602,6 +644,7 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
       case 'hsl':
         r.hsl = f.hsl
         r.bwMix = f.bwMix
+        r.pointColors = f.pointColors
         break
       case 'colorGrade':
         r.colorGrade = f.colorGrade

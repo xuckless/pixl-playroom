@@ -2,16 +2,13 @@
   gap: 8px;
   min-width: 0;
 }
-/* A narrow window squeezes the filters, never the actions at the end. */
-.library-bar select {
-  flex: 0 1 auto;
-  min-width: 64px;
-  max-width: 150px;
-  text-overflow: ellipsis;
-}
-.library-bar select.recent {
-  min-width: 84px;
-  max-width: 200px;
+/* The quick filters live in the Filters popover; the bar keeps the search
+   and the sort, which is only as wide as the order it names. */
+.library-bar select.sort-select {
+  flex: none;
+  field-sizing: content;
+  min-width: 0;
+  max-width: none;
 }
 .library-bar .size-range,
 .library-bar .count,
@@ -19,23 +16,13 @@
 .library-bar > .primary {
   flex: none;
 }
-@media (max-width: 1280px) {
-  .library-bar .size-range {
-    display: none;
-  }
-}
-@media (max-width: 1120px) {
-  .library-bar .kbd {
-    display: none;
-  }
-}
 .search-field {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   height: 32px;
   padding: 0 10px;
-  flex: 0 1 250px;
+  flex: 0 1 320px;
   min-width: 96px;
   background: var(--s1);
   border: 1px solid var(--hair2);
@@ -297,4 +284,770 @@
   flex-direction: column;
   gap: 2px;
   margin: -8px -10px 0;
+}
+
+/* ── the library's body: sources, grid, info ───────────────────── */
+.library-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.library-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.menu-anchor {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.filter-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 10px;
+  color: var(--acc-ink);
+  background: var(--acc);
+  border-radius: 8px;
+}
+.trail {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+}
+.trail > span {
+  white-space: nowrap;
+}
+.trail .here {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trail .sep {
+  margin: 0 7px;
+  color: var(--muted);
+}
+
+/* ── sidebar ───────────────────────────────────────────────────── */
+.lib-sidebar {
+  --lib-side: 252px;
+  width: 0;
+  flex: none;
+  overflow: hidden;
+  background: var(--s1);
+  opacity: 0;
+  transition:
+    width var(--dur-panel) var(--spring),
+    opacity 0.35s var(--ease);
+}
+.lib-sidebar.open {
+  width: var(--lib-side);
+  opacity: 1;
+  border-right: 1px solid transparent;
+  border-image: var(--hl-y) 1;
+}
+.lib-sidebar-inner {
+  width: var(--lib-side);
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 10px 24px 12px;
+}
+.lib-sidebar .section > header {
+  min-height: 30px;
+  margin-top: 8px;
+}
+.lib-sidebar .section > header .right button.icon {
+  width: 22px;
+  height: 22px;
+}
+.lib-sidebar .section > header .right svg {
+  width: 13px;
+  height: 13px;
+}
+.src-add {
+  position: relative;
+  display: inline-flex;
+}
+/* Each section's body is its own stacking context (its entrance keeps a
+   transform): the one with a menu open rises above the ones after it. */
+.lib-sidebar .section:has(.popover) {
+  z-index: 5;
+}
+/* The sidebar is not a backdrop the glass can bend, so its menus are solid. */
+.lib-sidebar .popover.liquid,
+.lib-sidebar .popover.liquid.refracting {
+  background: rgba(12, 12, 16, 0.97);
+}
+.src-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0 4px;
+}
+.src-row {
+  --depth: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 4px 0 calc(2px + var(--depth) * 14px);
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  color: var(--text2);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  transition:
+    background 0.25s,
+    color 0.2s,
+    border-color 0.25s;
+}
+.src-row:hover,
+.src-row:focus-visible,
+.src-row.menu-open {
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+}
+.src-row:focus-visible {
+  border-color: var(--acc-a35);
+}
+.src-row.on {
+  color: var(--text);
+  border-color: rgba(157, 139, 234, 0.35);
+  background: linear-gradient(90deg, rgba(157, 139, 234, 0.16), transparent);
+}
+.src-row.drop {
+  border: 1px dashed var(--acc);
+  background: var(--acc-a20);
+  color: #fff;
+}
+.src-caret {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.src-caret svg {
+  width: 9px;
+  height: 9px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  transition:
+    transform var(--dur-toggle) var(--spring),
+    stroke 0.2s;
+}
+.src-caret.open svg {
+  transform: rotate(90deg);
+}
+.src-caret:hover svg {
+  stroke: var(--acc);
+}
+.src-row .src-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  transition: color 0.2s;
+}
+.src-row:hover .src-icon {
+  color: var(--text2);
+}
+.src-row.on .src-icon {
+  color: var(--acc);
+}
+.src-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.src-count {
+  flex: none;
+  min-width: 18px;
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.src-row button.icon {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  opacity: 0;
+  color: var(--muted);
+}
+.src-row button.icon svg {
+  width: 12px;
+  height: 12px;
+}
+.src-row:hover button.icon,
+.src-row.menu-open button.icon,
+.src-row button.icon:focus-visible {
+  opacity: 1;
+}
+.src-row button.src-pin.pinned {
+  opacity: 1;
+  color: var(--acc);
+}
+.src-row button.icon:hover:not(:disabled) {
+  color: var(--text);
+  transform: none;
+}
+.src-sep {
+  height: 1px;
+  margin: 4px 4px;
+  background: var(--hair);
+}
+.src-hint {
+  margin: 4px 4px 6px;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.src-empty {
+  align-self: flex-start;
+}
+
+/* ── toolbar pop-overs ─────────────────────────────────────────── */
+.filter-pop {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px 12px;
+}
+.filter-pop .field {
+  min-height: 36px;
+  grid-template-columns: 84px minmax(0, 1fr);
+}
+.filter-pop select {
+  width: 100%;
+  max-width: none;
+}
+.filter-pop .seg {
+  justify-self: start;
+}
+.rating-seg button {
+  padding: 0 7px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.seg-star {
+  margin-left: 2px;
+  font-size: 10px;
+  color: var(--acc);
+}
+.label-pick {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.label-pick > button.sm {
+  margin-right: 4px;
+}
+.label-pick .swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-color: transparent;
+  background: transparent;
+}
+.label-pick .swatch i {
+  width: 10px;
+  height: 10px;
+  background: currentColor;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  opacity: 0.75;
+  transition:
+    opacity 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+.label-pick .swatch:hover:not(:disabled) i,
+.label-pick .swatch.on i {
+  opacity: 1;
+}
+.label-pick .swatch.on {
+  border-color: var(--hair3);
+}
+.label-pick .swatch.on i {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 10px currentColor;
+}
+.label-pick .swatch.on::after {
+  display: none;
+}
+.pop-rule {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--hair);
+}
+.range-pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.range-pair input {
+  flex: 1;
+  min-width: 0;
+  width: 0;
+}
+.range-pair input[type='date'] {
+  font-size: 11.5px;
+  padding: 0 6px;
+}
+.pop-foot {
+  margin: 8px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--hair);
+}
+.autostack-pop {
+  width: 290px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+}
+.autostack-pop p {
+  margin: 0;
+  line-height: 1.5;
+  font-family: var(--font-body);
+}
+.autostack-pop input {
+  width: 72px;
+}
+.dup-range .bar-track {
+  width: 110px;
+}
+
+/* ── tiles: folders, stacks, offline ───────────────────────────── */
+.thumb-names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.thumb-folder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-family: var(--font-body);
+  color: var(--muted);
+}
+.thumb.offline .thumb-img img {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+.offline-badge {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  color: var(--warn);
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(232, 197, 107, 0.45);
+  backdrop-filter: blur(6px);
+}
+.stack-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  height: 22px;
+  padding: 0 7px;
+  gap: 5px;
+  font-size: 11px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border-color: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(6px);
+}
+.stack-badge svg {
+  width: 12px;
+  height: 12px;
+}
+.stack-badge.open {
+  color: var(--acc);
+  border-color: var(--acc-a55);
+  box-shadow: 0 0 14px -4px var(--glow);
+}
+.thumb-img:has(.stack-badge) .edited {
+  right: 62px;
+  bottom: 16px;
+}
+/* A closed stack: the cover with the edges of the rest behind it. */
+.thumb.stack-closed {
+  box-shadow:
+    4px -4px 0 -1px var(--s2),
+    4px -4px 0 0 var(--hair2),
+    8px -8px 0 -1px var(--s1),
+    8px -8px 0 0 var(--hair);
+}
+.thumb.selected.stack-closed {
+  box-shadow:
+    4px -4px 0 -1px var(--s2),
+    4px -4px 0 0 var(--acc-a55),
+    0 0 0 1px rgba(157, 139, 234, 0.4),
+    0 16px 40px -18px var(--glow);
+}
+.thumb.stack-closed:hover {
+  box-shadow:
+    4px -4px 0 -1px var(--s2),
+    4px -4px 0 0 var(--hair3),
+    0 20px 40px -20px rgba(0, 0, 0, 0.9);
+}
+/* An open stack's tiles share a purple ground and edge. */
+.thumb.in-stack {
+  border-color: rgba(157, 139, 234, 0.42);
+}
+.thumb.in-stack .thumb-meta {
+  background: linear-gradient(180deg, rgba(157, 139, 234, 0.16), rgba(157, 139, 234, 0.05));
+  border-top-color: rgba(157, 139, 234, 0.3);
+}
+.thumb.in-stack:not(.stack-cover) .thumb-img {
+  opacity: 0.92;
+}
+.thumb.selected.in-stack {
+  border-color: var(--acc);
+}
+
+/* ── duplicates ────────────────────────────────────────────────── */
+.dupe-group {
+  display: contents;
+}
+.dupe-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  color: var(--text2);
+  font-size: 12px;
+  font-family: var(--font-body);
+  animation: rowIn 0.55s var(--spring) both;
+}
+.dupe-group:first-child .dupe-head {
+  margin-top: 0;
+}
+.dupe-head .line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(157, 139, 234, 0.45), var(--hair) 40%, transparent);
+}
+.grid.loading {
+  opacity: 0.55;
+  transition: opacity 0.3s;
+}
+.grid-wait {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--text2);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+/* ── info drawer and the metadata editor ───────────────────────── */
+.lib-info {
+  --lib-info: 312px;
+  width: 0;
+  flex: none;
+  overflow: hidden;
+  background: var(--s2);
+  opacity: 0;
+  transition:
+    width var(--dur-panel) var(--spring),
+    opacity 0.35s var(--ease);
+}
+.lib-info.open {
+  width: var(--lib-info);
+  opacity: 1;
+  border-left: 1px solid transparent;
+  border-image: var(--hl-y) 1;
+}
+.lib-info-inner {
+  width: var(--lib-info);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.lib-info-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px 24px;
+}
+.lib-info-body .rail-empty {
+  margin: 8px 0;
+}
+.meta-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.meta-count {
+  margin: 0;
+  color: var(--acc);
+}
+.meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.meta-field > label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.meta-field input,
+.meta-field textarea {
+  width: 100%;
+  min-width: 0;
+}
+.meta-field textarea {
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 58px;
+}
+.meta-field.mixed input::placeholder,
+.meta-field.mixed textarea::placeholder {
+  font-style: italic;
+  color: var(--text2);
+}
+.kw-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 4px;
+  background: var(--s1);
+  border: 1px solid var(--hair2);
+  border-radius: var(--r);
+  transition:
+    border-color 0.25s var(--ease),
+    box-shadow var(--dur-toggle) var(--ease);
+}
+.kw-tokens:focus-within {
+  border-color: rgba(157, 139, 234, 0.7);
+  box-shadow:
+    0 0 0 1px rgba(157, 139, 234, 0.25),
+    0 0 20px -6px var(--glow);
+}
+.kw-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 1px 0 8px;
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  color: var(--text);
+  background: var(--acc-a10);
+  border: 1px solid var(--acc-a35);
+  border-radius: var(--r);
+  white-space: nowrap;
+  animation: popIn 0.35s var(--spring) both;
+}
+.kw-token.partial {
+  color: var(--text2);
+  background: transparent;
+  border-style: dashed;
+  cursor: pointer;
+}
+.kw-token button.icon {
+  width: 18px;
+  height: 18px;
+  border: none;
+  color: var(--muted);
+}
+.kw-token button.icon svg {
+  width: 10px;
+  height: 10px;
+}
+.kw-token button.icon:hover:not(:disabled) {
+  color: var(--text);
+  background: transparent;
+  transform: none;
+}
+.kw-input {
+  position: relative;
+  flex: 1;
+  min-width: 96px;
+}
+.kw-tokens .kw-input input {
+  width: 100%;
+  height: 22px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12px;
+}
+.kw-offers {
+  position: absolute;
+  left: -5px;
+  top: calc(100% + 8px);
+  z-index: 30;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 4px;
+  background: rgba(12, 12, 16, 0.94);
+  border: 1px solid var(--hair2);
+  border-radius: var(--r);
+  backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow: 0 20px 40px -18px rgba(0, 0, 0, 0.9);
+  animation: popIn 0.3s var(--spring) both;
+}
+.kw-offer {
+  padding: 6px 8px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text2);
+  border-radius: var(--r);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kw-offer:hover,
+.kw-offer.on {
+  color: var(--text);
+  background: var(--acc-a20);
+}
+.meta-editor .kv {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hair);
+}
+
+/* ── the smart collection's rules ──────────────────────────────── */
+.modal.smart-dialog {
+  width: 860px;
+}
+.rules-fieldset {
+  margin-top: 14px;
+  padding: 12px 14px 14px;
+}
+.rule-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rule-group.nested {
+  margin: 4px 0 2px 4px;
+  padding: 8px 0 8px 12px;
+  border-left: 1px solid var(--acc-a35);
+  background: linear-gradient(90deg, rgba(157, 139, 234, 0.05), transparent 60%);
+  animation: rowIn 0.45s var(--spring) both;
+}
+.rule-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  color: var(--text2);
+  font-size: 12.5px;
+}
+.rule-group-head select {
+  width: 82px;
+}
+.rule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  animation: rowIn 0.4s var(--spring) both;
+}
+.rule-row select.rule-field {
+  width: 148px;
+  flex: none;
+}
+.rule-row select.rule-op {
+  width: 158px;
+  flex: none;
+}
+.rule-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+select.rule-value {
+  width: 180px;
+}
+.rule-row input.rule-text {
+  flex: 1;
+  min-width: 160px;
+  max-width: 320px;
+}
+.rule-row input.rule-num {
+  width: 84px;
+}
+.rule-row input.rule-date {
+  width: 150px;
+}
+.rule-value .stars span {
+  font-size: 15px;
+}
+.rule-and {
+  color: var(--muted);
+  font-size: 12px;
+}
+.rule-empty {
+  margin: 2px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.rule-preview {
+  font-size: 12px;
+}
+.rule-preview .big {
+  font-size: 20px;
+}
+
+/* As the window narrows the size slider goes first, then the key hints,
+   then the action labels; the search and the sort stay whole. */
+@media (max-width: 1400px) {
+  .library-bar .size-range,
+  .library-bar .kbd {
+    display: none;
+  }
+}
+@media (max-width: 1100px) {
+  .library-bar .lbl {
+    display: none;
+  }
+}
+@media (max-width: 1500px) {
+  .library-bar.dupes .lbl {
+    display: none;
+  }
 }

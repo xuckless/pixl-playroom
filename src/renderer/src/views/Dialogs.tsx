@@ -15,9 +15,11 @@ import {
   RECIPE_GROUPS,
   type RecipeGroup
 } from '../../../shared/recipe'
+import { savedWhite } from '../../../shared/wbconvert'
 import { Modal } from '../components/ui'
 import { ProgressRing, Sphere, Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
+import { autoWbBatch } from '../lib/autowb'
 import { useDevelop } from '../state/develop'
 import { useLibrary, useTargets } from '../state/library'
 
@@ -87,7 +89,11 @@ export function ExportDialog(): React.JSX.Element {
     }
   }
   const running = progress !== null && !progress.finished
+  const failed = progress?.errors.filter((e) => !e.warning) ?? []
+  const warned = progress?.errors.filter((e) => e.warning) ?? []
   const depths = depthsFor(s.format)
+  // As `outputSharpen` decides: HDR delivery is never sharpened.
+  const hdrOut = s.hdr.mode !== 'sdr'
   return (
     <Modal
       title={`Export ${targets.length} photo${targets.length === 1 ? '' : 's'}`}
@@ -108,10 +114,17 @@ export function ExportDialog(): React.JSX.Element {
               <span>
                 {progress.done}/{progress.total}{' '}
                 {progress.current ? `· ${progress.current}` : progress.finished ? '· done' : ''}
-                {progress.errors.length > 0 && (
+                {failed.length > 0 && (
                   <span className="error">
                     {' '}
-                    · {progress.errors.length} failed: {progress.errors[0].message}
+                    · {failed.length} failed: {failed[0].message}
+                  </span>
+                )}
+                {warned.length > 0 && (
+                  <span className="muted">
+                    {' '}
+                    · {warned[0].name}: {warned[0].message}
+                    {warned.length > 1 ? ` (and ${warned.length - 1} more)` : ''}
                   </span>
                 )}
               </span>
@@ -449,19 +462,98 @@ export function ExportDialog(): React.JSX.Element {
           </label>
         </fieldset>
         <fieldset>
+          <legend>Output sharpening</legend>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={s.outputSharpen.enabled}
+              disabled={hdrOut}
+              onChange={(e) =>
+                up('outputSharpen', { ...s.outputSharpen, enabled: e.target.checked })
+              }
+            />{' '}
+            Sharpen for output
+          </label>
+          <Field label="Media">
+            <select
+              value={s.outputSharpen.media}
+              disabled={hdrOut || !s.outputSharpen.enabled}
+              onChange={(e) =>
+                up('outputSharpen', {
+                  ...s.outputSharpen,
+                  media: e.target.value as ExportSettings['outputSharpen']['media']
+                })
+              }
+            >
+              <option value="screen">Screen</option>
+              <option value="matte">Matte paper</option>
+              <option value="glossy">Glossy paper</option>
+            </select>
+          </Field>
+          <Field label="Amount">
+            <select
+              value={s.outputSharpen.amount}
+              disabled={hdrOut || !s.outputSharpen.enabled}
+              onChange={(e) =>
+                up('outputSharpen', {
+                  ...s.outputSharpen,
+                  amount: e.target.value as ExportSettings['outputSharpen']['amount']
+                })
+              }
+            >
+              <option value="low">Low</option>
+              <option value="standard">Standard</option>
+              <option value="high">High</option>
+            </select>
+          </Field>
+          <p className="muted small">
+            {hdrOut
+              ? 'Not applied to HDR output.'
+              : 'Applied after the resize, at the size the picture will be seen.'}
+          </p>
+        </fieldset>
+        <fieldset>
           <legend>Metadata</legend>
+          <Field label="Include">
+            <select
+              value={s.metaMode}
+              onChange={(e) => up('metaMode', e.target.value as ExportSettings['metaMode'])}
+            >
+              <option value="all">All</option>
+              <option value="copyrightOnly">Copyright only</option>
+            </select>
+          </Field>
           {(['exif', 'icc', 'xmp', 'iptc'] as const).map((k) => (
             <label key={k} className="check">
               <input
                 type="checkbox"
                 checked={s.metadata[k]}
+                // Copyright only keeps the profile and writes the copyright alone.
+                disabled={s.metaMode === 'copyrightOnly' && k !== 'icc'}
                 onChange={(e) => up('metadata', { ...s.metadata, [k]: e.target.checked })}
               />{' '}
               {k.toUpperCase()}
             </label>
           ))}
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={s.removeLocation}
+              onChange={(e) => up('removeLocation', e.target.checked)}
+            />{' '}
+            Remove location
+          </label>
+          <Field label="Copyright">
+            <input
+              value={s.copyright}
+              placeholder="Used when a photo has none"
+              onChange={(e) => up('copyright', e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+          </Field>
           <p className="muted small">
-            Blocks are copied verbatim or not at all; the engine never edits them.
+            Blocks are copied verbatim or not at all; the title, caption, keywords and copyright are
+            then written into the ones kept.
           </p>
         </fieldset>
         <fieldset>
@@ -574,7 +666,12 @@ export function SyncDialog(): React.JSX.Element {
         : [])
   )
   const [groups, setGroups] = useState<Set<RecipeGroup>>(initial)
+  // The white balance either travels (converted to each photo's kind) or
+  // each photo gets its own, measured by auto white balance.
+  const [wbMode, setWbMode] = useState<'copy' | 'auto'>('copy')
   const keys = targets.filter((k) => k !== developKey || clipboard !== null)
+  const autoWb = groups.has('whiteBalance') && wbMode === 'auto'
+  const copied = [...groups].filter((g) => !(autoWb && g === 'whiteBalance'))
   return (
     <Modal
       title={`Apply settings to ${keys.length} photo${keys.length === 1 ? '' : 's'}`}
@@ -583,24 +680,27 @@ export function SyncDialog(): React.JSX.Element {
       footer={
         <button
           className="primary"
-          disabled={!source || keys.length === 0 || groups.size === 0}
+          disabled={(!source && copied.length > 0) || keys.length === 0 || groups.size === 0}
           onClick={async () => {
-            if (!source) return
             try {
-              patchItems(
-                await api.library.applyRecipe(
-                  keys,
-                  source,
-                  [...groups],
-                  clipboard?.source ?? developKey ?? undefined
+              if (source && copied.length > 0) {
+                patchItems(
+                  await api.library.applyRecipe(
+                    keys,
+                    source,
+                    copied,
+                    clipboard?.source ?? developKey ?? undefined
+                  )
                 )
-              )
-              if (developKey && keys.includes(developKey)) {
-                const s = await api.develop.open(developKey)
-                useDevelop.setState({ recipe: s.recipe })
+                if (developKey && keys.includes(developKey)) {
+                  const s = await api.develop.open(developKey)
+                  useDevelop.setState({ recipe: s.recipe })
+                }
               }
-              say(`Applied to ${keys.length} photo${keys.length === 1 ? '' : 's'}`)
               setDialog(null)
+              // The batch shows its own progress and ends with an Undo.
+              if (autoWb) void autoWbBatch(keys)
+              else say(`Applied to ${keys.length} photo${keys.length === 1 ? '' : 's'}`)
             } catch (err) {
               say(errorText(err), 'error')
             }
@@ -644,6 +744,34 @@ export function SyncDialog(): React.JSX.Element {
           </label>
         ))}
       </div>
+      {groups.has('whiteBalance') && (
+        <>
+          <div className="rule" />
+          <div className="quick-row" role="radiogroup" aria-label="White balance">
+            <span className="micro" style={{ alignSelf: 'center' }}>
+              White balance
+            </span>
+            <button
+              className={`chip${wbMode === 'copy' ? ' on' : ''}`}
+              role="radio"
+              aria-checked={wbMode === 'copy'}
+              onClick={() => setWbMode('copy')}
+              title="The same white on every photo, converted between RAW and other files"
+            >
+              Copy (converted per photo)
+            </button>
+            <button
+              className={`chip${wbMode === 'auto' ? ' on' : ''}`}
+              role="radio"
+              aria-checked={wbMode === 'auto'}
+              onClick={() => setWbMode('auto')}
+              title="Measure each photo's own white (Ctrl+Shift+U)"
+            >
+              Auto per photo
+            </button>
+          </div>
+        </>
+      )}
     </Modal>
   )
 }
@@ -652,6 +780,7 @@ export function SavePresetDialog(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
   const say = useLibrary((s) => s.say)
   const recipe = useDevelop((s) => s.recipe)
+  const session = useDevelop((s) => s.session)
   const [name, setName] = useState('')
   const [group, setGroup] = useState('User presets')
   const [groups, setGroups] = useState<Set<RecipeGroup>>(
@@ -675,11 +804,18 @@ export function SavePresetDialog(): React.JSX.Element {
           onClick={async () => {
             if (!recipe) return
             try {
+              // A custom white balance also goes as the engine's white, so
+              // the preset converts onto photos of the other kind.
+              const wbOp =
+                session && groups.has('whiteBalance') && recipe.wb.mode === 'custom'
+                  ? savedWhite(recipe.wb, session)
+                  : undefined
               await api.presets.save({
                 name: name.trim(),
                 group: group.trim() || 'User presets',
                 groups: [...groups],
-                recipe
+                recipe,
+                ...(wbOp ? { wbOp } : {})
               })
               say(`Saved preset ${name.trim()}`)
               setDialog(null)

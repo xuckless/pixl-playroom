@@ -9,27 +9,54 @@
  * from it). Folder scans and the exif fill are the only long work; they run
  * in chunks and give other requests a turn between them.
  */
-import { existsSync, mkdirSync, readdirSync, statSync } from 'fs'
-import { extname, join } from 'path'
+import { createHash } from 'crypto'
+import { createReadStream, existsSync, mkdirSync, readdirSync, statSync } from 'fs'
+import { dirname, extname, join, resolve } from 'path'
 import type {
   CameraInfo,
+  Collection,
   ColorLabel,
+  DuplicateGroup,
   ExportPreset,
   Flag,
   HistoryLog,
+  KeywordNode,
   LibraryItem,
+  LibrarySource,
   MetaPatch,
+  MetaTextPatch,
+  PhotoMeta,
   Preset,
-  Snapshot
+  Snapshot,
+  SourceListing
 } from '../../shared/ipc'
+import { groupNear } from '../../shared/dupes'
+import { keywordPrefixes, normaliseKeyword } from '../../shared/keywords'
 import { defaultRecipe, hash32, isEdited, newId, type Recipe } from '../../shared/recipe'
+import { memberResolver, remapCollections, type SmartGroup } from '../../shared/smart'
 import { cacheUrlIn } from '../cache-url'
 import { emptyCamera, readCamera } from '../camera'
-import { Store, type CopyRow, type PhotoRow } from '../db'
+import { Store, type CollectionRow, type CopyRow, type PhotoRow } from '../db'
 import { keyOf, parseKey } from '../keys'
-import { itemOf, readSidecar, SIDECAR_SUFFIX, writeSidecar, type Sidecar } from '../sidecar'
+import {
+  itemOf,
+  readSidecar,
+  SIDECAR_SUFFIX,
+  writeSidecar,
+  type Sidecar,
+  type SidecarStack
+} from '../sidecar'
 import { IMAGE_EXTENSIONS, isRawExt } from '../source'
 import type { IndexEvent } from './protocol'
+import {
+  applyMetaPatch,
+  emptyMeta,
+  exiftoolXmp,
+  metaIsEmpty,
+  sameMeta,
+  xmpPathFor,
+  type XmpIo
+} from './xmp'
 
 /** Files looked at per turn of a scan. */
 const CHUNK = 200
@@ -58,7 +85,50 @@ export interface OpenData {
 export interface IndexOptions {
   userData: string
   emit: (event: IndexEvent) => void
+  /** How `.xmp` sidecars are read and written (ExifTool unless a test says otherwise). */
+  xmp?: XmpIo
 }
+
+/** A saved collections file: definitions, and a manual collection's items by path. */
+export interface CollectionsFile {
+  app: 'pixl-playroom'
+  kind: 'collections'
+  version: 1
+  collections: {
+    id: string
+    name: string
+    kind: Collection['kind']
+    parent: string | null
+    rules: SmartGroup | null
+    sort: number
+    items?: { path: string; copyId: string | null }[]
+  }[]
+}
+
+/** What a listing needs beside the rows, fetched once for all of them. */
+interface ListingContext {
+  keywords: Map<number, string[]>
+  stackSizes: Map<string, number>
+  /** Per folder: gone from disk (an unplugged drive). */
+  folderGone: Map<string, boolean>
+  /** Only for evaluating rules: skip looking for each thumbnail on disk. */
+  bare: boolean
+}
+
+/** A file's content version, for its cached SHA-1. */
+const hashKeyOf = (row: PhotoRow): string => `${row.mtime}-${row.size}`
+
+function sha1(path: string): Promise<string> {
+  return new Promise((resolveHash, reject) => {
+    const h = createHash('sha1')
+    createReadStream(path)
+      .on('data', (d) => h.update(d))
+      .on('error', reject)
+      .on('end', () => resolveHash(h.digest('hex')))
+  })
+}
+
+const unique = <T>(xs: T[]): T[] => [...new Set(xs)]
 
 interface Scan {
   again: boolean
@@ -75,6 +145,9 @@ export class IndexService {
   private readonly scans = new Map<string, Scan>()
   private readonly filling = new Set<string>()
   private readonly fillAgain = new Set<string>()
+  private readonly xmp: XmpIo
+  /** `.xmp` reads and writes, one at a time: two edits of one file never interleave. */
+  private xmpChain: Promise<unknown> = Promise.resolve()
   private closed = false
 
   constructor(opts: IndexOptions) {
@@ -82,11 +155,19 @@ export class IndexService {
     this.store = Store.open(join(opts.userData, 'playroom.db'))
     this.cacheRoot = join(opts.userData, 'cache')
     this.emit = opts.emit
+    this.xmp = opts.xmp ?? exiftoolXmp()
   }
 
   close(): void {
     this.closed = true
     this.store.close()
+    void this.xmp.end().catch(() => {})
+  }
+
+  private xmpSerial<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.xmpChain.then(fn, fn)
+    this.xmpChain = run.catch(() => undefined)
+    return run
   }
 
   // ── folders ──
@@ -136,6 +217,7 @@ export class IndexService {
       }
       if (this.closed) return
       if (changed > 0 && scan.announce) this.emit({ name: 'changed', folder })
+      this.fillXmp(folder).catch((err) => console.warn('xmp fill failed', folder, err))
       this.fillCameras(folder).catch((err) => console.warn('exif fill failed', folder, err))
     })()
     return scan.done
@@ -227,6 +309,7 @@ export class IndexService {
         edited: c.recipe !== null && isEdited(c.recipe, raw)
       }))
     )
+    this.store.setStack(row.id, sidecar.stack?.id ?? null, sidecar.stack?.position ?? null)
     this.store.setSidecarMtime(row.id, mtime)
   }
 
@@ -257,44 +340,169 @@ export class IndexService {
     if (filled > 0) this.emit({ name: 'changed', folder })
   }
 
+  /**
+   * Mirror the folder's `.xmp` sidecars that changed on disk (or went) into
+   * the index; `changed` and `sources` when any did.
+   */
+  private async fillXmp(folder: string): Promise<void> {
+    const changed = await this.xmpSerial(async () => {
+      let n = 0
+      for (const row of this.store.photosIn(folder)) {
+        const file = xmpPathFor(row.path, row.is_raw === 1)
+        let mtime: number | null = null
+        try {
+          mtime = statSync(file).mtimeMs
+        } catch {
+          // no sidecar
+        }
+        if (mtime === row.xmp_mtime) continue
+        // Unreadable counts as empty until the file changes again.
+        const meta = mtime === null ? emptyMeta() : ((await this.xmp.read(file)) ?? emptyMeta())
+        if (this.closed) return n
+        // Gone while its sidecar was read.
+        if (!this.store.photo(row.id)) continue
+        this.store.tx(() => this.store.setXmp(row.id, meta, meta.keywords, mtime))
+        n++
+      }
+      return n
+    })
+    if (changed > 0 && !this.closed) {
+      this.emit({ name: 'changed', folder })
+      this.emit({ name: 'sources' })
+    }
+  }
+
   recentFolders(): string[] {
     return this.store.recentFolders().filter((f) => existsSync(f))
   }
 
+  /**
+   * Files (dropped, or handed over by the OS) as the folder of the first and
+   * their items' keys, indexing any folder the index has not seen. A folder
+   * given as the first path is that folder, with no keys.
+   */
+  async resolvePaths(paths: string[]): Promise<{ folder: string | null; keys: string[] }> {
+    if (paths.length === 0) return { folder: null, keys: [] }
+    const first = resolve(paths[0])
+    let isDir = false
+    try {
+      isDir = statSync(first).isDirectory()
+    } catch {
+      // a file that is not there: its folder may still be
+    }
+    const folder = isDir ? first : dirname(first)
+    await this.listFolder(folder)
+    if (isDir) return { folder, keys: [] }
+    const keys: string[] = []
+    const scanned = new Set<string>()
+    for (const p of paths.map((x) => resolve(x))) {
+      let row = this.store.photoByPath(p)
+      if (!row && !scanned.has(dirname(p))) {
+        // New since the last scan, or in a folder never opened.
+        scanned.add(dirname(p))
+        await this.rescan(dirname(p), false)
+        row = this.store.photoByPath(p)
+      }
+      if (row) keys.push(keyOf(row.id, null))
+    }
+    return { folder, keys }
+  }
+
   // ── items ──
 
-  /** A folder's items: each photo, then its copies. Two queries, whatever the size. */
-  items(folder: string): LibraryItem[] {
+  /** Keywords and stack sizes for these rows, in a query or two whatever their number. */
+  private contextFor(rows: PhotoRow[], bare = false): ListingContext {
+    const stackIds = unique(rows.map((r) => r.stack_id).filter((s): s is string => !!s))
+    return {
+      keywords: this.store.keywordsFor(rows.map((r) => r.id)),
+      stackSizes: stackIds.length > 0 ? this.store.stackSizes(stackIds) : new Map(),
+      folderGone: new Map(),
+      bare
+    }
+  }
+
+  /**
+   * Rows as items: each photo, then its copies. `keep` picks items by key
+   * (a collection holds some copies and not their photo).
+   */
+  private itemsOf(rows: PhotoRow[], keep?: (key: string) => boolean, bare = false): LibraryItem[] {
+    const ctx = this.contextFor(rows, bare)
     const copies = new Map<number, CopyRow[]>()
-    for (const c of this.store.copiesIn(folder)) {
+    for (const c of this.store.copiesOfPhotos(rows.map((r) => r.id))) {
       const list = copies.get(c.photo_id)
       if (list) list.push(c)
       else copies.set(c.photo_id, [c])
     }
     const out: LibraryItem[] = []
-    for (const row of this.store.photosIn(folder)) {
-      out.push(this.itemFrom(row, undefined))
-      for (const c of copies.get(row.id) ?? []) out.push(this.itemFrom(row, c))
+    for (const row of rows) {
+      if (!keep || keep(keyOf(row.id, null))) out.push(this.itemFrom(row, undefined, ctx))
+      for (const c of copies.get(row.id) ?? []) {
+        if (!keep || keep(keyOf(row.id, c.copy_id))) out.push(this.itemFrom(row, c, ctx))
+      }
     }
     return out
+  }
+
+  /**
+   * A listing that spans folders checks each file, not only its folder: a
+   * collection's photo may have been moved or deleted while its folder was
+   * not being looked at.
+   */
+  private markMissing(items: LibraryItem[]): LibraryItem[] {
+    const gone = new Map<string, boolean>()
+    for (const it of items) {
+      if (it.offline) continue
+      let g = gone.get(it.path)
+      if (g === undefined) {
+        g = !existsSync(it.path)
+        gone.set(it.path, g)
+      }
+      if (g) it.offline = true
+    }
+    return items
+  }
+
+  /** A folder's items: each photo, then its copies. A few queries, whatever the size. */
+  items(folder: string): LibraryItem[] {
+    return this.itemsOf(this.store.photosIn(folder))
+  }
+
+  /** Every item in the index, without thumbnails: what smart rules are evaluated over. */
+  private allItems(): LibraryItem[] {
+    return this.itemsOf(this.store.allPhotos(), undefined, true)
   }
 
   item(key: string): LibraryItem | undefined {
     const { photoId, copyId } = parseKey(key)
     const row = this.store.photo(photoId)
     if (!row) return undefined
-    if (copyId === null) return this.itemFrom(row, undefined)
-    const copy = this.store.copiesOf(row.id).find((c) => c.copy_id === copyId)
-    return copy ? this.itemFrom(row, copy) : undefined
+    const ctx = this.contextFor([row])
+    let it: LibraryItem | undefined
+    if (copyId === null) it = this.itemFrom(row, undefined, ctx)
+    else {
+      const copy = this.store.copiesOf(row.id).find((c) => c.copy_id === copyId)
+      it = copy ? this.itemFrom(row, copy, ctx) : undefined
+    }
+    return it && this.markMissing([it])[0]
   }
 
   itemsFor(keys: string[]): (LibraryItem | undefined)[] {
     return keys.map((k) => this.item(k))
   }
 
-  private itemFrom(row: PhotoRow, copy: CopyRow | undefined): LibraryItem {
+  /** These photos' items and their copies' (what a stack change touched). */
+  private itemsOfPhotos(ids: Iterable<number>): LibraryItem[] {
+    return this.itemsOf(this.store.photosByIds([...ids]))
+  }
+
+  private itemFrom(row: PhotoRow, copy: CopyRow | undefined, ctx: ListingContext): LibraryItem {
     const thumbPath = copy ? copy.thumb_path : row.thumb_path
     const thumbKey = copy ? copy.thumb_key : row.thumb_key
+    let folderGone = ctx.folderGone.get(row.folder)
+    if (folderGone === undefined) {
+      folderGone = !existsSync(row.folder)
+      ctx.folderGone.set(row.folder, folderGone)
+    }
     return {
       key: keyOf(row.id, copy?.copy_id ?? null),
       photoId: row.id,
@@ -311,12 +519,561 @@ export class IndexService {
       label: ((copy ? copy.label : row.label) as ColorLabel) ?? null,
       edited: (copy ? copy.edited : row.edited) === 1,
       thumbUrl:
-        thumbPath && existsSync(thumbPath)
+        thumbPath && !ctx.bare && existsSync(thumbPath)
           ? cacheUrlIn(this.cacheRoot, thumbPath, thumbKey ?? '')
           : null,
       unreadable: this.failed.has(versionOf(row)),
-      camera: row.camera_json ? (JSON.parse(row.camera_json) as CameraInfo) : emptyCamera()
+      camera: row.camera_json ? (JSON.parse(row.camera_json) as CameraInfo) : emptyCamera(),
+      folder: row.folder,
+      title: row.title ?? null,
+      caption: row.caption ?? null,
+      copyright: row.copyright ?? null,
+      keywords: ctx.keywords.get(row.id) ?? [],
+      stack: row.stack_id
+        ? {
+            id: row.stack_id,
+            position: row.stack_pos ?? 0,
+            size: ctx.stackSizes.get(row.stack_id) ?? 1
+          }
+        : null,
+      offline: folderGone
     }
+  }
+
+  // ── sources ──
+
+  /** The items of a folder, a collection, a keyword (and every keyword under it) or the duplicates. */
+  async listSource(src: LibrarySource): Promise<SourceListing> {
+    switch (src.kind) {
+      case 'folder':
+        return { source: src, items: await this.listFolder(src.path) }
+      case 'keyword': {
+        const ids = this.store.photoIdsWithKeyword(normaliseKeyword(src.path))
+        // Copies share their photo's keywords.
+        return { source: src, items: this.markMissing(this.itemsOf(this.store.photosByIds(ids))) }
+      }
+      case 'collection':
+        return { source: src, items: this.markMissing(this.collectionListing(src.id)) }
+      case 'duplicates':
+        return this.duplicates(src.folder, src.threshold)
+      default:
+        throw new Error(`unknown source ${(src as { kind: string }).kind}`)
+    }
+  }
+
+  private collectionListing(id: string): LibraryItem[] {
+    const c = this.store.collection(id)
+    if (!c) throw new Error(`no collection ${id}`)
+    if (c.kind === 'manual') {
+      const entries = this.store.collectionItems(id)
+      const want = new Set(entries.map((e) => keyOf(e.photo_id, e.copy_id || null)))
+      const rows = this.store.photosByIds(unique(entries.map((e) => e.photo_id)))
+      return this.itemsOf(rows, (k) => want.has(k))
+    }
+    const members = this.resolver(this.store.collections(), this.allItems())(id) ?? new Set()
+    const ids = unique([...members].map((k) => parseKey(k).photoId))
+    return this.itemsOf(this.store.photosByIds(ids), (k) => members.has(k))
+  }
+
+  /** Collection members over `items`: manual from the index, smart by rules, sets as unions. */
+  private resolver(
+    rows: CollectionRow[],
+    items: LibraryItem[]
+  ): (id: string) => Set<string> | undefined {
+    const manual = new Map<string, Set<string>>()
+    for (const e of this.store.allCollectionItems()) {
+      const set = manual.get(e.collection_id) ?? new Set<string>()
+      set.add(keyOf(e.photo_id, e.copy_id || null))
+      manual.set(e.collection_id, set)
+    }
+    return memberResolver({
+      collections: rows.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        parent: r.parent,
+        rules: this.rulesOf(r)
+      })),
+      items,
+      manual: (id) => manual.get(id) ?? new Set(),
+      now: new Date()
+    })
+  }
+
+  private rulesOf(r: CollectionRow): SmartGroup | null {
+    if (!r.rules) return null
+    try {
+      return JSON.parse(r.rules) as SmartGroup
+    } catch {
+      return null
+    }
+  }
+
+  // ── keywords and descriptive metadata ──
+
+  /** Every keyword as a tree, each node counting the photos with it or one under it. */
+  keywordTree(): KeywordNode[] {
+    const perPhoto = new Map<number, Set<string>>()
+    for (const r of this.store.allKeywords()) {
+      const set = perPhoto.get(r.photo_id) ?? new Set<string>()
+      for (const p of keywordPrefixes(r.path)) set.add(p)
+      perPhoto.set(r.photo_id, set)
+    }
+    const counts = new Map<string, number>()
+    for (const set of perPhoto.values())
+      for (const p of set) counts.set(p, (counts.get(p) ?? 0) + 1)
+    const nodes = new Map<string, KeywordNode>()
+    const roots: KeywordNode[] = []
+    for (const path of [...counts.keys()].sort()) {
+      const cut = path.lastIndexOf('|')
+      const node: KeywordNode = {
+        name: path.slice(cut + 1),
+        path,
+        count: counts.get(path) ?? 0,
+        children: []
+      }
+      nodes.set(path, node)
+      const parent = cut >= 0 ? nodes.get(path.slice(0, cut)) : undefined
+      ;(parent ? parent.children : roots).push(node)
+    }
+    const order = (list: KeywordNode[]): void => {
+      list.sort(
+        (a, b) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) ||
+          (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+      )
+      for (const n of list) order(n.children)
+    }
+    order(roots)
+    return roots
+  }
+
+  /**
+   * Edit title, caption, copyright or keywords. Metadata is the photo's (a
+   * copy shows its photo's): each photo's `.xmp` is read, changed, written,
+   * and mirrored into the index. Returns the items after.
+   */
+  async setMetadata(keys: string[], patch: MetaTextPatch): Promise<(LibraryItem | undefined)[]> {
+    const ids = unique(keys.map((k) => parseKey(k).photoId))
+    await this.xmpSerial(async () => {
+      for (const id of ids) {
+        const row = this.store.photo(id)
+        if (!row) continue
+        const file = xmpPathFor(row.path, row.is_raw === 1)
+        const exists = existsSync(file)
+        const current = exists
+          ? ((await this.xmp.read(file)) ?? this.indexedMeta(row))
+          : emptyMeta()
+        const next = applyMetaPatch(current, patch)
+        if (this.closed) return
+        let mtime: number | null = null
+        if (exists && sameMeta(current, next)) mtime = statSync(file).mtimeMs
+        else if (exists || !metaIsEmpty(next)) {
+          await this.xmp.write(file, next)
+          mtime = statSync(file).mtimeMs
+        }
+        if (this.closed) return
+        this.store.tx(() => this.store.setXmp(id, next, next.keywords, mtime))
+      }
+    })
+    this.emit({ name: 'sources' })
+    return this.itemsFor(keys)
+  }
+
+  /** What the index last read from a photo's `.xmp`. */
+  private indexedMeta(row: PhotoRow): PhotoMeta {
+    return {
+      title: row.title,
+      caption: row.caption,
+      copyright: row.copyright,
+      keywords: this.store.keywordsOf(row.id)
+    }
+  }
+
+  // ── collections ──
+
+  /** Every collection, with how many items each holds now. */
+  collections(): Collection[] {
+    const rows = this.store.collections()
+    const needItems = rows.some((r) => r.kind !== 'manual')
+    const members = this.resolver(rows, needItems ? this.allItems() : [])
+    return rows.map((r) => ({ ...this.collectionOf(r), count: members(r.id)?.size ?? 0 }))
+  }
+
+  private collectionOf(r: CollectionRow): Collection {
+    return {
+      id: r.id,
+      name: r.name,
+      kind: r.kind,
+      parent: r.parent,
+      rules: r.kind === 'smart' ? (this.rulesOf(r) ?? { match: 'all', rules: [] }) : null,
+      sort: r.sort
+    }
+  }
+
+  /**
+   * Create (no id) or change a collection. A collection sits at the top or
+   * in a set, never inside itself; its kind is fixed once made.
+   */
+  saveCollection(c: Omit<Collection, 'id' | 'count'> & { id?: string }): Collection {
+    if (!['manual', 'smart', 'set'].includes(c.kind))
+      throw new Error(`bad collection kind ${c.kind}`)
+    const name = String(c.name ?? '').trim()
+    if (!name) throw new Error('a collection needs a name')
+    const existing = c.id ? this.store.collection(c.id) : undefined
+    if (existing && existing.kind !== c.kind) throw new Error('a collection cannot change kind')
+    const id = existing?.id ?? c.id ?? newId()
+    const parent = c.parent ?? null
+    if (parent !== null) {
+      const p = this.store.collection(parent)
+      if (!p || p.kind !== 'set') throw new Error('a collection can only sit in a set')
+      // Walk up from the new parent: meeting this collection would make a loop.
+      for (let at: CollectionRow | undefined = p; at;) {
+        if (at.id === id) throw new Error('a set cannot sit inside itself')
+        at = at.parent ? this.store.collection(at.parent) : undefined
+      }
+    }
+    const rules = c.kind === 'smart' ? (c.rules ?? { match: 'all', rules: [] }) : null
+    const row = {
+      id,
+      name,
+      kind: c.kind,
+      parent,
+      rules: rules ? JSON.stringify(rules) : null,
+      sort: Number.isFinite(c.sort) ? c.sort : 0
+    }
+    this.store.saveCollection(row)
+    this.emit({ name: 'sources' })
+    return this.collectionOf({ ...row, created_at: '' })
+  }
+
+  /** Remove a collection (a set's children move to the top; photos are untouched). */
+  removeCollection(id: string): void {
+    this.store.tx(() => this.store.removeCollection(id))
+    this.emit({ name: 'sources' })
+  }
+
+  /** Add items to, or take them out of, a manual collection. */
+  collectionItems(id: string, keys: string[], action: 'add' | 'remove'): void {
+    const c = this.store.collection(id)
+    if (!c) throw new Error(`no collection ${id}`)
+    if (c.kind !== 'manual') throw new Error('only a manual collection holds items')
+    this.store.tx(() => {
+      for (const key of keys) {
+        const { photoId, copyId } = parseKey(key)
+        if (action === 'remove') this.store.removeCollectionItem(id, photoId, copyId ?? '')
+        else if (this.store.photo(photoId)) this.store.addCollectionItem(id, photoId, copyId ?? '')
+      }
+    })
+    this.emit({ name: 'sources' })
+  }
+
+  /**
+   * Collections as a file: their definitions (a set with everything in it)
+   * and a manual collection's items by path, so they survive another index.
+   */
+  exportCollections(ids: string[]): CollectionsFile {
+    const rows = this.store.collections()
+    const want = new Set<string>()
+    const add = (id: string): void => {
+      if (want.has(id)) return
+      want.add(id)
+      for (const r of rows) if (r.parent === id) add(r.id)
+    }
+    for (const id of ids) if (rows.some((r) => r.id === id)) add(id)
+    return {
+      app: 'pixl-playroom',
+      kind: 'collections',
+      version: 1,
+      collections: rows
+        .filter((r) => want.has(r.id))
+        .map((r) => {
+          const c = this.collectionOf(r)
+          const out: CollectionsFile['collections'][number] = {
+            id: c.id,
+            name: c.name,
+            kind: c.kind,
+            // A parent left out of the file puts this one at the top.
+            parent: c.parent !== null && want.has(c.parent) ? c.parent : null,
+            rules: c.rules,
+            sort: c.sort
+          }
+          if (r.kind === 'manual') {
+            const entries = this.store.collectionItems(r.id)
+            const paths = new Map(
+              this.store
+                .photosByIds(unique(entries.map((e) => e.photo_id)))
+                .map((p) => [p.id, p.path])
+            )
+            out.items = entries
+              .filter((e) => paths.has(e.photo_id))
+              .map((e) => ({ path: paths.get(e.photo_id) as string, copyId: e.copy_id || null }))
+          }
+          return out
+        })
+    }
+  }
+
+  /**
+   * Collections from a file: an id already taken gets a new one (and what
+   * refers to it follows), items are found by path (their folders indexed
+   * if new), and what cannot be found is left out. Returns what was added.
+   */
+  async importCollections(file: unknown): Promise<Collection[]> {
+    const f = file as Partial<CollectionsFile> | null
+    if (
+      !f ||
+      f.app !== 'pixl-playroom' ||
+      f.kind !== 'collections' ||
+      !Array.isArray(f.collections)
+    )
+      throw new Error('not a Pixl Playroom collections file')
+    type Def = CollectionsFile['collections'][number]
+    const defs = f.collections.filter(
+      (c): c is Def =>
+        !!c && typeof c.id === 'string' && ['manual', 'smart', 'set'].includes(c.kind)
+    )
+    const ids = new Map<string, string>()
+    for (const c of defs) {
+      ids.set(c.id, this.store.collection(c.id) || ids.has(c.id) ? newId() : c.id)
+    }
+    // Index the folders of paths the index does not know yet.
+    const folders = new Set<string>()
+    for (const c of defs) {
+      for (const it of c.items ?? []) {
+        if (typeof it?.path === 'string' && !this.store.photoByPath(it.path))
+          folders.add(dirname(it.path))
+      }
+    }
+    for (const folder of folders) if (existsSync(folder)) await this.rescan(folder, false)
+
+    // Parents first, so every parent exists when its child is saved.
+    const byOld = new Map(defs.map((c) => [c.id, c]))
+    const depth = (c: Def): number => {
+      let d = 0
+      for (let at = c; at.parent && byOld.has(at.parent) && d < defs.length; d++) {
+        at = byOld.get(at.parent) as Def
+      }
+      return d
+    }
+    const added: Collection[] = []
+    this.store.tx(() => {
+      for (const c of [...defs].sort((a, b) => depth(a) - depth(b))) {
+        const id = ids.get(c.id) as string
+        const parentId = c.parent ? (ids.get(c.parent) ?? c.parent) : null
+        const parent = parentId ? this.store.collection(parentId) : undefined
+        const rules =
+          c.kind === 'smart' && c.rules
+            ? remapCollections(c.rules, (old) => ids.get(old) ?? old)
+            : null
+        const row = {
+          id,
+          name: String(c.name ?? 'Collection'),
+          kind: c.kind,
+          parent: parent?.kind === 'set' ? parent.id : null,
+          rules: rules ? JSON.stringify(rules) : null,
+          sort: typeof c.sort === 'number' ? c.sort : 0
+        }
+        this.store.saveCollection(row)
+        if (c.kind === 'manual') {
+          for (const it of c.items ?? []) {
+            const photo = typeof it?.path === 'string' ? this.store.photoByPath(it.path) : undefined
+            if (!photo) continue
+            const copyId = typeof it.copyId === 'string' && it.copyId ? it.copyId : ''
+            if (copyId && !this.store.copiesOf(photo.id).some((x) => x.copy_id === copyId)) continue
+            this.store.addCollectionItem(id, photo.id, copyId)
+          }
+        }
+        added.push(this.collectionOf({ ...row, created_at: '' }))
+      }
+    })
+    this.emit({ name: 'sources' })
+    return added
+  }
+
+  // ── stacks ──
+
+  /** Set or clear a photo's stack in its sidecar (and so the index). */
+  private setStackOf(row: PhotoRow, stack: SidecarStack | null): void {
+    const sidecar = this.sidecar(row)
+    sidecar.stack = stack
+    const mtime = writeSidecar(row.path, sidecar)
+    this.mirror(row, sidecar, mtime)
+  }
+
+  /** A stack's members numbered 0… again in their order; one left alone is no stack. */
+  private renumber(stackId: string, touched: Set<number>): void {
+    const members = this.store.stackMembers(stackId)
+    for (const [i, m] of members.entries()) {
+      this.setStackOf(m, members.length < 2 ? null : { id: stackId, position: i })
+      touched.add(m.id)
+    }
+  }
+
+  /**
+   * Stack photos of one folder (the cover's), the cover on top and the rest
+   * in the order given. A photo already in another stack leaves it. Returns
+   * the items whose stack changed (copies included).
+   */
+  stack(keys: string[], coverKey: string): LibraryItem[] {
+    const cover = this.row(coverKey)
+    const ids = unique([cover.id, ...keys.map((k) => parseKey(k).photoId)])
+    const rows = ids
+      .map((id) => this.store.photo(id))
+      .filter((r): r is PhotoRow => !!r && r.folder === cover.folder)
+    if (rows.length < 2) return []
+    const id = newId()
+    const touched = new Set<number>()
+    this.store.tx(() => {
+      const left = unique(rows.map((r) => r.stack_id).filter((s): s is string => !!s))
+      rows.forEach((r, i) => {
+        this.setStackOf(r, { id, position: i })
+        touched.add(r.id)
+      })
+      for (const old of left) this.renumber(old, touched)
+    })
+    return this.itemsOfPhotos(touched)
+  }
+
+  /** Undo the stacks these items are in, whole. Returns the items that changed. */
+  unstack(keys: string[]): LibraryItem[] {
+    const touched = new Set<number>()
+    this.store.tx(() => {
+      const ids = unique(keys.map((k) => this.store.photo(parseKey(k).photoId)?.stack_id))
+      for (const stackId of ids) {
+        if (!stackId) continue
+        for (const m of this.store.stackMembers(stackId)) {
+          this.setStackOf(m, null)
+          touched.add(m.id)
+        }
+      }
+    })
+    return this.itemsOfPhotos(touched)
+  }
+
+  /** Make this photo its stack's cover; the others keep their order. */
+  stackTop(key: string): LibraryItem[] {
+    const row = this.row(key)
+    const stackId = row.stack_id
+    if (!stackId) return []
+    const touched = new Set<number>()
+    this.store.tx(() => {
+      const members = this.store.stackMembers(stackId)
+      const order = [row, ...members.filter((m) => m.id !== row.id)]
+      order.forEach((m, i) => {
+        this.setStackOf(m, { id: stackId, position: i })
+        touched.add(m.id)
+      })
+    })
+    return this.itemsOfPhotos(touched)
+  }
+
+  /**
+   * Stack the folder's unstacked photos taken in bursts: runs with no more
+   * than `seconds` between one capture and the next, two or more long, the
+   * first as cover. Returns how many stacks were made.
+   */
+  autoStack(folder: string, seconds = 3): number {
+    const timed = this.store
+      .photosIn(folder)
+      .filter((r) => !r.stack_id && r.captured_at)
+      .map((r) => ({ r, t: new Date(r.captured_at as string).getTime() }))
+      .filter((x) => Number.isFinite(x.t))
+      .sort((a, b) => a.t - b.t || a.r.name.localeCompare(b.r.name))
+    const runs: PhotoRow[][] = []
+    let run: PhotoRow[] = []
+    let last = -Infinity
+    for (const { r, t } of timed) {
+      if (t - last > seconds * 1000 && run.length > 0) {
+        runs.push(run)
+        run = []
+      }
+      run.push(r)
+      last = t
+    }
+    if (run.length > 0) runs.push(run)
+    const made = runs.filter((g) => g.length >= 2)
+    if (made.length === 0) return 0
+    this.store.tx(() => {
+      for (const g of made) {
+        const id = newId()
+        g.forEach((r, i) => this.setStackOf(r, { id, position: i }))
+      }
+    })
+    this.emit({ name: 'changed', folder })
+    return made.length
+  }
+
+  // ── duplicates ──
+
+  /**
+   * Photos whose picture hash is missing or older than their thumbnail, for
+   * the main process to hash (it has the engine). No thumbnail: a null path.
+   */
+  dhashWork(folder: string | null): { photoId: number; thumbPath: string | null }[] {
+    return this.store
+      .photosInScope(folder)
+      .filter((r) => !(r.dhash && r.thumb_key && r.dhash_key === r.thumb_key))
+      .filter((r) => !this.failed.has(versionOf(r)) && existsSync(r.path))
+      .map((r) => ({
+        photoId: r.id,
+        thumbPath: r.thumb_path && existsSync(r.thumb_path) ? r.thumb_path : null
+      }))
+  }
+
+  /** A photo's picture hash, of its thumbnail with this stamp. */
+  setDhash(photoId: number, hash: string, thumbKey: string): void {
+    this.store.setDhash(photoId, hash, thumbKey)
+  }
+
+  /**
+   * Exact duplicates (same size, same SHA-1; hashed only when the size is
+   * shared, and kept until the file changes) and then near ones (thumbnail
+   * dHashes within `threshold` bits), in `folder` or the whole library. An
+   * exact group counts once among the near ones, so identical files never
+   * make a near group on their own.
+   */
+  async duplicates(folder: string | null, threshold = 6): Promise<SourceListing> {
+    const source: LibrarySource = { kind: 'duplicates', folder, threshold }
+    const exact = new Map<string, PhotoRow[]>()
+    for (const row of this.store.photosSharingSize(folder)) {
+      let hash = row.hash_key === hashKeyOf(row) ? row.content_hash : null
+      if (!hash) {
+        if (!existsSync(row.path)) continue
+        try {
+          hash = await sha1(row.path)
+        } catch {
+          continue
+        }
+        if (this.closed) return { source, items: [], groups: [] }
+        // Gone while it was read.
+        if (!this.store.photo(row.id)) continue
+        this.store.setContentHash(row.id, hash, hashKeyOf(row))
+      }
+      const k = `${row.size}:${hash}`
+      const list = exact.get(k)
+      if (list) list.push(row)
+      else exact.set(k, [row])
+    }
+    const groups: DuplicateGroup[] = []
+    /** An exact group's members: true for the one standing in for it among the near. */
+    const standIn = new Map<number, boolean>()
+    for (const rows of exact.values()) {
+      if (rows.length < 2) continue
+      groups.push({ kind: 'exact', keys: rows.map((r) => keyOf(r.id, null)) })
+      rows.forEach((r, i) => standIn.set(r.id, i === 0))
+    }
+    const entries = this.store
+      .photosInScope(folder)
+      .filter((r) => r.dhash && r.dhash_key === r.thumb_key && standIn.get(r.id) !== false)
+      .map((r) => ({ key: keyOf(r.id, null), hash: r.dhash as string }))
+    for (const g of groupNear(entries, threshold)) {
+      groups.push({ kind: 'near', keys: g.keys, distance: g.distance })
+    }
+    const order = unique(groups.flatMap((g) => g.keys))
+    const rows = this.store.photosByIds(order.map((k) => parseKey(k).photoId))
+    const byKey = new Map(this.itemsOf(rows, (k) => !k.includes(':')).map((it) => [it.key, it]))
+    const items = order.map((k) => byKey.get(k)).filter((x): x is LibraryItem => !!x)
+    return { source, items: this.markMissing(items), groups }
   }
 
   // ── sidecar-backed state ──
@@ -435,11 +1192,12 @@ export class IndexService {
   }
 
   deleteCopy(key: string): void {
-    const { copyId } = parseKey(key)
+    const { photoId, copyId } = parseKey(key)
     if (copyId === null) return
     this.update(key, (s) => {
       s.copies = s.copies.filter((c) => c.id !== copyId)
     })
+    this.store.removeCopyFromCollections(photoId, copyId)
   }
 
   saveSnapshots(key: string, snapshots: Snapshot[]): void {

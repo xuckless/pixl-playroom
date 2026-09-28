@@ -293,7 +293,8 @@ export function Modal({
   children,
   footer,
   wide,
-  icon
+  icon,
+  className
 }: {
   title: string
   onClose: () => void
@@ -301,6 +302,7 @@ export function Modal({
   footer?: ReactNode
   wide?: boolean
   icon?: IconName
+  className?: string
 }): React.JSX.Element {
   useEffect(() => {
     const k = (e: KeyboardEvent): void => {
@@ -326,7 +328,7 @@ export function Modal({
         transition={{ type: 'spring', stiffness: 360, damping: 30, mass: 0.9 }}
       >
         <LiquidGlass
-          className={`modal${wide ? ' wide' : ''}`}
+          className={`modal${wide ? ' wide' : ''}${className ? ` ${className}` : ''}`}
           radius={2}
           bezel={18}
           strength={0.7}

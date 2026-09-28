@@ -1,5 +1,8 @@
 # Pixl Playroom
 
+**Website:** https://xuckless.github.io/pixl-playroom/ (source in [`site/`](site/), published by
+`.github/workflows/pages.yml`; its media are rebuilt with `scripts/site-media.sh`)
+
 A photo developer — the Lightroom kind — built on the **PIXL engine**. Every
 pixel on screen is a real engine render of the photo with its recipe, through
 the same compiler an export uses; the histogram and the colour-concentration

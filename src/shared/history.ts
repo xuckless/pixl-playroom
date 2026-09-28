@@ -45,7 +45,8 @@ const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !
 
 /** The entity lists: arrays whose items carry an `id` and are diffed by it. */
 function isEntityList(path: Seg[]): boolean {
-  if (path.length === 1) return path[0] === 'layers' || path[0] === 'custom'
+  if (path.length === 1)
+    return path[0] === 'layers' || path[0] === 'custom' || path[0] === 'pointColors'
   return (
     path.length === 3 &&
     path[0] === 'layers' &&

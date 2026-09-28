@@ -11,6 +11,7 @@
 import { app, utilityProcess, type UtilityProcess } from 'electron'
 import log from 'electron-log/main'
 import { join } from 'path'
+import { vendoredExiftoolPath } from '../exiftool'
 import type { HostToMain, IndexEvent, IndexRequest } from './protocol'
 import type { IndexService } from './service'
 
@@ -117,6 +118,9 @@ class Connection implements IndexControl {
   private spawn(): void {
     const args = ['--user-data', app.getPath('userData')]
     if (this.firstStart) args.push('--prune')
+    // Resolved here, where a packaged app's paths are known for sure.
+    const exiftool = vendoredExiftoolPath()
+    if (exiftool) args.push('--exiftool', exiftool)
     this.firstStart = false
     const child = utilityProcess.fork(join(__dirname, 'index-host.js'), args, {
       serviceName: 'pixl-index',

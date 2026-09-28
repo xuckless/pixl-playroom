@@ -181,7 +181,12 @@ const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
     hint: 'Drag out from the centre · Shift draws a circle · the handles reshape, the knob turns'
   },
   'wb-picker': { title: 'White balance', hint: 'Click something that should be neutral grey' },
-  'range-picker': { title: 'Range', hint: 'Click the colour or tone the mask should select' }
+  'range-picker': { title: 'Range', hint: 'Click the colour or tone the mask should select' },
+  'point-picker': { title: 'Point colour', hint: 'Click the colour to shift on its own' },
+  tat: {
+    title: 'Targeted',
+    hint: 'Press on the photo and drag up or down to move what controls that colour or tone'
+  }
 }
 
 /**

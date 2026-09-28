@@ -14,10 +14,9 @@ import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { mkdir } from 'fs/promises'
 import { join } from 'path'
-import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020, wbSliders } from '../shared/auto'
+import { autoTone, linearSrgbToRec2020, wbSliders } from '../shared/auto'
 import { compile, orientedFrame, type Compiled } from '../shared/compile'
 import type {
-  AnalyzeRequest,
   HdrWorking,
   ConvertReport,
   ImageStats,
@@ -36,14 +35,14 @@ import {
   type SampleResult,
   type ViewState
 } from '../shared/ipc'
-import { defaultRecipe, hash32, newLocalLayer, type Recipe } from '../shared/recipe'
+import { defaultRecipe, hash32, type Recipe } from '../shared/recipe'
 import type { Vec3 } from '../shared/wb'
+import { analyzeRequest, hdrWorkingOf, measureAutoWb, rendersDir } from './autowb'
 import { brushPlanes } from './brushes'
 import type { PhotoRow } from './db'
 import { EngineError, type EngineClient } from './engine/client'
 import { parseKey } from './keys'
 import type { Library } from './library'
-import { paths } from './paths'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
 import { ensureMaster, ensureProxies, type Proxies, type ProxyFile } from './proxy'
@@ -95,30 +94,6 @@ function reportOf(r: ConvertReport, totalMs: number, notes: string[]): RenderRep
   }
 }
 
-function analyzeRequest(
-  path: string,
-  input: 'Png' | 'Jpeg' | 'Tiff',
-  stride: number
-): AnalyzeRequest {
-  return {
-    source: { Path: path },
-    input,
-    raw: null,
-    domain: 'Encoded',
-    bins: 256,
-    percentiles: [...AUTO_PERCENTILES, 1, 99],
-    clip_low: 0,
-    clip_high: 1,
-    hue_bins: 36,
-    stride,
-    transparent: 'Include',
-    threads: INTERACTIVE_THREADS,
-    weights: null,
-    noise: false,
-    hdr: null
-  }
-}
-
 class Session {
   seq = 0
   view: ViewState = { cropMode: false, before: false, maskLayer: null, targetEdge: 2560 }
@@ -146,9 +121,7 @@ class Session {
 
   /** How a PQ/HLG source is graded and measured: 1.0 is 203-nit reference white. */
   get hdrWorking(): HdrWorking | null {
-    return this.info.is_hdr
-      ? { reference_white_nits: 203, peak_nits: this.info.peak_nits ?? 1000 }
-      : null
+    return hdrWorkingOf(this.info)
   }
 
   constructor(
@@ -685,103 +658,16 @@ class Session {
     return autoTone(stats)
   }
 
-  /**
-   * Auto white balance: the mean colour of the photo's near-neutral pixels
-   * (low saturation, away from black and clipping), falling back to the
-   * whole frame's grey world when too few qualify.
-   */
-  async autoWb(): Promise<SampleResult['wb']> {
-    const src = this.px.draft
-    // A PQ/HLG draft is measured in linear light as `convert` grades it
-    // (1.0 = reference white); the engine refuses it in Linear without `hdr`.
-    const linearReq: AnalyzeRequest = {
-      ...analyzeRequest(src.path, src.input === 'Png' ? 'Png' : 'Tiff', 1),
-      domain: 'Linear',
-      hdr: this.hdrWorking
-    }
-    let means: number[] | null = null
-    try {
-      const layer = newLocalLayer('neutral')
-      const maskOut = join(this.dir, 'auto-wb-mask.png')
-      await this.owner.engine.convert({
-        ...blankRequest(src.path, maskOut, src.input),
-        pixel: { depth: 'Eight', channels: 1 },
-        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-        metadata: STRIP_ALL,
-        color: 'Preserve',
-        grade: {
-          layers: [
-            {
-              name: layer.name,
-              enabled: true,
-              opacity: 1,
-              blend: { mode: 'Normal', space: 'LinearWorking' },
-              mask: {
-                components: [
-                  {
-                    shape: {
-                      Range: {
-                        hue: null,
-                        saturation: { centre: 0, width: 0.3, softness: 0.1 },
-                        luma: { centre: 0.5, width: 0.8, softness: 0.08 },
-                        blur_radius: 0,
-                        invert: false
-                      }
-                    },
-                    mode: 'Add',
-                    opacity: 1,
-                    invert: false,
-                    feather: { radius: 0, edge: 'Zero' }
-                  }
-                ],
-                invert: false,
-                space: {
-                  Encoded: {
-                    space: 'Srgb',
-                    intent: 'RelativeColorimetric',
-                    black_point_compensation: false
-                  }
-                }
-              },
-              stages: [
-                {
-                  space: 'LinearWorking',
-                  ops: [
-                    {
-                      Primary: {
-                        exposure: 0,
-                        lift: { r: 0, g: 0, b: 0 },
-                        gamma: { r: 1, g: 1, b: 1 },
-                        gain: { r: 1, g: 1, b: 1 },
-                        contrast: 1,
-                        contrast_pivot: 0.18,
-                        saturation: 1,
-                        hue_shift: 0
-                      }
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        },
-        inspect: { LayerMask: { layer: 0 } },
-        hdr: this.hdrWorking
-      })
-      const s = await this.owner.engine.analyze({
-        ...linearReq,
-        weights: { source: { Png: maskOut }, resampler: 'Bilinear' }
-      })
-      const total = src.width * src.height
-      if (s.pixels_measured > total * 0.02) means = s.channel_mean
-    } catch (err) {
-      log.info('grey-pixel white balance unavailable, using grey world', (err as Error).message)
-    }
-    if (!means) {
-      const s = await this.owner.engine.analyze(linearReq)
-      means = s.channel_mean
-    }
-    return wbSliders([means[0], means[1], means[2]], this.isRaw, this.info.as_shot_white)
+  /** Auto white balance, measured on the draft proxy (see `autowb.ts`). */
+  autoWb(): Promise<SampleResult['wb']> {
+    return measureAutoWb(
+      this.owner.engine,
+      this.px.draft,
+      this.dir,
+      this.hdrWorking,
+      this.isRaw,
+      this.info.as_shot_white
+    )
   }
 
   /** The noise the denoiser would measure, on the full-resolution frame. */
@@ -808,8 +694,6 @@ class Session {
     return this.save ? this.persist() : Promise.resolve()
   }
 }
-
-const rendersDir = (photoId: number): string => join(paths.photoCache(photoId), 'renders')
 
 export class DevelopSessions {
   private sessions = new Map<string, Session>()

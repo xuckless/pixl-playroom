@@ -13,8 +13,13 @@
   letter-spacing: 0.08em;
 }
 .loupe.tool-wb-picker,
-.loupe.tool-range-picker {
+.loupe.tool-range-picker,
+.loupe.tool-point-picker {
   cursor: crosshair;
+}
+/* the targeted adjustment tool: drag up or down */
+.loupe.tool-tat {
+  cursor: ns-resize;
 }
 .picture {
   position: absolute;

@@ -7,24 +7,32 @@
  */
 import { BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
-import { mkdir } from 'fs/promises'
+import { randomUUID } from 'crypto'
+import { mkdir, unlink } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import { compile, orientedFrame } from '../shared/compile'
+import type { ConvertRequest, Dither } from '../shared/engine-types'
 import {
   buildColor,
   buildEncode,
   buildResize,
   expandTemplate,
   FORMAT_EXT,
+  metadataPlan,
+  outputSharpen,
+  outputSharpenGrade,
   supportsHdr,
   type ExportSettings
 } from '../shared/export'
 import { IPC, type ExportProgress } from '../shared/ipc'
 import { hash32 } from '../shared/recipe'
 import { brushPlanes } from './brushes'
+import { embedMetadata } from './exiftool'
 import { exists } from './exists'
 import type { EngineClient } from './engine/client'
 import type { Library } from './library'
+import { paths } from './paths'
+import { ensureProxies } from './proxy'
 import type { DevelopSessions } from './render'
 import {
   BACKGROUND_THREADS,
@@ -79,12 +87,15 @@ export class Exporter {
       const item = await this.library.item(key)
       progress.current = item?.name ?? key
       this.send(progress)
+      const name = item?.name ?? key
       try {
-        const out = await this.one(key, s, i + 1)
+        const out = await this.one(key, s, i + 1, (message) =>
+          progress.errors.push({ name, message, warning: true })
+        )
         if (out) progress.outputs.push(out)
       } catch (err) {
         log.warn('export failed', key, err)
-        progress.errors.push({ name: item?.name ?? key, message: (err as Error).message })
+        progress.errors.push({ name, message: (err as Error).message })
       }
       progress.done = i + 1
       this.send(progress)
@@ -95,8 +106,16 @@ export class Exporter {
     if (s.reveal && progress.outputs.length > 0) shell.showItemInFolder(progress.outputs[0])
   }
 
-  /** Export one item. Returns the written path, or null when skipped. */
-  private async one(key: string, s: ExportSettings, seq: number): Promise<string | null> {
+  /**
+   * Export one item. Returns the written path, or null when skipped. What
+   * goes wrong after the file is written (its metadata) is a `warn`.
+   */
+  private async one(
+    key: string,
+    s: ExportSettings,
+    seq: number,
+    warn: (message: string) => void
+  ): Promise<string | null> {
     await this.sessions.flush(key)
     const row = await this.library.photoRow(key)
     const item = await this.library.item(key)
@@ -104,12 +123,16 @@ export class Exporter {
     const info = await this.library.probe(row)
     const raw = info.input === 'Raw' ? RAW_DEVELOP : null
     const srcOrientation = sourceOrientation(info, raw)
-    // The full-resolution frame, upright: probe's size turned by the file's
-    // orientation (a RAW's developed frame is a little smaller than its
-    // mosaic; the crop is normalised, so only the aspect has to be right).
+    // The full-resolution frame, upright. A RAW's developed frame is smaller
+    // than its mosaic and not always the same shape (a Canon's masked borders
+    // make 6288×4056 of a 6000×4000 picture), and an exact resize takes the
+    // shape as given, so a RAW's comes from the engine's own report on the
+    // proxies (made once, cached); anything else is probe's size, turned by
+    // the file's orientation.
     const swap = ['Transpose', 'Rotate90', 'Transverse', 'Rotate270'].includes(srcOrientation)
-    const frameW = swap ? info.height : info.width
-    const frameH = swap ? info.width : info.height
+    const developed = raw ? await ensureProxies(this.engine, row, info) : null
+    const frameW = developed?.frameWidth ?? (swap ? info.height : info.width)
+    const frameH = developed?.frameHeight ?? (swap ? info.width : info.height)
     const { user, width, height } = orientedFrame(recipe, frameW, frameH)
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
@@ -165,7 +188,10 @@ export class Exporter {
       floatWork ||
       (resize !== 'None' && !hdrKeep) ||
       (typeof color === 'object' && ('ToneMap' in color || 'Expand' in color))
-    await this.engine.convert({
+    const dither: Dither =
+      s.dither && depth === 'Eight' ? { TriangularNoise: { seed: hash32(row.path) } } : 'None'
+    const plan = metadataPlan(s, item ?? null)
+    const request: ConvertRequest = {
       ...blankRequest(row.path, out, info.input),
       raw,
       resize,
@@ -175,20 +201,77 @@ export class Exporter {
       linear_resample: hdrKeep ? floatWork : true,
       pixel: { depth, channels: 3 },
       encode,
-      metadata: s.metadata,
+      metadata: plan.policy,
       color,
       grade: compiled.grade,
       framing: compiled.framing,
-      dither:
-        s.dither && depth === 'Eight' && floatPath
-          ? { TriangularNoise: { seed: hash32(row.path) } }
-          : 'None',
+      dither: floatPath ? dither : 'None',
       hdr:
         hdrKeep && floatWork
           ? { reference_white_nits: s.hdr.referenceWhite, peak_nits: info.peak_nits ?? s.hdr.peak }
           : null,
       threads: BACKGROUND_THREADS * 2
-    })
+    }
+    // Only an SDR file is sharpened for output.
+    const sdrOut = typeof color === 'object' && ('ConvertTo' in color || 'ToneMap' in color)
+    const sharpen = sdrOut ? outputSharpen(s) : null
+    if (!sharpen) {
+      await this.engine.convert(request)
+    } else {
+      // Output sharpening belongs after the resize, which the engine does
+      // after the grade: so the picture is developed as always into a
+      // lossless 16-bit TIFF in the output space, then sharpened on its way
+      // into the file.
+      const dir = join(paths.cacheRoot(), 'export-tmp')
+      await mkdir(dir, { recursive: true })
+      const tmp = join(dir, `${randomUUID()}.tif`)
+      try {
+        await this.engine.convert({
+          ...request,
+          sink: { Path: tmp },
+          pixel: { depth: 'Sixteen', channels: 3 },
+          encode: { Tiff: { compression: 'None' } },
+          // Pass 2 reads the space from the profile, so it is always written.
+          metadata: { ...plan.policy, icc: true },
+          dither: 'None'
+        })
+        // Converting into the space it is already in changes nothing. Pass 1
+        // wrote upright pixels and reset the orientation, so the EXIF it
+        // carried over is copied on as it is.
+        await this.engine.convert({
+          ...blankRequest(tmp, out, 'Tiff'),
+          pixel: { depth, channels: 3 },
+          encode,
+          metadata: plan.policy,
+          color: {
+            ConvertTo: {
+              to: s.colorSpace,
+              intent: s.intent,
+              black_point_compensation: s.blackPointCompensation
+            }
+          },
+          grade: outputSharpenGrade(s, sharpen),
+          // The sharpen is a float pass of its own, so dither always applies.
+          dither,
+          threads: BACKGROUND_THREADS * 2
+        })
+      } finally {
+        await unlink(tmp).catch(() => {})
+      }
+    }
+
+    // The engine copies blocks as they are; the photo's own fields, the
+    // copyright and the location are ExifTool's. The picture is written by
+    // now, so a format ExifTool cannot write only costs the metadata.
+    try {
+      await embedMetadata(out, plan.tags, {
+        removeLocation: plan.removeLocation,
+        source: row.path
+      })
+    } catch (err) {
+      log.warn('export metadata failed', out, err)
+      warn(`metadata not written: ${(err as Error).message}`)
+    }
     return out
   }
 }

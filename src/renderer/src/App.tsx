@@ -1,8 +1,9 @@
 import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect } from 'react'
-import type { RenderScale } from '../../shared/ipc'
+import type { LibrarySource, RenderScale } from '../../shared/ipc'
 import { RECIPE_GROUPS } from '../../shared/recipe'
 import { api, errorText } from './lib/api'
+import { autoWbBatch } from './lib/autowb'
 import { runJob, useBusy } from './state/busy'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
 import { Scopes } from './develop/Scopes'
@@ -22,6 +23,9 @@ import { useUi } from './state/ui'
 import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
+import { CollectionDialog } from './views/library/CollectionDialog'
+import { InfoDrawer } from './views/library/InfoDrawer'
+import { Sidebar } from './views/library/Sidebar'
 import { FloatingToolbar } from './views/loupe/FloatingToolbar'
 import { MasksFloat } from './panels/masks/MasksFloat'
 import { Loupe } from './views/loupe/Loupe'
@@ -64,7 +68,13 @@ const LibraryScreen = memo(function LibraryScreen(): React.JSX.Element {
     <div className="library">
       <LibraryIdentity />
       <Toolbar />
-      <LibraryView />
+      <div className="library-body">
+        <Sidebar />
+        <main className="library-main">
+          <LibraryView />
+        </main>
+        <InfoDrawer />
+      </div>
       <LibraryStatus />
     </div>
   )
@@ -77,8 +87,12 @@ function Screens(): React.JSX.Element {
 
 function DialogHost(): React.JSX.Element {
   const dialog = useLibrary((s) => s.dialog)
+  const editing = useLibrary((s) => s.editing)
   return (
     <AnimatePresence>
+      {dialog === 'collection' && editing && (
+        <CollectionDialog key={`collection:${editing.id ?? 'new'}`} initial={editing} />
+      )}
       {dialog === 'export' && <ExportDialog key="export" />}
       {dialog === 'sync' && <SyncDialog key="sync" />}
       {dialog === 'preset' && <SavePresetDialog key="preset" />}
@@ -165,6 +179,54 @@ async function waitForEngine(): Promise<void> {
   }
 }
 
+/**
+ * Photos opened from outside (Finder's and Explorer's "Open With", a second
+ * launch): their folder opens with them selected, and the first goes to
+ * Develop. A folder (main sends it with a trailing separator) just opens.
+ * The folder opens as the library's source, in place of whatever was shown.
+ */
+async function openPaths(paths: string[]): Promise<void> {
+  const isDir = (p: string): boolean => /[\\/]$/.test(p)
+  const files = paths.filter((p) => !isDir(p))
+  // A folder loses its separator again, unless it is a root.
+  const dir = paths.find(isDir)?.replace(/(?<=[^\\/:])[\\/]$/, '') ?? null
+  try {
+    const { folder, keys } = files.length
+      ? await api.library.resolvePaths(files)
+      : { folder: dir, keys: [] }
+    if (!folder) return
+    if (!(await useLibrary.getState().openSource({ kind: 'folder', path: folder }))) return
+    const lib = useLibrary.getState()
+    const known = new Set(lib.items.map((i) => i.key))
+    const picked = keys.filter((k) => known.has(k))
+    if (!picked[0]) return
+    useLibrary.setState({ selection: picked, focus: picked[0] })
+    lib.setView('develop')
+    await useDevelop.getState().open(picked[0])
+  } catch (err) {
+    useLibrary.getState().say(errorText(err), 'error')
+  }
+}
+
+/**
+ * What the library showed last time: its source (a folder, a collection, a
+ * keyword), else the last folder (a profile from before sources, or a
+ * collection since deleted).
+ */
+async function openLastSource(): Promise<void> {
+  const [src, folder] = await Promise.all([
+    api.app.getSetting<LibrarySource>('library.lastSource').catch(() => null),
+    api.app.getSetting<string>('library.lastFolder').catch(() => null)
+  ])
+  const lib = useLibrary.getState()
+  if (folder) useLibrary.setState({ lastFolder: folder })
+  // A collection deleted since falls through quietly to the folder.
+  const gone =
+    src?.kind === 'collection' && !useLibrary.getState().collections.some((c) => c.id === src.id)
+  if (src && src.kind !== 'duplicates' && !gone && (await lib.openSource(src))) return
+  if (folder && !(src?.kind === 'folder' && src.path === folder)) await lib.openFolder(folder)
+}
+
 function useShortcuts(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -197,6 +259,7 @@ function useShortcuts(): void {
       if (!mod && (k === 'u' || k === 'U')) return void lib.setMeta({ flag: null })
       if (mod && e.shiftKey && (k === 'e' || k === 'E')) return lib.setDialog('export')
       if (mod && e.shiftKey && (k === 's' || k === 'S')) return lib.setDialog('sync')
+      if (mod && e.shiftKey && (k === 'u' || k === 'U')) return void autoWbBatch(lib.targets())
       if (k === 'ArrowRight' || k === 'ArrowLeft') {
         const vis = lib.visible()
         const i = vis.findIndex((it) => it.key === lib.focus)
@@ -217,6 +280,23 @@ function useShortcuts(): void {
           return e.preventDefault()
         }
         if (mod && (k === 'v' || k === 'V')) return lib.setDialog('sync')
+        // Stacks: ⌘G stacks the selection under the focused photo, ⇧⌘G undoes
+        // it, S opens or closes the focused stack, Shift+S makes it the cover.
+        if (mod && (k === 'g' || k === 'G')) {
+          void (e.shiftKey ? lib.unstackTargets() : lib.stackTargets())
+          return e.preventDefault()
+        }
+        const focused = lib.items.find((i) => i.key === lib.focus)
+        if (!mod && !e.shiftKey && k === 's' && focused?.stack)
+          return lib.toggleStack(focused.stack.id)
+        if (!mod && e.shiftKey && k === 'S' && focused?.stack)
+          return void lib.makeCover(focused.key)
+        const ui = useUi.getState()
+        if (!mod && (k === 'i' || k === 'I')) return ui.setLibraryInfo(!ui.libraryInfo)
+        if ((!mod && k === '\\') || (mod && e.shiftKey && (k === 'l' || k === 'L'))) {
+          ui.setLibrarySidebar(!ui.librarySidebar)
+          return e.preventDefault()
+        }
         return
       }
       // ── develop ──
@@ -336,6 +416,12 @@ function useShortcuts(): void {
       }
       if (k === 'w' || k === 'W')
         return dev.setTool(dev.tool === 'wb-picker' ? 'none' : 'wb-picker')
+      // T: the targeted adjustment tool, for the HSL or Tone Curve panel on show.
+      if ((k === 't' || k === 'T') && (ui.panel === 'hsl' || ui.panel === 'curve')) {
+        if (dev.tool === 'tat') return dev.setTool('none')
+        dev.setTatTarget(ui.panel)
+        return dev.setTool('tat')
+      }
       if (k === 'o' || k === 'O') {
         // In the crop tool O cycles the composition guides, as in Lightroom.
         if (dev.tool === 'crop') return ui.cycleCropGuide()
@@ -389,10 +475,12 @@ export default function App(): React.JSX.Element {
             .getState()
             .patchItems([{ ...it, thumbUrl: url ?? it.thumbUrl, unreadable: !!unreadable }])
       }),
-      api.library.onChanged(() => void useLibrary.getState().refresh()),
+      api.library.onChanged(({ folder }) => useLibrary.getState().onChanged(folder)),
+      api.library.onSourcesChanged(() => void useLibrary.getState().onSourcesChanged()),
       api.develop.onRendered((e) => useDevelop.getState().onRendered(e)),
       startWheelMemory(),
       api.app.onRenderScale(onRenderScale),
+      api.app.onOpenPaths((paths) => void openPaths(paths)),
       api.develop.onRenderError((e) =>
         useDevelop.getState().onError(e.field ? `${e.message} (${e.field})` : e.message)
       ),
@@ -412,11 +500,18 @@ export default function App(): React.JSX.Element {
     const boot = useBoot.getState()
     const engineUp = waitForEngine().then(() => boot.finish('engine'))
     const libraryUp = (async () => {
-      useLibrary.setState({ recent: await api.library.recentFolders() })
+      const [recent, pinned] = await Promise.all([
+        api.library.recentFolders(),
+        api.app.getSetting<string[]>('library.pinned')
+      ])
+      useLibrary.setState({ recent, pinned: Array.isArray(pinned) ? pinned : [] })
+      await useLibrary.getState().loadSources()
       boot.finish('index')
       onRenderScale(await api.app.renderScale())
-      const last = await api.app.getSetting<string>('library.lastFolder')
-      if (last) await useLibrary.getState().openFolder(last)
+      // Photos opened from outside take the place of the last source.
+      const opens = await api.app.takeOpens().catch(() => [])
+      if (opens.length) await openPaths(opens)
+      else await openLastSource()
       boot.finish('folder')
     })()
     void Promise.allSettled([engineUp, libraryUp]).then(() => boot.end())

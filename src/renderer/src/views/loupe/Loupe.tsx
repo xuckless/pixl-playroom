@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { type MaskComponentSetting } from '../../../../shared/recipe'
+import {
+  MAX_POINT_COLORS,
+  newId,
+  type MaskComponentSetting,
+  type Recipe
+} from '../../../../shared/recipe'
+import {
+  applyHslDelta,
+  bandWeights,
+  curveInput,
+  mainBand,
+  nudgeCurve
+} from '../../../../shared/tat'
 import {
   displaySize,
   displayToOriented,
@@ -15,7 +27,7 @@ import {
   type ZoomView
 } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
-import { emptyRange } from '../../lib/helpers'
+import { emptyRange, hsvOf } from '../../lib/helpers'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { samplePatch } from '../../lib/image'
 import { useDevelop } from '../../state/develop'
@@ -59,6 +71,19 @@ function isMouseWheel(e: WheelEvent): boolean {
   return mouse && now > trackpadUntil
 }
 
+/** A targeted-adjustment drag in progress. */
+interface TatDrag {
+  id: number
+  startY: number
+  /** The recipe the press started with: every move applies to it afresh. */
+  base: Recipe
+  /** Set once the sample is in; until then a drag waits. */
+  apply: ((r: Recipe, delta: number) => void) | null
+  label: string
+  lastY: number
+  moved: boolean
+}
+
 export function Loupe(): React.JSX.Element {
   const session = useDevelop((s) => s.session)
   const recipe = useDevelop((s) => s.recipe)
@@ -74,6 +99,8 @@ export function Loupe(): React.JSX.Element {
   const setTool = useDevelop((s) => s.setTool)
   const setZoom = useDevelop((s) => s.setZoom)
   const replace = useDevelop((s) => s.replace)
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
   const setTargetEdge = useDevelop((s) => s.setTargetEdge)
   const gesture = useDevelop((s) => s.gesture)
   const [boxRef, size, boxEl] = useSize()
@@ -207,6 +234,79 @@ export function Loupe(): React.JSX.Element {
     pan.current = { x: e.clientX, y: e.clientY, from: zoom, moved: false }
   }
 
+  // The targeted adjustment tool: press samples the pixel once; a vertical
+  // drag moves what controls it from the recipe the press started with.
+  const tat = useRef<TatDrag | null>(null)
+  const startTat = async (e: React.PointerEvent<HTMLDivElement>): Promise<void> => {
+    if (e.button !== 0 || !recipe || !picture || !vrect) return
+    const box = e.currentTarget.getBoundingClientRect()
+    const p = normalisedIn(e.clientX, e.clientY, {
+      left: box.left + vrect.x,
+      top: box.top + vrect.y,
+      width: vrect.w,
+      height: vrect.h
+    })
+    if (p.x < 0 || p.y < 0 || p.x > 1 || p.y > 1) return
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const t: TatDrag = {
+      id: e.pointerId,
+      startY: e.clientY,
+      base: recipe,
+      apply: null,
+      label: '',
+      lastY: e.clientY,
+      moved: false
+    }
+    tat.current = t
+    const rgb = await samplePatch(picture.url, p.x, p.y)
+    const dev = useDevelop.getState()
+    const say = useLibrary.getState().say
+    if (dev.tatTarget === 'hsl') {
+      if (dev.hslTab === 'point') {
+        tat.current = null
+        return say('The targeted tool moves the H, S and L tabs, not Point')
+      }
+      const s = hsvOf(...rgb)
+      if (s.saturation < 0.05) {
+        tat.current = null
+        return say('That pixel is grey: there is no colour to adjust')
+      }
+      const w = bandWeights(s.hue)
+      const axis = dev.hslTab
+      const band = mainBand(w)
+      const name = axis === 'all' ? 'saturation' : axis
+      t.label = `Targeted: ${band[0].toUpperCase()}${band.slice(1)} ${name}`
+      t.apply = (r, delta) => (r.hsl = applyHslDelta(t.base.hsl, w, axis, delta))
+    } else {
+      const channel = dev.curveChannel
+      const level =
+        channel === 'master' ? hsvOf(...rgb).luma : rgb[{ red: 0, green: 1, blue: 2 }[channel]]
+      // Where the pixel sat on the curve's input, before the curve moved it.
+      const x = curveInput(t.base.toneCurve[channel], level)
+      t.label = `Targeted: curve (${channel})`
+      t.apply = (r, delta) =>
+        (r.toneCurve[channel] = nudgeCurve(t.base.toneCurve[channel], x, delta / 300))
+    }
+    // A drag that went ahead of the sample catches up.
+    if (tat.current === t && t.lastY !== t.startY) moveTat(t.lastY)
+  }
+  const moveTat = (y: number): void => {
+    const t = tat.current
+    if (!t) return
+    t.lastY = y
+    if (!t.apply || y === t.startY) return
+    const delta = (t.startY - y) * 0.4
+    const apply = t.apply
+    t.moved = true
+    edit((r) => apply(r, delta), true)
+  }
+  const endTat = (): void => {
+    const t = tat.current
+    tat.current = null
+    if (t?.moved) commit(t.label)
+  }
+
   const pick = useCallback(
     async (e: React.MouseEvent<HTMLDivElement>) => {
       if (!session || !recipe || !g || !vrect) return
@@ -242,18 +342,7 @@ export function Loupe(): React.JSX.Element {
       } else if (tool === 'range-picker' && picture) {
         const layer = recipe.layers.find((l) => l.id === layerId)
         if (!layer) return useLibrary.getState().say('Select a mask first', 'error')
-        const [r, gg, b] = await samplePatch(picture.url, p.x, p.y)
-        const max = Math.max(r, gg, b)
-        const min = Math.min(r, gg, b)
-        const chroma = max - min
-        let hue = 0
-        if (chroma > 0) {
-          if (max === r) hue = 60 * (((gg - b) / chroma + 6) % 6)
-          else if (max === gg) hue = 60 * ((b - r) / chroma + 2)
-          else hue = 60 * ((r - gg) / chroma + 4)
-        }
-        const sat = max > 0 ? chroma / max : 0
-        const luma = 0.2289 * r + 0.6917 * gg + 0.0793 * b // Display P3 luminance weights
+        const { hue, saturation: sat, luma } = hsvOf(...(await samplePatch(picture.url, p.x, p.y)))
         const next = structuredClone(recipe)
         const l = next.layers.find((x) => x.id === layerId)
         if (!l) return
@@ -278,6 +367,28 @@ export function Loupe(): React.JSX.Element {
         }
         replace(next, 'Pick range')
         madeComponent(madeId)
+        setTool('none')
+      } else if (tool === 'point-picker' && picture) {
+        const s = hsvOf(...(await samplePatch(picture.url, p.x, p.y)))
+        const sample = {
+          hue: Math.round(s.hue),
+          saturation: Math.round(s.saturation * 100) / 100,
+          luminance: Math.round(s.luma * 100) / 100
+        }
+        const next = structuredClone(recipe)
+        const dev = useDevelop.getState()
+        const points = next.pointColors
+        // A new swatch; once they are all used, the selected one is re-sampled.
+        if (points.length < MAX_POINT_COLORS) {
+          const id = newId()
+          points.push({ id, ...sample, shiftHue: 0, shiftSat: 0, shiftLum: 0, range: 50 })
+          dev.setPointId(id)
+          replace(next, 'Point colour: add')
+        } else {
+          const sel = points.find((x) => x.id === dev.pointId) ?? points[points.length - 1]
+          Object.assign(sel, sample)
+          replace(next, 'Point colour: re-sample')
+        }
         setTool('none')
       }
     },
@@ -310,23 +421,29 @@ export function Loupe(): React.JSX.Element {
       onPointerDownCapture={(e) => {
         if (spaceHeld()) startPan(e)
       }}
-      onPointerDown={startPan}
+      onPointerDown={(e) => {
+        if (tool === 'tat' && !spaceHeld()) void startTat(e)
+        else startPan(e)
+      }}
       onPointerMove={(e) => {
         const box = e.currentTarget.getBoundingClientRect()
         setPointer({ x: e.clientX - box.left, y: e.clientY - box.top })
+        if (tat.current?.id === e.pointerId) return moveTat(e.clientY)
         const p = pan.current
         if (!p || !viewport) return
         if (Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y) > 3) p.moved = true
         preview(panBy(viewport, p.from, e.clientX - p.x, e.clientY - p.y))
       }}
       onPointerUp={() => {
+        endTat()
         const p = pan.current
         pan.current = null
         if (p && live.current) preview(live.current, true)
       }}
+      onPointerCancel={endTat}
       onPointerLeave={() => setPointer(null)}
       onClick={(e) => {
-        if (tool === 'wb-picker' || tool === 'range-picker') void pick(e)
+        if (tool === 'wb-picker' || tool === 'range-picker' || tool === 'point-picker') void pick(e)
       }}
       onDoubleClick={(e) => {
         if (tool !== 'none') return

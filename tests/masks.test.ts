@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   compile,
   scaleLocalAdjust,
+  smoothnessFeather,
   smoothnessRadius,
   type CompileContext
 } from '../src/shared/compile'
@@ -72,18 +73,22 @@ test('Amount 0 still leaves the mask inspectable', () => {
   )
 })
 
-test('Range smoothness becomes the key blur, in buffer pixels, within what the engine accepts', () => {
+test('Range smoothness softens by feather: the engine refuses a blur on a Range mask', () => {
   assert.equal(smoothnessRadius(0, { width: 6000, height: 4000, scale: 0.4 }), 0)
   assert.equal(smoothnessRadius(100, { width: 6000, height: 4000, scale: 0.4 }), 16)
   assert.equal(smoothnessRadius(100, { width: 40, height: 30, scale: 0.1 }), 0)
+  assert.equal(smoothnessFeather(0), 0)
+  assert.equal(smoothnessFeather(100), 0.01)
   const r = defaultRecipe(false)
   const l = newLocalLayer('m')
   l.components.push(range(50))
   r.layers.push(l)
-  const shape = compile(r, ctx).grade!.layers[0].mask!.components[0].shape as {
-    Range: { blur_radius: number }
+  const c = compile(r, ctx).grade!.layers[0].mask!.components[0] as {
+    feather: { radius: number }
+    shape: { Range: { blur_radius: number } }
   }
-  assert.equal(shape.Range.blur_radius, 8)
+  assert.equal(c.shape.Range.blur_radius, 0)
+  assert.equal(c.feather.radius, 0.005)
 })
 
 test('gradients reach the engine as raster planes, and are dropped without one', () => {

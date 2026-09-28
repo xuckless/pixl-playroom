@@ -1,24 +1,25 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { copyFile, readdir } from 'fs/promises'
+import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { cpus } from 'os'
 import type { ExportSettings } from '../shared/export'
 import {
   IPC,
   type AppError,
+  type Collection,
   type ExportPreset,
   type HistoryLog,
+  type LibrarySource,
   type LutProfile,
   type MetaPatch,
+  type MetaTextPatch,
   type Preset,
   type RegionRequest,
   type Snapshot,
   type ViewState
 } from '../shared/ipc'
-import { absoluteWb, baseWhite } from '../shared/compile'
-import type { WhitePoint } from '../shared/engine-types'
-import { absoluteFromOp, relativeFromOp } from '../shared/wb'
+import { convertWb, type WbContext } from '../shared/wbconvert'
 import { BUILTIN_PRESETS } from '../shared/presets'
 import { applyGroups, newId, planeRef, type Recipe, type RecipeGroup } from '../shared/recipe'
 import type { IndexClient } from './indexer/client'
@@ -26,10 +27,12 @@ import { IndexError } from './indexer/client'
 import type { PlaneStore } from './planestore'
 import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
+import { autoWbBatch, setWbBatch } from './autowb'
 import { enhanceAvailability, type Enhancer } from './enhance'
 import type { Exporter } from './exporter'
 import { parseKey } from './keys'
 import type { Library } from './library'
+import { takeOpens } from './open'
 import { paths } from './paths'
 import type { DevelopSessions } from './render'
 
@@ -50,38 +53,11 @@ function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => Pro
   })
 }
 
-interface WbContext {
-  isRaw: boolean
-  asShot: WhitePoint | null
-}
-
 async function wbContext(library: Library, key: string): Promise<WbContext> {
   const row = await library.photoRow(key)
   const isRaw = row.is_raw === 1
   const info = isRaw ? await library.probe(row) : null
   return { isRaw, asShot: info?.as_shot_white ?? null }
-}
-
-/** The same white, in the target's slider units. */
-function convertWb(wb: Recipe['wb'], from: WbContext, to: WbContext): Recipe['wb'] {
-  if (absoluteWb(from) === absoluteWb(to)) return wb
-  const op = baseWhite({ wb } as Recipe, from) ?? { kelvin: 6504, tint: 0 }
-  if (absoluteWb(to) && to.asShot) {
-    const abs = absoluteFromOp(op, to.asShot)
-    return {
-      mode: 'custom',
-      temperature: Math.round(abs.kelvin),
-      tint: Math.round(abs.tint * 3000),
-      preset: null
-    }
-  }
-  const rel = relativeFromOp(op)
-  return {
-    mode: 'custom',
-    temperature: Math.round(rel.temperature),
-    tint: Math.round(rel.tint),
-    preset: null
-  }
 }
 
 export interface Services {
@@ -107,6 +83,9 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.reveal, (path: string) => shell.showItemInFolder(path))
   handle(IPC.app.renderScale, () => renderScale())
   handle(IPC.app.restart, () => restart())
+
+  // ── opens (Open With, second launch) ── workstream E
+  handle(IPC.app.takeOpens, () => takeOpens())
 
   // ── library ──
   handle(IPC.library.chooseFolder, async () => {
@@ -176,6 +155,66 @@ export function registerIpc(s: Services): void {
     return items
   })
 
+  // ── library sources, metadata, collections, stacks, duplicates ── workstream D1
+  handle(IPC.library.openSource, (src: LibrarySource) => s.library.openSource(src))
+  handle(IPC.library.resolvePaths, (paths: string[]) => s.index.resolvePaths(paths))
+  handle(IPC.library.setMetadata, (keys: string[], patch: MetaTextPatch) =>
+    s.index.setMetadata(keys, patch)
+  )
+  handle(IPC.library.keywordTree, () => s.index.keywordTree())
+  handle(IPC.library.collections, () => s.index.collections())
+  handle(IPC.library.saveCollection, (c: Omit<Collection, 'id' | 'count'> & { id?: string }) =>
+    s.index.saveCollection(c)
+  )
+  handle(IPC.library.removeCollection, (id: string) => s.index.removeCollection(id))
+  handle(IPC.library.collectionItems, (id: string, keys: string[], action: 'add' | 'remove') =>
+    s.index.collectionItems(id, keys, action)
+  )
+  handle(IPC.library.exportCollections, async (ids: string[]): Promise<string | null> => {
+    const file = await s.index.exportCollections(ids)
+    const only = file.collections.length === 1 ? file.collections[0].name : 'Collections'
+    const opts = {
+      defaultPath: `${only.replace(/[/\\:*?"<>|]/g, '-')}.json`,
+      filters: [{ name: 'Collections', extensions: ['json'] }]
+    }
+    const w = win()
+    const r = w ? await dialog.showSaveDialog(w, opts) : await dialog.showSaveDialog(opts)
+    if (r.canceled || !r.filePath) return null
+    await writeFile(r.filePath, JSON.stringify(file, null, 2))
+    return r.filePath
+  })
+  handle(IPC.library.importCollections, async (): Promise<Collection[]> => {
+    const opts = {
+      properties: ['openFile'] as 'openFile'[],
+      filters: [{ name: 'Collections', extensions: ['json'] }]
+    }
+    const w = win()
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    if (r.canceled || r.filePaths.length === 0) return []
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(await readFile(r.filePaths[0], 'utf8'))
+    } catch {
+      throw new Error(`${basename(r.filePaths[0])} is not a collections file`)
+    }
+    return s.index.importCollections(parsed)
+  })
+  handle(IPC.library.stack, (keys: string[], cover: string) => s.index.stack(keys, cover))
+  handle(IPC.library.unstack, (keys: string[]) => s.index.unstack(keys))
+  handle(IPC.library.stackTop, (key: string) => s.index.stackTop(key))
+  handle(IPC.library.autoStack, (folder: string, seconds?: number) =>
+    s.index.autoStack(folder, seconds ?? 3)
+  )
+  handle(IPC.library.duplicates, (folder: string | null, threshold?: number) =>
+    s.library.duplicates(folder, threshold ?? 6)
+  )
+
+  // ── batch auto white balance ── workstream B
+  // Each photo measured on its own draft proxy by the background engine;
+  // the renderer sends a few keys at a time so it can show progress and stop.
+  handle(IPC.library.autoWb, (keys: string[]) => autoWbBatch(s, keys))
+  handle(IPC.library.setWb, (pairs: { key: string; wb: Recipe['wb'] }[]) => setWbBatch(s, pairs))
+
   // ── develop ──
   // Recipes go out with their brush planes by reference and come back in
   // hydrated (planestore.ts): the renderer never holds the PNGs in its state.
@@ -237,8 +276,13 @@ export function registerIpc(s: Services): void {
     }))
   )
   handle(IPC.presets.save, async (p: Omit<Preset, 'id' | 'builtin'> & { id?: string }) => {
+    // The engine white only means something for a custom white balance the
+    // preset actually carries.
+    const { wbOp, ...rest } = p
+    const keepsWb = p.groups.includes('whiteBalance') && p.recipe.wb.mode === 'custom'
     const preset: Preset = {
-      ...p,
+      ...rest,
+      ...(keepsWb && wbOp ? { wbOp } : {}),
       recipe: await s.planes.hydrate(p.recipe),
       id: p.id ?? newId(),
       builtin: false

@@ -28,6 +28,23 @@ export interface PhotoRow {
   thumb_path: string | null
   thumb_key: string | null
   sidecar_mtime: number | null
+  title: string | null
+  caption: string | null
+  copyright: string | null
+  xmp_mtime: number | null
+  content_hash: string | null
+  hash_key: string | null
+  dhash: string | null
+  dhash_key: string | null
+  captured_at: string | null
+  iso: number | null
+  focal: number | null
+  fnumber: number | null
+  exposure: number | null
+  camera: string | null
+  lens: string | null
+  stack_id: string | null
+  stack_pos: number | null
 }
 
 export interface CopyRow {
@@ -40,6 +57,17 @@ export interface CopyRow {
   edited: number
   thumb_path: string | null
   thumb_key: string | null
+}
+
+export interface CollectionRow {
+  id: string
+  name: string
+  kind: 'manual' | 'smart' | 'set'
+  parent: string | null
+  /** A smart collection's SmartGroup, as JSON. */
+  rules: string | null
+  sort: number
+  created_at: string
 }
 
 const SCHEMA = `
@@ -94,6 +122,138 @@ CREATE TABLE IF NOT EXISTS export_presets (id TEXT PRIMARY KEY, name TEXT NOT NU
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS planes (ref TEXT PRIMARY KEY, png TEXT NOT NULL);
 `
+
+const columnsOf = (db: DatabaseSync, table: string): string[] =>
+  (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name)
+
+/** Add the columns `table` lacks: a migration re-run after a crash finds some already there. */
+function addColumns(db: DatabaseSync, table: string, cols: Record<string, string>): void {
+  const have = columnsOf(db, table)
+  for (const [name, type] of Object.entries(cols)) {
+    if (!have.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`)
+  }
+}
+
+/**
+ * Schema changes, in order; `PRAGMA user_version` says how many have run.
+ * Each runs in its own transaction and must be safe on a database that
+ * already has part of it (every index made before versioning is at 0).
+ */
+export const MIGRATIONS: ((db: DatabaseSync) => void)[] = [
+  // 1. History became steps: each row past the base holds the patch it made,
+  // and can be hidden. Older rows are converted when their item is read.
+  (db) => addColumns(db, 'history', { patch: 'TEXT', hidden: 'INTEGER NOT NULL DEFAULT 0' }),
+  // 2. The library: descriptive metadata (mirrored from .xmp sidecars), the
+  // camera fields as columns so they can be searched, content and picture
+  // hashes for duplicates, stacks (mirrored from the sidecar), keywords and
+  // collections; a preset's white balance as the engine's white.
+  (db) => {
+    addColumns(db, 'photos', {
+      title: 'TEXT',
+      caption: 'TEXT',
+      copyright: 'TEXT',
+      xmp_mtime: 'REAL',
+      content_hash: 'TEXT',
+      hash_key: 'TEXT',
+      dhash: 'TEXT',
+      dhash_key: 'TEXT',
+      captured_at: 'TEXT',
+      iso: 'REAL',
+      focal: 'REAL',
+      fnumber: 'REAL',
+      exposure: 'REAL',
+      camera: 'TEXT',
+      lens: 'TEXT',
+      stack_id: 'TEXT',
+      stack_pos: 'INTEGER'
+    })
+    addColumns(db, 'presets', { wb_op: 'TEXT' })
+    db.exec(`
+CREATE TABLE IF NOT EXISTS photo_keywords (
+  photo_id INTEGER NOT NULL,
+  path TEXT NOT NULL,
+  PRIMARY KEY (photo_id, path)
+);
+CREATE INDEX IF NOT EXISTS photo_keywords_path ON photo_keywords(path);
+CREATE TABLE IF NOT EXISTS collections (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('manual', 'smart', 'set')),
+  parent TEXT,
+  rules TEXT,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS collection_items (
+  collection_id TEXT NOT NULL,
+  photo_id INTEGER NOT NULL,
+  copy_id TEXT NOT NULL DEFAULT '',
+  added_at TEXT NOT NULL,
+  PRIMARY KEY (collection_id, photo_id, copy_id)
+);
+CREATE INDEX IF NOT EXISTS collection_items_photo ON collection_items(photo_id);
+CREATE INDEX IF NOT EXISTS photos_captured ON photos(captured_at);
+CREATE INDEX IF NOT EXISTS photos_size ON photos(size);
+CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
+`)
+    // The camera fields, from the JSON already read.
+    const rows = db
+      .prepare('SELECT id, camera_json FROM photos WHERE camera_json IS NOT NULL')
+      .all() as { id: number; camera_json: string }[]
+    const set = db.prepare(
+      'UPDATE photos SET captured_at = ?, iso = ?, focal = ?, fnumber = ?, exposure = ?, camera = ?, lens = ? WHERE id = ?'
+    )
+    for (const r of rows) {
+      let c: Partial<CameraInfo>
+      try {
+        c = JSON.parse(r.camera_json) as Partial<CameraInfo>
+      } catch {
+        continue
+      }
+      set.run(...cameraColumns(c), r.id)
+    }
+  }
+]
+
+/** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
+export function cameraColumns(
+  c: Partial<CameraInfo> | null
+): [
+  string | null,
+  number | null,
+  number | null,
+  number | null,
+  number | null,
+  string | null,
+  string | null
+] {
+  const camera = [c?.make, c?.model].filter((x): x is string => !!x).join(' ') || null
+  return [
+    c?.capturedAt ?? null,
+    c?.iso ?? null,
+    c?.focalLength ?? null,
+    c?.fNumber ?? null,
+    c?.exposureTime ?? null,
+    camera,
+    c?.lens ?? null
+  ]
+}
+
+export function migrate(db: DatabaseSync): void {
+  let version = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
+  while (version < MIGRATIONS.length) {
+    db.exec('BEGIN')
+    try {
+      MIGRATIONS[version](db)
+      db.exec(`PRAGMA user_version = ${version + 1}`)
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    }
+    version++
+  }
+}
 
 /** History entries kept per item (the base and its steps); older steps fold into the base. */
 const HISTORY_LIMIT = 200
@@ -157,14 +317,7 @@ export class Store {
     const db = new DatabaseSync(file)
     db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;')
     db.exec(SCHEMA)
-    // History became steps: each row past the base holds the patch it made,
-    // and can be hidden. Older rows are converted when their item is read.
-    const cols = (db.prepare('PRAGMA table_info(history)').all() as { name: string }[]).map(
-      (c) => c.name
-    )
-    if (!cols.includes('patch')) db.exec('ALTER TABLE history ADD COLUMN patch TEXT')
-    if (!cols.includes('hidden'))
-      db.exec('ALTER TABLE history ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0')
+    migrate(db)
     return new Store(db)
   }
 
@@ -220,17 +373,223 @@ export class Store {
     return this.photoByPath(p.path) as PhotoRow
   }
 
-  /** Forget the folder's photos that are no longer on disk. Returns how many went. */
+  /**
+   * Forget the folder's photos that are no longer on disk, with their
+   * copies, keywords and places in collections. Returns how many went.
+   */
   removeMissing(folder: string, present: Set<string>): number {
     let removed = 0
     for (const row of this.photosIn(folder)) {
       if (!present.has(row.path)) {
         this.prepare('DELETE FROM photos WHERE id = ?').run(row.id)
         this.prepare('DELETE FROM copies WHERE photo_id = ?').run(row.id)
+        this.prepare('DELETE FROM photo_keywords WHERE photo_id = ?').run(row.id)
+        this.prepare('DELETE FROM collection_items WHERE photo_id = ?').run(row.id)
         removed++
       }
     }
     return removed
+  }
+
+  /** Every photo the index knows, in folder and name order. */
+  allPhotos(): PhotoRow[] {
+    return this.prepare('SELECT * FROM photos ORDER BY folder, name').all() as unknown as PhotoRow[]
+  }
+
+  /** These photos, in folder and name order (unknown ids are left out). */
+  photosByIds(ids: number[]): PhotoRow[] {
+    const rows = this.inChunks(ids, (qs) => `SELECT * FROM photos WHERE id IN (${qs})`)
+    return (rows as unknown as PhotoRow[]).sort(
+      (a, b) => a.folder.localeCompare(b.folder) || a.name.localeCompare(b.name)
+    )
+  }
+
+  /** Every copy of these photos. */
+  copiesOfPhotos(ids: number[]): CopyRow[] {
+    return this.inChunks(
+      ids,
+      (qs) => `SELECT * FROM copies WHERE photo_id IN (${qs}) ORDER BY name`
+    ) as unknown as CopyRow[]
+  }
+
+  /** A query over a list of ids, a few hundred at a time (SQLite limits the parameters). */
+  private inChunks(ids: number[], sql: (placeholders: string) => string): unknown[] {
+    const out: unknown[] = []
+    for (let i = 0; i < ids.length; i += 500) {
+      const part = ids.slice(i, i + 500)
+      out.push(...this.prepare(sql(part.map(() => '?').join(','))).all(...part))
+    }
+    return out
+  }
+
+  /** Photos of this size or any other that more than one photo has, in scope. */
+  photosSharingSize(folder: string | null): PhotoRow[] {
+    const where = folder === null ? '' : 'WHERE folder = ?'
+    const args = folder === null ? [] : [folder]
+    return this.prepare(
+      `SELECT * FROM photos WHERE size IN (
+         SELECT size FROM photos ${where} GROUP BY size HAVING COUNT(*) > 1
+       ) ${folder === null ? '' : 'AND folder = ?'} ORDER BY folder, name`
+    ).all(...args, ...args) as unknown as PhotoRow[]
+  }
+
+  photosInScope(folder: string | null): PhotoRow[] {
+    return folder === null ? this.allPhotos() : this.photosIn(folder)
+  }
+
+  setContentHash(id: number, hash: string, key: string): void {
+    this.prepare('UPDATE photos SET content_hash = ?, hash_key = ? WHERE id = ?').run(hash, key, id)
+  }
+
+  setDhash(id: number, hash: string, key: string): void {
+    this.prepare('UPDATE photos SET dhash = ?, dhash_key = ? WHERE id = ?').run(hash, key, id)
+  }
+
+  // ── descriptive metadata (mirrored from the .xmp) ──
+
+  setXmp(
+    id: number,
+    meta: { title: string | null; caption: string | null; copyright: string | null },
+    keywords: string[],
+    mtime: number | null
+  ): void {
+    this.prepare(
+      'UPDATE photos SET title = ?, caption = ?, copyright = ?, xmp_mtime = ? WHERE id = ?'
+    ).run(meta.title, meta.caption, meta.copyright, mtime, id)
+    this.prepare('DELETE FROM photo_keywords WHERE photo_id = ?').run(id)
+    const ins = this.prepare('INSERT OR IGNORE INTO photo_keywords(photo_id, path) VALUES (?, ?)')
+    for (const k of keywords) ins.run(id, k)
+  }
+
+  keywordsOf(id: number): string[] {
+    return (
+      this.prepare('SELECT path FROM photo_keywords WHERE photo_id = ? ORDER BY path').all(id) as {
+        path: string
+      }[]
+    ).map((r) => r.path)
+  }
+
+  /** Each photo's keywords, for a listing: one query per few hundred photos. */
+  keywordsFor(ids: number[]): Map<number, string[]> {
+    const out = new Map<number, string[]>()
+    const rows = this.inChunks(
+      ids,
+      (qs) => `SELECT photo_id, path FROM photo_keywords WHERE photo_id IN (${qs}) ORDER BY path`
+    ) as { photo_id: number; path: string }[]
+    for (const r of rows) {
+      const list = out.get(r.photo_id)
+      if (list) list.push(r.path)
+      else out.set(r.photo_id, [r.path])
+    }
+    return out
+  }
+
+  allKeywords(): { photo_id: number; path: string }[] {
+    return this.prepare('SELECT photo_id, path FROM photo_keywords').all() as {
+      photo_id: number
+      path: string
+    }[]
+  }
+
+  /** The photos with this keyword or one under it. */
+  photoIdsWithKeyword(path: string): number[] {
+    return (
+      this.prepare(
+        "SELECT DISTINCT photo_id FROM photo_keywords WHERE path = ? OR path LIKE ? ESCAPE '\\'"
+      ).all(path, path.replace(/[\\%_]/g, (c) => '\\' + c) + '|%') as { photo_id: number }[]
+    ).map((r) => r.photo_id)
+  }
+
+  // ── stacks (mirrored from the sidecar) ──
+
+  setStack(id: number, stackId: string | null, position: number | null): void {
+    this.prepare('UPDATE photos SET stack_id = ?, stack_pos = ? WHERE id = ?').run(
+      stackId,
+      position,
+      id
+    )
+  }
+
+  stackMembers(stackId: string): PhotoRow[] {
+    return this.prepare('SELECT * FROM photos WHERE stack_id = ? ORDER BY stack_pos, name').all(
+      stackId
+    ) as unknown as PhotoRow[]
+  }
+
+  /** How many photos each of these stacks holds. */
+  stackSizes(stackIds: string[]): Map<string, number> {
+    const out = new Map<string, number>()
+    for (let i = 0; i < stackIds.length; i += 500) {
+      const part = stackIds.slice(i, i + 500)
+      const rows = this.prepare(
+        `SELECT stack_id, COUNT(*) AS n FROM photos WHERE stack_id IN (${part.map(() => '?').join(',')}) GROUP BY stack_id`
+      ).all(...part) as { stack_id: string; n: number }[]
+      for (const r of rows) out.set(r.stack_id, r.n)
+    }
+    return out
+  }
+
+  // ── collections ──
+
+  collections(): CollectionRow[] {
+    return this.prepare(
+      'SELECT * FROM collections ORDER BY sort, name COLLATE NOCASE'
+    ).all() as unknown as CollectionRow[]
+  }
+
+  collection(id: string): CollectionRow | undefined {
+    return this.prepare('SELECT * FROM collections WHERE id = ?').get(id) as unknown as
+      CollectionRow | undefined
+  }
+
+  saveCollection(c: Omit<CollectionRow, 'created_at'>): void {
+    this.prepare(
+      `INSERT INTO collections(id, name, kind, parent, rules, sort, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, kind = excluded.kind,
+           parent = excluded.parent, rules = excluded.rules, sort = excluded.sort`
+    ).run(c.id, c.name, c.kind, c.parent, c.rules, c.sort, new Date().toISOString())
+  }
+
+  /** Remove a collection and its items; what sat in it (a set's children) moves to the top. */
+  removeCollection(id: string): void {
+    this.prepare('DELETE FROM collection_items WHERE collection_id = ?').run(id)
+    this.prepare('UPDATE collections SET parent = NULL WHERE parent = ?').run(id)
+    this.prepare('DELETE FROM collections WHERE id = ?').run(id)
+  }
+
+  collectionItems(id: string): { photo_id: number; copy_id: string }[] {
+    return this.prepare(
+      'SELECT photo_id, copy_id FROM collection_items WHERE collection_id = ?'
+    ).all(id) as { photo_id: number; copy_id: string }[]
+  }
+
+  /** Every manual collection's items, for smart rules that name them. */
+  allCollectionItems(): { collection_id: string; photo_id: number; copy_id: string }[] {
+    return this.prepare('SELECT collection_id, photo_id, copy_id FROM collection_items').all() as {
+      collection_id: string
+      photo_id: number
+      copy_id: string
+    }[]
+  }
+
+  addCollectionItem(id: string, photoId: number, copyId: string): void {
+    this.prepare(
+      'INSERT OR IGNORE INTO collection_items(collection_id, photo_id, copy_id, added_at) VALUES (?, ?, ?, ?)'
+    ).run(id, photoId, copyId, new Date().toISOString())
+  }
+
+  removeCollectionItem(id: string, photoId: number, copyId: string): void {
+    this.prepare(
+      'DELETE FROM collection_items WHERE collection_id = ? AND photo_id = ? AND copy_id = ?'
+    ).run(id, photoId, copyId)
+  }
+
+  /** A deleted copy leaves the collections it was in. */
+  removeCopyFromCollections(photoId: number, copyId: string): void {
+    this.prepare('DELETE FROM collection_items WHERE photo_id = ? AND copy_id = ?').run(
+      photoId,
+      copyId
+    )
   }
 
   hasPhotosIn(folder: string): boolean {
@@ -255,7 +614,9 @@ export class Store {
   }
 
   setCamera(id: number, camera: CameraInfo): void {
-    this.prepare('UPDATE photos SET camera_json = ? WHERE id = ?').run(JSON.stringify(camera), id)
+    this.prepare(
+      'UPDATE photos SET camera_json = ?, captured_at = ?, iso = ?, focal = ?, fnumber = ?, exposure = ?, camera = ?, lens = ? WHERE id = ?'
+    ).run(JSON.stringify(camera), ...cameraColumns(camera), id)
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, key: string): void {
@@ -476,6 +837,7 @@ export class Store {
         grp: string
         groups: string
         recipe: string
+        wb_op: string | null
       }[]
     ).map((r) => ({
       id: r.id,
@@ -483,14 +845,22 @@ export class Store {
       group: r.grp,
       builtin: false,
       groups: JSON.parse(r.groups) as RecipeGroup[],
-      recipe: JSON.parse(r.recipe) as Recipe
+      recipe: JSON.parse(r.recipe) as Recipe,
+      ...(r.wb_op ? { wbOp: JSON.parse(r.wb_op) as NonNullable<Preset['wbOp']> } : {})
     }))
   }
 
   savePreset(p: Preset): void {
     this.prepare(
-      'INSERT INTO presets(id, name, grp, groups, recipe) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, grp = excluded.grp, groups = excluded.groups, recipe = excluded.recipe'
-    ).run(p.id, p.name, p.group, JSON.stringify(p.groups), JSON.stringify(p.recipe))
+      'INSERT INTO presets(id, name, grp, groups, recipe, wb_op) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, grp = excluded.grp, groups = excluded.groups, recipe = excluded.recipe, wb_op = excluded.wb_op'
+    ).run(
+      p.id,
+      p.name,
+      p.group,
+      JSON.stringify(p.groups),
+      JSON.stringify(p.recipe),
+      p.wbOp ? JSON.stringify(p.wbOp) : null
+    )
   }
 
   removePreset(id: string): void {

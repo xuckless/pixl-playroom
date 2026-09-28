@@ -10,14 +10,18 @@ import type {
   Depth,
   Encode,
   GamutMap,
+  Grade,
   MetadataPolicy,
   PngCompression,
   RenderingIntent,
   Resize,
+  Sharpen,
   Subsampling,
   TiffCompression,
   ToneMapOperator
 } from './engine-types'
+import type { PhotoMeta } from './ipc'
+import { flatSubjects } from './keywords'
 
 export type ExportFormat = 'jpeg' | 'png' | 'tiff' | 'webp' | 'avif' | 'jxl' | 'heic'
 
@@ -32,6 +36,13 @@ export const FORMAT_EXT: Record<ExportFormat, string> = {
 }
 
 export type ResizeMode = 'none' | 'long' | 'short' | 'width' | 'height' | 'megapixels' | 'percent'
+
+/** Output sharpening: after the resize, for where the picture will be seen. */
+export interface OutputSharpenSetting {
+  enabled: boolean
+  media: 'screen' | 'matte' | 'glossy'
+  amount: 'low' | 'standard' | 'high'
+}
 
 export interface ExportSettings {
   /** null exports beside each original. */
@@ -60,6 +71,13 @@ export interface ExportSettings {
   blackPointCompensation: boolean
   resize: { mode: ResizeMode; value: number; enlarge: boolean }
   metadata: MetadataPolicy
+  /** all: the photo's metadata plus its title, caption, keywords; copyrightOnly: only the copyright. */
+  metaMode: 'all' | 'copyrightOnly'
+  /** Strip GPS from what is written. */
+  removeLocation: boolean
+  /** Written when the photo has no copyright of its own ("" writes nothing). */
+  copyright: string
+  outputSharpen: OutputSharpenSetting
   dither: boolean
   hdr: {
     /** sdr: an SDR file (HDR sources are tone mapped); keep: stay PQ/HLG; expand: SDR → PQ/HLG. */
@@ -102,6 +120,10 @@ export function defaultExportSettings(): ExportSettings {
     blackPointCompensation: true,
     resize: { mode: 'none', value: 2048, enlarge: false },
     metadata: { exif: true, icc: true, xmp: true, iptc: true },
+    metaMode: 'all',
+    removeLocation: false,
+    copyright: '',
+    outputSharpen: { enabled: false, media: 'screen', amount: 'standard' },
     dither: true,
     hdr: {
       mode: 'sdr',
@@ -272,6 +294,69 @@ export function buildColor(
   }
 }
 
+/**
+ * Output sharpening's radius in output pixels: a screen shows every pixel,
+ * gloss keeps a print's edges, and matte paper softens them the most.
+ */
+const OUTPUT_RADIUS: Record<OutputSharpenSetting['media'], number> = {
+  screen: 0.6,
+  glossy: 1,
+  matte: 1.3
+}
+const OUTPUT_AMOUNT: Record<OutputSharpenSetting['amount'], number> = {
+  low: 0.45,
+  standard: 0.75,
+  high: 1.1
+}
+
+/**
+ * The sharpening applied after the resize, in engine units (the recipe's
+ * default RAW sharpening compiles to amount 0.8, radius 1), or null when
+ * there is none: switched off, or an HDR delivery, whose values above SDR
+ * white a display-referred sharpen would clip.
+ */
+export function outputSharpen(s: ExportSettings): Sharpen | null {
+  const o = s.outputSharpen
+  if (!o?.enabled || s.hdr.mode === 'keep' || s.hdr.mode === 'expand') return null
+  const matte = o.media === 'matte'
+  return {
+    amount: Math.round(OUTPUT_AMOUNT[o.amount] * (matte ? 1.2 : 1) * 1e4) / 1e4,
+    radius: OUTPUT_RADIUS[o.media],
+    detail: matte ? 0.4 : 0.3,
+    masking: 0
+  }
+}
+
+/**
+ * The grade of output sharpening's own pass: the one op, in the export's
+ * colour space as encoded, so it acts on the values the file will hold.
+ */
+export function outputSharpenGrade(s: ExportSettings, sharpen: Sharpen): Grade {
+  return {
+    layers: [
+      {
+        name: 'output-sharpen',
+        enabled: true,
+        opacity: 1,
+        mask: null,
+        blend: { mode: 'Normal', space: 'LinearWorking' },
+        stages: [
+          {
+            space: {
+              Encoded: {
+                space: s.colorSpace,
+                intent: s.intent,
+                black_point_compensation: s.blackPointCompensation
+              }
+            },
+            ops: [{ Sharpen: sharpen }]
+          }
+        ]
+      }
+    ]
+  }
+}
+
 /** Expand a filename template (without extension). */
 export function expandTemplate(
   template: string,
@@ -286,4 +371,69 @@ export function expandTemplate(
     .replaceAll('{copy}', t.copy)
   // Nothing that would leave the folder or trip a filesystem.
   return out.replace(/[\\/:*?"<>|]/g, '_').trim() || t.name
+}
+
+/**
+ * What an export carries: the blocks the engine copies from the original,
+ * then what ExifTool writes into the file after it.
+ */
+export interface MetadataPlan {
+  /** Copied verbatim by the engine. */
+  policy: MetadataPolicy
+  /** Written afterwards, by group ("XMP-dc:Title"); empty writes nothing. */
+  tags: Record<string, string | string[]>
+  /** Delete GPS (EXIF and XMP) from the file. */
+  removeLocation: boolean
+}
+
+/**
+ * The metadata plan for one photo. `all` keeps the blocks the settings keep
+ * and writes the photo's title, caption, keywords and copyright into those
+ * same blocks (no XMP field lands in a file whose XMP was left out);
+ * `copyrightOnly` keeps only the profile and writes the copyright alone, in
+ * EXIF, XMP and IPTC. The copyright is the photo's own, or the dialog's when
+ * it has none.
+ */
+export function metadataPlan(s: ExportSettings, meta: PhotoMeta | null): MetadataPlan {
+  const all = s.metaMode !== 'copyrightOnly'
+  const policy: MetadataPolicy = all
+    ? { ...s.metadata }
+    : { exif: false, icc: s.metadata.icc, xmp: false, iptc: false }
+  // Where our fields may go: the blocks kept, or all three for the copyright.
+  const into = all ? s.metadata : { exif: true, xmp: true, iptc: true }
+  const text = (v: string | null | undefined): string | null => v?.trim() || null
+  const copyright = text(meta?.copyright) ?? text(s.copyright)
+  const title = all ? text(meta?.title) : null
+  const caption = all ? text(meta?.caption) : null
+  const keywords = all ? (meta?.keywords ?? []) : []
+
+  const tags: Record<string, string | string[]> = {}
+  if (into.exif) {
+    if (copyright) tags['EXIF:Copyright'] = copyright
+    if (caption) tags['EXIF:ImageDescription'] = caption
+  }
+  if (into.xmp) {
+    if (copyright) tags['XMP-dc:Rights'] = copyright
+    if (title) tags['XMP-dc:Title'] = title
+    if (caption) tags['XMP-dc:Description'] = caption
+    if (keywords.length > 0) {
+      tags['XMP-dc:Subject'] = flatSubjects(keywords)
+      tags['XMP-lr:HierarchicalSubject'] = keywords
+    }
+  }
+  if (into.iptc) {
+    const before = Object.keys(tags).length
+    if (copyright) tags['IPTC:CopyrightNotice'] = copyright
+    if (title) tags['IPTC:ObjectName'] = title
+    if (caption) tags['IPTC:Caption-Abstract'] = caption
+    if (keywords.length > 0) tags['IPTC:Keywords'] = flatSubjects(keywords)
+    // IPTC's text is Latin-1 unless it says otherwise.
+    if (Object.keys(tags).length > before) tags['IPTC:CodedCharacterSet'] = 'UTF8'
+  }
+  return {
+    policy,
+    tags,
+    // GPS lives in EXIF and XMP: with neither kept there is none to remove.
+    removeLocation: s.removeLocation && (policy.exif || policy.xmp)
+  }
 }

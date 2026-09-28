@@ -17,8 +17,18 @@ import { useLibrary } from './library'
 import { useUi } from './ui'
 
 export type Tool =
-  'none' | 'crop' | 'brush' | 'polygon' | 'linear' | 'radial' | 'wb-picker' | 'range-picker'
+  | 'none'
+  | 'crop'
+  | 'brush'
+  | 'polygon'
+  | 'linear'
+  | 'radial'
+  | 'wb-picker'
+  | 'range-picker'
+  | 'point-picker'
+  | 'tat'
 export type Compare = 'off' | 'before' | 'split'
+export type CurveChannel = 'master' | 'red' | 'green' | 'blue'
 /** A geometry gesture in progress: the loupe draws its grid while one runs. */
 export type Gesture = 'straighten' | 'crop' | 'rotate' | null
 
@@ -61,7 +71,13 @@ interface DevelopState {
   /** How the loupe looks at the picture: fitted, or zoomed about a point. */
   zoom: ZoomView
   hslFocus: HslBand | null
-  hslTab: 'hue' | 'saturation' | 'luminance' | 'all'
+  hslTab: 'hue' | 'saturation' | 'luminance' | 'all' | 'point'
+  /** The selected swatch of the colour mixer's Point tab. */
+  pointId: string | null
+  /** The point curve's channel on show (the targeted tool moves that one). */
+  curveChannel: CurveChannel
+  /** What the targeted adjustment tool moves: the HSL bands or the point curve. */
+  tatTarget: 'hsl' | 'curve'
   noise: NoiseEstimate | null
   targetEdge: number
 
@@ -92,6 +108,9 @@ interface DevelopState {
   setZoom(z: ZoomView): void
   setHslFocus(b: HslBand | null): void
   setHslTab(t: DevelopState['hslTab']): void
+  setPointId(id: string | null): void
+  setCurveChannel(c: CurveChannel): void
+  setTatTarget(t: DevelopState['tatTarget']): void
   setTargetEdge(n: number): void
   pushView(): void
   onRendered(e: RenderEvent): void
@@ -174,6 +193,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   zoom: FIT,
   hslFocus: null,
   hslTab: 'all',
+  pointId: null,
+  curveChannel: 'master',
+  tatTarget: 'hsl',
   noise: null,
   targetEdge: 2560,
 
@@ -352,6 +374,18 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   setHslTab(hslTab) {
     set({ hslTab })
+  },
+
+  setPointId(pointId) {
+    set({ pointId })
+  },
+
+  setCurveChannel(curveChannel) {
+    set({ curveChannel })
+  },
+
+  setTatTarget(tatTarget) {
+    set({ tatTarget })
   },
 
   setTargetEdge(targetEdge) {

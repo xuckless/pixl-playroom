@@ -3,6 +3,7 @@ import type { ConvertReport, ImageStats, LossReport, SourceInfo, WhitePoint } fr
 import type { ExportSettings } from './export'
 import type { Step } from './history'
 import type { BasicSetting, Recipe, RecipeGroup } from './recipe'
+import type { SmartGroup } from './smart'
 
 export const IPC = {
   app: {
@@ -13,6 +14,10 @@ export const IPC = {
     reveal: 'app:reveal',
     renderScale: 'app:render-scale',
     restart: 'app:restart',
+    /** Paths the OS asked us to open (Open With, a second launch), taken once the renderer is up. */
+    takeOpens: 'app:take-opens',
+    /** main → renderer: more paths to open */
+    openPaths: 'app:open-paths',
     /** main → renderer: the display or the rendering mode changed */
     renderScaleChanged: 'app:render-scale-changed'
   },
@@ -30,7 +35,31 @@ export const IPC = {
     /** main → renderer: a thumbnail (re)rendered */
     thumb: 'library:thumb',
     /** main → renderer: the folder's items changed (new file, new copy) */
-    changed: 'library:changed'
+    changed: 'library:changed',
+    /** The items of any source: a folder, a collection, a keyword, the duplicates. */
+    openSource: 'library:open-source',
+    /** Files → their folder and item keys (indexing the folder if new). */
+    resolvePaths: 'library:resolve-paths',
+    setMetadata: 'library:set-metadata',
+    keywordTree: 'library:keyword-tree',
+    collections: 'library:collections',
+    saveCollection: 'library:save-collection',
+    removeCollection: 'library:remove-collection',
+    /** Add or remove items of a manual collection. */
+    collectionItems: 'library:collection-items',
+    exportCollections: 'library:export-collections',
+    importCollections: 'library:import-collections',
+    stack: 'library:stack',
+    unstack: 'library:unstack',
+    stackTop: 'library:stack-top',
+    autoStack: 'library:auto-stack',
+    duplicates: 'library:duplicates',
+    /** Measure and set each photo's own auto white balance. */
+    autoWb: 'library:auto-wb',
+    /** Put white balances back (the undo of autoWb). */
+    setWb: 'library:set-wb',
+    /** main → renderer: collections, keywords or metadata changed */
+    sourcesChanged: 'library:sources-changed'
   },
   develop: {
     open: 'develop:open',
@@ -159,6 +188,91 @@ export interface LibraryItem {
   /** Its thumbnail failed: the file cannot be read (until it changes). */
   unreadable?: boolean
   camera: CameraInfo
+  /** The folder the file is in (items of a collection come from many). */
+  folder: string
+  title: string | null
+  caption: string | null
+  copyright: string | null
+  /** Keyword paths, `|` between levels ("Places|Canada|Winnipeg"). */
+  keywords: string[]
+  stack: StackInfo | null
+  /** The file is not where the index last saw it (a collection's item on an unplugged drive). */
+  offline?: boolean
+}
+
+export interface StackInfo {
+  id: string
+  /** 0 is the cover: the one the collapsed stack shows. */
+  position: number
+  size: number
+}
+
+export type LibrarySource =
+  | { kind: 'folder'; path: string }
+  /** A manual collection, a smart one or a set (the union of its children). */
+  | { kind: 'collection'; id: string }
+  | { kind: 'keyword'; path: string }
+  /** `folder` null: the whole library. `threshold`: the dHash distance still "similar". */
+  | { kind: 'duplicates'; folder: string | null; threshold: number }
+
+export interface DuplicateGroup {
+  kind: 'exact' | 'near'
+  keys: string[]
+  /** For near groups: the largest distance inside the group. */
+  distance?: number
+}
+
+export interface SourceListing {
+  source: LibrarySource
+  items: LibraryItem[]
+  /** The duplicates source: its groups, in order. */
+  groups?: DuplicateGroup[]
+}
+
+/** What the .xmp sidecar says about a photo. */
+export interface PhotoMeta {
+  title: string | null
+  caption: string | null
+  copyright: string | null
+  keywords: string[]
+}
+
+/** A metadata edit on a selection: fields set outright, keywords added or removed. */
+export interface MetaTextPatch {
+  title?: string | null
+  caption?: string | null
+  copyright?: string | null
+  /** Replace the keywords outright. */
+  keywords?: string[]
+  addKeywords?: string[]
+  removeKeywords?: string[]
+}
+
+export interface KeywordNode {
+  name: string
+  /** The full path, `|` between levels. */
+  path: string
+  /** Photos with this keyword or any under it. */
+  count: number
+  children: KeywordNode[]
+}
+
+export interface Collection {
+  id: string
+  name: string
+  kind: 'manual' | 'smart' | 'set'
+  /** A set this one sits in. */
+  parent: string | null
+  rules: SmartGroup | null
+  sort: number
+  count?: number
+}
+
+export interface AutoWbResult {
+  items: (LibraryItem | undefined)[]
+  /** Each key's white balance before, for undo. */
+  previous: Record<string, Recipe['wb']>
+  failed: { key: string; message: string }[]
 }
 
 export interface FolderListing {
@@ -306,6 +420,13 @@ export interface Preset {
   builtin: boolean
   groups: RecipeGroup[]
   recipe: Recipe
+  /**
+   * A custom white balance as the engine's white (`opOf`), so the preset can
+   * be converted onto a photo of the other kind (RAW ↔ anything else);
+   * `absolute` says which kind `recipe.wb` is in (absolute Kelvin on a RAW),
+   * and a photo of that kind takes the numbers as they are.
+   */
+  wbOp?: { kelvin: number; tint: number; absolute: boolean }
 }
 
 export interface LutProfile {
@@ -324,7 +445,8 @@ export interface ExportProgress {
   done: number
   total: number
   current: string | null
-  errors: { name: string; message: string }[]
+  /** `warning`: the file was written, but not all of it (its metadata). */
+  errors: { name: string; message: string; warning?: boolean }[]
   finished: boolean
   outputs: string[]
 }
