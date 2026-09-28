@@ -55,3 +55,50 @@ export function flatSubjects(paths: string[]): string[] {
   }
   return out
 }
+
+// ── what the keyword field takes and offers ──
+
+/**
+ * Keywords as typed: levels by `>` or `|` ("Places > Canada" or
+ * "Places|Canada"), several at once by commas or semicolons.
+ */
+export function parseKeywordInput(text: string): string[] {
+  return normaliseKeywords(text.split(/[,;]/).map((k) => k.replace(/>/g, '|')))
+}
+
+/** A path for reading: "Places › Canada". */
+export const keywordLabel = (path: string): string => path.split('|').join(' › ')
+
+interface PathNode {
+  path: string
+  children: PathNode[]
+}
+
+/** Every path of a keyword tree, parents before their children. */
+export function keywordPaths(nodes: PathNode[]): string[] {
+  return nodes.flatMap((n) => [n.path, ...keywordPaths(n.children)])
+}
+
+/**
+ * Paths worth offering for what is typed: those with a level starting with
+ * it first, then those containing it anywhere, leaving out `taken`.
+ */
+export function suggestKeywords(
+  paths: string[],
+  typed: string,
+  taken: string[] = [],
+  limit = 8
+): string[] {
+  const want = normaliseKeyword(typed.replace(/>/g, '|')).toLowerCase()
+  if (!want) return []
+  const skip = new Set(taken)
+  const starts: string[] = []
+  const contains: string[] = []
+  for (const p of paths) {
+    if (skip.has(p)) continue
+    const s = p.toLowerCase()
+    if (s.startsWith(want) || s.split('|').some((l) => l.startsWith(want))) starts.push(p)
+    else if (s.includes(want)) contains.push(p)
+  }
+  return [...starts, ...contains].slice(0, limit)
+}
