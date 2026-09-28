@@ -70,13 +70,17 @@ way. Grouped by area; roughly in priority order within each.
       the compiler emitting one engine stage per layer in stack order, a
       layers panel in develop, and per-layer copy/paste, sync and presets.
 - [ ] **Industry-standard white balance fixer**: learned auto WB (a colour
-      constancy model, e.g. FFCC or a small CNN) beside today's grey-pixel ∩
-      grey-world estimate; per-photo auto WB across a batch (today a batch
-      gets one photo's WB copied: Ctrl+Shift+S → White balance only); saved
-      WB presets converted across kinds (today they are kept per kind:
-      absolute for RAWs, relative otherwise).
-- [ ] Auto tone heuristics tuning (currently strong on overcast frames:
-      highlights −80, blacks −60 on the CR2 fixture); an adaptive/learned auto.
+      constancy model, e.g. FFCC or a small CNN) beside today's grey-pixel
+      estimate (grey-world when too few grey pixels).
+- [x] Per-photo auto WB across a batch (`library.autoWb`,
+      `src/main/autowb.ts`; Cmd/Ctrl+Shift+U, the Library's Auto WB, or
+      "Auto per photo" in Sync), with history per photo and Undo.
+- [x] White balances across kinds: saved WB presets and develop presets keep
+      the engine's white (`src/shared/wbconvert.ts`) and convert between a
+      RAW's absolute Kelvin and relative sliders.
+- [x] Auto tone tuned: gentler and scene-aware (flat vs hot frames, low- and
+      high-key targets; `src/shared/auto.ts`, `tests/auto.test.ts`).
+- [ ] An adaptive/learned auto tone.
 - [ ] Highlight recovery on RAW: rawler clips at sensor white; reconstruct
       clipped channels before the develop's clamp (engine).
 - [ ] Profiles: camera-matching profiles (DCP support), Adobe-compatible
@@ -85,12 +89,22 @@ way. Grouped by area; roughly in priority order within each.
       profile database (lensfun) and manual; defringe.
 - [ ] Transform/Upright: perspective correction (vertical, horizontal, auto,
       guided), scale, aspect.
-- [ ] Colour mixer "point colour" (Lightroom's newer targeted colour tool).
-- [ ] Targeted adjustment tool (drag on the photo to move a curve or HSL
-      band).
-- [ ] Tone curve: per-channel parametric, curve presets.
-- [ ] Output sharpening on export (after the resize: needs a second pass or
-      an engine post-resample sharpen).
+- [x] Colour mixer "point colour": the HSL panel's Point tab, up to 8
+      picked colours compiled to engine `Qualifier` ops.
+- [x] Targeted adjustment tool (T): drag on the photo to move the HSL band
+      or the curve under the pointer (`src/shared/tat.ts`).
+- [x] Tone curve presets (built-in and saved, `src/shared/curves.ts`).
+- [ ] Tone curve: per-channel parametric (the region sliders are master only).
+- [x] Output sharpening on export, as a second engine pass after the resize
+      (Screen / Matte / Glossy × Low / Standard / High).
+- [ ] Portrait RAWs: IMG_3086.CR2 (EXIF "Rotate 270 CW") shows and exports
+      landscape; check how the RAW's orientation reaches the develop.
+- [ ] Engine: every JPEG export writes a malformed APP1 (the `Exif\0\0`
+      header twice), so EXIF is unreadable until the exporter's ExifTool
+      pass repairs it (`repairJpegExif` in `src/main/exiftool.ts`). Fix it
+      in the engine's JPEG writer and the repair becomes a no-op.
+- [ ] Engine: this build has no HEIC encoder ("libheif has no encoder"), so
+      HEIC export fails.
 - [ ] AI denoise and raw-domain noise reduction (engine).
 - [ ] Soft proofing (output profile preview + gamut warning).
 - [ ] Full HDR editing and preview: render HDR previews (PQ AVIF / PNG cICP)
@@ -126,13 +140,20 @@ way. Grouped by area; roughly in priority order within each.
 
 ## Library and workflow
 
-- [ ] Catalog features: collections, smart collections, keywords (with
-      hierarchy), people, map/GPS, search by metadata, stacks, duplicates.
+- [x] Catalog: a sources sidebar (folders, pinned folders, collections,
+      keywords, duplicates); manual collections, smart collections with
+      nested rules (`src/shared/smart.ts`) and sets, exported and imported as
+      JSON; hierarchical keywords; search and filters by metadata; stacks
+      (kept in the sidecar); exact and near duplicates (SHA-1, dHash).
+- [ ] Catalog: people, map/GPS.
+- [ ] Collections import adds copies; merging into existing collections of
+      the same name is not offered.
 - [ ] Recursive folders / folder tree, watch folders for changes.
-- [ ] Metadata editing: title, caption, copyright, keywords written to
-      XMP; export options "copyright only" and "remove location" (the engine
-      copies metadata blocks verbatim, so this needs host-side EXIF/XMP
-      writing).
+- [x] Metadata editing: title, caption, copyright and keywords written to
+      `.xmp` sidecars through ExifTool (`IMG.xmp` for a RAW, `IMG.jpg.xmp`
+      otherwise; originals are never written), in the Library's Info drawer
+      and Develop's Info pane; embedded into exports, with "copyright only"
+      and "remove location".
 - [ ] XMP sidecar interop (read/write Lightroom `crs:` settings where they
       map).
 - [ ] Compare view (two photos side by side) and survey view.
@@ -142,24 +163,25 @@ way. Grouped by area; roughly in priority order within each.
 - [ ] History persisted with the recipe in the sidecar (today the index keeps
       it; moving a folder to another machine keeps snapshots but not
       history).
-- [ ] **Open with Pixl Playroom**: right-click any image in Finder or
-      Explorer and open it in Playroom. Register the image types (RAW,
-      JPEG, TIFF, HEIC, PNG) through electron-builder `fileAssociations`
-      (`LSHandlerRank: Alternate`, so Playroom never takes over as the
-      default), handle `open-file` (macOS) and the argv of a second instance
-      (Windows, Linux), and open the photo's folder with the photo in
-      Develop.
+- [x] **Open with Pixl Playroom**: `fileAssociations` on macOS
+      (`LSHandlerRank: Alternate`), `open-file` and a second instance's argv
+      (`src/main/open.ts`), surviving the display-scale relaunch; the photo
+      opens in Develop.
+- [ ] Windows "Open with": `build/installer.nsh` (OpenWithProgids, never the
+      default) has never been compiled or run; check it on a Windows machine
+      (see `.github/RELEASING.md`).
 
 ## Branding
 
 The PIXL Brand Kit design canvas holds the source for all of this; the SVG
 masters are in `build/brand/`.
 
-- [ ] Document icons (optional branding), from the kit's "Files Playroom
-      opens" board: a folded page with the mark, and the format on a lit
-      hairline (source formats in purple, outputs in white). Render them to
-      `.icns`/`.ico` and hand them to `fileAssociations` together with
-      "Open with Pixl Playroom" above.
+- [x] Document icons from the kit's "Files Playroom opens" board, for RAW,
+      DNG, JXL, HEIC, TIFF, JPEG, PNG, WebP and AVIF (`pnpm doc-icons` →
+      `build/doc-icons/`), handed to `fileAssociations`.
+- [x] Website: `site/`, deployed to GitHub Pages by `.github/workflows/pages.yml`
+      (media rebuilt by `scripts/site-media.sh`); downloads say "Available
+      soon" until the first release.
 - [ ] Windows installer art: the kit's installer sidebar (164×314) and
       banner (150×57) are unused while the NSIS installer is one-click, which
       shows neither. They need rendering to BMP if the installer becomes
