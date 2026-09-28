@@ -47,7 +47,10 @@
       var want = visible && !userPaused && !document.hidden
       if (want && video.paused) {
         var p = video.play()
-        if (p && p.catch) p.catch(function () {})
+        if (p && p.catch)
+          p.catch(function () {
+            // Autoplay refused (a saver mode, a strict browser): the poster stays.
+          })
       } else if (!want && !video.paused) {
         video.pause()
       }
@@ -96,7 +99,10 @@
       v = Math.max(0, Math.min(100, v))
       ba.style.setProperty('--pos', v + '%')
       range.value = String(Math.round(v))
-      range.setAttribute('aria-valuetext', Math.round(v) + '% before, ' + (100 - Math.round(v)) + '% after')
+      range.setAttribute(
+        'aria-valuetext',
+        Math.round(v) + '% before, ' + (100 - Math.round(v)) + '% after'
+      )
     }
     var fromPointer = function (e) {
       var r = ba.getBoundingClientRect()
