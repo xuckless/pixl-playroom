@@ -88,6 +88,7 @@ test('a clipped sky pulls highlights down, within the cap', () => {
   )
   assert.ok(t.highlights >= -50 && t.highlights <= -20, `highlights ${t.highlights}`)
   assert.ok(t.whites <= 0, `whites ${t.whites}`)
+  assert.ok(t.contrast >= 0, `contrast ${t.contrast}`)
 })
 
 test('a dark frame is brightened, by at most two stops', () => {
@@ -104,6 +105,22 @@ test('a dark frame is brightened, by at most two stops', () => {
     })
   )
   assert.ok(t.exposure > 0.5 && t.exposure <= 2, `exposure ${t.exposure}`)
+})
+
+test('a low-key frame with a lit subject is not pushed to mid-grey', () => {
+  const t = autoTone(
+    stats({
+      p005: 0.01,
+      p2: 0.02,
+      p10: 0.04,
+      p50: 0.12,
+      p90: 0.35,
+      p95: 0.5,
+      p995: 0.9,
+      sigma: 0.15
+    })
+  )
+  assert.ok(t.exposure >= 0 && t.exposure <= 0.4, `exposure ${t.exposure}`)
 })
 
 test('clipped shadows are never deepened', () => {

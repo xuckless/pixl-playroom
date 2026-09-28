@@ -52,7 +52,8 @@ const TARGET_SPREAD = 0.21
  * - exposure moves the median most of the way (×0.85) toward 0.46, 0.40
  *   for a low-key frame (the 90th percentile below 0.5: it is dark by
  *   intent) and 0.50 for a flat high-key one (the 10th above 0.45: snow,
- *   fog, a bright overcast), within ±2 stops;
+ *   fog, a bright overcast), within ±2 stops; a low-key frame brightens
+ *   no further than takes its 99.5th percentile to 0.97;
  * - highlights pull down by how far the 95th percentile sits above 0.80,
  *   at most −50, and only for a hot frame or one whose 99.5th reaches 0.95;
  * - whites stretch the 99.5th toward 0.97 (to +40), or back off by the
@@ -61,7 +62,8 @@ const TARGET_SPREAD = 0.21
  *   already clip, and lift (to +25) only when they clip; on a flat frame
  *   both ends stretch at most half as far, since contrast is doing that work too;
  * - shadows lift a dark 10th percentile (to +40), never on a flat frame;
- * - contrast nudges σ toward 0.21 (−20…+30); a flat frame always gains some.
+ * - contrast nudges σ toward 0.21 (−20…+30); a flat frame always gains
+ *   some, and a hot one never loses any.
  */
 export function autoTone(stats: ImageStats): BasicSetting {
   const p005 = pct(stats, 0.5)
@@ -75,11 +77,17 @@ export function autoTone(stats: ImageStats): BasicSetting {
   const clippedLow = Math.max(...stats.clipped_low, 0)
   const flat = p995 - p005 < 0.55 || sigma < 0.12
 
-  const target = p90 < 0.5 ? TARGET_LOW_KEY : flat && p10 > 0.45 ? TARGET_HIGH_KEY : TARGET_MEDIAN
+  const lowKey = p90 < 0.5
+  const target = lowKey ? TARGET_LOW_KEY : flat && p10 > 0.45 ? TARGET_HIGH_KEY : TARGET_MEDIAN
   const toTarget = Math.log2(
     srgbToLinear(target) / Math.max(srgbToLinear(Math.max(p50, 0.01)), 1e-4)
   )
-  const exposure = clamp(toTarget * EXPOSURE_SHARE, -2, 2)
+  // A low-key frame's median says little (a lit subject on a dark ground
+  // is dark by design): it brightens only while its brightest parts have
+  // room, so the subject is not blown out to lift the background.
+  const headroom = Math.log2(srgbToLinear(0.97) / Math.max(srgbToLinear(p995), 1e-4))
+  const wanted = toTarget * EXPOSURE_SHARE
+  const exposure = clamp(lowKey ? Math.min(wanted, Math.max(headroom, 0)) : wanted, -2, 2)
 
   // After the exposure, the percentiles move roughly by the same factor in
   // linear light; estimate where they land before placing the other sliders.
@@ -113,9 +121,11 @@ export function autoTone(stats: ImageStats): BasicSetting {
         : 0
   // Lifting a flat frame's shadows would only flatten it further.
   const shadows = !flat && s10 < 0.12 ? clamp(((0.12 - s10) / 0.12) * 50, 0, 40) : 0
+  // A hot frame's wide spread is mostly its clipped sky, which highlights
+  // and whites already pull in: lowering contrast too would only grey it.
   const contrast = flat
     ? clamp(((TARGET_SPREAD - sigma) / TARGET_SPREAD) * 40, 5, 30)
-    : clamp(((TARGET_SPREAD - sigma) / TARGET_SPREAD) * 30, -20, 30)
+    : clamp(((TARGET_SPREAD - sigma) / TARGET_SPREAD) * 30, hot ? 0 : -20, 30)
   const round = (v: number): number => Math.round(v) || 0
   return {
     exposure: Math.round(exposure * 100) / 100 || 0,
