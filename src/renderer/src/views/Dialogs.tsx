@@ -658,6 +658,9 @@ export function SyncDialog(): React.JSX.Element {
         <>
           <div className="rule" />
           <div className="quick-row" role="radiogroup" aria-label="White balance">
+            <span className="micro" style={{ alignSelf: 'center' }}>
+              White balance
+            </span>
             <button
               className={`chip${wbMode === 'copy' ? ' on' : ''}`}
               role="radio"
