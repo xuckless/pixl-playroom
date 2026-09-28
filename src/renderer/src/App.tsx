@@ -336,6 +336,12 @@ function useShortcuts(): void {
       }
       if (k === 'w' || k === 'W')
         return dev.setTool(dev.tool === 'wb-picker' ? 'none' : 'wb-picker')
+      // T: the targeted adjustment tool, for the HSL or Tone Curve panel on show.
+      if ((k === 't' || k === 'T') && (ui.panel === 'hsl' || ui.panel === 'curve')) {
+        if (dev.tool === 'tat') return dev.setTool('none')
+        dev.setTatTarget(ui.panel)
+        return dev.setTool('tat')
+      }
       if (k === 'o' || k === 'O') {
         // In the crop tool O cycles the composition guides, as in Lightroom.
         if (dev.tool === 'crop') return ui.cycleCropGuide()

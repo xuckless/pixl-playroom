@@ -23,6 +23,7 @@ import type {
   GradeOp,
   GradeSpace,
   HslBands,
+  HslKey,
   Mask,
   MaskComponent,
   Orientation,
@@ -37,6 +38,7 @@ import {
   type LocalAdjust,
   type LocalLayer,
   type MaskComponentSetting,
+  type PointColorSetting,
   type Recipe
 } from './recipe'
 import { opFromAbsolute, opFromRelative, type OpWhite } from './wb'
@@ -605,6 +607,79 @@ function hslOp(r: Recipe): GradeOp | null {
   return { HslBands: bands }
 }
 
+/** Point colours as `Masked` range masks instead of engine qualifiers. */
+const POINT_COLOR_AS_MASK = false
+/** How much a point colour's key is smoothed, on the range mask's 0…100 scale. */
+const POINT_COLOR_SMOOTHNESS = 15
+
+/**
+ * Point colour (the colour mixer's Point tab): each picked colour becomes a
+ * qualifier keyed on the sample — a hue band that widens with Range, and
+ * saturation and luma bands around the sample so a shift stays on similar
+ * colours — whose correction moves hue, saturation and brightness. A grey
+ * sample has no hue to key on and is keyed on saturation and luma alone; the
+ * luma band is always there, so the engine never gets an empty key. The key
+ * is blurred a little (as a range mask's smoothness of 15), so the noise in
+ * a colour near the band's edge does not flicker in and out as speckle.
+ */
+export function pointColorOps(
+  points: PointColorSetting[],
+  keyScale: KeyScale = { width: 1, height: 1, scale: 0 }
+): GradeOp[] {
+  const ops: GradeOp[] = []
+  const blur = smoothnessRadius(POINT_COLOR_SMOOTHNESS, keyScale)
+  for (const p of points) {
+    if (p.shiftHue === 0 && p.shiftSat === 0 && p.shiftLum === 0) continue
+    const range = clamp(p.range, 0, 100)
+    const key: HslKey = {
+      hue:
+        p.saturation < 0.08
+          ? null
+          : {
+              centre: round4(((p.hue % 360) + 360) % 360),
+              width: round4(10 + range * 0.3),
+              softness: round4(8 + range * 0.16)
+            },
+      saturation: {
+        centre: round4(clamp(p.saturation, 0, 1)),
+        width: round4(0.3 + range / 250),
+        softness: 0.15
+      },
+      luma: {
+        centre: round4(clamp(p.luminance, 0, 1)),
+        width: round4(0.3 + range / 250),
+        softness: 0.12
+      },
+      blur_radius: blur,
+      invert: false
+    }
+    const correction = primary({
+      hue_shift: round4(clamp(p.shiftHue, -100, 100) * 0.3),
+      saturation: round4(Math.max(0, 1 + clamp(p.shiftSat, -100, 100) / 100)),
+      exposure: round4((clamp(p.shiftLum, -100, 100) / 100) * 0.6)
+    })
+    if (POINT_COLOR_AS_MASK) {
+      // The same key as a range mask around a Primary: for an engine whose
+      // Qualifier misbehaves.
+      const mask: Mask = {
+        components: [
+          {
+            shape: { Range: key },
+            mode: 'Add',
+            opacity: 1,
+            invert: false,
+            feather: { radius: 0, edge: 'Zero' }
+          }
+        ],
+        invert: false,
+        space: LOOK_SPACE
+      }
+      ops.push({ Masked: { mask, opacity: 1, ops: [{ Primary: correction }] } })
+    } else ops.push({ Qualifier: { key, correction } })
+  }
+  return ops
+}
+
 function colorGradeOp(cg: Recipe['colorGrade']): GradeOp | null {
   const wheels = [cg.shadows, cg.midtones, cg.highlights, cg.global]
   if (wheels.every((w) => w.saturation === 0 && w.luminance === 0)) return null
@@ -733,6 +808,10 @@ function baseStages(
   const bw = r.treatment === 'bw' || r.profile.kind === 'monochrome'
   const hsl = hslOp(bw ? { ...r, treatment: 'bw' } : r)
   if (hsl) look.push(hsl)
+  if (!bw) {
+    const keyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }
+    look.push(...pointColorOps(r.pointColors, keyScale))
+  }
   if (!bw && p.vibrance !== 0) {
     look.push({ Vibrance: { amount: clamp(p.vibrance / 100, -1, 1), skin_protection: 0.6 } })
   }

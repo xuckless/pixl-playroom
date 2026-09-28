@@ -39,3 +39,26 @@ export function emptyRange(kind: 'color' | 'luminance'): MaskComponentSetting {
     smoothness: 0
   }
 }
+
+/**
+ * A sampled colour (0…1 channels, Display P3 encoded, as the loupe shows it)
+ * as the engine's keys see it: HSV hue in degrees, HSV saturation, and luma.
+ */
+export function hsvOf(
+  r: number,
+  g: number,
+  b: number
+): { hue: number; saturation: number; luma: number } {
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const chroma = max - min
+  let hue = 0
+  if (chroma > 0) {
+    if (max === r) hue = 60 * (((g - b) / chroma + 6) % 6)
+    else if (max === g) hue = 60 * ((b - r) / chroma + 2)
+    else hue = 60 * ((r - g) / chroma + 4)
+  }
+  const saturation = max > 0 ? chroma / max : 0
+  const luma = 0.2289 * r + 0.6917 * g + 0.0793 * b // Display P3 luminance weights
+  return { hue, saturation, luma }
+}
