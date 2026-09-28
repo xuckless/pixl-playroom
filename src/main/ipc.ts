@@ -29,6 +29,7 @@ import { enhanceAvailability, type Enhancer } from './enhance'
 import type { Exporter } from './exporter'
 import { parseKey } from './keys'
 import type { Library } from './library'
+import { takeOpens } from './open'
 import { paths } from './paths'
 import type { DevelopSessions } from './render'
 
@@ -84,8 +85,8 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.renderScale, () => renderScale())
   handle(IPC.app.restart, () => restart())
 
-  // ── opens (Open With, second launch) ── workstream E fills these in
-  handle(IPC.app.takeOpens, (): string[] => [])
+  // ── opens (Open With, second launch) ── workstream E
+  handle(IPC.app.takeOpens, () => takeOpens())
 
   // ── library ──
   handle(IPC.library.chooseFolder, async () => {

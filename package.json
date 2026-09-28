@@ -21,6 +21,7 @@
     "build": "pnpm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "fetch-ai": "node scripts/fetch-ai.mjs",
+    "doc-icons": "electron scripts/doc-icons.mjs",
     "build:unpack": "pnpm run build && electron-builder --dir",
     "build:win": "pnpm run build && electron-builder --win --x64",
     "build:mac:arm64": "pnpm run build && electron-builder --mac --arm64",
