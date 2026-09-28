@@ -34,7 +34,12 @@ export default defineConfig({
     build: {
       // Less to parse at start: three.js and the app ship minified.
       minify: 'esbuild',
-      sourcemap: false
+      sourcemap: false,
+      // Vite inlines assets under 4 kB as data: URLs, which caught one
+      // subset of Manrope (cyrillic-ext, 2.5 kB); the CSP in index.html has
+      // no font-src, so default-src 'self' blocked it in every build (dev
+      // serves it as a file). Fonts always ship as files.
+      assetsInlineLimit: (file) => (file.endsWith('.woff2') ? false : undefined)
     }
   }
 })
