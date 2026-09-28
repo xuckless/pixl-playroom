@@ -60,10 +60,6 @@ async function wbContext(library: Library, key: string): Promise<WbContext> {
   return { isRaw, asShot: info?.as_shot_white ?? null }
 }
 
-function notImplemented(channel: string): never {
-  throw new Error(`${channel} is not implemented yet`)
-}
-
 export interface Services {
   index: IndexClient
   planes: PlaneStore
