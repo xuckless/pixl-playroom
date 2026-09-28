@@ -8,6 +8,7 @@ import { api, errorText } from '../lib/api'
 import { usePresets } from '../lib/hooks'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
+import { MetadataEditor } from '../views/library/MetadataEditor'
 
 /**
  * The left rail's panes. Each shows one list at a time under the rail's
@@ -358,6 +359,11 @@ export function InfoPane(): React.JSX.Element {
         <Icon name="folder" />
         Show in folder
       </button>
+      <div className="rail-group">
+        <span className="micro">Metadata</span>
+        <span className="line" />
+      </div>
+      <MetadataEditor keys={[session.key]} facts={false} />
     </div>
   )
 }
