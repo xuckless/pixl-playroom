@@ -13,6 +13,8 @@ export interface Job {
   progress: number | null
   /** Over the loupe, or only in the app's identity bar. */
   scope: 'loupe' | 'global'
+  /** Stops the job; the identity bar offers it for a global job that has one. */
+  cancel?: () => void
   startedAt: number
 }
 

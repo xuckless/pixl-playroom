@@ -620,6 +620,7 @@ export class Store {
         grp: string
         groups: string
         recipe: string
+        wb_op: string | null
       }[]
     ).map((r) => ({
       id: r.id,
@@ -627,14 +628,22 @@ export class Store {
       group: r.grp,
       builtin: false,
       groups: JSON.parse(r.groups) as RecipeGroup[],
-      recipe: JSON.parse(r.recipe) as Recipe
+      recipe: JSON.parse(r.recipe) as Recipe,
+      ...(r.wb_op ? { wbOp: JSON.parse(r.wb_op) as NonNullable<Preset['wbOp']> } : {})
     }))
   }
 
   savePreset(p: Preset): void {
     this.prepare(
-      'INSERT INTO presets(id, name, grp, groups, recipe) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, grp = excluded.grp, groups = excluded.groups, recipe = excluded.recipe'
-    ).run(p.id, p.name, p.group, JSON.stringify(p.groups), JSON.stringify(p.recipe))
+      'INSERT INTO presets(id, name, grp, groups, recipe, wb_op) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, grp = excluded.grp, groups = excluded.groups, recipe = excluded.recipe, wb_op = excluded.wb_op'
+    ).run(
+      p.id,
+      p.name,
+      p.group,
+      JSON.stringify(p.groups),
+      JSON.stringify(p.recipe),
+      p.wbOp ? JSON.stringify(p.wbOp) : null
+    )
   }
 
   removePreset(id: string): void {

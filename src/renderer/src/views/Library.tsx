@@ -4,11 +4,12 @@ import { LiquidGlass } from '../components/glass/LiquidGlass'
 import { Icon } from '../components/icons'
 import { Stars } from '../components/ui'
 import { Ambient } from '../fx'
+import { autoWbBatch } from '../lib/autowb'
 import { LABEL_COLOURS } from '../lib/helpers'
 import { useThumbFirst } from '../lib/thumbs'
 import { IdentityBar } from '../shell/IdentityBar'
 import { useDevelop } from '../state/develop'
-import { useLibrary, useVisible, type FlagFilter, type SortKey } from '../state/library'
+import { useLibrary, useTargets, useVisible, type FlagFilter, type SortKey } from '../state/library'
 
 const Thumb = memo(function Thumb({
   item,
@@ -121,6 +122,7 @@ export function Toolbar(): React.JSX.Element {
   const openFolder = useLibrary((s) => s.openFolder)
   const setDialog = useLibrary((s) => s.setDialog)
   const focus = useLibrary((s) => s.focus)
+  const targets = useTargets()
   const setView = useLibrary((s) => s.setView)
   const open = useDevelop((s) => s.open)
   const count = useVisible().length
@@ -228,6 +230,15 @@ export function Toolbar(): React.JSX.Element {
         <span className="muted">/{total}</span>
       </span>
       <span className="vsep" />
+      <button
+        className="lg"
+        disabled={targets.length === 0}
+        title="Auto white balance on each selected photo (Ctrl+Shift+U)"
+        onClick={() => void autoWbBatch(targets)}
+      >
+        <Icon name="picker" />
+        Auto WB
+      </button>
       <button
         className="lg"
         disabled={!focus}

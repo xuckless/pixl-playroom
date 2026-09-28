@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { dependents, patchSummary, prerequisites, type Step } from '../../../shared/history'
+import type { Preset } from '../../../shared/ipc'
 import { applyGroups } from '../../../shared/recipe'
+import { wbFromSaved } from '../../../shared/wbconvert'
 import { Icon } from '../components/icons'
 import { api, errorText } from '../lib/api'
 import { usePresets } from '../lib/hooks'
@@ -24,10 +26,19 @@ export function PresetsActions(): React.JSX.Element {
 
 export function PresetsPane(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
+  const session = useDevelop((s) => s.session)
   const replace = useDevelop((s) => s.replace)
   const [presets, reload] = usePresets(4000)
   const [applied, setApplied] = useState<string | null>(null)
   if (!recipe) return <p className="rail-empty">Open a photo to use presets.</p>
+  const apply = (p: Preset): void => {
+    setApplied(p.id)
+    // A saved custom white balance is in the units of the photo it was made
+    // on; on a photo of the other kind it goes through the engine's white.
+    const from =
+      p.wbOp && session ? { ...p.recipe, wb: wbFromSaved(p.recipe.wb, p.wbOp, session) } : p.recipe
+    replace(applyGroups(recipe, from, p.groups), `Preset: ${p.name}`)
+  }
   // Presets keep the groups they were saved under.
   const groups = [...new Set(presets.map((p) => p.group))]
   return (
@@ -47,15 +58,9 @@ export function PresetsPane(): React.JSX.Element | null {
                   role="button"
                   tabIndex={0}
                   className={`preset rail-item${applied === p.id ? ' on' : ''}`}
-                  onClick={() => {
-                    setApplied(p.id)
-                    replace(applyGroups(recipe, p.recipe, p.groups), `Preset: ${p.name}`)
-                  }}
+                  onClick={() => apply(p)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      setApplied(p.id)
-                      replace(applyGroups(recipe, p.recipe, p.groups), `Preset: ${p.name}`)
-                    }
+                    if (e.key === 'Enter') apply(p)
                   }}
                   title={`Carries: ${p.groups.join(', ')}`}
                 >

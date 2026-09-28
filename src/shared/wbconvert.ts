@@ -6,7 +6,7 @@
 import { absoluteWb, baseWhite } from './compile'
 import type { WhitePoint } from './engine-types'
 import type { Recipe } from './recipe'
-import { absoluteFromOp, relativeFromOp, type OpWhite } from './wb'
+import { absoluteFromOp, relativeFromOp, TINT_UNITS_PER_DUV, type OpWhite } from './wb'
 
 export interface WbContext {
   isRaw: boolean
@@ -20,7 +20,7 @@ export function wbFromOp(op: Pick<OpWhite, 'kelvin' | 'tint'>, to: WbContext): R
     return {
       mode: 'custom',
       temperature: Math.round(abs.kelvin),
-      tint: Math.round(abs.tint * 3000),
+      tint: Math.round(abs.tint * TINT_UNITS_PER_DUV),
       preset: null
     }
   }
@@ -43,4 +43,27 @@ export function opOf(wb: Recipe['wb'], ctx: WbContext): { kelvin: number; tint: 
 export function convertWb(wb: Recipe['wb'], from: WbContext, to: WbContext): Recipe['wb'] {
   if (absoluteWb(from) === absoluteWb(to)) return wb
   return wbFromOp(opOf(wb, from), to)
+}
+
+/** A white balance saved with its engine white (a WB preset, a develop preset). */
+export interface SavedWhite {
+  kelvin: number
+  tint: number
+  /** Whether the saved numbers are absolute Kelvin (made on a RAW with an as-shot white). */
+  absolute: boolean
+}
+
+/** What to save beside `wb`, made on a photo of kind `ctx`. */
+export function savedWhite(wb: Recipe['wb'], ctx: WbContext): SavedWhite {
+  return { ...opOf(wb, ctx), absolute: absoluteWb(ctx) }
+}
+
+/**
+ * A saved custom white balance on a photo of kind `to`: the numbers as they
+ * were saved when the kinds match (a RAW keeps absolute Kelvin, whatever
+ * its as-shot white), otherwise the saved engine white in `to`'s units.
+ */
+export function wbFromSaved(wb: Recipe['wb'], saved: SavedWhite, to: WbContext): Recipe['wb'] {
+  if (saved.absolute === absoluteWb(to)) return wb
+  return { ...wbFromOp(saved, to), preset: wb.preset }
 }

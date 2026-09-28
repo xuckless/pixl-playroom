@@ -15,9 +15,11 @@ import {
   RECIPE_GROUPS,
   type RecipeGroup
 } from '../../../shared/recipe'
+import { savedWhite } from '../../../shared/wbconvert'
 import { Modal } from '../components/ui'
 import { ProgressRing, Sphere, Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
+import { autoWbBatch } from '../lib/autowb'
 import { useDevelop } from '../state/develop'
 import { useLibrary, useTargets } from '../state/library'
 
@@ -654,7 +656,12 @@ export function SyncDialog(): React.JSX.Element {
         : [])
   )
   const [groups, setGroups] = useState<Set<RecipeGroup>>(initial)
+  // The white balance either travels (converted to each photo's kind) or
+  // each photo gets its own, measured by auto white balance.
+  const [wbMode, setWbMode] = useState<'copy' | 'auto'>('copy')
   const keys = targets.filter((k) => k !== developKey || clipboard !== null)
+  const autoWb = groups.has('whiteBalance') && wbMode === 'auto'
+  const copied = [...groups].filter((g) => !(autoWb && g === 'whiteBalance'))
   return (
     <Modal
       title={`Apply settings to ${keys.length} photo${keys.length === 1 ? '' : 's'}`}
@@ -663,24 +670,27 @@ export function SyncDialog(): React.JSX.Element {
       footer={
         <button
           className="primary"
-          disabled={!source || keys.length === 0 || groups.size === 0}
+          disabled={(!source && copied.length > 0) || keys.length === 0 || groups.size === 0}
           onClick={async () => {
-            if (!source) return
             try {
-              patchItems(
-                await api.library.applyRecipe(
-                  keys,
-                  source,
-                  [...groups],
-                  clipboard?.source ?? developKey ?? undefined
+              if (source && copied.length > 0) {
+                patchItems(
+                  await api.library.applyRecipe(
+                    keys,
+                    source,
+                    copied,
+                    clipboard?.source ?? developKey ?? undefined
+                  )
                 )
-              )
-              if (developKey && keys.includes(developKey)) {
-                const s = await api.develop.open(developKey)
-                useDevelop.setState({ recipe: s.recipe })
+                if (developKey && keys.includes(developKey)) {
+                  const s = await api.develop.open(developKey)
+                  useDevelop.setState({ recipe: s.recipe })
+                }
               }
-              say(`Applied to ${keys.length} photo${keys.length === 1 ? '' : 's'}`)
               setDialog(null)
+              // The batch shows its own progress and ends with an Undo.
+              if (autoWb) void autoWbBatch(keys)
+              else say(`Applied to ${keys.length} photo${keys.length === 1 ? '' : 's'}`)
             } catch (err) {
               say(errorText(err), 'error')
             }
@@ -724,6 +734,34 @@ export function SyncDialog(): React.JSX.Element {
           </label>
         ))}
       </div>
+      {groups.has('whiteBalance') && (
+        <>
+          <div className="rule" />
+          <div className="quick-row" role="radiogroup" aria-label="White balance">
+            <span className="micro" style={{ alignSelf: 'center' }}>
+              White balance
+            </span>
+            <button
+              className={`chip${wbMode === 'copy' ? ' on' : ''}`}
+              role="radio"
+              aria-checked={wbMode === 'copy'}
+              onClick={() => setWbMode('copy')}
+              title="The same white on every photo, converted between RAW and other files"
+            >
+              Copy (converted per photo)
+            </button>
+            <button
+              className={`chip${wbMode === 'auto' ? ' on' : ''}`}
+              role="radio"
+              aria-checked={wbMode === 'auto'}
+              onClick={() => setWbMode('auto')}
+              title="Measure each photo's own white (Ctrl+Shift+U)"
+            >
+              Auto per photo
+            </button>
+          </div>
+        </>
+      )}
     </Modal>
   )
 }
@@ -732,6 +770,7 @@ export function SavePresetDialog(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
   const say = useLibrary((s) => s.say)
   const recipe = useDevelop((s) => s.recipe)
+  const session = useDevelop((s) => s.session)
   const [name, setName] = useState('')
   const [group, setGroup] = useState('User presets')
   const [groups, setGroups] = useState<Set<RecipeGroup>>(
@@ -755,11 +794,18 @@ export function SavePresetDialog(): React.JSX.Element {
           onClick={async () => {
             if (!recipe) return
             try {
+              // A custom white balance also goes as the engine's white, so
+              // the preset converts onto photos of the other kind.
+              const wbOp =
+                session && groups.has('whiteBalance') && recipe.wb.mode === 'custom'
+                  ? savedWhite(recipe.wb, session)
+                  : undefined
               await api.presets.save({
                 name: name.trim(),
                 group: group.trim() || 'User presets',
                 groups: [...groups],
-                recipe
+                recipe,
+                ...(wbOp ? { wbOp } : {})
               })
               say(`Saved preset ${name.trim()}`)
               setDialog(null)

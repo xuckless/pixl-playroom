@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { Icon } from '../components/icons'
 import { Mark } from '../components/Mark'
 import { Spinner } from '../fx'
 import { useBusy } from '../state/busy'
@@ -31,7 +32,13 @@ export function BackgroundJobs(): React.JSX.Element | null {
     <span className="bg-jobs micro" title={last.detail ?? last.title}>
       <Spinner size={14} />
       {last.title}
+      {last.progress !== null && <span className="t-num"> {Math.round(last.progress * 100)}%</span>}
       {jobs.length > 1 ? ` ×${jobs.length}` : ''}
+      {last.cancel && (
+        <button className="icon sm" title="Stop" onClick={last.cancel}>
+          <Icon name="close" />
+        </button>
+      )}
     </span>
   )
 }

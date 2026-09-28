@@ -24,6 +24,7 @@ import { IndexError } from './indexer/client'
 import type { PlaneStore } from './planestore'
 import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
+import { autoWbBatch, setWbBatch } from './autowb'
 import { enhanceAvailability, type Enhancer } from './enhance'
 import type { Exporter } from './exporter'
 import { parseKey } from './keys'
@@ -176,8 +177,10 @@ export function registerIpc(s: Services): void {
   }
 
   // ── batch auto white balance ── workstream B
-  handle(IPC.library.autoWb, () => notImplemented(IPC.library.autoWb))
-  handle(IPC.library.setWb, () => notImplemented(IPC.library.setWb))
+  // Each photo measured on its own draft proxy by the background engine;
+  // the renderer sends a few keys at a time so it can show progress and stop.
+  handle(IPC.library.autoWb, (keys: string[]) => autoWbBatch(s, keys))
+  handle(IPC.library.setWb, (pairs: { key: string; wb: Recipe['wb'] }[]) => setWbBatch(s, pairs))
 
   // ── develop ──
   // Recipes go out with their brush planes by reference and come back in
@@ -240,8 +243,13 @@ export function registerIpc(s: Services): void {
     }))
   )
   handle(IPC.presets.save, async (p: Omit<Preset, 'id' | 'builtin'> & { id?: string }) => {
+    // The engine white only means something for a custom white balance the
+    // preset actually carries.
+    const { wbOp, ...rest } = p
+    const keepsWb = p.groups.includes('whiteBalance') && p.recipe.wb.mode === 'custom'
     const preset: Preset = {
-      ...p,
+      ...rest,
+      ...(keepsWb && wbOp ? { wbOp } : {}),
       recipe: await s.planes.hydrate(p.recipe),
       id: p.id ?? newId(),
       builtin: false
