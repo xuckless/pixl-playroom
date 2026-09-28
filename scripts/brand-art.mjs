@@ -13,7 +13,14 @@ const ROOT = resolve(import.meta.dirname, '..')
 const ART = [
   { name: 'dmg', page: 'build/brand/dmg.html', out: 'build/background', width: 660, height: 400 },
   // A link card is fetched at 1×: no @2x copy.
-  { name: 'og', page: 'build/brand/og.html', out: 'site/assets/og', width: 1200, height: 630, only1x: true }
+  {
+    name: 'og',
+    page: 'build/brand/og.html',
+    out: 'site/assets/og',
+    width: 1200,
+    height: 630,
+    only1x: true
+  }
 ]
 const wanted = process.argv.slice(2).filter((a) => ART.some((x) => x.name === a))
 const todo = wanted.length ? ART.filter((a) => wanted.includes(a.name)) : ART

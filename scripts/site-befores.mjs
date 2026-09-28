@@ -117,5 +117,6 @@ const result = await page.evaluate(
   { folder, out, sidecars }
 )
 
-for (const l of result.log) console.log(l.name, l.outputs.join(' '), l.errors.length ? l.errors : '')
+for (const l of result.log)
+  console.log(l.name, l.outputs.join(' '), l.errors.length ? l.errors : '')
 await app.close()
