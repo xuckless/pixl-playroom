@@ -65,6 +65,7 @@ function focusWindow(): void {
 
 /** The executable, and in development the app path Electron was given. */
 const ARGV_SKIP = app.isPackaged ? 1 : 2
+const APP_PATH = app.isPackaged ? undefined : app.getAppPath()
 
 // macOS delivers Finder's "Open With" and Dock drops as `open-file`, possibly
 // before ready: queue them, and bring a window back if all were closed.
@@ -79,14 +80,16 @@ app.on('open-file', (e, path) => {
 
 app.on('second-instance', (_e, argv, cwd, data) => {
   // Electron's own `argv` can be rewritten by Chromium; the launch's is in `data`.
-  queueOpen(pathsFromArgv((data as { argv?: string[] } | undefined)?.argv ?? argv, cwd, ARGV_SKIP))
+  queueOpen(
+    pathsFromArgv((data as { argv?: string[] } | undefined)?.argv ?? argv, cwd, ARGV_SKIP, APP_PATH)
+  )
   if (!app.isReady()) return
   if (!mainWindow) createWindow()
   else focusWindow()
 })
 
 if (!relaunching && !secondary) takeHandOff(app.getPath('userData'))
-queueOpen(pathsFromArgv(process.argv, process.cwd(), ARGV_SKIP))
+queueOpen(pathsFromArgv(process.argv, process.cwd(), ARGV_SKIP, APP_PATH))
 
 function leaveForRelaunch(): void {
   handOffOpens(app.getPath('userData'))

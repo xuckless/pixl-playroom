@@ -32,6 +32,15 @@ test('pathsFromArgv skips the executable and the app path', () => {
   f.done()
 })
 
+test('pathsFromArgv never opens the app path, wherever a launcher put it', () => {
+  const f = fixture()
+  // Playwright: electron --inspect=0 --remote-debugging-port=0 <app> ; the app lands past skip.
+  const argv = ['exe', '--inspect=0', f.root, join(f.root, 'a.CR2')]
+  assert.deepEqual(pathsFromArgv(argv, '/', 2, f.root), [join(f.root, 'a.CR2')])
+  assert.deepEqual(pathsFromArgv(['exe', '.', 'b.jpg'], f.root, 1, f.root), [join(f.root, 'b.jpg')])
+  f.done()
+})
+
 test('pathsFromArgv drops switches', () => {
   const f = fixture()
   const argv = ['exe', '--allow-file-access-from-files', '-psn_0_123', 'b.jpg', '--', '-']

@@ -16,12 +16,23 @@ const OPENABLE = new Set(IMAGE_EXTENSIONS)
  * switches are ignored, relative paths resolve against `cwd`, and only
  * existing folders and files Playroom can read are kept. A folder comes back
  * with a trailing separator, so the renderer can tell it from a file.
+ *
+ * `appPath` is never a folder to open: a launcher that puts its own switches
+ * first (Playwright does) moves the app path past `skip`.
  */
-export function pathsFromArgv(argv: readonly string[], cwd: string, skip: number): string[] {
+export function pathsFromArgv(
+  argv: readonly string[],
+  cwd: string,
+  skip: number,
+  appPath?: string
+): string[] {
+  const app = appPath ? resolve(appPath) : null
   const out: string[] = []
   for (const arg of argv.slice(skip)) {
     if (!arg || arg.startsWith('-')) continue
-    const path = openable(isAbsolute(arg) ? arg : resolve(cwd, arg))
+    const full = resolve(cwd, arg)
+    if (app && full === app) continue
+    const path = openable(isAbsolute(arg) ? arg : full)
     if (path && !out.includes(path)) out.push(path)
   }
   return out
