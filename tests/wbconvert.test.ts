@@ -1,6 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Recipe } from '../src/shared/recipe'
+import { mkdtempSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { Store } from '../src/main/db'
+import { defaultRecipe, type Recipe } from '../src/shared/recipe'
 import { convertWb, opOf, wbFromOp, type WbContext } from '../src/shared/wbconvert'
 
 const RAW: WbContext = {
@@ -52,5 +56,26 @@ test('wbFromOp undoes opOf on each kind', () => {
     const back = wbFromOp(opOf(wb, ctx), ctx)
     close(back.temperature, wb.temperature, 1, 'temperature')
     close(back.tint, wb.tint, 1, 'tint')
+  }
+})
+
+test('a develop preset keeps its engine white through the index', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'playroom-wb-'))
+  try {
+    const store = Store.open(join(dir, 'playroom.db'))
+    const recipe = { ...defaultRecipe(true), wb: custom(4300, 8) }
+    const wbOp = opOf(recipe.wb, RAW)
+    const base = { name: 'Warm', group: 'Mine', builtin: false, groups: ['whiteBalance' as const] }
+    store.savePreset({ ...base, id: 'a', recipe, wbOp })
+    store.savePreset({ ...base, id: 'b', name: 'Plain', recipe })
+    const [a, b] = ['a', 'b'].map((id) => store.presets().find((p) => p.id === id))
+    assert.deepEqual(a?.wbOp, wbOp)
+    assert.equal(b?.wbOp, undefined)
+    // Below the RAW's as-shot 5300 K is a cooler picture: negative on a JPEG.
+    const onJpeg = wbFromOp(a!.wbOp!, JPEG)
+    assert.ok(onJpeg.temperature < 0, `temperature ${onJpeg.temperature}`)
+    store.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 })

@@ -420,6 +420,11 @@ export interface Preset {
   builtin: boolean
   groups: RecipeGroup[]
   recipe: Recipe
+  /**
+   * A custom white balance as the engine's white (`opOf`), so the preset can
+   * be converted onto a photo of the other kind (RAW ↔ anything else).
+   */
+  wbOp?: { kelvin: number; tint: number }
 }
 
 export interface LutProfile {

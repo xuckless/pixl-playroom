@@ -75,8 +75,7 @@ export function autoTone(stats: ImageStats): BasicSetting {
   const clippedLow = Math.max(...stats.clipped_low, 0)
   const flat = p995 - p005 < 0.55 || sigma < 0.12
 
-  const target =
-    p90 < 0.5 ? TARGET_LOW_KEY : flat && p10 > 0.45 ? TARGET_HIGH_KEY : TARGET_MEDIAN
+  const target = p90 < 0.5 ? TARGET_LOW_KEY : flat && p10 > 0.45 ? TARGET_HIGH_KEY : TARGET_MEDIAN
   const toTarget = Math.log2(
     srgbToLinear(target) / Math.max(srgbToLinear(Math.max(p50, 0.01)), 1e-4)
   )
@@ -96,8 +95,7 @@ export function autoTone(stats: ImageStats): BasicSetting {
   const hot = clippedHigh > 0.003 || s995 > 0.985
 
   // Overcast is flat, not hot: pulling its highlights only greys the sky.
-  const highlights =
-    hot || (!flat && s995 >= 0.95) ? -clamp(((s95 - 0.8) / 0.2) * 60, 0, 50) : 0
+  const highlights = hot || (!flat && s995 >= 0.95) ? -clamp(((s95 - 0.8) / 0.2) * 60, 0, 50) : 0
   // A flat frame's contrast already stretches it; the ends go at most half
   // as far so the three together do not wring it out.
   const stretch = flat ? 0.5 : 1
