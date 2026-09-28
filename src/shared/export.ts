@@ -20,6 +20,8 @@ import type {
   TiffCompression,
   ToneMapOperator
 } from './engine-types'
+import type { PhotoMeta } from './ipc'
+import { flatSubjects } from './keywords'
 
 export type ExportFormat = 'jpeg' | 'png' | 'tiff' | 'webp' | 'avif' | 'jxl' | 'heic'
 
@@ -369,4 +371,69 @@ export function expandTemplate(
     .replaceAll('{copy}', t.copy)
   // Nothing that would leave the folder or trip a filesystem.
   return out.replace(/[\\/:*?"<>|]/g, '_').trim() || t.name
+}
+
+/**
+ * What an export carries: the blocks the engine copies from the original,
+ * then what ExifTool writes into the file after it.
+ */
+export interface MetadataPlan {
+  /** Copied verbatim by the engine. */
+  policy: MetadataPolicy
+  /** Written afterwards, by group ("XMP-dc:Title"); empty writes nothing. */
+  tags: Record<string, string | string[]>
+  /** Delete GPS (EXIF and XMP) from the file. */
+  removeLocation: boolean
+}
+
+/**
+ * The metadata plan for one photo. `all` keeps the blocks the settings keep
+ * and writes the photo's title, caption, keywords and copyright into those
+ * same blocks (no XMP field lands in a file whose XMP was left out);
+ * `copyrightOnly` keeps only the profile and writes the copyright alone, in
+ * EXIF, XMP and IPTC. The copyright is the photo's own, or the dialog's when
+ * it has none.
+ */
+export function metadataPlan(s: ExportSettings, meta: PhotoMeta | null): MetadataPlan {
+  const all = s.metaMode !== 'copyrightOnly'
+  const policy: MetadataPolicy = all
+    ? { ...s.metadata }
+    : { exif: false, icc: s.metadata.icc, xmp: false, iptc: false }
+  // Where our fields may go: the blocks kept, or all three for the copyright.
+  const into = all ? s.metadata : { exif: true, xmp: true, iptc: true }
+  const text = (v: string | null | undefined): string | null => v?.trim() || null
+  const copyright = text(meta?.copyright) ?? text(s.copyright)
+  const title = all ? text(meta?.title) : null
+  const caption = all ? text(meta?.caption) : null
+  const keywords = all ? (meta?.keywords ?? []) : []
+
+  const tags: Record<string, string | string[]> = {}
+  if (into.exif) {
+    if (copyright) tags['EXIF:Copyright'] = copyright
+    if (caption) tags['EXIF:ImageDescription'] = caption
+  }
+  if (into.xmp) {
+    if (copyright) tags['XMP-dc:Rights'] = copyright
+    if (title) tags['XMP-dc:Title'] = title
+    if (caption) tags['XMP-dc:Description'] = caption
+    if (keywords.length > 0) {
+      tags['XMP-dc:Subject'] = flatSubjects(keywords)
+      tags['XMP-lr:HierarchicalSubject'] = keywords
+    }
+  }
+  if (into.iptc) {
+    const before = Object.keys(tags).length
+    if (copyright) tags['IPTC:CopyrightNotice'] = copyright
+    if (title) tags['IPTC:ObjectName'] = title
+    if (caption) tags['IPTC:Caption-Abstract'] = caption
+    if (keywords.length > 0) tags['IPTC:Keywords'] = flatSubjects(keywords)
+    // IPTC's text is Latin-1 unless it says otherwise.
+    if (Object.keys(tags).length > before) tags['IPTC:CodedCharacterSet'] = 'UTF8'
+  }
+  return {
+    policy,
+    tags,
+    // GPS lives in EXIF and XMP: with neither kept there is none to remove.
+    removeLocation: s.removeLocation && (policy.exif || policy.xmp)
+  }
 }

@@ -445,7 +445,8 @@ export interface ExportProgress {
   done: number
   total: number
   current: string | null
-  errors: { name: string; message: string }[]
+  /** `warning`: the file was written, but not all of it (its metadata). */
+  errors: { name: string; message: string; warning?: boolean }[]
   finished: boolean
   outputs: string[]
 }

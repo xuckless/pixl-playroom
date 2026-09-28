@@ -3,15 +3,10 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import {
-  embedMetadata,
-  embedTags,
-  endExiftool,
-  exiftool,
-  repairJpegExif
-} from '../src/main/exiftool'
+import { embedMetadata, endExiftool, exiftool, repairJpegExif } from '../src/main/exiftool'
 import { exiftoolXmp, metaToTags, tagsToMeta, xmpPathFor } from '../src/main/indexer/xmp'
 import { encodeGreyPng } from '../src/main/pngio'
+import { defaultExportSettings, metadataPlan, type ExportSettings } from '../src/shared/export'
 import { flatSubjects, keywordPrefixes, normaliseKeywords } from '../src/shared/keywords'
 import type { PhotoMeta } from '../src/shared/ipc'
 
@@ -68,24 +63,13 @@ test('tagsToMeta: the hierarchy wins, flat extras are top-level, ExifTool shapes
   assert.deepEqual(tagsToMeta({}), { title: null, caption: null, copyright: null, keywords: [] })
 })
 
-test('embedTags: copyright only, everything, and the dialog’s copyright first', () => {
-  const only = embedTags(meta, { mode: 'copyrightOnly', removeLocation: false, copyright: '' })
-  assert.deepEqual(Object.keys(only).sort(), [
-    'EXIF:Copyright',
-    'IPTC:CodedCharacterSet',
-    'IPTC:CopyrightNotice',
-    'XMP-dc:Rights'
-  ])
-  const all = embedTags(meta, {
-    mode: 'all',
-    removeLocation: false,
-    copyright: 'Studio'
-  }) as Record<string, unknown>
-  assert.equal(all['EXIF:Copyright'], 'Studio')
-  assert.equal(all['IPTC:ObjectName'], 'Lake at dusk')
-  assert.deepEqual(all['XMP-lr:HierarchicalSubject'], meta.keywords)
-  assert.deepEqual(all['IPTC:Keywords'], flatSubjects(meta.keywords))
-})
+/** What an export with these settings writes for `m`. */
+const tagsFor = (
+  m: PhotoMeta,
+  metaMode: ExportSettings['metaMode'],
+  copyright = ''
+): Record<string, string | string[]> =>
+  metadataPlan({ ...defaultExportSettings(), metaMode, copyright }, m).tags
 
 /** Whether perl and the vendored ExifTool can start here. */
 async function exiftoolWorks(): Promise<boolean> {
@@ -123,7 +107,7 @@ test('a real .xmp round trip, keeping tags that are not ours', async (t) => {
     // Embedding into an exported file (a PNG has no IPTC: the rest still lands).
     const png = join(dir, 'out.png')
     writeFileSync(png, encodeGreyPng(new Uint8Array(16).fill(128), 4, 4))
-    await embedMetadata(png, meta, { mode: 'all', removeLocation: true, copyright: '' })
+    await embedMetadata(png, tagsFor(meta, 'all'), { removeLocation: true })
     const out = (await exiftool().readRaw(png, { readArgs: ['-G1'] })) as Record<string, unknown>
     assert.equal(out['XMP-dc:Title'], 'Lake at dusk')
     assert.equal(out['XMP-dc:Rights'], '© 2026 Ali')
@@ -196,22 +180,39 @@ test('embedding into the engine’s JPEG keeps its EXIF, or copies it from the s
   try {
     const out = join(dir, 'export.jpg')
     writeFileSync(out, jpegWithApp1(2, tiffWithMake('Canon')))
-    await embedMetadata(out, meta, { mode: 'all', removeLocation: false, copyright: '' })
+    await embedMetadata(out, tagsFor(meta, 'all'), { removeLocation: false })
     const tags = (await exiftool().readRaw(out, { readArgs: ['-G1'] })) as Record<string, unknown>
     assert.equal(tags['ExifTool:Warning'], undefined)
     assert.equal(tags['IFD0:Make'], 'Canon')
     assert.equal(tags['IFD0:Copyright'], '© 2026 Ali')
     assert.equal(tags['XMP-dc:Title'], 'Lake at dusk')
 
-    // Beyond repair: the source photo's EXIF instead.
+    // Nothing to write: the EXIF is still put right.
+    const plain = join(dir, 'plain.jpg')
+    writeFileSync(plain, jpegWithApp1(2, tiffWithMake('Canon')))
+    await embedMetadata(plain, {}, { removeLocation: false })
+    assert.ok(readFileSync(plain).equals(jpegWithApp1(1, tiffWithMake('Canon'))))
+
+    // Location removed, the rest kept.
+    await exiftool().write(out, { GPSLatitude: 49.9, GPSLatitudeRef: 'N' } as never, {
+      writeArgs: ['-overwrite_original']
+    })
+    await embedMetadata(out, {}, { removeLocation: true })
+    const noGps = (await exiftool().readRaw(out, { readArgs: ['-G1'] })) as Record<string, unknown>
+    assert.deepEqual(
+      Object.keys(noGps).filter((k) => /gps/i.test(k)),
+      []
+    )
+    assert.equal(noGps['IFD0:Make'], 'Canon')
+
+    // Beyond repair: the source photo's EXIF instead, and the dialog's
+    // copyright for a photo without one.
     const source = join(dir, 'source.jpg')
     writeFileSync(source, jpegWithApp1(1, tiffWithMake('Nikon')))
     const broken = join(dir, 'broken.jpg')
     writeFileSync(broken, jpegWithApp1(2, Buffer.from('garbage!')))
-    await embedMetadata(broken, meta, {
-      mode: 'copyrightOnly',
+    await embedMetadata(broken, tagsFor({ ...meta, copyright: null }, 'copyrightOnly', 'Studio'), {
       removeLocation: false,
-      copyright: 'Studio',
       source
     })
     const b = (await exiftool().readRaw(broken, { readArgs: ['-G1'] })) as Record<string, unknown>

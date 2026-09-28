@@ -11,8 +11,6 @@ import { ExifTool, type WriteTags } from 'exiftool-vendored'
 import { readFile, rename, writeFile } from 'fs/promises'
 import { createRequire } from 'module'
 import { sep } from 'path'
-import type { PhotoMeta } from '../shared/ipc'
-import { flatSubjects } from '../shared/keywords'
 
 let shared: ExifTool | undefined
 let explicitPath: string | undefined
@@ -68,43 +66,10 @@ export async function endExiftool(): Promise<void> {
 }
 
 export interface EmbedOptions {
-  /** Everything we know, or only the copyright. */
-  mode: 'all' | 'copyrightOnly'
   /** Delete GPS coordinates (EXIF and XMP). */
   removeLocation: boolean
-  /** The export dialog's copyright; the photo's own is used when this is empty. */
-  copyright: string
-}
-
-/** The tags `embedMetadata` writes: XMP, IPTC and EXIF copies of each field. */
-export function embedTags(meta: PhotoMeta, opts: EmbedOptions): WriteTags {
-  const copyright = opts.copyright.trim() || meta.copyright?.trim() || null
-  const tags: Record<string, unknown> = {}
-  if (copyright) {
-    tags['EXIF:Copyright'] = copyright
-    tags['XMP-dc:Rights'] = copyright
-    tags['IPTC:CopyrightNotice'] = copyright
-  }
-  if (opts.mode === 'all') {
-    if (meta.title) {
-      tags['XMP-dc:Title'] = meta.title
-      tags['IPTC:ObjectName'] = meta.title
-    }
-    if (meta.caption) {
-      tags['XMP-dc:Description'] = meta.caption
-      tags['IPTC:Caption-Abstract'] = meta.caption
-      tags['EXIF:ImageDescription'] = meta.caption
-    }
-    if (meta.keywords.length > 0) {
-      const flat = flatSubjects(meta.keywords)
-      tags['XMP-dc:Subject'] = flat
-      tags['IPTC:Keywords'] = flat
-      tags['XMP-lr:HierarchicalSubject'] = meta.keywords
-    }
-  }
-  // IPTC's text is Latin-1 unless it says otherwise.
-  if (Object.keys(tags).some((k) => k.startsWith('IPTC:'))) tags['IPTC:CodedCharacterSet'] = 'UTF8'
-  return tags as WriteTags
+  /** The original photo: a JPEG's EXIF beyond repair is copied again from it. */
+  source?: string
 }
 
 const EXIF_HEADER = Buffer.from('Exif\0\0', 'latin1')
@@ -159,16 +124,17 @@ export function repairJpegExif(jpeg: Buffer): { data: Buffer; changed: boolean; 
 const isJpeg = (file: string): boolean => /\.jpe?g$/i.test(file)
 
 /**
- * Write a photo's metadata into an exported file (never an original). A
- * JPEG's EXIF block is repaired first (see `repairJpegExif`); one beyond
- * repair is dropped and, given the `source` photo, copied again from it,
- * without what the export changed (orientation, size, previews). A format
- * ExifTool cannot write throws; the exporter reports it as a warning.
+ * Write `tags` (see `metadataPlan`) into an exported file (never an
+ * original). A JPEG's EXIF block is repaired first, whatever there is to
+ * write (see `repairJpegExif`); one beyond repair is dropped and, given the
+ * `source` photo, copied again from it, without what the export changed
+ * (orientation, size, previews). A format ExifTool cannot write throws; the
+ * exporter reports it as a warning.
  */
 export async function embedMetadata(
   file: string,
-  meta: PhotoMeta,
-  opts: EmbedOptions & { source?: string }
+  tags: Record<string, string | string[]>,
+  opts: EmbedOptions
 ): Promise<void> {
   if (isJpeg(file)) {
     const fixed = repairJpegExif(await readFile(file))
@@ -198,10 +164,9 @@ export async function embedMetadata(
       )
     }
   }
-  const tags = embedTags(meta, opts)
   const args = ['-overwrite_original']
   if (opts.removeLocation) args.push('-gps:all=', '-xmp-exif:gps*=')
   if (Object.keys(tags).length === 0 && !opts.removeLocation) return
   // -m: a format without IPTC (PNG, WebP) takes the rest instead of failing.
-  await exiftool().write(file, tags, { writeArgs: ['-m', ...args] })
+  await exiftool().write(file, tags as WriteTags, { writeArgs: ['-m', ...args] })
 }

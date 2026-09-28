@@ -89,6 +89,8 @@ export function ExportDialog(): React.JSX.Element {
     }
   }
   const running = progress !== null && !progress.finished
+  const failed = progress?.errors.filter((e) => !e.warning) ?? []
+  const warned = progress?.errors.filter((e) => e.warning) ?? []
   const depths = depthsFor(s.format)
   // As `outputSharpen` decides: HDR delivery is never sharpened.
   const hdrOut = s.hdr.mode !== 'sdr'
@@ -112,10 +114,17 @@ export function ExportDialog(): React.JSX.Element {
               <span>
                 {progress.done}/{progress.total}{' '}
                 {progress.current ? `· ${progress.current}` : progress.finished ? '· done' : ''}
-                {progress.errors.length > 0 && (
+                {failed.length > 0 && (
                   <span className="error">
                     {' '}
-                    · {progress.errors.length} failed: {progress.errors[0].message}
+                    · {failed.length} failed: {failed[0].message}
+                  </span>
+                )}
+                {warned.length > 0 && (
+                  <span className="muted">
+                    {' '}
+                    · {warned[0].name}: {warned[0].message}
+                    {warned.length > 1 ? ` (and ${warned.length - 1} more)` : ''}
                   </span>
                 )}
               </span>
@@ -543,7 +552,8 @@ export function ExportDialog(): React.JSX.Element {
             />
           </Field>
           <p className="muted small">
-            Blocks are copied verbatim or not at all; the engine never edits them.
+            Blocks are copied verbatim or not at all; the title, caption, keywords and copyright are
+            then written into the ones kept.
           </p>
         </fieldset>
         <fieldset>
