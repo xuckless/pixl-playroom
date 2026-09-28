@@ -1,16 +1,19 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { copyFile, readdir } from 'fs/promises'
+import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { cpus } from 'os'
 import type { ExportSettings } from '../shared/export'
 import {
   IPC,
   type AppError,
+  type Collection,
   type ExportPreset,
   type HistoryLog,
+  type LibrarySource,
   type LutProfile,
   type MetaPatch,
+  type MetaTextPatch,
   type Preset,
   type RegionRequest,
   type Snapshot,
@@ -157,25 +160,58 @@ export function registerIpc(s: Services): void {
   })
 
   // ── library sources, metadata, collections, stacks, duplicates ── workstream D1
-  for (const channel of [
-    IPC.library.openSource,
-    IPC.library.resolvePaths,
-    IPC.library.setMetadata,
-    IPC.library.keywordTree,
-    IPC.library.collections,
-    IPC.library.saveCollection,
-    IPC.library.removeCollection,
-    IPC.library.collectionItems,
-    IPC.library.exportCollections,
-    IPC.library.importCollections,
-    IPC.library.stack,
-    IPC.library.unstack,
-    IPC.library.stackTop,
-    IPC.library.autoStack,
-    IPC.library.duplicates
-  ]) {
-    handle(channel, () => notImplemented(channel))
-  }
+  handle(IPC.library.openSource, (src: LibrarySource) => s.library.openSource(src))
+  handle(IPC.library.resolvePaths, (paths: string[]) => s.index.resolvePaths(paths))
+  handle(IPC.library.setMetadata, (keys: string[], patch: MetaTextPatch) =>
+    s.index.setMetadata(keys, patch)
+  )
+  handle(IPC.library.keywordTree, () => s.index.keywordTree())
+  handle(IPC.library.collections, () => s.index.collections())
+  handle(IPC.library.saveCollection, (c: Omit<Collection, 'id' | 'count'> & { id?: string }) =>
+    s.index.saveCollection(c)
+  )
+  handle(IPC.library.removeCollection, (id: string) => s.index.removeCollection(id))
+  handle(IPC.library.collectionItems, (id: string, keys: string[], action: 'add' | 'remove') =>
+    s.index.collectionItems(id, keys, action)
+  )
+  handle(IPC.library.exportCollections, async (ids: string[]): Promise<string | null> => {
+    const file = await s.index.exportCollections(ids)
+    const only = file.collections.length === 1 ? file.collections[0].name : 'Collections'
+    const opts = {
+      defaultPath: `${only.replace(/[/\\:*?"<>|]/g, '-')}.json`,
+      filters: [{ name: 'Collections', extensions: ['json'] }]
+    }
+    const w = win()
+    const r = w ? await dialog.showSaveDialog(w, opts) : await dialog.showSaveDialog(opts)
+    if (r.canceled || !r.filePath) return null
+    await writeFile(r.filePath, JSON.stringify(file, null, 2))
+    return r.filePath
+  })
+  handle(IPC.library.importCollections, async (): Promise<Collection[]> => {
+    const opts = {
+      properties: ['openFile'] as 'openFile'[],
+      filters: [{ name: 'Collections', extensions: ['json'] }]
+    }
+    const w = win()
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    if (r.canceled || r.filePaths.length === 0) return []
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(await readFile(r.filePaths[0], 'utf8'))
+    } catch {
+      throw new Error(`${basename(r.filePaths[0])} is not a collections file`)
+    }
+    return s.index.importCollections(parsed)
+  })
+  handle(IPC.library.stack, (keys: string[], cover: string) => s.index.stack(keys, cover))
+  handle(IPC.library.unstack, (keys: string[]) => s.index.unstack(keys))
+  handle(IPC.library.stackTop, (key: string) => s.index.stackTop(key))
+  handle(IPC.library.autoStack, (folder: string, seconds?: number) =>
+    s.index.autoStack(folder, seconds ?? 3)
+  )
+  handle(IPC.library.duplicates, (folder: string | null, threshold?: number) =>
+    s.library.duplicates(folder, threshold ?? 6)
+  )
 
   // ── batch auto white balance ── workstream B
   // Each photo measured on its own draft proxy by the background engine;

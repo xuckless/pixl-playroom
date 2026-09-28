@@ -1,8 +1,9 @@
 /**
  * The sidecar: `<photo file name>.playroom.json` beside the original. It is
- * the truth about a photo's edits, snapshots, virtual copies, rating, flag
- * and colour label — portable with the folder, readable by anyone, and never
- * inside the photo itself. The original is never written.
+ * the truth about a photo's edits, snapshots, virtual copies, rating, flag,
+ * colour label and stack — portable with the folder, readable by anyone, and
+ * never inside the photo itself. The original is never written. (Title,
+ * caption and keywords live in the `.xmp` sidecar, see indexer/xmp.ts.)
  *
  * Writes are atomic (a temporary file renamed over the old one), and a photo
  * with nothing to say gets no sidecar at all.
@@ -26,11 +27,20 @@ export interface SidecarCopy extends SidecarItem {
   name: string
 }
 
+/** The photo's place in a stack of photos from one folder (its copies go with it). */
+export interface SidecarStack {
+  id: string
+  /** 0 is the cover. */
+  position: number
+}
+
 export interface Sidecar {
   app: 'pixl-playroom'
   version: 1
   photo: SidecarItem
   copies: SidecarCopy[]
+  /** Added without a version bump: older builds ignore it. */
+  stack: SidecarStack | null
 }
 
 export function sidecarPath(photoPath: string): string {
@@ -42,7 +52,8 @@ export function emptySidecar(): Sidecar {
     app: 'pixl-playroom',
     version: 1,
     photo: { rating: 0, flag: null, label: null, recipe: null, snapshots: [] },
-    copies: []
+    copies: [],
+    stack: null
   }
 }
 
@@ -58,6 +69,13 @@ function item(v: unknown, isRaw: boolean): SidecarItem {
     ? (o.snapshots as Snapshot[]).map((s) => ({ ...s, recipe: normaliseRecipe(s.recipe, isRaw) }))
     : []
   return { rating, flag, label, recipe, snapshots }
+}
+
+function stackOf(v: unknown): SidecarStack | null {
+  const o = (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>
+  if (typeof o.id !== 'string' || !o.id) return null
+  const position = typeof o.position === 'number' ? Math.max(0, Math.round(o.position)) : 0
+  return { id: o.id, position }
 }
 
 /** Read a photo's sidecar, or an empty one. A damaged sidecar is kept aside, not overwritten. */
@@ -77,7 +95,13 @@ export function readSidecar(
         }))
       : []
     return {
-      sidecar: { app: 'pixl-playroom', version: 1, photo: item(raw.photo, isRaw), copies },
+      sidecar: {
+        app: 'pixl-playroom',
+        version: 1,
+        photo: item(raw.photo, isRaw),
+        copies,
+        stack: stackOf(raw.stack)
+      },
       mtime: statSync(file).mtimeMs
     }
   } catch {
@@ -95,6 +119,7 @@ function saysNothing(s: Sidecar): boolean {
   const p = s.photo
   return (
     s.copies.length === 0 &&
+    s.stack === null &&
     p.rating === 0 &&
     p.flag === null &&
     p.label === null &&
@@ -111,7 +136,9 @@ export function writeSidecar(photoPath: string, sidecar: Sidecar): number | null
     return null
   }
   const tmp = `${file}.tmp-${process.pid}`
-  writeFileSync(tmp, JSON.stringify(sidecar, null, 2))
+  // No stack, no key: a sidecar stays what older builds wrote.
+  const { stack, ...rest } = sidecar
+  writeFileSync(tmp, JSON.stringify(stack ? sidecar : rest, null, 2))
   renameSync(tmp, file)
   return statSync(file).mtimeMs
 }
