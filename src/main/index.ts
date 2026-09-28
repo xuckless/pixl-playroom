@@ -12,7 +12,15 @@ import { openIndex } from './indexer/client'
 import { registerIpc } from './ipc'
 import { Library } from './library'
 import { buildMenu } from './menu'
-import { onOpenPaths, openable, pathsFromArgv, queueOpen, rendererGone } from './open'
+import {
+  handOffOpens,
+  onOpenPaths,
+  openable,
+  pathsFromArgv,
+  queueOpen,
+  rendererGone,
+  takeHandOff
+} from './open'
 import { PlaneStore } from './planestore'
 import { pixels } from './workers/pool'
 import { registerProtocol, registerSchemePrivileges } from './protocol'
@@ -32,12 +40,15 @@ const hidden = process.env['PLAYROOM_HIDDEN'] === '1'
 // A Retina Mac in Performance mode needs its scale on the command line; a
 // build started without it starts again with it (see display.ts).
 const relaunching = bootScale({ canRelaunch: app.isPackaged && !hidden })
-if (relaunching) app.exit(0)
+// The relaunch starts when this process exits. It leaves at ready, once
+// macOS has delivered the photos this launch was asked to open (`open-file`),
+// and hands them to the next process.
+if (relaunching) app.once('ready', () => leaveForRelaunch())
 
 // One Playroom per profile: a second launch (Explorer's "Open With", a path
 // on the command line) hands its arguments to the first and leaves. The lock
 // is per userData, so PLAYROOM_USER_DATA runs stand apart; automation never
-// takes it. An `open-file` that arrives while bootScale relaunches is lost.
+// takes it.
 const secondary = !relaunching && !hidden && !app.requestSingleInstanceLock({ argv: process.argv })
 if (secondary) app.exit(0)
 
@@ -73,7 +84,13 @@ app.on('second-instance', (_e, argv, cwd, data) => {
   else focusWindow()
 })
 
+if (!relaunching && !secondary) takeHandOff(app.getPath('userData'))
 queueOpen(pathsFromArgv(process.argv, process.cwd(), ARGV_SKIP))
+
+function leaveForRelaunch(): void {
+  handOffOpens(app.getPath('userData'))
+  app.exit(0)
+}
 
 /** Previews and the develop view's measurements. */
 const engine = new EngineClient('interactive', 8)
@@ -143,7 +160,7 @@ function setAbout(engineVersion?: string): void {
 
 app.whenReady().then(() => {
   if (relaunching || secondary) return
-  if (settleScale()) return app.exit(0)
+  if (settleScale()) return leaveForRelaunch()
   electronApp.setAppUserModelId('com.xuckless.pixlplayroom')
   // A packaged app's dock shows its bundle icon; `pnpm dev` would show Electron's.
   if (!app.isPackaged) app.dock?.setIcon(dockIcon)

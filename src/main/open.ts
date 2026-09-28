@@ -4,8 +4,8 @@
  * handing its arguments to the first. They wait here until the renderer has
  * booted and takes them; after that they go straight to it.
  */
-import { statSync } from 'fs'
-import { extname, isAbsolute, resolve, sep } from 'path'
+import { readFileSync, rmSync, statSync, writeFileSync } from 'fs'
+import { extname, isAbsolute, join, resolve, sep } from 'path'
 import { IMAGE_EXTENSIONS } from './source'
 
 const OPENABLE = new Set(IMAGE_EXTENSIONS)
@@ -66,4 +66,36 @@ export function takeOpens(): string[] {
 /** The window closed or is reloading: queue again until the next boot takes them. */
 export function rendererGone(): void {
   ready = false
+}
+
+const HANDOFF = 'pending-opens.json'
+/** A handoff older than this is a crashed relaunch's, not ours. */
+const HANDOFF_MS = 60_000
+
+/**
+ * A relaunch for the display's scale starts a new process once this one
+ * exits: what this one was asked to open waits for it in `dir` (userData).
+ */
+export function handOffOpens(dir: string): void {
+  if (queue.length === 0) return
+  try {
+    writeFileSync(join(dir, HANDOFF), JSON.stringify({ at: Date.now(), paths: queue }))
+  } catch {
+    // Nothing to hand over to, then: the photos stay unopened.
+  }
+}
+
+/** Takes over what the process before a relaunch was asked to open. */
+export function takeHandOff(dir: string): void {
+  const file = join(dir, HANDOFF)
+  let left: { at?: number; paths?: unknown }
+  try {
+    left = JSON.parse(readFileSync(file, 'utf8'))
+    rmSync(file, { force: true })
+  } catch {
+    return
+  }
+  if (!Array.isArray(left.paths) || !(Date.now() - (left.at ?? 0) < HANDOFF_MS)) return
+  const paths = left.paths.filter((p): p is string => typeof p === 'string')
+  queueOpen(paths.map(openable).filter((p): p is string => p !== null))
 }

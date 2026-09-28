@@ -3,7 +3,15 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, sep } from 'path'
-import { onOpenPaths, pathsFromArgv, queueOpen, rendererGone, takeOpens } from '../src/main/open'
+import {
+  handOffOpens,
+  onOpenPaths,
+  pathsFromArgv,
+  queueOpen,
+  rendererGone,
+  takeHandOff,
+  takeOpens
+} from '../src/main/open'
 
 function fixture(): { root: string; done(): void } {
   const root = mkdtempSync(join(tmpdir(), 'playroom-open-'))
@@ -80,4 +88,30 @@ test('opens queue until the renderer takes them, then go straight to it', () => 
   queueOpen(['/d.jpg'])
   assert.deepEqual(sent, [['/c.jpg']])
   assert.deepEqual(takeOpens(), ['/d.jpg'])
+})
+
+test('a relaunch hands its opens to the next process, once', () => {
+  const f = fixture()
+  const profile = join(f.root, 'profile')
+  mkdirSync(profile)
+  rendererGone()
+  queueOpen([join(f.root, 'a.CR2'), join(f.root, 'gone.jpg')])
+  handOffOpens(profile)
+  // The next process, its renderer not up yet: what still exists, then nothing more.
+  takeOpens()
+  rendererGone()
+  takeHandOff(profile)
+  assert.deepEqual(takeOpens(), [join(f.root, 'a.CR2')])
+  rendererGone()
+  takeHandOff(profile)
+  assert.deepEqual(takeOpens(), [])
+  rendererGone()
+  // A stale handoff (a relaunch that never came) is dropped.
+  writeFileSync(
+    join(profile, 'pending-opens.json'),
+    JSON.stringify({ at: Date.now() - 3_600_000, paths: [join(f.root, 'b.jpg')] })
+  )
+  takeHandOff(profile)
+  assert.deepEqual(takeOpens(), [])
+  f.done()
 })
