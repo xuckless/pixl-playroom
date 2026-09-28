@@ -135,8 +135,8 @@ h1, h2, h3, p { margin: 0; }
 }
 .formats ul { display: contents; list-style: none; }
 .formats li { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 600; color: var(--ink-2); }
-/* A document icon per format can be dropped in as <img class="fmt-icon"> before the name. */
-.formats .fmt-icon { width: 36px; height: 36px; object-fit: contain; }
+/* The format's document icon (build/doc-icons), before its name. */
+.formats .fmt-icon { width: 48px; height: 48px; object-fit: contain; }
 
 /* ── features ───────────────────────────────────────────────── */
 .feature {

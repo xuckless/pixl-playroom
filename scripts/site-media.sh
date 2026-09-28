@@ -2,7 +2,7 @@
 # Builds the media the website (site/) ships. The outputs are committed, so
 # this only needs to run again when a source changes.
 #
-#   scripts/site-media.sh [step ...]      steps: fonts brand hero pairs shots og (default: all)
+#   scripts/site-media.sh [step ...]      steps: fonts brand hero pairs shots formats og (default: all)
 #
 # Sources (override with the env vars):
 #   REC_DIR    screen recordings of the app, *.mov    (~/Downloads/PIXL-Recordings)
@@ -124,13 +124,22 @@ shots() {
   done
 }
 
+# The formats strip: the app's own document icons (pnpm doc-icons), small.
+formats() {
+  mkdir -p "$SITE/formats"
+  for f in raw dng jxl heic jpg tiff; do
+    magick "$ROOT/build/doc-icons/png/$f-256.png" -resize 96x96 -strip \
+      -define png:compression-level=9 "$SITE/formats/$f.png"
+  done
+}
+
 # The link card, rendered from build/brand/og.html by brand-art.mjs.
 og() {
   (cd "$ROOT" && pnpm exec electron scripts/brand-art.mjs og)
 }
 
 steps=("$@")
-[ "${#steps[@]}" -gt 0 ] || steps=(fonts brand hero pairs shots og)
+[ "${#steps[@]}" -gt 0 ] || steps=(fonts brand hero pairs shots formats og)
 for s in "${steps[@]}"; do
   echo "== $s"
   "$s"
