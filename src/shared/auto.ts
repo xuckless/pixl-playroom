@@ -25,29 +25,63 @@ function pct(stats: ImageStats, p: number): number {
 /** The percentiles `autoTone` reads; ask `analyze` for these. */
 export const AUTO_PERCENTILES = [0.5, 2, 10, 50, 90, 95, 99.5]
 
+/** Where the median is put: display mid-grey, a little lower or higher for a low- or high-key frame. */
+const TARGET_MEDIAN = 0.46
+const TARGET_LOW_KEY = 0.4
+const TARGET_HIGH_KEY = 0.5
+/** Exposure goes most of the way to the target, never all of it: the median is only a guess at intent. */
+const EXPOSURE_SHARE = 0.85
+/** The spread (σ of encoded luma) of a frame that reads as neither flat nor punchy. */
+const TARGET_SPREAD = 0.21
+
 /**
  * Auto tone, from encoded-domain statistics of the photo as the base
- * profile renders it (no tone sliders yet):
+ * profile renders it (no tone sliders yet). Gentle on purpose: it should
+ * land a frame somewhere good to start from, never flatten it into an HDR
+ * look. Two readings of the scene decide how far it goes:
  *
- * - exposure puts the median luma at display mid-grey (0.46), in stops of
- *   linear light, within ±3;
- * - highlights pull down when the 95th percentile sits above 0.88, shadows
- *   lift when the 10th sits below 0.10;
- * - whites/blacks stretch the 99.5th and 0.5th percentiles toward 0.97 and
- *   0.02, and back off when either end is already clipping;
- * - contrast nudges the spread (σ) toward 0.21.
+ * - **flat** — the 0.5…99.5 percentile span is under 0.55, or σ is under
+ *   0.12: overcast, fog, haze, a grey wall. A flat frame wants contrast, not
+ *   highlight recovery (a dull sky is not a hot one), and no shadow lift;
+ * - **hot** — more than 0.3% of pixels clip, or the 99.5th percentile lands
+ *   above 0.985 once exposure has moved: only then is there something for
+ *   Highlights to recover.
+ *
+ * The sliders, each capped well short of its range:
+ *
+ * - exposure moves the median most of the way (×0.85) toward 0.46, 0.40
+ *   for a low-key frame (the 90th percentile below 0.5: it is dark by
+ *   intent) and 0.50 for a flat high-key one (the 10th above 0.45: snow,
+ *   fog, a bright overcast), within ±2 stops;
+ * - highlights pull down by how far the 95th percentile sits above 0.80,
+ *   at most −50, and only for a hot frame or one whose 99.5th reaches 0.95;
+ * - whites stretch the 99.5th toward 0.97 (to +40), or back off by the
+ *   clipped fraction (to −30);
+ * - blacks deepen a lifted 0.5th percentile (to −35) unless the shadows
+ *   already clip, and lift (to +25) only when they clip; on a flat frame
+ *   both ends stretch at most half as far, since contrast is doing that work too;
+ * - shadows lift a dark 10th percentile (to +40), never on a flat frame;
+ * - contrast nudges σ toward 0.21 (−20…+30); a flat frame always gains some.
  */
 export function autoTone(stats: ImageStats): BasicSetting {
   const p005 = pct(stats, 0.5)
   const p10 = pct(stats, 10)
   const p50 = pct(stats, 50)
+  const p90 = pct(stats, 90)
   const p95 = pct(stats, 95)
   const p995 = pct(stats, 99.5)
-  const exposure = clamp(
-    Math.log2(srgbToLinear(0.46) / Math.max(srgbToLinear(Math.max(p50, 0.01)), 1e-4)),
-    -3,
-    3
+  const sigma = stats.luma_stddev
+  const clippedHigh = Math.max(...stats.clipped_high, 0)
+  const clippedLow = Math.max(...stats.clipped_low, 0)
+  const flat = p995 - p005 < 0.55 || sigma < 0.12
+
+  const target =
+    p90 < 0.5 ? TARGET_LOW_KEY : flat && p10 > 0.45 ? TARGET_HIGH_KEY : TARGET_MEDIAN
+  const toTarget = Math.log2(
+    srgbToLinear(target) / Math.max(srgbToLinear(Math.max(p50, 0.01)), 1e-4)
   )
+  const exposure = clamp(toTarget * EXPOSURE_SHARE, -2, 2)
+
   // After the exposure, the percentiles move roughly by the same factor in
   // linear light; estimate where they land before placing the other sliders.
   const gain = 2 ** exposure
@@ -55,26 +89,38 @@ export function autoTone(stats: ImageStats): BasicSetting {
     const lin = srgbToLinear(v) * gain
     return lin <= 0.0031308 ? lin * 12.92 : Math.min(1, 1.055 * lin ** (1 / 2.4) - 0.055)
   }
-  const s95 = shifted(p95)
   const s10 = shifted(p10)
+  const s95 = shifted(p95)
   const s995 = shifted(p995)
   const s005 = shifted(p005)
-  const clippedHigh = Math.max(...stats.clipped_high, 0)
-  const clippedLow = Math.max(...stats.clipped_low, 0)
-  const highlights = s95 > 0.88 ? clamp(-((s95 - 0.85) / 0.15) * 100, -80, 0) : 0
-  const shadows = s10 < 0.1 ? clamp(((0.1 - s10) / 0.1) * 60, 0, 60) : 0
+  const hot = clippedHigh > 0.003 || s995 > 0.985
+
+  // Overcast is flat, not hot: pulling its highlights only greys the sky.
+  const highlights =
+    hot || (!flat && s995 >= 0.95) ? -clamp(((s95 - 0.8) / 0.2) * 60, 0, 50) : 0
+  // A flat frame's contrast already stretches it; the ends go at most half
+  // as far so the three together do not wring it out.
+  const stretch = flat ? 0.5 : 1
   const whites =
     clippedHigh > 0.005
-      ? clamp(-clippedHigh * 2000, -40, 0)
-      : clamp(((0.97 - s995) / 0.2) * 100, 0, 60)
+      ? clamp(-clippedHigh * 2000, -30, 0)
+      : clamp(((0.97 - s995) / 0.2) * 100, 0, 40 * stretch)
+  // Blacks deepen a milky floor, but not one that already clips; they lift
+  // only to rescue clipped shadows.
   const blacks =
-    clippedLow > 0.005
-      ? clamp(clippedLow * 2000, 0, 30)
-      : clamp(-((s005 - 0.02) / 0.15) * 100, -60, 0)
-  const contrast = clamp(((0.21 - stats.luma_stddev) / 0.21) * 60, -30, 40)
-  const round = (v: number): number => Math.round(v)
+    clippedLow > 0.002
+      ? clamp(clippedLow * 2000, 0, 25)
+      : s005 > 0.04
+        ? -clamp(((s005 - 0.02) / 0.15) * 100, 0, 35 * stretch)
+        : 0
+  // Lifting a flat frame's shadows would only flatten it further.
+  const shadows = !flat && s10 < 0.12 ? clamp(((0.12 - s10) / 0.12) * 50, 0, 40) : 0
+  const contrast = flat
+    ? clamp(((TARGET_SPREAD - sigma) / TARGET_SPREAD) * 40, 5, 30)
+    : clamp(((TARGET_SPREAD - sigma) / TARGET_SPREAD) * 30, -20, 30)
+  const round = (v: number): number => Math.round(v) || 0
   return {
-    exposure: Math.round(exposure * 100) / 100,
+    exposure: Math.round(exposure * 100) / 100 || 0,
     contrast: round(contrast),
     highlights: round(highlights),
     shadows: round(shadows),
