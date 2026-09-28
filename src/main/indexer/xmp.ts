@@ -138,7 +138,9 @@ export function exiftoolXmp(): XmpIo {
     },
     async write(xmpPath, meta) {
       // Writing to a .xmp path that does not exist makes one from scratch.
-      await exiftool().write(xmpPath, metaToTags(meta) as WriteTags, { writeArgs: ['-overwrite_original'] })
+      await exiftool().write(xmpPath, metaToTags(meta) as WriteTags, {
+        writeArgs: ['-overwrite_original']
+      })
     },
     end: endExiftool
   }

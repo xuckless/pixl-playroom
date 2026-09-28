@@ -59,6 +59,17 @@ export interface CopyRow {
   thumb_key: string | null
 }
 
+export interface CollectionRow {
+  id: string
+  name: string
+  kind: 'manual' | 'smart' | 'set'
+  parent: string | null
+  /** A smart collection's SmartGroup, as JSON. */
+  rules: string | null
+  sort: number
+  created_at: string
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS folders (path TEXT PRIMARY KEY, opened_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS photos (
@@ -362,17 +373,223 @@ export class Store {
     return this.photoByPath(p.path) as PhotoRow
   }
 
-  /** Forget the folder's photos that are no longer on disk. Returns how many went. */
+  /**
+   * Forget the folder's photos that are no longer on disk, with their
+   * copies, keywords and places in collections. Returns how many went.
+   */
   removeMissing(folder: string, present: Set<string>): number {
     let removed = 0
     for (const row of this.photosIn(folder)) {
       if (!present.has(row.path)) {
         this.prepare('DELETE FROM photos WHERE id = ?').run(row.id)
         this.prepare('DELETE FROM copies WHERE photo_id = ?').run(row.id)
+        this.prepare('DELETE FROM photo_keywords WHERE photo_id = ?').run(row.id)
+        this.prepare('DELETE FROM collection_items WHERE photo_id = ?').run(row.id)
         removed++
       }
     }
     return removed
+  }
+
+  /** Every photo the index knows, in folder and name order. */
+  allPhotos(): PhotoRow[] {
+    return this.prepare('SELECT * FROM photos ORDER BY folder, name').all() as unknown as PhotoRow[]
+  }
+
+  /** These photos, in folder and name order (unknown ids are left out). */
+  photosByIds(ids: number[]): PhotoRow[] {
+    const rows = this.inChunks(ids, (qs) => `SELECT * FROM photos WHERE id IN (${qs})`)
+    return (rows as unknown as PhotoRow[]).sort(
+      (a, b) => a.folder.localeCompare(b.folder) || a.name.localeCompare(b.name)
+    )
+  }
+
+  /** Every copy of these photos. */
+  copiesOfPhotos(ids: number[]): CopyRow[] {
+    return this.inChunks(
+      ids,
+      (qs) => `SELECT * FROM copies WHERE photo_id IN (${qs}) ORDER BY name`
+    ) as unknown as CopyRow[]
+  }
+
+  /** A query over a list of ids, a few hundred at a time (SQLite limits the parameters). */
+  private inChunks(ids: number[], sql: (placeholders: string) => string): unknown[] {
+    const out: unknown[] = []
+    for (let i = 0; i < ids.length; i += 500) {
+      const part = ids.slice(i, i + 500)
+      out.push(...this.prepare(sql(part.map(() => '?').join(','))).all(...part))
+    }
+    return out
+  }
+
+  /** Photos of this size or any other that more than one photo has, in scope. */
+  photosSharingSize(folder: string | null): PhotoRow[] {
+    const where = folder === null ? '' : 'WHERE folder = ?'
+    const args = folder === null ? [] : [folder]
+    return this.prepare(
+      `SELECT * FROM photos WHERE size IN (
+         SELECT size FROM photos ${where} GROUP BY size HAVING COUNT(*) > 1
+       ) ${folder === null ? '' : 'AND folder = ?'} ORDER BY folder, name`
+    ).all(...args, ...args) as unknown as PhotoRow[]
+  }
+
+  photosInScope(folder: string | null): PhotoRow[] {
+    return folder === null ? this.allPhotos() : this.photosIn(folder)
+  }
+
+  setContentHash(id: number, hash: string, key: string): void {
+    this.prepare('UPDATE photos SET content_hash = ?, hash_key = ? WHERE id = ?').run(hash, key, id)
+  }
+
+  setDhash(id: number, hash: string, key: string): void {
+    this.prepare('UPDATE photos SET dhash = ?, dhash_key = ? WHERE id = ?').run(hash, key, id)
+  }
+
+  // ── descriptive metadata (mirrored from the .xmp) ──
+
+  setXmp(
+    id: number,
+    meta: { title: string | null; caption: string | null; copyright: string | null },
+    keywords: string[],
+    mtime: number | null
+  ): void {
+    this.prepare(
+      'UPDATE photos SET title = ?, caption = ?, copyright = ?, xmp_mtime = ? WHERE id = ?'
+    ).run(meta.title, meta.caption, meta.copyright, mtime, id)
+    this.prepare('DELETE FROM photo_keywords WHERE photo_id = ?').run(id)
+    const ins = this.prepare('INSERT OR IGNORE INTO photo_keywords(photo_id, path) VALUES (?, ?)')
+    for (const k of keywords) ins.run(id, k)
+  }
+
+  keywordsOf(id: number): string[] {
+    return (
+      this.prepare('SELECT path FROM photo_keywords WHERE photo_id = ? ORDER BY path').all(id) as {
+        path: string
+      }[]
+    ).map((r) => r.path)
+  }
+
+  /** Each photo's keywords, for a listing: one query per few hundred photos. */
+  keywordsFor(ids: number[]): Map<number, string[]> {
+    const out = new Map<number, string[]>()
+    const rows = this.inChunks(
+      ids,
+      (qs) => `SELECT photo_id, path FROM photo_keywords WHERE photo_id IN (${qs}) ORDER BY path`
+    ) as { photo_id: number; path: string }[]
+    for (const r of rows) {
+      const list = out.get(r.photo_id)
+      if (list) list.push(r.path)
+      else out.set(r.photo_id, [r.path])
+    }
+    return out
+  }
+
+  allKeywords(): { photo_id: number; path: string }[] {
+    return this.prepare('SELECT photo_id, path FROM photo_keywords').all() as {
+      photo_id: number
+      path: string
+    }[]
+  }
+
+  /** The photos with this keyword or one under it. */
+  photoIdsWithKeyword(path: string): number[] {
+    return (
+      this.prepare(
+        "SELECT DISTINCT photo_id FROM photo_keywords WHERE path = ? OR path LIKE ? ESCAPE '\\'"
+      ).all(path, path.replace(/[\\%_]/g, (c) => '\\' + c) + '|%') as { photo_id: number }[]
+    ).map((r) => r.photo_id)
+  }
+
+  // ── stacks (mirrored from the sidecar) ──
+
+  setStack(id: number, stackId: string | null, position: number | null): void {
+    this.prepare('UPDATE photos SET stack_id = ?, stack_pos = ? WHERE id = ?').run(
+      stackId,
+      position,
+      id
+    )
+  }
+
+  stackMembers(stackId: string): PhotoRow[] {
+    return this.prepare('SELECT * FROM photos WHERE stack_id = ? ORDER BY stack_pos, name').all(
+      stackId
+    ) as unknown as PhotoRow[]
+  }
+
+  /** How many photos each of these stacks holds. */
+  stackSizes(stackIds: string[]): Map<string, number> {
+    const out = new Map<string, number>()
+    for (let i = 0; i < stackIds.length; i += 500) {
+      const part = stackIds.slice(i, i + 500)
+      const rows = this.prepare(
+        `SELECT stack_id, COUNT(*) AS n FROM photos WHERE stack_id IN (${part.map(() => '?').join(',')}) GROUP BY stack_id`
+      ).all(...part) as { stack_id: string; n: number }[]
+      for (const r of rows) out.set(r.stack_id, r.n)
+    }
+    return out
+  }
+
+  // ── collections ──
+
+  collections(): CollectionRow[] {
+    return this.prepare(
+      'SELECT * FROM collections ORDER BY sort, name COLLATE NOCASE'
+    ).all() as unknown as CollectionRow[]
+  }
+
+  collection(id: string): CollectionRow | undefined {
+    return this.prepare('SELECT * FROM collections WHERE id = ?').get(id) as unknown as
+      CollectionRow | undefined
+  }
+
+  saveCollection(c: Omit<CollectionRow, 'created_at'>): void {
+    this.prepare(
+      `INSERT INTO collections(id, name, kind, parent, rules, sort, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, kind = excluded.kind,
+           parent = excluded.parent, rules = excluded.rules, sort = excluded.sort`
+    ).run(c.id, c.name, c.kind, c.parent, c.rules, c.sort, new Date().toISOString())
+  }
+
+  /** Remove a collection and its items; what sat in it (a set's children) moves to the top. */
+  removeCollection(id: string): void {
+    this.prepare('DELETE FROM collection_items WHERE collection_id = ?').run(id)
+    this.prepare('UPDATE collections SET parent = NULL WHERE parent = ?').run(id)
+    this.prepare('DELETE FROM collections WHERE id = ?').run(id)
+  }
+
+  collectionItems(id: string): { photo_id: number; copy_id: string }[] {
+    return this.prepare(
+      'SELECT photo_id, copy_id FROM collection_items WHERE collection_id = ?'
+    ).all(id) as { photo_id: number; copy_id: string }[]
+  }
+
+  /** Every manual collection's items, for smart rules that name them. */
+  allCollectionItems(): { collection_id: string; photo_id: number; copy_id: string }[] {
+    return this.prepare('SELECT collection_id, photo_id, copy_id FROM collection_items').all() as {
+      collection_id: string
+      photo_id: number
+      copy_id: string
+    }[]
+  }
+
+  addCollectionItem(id: string, photoId: number, copyId: string): void {
+    this.prepare(
+      'INSERT OR IGNORE INTO collection_items(collection_id, photo_id, copy_id, added_at) VALUES (?, ?, ?, ?)'
+    ).run(id, photoId, copyId, new Date().toISOString())
+  }
+
+  removeCollectionItem(id: string, photoId: number, copyId: string): void {
+    this.prepare(
+      'DELETE FROM collection_items WHERE collection_id = ? AND photo_id = ? AND copy_id = ?'
+    ).run(id, photoId, copyId)
+  }
+
+  /** A deleted copy leaves the collections it was in. */
+  removeCopyFromCollections(photoId: number, copyId: string): void {
+    this.prepare('DELETE FROM collection_items WHERE photo_id = ? AND copy_id = ?').run(
+      photoId,
+      copyId
+    )
   }
 
   hasPhotosIn(folder: string): boolean {
