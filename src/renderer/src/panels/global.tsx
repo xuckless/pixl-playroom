@@ -4,8 +4,10 @@ import type { LutProfile } from '../../../shared/ipc'
 import {
   HSL_BANDS,
   HSL_BAND_CENTRES,
+  MAX_POINT_COLORS,
   type CurvePointSetting,
   type HslBand,
+  type PointColorSetting,
   type ProfileRef,
   type Recipe
 } from '../../../shared/recipe'
@@ -13,12 +15,13 @@ import { WB_PRESETS } from '../../../shared/wb'
 import { ColorWheel, CurveEditor } from '../components/editors'
 import { Section, Select, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
 import { api, errorText } from '../lib/api'
-import { useDevelop } from '../state/develop'
+import { useDevelop, type CurveChannel } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { runJob } from '../state/busy'
 import { ASPECTS, aspectValue } from '../lib/aspects'
 import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../lib/geometry'
-import { Icon } from '../components/icons'
+import { Icon, PathIcon } from '../components/icons'
+import { CurvePresets } from './CurvePresets'
 
 type Read = (r: Recipe) => number
 type Write = (r: Recipe, v: number) => void
@@ -448,14 +451,44 @@ export function BasicPanel(): React.JSX.Element | null {
 
 // ── Tone curve ───────────────────────────────────────────────────────────────
 
-type CurveChannel = 'master' | 'red' | 'green' | 'blue'
+/** A crosshair: the targeted adjustment tool. */
+const TAT_ICON = 'M12 3v4M12 17v4M3 12h4M17 12h4M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'
+
+/**
+ * The targeted adjustment tool's switch for one panel: on, it drags that
+ * panel's controls from the photo; the tool is put down when the panel goes.
+ */
+function TatToggle({ target }: { target: 'hsl' | 'curve' }): React.JSX.Element {
+  const on = useDevelop((s) => s.tool === 'tat' && s.tatTarget === target)
+  useEffect(
+    () => () => {
+      const s = useDevelop.getState()
+      if (s.tool === 'tat' && s.tatTarget === target) s.setTool('none')
+    },
+    [target]
+  )
+  return (
+    <Toggle
+      on={on}
+      onChange={(v) => {
+        const s = useDevelop.getState()
+        s.setTatTarget(target)
+        s.setTool(v ? 'tat' : 'none')
+      }}
+      title="Targeted adjustment: drag up or down on the photo (T)"
+    >
+      <PathIcon d={TAT_ICON} />
+    </Toggle>
+  )
+}
 
 export function ToneCurvePanel(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
   const stats = useDevelop((s) => s.stats)
   const edit = useDevelop((s) => s.edit)
   const commit = useDevelop((s) => s.commit)
-  const [channel, setChannel] = useState<CurveChannel>('master')
+  const channel = useDevelop((s) => s.curveChannel)
+  const setChannel = useDevelop((s) => s.setCurveChannel)
   if (!recipe) return null
   const colours: Record<CurveChannel, string> = {
     master: '#c9bdf7',
@@ -469,6 +502,9 @@ export function ToneCurvePanel(): React.JSX.Element | null {
       : stats?.histograms[{ red: 0, green: 1, blue: 2 }[channel]]?.counts
   return (
     <ToolPanel>
+      <Section id="curve.presets" title="Presets">
+        <CurvePresets />
+      </Section>
       <Section id="curve.region" title="Region">
         <RS
           label="Highlights"
@@ -495,16 +531,19 @@ export function ToneCurvePanel(): React.JSX.Element | null {
         id="curve.point"
         title="Point curve"
         right={
-          <Tabs
-            value={channel}
-            onChange={setChannel}
-            tabs={[
-              { value: 'master', label: 'RGB' },
-              { value: 'red', label: 'R' },
-              { value: 'green', label: 'G' },
-              { value: 'blue', label: 'B' }
-            ]}
-          />
+          <>
+            <TatToggle target="curve" />
+            <Tabs
+              value={channel}
+              onChange={setChannel}
+              tabs={[
+                { value: 'master', label: 'RGB' },
+                { value: 'red', label: 'R' },
+                { value: 'green', label: 'G' },
+                { value: 'blue', label: 'B' }
+              ]}
+            />
+          </>
         }
       >
         <CurveEditor
@@ -576,22 +615,27 @@ export function HslPanel(): React.JSX.Element | null {
     )
   }
   const axes: ('hue' | 'saturation' | 'luminance')[] =
-    tab === 'all' ? ['hue', 'saturation', 'luminance'] : [tab]
+    tab === 'point' ? [] : tab === 'all' ? ['hue', 'saturation', 'luminance'] : [tab]
   return (
     <ToolPanel
       actions={
-        <Tabs
-          value={tab}
-          onChange={setTab}
-          tabs={[
-            { value: 'hue', label: 'H' },
-            { value: 'saturation', label: 'S' },
-            { value: 'luminance', label: 'L' },
-            { value: 'all', label: 'All' }
-          ]}
-        />
+        <>
+          {tab !== 'point' && <TatToggle target="hsl" />}
+          <Tabs
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { value: 'hue', label: 'H' },
+              { value: 'saturation', label: 'S' },
+              { value: 'luminance', label: 'L' },
+              { value: 'all', label: 'All' },
+              { value: 'point', label: 'Point' }
+            ]}
+          />
+        </>
       }
     >
+      {tab === 'point' && <PointColorSection />}
       {axes.map((axis) => (
         <Section key={axis} id={`hsl.${axis}`} title={axis}>
           {HSL_BANDS.map((b) => {
@@ -616,6 +660,128 @@ export function HslPanel(): React.JSX.Element | null {
         </Section>
       ))}
     </ToolPanel>
+  )
+}
+
+/** The swatch colour of a sample: its hue and saturation at its own lightness. */
+function swatchColour(p: PointColorSetting): string {
+  const l = Math.min(85, Math.max(15, p.luminance * 100))
+  return `hsl(${Math.round(p.hue)} ${Math.round(p.saturation * 100)}% ${Math.round(l)}%)`
+}
+
+/**
+ * The colour mixer's Point tab: colours picked off the photo, each moved on
+ * its own. The eyedropper adds a swatch; the selected one shows its shifts.
+ */
+function PointColorSection(): React.JSX.Element | null {
+  const recipe = useDevelop((s) => s.recipe)
+  const tool = useDevelop((s) => s.tool)
+  const setTool = useDevelop((s) => s.setTool)
+  const pointId = useDevelop((s) => s.pointId)
+  const setPointId = useDevelop((s) => s.setPointId)
+  const replace = useDevelop((s) => s.replace)
+  // Put the eyedropper down when the tab goes.
+  useEffect(
+    () => () => {
+      if (useDevelop.getState().tool === 'point-picker') useDevelop.getState().setTool('none')
+    },
+    []
+  )
+  if (!recipe) return null
+  const points = recipe.pointColors
+  // The selected swatch, else the newest.
+  const sel = points.find((p) => p.id === pointId) ?? points[points.length - 1] ?? null
+  const index = sel ? points.indexOf(sel) : -1
+  const full = points.length >= MAX_POINT_COLORS
+  const remove = (): void => {
+    if (!sel) return
+    const next = structuredClone(recipe)
+    next.pointColors = next.pointColors.filter((p) => p.id !== sel.id)
+    setPointId(next.pointColors[Math.max(0, index - 1)]?.id ?? null)
+    replace(next, 'Point colour: remove')
+  }
+  // Each slider reads and writes the selected swatch, found by id.
+  const at = (r: Recipe): PointColorSetting | undefined =>
+    r.pointColors.find((p) => p.id === sel?.id)
+  const shift = (
+    label: string,
+    key: 'shiftHue' | 'shiftSat' | 'shiftLum' | 'range',
+    track?: string
+  ): React.JSX.Element => (
+    <RS
+      label={label}
+      read={(r) => at(r)?.[key] ?? 0}
+      write={(r, v) => {
+        const p = at(r)
+        if (p) p[key] = v
+      }}
+      min={key === 'range' ? 0 : -100}
+      def={key === 'range' ? 50 : 0}
+      track={track}
+    />
+  )
+  return (
+    <Section
+      id="hsl.point"
+      title="Point colour"
+      right={
+        <Toggle
+          on={tool === 'point-picker'}
+          onChange={(on) => setTool(on ? 'point-picker' : 'none')}
+          title={
+            full
+              ? `At most ${MAX_POINT_COLORS} colours: picking re-samples the selected one`
+              : 'Pick a colour in the photo'
+          }
+        >
+          ⌖ Pick
+        </Toggle>
+      }
+    >
+      <div className="row">
+        {points.length === 0 && (
+          <span className="muted">Pick a colour in the photo to shift it.</span>
+        )}
+        {points.map((p, i) => (
+          <button
+            key={p.id}
+            className={`icon mf-swatch-btn${p.id === sel?.id ? ' on' : ''}`}
+            title={`Colour ${i + 1}`}
+            onClick={() => setPointId(p.id)}
+          >
+            <span
+              className="mf-swatch"
+              style={{ background: swatchColour(p), color: swatchColour(p) }}
+            />
+          </button>
+        ))}
+        {sel && (
+          <button className="icon" title="Remove this colour" onClick={remove}>
+            <Icon name="trash" />
+          </button>
+        )}
+      </div>
+      {sel && (
+        <>
+          {shift(
+            'Hue',
+            'shiftHue',
+            `linear-gradient(90deg,hsl(${sel.hue - 30} 80% 50%),hsl(${sel.hue} 80% 50%),hsl(${sel.hue + 30} 80% 50%))`
+          )}
+          {shift(
+            'Saturation',
+            'shiftSat',
+            `linear-gradient(90deg,hsl(${sel.hue} 0% 50%),hsl(${sel.hue} 90% 50%))`
+          )}
+          {shift(
+            'Luminance',
+            'shiftLum',
+            `linear-gradient(90deg,hsl(${sel.hue} 70% 15%),hsl(${sel.hue} 70% 50%),hsl(${sel.hue} 70% 85%))`
+          )}
+          {shift('Range', 'range')}
+        </>
+      )}
+    </Section>
   )
 }
 
