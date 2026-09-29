@@ -500,3 +500,12 @@
 .hud-note {
   animation: fadeIn 0.2s var(--ease);
 }
+/* The mask under the pointer in the masks panel, previewed over the photo. */
+.mask-hover {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.mask-hover .mask-overlay {
+  animation-duration: 0.15s;
+}

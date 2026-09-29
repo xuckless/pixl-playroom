@@ -65,6 +65,8 @@ interface DevelopState {
   addMode: MaskMode | null
   /** Every mask, small (the masks panel's thumbnails), by layer id. */
   maskThumbs: Record<string, RenderEvent>
+  /** The mask under the pointer in the masks panel or on a pin: previewed on the photo. */
+  hoverLayer: string | null
   overlay: boolean
   compare: Compare
   clipping: boolean
@@ -102,6 +104,7 @@ interface DevelopState {
   setComp(id: string | null): void
   setAddMode(m: MaskMode | null): void
   setLayer(id: string | null): void
+  setHoverLayer(id: string | null): void
   setOverlay(on: boolean): void
   setCompare(c: Compare): void
   setClipping(on: boolean): void
@@ -187,6 +190,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   compId: null,
   addMode: null,
   maskThumbs: {},
+  hoverLayer: null,
   overlay: true,
   compare: 'off',
   clipping: false,
@@ -208,6 +212,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       picture: null,
       pictures: { framed: null, crop: null },
       maskThumbs: {},
+      hoverLayer: null,
       compId: null,
       addMode: null,
       before: null,
@@ -343,6 +348,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     // The last mask's plane goes at once: it is not this one's.
     set({ layerId, compId: null, addMode: null, mask: null })
     get().pushView()
+  },
+
+  setHoverLayer(hoverLayer) {
+    if (get().hoverLayer !== hoverLayer) set({ hoverLayer })
   },
 
   setComp(compId) {

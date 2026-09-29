@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { Rect } from '../../../../shared/view'
+import { geometricCentre } from '../../../../shared/masks'
+import { baseToDisplay, type Rect, type ViewGeometry } from '../../../../shared/view'
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { loadImage } from '../../lib/image'
 import { useDevelop } from '../../state/develop'
@@ -38,14 +39,24 @@ async function centroidOf(url: string): Promise<{ x: number; y: number } | null>
 
 /**
  * A glass pin on each mask, where its selection is centred, as Lightroom
- * shows them: click one to select its mask. Pins show while the pointer is
- * over the photo (Auto), always, or never.
+ * shows them: click one to select its mask, hover it to see the mask. A
+ * mask made of shapes (gradients, lassos) is pinned between them, so its pin
+ * moves with them at once; a painted or keyed one where its plane's weight
+ * sits. Pins show while the pointer is over the photo (Auto), always, or
+ * never.
  */
-export function MaskPins({ rect }: { rect: Rect }): React.JSX.Element | null {
+export function MaskPins({
+  rect,
+  g
+}: {
+  rect: Rect
+  g: ViewGeometry | null
+}): React.JSX.Element | null {
   const layers = useDevelop((s) => s.recipe?.layers ?? null)
   const thumbs = useDevelop((s) => s.maskThumbs)
   const layerId = useDevelop((s) => s.layerId)
   const setLayer = useDevelop((s) => s.setLayer)
+  const setHover = useDevelop((s) => s.setHoverLayer)
   const tool = useDevelop((s) => s.tool)
   const pins = useUi((s) => s.maskOverlay.pins)
   const panel = useUi((s) => s.panel)
@@ -72,8 +83,9 @@ export function MaskPins({ rect }: { rect: Rect }): React.JSX.Element | null {
       style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
     >
       {layers.map((l) => {
-        const p = where[l.id]
-        if (!p) return null
+        const shape = g ? geometricCentre(l.components) : null
+        const p = shape ? baseToDisplay(g!, shape) : where[l.id]
+        if (!p || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) return null
         return (
           <LiquidGlass
             as="button"
@@ -87,6 +99,8 @@ export function MaskPins({ rect }: { rect: Rect }): React.JSX.Element | null {
             style={{ left: p.x * rect.w, top: p.y * rect.h }}
             title={l.name}
             onPointerDown={(e) => e.stopPropagation()}
+            onPointerEnter={() => setHover(l.id)}
+            onPointerLeave={() => setHover(null)}
             onClick={(e) => {
               e.stopPropagation()
               setLayer(l.id)

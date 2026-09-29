@@ -70,17 +70,56 @@ export const MaskPlane = memo(function MaskPlane({
 
 /**
  * The overlay for the loupe: the selected mask in the chosen mode, or with
- * "show all", every mask in its own colour from the masks' thumbnails.
+ * "show all", every mask in its own colour from the masks' thumbnails. A
+ * mask hovered in the masks panel (or on its pin) shows over it, in its own
+ * colour, overlay on or off.
  */
 export function MaskOverlay(): React.JSX.Element | null {
+  const tool = useDevelop((s) => s.tool)
+  if (tool === 'crop') return null
+  return (
+    <>
+      <SelectedOverlay />
+      <HoverOverlay />
+    </>
+  )
+}
+
+function HoverOverlay(): React.JSX.Element | null {
+  const hoverLayer = useDevelop((s) => s.hoverLayer)
+  const layerId = useDevelop((s) => s.layerId)
+  const overlay = useDevelop((s) => s.overlay)
+  const mask = useDevelop((s) => s.mask)
+  const thumb = useDevelop((s) => (s.hoverLayer ? s.maskThumbs[s.hoverLayer]?.url : undefined))
+  const layers = useDevelop((s) => s.recipe?.layers)
+  const o = useUi((s) => s.maskOverlay)
+  if (!hoverLayer || !layers) return null
+  // The selected mask already shows while the overlay is on.
+  if (hoverLayer === layerId && overlay && !o.showAll) return null
+  const i = layers.findIndex((l) => l.id === hoverLayer)
+  const l = layers[i]
+  const url = hoverLayer === layerId && mask ? mask.url : thumb
+  if (!l || !url) return null
+  return (
+    <div className="mask-hover">
+      <MaskPlane
+        url={url}
+        mode="color"
+        hue={l.overlayHue ?? (hoverLayer === layerId ? o.hue : hueFor(i + 1, o.hue))}
+        opacity={Math.max(o.opacity, 55)}
+      />
+    </div>
+  )
+}
+
+function SelectedOverlay(): React.JSX.Element | null {
   const mask = useDevelop((s) => s.mask)
   const layerId = useDevelop((s) => s.layerId)
   const overlay = useDevelop((s) => s.overlay)
-  const tool = useDevelop((s) => s.tool)
   const thumbs = useDevelop((s) => s.maskThumbs)
   const layers = useDevelop((s) => s.recipe?.layers ?? [])
   const o = useUi((s) => s.maskOverlay)
-  if (!overlay || tool === 'crop') return null
+  if (!overlay) return null
   if (o.showAll) {
     return (
       <>

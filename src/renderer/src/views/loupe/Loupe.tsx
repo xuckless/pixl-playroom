@@ -521,7 +521,7 @@ export function Loupe(): React.JSX.Element {
             <Guides kind="grid" w={vrect.w} h={vrect.h} fine strong />
           </div>
         )}
-        {vrect && <MaskPins rect={vrect} />}
+        {vrect && <MaskPins rect={vrect} g={g ?? null} />}
         {tool === 'brush' && vrect && g && <BrushLayer rect={vrect} box={size} g={g} />}
         {tool === 'polygon' && vrect && g && <PolygonLayer rect={vrect} g={g} />}
         {tool !== 'crop' && vrect && g && <GradientTools rect={vrect} g={g} />}

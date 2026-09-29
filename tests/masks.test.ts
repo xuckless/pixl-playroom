@@ -18,6 +18,7 @@ import type { GradeOp } from '../src/shared/engine-types'
 import {
   copyName,
   dropIndex,
+  geometricCentre,
   effectiveMode,
   moveItem,
   nextMaskMode,
@@ -238,4 +239,34 @@ test('the first component always adds; modes and overlay views cycle', () => {
   assert.equal(nextMaskMode('Intersect'), 'Add')
   assert.equal(nextOf(['a', 'b', 'c'], 'c'), 'a')
   assert.equal(nextOf(['a', 'b', 'c'], 'a'), 'b')
+})
+
+test('a mask of shapes is centred between them; a painted one has no centre of its own', () => {
+  const base = { mode: 'Add' as const, opacity: 100, invert: false, feather: 0 }
+  const radial = {
+    ...base,
+    id: 'r',
+    kind: 'radial' as const,
+    centre: { x: 0.2, y: 0.4 },
+    radiusX: 0.1,
+    radiusY: 0.1,
+    angle: 0,
+    softness: 50,
+    width: 512,
+    height: 341
+  }
+  const linear = {
+    ...base,
+    id: 'l',
+    kind: 'linear' as const,
+    start: { x: 0.5, y: 0 },
+    end: { x: 0.9, y: 0.4 },
+    width: 512,
+    height: 341
+  }
+  assert.deepEqual(geometricCentre([radial]), { x: 0.2, y: 0.4 })
+  const both = geometricCentre([radial, linear])!
+  assert.ok(Math.abs(both.x - 0.45) < 1e-9 && Math.abs(both.y - 0.3) < 1e-9)
+  assert.equal(geometricCentre([radial, range(0)]), null)
+  assert.equal(geometricCentre([]), null)
 })
