@@ -55,7 +55,7 @@
   transition:
     border-color 0.25s,
     background 0.3s;
-  animation: rowIn 0.45s var(--spring) both;
+  animation: rowIn 0.45s var(--spring) backwards;
 }
 .mf-mask.on {
   border-color: var(--acc-a55);
@@ -149,7 +149,7 @@ input.mf-rename {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  animation: bodyIn 0.4s var(--spring) both;
+  animation: bodyIn 0.4s var(--spring) backwards;
 }
 .mf-comp {
   display: flex;
@@ -264,25 +264,32 @@ input.mf-rename {
 }
 
 /* ── popovers and menus ────────────────────────────────────────── */
+/* Portalled to the end of the document and fixed to the viewport (see
+   Popover.tsx): over dialogs, under toasts. Popover places it. */
 .popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  z-index: 30;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 55;
   min-width: 200px;
   padding: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   animation: popIn 0.4s var(--spring) both;
 }
-.popover.align-right {
-  right: 0;
-}
-.popover.align-left {
-  left: 0;
+.popover[data-side='top'] {
+  animation-name: popUp;
 }
 .popover.liquid,
 .popover.liquid.refracting {
   background:
     linear-gradient(155deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.01) 50%),
     rgba(10, 10, 14, 0.82);
+}
+/* Over surfaces the glass cannot bend (the library sidebar), a solid face. */
+.popover.solid.liquid,
+.popover.solid.liquid.refracting {
+  background: rgba(12, 12, 16, 0.97);
 }
 .popover::after {
   display: none;
@@ -336,8 +343,6 @@ input.mf-rename {
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  bottom: calc(100% + 6px);
-  top: auto;
 }
 .overlay-pop select {
   width: 100%;

@@ -107,7 +107,12 @@ function MaskRow({
             <span className="mf-swatch" style={{ background: `hsl(${hue} 90% 58%)` }} />
           </button>
           {colour && (
-            <Popover onClose={() => setColour(false)} align="right" className="overlay-pop">
+            <Popover
+              onClose={() => setColour(false)}
+              align="right"
+              side="top"
+              className="overlay-pop"
+            >
               <span className="micro">Overlay colour</span>
               <input
                 type="range"
@@ -328,7 +333,7 @@ function OverlayControls(): React.JSX.Element {
           <Icon name="settings" />
         </button>
         {open && (
-          <Popover onClose={() => setOpen(false)} align="right" className="overlay-pop">
+          <Popover onClose={() => setOpen(false)} align="right" side="top" className="overlay-pop">
             <span className="micro">Overlay</span>
             <select
               value={o.mode}

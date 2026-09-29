@@ -374,16 +374,6 @@
   position: relative;
   display: inline-flex;
 }
-/* Each section's body is its own stacking context (its entrance keeps a
-   transform): the one with a menu open rises above the ones after it. */
-.lib-sidebar .section:has(.popover) {
-  z-index: 5;
-}
-/* The sidebar is not a backdrop the glass can bend, so its menus are solid. */
-.lib-sidebar .popover.liquid,
-.lib-sidebar .popover.liquid.refracting {
-  background: rgba(12, 12, 16, 0.97);
-}
 .src-list {
   display: flex;
   flex-direction: column;

@@ -138,25 +138,25 @@ function SourceRow({
       <span className="src-label">{label}</span>
       {actions}
       {menu && (
-        <button
-          className="icon src-more"
-          title="More"
-          aria-label={`${label}: more`}
-          tabIndex={-1}
-          onClick={(e) => {
-            e.stopPropagation()
-            setMenuOpen(!menuOpen)
-          }}
-        >
-          <Icon name="more" />
-        </button>
-      )}
-      {count !== undefined && <span className="src-count t-num">{count}</span>}
-      {menuOpen && menu && (
-        <span className="src-menu" onClick={(e) => e.stopPropagation()}>
-          <Menu items={menu()} onClose={() => setMenuOpen(false)} align="right" />
+        <span className="src-menu">
+          <button
+            className="icon src-more"
+            title="More"
+            aria-label={`${label}: more`}
+            tabIndex={-1}
+            onClick={(e) => {
+              e.stopPropagation()
+              setMenuOpen(!menuOpen)
+            }}
+          >
+            <Icon name="more" />
+          </button>
+          {menuOpen && (
+            <Menu items={menu()} onClose={() => setMenuOpen(false)} align="right" solid />
+          )}
         </span>
       )}
+      {count !== undefined && <span className="src-count t-num">{count}</span>}
     </div>
   )
 }
@@ -175,7 +175,7 @@ function AddMenu({
       <button className="icon sm" title={title} aria-label={title} onClick={() => setOpen(!open)}>
         <Icon name="plus" />
       </button>
-      {open && <Menu items={items()} onClose={() => setOpen(false)} align="right" />}
+      {open && <Menu items={items()} onClose={() => setOpen(false)} align="right" solid />}
     </span>
   )
 }

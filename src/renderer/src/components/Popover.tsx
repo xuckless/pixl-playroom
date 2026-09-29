@@ -1,27 +1,59 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
+import { placePopover } from '../../../shared/placement'
 import { LiquidGlass } from './glass/LiquidGlass'
 
 const FOCUSABLE =
   'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
 
+export type PopoverAnchor = RefObject<HTMLElement | null> | HTMLElement | null
+
 /**
- * A glass popover under (or beside) whatever opened it. A click outside or
- * Escape closes it; it keeps Escape from reaching the app's own shortcuts.
- * Opening moves keyboard focus into it (unless something inside already took
- * it), and closing hands focus back to whatever had it before.
+ * A glass popover under (or over) whatever opened it. It lives at the end of
+ * the document, fixed to the viewport, so no scrolling list clips it and no
+ * row's stacking context buries it; it follows its anchor while open, flips
+ * when its side is short of room, and closes if the anchor goes away. The
+ * anchor is the element the popover is written inside, unless one is given.
+ *
+ * A click outside it (and outside the anchor, so the anchor's own button can
+ * toggle it) or Escape closes it; it keeps Escape from reaching the app's own
+ * shortcuts, and keys and clicks inside it from reaching whatever it is
+ * written inside. Opening moves keyboard focus into it (unless something
+ * inside already took it), Tab cycles within it, and closing hands focus back
+ * to whatever had it before.
  */
 export function Popover({
   onClose,
   children,
   className,
-  align = 'left'
+  align = 'left',
+  side = 'bottom',
+  anchor,
+  solid = false
 }: {
   onClose: () => void
   children: ReactNode
   className?: string
   align?: 'left' | 'right'
+  side?: 'bottom' | 'top'
+  anchor?: PopoverAnchor
+  /** Opaque, for surfaces the glass cannot bend (the library sidebar). */
+  solid?: boolean
 }): React.JSX.Element {
   const ref = useRef<HTMLElement>(null)
+  const marker = useRef<HTMLSpanElement>(null)
+  const closeRef = useRef(onClose)
+  useLayoutEffect(() => {
+    closeRef.current = onClose
+  })
+
+  const anchorEl = (): HTMLElement | null =>
+    anchor instanceof HTMLElement
+      ? anchor
+      : anchor
+        ? anchor.current
+        : (marker.current?.parentElement ?? null)
+
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null
     const box = ref.current
@@ -36,14 +68,51 @@ export function Popover({
       }
     }
   }, [])
+
+  // Placed before the first paint, then kept beside the anchor as it moves
+  // (a list scrolling under it, a window resizing, a row sliding in).
+  useLayoutEffect(() => {
+    const box = ref.current
+    if (!box) return
+    let last = ''
+    let frame = 0
+    const place = (): void => {
+      const a = anchorEl()
+      if (!a?.isConnected) {
+        closeRef.current()
+        return
+      }
+      const r = a.getBoundingClientRect()
+      const w = box.offsetWidth
+      const h = box.scrollHeight
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      const key = `${r.left} ${r.top} ${r.right} ${r.bottom} ${w} ${h} ${vw} ${vh}`
+      if (key !== last) {
+        last = key
+        const p = placePopover(r, { w, h }, { w: vw, h: vh }, { align, side, gap: 6, margin: 8 })
+        box.style.left = `${p.x}px`
+        box.style.top = `${p.y}px`
+        box.style.maxHeight = `${p.maxHeight}px`
+        box.dataset.side = p.side
+      }
+      frame = requestAnimationFrame(place)
+    }
+    place()
+    return () => cancelAnimationFrame(frame)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [align, side, anchor])
+
   useEffect(() => {
     const down = (e: PointerEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      const t = e.target as Node
+      if (ref.current?.contains(t) || anchorEl()?.contains(t)) return
+      closeRef.current()
     }
     const key = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         e.stopImmediatePropagation()
-        onClose()
+        closeRef.current()
       }
     }
     // Capture, so the app's own Escape handling never sees this one.
@@ -53,19 +122,51 @@ export function Popover({
       window.removeEventListener('pointerdown', down, true)
       window.removeEventListener('keydown', key, true)
     }
-  }, [onClose])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchor])
+
+  // React passes events up the component tree, portal or not: a popover
+  // written inside a selectable row must not also press that row.
+  const keep = (e: React.SyntheticEvent): void => e.stopPropagation()
+
   return (
-    <LiquidGlass
-      ref={ref}
-      className={`popover align-${align}${className ? ` ${className}` : ''}`}
-      radius={2}
-      bezel={12}
-      strength={0.8}
-      frost={4}
-      role="dialog"
-    >
-      {children}
-    </LiquidGlass>
+    <>
+      <span ref={marker} hidden />
+      {createPortal(
+        <LiquidGlass
+          ref={ref}
+          className={`popover${solid ? ' solid' : ''}${className ? ` ${className}` : ''}`}
+          radius={2}
+          bezel={12}
+          strength={0.8}
+          frost={4}
+          role="dialog"
+          onClick={keep}
+          onDoubleClick={keep}
+          onPointerDown={keep}
+          onContextMenu={keep}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key !== 'Tab') return
+            const list = [...e.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)]
+            if (list.length === 0) return
+            const at = list.indexOf(document.activeElement as HTMLElement)
+            const next = e.shiftKey
+              ? at <= 0
+                ? list.length - 1
+                : at - 1
+              : at < 0 || at === list.length - 1
+                ? 0
+                : at + 1
+            e.preventDefault()
+            list[next].focus()
+          }}
+        >
+          {children}
+        </LiquidGlass>,
+        document.body
+      )}
+    </>
   )
 }
 
@@ -85,14 +186,18 @@ export interface MenuItem {
 export function Menu({
   items,
   onClose,
-  align
+  align,
+  anchor,
+  solid
 }: {
   items: (MenuItem | 'sep')[]
   onClose: () => void
   align?: 'left' | 'right'
+  anchor?: PopoverAnchor
+  solid?: boolean
 }): React.JSX.Element {
   return (
-    <Popover onClose={onClose} className="menu" align={align}>
+    <Popover onClose={onClose} className="menu" align={align} anchor={anchor} solid={solid}>
       <div
         role="menu"
         onKeyDown={(e) => {
