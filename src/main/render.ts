@@ -69,7 +69,18 @@ const EMPTY = 'empty'
 /** How long an edit must rest before the sidecar is written. */
 const SAVE_MS = 600
 
-function reportOf(r: ConvertReport, totalMs: number, notes: string[]): RenderReport {
+function reportOf(
+  r: ConvertReport,
+  totalMs: number,
+  notes: string[],
+  layerIndex: Record<string, number>
+): RenderReport {
+  const graded = r.color.graded?.layers ?? []
+  const layers: NonNullable<RenderReport['layers']> = {}
+  for (const [id, i] of Object.entries(layerIndex)) {
+    const l = graded[i]
+    if (l) layers[id] = { applied: l.applied, coverage: l.mask?.coverage ?? null, ms: l.layer_ms }
+  }
   const lines: string[] = []
   for (const l of r.color.graded?.layers ?? []) {
     lines.push(
@@ -90,7 +101,8 @@ function reportOf(r: ConvertReport, totalMs: number, notes: string[]): RenderRep
     clampedSamples: r.color.graded?.clamped_samples ?? 0,
     loss: r.loss,
     notes,
-    colorSpace: r.color.space
+    colorSpace: r.color.space,
+    layers
   }
 }
 
@@ -276,7 +288,12 @@ class Session {
       height: report.height,
       stats,
       hdrStats: hdr,
-      report: reportOf(report, Math.round(performance.now() - t0), compiled.notes)
+      report: reportOf(
+        report,
+        Math.round(performance.now() - t0),
+        compiled.notes,
+        compiled.layerIndex
+      )
     }
     this.lastSig[kind] = sig
     this.lastEvent[kind] = event
@@ -338,6 +355,7 @@ class Session {
           key: this.key,
           seq: this.seq,
           kind: 'mask',
+          layerId: layerId ?? undefined,
           cropMode: this.view.cropMode,
           url: '',
           width: 0,
@@ -382,6 +400,7 @@ class Session {
       key: this.key,
       seq: this.seq,
       kind: 'mask',
+      layerId: layerId ?? undefined,
       cropMode: this.view.cropMode,
       url: cacheUrl(out, `${this.seq}-m`),
       width: report.width,
@@ -460,7 +479,22 @@ class Session {
         height: report.height
       } satisfies RenderEvent)
     }
-    for (const id of Object.keys(this.thumbSig)) if (!live.has(id)) delete this.thumbSig[id]
+    // A deleted mask's thumbnail is let go of on the renderer's side too.
+    for (const id of Object.keys(this.thumbSig)) {
+      if (live.has(id)) continue
+      delete this.thumbSig[id]
+      if (!this.closed)
+        this.owner.send(IPC.develop.rendered, {
+          key: this.key,
+          seq: this.seq,
+          kind: 'mask-thumb',
+          layerId: id,
+          cropMode: this.view.cropMode,
+          url: '',
+          width: 0,
+          height: 0
+        } satisfies RenderEvent)
+    }
   }
 
   /** The most recent full render's file: what the masked hue chart measures. */

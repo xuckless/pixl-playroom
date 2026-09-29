@@ -355,6 +355,8 @@ export interface RenderReport {
   loss: LossReport
   notes: string[]
   colorSpace: string
+  /** Per local layer id: whether it applied, and how much of the frame its mask covers (0…1). */
+  layers?: Record<string, { applied: boolean; coverage: number | null; ms: number }>
 }
 
 export interface RenderEvent {
@@ -362,7 +364,7 @@ export interface RenderEvent {
   seq: number
   kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb'
   url: string
-  /** A mask thumbnail's layer. */
+  /** A mask's (or mask thumbnail's) layer. */
   layerId?: string
   /** The view the render was made for: the crop tool's whole frame, or the framed picture. */
   cropMode?: boolean

@@ -15,6 +15,15 @@ import {
   type RangeComponent
 } from '../src/shared/recipe'
 import type { GradeOp } from '../src/shared/engine-types'
+import {
+  copyName,
+  dropIndex,
+  effectiveMode,
+  moveItem,
+  nextMaskMode,
+  nextMaskName,
+  nextOf
+} from '../src/shared/masks'
 
 const ctx: CompileContext = {
   isRaw: false,
@@ -193,4 +202,40 @@ test('component names and mask overlay colours survive normalising', () => {
   const p = normaliseRecipe(JSON.parse(JSON.stringify(plain)), false)
   assert.equal('overlayHue' in p.layers[0], false)
   assert.equal('name' in p.layers[0].components[0], false)
+})
+
+test('a new mask is never named like one that exists', () => {
+  assert.equal(nextMaskName([]), 'Mask 1')
+  assert.equal(nextMaskName(['Mask 1', 'Mask 2']), 'Mask 3')
+  // Mask 1 deleted: the next is not a second "Mask 2".
+  assert.equal(nextMaskName(['Mask 2']), 'Mask 3')
+  assert.equal(nextMaskName(['Sky', 'Face']), 'Mask 3')
+  assert.equal(nextMaskName(['Mask 9', 'Sky']), 'Mask 10')
+})
+
+test('copies are numbered past the ones already made', () => {
+  assert.equal(copyName('Sky', ['Sky']), 'Sky copy')
+  assert.equal(copyName('Sky', ['Sky', 'Sky copy']), 'Sky copy 2')
+  assert.equal(copyName('Sky copy', ['Sky', 'Sky copy', 'Sky copy 2']), 'Sky copy 3')
+})
+
+test('moveItem and dropIndex reorder a list the way a drag reads', () => {
+  assert.deepEqual(moveItem(['a', 'b', 'c', 'd'], 0, 2), ['b', 'c', 'a', 'd'])
+  assert.deepEqual(moveItem(['a', 'b', 'c', 'd'], 3, 0), ['d', 'a', 'b', 'c'])
+  assert.deepEqual(moveItem(['a', 'b'], 0, 9), ['b', 'a'])
+  assert.deepEqual(moveItem(['a', 'b'], 5, 0), ['a', 'b'])
+  // The other rows' middles at 10, 30, 50: above all, between, below all.
+  assert.equal(dropIndex([10, 30, 50], 0), 0)
+  assert.equal(dropIndex([10, 30, 50], 31), 2)
+  assert.equal(dropIndex([10, 30, 50], 99), 3)
+})
+
+test('the first component always adds; modes and overlay views cycle', () => {
+  assert.equal(effectiveMode(0, 'Subtract'), 'Add')
+  assert.equal(effectiveMode(1, 'Subtract'), 'Subtract')
+  assert.equal(nextMaskMode('Add'), 'Subtract')
+  assert.equal(nextMaskMode('Subtract'), 'Intersect')
+  assert.equal(nextMaskMode('Intersect'), 'Add')
+  assert.equal(nextOf(['a', 'b', 'c'], 'c'), 'a')
+  assert.equal(nextOf(['a', 'b', 'c'], 'a'), 'b')
 })

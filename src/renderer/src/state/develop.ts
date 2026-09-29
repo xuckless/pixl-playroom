@@ -340,7 +340,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   setLayer(layerId) {
     if (layerId === get().layerId) return
-    set({ layerId, compId: null, addMode: null })
+    // The last mask's plane goes at once: it is not this one's.
+    set({ layerId, compId: null, addMode: null, mask: null })
     get().pushView()
   },
 
@@ -417,9 +418,14 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     const { session } = get()
     if (!session || e.key !== session.key) return
     if (e.kind === 'before') set({ before: e })
-    // A mask event without a picture: the mask is empty now.
-    else if (e.kind === 'mask') set({ mask: e.url ? e : null })
-    else if (e.kind === 'mask-thumb') {
+    else if (e.kind === 'mask') {
+      // Only the selected mask's plane, and never an older one than shown.
+      if (e.layerId !== get().layerId) return
+      const cur = get().mask
+      if (cur && e.seq < cur.seq) return
+      // A mask event without a picture: the mask is empty now.
+      set({ mask: e.url ? e : null })
+    } else if (e.kind === 'mask-thumb') {
       const id = e.layerId
       if (!id) return
       set((s) => {

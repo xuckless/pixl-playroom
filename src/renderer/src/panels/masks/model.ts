@@ -5,6 +5,7 @@
  * the selected mask.
  */
 import type { MaskMode } from '../../../../shared/engine-types'
+import { copyName, moveItem, nextMaskName } from '../../../../shared/masks'
 import {
   newId,
   newLocalLayer,
@@ -113,7 +114,7 @@ export function changeLayer(fn: (l: LocalLayer) => void, live = false): void {
 export function createMask(): LocalLayer | null {
   const d = useDevelop.getState()
   if (!d.recipe) return null
-  const l = newLocalLayer(`Mask ${d.recipe.layers.length + 1}`)
+  const l = newLocalLayer(nextMaskName(d.recipe.layers.map((x) => x.name)))
   d.replace({ ...d.recipe, layers: [...d.recipe.layers, l] }, 'New mask')
   d.setLayer(l.id)
   return l
@@ -176,7 +177,10 @@ export function duplicateMask(id: string): void {
   if (!src) return
   const copy = structuredClone(src)
   copy.id = newId()
-  copy.name = `${src.name} copy`
+  copy.name = copyName(
+    src.name,
+    d.recipe.layers.map((x) => x.name)
+  )
   copy.components = copy.components.map((c) => ({ ...c, id: newId() }))
   const i = d.recipe.layers.indexOf(src)
   const layers = [...d.recipe.layers]
@@ -185,11 +189,59 @@ export function duplicateMask(id: string): void {
   d.setLayer(copy.id)
 }
 
+/** Tools that draw into, or key, the selected mask: they have nothing to do without it. */
+const MASK_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
+  'brush',
+  'polygon',
+  'linear',
+  'radial',
+  'range-picker'
+])
+
+function dropMaskTool(): void {
+  const d = useDevelop.getState()
+  if (MASK_TOOLS.has(d.tool)) d.setTool('none')
+}
+
+/**
+ * Delete a mask. Deleting the selected one selects its neighbour (the one
+ * after it, else the one before), so Delete can be pressed again.
+ */
 export function deleteMask(id: string): void {
   const d = useDevelop.getState()
   if (!d.recipe) return
-  d.replace({ ...d.recipe, layers: d.recipe.layers.filter((x) => x.id !== id) }, 'Delete mask')
-  if (d.layerId === id) d.setLayer(null)
+  const layers = d.recipe.layers
+  const i = layers.findIndex((x) => x.id === id)
+  if (i < 0) return
+  const next = layers[i + 1] ?? layers[i - 1] ?? null
+  d.replace({ ...d.recipe, layers: layers.filter((x) => x.id !== id) }, 'Delete mask')
+  if (d.layerId === id) {
+    dropMaskTool()
+    d.setLayer(next?.id ?? null)
+  }
+}
+
+/** Move a mask to index `to` of the list (masks apply in order, top first). */
+export function moveMask(id: string, to: number): void {
+  const d = useDevelop.getState()
+  if (!d.recipe) return
+  const from = d.recipe.layers.findIndex((x) => x.id === id)
+  if (from < 0 || from === to) return
+  d.replace({ ...d.recipe, layers: moveItem(d.recipe.layers, from, to) }, 'Reorder masks')
+}
+
+/** Move a component to index `to` of its mask's components. */
+export function moveComponent(compId: string, to: number): void {
+  const d = useDevelop.getState()
+  const l = d.recipe?.layers.find((x) => x.components.some((c) => c.id === compId))
+  if (!l) return
+  const from = l.components.findIndex((c) => c.id === compId)
+  if (from === to) return
+  d.edit((r) => {
+    const x = layerOf(r, l.id)
+    if (x) x.components = moveItem(x.components, from, to)
+  })
+  d.commit('Reorder mask components')
 }
 
 export function patchMask(id: string, label: string, fn: (l: LocalLayer) => void): void {
@@ -233,8 +285,13 @@ export function duplicateComponent(compId: string): void {
 }
 
 export function deleteComponent(compId: string): void {
-  patchComponent(compId, 'Remove mask component', (_, l) => {
+  patchComponent(compId, 'Delete component', (_, l) => {
     l.components = l.components.filter((x) => x.id !== compId)
   })
-  if (useDevelop.getState().compId === compId) useDevelop.getState().setComp(null)
+  const d = useDevelop.getState()
+  if (d.compId === compId) {
+    // The picker keys the selected range: with it gone, it has nothing to key.
+    if (d.tool === 'range-picker') d.setTool('none')
+    d.setComp(null)
+  }
 }
