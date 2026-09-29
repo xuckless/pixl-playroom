@@ -826,3 +826,6 @@ button.mode-badge:disabled {
   left: calc((100% - 296px) / 2);
   max-width: calc(100% - 324px);
 }
+.tp-needs.ai {
+  color: var(--acc);
+}

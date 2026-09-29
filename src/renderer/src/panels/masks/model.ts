@@ -15,7 +15,9 @@ import {
 } from '../../../../shared/recipe'
 import type { IconName } from '../../components/icons'
 import { selectPanel } from '../../develop/tools'
+import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
+import { useLibrary } from '../../state/library'
 import { useDevelop, type Tool } from '../../state/develop'
 
 export type MaskToolKind =
@@ -35,8 +37,10 @@ export interface MaskToolInfo {
   label: string
   icon: IconName
   key?: string
-  /** Why it cannot be used yet, when it cannot. */
+  /** Why it cannot be used yet, when it cannot (a model: see `ai`). */
   needs?: string
+  /** Found by a model: usable when the build has that task. */
+  ai?: 'segment'
 }
 
 /** The tools a mask can be made with, in Lightroom's order. */
@@ -44,13 +48,26 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
   {
     title: 'Automatic',
     tools: [
-      { kind: 'subject', label: 'Subject', icon: 'subject', needs: 'needs a segmentation model' },
-      { kind: 'sky', label: 'Sky', icon: 'sky', needs: 'needs a segmentation model' },
+      {
+        kind: 'subject',
+        label: 'Subject',
+        icon: 'subject',
+        needs: 'needs a segmentation model',
+        ai: 'segment'
+      },
+      {
+        kind: 'sky',
+        label: 'Sky',
+        icon: 'sky',
+        needs: 'needs a segmentation model',
+        ai: 'segment'
+      },
       {
         kind: 'background',
         label: 'Background',
         icon: 'background',
-        needs: 'needs a segmentation model'
+        needs: 'needs a segmentation model',
+        ai: 'segment'
       }
     ]
   },
@@ -131,7 +148,8 @@ export function modeForNew(layer: LocalLayer | undefined): MaskMode {
 
 /** A component was made: select it and forget the pending mode. */
 export function madeComponent(id: string): void {
-  useDevelop.setState({ compId: id, addMode: null })
+  useDevelop.setState({ addMode: null })
+  useDevelop.getState().setComp(id)
 }
 
 /**
@@ -144,6 +162,22 @@ export function startMaskTool(kind: MaskToolKind): void {
   const d = useDevelop.getState()
   if (!d.recipe) return
   const adding = d.addMode !== null && layerOf(d.recipe, d.layerId) !== undefined
+  // A model finds these: a job on this photo, whose mask lands when it is done
+  // (in this mask with the pending mode, else as a new one).
+  if (kind === 'subject' || kind === 'sky' || kind === 'background') {
+    if (!d.session) return
+    void api.ai
+      .start({
+        task: 'segment',
+        key: d.session.key,
+        target: kind,
+        into: adding && d.layerId ? { layerId: d.layerId, mode: d.addMode ?? 'Add' } : undefined
+      })
+      .catch((err) => useLibrary.getState().say(errorText(err), 'error'))
+    d.setAddMode(null)
+    selectPanel('masks')
+    return
+  }
   if (!adding) {
     if (!createMask()) return
   }

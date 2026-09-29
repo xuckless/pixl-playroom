@@ -6,20 +6,22 @@
  * original. The new file joins the folder with the source's recipe copied
  * over, so the look carries across, as Lightroom's Enhance does.
  */
-import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import { readdir } from 'fs/promises'
+import { readdir, unlink } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import type { ExecutionProvider, UpscalerRef } from '../shared/engine-types'
 import { PRESERVE_ALL } from '../shared/engine-types'
-import { IPC, type EnhanceProgress } from '../shared/ipc'
+import type { AiStartRequest } from '../shared/ai'
 import { baseWhite } from '../shared/compile'
 import { relativeFromOp } from '../shared/wb'
+import { Cancelled, type AiContext, type AiRunner } from './ai/jobs'
 import type { EngineClient } from './engine/client'
+import type { IndexClient } from './indexer/client'
 import { exists } from './exists'
 import type { Library } from './library'
 import { paths } from './paths'
 import { BACKGROUND_THREADS, blankRequest, RAW_DEVELOP, sourceOrientation } from './source'
+import { estimate } from '../shared/ai'
 
 export const MODEL_FILE = 'real_esrgan_x2.onnx'
 
@@ -69,48 +71,70 @@ async function provider(choice: 'auto' | 'cpu', runtime: string): Promise<Execut
   return 'Cpu'
 }
 
-export class Enhancer {
+type EnhanceRequest = Extract<AiStartRequest, { task: 'enhance' }>
+
+/** How long a megapixel takes, remembered between runs, for the estimated progress. */
+const RATE_KEY = 'ai.enhance.msPerMp'
+const FIRST_GUESS_MS_PER_MP = 1500
+
+/**
+ * Enhance as an AI job: Model (load and check) → Upscale (the engine's
+ * run, its progress estimated from the photo's size and how fast the last
+ * runs went) → Save (the new file joins the folder with the look). It runs
+ * in its own engine process, so cancelling kills that process and nothing
+ * else; a cancelled or failed run leaves no half-written file.
+ */
+export class EnhanceRunner implements AiRunner<EnhanceRequest> {
+  readonly task = 'enhance' as const
+
   constructor(
     private readonly library: Library,
-    private readonly engine: EngineClient
+    /** The AI engine: started when first needed, restarted to cancel. */
+    private readonly engine: EngineClient,
+    private readonly hasEnhance: () => boolean,
+    private readonly settings: IndexClient
   ) {}
 
-  private send(p: EnhanceProgress): void {
-    for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.enhance.progress, p)
+  stages(): { id: string; label: string; weight: number }[] {
+    return [
+      { id: 'model', label: 'Model', weight: 0.08 },
+      { id: 'upscale', label: 'Upscale', weight: 0.84 },
+      { id: 'save', label: 'Save', weight: 0.08 }
+    ]
   }
 
-  async run(key: string, choice: 'auto' | 'cpu'): Promise<void> {
-    const status = this.engine.getStatus()
-    const avail = await enhanceAvailability(status.enhance === true)
-    if (!avail.available || !avail.model || !avail.runtime) {
-      this.send({ key, phase: 'error', message: avail.reason ?? 'unavailable' })
-      return
-    }
+  title(): { title: string; subject: string } {
+    return { title: 'Enhancing', subject: 'Super Resolution ×2' }
+  }
+
+  async run(ctx: AiContext, req: EnhanceRequest): Promise<{ kind: 'file'; path: string }> {
+    const { key } = req
+    ctx.stage('model', 0, 'Loading the model')
+    const avail = await enhanceAvailability(this.hasEnhance())
+    if (!avail.available || !avail.model || !avail.runtime)
+      throw new Error(avail.reason ?? 'unavailable')
     const row = await this.library.photoRow(key)
     const info = await this.library.probe(row)
     // The model wants display-referred SDR; the engine refuses PQ/HLG pixels
     // for it by name. Say so up front rather than failing mid-run.
-    if (info.is_hdr) {
-      this.send({
-        key,
-        phase: 'error',
-        message: `${row.name}: HDR photos can't be enhanced yet — export an SDR copy and enhance that`
-      })
-      return
-    }
+    if (info.is_hdr)
+      throw new Error(
+        `${row.name}: HDR photos can't be enhanced yet — export an SDR copy and enhance that`
+      )
     const stem = basename(row.name, extname(row.name))
     const out = join(dirname(row.path), `${stem}-Enhanced-SR.tif`)
-    if (await exists(out)) {
-      this.send({ key, phase: 'error', message: `${basename(out)} already exists` })
-      return
+    if (await exists(out)) throw new Error(`${basename(out)} already exists`)
+    if (this.engine.getStatus().status === 'starting') {
+      this.engine.start()
+      await this.engine.whenStarted()
     }
-    this.send({ key, phase: 'running', message: `Enhancing ${row.name} ×2…` })
+    if (ctx.signal.aborted) throw new Cancelled()
     const raw = info.input === 'Raw' ? RAW_DEVELOP : null
     const orientation = sourceOrientation(info, raw)
     const upscaler: UpscalerRef = {
       model_path: avail.model,
       runtime_library: avail.runtime,
-      provider: await provider(choice, avail.runtime),
+      provider: await provider(req.cpu ? 'cpu' : 'auto', avail.runtime),
       threads: BACKGROUND_THREADS * 2,
       scale: 2,
       tile: 256,
@@ -136,22 +160,34 @@ export class Enhancer {
             : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null },
         threads: BACKGROUND_THREADS * 2
       })
+    // The engine says nothing until it is done: the bar follows the clock.
+    const mp = (info.width * info.height) / 1e6
+    const rate = await this.rate()
+    const expected = Math.max(1000, mp * rate)
+    const t0 = Date.now()
+    ctx.stage('upscale', 0, `Upscaling ${row.name}`)
+    const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 250)
+    const stop = (): void => this.engine.restart()
+    ctx.signal.addEventListener('abort', stop, { once: true })
     try {
       try {
         await tryRun(upscaler)
       } catch (err) {
+        if (ctx.signal.aborted) throw new Cancelled()
         // A provider the runtime cannot register is an error, never a silent
         // CPU run — so the retry on the CPU is the app's, and it says so.
         if (upscaler.provider !== 'Cpu' && /provider/i.test((err as Error).message)) {
           log.warn('enhance: accelerated provider unavailable, retrying on the CPU', err)
-          this.send({
-            key,
-            phase: 'running',
-            message: 'GPU provider unavailable — running on the CPU…'
-          })
+          ctx.stage('upscale', 0, 'GPU provider unavailable — running on the CPU')
           await tryRun({ ...upscaler, provider: 'Cpu' })
         } else throw err
       }
+      if (ctx.signal.aborted) throw new Cancelled()
+      const measured = (Date.now() - t0) / Math.max(0.1, mp)
+      void this.settings
+        .setSetting(RATE_KEY, Math.round(0.6 * measured + 0.4 * rate))
+        .catch(() => {})
+      ctx.stage('save', 0.2, 'Adding it to the folder')
       // The enhanced file starts with the source's look.
       const recipe = await this.library.recipe(key)
       recipe.geometry = { ...recipe.geometry, quarterTurns: 0, flipHorizontal: false }
@@ -169,10 +205,19 @@ export class Enhancer {
       }
       await this.library.index.seedRecipe(out, recipe)
       await this.library.openFolder(dirname(row.path))
-      this.send({ key, phase: 'done', message: `Wrote ${basename(out)}`, output: out })
+      return { kind: 'file', path: out }
     } catch (err) {
-      log.warn('enhance failed', err)
-      this.send({ key, phase: 'error', message: (err as Error).message })
+      // Half a file blocks the next try ("already exists"): it goes.
+      await unlink(out).catch(() => {})
+      throw err
+    } finally {
+      clearInterval(tick)
+      ctx.signal.removeEventListener('abort', stop)
     }
+  }
+
+  private async rate(): Promise<number> {
+    const r: unknown = await this.settings.getSetting(RATE_KEY).catch(() => undefined)
+    return typeof r === 'number' && r > 0 ? r : FIRST_GUESS_MS_PER_MP
   }
 }

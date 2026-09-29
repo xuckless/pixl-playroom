@@ -6,6 +6,7 @@ import { useThumbFirst } from '../lib/thumbs'
 import { useDevelop } from '../state/develop'
 import { useLibrary, useVisible } from '../state/library'
 import { useUi } from '../state/ui'
+import { AiChip } from '../fx/AiScan'
 
 /**
  * The photos of the library under the loupe, in the library's order and
@@ -80,6 +81,7 @@ const FilmTile = memo(function FilmTile({
         <span>{item.unreadable ? '—' : item.ext.toUpperCase()}</span>
       )}
       {item.rating > 0 && <span className="film-rating">{'★'.repeat(item.rating)}</span>}
+      <AiChip photoKey={item.key} />
     </div>
   )
 })

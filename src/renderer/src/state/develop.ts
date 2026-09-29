@@ -67,8 +67,6 @@ interface DevelopState {
   maskThumbs: Record<string, RenderEvent>
   /** The mask under the pointer in the masks panel or on a pin: previewed on the photo. */
   hoverLayer: string | null
-  /** Render the selected mask with every draft (a range slider moving). */
-  maskLive: boolean
   overlay: boolean
   compare: Compare
   clipping: boolean
@@ -107,7 +105,6 @@ interface DevelopState {
   setAddMode(m: MaskMode | null): void
   setLayer(id: string | null): void
   setHoverLayer(id: string | null): void
-  setMaskLive(on: boolean): void
   setOverlay(on: boolean): void
   setCompare(c: Compare): void
   setClipping(on: boolean): void
@@ -176,6 +173,12 @@ function queueHistoryOp(op: () => Promise<void>): void {
   historyOps = historyOps.then(op).catch((err) => useDevelop.getState().onError(errorText(err)))
 }
 
+/** Whether the selected mask component is a colour or luminance range. */
+function rangeSelected(s: Pick<DevelopState, 'recipe' | 'layerId' | 'compId'>): boolean {
+  const l = s.recipe?.layers.find((x) => x.id === s.layerId)
+  return l?.components.find((c) => c.id === s.compId)?.kind === 'range'
+}
+
 /** The last picture made for a view: the framed picture, or the crop tool's whole frame. */
 type Pictures = { framed: RenderEvent | null; crop: RenderEvent | null }
 
@@ -202,7 +205,6 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   addMode: null,
   maskThumbs: {},
   hoverLayer: null,
-  maskLive: false,
   overlay: true,
   compare: 'off',
   clipping: false,
@@ -366,14 +368,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     if (get().hoverLayer !== hoverLayer) set({ hoverLayer })
   },
 
-  setMaskLive(maskLive) {
-    if (get().maskLive === maskLive) return
-    set({ maskLive })
-    get().pushView()
-  },
-
   setComp(compId) {
+    const was = rangeSelected(get())
     set({ compId })
+    if (rangeSelected(get()) !== was) get().pushView()
   },
 
   setAddMode(addMode) {
@@ -435,7 +433,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       maskLayer: layerId,
       // Thumbnails of every mask while the masks panel is open or all show.
       maskThumbs: useUi.getState().panel === 'masks' || useUi.getState().maskOverlay.showAll,
-      maskLive: get().maskLive,
+      // With a range selected its mask comes with every draft: only the
+      // engine knows exactly what the key selects in the graded picture.
+      maskLive: rangeSelected(get()),
       targetEdge
     }
     set({ rendering: true })

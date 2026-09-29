@@ -9,13 +9,15 @@ import { useDevelop } from './state/develop'
 import { useLibrary } from './state/library'
 import { useUi } from './state/ui'
 import { useBusy } from './state/busy'
+import { useAiJobs } from './state/jobs'
 
 // The stores, for automation and the devtools console.
 ;(window as unknown as { __playroom: unknown }).__playroom = {
   useLibrary,
   useDevelop,
   useUi,
-  useBusy
+  useBusy,
+  useAiJobs
 }
 
 createRoot(document.getElementById('root')!).render(

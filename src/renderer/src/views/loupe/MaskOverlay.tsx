@@ -1,6 +1,9 @@
 import { memo, type CSSProperties } from 'react'
+import type { ViewGeometry } from '../../../../shared/view'
 import { useDevelop } from '../../state/develop'
 import { useUi, type OverlayMode } from '../../state/ui'
+import { MaskCanvas } from './maskgl/MaskCanvas'
+import { useMaskGlBroken } from './maskgl/state'
 
 /** Golden-angle hues, so every mask in "show all" gets its own colour. */
 const hueFor = (i: number, base: number): number => (base + i * 137.5) % 360
@@ -35,8 +38,10 @@ export const MaskPlane = memo(function MaskPlane({
 }): React.JSX.Element {
   const a = opacity / 100
   switch (mode) {
+    // The outline needs the loupe's own drawing; CSS shows the colour instead.
     case 'color':
     case 'color-bw':
+    case 'outline':
       return (
         <div
           className="mask-overlay"
@@ -74,12 +79,25 @@ export const MaskPlane = memo(function MaskPlane({
  * mask hovered in the masks panel (or on its pin) shows over it, in its own
  * colour, overlay on or off.
  */
-export function MaskOverlay(): React.JSX.Element | null {
+export function MaskOverlay({
+  g,
+  w,
+  h
+}: {
+  g: ViewGeometry | null
+  w: number
+  h: number
+}): React.JSX.Element | null {
   const tool = useDevelop((s) => s.tool)
+  const showAll = useUi((s) => s.maskOverlay.showAll)
+  const broken = useMaskGlBroken((s) => s.broken)
   if (tool === 'crop') return null
+  // The loupe draws the selected mask itself where it can (in step with the
+  // edit, then the engine's); every mask at once, and the fallback, are CSS.
+  const gl = g !== null && !showAll && !broken
   return (
     <>
-      <SelectedOverlay />
+      {gl ? <MaskCanvas g={g} w={w} h={h} /> : <SelectedOverlay />}
       <HoverOverlay />
     </>
   )

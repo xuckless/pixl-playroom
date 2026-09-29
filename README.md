@@ -203,6 +203,12 @@ offscreen-rendered window with a throwaway profile (`PLAYROOM_HIDDEN=1`,
 `tap x,y… [--dbl]`, `wheel <selector> <dy>`, `panel <tool>`, `ss <name>`,
 `eval <js>`).
 
+`PLAYROOM_FAKE_AI=1` turns on a stand-in segmentation model (Select Subject,
+Sky and Background in the mask tools): an AI job with real stages, progress,
+cancelling and a mask landing on its photo, until the real model ships.
+`window.__maskPreview` reports the loupe's own mask preview (`stats`, and
+`read()` for its plane, to compare with the engine's).
+
 ## Keys
 
 | Key                      | Where          | Does                                                                   |

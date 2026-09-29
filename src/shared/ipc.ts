@@ -102,10 +102,15 @@ export const IPC = {
     progress: 'export:progress'
   },
   enhance: {
-    available: 'enhance:available',
-    run: 'enhance:run',
-    /** main → renderer */
-    progress: 'enhance:progress'
+    available: 'enhance:available'
+  },
+  ai: {
+    start: 'ai:start',
+    cancel: 'ai:cancel',
+    list: 'ai:list',
+    capabilities: 'ai:capabilities',
+    /** main → renderer: a job's progress, its end and its result */
+    event: 'ai:event'
   }
 } as const
 
@@ -458,13 +463,6 @@ export interface ExportProgress {
   errors: { name: string; message: string; warning?: boolean }[]
   finished: boolean
   outputs: string[]
-}
-
-export interface EnhanceProgress {
-  key: string
-  phase: 'running' | 'done' | 'error'
-  message: string
-  output?: string
 }
 
 export type { BasicSetting, ConvertReport }

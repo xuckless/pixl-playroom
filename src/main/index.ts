@@ -7,7 +7,10 @@ import dockIcon from '../../resources/icon-dock.png?asset'
 import { bootScale, onRenderScale, settleScale, watchDisplay } from './display'
 import { EngineClient } from './engine/client'
 import { endExiftool } from './exiftool'
-import { Enhancer } from './enhance'
+import { AiJobs } from './ai/jobs'
+import { applyMaskResult } from './ai/apply'
+import { fakeAi, SegmentRunner } from './ai/segment'
+import { EnhanceRunner } from './enhance'
 import { Exporter } from './exporter'
 import { openIndex } from './indexer/client'
 import { registerIpc } from './ipc'
@@ -98,8 +101,10 @@ function leaveForRelaunch(): void {
 
 /** Previews and the develop view's measurements. */
 const engine = new EngineClient('interactive', 8)
-/** Thumbnails, exports, enhancement, the full-resolution masters. */
+/** Thumbnails, exports, the full-resolution masters. */
 const bgEngine = new EngineClient('background', 4)
+/** AI jobs, one at a time: started when first needed, restarted to cancel one. */
+const aiEngine = new EngineClient('ai', 4)
 /** The SQLite index and the sidecars, in their own process. */
 const index = openIndex()
 let sessions: DevelopSessions | undefined
@@ -180,9 +185,21 @@ app.whenReady().then(() => {
   const library = new Library(index, bgEngine)
   sessions = new DevelopSessions(library, engine, bgEngine)
   const exporter = new Exporter(library, sessions, bgEngine)
-  const enhancer = new Enhancer(library, bgEngine)
   const planes = new PlaneStore(index)
-  registerIpc({ index, planes, library, sessions, exporter, enhancer, engine, bgEngine })
+  const ai = new AiJobs(
+    {
+      enhance: new EnhanceRunner(
+        library,
+        aiEngine,
+        () => bgEngine.getStatus().enhance === true,
+        index
+      ),
+      ...(fakeAi() ? { segment: new SegmentRunner(library, planes) } : {})
+    },
+    async (key) => (await library.photoRow(key)).name,
+    (e) => applyMaskResult(e, { library, sessions: sessions!, planes })
+  )
+  registerIpc({ index, planes, library, sessions, exporter, ai, engine, bgEngine })
   onOpenPaths((paths) => mainWindow?.webContents.send(IPC.app.openPaths, paths))
 
   buildMenu()
@@ -224,6 +241,7 @@ app.on('before-quit', (e) => {
       clearTimeout(timer)
       engine.stop()
       bgEngine.stop()
+      aiEngine.stop()
       pixels.close()
       app.quit()
     }

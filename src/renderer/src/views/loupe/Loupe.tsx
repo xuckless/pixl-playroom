@@ -41,6 +41,7 @@ import { LassoEditor, PolygonLayer } from './LassoTool'
 import { LoupeHud } from './LoupeHud'
 import { GradientTools } from './GradientTools'
 import { MaskPins } from './MaskPins'
+import { AiScan } from '../../fx/AiScan'
 import { MaskOverlay } from './MaskOverlay'
 import { useGreyUnderOverlay } from './useGreyUnderOverlay'
 import { SharpTile } from './SharpTile'
@@ -475,7 +476,7 @@ export function Loupe(): React.JSX.Element {
                 <DecodedImage src={before.url} />
               </div>
             )}
-            <MaskOverlay />
+            <MaskOverlay g={g ?? null} w={vrect.w} h={vrect.h} />
             {clipping && picture && <ClippingOverlay url={picture.url} />}
           </div>
         )}
@@ -522,6 +523,7 @@ export function Loupe(): React.JSX.Element {
           </div>
         )}
         {vrect && <MaskPins rect={vrect} g={g ?? null} />}
+        {vrect && <AiScan rect={vrect} />}
         {tool === 'brush' && vrect && g && <BrushLayer rect={vrect} box={size} g={g} />}
         {tool === 'polygon' && vrect && g && <PolygonLayer rect={vrect} g={g} />}
         {tool !== 'crop' && vrect && g && <GradientTools rect={vrect} g={g} />}

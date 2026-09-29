@@ -1,11 +1,13 @@
 import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect } from 'react'
+import type { AiJobEvent } from '../../shared/ai'
 import type { LibrarySource, RenderScale } from '../../shared/ipc'
 import { nextOf } from '../../shared/masks'
 import { RECIPE_GROUPS } from '../../shared/recipe'
 import { api, errorText } from './lib/api'
 import { autoWbBatch } from './lib/autowb'
-import { runJob, useBusy } from './state/busy'
+import { runJob } from './state/busy'
+import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
 import { Scopes } from './develop/Scopes'
 import { ToolDial } from './develop/ToolDial'
@@ -235,6 +237,43 @@ async function openLastSource(): Promise<void> {
     src?.kind === 'collection' && !useLibrary.getState().collections.some((c) => c.id === src.id)
   if (src && src.kind !== 'duplicates' && !gone && (await lib.openSource(src))) return
   if (folder && !(src?.kind === 'folder' && src.path === folder)) await lib.openFolder(folder)
+}
+
+/**
+ * An AI job's end: say how it went, and when it made a mask for the photo in
+ * view, show it (the recipe it was added to, a history step, the new mask
+ * selected and revealed with a wipe). The mask is already on its photo
+ * either way: main put it there.
+ */
+async function aiJobEnded(e: AiJobEvent): Promise<void> {
+  const lib = useLibrary.getState()
+  if (e.phase === 'error') return lib.say(`${e.title}: ${e.message ?? 'failed'}`, 'error')
+  if (e.phase !== 'done') return
+  const r = e.result
+  if (r?.kind === 'file') {
+    lib.say(`${e.title}: wrote ${r.path.split(/[\\/]/).pop()}`)
+    return void lib.refresh()
+  }
+  if (r?.kind !== 'mask') return
+  const dev = useDevelop.getState()
+  if (dev.session?.key !== e.key) {
+    return lib.say(`${r.label} mask added to ${e.name}`, 'info', {
+      label: 'Show',
+      run: () => {
+        lib.setFocus(e.key)
+        void useDevelop.getState().open(e.key)
+      }
+    })
+  }
+  const s = await api.develop.open(e.key)
+  if (useDevelop.getState().session?.key !== e.key) return
+  useDevelop.getState().replace(s.recipe, `AI: ${r.label}`)
+  if (r.into) {
+    useDevelop.getState().setLayer(r.into.layerId)
+    // Shown: what the model found is the point.
+    useDevelop.getState().setOverlay(true)
+    useAiJobs.getState().setReveal(r.into.layerId)
+  }
 }
 
 function useShortcuts(): void {
@@ -527,17 +566,15 @@ export default function App(): React.JSX.Element {
       api.develop.onRenderError((e) =>
         useDevelop.getState().onError(e.field ? `${e.message} (${e.field})` : e.message)
       ),
-      api.enhance.onProgress((p) => {
-        // A run in the background shows in the identity bar until it ends.
-        const id = `enhance:${p.key}`
-        if (p.phase === 'running')
-          useBusy.getState().begin({ id, title: 'Enhancing', detail: p.message, scope: 'global' })
-        else useBusy.getState().end(id)
-        if (p.phase !== 'running' || useLibrary.getState().dialog !== 'enhance')
-          useLibrary.getState().say(p.message, p.phase === 'error' ? 'error' : 'info')
-        if (p.phase === 'done') void useLibrary.getState().refresh()
+      api.ai.onEvent((e) => {
+        useAiJobs.getState().onEvent(e)
+        void aiJobEnded(e)
       })
     ]
+    void useAiJobs
+      .getState()
+      .load()
+      .catch(() => undefined)
     // The launch, side by side: the engine coming up, and the index then the
     // last folder. The splash follows both and leaves when they are done.
     const boot = useBoot.getState()
