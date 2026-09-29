@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  gradientCoverage,
   gradientKey,
   gradientPlaneSize,
   linearAt,
@@ -88,4 +89,40 @@ test('the plane key follows the geometry, not the mode or opacity', () => {
   const c = linear()
   assert.equal(gradientKey(c), gradientKey({ ...c, mode: 'Subtract', opacity: 40, id: 'x' }))
   assert.notEqual(gradientKey(c), gradientKey({ ...c, end: { x: 0.5, y: 0.8 } }))
+})
+
+test('the plane rasteriser computes exactly what linearAt and radialAt say', () => {
+  // A seeded walk over shapes, including a zero-length linear and a turned ellipse.
+  let s = 12345
+  const rnd = (): number => (s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 2 ** 32
+  const shapes: (LinearComponent | RadialComponent)[] = [linear({ end: { x: 0.5, y: 0.25 } })]
+  for (let i = 0; i < 25; i++) {
+    shapes.push(
+      linear({
+        start: { x: rnd(), y: rnd() },
+        end: { x: rnd(), y: rnd() },
+        width: 512,
+        height: 341
+      })
+    )
+    shapes.push(
+      radial({
+        centre: { x: rnd(), y: rnd() },
+        radiusX: rnd() * 0.5,
+        radiusY: rnd() * 0.5,
+        angle: rnd() * 360 - 180,
+        softness: rnd() * 120 - 10,
+        width: 341,
+        height: 512
+      })
+    )
+  }
+  for (const c of shapes) {
+    const at = gradientCoverage(c)
+    for (let k = 0; k < 400; k++) {
+      const p = { x: Math.floor(rnd() * c.width) + 0.5, y: Math.floor(rnd() * c.height) + 0.5 }
+      const want = c.kind === 'linear' ? linearAt(c, p) : radialAt(c, p)
+      assert.equal(at(p.x, p.y), want)
+    }
+  }
 })

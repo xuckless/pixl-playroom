@@ -108,6 +108,12 @@ function reportOf(
 
 class Session {
   seq = 0
+  /**
+   * The renderer's number for the recipe last received: every render says
+   * which recipe it was made from, so the loupe's own preview knows when
+   * the engine has caught up with it.
+   */
+  rev = 0
   view: ViewState = { cropMode: false, before: false, maskLayer: null, targetEdge: 2560 }
   private inflight = false
   private pending: Kind | null = null
@@ -126,6 +132,8 @@ class Session {
   private lastSig: Record<Kind, string> = { draft: '', full: '' }
   private lastEvent: Record<Kind, RenderEvent | null> = { draft: null, full: null }
   private maskSig = ''
+  /** The last mask event sent: re-sent (with the current seq and rev) when nothing changed. */
+  private lastMask: RenderEvent | null = null
   /** Per layer, what its thumbnail was last rendered from. */
   private thumbSig: Record<string, string> = {}
   private readonly dir: string
@@ -166,8 +174,9 @@ class Session {
     })
   }
 
-  update(recipe: Recipe, interactive: boolean): void {
+  update(recipe: Recipe, interactive: boolean, rev?: number): void {
     this.recipe = recipe
+    if (rev !== undefined) this.rev = rev
     clearTimeout(this.save)
     this.save = setTimeout(() => this.persist(), SAVE_MS)
     this.schedule(interactive ? 'draft' : 'full')
@@ -206,8 +215,11 @@ class Session {
     this.inflight = true
     try {
       await this.renderPicture(kind)
-      if (kind === 'full' && !this.closed) {
-        if (this.view.maskLayer) await this.renderMask()
+      // A newer edit waiting behind this render will redo what follows.
+      if (kind === 'draft' && this.view.maskLive && this.view.maskLayer && !this.closed)
+        await this.renderMask('draft')
+      if (kind === 'full' && !this.closed && !this.pending) {
+        if (this.view.maskLayer) await this.renderMask('full')
         if (this.view.before) await this.renderBefore()
         if (this.view.maskThumbs) await this.renderMaskThumbs()
       }
@@ -244,6 +256,7 @@ class Session {
     const src = this.source(kind)
     // The view is read once, here: the event says which view it was made for.
     const cropMode = this.view.cropMode
+    const rev = this.rev
     const compiled = await this.compileFor(this.recipe, src, !cropMode)
     const seq = ++this.seq
     const sig = String(
@@ -252,7 +265,7 @@ class Session {
     const last = this.lastEvent[kind]
     if (last && sig === this.lastSig[kind]) {
       if (kind === 'full') this.lastFull = this.lastFullFor[sig] ?? this.lastFull
-      if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq })
+      if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq, rev })
       return
     }
     const out = this.nextFile('view', 'jpg')
@@ -281,6 +294,7 @@ class Session {
     const event: RenderEvent = {
       key: this.key,
       seq,
+      rev,
       kind,
       cropMode,
       url: cacheUrl(out, seq),
@@ -340,35 +354,52 @@ class Session {
     }
   }
 
-  /** The chosen layer's mask as a grey plane, and the picture measured inside it. */
-  private async renderMask(): Promise<void> {
-    const src = this.source('full')
+  /**
+   * The chosen layer's mask as a grey plane, and the picture measured inside
+   * it. A draft (while a range slider moves) is the draft proxy's plane with
+   * no measuring, so the overlay keeps up; the settled one follows. The same
+   * plane again re-sends its event, stamped with the current recipe, so the
+   * loupe's preview knows the engine agrees with it.
+   */
+  private async renderMask(kind: Kind): Promise<void> {
+    const src = kind === 'draft' ? this.px.draft : this.source('full')
+    const rev = this.rev
     const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
-    const layerId = this.view.maskLayer
+    const layerId = this.view.maskLayer ?? undefined
     const index = layerId ? compiled.layerIndex[layerId] : undefined
+    const send = (e: Omit<RenderEvent, 'key' | 'seq' | 'rev' | 'kind' | 'layerId'>): void => {
+      if (this.closed) return
+      this.lastMask = { key: this.key, seq: this.seq, rev, kind: 'mask', layerId, ...e }
+      this.owner.send(IPC.develop.rendered, this.lastMask)
+    }
     if (index === undefined || !compiled.grade) {
       // Nothing left in the mask (its last component undone or deleted): the
-      // overlay is told once, or it would go on showing the old plane.
-      if (this.maskSig !== EMPTY && !this.closed) {
-        this.maskSig = EMPTY
-        this.owner.send(IPC.develop.rendered, {
-          key: this.key,
-          seq: this.seq,
-          kind: 'mask',
-          layerId: layerId ?? undefined,
-          cropMode: this.view.cropMode,
-          url: '',
-          width: 0,
-          height: 0
-        } satisfies RenderEvent)
+      // overlay is told, or it would go on showing the old plane.
+      this.maskSig = EMPTY
+      send({ cropMode: this.view.cropMode, url: '', width: 0, height: 0 })
+      return
+    }
+    const measure = kind === 'full'
+    const sig = String(
+      hash32(
+        JSON.stringify([
+          src.path,
+          layerId,
+          index,
+          compiled.grade,
+          compiled.framing,
+          measure ? this.lastFull : null
+        ])
+      )
+    )
+    // The same plane over the same picture: say so again, for this recipe.
+    if (sig === this.maskSig && this.lastMask) {
+      if (!this.closed) {
+        this.lastMask = { ...this.lastMask, seq: this.seq, rev }
+        this.owner.send(IPC.develop.rendered, this.lastMask)
       }
       return
     }
-    const sig = String(
-      hash32(JSON.stringify([src.path, index, compiled.grade, compiled.framing, this.lastFull]))
-    )
-    // The same plane over the same picture: the overlay already has it.
-    if (sig === this.maskSig) return
     const out = this.nextFile('mask', 'png')
     const report = await this.owner.engine.convert({
       ...blankRequest(src.path, out, src.input),
@@ -385,28 +416,24 @@ class Session {
     // through the plane. `weights` is an engine feature that may be missing
     // from an older build — the overlay still shows without it.
     let maskStats: ImageStats | undefined
-    try {
-      const picture = this.lastFull
-      maskStats = await this.owner.engine.analyze({
-        ...analyzeRequest(picture, 'Jpeg', 1),
-        weights: { source: { Png: out }, resampler: 'Bilinear' }
-      })
-    } catch (err) {
-      log.info('masked analysis unavailable', (err as Error).message)
+    if (measure) {
+      try {
+        maskStats = await this.owner.engine.analyze({
+          ...analyzeRequest(this.lastFull, 'Jpeg', 1),
+          weights: { source: { Png: out }, resampler: 'Bilinear' }
+        })
+      } catch (err) {
+        log.info('masked analysis unavailable', (err as Error).message)
+      }
     }
-    if (this.closed) return
     this.maskSig = sig
-    this.owner.send(IPC.develop.rendered, {
-      key: this.key,
-      seq: this.seq,
-      kind: 'mask',
-      layerId: layerId ?? undefined,
+    send({
       cropMode: this.view.cropMode,
       url: cacheUrl(out, `${this.seq}-m`),
       width: report.width,
       height: report.height,
       maskStats
-    } satisfies RenderEvent)
+    })
   }
 
   /**
@@ -793,8 +820,8 @@ export class DevelopSessions {
     return Promise.all([...this.sessions.keys()].map((k) => this.close(k))).then(() => undefined)
   }
 
-  update(key: string, recipe: Recipe, interactive: boolean): void {
-    this.get(key).update(recipe, interactive)
+  update(key: string, recipe: Recipe, interactive: boolean, rev?: number): void {
+    this.get(key).update(recipe, interactive, rev)
   }
 
   view(key: string, view: ViewState): void {

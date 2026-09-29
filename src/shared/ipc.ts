@@ -341,6 +341,11 @@ export interface ViewState {
   maskLayer: string | null
   /** Also render every mask small (the masks panel's thumbnails, "show all"). */
   maskThumbs?: boolean
+  /**
+   * Render the chosen layer's mask with every draft too (a range slider
+   * moving: only the engine knows exactly what the key selects).
+   */
+  maskLive?: boolean
   /** Longest edge wanted from the renderer, in device pixels. */
   targetEdge: number
 }
@@ -362,6 +367,8 @@ export interface RenderReport {
 export interface RenderEvent {
   key: string
   seq: number
+  /** The renderer's number for the recipe this was rendered from (see `develop.update`). */
+  rev?: number
   kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb'
   url: string
   /** A mask's (or mask thumbnail's) layer. */

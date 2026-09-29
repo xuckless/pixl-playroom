@@ -227,8 +227,10 @@ export function registerIpc(s: Services): void {
     }
   })
   handle(IPC.develop.close, (key: string) => s.sessions.close(key))
-  handle(IPC.develop.update, async (key: string, recipe: Recipe, interactive: boolean) =>
-    s.sessions.update(key, await s.planes.hydrate(recipe), interactive)
+  handle(
+    IPC.develop.update,
+    async (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
+      s.sessions.update(key, await s.planes.hydrate(recipe), interactive, rev)
   )
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))

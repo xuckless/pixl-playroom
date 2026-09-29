@@ -67,6 +67,8 @@ interface DevelopState {
   maskThumbs: Record<string, RenderEvent>
   /** The mask under the pointer in the masks panel or on a pin: previewed on the photo. */
   hoverLayer: string | null
+  /** Render the selected mask with every draft (a range slider moving). */
+  maskLive: boolean
   overlay: boolean
   compare: Compare
   clipping: boolean
@@ -105,6 +107,7 @@ interface DevelopState {
   setAddMode(m: MaskMode | null): void
   setLayer(id: string | null): void
   setHoverLayer(id: string | null): void
+  setMaskLive(on: boolean): void
   setOverlay(on: boolean): void
   setCompare(c: Compare): void
   setClipping(on: boolean): void
@@ -131,20 +134,28 @@ interface DevelopState {
  */
 let queued: { key: string; recipe: Recipe } | null = null
 let frame = 0
+/** Numbers each recipe sent to the engine; every render says which one it drew. */
+let rev = 0
+
+/** The number of the recipe sent to the engine last. */
+export function lastSentRev(): number {
+  return rev
+}
 
 function flushQueued(onError: (message: string) => void): void {
   cancelAnimationFrame(frame)
   frame = 0
   const q = queued
   queued = null
-  if (q) void api.develop.update(q.key, q.recipe, true).catch((err) => onError(errorText(err)))
+  if (q)
+    void api.develop.update(q.key, q.recipe, true, ++rev).catch((err) => onError(errorText(err)))
 }
 
 function sendNow(key: string, recipe: Recipe, onError: (message: string) => void): void {
   cancelAnimationFrame(frame)
   frame = 0
   queued = null
-  void api.develop.update(key, recipe, false).catch((err) => onError(errorText(err)))
+  void api.develop.update(key, recipe, false, ++rev).catch((err) => onError(errorText(err)))
 }
 
 /**
@@ -191,6 +202,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   addMode: null,
   maskThumbs: {},
   hoverLayer: null,
+  maskLive: false,
   overlay: true,
   compare: 'off',
   clipping: false,
@@ -354,6 +366,12 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     if (get().hoverLayer !== hoverLayer) set({ hoverLayer })
   },
 
+  setMaskLive(maskLive) {
+    if (get().maskLive === maskLive) return
+    set({ maskLive })
+    get().pushView()
+  },
+
   setComp(compId) {
     set({ compId })
   },
@@ -417,6 +435,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       maskLayer: layerId,
       // Thumbnails of every mask while the masks panel is open or all show.
       maskThumbs: useUi.getState().panel === 'masks' || useUi.getState().maskOverlay.showAll,
+      maskLive: get().maskLive,
       targetEdge
     }
     set({ rendering: true })
@@ -432,8 +451,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       if (e.layerId !== get().layerId) return
       const cur = get().mask
       if (cur && e.seq < cur.seq) return
-      // A mask event without a picture: the mask is empty now.
-      set({ mask: e.url ? e : null })
+      // A mask event without a picture: the mask is empty now. A draft's
+      // plane has no measurements; the last ones stand until the settled one.
+      set({ mask: e.url ? { ...e, maskStats: e.maskStats ?? cur?.maskStats } : null })
     } else if (e.kind === 'mask-thumb') {
       const id = e.layerId
       if (!id) return

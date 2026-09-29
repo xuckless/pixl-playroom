@@ -12,7 +12,7 @@ import { gradientKey } from '../shared/gradients'
 import { hash32, type Recipe } from '../shared/recipe'
 import { exists } from './exists'
 import { paths } from './paths'
-import { pruneGradients, writeBrushPlane, writeGradientPlane } from './planes'
+import { pruneGradientsSometimes, writeBrushPlane, writeGradientPlane } from './planes'
 import { pixels, type PixelsJob } from './workers/pool'
 
 /** Planes being written now, by file: two renders asking for one plane share the work. */
@@ -27,7 +27,7 @@ function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Pr
       // The worker is gone: draw it here rather than fail the render.
       if (job.op === 'gradient') {
         writeGradientPlane(file, job.c, job.user)
-        pruneGradients(job.dir)
+        pruneGradientsSometimes(job.dir)
       } else writeBrushPlane(file, job.png, job.user)
     })
     .finally(() => writing.delete(file))

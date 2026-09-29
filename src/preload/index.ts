@@ -111,8 +111,8 @@ const api = {
   develop: {
     open: (key: string) => call<DevelopSession>(IPC.develop.open, key),
     close: (key: string) => call<void>(IPC.develop.close, key),
-    update: (key: string, recipe: Recipe, interactive: boolean) =>
-      call<void>(IPC.develop.update, key, recipe, interactive),
+    update: (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
+      call<void>(IPC.develop.update, key, recipe, interactive, rev),
     view: (key: string, view: ViewState) => call<void>(IPC.develop.view, key, view),
     region: (req: RegionRequest) => call<RegionResult>(IPC.develop.region, req),
     sample: (key: string, x: number, y: number) =>
