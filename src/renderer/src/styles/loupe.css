@@ -497,3 +497,6 @@
   object-fit: fill;
   pointer-events: none;
 }
+.hud-note {
+  animation: fadeIn 0.2s var(--ease);
+}

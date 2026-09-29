@@ -1,5 +1,6 @@
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { useDevelop } from '../../state/develop'
+import { useHudNote } from './hudNote'
 
 /**
  * What the engine is doing, and how far the loupe is zoomed, in a glass
@@ -12,7 +13,8 @@ export function LoupeHud({ scale }: { scale: number | null }): React.JSX.Element
   const compare = useDevelop((s) => s.compare)
   const error = useDevelop((s) => s.error)
   const straightened = useDevelop((s) => (s.recipe?.geometry.straighten ?? 0) !== 0)
-  if (!rendering && compare !== 'before' && !error && scale === null) return null
+  const { note, n } = useHudNote()
+  if (!rendering && compare !== 'before' && !error && scale === null && !note) return null
   return (
     <LiquidGlass className={`hud loupe-status${error ? ' bad' : ''}`} radius={2} bezel={8}>
       {scale !== null && (
@@ -30,6 +32,11 @@ export function LoupeHud({ scale }: { scale: number | null }): React.JSX.Element
         </span>
       )}
       {compare === 'before' && <span className="hud-item accent">Before</span>}
+      {note && (
+        <span key={n} className="hud-item accent hud-note">
+          {note}
+        </span>
+      )}
       {error && <span className="hud-item error">{error}</span>}
     </LiquidGlass>
   )

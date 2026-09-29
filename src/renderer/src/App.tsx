@@ -1,6 +1,7 @@
 import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect } from 'react'
 import type { LibrarySource, RenderScale } from '../../shared/ipc'
+import { nextOf } from '../../shared/masks'
 import { RECIPE_GROUPS } from '../../shared/recipe'
 import { api, errorText } from './lib/api'
 import { autoWbBatch } from './lib/autowb'
@@ -11,7 +12,15 @@ import { ToolDial } from './develop/ToolDial'
 import { ToolPanelHost } from './develop/ToolPanelHost'
 import { selectPanel, stepPanel, TOOLS } from './develop/tools'
 import { startWheelMemory } from './develop/wheelMemory'
-import { startMaskTool } from './panels/masks/model'
+import {
+  componentLabel,
+  deleteComponent,
+  deleteMask,
+  duplicateComponent,
+  duplicateMask,
+  patchMask,
+  startMaskTool
+} from './panels/masks/model'
 import { DevelopToolbar } from './shell/DevelopToolbar'
 import { DevelopIdentity } from './shell/IdentityBar'
 import { LeftRail } from './shell/LeftRail'
@@ -19,7 +28,7 @@ import { Splash } from './shell/Splash'
 import { useDevelop } from './state/develop'
 import { useBoot } from './state/boot'
 import { useLibrary } from './state/library'
-import { useUi } from './state/ui'
+import { OVERLAY_MODES, useUi } from './state/ui'
 import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
@@ -27,6 +36,7 @@ import { CollectionDialog } from './views/library/CollectionDialog'
 import { InfoDrawer } from './views/library/InfoDrawer'
 import { Sidebar } from './views/library/Sidebar'
 import { FloatingToolbar } from './views/loupe/FloatingToolbar'
+import { flashHud } from './views/loupe/hudNote'
 import { MasksFloat } from './panels/masks/MasksFloat'
 import { Loupe } from './views/loupe/Loupe'
 import { loupeZoom, setSpace } from './views/loupe/zoom'
@@ -368,7 +378,23 @@ function useShortcuts(): void {
         if (dev.session) void api.library.createCopy(dev.session.key).then(() => lib.refresh())
         return
       }
+      const masksOpen = useUi.getState().panel === 'masks'
+      // ⌘D duplicates the selected mask component, or else the selected mask.
+      if (mod && !e.shiftKey && (k === 'd' || k === 'D') && masksOpen && dev.layerId) {
+        e.preventDefault()
+        return dev.compId ? duplicateComponent(dev.compId) : duplicateMask(dev.layerId)
+      }
       if (mod) return
+      // Delete / Backspace: the selected mask component, or else the selected mask.
+      if ((k === 'Delete' || k === 'Backspace') && masksOpen && t.tagName !== 'INPUT') {
+        const layer = dev.recipe?.layers.find((l) => l.id === dev.layerId)
+        if (!layer) return
+        e.preventDefault()
+        const comp = layer.components.find((c) => c.id === dev.compId)
+        if (comp) deleteComponent(comp.id)
+        else deleteMask(layer.id)
+        return lib.say(`Deleted ${comp ? componentLabel(comp) : layer.name} — Ctrl+Z to undo`)
+      }
       if (k === '\\') return dev.setCompare(dev.compare === 'before' ? 'off' : 'before')
       if (k === 'y' || k === 'Y') return dev.setCompare(dev.compare === 'split' ? 'off' : 'split')
       if (k === 'j' || k === 'J') return dev.setClipping(!dev.clipping)
@@ -408,8 +434,15 @@ function useShortcuts(): void {
         }
         return selectPanel('masks', { tool: t })
       }
-      // H: the pins cycle Auto → Always → Never.
-      if (k === 'h' || k === 'H') {
+      // H hides or shows the selected mask; Shift+H cycles the pins Auto → Always → Never.
+      if (k === 'h' && masksOpen && dev.layerId) {
+        const layer = dev.recipe?.layers.find((l) => l.id === dev.layerId)
+        if (!layer) return
+        return patchMask(layer.id, layer.enabled ? 'Hide mask' : 'Show mask', (l) => {
+          l.enabled = !l.enabled
+        })
+      }
+      if (k === 'H' || k === 'h') {
         const order = ['auto', 'always', 'never'] as const
         const cur = order.indexOf(ui.maskOverlay.pins)
         return ui.setMaskOverlay({ pins: order[(cur + 1) % order.length] })
@@ -421,6 +454,16 @@ function useShortcuts(): void {
         if (dev.tool === 'tat') return dev.setTool('none')
         dev.setTatTarget(ui.panel)
         return dev.setTool('tat')
+      }
+      // Shift+O cycles how the overlay shows a mask (and shows it).
+      if (k === 'O' && e.shiftKey && dev.tool !== 'crop') {
+        const mode = nextOf(
+          OVERLAY_MODES.map((m) => m.value),
+          ui.maskOverlay.mode
+        )
+        ui.setMaskOverlay({ mode })
+        dev.setOverlay(true)
+        return flashHud(OVERLAY_MODES.find((m) => m.value === mode)?.label ?? mode)
       }
       if (k === 'o' || k === 'O') {
         // In the crop tool O cycles the composition guides, as in Lightroom.
