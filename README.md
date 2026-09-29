@@ -17,19 +17,48 @@ liquid-glass controls floating over the picture.
 **Library** — open a folder (no import step; files stay where they are): grid
 with engine thumbnails (a RAW's embedded preview until it is edited, the graded
 picture after), ratings (0–5), pick/reject flags (P/X/U), colour labels (6–9),
-filter/sort, virtual copies, copy/paste/sync settings to a selection, batch
-export, Enhance.
+virtual copies, copy/paste/sync settings to a selection, batch export, Enhance.
+
+- **Sources sidebar** (\\ or Ctrl+Shift+L): folders (pinned and recent),
+  collections, keywords and duplicates; the grid shows whichever is chosen,
+  across folders.
+- **Collections** — manual ones (drag photos onto them), smart ones built from
+  rules in nested all / any / none groups (rating, flag, label, kind, camera,
+  lens, ISO, focal length, aperture, shutter, capture date, keywords, text,
+  other collections…), and sets to hold both; exported and imported as JSON.
+- **Metadata** — title, caption, copyright and hierarchical keywords
+  ("Places › Canada › Winnipeg") in the Info drawer (I) and in Develop's Info
+  pane, many photos at once. They are written to standard `.xmp` sidecars
+  through ExifTool (`IMG_0001.xmp` beside a RAW, `IMG_0001.jpg.xmp` beside
+  anything else); the original is never touched.
+- **Search and filters** — text over names, titles, captions, keywords,
+  camera and lens; filters for rating, flag, label, edits, camera, lens, RAW or
+  not, ISO and focal ranges, dates and keyword. They mean exactly what the
+  same rules mean in a smart collection.
+- **Stacks** — stack a selection under a cover (Ctrl+G), open and close it
+  (S), or auto-stack a folder by capture time; kept in each photo's sidecar,
+  so a stack travels with the folder.
+- **Duplicates** — exact copies (size and SHA-1) and near ones (a 64-bit
+  difference hash of the thumbnail, with an adjustable distance), in a folder
+  or the whole library.
+- **Auto white balance per photo** across a selection (Ctrl+Shift+U, the
+  toolbar's Auto WB, or "Auto per photo" in Sync), each photo measured on its
+  own, with a history step each and one Undo for the batch.
+- **Open with Pixl Playroom** — Finder's and Explorer's Open With (RAW, DNG,
+  JPEG, TIFF, HEIC, PNG, WebP, AVIF, JPEG XL, each with its own document icon)
+  opens the photo in Develop, in the running app if there is one. Playroom
+  registers as an alternative only and never takes over a file type.
 
 **Develop**
 
 | Panel          | What                                                                                                                                                                                                                                                                                                                                | Engine                                              |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | Profile        | Neutral, Playroom Standard, Vivid, Monochrome, any imported `.cube` (with amount)                                                                                                                                                                                                                                                   | `Curves`, `Vibrance`, `Lut`                         |
-| White balance  | As shot / Auto / eyedropper / Custom / saved presets; RAWs show absolute Kelvin from the camera's as-shot white and offer Daylight, Cloudy…; copy to a batch with Sync → White balance only                                                                                                                                         | `WhiteBalance` (Bradford), `probe().as_shot_white`  |
-| Tone           | Exposure (with a highlight shoulder for positive values), Contrast, Highlights, Shadows, Whites, Blacks, Auto                                                                                                                                                                                                                       | `Primary`, 1D `Lut`, `Tone`                         |
+| White balance  | As shot / Auto / eyedropper / Custom / saved presets; RAWs show absolute Kelvin from the camera's as-shot white and offer Daylight, Cloudy…; a saved white (and a preset's) converts between a RAW's Kelvin and another photo's relative sliders; Sync copies it, converted, or measures each photo's own                           | `WhiteBalance` (Bradford), `probe().as_shot_white`  |
+| Tone           | Exposure (with a highlight shoulder for positive values), Contrast, Highlights, Shadows, Whites, Blacks, Auto (scene-aware: a flat, overcast frame gets contrast, not a highlight pull)                                                                                                                                             | `Primary`, 1D `Lut`, `Tone`                         |
 | Presence       | Texture, Clarity, Dehaze, Vibrance, Saturation                                                                                                                                                                                                                                                                                      | `LocalContrast` ×2, `Dehaze`, `Vibrance`, `Primary` |
-| Tone curve     | Parametric (4 regions, movable splits) and point curves (RGB, R, G, B)                                                                                                                                                                                                                                                              | `Curves`                                            |
-| HSL / B&W mix  | 8 bands × hue/sat/lum; B&W mix                                                                                                                                                                                                                                                                                                      | `HslBands`, `Primary`                               |
+| Tone curve     | Parametric (4 regions, movable splits) and point curves (RGB, R, G, B); built-in and saved curve presets; the targeted tool (T) drags the curve at the tone under the pointer                                                                                                                                                       | `Curves`                                            |
+| HSL / B&W mix  | 8 bands × hue/sat/lum; B&W mix; Point colour (up to 8 colours picked off the photo, each shifted in hue, saturation and luminance with its own range); the targeted tool (T) drags the band under the pointer                                                                                                                       | `HslBands`, `Qualifier`, `Primary`                  |
 | Colour grading | Shadows/midtones/highlights/global wheels, blending, balance                                                                                                                                                                                                                                                                        | `ColorGrade`                                        |
 | Detail         | Sharpening (amount, radius, detail, masking); noise reduction (luminance/colour + detail); measured noise σ̂                                                                                                                                                                                                                         | `Sharpen`, `Denoise`, `analyze(noise)`              |
 | Effects        | Post-crop vignette (fitted to the crop, follows the straighten), grain (seeded)                                                                                                                                                                                                                                                     | `Vignette`, `Grain`                                 |
@@ -65,14 +94,19 @@ empty views, with CSS fallbacks and reduced-motion stills.
 **Workflow** — undo/redo and a history list (per photo, kept in the index),
 snapshots (in the sidecar), presets (built-in and saved, each carrying chosen
 groups), copy/paste/sync (Ctrl+C / Ctrl+V / Ctrl+Shift+S) — e.g. white balance
-only, to a batch.
+only, to a batch, copied or measured per photo.
 
 **Export** — chosen folder (or beside each original), subfolder, filename
 template (`{name} {seq} {date} {rating} {copy} {ext}`), JPEG/PNG/TIFF/WebP/
 AVIF/JPEG XL/HEIC with each codec's knobs, bit depth, resize (long/short edge,
 width, height, megapixels, percent), colour space + intent + BPC, metadata
 blocks, dither, HDR (tone map HDR sources, keep HDR, expand SDR to PQ/HLG),
-export presets, batch with progress and cancel.
+export presets, batch with progress and cancel. Output sharpening after the
+resize (Screen, Matte or Glossy × Low, Standard or High; a second engine pass).
+The photo's title, caption, keywords and copyright are written into the file
+(EXIF, XMP and IPTC, in the blocks kept), or only a copyright ("Copyright
+only"), with a default copyright for photos that have none and "Remove
+location" to strip GPS.
 
 **Enhance → Super Resolution** — ×2 with the bundled Real-ESRGAN model on the
 bundled ONNX Runtime (CoreML on macOS, CPU elsewhere, DirectML on Windows when
@@ -86,8 +120,8 @@ renderer (React)  ──IPC──>  main process ──postMessage──> utilit
    panels, loupe             library, thumbnails,            (previews, analysis)
    tools, charts             render sessions, export,     utility process "background" ─> @xuckless/pixl-engine
                              enhance, pixl:// cache          (thumbnails, exports, masters, enhance)
-                                                          utility process "index" ─> node:sqlite, sidecars
-                                                             (folder scans, exif, history, presets, settings)
+                                                          utility process "index" ─> node:sqlite, sidecars, ExifTool
+                                                             (folder scans, exif, .xmp, collections, history, presets, settings)
 ```
 
 - **The recipe** (`src/shared/recipe.ts`) is what the sliders hold, in
@@ -105,9 +139,18 @@ renderer (React)  ──IPC──>  main process ──postMessage──> utilit
   JPEG), each followed by `analyze`; the before render; mask planes via `Inspect`; 1:1
   regions via `Region`; the eyedropper via a 5×5 region in linear sRGB.
 - **Sidecars** (`<photo>.playroom.json`, `src/main/sidecar.ts`) are the
-  truth: recipe, snapshots, virtual copies, rating, flag, label. The index
-  (`node:sqlite`, `src/main/db.ts`) mirrors them for speed and keeps history,
-  presets, export presets and settings. The original is never written.
+  truth: recipe, snapshots, virtual copies, rating, flag, label, stack. The
+  descriptive metadata lives in a standard `.xmp` sidecar, so other apps read
+  it too (`src/main/indexer/xmp.ts`, ExifTool through `exiftool-vendored`,
+  unpacked from the asar in a build). The index (`node:sqlite`,
+  `src/main/db.ts`) mirrors both for speed and keeps what has no better home:
+  history, collections, presets, export presets and settings. Its schema
+  moves forward by numbered migrations (`PRAGMA user_version`). The original
+  is never written.
+- **The library's rules** (`src/shared/smart.ts`) are one predicate for smart
+  collections and the filter bar (`src/shared/filter.ts`); stacks
+  (`src/shared/stacks.ts`), duplicates (`src/shared/dupes.ts`) and keywords
+  (`src/shared/keywords.ts`) are pure and tested the same way.
 - **The index host** (`src/main/indexer/`), as VS Code keeps its shared
   process: every index query and sidecar read or write runs in a utility
   process, one request at a time in the order sent, so batches are one
@@ -130,8 +173,12 @@ renderer (React)  ──IPC──>  main process ──postMessage──> utilit
   a shader. Brush planes cross IPC by reference (`src/main/planestore.ts`), so
   a slider drag sends kilobytes whatever is painted.
 - **White balance** (`src/shared/wb.ts`) mirrors the engine's locus model
-  exactly, so absolute RAW Kelvin, relative sliders, Auto (grey pixels ∩ grey
-  world) and the eyedropper all become the one `WhiteBalance` op.
+  exactly, so absolute RAW Kelvin, relative sliders, Auto (grey pixels, grey
+  world when too few) and the eyedropper all become the one `WhiteBalance`
+  op; `src/shared/wbconvert.ts` moves a white between the two kinds of units.
+- **Opening from outside** (`src/main/open.ts`): one instance; Finder's
+  `open-file`, a second launch's arguments and the command line queue until
+  the renderer has booted, and survive the display-scale relaunch.
 
 ## Running
 
@@ -142,9 +189,11 @@ with `read:packages` for it; see `.github/RELEASING.md`.
 ```sh
 pnpm install
 pnpm fetch-ai            # ONNX Runtime + Real-ESRGAN for this platform (Enhance)
-pnpm dev                 # the app
-pnpm test                # the pure modules (compiler, white balance, orientation)
+pnpm dev                 # the app (pnpm dev -- /path/to/photo.CR2 opens a photo)
+pnpm test                # the pure modules and the index (compiler, white balance, library rules…)
 pnpm typecheck && pnpm lint && pnpm build
+pnpm doc-icons           # re-render the document icons (build/doc-icons/)
+scripts/site-media.sh    # rebuild the website's media (site/assets/)
 ```
 
 `node scripts/drive.mjs` drives the built app for automation: a hidden,
@@ -180,6 +229,12 @@ offscreen-rendered window with a throwaway profile (`PLAYROOM_HIDDEN=1`,
 | H                        | develop        | mask pins: auto, always, never                                         |
 | [ ], Alt                 | develop        | brush size, erase while held                                           |
 | Shift+A                  | develop        | auto tone                                                              |
+| T                        | develop        | targeted adjustment (in the HSL and tone curve panels)                 |
+| Ctrl+Shift+U             | both           | auto white balance, each selected photo its own                        |
+| \\ or Ctrl+Shift+L       | library        | sources sidebar                                                        |
+| I                        | library        | info drawer (title, caption, copyright, keywords)                      |
+| Ctrl+G / Ctrl+Shift+G    | library        | stack the selection under the focused photo / unstack                  |
+| S, Shift+S               | library        | open or close the focused stack, make the focused photo its cover      |
 
 See `TODO.md` for everything not in this pass.
 
