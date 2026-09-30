@@ -234,10 +234,8 @@ class Session {
    * and the engine is not asked to do those again.
    */
   async compileFor(recipe: Recipe, source: ProxyFile, applyCrop: boolean): Promise<Compiled> {
-    const of = (px: Proxies | undefined): boolean =>
-      !!px && (source === px.proxy || source === px.draft)
-    const baked = of(this.lensed?.px)
-    const denoised = baked ? this.lensed!.denoised : of(this.denoised?.px)
+    const baked = this.isBaked(source)
+    const denoised = this.carriesDenoise(source)
     const px = baked ? this.lensed!.px : denoised ? this.denoised!.px : this.px
     const { user } = orientedFrame(recipe, px.frameWidth, px.frameHeight)
     const compiled = compile(recipe, {
@@ -256,6 +254,19 @@ class Session {
       aiDenoised: denoised || this.denoiseKeyOf(recipe) !== ''
     })
     return baked ? { ...compiled, lens: null, retouch: null } : compiled
+  }
+
+  /** Whether a source is one of the prepared set's (lens and spots baked in). */
+  private isBaked(source: ProxyFile): boolean {
+    const px = this.lensed?.px
+    return !!px && (source === px.proxy || source === px.draft)
+  }
+
+  /** Whether a source's pixels are AI-denoised: from the denoised set, or prepared from it. */
+  private carriesDenoise(source: ProxyFile): boolean {
+    if (this.isBaked(source)) return this.lensed!.denoised
+    const px = this.denoised?.px
+    return !!px && (source === px.proxy || source === px.draft)
   }
 
   // ── AI denoise ──
@@ -827,7 +838,10 @@ class Session {
     before.lens = { ...structuredClone(this.recipe.lens), defringe: before.lens.defringe }
     // Spots too: they are repairs, not a look, and the prepared proxies carry them.
     before.retouch = structuredClone(this.recipe.retouch)
-    const src = this.source('full')
+    // The photo as it came: never the AI-denoised pixels the edit renders
+    // from (the plain proxy then, with the lens and spots applied live).
+    const view = this.source('full')
+    const src = this.carriesDenoise(view) ? this.px.proxy : view
     const compiled = await this.compileFor(before, src, !this.view.cropMode)
     // Keyed on what the engine is asked for, not on the raw geometry: a
     // straighten in the crop tool changes the recipe but not this picture.
