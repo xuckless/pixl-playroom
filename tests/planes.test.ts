@@ -7,6 +7,7 @@ import {
   slimRecipe,
   type BrushComponent
 } from '../src/shared/recipe'
+import { pruneDue } from '../src/main/planes'
 
 const brush = (png: string): BrushComponent => ({
   id: 'b1',
@@ -38,4 +39,18 @@ test('slimRecipe sends planes by reference and hands them over', () => {
   assert.deepEqual(seen, [[c.ref, 'iVBORw0KGgo=']])
   // The original keeps its pixels.
   assert.equal((r.layers[0].components[0] as BrushComponent).png, 'iVBORw0KGgo=')
+})
+
+test('gradient planes are pruned after 32 writes or 10 s, not on every write', () => {
+  let st: { writes: number; at: number } | undefined
+  let dues = 0
+  for (let i = 0; i < 64; i++) {
+    const r = pruneDue(st, 1000)
+    st = r.next
+    if (r.due) dues++
+  }
+  assert.equal(dues, 2)
+  const first = pruneDue(undefined, 0)
+  assert.equal(first.due, false)
+  assert.equal(pruneDue(first.next, 10_000).due, true, 'ten seconds on, the next write prunes')
 })

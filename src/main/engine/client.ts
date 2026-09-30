@@ -70,6 +70,23 @@ export class EngineClient {
     this.child = undefined
   }
 
+  /**
+   * Kill the host mid-call (a cancelled job): what it was doing fails as
+   * Cancelled, and a fresh host starts. Not a crash: it does not count
+   * towards giving up.
+   */
+  restart(): void {
+    const child = this.child
+    if (!child) return
+    this.child = undefined
+    for (const [id, p] of this.inflight) {
+      this.inflight.delete(id)
+      p.reject(new EngineError({ message: `${p.method}: cancelled`, code: 'Cancelled' }))
+    }
+    child.kill()
+    if (!this.stopped) this.spawn()
+  }
+
   getStatus(): EngineStatus {
     return this.status
   }

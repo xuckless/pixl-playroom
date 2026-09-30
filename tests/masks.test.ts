@@ -15,6 +15,16 @@ import {
   type RangeComponent
 } from '../src/shared/recipe'
 import type { GradeOp } from '../src/shared/engine-types'
+import {
+  copyName,
+  dropIndex,
+  geometricCentre,
+  effectiveMode,
+  moveItem,
+  nextMaskMode,
+  nextMaskName,
+  nextOf
+} from '../src/shared/masks'
 
 const ctx: CompileContext = {
   isRaw: false,
@@ -193,4 +203,70 @@ test('component names and mask overlay colours survive normalising', () => {
   const p = normaliseRecipe(JSON.parse(JSON.stringify(plain)), false)
   assert.equal('overlayHue' in p.layers[0], false)
   assert.equal('name' in p.layers[0].components[0], false)
+})
+
+test('a new mask is never named like one that exists', () => {
+  assert.equal(nextMaskName([]), 'Mask 1')
+  assert.equal(nextMaskName(['Mask 1', 'Mask 2']), 'Mask 3')
+  // Mask 1 deleted: the next is not a second "Mask 2".
+  assert.equal(nextMaskName(['Mask 2']), 'Mask 3')
+  assert.equal(nextMaskName(['Sky', 'Face']), 'Mask 3')
+  assert.equal(nextMaskName(['Mask 9', 'Sky']), 'Mask 10')
+})
+
+test('copies are numbered past the ones already made', () => {
+  assert.equal(copyName('Sky', ['Sky']), 'Sky copy')
+  assert.equal(copyName('Sky', ['Sky', 'Sky copy']), 'Sky copy 2')
+  assert.equal(copyName('Sky copy', ['Sky', 'Sky copy', 'Sky copy 2']), 'Sky copy 3')
+})
+
+test('moveItem and dropIndex reorder a list the way a drag reads', () => {
+  assert.deepEqual(moveItem(['a', 'b', 'c', 'd'], 0, 2), ['b', 'c', 'a', 'd'])
+  assert.deepEqual(moveItem(['a', 'b', 'c', 'd'], 3, 0), ['d', 'a', 'b', 'c'])
+  assert.deepEqual(moveItem(['a', 'b'], 0, 9), ['b', 'a'])
+  assert.deepEqual(moveItem(['a', 'b'], 5, 0), ['a', 'b'])
+  // The other rows' middles at 10, 30, 50: above all, between, below all.
+  assert.equal(dropIndex([10, 30, 50], 0), 0)
+  assert.equal(dropIndex([10, 30, 50], 31), 2)
+  assert.equal(dropIndex([10, 30, 50], 99), 3)
+})
+
+test('the first component always adds; modes and overlay views cycle', () => {
+  assert.equal(effectiveMode(0, 'Subtract'), 'Add')
+  assert.equal(effectiveMode(1, 'Subtract'), 'Subtract')
+  assert.equal(nextMaskMode('Add'), 'Subtract')
+  assert.equal(nextMaskMode('Subtract'), 'Intersect')
+  assert.equal(nextMaskMode('Intersect'), 'Add')
+  assert.equal(nextOf(['a', 'b', 'c'], 'c'), 'a')
+  assert.equal(nextOf(['a', 'b', 'c'], 'a'), 'b')
+})
+
+test('a mask of shapes is centred between them; a painted one has no centre of its own', () => {
+  const base = { mode: 'Add' as const, opacity: 100, invert: false, feather: 0 }
+  const radial = {
+    ...base,
+    id: 'r',
+    kind: 'radial' as const,
+    centre: { x: 0.2, y: 0.4 },
+    radiusX: 0.1,
+    radiusY: 0.1,
+    angle: 0,
+    softness: 50,
+    width: 512,
+    height: 341
+  }
+  const linear = {
+    ...base,
+    id: 'l',
+    kind: 'linear' as const,
+    start: { x: 0.5, y: 0 },
+    end: { x: 0.9, y: 0.4 },
+    width: 512,
+    height: 341
+  }
+  assert.deepEqual(geometricCentre([radial]), { x: 0.2, y: 0.4 })
+  const both = geometricCentre([radial, linear])!
+  assert.ok(Math.abs(both.x - 0.45) < 1e-9 && Math.abs(both.y - 0.3) < 1e-9)
+  assert.equal(geometricCentre([radial, range(0)]), null)
+  assert.equal(geometricCentre([]), null)
 })

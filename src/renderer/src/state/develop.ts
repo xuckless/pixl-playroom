@@ -65,6 +65,8 @@ interface DevelopState {
   addMode: MaskMode | null
   /** Every mask, small (the masks panel's thumbnails), by layer id. */
   maskThumbs: Record<string, RenderEvent>
+  /** The mask under the pointer in the masks panel or on a pin: previewed on the photo. */
+  hoverLayer: string | null
   overlay: boolean
   compare: Compare
   clipping: boolean
@@ -102,6 +104,7 @@ interface DevelopState {
   setComp(id: string | null): void
   setAddMode(m: MaskMode | null): void
   setLayer(id: string | null): void
+  setHoverLayer(id: string | null): void
   setOverlay(on: boolean): void
   setCompare(c: Compare): void
   setClipping(on: boolean): void
@@ -128,20 +131,28 @@ interface DevelopState {
  */
 let queued: { key: string; recipe: Recipe } | null = null
 let frame = 0
+/** Numbers each recipe sent to the engine; every render says which one it drew. */
+let rev = 0
+
+/** The number of the recipe sent to the engine last. */
+export function lastSentRev(): number {
+  return rev
+}
 
 function flushQueued(onError: (message: string) => void): void {
   cancelAnimationFrame(frame)
   frame = 0
   const q = queued
   queued = null
-  if (q) void api.develop.update(q.key, q.recipe, true).catch((err) => onError(errorText(err)))
+  if (q)
+    void api.develop.update(q.key, q.recipe, true, ++rev).catch((err) => onError(errorText(err)))
 }
 
 function sendNow(key: string, recipe: Recipe, onError: (message: string) => void): void {
   cancelAnimationFrame(frame)
   frame = 0
   queued = null
-  void api.develop.update(key, recipe, false).catch((err) => onError(errorText(err)))
+  void api.develop.update(key, recipe, false, ++rev).catch((err) => onError(errorText(err)))
 }
 
 /**
@@ -160,6 +171,12 @@ function applyLog(key: string, history: HistoryLog): void {
 let historyOps: Promise<void> = Promise.resolve()
 function queueHistoryOp(op: () => Promise<void>): void {
   historyOps = historyOps.then(op).catch((err) => useDevelop.getState().onError(errorText(err)))
+}
+
+/** Whether the selected mask component is a colour or luminance range. */
+function rangeSelected(s: Pick<DevelopState, 'recipe' | 'layerId' | 'compId'>): boolean {
+  const l = s.recipe?.layers.find((x) => x.id === s.layerId)
+  return l?.components.find((c) => c.id === s.compId)?.kind === 'range'
 }
 
 /** The last picture made for a view: the framed picture, or the crop tool's whole frame. */
@@ -187,6 +204,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   compId: null,
   addMode: null,
   maskThumbs: {},
+  hoverLayer: null,
   overlay: true,
   compare: 'off',
   clipping: false,
@@ -208,6 +226,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       picture: null,
       pictures: { framed: null, crop: null },
       maskThumbs: {},
+      hoverLayer: null,
       compId: null,
       addMode: null,
       before: null,
@@ -340,12 +359,19 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   setLayer(layerId) {
     if (layerId === get().layerId) return
-    set({ layerId, compId: null, addMode: null })
+    // The last mask's plane goes at once: it is not this one's.
+    set({ layerId, compId: null, addMode: null, mask: null })
     get().pushView()
   },
 
+  setHoverLayer(hoverLayer) {
+    if (get().hoverLayer !== hoverLayer) set({ hoverLayer })
+  },
+
   setComp(compId) {
+    const was = rangeSelected(get())
     set({ compId })
+    if (rangeSelected(get()) !== was) get().pushView()
   },
 
   setAddMode(addMode) {
@@ -407,6 +433,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       maskLayer: layerId,
       // Thumbnails of every mask while the masks panel is open or all show.
       maskThumbs: useUi.getState().panel === 'masks' || useUi.getState().maskOverlay.showAll,
+      // With a range selected its mask comes with every draft: only the
+      // engine knows exactly what the key selects in the graded picture.
+      maskLive: rangeSelected(get()),
       targetEdge
     }
     set({ rendering: true })
@@ -417,9 +446,15 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     const { session } = get()
     if (!session || e.key !== session.key) return
     if (e.kind === 'before') set({ before: e })
-    // A mask event without a picture: the mask is empty now.
-    else if (e.kind === 'mask') set({ mask: e.url ? e : null })
-    else if (e.kind === 'mask-thumb') {
+    else if (e.kind === 'mask') {
+      // Only the selected mask's plane, and never an older one than shown.
+      if (e.layerId !== get().layerId) return
+      const cur = get().mask
+      if (cur && e.seq < cur.seq) return
+      // A mask event without a picture: the mask is empty now. A draft's
+      // plane has no measurements; the last ones stand until the settled one.
+      set({ mask: e.url ? { ...e, maskStats: e.maskStats ?? cur?.maskStats } : null })
+    } else if (e.kind === 'mask-thumb') {
       const id = e.layerId
       if (!id) return
       set((s) => {

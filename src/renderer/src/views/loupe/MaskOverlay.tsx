@@ -1,6 +1,9 @@
 import { memo, type CSSProperties } from 'react'
+import type { ViewGeometry } from '../../../../shared/view'
 import { useDevelop } from '../../state/develop'
 import { useUi, type OverlayMode } from '../../state/ui'
+import { MaskCanvas } from './maskgl/MaskCanvas'
+import { useMaskGlBroken } from './maskgl/state'
 
 /** Golden-angle hues, so every mask in "show all" gets its own colour. */
 const hueFor = (i: number, base: number): number => (base + i * 137.5) % 360
@@ -35,8 +38,10 @@ export const MaskPlane = memo(function MaskPlane({
 }): React.JSX.Element {
   const a = opacity / 100
   switch (mode) {
+    // The outline needs the loupe's own drawing; CSS shows the colour instead.
     case 'color':
     case 'color-bw':
+    case 'outline':
       return (
         <div
           className="mask-overlay"
@@ -70,17 +75,69 @@ export const MaskPlane = memo(function MaskPlane({
 
 /**
  * The overlay for the loupe: the selected mask in the chosen mode, or with
- * "show all", every mask in its own colour from the masks' thumbnails.
+ * "show all", every mask in its own colour from the masks' thumbnails. A
+ * mask hovered in the masks panel (or on its pin) shows over it, in its own
+ * colour, overlay on or off.
  */
-export function MaskOverlay(): React.JSX.Element | null {
+export function MaskOverlay({
+  g,
+  w,
+  h
+}: {
+  g: ViewGeometry | null
+  w: number
+  h: number
+}): React.JSX.Element | null {
+  const tool = useDevelop((s) => s.tool)
+  const showAll = useUi((s) => s.maskOverlay.showAll)
+  const broken = useMaskGlBroken((s) => s.broken)
+  if (tool === 'crop') return null
+  // The loupe draws the selected mask itself where it can (in step with the
+  // edit, then the engine's); every mask at once, and the fallback, are CSS.
+  const gl = g !== null && !showAll && !broken
+  return (
+    <>
+      {gl ? <MaskCanvas g={g} w={w} h={h} /> : <SelectedOverlay />}
+      <HoverOverlay />
+    </>
+  )
+}
+
+function HoverOverlay(): React.JSX.Element | null {
+  const hoverLayer = useDevelop((s) => s.hoverLayer)
+  const layerId = useDevelop((s) => s.layerId)
+  const overlay = useDevelop((s) => s.overlay)
+  const mask = useDevelop((s) => s.mask)
+  const thumb = useDevelop((s) => (s.hoverLayer ? s.maskThumbs[s.hoverLayer]?.url : undefined))
+  const layers = useDevelop((s) => s.recipe?.layers)
+  const o = useUi((s) => s.maskOverlay)
+  if (!hoverLayer || !layers) return null
+  // The selected mask already shows while the overlay is on.
+  if (hoverLayer === layerId && overlay && !o.showAll) return null
+  const i = layers.findIndex((l) => l.id === hoverLayer)
+  const l = layers[i]
+  const url = hoverLayer === layerId && mask ? mask.url : thumb
+  if (!l || !url) return null
+  return (
+    <div className="mask-hover">
+      <MaskPlane
+        url={url}
+        mode="color"
+        hue={l.overlayHue ?? (hoverLayer === layerId ? o.hue : hueFor(i + 1, o.hue))}
+        opacity={Math.max(o.opacity, 55)}
+      />
+    </div>
+  )
+}
+
+function SelectedOverlay(): React.JSX.Element | null {
   const mask = useDevelop((s) => s.mask)
   const layerId = useDevelop((s) => s.layerId)
   const overlay = useDevelop((s) => s.overlay)
-  const tool = useDevelop((s) => s.tool)
   const thumbs = useDevelop((s) => s.maskThumbs)
   const layers = useDevelop((s) => s.recipe?.layers ?? [])
   const o = useUi((s) => s.maskOverlay)
-  if (!overlay || tool === 'crop') return null
+  if (!overlay) return null
   if (o.showAll) {
     return (
       <>

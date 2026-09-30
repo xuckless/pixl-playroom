@@ -33,7 +33,8 @@ function chunk(type: string, data: Buffer): Buffer {
 }
 
 /** An 8-bit greyscale PNG of `w × h` samples. */
-export function encodeGreyPng(data: Uint8Array, w: number, h: number): Buffer {
+/** `level` trades size for time: cache planes the engine reads once want it low. */
+export function encodeGreyPng(data: Uint8Array, w: number, h: number, level = 6): Buffer {
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(w, 0)
   ihdr.writeUInt32BE(h, 4)
@@ -50,7 +51,7 @@ export function encodeGreyPng(data: Uint8Array, w: number, h: number): Buffer {
   return Buffer.concat([
     SIGNATURE,
     chunk('IHDR', ihdr),
-    chunk('IDAT', deflateSync(raw, { level: 6 })),
+    chunk('IDAT', deflateSync(raw, { level })),
     chunk('IEND', Buffer.alloc(0))
   ])
 }

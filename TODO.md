@@ -36,7 +36,11 @@ way. Grouped by area; roughly in priority order within each.
       box. A segmentation model (e.g. U²-Net/ISNet for subject, a sky model)
       fetched by `pnpm fetch-ai`, run on the bundled ONNX Runtime (a mask
       seam beside the engine's `enhance` upscaler, or in the host), producing
-      a grey plane stored as a raster component.
+      a grey plane stored as a raster component. The job side is built:
+      `main/ai/segment.ts` is the runner (stages, progress, cancel, the plane
+      into the plane store, the mask applied to its photo), and
+      `PLAYROOM_FAKE_AI=1` runs it with a stand-in plane; what is missing is
+      the model itself, in a utility process that cancelling can kill.
 - [ ] **Depth range mask** (its picker entry is disabled): a depth map from
       iPhone HEIC/ProRAW auxiliary images or a monocular depth model, and a
       `MaskShape::DepthRange` in the engine.

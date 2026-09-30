@@ -203,6 +203,12 @@ offscreen-rendered window with a throwaway profile (`PLAYROOM_HIDDEN=1`,
 `tap x,y… [--dbl]`, `wheel <selector> <dy>`, `panel <tool>`, `ss <name>`,
 `eval <js>`).
 
+`PLAYROOM_FAKE_AI=1` turns on a stand-in segmentation model (Select Subject,
+Sky and Background in the mask tools): an AI job with real stages, progress,
+cancelling and a mask landing on its photo, until the real model ships.
+`window.__maskPreview` reports the loupe's own mask preview (`stats`, and
+`read()` for its plane, to compare with the engine's).
+
 ## Keys
 
 | Key                      | Where          | Does                                                                   |
@@ -225,8 +231,10 @@ offscreen-rendered window with a throwaway profile (`PLAYROOM_HIDDEN=1`,
 | Ctrl+1…9, Ctrl+↑/↓       | develop        | pick / turn the tool wheel                                             |
 | R, W                     | develop        | crop tool, white-balance picker                                        |
 | B/K, L, M, Shift+M       | develop        | brush, lasso, linear, radial gradient (a new mask if none is selected) |
-| O                        | develop        | mask overlay (in the crop tool: cycle guides)                          |
-| H                        | develop        | mask pins: auto, always, never                                         |
+| O, Shift+O               | develop        | mask overlay; cycle its view (in the crop tool O cycles guides)        |
+| H, Shift+H               | develop        | hide / show the selected mask (masks panel); pins: auto, always, never |
+| Delete / Backspace       | develop        | delete the selected mask component, or else the mask (masks panel)     |
+| Ctrl+D                   | develop        | duplicate the selected mask component, or else the mask (masks panel)  |
 | [ ], Alt                 | develop        | brush size, erase while held                                           |
 | Shift+A                  | develop        | auto tone                                                              |
 | T                        | develop        | targeted adjustment (in the HSL and tone curve panels)                 |

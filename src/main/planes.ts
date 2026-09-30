@@ -15,6 +15,14 @@ import { decodePng, encodeGreyPng } from './pngio'
 
 /** Gradient planes kept per photo: dragging a gradient writes a new one per settled position. */
 const KEEP_GRADIENTS = 64
+/**
+ * Planes are cache files the engine reads straight away: fast deflate beats
+ * small files (a 512 px ramp encodes about five times faster than at 6).
+ */
+const PLANE_DEFLATE = 1
+/** Pruning lists the whole folder: after this many writes, or this long, not on every one. */
+const PRUNE_EVERY = 32
+const PRUNE_MS = 10_000
 
 /** Write whole or not at all: another thread may be writing the same plane. */
 function writeAtomic(file: string, data: Buffer): void {
@@ -31,7 +39,7 @@ export function writeGradientPlane(
   const w = Math.max(1, Math.round(c.width))
   const h = Math.max(1, Math.round(c.height))
   const turned = orientPlane(user, rasteriseGradient(c), w, h)
-  writeAtomic(file, encodeGreyPng(turned.data, turned.width, turned.height))
+  writeAtomic(file, encodeGreyPng(turned.data, turned.width, turned.height, PLANE_DEFLATE))
 }
 
 export function writeBrushPlane(file: string, png: string, user: Orientation): void {
@@ -39,7 +47,28 @@ export function writeBrushPlane(file: string, png: string, user: Orientation): v
   if (user === 'Normal') return writeAtomic(file, buf)
   const d = decodePng(buf)
   const turned = orientPlane(user, new Uint8Array(d.rows), d.width, d.height)
-  writeAtomic(file, encodeGreyPng(turned.data, turned.width, turned.height))
+  writeAtomic(file, encodeGreyPng(turned.data, turned.width, turned.height, PLANE_DEFLATE))
+}
+
+/** Per folder: writes since it was last pruned, and when that was. */
+const pruned = new Map<string, { writes: number; at: number }>()
+
+/** Whether a folder is due a prune after one more write (counting it). */
+export function pruneDue(
+  state: { writes: number; at: number } | undefined,
+  now: number
+): { due: boolean; next: { writes: number; at: number } } {
+  const s = state ?? { writes: 0, at: now }
+  const writes = s.writes + 1
+  const due = writes >= PRUNE_EVERY || now - s.at >= PRUNE_MS
+  return { due, next: due ? { writes: 0, at: now } : { writes, at: s.at } }
+}
+
+/** Prune a folder's gradient planes when it is due (see `pruneDue`). */
+export function pruneGradientsSometimes(dir: string): void {
+  const { due, next } = pruneDue(pruned.get(dir), Date.now())
+  pruned.set(dir, next)
+  if (due) pruneGradients(dir)
 }
 
 /** Keep the newest gradient planes, drop the rest. */

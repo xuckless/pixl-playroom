@@ -5,6 +5,7 @@
  * the selected mask.
  */
 import type { MaskMode } from '../../../../shared/engine-types'
+import { copyName, moveItem, nextMaskName } from '../../../../shared/masks'
 import {
   newId,
   newLocalLayer,
@@ -14,7 +15,9 @@ import {
 } from '../../../../shared/recipe'
 import type { IconName } from '../../components/icons'
 import { selectPanel } from '../../develop/tools'
+import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
+import { useLibrary } from '../../state/library'
 import { useDevelop, type Tool } from '../../state/develop'
 
 export type MaskToolKind =
@@ -34,8 +37,10 @@ export interface MaskToolInfo {
   label: string
   icon: IconName
   key?: string
-  /** Why it cannot be used yet, when it cannot. */
+  /** Why it cannot be used yet, when it cannot (a model: see `ai`). */
   needs?: string
+  /** Found by a model: usable when the build has that task. */
+  ai?: 'segment'
 }
 
 /** The tools a mask can be made with, in Lightroom's order. */
@@ -43,13 +48,26 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
   {
     title: 'Automatic',
     tools: [
-      { kind: 'subject', label: 'Subject', icon: 'subject', needs: 'needs a segmentation model' },
-      { kind: 'sky', label: 'Sky', icon: 'sky', needs: 'needs a segmentation model' },
+      {
+        kind: 'subject',
+        label: 'Subject',
+        icon: 'subject',
+        needs: 'needs a segmentation model',
+        ai: 'segment'
+      },
+      {
+        kind: 'sky',
+        label: 'Sky',
+        icon: 'sky',
+        needs: 'needs a segmentation model',
+        ai: 'segment'
+      },
       {
         kind: 'background',
         label: 'Background',
         icon: 'background',
-        needs: 'needs a segmentation model'
+        needs: 'needs a segmentation model',
+        ai: 'segment'
       }
     ]
   },
@@ -113,7 +131,7 @@ export function changeLayer(fn: (l: LocalLayer) => void, live = false): void {
 export function createMask(): LocalLayer | null {
   const d = useDevelop.getState()
   if (!d.recipe) return null
-  const l = newLocalLayer(`Mask ${d.recipe.layers.length + 1}`)
+  const l = newLocalLayer(nextMaskName(d.recipe.layers.map((x) => x.name)))
   d.replace({ ...d.recipe, layers: [...d.recipe.layers, l] }, 'New mask')
   d.setLayer(l.id)
   return l
@@ -130,7 +148,8 @@ export function modeForNew(layer: LocalLayer | undefined): MaskMode {
 
 /** A component was made: select it and forget the pending mode. */
 export function madeComponent(id: string): void {
-  useDevelop.setState({ compId: id, addMode: null })
+  useDevelop.setState({ addMode: null })
+  useDevelop.getState().setComp(id)
 }
 
 /**
@@ -143,6 +162,22 @@ export function startMaskTool(kind: MaskToolKind): void {
   const d = useDevelop.getState()
   if (!d.recipe) return
   const adding = d.addMode !== null && layerOf(d.recipe, d.layerId) !== undefined
+  // A model finds these: a job on this photo, whose mask lands when it is done
+  // (in this mask with the pending mode, else as a new one).
+  if (kind === 'subject' || kind === 'sky' || kind === 'background') {
+    if (!d.session) return
+    void api.ai
+      .start({
+        task: 'segment',
+        key: d.session.key,
+        target: kind,
+        into: adding && d.layerId ? { layerId: d.layerId, mode: d.addMode ?? 'Add' } : undefined
+      })
+      .catch((err) => useLibrary.getState().say(errorText(err), 'error'))
+    d.setAddMode(null)
+    selectPanel('masks')
+    return
+  }
   if (!adding) {
     if (!createMask()) return
   }
@@ -176,7 +211,10 @@ export function duplicateMask(id: string): void {
   if (!src) return
   const copy = structuredClone(src)
   copy.id = newId()
-  copy.name = `${src.name} copy`
+  copy.name = copyName(
+    src.name,
+    d.recipe.layers.map((x) => x.name)
+  )
   copy.components = copy.components.map((c) => ({ ...c, id: newId() }))
   const i = d.recipe.layers.indexOf(src)
   const layers = [...d.recipe.layers]
@@ -185,11 +223,59 @@ export function duplicateMask(id: string): void {
   d.setLayer(copy.id)
 }
 
+/** Tools that draw into, or key, the selected mask: they have nothing to do without it. */
+const MASK_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
+  'brush',
+  'polygon',
+  'linear',
+  'radial',
+  'range-picker'
+])
+
+function dropMaskTool(): void {
+  const d = useDevelop.getState()
+  if (MASK_TOOLS.has(d.tool)) d.setTool('none')
+}
+
+/**
+ * Delete a mask. Deleting the selected one selects its neighbour (the one
+ * after it, else the one before), so Delete can be pressed again.
+ */
 export function deleteMask(id: string): void {
   const d = useDevelop.getState()
   if (!d.recipe) return
-  d.replace({ ...d.recipe, layers: d.recipe.layers.filter((x) => x.id !== id) }, 'Delete mask')
-  if (d.layerId === id) d.setLayer(null)
+  const layers = d.recipe.layers
+  const i = layers.findIndex((x) => x.id === id)
+  if (i < 0) return
+  const next = layers[i + 1] ?? layers[i - 1] ?? null
+  d.replace({ ...d.recipe, layers: layers.filter((x) => x.id !== id) }, 'Delete mask')
+  if (d.layerId === id) {
+    dropMaskTool()
+    d.setLayer(next?.id ?? null)
+  }
+}
+
+/** Move a mask to index `to` of the list (masks apply in order, top first). */
+export function moveMask(id: string, to: number): void {
+  const d = useDevelop.getState()
+  if (!d.recipe) return
+  const from = d.recipe.layers.findIndex((x) => x.id === id)
+  if (from < 0 || from === to) return
+  d.replace({ ...d.recipe, layers: moveItem(d.recipe.layers, from, to) }, 'Reorder masks')
+}
+
+/** Move a component to index `to` of its mask's components. */
+export function moveComponent(compId: string, to: number): void {
+  const d = useDevelop.getState()
+  const l = d.recipe?.layers.find((x) => x.components.some((c) => c.id === compId))
+  if (!l) return
+  const from = l.components.findIndex((c) => c.id === compId)
+  if (from === to) return
+  d.edit((r) => {
+    const x = layerOf(r, l.id)
+    if (x) x.components = moveItem(x.components, from, to)
+  })
+  d.commit('Reorder mask components')
 }
 
 export function patchMask(id: string, label: string, fn: (l: LocalLayer) => void): void {
@@ -233,8 +319,13 @@ export function duplicateComponent(compId: string): void {
 }
 
 export function deleteComponent(compId: string): void {
-  patchComponent(compId, 'Remove mask component', (_, l) => {
+  patchComponent(compId, 'Delete component', (_, l) => {
     l.components = l.components.filter((x) => x.id !== compId)
   })
-  if (useDevelop.getState().compId === compId) useDevelop.getState().setComp(null)
+  const d = useDevelop.getState()
+  if (d.compId === compId) {
+    // The picker keys the selected range: with it gone, it has nothing to key.
+    if (d.tool === 'range-picker') d.setTool('none')
+    d.setComp(null)
+  }
 }

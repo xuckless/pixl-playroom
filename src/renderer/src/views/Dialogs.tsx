@@ -7,7 +7,7 @@ import {
   type ExportSettings,
   type ResizeMode
 } from '../../../shared/export'
-import type { EnhanceProgress, ExportPreset, ExportProgress } from '../../../shared/ipc'
+import type { ExportPreset, ExportProgress } from '../../../shared/ipc'
 import {
   changedGroups,
   defaultRecipe,
@@ -21,6 +21,7 @@ import { ProgressRing, Sphere, Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
 import { autoWbBatch } from '../lib/autowb'
 import { useDevelop } from '../state/develop'
+import { useAiJobs } from '../state/jobs'
 import { useLibrary, useTargets } from '../state/library'
 
 function Field({
@@ -870,18 +871,18 @@ export function EnhanceDialog(): React.JSX.Element {
   const targets = useTargets()
   const [avail, setAvail] = useState<{ available: boolean; reason?: string } | null>(null)
   const [cpu, setCpu] = useState(false)
-  const [runs, setRuns] = useState<Record<string, EnhanceProgress>>({})
   const [started, setStarted] = useState<string[]>([])
+  const jobs = useAiJobs((s) => s.jobs)
   useEffect(() => {
     void api.enhance.available().then(setAvail)
-    return api.enhance.onProgress((p) => setRuns((r) => ({ ...r, [p.key]: p })))
   }, [])
-  const list = started.map((k) => runs[k]).filter(Boolean)
-  const running =
-    started.length > 0 && list.filter((p) => p.phase !== 'running').length < started.length
+  // Each photo's job as the queue last told it (the store keeps how finished ones ended).
+  const ended = useAiJobs((s) => s.ended)
+  const list = started.map((id) => jobs[id] ?? ended[id]).filter(Boolean)
+  const running = list.some((p) => p.phase === 'running' || p.phase === 'queued')
   const done = list.filter((p) => p.phase === 'done').length
   const failed = list.filter((p) => p.phase === 'error')
-  const latest = list.at(-1)
+  const current = list.find((p) => p.phase === 'running')
   return (
     <Modal
       title="Enhance → Super Resolution"
@@ -892,20 +893,25 @@ export function EnhanceDialog(): React.JSX.Element {
           <button
             className="primary"
             disabled={!avail?.available || targets.length === 0}
-            onClick={() => {
-              for (const k of targets) void api.enhance.run(k, cpu ? 'cpu' : 'auto')
-              setStarted(targets)
+            onClick={async () => {
+              const ids = await Promise.all(
+                targets.map((key) => api.ai.start({ task: 'enhance', key, cpu }))
+              )
+              setStarted(ids)
             }}
           >
             Enhance {targets.length > 1 ? `${targets.length} photos` : ''}
           </button>
         ) : running ? (
-          <button
-            onClick={() => setDialog(null)}
-            title="Keep working; progress shows in the top bar"
-          >
-            Run in the background
-          </button>
+          <>
+            <button onClick={() => started.forEach((id) => void api.ai.cancel(id))}>Cancel</button>
+            <button
+              onClick={() => setDialog(null)}
+              title="Keep working; progress shows on the photo and in the top bar"
+            >
+              Run in the background
+            </button>
+          </>
         ) : (
           <button className="primary" onClick={() => setDialog(null)}>
             Done
@@ -918,7 +924,7 @@ export function EnhanceDialog(): React.JSX.Element {
           <p>
             Doubles the resolution with the bundled Real-ESRGAN ×2 model, before any edit, into a
             new 16-bit TIFF beside the original. The new file starts with this photo&apos;s
-            settings.
+            settings. Photos are enhanced one at a time; you can keep editing meanwhile.
           </p>
           {avail && !avail.available && <p className="error">{avail.reason}</p>}
           <label className="check">
@@ -930,7 +936,7 @@ export function EnhanceDialog(): React.JSX.Element {
         <div className="enhance-stage">
           <div className="sphere-wrap">
             <Sphere active={running} />
-            <ProgressRing progress={running ? null : 1} />
+            <ProgressRing progress={running ? (current?.progress ?? null) : 1} />
           </div>
           <div className="enhance-log" role="status" aria-live="polite">
             <span className="micro">
@@ -940,13 +946,17 @@ export function EnhanceDialog(): React.JSX.Element {
               {done}/{started.length} done
               {failed.length > 0 ? ` · ${failed.length} failed` : ''}
             </span>
-            {latest && latest.phase !== 'error' && <span className="msg">{latest.message}</span>}
+            {current && (
+              <span className="msg">
+                {current.name} · {current.message}
+              </span>
+            )}
             {failed.map((p) => (
-              <span key={p.key} className="msg error">
-                {p.message}
+              <span key={p.jobId} className="msg error">
+                {p.name}: {p.message}
               </span>
             ))}
-            {!latest && <span className="msg">Starting the upscaler…</span>}
+            {!current && running && <span className="msg">Waiting for the upscaler…</span>}
           </div>
         </div>
       )}

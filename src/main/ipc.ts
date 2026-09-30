@@ -28,7 +28,10 @@ import type { PlaneStore } from './planestore'
 import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
 import { autoWbBatch, setWbBatch } from './autowb'
-import { enhanceAvailability, type Enhancer } from './enhance'
+import type { AiCapabilities, AiStartRequest } from '../shared/ai'
+import { enhanceAvailability } from './enhance'
+import type { AiJobs } from './ai/jobs'
+import { fakeAi } from './ai/segment'
 import type { Exporter } from './exporter'
 import { parseKey } from './keys'
 import type { Library } from './library'
@@ -66,7 +69,7 @@ export interface Services {
   library: Library
   sessions: DevelopSessions
   exporter: Exporter
-  enhancer: Enhancer
+  ai: AiJobs
   engine: EngineClient
   bgEngine: EngineClient
 }
@@ -227,8 +230,10 @@ export function registerIpc(s: Services): void {
     }
   })
   handle(IPC.develop.close, (key: string) => s.sessions.close(key))
-  handle(IPC.develop.update, async (key: string, recipe: Recipe, interactive: boolean) =>
-    s.sessions.update(key, await s.planes.hydrate(recipe), interactive)
+  handle(
+    IPC.develop.update,
+    async (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
+      s.sessions.update(key, await s.planes.hydrate(recipe), interactive, rev)
   )
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))
@@ -337,7 +342,23 @@ export function registerIpc(s: Services): void {
 
   // ── enhance ──
   handle(IPC.enhance.available, () => enhanceAvailability(s.bgEngine.getStatus().enhance === true))
-  handle(IPC.enhance.run, (key: string, choice: 'auto' | 'cpu') => {
-    void s.enhancer.run(key, choice)
+
+  // ── AI jobs ──
+  handle(IPC.ai.start, (req: AiStartRequest) => s.ai.start(req))
+  handle(IPC.ai.cancel, (jobId: string) => s.ai.cancel(jobId))
+  handle(IPC.ai.list, () => s.ai.list())
+  handle(IPC.ai.capabilities, async (): Promise<AiCapabilities> => {
+    const enhance = await enhanceAvailability(s.bgEngine.getStatus().enhance === true)
+    const segment = fakeAi()
+    return {
+      enhance: enhance.available,
+      segment,
+      denoise: false,
+      why: {
+        ...(enhance.available ? {} : { enhance: enhance.reason }),
+        ...(segment ? {} : { segment: 'needs a segmentation model' }),
+        denoise: 'needs a denoising model'
+      }
+    }
   })
 }

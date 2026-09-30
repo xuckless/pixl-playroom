@@ -102,10 +102,15 @@ export const IPC = {
     progress: 'export:progress'
   },
   enhance: {
-    available: 'enhance:available',
-    run: 'enhance:run',
-    /** main → renderer */
-    progress: 'enhance:progress'
+    available: 'enhance:available'
+  },
+  ai: {
+    start: 'ai:start',
+    cancel: 'ai:cancel',
+    list: 'ai:list',
+    capabilities: 'ai:capabilities',
+    /** main → renderer: a job's progress, its end and its result */
+    event: 'ai:event'
   }
 } as const
 
@@ -341,6 +346,11 @@ export interface ViewState {
   maskLayer: string | null
   /** Also render every mask small (the masks panel's thumbnails, "show all"). */
   maskThumbs?: boolean
+  /**
+   * Render the chosen layer's mask with every draft too (a range slider
+   * moving: only the engine knows exactly what the key selects).
+   */
+  maskLive?: boolean
   /** Longest edge wanted from the renderer, in device pixels. */
   targetEdge: number
 }
@@ -355,14 +365,18 @@ export interface RenderReport {
   loss: LossReport
   notes: string[]
   colorSpace: string
+  /** Per local layer id: whether it applied, and how much of the frame its mask covers (0…1). */
+  layers?: Record<string, { applied: boolean; coverage: number | null; ms: number }>
 }
 
 export interface RenderEvent {
   key: string
   seq: number
+  /** The renderer's number for the recipe this was rendered from (see `develop.update`). */
+  rev?: number
   kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb'
   url: string
-  /** A mask thumbnail's layer. */
+  /** A mask's (or mask thumbnail's) layer. */
   layerId?: string
   /** The view the render was made for: the crop tool's whole frame, or the framed picture. */
   cropMode?: boolean
@@ -449,13 +463,6 @@ export interface ExportProgress {
   errors: { name: string; message: string; warning?: boolean }[]
   finished: boolean
   outputs: string[]
-}
-
-export interface EnhanceProgress {
-  key: string
-  phase: 'running' | 'done' | 'error'
-  message: string
-  output?: string
 }
 
 export type { BasicSetting, ConvertReport }

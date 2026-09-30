@@ -18,13 +18,15 @@ export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
 export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
 
 /** How a mask is shown over the photo (Lightroom's overlay modes). */
-export type OverlayMode = 'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black'
+export type OverlayMode =
+  'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
 export const OVERLAY_MODES: { value: OverlayMode; label: string }[] = [
   { value: 'color', label: 'Colour overlay' },
   { value: 'color-bw', label: 'Colour overlay on B&W' },
   { value: 'image-black', label: 'Image on black' },
   { value: 'image-white', label: 'Image on white' },
-  { value: 'white-black', label: 'White on black' }
+  { value: 'white-black', label: 'White on black' },
+  { value: 'outline', label: 'Outline' }
 ]
 export type PinsMode = 'auto' | 'always' | 'never'
 

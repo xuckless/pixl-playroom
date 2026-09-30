@@ -88,15 +88,46 @@ export function radialAt(c: RadialComponent, p: Pt): number {
   return 1 - smooth(inner, 1, d)
 }
 
+/**
+ * The component's coverage at a plane pixel, with everything that does not
+ * change across the plane worked out once: the same arithmetic, in the same
+ * order, as `linearAt` / `radialAt` (so the same bytes), without their
+ * per-pixel trigonometry and objects.
+ */
+export function gradientCoverage(
+  c: LinearComponent | RadialComponent
+): (px: number, py: number) => number {
+  if (c.kind === 'linear') {
+    const sx = c.start.x * c.width
+    const sy = c.start.y * c.height
+    const dx = c.end.x * c.width - sx
+    const dy = c.end.y * c.height - sy
+    const len2 = dx * dx + dy * dy
+    if (len2 < 1e-9) return (px, py) => ((px - sx) * dx + (py - sy) * dy <= 0 ? 1 : 0)
+    return (px, py) => 1 - smooth(0, 1, ((px - sx) * dx + (py - sy) * dy) / len2)
+  }
+  const g = radialGeometry(c)
+  const cos = Math.cos(-g.angle)
+  const sin = Math.sin(-g.angle)
+  const inner = 1 - Math.min(100, Math.max(0, c.softness)) / 100
+  return (px, py) => {
+    const x = px - g.cx
+    const y = py - g.cy
+    const u = (x * cos - y * sin) / g.rx
+    const v = (x * sin + y * cos) / g.ry
+    return 1 - smooth(inner, 1, Math.sqrt(u * u + v * v))
+  }
+}
+
 /** The component's plane: one byte per pixel, row by row. */
 export function rasteriseGradient(c: LinearComponent | RadialComponent): Uint8Array {
   const w = Math.max(1, Math.round(c.width))
   const h = Math.max(1, Math.round(c.height))
   const out = new Uint8Array(w * h)
-  const at = c.kind === 'linear' ? linearAt : radialAt
+  const at = gradientCoverage(c)
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const v = at(c as never, { x: x + 0.5, y: y + 0.5 })
+      const v = at(x + 0.5, y + 0.5)
       out[y * w + x] = Math.max(0, Math.min(255, Math.round(v * 255 + dither(x, y))))
     }
   }

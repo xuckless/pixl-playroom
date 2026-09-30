@@ -1,6 +1,7 @@
 import { Icon } from '../../components/icons'
 import { useDevelop } from '../../state/develop'
-import { MASK_TOOL_GROUPS, startMaskTool, type MaskToolKind } from './model'
+import { useAiJobs } from '../../state/jobs'
+import { MASK_TOOL_GROUPS, startMaskTool, type MaskToolInfo, type MaskToolKind } from './model'
 
 /**
  * Lightroom's "Create new mask" menu: every tool a mask can be made with.
@@ -15,6 +16,10 @@ export function ToolPicker({
   inline?: boolean
 }): React.JSX.Element {
   const addMode = useDevelop((s) => s.addMode)
+  const caps = useAiJobs((s) => s.capabilities)
+  // A model's tool is there when the build has the model.
+  const needs = (t: MaskToolInfo): string | undefined =>
+    t.ai && caps?.[t.ai] ? undefined : t.needs
   const pick = (kind: MaskToolKind): void => {
     startMaskTool(kind)
     onDone?.()
@@ -39,16 +44,19 @@ export function ToolPicker({
               <button
                 key={t.kind}
                 className="tp-tool"
-                disabled={Boolean(t.needs)}
+                disabled={Boolean(needs(t))}
                 title={
-                  t.needs ? `${t.label} — ${t.needs}` : `${t.label}${t.key ? ` (${t.key})` : ''}`
+                  needs(t)
+                    ? `${t.label} — ${needs(t)}`
+                    : `${t.label}${t.ai ? ' (found by a model)' : ''}${t.key ? ` (${t.key})` : ''}`
                 }
                 onClick={() => pick(t.kind)}
               >
                 <Icon name={t.icon} />
                 <span className="tp-label">{t.label}</span>
                 {t.key && <span className="kbd">{t.key}</span>}
-                {t.needs && <span className="tp-needs">soon</span>}
+                {needs(t) && <span className="tp-needs">soon</span>}
+                {t.ai && !needs(t) && <span className="tp-needs ai">AI</span>}
               </button>
             ))}
           </div>

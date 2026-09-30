@@ -4,14 +4,14 @@
  * One message in, one reply out, by id. (Exif is read by the index host.)
  */
 import { parentPort } from 'worker_threads'
-import { pruneGradients, writeBrushPlane, writeGradientPlane } from '../planes'
+import { pruneGradientsSometimes, writeBrushPlane, writeGradientPlane } from '../planes'
 import type { PixelsJob } from './pool'
 
 parentPort?.on('message', (job: PixelsJob & { id: number }) => {
   try {
     if (job.op === 'gradient') {
       writeGradientPlane(job.file, job.c, job.user)
-      pruneGradients(job.dir)
+      pruneGradientsSometimes(job.dir)
     } else writeBrushPlane(job.file, job.png, job.user)
     parentPort?.postMessage({ id: job.id, value: null })
   } catch (err) {

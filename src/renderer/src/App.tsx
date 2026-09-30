@@ -1,17 +1,28 @@
 import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect } from 'react'
+import type { AiJobEvent } from '../../shared/ai'
 import type { LibrarySource, RenderScale } from '../../shared/ipc'
+import { nextOf } from '../../shared/masks'
 import { RECIPE_GROUPS } from '../../shared/recipe'
 import { api, errorText } from './lib/api'
 import { autoWbBatch } from './lib/autowb'
-import { runJob, useBusy } from './state/busy'
+import { runJob } from './state/busy'
+import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
 import { Scopes } from './develop/Scopes'
 import { ToolDial } from './develop/ToolDial'
 import { ToolPanelHost } from './develop/ToolPanelHost'
 import { selectPanel, stepPanel, TOOLS } from './develop/tools'
 import { startWheelMemory } from './develop/wheelMemory'
-import { startMaskTool } from './panels/masks/model'
+import {
+  componentLabel,
+  deleteComponent,
+  deleteMask,
+  duplicateComponent,
+  duplicateMask,
+  patchMask,
+  startMaskTool
+} from './panels/masks/model'
 import { DevelopToolbar } from './shell/DevelopToolbar'
 import { DevelopIdentity } from './shell/IdentityBar'
 import { LeftRail } from './shell/LeftRail'
@@ -19,7 +30,7 @@ import { Splash } from './shell/Splash'
 import { useDevelop } from './state/develop'
 import { useBoot } from './state/boot'
 import { useLibrary } from './state/library'
-import { useUi } from './state/ui'
+import { OVERLAY_MODES, useUi } from './state/ui'
 import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
@@ -27,6 +38,7 @@ import { CollectionDialog } from './views/library/CollectionDialog'
 import { InfoDrawer } from './views/library/InfoDrawer'
 import { Sidebar } from './views/library/Sidebar'
 import { FloatingToolbar } from './views/loupe/FloatingToolbar'
+import { flashHud } from './views/loupe/hudNote'
 import { MasksFloat } from './panels/masks/MasksFloat'
 import { Loupe } from './views/loupe/Loupe'
 import { loupeZoom, setSpace } from './views/loupe/zoom'
@@ -227,6 +239,43 @@ async function openLastSource(): Promise<void> {
   if (folder && !(src?.kind === 'folder' && src.path === folder)) await lib.openFolder(folder)
 }
 
+/**
+ * An AI job's end: say how it went, and when it made a mask for the photo in
+ * view, show it (the recipe it was added to, a history step, the new mask
+ * selected and revealed with a wipe). The mask is already on its photo
+ * either way: main put it there.
+ */
+async function aiJobEnded(e: AiJobEvent): Promise<void> {
+  const lib = useLibrary.getState()
+  if (e.phase === 'error') return lib.say(`${e.title}: ${e.message ?? 'failed'}`, 'error')
+  if (e.phase !== 'done') return
+  const r = e.result
+  if (r?.kind === 'file') {
+    lib.say(`${e.title}: wrote ${r.path.split(/[\\/]/).pop()}`)
+    return void lib.refresh()
+  }
+  if (r?.kind !== 'mask') return
+  const dev = useDevelop.getState()
+  if (dev.session?.key !== e.key) {
+    return lib.say(`${r.label} mask added to ${e.name}`, 'info', {
+      label: 'Show',
+      run: () => {
+        lib.setFocus(e.key)
+        void useDevelop.getState().open(e.key)
+      }
+    })
+  }
+  const s = await api.develop.open(e.key)
+  if (useDevelop.getState().session?.key !== e.key) return
+  useDevelop.getState().replace(s.recipe, `AI: ${r.label}`)
+  if (r.into) {
+    useDevelop.getState().setLayer(r.into.layerId)
+    // Shown: what the model found is the point.
+    useDevelop.getState().setOverlay(true)
+    useAiJobs.getState().setReveal(r.into.layerId)
+  }
+}
+
 function useShortcuts(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -368,7 +417,23 @@ function useShortcuts(): void {
         if (dev.session) void api.library.createCopy(dev.session.key).then(() => lib.refresh())
         return
       }
+      const masksOpen = useUi.getState().panel === 'masks'
+      // ⌘D duplicates the selected mask component, or else the selected mask.
+      if (mod && !e.shiftKey && (k === 'd' || k === 'D') && masksOpen && dev.layerId) {
+        e.preventDefault()
+        return dev.compId ? duplicateComponent(dev.compId) : duplicateMask(dev.layerId)
+      }
       if (mod) return
+      // Delete / Backspace: the selected mask component, or else the selected mask.
+      if ((k === 'Delete' || k === 'Backspace') && masksOpen && t.tagName !== 'INPUT') {
+        const layer = dev.recipe?.layers.find((l) => l.id === dev.layerId)
+        if (!layer) return
+        e.preventDefault()
+        const comp = layer.components.find((c) => c.id === dev.compId)
+        if (comp) deleteComponent(comp.id)
+        else deleteMask(layer.id)
+        return lib.say(`Deleted ${comp ? componentLabel(comp) : layer.name} — Ctrl+Z to undo`)
+      }
       if (k === '\\') return dev.setCompare(dev.compare === 'before' ? 'off' : 'before')
       if (k === 'y' || k === 'Y') return dev.setCompare(dev.compare === 'split' ? 'off' : 'split')
       if (k === 'j' || k === 'J') return dev.setClipping(!dev.clipping)
@@ -408,8 +473,15 @@ function useShortcuts(): void {
         }
         return selectPanel('masks', { tool: t })
       }
-      // H: the pins cycle Auto → Always → Never.
-      if (k === 'h' || k === 'H') {
+      // H hides or shows the selected mask; Shift+H cycles the pins Auto → Always → Never.
+      if (k === 'h' && masksOpen && dev.layerId) {
+        const layer = dev.recipe?.layers.find((l) => l.id === dev.layerId)
+        if (!layer) return
+        return patchMask(layer.id, layer.enabled ? 'Hide mask' : 'Show mask', (l) => {
+          l.enabled = !l.enabled
+        })
+      }
+      if (k === 'H' || k === 'h') {
         const order = ['auto', 'always', 'never'] as const
         const cur = order.indexOf(ui.maskOverlay.pins)
         return ui.setMaskOverlay({ pins: order[(cur + 1) % order.length] })
@@ -421,6 +493,16 @@ function useShortcuts(): void {
         if (dev.tool === 'tat') return dev.setTool('none')
         dev.setTatTarget(ui.panel)
         return dev.setTool('tat')
+      }
+      // Shift+O cycles how the overlay shows a mask (and shows it).
+      if (k === 'O' && e.shiftKey && dev.tool !== 'crop') {
+        const mode = nextOf(
+          OVERLAY_MODES.map((m) => m.value),
+          ui.maskOverlay.mode
+        )
+        ui.setMaskOverlay({ mode })
+        dev.setOverlay(true)
+        return flashHud(OVERLAY_MODES.find((m) => m.value === mode)?.label ?? mode)
       }
       if (k === 'o' || k === 'O') {
         // In the crop tool O cycles the composition guides, as in Lightroom.
@@ -484,17 +566,15 @@ export default function App(): React.JSX.Element {
       api.develop.onRenderError((e) =>
         useDevelop.getState().onError(e.field ? `${e.message} (${e.field})` : e.message)
       ),
-      api.enhance.onProgress((p) => {
-        // A run in the background shows in the identity bar until it ends.
-        const id = `enhance:${p.key}`
-        if (p.phase === 'running')
-          useBusy.getState().begin({ id, title: 'Enhancing', detail: p.message, scope: 'global' })
-        else useBusy.getState().end(id)
-        if (p.phase !== 'running' || useLibrary.getState().dialog !== 'enhance')
-          useLibrary.getState().say(p.message, p.phase === 'error' ? 'error' : 'info')
-        if (p.phase === 'done') void useLibrary.getState().refresh()
+      api.ai.onEvent((e) => {
+        useAiJobs.getState().onEvent(e)
+        void aiJobEnded(e)
       })
     ]
+    void useAiJobs
+      .getState()
+      .load()
+      .catch(() => undefined)
     // The launch, side by side: the engine coming up, and the index then the
     // last folder. The splash follows both and leaves when they are done.
     const boot = useBoot.getState()

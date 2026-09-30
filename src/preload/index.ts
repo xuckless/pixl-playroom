@@ -9,7 +9,6 @@ import {
   type Collection,
   type DevelopSession,
   type EngineStatus,
-  type EnhanceProgress,
   type ExportPreset,
   type ExportProgress,
   type FolderListing,
@@ -31,6 +30,7 @@ import {
   type ViewState
 } from '../shared/ipc'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
+import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
 
 async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
   const r = (await ipcRenderer.invoke(channel, ...args)) as
@@ -111,8 +111,8 @@ const api = {
   develop: {
     open: (key: string) => call<DevelopSession>(IPC.develop.open, key),
     close: (key: string) => call<void>(IPC.develop.close, key),
-    update: (key: string, recipe: Recipe, interactive: boolean) =>
-      call<void>(IPC.develop.update, key, recipe, interactive),
+    update: (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
+      call<void>(IPC.develop.update, key, recipe, interactive, rev),
     view: (key: string, view: ViewState) => call<void>(IPC.develop.view, key, view),
     region: (req: RegionRequest) => call<RegionResult>(IPC.develop.region, req),
     sample: (key: string, x: number, y: number) =>
@@ -156,9 +156,14 @@ const api = {
     onProgress: (cb: (p: ExportProgress) => void) => on(IPC.export.progress, cb)
   },
   enhance: {
-    available: () => call<{ available: boolean; reason?: string }>(IPC.enhance.available),
-    run: (key: string, choice: 'auto' | 'cpu') => call<void>(IPC.enhance.run, key, choice),
-    onProgress: (cb: (p: EnhanceProgress) => void) => on(IPC.enhance.progress, cb)
+    available: () => call<{ available: boolean; reason?: string }>(IPC.enhance.available)
+  },
+  ai: {
+    start: (req: AiStartRequest) => call<string>(IPC.ai.start, req),
+    cancel: (jobId: string) => call<void>(IPC.ai.cancel, jobId),
+    list: () => call<AiJobEvent[]>(IPC.ai.list),
+    capabilities: () => call<AiCapabilities>(IPC.ai.capabilities),
+    onEvent: (cb: (e: AiJobEvent) => void) => on(IPC.ai.event, cb)
   }
 }
 

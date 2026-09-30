@@ -25,6 +25,8 @@ export const PolygonLayer = memo(function PolygonLayer({
   const recipe = useDevelop((s) => s.recipe)
   const edit = useDevelop((s) => s.edit)
   const commit = useDevelop((s) => s.commit)
+  const addMode = useDevelop((s) => s.addMode)
+  const overlayHue = useUi((s) => s.maskOverlay.hue)
   const [pts, setPts] = useState<P[]>([])
   const [hover, setHover] = useState<P | null>(null)
   const toDisplay = (e: React.MouseEvent): P =>
@@ -63,6 +65,7 @@ export const PolygonLayer = memo(function PolygonLayer({
   })
   // Existing polygons of the selected layer, drawn in display coordinates.
   const layer = recipe?.layers.find((l) => l.id === layerId)
+  const hue = layer?.overlayHue ?? overlayHue
   const existing = (layer?.components ?? []).filter((c) => c.kind === 'polygon')
   const path = (list: P[]): string => list.map((p) => `${p.x * rect.w},${p.y * rect.h}`).join(' ')
   return (
@@ -95,6 +98,15 @@ export const PolygonLayer = memo(function PolygonLayer({
               className={c.mode === 'Subtract' ? 'poly subtract' : 'poly'}
             />
           ) : null
+        )}
+        {pts.length >= 2 && (
+          // What the lasso will select, filled as it is drawn, in the mask's colour
+          // (a shadow when it will be taken away).
+          <polygon
+            points={path(hover ? [...pts, hover] : pts)}
+            className={`poly live${addMode === 'Subtract' ? ' subtract' : ''}`}
+            style={addMode === 'Subtract' ? undefined : { fill: `hsl(${hue} 90% 55% / 0.3)` }}
+          />
         )}
         {pts.length > 0 && (
           <polyline points={path(hover ? [...pts, hover] : pts)} className="poly drawing" />

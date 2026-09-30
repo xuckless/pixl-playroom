@@ -3,7 +3,9 @@ import { useShallow } from 'zustand/react/shallow'
 import { Icon } from '../components/icons'
 import { Mark } from '../components/Mark'
 import { Spinner } from '../fx'
+import { api } from '../lib/api'
 import { useBusy } from '../state/busy'
+import { liveJobs, useAiJobs } from '../state/jobs'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 
@@ -23,10 +25,43 @@ export function EngineStatus(): React.JSX.Element {
   )
 }
 
-/** Work running in the background (an enhance), as the inline loader and its latest word. */
+/**
+ * Work running in the background, as the inline loader and its latest word:
+ * the busy jobs, and AI jobs on any photo (click one to go to its photo;
+ * each can be stopped).
+ */
 export function BackgroundJobs(): React.JSX.Element | null {
   const jobs = useBusy(useShallow((s) => s.jobs.filter((j) => j.scope === 'global')))
-  if (jobs.length === 0) return null
+  const ai = useAiJobs(useShallow((s) => liveJobs(s.jobs)))
+  const shownKey = useDevelop((s) => s.session?.key ?? null)
+  if (jobs.length === 0 && ai.length === 0) return null
+  if (ai.length > 0) {
+    const first = ai[0]
+    const pct = first.progress === null ? null : Math.round(first.progress * 100)
+    return (
+      <span className="bg-jobs micro" title={first.message ?? first.title}>
+        <Spinner size={14} />
+        <button
+          className="bg-job-link"
+          title={first.key === shownKey ? first.name : `Go to ${first.name}`}
+          onClick={() => {
+            const lib = useLibrary.getState()
+            lib.setFocus(first.key)
+            lib.setView('develop')
+            void useDevelop.getState().open(first.key)
+          }}
+        >
+          {first.title}
+          {first.subject ? ` ${first.subject}` : ''} · {first.name}
+        </button>
+        {pct !== null && <span className="t-num"> {pct}%</span>}
+        {ai.length > 1 ? ` +${ai.length - 1} queued` : ''}
+        <button className="icon sm" title="Stop" onClick={() => void api.ai.cancel(first.jobId)}>
+          <Icon name="close" />
+        </button>
+      </span>
+    )
+  }
   const last = jobs[jobs.length - 1]
   return (
     <span className="bg-jobs micro" title={last.detail ?? last.title}>

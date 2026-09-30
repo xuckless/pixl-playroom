@@ -259,7 +259,17 @@ const PATHS = {
       <path d="M9 4v16" />
     </>
   ),
-  filter: <path d="M3 5h18l-7 8v6l-4 2v-8z" />
+  filter: <path d="M3 5h18l-7 8v6l-4 2v-8z" />,
+  grip: (
+    <>
+      <circle cx="9" cy="6" r="1.2" className="fill-cur" />
+      <circle cx="15" cy="6" r="1.2" className="fill-cur" />
+      <circle cx="9" cy="12" r="1.2" className="fill-cur" />
+      <circle cx="15" cy="12" r="1.2" className="fill-cur" />
+      <circle cx="9" cy="18" r="1.2" className="fill-cur" />
+      <circle cx="15" cy="18" r="1.2" className="fill-cur" />
+    </>
+  )
 } as const
 
 export type IconName = keyof typeof PATHS

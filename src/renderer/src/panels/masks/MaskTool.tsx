@@ -243,7 +243,7 @@ function ComponentCard({
         <span className="spacer" />
         <button
           className="icon sm"
-          title="Remove this component"
+          title="Delete component (⌫)"
           onClick={() => deleteComponent(c.id)}
         >
           <Icon name="trash" />
@@ -372,7 +372,14 @@ export function MasksPanel(): React.JSX.Element | null {
     )
   const index = layer.components.findIndex((c) => c.id === compId)
   const comp = index >= 0 ? layer.components[index] : undefined
-  const coverage = report?.gradeLines.find((line) => line.includes(`▸ ${layer.name} `))
+  const measured = report?.layers?.[layer.id]
+  const coverage = !measured
+    ? null
+    : !measured.applied
+      ? 'Not applied'
+      : measured.coverage === null
+        ? null
+        : `Covers ${(measured.coverage * 100).toFixed(1)}% of the photo`
   return (
     <ToolPanel
       actions={
@@ -434,7 +441,7 @@ export function MasksPanel(): React.JSX.Element | null {
             Invert the whole mask
           </label>
         </div>
-        {coverage && <p className="muted small">{coverage.replace(/^▸\s*/, '')}</p>}
+        {coverage && <p className="muted small">{coverage}</p>}
       </Section>
     </ToolPanel>
   )

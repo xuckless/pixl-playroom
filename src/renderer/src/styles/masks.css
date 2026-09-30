@@ -55,7 +55,25 @@
   transition:
     border-color 0.25s,
     background 0.3s;
-  animation: rowIn 0.45s var(--spring) both;
+  animation: rowIn 0.45s var(--spring) backwards;
+}
+/* While a row is dragged, the others step aside smoothly; the dragged one
+   follows the pointer exactly, lifted over them. */
+.mf-list.sorting .mf-mask,
+.mf-comps.sorting .mf-comp {
+  transition: transform 0.22s var(--spring);
+}
+.mf-mask.dragging,
+.mf-comp.dragging {
+  position: relative;
+  z-index: 2;
+  transition: none !important;
+  background: rgba(14, 14, 20, 0.96);
+  border-color: var(--acc);
+  box-shadow:
+    0 10px 28px -8px rgba(0, 0, 0, 0.8),
+    0 0 18px -6px var(--glow);
+  cursor: grabbing;
 }
 .mf-mask.on {
   border-color: var(--acc-a55);
@@ -68,14 +86,85 @@
 .mf-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   height: 46px;
-  padding: 0 4px 0 6px;
-  cursor: pointer;
-  outline: none;
+  padding: 0 4px 0 2px;
 }
-.mf-row:focus-visible {
+/* The row's body: one button that selects (Enter, Space, a click) and
+   renames on a double-click; the actions beside it are its siblings. */
+button.mf-select {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 4px;
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: normal;
+}
+button.mf-select:hover:not(:disabled) {
+  transform: none;
+  border-color: transparent;
+  background: transparent;
+}
+button.mf-select:focus-visible {
   box-shadow: inset 0 0 0 1px var(--acc);
+}
+.mf-grip {
+  width: 12px;
+  height: 24px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  opacity: 0;
+  cursor: grab;
+  touch-action: none;
+  transition: opacity 0.2s var(--ease);
+}
+.mf-grip .icon-svg {
+  width: 12px;
+  height: 12px;
+}
+.mf-row:hover .mf-grip,
+.mf-comp:hover .mf-grip,
+.dragging .mf-grip {
+  opacity: 1;
+}
+.mf-grip:hover {
+  color: var(--text);
+}
+/* Actions show under the pointer, with keyboard focus, or on the selected
+   mask; a hidden mask keeps its eye showing, and every mask its swatch. */
+.mf-acts {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+.mf-act,
+.mf-comp .mf-acts > * {
+  opacity: 0;
+  transition: opacity 0.2s var(--ease);
+}
+.mf-row:hover .mf-act,
+.mf-row:focus-within .mf-act,
+.mf-mask.on > .mf-row .mf-act,
+.mf-mask.off .mf-eye,
+.mf-act.on,
+.mf-comp:hover .mf-acts > *,
+.mf-comp:focus-within .mf-acts > *,
+.mf-comp.on .mf-acts > *,
+.mf-acts .mf-menu-anchor:has(button[aria-expanded='true']) {
+  opacity: 1;
+}
+.mf-acts button.icon.on {
+  color: var(--acc);
+  background: none;
+  box-shadow: none;
+  border-color: transparent;
 }
 .mf-thumb {
   position: relative;
@@ -149,34 +238,37 @@ input.mf-rename {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  animation: bodyIn 0.4s var(--spring) both;
+  animation: bodyIn 0.4s var(--spring) backwards;
 }
 .mf-comp {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   height: 32px;
-  padding: 0 2px 0 6px;
+  padding: 0 2px 0 0;
   border: 1px solid transparent;
   border-radius: var(--r);
   color: var(--text2);
-  cursor: pointer;
   font-size: 12px;
   font-family: var(--font-body);
   transition:
     background 0.2s,
-    border-color 0.2s,
-    padding-left var(--dur-toggle) var(--spring);
-  outline: none;
+    border-color 0.2s;
 }
-.mf-comp:hover,
-.mf-comp:focus-visible {
+.mf-comp:hover {
   background: rgba(255, 255, 255, 0.04);
-  padding-left: 9px;
 }
-.mf-comp:focus-visible {
-  border-color: rgba(157, 139, 234, 0.55);
-  box-shadow: 0 0 12px -4px var(--glow);
+.mf-comp button.mf-select {
+  height: 28px;
+  gap: 7px;
+  font-size: 12px;
+}
+.mf-comp button.mf-select .icon-svg {
+  width: 14px;
+  height: 14px;
+}
+.mf-comp:focus-within:not(.on) {
+  border-color: rgba(157, 139, 234, 0.35);
 }
 .mf-comp.on {
   border-color: rgba(157, 139, 234, 0.4);
@@ -201,6 +293,18 @@ input.mf-rename {
   border: 1px solid var(--hair2);
   border-radius: var(--r);
 }
+button.mode-badge {
+  padding: 0;
+  margin-left: 4px;
+  background: transparent;
+}
+button.mode-badge:hover:not(:disabled) {
+  transform: scale(1.15);
+  border-color: currentColor;
+}
+button.mode-badge:disabled {
+  opacity: 1;
+}
 .mode-badge.m-add {
   color: var(--ok);
 }
@@ -218,15 +322,49 @@ input.mf-rename {
 }
 .mf-add {
   display: flex;
+  flex-direction: column;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hair);
 }
-.mf-add button:not(.icon) {
+.mf-add .seg {
+  width: 100%;
+  height: 26px;
+}
+.mf-add .seg button {
   flex: 1;
+  gap: 5px;
+  padding: 0 6px;
+  font-size: 11.5px;
 }
-.mf-add .icon-svg {
-  width: 12px;
-  height: 12px;
+.mf-join {
+  font-weight: 700;
+}
+.mf-join.m-add {
+  color: var(--ok);
+}
+.mf-join.m-subtract {
+  color: var(--danger);
+}
+.mf-join.m-intersect {
+  color: var(--acc);
+}
+.mf-add .seg button.on .mf-join {
+  color: inherit;
+}
+.mf-add-tools {
+  display: flex;
+  justify-content: space-between;
+}
+.mf-add-tools button.icon {
+  width: 28px;
+  height: 26px;
+  color: var(--text2);
+}
+.mf-add-tools .icon-svg {
+  width: 15px;
+  height: 15px;
 }
 .mf-foot {
   display: flex;
@@ -264,25 +402,32 @@ input.mf-rename {
 }
 
 /* ── popovers and menus ────────────────────────────────────────── */
+/* Portalled to the end of the document and fixed to the viewport (see
+   Popover.tsx): over dialogs, under toasts. Popover places it. */
 .popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  z-index: 30;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 55;
   min-width: 200px;
   padding: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   animation: popIn 0.4s var(--spring) both;
 }
-.popover.align-right {
-  right: 0;
-}
-.popover.align-left {
-  left: 0;
+.popover[data-side='top'] {
+  animation-name: popUp;
 }
 .popover.liquid,
 .popover.liquid.refracting {
   background:
     linear-gradient(155deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.01) 50%),
     rgba(10, 10, 14, 0.82);
+}
+/* Over surfaces the glass cannot bend (the library sidebar), a solid face. */
+.popover.solid.liquid,
+.popover.solid.liquid.refracting {
+  background: rgba(12, 12, 16, 0.97);
 }
 .popover::after {
   display: none;
@@ -336,8 +481,6 @@ input.mf-rename {
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  bottom: calc(100% + 6px);
-  top: auto;
 }
 .overlay-pop select {
   width: 100%;
@@ -682,4 +825,7 @@ input.mf-rename {
 .stage:has(.masks-float) .floating-toolbar {
   left: calc((100% - 296px) / 2);
   max-width: calc(100% - 324px);
+}
+.tp-needs.ai {
+  color: var(--acc);
 }
