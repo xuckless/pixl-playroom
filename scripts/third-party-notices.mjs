@@ -9,7 +9,8 @@
 //   - the production npm packages (pnpm licenses), which ship in node_modules;
 //   - the packages bundled into the app's JavaScript (out/*/bundled-packages.json,
 //     written by electron.vite.config.ts), so run `electron-vite build` first.
-// --web also copies the file into pixl-web for pixlfoundation.com/legal/third-party/.
+// --web also copies the file into pixl-web, for the /legal/third-party/ pages
+// on pixlfoundation.com and playroom.pixlfoundation.com.
 import { execFileSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -192,7 +193,8 @@ console.log(
   `third-party-notices: ${path.relative(ROOT, OUT)}: ${components.length} native components, ${npm.size} npm packages (${bundled} bundled), ${ids.size} licence texts`
 )
 if (web) {
-  const dest = path.join(web, 'public', 'home', 'legal', 'playroom-third-party-notices.txt')
+  // /shared/ is served on every host: playroom.… and pixlfoundation.com both link to it.
+  const dest = path.join(web, 'public', 'shared', 'legal', 'playroom-third-party-notices.txt')
   fs.mkdirSync(path.dirname(dest), { recursive: true })
   fs.copyFileSync(OUT, dest)
   console.log(`third-party-notices: copied to ${dest}`)

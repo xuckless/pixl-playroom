@@ -9,7 +9,7 @@ import { Modal, Select } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
 
-const LEGAL = 'https://pixlfoundation.com/legal'
+const LEGAL = 'https://playroom.pixlfoundation.com/legal'
 
 function updateLine(s: UpdateState): string {
   switch (s.phase) {

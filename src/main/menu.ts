@@ -9,7 +9,7 @@ import { PERFORMANCE_SCALE, renderScale, setRenderMode, ULTRA_SCALE } from './di
 import { paths } from './paths'
 
 const SITE = 'https://playroom.pixlfoundation.com'
-const LEGAL = 'https://pixlfoundation.com/legal'
+const LEGAL = 'https://playroom.pixlfoundation.com/legal'
 
 const settings: MenuItemConstructorOptions = {
   label: 'Settings…',
