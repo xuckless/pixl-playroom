@@ -159,6 +159,7 @@ win:
   target:
     - target: nsis
       arch: [x64]
+  extraResources:
     # The document icons build/installer.nsh points the file types at.
     - from: build/doc-icons
       to: doc-icons

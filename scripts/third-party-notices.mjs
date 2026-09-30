@@ -62,8 +62,14 @@ function addPackage(dir, fallbackLicense) {
   npm.set(key, { name: pkg.name, version: pkg.version, license, text: licenseText(dir) })
 }
 
+// pnpm is a .cmd shim on Windows, which only a shell can start.
 const listed = JSON.parse(
-  execFileSync('pnpm', ['licenses', 'list', '--prod', '--json'], { cwd: ROOT, encoding: 'utf8' })
+  execFileSync('pnpm', ['licenses', 'list', '--prod', '--json'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    shell: process.platform === 'win32'
+  })
 )
 for (const [license, pkgs] of Object.entries(listed))
   for (const p of pkgs) for (const dir of p.paths ?? []) addPackage(dir, license)
