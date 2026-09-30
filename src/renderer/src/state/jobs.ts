@@ -20,7 +20,7 @@ export interface Reveal {
 
 interface JobsState {
   jobs: Record<string, AiJobEvent>
-  /** How the last jobs ended, by id, after they leave `jobs` (for the Enhance dialog's tally). */
+  /** How the last jobs ended, by id, after they leave `jobs` (for the Enhance panel's list). */
   ended: Record<string, AiJobEvent>
   capabilities: AiCapabilities | null
   reveal: Reveal | null

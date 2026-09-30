@@ -373,6 +373,44 @@ export class ModelStore {
     >
   }
 
+  /** Models the accelerator would not load this session: they run on the CPU. */
+  private readonly cpuOnly = new Set<string>()
+
+  /**
+   * Run `make` with each of `ids` on the chosen provider, moving a model to
+   * the CPU when the accelerator cannot load it (SCUNet and FBCNN under
+   * CoreML: ONNX Runtime refuses them) — the one the error names, or all of
+   * them when it names none (a provider that cannot be registered). Never
+   * silently: each move is logged, and the model stays on the CPU for the
+   * session. `make` is told which models to put on the CPU.
+   */
+  async withCpuFallback<T>(
+    ids: string[],
+    make: (onCpu: ReadonlySet<string>) => Promise<T>,
+    signal: AbortSignal
+  ): Promise<T> {
+    const onCpu = new Set(
+      (await this.provider()) === 'Cpu' ? ids : ids.filter((id) => this.cpuOnly.has(id))
+    )
+    for (;;) {
+      try {
+        return await make(onCpu)
+      } catch (err) {
+        const message = String((err as Error)?.message)
+        if (signal.aborted || !/load-model|provider/i.test(message)) throw err
+        const left = ids.filter((id) => !onCpu.has(id))
+        if (left.length === 0) throw err
+        const named = left.filter((id) => message.includes(`${id}/`))
+        const moved = named.length > 0 ? named : left
+        log.warn('models would not run on the accelerator; using the CPU', moved, message)
+        for (const id of moved) {
+          onCpu.add(id)
+          this.cpuOnly.add(id)
+        }
+      }
+    }
+  }
+
   /** The licence texts shipped with the roster (for the notices). */
   licencesDir(): string {
     return join(pixlModels.dir, 'licences')

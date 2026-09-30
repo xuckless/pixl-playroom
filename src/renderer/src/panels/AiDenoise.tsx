@@ -5,8 +5,10 @@
  * something not made yet.
  */
 import { useEffect, useState } from 'react'
-import type { DenoiseState, ModelInfo } from '../../../shared/ipc'
+import type { DenoiseState } from '../../../shared/ipc'
 import type { AiDenoiseModel } from '../../../shared/recipe'
+import { ModelGet } from '../components/ModelGet'
+import { useModels } from '../lib/models'
 import { Select, Slider } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { ensureDenoise } from '../lib/denoise'
@@ -27,8 +29,6 @@ const MODELS: { value: AiDenoiseModel; label: string; hint: string }[] = [
   }
 ]
 
-const mb = (bytes: number): string => `${Math.max(1, Math.round(bytes / 1e6))} MB`
-
 export function AiDenoise(): React.JSX.Element | null {
   const key = useDevelop((s) => s.session?.key ?? null)
   const recipe = useDevelop((s) => s.recipe)
@@ -38,15 +38,11 @@ export function AiDenoise(): React.JSX.Element | null {
   const job = useAiJobs((s) =>
     Object.values(s.jobs).findLast((j) => j.key === key && j.task === 'denoise')
   )
-  const [models, setModels] = useState<ModelInfo[]>([])
+  const models = useModels()
   const [state, setState] = useState<DenoiseState | null>(null)
   const ai = recipe?.detail.ai
   const params = ai ? `${ai.model}:${Math.round(ai.strength)}` : ''
 
-  useEffect(() => {
-    void api.models.list().then(setModels, () => undefined)
-    return api.models.onEvent(setModels)
-  }, [])
   // Where it stands: asked again when the settings or the job move on.
   useEffect(() => {
     if (!key) return
@@ -76,7 +72,7 @@ export function AiDenoise(): React.JSX.Element | null {
       job.phase === 'queued'
         ? 'Waiting for another AI job…'
         : `${job.stage === 'full' ? 'Full resolution' : 'Preview'}${pct !== null ? ` · ${job.estimated ? '~' : ''}${pct}%` : ''}`
-  else if (model && !model.installed) status = `${model.title} is not downloaded yet`
+  else if (model && !model.installed) status = 'The model is not downloaded yet'
   else if (state?.made === 'full') status = 'Applied at full resolution'
   else if (state?.made === 'preview') status = 'Preview only: full resolution not made'
   else if (job?.phase === 'error') status = job.message ?? 'Failed'
@@ -107,22 +103,7 @@ export function AiDenoise(): React.JSX.Element | null {
             <button className="sm ghost" onClick={() => void api.ai.cancel(job.jobId)}>
               Cancel
             </button>
-          ) : model && !model.installed ? (
-            model.progress !== null ? (
-              <span className="model-bar" aria-label="Downloading">
-                <span style={{ width: `${Math.round(model.progress * 100)}%` }} />
-              </span>
-            ) : (
-              <button
-                className="sm"
-                onClick={() =>
-                  void api.models.download(model.id).catch((e) => say(errorText(e), 'error'))
-                }
-              >
-                Download {mb(model.bytes)}
-              </button>
-            )
-          ) : state?.made !== 'full' ? (
+          ) : model && !model.installed ? null : state?.made !== 'full' ? (
             <button
               className="sm"
               onClick={() => void ensureDenoise().catch((e) => say(errorText(e), 'error'))}
@@ -131,6 +112,7 @@ export function AiDenoise(): React.JSX.Element | null {
             </button>
           ) : null)}
       </div>
+      {!state?.refused && <ModelGet id={ai.model} models={models} />}
       <p className="muted small">
         Made once per photo, model and strength, and kept: every view and export after uses it.
       </p>

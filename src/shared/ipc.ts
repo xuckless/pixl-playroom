@@ -161,7 +161,7 @@ export const IPC = {
     progress: 'export:progress'
   },
   enhance: {
-    available: 'enhance:available'
+    rates: 'enhance:rates'
   },
   ai: {
     start: 'ai:start',

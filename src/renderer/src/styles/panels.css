@@ -916,3 +916,71 @@ fieldset::before {
   color: var(--text2);
   font-variant-numeric: tabular-nums;
 }
+.model-get {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 26px;
+  font-size: 11.5px;
+}
+.model-get > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── enhance ───────────────────────────────────────────────────── */
+.enhance-sum {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.enhance-sum b {
+  color: var(--text);
+  font-weight: 600;
+}
+.enhance-sum .muted {
+  font-size: 11.5px;
+}
+.enhance-run {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 6px;
+}
+.enhance-run .primary {
+  flex: 1;
+}
+.enhance-jobs {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.enhance-jobs li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--hair);
+}
+.enhance-jobs li .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.enhance-jobs li.error .muted {
+  color: var(--danger);
+}
+.enhance-jobs li.done .muted {
+  color: var(--text2);
+}

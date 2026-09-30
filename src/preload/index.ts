@@ -44,6 +44,7 @@ import {
 import type { LicenceStatus } from '../shared/licence'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
+import type { EnhanceRates } from '../shared/enhance'
 
 async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
   const r = (await ipcRenderer.invoke(channel, ...args)) as
@@ -217,7 +218,8 @@ const api = {
     onProgress: (cb: (p: ExportProgress) => void) => on(IPC.export.progress, cb)
   },
   enhance: {
-    available: () => call<{ available: boolean; reason?: string }>(IPC.enhance.available)
+    /** How fast each step has run here (ms per megapixel), for the panel's estimate. */
+    rates: () => call<EnhanceRates>(IPC.enhance.rates)
   },
   ai: {
     start: (req: AiStartRequest) => call<string>(IPC.ai.start, req),

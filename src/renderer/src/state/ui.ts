@@ -4,6 +4,7 @@
  * of a recipe.
  */
 import { create } from 'zustand'
+import { DEFAULT_ENHANCE, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind } from '../../../shared/retouch'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
@@ -83,7 +84,8 @@ export const TOOL_IDS = [
   'masks',
   'heal',
   'crop',
-  'calibration'
+  'calibration',
+  'enhance'
 ] as const
 
 export type ToolId = (typeof TOOL_IDS)[number]
@@ -110,6 +112,9 @@ interface UiState {
   /** The Heal tool's mode and brush for new spots, and whether spots show on the photo. */
   heal: HealSettings
   setHeal(p: Partial<HealSettings>): void
+  /** The Enhance tool's steps, kept for the next photo. */
+  enhance: EnhanceSettings
+  setEnhance(p: Partial<EnhanceSettings>): void
   /** Change the current brush's settings. */
   setBrush(p: Partial<BrushSettings>): void
   /** The one tool the right column shows, chosen on the thumb-wheel. */
@@ -156,6 +161,8 @@ export const useUi = create<UiState>()(
       setBrushSlot: (brushSlot) => set({ brushSlot }),
       heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100, showAll: false },
       setHeal: (p) => set((s) => ({ heal: { ...s.heal, ...p } })),
+      enhance: DEFAULT_ENHANCE,
+      setEnhance: (p) => set((s) => ({ enhance: { ...s.enhance, ...p } })),
       setBrush: (p) =>
         set((s) => ({
           brushes: { ...s.brushes, [s.brushSlot]: { ...s.brushes[s.brushSlot], ...p } }
@@ -190,6 +197,8 @@ export const useUi = create<UiState>()(
         return {
           ...current,
           ...p,
+          // Settings saved before a field existed take its default.
+          enhance: { ...DEFAULT_ENHANCE, ...p.enhance },
           panel: isToolId(p.panel) ? p.panel : current.panel,
           previousPanel: isToolId(p.previousPanel) ? p.previousPanel : current.previousPanel
         }

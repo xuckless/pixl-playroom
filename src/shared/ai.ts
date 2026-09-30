@@ -6,6 +6,7 @@
  * (the scan over the loupe, the filmstrip's chips), and the arithmetic of
  * its progress.
  */
+import type { EnhanceSettings } from './enhance'
 import type { MaskMode } from './engine-types'
 
 export type AiTask = 'enhance' | 'segment' | 'denoise'
@@ -57,7 +58,7 @@ export interface AiJobEvent {
 }
 
 export type AiStartRequest =
-  | { task: 'enhance'; key: string; cpu: boolean }
+  | { task: 'enhance'; key: string; settings: EnhanceSettings }
   | {
       task: 'segment'
       key: string

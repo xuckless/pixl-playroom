@@ -17,11 +17,10 @@ import {
 } from '../../../shared/recipe'
 import { savedWhite } from '../../../shared/wbconvert'
 import { Modal } from '../components/ui'
-import { ProgressRing, Sphere, Spinner } from '../fx'
+import { Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
 import { autoWbBatch } from '../lib/autowb'
 import { useDevelop } from '../state/develop'
-import { useAiJobs } from '../state/jobs'
 import { useLibrary, useTargets } from '../state/library'
 
 function Field({
@@ -863,104 +862,6 @@ export function SavePresetDialog(): React.JSX.Element {
           </label>
         ))}
       </div>
-    </Modal>
-  )
-}
-
-export function EnhanceDialog(): React.JSX.Element {
-  const setDialog = useLibrary((s) => s.setDialog)
-  const targets = useTargets()
-  const [avail, setAvail] = useState<{ available: boolean; reason?: string } | null>(null)
-  const [cpu, setCpu] = useState(false)
-  const [started, setStarted] = useState<string[]>([])
-  const jobs = useAiJobs((s) => s.jobs)
-  useEffect(() => {
-    void api.enhance.available().then(setAvail)
-  }, [])
-  // Each photo's job as the queue last told it (the store keeps how finished ones ended).
-  const ended = useAiJobs((s) => s.ended)
-  const list = started.map((id) => jobs[id] ?? ended[id]).filter(Boolean)
-  const running = list.some((p) => p.phase === 'running' || p.phase === 'queued')
-  const done = list.filter((p) => p.phase === 'done').length
-  const failed = list.filter((p) => p.phase === 'error')
-  const current = list.find((p) => p.phase === 'running')
-  return (
-    <Modal
-      title="Enhance → Super Resolution"
-      onClose={() => setDialog(null)}
-      icon="enhance"
-      footer={
-        started.length === 0 ? (
-          <button
-            className="primary"
-            disabled={!avail?.available || targets.length === 0}
-            onClick={async () => {
-              const ids = await Promise.all(
-                targets.map((key) => api.ai.start({ task: 'enhance', key, cpu }))
-              )
-              setStarted(ids)
-            }}
-          >
-            Enhance {targets.length > 1 ? `${targets.length} photos` : ''}
-          </button>
-        ) : running ? (
-          <>
-            <button onClick={() => started.forEach((id) => void api.ai.cancel(id))}>Cancel</button>
-            <button
-              onClick={() => setDialog(null)}
-              title="Keep working; progress shows on the photo and in the top bar"
-            >
-              Run in the background
-            </button>
-          </>
-        ) : (
-          <button className="primary" onClick={() => setDialog(null)}>
-            Done
-          </button>
-        )
-      }
-    >
-      {started.length === 0 ? (
-        <>
-          <p>
-            Doubles the resolution with the bundled Real-ESRGAN ×2 model, before any edit, into a
-            new 16-bit TIFF beside the original. The new file starts with this photo&apos;s
-            settings. Photos are enhanced one at a time; you can keep editing meanwhile.
-          </p>
-          {avail && !avail.available && <p className="error">{avail.reason}</p>}
-          <label className="check">
-            <input type="checkbox" checked={cpu} onChange={(e) => setCpu(e.target.checked)} /> Run
-            on the CPU (slower, always available)
-          </label>
-        </>
-      ) : (
-        <div className="enhance-stage">
-          <div className="sphere-wrap">
-            <Sphere active={running} />
-            <ProgressRing progress={running ? (current?.progress ?? null) : 1} />
-          </div>
-          <div className="enhance-log" role="status" aria-live="polite">
-            <span className="micro">
-              {running ? 'Enhancing' : failed.length ? 'Finished with errors' : 'Finished'}
-            </span>
-            <span className="phase">
-              {done}/{started.length} done
-              {failed.length > 0 ? ` · ${failed.length} failed` : ''}
-            </span>
-            {current && (
-              <span className="msg">
-                {current.name} · {current.message}
-              </span>
-            )}
-            {failed.map((p) => (
-              <span key={p.jobId} className="msg error">
-                {p.name}: {p.message}
-              </span>
-            ))}
-            {!current && running && <span className="msg">Waiting for the upscaler…</span>}
-          </div>
-        </div>
-      )}
     </Modal>
   )
 }

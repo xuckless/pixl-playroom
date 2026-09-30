@@ -33,7 +33,7 @@ import { useDevelop } from './state/develop'
 import { useBoot } from './state/boot'
 import { useLibrary } from './state/library'
 import { OVERLAY_MODES, useUi } from './state/ui'
-import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
+import { ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
@@ -112,7 +112,6 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'export' && <ExportDialog key="export" />}
       {dialog === 'sync' && <SyncDialog key="sync" />}
       {dialog === 'preset' && <SavePresetDialog key="preset" />}
-      {dialog === 'enhance' && <EnhanceDialog key="enhance" />}
       {dialog === 'preferences' && <PreferencesDialog key="preferences" />}
       {dialog === 'crash-consent' && <CrashConsentDialog key="crash-consent" />}
       {dialog === 'engine' && <EngineReportDialog key="engine" />}

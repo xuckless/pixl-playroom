@@ -89,6 +89,13 @@ export const TOOLS: ToolInfo[] = [
     short: 'Calib',
     desc: 'Shadow tint; red, green and blue primaries.',
     icon: 'M12 3v18M3 12h18M6 6l12 12M18 6 6 18'
+  },
+  {
+    id: 'enhance',
+    name: 'Enhance',
+    short: 'Enhance',
+    desc: 'JPEG restore, deblur and super-resolution, into a new file.',
+    icon: 'M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8'
   }
 ]
 

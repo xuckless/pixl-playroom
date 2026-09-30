@@ -96,7 +96,7 @@ first paid release.
       drawn by the host into 512 px raster planes (`src/shared/gradients.ts`,
       cached in the photo's cache) and reach the engine as `Raster` masks.
       Add `MaskShape::Linear { start, end }` and `MaskShape::Radial { centre,
-    radii, angle, softness }` to the engine so they are resolution-free at
+  radii, angle, softness }` to the engine so they are resolution-free at
       export, then retire the planes and their cache.
 - [ ] **AI masks**: Select Subject, Select Sky, Select Background (their
       entries are in the tool picker, disabled until a model ships), Select
@@ -382,7 +382,18 @@ Phased; each phase is tested and committed before the next.
         high-ISO RAWs and expose a Noise level override if needed.
   - [ ] Virtual copies share the photo's denoise sets; pruning keeps the
         newest three, which a copy with other settings may lose (it rebuilds).
-- [ ] Phase 9 — Enhance on the wheel (JPEG restore, deblur, upscale ×2/×4).
+- [x] Phase 9 — Enhance on the wheel (JPEG restore, deblur, upscale ×2/×4).
+      `panels/enhance.tsx` replaces the dialog; `shared/enhance.ts` plans the
+      chain (JpegReconstruct → FBCNN → NAFNet → Upscale), sizes and times it
+      (per-step ms/MP, learned); `main/enhance.ts` runs it into
+      `<stem>-Enhanced.tif`. A model the accelerator cannot load moves to the
+      CPU alone (`ModelStore.withCpuFallback`, per model).
+  - [ ] A before/after preview of a crop before running (the engine refuses
+        `region` with a chain: crop to a temp file first; a JPEG rebuild needs
+        the whole file).
+  - [ ] FBCNN is ~50 s/MP on the CPU and CoreML cannot load it: ask the engine
+        for a CoreML-loadable export.
+  - [ ] A long-edge limit for ×4 (the request's `resize` after the chain).
 - [ ] Phase 10 — HDR gain maps: read, grade and write.
 - [ ] Phase 11 — export watermark.
 - [ ] Phase 12 — real lens profiles (lensfun, DNG opcodes and maker notes,

@@ -40,7 +40,7 @@ import { importProfiles, listProfiles } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
 import type { GuideLine } from '../shared/upright'
 import type { P as SpotPoint } from '../shared/retouch'
-import { enhanceAvailability } from './enhance'
+import { enhanceAvailability, enhanceRates } from './enhance'
 import type { AiJobs } from './ai/jobs'
 import { modelName, type ModelStore } from './ai/models'
 import type { Exporter } from './exporter'
@@ -410,7 +410,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.export.removePreset, (id: string) => s.index.removeExportPreset(id))
 
   // ── enhance ──
-  handle(IPC.enhance.available, () => enhanceAvailability(s.bgEngine.getStatus(), s.models))
+  handle(IPC.enhance.rates, () => enhanceRates(s.index))
 
   // ── AI models ──
   handle(IPC.models.list, () => s.models.list())
@@ -426,7 +426,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.ai.cancel, (jobId: string) => s.ai.cancel(jobId))
   handle(IPC.ai.list, () => s.ai.list())
   handle(IPC.ai.capabilities, async (): Promise<AiCapabilities> => {
-    const enhance = await enhanceAvailability(s.bgEngine.getStatus(), s.models)
+    const enhance = enhanceAvailability(s.bgEngine.getStatus())
     const subject = (await s.models.installed('u2net')) || (await s.models.installed('u2netp'))
     // Models run on the engine's bundled runtime; each denoise model is
     // offered for download where it is picked (Detail → Noise reduction).

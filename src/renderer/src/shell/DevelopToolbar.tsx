@@ -4,6 +4,7 @@ import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { loupeZoom } from '../views/loupe/zoom'
+import { selectPanel } from '../develop/tools'
 
 /** The second tier in Develop: back to the library, history, how to look, and what to do with the photo. */
 export function DevelopToolbar(): React.JSX.Element {
@@ -113,8 +114,8 @@ export function DevelopToolbar(): React.JSX.Element {
       </button>
       <button
         className="lg"
-        onClick={() => setDialog('enhance')}
-        title="Enhance → Super Resolution"
+        onClick={() => selectPanel('enhance')}
+        title="Enhance: JPEG restore, deblur, super-resolution"
       >
         <Icon name="enhance" />
         Enhance

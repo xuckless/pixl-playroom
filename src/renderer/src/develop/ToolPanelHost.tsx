@@ -10,6 +10,7 @@ import {
   HslPanel,
   ToneCurvePanel
 } from '../panels/global'
+import { EnhancePanel } from '../panels/enhance'
 import { HealPanel } from '../panels/heal'
 import { LensPanel } from '../panels/lens'
 import { MasksPanel } from '../panels/masks/MaskTool'
@@ -26,7 +27,8 @@ const PANELS: Record<ToolId, ComponentType> = {
   masks: MasksPanel,
   heal: HealPanel,
   crop: GeometryPanel,
-  calibration: CalibrationPanel
+  calibration: CalibrationPanel,
+  enhance: EnhancePanel
 }
 
 /** Exactly one tool, springing in as the wheel lands on it. */

@@ -74,32 +74,6 @@ async function keep(photo: PhotoRow, set: DenoiseSet): Promise<DenoiseSet> {
   return set
 }
 
-/**
- * Models the accelerator would not load (SCUNet under CoreML: ONNX Runtime
- * refuses a reshape of its attention blocks), run on the CPU from then on.
- */
-const cpuOnly = new Set<string>()
-
-/**
- * Run `make` with the model on the chosen provider, and once more on the CPU
- * when the accelerator cannot load it.
- */
-async function withFallback<T>(
-  ai: AiDenoiseSetting,
-  make: (cpu: boolean) => Promise<T>,
-  signal: AbortSignal
-): Promise<T> {
-  if (cpuOnly.has(ai.model)) return make(true)
-  try {
-    return await make(false)
-  } catch (err) {
-    if (signal.aborted || !/load-model/.test(String((err as Error)?.message))) throw err
-    log.warn('denoise model would not load on the accelerator; using the CPU', ai.model, err)
-    cpuOnly.add(ai.model)
-    return make(true)
-  }
-}
-
 /** The model's engine reference, with the strength and (DRUNet) the measured noise. */
 async function enhancer(
   models: ModelStore,
@@ -157,13 +131,13 @@ export async function buildPreview(
   const dir = dirOf(photo, key)
   await mkdir(dir, { recursive: true })
   const path = join(dir, 'preview.tiff')
-  const r = await withFallback(
-    ai,
-    async (cpu) =>
+  const r = await models.withCpuFallback(
+    [ai.model],
+    async (onCpu) =>
       engine.convert(
         {
           ...blankRequest(plain.draft.path, path, plain.draft.input),
-          enhance: [{ Model: await enhancer(models, ai, cpu) }],
+          enhance: [{ Model: await enhancer(models, ai, onCpu.has(ai.model)) }],
           pixel: { depth: 'Sixteen', channels: 3 },
           encode: writeTiff,
           metadata: withProfile,
@@ -203,14 +177,14 @@ export async function buildMaster(
   const raw = info.input === 'Raw' ? RAW_DEVELOP : null
   const orientation = sourceOrientation(info, raw)
   const path = join(dir, 'master.tiff')
-  const r = await withFallback(
-    ai,
-    async (cpu) =>
+  const r = await models.withCpuFallback(
+    [ai.model],
+    async (onCpu) =>
       engine.convert(
         {
           ...blankRequest(photo.path, path, info.input, info),
           raw,
-          enhance: [{ Model: await enhancer(models, ai, cpu) }],
+          enhance: [{ Model: await enhancer(models, ai, onCpu.has(ai.model)) }],
           pixel: { depth: 'Sixteen', channels: 3 },
           encode: writeTiff,
           metadata: withProfile,
