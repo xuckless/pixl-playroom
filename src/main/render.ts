@@ -68,7 +68,14 @@ import { parseKey } from './keys'
 import type { Library } from './library'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
-import { ensureMaster, ensureProxies, type Proxies, type ProxyFile } from './proxy'
+import {
+  ensureLensedProxies,
+  ensureMaster,
+  ensureProxies,
+  pruneLensed,
+  type Proxies,
+  type ProxyFile
+} from './proxy'
 import {
   blankRequest,
   BACKGROUND_THREADS,
@@ -216,21 +223,80 @@ class Session {
     return this.row.is_raw === 1
   }
 
+  /**
+   * Compile a recipe for a source. A source from the lens-corrected set
+   * already carries the correction: the frame is that set's, and the engine
+   * is not asked to correct it again.
+   */
   async compileFor(recipe: Recipe, source: ProxyFile, applyCrop: boolean): Promise<Compiled> {
-    const { user } = orientedFrame(recipe, this.px.frameWidth, this.px.frameHeight)
-    return compile(recipe, {
+    const baked =
+      this.lensed && (source === this.lensed.px.proxy || source === this.lensed.px.draft)
+    const px = baked ? this.lensed!.px : this.px
+    const { user } = orientedFrame(recipe, px.frameWidth, px.frameHeight)
+    const compiled = compile(recipe, {
       isRaw: this.isRaw,
       asShot: this.info.as_shot_white,
       sourceOrientation: 'Normal',
-      frameWidth: this.px.frameWidth,
-      frameHeight: this.px.frameHeight,
-      scale: source.width / this.px.frameWidth,
+      frameWidth: px.frameWidth,
+      frameHeight: px.frameHeight,
+      scale: source.width / px.frameWidth,
       seed: hash32(this.row.path),
       brushPaths: await brushPlanes(this.row.id, recipe, user),
       applyCrop,
       hdr: this.info.is_hdr,
       showTransform: !this.view.guides
     })
+    return baked ? { ...compiled, lens: null } : compiled
+  }
+
+  /** What names a lens correction: '' for none. */
+  private lensKey(recipe: Recipe): string {
+    const lens = lensCorrection(recipe.lens)
+    return lens ? hash32(JSON.stringify(lens)).toString(16) : ''
+  }
+
+  /**
+   * The proxies previews are graded from: the lens-corrected set when it is
+   * the recipe's correction, else the plain one (the correction then runs
+   * live, as while a lens slider moves).
+   */
+  private viewPx(): Proxies {
+    const key = this.lensKey(this.recipe)
+    return key && this.lensed?.key === key ? this.lensed.px : this.px
+  }
+
+  /** A correction waiting for its corrected proxies. */
+  private bakePending(): boolean {
+    const key = this.lensKey(this.recipe)
+    return key !== '' && this.lensed?.key !== key
+  }
+
+  private baking: string | null = null
+
+  /**
+   * Make the recipe's lens-corrected proxies in the background (once the
+   * edit has settled), then render again from them. One at a time; a
+   * correction changed meanwhile is baked next.
+   */
+  private bake(): void {
+    const key = this.lensKey(this.recipe)
+    const lens = lensCorrection(this.recipe.lens)
+    if (!lens || !key || this.lensed?.key === key || this.baking === key) return
+    this.baking = key
+    ensureLensedProxies(this.owner.bgEngine, this.row, this.px, lens, key, this.hdrWorking).then(
+      (px) => {
+        if (this.baking === key) this.baking = null
+        if (this.closed) return
+        if (this.lensKey(this.recipe) === key) {
+          this.lensed = { key, px }
+          this.schedule('full')
+        } else this.bake()
+      },
+      (err) => {
+        if (this.baking === key) this.baking = null
+        log.warn('lens proxies failed; correcting live', (err as Error).message)
+      }
+    )
   }
 
   update(recipe: Recipe, interactive: boolean, rev?: number): void {
@@ -263,7 +329,7 @@ class Session {
   schedule(kind: Kind): void {
     clearTimeout(this.settle)
     if (kind === 'draft') {
-      const wait = this.source('full') === this.px.proxy ? SETTLE_LARGE_MS : SETTLE_MS
+      const wait = this.source('full') === this.viewPx().proxy ? SETTLE_LARGE_MS : SETTLE_MS
       this.settle = setTimeout(() => this.schedule('full'), wait)
     }
     if (this.inflight) {
@@ -280,11 +346,14 @@ class Session {
     this.abort = abort
     const { signal } = abort
     try {
+      // A settled edit bakes its lens correction in the background.
+      if (kind === 'full') this.bake()
       await this.renderPicture(kind, signal)
       // A newer edit waiting behind this render will redo what follows.
       if (kind === 'draft' && this.view.maskLive && this.view.maskLayer && !this.closed)
         await this.renderMask('draft', signal)
-      if (kind === 'full' && !this.closed && !this.pending) {
+      // While a bake is pending, what follows waits for the render it brings.
+      if (kind === 'full' && !this.closed && !this.pending && !this.bakePending()) {
         if (this.view.maskLayer) await this.renderMask('full', signal)
         if (this.view.before) await this.renderBefore(signal)
         if (this.view.maskThumbs) await this.renderMaskThumbs(signal)
@@ -311,9 +380,13 @@ class Session {
   }
 
   private source(kind: Kind): ProxyFile {
-    if (kind === 'draft') return this.px.draft
-    const long = Math.max(this.px.draft.width, this.px.draft.height)
-    return this.view.targetEdge <= long ? this.px.draft : this.px.proxy
+    const px = this.viewPx()
+    if (kind === 'draft') return px.draft
+    // A correction still being baked: the draft, corrected live, stands in
+    // (a large proxy warped on every render is what the bake avoids).
+    if (this.bakePending()) return px.draft
+    const long = Math.max(px.draft.width, px.draft.height)
+    return this.view.targetEdge <= long ? px.draft : px.proxy
   }
 
   private nextFile(stem: string, ext: string): string {
@@ -407,7 +480,7 @@ class Session {
     const hdr = this.hdrWorking
     if (!hdr) return undefined
     try {
-      const src = this.px.draft
+      const src = this.viewPx().draft
       const compiled = await this.compileFor(this.recipe, src, !cropMode)
       const out = join(this.dir, 'hdr-stats.png')
       // Fine bins: the chart re-bins them onto a stops axis, where the
@@ -456,7 +529,7 @@ class Session {
    * loupe's preview knows the engine agrees with it.
    */
   private async renderMask(kind: Kind, signal: AbortSignal): Promise<void> {
-    const src = kind === 'draft' ? this.px.draft : this.source('full')
+    const src = kind === 'draft' ? this.viewPx().draft : this.source('full')
     const rev = this.rev
     const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
     const layerId = this.view.maskLayer ?? undefined
@@ -547,7 +620,7 @@ class Session {
    * newer edit waiting behind it.
    */
   private async renderMaskThumbs(signal: AbortSignal): Promise<void> {
-    const src = this.px.draft
+    const src = this.viewPx().draft
     const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
     // A warp shown whole has transparent corners a plane cannot carry; the
     // thumbnails wait for the crop tool to close.
@@ -785,6 +858,8 @@ class Session {
 
   /** Per lens correction and frame size, the shrink its crop makes (1 when none). */
   private lensScale = new Map<string, number>()
+  /** The recipe's lens correction baked into proxies (see `ensureLensedProxies`). */
+  private lensed: { key: string; px: Proxies } | null = null
 
   /**
    * A rectangle of the oriented frame (`width × height` pixels) as a region
@@ -889,7 +964,7 @@ class Session {
     const flat: Recipe = structuredClone(this.recipe)
     flat.basic = { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 }
     flat.layers = []
-    const src = this.px.draft
+    const src = this.viewPx().draft
     const compiled = await this.compileFor(flat, src, true)
     const out = join(this.dir, 'auto-tone.png')
     const report = await this.owner.engine.convert({
@@ -1025,6 +1100,8 @@ class Session {
     clearTimeout(this.settle)
     this.abort?.abort()
     this.regionAbort?.abort()
+    // Corrected proxies for any other correction are no longer read.
+    void pruneLensed(this.row, this.lensKey(this.recipe))
     return this.save ? this.persist() : Promise.resolve()
   }
 }

@@ -9,14 +9,19 @@
  * - `draft`: long edge ≤ 1280, made from the proxy, for renders while a
  *   slider is moving;
  * - `master`: full resolution, only for RAWs, only when a 1:1 view asks —
- *   the developed frame, so region renders never re-develop.
+ *   the developed frame, so region renders never re-develop;
+ * - `lens-…`: the proxy and draft with a lens correction applied, one set
+ *   per correction. The optics sit before everything else and change far
+ *   less often than a slider does, so previews grade the corrected copy
+ *   instead of warping the proxy again on every render (Lightroom caches
+ *   the same way).
  *
  * HDR sources keep their PQ/HLG signal in a 16-bit PNG (which carries CICP);
  * everything else is an uncompressed 16-bit TIFF, the fastest to decode.
  */
 import { readFile, readdir, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
-import type { InputFormat, SourceInfo } from '../shared/engine-types'
+import type { HdrWorking, InputFormat, LensCorrection, SourceInfo } from '../shared/engine-types'
 import type { EngineClient } from './engine/client'
 import { exists } from './exists'
 import type { PhotoRow } from './db'
@@ -82,7 +87,8 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
       f.startsWith('proxies-') ||
       f.startsWith('proxy-') ||
       f.startsWith('draft-') ||
-      f.startsWith('master-')
+      f.startsWith('master-') ||
+      f.startsWith('lens-')
     ) {
       try {
         await unlink(join(dir, f))
@@ -156,6 +162,108 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
   }
   await writeFile(meta, JSON.stringify(out))
   return out
+}
+
+const lensing = new Map<string, Promise<Proxies>>()
+
+/**
+ * A photo's proxies with a lens correction applied, made once per correction
+ * (`key` names it) and kept beside the plain ones; only the newest set is
+ * kept on disk. The frame is the corrected one — the same shape, a little
+ * smaller when the warp crops its empty edges — so every normalised
+ * coordinate still means the same place.
+ */
+export function ensureLensedProxies(
+  engine: EngineClient,
+  photo: PhotoRow,
+  px: Proxies,
+  lens: LensCorrection,
+  key: string,
+  hdr: HdrWorking | null
+): Promise<Proxies> {
+  const id = `${photo.id}:${stamp(photo)}:${key}`
+  let p = lensing.get(id)
+  if (!p) {
+    p = bakeLens(engine, photo, px, lens, key, hdr).finally(() => lensing.delete(id))
+    lensing.set(id, p)
+  }
+  return p
+}
+
+async function bakeLens(
+  engine: EngineClient,
+  photo: PhotoRow,
+  px: Proxies,
+  lens: LensCorrection,
+  key: string,
+  hdr: HdrWorking | null
+): Promise<Proxies> {
+  const dir = paths.photoCache(photo.id)
+  const prefix = `lens-${stamp(photo)}-${key}`
+  const meta = join(dir, `${prefix}.json`)
+  if (await exists(meta)) {
+    const known = JSON.parse(await readFile(meta, 'utf8')) as Proxies
+    if ((await exists(known.proxy.path)) && (await exists(known.draft.path))) return known
+  }
+  const ext = px.proxy.input === 'Png' ? 'png' : 'tiff'
+  const encode =
+    px.proxy.input === 'Png'
+      ? ({ Png: { compression: 'Fast', filter: 'Sub' } } as const)
+      : ({ Tiff: { compression: 'None' } } as const)
+  const proxyPath = join(dir, `${prefix}-proxy.${ext}`)
+  const report = await engine.convert({
+    ...blankRequest(px.proxy.path, proxyPath, px.proxy.input),
+    pixel: { depth: 'Sixteen', channels: 3 },
+    encode,
+    metadata: { exif: false, icc: true, xmp: false, iptc: false },
+    color: 'Preserve',
+    lens,
+    // A PQ/HLG proxy is corrected in the HDR working space it is graded in.
+    hdr
+  })
+  const proxy: ProxyFile = {
+    path: proxyPath,
+    input: px.proxy.input,
+    width: report.width,
+    height: report.height
+  }
+  const draftPath = join(dir, `${prefix}-draft.${ext}`)
+  const dFactor = Math.min(1, px.draft.width / px.proxy.width)
+  const draftReport = await engine.convert({
+    ...blankRequest(proxyPath, draftPath, px.proxy.input),
+    resize: dFactor < 1 ? { Scale: { factor: dFactor } } : 'None',
+    pixel: { depth: 'Sixteen', channels: null },
+    encode,
+    metadata: { exif: false, icc: true, xmp: false, iptc: false },
+    color: 'Preserve'
+  })
+  const k = report.width / px.proxy.width
+  const out: Proxies = {
+    proxy,
+    draft: {
+      path: draftPath,
+      input: px.proxy.input,
+      width: draftReport.width,
+      height: draftReport.height
+    },
+    frameWidth: Math.round(px.frameWidth * k),
+    frameHeight: Math.round(px.frameHeight * k)
+  }
+  await writeFile(meta, JSON.stringify(out))
+  return out
+}
+
+/**
+ * Drop a photo's lens-corrected sets but the one for `keepKey` (none when
+ * empty) — when the photo closes, so no render still reads them.
+ */
+export async function pruneLensed(photo: PhotoRow, keepKey: string): Promise<void> {
+  const dir = paths.photoCache(photo.id)
+  const keep = keepKey ? `lens-${stamp(photo)}-${keepKey}` : null
+  for (const f of await readdir(dir).catch(() => [] as string[])) {
+    if (f.startsWith('lens-') && (!keep || !f.startsWith(keep)))
+      await unlink(join(dir, f)).catch(() => {})
+  }
 }
 
 const mastering = new Map<string, Promise<ProxyFile>>()

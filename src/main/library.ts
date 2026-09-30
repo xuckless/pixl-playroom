@@ -254,7 +254,11 @@ export class Library {
     this.broadcast(IPC.library.thumb, { key, url: cacheUrl(out, stamp) })
   }
 
-  /** A thumbnail of the graded picture, from the photo's proxy. */
+  /**
+   * A thumbnail of the graded picture, from the photo's draft proxy — a
+   * quarter of the proxy's pixels, and still more than a thumbnail needs —
+   * or the proxy when a tight crop leaves the draft too few.
+   */
   private async graded(
     row: PhotoRow,
     info: SourceInfo,
@@ -264,13 +268,26 @@ export class Library {
   ): Promise<void> {
     const px = await ensureProxies(this.engine, row, info)
     const { user, width, height } = orientedFrame(recipe, px.frameWidth, px.frameHeight)
+    const cropOf = compile(recipe, {
+      isRaw: row.is_raw === 1,
+      asShot: info.as_shot_white,
+      sourceOrientation: 'Normal',
+      frameWidth: px.frameWidth,
+      frameHeight: px.frameHeight,
+      scale: 1,
+      seed: 0,
+      brushPaths: {},
+      applyCrop: true
+    }).crop
+    const cropLong = Math.max((cropOf?.width ?? 1) * width, (cropOf?.height ?? 1) * height)
+    const src = cropLong * (px.draft.width / px.frameWidth) >= THUMB_EDGE ? px.draft : px.proxy
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
       sourceOrientation: 'Normal',
       frameWidth: px.frameWidth,
       frameHeight: px.frameHeight,
-      scale: px.proxy.width / px.frameWidth,
+      scale: src.width / px.frameWidth,
       seed: hash32(row.path),
       brushPaths: await brushPlanes(row.id, recipe, user),
       applyCrop: true,
@@ -278,12 +295,9 @@ export class Library {
     })
     const cropW = (compiled.crop?.width ?? 1) * width
     const cropH = (compiled.crop?.height ?? 1) * height
-    const factor = Math.min(
-      1,
-      THUMB_EDGE / (Math.max(cropW, cropH) * (px.proxy.width / px.frameWidth))
-    )
+    const factor = Math.min(1, THUMB_EDGE / (Math.max(cropW, cropH) * (src.width / px.frameWidth)))
     await this.engine.convert({
-      ...blankRequest(px.proxy.path, out, px.proxy.input),
+      ...blankRequest(src.path, out, src.input),
       ...base,
       resize: factor < 1 ? { Scale: { factor } } : 'None',
       grade: compiled.grade,

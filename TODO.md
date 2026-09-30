@@ -321,6 +321,15 @@ Phased; each phase is tested and committed before the next.
       wait while it is open).
   - [ ] 1:1 sharp tiles with a warp or a straighten (the engine renders a
         region only of the plain frame).
+- [x] Preview speed with lens corrections: a lens warp (distortion, CA,
+      vignetting) cost ~1 s per settled 2.5K render and again for "before"
+      and the mask renders (IMG_1750.CR2: 2.0 s). The correction is now
+      baked once into lens-corrected proxies (`ensureLensedProxies`, per
+      correction, beside the plain ones) and previews grade those; while a
+      lens slider moves the draft corrects live, and a settled change bakes
+      in the background. Same photo: 0.57–0.88 s settled, ~0.17 s drafts.
+      Graded thumbnails render from the draft proxy. Engine 0.15 itself is
+      as fast as 0.13 for the same work.
   - [ ] Upright's focal length from the 35 mm equivalent only; a file that
         states only the real focal length and no crop factor gets 35 mm.
 - [ ] Phase 6 — Heal tool (heal, clone, fill, red eye, pet eye).

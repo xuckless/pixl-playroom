@@ -136,7 +136,8 @@ renderer (React)  ──IPC──>  main process ──postMessage──> utilit
   space; the look runs display-referred in Display P3. Pure, tested.
 - **Proxies** (`src/main/proxy.ts`): each photo is decoded once (a RAW
   developed once) into a 16-bit upright proxy (≤ 2560 px) and a draft
-  (≤ 1280 px); every preview grades those. Masks and radii are fractions of
+  (≤ 1280 px); every preview grades those — a lens correction baked into a
+  corrected copy of them once it settles, so no preview warps again. Masks and radii are fractions of
   the frame, so a preview and an export select and blur the same things.
 - **Render sessions** (`src/main/render.ts`): coalesced renders (a moving
   slider renders the draft, the full proxy follows when it settles; both
