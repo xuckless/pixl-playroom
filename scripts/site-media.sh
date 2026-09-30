@@ -56,9 +56,12 @@ brand() {
 }
 
 # The hero loop: the three recordings of Develop's before/after wipe, cropped to
-# the photo (the recordings have a black edge), cross-faded, muted.
+# the photo (the recordings have a black edge), cross-faded, muted. The videos
+# go to pixl-web's media/ (served from R2: run its scripts/push-media.sh after),
+# the poster to the site itself.
 hero() {
-  mkdir -p "$SITE/media"
+  local vid="$WEB_DIR/media/playroom"
+  mkdir -p "$SITE/media" "$vid"
   local recs=() f
   for f in "$REC_DIR"/*.mov; do recs+=("$f"); done
   [ "${#recs[@]}" -ge 3 ] || { echo "hero: need 3 recordings in $REC_DIR" >&2; return 1; }
@@ -68,11 +71,11 @@ hero() {
   local graph="[0:v]$v[a];[1:v]$v[b];[2:v]$v[c];[a][b]xfade=transition=fade:duration=0.8:offset=8.2[ab];[ab][c]xfade=transition=fade:duration=0.8:offset=16.4[v]"
   local inputs=(-ss 1.0 -t 9.0 -i "$SCRATCH/r2.mov" -ss 1.0 -t 9.0 -i "$SCRATCH/r3.mov" -ss 1.5 -t 8.3 -i "$SCRATCH/r1.mov")
   ffmpeg -v error -y "${inputs[@]}" -filter_complex "$graph" -map "[v]" -an \
-    -c:v libx264 -crf 24 -preset slow -pix_fmt yuv420p -movflags +faststart "$SITE/media/hero.mp4"
+    -c:v libx264 -crf 24 -preset slow -pix_fmt yuv420p -movflags +faststart "$vid/hero.mp4"
   ffmpeg -v error -y "${inputs[@]}" -filter_complex "$graph" -map "[v]" -an \
-    -c:v libvpx-vp9 -crf 36 -b:v 0 -row-mt 1 -deadline good -cpu-used 2 "$SITE/media/hero.webm"
+    -c:v libvpx-vp9 -crf 36 -b:v 0 -row-mt 1 -deadline good -cpu-used 2 "$vid/hero.webm"
   # Poster: mid-wipe on the first clip, so a still (or reduced motion) still shows the idea.
-  ffmpeg -v error -y -ss 4.2 -i "$SITE/media/hero.mp4" -frames:v 1 "$SCRATCH/poster.png"
+  ffmpeg -v error -y -ss 4.2 -i "$vid/hero.mp4" -frames:v 1 "$SCRATCH/poster.png"
   magick "$SCRATCH/poster.png" -quality 80 "$SITE/media/hero-poster.webp"
   magick "$SCRATCH/poster.png" -resize 1200x -quality 80 "$SITE/media/hero-poster.jpg"
 }

@@ -1,10 +1,39 @@
-import { resolve } from 'path'
+import { resolve, sep } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import type { Plugin } from 'vite'
+
+/**
+ * Records the npm packages a bundle actually contains (bundled-packages.json
+ * beside it), so scripts/third-party-notices.mjs credits exactly what ships:
+ * dev dependencies bundled into the renderer included, build tooling not.
+ */
+function bundledPackages(): Plugin {
+  return {
+    name: 'playroom:bundled-packages',
+    apply: 'build',
+    generateBundle() {
+      const dirs = new Set<string>()
+      for (const id of this.getModuleIds()) {
+        const path = id.replace(/^\0/, '').split('?')[0]
+        const at = path.lastIndexOf(`${sep}node_modules${sep}`)
+        if (at < 0) continue
+        const rest = path.slice(at + 14).split(sep)
+        const n = rest[0].startsWith('@') ? 2 : 1
+        dirs.add(path.slice(0, at + 14) + rest.slice(0, n).join(sep))
+      }
+      this.emitFile({
+        type: 'asset',
+        fileName: 'bundled-packages.json',
+        source: JSON.stringify([...dirs].sort(), null, 2) + '\n'
+      })
+    }
+  }
+}
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin(), bundledPackages()],
     build: {
       rollupOptions: {
         input: {
@@ -22,7 +51,7 @@ export default defineConfig({
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin(), bundledPackages()]
   },
   renderer: {
     resolve: {
@@ -30,7 +59,7 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react()],
+    plugins: [react(), bundledPackages()],
     build: {
       // Less to parse at start: three.js and the app ship minified.
       minify: 'esbuild',

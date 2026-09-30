@@ -22,11 +22,18 @@ export const paths = {
   // The index (playroom.db) is the index host's: see indexer/service.ts.
   /** The rendering mode and the last display's scale, read before the app is ready. */
   displayState: (): string => join(dir(), 'display.json'),
+  /** The update channel and crash-report consent, read before the app is ready (settings.ts). */
+  settings: (): string => join(dir(), 'settings.json'),
   /** Per-photo working files: proxies, renders, mask planes. */
   photoCache: (photoId: number): string => dir('cache', 'photos', String(photoId)),
   thumbs: (): string => dir('cache', 'thumbs'),
   luts: (): string => dir('luts'),
   cacheRoot: (): string => dir('cache'),
+  /** THIRD_PARTY_NOTICES.txt: beside the app's resources when packaged, in build/ in a checkout. */
+  notices: (): string =>
+    app.isPackaged
+      ? join(process.resourcesPath, 'THIRD_PARTY_NOTICES.txt')
+      : join(app.getAppPath(), 'build', 'THIRD_PARTY_NOTICES.txt'),
   /** The bundled AI runtime and model: resources/ai/<platform>-<arch>. */
   ai: (): string =>
     app.isPackaged

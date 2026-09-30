@@ -1,5 +1,5 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { cpus } from 'os'
@@ -8,6 +8,8 @@ import {
   IPC,
   type AppError,
   type Collection,
+  type CrashConsent,
+  type ErrorReport,
   type ExportPreset,
   type HistoryLog,
   type LibrarySource,
@@ -16,7 +18,9 @@ import {
   type MetaTextPatch,
   type Preset,
   type RegionRequest,
+  type Prefs,
   type Snapshot,
+  type UpdateChannel,
   type ViewState
 } from '../shared/ipc'
 import { convertWb, type WbContext } from '../shared/wbconvert'
@@ -28,6 +32,7 @@ import type { PlaneStore } from './planestore'
 import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
 import { autoWbBatch, setWbBatch } from './autowb'
+import { crashConsent, reportRendererError, setCrashConsent } from './crash'
 import type { AiCapabilities, AiStartRequest } from '../shared/ai'
 import { enhanceAvailability } from './enhance'
 import type { AiJobs } from './ai/jobs'
@@ -38,6 +43,8 @@ import type { Library } from './library'
 import { takeOpens } from './open'
 import { paths } from './paths'
 import type { DevelopSessions } from './render'
+import { readSettings } from './settings'
+import { checkForUpdates, installUpdate, setUpdateChannel, updateState } from './updater'
 
 function toAppError(err: unknown): AppError {
   if (err instanceof EngineError) return { message: err.message, code: err.code, field: err.field }
@@ -86,6 +93,26 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.reveal, (path: string) => shell.showItemInFolder(path))
   handle(IPC.app.renderScale, () => renderScale())
   handle(IPC.app.restart, () => restart())
+
+  handle(IPC.app.reportError, (e: ErrorReport) => reportRendererError(e))
+  handle(IPC.app.openNotices, async () => {
+    const err = await shell.openPath(paths.notices())
+    if (err) throw new Error(`Couldn't open the third-party notices: ${err}`)
+  })
+
+  // ── updates and preferences ──
+  handle(IPC.updates.getState, () => updateState())
+  handle(IPC.updates.check, () => checkForUpdates())
+  handle(IPC.updates.install, () => installUpdate())
+  handle(IPC.updates.setChannel, (c: UpdateChannel) => setUpdateChannel(c))
+  handle(IPC.prefs.get, (): Prefs => ({
+    updateChannel: readSettings().updateChannel,
+    crashReports: crashConsent(),
+    version: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch
+  }))
+  handle(IPC.prefs.setCrashReports, (c: CrashConsent) => setCrashConsent(c))
 
   // ── opens (Open With, second launch) ── workstream E
   handle(IPC.app.takeOpens, () => takeOpens())

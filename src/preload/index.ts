@@ -7,6 +7,8 @@ import {
   type AutoWbResult,
   type BasicSetting,
   type Collection,
+  type CrashConsent,
+  type ErrorReport,
   type DevelopSession,
   type EngineStatus,
   type ExportPreset,
@@ -20,6 +22,7 @@ import {
   type MetaPatch,
   type MetaTextPatch,
   type Preset,
+  type Prefs,
   type RegionRequest,
   type RegionResult,
   type RenderEvent,
@@ -27,6 +30,8 @@ import {
   type SampleResult,
   type Snapshot,
   type SourceListing,
+  type UpdateChannel,
+  type UpdateState,
   type ViewState
 } from '../shared/ipc'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
@@ -60,7 +65,21 @@ const api = {
     onRenderScale: (cb: (s: RenderScale) => void) => on(IPC.app.renderScaleChanged, cb),
     takeOpens: () => call<string[]>(IPC.app.takeOpens),
     onOpenPaths: (cb: (paths: string[]) => void) => on(IPC.app.openPaths, cb),
-    pathOf: (file: File) => webUtils.getPathForFile(file)
+    pathOf: (file: File) => webUtils.getPathForFile(file),
+    onOpenPreferences: (cb: () => void) => on(IPC.app.openPreferences, cb),
+    reportError: (e: ErrorReport) => call<void>(IPC.app.reportError, e),
+    openNotices: () => call<void>(IPC.app.openNotices)
+  },
+  updates: {
+    getState: () => call<UpdateState>(IPC.updates.getState),
+    check: () => call<UpdateState>(IPC.updates.check),
+    install: () => call<void>(IPC.updates.install),
+    setChannel: (channel: UpdateChannel) => call<UpdateState>(IPC.updates.setChannel, channel),
+    onState: (cb: (s: UpdateState) => void) => on(IPC.updates.event, cb)
+  },
+  prefs: {
+    get: () => call<Prefs>(IPC.prefs.get),
+    setCrashReports: (c: CrashConsent) => call<CrashConsent>(IPC.prefs.setCrashReports, c)
   },
   library: {
     chooseFolder: () => call<string | null>(IPC.library.chooseFolder),
