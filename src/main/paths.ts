@@ -30,6 +30,13 @@ export const paths = {
   luts: (): string => dir('luts'),
   /** Imported lens profiles, one JSON file per lens (`shared/lens.ts`). */
   lensProfiles: (): string => dir('lens-profiles'),
+  /** The lens catalogue downloaded from the models server (`lensprofiles.ts`). */
+  lensCatalog: (): string => dir('lens-profiles', 'catalog'),
+  /** The lens catalogue the app ships: beside its resources when packaged, in resources/ in a checkout. */
+  bundledLensCatalog: (): string =>
+    app.isPackaged
+      ? join(process.resourcesPath, 'lens-profiles')
+      : join(app.getAppPath(), 'resources', 'lens-profiles'),
   /** Downloaded AI models, `<id>/<version>/<files>` (see `ai/models.ts`). */
   models: (): string => dir('models'),
   cacheRoot: (): string => dir('cache'),

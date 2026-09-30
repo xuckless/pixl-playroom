@@ -1,3 +1,4 @@
+import type { ResolvedProfile } from './lens'
 /** IPC channel names and the app-level types both sides of the bridge share. */
 import type {
   ConvertReport,
@@ -148,8 +149,13 @@ export const IPC = {
     event: 'models:event'
   },
   lens: {
-    profiles: 'lens:profiles',
-    importProfiles: 'lens:import-profiles'
+    importProfiles: 'lens:import-profiles',
+    status: 'lens:status',
+    check: 'lens:check',
+    search: 'lens:search',
+    resolve: 'lens:resolve',
+    /** main → renderer: the catalogue or the imported profiles changed. */
+    changed: 'lens:changed'
   },
   export: {
     start: 'export:start',
@@ -521,6 +527,48 @@ export interface Preset {
 export interface LutProfile {
   name: string
   path: string
+}
+
+/** Where the lens catalogue stands (Settings, the Lens panel's credit). */
+export interface LensCatalogStatus {
+  version: string | null
+  /** The catalogue the app shipped, or a newer one from the models server. */
+  origin: 'bundled' | 'online' | null
+  generated: string | null
+  lensfunCommit: string | null
+  lenses: number
+  cameras: number
+  imported: number
+  /** When the server was last asked, and what went wrong if it could not be. */
+  checkedAt: string | null
+  error: string | null
+  url: string
+}
+
+/** A lens the profile search found. */
+export interface LensSearchHit {
+  id: string
+  name: string
+  mount: string | null
+  /** The calibration camera's crop factor (a lens profiled on several bodies has one per). */
+  crop: number | null
+  source: string | null
+}
+
+/** A photo's lens profile: which one, found how, and its correction for this photo. */
+export interface LensMatch {
+  profile: {
+    id: string
+    name: string
+    source: string | null
+    mount: string | null
+    calibrationCrop: number | null
+  } | null
+  /** The camera the catalogue found for the photo (its crop factor). */
+  camera: { name: string; crop: number } | null
+  resolved: ResolvedProfile | null
+  /** The catalogue version it was resolved from. */
+  catalog: string | null
 }
 
 /** A watermark PNG as the export dialog shows it. */

@@ -81,6 +81,7 @@ import {
   type ProxyFile
 } from './proxy'
 import { editsHdr, ensureHdrSource } from './hdrsource'
+import type { LensShot } from './lensprofiles'
 import {
   blankRequest,
   BACKGROUND_THREADS,
@@ -1434,6 +1435,18 @@ export class DevelopSessions {
   }
 
   /** The AI denoise job made something for a photo: an open session picks it up. */
+  /** What lens matching needs of an open photo: its lens, its camera and its frame. */
+  async lensShot(key: string): Promise<LensShot> {
+    const session = this.get(key)
+    const item = await this.library.item(key)
+    return {
+      lens: session.file.lens ?? null,
+      camera: item ? { make: item.camera.make, model: item.camera.model } : null,
+      width: session.px.frameWidth,
+      height: session.px.frameHeight
+    }
+  }
+
   denoiseChanged(key: string): void {
     void this.sessions.get(key)?.refreshDenoise()
   }

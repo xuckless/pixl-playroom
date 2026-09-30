@@ -17,6 +17,7 @@ import { EnhanceRunner } from './enhance'
 import { Exporter } from './exporter'
 import { openIndex } from './indexer/client'
 import { registerIpc } from './ipc'
+import { LensProfileStore } from './lensprofiles'
 import { startLicence } from './licence'
 import { Library } from './library'
 import { buildMenu } from './menu'
@@ -192,6 +193,8 @@ app.whenReady().then(() => {
   const library = new Library(index, bgEngine)
   sessions = new DevelopSessions(library, engine, bgEngine)
   const models = new ModelStore(index, () => bgEngine.getStatus())
+  const lenses = new LensProfileStore()
+  void lenses.start()
   const exporter = new Exporter(library, sessions, bgEngine, models)
   const planes = new PlaneStore(index)
   const ai = new AiJobs(
@@ -213,7 +216,8 @@ app.whenReady().then(() => {
     engine,
     bgEngine,
     aiEngine,
-    models
+    models,
+    lenses
   })
   onOpenPaths((paths) => mainWindow?.webContents.send(IPC.app.openPaths, paths))
 

@@ -984,3 +984,64 @@ fieldset::before {
 .enhance-jobs li.done .muted {
   color: var(--text2);
 }
+
+/* ── lens profile ──────────────────────────────────────────────── */
+.lens-using {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 8px 0 4px;
+  font-size: 12px;
+}
+.lens-using-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.lens-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+.lens-pick input {
+  width: 100%;
+}
+.lens-pick ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--hair);
+}
+.lens-pick li button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--hair);
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+}
+.lens-pick li button:hover,
+.lens-pick li button.on {
+  background: rgba(255, 255, 255, 0.05);
+}
+.lens-pick li.muted {
+  padding: 8px;
+}
+.lens-credit {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}

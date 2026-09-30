@@ -108,6 +108,30 @@ The channel (Stable / Beta) is in _Settings_ and in `userData/settings.json`.
 - **From a checkout:** `PLAYROOM_FORCE_UPDATER=1 pnpm dev` reads `dev-app-update.yml`
   (the same GitHub feed). Without it the updater is off in development.
 
+## Models and lens profiles (R2)
+
+AI models and the lens catalogue are served from one Cloudflare R2 bucket behind
+`https://models.pixlfoundation.com`, and apps fetch from it on their own: models when the
+user downloads one (`src/main/ai/models.ts`), the lens catalogue a little after start and
+every six hours (`src/main/lensprofiles.ts`). Nothing here is part of a release.
+
+**Once:** `npx wrangler login` (or set `CLOUDFLARE_API_TOKEN`), create the bucket
+(`npx wrangler r2 bucket create <bucket>`), and attach the custom domain in the Cloudflare
+dashboard (R2 → the bucket → Settings → Custom domains → `models.pixlfoundation.com`), or
+with `npx wrangler r2 bucket domain add <bucket> --domain models.pixlfoundation.com
+--zone-id <pixlfoundation.com's zone id>`. Until the domain answers, apps fall back to each
+model's public upstream and keep the lens catalogue they ship.
+
+**Models:** `pnpm publish-models --bucket <bucket>` when the engine's roster changes.
+
+**Lens profiles:** `pnpm lens-profiles` converts Lensfun's current database into
+`resources/lens-profiles/` (commit it: it is the catalogue the next release ships, and works
+offline). `pnpm lens-profiles --bucket <bucket>` also uploads it to
+`<bucket>/lens-profiles/v1/`, shards first and `index.json` last; every installed app picks
+it up at its next check, downloading only the shards whose SHA-256 changed. Pin a Lensfun
+commit with `--ref <sha>`. `PLAYROOM_LENS_PROFILES_URL=file:///…/lens-profiles/v1` points a
+development build at a local copy of that layout.
+
 ## Third-party notices
 
 `pnpm notices` writes `build/THIRD_PARTY_NOTICES.txt` (shipped via `extraResources`,

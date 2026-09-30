@@ -422,11 +422,36 @@ Phased; each phase is tested and committed before the next.
         text to a PNG in the renderer (canvas) and hand it over as a file.
   - [ ] A watermark per preset folder of logos (light and dark versions,
         chosen by the picture's brightness under the mark).
-- [ ] Phase 12 — real lens profiles (lensfun, DNG opcodes and maker notes,
-      vendor profiles as user imports).
-  - [ ] A profile resolves per photo: pasting or syncing lens settings copies
-        the source's resolved correction; re-resolve each target at its own
-        focal length when the profile is known.
+- [x] Phase 12 — real lens profiles. Lensfun's database (1557 lenses, 1057
+      cameras) converted by `scripts/lensfun-profiles.mjs` into
+      `resources/lens-profiles` (bundled, works offline) and, with `--bucket`,
+      uploaded to R2 (`lens-profiles/v1/`); `main/lensprofiles.ts` loads the
+      newer of the bundled and the downloaded catalogue, checks the server at
+      start and every 6 h, downloads only changed shards (SHA-256), swaps the
+      set in whole and tells the renderer, which re-resolves photos on a
+      profile. Matching (maker prefix and punctuation aside, focal range,
+      mount, the calibration closest to the photo's crop) and resolving are
+      in main; Lensfun's coefficients stay as calibrated, placed on each
+      photo by the engine's `Focal` unit from the two crop factors (EXIF's
+      35 mm focal, else the camera list) and aspects. Paste, sync and presets
+      re-resolve each target at its own lens and focal length. Credit and
+      CC BY-SA 3.0 text in the notices.
+  - [ ] **R2**: `npx wrangler login`, then `pnpm lens-profiles --bucket
+    <bucket>` (and `pnpm publish-models --bucket <bucket>`), and attach
+        `models.pixlfoundation.com` to the bucket (it has no DNS record yet).
+        See `.github/RELEASING.md`.
+  - [ ] Corrections the file carries: DNG `OpcodeList3` (WarpRectilinear →
+        the engine's `Rectilinear`, `FarthestCorner`; FixVignetteRadial →
+        `Multiply` at `Corrected`), read with ExifTool; then Sony, Fujifilm,
+        Olympus/OM and Panasonic maker-note distortion and vignetting. Needs
+        sample files (the one local DNG, from Adobe DNG Converter, carries no
+        OpcodeList3).
+  - [ ] Adobe LCP import (the user's own, not redistributable): LCP's
+        perspective model and `Focal` unit map directly.
+  - [ ] Lensfun lens-centre offsets (`<center>`, unused in today's data) and
+        its focal-spline interpolation (we interpolate linearly).
+  - [ ] Fisheye lenses: their distortion is left out (it needs a projection
+        change the engine does not make); TCA and vignetting apply.
   - [ ] Constrain Crop off (keep the warped frame's empty corners as
         transparent) needs an alpha preview path; today a warp always crops.
 - [ ] HEIC export: the published engine's libheif has no HEVC encoder

@@ -24,6 +24,9 @@ import {
   type HistoryLog,
   type KeywordNode,
   type HdrKind,
+  type LensCatalogStatus,
+  type LensMatch,
+  type LensSearchHit,
   type WatermarkFile,
   type LibraryItem,
   type LibrarySource,
@@ -199,8 +202,14 @@ const api = {
     onEvent: (cb: (models: ModelInfo[]) => void) => on(IPC.models.event, cb)
   },
   lens: {
-    profiles: () => call<LensProfile[]>(IPC.lens.profiles),
-    importProfiles: () => call<LensProfile[]>(IPC.lens.importProfiles)
+    importProfiles: () => call<LensProfile[]>(IPC.lens.importProfiles),
+    status: () => call<LensCatalogStatus>(IPC.lens.status),
+    /** Ask the models server for a newer catalogue now. */
+    check: () => call<LensCatalogStatus>(IPC.lens.check),
+    search: (query: string) => call<LensSearchHit[]>(IPC.lens.search, query),
+    /** The open photo's profile (the chosen one, or null for the best match) and its correction. */
+    resolve: (key: string, id: string | null) => call<LensMatch>(IPC.lens.resolve, key, id),
+    onChanged: (cb: (s: LensCatalogStatus) => void) => on(IPC.lens.changed, cb)
   },
   presets: {
     list: () => call<Preset[]>(IPC.presets.list),

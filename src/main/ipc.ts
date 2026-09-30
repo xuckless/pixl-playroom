@@ -1,5 +1,6 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import log from 'electron-log/main'
 import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { cpus } from 'os'
@@ -36,7 +37,7 @@ import { autoWbBatch, setWbBatch } from './autowb'
 import { crashConsent, reportRendererError, setCrashConsent } from './crash'
 import { activateLicence, deactivateLicence, licence, validateLicence } from './licence'
 import type { AiCapabilities, AiStartRequest } from '../shared/ai'
-import { importProfiles, listProfiles } from './lensprofiles'
+import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
 import type { GuideLine } from '../shared/upright'
 import type { P as SpotPoint } from '../shared/retouch'
@@ -90,6 +91,21 @@ export interface Services {
   /** AI jobs' engine (started when first needed). */
   aiEngine: EngineClient
   models: ModelStore
+  lenses: LensProfileStore
+}
+
+/** A photo that is not open, as lens matching needs it: probed, with its camera. */
+async function lensShotOf(s: Services, key: string): Promise<LensShot> {
+  const row = await s.library.photoRow(key)
+  const info = await s.library.probe(row)
+  const item = await s.library.item(key)
+  return {
+    lens: info.lens ?? null,
+    camera: item ? { make: item.camera.make, model: item.camera.model } : null,
+    // Only the frame's shape matters, and a RAW's developed frame keeps it.
+    width: info.width,
+    height: info.height
+  }
 }
 
 export function registerIpc(s: Services): void {
@@ -179,7 +195,20 @@ export function registerIpc(s: Services): void {
           sourceWb && target ? { ...recipe, wb: convertWb(recipe.wb, sourceWb, target) } : recipe
         const live = s.sessions.liveRecipe(key)
         const base = live ?? saved.get(key)
-        if (base) pairs.push({ key, recipe: applyGroups(base, from, groups) })
+        if (!base) continue
+        const next = applyGroups(base, from, groups)
+        // A lens profile is resolved per photo: each target at its own lens,
+        // focal length, aperture and crop factor (an automatic one finds
+        // each target's own lens), not the source's numbers.
+        if (groups.includes('lens') && next.lens.profile.enabled) {
+          try {
+            const shot = live ? await s.sessions.lensShot(key) : await lensShotOf(s, key)
+            next.lens.profile.resolved = s.lenses.resolve(shot, next.lens.profile.id).resolved
+          } catch (err) {
+            log.info('lens profile not re-resolved for', key, (err as Error).message)
+          }
+        }
+        pairs.push({ key, recipe: next })
       }
       // One message, one transaction: a batch commits once.
       const items = await s.index.saveRecipes(pairs)
@@ -361,7 +390,12 @@ export function registerIpc(s: Services): void {
       .map((f) => ({ name: basename(f, '.cube'), path: join(paths.luts(), f) }))
   )
   // ── lens profiles ──
-  handle(IPC.lens.profiles, () => listProfiles())
+  handle(IPC.lens.status, () => s.lenses.status())
+  handle(IPC.lens.check, () => s.lenses.check())
+  handle(IPC.lens.search, (query: string) => s.lenses.search(query))
+  handle(IPC.lens.resolve, async (key: string, id: string | null) =>
+    s.lenses.resolve(await s.sessions.lensShot(key), id)
+  )
   handle(IPC.lens.importProfiles, async (): Promise<LensProfile[]> => {
     const w = win()
     const opts = {
@@ -369,7 +403,10 @@ export function registerIpc(s: Services): void {
       filters: [{ name: 'Lens profile', extensions: ['json'] }]
     }
     const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
-    return r.canceled ? [] : importProfiles(r.filePaths)
+    if (r.canceled) return []
+    const added = await importProfiles(r.filePaths)
+    await s.lenses.reloadImported()
+    return added
   })
   handle(IPC.presets.importLut, async (): Promise<LutProfile[]> => {
     const w = win()

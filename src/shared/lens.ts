@@ -8,30 +8,42 @@
  * A **profile** is a JSON file describing one lens (Lensfun's models: poly3,
  * poly5 or ptlens distortion; linear or poly3 TCA; the `pa` vignetting
  * polynomial), sampled at several focal lengths (and, for vignetting,
- * apertures). The app ships none yet; they are imported (`userData/lens-
- * profiles/`), and a later phase fills the store from Lensfun and from the
- * corrections cameras embed. When one applies, the recipe keeps the
- * correction it resolved to, so the photo renders the same on a machine
- * without the profile.
+ * apertures and distances). The catalogue is Lensfun's database, converted
+ * by `scripts/lensfun-profiles.mjs`: bundled with the app and kept current
+ * from the models server (`main/lensprofiles.ts`); the user can import
+ * their own. When one applies, the recipe keeps the correction it resolved
+ * to, so the photo renders the same on a machine without the profile.
+ *
+ * Lensfun states its coefficients on the calibration camera's frame:
+ * distortion and TCA with r = 1 at half its shorter side, vignetting at half
+ * its diagonal. A photo from another sensor size or shape keeps the numbers
+ * as they are and moves r = 1 to where that length falls on it (the
+ * engine's `Focal` unit: a fraction of the canvas's longer side), from the
+ * two crop factors and aspect ratios — exact where rescaling the
+ * coefficients would not be (a poly3's or ptlens's constant term).
  *
  * Everything here is pure: the renderer and the main process both use it.
  */
 import type {
   Defringe,
+  RadiusUnit,
   Distortion,
   DistortionModel,
   LateralCa,
   LateralCaModel,
   LensCorrection,
   LensGeometry,
-  RadiusUnit,
   ShotLens,
   Vignetting
 } from './engine-types'
 
 // ── Profiles ─────────────────────────────────────────────────────────────────
 
-export type ProfileUnit = 'HalfShorterSide' | 'HalfDiagonal' | 'FarthestCorner'
+/**
+ * What r = 1 is for a profile's models: a length of the photo's own frame,
+ * or `Lensfun`, lengths of the calibration camera's (see `calibration`).
+ */
+export type ProfileUnit = 'HalfShorterSide' | 'HalfDiagonal' | 'FarthestCorner' | 'Lensfun'
 
 export interface DistortionSample {
   focal: number
@@ -51,6 +63,8 @@ export interface TcaSample {
 export interface VignettingSample {
   focal: number
   aperture: number
+  /** Focus distance in metres, where the numbers depend on it. */
+  distance?: number
   /** The falloff polynomial `1 + k1 r² + k2 r⁴ + k3 r⁶` (Lensfun `pa`); divided out. */
   k: number[]
 }
@@ -64,10 +78,18 @@ export interface LensProfile {
   /** Other names the lens goes by in files (EXIF `LensModel` variants). */
   aliases?: string[]
   mount?: string
+  /** Every mount it fits (a Lensfun lens often lists several). */
+  mounts?: string[]
+  /** Its projection when not rectilinear (fisheye, equisolid…): only TCA and vignetting are kept. */
+  type?: string
+  /** Its focal range, mm: a shot outside it is not this lens. */
+  focal?: number[]
   /** Where the numbers came from, for the credit (Lensfun, a vendor, measured). */
   source?: string
   /** What r = 1 is for every model in the profile. */
   unit: ProfileUnit
+  /** `Lensfun` unit: the calibration camera's crop factor and aspect ratio (long / short). */
+  calibration?: { crop: number; aspect: number }
   distortion?: DistortionSample[]
   tca?: TcaSample[]
   vignetting?: VignettingSample[]
@@ -80,6 +102,11 @@ export interface ResolvedProfile {
   focal: number | null
   aperture: number | null
   unit: ProfileUnit
+  /** Where r = 1 falls on this photo, when the profile's lengths are not its own (`Lensfun`). */
+  geometryUnit?: RadiusUnit
+  vignettingUnit?: RadiusUnit
+  /** The crop factor the units were worked out for, and where it came from. */
+  crop?: { value: number; from: 'exif' | 'camera' | 'calibration' }
   distortion: DistortionModel | null
   tca: LateralCaModel | null
   /** The falloff polynomial's coefficients (r², r⁴, …), divided out. */
@@ -99,8 +126,14 @@ export function validateProfile(v: unknown, id: string): LensProfile | string {
   const p = v as Record<string, unknown>
   if (typeof p.maker !== 'string' || typeof p.model !== 'string')
     return '`maker` and `model` must be strings'
-  if (!['HalfShorterSide', 'HalfDiagonal', 'FarthestCorner'].includes(p.unit as string))
-    return '`unit` must be HalfShorterSide, HalfDiagonal or FarthestCorner'
+  if (!['HalfShorterSide', 'HalfDiagonal', 'FarthestCorner', 'Lensfun'].includes(p.unit as string))
+    return '`unit` must be HalfShorterSide, HalfDiagonal, FarthestCorner or Lensfun'
+  const cal = p.calibration as Record<string, unknown> | undefined
+  if (
+    p.unit === 'Lensfun' &&
+    !(cal && isNum(cal.crop) && cal.crop > 0 && isNum(cal.aspect) && cal.aspect > 0)
+  )
+    return 'a `Lensfun` profile needs `calibration`: its camera’s `crop` and `aspect`'
   const list = (key: string): Record<string, unknown>[] | string => {
     const x = p[key]
     if (x === undefined) return []
@@ -135,8 +168,15 @@ export function validateProfile(v: unknown, id: string): LensProfile | string {
     model: p.model,
     aliases: Array.isArray(p.aliases) ? p.aliases.filter((a) => typeof a === 'string') : [],
     mount: typeof p.mount === 'string' ? p.mount : undefined,
+    mounts: Array.isArray(p.mounts) ? p.mounts.filter((m) => typeof m === 'string') : undefined,
+    type: typeof p.type === 'string' ? p.type : undefined,
+    focal: nums(p.focal) ? p.focal : undefined,
     source: typeof p.source === 'string' ? p.source : undefined,
     unit: p.unit as ProfileUnit,
+    calibration:
+      p.unit === 'Lensfun'
+        ? { crop: cal!.crop as number, aspect: cal!.aspect as number }
+        : undefined,
     distortion: dist as unknown as DistortionSample[],
     tca: tca as unknown as TcaSample[],
     vignetting: vig as unknown as VignettingSample[]
@@ -150,20 +190,166 @@ export function profileName(p: Pick<LensProfile, 'maker' | 'model'>): string {
   return p.model.toLowerCase().startsWith(p.maker.toLowerCase()) ? p.model : `${p.maker} ${p.model}`
 }
 
-/**
- * The profile for the lens a file names: the one whose model (or an alias)
- * is the file's lens model, ignoring case, spaces and punctuation; failing
- * that, one whose model the file's contains (a maker's prefix, a suffix).
- */
-export function matchProfile(lens: ShotLens | null, profiles: LensProfile[]): LensProfile | null {
-  const want = lens?.model ? squash(lens.model) : ''
+/** A camera as the catalogue knows it: what its crop factor is (Lensfun's cameras). */
+export interface CameraEntry {
+  maker: string
+  model: string
+  aliases?: string[]
+  variant?: string
+  mount: string | null
+  crop: number
+}
+
+/** A mount and the mounts whose lenses fit it (through an adapter or as is). */
+export interface MountEntry {
+  name: string
+  compat?: string[]
+}
+
+/** The camera a photo was taken with, as its EXIF names it. */
+export interface ShotCamera {
+  make: string | null
+  model: string | null
+}
+
+/** A name without its maker's prefix, squashed: "Canon EF-S 18-55mm" → "efs1855mm". */
+function bare(name: string, maker: string | null | undefined): string {
+  const n = squash(name)
+  const m = maker ? squash(maker) : ''
+  return m && n.startsWith(m) && n.length > m.length ? n.slice(m.length) : n
+}
+
+/** The catalogue's entry for a camera, matched as lenses are, ignoring the maker prefix. */
+export function findCamera(camera: ShotCamera | null, cameras: CameraEntry[]): CameraEntry | null {
+  if (!camera?.model) return null
+  const want = bare(camera.model, camera.make)
   if (!want) return null
-  const names = (p: LensProfile): string[] => [p.model, ...(p.aliases ?? [])].map(squash)
-  return (
-    profiles.find((p) => names(p).includes(want)) ??
-    profiles.find((p) => names(p).some((n) => n.length >= 6 && want.includes(n))) ??
-    null
-  )
+  const names = (c: CameraEntry): string[] =>
+    [c.model, ...(c.aliases ?? [])].map((n) => bare(n, c.maker))
+  const makerOk = (c: CameraEntry): boolean =>
+    !camera.make || squash(c.maker).startsWith(squash(camera.make).slice(0, 4))
+  return cameras.find((c) => makerOk(c) && names(c).includes(want)) ?? null
+}
+
+/**
+ * The photo's crop factor: from its EXIF (the 35 mm equivalent focal over
+ * the focal), else its camera's in the catalogue; null when neither says.
+ */
+export function shotCrop(
+  lens: ShotLens | null,
+  camera: CameraEntry | null
+): { value: number; from: 'exif' | 'camera' } | null {
+  if (lens?.focal_mm && lens.focal_35mm && lens.focal_35mm >= lens.focal_mm * 0.9)
+    return { value: Math.round((lens.focal_35mm / lens.focal_mm) * 1000) / 1000, from: 'exif' }
+  if (camera) return { value: camera.crop, from: 'camera' }
+  return null
+}
+
+/** Mounts a camera's lenses may have: its own and every one listed as fitting it. */
+export function mountsFor(mount: string | null, mounts: MountEntry[]): Set<string> | null {
+  if (!mount) return null
+  const out = new Set([mount])
+  for (const c of mounts.find((m) => m.name === mount)?.compat ?? []) out.add(c)
+  return out
+}
+
+/**
+ * A lens's focal range: as the profile states it, else as its name does
+ * ("18-55mm", "50mm"), else null.
+ */
+export function focalRange(p: Pick<LensProfile, 'focal' | 'model'>): [number, number] | null {
+  if (p.focal?.length) return [p.focal[0], p.focal[p.focal.length - 1]]
+  const m = /(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?\s*mm/i.exec(p.model)
+  if (!m) return null
+  const lo = Number(m[1])
+  const hi = m[2] ? Number(m[2]) : lo
+  return lo > 0 && hi >= lo ? [lo, hi] : null
+}
+
+/**
+ * How well a profile answers to a file's lens, 0 when it does not: its model
+ * or an alias equal to the file's, ignoring the maker, case and punctuation
+ * (100), or one containing the other (less, by how much is left over); a
+ * shot outside the lens's focal range is not this lens. Among equals, a
+ * profile of a mount the camera takes, then one calibrated on a sensor the
+ * size of the photo's, wins.
+ */
+function lensScore(
+  p: LensProfile,
+  want: string,
+  focal: number | null,
+  mounts: Set<string> | null,
+  crop: number | null
+): number {
+  const range = focalRange(p)
+  if (focal && range) {
+    const [lo, hi] = range
+    if (focal < lo * 0.97 || focal > hi * 1.03) return 0
+  }
+  let best = 0
+  for (const n of [p.model, ...(p.aliases ?? [])].map((x) => bare(x, p.maker))) {
+    if (!n) continue
+    if (n === want) best = Math.max(best, 100)
+    else {
+      const [short, long] = n.length < want.length ? [n, want] : [want, n]
+      if (short.length >= 6 && long.includes(short))
+        best = Math.max(best, 40 + 40 * (short.length / long.length))
+    }
+  }
+  if (!best) return 0
+  if (mounts && (p.mounts ?? (p.mount ? [p.mount] : [])).some((m) => mounts.has(m))) best += 5
+  if (crop && p.calibration) best += 4 / (1 + Math.abs(Math.log(p.calibration.crop / crop)) * 8)
+  return best
+}
+
+/**
+ * The profile for the lens a file names, among `profiles`: the best scoring
+ * (see `lensScore`), or null. `camera` (its mount) and `crop` break ties.
+ */
+export function matchProfile(
+  lens: ShotLens | null,
+  profiles: LensProfile[],
+  context: { mounts?: Set<string> | null; crop?: number | null } = {}
+): LensProfile | null {
+  const want = lens?.model ? bare(lens.model, lens.make) : ''
+  if (!want) return null
+  let best: LensProfile | null = null
+  let score = 0
+  for (const p of profiles) {
+    const s = lensScore(
+      p,
+      want,
+      lens?.focal_mm ?? null,
+      context.mounts ?? null,
+      context.crop ?? null
+    )
+    if (s > score) {
+      best = p
+      score = s
+    }
+  }
+  return best
+}
+
+/**
+ * Where a `Lensfun` profile's r = 1 falls on this photo, as fractions of the
+ * canvas's longer side: the calibration frame's half shorter side
+ * (distortion, TCA) and half diagonal (vignetting), scaled by the two crop
+ * factors (a sensor's diagonal is 43.27 mm over its crop factor, and the
+ * photo is taken to span it) and placed by the photo's aspect.
+ */
+export function lensfunUnits(
+  calibration: { crop: number; aspect: number },
+  photo: { crop: number; width: number; height: number }
+): { geometry: number; vignetting: number } {
+  const a = Math.max(photo.width, photo.height) / Math.max(1, Math.min(photo.width, photo.height))
+  const ac = calibration.aspect
+  const k = photo.crop / calibration.crop
+  const long = a / Math.hypot(a, 1) // the photo's longer side, over its diagonal
+  return {
+    geometry: round6((k * (1 / Math.hypot(ac, 1)) * 0.5) / long),
+    vignetting: round6((k * 0.5) / long)
+  }
 }
 
 /** Linear interpolation of coefficient lists between the two samples around `x`. */
@@ -192,9 +378,14 @@ function interpolate<T>(
  * (in stops) and interpolates those by focal length. Without a focal length
  * the middle sample stands in.
  */
-export function resolveProfile(p: LensProfile, lens: ShotLens | null): ResolvedProfile {
+export function resolveProfile(
+  p: LensProfile,
+  lens: ShotLens | null,
+  photo?: { crop: { value: number; from: 'exif' | 'camera' } | null; width: number; height: number }
+): ResolvedProfile {
   const focal = lens?.focal_mm ?? null
   const aperture = lens?.f_number ?? null
+  const distanceM = lens?.focus_distance_m ?? null
   let distortion: DistortionModel | null = null
   if (p.distortion?.length) {
     // One model per profile: the most common one's samples.
@@ -241,7 +432,19 @@ export function resolveProfile(p: LensProfile, lens: ShotLens | null): ResolvedP
   let vignetting: number[] | null = null
   if (p.vignetting?.length) {
     const stops = (n: number): number => 2 * Math.log2(n)
-    const nearest =
+    // The distance the focus was at (or the farthest, which most shots are
+    // near): Lensfun keeps a distance only where it changes the falloff.
+    const far = (x: VignettingSample): number => x.distance ?? Infinity
+    const byDistance = (list: VignettingSample[]): VignettingSample[] => {
+      if (!list.some((x) => x.distance !== undefined)) return list
+      const at = (x: VignettingSample): number =>
+        distanceM === null
+          ? -far(x)
+          : Math.abs(Math.log(Math.min(far(x), 1000) / Math.max(0.05, distanceM)))
+      const best = Math.min(...list.map(at))
+      return list.filter((x) => at(x) - best < 1e-6)
+    }
+    const nearest = byDistance(
       aperture === null
         ? p.vignetting
         : (() => {
@@ -252,6 +455,7 @@ export function resolveProfile(p: LensProfile, lens: ShotLens | null): ResolvedP
               (s) => Math.abs(Math.abs(stops(s.aperture) - stops(aperture)) - best) < 1e-6
             )
           })()
+    )
     vignetting = interpolate(
       nearest,
       focal,
@@ -259,7 +463,7 @@ export function resolveProfile(p: LensProfile, lens: ShotLens | null): ResolvedP
       (s) => s.k
     )
   }
-  return {
+  const out: ResolvedProfile = {
     name: profileName(p),
     focal,
     aperture,
@@ -268,6 +472,20 @@ export function resolveProfile(p: LensProfile, lens: ShotLens | null): ResolvedP
     tca,
     vignetting
   }
+  if (p.unit === 'Lensfun' && p.calibration && photo) {
+    // Without a crop factor for the photo, it is taken to be the calibration
+    // camera's own (a lens profiled on the system it is sold for).
+    const crop = photo.crop ?? { value: p.calibration.crop, from: 'calibration' as const }
+    const u = lensfunUnits(p.calibration, {
+      crop: crop.value,
+      width: photo.width,
+      height: photo.height
+    })
+    out.geometryUnit = { Focal: { x: u.geometry, y: u.geometry } }
+    out.vignettingUnit = { Focal: { x: u.vignetting, y: u.vignetting } }
+    out.crop = crop
+  }
+  return out
 }
 
 // ── The recipe's lens settings → the engine's correction ─────────────────────
@@ -331,6 +549,19 @@ const round6 = (v: number): number => Math.round(v * 1e6) / 1e6
 
 const geometryOf = (unit: RadiusUnit): LensGeometry => ({ centre: { x: 0.5, y: 0.5 }, unit })
 
+/**
+ * Where a resolved profile's models are measured on the photo. A `Lensfun`
+ * profile resolved without the photo's size (an old recipe) falls back to
+ * its calibration frame's own lengths, which hold on the same camera.
+ */
+function profileGeometry(p: ResolvedProfile, what: 'geometry' | 'vignetting'): LensGeometry {
+  const unit = what === 'geometry' ? p.geometryUnit : p.vignettingUnit
+  if (unit) return geometryOf(unit)
+  if (p.unit === 'Lensfun')
+    return geometryOf(what === 'geometry' ? 'HalfShorterSide' : 'HalfDiagonal')
+  return geometryOf(p.unit)
+}
+
 /** Whether the profile's distortion is what corrects this photo (the manual slider steps aside). */
 export function profileDistorts(l: LensSetting): boolean {
   return l.profile.enabled && !!l.profile.resolved?.distortion && l.profile.distortion > 0
@@ -370,7 +601,7 @@ export function lensCorrection(l: LensSetting): LensCorrection | null {
   if (p?.distortion && l.profile.distortion > 0) {
     distortion = {
       model: p.distortion,
-      geometry: geometryOf(p.unit),
+      geometry: profileGeometry(p, 'geometry'),
       amount: round6(clamp(l.profile.distortion / 100, 0, 2))
     }
   } else if (l.distortion !== 0) {
@@ -382,7 +613,8 @@ export function lensCorrection(l: LensSetting): LensCorrection | null {
   }
   let lateral: LateralCa | null = null
   if (l.removeCa && l.ca) lateral = { ...l.ca, amount: 1 }
-  else if (l.removeCa && p?.tca) lateral = { model: p.tca, geometry: geometryOf(p.unit), amount: 1 }
+  else if (l.removeCa && p?.tca)
+    lateral = { model: p.tca, geometry: profileGeometry(p, 'geometry'), amount: 1 }
   const profileVig =
     p?.vignetting && l.profile.vignetting > 0
       ? p.vignetting.map((k) => k * clamp(l.profile.vignetting / 100, 0, 2))
@@ -397,7 +629,7 @@ export function lensCorrection(l: LensSetting): LensCorrection | null {
       k: k.slice(0, 5).map(round6),
       apply: 'Divide',
       at: 'Source',
-      geometry: profileVig && p ? geometryOf(p.unit) : MANUAL_GEOMETRY,
+      geometry: profileVig && p ? profileGeometry(p, 'vignetting') : MANUAL_GEOMETRY,
       amount: 1
     }
   }

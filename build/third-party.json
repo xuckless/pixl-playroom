@@ -128,6 +128,13 @@
       "license": "MIT",
       "copyright": "Copyright (c) Electron contributors. Copyright (c) 2013-2020 GitHub Inc.",
       "source": "https://github.com/electron/electron"
+    },
+    {
+      "name": "Lensfun database",
+      "use": "Lens profiles (distortion, chromatic aberration, vignetting) and camera crop factors: the bundled lens catalogue, converted by scripts/lensfun-profiles.mjs; updated catalogues are the same data",
+      "license": "CC-BY-SA-3.0",
+      "copyright": "Copyright (c) the Lensfun contributors (https://lensfun.github.io)",
+      "source": "https://github.com/lensfun/lensfun/tree/master/data/db"
     }
   ]
 }

@@ -40,6 +40,9 @@ const BASE = (process.env.PLAYROOM_MODELS_URL ?? 'https://models.pixlfoundation.
   ''
 )
 
+/** The models server (or its stand-in): the lens catalogue is served beside the models. */
+export const MODELS_BASE = BASE
+
 /** Which provider the performance test chose: the accelerator unless the CPU won. */
 const PROVIDER_KEY = 'ai.provider'
 /** What the performance test measured, per provider. */

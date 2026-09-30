@@ -25,6 +25,7 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!{.github,release-please-config.json,.release-please-manifest.json}'
   - '!resources/ai/**'
+  - '!resources/lens-profiles/**'
 
 # The third-party notices (scripts/third-party-notices.mjs, run after the
 # build), opened from Settings and Help. Every platform's own extraResources
@@ -32,6 +33,10 @@ files:
 extraResources:
   - from: build/THIRD_PARTY_NOTICES.txt
     to: THIRD_PARTY_NOTICES.txt
+  # The offline lens catalogue (scripts/lensfun-profiles.mjs); the app keeps
+  # a newer one from the models server beside it (src/main/lensprofiles.ts).
+  - from: resources/lens-profiles
+    to: lens-profiles
 
 # Native addons cannot be loaded from inside the asar archive. The engine
 # binding ships as `@xuckless/pixl-engine` plus one platform package

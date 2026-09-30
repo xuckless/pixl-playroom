@@ -5,18 +5,14 @@
  * compiles; everything here is Playroom's choice of numbers.
  */
 import { useEffect, useState } from 'react'
-import type { CaMeasurement } from '../../../shared/ipc'
-import {
-  describeLens,
-  matchProfile,
-  profileDistorts,
-  profileName,
-  resolveProfile,
-  type LensProfile,
-  type LensSetting
-} from '../../../shared/lens'
-import type { Recipe } from '../../../shared/recipe'
-import { Section, Select, Slider, Toggle, ToolPanel } from '../components/ui'
+import type {
+  CaMeasurement,
+  LensCatalogStatus,
+  LensMatch,
+  LensSearchHit
+} from '../../../shared/ipc'
+import { describeLens, profileDistorts, profileName, type LensSetting } from '../../../shared/lens'
+import { Section, Slider, Toggle, ToolPanel } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { runJob } from '../state/busy'
 import { useDevelop } from '../state/develop'
@@ -72,15 +68,258 @@ function LS({
   )
 }
 
-/** The profile a lens setting stands for: the chosen one, else the one matching the lens. */
-function chosenProfile(
-  l: LensSetting,
-  profiles: LensProfile[],
-  lens: Parameters<typeof matchProfile>[0]
-): LensProfile | null {
-  return l.profile.id
-    ? (profiles.find((p) => p.id === l.profile.id) ?? null)
-    : matchProfile(lens, profiles)
+/** The catalogue's version, short: its first eight characters. */
+const shortVersion = (v: string | null): string => (v ? v.slice(0, 8) : '—')
+
+/**
+ * The Profile section: the profile the photo uses (found for its lens, or
+ * chosen), searched for across the whole catalogue, and what it was
+ * resolved at. Matching and resolving are the main process's, where the
+ * catalogue is; when the catalogue updates, a photo on an automatic match
+ * follows it.
+ */
+function LensProfileSection(): React.JSX.Element | null {
+  const session = useDevelop((s) => s.session)
+  const recipe = useDevelop((s) => s.recipe)
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
+  const say = useLibrary((s) => s.say)
+  const [match, setMatch] = useState<LensMatch | null>(null)
+  const [status, setStatus] = useState<LensCatalogStatus | null>(null)
+  /** Bumped when the catalogue or the imported profiles change. */
+  const [rev, setRev] = useState(0)
+  const [picking, setPicking] = useState(false)
+  const [query, setQuery] = useState('')
+  const [hits, setHits] = useState<LensSearchHit[]>([])
+  const [checking, setChecking] = useState(false)
+  const key = session?.key ?? null
+  const id = recipe?.lens.profile.id ?? null
+
+  useEffect(() => {
+    void api.lens.status().then(setStatus, () => undefined)
+    return api.lens.onChanged((st) => {
+      setStatus(st)
+      setRev((r) => r + 1)
+    })
+  }, [])
+
+  // The photo's profile, again whenever the choice or the catalogue changes.
+  useEffect(() => {
+    if (!key) return
+    let live = true
+    void api.lens.resolve(key, id).then(
+      (m) => {
+        if (!live) return
+        setMatch(m)
+        // A catalogue update reaches a photo that uses a profile: it follows.
+        const now = useDevelop.getState()
+        const prof = now.recipe?.lens.profile
+        if (
+          rev > 0 &&
+          now.session?.key === key &&
+          prof?.enabled &&
+          prof.id === id &&
+          JSON.stringify(prof.resolved) !== JSON.stringify(m.resolved)
+        ) {
+          edit((r) => (r.lens.profile.resolved = m.resolved))
+          commit('Lens: profile updated')
+        }
+      },
+      () => undefined
+    )
+    return () => {
+      live = false
+    }
+  }, [key, id, rev, edit, commit])
+
+  // The search, a moment after typing stops.
+  useEffect(() => {
+    if (!picking || !query.trim()) return
+    const t = setTimeout(() => void api.lens.search(query).then(setHits, () => setHits([])), 120)
+    return () => clearTimeout(t)
+  }, [picking, query])
+
+  if (!session || !recipe || !key) return null
+  const l = recipe.lens
+  const shot = session.info.lens
+  const resolved = l.profile.enabled ? l.profile.resolved : null
+
+  /** Resolve the profile for this photo in main and keep the result in the recipe. */
+  const apply = async (enabled: boolean, pid: string | null, label: string): Promise<void> => {
+    try {
+      const m = await api.lens.resolve(key, pid)
+      setMatch(m)
+      edit((r) => {
+        r.lens.profile.enabled = enabled
+        r.lens.profile.id = pid
+        r.lens.profile.resolved = m.resolved
+      })
+      commit(label)
+    } catch (err) {
+      say(errorText(err), 'error')
+    }
+  }
+
+  const importProfile = async (): Promise<void> => {
+    try {
+      const added = await api.lens.importProfiles()
+      if (added.length === 0) return
+      setPicking(false)
+      await apply(true, added[0].id, 'Lens: import profile')
+      say(`Imported ${added.map((p) => profileName(p)).join(', ')}`)
+    } catch (err) {
+      say(errorText(err), 'error')
+    }
+  }
+
+  const check = async (): Promise<void> => {
+    setChecking(true)
+    try {
+      const st = await api.lens.check()
+      setStatus(st)
+      say(
+        st.error
+          ? `Lens profiles: ${st.error}`
+          : `Lens profiles are up to date (${st.lenses} lenses, ${shortVersion(st.version)})`,
+        st.error ? 'error' : 'info'
+      )
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const using = match?.profile
+  const crop = resolved?.crop
+  return (
+    <Section id="lens.profile" title="Profile">
+      <p className="muted small">{describeLens(shot) ?? 'The file names no lens.'}</p>
+      <div className="row">
+        <Toggle
+          on={l.profile.enabled}
+          onChange={(on) => void apply(on, id, on ? 'Lens: profile on' : 'Lens: profile off')}
+          title="Correct distortion, vignetting and colour fringes from a profile of this lens"
+        >
+          Enable profile corrections
+        </Toggle>
+      </div>
+      {l.profile.enabled && (
+        <div className="lens-using">
+          <span className="lens-using-name" title={using?.source ?? undefined}>
+            {using ? `${id ? '' : 'Auto · '}${using.name}` : 'No profile found for this lens'}
+          </span>
+          <button className="sm ghost" onClick={() => setPicking((v) => !v)}>
+            {picking ? 'Close' : 'Change…'}
+          </button>
+          {id && (
+            <button
+              className="sm ghost"
+              onClick={() => void apply(true, null, 'Lens: profile auto')}
+              title="Use the profile that matches the lens the file names"
+            >
+              Auto
+            </button>
+          )}
+        </div>
+      )}
+      {l.profile.enabled && picking && (
+        <div className="lens-pick">
+          <input
+            autoFocus
+            placeholder="Search lenses: maker, model, mount…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.stopPropagation()}
+          />
+          <ul>
+            {(query.trim() ? hits : []).map((h) => (
+              <li key={h.id}>
+                <button
+                  className={h.id === using?.id ? 'on' : ''}
+                  onClick={() => {
+                    setPicking(false)
+                    void apply(true, h.id, 'Lens: profile')
+                  }}
+                >
+                  <span>{h.name}</span>
+                  <span className="muted micro">
+                    {[h.mount, h.crop ? `crop ${h.crop}` : null].filter(Boolean).join(' · ')}
+                  </span>
+                </button>
+              </li>
+            ))}
+            {query.trim() && hits.length === 0 && <li className="muted small">No lens found</li>}
+          </ul>
+          <button className="sm ghost" onClick={() => void importProfile()}>
+            Import a profile…
+          </button>
+        </div>
+      )}
+      {l.profile.enabled && !resolved && !picking && (
+        <p className="note small">
+          The catalogue has no profile for this lens. Search it by hand with Change…, or import one
+          (Lensfun&apos;s models, as JSON).
+        </p>
+      )}
+      {resolved && (
+        <>
+          <p className="muted small">
+            {resolved.focal
+              ? `At ${Math.round(resolved.focal * 10) / 10} mm`
+              : 'At its middle focal'}
+            {resolved.aperture ? `, f/${Math.round(resolved.aperture * 10) / 10}` : ''}
+            {using?.calibrationCrop && crop
+              ? ` · calibrated at crop ${using.calibrationCrop}, this photo ${crop.value}${
+                  crop.from === 'camera' && match?.camera
+                    ? ` (${match.camera.name})`
+                    : crop.from === 'calibration'
+                      ? ' (assumed)'
+                      : ''
+                }`
+              : ''}
+          </p>
+          <LS
+            label="Distortion"
+            read={(x) => x.profile.distortion}
+            write={(x, v) => (x.profile.distortion = v)}
+            min={0}
+            max={200}
+            def={100}
+            disabled={!resolved.distortion}
+            format={(v) => `${Math.round(v)}%`}
+          />
+          <LS
+            label="Vignetting"
+            read={(x) => x.profile.vignetting}
+            write={(x, v) => (x.profile.vignetting = v)}
+            min={0}
+            max={200}
+            def={100}
+            disabled={!resolved.vignetting}
+            format={(v) => `${Math.round(v)}%`}
+          />
+        </>
+      )}
+      <div className="lens-credit muted micro">
+        <span
+          title={
+            status
+              ? `${status.lenses} lenses, ${status.cameras} cameras${
+                  status.imported ? `, ${status.imported} imported` : ''
+                } · ${status.origin === 'online' ? 'updated from' : 'shipped; updates from'} ${status.url}${
+                  status.error ? ` · last check: ${status.error}` : ''
+                }`
+              : undefined
+          }
+        >
+          Lens data: Lensfun (CC BY-SA 3.0) · {shortVersion(status?.version ?? null)}
+          {status?.origin === 'online' ? ' · updated' : ''}
+        </span>
+        <button className="sm ghost" disabled={checking} onClick={() => void check()}>
+          {checking ? 'Checking…' : 'Check for updates'}
+        </button>
+      </div>
+    </Section>
+  )
 }
 
 export function LensPanel(): React.JSX.Element | null {
@@ -91,46 +330,11 @@ export function LensPanel(): React.JSX.Element | null {
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
   const say = useLibrary((s) => s.say)
-  const [profiles, setProfiles] = useState<LensProfile[]>([])
   const [measured, setMeasured] = useState<CaMeasurement | null>(null)
   const [measuring, setMeasuring] = useState(false)
 
-  useEffect(() => {
-    void api.lens.profiles().then(setProfiles, () => setProfiles([]))
-  }, [])
-
   if (!session || !recipe) return null
   const l = recipe.lens
-  const shot = session.info.lens
-  const matched = matchProfile(shot, profiles)
-
-  /** Resolve the profile for this photo and keep the result in the recipe. */
-  const applyProfile = (r: Recipe, enabled: boolean, id: string | null, list = profiles): void => {
-    r.lens.profile.enabled = enabled
-    r.lens.profile.id = id
-    const p = chosenProfile(r.lens, list, shot)
-    r.lens.profile.resolved = p ? resolveProfile(p, shot) : null
-  }
-
-  const choose = async (v: string): Promise<void> => {
-    if (v === 'import') {
-      try {
-        const added = await api.lens.importProfiles()
-        if (added.length === 0) return
-        const all = await api.lens.profiles()
-        setProfiles(all)
-        edit((r) => applyProfile(r, true, added[0].id, all))
-        commit('Lens: import profile')
-        say(`Imported ${added.map((p) => profileName(p)).join(', ')}`)
-      } catch (err) {
-        say(errorText(err), 'error')
-      }
-      return
-    }
-    edit((r) => applyProfile(r, true, v === 'auto' ? null : v))
-    commit('Lens: profile')
-  }
-
   const measureCa = async (): Promise<void> => {
     setMeasuring(true)
     try {
@@ -160,71 +364,7 @@ export function LensPanel(): React.JSX.Element | null {
 
   return (
     <ToolPanel>
-      <Section id="lens.profile" title="Profile">
-        <p className="muted small">{describeLens(shot) ?? 'The file names no lens.'}</p>
-        <div className="row">
-          <Toggle
-            on={l.profile.enabled}
-            onChange={(on) => {
-              edit((r) => applyProfile(r, on, r.lens.profile.id))
-              commit(on ? 'Lens: profile on' : 'Lens: profile off')
-            }}
-            title="Correct distortion, vignetting and colour fringes from a profile of this lens"
-          >
-            Enable profile corrections
-          </Toggle>
-        </div>
-        {l.profile.enabled && (
-          <Select
-            label="Profile"
-            value={l.profile.id ?? 'auto'}
-            onChange={(v) => void choose(v)}
-            options={[
-              {
-                value: 'auto',
-                label: matched ? `Auto — ${profileName(matched)}` : 'Auto — none found'
-              },
-              ...profiles.map((p) => ({ value: p.id, label: profileName(p) })),
-              { value: 'import', label: 'Import profile…' }
-            ]}
-          />
-        )}
-        {l.profile.enabled && !resolved && (
-          <p className="note small">
-            No profile for this lens yet. Import one as JSON (Lensfun&apos;s models); profiles for
-            common lenses are coming in an update.
-          </p>
-        )}
-        {resolved && (
-          <>
-            <p className="muted small">
-              {resolved.name}
-              {resolved.focal ? ` at ${Math.round(resolved.focal * 10) / 10} mm` : ''}
-              {resolved.aperture ? `, f/${Math.round(resolved.aperture * 10) / 10}` : ''}
-            </p>
-            <LS
-              label="Distortion"
-              read={(x) => x.profile.distortion}
-              write={(x, v) => (x.profile.distortion = v)}
-              min={0}
-              max={200}
-              def={100}
-              disabled={!resolved.distortion}
-              format={(v) => `${Math.round(v)}%`}
-            />
-            <LS
-              label="Vignetting"
-              read={(x) => x.profile.vignetting}
-              write={(x, v) => (x.profile.vignetting = v)}
-              min={0}
-              max={200}
-              def={100}
-              disabled={!resolved.vignetting}
-              format={(v) => `${Math.round(v)}%`}
-            />
-          </>
-        )}
-      </Section>
+      <LensProfileSection />
 
       <Section id="lens.ca" title="Chromatic aberration">
         <div className="row">
