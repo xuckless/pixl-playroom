@@ -9,7 +9,7 @@ import { BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
 import { mkdir } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
-import { compile, orientedFrame } from '../shared/compile'
+import { compile, framingWarps, orientedFrame } from '../shared/compile'
 import type { ConvertRequest, Dither } from '../shared/engine-types'
 import {
   buildColor,
@@ -186,9 +186,7 @@ export class Exporter {
         ? { ...s, hdr: { ...s.hdr, mode: 'sdr' } }
         : s
     const floatWork =
-      compiled.grade !== null ||
-      compiled.lens !== null ||
-      (compiled.framing?.rotate_degrees ?? 0) !== 0
+      compiled.grade !== null || compiled.lens !== null || framingWarps(compiled.framing)
     const resize = buildResize(s, cw, ch)
     const color = buildColor(effective, info.is_hdr, info.peak_nits)
     // Dither acts on the one float → integer rounding, so it is only asked

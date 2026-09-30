@@ -11,6 +11,7 @@
 import { NO_ADD, type AddColourSetting } from './addcolor'
 import type { BlendMode, KeyBand, MaskMode } from './engine-types'
 import { defaultLens, type LensSetting } from './lens'
+import { defaultUpright, type UprightSetting } from './upright'
 
 export const RECIPE_VERSION = 1
 
@@ -191,6 +192,8 @@ export interface GeometrySetting {
   crop: { x: number; y: number; width: number; height: number } | null
   /** Width over height the crop tool holds, or null for free. */
   aspect: number | null
+  /** Perspective correction (see `upright.ts`). */
+  upright: UprightSetting
 }
 
 // ── Local adjustments ────────────────────────────────────────────────────────
@@ -461,7 +464,14 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       blueHue: 0,
       blueSaturation: 0
     },
-    geometry: { quarterTurns: 0, flipHorizontal: false, straighten: 0, crop: null, aspect: null },
+    geometry: {
+      quarterTurns: 0,
+      flipHorizontal: false,
+      straighten: 0,
+      crop: null,
+      aspect: null,
+      upright: defaultUpright()
+    },
     layers: [],
     custom: []
   }

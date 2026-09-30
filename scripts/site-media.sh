@@ -131,7 +131,7 @@ shots() {
 # scripts/site-tools.mjs opens a photo per tool, applies an edit that gives
 # the panel something to show, turns the wheel to it and captures the window
 # at twice 1600×1000.
-TOOLS=(basic curve hsl grade detail effects masks crop calibration)
+TOOLS=(basic curve hsl grade detail lens effects masks crop calibration)
 tools() {
   mkdir -p "$SITE/shots/tools" "$SCRATCH/tools"
   PLAYROOM_USER_DATA="$SCRATCH/tools-profile" \

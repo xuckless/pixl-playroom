@@ -24,6 +24,8 @@ import { ASPECTS, aspectValue } from '../lib/aspects'
 import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../lib/geometry'
 import { Icon, PathIcon } from '../components/icons'
 import { CurvePresets } from './CurvePresets'
+import { applyUpright, startGuides } from '../lib/upright'
+import type { UprightMode } from '../../../shared/upright'
 
 type Read = (r: Recipe) => number
 type Write = (r: Recipe, v: number) => void
@@ -1143,6 +1145,8 @@ export function GeometryPanel(): React.JSX.Element | null {
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
   const setGesture = useDevelop((s) => s.setGesture)
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
   if (!recipe || !session) return null
   const g = recipe.geometry
   return (
@@ -1187,6 +1191,128 @@ export function GeometryPanel(): React.JSX.Element | null {
         format={(v) => `${v.toFixed(2)}°`}
         onGesture={(on) => setGesture(on ? 'straighten' : null)}
       />
+      <Section id="crop.upright" title="Upright">
+        <div className="seg upright-modes" role="group" aria-label="Upright">
+          {UPRIGHT_MODES.map((m) => (
+            <button
+              key={m.value}
+              className={g.upright.mode === m.value ? 'on' : ''}
+              aria-pressed={g.upright.mode === m.value}
+              title={m.title}
+              onClick={() => void applyUpright(m.value)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        {g.upright.mode === 'guided' && tool !== 'upright-guide' && (
+          <div className="row">
+            <button className="sm" onClick={startGuides}>
+              Edit guides ({g.upright.guides.length})
+            </button>
+          </div>
+        )}
+        <p className="muted small">
+          {g.upright.mode === 'off'
+            ? 'Levels and makes upright from the straight lines in the photo.'
+            : 'The crop fits the corrected picture; the sliders below add to it.'}
+        </p>
+      </Section>
+      <Section
+        id="crop.transform"
+        title="Transform"
+        right={
+          <button
+            className="sm ghost"
+            title="The sliders back to zero (the Upright mode stays)"
+            onClick={() => {
+              const u = g.upright
+              if (
+                !u.vertical &&
+                !u.horizontal &&
+                !u.rotate &&
+                !u.aspect &&
+                u.scale === 100 &&
+                !u.offsetX &&
+                !u.offsetY
+              )
+                return
+              edit((r) =>
+                Object.assign(r.geometry.upright, {
+                  vertical: 0,
+                  horizontal: 0,
+                  rotate: 0,
+                  aspect: 0,
+                  scale: 100,
+                  offsetX: 0,
+                  offsetY: 0
+                })
+              )
+              commit('Transform: reset')
+            }}
+          >
+            Reset
+          </button>
+        }
+      >
+        <RS
+          label="Vertical"
+          read={(r) => r.geometry.upright.vertical}
+          write={(r, v) => (r.geometry.upright.vertical = v)}
+          title="Tilt top and bottom: straightens converging verticals"
+        />
+        <RS
+          label="Horizontal"
+          read={(r) => r.geometry.upright.horizontal}
+          write={(r, v) => (r.geometry.upright.horizontal = v)}
+        />
+        <RS
+          label="Rotate"
+          read={(r) => r.geometry.upright.rotate}
+          write={(r, v) => (r.geometry.upright.rotate = v)}
+          step={0.5}
+        />
+        <RS
+          label="Aspect"
+          read={(r) => r.geometry.upright.aspect}
+          write={(r, v) => (r.geometry.upright.aspect = v)}
+        />
+        <RS
+          label="Scale"
+          read={(r) => r.geometry.upright.scale}
+          write={(r, v) => (r.geometry.upright.scale = v)}
+          min={50}
+          max={150}
+          def={100}
+        />
+        <RS
+          label="X offset"
+          read={(r) => r.geometry.upright.offsetX}
+          write={(r, v) => (r.geometry.upright.offsetX = v)}
+        />
+        <RS
+          label="Y offset"
+          read={(r) => r.geometry.upright.offsetY}
+          write={(r, v) => (r.geometry.upright.offsetY = v)}
+        />
+      </Section>
     </ToolPanel>
   )
 }
+
+const UPRIGHT_MODES: { value: UprightMode; label: string; title: string }[] = [
+  { value: 'off', label: 'Off', title: 'No perspective correction' },
+  {
+    value: 'auto',
+    label: 'Auto',
+    title: 'The most the lines support: Full, else Vertical, else Level'
+  },
+  { value: 'level', label: 'Level', title: 'Horizontal lines level' },
+  { value: 'vertical', label: 'Vertical', title: 'Level, and vertical lines upright' },
+  { value: 'full', label: 'Full', title: 'Level, vertical and horizontal perspective' },
+  {
+    value: 'guided',
+    label: 'Guided',
+    title: 'Draw two to four lines that should be upright or level'
+  }
+]

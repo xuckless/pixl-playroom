@@ -5,6 +5,8 @@ import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../../lib/g
 import { useDevelop } from '../../state/develop'
 import { CROP_GUIDES, useUi, type BrushSlot } from '../../state/ui'
 import { addLabel, addPickHint } from '../../lib/addpick'
+import { applyGuides } from '../../lib/upright'
+import { MAX_GUIDES } from './UprightGuides'
 
 /** A compact range for the floating bar: label, rail and value. */
 export function BarRange({
@@ -194,6 +196,35 @@ const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
   }
 }
 
+/** Guided Upright: how many guides, and Apply once there are two. */
+function GuideBar(): React.JSX.Element {
+  const guides = useDevelop((s) => s.guides)
+  const setGuides = useDevelop((s) => s.setGuides)
+  const setTool = useDevelop((s) => s.setTool)
+  return (
+    <>
+      <span className="bar-title micro">Guided Upright</span>
+      <span className="bar-hint">
+        Drag along edges that should be upright or level · {guides.length}/{MAX_GUIDES} · Alt-click
+        removes
+      </span>
+      <button className="sm ghost" disabled={guides.length === 0} onClick={() => setGuides([])}>
+        Clear
+      </button>
+      <button className="sm ghost" onClick={() => setTool('none')} title="Esc">
+        Cancel
+      </button>
+      <button
+        className="sm primary"
+        disabled={guides.length < 2}
+        onClick={() => void applyGuides()}
+      >
+        Apply
+      </button>
+    </>
+  )
+}
+
 /**
  * The bar of whatever tool is working on the picture, floating in glass over
  * its top edge — so opening a tool never resizes the loupe under it.
@@ -215,6 +246,7 @@ export function FloatingToolbar(): React.JSX.Element | null {
   return (
     <LiquidGlass className="floating-toolbar" radius={2} bezel={10} key={tool}>
       {tool === 'crop' && <CropBar />}
+      {tool === 'upright-guide' && <GuideBar />}
       {tool === 'brush' && <BrushBar />}
       {hint && (
         <>

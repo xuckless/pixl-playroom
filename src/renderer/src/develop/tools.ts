@@ -119,7 +119,8 @@ export function selectPanel(id: ToolId, opts: { tool?: Tool } = {}): void {
     cropTimer = setTimeout(() => {
       if (useUi.getState().panel === 'crop') useDevelop.getState().setTool('crop')
     }, CROP_SETTLE_MS)
-  } else if (id !== 'crop' && dev.tool === 'crop') dev.setTool('none')
+  } else if (id !== 'crop' && (dev.tool === 'crop' || dev.tool === 'upright-guide'))
+    dev.setTool('none')
   if (id !== 'masks' && MASK_TOOLS.includes(dev.tool)) dev.setTool('none')
 }
 

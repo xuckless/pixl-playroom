@@ -865,3 +865,12 @@ fieldset::before {
   font-family: var(--font-mono);
   text-transform: lowercase;
 }
+.upright-modes {
+  display: flex;
+  margin-bottom: 8px;
+}
+.upright-modes button {
+  flex: 1;
+  padding-left: 0;
+  padding-right: 0;
+}

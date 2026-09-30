@@ -294,8 +294,35 @@ Phased; each phase is tested and committed before the next.
       splits); Playroom's own curve moves 0.25, so switching would weaken
       every existing region edit about fourfold. Revisit if the engine takes
       a strength, or with a recipe migration that rescales the sliders.
-- [ ] Phase 4 — Lens tool (manual, auto CA, defringe, a profile system).
-- [ ] Phase 5 — Upright in Crop & Rotate.
+- [x] Phase 4 — the Lens tool (after Detail): lens profiles
+      (`src/shared/lens.ts`: JSON, Lensfun's poly3/poly5/ptlens distortion,
+      linear/poly3 TCA and `pa` vignetting, matched on the file's lens model,
+      interpolated by focal length, vignetting at the nearest aperture;
+      imported into `userData/lens-profiles/`, the resolved correction kept
+      in the recipe), Remove CA measured on the original
+      (`suggestLateralCa`, radial scale about the centre), manual
+      distortion and vignetting (profile and manual vignetting multiply into
+      one polynomial), defringe with a fringe picker. A warp crops its empty
+      edges (`Outside::Crop`), keeping the frame's shape, so crops and masks
+      stay fractions of it; 1:1 regions and the eyedropper are mapped into
+      the corrected frame (`lensFrame`). Match in Additive Colour takes its
+      target from a wheel or a hex too.
+- [x] Phase 5 — Upright in Crop & Rotate (`src/shared/upright.ts`): Off /
+      Auto (Full, else Vertical, else Level) / Level / Vertical / Full from
+      `suggestUpright` on the large proxy, Guided from two to four lines
+      (`uprightFromLines`, drawn on the frame before the warp), and the
+      Transform sliders on top. The engine's homography is reproduced
+      exactly, so masks, pins and pickers map through it, and the crop is
+      fitted to the corrected picture as the engine would; the photo's
+      centre is kept at the canvas centre (a re-aimed camera slides it). A
+      suggestion that keeps under a quarter of the frame, or tilts past 40°,
+      is refused and Auto tries the next. The crop tool shows the warp whole,
+      its empty corners transparent (a PNG preview with alpha; mask planes
+      wait while it is open).
+  - [ ] 1:1 sharp tiles with a warp or a straighten (the engine renders a
+        region only of the plain frame).
+  - [ ] Upright's focal length from the 35 mm equivalent only; a file that
+        states only the real focal length and no crop factor gets 35 mm.
 - [ ] Phase 6 — Heal tool (heal, clone, fill, red eye, pet eye).
 - [ ] Phase 7 — AI models on demand (models.pixlfoundation.com), real
       subject and background masks.
@@ -305,6 +332,11 @@ Phased; each phase is tested and committed before the next.
 - [ ] Phase 11 — export watermark.
 - [ ] Phase 12 — real lens profiles (lensfun, DNG opcodes and maker notes,
       vendor profiles as user imports).
+  - [ ] A profile resolves per photo: pasting or syncing lens settings copies
+        the source's resolved correction; re-resolve each target at its own
+        focal length when the profile is known.
+  - [ ] Constrain Crop off (keep the warped frame's empty corners as
+        transparent) needs an alpha preview path; today a warp always crops.
 - [ ] HEIC export: the published engine's libheif has no HEVC encoder
       (`EncoderUnavailable`); AVIF works.
 

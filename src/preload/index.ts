@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
-import type { NoiseEstimate } from '../shared/engine-types'
+import type { NoiseEstimate, Transform } from '../shared/engine-types'
+import type { GuideLine } from '../shared/upright'
 import type { ExportSettings } from '../shared/export'
 import type { LensProfile } from '../shared/lens'
 import {
@@ -151,6 +152,10 @@ const api = {
     autoWb: (key: string) => call<SampleResult['wb']>(IPC.develop.autoWb, key),
     noise: (key: string) => call<NoiseEstimate | null>(IPC.develop.noise, key),
     measureCa: (key: string) => call<CaMeasurement>(IPC.develop.measureCa, key),
+    suggestUpright: (key: string, mode: 'Level' | 'Vertical' | 'Full', focal: number) =>
+      call<Transform>(IPC.develop.suggestUpright, key, mode, focal),
+    uprightFromLines: (key: string, lines: GuideLine[], focal: number) =>
+      call<Transform>(IPC.develop.uprightFromLines, key, lines, focal),
     putPlane: (png: string) => call<string>(IPC.develop.putPlane, png),
     getPlane: (ref: string) => call<string>(IPC.develop.getPlane, ref),
     saveSnapshots: (key: string, snapshots: Snapshot[]) =>

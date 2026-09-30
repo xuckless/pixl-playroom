@@ -116,6 +116,9 @@ export const IPC = {
     noise: 'develop:noise',
     /** Measure the photo's lateral chromatic aberration (Lens → Remove CA). */
     measureCa: 'develop:measure-ca',
+    /** Upright: a mode's suggestion measured on the photo, or the guides' transform. */
+    suggestUpright: 'develop:suggest-upright',
+    uprightFromLines: 'develop:upright-from-lines',
     /** main → renderer: a render finished */
     rendered: 'develop:rendered',
     /** main → renderer: a render failed */
@@ -396,6 +399,8 @@ export interface ViewState {
   maskLive?: boolean
   /** Longest edge wanted from the renderer, in device pixels. */
   targetEdge: number
+  /** Upright's guides are being drawn: show the whole frame before the warp. */
+  guides?: boolean
 }
 
 export interface RenderReport {

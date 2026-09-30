@@ -1,6 +1,6 @@
 import { memo, type CSSProperties } from 'react'
 import type { ViewGeometry } from '../../../../shared/view'
-import { useDevelop } from '../../state/develop'
+import { useDevelop, wholeFrameTool } from '../../state/develop'
 import { useUi, type OverlayMode } from '../../state/ui'
 import { MaskCanvas } from './maskgl/MaskCanvas'
 import { useMaskGlBroken } from './maskgl/state'
@@ -91,7 +91,7 @@ export function MaskOverlay({
   const tool = useDevelop((s) => s.tool)
   const showAll = useUi((s) => s.maskOverlay.showAll)
   const broken = useMaskGlBroken((s) => s.broken)
-  if (tool === 'crop') return null
+  if (wholeFrameTool(tool)) return null
   // The loupe draws the selected mask itself where it can (in step with the
   // edit, then the engine's); every mask at once, and the fallback, are CSS.
   const gl = g !== null && !showAll && !broken

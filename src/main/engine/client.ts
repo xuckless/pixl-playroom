@@ -20,8 +20,11 @@ import type {
   ImageStats,
   LensCorrection,
   LensReport,
+  Framing,
+  MaskBounds,
   Rgb,
   SourceInfo,
+  Transform,
   WhiteBalance
 } from '../../shared/engine-types'
 import type { EngineStatus } from '../../shared/ipc'
@@ -129,6 +132,23 @@ export class EngineClient {
   /** What a lens correction does to a `width × height` frame, without pixels. */
   lensFrame(lens: LensCorrection, width: number, height: number): Promise<LensReport> {
     return this.call('lensFrame', [lens, width, height, 2]) as Promise<LensReport>
+  }
+  /** The rectangle a framing keeps of a `width × height` frame (after `Outside::Crop`). */
+  framingCrop(framing: Framing, width: number, height: number): Promise<MaskBounds> {
+    return this.call('framingCrop', [framing, width, height]) as Promise<MaskBounds>
+  }
+  /** Measure a photo's lines and suggest an Upright (see `upright.rs`). */
+  suggestUpright(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.call('suggestUpright', [request]) as Promise<Record<string, unknown>>
+  }
+  /** The Upright that makes guide lines vertical or horizontal (Guided). */
+  uprightFromLines(
+    lines: { from: { x: number; y: number }; to: { x: number; y: number } }[],
+    width: number,
+    height: number,
+    focal: number
+  ): Promise<Transform> {
+    return this.call('uprightFromLines', [lines, width, height, focal]) as Promise<Transform>
   }
   /** Measure a photo's lateral chromatic aberration (see `lateral_ca.rs`). */
   suggestLateralCa(request: Record<string, unknown>): Promise<Record<string, unknown>> {

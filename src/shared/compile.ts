@@ -31,10 +31,12 @@ import type {
   Orientation,
   Primary,
   Rgb,
+  Transform,
   WhitePoint
 } from './engine-types'
 import { addColorOp } from './addcolor'
 import { defringeOp, lensCorrection } from './lens'
+import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
 import {
   HSL_BANDS,
@@ -100,6 +102,8 @@ export interface CompileContext {
    * one expanded to HDR on export. Changes where bounded blends run.
    */
   hdr?: boolean
+  /** False while Upright's guides are drawn: the frame as it is before the warp. */
+  showTransform?: boolean
 }
 
 export interface Compiled {
@@ -352,25 +356,29 @@ export function autoCrop(degrees: number, w: number, h: number): CropRect {
   return { x: (1 - shrink) / 2, y: (1 - shrink) / 2, width: shrink, height: shrink }
 }
 
-/** Whether every corner of `crop` (normalised canvas) lies inside the rotated `w × h` picture. */
-export function cropFits(crop: CropRect, degrees: number, w: number, h: number): boolean {
-  const th = (degrees * Math.PI) / 180
-  const c = Math.cos(th)
-  const s = Math.sin(th)
-  const corners = [
-    [crop.x, crop.y],
-    [crop.x + crop.width, crop.y],
-    [crop.x, crop.y + crop.height],
-    [crop.x + crop.width, crop.y + crop.height]
-  ]
-  return corners.every(([nx, ny]) => {
-    const qx = nx * w - w / 2
-    const qy = ny * h - h / 2
-    // Back into the picture by the inverse rotation.
-    const px = c * qx + s * qy
-    const py = -s * qx + c * qy
-    return Math.abs(px) <= w / 2 + 0.5 && Math.abs(py) <= h / 2 + 0.5
-  })
+/**
+ * Whether every corner of `crop` (normalised canvas) has picture behind it:
+ * inside the `w × h` picture rotated by `degrees`, and warped by an Upright
+ * `transform` when there is one.
+ */
+export function cropFits(
+  crop: CropRect,
+  degrees: number,
+  w: number,
+  h: number,
+  transform: Transform | null = null
+): boolean {
+  return cropFitsWarp(crop, degrees, transform, w, h)
+}
+
+/** Whether framing resamples: a straighten or an Upright warp (both need float work). */
+export function framingWarps(f: Framing | null): boolean {
+  return (f?.rotate_degrees ?? 0) !== 0 || !!f?.transform
+}
+
+/** Whether a render must carry alpha: the crop tool shows a warp's empty corners transparent. */
+export function framingTransparent(f: Framing | null): boolean {
+  return f?.outside === 'Transparent'
 }
 
 /** The user-oriented frame's size and orientation for a recipe. */
@@ -389,7 +397,13 @@ export function orientedFrame(
  * corner lies inside the picture rotated by `degrees`. A straighten changed
  * after a crop was drawn must never hand the engine a crop it will refuse.
  */
-export function fitCrop(crop: CropRect, degrees: number, w: number, h: number): CropRect {
+export function fitCrop(
+  crop: CropRect,
+  degrees: number,
+  w: number,
+  h: number,
+  transform: Transform | null = null
+): CropRect {
   const cx = Math.min(1, Math.max(0, crop.x + crop.width / 2))
   const cy = Math.min(1, Math.max(0, crop.y + crop.height / 2))
   const at = (k: number): CropRect => {
@@ -399,32 +413,50 @@ export function fitCrop(crop: CropRect, degrees: number, w: number, h: number): 
     const y = Math.min(Math.max(0, cy - ch / 2), 1 - ch)
     return { x, y, width: cw, height: ch }
   }
-  if (cropFits(at(1), degrees, w, h)) return at(1)
+  if (cropFits(at(1), degrees, w, h, transform)) return at(1)
   let lo = 0
   let hi = 1
   for (let i = 0; i < 30; i++) {
     const mid = (lo + hi) / 2
-    if (cropFits(at(mid), degrees, w, h)) lo = mid
+    if (cropFits(at(mid), degrees, w, h, transform)) lo = mid
     else hi = mid
   }
   return at(lo * 0.999)
 }
 
 /** The largest centred crop of `aspect` (width/height, in pixels) inside the rotated picture. */
-export function aspectCrop(aspect: number, degrees: number, w: number, h: number): CropRect {
+export function aspectCrop(
+  aspect: number,
+  degrees: number,
+  w: number,
+  h: number,
+  transform: Transform | null = null
+): CropRect {
   const frameAspect = w / h
   const base =
     aspect > frameAspect
       ? { width: 1, height: frameAspect / aspect }
       : { width: aspect / frameAspect, height: 1 }
-  return fitCrop({ x: (1 - base.width) / 2, y: (1 - base.height) / 2, ...base }, degrees, w, h)
+  return fitCrop(
+    { x: (1 - base.width) / 2, y: (1 - base.height) / 2, ...base },
+    degrees,
+    w,
+    h,
+    transform
+  )
 }
 
-/** The crop the engine gets: the user's (made to fit), the aspect's, or an auto-fit for a bare straighten. */
+/**
+ * The crop the engine gets: the user's (made to fit), the aspect's, or an
+ * auto-fit for a bare straighten or Upright — always clear of the corners a
+ * rotation or a perspective warp leaves without picture.
+ */
 export function effectiveCrop(r: Recipe, w: number, h: number): CropRect | null {
   const { straighten, crop, aspect } = r.geometry
-  if (crop) return fitCrop(crop, straighten, w, h)
-  if (aspect !== null && aspect > 0) return aspectCrop(aspect, straighten, w, h)
+  const t = uprightTransform(r.geometry.upright, w, h)
+  if (crop) return fitCrop(crop, straighten, w, h, t)
+  if (aspect !== null && aspect > 0) return aspectCrop(aspect, straighten, w, h, t)
+  if (t) return fitCrop({ x: 0, y: 0, width: 1, height: 1 }, straighten, w, h, t)
   if (straighten !== 0) return autoCrop(straighten, w, h)
   return null
 }
@@ -438,8 +470,33 @@ export function vignettePlacement(
   crop: CropRect | null,
   degrees: number,
   w: number,
-  h: number
+  h: number,
+  transform: Transform | null = null
 ): { centre: { x: number; y: number }; half: { x: number; y: number }; rotation: number } {
+  if (transform) {
+    // The grade runs before the warp: the crop's centre and its half sizes
+    // (to its edges' midpoints) are carried back into the frame, which is
+    // what the vignette is placed in.
+    const flat = vignettePlacement(crop, degrees, w, h)
+    const back = (x: number, y: number): { x: number; y: number } =>
+      canvasToFrame(transform, w, h, { x, y }) ?? { x, y }
+    const c0 = crop ?? { x: 0, y: 0, width: 1, height: 1 }
+    const mid = (fx: number, fy: number): { x: number; y: number } => {
+      const qx = (c0.x + fx * c0.width) * w - w / 2
+      const qy = (c0.y + fy * c0.height) * h - h / 2
+      const th = (degrees * Math.PI) / 180
+      return back(
+        (Math.cos(th) * qx + Math.sin(th) * qy + w / 2) / w,
+        (-Math.sin(th) * qx + Math.cos(th) * qy + h / 2) / h
+      )
+    }
+    const centre = back(flat.centre.x, flat.centre.y)
+    const dist = (a: { x: number; y: number }, b: { x: number; y: number }): number =>
+      Math.hypot((a.x - b.x) * w, (a.y - b.y) * h)
+    const hx = (dist(mid(1, 0.5), centre) + dist(mid(0, 0.5), centre)) / 2 / w
+    const hy = (dist(mid(0.5, 1), centre) + dist(mid(0.5, 0), centre)) / 2 / h
+    return { centre, half: { x: hx, y: hy }, rotation: flat.rotation - transform.rotate }
+  }
   const c = crop ?? { x: 0, y: 0, width: 1, height: 1 }
   const qx = (c.x + c.width / 2) * w - w / 2
   const qy = (c.y + c.height / 2) * h - h / 2
@@ -892,7 +949,13 @@ function baseStages(
   if (sharpen) look.push(sharpen)
   const e = r.effects
   if (e.vignetteAmount !== 0) {
-    const v = vignettePlacement(crop, r.geometry.straighten, oriented.width, oriented.height)
+    const v = vignettePlacement(
+      crop,
+      r.geometry.straighten,
+      oriented.width,
+      oriented.height,
+      uprightTransform(r.geometry.upright, oriented.width, oriented.height)
+    )
     look.push({
       Vignette: {
         amount: clamp(e.vignetteAmount / 100, -1, 1),
@@ -1080,17 +1143,31 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
   const orientation = compose(ctx.sourceOrientation, oriented.user)
   const straighten = ctx.applyCrop ? r.geometry.straighten : 0
   const shownCrop = ctx.applyCrop ? crop : null
+  // With the crop tool open the warp shows whole, its empty wedges
+  // transparent, so the crop is drawn over the canvas it cuts; guides are
+  // drawn on the frame before any warp.
+  const transform =
+    ctx.showTransform === false
+      ? null
+      : uprightTransform(r.geometry.upright, oriented.width, oriented.height)
+  const outside =
+    transform && !ctx.applyCrop
+      ? ('Transparent' as const)
+      : straighten !== 0 || transform
+        ? ('Crop' as const)
+        : null
   const framing: Framing | null =
-    orientation === 'Normal' && straighten === 0 && !shownCrop
+    orientation === 'Normal' && straighten === 0 && !shownCrop && !transform
       ? null
       : {
           orientation,
           rotate_degrees: round4(straighten),
           rotate_resampler: 'Lanczos3',
-          // A rotation leaves corners with no picture. The crop already
-          // keeps clear of them; `Crop` only shrinks it should rounding reach
-          // one, where `Refuse` would fail the render.
-          ...(straighten !== 0 ? { outside: 'Crop' as const } : {}),
+          ...(transform ? { transform } : {}),
+          // A rotation or warp leaves corners with no picture. The crop
+          // already keeps clear of them; `Crop` only shrinks it should
+          // rounding reach one, where `Refuse` would fail the render.
+          ...(outside ? { outside } : {}),
           crop: shownCrop
             ? {
                 x: round4(shownCrop.x),

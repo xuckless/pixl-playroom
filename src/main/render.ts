@@ -17,13 +17,22 @@ import log from 'electron-log/main'
 import { mkdir } from 'fs/promises'
 import { join } from 'path'
 import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020 } from '../shared/auto'
-import { compile, orientedFrame, type Compiled } from '../shared/compile'
+import {
+  compile,
+  fitCrop,
+  framingTransparent,
+  framingWarps,
+  orientedFrame,
+  type Compiled
+} from '../shared/compile'
 import { lensCorrection, MANUAL_GEOMETRY } from '../shared/lens'
+import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
 import type {
   HdrWorking,
   ConvertReport,
   LateralCa,
   LensCorrection,
+  Transform,
   ImageStats,
   Measure,
   NoiseEstimate,
@@ -219,7 +228,8 @@ class Session {
       seed: hash32(this.row.path),
       brushPaths: await brushPlanes(this.row.id, recipe, user),
       applyCrop,
-      hdr: this.info.is_hdr
+      hdr: this.info.is_hdr,
+      showTransform: !this.view.guides
     })
   }
 
@@ -328,22 +338,28 @@ class Session {
       if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq, rev })
       return
     }
-    const out = this.nextFile('view', 'jpg')
+    // A warp shown whole (the crop tool) keeps its empty corners: PNG with alpha.
+    const alpha = framingTransparent(compiled.framing)
+    const out = this.nextFile('view', alpha ? 'png' : 'jpg')
     const hdrStats =
       kind === 'full' ? this.measureHdr(cropMode, signal) : Promise.resolve(undefined)
     const report = await this.owner.engine.convert(
       {
         ...blankRequest(src.path, out, src.input),
-        pixel: { depth: 'Eight', channels: 3 },
-        encode: {
-          Jpeg: { quality: kind === 'draft' ? 92 : 95, subsampling: 'None', optimize: false }
-        },
+        pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
+        encode: alpha
+          ? { Png: { compression: 'Fast', filter: 'Sub' } }
+          : {
+              Jpeg: { quality: kind === 'draft' ? 92 : 95, subsampling: 'None', optimize: false }
+            },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: displayPolicy(this.info, 'DisplayP3'),
         grade: compiled.grade,
         framing: compiled.framing,
         lens: compiled.lens,
         threads: INTERACTIVE_THREADS,
+        // A warp shown whole counts its empty corners (as black) rather than
+        // risk measuring nothing when little of the picture is left.
         measure: measureOf(kind === 'draft' ? 2 : 1)
       },
       { signal }
@@ -399,7 +415,7 @@ class Session {
       const bins = 4096
       const request = {
         ...blankRequest(src.path, out, src.input),
-        pixel: { depth: 'Sixteen', channels: 3 },
+        pixel: { depth: 'Sixteen', channels: framingTransparent(compiled.framing) ? 4 : 3 },
         encode: { Png: { compression: 'Fast', filter: 'Sub' } },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: 'Preserve',
@@ -413,9 +429,7 @@ class Session {
       // (the engine refuses a working space nothing would use), so the file
       // is measured afterwards by the same numbers.
       const floatWork =
-        compiled.grade !== null ||
-        compiled.lens !== null ||
-        (compiled.framing?.rotate_degrees ?? 0) !== 0
+        compiled.grade !== null || compiled.lens !== null || framingWarps(compiled.framing)
       if (floatWork) {
         const r = await this.owner.engine.convert(
           { ...request, hdr, measure: { ...measureOf(1), domain: 'Linear', bins } },
@@ -452,8 +466,9 @@ class Session {
       this.lastMask = { key: this.key, seq: this.seq, rev, kind: 'mask', layerId, ...e }
       this.owner.send(IPC.develop.rendered, this.lastMask)
     }
-    if (index === undefined || !compiled.grade) {
-      // Nothing left in the mask (its last component undone or deleted): the
+    if (index === undefined || !compiled.grade || framingTransparent(compiled.framing)) {
+      // Nothing left in the mask (its last component undone or deleted), or a
+      // warp shown whole, which a one-channel plane cannot carry: the
       // overlay is told, or it would go on showing the old plane.
       this.maskSig = EMPTY
       send({ cropMode: this.view.cropMode, url: '', width: 0, height: 0 })
@@ -534,6 +549,9 @@ class Session {
   private async renderMaskThumbs(signal: AbortSignal): Promise<void> {
     const src = this.px.draft
     const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
+    // A warp shown whole has transparent corners a plane cannot carry; the
+    // thumbnails wait for the crop tool to close.
+    if (framingTransparent(compiled.framing)) return
     const live = new Set<string>()
     for (const layer of this.recipe.layers) {
       live.add(layer.id)
@@ -638,7 +656,7 @@ class Session {
     const report = await this.owner.engine.convert(
       {
         ...blankRequest(src.path, out, src.input),
-        pixel: { depth: 'Eight', channels: 3 },
+        pixel: { depth: 'Eight', channels: framingTransparent(compiled.framing) ? 4 : 3 },
         encode: { Png: { compression: 'Fast', filter: 'Sub' } },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: displayPolicy(this.info, 'DisplayP3'),
@@ -934,6 +952,55 @@ class Session {
     }
   }
 
+  /**
+   * Upright: the photo's lines found and the transform a mode asks for, on
+   * the large proxy as the loupe frames it (the user's turns, and the lens
+   * correction, which comes first). A mode the lines cannot support fails
+   * by name; the caller decides whether to try a lesser one.
+   */
+  async suggestUpright(mode: 'Level' | 'Vertical' | 'Full', focal: number): Promise<Transform> {
+    const src = this.px.proxy
+    const { user } = orientedFrame(this.recipe, src.width, src.height)
+    const r = (await this.owner.engine.suggestUpright({
+      source: { Path: src.path },
+      input: src.input,
+      raw: null,
+      gain_map: null,
+      orientation: user,
+      lens: lensCorrection(this.recipe.lens),
+      mode,
+      focal,
+      threads: INTERACTIVE_THREADS
+    })) as unknown as { transform: Transform }
+    this.usableUpright(r.transform, src.width, src.height)
+    return r.transform
+  }
+
+  /**
+   * Whether a suggestion is one to keep: a few mis-fitted lines can ask for
+   * a turn so steep the photo shrinks to a sliver (or past what the engine
+   * will resample). Centred as the develop view keeps it, a quarter of the
+   * frame must remain; otherwise it fails by name and Auto tries a lesser
+   * mode.
+   */
+  private usableUpright(t: Transform, w: number, h: number): void {
+    const { width, height } = orientedFrame(this.recipe, w, h)
+    const tooSteep = new Error('the lines ask for too strong a correction')
+    if (Math.abs(t.vertical) > 40 || Math.abs(t.horizontal) > 40) throw tooSteep
+    const centred = uprightTransform({ ...defaultUpright(), suggested: t }, width, height)
+    if (!centred) return
+    const kept = fitCrop({ x: 0, y: 0, width: 1, height: 1 }, 0, width, height, centred)
+    if (kept.width * kept.height < 0.25) throw tooSteep
+  }
+
+  /** Guided Upright: the transform that makes the guides (frame fractions) upright or level. */
+  async uprightFromLines(lines: GuideLine[], focal: number): Promise<Transform> {
+    const { width, height } = orientedFrame(this.recipe, this.px.frameWidth, this.px.frameHeight)
+    const t = await this.owner.engine.uprightFromLines(lines, width, height, focal)
+    this.usableUpright(t, this.px.frameWidth, this.px.frameHeight)
+    return t
+  }
+
   /** The noise the denoiser would measure, on the full-resolution frame. */
   async noise(): Promise<NoiseEstimate | null> {
     const src: ProxyFile = this.isRaw
@@ -1056,6 +1123,18 @@ export class DevelopSessions {
 
   measureCa(key: string): Promise<CaMeasurement> {
     return this.get(key).measureCa()
+  }
+
+  suggestUpright(
+    key: string,
+    mode: 'Level' | 'Vertical' | 'Full',
+    focal: number
+  ): Promise<Transform> {
+    return this.get(key).suggestUpright(mode, focal)
+  }
+
+  uprightFromLines(key: string, lines: GuideLine[], focal: number): Promise<Transform> {
+    return this.get(key).uprightFromLines(lines, focal)
   }
 
   /** The recipe an open session holds, which may be newer than the sidecar. */

@@ -38,6 +38,7 @@ import { activateLicence, deactivateLicence, licence, validateLicence } from './
 import type { AiCapabilities, AiStartRequest } from '../shared/ai'
 import { importProfiles, listProfiles } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
+import type { GuideLine } from '../shared/upright'
 import { enhanceAvailability } from './enhance'
 import type { AiJobs } from './ai/jobs'
 import { fakeAi } from './ai/segment'
@@ -276,6 +277,14 @@ export function registerIpc(s: Services): void {
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))
   handle(IPC.develop.measureCa, (key: string) => s.sessions.measureCa(key))
+  handle(
+    IPC.develop.suggestUpright,
+    (key: string, mode: 'Level' | 'Vertical' | 'Full', focal: number) =>
+      s.sessions.suggestUpright(key, mode, focal)
+  )
+  handle(IPC.develop.uprightFromLines, (key: string, lines: GuideLine[], focal: number) =>
+    s.sessions.uprightFromLines(key, lines, focal)
+  )
   handle(IPC.develop.sample, (key: string, x: number, y: number) => s.sessions.sample(key, x, y))
   handle(IPC.develop.autoTone, (key: string) => s.sessions.autoTone(key))
   handle(IPC.develop.autoWb, (key: string) => s.sessions.autoWb(key))

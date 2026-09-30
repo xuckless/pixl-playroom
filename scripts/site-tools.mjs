@@ -90,6 +90,15 @@ const SHOTS = [
     }
   },
   {
+    // Manual corrections and defringe: something for every section to show.
+    id: 'lens',
+    photo: 3218,
+    edit: (r) => {
+      Object.assign(r.lens, { distortion: 18, vignetting: 25, vignettingMidpoint: 40 })
+      Object.assign(r.lens.defringe, { purpleAmount: 35, greenAmount: 15 })
+    }
+  },
+  {
     id: 'effects',
     photo: 3273,
     edit: (r) => {

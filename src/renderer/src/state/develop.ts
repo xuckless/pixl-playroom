@@ -15,6 +15,7 @@ import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
 import { useLibrary } from './library'
 import { useUi } from './ui'
+import type { GuideLine } from '../../../shared/upright'
 
 export type Tool =
   | 'none'
@@ -28,8 +29,18 @@ export type Tool =
   | 'point-picker'
   | 'add-pick'
   | 'fringe-pick'
+  | 'upright-guide'
   | 'tat'
 export type Compare = 'off' | 'before' | 'split'
+
+/**
+ * The tools that work on the whole frame rather than the framed picture:
+ * Crop (the warped canvas, before its crop) and Upright's guides (the frame
+ * before the warp). They share the whole-frame render.
+ */
+export function wholeFrameTool(t: Tool): boolean {
+  return t === 'crop' || t === 'upright-guide'
+}
 
 /** Where an added colour lives: Colour grading, the Effects wash, or a mask. */
 export type AddTarget = 'grade' | 'wash' | { layer: string }
@@ -98,6 +109,8 @@ interface DevelopState {
   /** The selected swatch of the colour mixer's Point tab. */
   pointId: string | null
   addPick: AddPick | null
+  /** Upright's guides while they are drawn (tool `upright-guide`), frame fractions. */
+  guides: GuideLine[]
   /** The point curve's channel on show (the targeted tool moves that one). */
   curveChannel: CurveChannel
   /** What the targeted adjustment tool moves: the HSL bands or the point curve. */
@@ -134,6 +147,7 @@ interface DevelopState {
   setHslFocus(b: HslBand | null): void
   setHslTab(t: DevelopState['hslTab']): void
   setPointId(id: string | null): void
+  setGuides(g: GuideLine[]): void
   /** Start (or, with null, stop) the additive-colour picker. */
   setAddPick(p: AddPick | null): void
   setCurveChannel(c: CurveChannel): void
@@ -237,6 +251,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   hslTab: 'all',
   pointId: null,
   addPick: null,
+  guides: [],
   curveChannel: 'master',
   tatTarget: 'hsl',
   noise: null,
@@ -370,12 +385,16 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   setTool(tool) {
     const prev = get().tool
     if (tool !== 'add-pick' && get().addPick) set({ addPick: null })
-    if ((prev === 'crop') === (tool === 'crop')) return set({ tool })
+    const same =
+      wholeFrameTool(prev) === wholeFrameTool(tool) &&
+      (prev === 'upright-guide') === (tool === 'upright-guide')
+    if (same) return set({ tool })
     // Show the other view's last picture at once; a fresh one follows.
     const { pictures, picture } = get()
-    const shown = tool === 'crop' ? pictures.crop : pictures.framed
-    // The crop tool works on the whole fitted frame.
-    set({ tool, picture: shown ?? picture, ...(tool === 'crop' ? { zoom: FIT } : {}) })
+    const whole = wholeFrameTool(tool)
+    const shown = whole ? pictures.crop : pictures.framed
+    // The whole-frame tools work on the whole fitted frame.
+    set({ tool, picture: shown ?? picture, ...(whole ? { zoom: FIT } : {}) })
     get().pushView()
   },
 
@@ -434,6 +453,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     get().setTool('add-pick')
   },
 
+  setGuides(guides) {
+    set({ guides })
+  },
+
   setPointId(pointId) {
     set({ pointId })
   },
@@ -456,7 +479,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     const { session, tool, layerId, targetEdge } = get()
     if (!session) return
     const view: ViewState = {
-      cropMode: tool === 'crop',
+      cropMode: wholeFrameTool(tool),
+      guides: tool === 'upright-guide',
       // The before render also feeds the hue chart's ghost bars, so it is
       // always wanted, compared or not.
       before: true,
@@ -502,7 +526,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       // A late draft must not replace a newer render.
       if (cur && e.seq < cur.seq) return
       const next = { ...pictures, [slot]: e }
-      const forView = (tool === 'crop') === Boolean(e.cropMode)
+      const forView = wholeFrameTool(tool) === Boolean(e.cropMode)
       // Only the view on screen changes the picture, the scopes and the busy
       // state; a render made for the other view is kept for when it returns.
       if (!forView) return set({ pictures: next })

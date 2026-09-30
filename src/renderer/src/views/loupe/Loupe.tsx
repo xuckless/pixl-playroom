@@ -32,7 +32,8 @@ import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { samplePatch } from '../../lib/image'
 import { pickAdd } from '../../lib/addpick'
 import { fringeFrom } from '../../lib/helpers'
-import { useDevelop } from '../../state/develop'
+import { useDevelop, wholeFrameTool } from '../../state/develop'
+import { UprightGuides } from './UprightGuides'
 import { useLibrary } from '../../state/library'
 import { BrushLayer } from './BrushTool'
 import { ClippingOverlay } from './ClippingOverlay'
@@ -125,7 +126,13 @@ export function Loupe(): React.JSX.Element {
   const g = useMemo(
     () =>
       session && recipe
-        ? viewGeometry(recipe, session.frameWidth, session.frameHeight, tool === 'crop')
+        ? viewGeometry(
+            recipe,
+            session.frameWidth,
+            session.frameHeight,
+            tool === 'crop',
+            tool === 'upright-guide'
+          )
         : null,
     [session, recipe, tool]
   )
@@ -141,7 +148,7 @@ export function Loupe(): React.JSX.Element {
       const d = displaySize(g)
       return fitRect(size, d.width, d.height)
     }
-    if (tool === 'crop')
+    if (wholeFrameTool(tool))
       return fromGeometry() ?? (picture ? fitRect(size, picture.width, picture.height, 4) : null)
     if (picture && !picture.cropMode) return fitRect(size, picture.width, picture.height, 4)
     return fromGeometry() ?? (picture ? fitRect(size, picture.width, picture.height, 4) : null)
@@ -556,8 +563,9 @@ export function Loupe(): React.JSX.Element {
         {vrect && <AiScan rect={vrect} />}
         {tool === 'brush' && vrect && g && <BrushLayer rect={vrect} box={size} g={g} />}
         {tool === 'polygon' && vrect && g && <PolygonLayer rect={vrect} g={g} />}
-        {tool !== 'crop' && vrect && g && <GradientTools rect={vrect} g={g} />}
-        {tool !== 'crop' && vrect && g && <LassoEditor rect={vrect} g={g} />}
+        {!wholeFrameTool(tool) && vrect && g && <GradientTools rect={vrect} g={g} />}
+        {!wholeFrameTool(tool) && vrect && g && <LassoEditor rect={vrect} g={g} />}
+        {tool === 'upright-guide' && rect && <UprightGuides rect={rect} />}
       </div>
       <LoupeHud scale={scale} />
     </div>
