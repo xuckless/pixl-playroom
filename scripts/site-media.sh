@@ -43,13 +43,11 @@ fonts() {
   cp "$fs/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2" "$SHARED/fonts/jetbrains-mono.woff2"
 }
 
+# Playroom's own icons. The marks the sites draw, and every other brand's icons,
+# link cards and press kits, come from pixl-web itself (src/lib/marks.ts and
+# scripts/brand-assets.mts, after the PIXL Family Kit).
 brand() {
-  mkdir -p "$SHARED/brand"
   cp "$ROOT/build/brand/icons/favicon.svg" "$SITE/favicon.svg"
-  cp "$ROOT/build/brand/lockups/playroom-lockup-horizontal-dark.svg" "$SHARED/brand/"
-  cp "$ROOT/build/brand/lockups/engine-lockup-horizontal-dark.svg" "$SHARED/brand/"
-  cp "$ROOT/build/brand/marks/playroom-mark-glass.svg" "$SHARED/brand/"
-  cp "$ROOT/build/brand/marks/engine-mark-glass.svg" "$SHARED/brand/"
   for f in favicon.ico apple-touch-icon.png icon-192.png icon-512-maskable.png; do
     cp "$ICON_DIR/$f" "$SITE/$f"
   done
