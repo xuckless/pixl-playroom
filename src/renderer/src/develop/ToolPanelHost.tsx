@@ -10,6 +10,7 @@ import {
   HslPanel,
   ToneCurvePanel
 } from '../panels/global'
+import { HealPanel } from '../panels/heal'
 import { LensPanel } from '../panels/lens'
 import { MasksPanel } from '../panels/masks/MaskTool'
 import { useUi, type ToolId } from '../state/ui'
@@ -23,6 +24,7 @@ const PANELS: Record<ToolId, ComponentType> = {
   lens: LensPanel,
   effects: EffectsPanel,
   masks: MasksPanel,
+  heal: HealPanel,
   crop: GeometryPanel,
   calibration: CalibrationPanel
 }

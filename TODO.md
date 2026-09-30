@@ -332,7 +332,18 @@ Phased; each phase is tested and committed before the next.
       as fast as 0.13 for the same work.
   - [ ] Upright's focal length from the 35 mm equivalent only; a file that
         states only the real focal length and no crop factor gets 35 mm.
-- [ ] Phase 6 — Heal tool (heal, clone, fill, red eye, pet eye).
+- [x] Phase 6 — the Heal tool (after Masks; Q): heal, clone and
+      content-aware fill as round spots or painted strokes, the source picked
+      by `suggestHealSource` (texture for heal, difference for clone) and
+      draggable; red eye and pet eye as dragged ellipses. Spots are stored in
+      the base frame like masks (`src/shared/retouch.ts`), a source that would
+      read outside the frame is pulled back inside, and spots are baked into
+      the prepared proxies with the lens correction, so they cost nothing per
+      render once placed. Not in Sync or presets by default.
+  - [ ] AI Remove: needs an inpainting model we can ship (LaMa's weights
+        were trained on Places2, non-commercial).
+  - [ ] Spots under an Upright warp are placed round on the unwarped frame
+        and show as circles on the warped one (close, not exact).
 - [ ] Phase 7 — AI models on demand (models.pixlfoundation.com), real
       subject and background masks.
 - [ ] Phase 8 — AI denoise in Detail (a cached denoised master).

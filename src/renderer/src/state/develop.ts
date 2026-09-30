@@ -30,6 +30,7 @@ export type Tool =
   | 'add-pick'
   | 'fringe-pick'
   | 'upright-guide'
+  | 'heal'
   | 'tat'
 export type Compare = 'off' | 'before' | 'split'
 
@@ -111,6 +112,8 @@ interface DevelopState {
   addPick: AddPick | null
   /** Upright's guides while they are drawn (tool `upright-guide`), frame fractions. */
   guides: GuideLine[]
+  /** The selected spot of the Heal tool. */
+  spotId: string | null
   /** The point curve's channel on show (the targeted tool moves that one). */
   curveChannel: CurveChannel
   /** What the targeted adjustment tool moves: the HSL bands or the point curve. */
@@ -148,6 +151,7 @@ interface DevelopState {
   setHslTab(t: DevelopState['hslTab']): void
   setPointId(id: string | null): void
   setGuides(g: GuideLine[]): void
+  setSpotId(id: string | null): void
   /** Start (or, with null, stop) the additive-colour picker. */
   setAddPick(p: AddPick | null): void
   setCurveChannel(c: CurveChannel): void
@@ -252,6 +256,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   pointId: null,
   addPick: null,
   guides: [],
+  spotId: null,
   curveChannel: 'master',
   tatTarget: 'hsl',
   noise: null,
@@ -455,6 +460,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   setGuides(guides) {
     set({ guides })
+  },
+
+  setSpotId(spotId) {
+    set({ spotId })
   },
 
   setPointId(pointId) {

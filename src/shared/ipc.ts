@@ -119,6 +119,8 @@ export const IPC = {
     /** Upright: a mode's suggestion measured on the photo, or the guides' transform. */
     suggestUpright: 'develop:suggest-upright',
     uprightFromLines: 'develop:upright-from-lines',
+    /** Heal / clone: the best place to copy a spot from. */
+    suggestHeal: 'develop:suggest-heal',
     /** main → renderer: a render finished */
     rendered: 'develop:rendered',
     /** main → renderer: a render failed */

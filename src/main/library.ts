@@ -302,7 +302,8 @@ export class Library {
       resize: factor < 1 ? { Scale: { factor } } : 'None',
       grade: compiled.grade,
       framing: compiled.framing,
-      lens: compiled.lens
+      lens: compiled.lens,
+      retouch: compiled.retouch
     })
   }
 }

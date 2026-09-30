@@ -26,6 +26,7 @@ import type {
   HslKey,
   LensCorrection,
   Mask,
+  Retouch,
   Vignette,
   MaskComponent,
   Orientation,
@@ -36,6 +37,7 @@ import type {
 } from './engine-types'
 import { addColorOp } from './addcolor'
 import { defringeOp, lensCorrection } from './lens'
+import { compileRetouch } from './retouch'
 import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
 import {
@@ -114,6 +116,8 @@ export interface Compiled {
    * coordinate (masks, crop, a region) is of the frame it produces.
    */
   lens: LensCorrection | null
+  /** Spots and eyes, after the lens and before the grade (see `retouch.ts`). */
+  retouch: Retouch | null
   /** Engine layer index of each local layer, for `Inspect::LayerMask`. */
   layerIndex: Record<string, number>
   /** What the preview could not show at this scale, and why. */
@@ -1182,6 +1186,7 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
     grade: layers.length > 0 ? { layers } : null,
     framing,
     lens: lensCorrection(r.lens),
+    retouch: compileRetouch(r.retouch, oriented.user, ctx.frameWidth, ctx.frameHeight),
     layerIndex,
     notes,
     orientedWidth: oriented.width,

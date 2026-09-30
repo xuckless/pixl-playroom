@@ -186,6 +186,10 @@ const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
   'wb-picker': { title: 'White balance', hint: 'Click something that should be neutral grey' },
   'range-picker': { title: 'Range', hint: 'Click the colour or tone the mask should select' },
   'point-picker': { title: 'Point colour', hint: 'Click the colour to shift on its own' },
+  heal: {
+    title: 'Heal',
+    hint: 'Click a spot · drag to paint · drag a circle to move it · ⌫ deletes · [ ] size'
+  },
   'fringe-pick': {
     title: 'Defringe',
     hint: 'Click a purple or green fringe along an edge (zoom in to find one)'

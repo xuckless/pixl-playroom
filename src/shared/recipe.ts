@@ -12,6 +12,7 @@ import { NO_ADD, type AddColourSetting } from './addcolor'
 import type { BlendMode, KeyBand, MaskMode } from './engine-types'
 import { defaultLens, type LensSetting } from './lens'
 import { defaultUpright, type UprightSetting } from './upright'
+import type { RetouchSpot } from './retouch'
 
 export const RECIPE_VERSION = 1
 
@@ -349,6 +350,8 @@ export interface Recipe {
   effects: EffectsSetting
   calibration: CalibrationSetting
   geometry: GeometrySetting
+  /** Heal, clone and fill spots, red and pet eye, in the order they run (see `retouch.ts`). */
+  retouch: RetouchSpot[]
   layers: LocalLayer[]
   custom: CustomLayer[]
 }
@@ -472,6 +475,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       aspect: null,
       upright: defaultUpright()
     },
+    retouch: [],
     layers: [],
     custom: []
   }
@@ -515,6 +519,14 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
       .map(normaliseComponent)
       .filter((c): c is MaskComponentSetting => c !== null)
   }))
+  r.retouch = (Array.isArray(r.retouch) ? (r.retouch as unknown[]) : []).filter(
+    (s): s is RetouchSpot =>
+      isObject(s) &&
+      typeof s.id === 'string' &&
+      typeof s.kind === 'string' &&
+      Array.isArray(s.points) &&
+      typeof s.radius === 'number'
+  )
   r.pointColors = (Array.isArray(r.pointColors) ? (r.pointColors as unknown[]) : [])
     .map(normalisePointColor)
     .filter((p): p is PointColorSetting => p !== null)
@@ -633,6 +645,7 @@ export const RECIPE_GROUPS = [
   'treatment',
   'crop',
   'orientation',
+  'retouch',
   'localAdjustments',
   'custom'
 ] as const
@@ -654,6 +667,7 @@ export const GROUP_LABELS: Record<RecipeGroup, string> = {
   treatment: 'Treatment (colour / B&W)',
   crop: 'Crop & straighten',
   orientation: 'Rotation & flip',
+  retouch: 'Spot removal & eyes',
   localAdjustments: 'Masks & local adjustments',
   custom: 'Advanced layers'
 }
@@ -702,6 +716,9 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         break
       case 'lens':
         r.lens = f.lens
+        break
+      case 'retouch':
+        r.retouch = f.retouch
         break
       case 'effects':
         r.effects = f.effects

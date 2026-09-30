@@ -4,6 +4,7 @@
  * of a recipe.
  */
 import { create } from 'zustand'
+import type { SpotKind } from '../../../shared/retouch'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 export type CropGuide = 'thirds' | 'grid' | 'golden' | 'diagonal' | 'none'
@@ -59,6 +60,16 @@ export interface MaskOverlaySettings {
   pins: PinsMode
 }
 
+export interface HealSettings {
+  mode: SpotKind
+  /** A new spot's radius, a fraction of the frame's shorter side. */
+  size: number
+  /** 0…100 */
+  feather: number
+  opacity: number
+  showSpots: boolean
+}
+
 /** Every tool the wheel can hold (its order is `TOOLS`, in develop/tools.ts). */
 export const TOOL_IDS = [
   'basic',
@@ -69,6 +80,7 @@ export const TOOL_IDS = [
   'lens',
   'effects',
   'masks',
+  'heal',
   'crop',
   'calibration'
 ] as const
@@ -94,6 +106,9 @@ interface UiState {
   brushes: Record<BrushSlot, BrushSettings>
   brushSlot: BrushSlot
   setBrushSlot(s: BrushSlot): void
+  /** The Heal tool's mode and brush for new spots, and whether spots show on the photo. */
+  heal: HealSettings
+  setHeal(p: Partial<HealSettings>): void
   /** Change the current brush's settings. */
   setBrush(p: Partial<BrushSettings>): void
   /** The one tool the right column shows, chosen on the thumb-wheel. */
@@ -138,6 +153,8 @@ export const useUi = create<UiState>()(
       },
       brushSlot: 'A',
       setBrushSlot: (brushSlot) => set({ brushSlot }),
+      heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100, showSpots: true },
+      setHeal: (p) => set((s) => ({ heal: { ...s.heal, ...p } })),
       setBrush: (p) =>
         set((s) => ({
           brushes: { ...s.brushes, [s.brushSlot]: { ...s.brushes[s.brushSlot], ...p } }

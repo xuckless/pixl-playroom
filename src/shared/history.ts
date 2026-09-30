@@ -46,7 +46,12 @@ const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !
 /** The entity lists: arrays whose items carry an `id` and are diffed by it. */
 function isEntityList(path: Seg[]): boolean {
   if (path.length === 1)
-    return path[0] === 'layers' || path[0] === 'custom' || path[0] === 'pointColors'
+    return (
+      path[0] === 'layers' ||
+      path[0] === 'custom' ||
+      path[0] === 'pointColors' ||
+      path[0] === 'retouch'
+    )
   return (
     path.length === 3 &&
     path[0] === 'layers' &&
@@ -239,6 +244,8 @@ function groupOf(path: Seg[]): RecipeGroup | null {
       return typeof sub === 'string' && GEOMETRY_ORIENTATION.has(sub) ? 'orientation' : 'crop'
     case 'layers':
       return 'localAdjustments'
+    case 'retouch':
+      return 'retouch'
     case 'presence':
     case 'lens':
     case 'toneCurve':

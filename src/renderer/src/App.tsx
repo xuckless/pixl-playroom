@@ -14,6 +14,7 @@ import { ToolDial } from './develop/ToolDial'
 import { ToolPanelHost } from './develop/ToolPanelHost'
 import { selectPanel, stepPanel, TOOLS } from './develop/tools'
 import { startWheelMemory } from './develop/wheelMemory'
+import { deleteSpot } from './lib/heal'
 import {
   componentLabel,
   deleteComponent,
@@ -427,7 +428,7 @@ function useShortcuts(): void {
       }
       if (mod && (k === 'c' || k === 'C') && dev.recipe) {
         const groups = RECIPE_GROUPS.filter(
-          (g) => g !== 'crop' && g !== 'orientation' && g !== 'localAdjustments'
+          (g) => g !== 'crop' && g !== 'orientation' && g !== 'localAdjustments' && g !== 'retouch'
         )
         lib.setClipboard({
           recipe: structuredClone(dev.recipe),
@@ -458,12 +459,21 @@ function useShortcuts(): void {
         return
       }
       const masksOpen = useUi.getState().panel === 'masks'
+      const healOpen = useUi.getState().panel === 'heal'
       // ⌘D duplicates the selected mask component, or else the selected mask.
       if (mod && !e.shiftKey && (k === 'd' || k === 'D') && masksOpen && dev.layerId) {
         e.preventDefault()
         return dev.compId ? duplicateComponent(dev.compId) : duplicateMask(dev.layerId)
       }
       if (mod) return
+      // Delete / Backspace in Heal: the selected spot.
+      if ((k === 'Delete' || k === 'Backspace') && healOpen && t.tagName !== 'INPUT') {
+        if (dev.spotId) deleteSpot(dev.spotId)
+        return
+      }
+      // Q: the Heal tool (Lightroom's spot removal key).
+      if (k === 'q' || k === 'Q')
+        return selectPanel(healOpen ? useUi.getState().previousPanel : 'heal')
       // Delete / Backspace: the selected mask component, or else the selected mask.
       if ((k === 'Delete' || k === 'Backspace') && masksOpen && t.tagName !== 'INPUT') {
         const layer = dev.recipe?.layers.find((l) => l.id === dev.layerId)
@@ -513,6 +523,8 @@ function useShortcuts(): void {
         }
         return selectPanel('masks', { tool: t })
       }
+      // H in Heal shows or hides the spots.
+      if ((k === 'h' || k === 'H') && healOpen) return ui.setHeal({ showSpots: !ui.heal.showSpots })
       // H hides or shows the selected mask; Shift+H cycles the pins Auto → Always → Never.
       if (k === 'h' && masksOpen && dev.layerId) {
         const layer = dev.recipe?.layers.find((l) => l.id === dev.layerId)
@@ -548,6 +560,12 @@ function useShortcuts(): void {
         // In the crop tool O cycles the composition guides, as in Lightroom.
         if (dev.tool === 'crop') return ui.cycleCropGuide()
         return dev.setOverlay(!dev.overlay)
+      }
+      if ((k === '[' || k === ']') && healOpen) {
+        const size = ui.heal.size
+        return ui.setHeal({
+          size: k === '[' ? Math.max(0.002, size / 1.15) : Math.min(0.25, size * 1.15)
+        })
       }
       if (k === '[' || k === ']') {
         const size = ui.brushes[ui.brushSlot].size

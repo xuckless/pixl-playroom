@@ -68,6 +68,7 @@ virtual copies, copy/paste/sync settings to a selection, batch export, Enhance.
 | Calibration    | Shadows tint; red/green/blue primary hue & saturation                                                                                                                                                                                                                                                                               | `ChannelMixer`, `Primary`                           |
 | Crop & rotate  | Crop tool with aspect presets, straighten, rotate left/right, flip; Upright (Auto, Level, Vertical, Full from the photo's lines; Guided from two to four drawn lines) and Transform sliders (vertical, horizontal, rotate, aspect, scale, offset), the photo kept centred and the crop fitted to the corrected picture | `Framing` (`transform`), `suggestUpright`, `uprightFromLines` |
 | Masks          | Lightroom's masks panel (thumbnails; components joined by Add / Subtract / Intersect); brush A/B/erase with flow, density, pressure and Auto Mask; linear and radial gradients with pins; editable lasso; colour & luminance ranges with smoothness; Amount, blend, opacity, invert, 17 local sliders and Add colour; five overlay modes, show all | `GradeLayer`, `Mask`, `Inspect::LayerMask`          |
+| Heal           | Heal, clone and content-aware fill (click a spot, drag to paint a stroke; the engine picks the source, drag it to choose another), red eye and pet eye (drag over the pupil); a spot list with show/hide and delete; Q, H, ⌫, [ ] | `Retouch`, `suggestHealSource` |
 | Engine report  | View ▸ Engine Report… (Ctrl+Alt+E) or the toolbar's `</>`: the last render's engine report line by line, the compiled grade JSON, and custom layers written directly in the engine's terms (any op, any stage space, CDL, qualifiers) | the whole `Grade` model |
 
 **Scopes** — RGB histogram with clipping markers and overlay (J), and the
@@ -87,7 +88,7 @@ overlay, brush cursor, lasso and gradient handles.
 library, history, view modes, copy, enhance, export). The left rail is a
 spine of Presets, Snapshots, History and Info, one pane at a time, folding to
 the spine. The right column pins the scopes above a thumb-wheel that turns
-through the ten tools (scroll, drag, click, arrows, Ctrl+1…9) and shows one
+through the eleven tools (scroll, drag, click, arrows, Ctrl+1…9) and shows one
 at a time. The filmstrip waits under the loupe until its glass chip is
 clicked. Liquid glass (an SVG refraction filter as the backdrop filter) on
 the loupe's badges and bars, the wheel, dialogs, pins and popovers; a

@@ -150,6 +150,10 @@ export class EngineClient {
   ): Promise<Transform> {
     return this.call('uprightFromLines', [lines, width, height, focal]) as Promise<Transform>
   }
+  /** Where a heal or clone should copy from (see `retouch/suggest.rs`). */
+  suggestHealSource(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.call('suggestHealSource', [request]) as Promise<Record<string, unknown>>
+  }
   /** Measure a photo's lateral chromatic aberration (see `lateral_ca.rs`). */
   suggestLateralCa(request: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.call('suggestLateralCa', [request]) as Promise<Record<string, unknown>>

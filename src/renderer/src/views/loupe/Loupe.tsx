@@ -33,7 +33,9 @@ import { samplePatch } from '../../lib/image'
 import { pickAdd } from '../../lib/addpick'
 import { fringeFrom } from '../../lib/helpers'
 import { useDevelop, wholeFrameTool } from '../../state/develop'
+import { useUi } from '../../state/ui'
 import { UprightGuides } from './UprightGuides'
+import { HealTool } from './HealTool'
 import { useLibrary } from '../../state/library'
 import { BrushLayer } from './BrushTool'
 import { ClippingOverlay } from './ClippingOverlay'
@@ -123,6 +125,7 @@ export function Loupe(): React.JSX.Element {
     return () => clearTimeout(t)
   }, [size.w, size.h, setTargetEdge])
 
+  const panel = useUi((s) => s.panel)
   const g = useMemo(
     () =>
       session && recipe
@@ -566,6 +569,7 @@ export function Loupe(): React.JSX.Element {
         {!wholeFrameTool(tool) && vrect && g && <GradientTools rect={vrect} g={g} />}
         {!wholeFrameTool(tool) && vrect && g && <LassoEditor rect={vrect} g={g} />}
         {tool === 'upright-guide' && rect && <UprightGuides rect={rect} />}
+        {panel === 'heal' && !wholeFrameTool(tool) && vrect && g && <HealTool rect={vrect} g={g} />}
       </div>
       <LoupeHud scale={scale} />
     </div>

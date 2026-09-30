@@ -70,6 +70,13 @@ export const TOOLS: ToolInfo[] = [
     icon: 'M4 20c2-6 8-6 10-12M16 6a2 2 0 1 0 4 0 2 2 0 0 0-4 0'
   },
   {
+    id: 'heal',
+    name: 'Heal',
+    short: 'Heal',
+    desc: 'Heal, clone and fill spots; red eye and pet eye.',
+    icon: 'M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z'
+  },
+  {
     id: 'crop',
     name: 'Crop & Rotate',
     short: 'Crop',
@@ -122,6 +129,9 @@ export function selectPanel(id: ToolId, opts: { tool?: Tool } = {}): void {
   } else if (id !== 'crop' && (dev.tool === 'crop' || dev.tool === 'upright-guide'))
     dev.setTool('none')
   if (id !== 'masks' && MASK_TOOLS.includes(dev.tool)) dev.setTool('none')
+  // The Heal tool is on while its panel shows, as Lightroom's spot removal is.
+  if (id === 'heal' && dev.tool === 'none') dev.setTool('heal')
+  else if (id !== 'heal' && dev.tool === 'heal') dev.setTool('none')
 }
 
 /** Turn the wheel one place (wrapping). */

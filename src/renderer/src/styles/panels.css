@@ -874,3 +874,29 @@ fieldset::before {
   padding-left: 0;
   padding-right: 0;
 }
+
+/* ── Heal ────────────────────────────────────────────────────────── */
+.spot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.spot-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+}
+.spot-list li.on {
+  border-color: var(--acc-a35);
+  background: var(--acc-a10);
+}
+.spot-list .spot-name {
+  flex: 1;
+  justify-content: flex-start;
+  text-align: left;
+}

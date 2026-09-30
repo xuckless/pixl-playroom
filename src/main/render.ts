@@ -26,12 +26,14 @@ import {
   type Compiled
 } from '../shared/compile'
 import { lensCorrection, MANUAL_GEOMETRY } from '../shared/lens'
+import { compileRetouch, featherOf, spotShape, type P as SpotPoint } from '../shared/retouch'
 import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
 import type {
   HdrWorking,
   ConvertReport,
   LateralCa,
   LensCorrection,
+  Retouch,
   Transform,
   ImageStats,
   Measure,
@@ -246,13 +248,24 @@ class Session {
       hdr: this.info.is_hdr,
       showTransform: !this.view.guides
     })
-    return baked ? { ...compiled, lens: null } : compiled
+    return baked ? { ...compiled, lens: null, retouch: null } : compiled
   }
 
-  /** What names a lens correction: '' for none. */
+  /**
+   * What the prepared proxies hold for a recipe: its lens correction and
+   * its spots, placed on the base frame (the proxy's own).
+   */
+  private prepared(recipe: Recipe): { lens: LensCorrection | null; retouch: Retouch | null } {
+    return {
+      lens: lensCorrection(recipe.lens),
+      retouch: compileRetouch(recipe.retouch, 'Normal', this.px.frameWidth, this.px.frameHeight)
+    }
+  }
+
+  /** What names the prepared proxies a recipe needs: '' for none (the plain proxies serve). */
   private lensKey(recipe: Recipe): string {
-    const lens = lensCorrection(recipe.lens)
-    return lens ? hash32(JSON.stringify(lens)).toString(16) : ''
+    const p = this.prepared(recipe)
+    return p.lens || p.retouch ? hash32(JSON.stringify(p)).toString(16) : ''
   }
 
   /**
@@ -280,10 +293,18 @@ class Session {
    */
   private bake(): void {
     const key = this.lensKey(this.recipe)
-    const lens = lensCorrection(this.recipe.lens)
-    if (!lens || !key || this.lensed?.key === key || this.baking === key) return
+    if (!key || this.lensed?.key === key || this.baking === key) return
+    const { lens, retouch } = this.prepared(this.recipe)
     this.baking = key
-    ensureLensedProxies(this.owner.bgEngine, this.row, this.px, lens, key, this.hdrWorking).then(
+    ensureLensedProxies(
+      this.owner.bgEngine,
+      this.row,
+      this.px,
+      lens,
+      retouch,
+      key,
+      this.hdrWorking
+    ).then(
       (px) => {
         if (this.baking === key) this.baking = null
         if (this.closed) return
@@ -403,7 +424,16 @@ class Session {
     const compiled = await this.compileFor(this.recipe, src, !cropMode)
     const seq = ++this.seq
     const sig = String(
-      hash32(JSON.stringify([src.path, cropMode, compiled.grade, compiled.framing, compiled.lens]))
+      hash32(
+        JSON.stringify([
+          src.path,
+          cropMode,
+          compiled.grade,
+          compiled.framing,
+          compiled.lens,
+          compiled.retouch
+        ])
+      )
     )
     const last = this.lastEvent[kind]
     if (last && sig === this.lastSig[kind]) {
@@ -430,6 +460,7 @@ class Session {
         grade: compiled.grade,
         framing: compiled.framing,
         lens: compiled.lens,
+        retouch: compiled.retouch,
         threads: INTERACTIVE_THREADS,
         // A warp shown whole counts its empty corners (as black) rather than
         // risk measuring nothing when little of the picture is left.
@@ -495,6 +526,7 @@ class Session {
         grade: compiled.grade,
         framing: compiled.framing,
         lens: compiled.lens,
+        retouch: compiled.retouch,
         threads: INTERACTIVE_THREADS
       } as const
       // With float work the engine measures its own output in linear light
@@ -502,7 +534,10 @@ class Session {
       // (the engine refuses a working space nothing would use), so the file
       // is measured afterwards by the same numbers.
       const floatWork =
-        compiled.grade !== null || compiled.lens !== null || framingWarps(compiled.framing)
+        compiled.grade !== null ||
+        compiled.lens !== null ||
+        compiled.retouch !== null ||
+        framingWarps(compiled.framing)
       if (floatWork) {
         const r = await this.owner.engine.convert(
           { ...request, hdr, measure: { ...measureOf(1), domain: 'Linear', bins } },
@@ -557,6 +592,7 @@ class Session {
           compiled.grade,
           compiled.framing,
           compiled.lens,
+          compiled.retouch,
           measure ? this.lastFull : null
         ])
       )
@@ -580,6 +616,7 @@ class Session {
         grade: compiled.grade,
         framing: compiled.framing,
         lens: compiled.lens,
+        retouch: compiled.retouch,
         inspect: { LayerMask: { layer: index } },
         hdr: this.hdrWorking
       },
@@ -673,6 +710,7 @@ class Session {
           grade: compiled.grade,
           framing: compiled.framing,
           lens: compiled.lens,
+          retouch: compiled.retouch,
           inspect: { LayerMask: { layer: index } },
           hdr: this.hdrWorking
         },
@@ -719,11 +757,19 @@ class Session {
     before.geometry = structuredClone(this.recipe.geometry)
     // The lens's geometry too, so before and after line up; not its defringe.
     before.lens = { ...structuredClone(this.recipe.lens), defringe: before.lens.defringe }
+    // Spots too: they are repairs, not a look, and the prepared proxies carry them.
+    before.retouch = structuredClone(this.recipe.retouch)
     const src = this.source('full')
     const compiled = await this.compileFor(before, src, !this.view.cropMode)
     // Keyed on what the engine is asked for, not on the raw geometry: a
     // straighten in the crop tool changes the recipe but not this picture.
-    const key = JSON.stringify([compiled.framing, compiled.lens, src.path, this.view.cropMode])
+    const key = JSON.stringify([
+      compiled.framing,
+      compiled.lens,
+      compiled.retouch,
+      src.path,
+      this.view.cropMode
+    ])
     if (key === this.beforeKey) return
     const out = join(this.dir, `before-${hash32(key).toString(16)}.png`)
     const report = await this.owner.engine.convert(
@@ -736,6 +782,7 @@ class Session {
         grade: compiled.grade,
         framing: compiled.framing,
         lens: compiled.lens,
+        retouch: compiled.retouch,
         measure: measureOf(1)
       },
       { signal }
@@ -811,6 +858,7 @@ class Session {
         grade: compiled.grade,
         framing: orientOnly(compiled.framing),
         lens: compiled.lens,
+        retouch: compiled.retouch,
         region
       },
       { signal }
@@ -833,6 +881,7 @@ class Session {
             grade: compiled.grade,
             framing: orientOnly(compiled.framing),
             lens: compiled.lens,
+            retouch: compiled.retouch,
             region,
             inspect: { LayerMask: { layer: index } }
           },
@@ -976,6 +1025,7 @@ class Session {
       grade: compiled.grade,
       framing: compiled.framing,
       lens: compiled.lens,
+      retouch: compiled.retouch,
       measure: measureOf(1)
     })
     return autoTone(statsOf(report))
@@ -1074,6 +1124,35 @@ class Session {
     const t = await this.owner.engine.uprightFromLines(lines, width, height, focal)
     this.usableUpright(t, this.px.frameWidth, this.px.frameHeight)
     return t
+  }
+
+  /**
+   * Where a heal or clone spot should copy from: the engine's search around
+   * it on the large proxy, in the base frame (the proxy's own) after the
+   * lens correction, as the spot is stored. Texture for a heal (the membrane
+   * fixes the tone), difference for a clone (it keeps the source's tone).
+   */
+  async suggestHeal(
+    points: SpotPoint[],
+    radius: number,
+    feather: number,
+    kind: 'heal' | 'clone'
+  ): Promise<SpotPoint> {
+    const src = this.px.proxy
+    const r = (await this.owner.bgEngine.suggestHealSource({
+      source: { Path: src.path },
+      input: src.input,
+      raw: null,
+      gain_map: null,
+      orientation: 'Normal',
+      lens: lensCorrection(this.recipe.lens),
+      shape: spotShape(points, radius),
+      feather: featherOf({ feather, radius }),
+      score: kind === 'heal' ? 'Texture' : 'Difference',
+      threads: BACKGROUND_THREADS
+    })) as unknown as { source_offset: SpotPoint }
+    const at = points[0]
+    return { x: at.x + r.source_offset.x, y: at.y + r.source_offset.y }
   }
 
   /** The noise the denoiser would measure, on the full-resolution frame. */
@@ -1200,6 +1279,16 @@ export class DevelopSessions {
 
   measureCa(key: string): Promise<CaMeasurement> {
     return this.get(key).measureCa()
+  }
+
+  suggestHeal(
+    key: string,
+    points: SpotPoint[],
+    radius: number,
+    feather: number,
+    kind: 'heal' | 'clone'
+  ): Promise<SpotPoint> {
+    return this.get(key).suggestHeal(points, radius, feather, kind)
   }
 
   suggestUpright(

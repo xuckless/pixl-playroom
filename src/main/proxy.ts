@@ -10,18 +10,24 @@
  *   slider is moving;
  * - `master`: full resolution, only for RAWs, only when a 1:1 view asks —
  *   the developed frame, so region renders never re-develop;
- * - `lens-…`: the proxy and draft with a lens correction applied, one set
- *   per correction. The optics sit before everything else and change far
- *   less often than a slider does, so previews grade the corrected copy
- *   instead of warping the proxy again on every render (Lightroom caches
- *   the same way).
+ * - `lens-…`: the proxy and draft with the lens correction and the spots
+ *   (heal, clone, fill, eyes) applied, one set per combination. Both sit
+ *   before the grade and change far less often than a slider does, so
+ *   previews grade the prepared copy instead of warping and healing the
+ *   proxy again on every render (Lightroom caches the same way).
  *
  * HDR sources keep their PQ/HLG signal in a 16-bit PNG (which carries CICP);
  * everything else is an uncompressed 16-bit TIFF, the fastest to decode.
  */
 import { readFile, readdir, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
-import type { HdrWorking, InputFormat, LensCorrection, SourceInfo } from '../shared/engine-types'
+import type {
+  HdrWorking,
+  InputFormat,
+  LensCorrection,
+  Retouch,
+  SourceInfo
+} from '../shared/engine-types'
 import type { EngineClient } from './engine/client'
 import { exists } from './exists'
 import type { PhotoRow } from './db'
@@ -177,14 +183,15 @@ export function ensureLensedProxies(
   engine: EngineClient,
   photo: PhotoRow,
   px: Proxies,
-  lens: LensCorrection,
+  lens: LensCorrection | null,
+  retouch: Retouch | null,
   key: string,
   hdr: HdrWorking | null
 ): Promise<Proxies> {
   const id = `${photo.id}:${stamp(photo)}:${key}`
   let p = lensing.get(id)
   if (!p) {
-    p = bakeLens(engine, photo, px, lens, key, hdr).finally(() => lensing.delete(id))
+    p = bakeLens(engine, photo, px, lens, retouch, key, hdr).finally(() => lensing.delete(id))
     lensing.set(id, p)
   }
   return p
@@ -194,7 +201,8 @@ async function bakeLens(
   engine: EngineClient,
   photo: PhotoRow,
   px: Proxies,
-  lens: LensCorrection,
+  lens: LensCorrection | null,
+  retouch: Retouch | null,
   key: string,
   hdr: HdrWorking | null
 ): Promise<Proxies> {
@@ -218,6 +226,8 @@ async function bakeLens(
     metadata: { exif: false, icc: true, xmp: false, iptc: false },
     color: 'Preserve',
     lens,
+    // Placed on the base frame, which is what the proxy is.
+    retouch,
     // A PQ/HLG proxy is corrected in the HDR working space it is graded in.
     hdr
   })
