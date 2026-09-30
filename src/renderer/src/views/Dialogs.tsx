@@ -24,6 +24,7 @@ import { api, errorText } from '../lib/api'
 import { autoWbBatch } from '../lib/autowb'
 import { useDevelop } from '../state/develop'
 import { useLibrary, useTargets } from '../state/library'
+import { WatermarkSection } from './WatermarkSection'
 
 function Field({
   label,
@@ -70,6 +71,7 @@ export function ExportDialog(): React.JSX.Element {
   const targets = useTargets()
   const setDialog = useLibrary((s) => s.setDialog)
   const say = useLibrary((s) => s.say)
+  const items = useLibrary((s) => s.items)
   const [s, setS] = useState<ExportSettings>(defaultExportSettings())
   const [presets, setPresets] = useState<ExportPreset[]>([])
   const [progress, setProgress] = useState<ExportProgress | null>(null)
@@ -514,6 +516,11 @@ export function ExportDialog(): React.JSX.Element {
               : 'Applied after the resize, at the size the picture will be seen.'}
           </p>
         </fieldset>
+        <WatermarkSection
+          value={s.watermark}
+          onChange={(v) => up('watermark', v)}
+          thumbUrl={items.find((i) => i.key === targets[0])?.thumbUrl ?? null}
+        />
         <fieldset>
           <legend>Metadata</legend>
           <Field label="Include">

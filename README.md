@@ -108,7 +108,10 @@ width, height, megapixels, percent), colour space + intent + BPC, metadata
 blocks, dither, HDR (tone map HDR sources, keep HDR, expand SDR to PQ/HLG,
 or SDR + gain map: UltraHDR JPEG, AVIF, HEIC; highlights clipped at the peak
 or rolled off by BT.2390 from a chosen knee),
-export presets, batch with progress and cancel (it stops the file being
+a watermark (a PNG at one of nine anchors, sized and inset by the
+picture's shorter edge, with opacity and Normal / Multiply / Screen, previewed
+on the photo and composited after the resize so it stays sharp), export
+presets, batch with progress and cancel (it stops the file being
 written). Output sharpening after the resize (Screen, Matte or Glossy × Low,
 Standard or High), in the same engine pass.
 The photo's title, caption, keywords and copyright are written into the file

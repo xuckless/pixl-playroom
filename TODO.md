@@ -412,7 +412,16 @@ Phased; each phase is tested and committed before the next.
         original map (or remake it) so the export stays HDR-capable.
   - [ ] Existing edits on HEIC photos were placed on the sideways frame
         (crops, masks): they now land turned. Offer to rotate them once.
-- [ ] Phase 11 — export watermark.
+- [x] Phase 11 — export watermark. `shared/watermark.ts` places a PNG
+      (anchor, inset and size as shares of the shorter edge, opacity, blend)
+      in whole output pixels and hands the engine an `overlays` entry; the
+      export dialog's Watermark section previews it on the first photo; it is
+      kept in the last settings and in export presets. SDR files blend in
+      sRGB, HDR ones (Keep, Expand, SDR + gain map) on the PQ signal.
+  - [ ] Text watermarks (a copyright line typed in the dialog): render the
+        text to a PNG in the renderer (canvas) and hand it over as a file.
+  - [ ] A watermark per preset folder of logos (light and dark versions,
+        chosen by the picture's brightness under the mark).
 - [ ] Phase 12 — real lens profiles (lensfun, DNG opcodes and maker notes,
       vendor profiles as user imports).
   - [ ] A profile resolves per photo: pasting or syncing lens settings copies

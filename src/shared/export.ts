@@ -25,6 +25,7 @@ import type {
   ToneMapOperator
 } from './engine-types'
 import type { PhotoMeta } from './ipc'
+import { DEFAULT_WATERMARK, type WatermarkSettings } from './watermark'
 import { flatSubjects } from './keywords'
 
 export type ExportFormat = 'jpeg' | 'png' | 'tiff' | 'webp' | 'avif' | 'jxl' | 'heic'
@@ -106,6 +107,8 @@ export interface ExportSettings {
     sdrWhite: number
     referenceWhite: number
   }
+  /** A PNG composited onto every exported picture (see `watermark.ts`). */
+  watermark: WatermarkSettings
   reveal: boolean
 }
 
@@ -153,6 +156,7 @@ export function defaultExportSettings(): ExportSettings {
       knee: 100,
       gainMapQuality: 85
     },
+    watermark: { ...DEFAULT_WATERMARK },
     reveal: true
   }
 }
@@ -192,7 +196,8 @@ export function normaliseExportSettings(
     resize: { ...d.resize, ...v.resize },
     metadata: { ...d.metadata, ...v.metadata },
     outputSharpen: { ...d.outputSharpen, ...v.outputSharpen },
-    hdr: { ...d.hdr, ...v.hdr }
+    hdr: { ...d.hdr, ...v.hdr },
+    watermark: { ...d.watermark, ...v.watermark }
   }
 }
 

@@ -281,3 +281,84 @@ button.link:hover {
   background: var(--acc);
   transition: width 0.2s var(--ease);
 }
+
+/* Export: watermark */
+.watermark .wm-file {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+.watermark .wm-file .muted {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.watermark .wm-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  margin: 8px 0;
+}
+.watermark .wm-preview {
+  position: relative;
+  line-height: 0;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--hair);
+  overflow: hidden;
+}
+.watermark .wm-preview > img:first-child {
+  width: 100%;
+  height: auto;
+}
+.watermark .wm-blank {
+  aspect-ratio: 3 / 2;
+}
+.watermark .wm-mark {
+  position: absolute;
+  height: auto;
+  pointer-events: none;
+}
+.watermark .wm-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.watermark .wm-anchors {
+  display: grid;
+  grid-template-columns: repeat(3, 26px);
+  gap: 4px;
+}
+.watermark .wm-anchors button {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--hair2);
+  background: transparent;
+}
+.watermark .wm-anchors button i {
+  width: 6px;
+  height: 6px;
+  background: var(--text2);
+}
+.watermark .wm-anchors button.on {
+  border-color: var(--acc);
+}
+.watermark .wm-anchors button.on i {
+  background: var(--acc);
+}
+.watermark .wm-blend {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.watermark .wm-blend select {
+  width: 100%;
+  min-width: 0;
+}

@@ -41,6 +41,7 @@ import type { LensProfile } from '../shared/lens'
 import type { GuideLine } from '../shared/upright'
 import type { P as SpotPoint } from '../shared/retouch'
 import { enhanceAvailability, enhanceRates } from './enhance'
+import { readWatermark } from './watermark'
 import type { AiJobs } from './ai/jobs'
 import { modelName, type ModelStore } from './ai/models'
 import type { Exporter } from './exporter'
@@ -396,6 +397,17 @@ export function registerIpc(s: Services): void {
     const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
     return r.canceled ? null : r.filePaths[0]
   })
+  handle(IPC.export.chooseWatermark, async () => {
+    const w = win()
+    const opts = {
+      title: 'Choose a watermark',
+      properties: ['openFile'] as 'openFile'[],
+      filters: [{ name: 'PNG', extensions: ['png'] }]
+    }
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    return r.canceled || !r.filePaths[0] ? null : readWatermark(r.filePaths[0])
+  })
+  handle(IPC.export.readWatermark, (path: string) => readWatermark(path))
   handle(IPC.export.start, (keys: string[], settings: ExportSettings) => {
     void s.index.setSetting('export.last', settings).catch(() => {})
     return s.exporter.start(keys, settings)

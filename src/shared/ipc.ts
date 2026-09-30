@@ -155,6 +155,8 @@ export const IPC = {
     start: 'export:start',
     cancel: 'export:cancel',
     chooseFolder: 'export:choose-folder',
+    chooseWatermark: 'export:choose-watermark',
+    readWatermark: 'export:read-watermark',
     presets: 'export:presets',
     savePreset: 'export:save-preset',
     removePreset: 'export:remove-preset',
@@ -519,6 +521,15 @@ export interface Preset {
 export interface LutProfile {
   name: string
   path: string
+}
+
+/** A watermark PNG as the export dialog shows it. */
+export interface WatermarkFile {
+  path: string
+  width: number
+  height: number
+  /** The picture as a data URL, for the preview. */
+  url: string
 }
 
 export interface ExportPreset {

@@ -38,6 +38,8 @@ import type { Library } from './library'
 import { ensureProxies, type ProxyFile } from './proxy'
 import { buildMaster, denoiseKey, denoiseRefusal, findDenoised } from './ai/denoise'
 import { editsHdr, ensureHdrSource } from './hdrsource'
+import { watermarkSize } from './watermark'
+import { watermarkOverlay } from '../shared/watermark'
 import type { ModelStore } from './ai/models'
 import type { PhotoRow } from './db'
 import type { SourceInfo } from '../shared/engine-types'
@@ -234,12 +236,42 @@ export class Exporter {
         ? { ...s, hdr: { ...s.hdr, mode: 'sdr' } }
         : s
     const peak = info.peak_nits ?? s.hdr.peak
+    const resize = buildResize(s, cw, ch)
+    // The watermark, placed on the output as it will be: cropped, then resized.
+    const wm = s.watermark
+    const overlay =
+      wm.enabled && wm.path
+        ? await (async () => {
+            const pic = await watermarkSize(wm.path!)
+            const outW =
+              resize === 'None'
+                ? cw
+                : 'Exact' in resize
+                  ? resize.Exact.width
+                  : Math.round(cw * resize.Scale.factor)
+            const outH =
+              resize === 'None'
+                ? ch
+                : 'Exact' in resize
+                  ? resize.Exact.height
+                  : Math.round(ch * resize.Scale.factor)
+            return watermarkOverlay(
+              wm,
+              wm.path!,
+              outW,
+              outH,
+              pic.width,
+              pic.height,
+              hdrOut || gainMapOut
+            )
+          })()
+        : null
     const floatWork =
       compiled.grade !== null ||
       compiled.lens !== null ||
       compiled.retouch !== null ||
+      overlay !== null ||
       framingWarps(compiled.framing)
-    const resize = buildResize(s, cw, ch)
     const color = gainMapOut ? 'Preserve' : buildColor(effective, info.is_hdr, info.peak_nits)
     // Dither acts on the one float → integer rounding, so it is only asked
     // for when there is one (the engine refuses it otherwise).
@@ -274,6 +306,7 @@ export class Exporter {
       framing: compiled.framing ?? (master ? null : uprightFraming('Normal', info)),
       lens: compiled.lens,
       retouch: compiled.retouch,
+      overlays: overlay ? [overlay] : null,
       dither: floatPath ? dither : 'None',
       hdr:
         gainMapOut || (hdrKeep && floatWork)

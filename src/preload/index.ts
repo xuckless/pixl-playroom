@@ -24,6 +24,7 @@ import {
   type HistoryLog,
   type KeywordNode,
   type HdrKind,
+  type WatermarkFile,
   type LibraryItem,
   type LibrarySource,
   type LutProfile,
@@ -211,6 +212,10 @@ const api = {
   },
   export: {
     chooseFolder: () => call<string | null>(IPC.export.chooseFolder),
+    /** Pick a watermark PNG; null when the dialog is cancelled. */
+    chooseWatermark: () => call<WatermarkFile | null>(IPC.export.chooseWatermark),
+    /** A chosen watermark again (a preset's), or an error when it is gone. */
+    readWatermark: (path: string) => call<WatermarkFile>(IPC.export.readWatermark, path),
     start: (keys: string[], settings: ExportSettings) =>
       call<string>(IPC.export.start, keys, settings),
     cancel: (id: string) => call<void>(IPC.export.cancel, id),
