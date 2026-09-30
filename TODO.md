@@ -8,11 +8,79 @@ way. Grouped by area; roughly in priority order within each.
 - [ ] **Enhance in the published engine.** The published binding is built
       without the engine's Enhance support, so `hasEnhance()` is false and
       Enhance says so; the release still bundles the runtime and model.
-- [ ] **Signing and updates**: CI, release-please and the release builds
+- [ ] **Code signing**: CI, release-please and the release builds
       (GitHub-hosted, per-arch, `pnpm fetch-ai` per target) are set up as in
-      space-pixl, but builds are unsigned until the signing secrets exist
-      (see `.github/RELEASING.md`), and there is no in-app updater yet
-      (electron-updater against the release feed, as space-pixl has).
+      space-pixl, but builds are unsigned until the signing secrets exist. The
+      steps (Apple Developer ID and notarization; Azure Trusted Signing or an
+      OV/EV certificate on Windows) are in `.github/RELEASING.md`. Start now:
+      both take days.
+- [x] **In-app updates**: electron-updater against the GitHub releases
+      (`src/main/updater.ts`), Stable/Beta in Settings. macOS updates start
+      working once the builds are signed.
+- [x] **Settings** (⌘, / Ctrl+,): updates, crash reports, legal links
+      (`src/renderer/src/views/Preferences.tsx`); Help menu with the legal pages.
+- [x] **Opt-in crash reporting** (`src/main/crash.ts`): asked once at first
+      launch. Minidumps and scrubbed JSON reports to
+      `pixlfoundation.com/api/crash`.
+  - [ ] Somewhere to keep them: the Worker only logs a summary. Store them in
+        R2 with a retention period (and put that period in the privacy policy),
+        or send them to Sentry (its Electron SDK can take over from
+        `crashReporter`); symbol files for minidumps either way.
+- [x] **Third-party notices** (`pnpm notices` → `build/THIRD_PARTY_NOTICES.txt`,
+      shipped and opened from Settings/Help, copied to
+      pixlfoundation.com/legal/third-party/).
+- [ ] **Legal pages**: licence agreement and privacy policy are drafts on
+      pixlfoundation.com/legal/ (pixl-web `src/legal/`). Fill in the
+      [bracketed] parts (legal entity, jurisdiction, address, refunds, what a
+      finished trial does, crash-report retention) and have a lawyer review
+      both before launch.
+- [ ] `tests/indexer.test.ts` fails on Node 26 ("A FileHandle object was
+      closed during garbage collection"), on `main` too; CI's Node 22 passes.
+      Close the FileHandle explicitly in the indexer.
+
+## Licensing compliance (before selling)
+
+Found while writing the third-party notices; needs a lawyer's view before the
+first paid release.
+
+- [ ] **jpegxl-sys is GPL-3.0-or-later** (0.12.1 in pixl-engine's Cargo.lock)
+      and is compiled into the engine, which ships inside a proprietary app.
+      libjxl itself is BSD-3-Clause; only the Rust binding crate is GPL. Likely
+      fix in the engine: replace it with our own bindgen bindings to libjxl
+      (the engine already wraps it in `src/encode/jxl.rs`).
+- [ ] **rawler is LGPL-2.1** (0.7.2), statically linked into the engine.
+      Static linking under the LGPL means users must be able to relink with a
+      modified rawler (object files or source for the rest). Options: ship the
+      engine's object files on request, move RAW decoding into a separately
+      loaded library, or confirm with the author.
+- [ ] A complete list of the engine's Rust crates and their licences, from
+      its own release build (`cargo about` in pixl-engine), merged into
+      `build/third-party.json` instead of the one summary line there now.
+
+## Business: licensing and accounts
+
+- [x] Licence keys, 3-device activation, a 14-day trial and a 30-day offline
+      grace, against Lemon Squeezy's licence API (`src/shared/licence.ts`,
+      `src/main/licence.ts`, Settings → Licence; tests in
+      `tests/licence.test.ts`). **Not enforced**: `LICENCE_ENFORCED` is false,
+      and the Licence section only shows in development or with
+      `PLAYROOM_LICENCE_UI=1`.
+- [ ] The Lemon Squeezy store: create it, the Playroom product with an
+      activation limit of 3, then set `LS_PRODUCT` (store and product ids) in
+      `src/shared/licence.ts` so other products' keys are refused. Test with a
+      test-mode key (`PLAYROOM_LICENCE_UI=1` in a packaged build).
+- [ ] Enforcement, once checkout is live: decide what an ended trial and an
+      unconfirmed licence (`revalidate`) lock (exports? the whole Develop
+      view?), gate it with `allows()` and flip `LICENCE_ENFORCED`. The trial's
+      start lives in `licence.json`, which deleting resets; if that matters,
+      record trials on the server by device.
+- [ ] Lost devices: the app can only free its own place. Until the website
+      account lists devices, freeing a lost one is by email (the account page
+      says so).
+- [ ] Update policy in writing: 1.x updates included, major versions a
+      discounted paid upgrade (the EULA draft says so).
+- [ ] AI harness (MCP, bring your own agent; every agent action a history
+      step tagged with actor and run ID) and the cloud tiers and credits.
 - [ ] **Windows DirectML**: bundle a DirectML build of ONNX Runtime (the
       GitHub zip is CPU-only; the provider falls back to the CPU and says so).
 - [ ] Design polish still open: a light theme; user-reorderable tools on the
@@ -183,9 +251,11 @@ masters are in `build/brand/`.
 - [x] Document icons from the kit's "Files Playroom opens" board, for RAW,
       DNG, JXL, HEIC, TIFF, JPEG, PNG, WebP and AVIF (`pnpm doc-icons` →
       `build/doc-icons/`), handed to `fileAssociations`.
-- [x] Website: `site/`, deployed to GitHub Pages by `.github/workflows/pages.yml`
-      (media rebuilt by `scripts/site-media.sh`); downloads say "Available
-      soon" until the first release.
+- [x] Website: playroom.pixlfoundation.com, in the pixl-web repo (one
+      Cloudflare Worker for every PIXL site); media rebuilt from here by
+      `scripts/site-media.sh`, tool screenshots by `scripts/site-tools.mjs`.
+      `site/` is only a redirect from the old GitHub Pages address. Downloads
+      say "Soon" until the first release.
 - [ ] Windows installer art: the kit's installer sidebar (164×314) and
       banner (150×57) are unused while the NSIS installer is one-click, which
       shows neither. They need rendering to BMP if the installer becomes

@@ -19,7 +19,33 @@ export const IPC = {
     /** main → renderer: more paths to open */
     openPaths: 'app:open-paths',
     /** main → renderer: the display or the rendering mode changed */
-    renderScaleChanged: 'app:render-scale-changed'
+    renderScaleChanged: 'app:render-scale-changed',
+    /** main → renderer: the menu's Settings… was chosen */
+    openPreferences: 'app:open-preferences',
+    /** An uncaught error in the renderer, for the log and (opted in) a crash report. */
+    reportError: 'app:report-error',
+    /** The bundled THIRD_PARTY_NOTICES.txt, opened in the system's text viewer. */
+    openNotices: 'app:open-notices'
+  },
+  updates: {
+    getState: 'updates:get-state',
+    check: 'updates:check',
+    install: 'updates:install',
+    setChannel: 'updates:set-channel',
+    /** main → renderer: the update state changed */
+    event: 'updates:event'
+  },
+  prefs: {
+    get: 'prefs:get',
+    setCrashReports: 'prefs:set-crash-reports'
+  },
+  licence: {
+    status: 'licence:status',
+    activate: 'licence:activate',
+    deactivate: 'licence:deactivate',
+    validate: 'licence:validate',
+    /** main → renderer: the licence changed */
+    changed: 'licence:changed'
   },
   library: {
     chooseFolder: 'library:choose-folder',
@@ -466,3 +492,58 @@ export interface ExportProgress {
 }
 
 export type { BasicSetting, ConvertReport }
+
+// ── Updates ──────────────────────────────────────────────────────────────────
+
+/** `latest` follows stable releases; `beta` also takes prereleases (0.3.0-beta.1). */
+export type UpdateChannel = 'latest' | 'beta'
+
+export type UpdatePhase =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'not-available'
+  | 'error'
+  /** A development build: there is nothing to update against. */
+  | 'disabled'
+
+export interface UpdateProgress {
+  percent: number
+  transferred: number
+  total: number
+  bytesPerSecond: number
+}
+
+export interface UpdateState {
+  phase: UpdatePhase
+  channel: UpdateChannel
+  currentVersion: string
+  /** The newest version the feed offered. */
+  version?: string
+  releaseDate?: string
+  progress?: UpdateProgress
+  error?: string
+  lastCheckedAt?: string
+}
+
+// ── Preferences ──────────────────────────────────────────────────────────────
+
+/** Crash reports leave the machine only once the user says yes; `unset` asks once. */
+export type CrashConsent = 'unset' | 'on' | 'off'
+
+export interface Prefs {
+  updateChannel: UpdateChannel
+  crashReports: CrashConsent
+  version: string
+  platform: string
+  arch: string
+}
+
+/** An uncaught error or rejection in the renderer. */
+export interface ErrorReport {
+  kind: 'error' | 'rejection'
+  message: string
+  stack?: string
+}

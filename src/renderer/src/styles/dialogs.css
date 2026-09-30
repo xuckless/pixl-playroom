@@ -222,3 +222,49 @@ legend {
 .enhance-log .msg.error {
   color: var(--danger);
 }
+
+/* Settings: updates, privacy, about */
+.modal.prefs .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.modal.prefs fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.modal.prefs fieldset p {
+  margin: 0;
+  line-height: 1.5;
+}
+.prefs-status {
+  color: var(--text);
+}
+.prefs-row,
+.prefs-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+}
+.prefs-links a,
+button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--acc);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.prefs-links a:hover,
+button.link:hover {
+  color: var(--text);
+}
+.prefs-row .licence-key {
+  flex: 1 1 260px;
+  min-width: 0;
+  font-family: var(--font-mono);
+}

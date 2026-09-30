@@ -1,7 +1,8 @@
 name: Pages
 
-# Publishes site/ (the static website, no build step) to GitHub Pages at
-# https://xuckless.github.io/pixl-playroom/.
+# Publishes site/ to GitHub Pages at https://xuckless.github.io/pixl-playroom/.
+# The website itself moved to https://playroom.pixlfoundation.com (the pixl-web
+# repo); site/ is only a redirect there, so old links keep working.
 on:
   push:
     branches: [main]

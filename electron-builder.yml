@@ -21,9 +21,17 @@ files:
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,CHANGELOG.md,README.md,TODO.md,CLAUDE.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml,pnpm-workspace.yaml}'
+  - '!dev-app-update.yml'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!{.github,release-please-config.json,.release-please-manifest.json}'
   - '!resources/ai/**'
+
+# The third-party notices (scripts/third-party-notices.mjs, run after the
+# build), opened from Settings and Help. Every platform's own extraResources
+# add to this list.
+extraResources:
+  - from: build/THIRD_PARTY_NOTICES.txt
+    to: THIRD_PARTY_NOTICES.txt
 
 # Native addons cannot be loaded from inside the asar archive. The engine
 # binding ships as `@xuckless/pixl-engine` plus one platform package

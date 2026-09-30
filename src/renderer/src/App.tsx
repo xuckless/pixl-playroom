@@ -32,6 +32,7 @@ import { useBoot } from './state/boot'
 import { useLibrary } from './state/library'
 import { OVERLAY_MODES, useUi } from './state/ui'
 import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
+import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
 import { CollectionDialog } from './views/library/CollectionDialog'
@@ -109,6 +110,8 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'sync' && <SyncDialog key="sync" />}
       {dialog === 'preset' && <SavePresetDialog key="preset" />}
       {dialog === 'enhance' && <EnhanceDialog key="enhance" />}
+      {dialog === 'preferences' && <PreferencesDialog key="preferences" />}
+      {dialog === 'crash-consent' && <CrashConsentDialog key="crash-consent" />}
     </AnimatePresence>
   )
 }
@@ -274,6 +277,34 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
     useDevelop.getState().setOverlay(true)
     useAiJobs.getState().setReveal(r.into.layerId)
   }
+}
+
+/** Uncaught errors and rejections go to main: the log, and a crash report when opted in. */
+function reportErrors(): () => void {
+  const onError = (e: ErrorEvent): void => {
+    void api.app
+      .reportError({ kind: 'error', message: e.message, stack: e.error?.stack })
+      .catch(() => undefined)
+  }
+  const onRejection = (e: PromiseRejectionEvent): void => {
+    const r = e.reason as { message?: string; stack?: string } | undefined
+    void api.app
+      .reportError({ kind: 'rejection', message: r?.message ?? String(e.reason), stack: r?.stack })
+      .catch(() => undefined)
+  }
+  window.addEventListener('error', onError)
+  window.addEventListener('unhandledrejection', onRejection)
+  return () => {
+    window.removeEventListener('error', onError)
+    window.removeEventListener('unhandledrejection', onRejection)
+  }
+}
+
+/** The first launch without an answer asks whether crash reports may be sent (once the splash is gone). */
+async function askCrashConsent(): Promise<void> {
+  const prefs = await api.prefs.get().catch(() => null)
+  if (prefs?.crashReports !== 'unset' || useLibrary.getState().dialog) return
+  useLibrary.getState().setDialog('crash-consent')
 }
 
 function useShortcuts(): void {
@@ -569,7 +600,9 @@ export default function App(): React.JSX.Element {
       api.ai.onEvent((e) => {
         useAiJobs.getState().onEvent(e)
         void aiJobEnded(e)
-      })
+      }),
+      api.app.onOpenPreferences(() => useLibrary.getState().setDialog('preferences')),
+      reportErrors()
     ]
     void useAiJobs
       .getState()
@@ -594,7 +627,10 @@ export default function App(): React.JSX.Element {
       else await openLastSource()
       boot.finish('folder')
     })()
-    void Promise.allSettled([engineUp, libraryUp]).then(() => boot.end())
+    void Promise.allSettled([engineUp, libraryUp]).then(() => {
+      boot.end()
+      void askCrashConsent()
+    })
     const t = setInterval(() => void refreshEngine(), 5000)
     return () => {
       offs.forEach((off) => off())

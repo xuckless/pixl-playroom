@@ -4,6 +4,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import dockIcon from '../../resources/icon-dock.png?asset'
+import { startCrashReporting } from './crash'
 import { bootScale, onRenderScale, settleScale, watchDisplay } from './display'
 import { EngineClient } from './engine/client'
 import { endExiftool } from './exiftool'
@@ -14,6 +15,7 @@ import { EnhanceRunner } from './enhance'
 import { Exporter } from './exporter'
 import { openIndex } from './indexer/client'
 import { registerIpc } from './ipc'
+import { startLicence } from './licence'
 import { Library } from './library'
 import { buildMenu } from './menu'
 import {
@@ -29,6 +31,7 @@ import { PlaneStore } from './planestore'
 import { pixels } from './workers/pool'
 import { registerProtocol, registerSchemePrivileges } from './protocol'
 import { DevelopSessions } from './render'
+import { setupUpdater } from './updater'
 import { IPC } from '../shared/ipc'
 
 log.initialize()
@@ -38,6 +41,8 @@ registerSchemePrivileges()
 
 // A separate profile for automated runs and experiments.
 if (process.env['PLAYROOM_USER_DATA']) app.setPath('userData', process.env['PLAYROOM_USER_DATA'])
+// Once userData is settled (consent lives there) and before anything else can crash.
+startCrashReporting()
 /** Automation: never show the window; render offscreen so it can still be captured. */
 const hidden = process.env['PLAYROOM_HIDDEN'] === '1'
 
@@ -205,6 +210,8 @@ app.whenReady().then(() => {
   buildMenu()
   onRenderScale(buildMenu)
   createWindow()
+  setupUpdater()
+  startLicence()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

@@ -65,7 +65,8 @@ interface LibraryState {
   recent: string[]
   engine: EngineStatus | null
   toast: { text: string; tone: 'info' | 'error'; action?: ToastAction } | null
-  dialog: null | 'export' | 'sync' | 'preset' | 'enhance' | 'collection'
+  dialog:
+    null | 'export' | 'sync' | 'preset' | 'enhance' | 'collection' | 'preferences' | 'crash-consent'
   /** The collection the 'collection' dialog edits. */
   editing: CollectionDraft | null
   clipboard: { recipe: Recipe; groups: RecipeGroup[]; source: string | null } | null

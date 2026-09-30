@@ -1,11 +1,32 @@
 /**
  * The menu bar: Electron's default menus, less page zoom (⌘+ / ⌘− / ⌘0 zoom
  * the loupe instead), with View ▸ Rendering where the window's display offers
- * a choice (macOS).
+ * a choice (macOS), Settings… (⌘, / Ctrl+,) and Help's legal pages.
  */
-import { Menu, type MenuItemConstructorOptions } from 'electron'
-import type { RenderMode } from '../shared/ipc'
+import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { IPC, type RenderMode } from '../shared/ipc'
 import { PERFORMANCE_SCALE, renderScale, setRenderMode, ULTRA_SCALE } from './display'
+import { paths } from './paths'
+
+const SITE = 'https://playroom.pixlfoundation.com'
+const LEGAL = 'https://playroom.pixlfoundation.com/legal'
+
+const settings: MenuItemConstructorOptions = {
+  label: 'Settings…',
+  accelerator: 'CmdOrCtrl+,',
+  click: () => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    win?.webContents.send(IPC.app.openPreferences)
+  }
+}
+
+const help: MenuItemConstructorOptions[] = [
+  { label: 'Pixl Playroom Website', click: () => void shell.openExternal(SITE) },
+  { type: 'separator' },
+  { label: 'Licence Agreement', click: () => void shell.openExternal(`${LEGAL}/eula/`) },
+  { label: 'Privacy Policy', click: () => void shell.openExternal(`${LEGAL}/privacy/`) },
+  { label: 'Third-Party Notices', click: () => void shell.openPath(paths.notices()) }
+]
 
 const times = (n: number): string => `${Number(n.toFixed(2))}×`
 
@@ -43,11 +64,33 @@ export function buildMenu(): void {
   }
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
-      ...(mac ? [{ role: 'appMenu' as const }] : []),
-      { role: 'fileMenu' },
+      ...(mac
+        ? [
+            {
+              label: app.name,
+              submenu: [
+                { role: 'about' },
+                { type: 'separator' },
+                settings,
+                { type: 'separator' },
+                { role: 'services' },
+                { type: 'separator' },
+                { role: 'hide' },
+                { role: 'hideOthers' },
+                { role: 'unhide' },
+                { type: 'separator' },
+                { role: 'quit' }
+              ] satisfies MenuItemConstructorOptions[]
+            }
+          ]
+        : []),
+      mac
+        ? { role: 'fileMenu' }
+        : { label: 'File', submenu: [settings, { type: 'separator' }, { role: 'quit' }] },
       { role: 'editMenu' },
       { label: 'View', submenu: view },
-      { role: 'windowMenu' }
+      { role: 'windowMenu' },
+      { role: 'help', submenu: help }
     ])
   )
 }

@@ -92,6 +92,11 @@ jobs:
       - name: Build renderer, preload and main
         run: pnpm exec electron-vite build
 
+      # After the build (it reads what the bundles contain) and fetch-ai (it
+      # carries ONNX Runtime's own notices).
+      - name: Third-party notices
+        run: pnpm notices
+
       - name: Signing credentials (only those that exist)
         # electron-builder treats an empty CSC_LINK as a certificate path and
         # fails with "not a file", so unset secrets must stay unset. Without a

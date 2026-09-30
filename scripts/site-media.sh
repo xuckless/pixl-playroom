@@ -1,23 +1,31 @@
 #!/usr/bin/env bash
-# Builds the media the website (site/) ships. The outputs are committed, so
-# this only needs to run again when a source changes.
+# Builds the media the Playroom website ships. The site is its own repo,
+# pixl-web (playroom.pixlfoundation.com), checked out beside this one; the
+# outputs land in its public/ folder and are committed there, so this only
+# needs to run again when a source changes.
 #
-#   scripts/site-media.sh [step ...]      steps: fonts brand hero pairs shots formats og (default: all)
+#   scripts/site-media.sh [step ...]      steps: fonts brand hero pairs shots tools formats og (default: all)
 #
-# Sources (override with the env vars):
+# Sources and destination (override with the env vars):
+#   WEB_DIR    the pixl-web checkout                   (../pixl-web)
 #   REC_DIR    screen recordings of the app, *.mov    (~/Downloads/PIXL-Recordings)
 #   AFTER_DIR  the edited photos, IMG_<n>-edit.jpg    (~/Downloads/Send-to-Friends)
-#   CARD_DIR   the CR2 originals and their sidecars   (/Volumes/Untitled/DCIM/100CANON)
+#   CARD_DIR   the CR2 originals and their sidecars   (/Volumes/Untitled/DCIM/100CANON,
+#              or a copy of the card, e.g. ~/photos-card)
 #   ICON_DIR   PNG/ICO web icons from the brand kit    (~/Downloads/PIXL-brand-assets/web)
 #
 # Needs ffmpeg (with libx264 and libvpx-vp9), ImageMagick 7 and node. The
-# "pairs" and "shots" steps drive the built app (pnpm exec electron-vite build)
+# "pairs", "shots" and "tools" steps drive the built app (pnpm exec electron-vite build)
 # and "og" runs Electron. The card is only ever read: its files are copied to a
 # scratch folder before the app touches them.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SITE="$ROOT/site/assets"
+WEB_DIR="${WEB_DIR:-$ROOT/../pixl-web}"
+[ -d "$WEB_DIR/public" ] || { echo "no pixl-web checkout at $WEB_DIR (set WEB_DIR)" >&2; exit 1; }
+# Playroom's own files, and the fonts and marks every PIXL site shares.
+SITE="$WEB_DIR/public/playroom"
+SHARED="$WEB_DIR/public/shared"
 REC_DIR="${REC_DIR:-$HOME/Downloads/PIXL-Recordings}"
 AFTER_DIR="${AFTER_DIR:-$HOME/Downloads/Send-to-Friends}"
 CARD_DIR="${CARD_DIR:-/Volumes/Untitled/DCIM/100CANON}"
@@ -29,29 +37,31 @@ trap 'rm -rf "$SCRATCH"' EXIT
 
 fonts() {
   local fs="$ROOT/node_modules/@fontsource-variable"
-  mkdir -p "$SITE/fonts"
-  cp "$fs/space-grotesk/files/space-grotesk-latin-wght-normal.woff2" "$SITE/fonts/space-grotesk.woff2"
-  cp "$fs/manrope/files/manrope-latin-wght-normal.woff2" "$SITE/fonts/manrope.woff2"
-  cp "$fs/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2" "$SITE/fonts/jetbrains-mono.woff2"
+  mkdir -p "$SHARED/fonts"
+  cp "$fs/space-grotesk/files/space-grotesk-latin-wght-normal.woff2" "$SHARED/fonts/space-grotesk.woff2"
+  cp "$fs/manrope/files/manrope-latin-wght-normal.woff2" "$SHARED/fonts/manrope.woff2"
+  cp "$fs/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2" "$SHARED/fonts/jetbrains-mono.woff2"
 }
 
 brand() {
-  mkdir -p "$SITE/brand"
-  cp "$ROOT/build/brand/icons/favicon.svg" "$SITE/brand/favicon.svg"
-  cp "$ROOT/build/brand/lockups/playroom-lockup-horizontal-dark.svg" "$SITE/brand/"
-  cp "$ROOT/build/brand/lockups/playroom-lockup-stacked-dark.svg" "$SITE/brand/"
-  cp "$ROOT/build/brand/lockups/engine-lockup-horizontal-dark.svg" "$SITE/brand/"
-  cp "$ROOT/build/brand/marks/playroom-mark-glass.svg" "$SITE/brand/"
-  cp "$ROOT/build/brand/marks/engine-mark-glass.svg" "$SITE/brand/"
+  mkdir -p "$SHARED/brand"
+  cp "$ROOT/build/brand/icons/favicon.svg" "$SITE/favicon.svg"
+  cp "$ROOT/build/brand/lockups/playroom-lockup-horizontal-dark.svg" "$SHARED/brand/"
+  cp "$ROOT/build/brand/lockups/engine-lockup-horizontal-dark.svg" "$SHARED/brand/"
+  cp "$ROOT/build/brand/marks/playroom-mark-glass.svg" "$SHARED/brand/"
+  cp "$ROOT/build/brand/marks/engine-mark-glass.svg" "$SHARED/brand/"
   for f in favicon.ico apple-touch-icon.png icon-192.png icon-512-maskable.png; do
-    cp "$ICON_DIR/$f" "$SITE/brand/$f"
+    cp "$ICON_DIR/$f" "$SITE/$f"
   done
 }
 
 # The hero loop: the three recordings of Develop's before/after wipe, cropped to
-# the photo (the recordings have a black edge), cross-faded, muted.
+# the photo (the recordings have a black edge), cross-faded, muted. The videos
+# go to pixl-web's media/ (served from R2: run its scripts/push-media.sh after),
+# the poster to the site itself.
 hero() {
-  mkdir -p "$SITE/media"
+  local vid="$WEB_DIR/media/playroom"
+  mkdir -p "$SITE/media" "$vid"
   local recs=() f
   for f in "$REC_DIR"/*.mov; do recs+=("$f"); done
   [ "${#recs[@]}" -ge 3 ] || { echo "hero: need 3 recordings in $REC_DIR" >&2; return 1; }
@@ -61,11 +71,11 @@ hero() {
   local graph="[0:v]$v[a];[1:v]$v[b];[2:v]$v[c];[a][b]xfade=transition=fade:duration=0.8:offset=8.2[ab];[ab][c]xfade=transition=fade:duration=0.8:offset=16.4[v]"
   local inputs=(-ss 1.0 -t 9.0 -i "$SCRATCH/r2.mov" -ss 1.0 -t 9.0 -i "$SCRATCH/r3.mov" -ss 1.5 -t 8.3 -i "$SCRATCH/r1.mov")
   ffmpeg -v error -y "${inputs[@]}" -filter_complex "$graph" -map "[v]" -an \
-    -c:v libx264 -crf 24 -preset slow -pix_fmt yuv420p -movflags +faststart "$SITE/media/hero.mp4"
+    -c:v libx264 -crf 24 -preset slow -pix_fmt yuv420p -movflags +faststart "$vid/hero.mp4"
   ffmpeg -v error -y "${inputs[@]}" -filter_complex "$graph" -map "[v]" -an \
-    -c:v libvpx-vp9 -crf 36 -b:v 0 -row-mt 1 -deadline good -cpu-used 2 "$SITE/media/hero.webm"
+    -c:v libvpx-vp9 -crf 36 -b:v 0 -row-mt 1 -deadline good -cpu-used 2 "$vid/hero.webm"
   # Poster: mid-wipe on the first clip, so a still (or reduced motion) still shows the idea.
-  ffmpeg -v error -y -ss 4.2 -i "$SITE/media/hero.mp4" -frames:v 1 "$SCRATCH/poster.png"
+  ffmpeg -v error -y -ss 4.2 -i "$vid/hero.mp4" -frames:v 1 "$SCRATCH/poster.png"
   magick "$SCRATCH/poster.png" -quality 80 "$SITE/media/hero-poster.webp"
   magick "$SCRATCH/poster.png" -resize 1200x -quality 80 "$SITE/media/hero-poster.jpg"
 }
@@ -119,6 +129,22 @@ shots() {
   done
 }
 
+# One shot per tool on the Develop wheel, for the site's tool showcase:
+# scripts/site-tools.mjs opens a photo per tool, applies an edit that gives
+# the panel something to show, turns the wheel to it and captures the window
+# at twice 1600×1000.
+TOOLS=(basic curve hsl grade detail effects masks crop calibration advanced)
+tools() {
+  mkdir -p "$SITE/shots/tools" "$SCRATCH/tools"
+  PLAYROOM_USER_DATA="$SCRATCH/tools-profile" \
+    node "$ROOT/scripts/site-tools.mjs" "$CARD_DIR" "$SCRATCH/Tools" "$SCRATCH/tools"
+  local t
+  for t in "${TOOLS[@]}"; do
+    magick "$SCRATCH/tools/tool-$t.png" -filter Lanczos -resize 1600x1000 -strip -quality 82 \
+      "$SITE/shots/tools/$t.webp"
+  done
+}
+
 # The formats strip: the app's own document icons (pnpm doc-icons), small.
 formats() {
   mkdir -p "$SITE/formats"
@@ -134,7 +160,7 @@ og() {
 }
 
 steps=("$@")
-[ "${#steps[@]}" -gt 0 ] || steps=(fonts brand hero pairs shots formats og)
+[ "${#steps[@]}" -gt 0 ] || steps=(fonts brand hero pairs shots tools formats og)
 for s in "${steps[@]}"; do
   echo "== $s"
   "$s"

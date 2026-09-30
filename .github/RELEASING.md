@@ -74,3 +74,66 @@ the icons, that the default apps stay as they were, and that uninstalling remove
 Until the Apple secrets exist, macOS builds are unsigned: Gatekeeper reports them as
 "damaged" (users clear quarantine with `xattr`). Windows works unsigned with a SmartScreen
 warning.
+
+## Code signing (not set up yet)
+
+Both take days of waiting on someone else, so start them before anything else on the
+release list.
+
+**macOS (Developer ID + notarization).**
+
+1. Enrol in the Apple Developer Program (individual or organisation; an organisation needs
+   a D-U-N-S number, which can take a week or two).
+2. In Xcode or the developer portal, create a **Developer ID Application** certificate and
+   export it with its private key as a `.p12`.
+3. Repository secrets: `CSC_LINK` (`base64 -i cert.p12 | pbcopy`), `CSC_KEY_PASSWORD`,
+   `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` (appleid.apple.com → App-Specific
+   Passwords) and `APPLE_TEAM_ID`.
+4. `electron-builder.yml` already has `hardenedRuntime`, the entitlements and
+   `notarize: true`; the next release is signed and notarized. Check with
+   `codesign --verify --deep --strict` and `spctl -a -vv` on the built app.
+
+**Windows.** Either Azure Trusted Signing (a monthly fee, no hardware token; electron-builder
+supports it through `win.azureSignOptions`, with its own secrets), or an OV/EV certificate
+from a CA as a `.pfx` in `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`. SmartScreen warnings
+fade as a signed build gathers reputation (an EV certificate skips that wait).
+
+## Updates
+
+`src/main/updater.ts` (ported from space-pixl) reads the GitHub releases through the
+`app-update.yml` electron-builder writes from `publish`. It checks at launch and every four
+hours, downloads in the background and installs on quit or on _Settings → Restart to update_.
+The channel (Stable / Beta) is in _Settings_ and in `userData/settings.json`.
+
+- **macOS updates need signing.** Squirrel.Mac refuses an unsigned update, so until the
+  Apple secrets exist a Mac check ends in an error, which Settings shows.
+- **From a checkout:** `PLAYROOM_FORCE_UPDATER=1 pnpm dev` reads `dev-app-update.yml`
+  (the same GitHub feed). Without it the updater is off in development.
+
+## Third-party notices
+
+`pnpm notices` writes `build/THIRD_PARTY_NOTICES.txt` (shipped via `extraResources`,
+opened from _Settings_ and _Help_). It reads what the bundles contain
+(`out/*/bundled-packages.json`, from `electron.vite.config.ts`), the production npm
+packages, ONNX Runtime's own notices when `pnpm fetch-ai` has run, and the hand-kept native
+components in `build/third-party.json`, with licence texts from `build/licenses/`.
+`release.yml` regenerates it after the build. When the engine's dependencies change,
+update `build/third-party.json`. To refresh the copy on the website:
+`node scripts/third-party-notices.mjs --web ../pixl-web`.
+
+## Licences
+
+Lemon Squeezy's licence API, called straight from the app (`src/shared/licence.ts`; no
+API key needed): activate with the key and a device name, validate at most once a day at
+launch, deactivate from _Settings_. `userData/licence.json` holds the record with the key
+sealed by `safeStorage`. Nothing is enforced (`LICENCE_ENFORCED`), and the Licence section
+only shows in development or with `PLAYROOM_LICENCE_UI=1`. `PLAYROOM_LICENCE_API` points the
+app at another server, for testing or for routing through the pixl-web Worker later.
+
+## Crash reports
+
+Opt-in (asked once at first launch, then in _Settings_), stored as `crashReports` in
+`userData/settings.json`. Native crashes go through Electron's `crashReporter` (minidumps),
+JavaScript errors and processes that die abnormally as JSON (`src/main/crash.ts`,
+`src/shared/crash.ts`), to `https://pixlfoundation.com/api/crash`. The pixl-web Worker only
+logs a summary of each for now; see its TODO.md.
