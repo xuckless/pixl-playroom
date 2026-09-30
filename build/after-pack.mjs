@@ -134,7 +134,27 @@ export default async function afterPack(context) {
         `@xuckless/pixl-engine@${baseVersion}; the binding would refuse to load`
     )
   }
+  // 0.15+: the ONNX Runtime model steps run on ships beside the addon, named
+  // by onnxruntime.json. Without it Enhance and every AI feature is dead.
+  const ortRecord = path.join(bindingDir, 'onnxruntime.json')
+  if (!existsSync(ortRecord)) {
+    throw new Error(
+      `engine binding check failed for ${target}: ${expected} carries no onnxruntime.json, so no ONNX Runtime`
+    )
+  }
+  const ort = JSON.parse(readFileSync(ortRecord, 'utf8'))
+  const ortLib = path.join(bindingDir, ort.library)
+  if (!existsSync(ortLib)) {
+    throw new Error(`engine binding check failed for ${target}: ${ort.library} is missing`)
+  }
+  const ortArch = binaryArch(ortLib)
+  if (ortArch !== arch && ortArch !== 'universal') {
+    throw new Error(
+      `engine binding check failed for ${target}: ${ort.library} is ${ortArch}, not ${arch}`
+    )
+  }
   console.log(
-    `  • engine binding ok  target=${target} package=${expected}@${version} addon=${addons[0]}`
+    `  • engine binding ok  target=${target} package=${expected}@${version} addon=${addons[0]} ` +
+      `onnxruntime=${ort.version} (${ort.providers.join(', ')})`
   )
 }

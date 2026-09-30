@@ -91,6 +91,11 @@ export interface CompileContext {
   brushPaths: Record<string, string>
   /** False while the crop tool is open: show the whole, unrotated frame. */
   applyCrop: boolean
+  /**
+   * The pipeline carries light above SDR white: a PQ/HLG source, or an SDR
+   * one expanded to HDR on export. Changes where bounded blends run.
+   */
+  hdr?: boolean
 }
 
 export interface Compiled {
@@ -122,7 +127,9 @@ function curve(points: CurvePointSetting[]): Curve {
   for (const p of sorted) {
     const x = clamp(p.x, 0, 1)
     if (out.length > 0 && x <= out[out.length - 1].x) continue
-    out.push({ x: round4(x), y: round4(p.y) })
+    // The engine refuses a point above 1 in a display-referred stage, and a
+    // sidecar written elsewhere may hold one.
+    out.push({ x: round4(x), y: round4(clamp(p.y, 0, 1)) })
   }
   return { points: out }
 }
@@ -141,6 +148,7 @@ function curvesOp(c: Partial<Curves>): GradeOp {
       luma_vs_saturation: null,
       hue_vs_saturation: null,
       hue_vs_hue: null,
+      refine_saturation: null,
       ...c
     }
   }
@@ -552,14 +560,29 @@ export function layerMask(
   return { components, invert: l.invert, space: keys ? LOOK_SPACE : null }
 }
 
+/** Modes whose formula only holds on values in 0…1. */
+const BOUNDED_BLENDS: BlendMode[] = ['Screen', 'Overlay', 'SoftLight', 'HardLight']
+
+/**
+ * An HDR pipeline's own encoding, where 0…1 spans black to the peak: the one
+ * place a bounded blend is defined above SDR white.
+ */
+const HDR_BLEND_SPACE: GradeSpace = {
+  Encoded: { space: 'Rec2100Pq', intent: 'RelativeColorimetric', black_point_compensation: false }
+}
+
 /**
  * `Normal` needs no space and costs nothing in the working space; every other
  * mode means what a compositing application means by it, which is a formula
  * on display-referred values (and Screen/Overlay/Soft/Hard Light are refused
- * in linear light anyway).
+ * in linear light anyway). In an HDR pipeline the look space carries
+ * highlights above 1, where the engine refuses those four: they blend on the
+ * PQ signal instead.
  */
-function blendFor(mode: BlendMode): Blend {
-  return mode === 'Normal' ? { mode, space: 'LinearWorking' } : { mode, space: LOOK_SPACE }
+function blendFor(mode: BlendMode, hdr: boolean): Blend {
+  if (mode === 'Normal') return { mode, space: 'LinearWorking' }
+  if (hdr && BOUNDED_BLENDS.includes(mode)) return { mode, space: HDR_BLEND_SPACE }
+  return { mode, space: LOOK_SPACE }
 }
 
 // ── The compiler ─────────────────────────────────────────────────────────────
@@ -854,7 +877,7 @@ function baseStages(
         midpoint: clamp(e.vignetteMidpoint / 100, 0, 1),
         roundness: clamp(e.vignetteRoundness / 100, -1, 1),
         feather: clamp(e.vignetteFeather / 100, 0, 1),
-        highlights: clamp(e.vignetteHighlights / 100, 0, 1),
+        style: { Exposure: { highlights: clamp(e.vignetteHighlights / 100, 0, 1) } },
         centre: { x: round4(v.centre.x), y: round4(v.centre.y) },
         half_size: { x: round4(Math.max(v.half.x, 1e-4)), y: round4(Math.max(v.half.y, 1e-4)) },
         rotation_degrees: clamp(v.rotation, -45, 45)
@@ -997,7 +1020,7 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
       enabled: l.enabled,
       opacity: clamp(l.opacity / 100, 0, 1),
       mask,
-      blend: blendFor(l.blend),
+      blend: blendFor(l.blend, ctx.hdr === true),
       stages
     })
   }
@@ -1019,6 +1042,10 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
           orientation,
           rotate_degrees: round4(straighten),
           rotate_resampler: 'Lanczos3',
+          // A rotation leaves corners with no picture. The crop already
+          // keeps clear of them; `Crop` only shrinks it should rounding reach
+          // one, where `Refuse` would fail the render.
+          ...(straighten !== 0 ? { outside: 'Crop' as const } : {}),
           crop: shownCrop
             ? {
                 x: round4(shownCrop.x),

@@ -8,6 +8,7 @@
 import { createRequire } from 'module'
 import type {
   EngineErrorShape,
+  EngineHelloMessage,
   EngineMethod,
   HostToMain,
   MainToHost,
@@ -15,6 +16,7 @@ import type {
 } from '../../shared/engine-types'
 
 const ENGINE_PACKAGE = '@xuckless/pixl-engine'
+/** What Playroom cannot run without. The rest (lens, upright, AI…) are looked up per call. */
 const METHODS: EngineMethod[] = ['engineVersion', 'probe', 'convert', 'analyze', 'suggestEncode']
 
 function send(msg: HostToMain): void {
@@ -78,6 +80,15 @@ function toErrorShape(err: unknown): EngineErrorShape {
   return { message: String(err), code: 'Unknown' }
 }
 
+/** The ONNX Runtime shipped beside the addon, if this build carries one. */
+function bundledRuntime(e: PixlEngineModule): EngineHelloMessage['runtime'] {
+  try {
+    return typeof e.bundledRuntime === 'function' ? e.bundledRuntime() : undefined
+  } catch {
+    return undefined
+  }
+}
+
 const loaded = loadNative()
 const engine = 'engine' in loaded ? loaded.engine : undefined
 
@@ -86,7 +97,8 @@ if (engine) {
     kind: 'hello',
     status: 'ready',
     version: engine.engineVersion(),
-    enhance: engine.hasEnhance()
+    enhance: engine.hasEnhance(),
+    runtime: bundledRuntime(engine)
   })
 } else {
   send({

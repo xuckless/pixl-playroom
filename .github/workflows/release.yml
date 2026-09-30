@@ -82,18 +82,17 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      # Enhance → Super Resolution bundles Microsoft's ONNX Runtime and the
-      # Real-ESRGAN model for this job's own target (resources/ai/<target>,
-      # which electron-builder.yml carries as `ai`). The default shell on
-      # Windows is PowerShell, whose `tar` is bsdtar and unpacks the .zip.
+      # Enhance → Super Resolution bundles the Real-ESRGAN model for this
+      # job's own target (resources/ai/<target>, which electron-builder.yml
+      # carries as `ai`). ONNX Runtime ships in the engine's platform package.
       - name: Enhance bundle
         run: pnpm fetch-ai ${{ matrix.ai }}
 
       - name: Build renderer, preload and main
         run: pnpm exec electron-vite build
 
-      # After the build (it reads what the bundles contain) and fetch-ai (it
-      # carries ONNX Runtime's own notices).
+      # After the build (it reads what the bundles contain); ONNX Runtime's
+      # own notices come from the engine's platform package.
       - name: Third-party notices
         run: pnpm notices
 

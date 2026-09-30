@@ -108,7 +108,7 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
   const long = Math.max(info.width, info.height)
   const factor = Math.min(1, PROXY_EDGE / long)
   const report = await engine.convert({
-    ...blankRequest(photo.path, proxyPath, info.input),
+    ...blankRequest(photo.path, proxyPath, info.input, info),
     raw,
     resize: factor < 1 ? { Scale: { factor } } : 'None',
     resampler: 'Lanczos3',

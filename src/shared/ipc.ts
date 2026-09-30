@@ -153,6 +153,8 @@ export interface EngineStatus {
   status: 'starting' | 'ready' | 'unavailable' | 'crashed'
   version?: string
   enhance?: boolean
+  /** The ONNX Runtime bundled with the engine: what model steps run on. */
+  runtime?: { library: string; version: string; providers: string[] }
   reason?: string
   /** Why the engine is unavailable, when the load named it (e.g. `VersionMismatch`). */
   code?: string

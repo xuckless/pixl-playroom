@@ -59,7 +59,7 @@ nodeGypRebuild: false
 # one of them.
 afterPack: ./build/after-pack.mjs
 
-# Enhance → Super Resolution: the ONNX Runtime and Real-ESRGAN model fetched
+# Enhance → Super Resolution: the Real-ESRGAN model fetched
 # per target by `pnpm fetch-ai <platform>-<arch>` into resources/ai/, carried
 # outside the asar as `resources/ai` (src/main/paths.ts reads it there).
 mac:

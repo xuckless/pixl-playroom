@@ -7,6 +7,8 @@
 import type {
   ColorPolicy,
   ConvertRequest,
+  Framing,
+  GainMapMode,
   InputFormat,
   Orientation,
   RawMode,
@@ -75,7 +77,8 @@ export const RAW_DEVELOP: RawMode = {
 
 /** The orientation to hand the engine for a source decoded this way. */
 export function sourceOrientation(info: SourceInfo, raw: RawMode | null): Orientation {
-  // A developed RAW comes out upright; every other path carries the tag.
+  // A developed RAW (rawler's or the scene-linear one) comes out upright;
+  // every other path carries the tag.
   if (info.input === 'Raw' && raw !== null && raw !== 'EmbeddedPreview') return 'Normal'
   return fromExif(info.orientation)
 }
@@ -126,8 +129,38 @@ export const INTERACTIVE_THREADS = interactiveThreads()
 /** Threads for background work: a few, so the UI stays responsive. */
 export const BACKGROUND_THREADS = Math.max(1, Math.min(4, Math.floor(cpus().length / 2)))
 
-/** A request with every field stated and nothing done; callers spread over it. */
-export function blankRequest(source: string, sink: string, input: InputFormat): ConvertRequest {
+/**
+ * Which rendition of a gain-map file (an iPhone HEIC, an UltraHDR JPEG) to
+ * read: the engine requires the choice exactly when the file carries one.
+ * Playroom reads the SDR base.
+ */
+export function gainMapOf(info: Pick<SourceInfo, 'gain_map'> | null | undefined): GainMapMode | null {
+  return info?.gain_map ? 'Base' : null
+}
+
+/**
+ * Framing that only orients and flips, no straighten: the engine refuses an
+ * `outside` where nothing rotates, so it goes with the rotation.
+ */
+export function orientOnly(framing: Framing | null): Framing | null {
+  if (!framing) return null
+  const { transform: _t, outside: _o, ...rest } = framing
+  void _t
+  void _o
+  return { ...rest, rotate_degrees: 0, crop: null }
+}
+
+/**
+ * A request with every field stated and nothing done; callers spread over it.
+ * `info` is the probe of `source` when it is the original file (a proxy or
+ * master carries no gain map); it states the rendition a gain-map file needs.
+ */
+export function blankRequest(
+  source: string,
+  sink: string,
+  input: InputFormat,
+  info?: Pick<SourceInfo, 'gain_map'> | null
+): ConvertRequest {
   return {
     source: { Path: source },
     sink: { Path: sink },
@@ -144,9 +177,17 @@ export function blankRequest(source: string, sink: string, input: InputFormat): 
     grade: null,
     dither: 'None',
     hdr: null,
+    sdr: null,
+    gain_map: gainMapOf(info),
     threads: INTERACTIVE_THREADS,
     framing: null,
     region: null,
-    inspect: null
+    inspect: null,
+    overlays: null,
+    enhance: null,
+    lens: null,
+    retouch: null,
+    output_sharpen: null,
+    measure: null
   }
 }

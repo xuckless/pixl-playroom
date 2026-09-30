@@ -16,6 +16,7 @@ import type {
   RenderingIntent,
   Resize,
   Sharpen,
+  YCbCrMatrix,
   Subsampling,
   TiffCompression,
   ToneMapOperator
@@ -159,9 +160,30 @@ export function supportsHdr(format: ExportFormat): boolean {
   return format === 'avif' || format === 'heic' || format === 'jxl' || format === 'png'
 }
 
-/** The encoder and the depth the engine must hand it. */
-export function buildEncode(s: ExportSettings, threads: number): { encode: Encode; depth: Depth } {
-  const deep = s.bitDepth > 8
+/**
+ * How a HEIF-family file turns RGB into Y/Cb/Cr: none at all for a lossless
+ * file (the one exact round trip), BT.2020's matrix for wide-gamut and HDR
+ * output, and BT.601 otherwise — what libheif assumed before the engine made
+ * it a choice, so an SDR export's pixels are unchanged.
+ */
+export function heifMatrix(s: ExportSettings, hdrOut: boolean): YCbCrMatrix {
+  if (s.lossless) return 'Identity'
+  if (hdrOut || s.colorSpace === 'Rec2020') return 'Bt2020Ncl'
+  return 'Bt601'
+}
+
+/**
+ * The encoder and the depth the engine must hand it. `hdrOut` when the file
+ * will hold PQ/HLG: those need at least 10 bits (the engine refuses 8-bit PQ
+ * out of a float pass, and it would band).
+ */
+export function buildEncode(
+  s: ExportSettings,
+  threads: number,
+  hdrOut = false
+): { encode: Encode; depth: Depth } {
+  const deep = s.bitDepth > 8 || hdrOut
+  const heifBits = hdrOut ? Math.max(10, s.bitDepth) : s.bitDepth
   switch (s.format) {
     case 'jpeg':
       return {
@@ -189,9 +211,10 @@ export function buildEncode(s: ExportSettings, threads: number): { encode: Encod
           Avif: {
             quality: s.quality,
             lossless: s.lossless,
-            bit_depth: s.bitDepth,
+            bit_depth: heifBits,
             chroma: s.lossless ? 'Full' : s.chroma,
-            speed: s.avifSpeed
+            speed: s.avifSpeed,
+            matrix: heifMatrix(s, hdrOut)
           }
         },
         depth: deep ? 'Sixteen' : 'Eight'
@@ -202,8 +225,9 @@ export function buildEncode(s: ExportSettings, threads: number): { encode: Encod
           Heic: {
             quality: s.quality,
             lossless: s.lossless,
-            bit_depth: s.bitDepth,
-            chroma: s.lossless ? 'Full' : s.chroma
+            bit_depth: heifBits,
+            chroma: s.lossless ? 'Full' : s.chroma,
+            matrix: heifMatrix(s, hdrOut)
           }
         },
         depth: deep ? 'Sixteen' : 'Eight'
@@ -285,7 +309,8 @@ export function buildColor(
       Expand: {
         to: s.hdr.to,
         operator: { Linear: { sdr_white_nits: s.hdr.sdrWhite } },
-        peak_nits: s.hdr.peak
+        peak_nits: s.hdr.peak,
+        limit: 'Clip'
       }
     }
   }

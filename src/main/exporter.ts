@@ -134,6 +134,10 @@ export class Exporter {
     const frameW = developed?.frameWidth ?? (swap ? info.height : info.width)
     const frameH = developed?.frameHeight ?? (swap ? info.width : info.height)
     const { user, width, height } = orientedFrame(recipe, frameW, frameH)
+    // PQ/HLG out: an HDR source kept HDR, or an SDR one expanded.
+    const hdrOut =
+      supportsHdr(s.format) &&
+      ((info.is_hdr && s.hdr.mode === 'keep') || (!info.is_hdr && s.hdr.mode === 'expand'))
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
@@ -143,11 +147,12 @@ export class Exporter {
       scale: 1,
       seed: hash32(row.path),
       brushPaths: await brushPlanes(row.id, recipe, user),
-      applyCrop: true
+      applyCrop: true,
+      hdr: info.is_hdr || hdrOut
     })
     const cw = Math.round((compiled.crop?.width ?? 1) * width)
     const ch = Math.round((compiled.crop?.height ?? 1) * height)
-    const { encode, depth } = buildEncode(s, INTERACTIVE_THREADS)
+    const { encode, depth } = buildEncode(s, INTERACTIVE_THREADS, hdrOut)
 
     const folder = s.folder ?? dirname(row.path)
     const target = s.subfolder ? join(folder, s.subfolder) : folder
@@ -192,7 +197,7 @@ export class Exporter {
       s.dither && depth === 'Eight' ? { TriangularNoise: { seed: hash32(row.path) } } : 'None'
     const plan = metadataPlan(s, item ?? null)
     const request: ConvertRequest = {
-      ...blankRequest(row.path, out, info.input),
+      ...blankRequest(row.path, out, info.input, info),
       raw,
       resize,
       resampler: 'Lanczos3',
@@ -208,7 +213,11 @@ export class Exporter {
       dither: floatPath ? dither : 'None',
       hdr:
         hdrKeep && floatWork
-          ? { reference_white_nits: s.hdr.referenceWhite, peak_nits: info.peak_nits ?? s.hdr.peak }
+          ? {
+              reference_white_nits: s.hdr.referenceWhite,
+              peak_nits: info.peak_nits ?? s.hdr.peak,
+              limit: 'Clip'
+            }
           : null,
       threads: BACKGROUND_THREADS * 2
     }

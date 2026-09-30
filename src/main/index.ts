@@ -196,7 +196,7 @@ app.whenReady().then(() => {
       enhance: new EnhanceRunner(
         library,
         aiEngine,
-        () => bgEngine.getStatus().enhance === true,
+        () => bgEngine.getStatus(),
         index
       ),
       ...(fakeAi() ? { segment: new SegmentRunner(library, planes) } : {})

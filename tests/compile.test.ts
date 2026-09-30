@@ -142,6 +142,40 @@ test('a bare straighten gets the largest crop that fits', () => {
   const c = compile(r, ctx)
   assert.equal(c.framing!.rotate_degrees, 5)
   assert.ok(c.framing!.crop)
+  // The engine needs `outside` exactly when the framing rotates.
+  assert.equal(c.framing!.outside, 'Crop')
+})
+
+test('framing that only turns names no outside', () => {
+  const r = defaultRecipe(false)
+  r.geometry.quarterTurns = 1
+  const c = compile(r, ctx)
+  assert.equal(c.framing!.rotate_degrees, 0)
+  assert.equal(c.framing!.outside, undefined)
+})
+
+test('the vignette is the exposure style, with its highlights', () => {
+  const r = defaultRecipe(false)
+  r.effects.vignetteAmount = -40
+  r.effects.vignetteHighlights = 30
+  const op = compile(r, ctx).grade!.layers[0].stages.flatMap((s) => s.ops).find((o) => 'Vignette' in o)
+  assert.ok(op && 'Vignette' in op)
+  assert.deepEqual(op.Vignette.style, { Exposure: { highlights: 0.3 } })
+})
+
+test('a curve point above white is brought down to it', () => {
+  const r = defaultRecipe(false)
+  r.toneCurve.master = [
+    { x: 0, y: 0 },
+    { x: 0.5, y: 1.4 },
+    { x: 1, y: 1 }
+  ]
+  const ops = compile(r, ctx).grade!.layers[0].stages.flatMap((s) => s.ops)
+  const curves = ops.filter((o): o is Extract<GradeOp, { Curves: unknown }> => 'Curves' in o)
+  const master = curves.map((c) => c.Curves.master).find((m) => m !== null)
+  assert.ok(master)
+  assert.ok(master.points.every((p) => p.y <= 1))
+  assert.equal(curves[0].Curves.refine_saturation, null)
 })
 
 test('the vignette follows the crop back into the frame', () => {

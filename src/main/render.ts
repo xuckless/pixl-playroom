@@ -37,7 +37,7 @@ import {
 } from '../shared/ipc'
 import { defaultRecipe, hash32, type Recipe } from '../shared/recipe'
 import type { Vec3 } from '../shared/wb'
-import { analyzeRequest, hdrWorkingOf, measureAutoWb, rendersDir } from './autowb'
+import { analyzeRequest, hdrSignalOf, hdrWorkingOf, measureAutoWb, rendersDir } from './autowb'
 import { brushPlanes } from './brushes'
 import type { PhotoRow } from './db'
 import { EngineError, type EngineClient } from './engine/client'
@@ -49,7 +49,9 @@ import { ensureMaster, ensureProxies, type Proxies, type ProxyFile } from './pro
 import {
   blankRequest,
   displayPolicy,
+  gainMapOf,
   INTERACTIVE_THREADS,
+  orientOnly,
   RAW_DEVELOP,
   sourceOrientation
 } from './source'
@@ -170,7 +172,8 @@ class Session {
       scale: source.width / this.px.frameWidth,
       seed: hash32(this.row.path),
       brushPaths: await brushPlanes(this.row.id, recipe, user),
-      applyCrop
+      applyCrop,
+      hdr: this.info.is_hdr
     })
   }
 
@@ -346,7 +349,7 @@ class Session {
         // Fine bins: the chart re-bins them onto a stops axis, where the
         // shadows need the resolution.
         bins: 4096,
-        hdr
+        hdr: hdrSignalOf(hdr)
       })
     } catch (err) {
       log.info('HDR histogram unavailable', (err as Error).message)
@@ -590,7 +593,8 @@ class Session {
       scale: zoom,
       seed: hash32(this.row.path),
       brushPaths: await brushPlanes(this.row.id, this.recipe, user),
-      applyCrop: false
+      applyCrop: false,
+      hdr: this.info.is_hdr
     })
     const x = Math.max(0, Math.min(width - 1, Math.floor(req.x)))
     const y = Math.max(0, Math.min(height - 1, Math.floor(req.y)))
@@ -598,8 +602,10 @@ class Session {
     const h = Math.max(1, Math.min(height - y, Math.ceil(req.height)))
     this.regionSlot = (this.regionSlot + 1) % 4
     const out = join(this.dir, `region-${this.regionSlot}.png`)
+    // The original (not a RAW's master) states its gain-map rendition.
+    const original = raw ? null : this.info
     await this.owner.engine.convert({
-      ...blankRequest(src.path, out, src.input),
+      ...blankRequest(src.path, out, src.input, original),
       raw: null,
       resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
       pixel: { depth: 'Eight', channels: 3 },
@@ -607,7 +613,7 @@ class Session {
       metadata: { exif: false, icc: true, xmp: false, iptc: false },
       color: displayPolicy(this.info, 'DisplayP3'),
       grade: compiled.grade,
-      framing: compiled.framing ? { ...compiled.framing, rotate_degrees: 0, crop: null } : null,
+      framing: orientOnly(compiled.framing),
       region: { x, y, width: w, height: h, margin: 96 }
     })
     // The overlay at 1:1: the same region through the layer's mask.
@@ -617,7 +623,7 @@ class Session {
       const maskOut = join(this.dir, `region-mask-${this.regionSlot}.png`)
       try {
         await this.owner.engine.convert({
-          ...blankRequest(src.path, maskOut, src.input),
+          ...blankRequest(src.path, maskOut, src.input, original),
           raw: null,
           resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
           pixel: { depth: 'Eight', channels: 1 },
@@ -625,7 +631,7 @@ class Session {
           metadata: STRIP_ALL,
           color: 'Preserve',
           grade: compiled.grade,
-          framing: compiled.framing ? { ...compiled.framing, rotate_degrees: 0, crop: null } : null,
+          framing: orientOnly(compiled.framing),
           region: { x, y, width: w, height: h, margin: 96 },
           inspect: { LayerMask: { layer: index } }
         })
@@ -740,6 +746,7 @@ class Session {
       ...analyzeRequest(src.path, 'Png', 1),
       input: src.input,
       raw: null,
+      gain_map: this.isRaw ? null : gainMapOf(this.info),
       noise: true,
       hue_bins: 1,
       bins: 16,

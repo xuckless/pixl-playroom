@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  buildColor,
+  buildEncode,
   defaultExportSettings,
   metadataPlan,
   outputSharpen,
@@ -211,4 +213,27 @@ test('location is removed only where it could be', () => {
     plan({ removeLocation: true, metadata: keep({ exif: false, xmp: false }) }).removeLocation,
     false
   )
+})
+
+test('HEIF files state their matrix: BT.601 for SDR as before, BT.2020 wide or HDR, none lossless', () => {
+  const s = { ...defaultExportSettings(), format: 'heic' as const, bitDepth: 8 }
+  const heic = (e: ReturnType<typeof buildEncode>['encode']) => {
+    assert.ok(typeof e === 'object' && 'Heic' in e)
+    return e.Heic
+  }
+  assert.equal(heic(buildEncode(s, 4).encode).matrix, 'Bt601')
+  assert.equal(heic(buildEncode({ ...s, colorSpace: 'Rec2020' }, 4).encode).matrix, 'Bt2020Ncl')
+  assert.equal(heic(buildEncode({ ...s, lossless: true }, 4).encode).matrix, 'Identity')
+  const hdr = buildEncode(s, 4, true)
+  assert.equal(heic(hdr.encode).matrix, 'Bt2020Ncl')
+  // PQ/HLG never leaves at 8 bits.
+  assert.equal(heic(hdr.encode).bit_depth, 10)
+  assert.equal(hdr.depth, 'Sixteen')
+})
+
+test('an SDR photo expanded to HDR clips at the peak, as before', () => {
+  const s = defaultExportSettings()
+  const c = buildColor({ ...s, format: 'avif', hdr: { ...s.hdr, mode: 'expand' } }, false)
+  assert.ok(typeof c === 'object' && 'Expand' in c)
+  assert.equal(c.Expand.limit, 'Clip')
 })

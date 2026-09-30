@@ -4,8 +4,8 @@
 //   node scripts/third-party-notices.mjs [--web <pixl-web dir>]
 // Three sources:
 //   - the native components npm can't see (build/third-party.json), with
-//     licence texts from build/licenses/ and, when fetched, ONNX Runtime's own
-//     notices (resources/ai/*/onnxruntime*/);
+//     licence texts from build/licenses/ and ONNX Runtime's own notices (from
+//     the engine's platform package, which ships the runtime);
 //   - the production npm packages (pnpm licenses), which ship in node_modules;
 //   - the packages bundled into the app's JavaScript (out/*/bundled-packages.json,
 //     written by electron.vite.config.ts), so run `electron-vite build` first.
@@ -96,19 +96,27 @@ const { components } = JSON.parse(
   fs.readFileSync(path.join(ROOT, 'build', 'third-party.json'), 'utf8')
 )
 const ids = new Set()
-/** ONNX Runtime's own LICENSE and ThirdPartyNotices.txt, from the first fetched runtime. */
+/**
+ * ONNX Runtime's own LICENSE and ThirdPartyNotices.txt, from the engine's
+ * platform package installed here (0.15+ ships the runtime beside the addon).
+ */
 function ortNotices() {
-  const ai = path.join(ROOT, 'resources', 'ai')
-  for (const target of fs.existsSync(ai) ? fs.readdirSync(ai).sort() : []) {
-    const dir = path.join(ai, target)
-    const ort = fs.readdirSync(dir).find((n) => n.toLowerCase().startsWith('onnxruntime'))
-    if (!ort) continue
-    const base = path.join(dir, ort)
-    const texts = ['LICENSE', 'ThirdPartyNotices.txt']
-      .map((n) => path.join(base, n))
-      .filter((f) => fs.existsSync(f))
-      .map((f) => fs.readFileSync(f, 'utf8').trim())
-    if (texts.length) return texts.join(`\n\n${RULE}\n\n`)
+  // pnpm keeps the platform package beside the base one in its store.
+  const base = path.join(ROOT, 'node_modules', '@xuckless', 'pixl-engine')
+  const roots = [
+    ...(fs.existsSync(base) ? [path.dirname(fs.realpathSync(base))] : []),
+    path.join(ROOT, 'node_modules', '@xuckless')
+  ]
+  for (const root of roots) {
+    for (const pkg of fs.existsSync(root) ? fs.readdirSync(root).sort() : []) {
+      if (!pkg.startsWith('pixl-engine-')) continue
+      const dir = fs.realpathSync(path.join(root, pkg))
+      const texts = ['onnxruntime-LICENSE.txt', 'onnxruntime-ThirdPartyNotices.txt']
+        .map((n) => path.join(dir, n))
+        .filter((f) => fs.existsSync(f))
+        .map((f) => fs.readFileSync(f, 'utf8').trim())
+      if (texts.length) return texts.join(`\n\n${RULE}\n\n`)
+    }
   }
   return null
 }
@@ -160,7 +168,7 @@ for (const c of components) {
           .join('\n')
       )
     else
-      console.warn('third-party-notices: no ONNX Runtime found under resources/ai (pnpm fetch-ai)')
+      console.warn("third-party-notices: no ONNX Runtime notices in the engine's platform package")
   }
 }
 

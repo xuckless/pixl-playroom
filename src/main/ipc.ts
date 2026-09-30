@@ -377,14 +377,14 @@ export function registerIpc(s: Services): void {
   handle(IPC.export.removePreset, (id: string) => s.index.removeExportPreset(id))
 
   // ── enhance ──
-  handle(IPC.enhance.available, () => enhanceAvailability(s.bgEngine.getStatus().enhance === true))
+  handle(IPC.enhance.available, () => enhanceAvailability(s.bgEngine.getStatus()))
 
   // ── AI jobs ──
   handle(IPC.ai.start, (req: AiStartRequest) => s.ai.start(req))
   handle(IPC.ai.cancel, (jobId: string) => s.ai.cancel(jobId))
   handle(IPC.ai.list, () => s.ai.list())
   handle(IPC.ai.capabilities, async (): Promise<AiCapabilities> => {
-    const enhance = await enhanceAvailability(s.bgEngine.getStatus().enhance === true)
+    const enhance = await enhanceAvailability(s.bgEngine.getStatus())
     const segment = fakeAi()
     return {
       enhance: enhance.available,

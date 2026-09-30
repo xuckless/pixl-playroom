@@ -1,5 +1,5 @@
 {
-  "_comment": "Native components Playroom ships that npm can't report: the engine's linked libraries and Rust crates, the AI runtime and model, and ExifTool. Read by scripts/third-party-notices.mjs; `license` names a text in build/licenses/. Keep in step with pixl-engine's Cargo.lock and its release build, and with scripts/fetch-ai.mjs.",
+  "_comment": "Native components Playroom ships that npm can't report: the engine's linked libraries and Rust crates, the AI runtime and model, and ExifTool. Read by scripts/third-party-notices.mjs; `license` names a text in build/licenses/. Keep in step with pixl-engine's Cargo.lock and its release build, and with scripts/fetch-ai.mjs and the engine's ci/onnxruntime.json.",
   "components": [
     {
       "name": "libheif",
@@ -94,11 +94,12 @@
     },
     {
       "name": "ONNX Runtime",
-      "use": "runs the Super Resolution model; its own notices follow in full when the runtime is present at build time",
+      "use": "runs the AI models, shipped as a separate shared library in the engine's platform package; its own notices follow in full",
       "license": "MIT",
       "copyright": "Copyright (c) Microsoft Corporation",
       "source": "https://github.com/microsoft/onnxruntime",
-      "ortNotices": true
+      "ortNotices": true,
+      "dynamic": true
     },
     {
       "name": "Real-ESRGAN (RealESRGAN_x2plus)",

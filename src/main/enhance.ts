@@ -1,15 +1,15 @@
 /**
  * Enhance → Super Resolution: the engine's generative upscaler (a bundled
- * Real-ESRGAN ×2 model on a bundled ONNX Runtime) enlarges a photo's
+ * Real-ESRGAN ×2 model on the ONNX Runtime the engine ships) enlarges a photo's
  * *original*, before any grade — the model wants display-referred pixels and
  * the engine refuses a grade beside it — into a new 16-bit TIFF beside the
  * original. The new file joins the folder with the source's recipe copied
  * over, so the look carries across, as Lightroom's Enhance does.
  */
 import log from 'electron-log/main'
-import { readdir, unlink } from 'fs/promises'
+import { unlink } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
-import type { ExecutionProvider, UpscalerRef } from '../shared/engine-types'
+import type { ExecutionProvider, TensorSpec, UpscalerRef } from '../shared/engine-types'
 import { PRESERVE_ALL } from '../shared/engine-types'
 import type { AiStartRequest } from '../shared/ai'
 import { baseWhite } from '../shared/compile'
@@ -17,6 +17,7 @@ import { relativeFromOp } from '../shared/wb'
 import { Cancelled, type AiContext, type AiRunner } from './ai/jobs'
 import type { EngineClient } from './engine/client'
 import type { IndexClient } from './indexer/client'
+import type { EngineStatus } from '../shared/ipc'
 import { exists } from './exists'
 import type { Library } from './library'
 import { paths } from './paths'
@@ -25,50 +26,60 @@ import { estimate } from '../shared/ai'
 
 export const MODEL_FILE = 'real_esrgan_x2.onnx'
 
-async function runtimeLibrary(dir: string): Promise<string | null> {
-  const lib = join(dir, 'onnxruntime', 'lib')
-  if (!(await exists(lib))) return null
-  const want =
-    process.platform === 'win32'
-      ? /^onnxruntime\.dll$/
-      : process.platform === 'darwin'
-        ? /^libonnxruntime\.\d.*\.dylib$|^libonnxruntime\.dylib$/
-        : /^libonnxruntime\.so(\.\d+)*$/
-  const hit = (await readdir(lib)).find((f) => want.test(f))
-  return hit ? join(lib, hit) : null
-}
-
 export interface EnhanceAvailability {
   available: boolean
   reason?: string
   model?: string
   runtime?: string
-}
-
-export async function enhanceAvailability(engineHasEnhance: boolean): Promise<EnhanceAvailability> {
-  if (!engineHasEnhance)
-    return { available: false, reason: 'this build of the engine has no generative upscaler' }
-  const dir = paths.ai()
-  const model = join(dir, MODEL_FILE)
-  if (!(await exists(model)))
-    return { available: false, reason: `the model is not bundled (${model}); run pnpm fetch-ai` }
-  const runtime = await runtimeLibrary(dir)
-  if (!runtime)
-    return { available: false, reason: `ONNX Runtime is not bundled in ${dir}; run pnpm fetch-ai` }
-  return { available: true, model, runtime }
+  providers?: string[]
 }
 
 /**
- * The provider the bundled runtime offers: CoreML in Apple's builds; DirectML
- * only when a DirectML build of the runtime was bundled; otherwise the CPU.
+ * Whether Super Resolution can run: an engine built with its model support,
+ * the ONNX Runtime it ships (0.15+) and the model file.
  */
-async function provider(choice: 'auto' | 'cpu', runtime: string): Promise<ExecutionProvider> {
-  if (choice === 'cpu') return 'Cpu'
-  if (process.platform === 'darwin') return 'CoreMl'
-  if (process.platform === 'win32' && (await exists(join(dirname(runtime), 'DirectML.dll')))) {
-    return { DirectMl: { device: 0 } }
+export async function enhanceAvailability(status: EngineStatus): Promise<EnhanceAvailability> {
+  if (status.enhance !== true)
+    return { available: false, reason: 'this build of the engine has no generative upscaler' }
+  if (!status.runtime)
+    return { available: false, reason: 'this build of the engine ships no ONNX Runtime' }
+  const model = join(paths.ai(), MODEL_FILE)
+  if (!(await exists(model)))
+    return { available: false, reason: `the model is not bundled (${model}); run pnpm fetch-ai` }
+  return {
+    available: true,
+    model,
+    runtime: status.runtime.library,
+    providers: status.runtime.providers
   }
+}
+
+/**
+ * The accelerated provider the bundled runtime offers — CoreML (all units,
+ * as an ML program) on a Mac, DirectML on Windows — or the CPU.
+ */
+function provider(choice: 'auto' | 'cpu', providers: string[]): ExecutionProvider {
+  if (choice === 'cpu') return 'Cpu'
+  if (providers.includes('coreml'))
+    return {
+      CoreMl: {
+        units: 'All',
+        format: 'MlProgram',
+        static_shapes: false,
+        low_precision_gpu: false
+      }
+    }
+  if (providers.includes('directml')) return { DirectMl: { device: 0 } }
   return 'Cpu'
+}
+
+/** Real-ESRGAN's tensors: `[1, 3, h, w]`, RGB, 0…1, f32 both ways. */
+const ESRGAN_TENSOR: Omit<TensorSpec, 'name'> = {
+  layout: 'Nchw',
+  order: 'Rgb',
+  element: 'F32',
+  mean: { r: 0, g: 0, b: 0 },
+  std: { r: 1, g: 1, b: 1 }
 }
 
 type EnhanceRequest = Extract<AiStartRequest, { task: 'enhance' }>
@@ -91,7 +102,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     private readonly library: Library,
     /** The AI engine: started when first needed, restarted to cancel. */
     private readonly engine: EngineClient,
-    private readonly hasEnhance: () => boolean,
+    private readonly status: () => EngineStatus,
     private readonly settings: IndexClient
   ) {}
 
@@ -110,7 +121,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
   async run(ctx: AiContext, req: EnhanceRequest): Promise<{ kind: 'file'; path: string }> {
     const { key } = req
     ctx.stage('model', 0, 'Loading the model')
-    const avail = await enhanceAvailability(this.hasEnhance())
+    const avail = await enhanceAvailability(this.status())
     if (!avail.available || !avail.model || !avail.runtime)
       throw new Error(avail.reason ?? 'unavailable')
     const row = await this.library.photoRow(key)
@@ -132,20 +143,23 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const raw = info.input === 'Raw' ? RAW_DEVELOP : null
     const orientation = sourceOrientation(info, raw)
     const upscaler: UpscalerRef = {
-      model_path: avail.model,
-      runtime_library: avail.runtime,
-      provider: await provider(req.cpu ? 'cpu' : 'auto', avail.runtime),
-      threads: BACKGROUND_THREADS * 2,
+      model: {
+        model_path: avail.model,
+        runtime_library: avail.runtime,
+        provider: provider(req.cpu ? 'cpu' : 'auto', avail.providers ?? []),
+        session: { threads: BACKGROUND_THREADS * 2, optimisation: 'All', deterministic: false }
+      },
+      model_space: 'Srgb',
+      input: { name: 'input', ...ESRGAN_TENSOR },
+      output: { name: 'output', ...ESRGAN_TENSOR },
       scale: 2,
-      tile: 256,
-      overlap: 16,
-      input_multiple: 2,
+      tiling: { Dynamic: { tile: 256, overlap: 16, multiple: 2 } },
       then: null,
       alpha: { Resample: 'Lanczos3' }
     }
     const tryRun = (up: UpscalerRef): Promise<unknown> =>
       this.engine.convert({
-        ...blankRequest(row.path, out, info.input),
+        ...blankRequest(row.path, out, info.input, info),
         raw,
         resize: { Scale: { factor: 2 } },
         resampler: 'Ai',
@@ -176,10 +190,10 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         if (ctx.signal.aborted) throw new Cancelled()
         // A provider the runtime cannot register is an error, never a silent
         // CPU run — so the retry on the CPU is the app's, and it says so.
-        if (upscaler.provider !== 'Cpu' && /provider/i.test((err as Error).message)) {
+        if (upscaler.model.provider !== 'Cpu' && /provider/i.test((err as Error).message)) {
           log.warn('enhance: accelerated provider unavailable, retrying on the CPU', err)
           ctx.stage('upscale', 0, 'GPU provider unavailable — running on the CPU')
-          await tryRun({ ...upscaler, provider: 'Cpu' })
+          await tryRun({ ...upscaler, model: { ...upscaler.model, provider: 'Cpu' } })
         } else throw err
       }
       if (ctx.signal.aborted) throw new Cancelled()

@@ -233,7 +233,7 @@ export class Library {
       const factor = Math.min(1, THUMB_EDGE / long)
       try {
         await this.engine.convert({
-          ...blankRequest(row.path, out, info.input),
+          ...blankRequest(row.path, out, info.input, info),
           ...base,
           raw: rawMode,
           resize: factor < 1 ? { Scale: { factor } } : 'None',
@@ -273,7 +273,8 @@ export class Library {
       scale: px.proxy.width / px.frameWidth,
       seed: hash32(row.path),
       brushPaths: await brushPlanes(row.id, recipe, user),
-      applyCrop: true
+      applyCrop: true,
+      hdr: info.is_hdr
     })
     const cropW = (compiled.crop?.width ?? 1) * width
     const cropH = (compiled.crop?.height ?? 1) * height

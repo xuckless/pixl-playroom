@@ -8,7 +8,13 @@ import log from 'electron-log/main'
 import { mkdir } from 'fs/promises'
 import { join } from 'path'
 import { AUTO_PERCENTILES, wbSliders } from '../shared/auto'
-import type { AnalyzeRequest, HdrWorking, SourceInfo, WhitePoint } from '../shared/engine-types'
+import type {
+  AnalyzeRequest,
+  HdrSignal,
+  HdrWorking,
+  SourceInfo,
+  WhitePoint
+} from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
 import type { AutoWbResult, SampleResult } from '../shared/ipc'
 import { newLocalLayer, type Recipe } from '../shared/recipe'
@@ -44,13 +50,24 @@ export function analyzeRequest(
     threads: INTERACTIVE_THREADS,
     weights: null,
     noise: false,
-    hdr: null
+    hdr: null,
+    gain_map: null
   }
 }
 
-/** How a PQ/HLG source is graded and measured: 1.0 is 203-nit reference white. */
+/**
+ * How a PQ/HLG source is graded and measured: 1.0 is 203-nit reference white,
+ * and what a grade pushes past the peak clips there (0.13's behaviour).
+ */
 export function hdrWorkingOf(info: SourceInfo): HdrWorking | null {
-  return info.is_hdr ? { reference_white_nits: 203, peak_nits: info.peak_nits ?? 1000 } : null
+  return info.is_hdr
+    ? { reference_white_nits: 203, peak_nits: info.peak_nits ?? 1000, limit: 'Clip' }
+    : null
+}
+
+/** How `analyze` reads a PQ/HLG signal into linear light: the working space without its limit. */
+export function hdrSignalOf(hdr: HdrWorking | null): HdrSignal | null {
+  return hdr ? { reference_white_nits: hdr.reference_white_nits, peak_nits: hdr.peak_nits } : null
 }
 
 /** Where a photo's develop renders (and measurements) are written. */
@@ -75,7 +92,7 @@ export async function measureAutoWb(
   const linearReq: AnalyzeRequest = {
     ...analyzeRequest(src.path, src.input === 'Png' ? 'Png' : 'Tiff', 1),
     domain: 'Linear',
-    hdr
+    hdr: hdrSignalOf(hdr)
   }
   let means: number[] | null = null
   try {

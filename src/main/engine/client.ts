@@ -158,6 +158,7 @@ export class EngineClient {
               status: 'ready',
               version: msg.version,
               enhance: msg.enhance,
+              runtime: msg.runtime,
               restarts: this.status.restarts
             }
           : {
