@@ -358,14 +358,11 @@ Phased; each phase is tested and committed before the next.
       run). Enhance ×2 takes its model from the store; `fetch-ai`,
       `resources/ai` and the release step are gone; every model is credited
       in the notices from the roster.
-  - [ ] **Before release:** run `pnpm publish-models --bucket <bucket>` (your
-        GitHub Packages token and `wrangler login`) and point the
-        `models.pixlfoundation.com` custom domain at the bucket. Until then the
-        app falls back to each file's public upstream (Hugging Face, rembg's
-        GitHub releases; same checksum), which covers six of the ten; NAFNet,
-        the two FBCNNs and Real-ESRGAN general WDN are only in the engine's
-        private release and wait for the mirror. `PLAYROOM_MODELS_URL` points
-        at another mirror (`file://` works) for development.
+  - [x] **Before release:** the models are mirrored in R2 (`pixl-models`,
+        `models.pixlfoundation.com`), including NAFNet, the two FBCNNs and
+        Real-ESRGAN general WDN, which have no public upstream.
+        `PLAYROOM_MODELS_URL` points at another mirror (`file://` works) for
+        development.
   - [ ] Sky: no sky model in the roster yet.
 - [x] Phase 8 — AI denoise in Detail (a cached denoised master). Classic | AI
       in Noise reduction; SCUNet or DRUNet with strength; an AI job makes a
@@ -436,10 +433,9 @@ Phased; each phase is tested and committed before the next.
       35 mm focal, else the camera list) and aspects. Paste, sync and presets
       re-resolve each target at its own lens and focal length. Credit and
       CC BY-SA 3.0 text in the notices.
-  - [ ] **R2**: `npx wrangler login`, then `pnpm lens-profiles --bucket
-    <bucket>` (and `pnpm publish-models --bucket <bucket>`), and attach
-        `models.pixlfoundation.com` to the bucket (it has no DNS record yet).
-        See `.github/RELEASING.md`.
+  - [x] **R2**: bucket `pixl-models` with `models.pixlfoundation.com`
+        attached; the lens catalogue (version 9f8904d4) and the models are
+        published there. See `.github/RELEASING.md`.
   - [ ] Corrections the file carries: DNG `OpcodeList3` (WarpRectilinear →
         the engine's `Rectilinear`, `FarthestCorner`; FixVignetteRadial →
         `Multiply` at `Corrected`), read with ExifTool; then Sony, Fujifilm,
