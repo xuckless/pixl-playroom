@@ -66,6 +66,7 @@ export const TOOL_IDS = [
   'hsl',
   'grade',
   'detail',
+  'lens',
   'effects',
   'masks',
   'crop',

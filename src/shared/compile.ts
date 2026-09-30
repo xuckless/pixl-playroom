@@ -24,6 +24,7 @@ import type {
   GradeSpace,
   HslBands,
   HslKey,
+  LensCorrection,
   Mask,
   Vignette,
   MaskComponent,
@@ -33,6 +34,7 @@ import type {
   WhitePoint
 } from './engine-types'
 import { addColorOp } from './addcolor'
+import { defringeOp, lensCorrection } from './lens'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
 import {
   HSL_BANDS,
@@ -103,6 +105,11 @@ export interface CompileContext {
 export interface Compiled {
   grade: Grade | null
   framing: Framing | null
+  /**
+   * The lens correction, run before the grade and framing; every normalised
+   * coordinate (masks, crop, a region) is of the frame it produces.
+   */
+  lens: LensCorrection | null
   /** Engine layer index of each local layer, for `Inspect::LayerMask`. */
   layerIndex: Record<string, number>
   /** What the preview could not show at this scale, and why. */
@@ -784,6 +791,9 @@ function baseStages(
 
   // ── the look ──
   if (denoise && !ctx.isRaw) look.push(denoise)
+  // Fringes come off before anything grades their colour.
+  const defringe = defringeOp(r.lens)
+  if (defringe) look.push(defringe)
   // The engine's detail and effect constants are set for display-referred
   // values, so dehaze runs at the head of the look stage.
   if (r.presence.dehaze !== 0) {
@@ -1094,6 +1104,7 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
   return {
     grade: layers.length > 0 ? { layers } : null,
     framing,
+    lens: lensCorrection(r.lens),
     layerIndex,
     notes,
     orientedWidth: oriented.width,

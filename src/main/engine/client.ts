@@ -18,6 +18,8 @@ import type {
   GradeSpace,
   HostToMain,
   ImageStats,
+  LensCorrection,
+  LensReport,
   Rgb,
   SourceInfo,
   WhiteBalance
@@ -123,6 +125,14 @@ export class EngineClient {
   }
   analyze(request: AnalyzeRequest, opts: CallOptions = {}): Promise<ImageStats> {
     return this.call('analyze', [request], opts.signal) as Promise<ImageStats>
+  }
+  /** What a lens correction does to a `width × height` frame, without pixels. */
+  lensFrame(lens: LensCorrection, width: number, height: number): Promise<LensReport> {
+    return this.call('lensFrame', [lens, width, height, 2]) as Promise<LensReport>
+  }
+  /** Measure a photo's lateral chromatic aberration (see `lateral_ca.rs`). */
+  suggestLateralCa(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.call('suggestLateralCa', [request]) as Promise<Record<string, unknown>>
   }
   /** The white that makes a linear sample neutral, as the `WhiteBalance` op names it. */
   whiteBalanceFromPixel(rgb: Rgb, space: GradeSpace): Promise<WhiteBalance> {

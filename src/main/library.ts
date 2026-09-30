@@ -287,7 +287,8 @@ export class Library {
       ...base,
       resize: factor < 1 ? { Scale: { factor } } : 'None',
       grade: compiled.grade,
-      framing: compiled.framing
+      framing: compiled.framing,
+      lens: compiled.lens
     })
   }
 }

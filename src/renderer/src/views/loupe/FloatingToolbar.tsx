@@ -184,6 +184,10 @@ const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
   'wb-picker': { title: 'White balance', hint: 'Click something that should be neutral grey' },
   'range-picker': { title: 'Range', hint: 'Click the colour or tone the mask should select' },
   'point-picker': { title: 'Point colour', hint: 'Click the colour to shift on its own' },
+  'fringe-pick': {
+    title: 'Defringe',
+    hint: 'Click a purple or green fringe along an edge (zoom in to find one)'
+  },
   tat: {
     title: 'Targeted',
     hint: 'Press on the photo and drag up or down to move what controls that colour or tone'
@@ -205,7 +209,7 @@ export function FloatingToolbar(): React.JSX.Element | null {
     tool === 'add-pick' && addPick
       ? {
           title: addLabel(recipe, addPick.target),
-          hint: addPickHint(addPick.mode, addPick.first !== null)
+          hint: addPickHint(addPick.mode, addPick.first !== null, addPick.goalHex ?? null)
         }
       : HINTS[tool]
   return (

@@ -846,3 +846,22 @@ fieldset::before {
   border: 1px solid var(--hair2);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
+.match-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  width: 232px;
+}
+.match-pop .wheel {
+  align-self: center;
+}
+.match-hex {
+  gap: 8px;
+  align-items: center;
+}
+.match-hex .hex {
+  flex: 1;
+  font-family: var(--font-mono);
+  text-transform: lowercase;
+}

@@ -36,6 +36,8 @@ import { autoWbBatch, setWbBatch } from './autowb'
 import { crashConsent, reportRendererError, setCrashConsent } from './crash'
 import { activateLicence, deactivateLicence, licence, validateLicence } from './licence'
 import type { AiCapabilities, AiStartRequest } from '../shared/ai'
+import { importProfiles, listProfiles } from './lensprofiles'
+import type { LensProfile } from '../shared/lens'
 import { enhanceAvailability } from './enhance'
 import type { AiJobs } from './ai/jobs'
 import { fakeAi } from './ai/segment'
@@ -273,6 +275,7 @@ export function registerIpc(s: Services): void {
   )
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))
+  handle(IPC.develop.measureCa, (key: string) => s.sessions.measureCa(key))
   handle(IPC.develop.sample, (key: string, x: number, y: number) => s.sessions.sample(key, x, y))
   handle(IPC.develop.autoTone, (key: string) => s.sessions.autoTone(key))
   handle(IPC.develop.autoWb, (key: string) => s.sessions.autoWb(key))
@@ -337,6 +340,17 @@ export function registerIpc(s: Services): void {
       .filter((f) => f.toLowerCase().endsWith('.cube'))
       .map((f) => ({ name: basename(f, '.cube'), path: join(paths.luts(), f) }))
   )
+  // ── lens profiles ──
+  handle(IPC.lens.profiles, () => listProfiles())
+  handle(IPC.lens.importProfiles, async (): Promise<LensProfile[]> => {
+    const w = win()
+    const opts = {
+      properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[],
+      filters: [{ name: 'Lens profile', extensions: ['json'] }]
+    }
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    return r.canceled ? [] : importProfiles(r.filePaths)
+  })
   handle(IPC.presets.importLut, async (): Promise<LutProfile[]> => {
     const w = win()
     const opts = {

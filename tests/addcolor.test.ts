@@ -8,7 +8,10 @@ import {
   complementToWhite,
   hsvToRgb,
   NO_ADD,
+  parseHex,
   rgbToHsv,
+  srgbToP3,
+  toHex,
   sampleIn,
   settingFromVector,
   type Vec3
@@ -78,4 +81,26 @@ test('a sample is linearised for light and left as code values for a wash', () =
   near(sampleIn([1, 1, 1], 'light'), [1, 1, 1], 2e-3)
   near(sampleIn([0.5, 0.5, 0.5], 'light'), [0.214, 0.214, 0.214], 2e-3)
   assert.deepEqual(sampleIn([0.5, 0.4, 0.3], 'wash'), [0.5, 0.4, 0.3])
+})
+
+test('a hex reads as sRGB and writes back the same', () => {
+  near(parseHex('#ff8000')!, [1, 128 / 255, 0])
+  near(parseHex('0f0')!, [0, 1, 0])
+  assert.equal(parseHex('#12345'), null)
+  assert.equal(toHex(parseHex('#5c9ea8')!), '#5c9ea8')
+})
+
+test('a chosen sRGB colour lands where the shown picture would hold it', () => {
+  near(srgbToP3([1, 1, 1]), [1, 1, 1], 2e-3)
+  near(srgbToP3([0.5, 0.5, 0.5]), [0.5, 0.5, 0.5], 2e-3)
+  // sRGB red sits inside Display P3's gamut: less than full P3 red.
+  const red = srgbToP3([1, 0, 0])
+  assert.ok(red[0] < 1 && red[1] > 0)
+})
+
+test('matching to a chosen colour needs one click: the difference to it', () => {
+  const a: Vec3 = [0.3, 0.3, 0.3]
+  const goal = sampleIn(srgbToP3(parseHex('#5c9ea8')!), 'wash')
+  const add = complementTo(a, goal)
+  assert.ok(add.every((v) => v >= 0))
 })

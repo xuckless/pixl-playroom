@@ -66,3 +66,21 @@ export function hsvOf(
   const luma = 0.2289 * r + 0.6917 * g + 0.0793 * b // Display P3 luminance weights
   return { hue, saturation, luma }
 }
+
+/**
+ * Which defringe band a picked colour belongs to, and the hue to aim it at
+ * (within the band's slider): purple-magenta fringes sit about 240–345°,
+ * green-yellow ones about 60–170°. Null for a colour too grey to be a fringe
+ * or of neither hue.
+ */
+export function fringeFrom(c: {
+  hue: number
+  saturation: number
+}): { band: 'purple' | 'green'; hue: number } | null {
+  if (c.saturation < 0.08) return null
+  const h = Math.round(c.hue)
+  if (h >= 230 || h <= 10)
+    return { band: 'purple', hue: h <= 10 ? 345 : Math.min(345, Math.max(240, h)) }
+  if (h >= 50 && h <= 180) return { band: 'green', hue: Math.min(170, Math.max(60, h)) }
+  return null
+}

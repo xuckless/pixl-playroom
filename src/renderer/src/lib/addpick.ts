@@ -51,8 +51,9 @@ export function addLabel(r: Recipe | null, t: AddTarget): string {
 }
 
 /** The picker's instruction for where it is. */
-export function addPickHint(mode: 'white' | 'match', first: boolean): string {
+export function addPickHint(mode: 'white' | 'match', first: boolean, goal: string | null): string {
   if (mode === 'white') return 'Click a colour to make neutral'
+  if (goal) return `Click the colour to turn into ${goal}`
   return first ? 'Now click the colour it should become' : 'Click the colour to change'
 }
 
@@ -69,7 +70,8 @@ export function pickAdd(p3: Vec3): void {
   if (!pick || !recipe) return
   const kind = addKindOf(pick.target)
   const sample = sampleIn(p3, kind)
-  if (pick.mode === 'match' && !pick.first) {
+  const goal = pick.goal ? sampleIn(pick.goal, kind) : null
+  if (pick.mode === 'match' && !pick.first && !goal) {
     dev.setAddPick({ ...pick, first: sample })
     return
   }
@@ -78,7 +80,12 @@ export function pickAdd(p3: Vec3): void {
     dev.setAddPick(null)
     return useLibrary.getState().say('Select a mask first', 'error')
   }
-  const add = pick.mode === 'white' ? complementToWhite(sample) : complementTo(pick.first!, sample)
+  const add =
+    pick.mode === 'white'
+      ? complementToWhite(sample)
+      : goal
+        ? complementTo(sample, goal)
+        : complementTo(pick.first!, sample)
   const { clamped, ...next } = afterPick(old, add, kind)
   const r = structuredClone(recipe)
   writeAdd(r, pick.target, next)

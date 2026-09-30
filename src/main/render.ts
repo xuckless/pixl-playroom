@@ -18,9 +18,12 @@ import { mkdir } from 'fs/promises'
 import { join } from 'path'
 import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020 } from '../shared/auto'
 import { compile, orientedFrame, type Compiled } from '../shared/compile'
+import { lensCorrection, MANUAL_GEOMETRY } from '../shared/lens'
 import type {
   HdrWorking,
   ConvertReport,
+  LateralCa,
+  LensCorrection,
   ImageStats,
   Measure,
   NoiseEstimate,
@@ -30,6 +33,7 @@ import { STRIP_ALL } from '../shared/engine-types'
 import {
   IPC,
   type BasicSetting,
+  type CaMeasurement,
   type DevelopSession,
   type RegionRequest,
   type RegionResult,
@@ -58,6 +62,7 @@ import { cacheUrl } from './protocol'
 import { ensureMaster, ensureProxies, type Proxies, type ProxyFile } from './proxy'
 import {
   blankRequest,
+  BACKGROUND_THREADS,
   displayPolicy,
   gainMapOf,
   INTERACTIVE_THREADS,
@@ -315,7 +320,7 @@ class Session {
     const compiled = await this.compileFor(this.recipe, src, !cropMode)
     const seq = ++this.seq
     const sig = String(
-      hash32(JSON.stringify([src.path, cropMode, compiled.grade, compiled.framing]))
+      hash32(JSON.stringify([src.path, cropMode, compiled.grade, compiled.framing, compiled.lens]))
     )
     const last = this.lastEvent[kind]
     if (last && sig === this.lastSig[kind]) {
@@ -337,6 +342,7 @@ class Session {
         color: displayPolicy(this.info, 'DisplayP3'),
         grade: compiled.grade,
         framing: compiled.framing,
+        lens: compiled.lens,
         threads: INTERACTIVE_THREADS,
         measure: measureOf(kind === 'draft' ? 2 : 1)
       },
@@ -399,13 +405,17 @@ class Session {
         color: 'Preserve',
         grade: compiled.grade,
         framing: compiled.framing,
+        lens: compiled.lens,
         threads: INTERACTIVE_THREADS
       } as const
       // With float work the engine measures its own output in linear light
       // by the working white; without, the signal passes through untouched
       // (the engine refuses a working space nothing would use), so the file
       // is measured afterwards by the same numbers.
-      const floatWork = compiled.grade !== null || (compiled.framing?.rotate_degrees ?? 0) !== 0
+      const floatWork =
+        compiled.grade !== null ||
+        compiled.lens !== null ||
+        (compiled.framing?.rotate_degrees ?? 0) !== 0
       if (floatWork) {
         const r = await this.owner.engine.convert(
           { ...request, hdr, measure: { ...measureOf(1), domain: 'Linear', bins } },
@@ -458,6 +468,7 @@ class Session {
           index,
           compiled.grade,
           compiled.framing,
+          compiled.lens,
           measure ? this.lastFull : null
         ])
       )
@@ -480,6 +491,7 @@ class Session {
         color: 'Preserve',
         grade: compiled.grade,
         framing: compiled.framing,
+        lens: compiled.lens,
         inspect: { LayerMask: { layer: index } },
         hdr: this.hdrWorking
       },
@@ -551,6 +563,7 @@ class Session {
             layer.components,
             layer.invert,
             compiled.framing,
+            compiled.lens,
             this.view.cropMode,
             // A range keys on the graded colours, so the grade under it counts too.
             layer.components.some((c) => c.kind === 'range') ? compiled.grade : null
@@ -568,6 +581,7 @@ class Session {
           color: 'Preserve',
           grade: compiled.grade,
           framing: compiled.framing,
+          lens: compiled.lens,
           inspect: { LayerMask: { layer: index } },
           hdr: this.hdrWorking
         },
@@ -612,11 +626,13 @@ class Session {
   private async renderBefore(signal: AbortSignal): Promise<void> {
     const before = defaultRecipe(this.isRaw)
     before.geometry = structuredClone(this.recipe.geometry)
+    // The lens's geometry too, so before and after line up; not its defringe.
+    before.lens = { ...structuredClone(this.recipe.lens), defringe: before.lens.defringe }
     const src = this.source('full')
     const compiled = await this.compileFor(before, src, !this.view.cropMode)
     // Keyed on what the engine is asked for, not on the raw geometry: a
     // straighten in the crop tool changes the recipe but not this picture.
-    const key = JSON.stringify([compiled.framing, src.path, this.view.cropMode])
+    const key = JSON.stringify([compiled.framing, compiled.lens, src.path, this.view.cropMode])
     if (key === this.beforeKey) return
     const out = join(this.dir, `before-${hash32(key).toString(16)}.png`)
     const report = await this.owner.engine.convert(
@@ -628,6 +644,7 @@ class Session {
         color: displayPolicy(this.info, 'DisplayP3'),
         grade: compiled.grade,
         framing: compiled.framing,
+        lens: compiled.lens,
         measure: measureOf(1)
       },
       { signal }
@@ -686,6 +703,7 @@ class Session {
     const y = Math.max(0, Math.min(height - 1, Math.floor(req.y)))
     const w = Math.max(1, Math.min(width - x, Math.ceil(req.width)))
     const h = Math.max(1, Math.min(height - y, Math.ceil(req.height)))
+    const region = await this.correctedRegion(compiled.lens, width, height, { x, y, w, h })
     this.regionSlot = (this.regionSlot + 1) % 4
     const out = join(this.dir, `region-${this.regionSlot}.png`)
     // The original (not a RAW's master) states its gain-map rendition.
@@ -701,7 +719,8 @@ class Session {
         color: displayPolicy(this.info, 'DisplayP3'),
         grade: compiled.grade,
         framing: orientOnly(compiled.framing),
-        region: { x, y, width: w, height: h, margin: 96 }
+        lens: compiled.lens,
+        region
       },
       { signal }
     )
@@ -722,7 +741,8 @@ class Session {
             color: 'Preserve',
             grade: compiled.grade,
             framing: orientOnly(compiled.framing),
-            region: { x, y, width: w, height: h, margin: 96 },
+            lens: compiled.lens,
+            region,
             inspect: { LayerMask: { layer: index } }
           },
           { signal }
@@ -745,6 +765,46 @@ class Session {
     }
   }
 
+  /** Per lens correction and frame size, the shrink its crop makes (1 when none). */
+  private lensScale = new Map<string, number>()
+
+  /**
+   * A rectangle of the oriented frame (`width × height` pixels) as a region
+   * of the lens-corrected one, which a correction's crop makes smaller at
+   * the same shape: the same part of the picture, in its pixels.
+   */
+  private async correctedRegion(
+    lens: LensCorrection | null,
+    width: number,
+    height: number,
+    r: { x: number; y: number; w: number; h: number },
+    margin = 96
+  ): Promise<{ x: number; y: number; width: number; height: number; margin: number }> {
+    let k = 1
+    if (lens) {
+      const key = JSON.stringify([lens, width, height])
+      let cached = this.lensScale.get(key)
+      if (cached === undefined) {
+        const f = await this.owner.engine.lensFrame(lens, width, height)
+        cached = f.frame.width / width
+        if (this.lensScale.size > 32) this.lensScale.clear()
+        this.lensScale.set(key, cached)
+      }
+      k = cached
+    }
+    const fw = Math.max(1, Math.floor(width * k))
+    const fh = Math.max(1, Math.floor(height * k))
+    const x = Math.max(0, Math.min(fw - 1, Math.floor(r.x * k)))
+    const y = Math.max(0, Math.min(fh - 1, Math.floor(r.y * k)))
+    return {
+      x,
+      y,
+      width: Math.max(1, Math.min(fw - x, Math.round(r.w * k))),
+      height: Math.max(1, Math.min(fh - y, Math.round(r.h * k))),
+      margin
+    }
+  }
+
   /**
    * The source's colour (before any grade) at a point of the user-oriented,
    * uncropped frame (normalised), averaged over 5×5 proxy pixels, in linear
@@ -753,10 +813,16 @@ class Session {
   async sample(nx: number, ny: number): Promise<SampleResult> {
     const src = this.px.proxy
     const { user, width, height } = orientedFrame(this.recipe, src.width, src.height)
-    const cx = Math.round(nx * width)
-    const cy = Math.round(ny * height)
-    const x = Math.max(0, Math.min(width - 5, cx - 2))
-    const y = Math.max(0, Math.min(height - 5, cy - 2))
+    // The point is of the frame on screen: the lens-corrected one when there
+    // is a correction, which the sample is taken through too.
+    const lens = lensCorrection(this.recipe.lens)
+    const at = await this.correctedRegion(
+      lens,
+      width,
+      height,
+      { x: Math.max(0, nx * width - 2), y: Math.max(0, ny * height - 2), w: 5, h: 5 },
+      0
+    )
     const linear = this.info.is_hdr
       ? ({
           ToneMap: {
@@ -787,7 +853,8 @@ class Session {
         user === 'Normal'
           ? null
           : { orientation: user, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null },
-      region: { x, y, width: 5, height: 5, margin: 0 }
+      lens,
+      region: at
     })
     if (!report.output) throw new Error('the engine returned no sample')
     const px = pngToFloats(Buffer.from(report.output))
@@ -815,6 +882,7 @@ class Session {
       color: displayPolicy(this.info, 'DisplayP3'),
       grade: compiled.grade,
       framing: compiled.framing,
+      lens: compiled.lens,
       measure: measureOf(1)
     })
     return autoTone(statsOf(report))
@@ -830,6 +898,40 @@ class Session {
       this.isRaw,
       this.info.as_shot_white
     )
+  }
+
+  /**
+   * Lateral chromatic aberration measured on the original at full size (the
+   * shifts are fractions of a pixel), as the centred radial scale a lens
+   * correction states — rotation- and flip-free, so the same numbers hold
+   * for the previews and the export.
+   */
+  async measureCa(): Promise<CaMeasurement> {
+    const raw = this.isRaw ? RAW_DEVELOP : null
+    const r = (await this.owner.bgEngine.suggestLateralCa({
+      source: { Path: this.row.path },
+      input: this.info.input,
+      raw,
+      gain_map: gainMapOf(this.info),
+      orientation: sourceOrientation(this.info, raw),
+      geometry: MANUAL_GEOMETRY,
+      model: 'Scale',
+      threads: BACKGROUND_THREADS
+    })) as unknown as {
+      lateral_ca: LateralCa
+      red_points: number
+      blue_points: number
+      red_before_px: number
+      red_after_px: number
+      blue_before_px: number
+      blue_after_px: number
+    }
+    return {
+      ca: r.lateral_ca,
+      red: [r.red_before_px, r.red_after_px],
+      blue: [r.blue_before_px, r.blue_after_px],
+      points: r.red_points + r.blue_points
+    }
   }
 
   /** The noise the denoiser would measure, on the full-resolution frame. */
@@ -950,6 +1052,10 @@ export class DevelopSessions {
 
   noise(key: string): Promise<NoiseEstimate | null> {
     return this.get(key).noise()
+  }
+
+  measureCa(key: string): Promise<CaMeasurement> {
+    return this.get(key).measureCa()
   }
 
   /** The recipe an open session holds, which may be newer than the sidecar. */

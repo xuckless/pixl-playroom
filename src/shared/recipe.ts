@@ -10,6 +10,7 @@
  */
 import { NO_ADD, type AddColourSetting } from './addcolor'
 import type { BlendMode, KeyBand, MaskMode } from './engine-types'
+import { defaultLens, type LensSetting } from './lens'
 
 export const RECIPE_VERSION = 1
 
@@ -340,6 +341,8 @@ export interface Recipe {
   pointColors: PointColorSetting[]
   colorGrade: ColorGradeSetting
   detail: DetailSetting
+  /** Lens corrections: profile, manual, chromatic aberration, defringe (see `lens.ts`). */
+  lens: LensSetting
   effects: EffectsSetting
   calibration: CalibrationSetting
   geometry: GeometrySetting
@@ -436,6 +439,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       noiseColor: isRaw ? 25 : 0,
       noiseColorDetail: 50
     },
+    lens: defaultLens(),
     effects: {
       vignetteAmount: 0,
       vignetteMidpoint: 50,
@@ -613,6 +617,7 @@ export const RECIPE_GROUPS = [
   'colorGrade',
   'detailSharpen',
   'detailNoise',
+  'lens',
   'effects',
   'calibration',
   'treatment',
@@ -633,6 +638,7 @@ export const GROUP_LABELS: Record<RecipeGroup, string> = {
   colorGrade: 'Colour grading',
   detailSharpen: 'Sharpening',
   detailNoise: 'Noise reduction',
+  lens: 'Lens corrections',
   effects: 'Effects',
   calibration: 'Calibration',
   treatment: 'Treatment (colour / B&W)',
@@ -683,6 +689,9 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.detail.noiseLuminanceDetail = f.detail.noiseLuminanceDetail
         r.detail.noiseColor = f.detail.noiseColor
         r.detail.noiseColorDetail = f.detail.noiseColorDetail
+        break
+      case 'lens':
+        r.lens = f.lens
         break
       case 'effects':
         r.effects = f.effects

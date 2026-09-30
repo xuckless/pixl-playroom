@@ -131,6 +131,56 @@ export function sampleIn(p3: Vec3, kind: AddKind): Vec3 {
   return P3_TO_SRGB.map((row) => row[0] * lin[0] + row[1] * lin[1] + row[2] * lin[2]) as Vec3
 }
 
+/** Linear sRGB → linear Display P3 (both D65). */
+const SRGB_TO_P3 = [
+  [0.8225, 0.1774, 0],
+  [0.0332, 0.9669, 0],
+  [0.0171, 0.0724, 0.9108]
+]
+
+function encode(v: number): number {
+  const c = Math.max(0, v)
+  return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055
+}
+
+/**
+ * A colour typed or chosen as sRGB (code values 0…1, what a hex means) as the
+ * shown picture would hold it: Display P3 code values, ready for `sampleIn`.
+ */
+export function srgbToP3(rgb: Vec3): Vec3 {
+  const lin = rgb.map(decode) as Vec3
+  return SRGB_TO_P3.map((row) =>
+    encode(row[0] * lin[0] + row[1] * lin[1] + row[2] * lin[2])
+  ) as Vec3
+}
+
+/** `#rgb` or `#rrggbb` (the `#` optional) → sRGB code values, or null. */
+export function parseHex(text: string): Vec3 | null {
+  const t = text.trim().replace(/^#/, '')
+  const full = /^[0-9a-f]{3}$/i.test(t)
+    ? t
+        .split('')
+        .map((c) => c + c)
+        .join('')
+    : t
+  if (!/^[0-9a-f]{6}$/i.test(full)) return null
+  return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255) as Vec3
+}
+
+/** sRGB code values → `#rrggbb`. */
+export function toHex(rgb: Vec3): string {
+  return (
+    '#' +
+    rgb
+      .map((v) =>
+        Math.round(clamp(v, 0, 1) * 255)
+          .toString(16)
+          .padStart(2, '0')
+      )
+      .join('')
+  )
+}
+
 /** What to add so `a` becomes neutral at its brightest channel. */
 export function complementToWhite(a: Vec3): Vec3 {
   const m = Math.max(a[0], a[1], a[2])

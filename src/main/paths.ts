@@ -28,6 +28,8 @@ export const paths = {
   photoCache: (photoId: number): string => dir('cache', 'photos', String(photoId)),
   thumbs: (): string => dir('cache', 'thumbs'),
   luts: (): string => dir('luts'),
+  /** Imported lens profiles, one JSON file per lens (`shared/lens.ts`). */
+  lensProfiles: (): string => dir('lens-profiles'),
   cacheRoot: (): string => dir('cache'),
   /** THIRD_PARTY_NOTICES.txt: beside the app's resources when packaged, in build/ in a checkout. */
   notices: (): string =>

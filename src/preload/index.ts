@@ -1,11 +1,13 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { NoiseEstimate } from '../shared/engine-types'
 import type { ExportSettings } from '../shared/export'
+import type { LensProfile } from '../shared/lens'
 import {
   IPC,
   type AppError,
   type AutoWbResult,
   type BasicSetting,
+  type CaMeasurement,
   type Collection,
   type CrashConsent,
   type ErrorReport,
@@ -148,6 +150,7 @@ const api = {
     autoTone: (key: string) => call<BasicSetting>(IPC.develop.autoTone, key),
     autoWb: (key: string) => call<SampleResult['wb']>(IPC.develop.autoWb, key),
     noise: (key: string) => call<NoiseEstimate | null>(IPC.develop.noise, key),
+    measureCa: (key: string) => call<CaMeasurement>(IPC.develop.measureCa, key),
     putPlane: (png: string) => call<string>(IPC.develop.putPlane, png),
     getPlane: (ref: string) => call<string>(IPC.develop.getPlane, ref),
     saveSnapshots: (key: string, snapshots: Snapshot[]) =>
@@ -163,6 +166,10 @@ const api = {
     onRenderError: (
       cb: (e: { key: string; message: string; code: string; field?: string }) => void
     ) => on(IPC.develop.renderError, cb)
+  },
+  lens: {
+    profiles: () => call<LensProfile[]>(IPC.lens.profiles),
+    importProfiles: () => call<LensProfile[]>(IPC.lens.importProfiles)
   },
   presets: {
     list: () => call<Preset[]>(IPC.presets.list),

@@ -1,5 +1,12 @@
 /** IPC channel names and the app-level types both sides of the bridge share. */
-import type { ConvertReport, ImageStats, LossReport, SourceInfo, WhitePoint } from './engine-types'
+import type {
+  ConvertReport,
+  ImageStats,
+  LateralCa,
+  LossReport,
+  SourceInfo,
+  WhitePoint
+} from './engine-types'
 import type { ExportSettings } from './export'
 import type { Step } from './history'
 import type { BasicSetting, Recipe, RecipeGroup } from './recipe'
@@ -107,6 +114,8 @@ export const IPC = {
     historySetHidden: 'develop:history-set-hidden',
     historyDelete: 'develop:history-delete',
     noise: 'develop:noise',
+    /** Measure the photo's lateral chromatic aberration (Lens → Remove CA). */
+    measureCa: 'develop:measure-ca',
     /** main → renderer: a render finished */
     rendered: 'develop:rendered',
     /** main → renderer: a render failed */
@@ -118,6 +127,10 @@ export const IPC = {
     remove: 'presets:remove',
     importLut: 'presets:import-lut',
     luts: 'presets:luts'
+  },
+  lens: {
+    profiles: 'lens:profiles',
+    importProfiles: 'lens:import-profiles'
   },
   export: {
     start: 'export:start',
@@ -550,4 +563,13 @@ export interface ErrorReport {
   kind: 'error' | 'rejection'
   message: string
   stack?: string
+}
+
+/** Lens → Remove chromatic aberration: the measurement, and how much it explains. */
+export interface CaMeasurement {
+  ca: LateralCa
+  /** RMS shift of red and blue from green, before and after the correction, in pixels. */
+  red: [number, number]
+  blue: [number, number]
+  points: number
 }

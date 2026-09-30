@@ -185,7 +185,10 @@ export class Exporter {
       info.is_hdr && s.hdr.mode === 'keep' && !hdrKeep
         ? { ...s, hdr: { ...s.hdr, mode: 'sdr' } }
         : s
-    const floatWork = compiled.grade !== null || (compiled.framing?.rotate_degrees ?? 0) !== 0
+    const floatWork =
+      compiled.grade !== null ||
+      compiled.lens !== null ||
+      (compiled.framing?.rotate_degrees ?? 0) !== 0
     const resize = buildResize(s, cw, ch)
     const color = buildColor(effective, info.is_hdr, info.peak_nits)
     // Dither acts on the one float → integer rounding, so it is only asked
@@ -211,6 +214,7 @@ export class Exporter {
       color,
       grade: compiled.grade,
       framing: compiled.framing,
+      lens: compiled.lens,
       dither: floatPath ? dither : 'None',
       hdr:
         hdrKeep && floatWork

@@ -27,6 +27,7 @@ export type Tool =
   | 'range-picker'
   | 'point-picker'
   | 'add-pick'
+  | 'fringe-pick'
   | 'tat'
 export type Compare = 'off' | 'before' | 'split'
 
@@ -35,13 +36,18 @@ export type AddTarget = 'grade' | 'wash' | { layer: string }
 
 /**
  * The additive-colour picker at work (tool `add-pick`): `white` takes one
- * click, the colour to neutralise; `match` takes two, the colour to change
- * and the one it should become (`first` holds the first, in the target's space).
+ * click, the colour to neutralise; `match` takes the colour to change and the
+ * one it should become — a second click (`first` holds the first, in the
+ * target's space), or a colour chosen beforehand (`goal`, Display P3 code
+ * values), when one click does.
  */
 export interface AddPick {
   target: AddTarget
   mode: 'white' | 'match'
   first: [number, number, number] | null
+  goal?: [number, number, number] | null
+  /** The goal as the user chose it, for the hint. */
+  goalHex?: string | null
 }
 export type CurveChannel = 'master' | 'red' | 'green' | 'blue'
 /** A geometry gesture in progress: the loupe draws its grid while one runs. */

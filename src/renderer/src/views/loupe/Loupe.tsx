@@ -31,6 +31,7 @@ import { emptyRange, hsvOf } from '../../lib/helpers'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { samplePatch } from '../../lib/image'
 import { pickAdd } from '../../lib/addpick'
+import { fringeFrom } from '../../lib/helpers'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { BrushLayer } from './BrushTool'
@@ -370,6 +371,23 @@ export function Loupe(): React.JSX.Element {
         replace(next, 'Pick range')
         madeComponent(madeId)
         setTool('none')
+      } else if (tool === 'fringe-pick' && picture) {
+        const f = fringeFrom(hsvOf(...(await samplePatch(picture.url, p.x, p.y))))
+        if (!f) {
+          useLibrary.getState().say('That is not a purple or green fringe', 'error')
+        } else {
+          const next = structuredClone(recipe)
+          const d = next.lens.defringe
+          if (f.band === 'purple') {
+            d.purpleHue = f.hue
+            if (d.purpleAmount === 0) d.purpleAmount = 50
+          } else {
+            d.greenHue = f.hue
+            if (d.greenAmount === 0) d.greenAmount = 50
+          }
+          replace(next, `Lens: pick ${f.band} fringe`)
+        }
+        setTool('none')
       } else if (tool === 'add-pick' && picture) {
         // The picture as shown, in its own Display P3: what the complement
         // has to turn white (or into the second colour).
@@ -453,7 +471,8 @@ export function Loupe(): React.JSX.Element {
           tool === 'wb-picker' ||
           tool === 'range-picker' ||
           tool === 'point-picker' ||
-          tool === 'add-pick'
+          tool === 'add-pick' ||
+          tool === 'fringe-pick'
         )
           void pick(e)
       }}
