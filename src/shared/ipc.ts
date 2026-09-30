@@ -1,5 +1,13 @@
+import type { ResolvedProfile } from './lens'
 /** IPC channel names and the app-level types both sides of the bridge share. */
-import type { ConvertReport, ImageStats, LossReport, SourceInfo, WhitePoint } from './engine-types'
+import type {
+  ConvertReport,
+  ImageStats,
+  LateralCa,
+  LossReport,
+  SourceInfo,
+  WhitePoint
+} from './engine-types'
 import type { ExportSettings } from './export'
 import type { Step } from './history'
 import type { BasicSetting, Recipe, RecipeGroup } from './recipe'
@@ -22,6 +30,8 @@ export const IPC = {
     renderScaleChanged: 'app:render-scale-changed',
     /** main → renderer: the menu's Settings… was chosen */
     openPreferences: 'app:open-preferences',
+    /** main → renderer: the menu's Engine Report… was chosen */
+    openEngineReport: 'app:open-engine-report',
     /** An uncaught error in the renderer, for the log and (opted in) a crash report. */
     reportError: 'app:report-error',
     /** The bundled THIRD_PARTY_NOTICES.txt, opened in the system's text viewer. */
@@ -60,6 +70,7 @@ export const IPC = {
     prioritize: 'library:prioritize',
     /** main → renderer: a thumbnail (re)rendered */
     thumb: 'library:thumb',
+    hdr: 'library:hdr',
     /** main → renderer: the folder's items changed (new file, new copy) */
     changed: 'library:changed',
     /** The items of any source: a folder, a collection, a keyword, the duplicates. */
@@ -105,6 +116,15 @@ export const IPC = {
     historySetHidden: 'develop:history-set-hidden',
     historyDelete: 'develop:history-delete',
     noise: 'develop:noise',
+    /** Measure the photo's lateral chromatic aberration (Lens → Remove CA). */
+    measureCa: 'develop:measure-ca',
+    /** Upright: a mode's suggestion measured on the photo, or the guides' transform. */
+    suggestUpright: 'develop:suggest-upright',
+    uprightFromLines: 'develop:upright-from-lines',
+    /** Heal / clone: the best place to copy a spot from. */
+    suggestHeal: 'develop:suggest-heal',
+    /** Where the open photo's AI denoise stands. */
+    denoiseState: 'develop:denoise-state',
     /** main → renderer: a render finished */
     rendered: 'develop:rendered',
     /** main → renderer: a render failed */
@@ -117,10 +137,32 @@ export const IPC = {
     importLut: 'presets:import-lut',
     luts: 'presets:luts'
   },
+  models: {
+    list: 'models:list',
+    download: 'models:download',
+    cancel: 'models:cancel',
+    remove: 'models:remove',
+    /** Time the models on the CPU and the accelerator; keep the faster. */
+    benchmark: 'models:benchmark',
+    provider: 'models:provider',
+    /** main → renderer: the models' state changed (a download's progress, one installed). */
+    event: 'models:event'
+  },
+  lens: {
+    importProfiles: 'lens:import-profiles',
+    status: 'lens:status',
+    check: 'lens:check',
+    search: 'lens:search',
+    resolve: 'lens:resolve',
+    /** main → renderer: the catalogue or the imported profiles changed. */
+    changed: 'lens:changed'
+  },
   export: {
     start: 'export:start',
     cancel: 'export:cancel',
     chooseFolder: 'export:choose-folder',
+    chooseWatermark: 'export:choose-watermark',
+    readWatermark: 'export:read-watermark',
     presets: 'export:presets',
     savePreset: 'export:save-preset',
     removePreset: 'export:remove-preset',
@@ -128,7 +170,7 @@ export const IPC = {
     progress: 'export:progress'
   },
   enhance: {
-    available: 'enhance:available'
+    rates: 'enhance:rates'
   },
   ai: {
     start: 'ai:start',
@@ -153,6 +195,8 @@ export interface EngineStatus {
   status: 'starting' | 'ready' | 'unavailable' | 'crashed'
   version?: string
   enhance?: boolean
+  /** The ONNX Runtime bundled with the engine: what model steps run on. */
+  runtime?: { library: string; version: string; providers: string[] }
   reason?: string
   /** Why the engine is unavailable, when the load named it (e.g. `VersionMismatch`). */
   code?: string
@@ -229,7 +273,12 @@ export interface LibraryItem {
   stack: StackInfo | null
   /** The file is not where the index last saw it (a collection's item on an unplugged drive). */
   offline?: boolean
+  /** HDR, and how; null when it is not; absent until the file has been probed. */
+  hdr?: HdrKind | null
 }
+
+/** A gain map over an SDR base (iPhone, UltraHDR), or a PQ / HLG signal. */
+export type HdrKind = 'gainmap' | 'pq' | 'hlg'
 
 export interface StackInfo {
   id: string
@@ -379,6 +428,10 @@ export interface ViewState {
   maskLive?: boolean
   /** Longest edge wanted from the renderer, in device pixels. */
   targetEdge: number
+  /** Upright's guides are being drawn: show the whole frame before the warp. */
+  guides?: boolean
+  /** An HDR photo: also render where the picture rises above white (the headroom overlay). */
+  headroom?: boolean
 }
 
 export interface RenderReport {
@@ -400,7 +453,7 @@ export interface RenderEvent {
   seq: number
   /** The renderer's number for the recipe this was rendered from (see `develop.update`). */
   rev?: number
-  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb'
+  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb' | 'headroom'
   url: string
   /** A mask's (or mask thumbnail's) layer. */
   layerId?: string
@@ -418,6 +471,8 @@ export interface RenderEvent {
    * white; the histograms span `0…range_max`).
    */
   hdrStats?: ImageStats
+  /** A headroom plane: how many stops above white its full scale stands for. */
+  stops?: number
   report?: RenderReport
 }
 
@@ -472,6 +527,57 @@ export interface Preset {
 export interface LutProfile {
   name: string
   path: string
+}
+
+/** Where the lens catalogue stands (Settings, the Lens panel's credit). */
+export interface LensCatalogStatus {
+  version: string | null
+  /** The catalogue the app shipped, or a newer one from the models server. */
+  origin: 'bundled' | 'online' | null
+  generated: string | null
+  lensfunCommit: string | null
+  lenses: number
+  cameras: number
+  imported: number
+  /** When the server was last asked, and what went wrong if it could not be. */
+  checkedAt: string | null
+  error: string | null
+  url: string
+}
+
+/** A lens the profile search found. */
+export interface LensSearchHit {
+  id: string
+  name: string
+  mount: string | null
+  /** The calibration camera's crop factor (a lens profiled on several bodies has one per). */
+  crop: number | null
+  source: string | null
+}
+
+/** A photo's lens profile: which one, found how, and its correction for this photo. */
+export interface LensMatch {
+  profile: {
+    id: string
+    name: string
+    source: string | null
+    mount: string | null
+    calibrationCrop: number | null
+  } | null
+  /** The camera the catalogue found for the photo (its crop factor). */
+  camera: { name: string; crop: number } | null
+  resolved: ResolvedProfile | null
+  /** The catalogue version it was resolved from. */
+  catalog: string | null
+}
+
+/** A watermark PNG as the export dialog shows it. */
+export interface WatermarkFile {
+  path: string
+  width: number
+  height: number
+  /** The picture as a data URL, for the preview. */
+  url: string
 }
 
 export interface ExportPreset {
@@ -546,4 +652,44 @@ export interface ErrorReport {
   kind: 'error' | 'rejection'
   message: string
   stack?: string
+}
+
+/** Lens → Remove chromatic aberration: the measurement, and how much it explains. */
+export interface CaMeasurement {
+  ca: LateralCa
+  /** RMS shift of red and blue from green, before and after the correction, in pixels. */
+  red: [number, number]
+  blue: [number, number]
+  points: number
+}
+
+/** One AI model, as Settings lists it. */
+export interface ModelInfo {
+  id: string
+  title: string
+  role: 'upscale' | 'denoise' | 'deblur' | 'restore' | 'segment' | 'inpaint'
+  bytes: number
+  licence: string
+  holder: string
+  /** What is known about the training data's own terms. */
+  caveat: string
+  installed: boolean
+  /** 0…1 while downloading, else null. */
+  progress: number | null
+  error?: string
+}
+
+/** Which provider AI models run on, and what the performance test measured. */
+export interface ProviderInfo {
+  choice: 'cpu' | 'accelerated'
+  /** The accelerator the bundled runtime offers ('coreml', 'directml'), if any. */
+  accelerator: string | null
+  measured?: { cpuMs: number | null; acceleratedMs: number | null }
+}
+
+/** Where a photo's AI denoise stands: nothing made yet, the preview, or the full resolution. */
+export interface DenoiseState {
+  made: 'none' | 'preview' | 'full'
+  /** Why this photo cannot be AI-denoised (an HDR photo). */
+  refused?: string
 }

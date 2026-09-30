@@ -1,129 +1,177 @@
 /**
- * Enhance → Super Resolution: the engine's generative upscaler (a bundled
- * Real-ESRGAN ×2 model on a bundled ONNX Runtime) enlarges a photo's
- * *original*, before any grade — the model wants display-referred pixels and
- * the engine refuses a grade beside it — into a new 16-bit TIFF beside the
- * original. The new file joins the folder with the source's recipe copied
- * over, so the look carries across, as Lightroom's Enhance does.
+ * Enhance (the wheel's last tool): the engine's enhance chain — a JPEG
+ * rebuilt from its coefficients, FBCNN's JPEG restore, NAFNet's deblur,
+ * Real-ESRGAN's super-resolution, whichever are chosen, in that order — run
+ * over a photo's *original*, before any grade (the models want
+ * display-referred pixels), into a new 16-bit TIFF beside it. The new file
+ * joins the folder with the source's recipe copied over, so the look carries
+ * across, as Lightroom's Enhance does. The steps and their numbers are
+ * `shared/enhance.ts`'s.
  */
 import log from 'electron-log/main'
-import { readdir, unlink } from 'fs/promises'
+import { unlink } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
-import type { ExecutionProvider, UpscalerRef } from '../shared/engine-types'
+import type { EnhanceStep, EnhancerRef, SourceInfo, UpscalerRef } from '../shared/engine-types'
 import { PRESERVE_ALL } from '../shared/engine-types'
 import type { AiStartRequest } from '../shared/ai'
 import { baseWhite } from '../shared/compile'
+import {
+  chainSubject,
+  enhanceRefusal,
+  estimateMs,
+  FALLBACK_JPEG_QUALITY,
+  fbcnnQuality,
+  learnRates,
+  planSteps,
+  reconstructParams,
+  type EnhanceRates,
+  type EnhanceSettings,
+  type PlannedStep
+} from '../shared/enhance'
 import { relativeFromOp } from '../shared/wb'
 import { Cancelled, type AiContext, type AiRunner } from './ai/jobs'
 import type { EngineClient } from './engine/client'
 import type { IndexClient } from './indexer/client'
+import type { EngineStatus } from '../shared/ipc'
 import { exists } from './exists'
+import { ModelMissing, type ModelStore } from './ai/models'
 import type { Library } from './library'
-import { paths } from './paths'
-import { BACKGROUND_THREADS, blankRequest, RAW_DEVELOP, sourceOrientation } from './source'
+import {
+  BACKGROUND_THREADS,
+  blankRequest,
+  RAW_DEVELOP,
+  sourceOrientation,
+  uprightFraming
+} from './source'
 import { estimate } from '../shared/ai'
-
-export const MODEL_FILE = 'real_esrgan_x2.onnx'
-
-async function runtimeLibrary(dir: string): Promise<string | null> {
-  const lib = join(dir, 'onnxruntime', 'lib')
-  if (!(await exists(lib))) return null
-  const want =
-    process.platform === 'win32'
-      ? /^onnxruntime\.dll$/
-      : process.platform === 'darwin'
-        ? /^libonnxruntime\.\d.*\.dylib$|^libonnxruntime\.dylib$/
-        : /^libonnxruntime\.so(\.\d+)*$/
-  const hit = (await readdir(lib)).find((f) => want.test(f))
-  return hit ? join(lib, hit) : null
-}
 
 export interface EnhanceAvailability {
   available: boolean
   reason?: string
-  model?: string
-  runtime?: string
-}
-
-export async function enhanceAvailability(engineHasEnhance: boolean): Promise<EnhanceAvailability> {
-  if (!engineHasEnhance)
-    return { available: false, reason: 'this build of the engine has no generative upscaler' }
-  const dir = paths.ai()
-  const model = join(dir, MODEL_FILE)
-  if (!(await exists(model)))
-    return { available: false, reason: `the model is not bundled (${model}); run pnpm fetch-ai` }
-  const runtime = await runtimeLibrary(dir)
-  if (!runtime)
-    return { available: false, reason: `ONNX Runtime is not bundled in ${dir}; run pnpm fetch-ai` }
-  return { available: true, model, runtime }
 }
 
 /**
- * The provider the bundled runtime offers: CoreML in Apple's builds; DirectML
- * only when a DirectML build of the runtime was bundled; otherwise the CPU.
+ * Whether Enhance can run at all: an engine built with its model support and
+ * the ONNX Runtime it ships. Each step's model is offered where it is chosen.
  */
-async function provider(choice: 'auto' | 'cpu', runtime: string): Promise<ExecutionProvider> {
-  if (choice === 'cpu') return 'Cpu'
-  if (process.platform === 'darwin') return 'CoreMl'
-  if (process.platform === 'win32' && (await exists(join(dirname(runtime), 'DirectML.dll')))) {
-    return { DirectMl: { device: 0 } }
-  }
-  return 'Cpu'
+export function enhanceAvailability(status: EngineStatus): EnhanceAvailability {
+  if (status.enhance !== true)
+    return { available: false, reason: 'this build of the engine runs no models' }
+  if (!status.runtime)
+    return { available: false, reason: 'this build of the engine ships no ONNX Runtime' }
+  return { available: true }
 }
 
 type EnhanceRequest = Extract<AiStartRequest, { task: 'enhance' }>
 
-/** How long a megapixel takes, remembered between runs, for the estimated progress. */
-const RATE_KEY = 'ai.enhance.msPerMp'
-const FIRST_GUESS_MS_PER_MP = 1500
+/** How long each step takes per megapixel, remembered between runs, for the estimate. */
+export const RATE_KEY = 'ai.enhance.rates'
+
+/** The remembered speeds (an older build kept one number for ×2). */
+export async function enhanceRates(settings: IndexClient): Promise<EnhanceRates> {
+  const r: unknown = await settings.getSetting(RATE_KEY).catch(() => null)
+  return r && typeof r === 'object' ? (r as EnhanceRates) : {}
+}
+
+/** A name beside the original that is not taken: IMG-Enhanced.tif, IMG-Enhanced-2.tif… */
+async function freeName(dir: string, stem: string): Promise<string> {
+  for (let n = 1; ; n++) {
+    const out = join(dir, `${stem}-Enhanced${n > 1 ? `-${n}` : ''}.tif`)
+    if (!(await exists(out))) return out
+  }
+}
+
+/** The chain the engine runs, the models' references filled in. */
+async function chainOf(
+  models: ModelStore,
+  steps: PlannedStep[],
+  s: EnhanceSettings,
+  info: SourceInfo,
+  onCpu: ReadonlySet<string>
+): Promise<EnhanceStep[]> {
+  const out: EnhanceStep[] = []
+  for (const p of steps) {
+    if (p.kind === 'reconstruct') {
+      const sub = info.jpeg?.subsampling
+      out.push({
+        JpegReconstruct: {
+          ...reconstructParams(s.smoothing),
+          // Required exactly when the file subsamples chroma.
+          chroma:
+            sub === 'Half' || sub === 'Quarter'
+              ? s.guidedChroma
+                ? { LumaGuided: { radius: 2, epsilon: 0.001 } }
+                : 'Triangle'
+              : null
+        }
+      })
+      continue
+    }
+    const id = p.model!
+    if (!(await models.installed(id))) throw new ModelMissing(models.entry(id))
+    const provider = onCpu.has(id) ? ('Cpu' as const) : undefined
+    if (p.kind === 'x2' || p.kind === 'x4' || p.kind === 'x4-wdn') {
+      out.push({ Upscale: (await models.ref(id, provider)) as unknown as UpscalerRef })
+      continue
+    }
+    const quality = s.jpegQuality ?? info.jpeg?.quality ?? FALLBACK_JPEG_QUALITY
+    const ref = (await models.ref(
+      id,
+      provider,
+      p.kind === 'fbcnn-qf' ? { quality: { Stated: { value: fbcnnQuality(quality) } } } : {}
+    )) as unknown as EnhancerRef
+    const strength = p.kind === 'deblur' ? s.deblurStrength : s.jpegStrength
+    out.push({ Model: { ...ref, strength: Math.min(1, Math.max(0.01, strength / 100)) } })
+  }
+  return out
+}
 
 /**
- * Enhance as an AI job: Model (load and check) → Upscale (the engine's
- * run, its progress estimated from the photo's size and how fast the last
- * runs went) → Save (the new file joins the folder with the look). It runs
- * in its own engine process, so cancelling kills that process and nothing
- * else; a cancelled or failed run leaves no half-written file.
+ * Enhance as an AI job: Model (check and load) → Enhance (the engine's run,
+ * its progress estimated from the photo's size and how fast earlier runs
+ * went) → Save (the new file joins the folder with the look). It runs in
+ * its own engine process; cancelling stops the engine between model tiles,
+ * and a cancelled or failed run leaves no half-written file.
  */
 export class EnhanceRunner implements AiRunner<EnhanceRequest> {
   readonly task = 'enhance' as const
 
   constructor(
     private readonly library: Library,
-    /** The AI engine: started when first needed, restarted to cancel. */
+    /** The AI engine: started when first needed. */
     private readonly engine: EngineClient,
-    private readonly hasEnhance: () => boolean,
+    private readonly status: () => EngineStatus,
+    private readonly models: ModelStore,
     private readonly settings: IndexClient
   ) {}
 
   stages(): { id: string; label: string; weight: number }[] {
     return [
-      { id: 'model', label: 'Model', weight: 0.08 },
-      { id: 'upscale', label: 'Upscale', weight: 0.84 },
-      { id: 'save', label: 'Save', weight: 0.08 }
+      { id: 'model', label: 'Model', weight: 0.06 },
+      { id: 'enhance', label: 'Enhance', weight: 0.88 },
+      { id: 'save', label: 'Save', weight: 0.06 }
     ]
   }
 
-  title(): { title: string; subject: string } {
-    return { title: 'Enhancing', subject: 'Super Resolution ×2' }
+  title(req: EnhanceRequest): { title: string; subject: string } {
+    return { title: 'Enhancing', subject: chainSubject(planSteps(req.settings, true)) }
   }
 
   async run(ctx: AiContext, req: EnhanceRequest): Promise<{ kind: 'file'; path: string }> {
-    const { key } = req
-    ctx.stage('model', 0, 'Loading the model')
-    const avail = await enhanceAvailability(this.hasEnhance())
-    if (!avail.available || !avail.model || !avail.runtime)
-      throw new Error(avail.reason ?? 'unavailable')
+    const { key, settings } = req
+    ctx.stage('model', 0, 'Checking the models')
+    const avail = enhanceAvailability(this.status())
+    if (!avail.available) throw new Error(avail.reason ?? 'unavailable')
     const row = await this.library.photoRow(key)
     const info = await this.library.probe(row)
-    // The model wants display-referred SDR; the engine refuses PQ/HLG pixels
-    // for it by name. Say so up front rather than failing mid-run.
-    if (info.is_hdr)
-      throw new Error(
-        `${row.name}: HDR photos can't be enhanced yet — export an SDR copy and enhance that`
-      )
-    const stem = basename(row.name, extname(row.name))
-    const out = join(dirname(row.path), `${stem}-Enhanced-SR.tif`)
-    if (await exists(out)) throw new Error(`${basename(out)} already exists`)
+    const isJpeg = info.input === 'Jpeg'
+    const refused = enhanceRefusal(settings, { isJpeg, isHdr: info.is_hdr })
+    if (refused) throw new Error(`${row.name}: ${refused}`)
+    const steps = planSteps(settings, isJpeg)
+    const ids = steps.flatMap((p) => (p.model ? [p.model] : []))
+    for (const id of ids)
+      if (!(await this.models.installed(id))) throw new ModelMissing(this.models.entry(id))
+    const out = await freeName(dirname(row.path), basename(row.name, extname(row.name)))
     if (this.engine.getStatus().status === 'starting') {
       this.engine.start()
       await this.engine.whenStarted()
@@ -131,61 +179,37 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     if (ctx.signal.aborted) throw new Cancelled()
     const raw = info.input === 'Raw' ? RAW_DEVELOP : null
     const orientation = sourceOrientation(info, raw)
-    const upscaler: UpscalerRef = {
-      model_path: avail.model,
-      runtime_library: avail.runtime,
-      provider: await provider(req.cpu ? 'cpu' : 'auto', avail.runtime),
-      threads: BACKGROUND_THREADS * 2,
-      scale: 2,
-      tile: 256,
-      overlap: 16,
-      input_multiple: 2,
-      then: null,
-      alpha: { Resample: 'Lanczos3' }
-    }
-    const tryRun = (up: UpscalerRef): Promise<unknown> =>
-      this.engine.convert({
-        ...blankRequest(row.path, out, info.input),
-        raw,
-        resize: { Scale: { factor: 2 } },
-        resampler: 'Ai',
-        upscaler: up,
-        pixel: { depth: 'Sixteen', channels: 3 },
-        encode: { Tiff: { compression: 'Deflate' } },
-        metadata: raw ? { ...PRESERVE_ALL, icc: true } : PRESERVE_ALL,
-        color: 'Preserve',
-        framing:
-          orientation === 'Normal'
-            ? null
-            : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null },
-        threads: BACKGROUND_THREADS * 2
-      })
+    const convert = async (onCpu: ReadonlySet<string>): Promise<unknown> =>
+      this.engine.convert(
+        {
+          ...blankRequest(row.path, out, info.input, info),
+          raw,
+          enhance: await chainOf(this.models, steps, settings, info, onCpu),
+          pixel: { depth: 'Sixteen', channels: 3 },
+          encode: { Tiff: { compression: 'Deflate' } },
+          metadata: raw ? { ...PRESERVE_ALL, icc: true } : PRESERVE_ALL,
+          color: 'Preserve',
+          framing: uprightFraming(orientation, info),
+          threads: BACKGROUND_THREADS * 2
+        },
+        { signal: ctx.signal }
+      )
     // The engine says nothing until it is done: the bar follows the clock.
-    const mp = (info.width * info.height) / 1e6
-    const rate = await this.rate()
-    const expected = Math.max(1000, mp * rate)
+    const rates = await enhanceRates(this.settings)
+    const expected = Math.max(1000, estimateMs(steps, info.width, info.height, rates))
     const t0 = Date.now()
-    ctx.stage('upscale', 0, `Upscaling ${row.name}`)
+    ctx.stage('enhance', 0, `${chainSubject(steps)} · ${row.name}`)
     const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 250)
-    const stop = (): void => this.engine.restart()
-    ctx.signal.addEventListener('abort', stop, { once: true })
     try {
       try {
-        await tryRun(upscaler)
+        await this.models.withCpuFallback(ids, convert, ctx.signal)
       } catch (err) {
         if (ctx.signal.aborted) throw new Cancelled()
-        // A provider the runtime cannot register is an error, never a silent
-        // CPU run — so the retry on the CPU is the app's, and it says so.
-        if (upscaler.provider !== 'Cpu' && /provider/i.test((err as Error).message)) {
-          log.warn('enhance: accelerated provider unavailable, retrying on the CPU', err)
-          ctx.stage('upscale', 0, 'GPU provider unavailable — running on the CPU')
-          await tryRun({ ...upscaler, provider: 'Cpu' })
-        } else throw err
+        throw err
       }
       if (ctx.signal.aborted) throw new Cancelled()
-      const measured = (Date.now() - t0) / Math.max(0.1, mp)
       void this.settings
-        .setSetting(RATE_KEY, Math.round(0.6 * measured + 0.4 * rate))
+        .setSetting(RATE_KEY, learnRates(steps, rates, Date.now() - t0, expected))
         .catch(() => {})
       ctx.stage('save', 0.2, 'Adding it to the folder')
       // The enhanced file starts with the source's look.
@@ -207,17 +231,12 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
       await this.library.openFolder(dirname(row.path))
       return { kind: 'file', path: out }
     } catch (err) {
-      // Half a file blocks the next try ("already exists"): it goes.
+      // Half a file is no file.
       await unlink(out).catch(() => {})
+      if (!(err instanceof Cancelled)) log.warn('enhance failed', row.name, err)
       throw err
     } finally {
       clearInterval(tick)
-      ctx.signal.removeEventListener('abort', stop)
     }
-  }
-
-  private async rate(): Promise<number> {
-    const r: unknown = await this.settings.getSetting(RATE_KEY).catch(() => undefined)
-    return typeof r === 'number' && r > 0 ? r : FIRST_GUESS_MS_PER_MP
   }
 }

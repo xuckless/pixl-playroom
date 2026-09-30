@@ -185,44 +185,6 @@ legend {
   margin: 2px 0 10px;
 }
 
-/* enhance, in the dialog */
-.enhance-stage {
-  display: flex;
-  align-items: center;
-  gap: 26px;
-  margin: 6px 0 14px;
-}
-.enhance-stage .sphere-wrap {
-  width: 150px;
-  height: 150px;
-  flex: none;
-}
-.enhance-stage .sphere-wrap .fx-canvas,
-.enhance-stage .sphere-wrap .css-sphere {
-  width: 150px;
-  height: 150px;
-}
-.enhance-log {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-.enhance-log .phase {
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 16px;
-  font-weight: 600;
-}
-.enhance-log .msg {
-  color: var(--text2);
-  font-size: 12px;
-  word-break: break-word;
-}
-.enhance-log .msg.error {
-  color: var(--danger);
-}
-
 /* Settings: updates, privacy, about */
 .modal.prefs .modal-body {
   display: flex;
@@ -267,4 +229,136 @@ button.link:hover {
   flex: 1 1 260px;
   min-width: 0;
   font-family: var(--font-mono);
+}
+
+/* Engine report: the last render and the compiled grade beside custom layers */
+.modal.engine-report .engine-line {
+  margin: 0 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+.modal.engine-report .engine-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+.modal.engine-report .report-lines,
+.modal.engine-report .json {
+  max-height: 46vh;
+}
+
+/* Settings → AI models */
+.models-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.models-table td {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hair);
+  vertical-align: middle;
+}
+.models-table .model-title {
+  color: var(--text);
+  cursor: help;
+}
+.models-table .model-act {
+  text-align: right;
+  white-space: nowrap;
+  width: 1%;
+  padding-left: 12px;
+}
+.model-bar {
+  display: inline-block;
+  width: 90px;
+  height: 3px;
+  margin-right: 8px;
+  vertical-align: middle;
+  background: var(--hair2);
+}
+.model-bar span {
+  display: block;
+  height: 100%;
+  background: var(--acc);
+  transition: width 0.2s var(--ease);
+}
+
+/* Export: watermark */
+.watermark .wm-file {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+.watermark .wm-file .muted {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.watermark .wm-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  margin: 8px 0;
+}
+.watermark .wm-preview {
+  position: relative;
+  line-height: 0;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--hair);
+  overflow: hidden;
+}
+.watermark .wm-preview > img:first-child {
+  width: 100%;
+  height: auto;
+}
+.watermark .wm-blank {
+  aspect-ratio: 3 / 2;
+}
+.watermark .wm-mark {
+  position: absolute;
+  height: auto;
+  pointer-events: none;
+}
+.watermark .wm-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.watermark .wm-anchors {
+  display: grid;
+  grid-template-columns: repeat(3, 26px);
+  gap: 4px;
+}
+.watermark .wm-anchors button {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--hair2);
+  background: transparent;
+}
+.watermark .wm-anchors button i {
+  width: 6px;
+  height: 6px;
+  background: var(--text2);
+}
+.watermark .wm-anchors button.on {
+  border-color: var(--acc);
+}
+.watermark .wm-anchors button.on i {
+  background: var(--acc);
+}
+.watermark .wm-blend {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.watermark .wm-blend select {
+  width: 100%;
+  min-width: 0;
 }

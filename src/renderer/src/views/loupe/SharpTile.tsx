@@ -50,7 +50,8 @@ export const SharpTile = memo(function SharpTile({
   const request = useRef(0)
   const shownWidth = g.crop && !g.whole ? g.crop.width * g.width : g.width
   // The preview is enough while it has a pixel for every device pixel.
-  const wanted = g.straighten === 0 && scale > (previewWidth / shownWidth) * 1.1
+  // A straighten or a warp: the engine renders a region only of the plain frame.
+  const wanted = g.straighten === 0 && !g.transform && scale > (previewWidth / shownWidth) * 1.1
 
   useEffect(() => {
     if (!wanted || !session || !recipe) return

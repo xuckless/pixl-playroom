@@ -8,6 +8,7 @@
 import { createRequire } from 'module'
 import type {
   EngineErrorShape,
+  EngineHelloMessage,
   EngineMethod,
   HostToMain,
   MainToHost,
@@ -15,6 +16,7 @@ import type {
 } from '../../shared/engine-types'
 
 const ENGINE_PACKAGE = '@xuckless/pixl-engine'
+/** What Playroom cannot run without. The rest (lens, upright, AI…) are looked up per call. */
 const METHODS: EngineMethod[] = ['engineVersion', 'probe', 'convert', 'analyze', 'suggestEncode']
 
 function send(msg: HostToMain): void {
@@ -78,6 +80,15 @@ function toErrorShape(err: unknown): EngineErrorShape {
   return { message: String(err), code: 'Unknown' }
 }
 
+/** The ONNX Runtime shipped beside the addon, if this build carries one. */
+function bundledRuntime(e: PixlEngineModule): EngineHelloMessage['runtime'] {
+  try {
+    return typeof e.bundledRuntime === 'function' ? e.bundledRuntime() : undefined
+  } catch {
+    return undefined
+  }
+}
+
 const loaded = loadNative()
 const engine = 'engine' in loaded ? loaded.engine : undefined
 
@@ -86,7 +97,8 @@ if (engine) {
     kind: 'hello',
     status: 'ready',
     version: engine.engineVersion(),
-    enhance: engine.hasEnhance()
+    enhance: engine.hasEnhance(),
+    runtime: bundledRuntime(engine)
   })
 } else {
   send({
@@ -97,8 +109,15 @@ if (engine) {
   })
 }
 
+/** The calls that may still be stopped, by request id. */
+const aborts = new Map<number, AbortController>()
+
 process.parentPort.on('message', (e) => {
   const msg = e.data as MainToHost
+  if (msg?.kind === 'cancel') {
+    aborts.get(msg.id)?.abort()
+    return
+  }
   if (!msg || msg.kind !== 'request') return
   const { id, method, args } = msg
   if (!engine) {
@@ -120,10 +139,18 @@ process.parentPort.on('message', (e) => {
     })
     return
   }
+  // A signal goes after the request; the engine checks it between stages.
+  let callArgs = args
+  if (msg.cancellable) {
+    const abort = new AbortController()
+    aborts.set(id, abort)
+    callArgs = [...args, { signal: abort.signal }]
+  }
   Promise.resolve()
-    .then(() => fn.apply(engine, args))
+    .then(() => fn.apply(engine, callArgs))
     .then(
       (result) => send({ kind: 'response', id, ok: true, result }),
       (err) => send({ kind: 'response', id, ok: false, error: toErrorShape(err) })
     )
+    .finally(() => aborts.delete(id))
 })

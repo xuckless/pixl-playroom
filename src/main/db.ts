@@ -45,6 +45,9 @@ export interface PhotoRow {
   lens: string | null
   stack_id: string | null
   stack_pos: number | null
+  /** What kind of HDR the file is ('' none), as last probed; `hdr_key` names that file version. */
+  hdr: string | null
+  hdr_key: string | null
 }
 
 export interface CopyRow {
@@ -212,7 +215,10 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
       }
       set.run(...cameraColumns(c), r.id)
     }
-  }
+  },
+  // 3. Whether a photo is HDR, and how (a gain map, PQ, HLG), for the grid's
+  // badge: known once the file has been probed.
+  (db) => addColumns(db, 'photos', { hdr: 'TEXT', hdr_key: 'TEXT' })
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -617,6 +623,10 @@ export class Store {
     this.prepare(
       'UPDATE photos SET camera_json = ?, captured_at = ?, iso = ?, focal = ?, fnumber = ?, exposure = ?, camera = ?, lens = ? WHERE id = ?'
     ).run(JSON.stringify(camera), ...cameraColumns(camera), id)
+  }
+
+  setHdr(photoId: number, kind: string, key: string): void {
+    this.prepare('UPDATE photos SET hdr = ?, hdr_key = ? WHERE id = ?').run(kind, key, photoId)
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, key: string): void {

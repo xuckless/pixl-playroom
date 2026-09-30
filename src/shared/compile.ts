@@ -24,13 +24,21 @@ import type {
   GradeSpace,
   HslBands,
   HslKey,
+  LensCorrection,
   Mask,
+  Retouch,
+  Vignette,
   MaskComponent,
   Orientation,
   Primary,
   Rgb,
+  Transform,
   WhitePoint
 } from './engine-types'
+import { addColorOp } from './addcolor'
+import { defringeOp, lensCorrection } from './lens'
+import { compileRetouch } from './retouch'
+import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
 import {
   HSL_BANDS,
@@ -91,11 +99,30 @@ export interface CompileContext {
   brushPaths: Record<string, string>
   /** False while the crop tool is open: show the whole, unrotated frame. */
   applyCrop: boolean
+  /**
+   * The pipeline carries light above SDR white: a PQ/HLG source, or an SDR
+   * one expanded to HDR on export. Changes where bounded blends run.
+   */
+  hdr?: boolean
+  /**
+   * The source is the AI-denoised photo: the classic noise reduction steps
+   * aside (the model has done it).
+   */
+  aiDenoised?: boolean
+  /** False while Upright's guides are drawn: the frame as it is before the warp. */
+  showTransform?: boolean
 }
 
 export interface Compiled {
   grade: Grade | null
   framing: Framing | null
+  /**
+   * The lens correction, run before the grade and framing; every normalised
+   * coordinate (masks, crop, a region) is of the frame it produces.
+   */
+  lens: LensCorrection | null
+  /** Spots and eyes, after the lens and before the grade (see `retouch.ts`). */
+  retouch: Retouch | null
   /** Engine layer index of each local layer, for `Inspect::LayerMask`. */
   layerIndex: Record<string, number>
   /** What the preview could not show at this scale, and why. */
@@ -122,9 +149,37 @@ function curve(points: CurvePointSetting[]): Curve {
   for (const p of sorted) {
     const x = clamp(p.x, 0, 1)
     if (out.length > 0 && x <= out[out.length - 1].x) continue
-    out.push({ x: round4(x), y: round4(p.y) })
+    // The engine refuses a point above 1 in a display-referred stage, and a
+    // sidecar written elsewhere may hold one.
+    out.push({ x: round4(x), y: round4(clamp(p.y, 0, 1)) })
   }
   return { points: out }
+}
+
+/**
+ * How far a display-referred stage's values reach on an HDR pipeline: PQ's
+ * 10 000 cd/m² over a 203 cd/m² white, in sRGB's extended encoding.
+ */
+const HDR_ENCODED_TOP = 5.3
+
+/**
+ * A tonal curve (master, red, green, blue). On an HDR pipeline a
+ * display-referred stage holds the highlights above 1 — two stops over white
+ * is about 1.8 — and a curve is flat past its last point, so one ending at
+ * (1, y) would flatten every highlight to y. There it goes on past white at
+ * slope 1, as far as PQ reaches, and the highlights keep their room.
+ */
+function tonal(points: CurvePointSetting[], hdr: boolean): Curve {
+  const c = curve(points)
+  const last = c.points[c.points.length - 1]
+  if (!hdr || !last) return c
+  return {
+    points: [
+      ...c.points,
+      { x: round4(last.x + 0.5), y: round4(last.y + 0.5) },
+      { x: HDR_ENCODED_TOP, y: round4(last.y + HDR_ENCODED_TOP - last.x) }
+    ]
+  }
 }
 
 export function isIdentityCurve(points: CurvePointSetting[]): boolean {
@@ -141,6 +196,7 @@ function curvesOp(c: Partial<Curves>): GradeOp {
       luma_vs_saturation: null,
       hue_vs_saturation: null,
       hue_vs_hue: null,
+      refine_saturation: null,
       ...c
     }
   }
@@ -335,25 +391,29 @@ export function autoCrop(degrees: number, w: number, h: number): CropRect {
   return { x: (1 - shrink) / 2, y: (1 - shrink) / 2, width: shrink, height: shrink }
 }
 
-/** Whether every corner of `crop` (normalised canvas) lies inside the rotated `w × h` picture. */
-export function cropFits(crop: CropRect, degrees: number, w: number, h: number): boolean {
-  const th = (degrees * Math.PI) / 180
-  const c = Math.cos(th)
-  const s = Math.sin(th)
-  const corners = [
-    [crop.x, crop.y],
-    [crop.x + crop.width, crop.y],
-    [crop.x, crop.y + crop.height],
-    [crop.x + crop.width, crop.y + crop.height]
-  ]
-  return corners.every(([nx, ny]) => {
-    const qx = nx * w - w / 2
-    const qy = ny * h - h / 2
-    // Back into the picture by the inverse rotation.
-    const px = c * qx + s * qy
-    const py = -s * qx + c * qy
-    return Math.abs(px) <= w / 2 + 0.5 && Math.abs(py) <= h / 2 + 0.5
-  })
+/**
+ * Whether every corner of `crop` (normalised canvas) has picture behind it:
+ * inside the `w × h` picture rotated by `degrees`, and warped by an Upright
+ * `transform` when there is one.
+ */
+export function cropFits(
+  crop: CropRect,
+  degrees: number,
+  w: number,
+  h: number,
+  transform: Transform | null = null
+): boolean {
+  return cropFitsWarp(crop, degrees, transform, w, h)
+}
+
+/** Whether framing resamples: a straighten or an Upright warp (both need float work). */
+export function framingWarps(f: Framing | null): boolean {
+  return (f?.rotate_degrees ?? 0) !== 0 || !!f?.transform
+}
+
+/** Whether a render must carry alpha: the crop tool shows a warp's empty corners transparent. */
+export function framingTransparent(f: Framing | null): boolean {
+  return f?.outside === 'Transparent'
 }
 
 /** The user-oriented frame's size and orientation for a recipe. */
@@ -372,7 +432,13 @@ export function orientedFrame(
  * corner lies inside the picture rotated by `degrees`. A straighten changed
  * after a crop was drawn must never hand the engine a crop it will refuse.
  */
-export function fitCrop(crop: CropRect, degrees: number, w: number, h: number): CropRect {
+export function fitCrop(
+  crop: CropRect,
+  degrees: number,
+  w: number,
+  h: number,
+  transform: Transform | null = null
+): CropRect {
   const cx = Math.min(1, Math.max(0, crop.x + crop.width / 2))
   const cy = Math.min(1, Math.max(0, crop.y + crop.height / 2))
   const at = (k: number): CropRect => {
@@ -382,32 +448,50 @@ export function fitCrop(crop: CropRect, degrees: number, w: number, h: number): 
     const y = Math.min(Math.max(0, cy - ch / 2), 1 - ch)
     return { x, y, width: cw, height: ch }
   }
-  if (cropFits(at(1), degrees, w, h)) return at(1)
+  if (cropFits(at(1), degrees, w, h, transform)) return at(1)
   let lo = 0
   let hi = 1
   for (let i = 0; i < 30; i++) {
     const mid = (lo + hi) / 2
-    if (cropFits(at(mid), degrees, w, h)) lo = mid
+    if (cropFits(at(mid), degrees, w, h, transform)) lo = mid
     else hi = mid
   }
   return at(lo * 0.999)
 }
 
 /** The largest centred crop of `aspect` (width/height, in pixels) inside the rotated picture. */
-export function aspectCrop(aspect: number, degrees: number, w: number, h: number): CropRect {
+export function aspectCrop(
+  aspect: number,
+  degrees: number,
+  w: number,
+  h: number,
+  transform: Transform | null = null
+): CropRect {
   const frameAspect = w / h
   const base =
     aspect > frameAspect
       ? { width: 1, height: frameAspect / aspect }
       : { width: aspect / frameAspect, height: 1 }
-  return fitCrop({ x: (1 - base.width) / 2, y: (1 - base.height) / 2, ...base }, degrees, w, h)
+  return fitCrop(
+    { x: (1 - base.width) / 2, y: (1 - base.height) / 2, ...base },
+    degrees,
+    w,
+    h,
+    transform
+  )
 }
 
-/** The crop the engine gets: the user's (made to fit), the aspect's, or an auto-fit for a bare straighten. */
+/**
+ * The crop the engine gets: the user's (made to fit), the aspect's, or an
+ * auto-fit for a bare straighten or Upright — always clear of the corners a
+ * rotation or a perspective warp leaves without picture.
+ */
 export function effectiveCrop(r: Recipe, w: number, h: number): CropRect | null {
   const { straighten, crop, aspect } = r.geometry
-  if (crop) return fitCrop(crop, straighten, w, h)
-  if (aspect !== null && aspect > 0) return aspectCrop(aspect, straighten, w, h)
+  const t = uprightTransform(r.geometry.upright, w, h)
+  if (crop) return fitCrop(crop, straighten, w, h, t)
+  if (aspect !== null && aspect > 0) return aspectCrop(aspect, straighten, w, h, t)
+  if (t) return fitCrop({ x: 0, y: 0, width: 1, height: 1 }, straighten, w, h, t)
   if (straighten !== 0) return autoCrop(straighten, w, h)
   return null
 }
@@ -421,8 +505,33 @@ export function vignettePlacement(
   crop: CropRect | null,
   degrees: number,
   w: number,
-  h: number
+  h: number,
+  transform: Transform | null = null
 ): { centre: { x: number; y: number }; half: { x: number; y: number }; rotation: number } {
+  if (transform) {
+    // The grade runs before the warp: the crop's centre and its half sizes
+    // (to its edges' midpoints) are carried back into the frame, which is
+    // what the vignette is placed in.
+    const flat = vignettePlacement(crop, degrees, w, h)
+    const back = (x: number, y: number): { x: number; y: number } =>
+      canvasToFrame(transform, w, h, { x, y }) ?? { x, y }
+    const c0 = crop ?? { x: 0, y: 0, width: 1, height: 1 }
+    const mid = (fx: number, fy: number): { x: number; y: number } => {
+      const qx = (c0.x + fx * c0.width) * w - w / 2
+      const qy = (c0.y + fy * c0.height) * h - h / 2
+      const th = (degrees * Math.PI) / 180
+      return back(
+        (Math.cos(th) * qx + Math.sin(th) * qy + w / 2) / w,
+        (-Math.sin(th) * qx + Math.cos(th) * qy + h / 2) / h
+      )
+    }
+    const centre = back(flat.centre.x, flat.centre.y)
+    const dist = (a: { x: number; y: number }, b: { x: number; y: number }): number =>
+      Math.hypot((a.x - b.x) * w, (a.y - b.y) * h)
+    const hx = (dist(mid(1, 0.5), centre) + dist(mid(0, 0.5), centre)) / 2 / w
+    const hy = (dist(mid(0.5, 1), centre) + dist(mid(0.5, 0), centre)) / 2 / h
+    return { centre, half: { x: hx, y: hy }, rotation: flat.rotation - transform.rotate }
+  }
   const c = crop ?? { x: 0, y: 0, width: 1, height: 1 }
   const qx = (c.x + c.width / 2) * w - w / 2
   const qy = (c.y + c.height / 2) * h - h / 2
@@ -468,17 +577,20 @@ export function smoothnessFeather(smoothness: number): number {
   return (clamp(smoothness, 0, 100) / 100) * 0.01
 }
 
+/** The sliders that say which colour, not how much: Amount leaves them be. */
+const DIRECTIONS = new Set<keyof LocalAdjust>(['tintHue', 'addHue', 'addSaturation'])
+
 /**
- * A mask's Amount: every adjustment scaled by amount/100 (the tint's hue is
- * a direction, not a strength, and stays). The sliders' own clamps bound the
- * 200% end.
+ * A mask's Amount: every adjustment scaled by amount/100 (the tint's hue and
+ * the added colour are directions, not strengths, and stay). The sliders'
+ * own clamps bound the 200% end.
  */
 export function scaleLocalAdjust(a: LocalAdjust, amount: number): LocalAdjust {
   const k = clamp(amount, 0, 200) / 100
   if (k === 1) return a
   const out = { ...a }
   for (const key of Object.keys(out) as (keyof LocalAdjust)[]) {
-    if (key === 'tintHue') continue
+    if (DIRECTIONS.has(key)) continue
     out[key] = a[key] * k
   }
   return out
@@ -552,14 +664,29 @@ export function layerMask(
   return { components, invert: l.invert, space: keys ? LOOK_SPACE : null }
 }
 
+/** Modes whose formula only holds on values in 0…1. */
+const BOUNDED_BLENDS: BlendMode[] = ['Screen', 'Overlay', 'SoftLight', 'HardLight']
+
+/**
+ * An HDR pipeline's own encoding, where 0…1 spans black to the peak: the one
+ * place a bounded blend is defined above SDR white.
+ */
+const HDR_BLEND_SPACE: GradeSpace = {
+  Encoded: { space: 'Rec2100Pq', intent: 'RelativeColorimetric', black_point_compensation: false }
+}
+
 /**
  * `Normal` needs no space and costs nothing in the working space; every other
  * mode means what a compositing application means by it, which is a formula
  * on display-referred values (and Screen/Overlay/Soft/Hard Light are refused
- * in linear light anyway).
+ * in linear light anyway). In an HDR pipeline the look space carries
+ * highlights above 1, where the engine refuses those four: they blend on the
+ * PQ signal instead.
  */
-function blendFor(mode: BlendMode): Blend {
-  return mode === 'Normal' ? { mode, space: 'LinearWorking' } : { mode, space: LOOK_SPACE }
+function blendFor(mode: BlendMode, hdr: boolean): Blend {
+  if (mode === 'Normal') return { mode, space: 'LinearWorking' }
+  if (hdr && BOUNDED_BLENDS.includes(mode)) return { mode, space: HDR_BLEND_SPACE }
+  return { mode, space: LOOK_SPACE }
 }
 
 // ── The compiler ─────────────────────────────────────────────────────────────
@@ -722,9 +849,10 @@ function baseStages(
 ): { space: GradeSpace; ops: GradeOp[] }[] {
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
+  const hdr = ctx.hdr === true
   const d = r.detail
   const denoise =
-    d.noiseLuminance > 0 || d.noiseColor > 0
+    !ctx.aiDenoised && (d.noiseLuminance > 0 || d.noiseColor > 0)
       ? ({
           Denoise: {
             luminance: clamp(d.noiseLuminance / 100, 0, 1),
@@ -746,13 +874,21 @@ function baseStages(
   if (mix) linear.push({ ChannelMixer: { red: mix[0], green: mix[1], blue: mix[2] } })
   if (r.basic.exposure !== 0) {
     linear.push({ Primary: primary({ exposure: round4(r.basic.exposure), contrast_pivot: 0.18 }) })
-    if (r.basic.exposure > 0) {
+    // An SDR picture's highlights are rolled onto white; an HDR one has
+    // room above white for them (and a shoulder there would flatten it).
+    if (r.basic.exposure > 0 && !ctx.hdr) {
       linear.push({ Lut: { lut: { Cube: shoulderCube(r.basic.exposure) }, amount: 1 } })
     }
   }
+  // Coloured light on the scene, after the exposure it is lit at.
+  const light = addColorOp(r.colorGrade.add, 'light')
+  if (light) linear.push(light)
 
   // ── the look ──
   if (denoise && !ctx.isRaw) look.push(denoise)
+  // Fringes come off before anything grades their colour.
+  const defringe = defringeOp(r.lens)
+  if (defringe) look.push(defringe)
   // The engine's detail and effect constants are set for display-referred
   // values, so dehaze runs at the head of the look stage.
   if (r.presence.dehaze !== 0) {
@@ -760,16 +896,20 @@ function baseStages(
   }
   switch (r.profile.kind) {
     case 'standard':
-      look.push(curvesOp({ master: curve(STANDARD_CURVE) }))
+      look.push(curvesOp({ master: tonal(STANDARD_CURVE, hdr) }))
       break
     case 'vivid':
-      look.push(curvesOp({ master: curve(VIVID_CURVE) }))
+      look.push(curvesOp({ master: tonal(VIVID_CURVE, hdr) }))
       look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7 } })
       break
     case 'monochrome':
-      look.push(curvesOp({ master: curve(STANDARD_CURVE) }))
+      look.push(curvesOp({ master: tonal(STANDARD_CURVE, hdr) }))
       break
     case 'lut':
+      // A table is defined on 0…1: on an HDR pipeline everything above white
+      // gets its value at white.
+      if (hdr && r.profileAmount > 0)
+        notes.push('The LUT profile flattens the highlights above white on this HDR photo')
       if (r.profileAmount > 0) {
         look.push({
           Lut: { lut: { Path: r.profile.path }, amount: clamp(r.profileAmount / 100, 0, 1) }
@@ -809,13 +949,17 @@ function baseStages(
     })
   }
   const para = parametricCurve(r.toneCurve)
-  if (para) look.push(curvesOp({ master: curve(para) }))
+  if (para) look.push(curvesOp({ master: tonal(para, hdr) }))
   const tc = r.toneCurve
   const pc: Partial<Curves> = {}
-  if (!isIdentityCurve(tc.master)) pc.master = curve(tc.master)
-  if (!isIdentityCurve(tc.red)) pc.red = curve(tc.red)
-  if (!isIdentityCurve(tc.green)) pc.green = curve(tc.green)
-  if (!isIdentityCurve(tc.blue)) pc.blue = curve(tc.blue)
+  if (!isIdentityCurve(tc.master)) pc.master = tonal(tc.master, hdr)
+  if (!isIdentityCurve(tc.red)) pc.red = tonal(tc.red, hdr)
+  if (!isIdentityCurve(tc.green)) pc.green = tonal(tc.green, hdr)
+  if (!isIdentityCurve(tc.blue)) pc.blue = tonal(tc.blue, hdr)
+  // Refine Saturation only means something with an RGB curve to refine;
+  // 100 is the curve as it has always run.
+  if (pc.master && tc.refineSaturation < 100)
+    pc.refine_saturation = round4(clamp(tc.refineSaturation / 100, 0, 1))
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
   const bw = r.treatment === 'bw' || r.profile.kind === 'monochrome'
   const hsl = hslOp(bw ? { ...r, treatment: 'bw' } : r)
@@ -847,20 +991,29 @@ function baseStages(
   if (sharpen) look.push(sharpen)
   const e = r.effects
   if (e.vignetteAmount !== 0) {
-    const v = vignettePlacement(crop, r.geometry.straighten, oriented.width, oriented.height)
+    const v = vignettePlacement(
+      crop,
+      r.geometry.straighten,
+      oriented.width,
+      oriented.height,
+      uprightTransform(r.geometry.upright, oriented.width, oriented.height)
+    )
     look.push({
       Vignette: {
         amount: clamp(e.vignetteAmount / 100, -1, 1),
         midpoint: clamp(e.vignetteMidpoint / 100, 0, 1),
         roundness: clamp(e.vignetteRoundness / 100, -1, 1),
         feather: clamp(e.vignetteFeather / 100, 0, 1),
-        highlights: clamp(e.vignetteHighlights / 100, 0, 1),
+        style: vignetteStyle(e, ctx.hdr === true, notes),
         centre: { x: round4(v.centre.x), y: round4(v.centre.y) },
         half_size: { x: round4(Math.max(v.half.x, 1e-4)), y: round4(Math.max(v.half.y, 1e-4)) },
         rotation_degrees: clamp(v.rotation, -45, 45)
       }
     })
   }
+  // The wash sits on the finished look; only grain goes over it.
+  const wash = addColorOp(e.wash, 'wash')
+  if (wash) look.push(wash)
   if (e.grainAmount > 0) {
     look.push({
       Grain: {
@@ -872,6 +1025,21 @@ function baseStages(
     })
   }
   return [...stage('LinearWorking', linear), ...stage(LOOK_SPACE, look)]
+}
+
+/**
+ * The vignette's style. Paint overlay mixes toward black or white, which
+ * means nothing where the look carries light above white: an HDR pipeline
+ * keeps highlight priority, and says so.
+ */
+function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vignette['style'] {
+  const exposure = { Exposure: { highlights: clamp(e.vignetteHighlights / 100, 0, 1) } }
+  if (e.vignetteStyle !== 'paint') return exposure
+  if (hdr) {
+    notes.push('Paint overlay needs an SDR picture; this HDR photo keeps highlight priority')
+    return exposure
+  }
+  return 'PaintOverlay'
 }
 
 /** A local layer's stages from its sliders. */
@@ -889,6 +1057,11 @@ function localStages(
   }
   if (a.exposure !== 0)
     linear.push({ Primary: primary({ exposure: a.exposure, contrast_pivot: 0.18 }) })
+  const light = addColorOp(
+    { hue: a.addHue, saturation: a.addSaturation, amount: a.addAmount },
+    'light'
+  )
+  if (light) linear.push(light)
   if (a.dehaze !== 0) look.push({ Dehaze: { amount: clamp(a.dehaze / 100, -1, 1), radius: 0.01 } })
   if (a.noise > 0) {
     look.push({
@@ -997,7 +1170,7 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
       enabled: l.enabled,
       opacity: clamp(l.opacity / 100, 0, 1),
       mask,
-      blend: blendFor(l.blend),
+      blend: blendFor(l.blend, ctx.hdr === true),
       stages
     })
   }
@@ -1012,13 +1185,31 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
   const orientation = compose(ctx.sourceOrientation, oriented.user)
   const straighten = ctx.applyCrop ? r.geometry.straighten : 0
   const shownCrop = ctx.applyCrop ? crop : null
+  // With the crop tool open the warp shows whole, its empty wedges
+  // transparent, so the crop is drawn over the canvas it cuts; guides are
+  // drawn on the frame before any warp.
+  const transform =
+    ctx.showTransform === false
+      ? null
+      : uprightTransform(r.geometry.upright, oriented.width, oriented.height)
+  const outside =
+    transform && !ctx.applyCrop
+      ? ('Transparent' as const)
+      : straighten !== 0 || transform
+        ? ('Crop' as const)
+        : null
   const framing: Framing | null =
-    orientation === 'Normal' && straighten === 0 && !shownCrop
+    orientation === 'Normal' && straighten === 0 && !shownCrop && !transform
       ? null
       : {
           orientation,
           rotate_degrees: round4(straighten),
           rotate_resampler: 'Lanczos3',
+          ...(transform ? { transform } : {}),
+          // A rotation or warp leaves corners with no picture. The crop
+          // already keeps clear of them; `Crop` only shrinks it should
+          // rounding reach one, where `Refuse` would fail the render.
+          ...(outside ? { outside } : {}),
           crop: shownCrop
             ? {
                 x: round4(shownCrop.x),
@@ -1032,6 +1223,8 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
   return {
     grade: layers.length > 0 ? { layers } : null,
     framing,
+    lens: lensCorrection(r.lens),
+    retouch: compileRetouch(r.retouch, oriented.user, ctx.frameWidth, ctx.frameHeight),
     layerIndex,
     notes,
     orientedWidth: oriented.width,

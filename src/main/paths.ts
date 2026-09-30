@@ -28,15 +28,21 @@ export const paths = {
   photoCache: (photoId: number): string => dir('cache', 'photos', String(photoId)),
   thumbs: (): string => dir('cache', 'thumbs'),
   luts: (): string => dir('luts'),
+  /** Imported lens profiles, one JSON file per lens (`shared/lens.ts`). */
+  lensProfiles: (): string => dir('lens-profiles'),
+  /** The lens catalogue downloaded from the models server (`lensprofiles.ts`). */
+  lensCatalog: (): string => dir('lens-profiles', 'catalog'),
+  /** The lens catalogue the app ships: beside its resources when packaged, in resources/ in a checkout. */
+  bundledLensCatalog: (): string =>
+    app.isPackaged
+      ? join(process.resourcesPath, 'lens-profiles')
+      : join(app.getAppPath(), 'resources', 'lens-profiles'),
+  /** Downloaded AI models, `<id>/<version>/<files>` (see `ai/models.ts`). */
+  models: (): string => dir('models'),
   cacheRoot: (): string => dir('cache'),
   /** THIRD_PARTY_NOTICES.txt: beside the app's resources when packaged, in build/ in a checkout. */
   notices: (): string =>
     app.isPackaged
       ? join(process.resourcesPath, 'THIRD_PARTY_NOTICES.txt')
-      : join(app.getAppPath(), 'build', 'THIRD_PARTY_NOTICES.txt'),
-  /** The bundled AI runtime and model: resources/ai/<platform>-<arch>. */
-  ai: (): string =>
-    app.isPackaged
-      ? join(process.resourcesPath, 'ai')
-      : join(app.getAppPath(), 'resources', 'ai', `${process.platform}-${process.arch}`)
+      : join(app.getAppPath(), 'build', 'THIRD_PARTY_NOTICES.txt')
 }

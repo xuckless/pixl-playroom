@@ -1,0 +1,485 @@
+/**
+ * Lens corrections (the wheel's Lens tool): a profile for the lens the file
+ * names, chromatic aberration measured on the photo, manual distortion and
+ * vignetting, and defringe. The engine applies what `shared/lens.ts`
+ * compiles; everything here is Playroom's choice of numbers.
+ */
+import { useEffect, useState } from 'react'
+import type {
+  CaMeasurement,
+  LensCatalogStatus,
+  LensMatch,
+  LensSearchHit
+} from '../../../shared/ipc'
+import { describeLens, profileDistorts, profileName, type LensSetting } from '../../../shared/lens'
+import { Section, Slider, Toggle, ToolPanel } from '../components/ui'
+import { api, errorText } from '../lib/api'
+import { runJob } from '../state/busy'
+import { useDevelop } from '../state/develop'
+import { useLibrary } from '../state/library'
+
+type Num = (l: LensSetting) => number
+
+const PURPLE_TRACK = 'linear-gradient(90deg,#4d5bff,#8a4dff,#c44dff,#ff4dd8,#ff4d7a)'
+const GREEN_TRACK = 'linear-gradient(90deg,#ffd84d,#b8ff4d,#4dff6a,#4dffb8,#4de1ff)'
+
+/** A slider on one number of the lens settings. */
+function LS({
+  label,
+  read,
+  write,
+  min = -100,
+  max = 100,
+  def = 0,
+  disabled,
+  track,
+  title,
+  format
+}: {
+  label: string
+  read: Num
+  write: (l: LensSetting, v: number) => void
+  min?: number
+  max?: number
+  def?: number
+  disabled?: boolean
+  track?: string
+  title?: string
+  format?: (v: number) => string
+}): React.JSX.Element | null {
+  const recipe = useDevelop((s) => s.recipe)
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
+  if (!recipe) return null
+  return (
+    <Slider
+      label={label}
+      value={read(recipe.lens)}
+      min={min}
+      max={max}
+      def={def}
+      disabled={disabled}
+      track={track}
+      title={title}
+      format={format}
+      onChange={(v, live) => edit((r) => write(r.lens, v), live)}
+      onCommit={() => commit(`Lens: ${label}`)}
+    />
+  )
+}
+
+/** The catalogue's version, short: its first eight characters. */
+const shortVersion = (v: string | null): string => (v ? v.slice(0, 8) : '—')
+
+/**
+ * The Profile section: the profile the photo uses (found for its lens, or
+ * chosen), searched for across the whole catalogue, and what it was
+ * resolved at. Matching and resolving are the main process's, where the
+ * catalogue is; when the catalogue updates, a photo on an automatic match
+ * follows it.
+ */
+function LensProfileSection(): React.JSX.Element | null {
+  const session = useDevelop((s) => s.session)
+  const recipe = useDevelop((s) => s.recipe)
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
+  const say = useLibrary((s) => s.say)
+  const [match, setMatch] = useState<LensMatch | null>(null)
+  const [status, setStatus] = useState<LensCatalogStatus | null>(null)
+  /** Bumped when the catalogue or the imported profiles change. */
+  const [rev, setRev] = useState(0)
+  const [picking, setPicking] = useState(false)
+  const [query, setQuery] = useState('')
+  const [hits, setHits] = useState<LensSearchHit[]>([])
+  const [checking, setChecking] = useState(false)
+  const key = session?.key ?? null
+  const id = recipe?.lens.profile.id ?? null
+
+  useEffect(() => {
+    void api.lens.status().then(setStatus, () => undefined)
+    return api.lens.onChanged((st) => {
+      setStatus(st)
+      setRev((r) => r + 1)
+    })
+  }, [])
+
+  // The photo's profile, again whenever the choice or the catalogue changes.
+  useEffect(() => {
+    if (!key) return
+    let live = true
+    void api.lens.resolve(key, id).then(
+      (m) => {
+        if (!live) return
+        setMatch(m)
+        // A catalogue update reaches a photo that uses a profile: it follows.
+        const now = useDevelop.getState()
+        const prof = now.recipe?.lens.profile
+        if (
+          rev > 0 &&
+          now.session?.key === key &&
+          prof?.enabled &&
+          prof.id === id &&
+          JSON.stringify(prof.resolved) !== JSON.stringify(m.resolved)
+        ) {
+          edit((r) => (r.lens.profile.resolved = m.resolved))
+          commit('Lens: profile updated')
+        }
+      },
+      () => undefined
+    )
+    return () => {
+      live = false
+    }
+  }, [key, id, rev, edit, commit])
+
+  // The search, a moment after typing stops.
+  useEffect(() => {
+    if (!picking || !query.trim()) return
+    const t = setTimeout(() => void api.lens.search(query).then(setHits, () => setHits([])), 120)
+    return () => clearTimeout(t)
+  }, [picking, query])
+
+  if (!session || !recipe || !key) return null
+  const l = recipe.lens
+  const shot = session.info.lens
+  const resolved = l.profile.enabled ? l.profile.resolved : null
+
+  /** Resolve the profile for this photo in main and keep the result in the recipe. */
+  const apply = async (enabled: boolean, pid: string | null, label: string): Promise<void> => {
+    try {
+      const m = await api.lens.resolve(key, pid)
+      setMatch(m)
+      edit((r) => {
+        r.lens.profile.enabled = enabled
+        r.lens.profile.id = pid
+        r.lens.profile.resolved = m.resolved
+      })
+      commit(label)
+    } catch (err) {
+      say(errorText(err), 'error')
+    }
+  }
+
+  const importProfile = async (): Promise<void> => {
+    try {
+      const added = await api.lens.importProfiles()
+      if (added.length === 0) return
+      setPicking(false)
+      await apply(true, added[0].id, 'Lens: import profile')
+      say(`Imported ${added.map((p) => profileName(p)).join(', ')}`)
+    } catch (err) {
+      say(errorText(err), 'error')
+    }
+  }
+
+  const check = async (): Promise<void> => {
+    setChecking(true)
+    try {
+      const st = await api.lens.check()
+      setStatus(st)
+      say(
+        st.error
+          ? `Lens profiles: ${st.error}`
+          : `Lens profiles are up to date (${st.lenses} lenses, ${shortVersion(st.version)})`,
+        st.error ? 'error' : 'info'
+      )
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const using = match?.profile
+  const crop = resolved?.crop
+  return (
+    <Section id="lens.profile" title="Profile">
+      <p className="muted small">{describeLens(shot) ?? 'The file names no lens.'}</p>
+      <div className="row">
+        <Toggle
+          on={l.profile.enabled}
+          onChange={(on) => void apply(on, id, on ? 'Lens: profile on' : 'Lens: profile off')}
+          title="Correct distortion, vignetting and colour fringes from a profile of this lens"
+        >
+          Enable profile corrections
+        </Toggle>
+      </div>
+      {l.profile.enabled && (
+        <div className="lens-using">
+          <span className="lens-using-name" title={using?.source ?? undefined}>
+            {using ? `${id ? '' : 'Auto · '}${using.name}` : 'No profile found for this lens'}
+          </span>
+          <button className="sm ghost" onClick={() => setPicking((v) => !v)}>
+            {picking ? 'Close' : 'Change…'}
+          </button>
+          {id && (
+            <button
+              className="sm ghost"
+              onClick={() => void apply(true, null, 'Lens: profile auto')}
+              title="Use the profile that matches the lens the file names"
+            >
+              Auto
+            </button>
+          )}
+        </div>
+      )}
+      {l.profile.enabled && picking && (
+        <div className="lens-pick">
+          <input
+            autoFocus
+            placeholder="Search lenses: maker, model, mount…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.stopPropagation()}
+          />
+          <ul>
+            {(query.trim() ? hits : []).map((h) => (
+              <li key={h.id}>
+                <button
+                  className={h.id === using?.id ? 'on' : ''}
+                  onClick={() => {
+                    setPicking(false)
+                    void apply(true, h.id, 'Lens: profile')
+                  }}
+                >
+                  <span>{h.name}</span>
+                  <span className="muted micro">
+                    {[h.mount, h.crop ? `crop ${h.crop}` : null].filter(Boolean).join(' · ')}
+                  </span>
+                </button>
+              </li>
+            ))}
+            {query.trim() && hits.length === 0 && <li className="muted small">No lens found</li>}
+          </ul>
+          <button className="sm ghost" onClick={() => void importProfile()}>
+            Import a profile…
+          </button>
+        </div>
+      )}
+      {l.profile.enabled && !resolved && !picking && (
+        <p className="note small">
+          The catalogue has no profile for this lens. Search it by hand with Change…, or import one
+          (Lensfun&apos;s models, as JSON).
+        </p>
+      )}
+      {resolved && (
+        <>
+          <p className="muted small">
+            {resolved.focal
+              ? `At ${Math.round(resolved.focal * 10) / 10} mm`
+              : 'At its middle focal'}
+            {resolved.aperture ? `, f/${Math.round(resolved.aperture * 10) / 10}` : ''}
+            {using?.calibrationCrop && crop
+              ? ` · calibrated at crop ${using.calibrationCrop}, this photo ${crop.value}${
+                  crop.from === 'camera' && match?.camera
+                    ? ` (${match.camera.name})`
+                    : crop.from === 'calibration'
+                      ? ' (assumed)'
+                      : ''
+                }`
+              : ''}
+          </p>
+          <LS
+            label="Distortion"
+            read={(x) => x.profile.distortion}
+            write={(x, v) => (x.profile.distortion = v)}
+            min={0}
+            max={200}
+            def={100}
+            disabled={!resolved.distortion}
+            format={(v) => `${Math.round(v)}%`}
+          />
+          <LS
+            label="Vignetting"
+            read={(x) => x.profile.vignetting}
+            write={(x, v) => (x.profile.vignetting = v)}
+            min={0}
+            max={200}
+            def={100}
+            disabled={!resolved.vignetting}
+            format={(v) => `${Math.round(v)}%`}
+          />
+        </>
+      )}
+      <div className="lens-credit muted micro">
+        <span
+          title={
+            status
+              ? `${status.lenses} lenses, ${status.cameras} cameras${
+                  status.imported ? `, ${status.imported} imported` : ''
+                } · ${status.origin === 'online' ? 'updated from' : 'shipped; updates from'} ${status.url}${
+                  status.error ? ` · last check: ${status.error}` : ''
+                }`
+              : undefined
+          }
+        >
+          Lens data: Lensfun (CC BY-SA 3.0) · {shortVersion(status?.version ?? null)}
+          {status?.origin === 'online' ? ' · updated' : ''}
+        </span>
+        <button className="sm ghost" disabled={checking} onClick={() => void check()}>
+          {checking ? 'Checking…' : 'Check for updates'}
+        </button>
+      </div>
+    </Section>
+  )
+}
+
+export function LensPanel(): React.JSX.Element | null {
+  const session = useDevelop((s) => s.session)
+  const recipe = useDevelop((s) => s.recipe)
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
+  const tool = useDevelop((s) => s.tool)
+  const setTool = useDevelop((s) => s.setTool)
+  const say = useLibrary((s) => s.say)
+  const [measured, setMeasured] = useState<CaMeasurement | null>(null)
+  const [measuring, setMeasuring] = useState(false)
+
+  if (!session || !recipe) return null
+  const l = recipe.lens
+  const measureCa = async (): Promise<void> => {
+    setMeasuring(true)
+    try {
+      const m = await runJob(
+        'Measuring chromatic aberration',
+        () => api.develop.measureCa(session.key),
+        {
+          detail: 'Red and blue against green, along the edges of the whole photo'
+        }
+      )
+      setMeasured(m)
+      edit((r) => {
+        r.lens.ca = m.ca
+        r.lens.removeCa = true
+      })
+      commit('Lens: remove chromatic aberration')
+      if (m.points === 0) say('No edges to measure: nothing to correct', 'error')
+    } catch (err) {
+      say(errorText(err), 'error')
+    } finally {
+      setMeasuring(false)
+    }
+  }
+
+  const resolved = l.profile.enabled ? l.profile.resolved : null
+  const px = (v: number): string => `${v.toFixed(2)} px`
+
+  return (
+    <ToolPanel>
+      <LensProfileSection />
+
+      <Section id="lens.ca" title="Chromatic aberration">
+        <div className="row">
+          <Toggle
+            on={l.removeCa}
+            onChange={(on) => {
+              if (on && !l.ca && !resolved?.tca) return void measureCa()
+              edit((r) => (r.lens.removeCa = on))
+              commit(on ? 'Lens: remove chromatic aberration' : 'Lens: keep chromatic aberration')
+            }}
+            title="Line red and blue up with green, as measured on this photo"
+          >
+            Remove chromatic aberration
+          </Toggle>
+          {l.removeCa && (
+            <button className="sm ghost" disabled={measuring} onClick={() => void measureCa()}>
+              {measuring ? 'Measuring…' : 'Measure again'}
+            </button>
+          )}
+        </div>
+        {measured && (
+          <p className="muted small">
+            Red {px(measured.red[0])} → {px(measured.red[1])} · blue {px(measured.blue[0])} →{' '}
+            {px(measured.blue[1])} ({measured.points} edge points)
+          </p>
+        )}
+        {session.isHdr && !resolved?.tca && (
+          <p className="muted small">
+            Measuring needs an SDR picture: an HDR photo takes its CA from a profile.
+          </p>
+        )}
+        {l.removeCa && !l.ca && resolved?.tca && <p className="muted small">From the profile.</p>}
+      </Section>
+
+      <Section id="lens.manual" title="Manual">
+        <LS
+          label="Distortion"
+          read={(x) => x.distortion}
+          write={(x, v) => (x.distortion = v)}
+          disabled={profileDistorts(l)}
+          title={
+            profileDistorts(l)
+              ? 'The profile corrects distortion here; set its amount above'
+              : 'Positive pulls barrel distortion in; negative pushes pincushion out'
+          }
+        />
+        <LS
+          label="Vignetting"
+          read={(x) => x.vignetting}
+          write={(x, v) => (x.vignetting = v)}
+          title="Positive brightens the corners; negative darkens them"
+        />
+        <LS
+          label="Midpoint"
+          read={(x) => x.vignettingMidpoint}
+          write={(x, v) => (x.vignettingMidpoint = v)}
+          min={0}
+          max={100}
+          def={50}
+          disabled={l.vignetting === 0}
+        />
+        <p className="muted small">
+          A correction that warps the frame crops its empty edges, keeping the frame&apos;s shape.
+        </p>
+      </Section>
+
+      <Section
+        id="lens.defringe"
+        title="Defringe"
+        right={
+          <Toggle
+            on={tool === 'fringe-pick'}
+            onChange={(on) => setTool(on ? 'fringe-pick' : 'none')}
+            title="Click a purple or green fringe to aim at its hue"
+          >
+            ⌖ Pick
+          </Toggle>
+        }
+      >
+        <LS
+          label="Purple amount"
+          read={(x) => x.defringe.purpleAmount}
+          write={(x, v) => (x.defringe.purpleAmount = v)}
+          min={0}
+          max={100}
+        />
+        <LS
+          label="Purple hue"
+          read={(x) => x.defringe.purpleHue}
+          write={(x, v) => (x.defringe.purpleHue = v)}
+          min={240}
+          max={345}
+          def={300}
+          track={PURPLE_TRACK}
+          format={(v) => `${Math.round(v)}°`}
+        />
+        <LS
+          label="Green amount"
+          read={(x) => x.defringe.greenAmount}
+          write={(x, v) => (x.defringe.greenAmount = v)}
+          min={0}
+          max={100}
+        />
+        <LS
+          label="Green hue"
+          read={(x) => x.defringe.greenHue}
+          write={(x, v) => (x.defringe.greenHue = v)}
+          min={60}
+          max={170}
+          def={115}
+          track={GREEN_TRACK}
+          format={(v) => `${Math.round(v)}°`}
+        />
+        <p className="muted small">Only along edges: flat colour of the same hue is left alone.</p>
+      </Section>
+    </ToolPanel>
+  )
+}

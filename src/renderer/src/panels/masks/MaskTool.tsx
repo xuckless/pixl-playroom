@@ -1,6 +1,7 @@
 import type { BlendMode, KeyBand, MaskMode } from '../../../../shared/engine-types'
 import { ZERO_LOCAL, type LocalAdjust, type MaskComponentSetting } from '../../../../shared/recipe'
 import { Icon } from '../../components/icons'
+import { AddColourControl } from '../../components/AddColour'
 import { Section, Select, Slider, Toggle, ToolPanel } from '../../components/ui'
 import { useDevelop } from '../../state/develop'
 import {
@@ -211,6 +212,24 @@ function Adjustments(): React.JSX.Element | null {
           })}
         </Section>
       ))}
+      <Section id="masks.add" title="Add colour">
+        <AddColourControl
+          target={{ layer: layer.id }}
+          value={{
+            hue: layer.adjust.addHue,
+            saturation: layer.adjust.addSaturation,
+            amount: layer.adjust.addAmount
+          }}
+          onChange={(v, live) =>
+            changeLayer((l) => {
+              l.adjust.addHue = v.hue
+              l.adjust.addSaturation = v.saturation
+              l.adjust.addAmount = v.amount
+            }, live)
+          }
+          hint="Coloured light added where the mask selects, in linear light."
+        />
+      </Section>
     </>
   )
 }

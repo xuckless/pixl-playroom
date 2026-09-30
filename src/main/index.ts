@@ -10,11 +10,14 @@ import { EngineClient } from './engine/client'
 import { endExiftool } from './exiftool'
 import { AiJobs } from './ai/jobs'
 import { applyMaskResult } from './ai/apply'
-import { fakeAi, SegmentRunner } from './ai/segment'
+import { SegmentRunner } from './ai/segment'
+import { DenoiseRunner } from './ai/denoise'
+import { ModelStore } from './ai/models'
 import { EnhanceRunner } from './enhance'
 import { Exporter } from './exporter'
 import { openIndex } from './indexer/client'
 import { registerIpc } from './ipc'
+import { LensProfileStore } from './lensprofiles'
 import { startLicence } from './licence'
 import { Library } from './library'
 import { buildMenu } from './menu'
@@ -189,22 +192,33 @@ app.whenReady().then(() => {
   void engine.whenStarted().then(() => setAbout(engine.getStatus().version))
   const library = new Library(index, bgEngine)
   sessions = new DevelopSessions(library, engine, bgEngine)
-  const exporter = new Exporter(library, sessions, bgEngine)
+  const models = new ModelStore(index, () => bgEngine.getStatus())
+  const lenses = new LensProfileStore()
+  void lenses.start()
+  const exporter = new Exporter(library, sessions, bgEngine, models)
   const planes = new PlaneStore(index)
   const ai = new AiJobs(
     {
-      enhance: new EnhanceRunner(
-        library,
-        aiEngine,
-        () => bgEngine.getStatus().enhance === true,
-        index
-      ),
-      ...(fakeAi() ? { segment: new SegmentRunner(library, planes) } : {})
+      enhance: new EnhanceRunner(library, aiEngine, () => bgEngine.getStatus(), models, index),
+      segment: new SegmentRunner(library, planes, aiEngine, models, () => sessions),
+      denoise: new DenoiseRunner(library, aiEngine, models, index, () => sessions)
     },
     async (key) => (await library.photoRow(key)).name,
     (e) => applyMaskResult(e, { library, sessions: sessions!, planes })
   )
-  registerIpc({ index, planes, library, sessions, exporter, ai, engine, bgEngine })
+  registerIpc({
+    index,
+    planes,
+    library,
+    sessions,
+    exporter,
+    ai,
+    engine,
+    bgEngine,
+    aiEngine,
+    models,
+    lenses
+  })
   onOpenPaths((paths) => mainWindow?.webContents.send(IPC.app.openPaths, paths))
 
   buildMenu()

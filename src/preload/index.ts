@@ -1,11 +1,18 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
-import type { NoiseEstimate } from '../shared/engine-types'
+import type { NoiseEstimate, Transform } from '../shared/engine-types'
+import type { GuideLine } from '../shared/upright'
+import type { P as SpotPoint } from '../shared/retouch'
 import type { ExportSettings } from '../shared/export'
+import type { LensProfile } from '../shared/lens'
 import {
   IPC,
   type AppError,
   type AutoWbResult,
   type BasicSetting,
+  type CaMeasurement,
+  type DenoiseState,
+  type ModelInfo,
+  type ProviderInfo,
   type Collection,
   type CrashConsent,
   type ErrorReport,
@@ -16,6 +23,11 @@ import {
   type FolderListing,
   type HistoryLog,
   type KeywordNode,
+  type HdrKind,
+  type LensCatalogStatus,
+  type LensMatch,
+  type LensSearchHit,
+  type WatermarkFile,
   type LibraryItem,
   type LibrarySource,
   type LutProfile,
@@ -37,6 +49,7 @@ import {
 import type { LicenceStatus } from '../shared/licence'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
+import type { EnhanceRates } from '../shared/enhance'
 
 async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
   const r = (await ipcRenderer.invoke(channel, ...args)) as
@@ -68,6 +81,7 @@ const api = {
     onOpenPaths: (cb: (paths: string[]) => void) => on(IPC.app.openPaths, cb),
     pathOf: (file: File) => webUtils.getPathForFile(file),
     onOpenPreferences: (cb: () => void) => on(IPC.app.openPreferences, cb),
+    onOpenEngineReport: (cb: () => void) => on(IPC.app.openEngineReport, cb),
     reportError: (e: ErrorReport) => call<void>(IPC.app.reportError, e),
     openNotices: () => call<void>(IPC.app.openNotices)
   },
@@ -105,6 +119,8 @@ const api = {
     prioritize: (keys: string[]) => call<void>(IPC.library.prioritize, keys),
     onThumb: (cb: (p: { key: string; url: string | null; unreadable?: boolean }) => void) =>
       on(IPC.library.thumb, cb),
+    /** A photo's HDR kind, learned from its probe (every copy of it shares it). */
+    onHdr: (cb: (p: { photoId: number; hdr: HdrKind | null }) => void) => on(IPC.library.hdr, cb),
     onChanged: (cb: (p: { folder: string }) => void) => on(IPC.library.changed, cb),
     openSource: (source: LibrarySource) => call<SourceListing>(IPC.library.openSource, source),
     resolvePaths: (paths: string[]) =>
@@ -147,6 +163,19 @@ const api = {
     autoTone: (key: string) => call<BasicSetting>(IPC.develop.autoTone, key),
     autoWb: (key: string) => call<SampleResult['wb']>(IPC.develop.autoWb, key),
     noise: (key: string) => call<NoiseEstimate | null>(IPC.develop.noise, key),
+    measureCa: (key: string) => call<CaMeasurement>(IPC.develop.measureCa, key),
+    denoiseState: (key: string) => call<DenoiseState>(IPC.develop.denoiseState, key),
+    suggestHeal: (
+      key: string,
+      points: SpotPoint[],
+      radius: number,
+      feather: number,
+      kind: 'heal' | 'clone'
+    ) => call<SpotPoint>(IPC.develop.suggestHeal, key, points, radius, feather, kind),
+    suggestUpright: (key: string, mode: 'Level' | 'Vertical' | 'Full', focal: number) =>
+      call<Transform>(IPC.develop.suggestUpright, key, mode, focal),
+    uprightFromLines: (key: string, lines: GuideLine[], focal: number) =>
+      call<Transform>(IPC.develop.uprightFromLines, key, lines, focal),
     putPlane: (png: string) => call<string>(IPC.develop.putPlane, png),
     getPlane: (ref: string) => call<string>(IPC.develop.getPlane, ref),
     saveSnapshots: (key: string, snapshots: Snapshot[]) =>
@@ -163,6 +192,25 @@ const api = {
       cb: (e: { key: string; message: string; code: string; field?: string }) => void
     ) => on(IPC.develop.renderError, cb)
   },
+  models: {
+    list: () => call<ModelInfo[]>(IPC.models.list),
+    download: (id: string) => call<void>(IPC.models.download, id),
+    cancel: (id: string) => call<void>(IPC.models.cancel, id),
+    remove: (id: string) => call<void>(IPC.models.remove, id),
+    provider: () => call<ProviderInfo>(IPC.models.provider),
+    benchmark: () => call<ProviderInfo>(IPC.models.benchmark),
+    onEvent: (cb: (models: ModelInfo[]) => void) => on(IPC.models.event, cb)
+  },
+  lens: {
+    importProfiles: () => call<LensProfile[]>(IPC.lens.importProfiles),
+    status: () => call<LensCatalogStatus>(IPC.lens.status),
+    /** Ask the models server for a newer catalogue now. */
+    check: () => call<LensCatalogStatus>(IPC.lens.check),
+    search: (query: string) => call<LensSearchHit[]>(IPC.lens.search, query),
+    /** The open photo's profile (the chosen one, or null for the best match) and its correction. */
+    resolve: (key: string, id: string | null) => call<LensMatch>(IPC.lens.resolve, key, id),
+    onChanged: (cb: (s: LensCatalogStatus) => void) => on(IPC.lens.changed, cb)
+  },
   presets: {
     list: () => call<Preset[]>(IPC.presets.list),
     save: (p: Omit<Preset, 'id' | 'builtin'> & { id?: string }) =>
@@ -173,6 +221,10 @@ const api = {
   },
   export: {
     chooseFolder: () => call<string | null>(IPC.export.chooseFolder),
+    /** Pick a watermark PNG; null when the dialog is cancelled. */
+    chooseWatermark: () => call<WatermarkFile | null>(IPC.export.chooseWatermark),
+    /** A chosen watermark again (a preset's), or an error when it is gone. */
+    readWatermark: (path: string) => call<WatermarkFile>(IPC.export.readWatermark, path),
     start: (keys: string[], settings: ExportSettings) =>
       call<string>(IPC.export.start, keys, settings),
     cancel: (id: string) => call<void>(IPC.export.cancel, id),
@@ -183,7 +235,8 @@ const api = {
     onProgress: (cb: (p: ExportProgress) => void) => on(IPC.export.progress, cb)
   },
   enhance: {
-    available: () => call<{ available: boolean; reason?: string }>(IPC.enhance.available)
+    /** How fast each step has run here (ms per megapixel), for the panel's estimate. */
+    rates: () => call<EnhanceRates>(IPC.enhance.rates)
   },
   ai: {
     start: (req: AiStartRequest) => call<string>(IPC.ai.start, req),

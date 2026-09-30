@@ -132,13 +132,16 @@ export function ColorWheel({
   label,
   onChange,
   onCommit,
-  size = 110
+  size = 110,
+  luminance = true
 }: {
   value: WheelSetting
   label: string
   onChange: (w: WheelSetting, live: boolean) => void
   onCommit: () => void
   size?: number
+  /** Show the luminance slider under the disc (a grading wheel's third control). */
+  luminance?: boolean
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState(false)
@@ -193,19 +196,21 @@ export function ColorWheel({
       <div className="wheel-values">
         H {value.hue}° · S {value.saturation}
       </div>
-      <input
-        type="range"
-        min={-100}
-        max={100}
-        value={value.luminance}
-        title="Luminance"
-        onChange={(e) => onChange({ ...value, luminance: Number(e.target.value) }, true)}
-        onPointerUp={onCommit}
-        onDoubleClick={() => {
-          onChange({ ...value, luminance: 0 }, false)
-          onCommit()
-        }}
-      />
+      {luminance && (
+        <input
+          type="range"
+          min={-100}
+          max={100}
+          value={value.luminance}
+          title="Luminance"
+          onChange={(e) => onChange({ ...value, luminance: Number(e.target.value) }, true)}
+          onPointerUp={onCommit}
+          onDoubleClick={() => {
+            onChange({ ...value, luminance: 0 }, false)
+            onCommit()
+          }}
+        />
+      )}
     </div>
   )
 }

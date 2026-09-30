@@ -1,6 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, type ComponentType } from 'react'
-import { AdvancedPanel } from '../panels/advanced'
 import {
   BasicPanel,
   CalibrationPanel,
@@ -11,6 +10,9 @@ import {
   HslPanel,
   ToneCurvePanel
 } from '../panels/global'
+import { EnhancePanel } from '../panels/enhance'
+import { HealPanel } from '../panels/heal'
+import { LensPanel } from '../panels/lens'
 import { MasksPanel } from '../panels/masks/MaskTool'
 import { useUi, type ToolId } from '../state/ui'
 
@@ -20,11 +22,13 @@ const PANELS: Record<ToolId, ComponentType> = {
   hsl: HslPanel,
   grade: ColorGradePanel,
   detail: DetailPanel,
+  lens: LensPanel,
   effects: EffectsPanel,
   masks: MasksPanel,
+  heal: HealPanel,
   crop: GeometryPanel,
   calibration: CalibrationPanel,
-  advanced: AdvancedPanel
+  enhance: EnhancePanel
 }
 
 /** Exactly one tool, springing in as the wheel lands on it. */

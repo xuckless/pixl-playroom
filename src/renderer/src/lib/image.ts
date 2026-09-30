@@ -14,18 +14,23 @@ export async function samplePatch(
   url: string,
   nx: number,
   ny: number,
-  size = 5
+  size = 5,
+  /** `display-p3` reads the preview's own values (it is rendered in Display P3), unclipped. */
+  space: PredefinedColorSpace = 'srgb'
 ): Promise<[number, number, number]> {
   const img = await loadImage(url)
   const c = document.createElement('canvas')
   c.width = size
   c.height = size
-  const ctx = c.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D
+  const ctx = c.getContext('2d', {
+    willReadFrequently: true,
+    colorSpace: space
+  }) as CanvasRenderingContext2D
   const px = Math.floor(nx * img.naturalWidth) - Math.floor(size / 2)
   const py = Math.floor(ny * img.naturalHeight) - Math.floor(size / 2)
   // Only the patch is drawn and read back, never the whole picture.
   ctx.drawImage(img, px, py, size, size, 0, 0, size, size)
-  const d = ctx.getImageData(0, 0, size, size).data
+  const d = ctx.getImageData(0, 0, size, size, { colorSpace: space }).data
   let r = 0
   let g = 0
   let b = 0

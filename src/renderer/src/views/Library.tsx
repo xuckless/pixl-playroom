@@ -117,6 +117,18 @@ const Thumb = memo(function Thumb({
         )}
         {item.edited && <span className="edited" title="Edited" />}
         {item.copyId && <span className="copy-badge">{item.copyName}</span>}
+        {item.hdr && (
+          <span
+            className="hdr-badge"
+            title={
+              item.hdr === 'gainmap'
+                ? 'HDR: an SDR picture with a gain map (edit it as HDR in Develop)'
+                : `HDR: ${item.hdr === 'pq' ? 'PQ' : 'HLG'}`
+            }
+          >
+            HDR
+          </span>
+        )}
         {stackId && stackCover && (
           <button
             className={`stack-badge t-num${stackOpen ? ' open' : ''}`}

@@ -129,6 +129,20 @@ export function DevelopIdentity(): React.JSX.Element {
         {item.name}
       </span>
       <span className="badge">{kind}</span>
+      {(info.gain_map || info.is_hdr) && (
+        <span
+          className="badge hdr"
+          title={
+            info.gain_map
+              ? session.isHdr
+                ? 'Edited as HDR: the rendition its gain map lifts it to'
+                : 'An SDR picture with a gain map: edit it as HDR from the toolbar'
+              : 'An HDR (PQ/HLG) photo'
+          }
+        >
+          HDR{info.gain_map ? (session.isHdr ? '' : ' · map') : ''}
+        </span>
+      )}
       {item.copyName && <span className="badge ghost">{item.copyName}</span>}
     </IdentityBar>
   )

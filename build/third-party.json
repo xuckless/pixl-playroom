@@ -1,5 +1,5 @@
 {
-  "_comment": "Native components Playroom ships that npm can't report: the engine's linked libraries and Rust crates, the AI runtime and model, and ExifTool. Read by scripts/third-party-notices.mjs; `license` names a text in build/licenses/. Keep in step with pixl-engine's Cargo.lock and its release build, and with scripts/fetch-ai.mjs.",
+  "_comment": "Native components Playroom ships that npm can't report: the engine's linked libraries and Rust crates, the AI runtime, and ExifTool (the AI models are credited from the engine's roster). Read by scripts/third-party-notices.mjs; `license` names a text in build/licenses/. Keep in step with pixl-engine's Cargo.lock and its release build, and with the engine's ci/onnxruntime.json.",
   "components": [
     {
       "name": "libheif",
@@ -20,7 +20,10 @@
     {
       "name": "libaom",
       "use": "AV1 for AVIF files, shipped as a separate shared library",
-      "license": ["BSD-2-Clause", "AOM-Patent-License-1.0"],
+      "license": [
+        "BSD-2-Clause",
+        "AOM-Patent-License-1.0"
+      ],
       "copyright": "Copyright (c) 2016, Alliance for Open Media. All rights reserved.",
       "source": "https://aomedia.googlesource.com/aom/",
       "dynamic": true
@@ -49,7 +52,11 @@
     {
       "name": "libjpeg-turbo",
       "use": "JPEG files, linked into the engine",
-      "license": ["IJG", "BSD-3-Clause", "Zlib"],
+      "license": [
+        "IJG",
+        "BSD-3-Clause",
+        "Zlib"
+      ],
       "copyright": "Copyright (c) the libjpeg-turbo Project authors. This software is based in part on the work of the Independent JPEG Group.",
       "source": "https://github.com/libjpeg-turbo/libjpeg-turbo"
     },
@@ -87,30 +94,30 @@
     {
       "name": "Other Rust crates in PIXL Engine",
       "use": "the engine's remaining dependencies (png, tiff, fast_image_resize, weezl, image, and others), under MIT, Apache-2.0 and similar permissive licences",
-      "license": ["MIT", "Apache-2.0"],
+      "license": [
+        "MIT",
+        "Apache-2.0"
+      ],
       "copyright": "Copyright (c) their respective authors; see each crate's page on crates.io",
       "source": "https://crates.io",
       "note": "A complete per-crate list will come from the engine's own release build (see TODO.md)."
     },
     {
       "name": "ONNX Runtime",
-      "use": "runs the Super Resolution model; its own notices follow in full when the runtime is present at build time",
+      "use": "runs the AI models (downloaded on demand), shipped as a separate shared library in the engine's platform package; its own notices follow in full",
       "license": "MIT",
       "copyright": "Copyright (c) Microsoft Corporation",
       "source": "https://github.com/microsoft/onnxruntime",
-      "ortNotices": true
-    },
-    {
-      "name": "Real-ESRGAN (RealESRGAN_x2plus)",
-      "use": "the Super Resolution model",
-      "license": "BSD-3-Clause",
-      "copyright": "Copyright (c) 2021, Xintao Wang",
-      "source": "https://github.com/xinntao/Real-ESRGAN"
+      "ortNotices": true,
+      "dynamic": true
     },
     {
       "name": "ExifTool",
       "use": "reads and writes metadata (run as a separate program, through exiftool-vendored)",
-      "license": ["Artistic-1.0-Perl", "GPL-3.0-only"],
+      "license": [
+        "Artistic-1.0-Perl",
+        "GPL-3.0-only"
+      ],
       "licenseName": "the same terms as Perl itself (Artistic License or GNU GPL)",
       "copyright": "Copyright 2003-2026, Phil Harvey",
       "source": "https://exiftool.org"
@@ -121,6 +128,13 @@
       "license": "MIT",
       "copyright": "Copyright (c) Electron contributors. Copyright (c) 2013-2020 GitHub Inc.",
       "source": "https://github.com/electron/electron"
+    },
+    {
+      "name": "Lensfun database",
+      "use": "Lens profiles (distortion, chromatic aberration, vignetting) and camera crop factors: the bundled lens catalogue, converted by scripts/lensfun-profiles.mjs; updated catalogues are the same data",
+      "license": "CC-BY-SA-3.0",
+      "copyright": "Copyright (c) the Lensfun contributors (https://lensfun.github.io)",
+      "source": "https://github.com/lensfun/lensfun/tree/master/data/db"
     }
   ]
 }

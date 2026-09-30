@@ -19,7 +19,8 @@ export type Sink = { Path: string } | 'Bytes'
 
 export type InputFormat = 'Jpeg' | 'Png' | 'Heif' | 'Jxl' | 'Tiff' | 'WebP' | 'Raw'
 
-export type Depth = 'Eight' | 'Sixteen'
+/** `F32` is unbounded 32-bit float: only TIFF and `Encode.Pixels` take it. */
+export type Depth = 'Eight' | 'Sixteen' | 'F32'
 
 // ── Geometry ─────────────────────────────────────────────────────────────────
 
@@ -52,12 +53,40 @@ export interface CropRect {
   height: number
 }
 
+/**
+ * What happens to canvas pixels a rotation, transform or lens correction
+ * leaves with no picture behind them. `Crop` keeps the largest clean
+ * rectangle inside the crop at its aspect and centre; `Transparent` keeps
+ * them, transparent (the pipeline must carry alpha); `Refuse` refuses.
+ */
+export type Outside = 'Crop' | 'Transparent' | 'Refuse'
+
+/**
+ * A perspective correction (an Upright): the picture re-seen by a virtual
+ * camera. Degrees for the turns (vertical/horizontal ±80, rotate ±45);
+ * `focal` is a fraction of the frame's diagonal (35 mm-equivalent ÷ 43.27);
+ * `aspect` ±1, `scale` 0.1…10, `offset` ±1. Identity: all 0, scale 1.
+ */
+export interface Transform {
+  vertical: number
+  horizontal: number
+  rotate: number
+  focal: number
+  aspect: number
+  scale: number
+  offset: Point
+}
+
 export interface Framing {
   orientation: Orientation
   /** −45…45, positive turns the picture clockwise. */
   rotate_degrees: number
   rotate_resampler: Resampler
   crop: CropRect | null
+  /** Applied before the rotation, in the same resample. */
+  transform?: Transform | null
+  /** Required exactly when the framing rotates or transforms; refused otherwise. */
+  outside?: Outside | null
 }
 
 /** A rectangle of the oriented frame, in its pixels, output alone (a 1:1 view). */
@@ -70,7 +99,10 @@ export interface Region {
 }
 
 export type Inspect =
-  { LayerMask: { layer: number } } | { GroupMask: { layer: number; group: number } }
+  | { LayerMask: { layer: number } }
+  | { GroupMask: { layer: number; group: number } }
+  /** Where HDR output sits above its white: `clamp(log2(Y / white) / stops, 0, 1)`. */
+  | { Headroom: { stops: number } }
 
 // ── RAW ──────────────────────────────────────────────────────────────────────
 
@@ -88,26 +120,110 @@ export type RawMode =
       }
     }
   | 'EmbeddedPreview'
+  /** PIXL's own scene-linear develop: F32 linear Rec.2020, unclamped. */
+  | {
+      Scene: {
+        white_balance: 'AsShot' | { Stated: { temperature_kelvin: number; tint: number } }
+        highlights: 'Clip' | 'Unclipped' | 'Blend' | 'InpaintOpposed'
+        crop: DngCrop
+        denoise: Denoise | null
+      }
+    }
 
 // ── The generative upscaler ──────────────────────────────────────────────────
 
+export type CoreMlUnits = 'All' | 'CpuAndNeuralEngine' | 'CpuAndGpu' | 'CpuOnly'
+export type CoreMlFormat = 'MlProgram' | 'NeuralNetwork'
+
+/** Where a model runs. The engine never falls back: a missing provider is an error. */
 export type ExecutionProvider =
-  'Cpu' | 'CoreMl' | { Cuda: { device: number } } | { DirectMl: { device: number } }
+  | 'Cpu'
+  | {
+      CoreMl: {
+        units: CoreMlUnits
+        format: CoreMlFormat
+        static_shapes: boolean
+        low_precision_gpu: boolean
+      }
+    }
+  | { Cuda: { device: number } }
+  | { DirectMl: { device: number } }
+
+export type GraphOptimisation = 'Disable' | 'Basic' | 'Extended' | 'All'
+
+export interface SessionSpec {
+  threads: number
+  optimisation: GraphOptimisation
+  deterministic: boolean
+}
+
+/** A model file and the ONNX Runtime it runs on. One runtime per process. */
+export interface ModelRef {
+  model_path: string
+  runtime_library: string
+  provider: ExecutionProvider
+  session: SessionSpec
+}
+
+export interface TensorSpec {
+  name: string
+  layout: 'Nchw' | 'Nhwc'
+  order: 'Rgb' | 'Bgr'
+  element: 'F32' | 'F16'
+  mean: Rgb
+  std: Rgb
+}
+
+export type ModelInput =
+  | { Dynamic: { tile: number; overlap: number; multiple: number } }
+  | { Fixed: { width: number; height: number; overlap: number } }
+
+export type ModelSpace = 'Srgb' | 'SourceEncoding'
 
 export type AlphaUpscale = 'Model' | { Resample: Resampler }
 
 export interface UpscalerRef {
-  model_path: string
-  runtime_library: string
-  provider: ExecutionProvider
-  threads: number
+  model: ModelRef
+  model_space: ModelSpace
+  input: TensorSpec
+  output: TensorSpec
+  /** 2, 3 or 4, checked against what the model produces. */
   scale: number
-  tile: number
-  overlap: number
-  input_multiple: number
+  tiling: ModelInput
   then: Resampler | null
   alpha: AlphaUpscale
 }
+
+export type ConditionValue = { Stated: { value: number } } | { MeasuredNoise: { gain: number } }
+export type Conditioning =
+  { Channel: { value: ConditionValue } } | { Tensor: { name: string; value: ConditionValue } }
+
+/** A restoring model, ×1: denoise, deblur, JPEG artefacts. */
+export interface EnhancerRef {
+  model: ModelRef
+  model_space: ModelSpace
+  input: TensorSpec
+  output: TensorSpec
+  tiling: ModelInput
+  /** 0 < strength ≤ 1: blends the model's output with its input. */
+  strength: number
+  conditioning: Conditioning[]
+}
+
+export type ChromaUpsample = 'Triangle' | { LumaGuided: { radius: number; epsilon: number } }
+
+/** Rebuild a JPEG from its DCT coefficients (no model). */
+export interface JpegReconstruct {
+  iterations: number
+  second_order: number
+  fidelity: number
+  /** Required exactly when the file subsamples chroma. */
+  chroma: ChromaUpsample | null
+}
+
+/** One step of `ConvertRequest.enhance`, run straight after decode and orientation. */
+export type EnhanceStep =
+  { JpegReconstruct: JpegReconstruct } | { Model: EnhancerRef } | { Upscale: UpscalerRef }
 
 // ── Encoders ─────────────────────────────────────────────────────────────────
 
@@ -123,11 +239,36 @@ export type Encode =
   | { JxlLossless: { effort: number; threads: number } }
   | { JxlJpegRepack: { effort: number; threads: number } }
   | 'JpegFromJxl'
-  | { Jpeg: { quality: number; subsampling: Subsampling; optimize: boolean } }
-  | { Png: { compression: PngCompression; filter: PngFilter } }
-  | { Heic: { quality: number; lossless: boolean; bit_depth: number; chroma: Chroma } }
   | {
-      Avif: { quality: number; lossless: boolean; bit_depth: number; chroma: Chroma; speed: number }
+      Jpeg: {
+        quality: number
+        subsampling: Subsampling
+        optimize: boolean
+        /** An UltraHDR JPEG: a gain map lifting this SDR base to the HDR master. */
+        gain_map?: GainMapEncode | null
+      }
+    }
+  | { Png: { compression: PngCompression; filter: PngFilter } }
+  | {
+      Heic: {
+        quality: number
+        lossless: boolean
+        bit_depth: number
+        chroma: Chroma
+        matrix: YCbCrMatrix
+        gain_map?: GainMapEncode | null
+      }
+    }
+  | {
+      Avif: {
+        quality: number
+        lossless: boolean
+        bit_depth: number
+        chroma: Chroma
+        speed: number
+        matrix: YCbCrMatrix
+        gain_map?: GainMapEncode | null
+      }
     }
   | { Tiff: { compression: TiffCompression } }
   | { WebP: { quality: number; lossless: boolean; method: number } }
@@ -143,6 +284,14 @@ export type Encode =
         index: number
       }
     }
+  /** Raw interleaved samples, no container; `Bytes` sink only. */
+  | { Pixels: { sample: 'U8' | 'U16' | 'F16' | 'F32' } }
+
+/**
+ * How a HEIF-family sink turns RGB into Y/Cb/Cr, stated in its `nclx` box.
+ * `Bt601` is what libheif assumed when nothing was said (0.13's output).
+ */
+export type YCbCrMatrix = 'Bt601' | 'Bt709' | 'Bt2020Ncl' | 'Identity'
 
 export type EncodeVariant =
   | 'JxlLossy'
@@ -156,6 +305,7 @@ export type EncodeVariant =
   | 'Tiff'
   | 'WebP'
   | 'Dng'
+  | 'Pixels'
 
 /** The variant name of an `Encode` value. */
 export function encodeVariant(e: Encode): EncodeVariant {
@@ -196,7 +346,21 @@ export type ExpandOperator = { Linear: { sdr_white_nits: number } } | 'Bt2446A'
 export type Peak = 'FromFile' | { Nits: number }
 export type GamutMap = 'Clip' | 'Compress'
 
+/**
+ * What happens to luminance above the peak when PQ/HLG pixels leave the
+ * working space. `Clip` is 0.13's behaviour; `Rolloff` is BT.2390's knee
+ * (`0 < knee_nits < peak < source_max_nits ≤ 10000`).
+ */
+export type HdrLimit = 'Clip' | { Rolloff: { knee_nits: number; source_max_nits: number } }
+
 export interface HdrWorking {
+  reference_white_nits: number
+  peak_nits: number
+  limit: HdrLimit
+}
+
+/** How a PQ/HLG signal is read into linear light for `analyze`. */
+export interface HdrSignal {
   reference_white_nits: number
   peak_nits: number
 }
@@ -218,7 +382,9 @@ export type ColorPolicy =
         black_point_compensation: boolean
       }
     }
-  | { Expand: { to: ColorSpaceRef; operator: ExpandOperator; peak_nits: number } }
+  | {
+      Expand: { to: ColorSpaceRef; operator: ExpandOperator; peak_nits: number; limit: HdrLimit }
+    }
 
 export type ColorSource = 'IccProfile' | 'Cicp' | 'Assumed'
 
@@ -316,6 +482,20 @@ export interface Curves {
   luma_vs_saturation: Curve | null
   hue_vs_saturation: Curve | null
   hue_vs_hue: Curve | null
+  /** 0…1: keep saturation as the master curve changes contrast. Needs `master`. */
+  refine_saturation: number | null
+}
+
+/**
+ * Lightroom's region curve, in the engine: each amount −1…1 bends its
+ * region; `0 < low < mid < high < 1`. Display-referred stages only.
+ */
+export interface ParametricCurve {
+  shadows: number
+  darks: number
+  lights: number
+  highlights: number
+  splits: { low: number; mid: number; high: number }
 }
 
 export interface BandAdjust {
@@ -372,12 +552,15 @@ export interface Point {
   y: number
 }
 
+/** `Exposure` darkens like light falling off; `PaintOverlay` paints black or white over. */
+export type VignetteStyle = { Exposure: { highlights: number } } | 'PaintOverlay'
+
 export interface Vignette {
   amount: number
   midpoint: number
   roundness: number
   feather: number
-  highlights: number
+  style: VignetteStyle
   centre: Point
   half_size: Point
   rotation_degrees: number
@@ -413,6 +596,30 @@ export interface ChannelMixer {
 
 export type LutRef = { Path: string } | { Cube: string }
 
+/** A fringe hue (degrees) and how much of it is neutralised, 0…1. */
+export interface FringeBand {
+  hue: KeyBand
+  amount: number
+}
+
+export interface Defringe {
+  purple: FringeBand
+  green: FringeBand
+  edges: EdgeKey
+}
+
+/** Light added, in `space`: `color` ≥ 0 per channel, times `amount` ≥ 0. */
+export interface AddColor {
+  color: Rgb
+  space: ColorSpaceRef
+  amount: number
+}
+
+export interface Fill {
+  color: Rgb
+  space: ColorSpaceRef
+}
+
 export type GradeOp =
   | { Lut: { lut: LutRef; amount: number } }
   | { Primary: Primary }
@@ -421,6 +628,7 @@ export type GradeOp =
   | { WhiteBalance: WhiteBalance }
   | { Vibrance: Vibrance }
   | { Curves: Curves }
+  | { ParametricCurve: ParametricCurve }
   | { HslBands: HslBands }
   | { Cdl: Cdl }
   | { Denoise: Denoise }
@@ -431,6 +639,9 @@ export type GradeOp =
   | { Grain: Grain }
   | { ColorGrade: ColorGrade }
   | { ChannelMixer: ChannelMixer }
+  | { Defringe: Defringe }
+  | { AddColor: AddColor }
+  | { Fill: Fill }
   | { Masked: { mask: Mask; opacity: number; ops: GradeOp[] } }
 
 export type GradeOpKind = GradeOp extends infer T ? (T extends object ? keyof T : never) : never
@@ -485,7 +696,18 @@ export interface RasterMask {
   resampler: Resampler
 }
 
-export type MaskShape = { Polygon: Polygon } | { Range: HslKey } | { Raster: RasterMask }
+/**
+ * Edge strength: `sigma` is a fraction of the shorter side (0.0001…0.05),
+ * `low ≤ high` in luminance steps (0…10).
+ */
+export interface EdgeKey {
+  sigma: number
+  low: number
+  high: number
+}
+
+export type MaskShape =
+  { Polygon: Polygon } | { Range: HslKey } | { Raster: RasterMask } | { Edges: EdgeKey }
 
 export interface MaskComponent {
   shape: MaskShape
@@ -539,6 +761,235 @@ export interface GradeReport {
   grade_ms: number
 }
 
+// ── Lens, retouch, overlays ──────────────────────────────────────────────────
+
+export type RadiusUnit =
+  'HalfShorterSide' | 'HalfDiagonal' | 'FarthestCorner' | { Focal: { x: number; y: number } }
+
+export interface LensGeometry {
+  centre: Point
+  unit: RadiusUnit
+}
+
+/** Adobe's WarpRectilinear (DNG opcode); identity k0 = 1, the rest 0. */
+export interface WarpRectilinear {
+  k0: number
+  k1: number
+  k2: number
+  k3: number
+  p1: number
+  p2: number
+}
+
+export type DistortionModel =
+  | { Poly3: { k1: number } }
+  | { Poly5: { k1: number; k2: number } }
+  | { PtLens: { a: number; b: number; c: number } }
+  | { Rectilinear: WarpRectilinear }
+  | { RectilinearPlanes: { red: WarpRectilinear; green: WarpRectilinear; blue: WarpRectilinear } }
+
+export interface Distortion {
+  model: DistortionModel
+  geometry: LensGeometry
+  /** 0…2; 1 applies the model as stated. */
+  amount: number
+}
+
+export interface TcaPoly3 {
+  v: number
+  c: number
+  b: number
+}
+
+export type LateralCaModel =
+  | { Scale: { red: number; blue: number } }
+  | { Poly3: { red: TcaPoly3; blue: TcaPoly3 } }
+  | { Rectilinear: { red: WarpRectilinear; blue: WarpRectilinear } }
+
+export interface LateralCa {
+  model: LateralCaModel
+  geometry: LensGeometry
+  amount: number
+}
+
+export interface Vignetting {
+  /** 1…5 coefficients of the radial gain polynomial. */
+  k: number[]
+  apply: 'Divide' | 'Multiply'
+  at: 'Source' | 'Corrected'
+  geometry: LensGeometry
+  amount: number
+}
+
+/** `outside` and `resampler` are required exactly when distortion or lateral CA is set. */
+export interface LensCorrection {
+  distortion: Distortion | null
+  lateral_ca: LateralCa | null
+  vignetting: Vignetting | null
+  outside: Outside | null
+  resampler: Resampler | null
+}
+
+export interface LensReport {
+  canvas_width: number
+  canvas_height: number
+  frame: MaskBounds
+  outside: Outside | null
+  outside_pixels: number
+  max_displacement_px: number[]
+  gain_min: number | null
+  gain_max: number | null
+  max_minification: number
+  lines: string[]
+}
+
+/** Positions are fractions of the frame; radii fractions of its shorter side. */
+export type SpotShape =
+  { Circle: { centre: Point; radius: number } } | { Stroke: { points: Point[]; radius: number } }
+
+export interface Spot {
+  shape: SpotShape
+  /** Where the source is, relative to the spot, as fractions of the frame (±1). */
+  source_offset: Point
+  feather: Feather
+  opacity: number
+}
+
+export interface ContentFill {
+  shape: SpotShape
+  feather: Feather
+  opacity: number
+  /** Odd, 3…15. */
+  patch: number
+  iterations: number
+  seed: number
+}
+
+export interface Ellipse {
+  centre: Point
+  radius_x: number
+  radius_y: number
+  rotate_degrees: number
+}
+
+export interface RedEye {
+  pupils: Ellipse[]
+  feather: Feather
+  desaturate: number
+  darken: number
+}
+
+export interface PetEye {
+  pupils: Ellipse[]
+  feather: Feather
+  amount: number
+  pupil_level: number
+}
+
+export type RetouchStep =
+  { Clone: Spot } | { Heal: Spot } | { Fill: ContentFill } | { RedEye: RedEye } | { PetEye: PetEye }
+
+/** Run after the lens correction, before a region, the grade and framing. */
+export interface Retouch {
+  space: GradeSpace
+  steps: RetouchStep[]
+}
+
+export interface RetouchStepReport {
+  ran: boolean
+  pixels: number
+  bounds: MaskBounds | null
+  heal: { ring_pixels: number; cycles: number; residual: number; converged: boolean } | null
+  fill: { levels: number; hole_pixels: number; mean_distance: number } | null
+  line: string
+}
+
+export interface RetouchReport {
+  space: string
+  steps: RetouchStepReport[]
+}
+
+/** A picture composited on the output: `rect` in fractions of it; height follows the picture's aspect. */
+export interface Overlay {
+  source: RasterRef
+  rect: { x: number; y: number; width: number }
+  opacity: number
+  blend: Blend
+  resampler: Resampler
+}
+
+export interface OverlayReport {
+  placed: MaskBounds
+  clamped_samples: number
+  line: string
+}
+
+// ── HDR renditions and gain maps ─────────────────────────────────────────────
+
+/** An HDR master rendered for an SDR display (the policy states the master). */
+export interface SdrRendition {
+  to: ColorSpaceRef
+  operator: ToneMapOperator
+  source_peak_nits: number
+  target_peak_nits: number
+  gamut: GamutMap
+  intent: RenderingIntent
+  black_point_compensation: boolean
+  grade: Grade | null
+}
+
+/** Which rendition of a gain-map file to read. Required exactly when the file has one. */
+export type GainMapMode =
+  'Base' | { Apply: { headroom_stops: number; signal: 'Rec2100Pq' | 'Rec2100Hlg' } }
+
+export interface GainMapEncode {
+  /** 1, 2, 4 or 8: the map's downscale from the base. */
+  scale: number
+  channels: number
+  quality: number
+  gamma: number
+  offset_sdr: number
+  offset_hdr: number
+  gain_min_log2: number
+  gain_max_log2: number
+  hdr_capacity_min: number
+  hdr_capacity_max: number
+}
+
+export type GainMapKind = 'Iso21496' | 'UltraHdrXmp' | 'AppleLegacy'
+
+export interface GainMapInfo {
+  kind: GainMapKind
+  width: number
+  height: number
+  channels: number
+  base_headroom_stops: number | null
+  alternate_headroom_stops: number | null
+}
+
+// ── Measuring and output sharpening ──────────────────────────────────────────
+
+/** Measure the conversion's own pixels; the numbers come back as `report.stats`. */
+export interface Measure {
+  /** `Output`: the encoder's buffer. `Working`: the float buffer (needs `Linear`). */
+  at: 'Output' | 'Working'
+  domain: AnalysisDomain
+  bins: number
+  percentiles: number[]
+  clip_low: number
+  clip_high: number
+  hue_bins: number
+  stride: number
+  transparent: TransparentPixels
+  noise: boolean
+}
+
+/** Sharpening for the output's size, after the resize; `radius` in output pixels. */
+export interface OutputSharpen {
+  space: GradeSpace
+  sharpen: Sharpen
+}
+
 // ── Requests ─────────────────────────────────────────────────────────────────
 
 /** One conversion, fully specified. */
@@ -558,10 +1009,20 @@ export interface ConvertRequest {
   grade: Grade | null
   dither: Dither
   hdr: HdrWorking | null
+  /** Render the HDR master for an SDR display instead of writing it. */
+  sdr: SdrRendition | null
+  /** Required exactly when the source carries a gain map (`SourceInfo.gain_map`). */
+  gain_map: GainMapMode | null
   threads: number
   framing: Framing | null
   region: Region | null
   inspect: Inspect | null
+  overlays: Overlay[] | null
+  enhance: EnhanceStep[] | null
+  lens: LensCorrection | null
+  retouch: Retouch | null
+  output_sharpen: OutputSharpen | null
+  measure: Measure | null
 }
 
 export type AnalysisDomain = 'Encoded' | 'Linear'
@@ -587,7 +1048,8 @@ export interface AnalyzeRequest {
    * white; the measurement spans to the peak). Required exactly for a PQ/HLG
    * source measured in `Linear`, refused otherwise.
    */
-  hdr: HdrWorking | null
+  hdr: HdrSignal | null
+  gain_map: GainMapMode | null
 }
 
 // ── Reports ──────────────────────────────────────────────────────────────────
@@ -596,6 +1058,7 @@ export interface LightLevel {
   max_cll_nits: number
   max_fall_nits: number
   working_white_nits: number
+  headroom_stops: number | null
 }
 
 export interface ColorReport {
@@ -613,7 +1076,16 @@ export interface ColorReport {
   } | null
   expanded: { operator: ExpandOperator; peak_nits: number; output_transfer: string } | null
   light_level: LightLevel | null
+  limit: { peak_nits: number; limit: HdrLimit; limited_samples: number } | null
   graded: GradeReport | null
+  sdr: {
+    space: string
+    operator: ToneMapOperator
+    source_peak_nits: number
+    target_peak_nits: number
+    gamut: GamutMap
+    graded: GradeReport | null
+  } | null
 }
 
 export interface LossReport {
@@ -623,12 +1095,15 @@ export interface LossReport {
   dither: Dither
   single_float_pass: boolean
   resampled: boolean
+  warps: number
   channels_changed: boolean
   depth_narrowed: boolean
   colour_transformed: boolean
   graded: boolean
   lossy_encoder: boolean
   chroma_subsampled: boolean
+  /** Pixels were made up (content fill, a model), not recovered. */
+  synthesised: boolean
 }
 
 export interface UpscaleReport {
@@ -640,13 +1115,42 @@ export interface UpscaleReport {
   model_ms: number
   post_resample: Resampler | null
   model_space: string
+  input_clipped: number
+  output_clamped: number
+  runtime_version: string
 }
+
+export interface ModelStepReport {
+  model: string
+  provider: ExecutionProvider
+  runtime_version: string
+  model_space: string
+  scale: number
+  tiles: number
+  model_load_ms: number
+  model_ms: number
+  input_clipped: number
+  output_clamped: number
+  strength: number
+  conditioning: string[]
+  grey_as_rgb: boolean
+  alpha: AlphaUpscale | null
+}
+
+export type EnhanceStepReport =
+  | { JpegReconstruct: Record<string, unknown> }
+  | { Model: ModelStepReport }
+  | { Upscale: ModelStepReport }
 
 export interface FramingReport {
   orientation: Orientation
   rotate_degrees: number
+  transform: Transform | null
   crop: MaskBounds
   exif_orientation_reset: boolean
+  outside: Outside | null
+  outside_pixels: number
+  max_minification: number
 }
 
 export interface RegionReport {
@@ -674,8 +1178,20 @@ export interface ConvertReport {
   frame_width: number
   frame_height: number
   framing: FramingReport | null
+  lens: LensReport | null
+  retouch: RetouchReport | null
   region: RegionReport | null
+  overlays: OverlayReport[]
   inspected: string | null
+  enhance: EnhanceStepReport[]
+  enhance_ms: number
+  output_sharpen: GradeStageReport | null
+  /** The measurement asked for with `measure`. */
+  stats: ImageStats | null
+  gain_map: {
+    read: Record<string, unknown> | null
+    written: Record<string, unknown> | null
+  } | null
 }
 
 export interface JpegInfo {
@@ -695,6 +1211,7 @@ export interface HeifInfo {
   codec: HeifCodec
   chroma: Chroma | null
   bit_depth: number
+  matrix: YCbCrMatrix | null
 }
 
 export interface PngInfo {
@@ -758,6 +1275,18 @@ export interface SourceInfo {
   jxl: JxlInfo | null
   tiff: TiffInfo | null
   as_shot_white: WhitePoint | null
+  gain_map: GainMapInfo | null
+  /** What the file says about the lens. The engine never looks up a correction. */
+  lens: ShotLens | null
+}
+
+export interface ShotLens {
+  make: string | null
+  model: string | null
+  focal_mm: number | null
+  focal_35mm: number | null
+  f_number: number | null
+  focus_distance_m: number | null
 }
 
 export interface Histogram {
@@ -823,8 +1352,9 @@ export interface EngineErrorShape {
   message: string
   /**
    * A `PixlError` variant, `VersionMismatch` (the loaded addon is not the
-   * installed package's release), or one of the app's own: EngineUnavailable,
-   * EngineCrashed, BadRequest, Cancelled, Unknown.
+   * installed package's release), `Model` (a model step failed; `Upscale`
+   * before 0.15), `Cancelled`, or one of the app's own: EngineUnavailable,
+   * EngineCrashed, BadRequest, Unknown.
    */
   code: string
   detail?: PixlErrorDetail
@@ -840,9 +1370,25 @@ export interface PixlEngineModule {
   bindingVersion(): string
   hasEnhance(): boolean
   probe(path: string): Promise<SourceInfo>
-  convert(request: ConvertRequest): Promise<ConvertReport>
-  analyze(request: AnalyzeRequest): Promise<ImageStats>
+  convert(request: ConvertRequest, options?: { signal?: AbortSignal }): Promise<ConvertReport>
+  analyze(request: AnalyzeRequest, options?: { signal?: AbortSignal }): Promise<ImageStats>
   suggestEncode(info: SourceInfo, threads: number): Encode
+  whiteBalanceFromPixel(rgb: Rgb, space: GradeSpace): WhiteBalance
+  lensFrame(lens: LensCorrection, width: number, height: number, threads: number): LensReport
+  framingCrop(framing: Framing, width: number, height: number): MaskBounds
+  uprightFromLines(
+    lines: { from: Point; to: Point }[],
+    frameWidth: number,
+    frameHeight: number,
+    focal: number
+  ): Transform
+  suggestUpright(request: Record<string, unknown>): Promise<Record<string, unknown>>
+  suggestLateralCa(request: Record<string, unknown>): Promise<Record<string, unknown>>
+  suggestHealSource(request: Record<string, unknown>): Promise<Record<string, unknown>>
+  segment(request: Record<string, unknown>): Promise<Record<string, unknown>>
+  benchmark(request: Record<string, unknown>): Promise<Record<string, unknown>>
+  /** The ONNX Runtime shipped in the platform package. */
+  bundledRuntime(): { library: string; version: string; providers: string[] }
 }
 
 export type EngineMethod = keyof PixlEngineModule
@@ -854,6 +1400,14 @@ export interface EngineRequestMessage {
   id: number
   method: EngineMethod
   args: unknown[]
+  /** The call may be cancelled (`convert` and `analyze` take a signal). */
+  cancellable?: boolean
+}
+
+/** Stop request `id`: the engine returns `Cancelled` at its next stage boundary. */
+export interface EngineCancelMessage {
+  kind: 'cancel'
+  id: number
 }
 
 export interface EngineHelloMessage {
@@ -861,6 +1415,8 @@ export interface EngineHelloMessage {
   status: 'ready' | 'unavailable'
   version?: string
   enhance?: boolean
+  /** The ONNX Runtime bundled with the addon (0.15+): what model steps run on. */
+  runtime?: { library: string; version: string; providers: string[] }
   reason?: string
   /** The load error's code when the engine is unavailable, e.g. `VersionMismatch`. */
   code?: string
@@ -875,4 +1431,4 @@ export interface EngineResponseMessage {
 }
 
 export type HostToMain = EngineHelloMessage | EngineResponseMessage
-export type MainToHost = EngineRequestMessage
+export type MainToHost = EngineRequestMessage | EngineCancelMessage

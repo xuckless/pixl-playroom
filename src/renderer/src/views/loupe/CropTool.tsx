@@ -113,7 +113,7 @@ export const CropTool = memo(function CropTool({
       draft.height === d.orig.height
     // A click on the box without a drag changes nothing and records nothing.
     if (!draft || same) return setDraft(null)
-    const fitted = fitCrop(draft, g.straighten, g.width, g.height)
+    const fitted = fitCrop(draft, g.straighten, g.width, g.height, g.transform)
     edit((r) => (r.geometry.crop = fitted))
     commit('Crop')
     setDraft(null)

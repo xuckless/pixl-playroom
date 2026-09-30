@@ -4,6 +4,8 @@
  * of a recipe.
  */
 import { create } from 'zustand'
+import { DEFAULT_ENHANCE, type EnhanceSettings } from '../../../shared/enhance'
+import type { SpotKind } from '../../../shared/retouch'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 export type CropGuide = 'thirds' | 'grid' | 'golden' | 'diagonal' | 'none'
@@ -59,17 +61,36 @@ export interface MaskOverlaySettings {
   pins: PinsMode
 }
 
-export type ToolId =
-  | 'basic'
-  | 'curve'
-  | 'hsl'
-  | 'grade'
-  | 'detail'
-  | 'effects'
-  | 'masks'
-  | 'crop'
-  | 'calibration'
-  | 'advanced'
+export interface HealSettings {
+  mode: SpotKind
+  /** A new spot's radius, a fraction of the frame's shorter side. */
+  size: number
+  /** 0…100 */
+  feather: number
+  opacity: number
+  /** Show every spot's outline (H); otherwise only the selected one and the one under the pointer. */
+  showAll: boolean
+}
+
+/** Every tool the wheel can hold (its order is `TOOLS`, in develop/tools.ts). */
+export const TOOL_IDS = [
+  'basic',
+  'curve',
+  'hsl',
+  'grade',
+  'detail',
+  'lens',
+  'effects',
+  'masks',
+  'heal',
+  'crop',
+  'calibration',
+  'enhance'
+] as const
+
+export type ToolId = (typeof TOOL_IDS)[number]
+
+const isToolId = (v: unknown): v is ToolId => TOOL_IDS.includes(v as ToolId)
 
 interface UiState {
   /** Which pane the left rail shows, and whether it is open or folded to its spine. */
@@ -88,6 +109,12 @@ interface UiState {
   brushes: Record<BrushSlot, BrushSettings>
   brushSlot: BrushSlot
   setBrushSlot(s: BrushSlot): void
+  /** The Heal tool's mode and brush for new spots, and whether spots show on the photo. */
+  heal: HealSettings
+  setHeal(p: Partial<HealSettings>): void
+  /** The Enhance tool's steps, kept for the next photo. */
+  enhance: EnhanceSettings
+  setEnhance(p: Partial<EnhanceSettings>): void
   /** Change the current brush's settings. */
   setBrush(p: Partial<BrushSettings>): void
   /** The one tool the right column shows, chosen on the thumb-wheel. */
@@ -132,6 +159,10 @@ export const useUi = create<UiState>()(
       },
       brushSlot: 'A',
       setBrushSlot: (brushSlot) => set({ brushSlot }),
+      heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100, showAll: false },
+      setHeal: (p) => set((s) => ({ heal: { ...s.heal, ...p } })),
+      enhance: DEFAULT_ENHANCE,
+      setEnhance: (p) => set((s) => ({ enhance: { ...s.enhance, ...p } })),
       setBrush: (p) =>
         set((s) => ({
           brushes: { ...s.brushes, [s.brushSlot]: { ...s.brushes[s.brushSlot], ...p } }
@@ -155,6 +186,23 @@ export const useUi = create<UiState>()(
         set({ cropGuide: CROP_GUIDES[(i + 1) % CROP_GUIDES.length].value })
       }
     }),
-    { name: 'playroom.ui', storage, version: 1 }
+    {
+      name: 'playroom.ui',
+      storage,
+      version: 1,
+      // A tool saved by an older build that the wheel no longer has (the
+      // Engine tool, now a dialog) comes back as Basic.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<UiState>
+        return {
+          ...current,
+          ...p,
+          // Settings saved before a field existed take its default.
+          enhance: { ...DEFAULT_ENHANCE, ...p.enhance },
+          panel: isToolId(p.panel) ? p.panel : current.panel,
+          previousPanel: isToolId(p.previousPanel) ? p.previousPanel : current.previousPanel
+        }
+      }
+    }
   )
 )

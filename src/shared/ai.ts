@@ -6,6 +6,7 @@
  * (the scan over the loupe, the filmstrip's chips), and the arithmetic of
  * its progress.
  */
+import type { EnhanceSettings } from './enhance'
 import type { MaskMode } from './engine-types'
 
 export type AiTask = 'enhance' | 'segment' | 'denoise'
@@ -21,6 +22,8 @@ export interface AiStage {
 
 export type AiResult =
   | { kind: 'file'; path: string }
+  /** The photo itself changed (AI denoise): its renders pick it up. */
+  | { kind: 'applied'; label: string }
   | {
       kind: 'mask'
       /** The plane, grey, in the photo's base frame, held by the plane store. */
@@ -55,13 +58,14 @@ export interface AiJobEvent {
 }
 
 export type AiStartRequest =
-  | { task: 'enhance'; key: string; cpu: boolean }
+  | { task: 'enhance'; key: string; settings: EnhanceSettings }
   | {
       task: 'segment'
       key: string
       target: SegmentTarget
       into?: { layerId: string; mode: MaskMode }
     }
+  | { task: 'denoise'; key: string }
 
 export interface AiCapabilities {
   enhance: boolean

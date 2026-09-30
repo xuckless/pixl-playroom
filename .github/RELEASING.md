@@ -7,7 +7,6 @@ Maintainer notes. The public README does not carry these.
 ```sh
 pnpm config set //npm.pkg.github.com/:_authToken <PAT with read:packages>   # @xuckless/pixl-engine on GitHub Packages
 pnpm install
-pnpm fetch-ai                              # ONNX Runtime + Real-ESRGAN for this machine (Enhance)
 pnpm dev                                   # electron-vite dev with HMR
 pnpm typecheck && pnpm lint && pnpm test   # tests: node --test over src/shared
 pnpm build:unpack                          # unpacked app in dist/
@@ -24,8 +23,7 @@ engine. If `pnpm dev` fails with `Error: Electron uninstall`, fetch the binary w
    while pre-1.0 (`bump-patch-for-minor-pre-major`); `docs`/`chore` bump nothing.
 2. `release-please.yml` keeps a release PR open with the next version and CHANGELOG.
 3. Merging that PR tags `vX.Y.Z`, creates the GitHub release, and `release.yml` builds
-   macOS arm64, macOS x64 and Windows x64 on GitHub-hosted runners: `pnpm fetch-ai` for the
-   job's own target, `electron-vite build`, then `electron-builder --publish always`, which
+   macOS arm64, macOS x64 and Windows x64 on GitHub-hosted runners: `electron-vite build`, then `electron-builder --publish always`, which
    signs and notarizes macOS when the secrets exist and attaches installers plus
    `latest*.yml` manifests. A final `mac-channel` job replaces `latest-mac.yml` with both
    arches merged.
@@ -110,12 +108,37 @@ The channel (Stable / Beta) is in _Settings_ and in `userData/settings.json`.
 - **From a checkout:** `PLAYROOM_FORCE_UPDATER=1 pnpm dev` reads `dev-app-update.yml`
   (the same GitHub feed). Without it the updater is off in development.
 
+## Models and lens profiles (R2)
+
+AI models and the lens catalogue are served from one Cloudflare R2 bucket behind
+`https://models.pixlfoundation.com`, and apps fetch from it on their own: models when the
+user downloads one (`src/main/ai/models.ts`), the lens catalogue a little after start and
+every six hours (`src/main/lensprofiles.ts`). Nothing here is part of a release.
+
+**Once:** `npx wrangler login` (or set `CLOUDFLARE_API_TOKEN`), create the bucket
+(`npx wrangler r2 bucket create <bucket>`), and attach the custom domain in the Cloudflare
+dashboard (R2 → the bucket → Settings → Custom domains → `models.pixlfoundation.com`), or
+with `npx wrangler r2 bucket domain add <bucket> --domain models.pixlfoundation.com
+--zone-id <pixlfoundation.com's zone id>`. Until the domain answers, apps fall back to each
+model's public upstream and keep the lens catalogue they ship.
+
+**Models:** `pnpm publish-models --bucket <bucket>` when the engine's roster changes.
+
+**Lens profiles:** `pnpm lens-profiles` converts Lensfun's current database into
+`resources/lens-profiles/` (commit it: it is the catalogue the next release ships, and works
+offline). `pnpm lens-profiles --bucket <bucket>` also uploads it to
+`<bucket>/lens-profiles/v1/`, shards first and `index.json` last; every installed app picks
+it up at its next check, downloading only the shards whose SHA-256 changed. Pin a Lensfun
+commit with `--ref <sha>`. `PLAYROOM_LENS_PROFILES_URL=file:///…/lens-profiles/v1` points a
+development build at a local copy of that layout.
+
 ## Third-party notices
 
 `pnpm notices` writes `build/THIRD_PARTY_NOTICES.txt` (shipped via `extraResources`,
 opened from _Settings_ and _Help_). It reads what the bundles contain
 (`out/*/bundled-packages.json`, from `electron.vite.config.ts`), the production npm
-packages, ONNX Runtime's own notices when `pnpm fetch-ai` has run, and the hand-kept native
+packages, ONNX Runtime's own notices (from the engine's platform package), every AI model the
+app can download (from the engine's model roster), and the hand-kept native
 components in `build/third-party.json`, with licence texts from `build/licenses/`.
 `release.yml` regenerates it after the build. When the engine's dependencies change,
 update `build/third-party.json`. To refresh the copy on the website:

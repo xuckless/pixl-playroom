@@ -4,6 +4,9 @@ import { ASPECTS, aspectValue } from '../../lib/aspects'
 import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../../lib/geometry'
 import { useDevelop } from '../../state/develop'
 import { CROP_GUIDES, useUi, type BrushSlot } from '../../state/ui'
+import { addLabel, addPickHint } from '../../lib/addpick'
+import { applyGuides } from '../../lib/upright'
+import { MAX_GUIDES } from './UprightGuides'
 
 /** A compact range for the floating bar: label, rail and value. */
 export function BarRange({
@@ -183,10 +186,47 @@ const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
   'wb-picker': { title: 'White balance', hint: 'Click something that should be neutral grey' },
   'range-picker': { title: 'Range', hint: 'Click the colour or tone the mask should select' },
   'point-picker': { title: 'Point colour', hint: 'Click the colour to shift on its own' },
+  heal: {
+    title: 'Heal',
+    hint: 'Click or paint · drag the spot to its source · Alt-click sets a source · ⌫ deletes · [ ] size'
+  },
+  'fringe-pick': {
+    title: 'Defringe',
+    hint: 'Click a purple or green fringe along an edge (zoom in to find one)'
+  },
   tat: {
     title: 'Targeted',
     hint: 'Press on the photo and drag up or down to move what controls that colour or tone'
   }
+}
+
+/** Guided Upright: how many guides, and Apply once there are two. */
+function GuideBar(): React.JSX.Element {
+  const guides = useDevelop((s) => s.guides)
+  const setGuides = useDevelop((s) => s.setGuides)
+  const setTool = useDevelop((s) => s.setTool)
+  return (
+    <>
+      <span className="bar-title micro">Guided Upright</span>
+      <span className="bar-hint">
+        Drag along edges that should be upright or level · {guides.length}/{MAX_GUIDES} · Alt-click
+        removes
+      </span>
+      <button className="sm ghost" disabled={guides.length === 0} onClick={() => setGuides([])}>
+        Clear
+      </button>
+      <button className="sm ghost" onClick={() => setTool('none')} title="Esc">
+        Cancel
+      </button>
+      <button
+        className="sm primary"
+        disabled={guides.length < 2}
+        onClick={() => void applyGuides()}
+      >
+        Apply
+      </button>
+    </>
+  )
 }
 
 /**
@@ -197,11 +237,20 @@ export function FloatingToolbar(): React.JSX.Element | null {
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
   const hasPhoto = useDevelop((s) => s.session !== null)
+  const addPick = useDevelop((s) => s.addPick)
+  const recipe = useDevelop((s) => s.recipe)
   if (tool === 'none' || !hasPhoto) return null
-  const hint = HINTS[tool]
+  const hint =
+    tool === 'add-pick' && addPick
+      ? {
+          title: addLabel(recipe, addPick.target),
+          hint: addPickHint(addPick.mode, addPick.first !== null, addPick.goalHex ?? null)
+        }
+      : HINTS[tool]
   return (
     <LiquidGlass className="floating-toolbar" radius={2} bezel={10} key={tool}>
       {tool === 'crop' && <CropBar />}
+      {tool === 'upright-guide' && <GuideBar />}
       {tool === 'brush' && <BrushBar />}
       {hint && (
         <>

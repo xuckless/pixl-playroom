@@ -7,6 +7,8 @@
 import type {
   ColorPolicy,
   ConvertRequest,
+  Framing,
+  GainMapMode,
   InputFormat,
   Orientation,
   RawMode,
@@ -14,6 +16,7 @@ import type {
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
 import { fromExif } from '../shared/orientation'
+import type { PhotoRow } from './db'
 import { execFileSync } from 'child_process'
 import { cpus } from 'os'
 
@@ -75,9 +78,40 @@ export const RAW_DEVELOP: RawMode = {
 
 /** The orientation to hand the engine for a source decoded this way. */
 export function sourceOrientation(info: SourceInfo, raw: RawMode | null): Orientation {
-  // A developed RAW comes out upright; every other path carries the tag.
+  // A developed RAW (rawler's or the scene-linear one) comes out upright;
+  // every other path carries the tag.
   if (info.input === 'Raw' && raw !== null && raw !== 'EmbeddedPreview') return 'Normal'
+  // A HEIF or AVIF is decoded (by libheif) with its own transforms — irot,
+  // imir — applied, and the spec says the EXIF tag must then be ignored: an
+  // iPhone writes both, so turning by the tag too lays a portrait on its side.
+  if (info.input === 'Heif') return 'Normal'
   return fromExif(info.orientation)
+}
+
+/**
+ * Framing that only turns a source upright, for a new file that keeps the
+ * source's EXIF: null when nothing turns, except for a HEIF, whose EXIF tag
+ * still says to turn pixels libheif has already turned — a stated framing
+ * makes the engine reset that tag to 1.
+ */
+export function uprightFraming(
+  orientation: Orientation,
+  info: Pick<SourceInfo, 'input'>
+): Framing | null {
+  if (orientation === 'Normal' && info.input !== 'Heif') return null
+  return { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
+}
+
+/** HEIF and AVIF files, whose working copies an older build laid on their side. */
+const HEIF_EXT = /^(heic|heif|hif|avif)$/i
+
+/**
+ * What names a file version in the caches made from it: its time and size,
+ * and a mark on HEIF/AVIF copies made since their orientation was fixed, so
+ * the older (sideways) ones are made again.
+ */
+export function versionStamp(photo: Pick<PhotoRow, 'mtime' | 'size' | 'ext'>): string {
+  return `${Math.round(photo.mtime)}-${photo.size}${HEIF_EXT.test(photo.ext) ? '-u' : ''}`
 }
 
 /** The peak an HDR source is assumed to reach when it states none. */
@@ -126,8 +160,40 @@ export const INTERACTIVE_THREADS = interactiveThreads()
 /** Threads for background work: a few, so the UI stays responsive. */
 export const BACKGROUND_THREADS = Math.max(1, Math.min(4, Math.floor(cpus().length / 2)))
 
-/** A request with every field stated and nothing done; callers spread over it. */
-export function blankRequest(source: string, sink: string, input: InputFormat): ConvertRequest {
+/**
+ * Which rendition of a gain-map file (an iPhone HEIC, an UltraHDR JPEG) to
+ * read: the engine requires the choice exactly when the file carries one.
+ * Playroom reads the SDR base.
+ */
+export function gainMapOf(
+  info: Pick<SourceInfo, 'gain_map'> | null | undefined
+): GainMapMode | null {
+  return info?.gain_map ? 'Base' : null
+}
+
+/**
+ * Framing that only orients and flips, no straighten: the engine refuses an
+ * `outside` where nothing rotates, so it goes with the rotation.
+ */
+export function orientOnly(framing: Framing | null): Framing | null {
+  if (!framing) return null
+  const { transform: _t, outside: _o, ...rest } = framing
+  void _t
+  void _o
+  return { ...rest, rotate_degrees: 0, crop: null }
+}
+
+/**
+ * A request with every field stated and nothing done; callers spread over it.
+ * `info` is the probe of `source` when it is the original file (a proxy or
+ * master carries no gain map); it states the rendition a gain-map file needs.
+ */
+export function blankRequest(
+  source: string,
+  sink: string,
+  input: InputFormat,
+  info?: Pick<SourceInfo, 'gain_map'> | null
+): ConvertRequest {
   return {
     source: { Path: source },
     sink: { Path: sink },
@@ -144,9 +210,17 @@ export function blankRequest(source: string, sink: string, input: InputFormat): 
     grade: null,
     dither: 'None',
     hdr: null,
+    sdr: null,
+    gain_map: gainMapOf(info),
     threads: INTERACTIVE_THREADS,
     framing: null,
     region: null,
-    inspect: null
+    inspect: null,
+    overlays: null,
+    enhance: null,
+    lens: null,
+    retouch: null,
+    output_sharpen: null,
+    measure: null
   }
 }

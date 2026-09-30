@@ -52,21 +52,20 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
         kind: 'subject',
         label: 'Subject',
         icon: 'subject',
-        needs: 'needs a segmentation model',
+        needs: 'download the subject model in Settings → AI models',
         ai: 'segment'
       },
       {
         kind: 'sky',
         label: 'Sky',
         icon: 'sky',
-        needs: 'needs a segmentation model',
-        ai: 'segment'
+        needs: 'no sky model ships yet'
       },
       {
         kind: 'background',
         label: 'Background',
         icon: 'background',
-        needs: 'needs a segmentation model',
+        needs: 'download the subject model in Settings → AI models',
         ai: 'segment'
       }
     ]

@@ -16,7 +16,13 @@ import { join } from 'path'
 import { compile } from '../shared/compile'
 import { dhashFromGrey } from '../shared/dupes'
 import type { SourceInfo } from '../shared/engine-types'
-import { IPC, type LibraryItem, type LibrarySource, type SourceListing } from '../shared/ipc'
+import {
+  IPC,
+  type HdrKind,
+  type LibraryItem,
+  type LibrarySource,
+  type SourceListing
+} from '../shared/ipc'
 import { orientedFrame } from '../shared/compile'
 import { hash32, type Recipe } from '../shared/recipe'
 import type { EngineClient } from './engine/client'
@@ -25,6 +31,8 @@ import type { IndexClient } from './indexer/client'
 import { brushPlanes } from './brushes'
 import { keyOf } from './keys'
 import { paths } from './paths'
+import { denoiseKey, denoiseRefusal, findDenoised } from './ai/denoise'
+import { editsHdr, ensureHdrSource } from './hdrsource'
 import { ensureProxies } from './proxy'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
@@ -36,6 +44,13 @@ export const THUMB_EDGE = 400
 
 /** A file's version: its path, size and modification time. */
 const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.size}`
+
+/** What kind of HDR a probe says a file is, or '' for none. */
+export function hdrKindOf(info: SourceInfo): HdrKind | '' {
+  if (info.gain_map) return 'gainmap'
+  if (!info.is_hdr) return ''
+  return /HLG/i.test(info.color) ? 'hlg' : 'pq'
+}
 
 interface ThumbJob {
   photoId: number
@@ -69,13 +84,47 @@ export class Library {
     if (hit) return hit
     const info = await this.engine.probe(photo.path)
     this.probes.set(k, info)
+    // The grid's HDR badge learns what the file is.
+    const kind = hdrKindOf(info)
+    if (photo.hdr_key !== versionOf(photo) || (photo.hdr ?? '') !== kind) {
+      void this.index.setHdr(photo.id, kind).catch(() => undefined)
+      this.broadcast(IPC.library.hdr, { photoId: photo.id, hdr: kind || null })
+    }
     return info
+  }
+
+  /** Photos whose HDR kind is not known yet, probed one by one in the background. */
+  private hdrWork: string[] = []
+  private hdrSeen = new Set<string>()
+  private hdrRunning = false
+
+  private queueHdr(items: LibraryItem[]): void {
+    for (const it of items) {
+      if (it.hdr !== undefined || it.offline || it.unreadable || it.copyId) continue
+      if (this.hdrSeen.has(it.key)) continue
+      this.hdrSeen.add(it.key)
+      this.hdrWork.push(it.key)
+    }
+    if (this.hdrRunning) return
+    this.hdrRunning = true
+    void (async () => {
+      while (this.hdrWork.length) {
+        const key = this.hdrWork.shift()!
+        try {
+          await this.probe(await this.photoRow(key))
+        } catch {
+          // unreadable: the thumbnail says so
+        }
+      }
+      this.hdrRunning = false
+    })()
   }
 
   /** A folder's items as the index has them; its thumbnails are queued. */
   async openFolder(folder: string): Promise<LibraryItem[]> {
     const items = await this.index.listFolder(folder)
     for (const it of items) this.queueThumb(it.photoId, it.copyId)
+    this.queueHdr(items)
     return items
   }
 
@@ -90,6 +139,7 @@ export class Library {
         ? await this.duplicates(src.folder, src.threshold)
         : await this.index.listSource(src)
     for (const it of listing.items) if (!it.offline) this.queueThumb(it.photoId, it.copyId)
+    this.queueHdr(listing.items)
     return listing
   }
 
@@ -233,7 +283,7 @@ export class Library {
       const factor = Math.min(1, THUMB_EDGE / long)
       try {
         await this.engine.convert({
-          ...blankRequest(row.path, out, info.input),
+          ...blankRequest(row.path, out, info.input, info),
           ...base,
           raw: rawMode,
           resize: factor < 1 ? { Scale: { factor } } : 'None',
@@ -254,39 +304,66 @@ export class Library {
     this.broadcast(IPC.library.thumb, { key, url: cacheUrl(out, stamp) })
   }
 
-  /** A thumbnail of the graded picture, from the photo's proxy. */
+  /**
+   * A thumbnail of the graded picture, from the photo's draft proxy — a
+   * quarter of the proxy's pixels, and still more than a thumbnail needs —
+   * or the proxy when a tight crop leaves the draft too few.
+   */
   private async graded(
     row: PhotoRow,
-    info: SourceInfo,
+    file: SourceInfo,
     recipe: Recipe,
     out: string,
     base: Record<string, unknown>
   ): Promise<void> {
-    const px = await ensureProxies(this.engine, row, info)
+    // A gain-map photo edited as HDR: its applied rendition, tone mapped.
+    const hdr = editsHdr(recipe, file) ? await ensureHdrSource(this.engine, row, file) : null
+    const info = hdr?.info ?? file
+    if (hdr) base = { ...base, color: displayPolicy(info, 'Srgb') }
+    // AI denoise: its proxies when it has been made (the develop view or an
+    // export makes it; a thumbnail never waits on a model).
+    const ai = recipe.detail.ai
+    const aiOn = ai.enabled && !denoiseRefusal(info)
+    const denoised = aiOn ? await findDenoised(row, denoiseKey(row, ai)) : null
+    const px = hdr?.px ?? denoised?.px ?? (await ensureProxies(this.engine, row, info))
     const { user, width, height } = orientedFrame(recipe, px.frameWidth, px.frameHeight)
+    const cropOf = compile(recipe, {
+      isRaw: row.is_raw === 1,
+      asShot: info.as_shot_white,
+      sourceOrientation: 'Normal',
+      frameWidth: px.frameWidth,
+      frameHeight: px.frameHeight,
+      scale: 1,
+      seed: 0,
+      brushPaths: {},
+      applyCrop: true
+    }).crop
+    const cropLong = Math.max((cropOf?.width ?? 1) * width, (cropOf?.height ?? 1) * height)
+    const src = cropLong * (px.draft.width / px.frameWidth) >= THUMB_EDGE ? px.draft : px.proxy
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
       sourceOrientation: 'Normal',
       frameWidth: px.frameWidth,
       frameHeight: px.frameHeight,
-      scale: px.proxy.width / px.frameWidth,
+      scale: src.width / px.frameWidth,
       seed: hash32(row.path),
       brushPaths: await brushPlanes(row.id, recipe, user),
-      applyCrop: true
+      applyCrop: true,
+      aiDenoised: aiOn,
+      hdr: info.is_hdr
     })
     const cropW = (compiled.crop?.width ?? 1) * width
     const cropH = (compiled.crop?.height ?? 1) * height
-    const factor = Math.min(
-      1,
-      THUMB_EDGE / (Math.max(cropW, cropH) * (px.proxy.width / px.frameWidth))
-    )
+    const factor = Math.min(1, THUMB_EDGE / (Math.max(cropW, cropH) * (src.width / px.frameWidth)))
     await this.engine.convert({
-      ...blankRequest(px.proxy.path, out, px.proxy.input),
+      ...blankRequest(src.path, out, src.input),
       ...base,
       resize: factor < 1 ? { Scale: { factor } } : 'None',
       grade: compiled.grade,
-      framing: compiled.framing
+      framing: compiled.framing,
+      lens: compiled.lens,
+      retouch: compiled.retouch
     })
   }
 }

@@ -7,13 +7,15 @@
  *
  * Coordinate systems, all normalised 0…1 on each axis:
  *   display  — the rendered picture as shown;
- *   oriented — the user-turned frame, uncropped and unrotated;
+ *   canvas   — the frame after an Upright warp, before the straighten;
+ *   oriented — the user-turned frame, uncropped, unrotated and unwarped;
  *   base     — the file upright, before the user's turns.
  */
-import type { CropRect, Orientation } from './engine-types'
+import type { CropRect, Orientation, Transform } from './engine-types'
 import { effectiveCrop, orientedFrame } from './compile'
 import { inverse, transformPoint } from './orientation'
 import type { Recipe } from './recipe'
+import { canvasToFrame, frameToCanvas, uprightTransform } from './upright'
 
 export interface ViewGeometry {
   /** The oriented frame, full resolution, in pixels. */
@@ -22,7 +24,9 @@ export interface ViewGeometry {
   user: Orientation
   crop: CropRect | null
   straighten: number
-  /** The display is the whole oriented frame (crop tool open). */
+  /** The Upright warp between the oriented frame and the canvas, if any. */
+  transform: Transform | null
+  /** The display is the whole canvas (crop tool open), or the whole unwarped frame (guides). */
   whole: boolean
 }
 
@@ -30,7 +34,9 @@ export function viewGeometry(
   r: Recipe,
   frameWidth: number,
   frameHeight: number,
-  cropMode: boolean
+  cropMode: boolean,
+  /** Upright's guides are being drawn: the display is the frame before the warp. */
+  guides = false
 ): ViewGeometry {
   const o = orientedFrame(r, frameWidth, frameHeight)
   return {
@@ -39,7 +45,8 @@ export function viewGeometry(
     user: o.user,
     crop: effectiveCrop(r, o.width, o.height),
     straighten: r.geometry.straighten,
-    whole: cropMode
+    transform: guides ? null : uprightTransform(r.geometry.upright, o.width, o.height),
+    whole: cropMode || guides
   }
 }
 
@@ -48,8 +55,17 @@ export interface P {
   y: number
 }
 
+/** A canvas point back through the warp to the frame (a point past the horizon stays put). */
+function unwarp(g: ViewGeometry, p: P): P {
+  return g.transform ? (canvasToFrame(g.transform, g.width, g.height, p) ?? p) : p
+}
+
+function warp(g: ViewGeometry, p: P): P {
+  return g.transform ? (frameToCanvas(g.transform, g.width, g.height, p) ?? p) : p
+}
+
 export function displayToOriented(g: ViewGeometry, p: P): P {
-  if (g.whole || !g.crop) return p
+  if (g.whole || !g.crop) return unwarp(g, p)
   const qx = (g.crop.x + p.x * g.crop.width) * g.width - g.width / 2
   const qy = (g.crop.y + p.y * g.crop.height) * g.height - g.height / 2
   const t = (g.straighten * Math.PI) / 180
@@ -57,13 +73,14 @@ export function displayToOriented(g: ViewGeometry, p: P): P {
   const s = Math.sin(t)
   const px = c * qx + s * qy
   const py = -s * qx + c * qy
-  return { x: (px + g.width / 2) / g.width, y: (py + g.height / 2) / g.height }
+  return unwarp(g, { x: (px + g.width / 2) / g.width, y: (py + g.height / 2) / g.height })
 }
 
 export function orientedToDisplay(g: ViewGeometry, p: P): P {
-  if (g.whole || !g.crop) return p
-  const px = p.x * g.width - g.width / 2
-  const py = p.y * g.height - g.height / 2
+  const w = warp(g, p)
+  if (g.whole || !g.crop) return w
+  const px = w.x * g.width - g.width / 2
+  const py = w.y * g.height - g.height / 2
   const t = (g.straighten * Math.PI) / 180
   const c = Math.cos(t)
   const s = Math.sin(t)

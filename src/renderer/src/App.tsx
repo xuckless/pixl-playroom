@@ -14,6 +14,9 @@ import { ToolDial } from './develop/ToolDial'
 import { ToolPanelHost } from './develop/ToolPanelHost'
 import { selectPanel, stepPanel, TOOLS } from './develop/tools'
 import { startWheelMemory } from './develop/wheelMemory'
+import { startDenoiseUpkeep } from './lib/denoise'
+import { startHdrUpkeep } from './lib/hdr'
+import { deleteSpot } from './lib/heal'
 import {
   componentLabel,
   deleteComponent,
@@ -31,7 +34,8 @@ import { useDevelop } from './state/develop'
 import { useBoot } from './state/boot'
 import { useLibrary } from './state/library'
 import { OVERLAY_MODES, useUi } from './state/ui'
-import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
+import { ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
+import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
@@ -109,9 +113,9 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'export' && <ExportDialog key="export" />}
       {dialog === 'sync' && <SyncDialog key="sync" />}
       {dialog === 'preset' && <SavePresetDialog key="preset" />}
-      {dialog === 'enhance' && <EnhanceDialog key="enhance" />}
       {dialog === 'preferences' && <PreferencesDialog key="preferences" />}
       {dialog === 'crash-consent' && <CrashConsentDialog key="crash-consent" />}
+      {dialog === 'engine' && <EngineReportDialog key="engine" />}
     </AnimatePresence>
   )
 }
@@ -253,6 +257,11 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
   if (e.phase === 'error') return lib.say(`${e.title}: ${e.message ?? 'failed'}`, 'error')
   if (e.phase !== 'done') return
   const r = e.result
+  if (r?.kind === 'applied') {
+    // The photo's renders switched over already; say so only when it is not in view.
+    if (useDevelop.getState().session?.key !== e.key) lib.say(`${r.label} made for ${e.name}`)
+    return
+  }
   if (r?.kind === 'file') {
     lib.say(`${e.title}: wrote ${r.path.split(/[\\/]/).pop()}`)
     return void lib.refresh()
@@ -277,6 +286,13 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
     useDevelop.getState().setOverlay(true)
     useAiJobs.getState().setReveal(r.into.layerId)
   }
+}
+
+/** View ▸ Engine Report…: the open photo's, so only in Develop. */
+function openEngineReport(): void {
+  const lib = useLibrary.getState()
+  if (lib.view === 'develop' && useDevelop.getState().session) lib.setDialog('engine')
+  else lib.say('Open a photo in Develop to see its engine report')
 }
 
 /** Uncaught errors and rejections go to main: the log, and a crash report when opted in. */
@@ -418,7 +434,7 @@ function useShortcuts(): void {
       }
       if (mod && (k === 'c' || k === 'C') && dev.recipe) {
         const groups = RECIPE_GROUPS.filter(
-          (g) => g !== 'crop' && g !== 'orientation' && g !== 'localAdjustments'
+          (g) => g !== 'crop' && g !== 'orientation' && g !== 'localAdjustments' && g !== 'retouch'
         )
         lib.setClipboard({
           recipe: structuredClone(dev.recipe),
@@ -449,12 +465,21 @@ function useShortcuts(): void {
         return
       }
       const masksOpen = useUi.getState().panel === 'masks'
+      const healOpen = useUi.getState().panel === 'heal'
       // ⌘D duplicates the selected mask component, or else the selected mask.
       if (mod && !e.shiftKey && (k === 'd' || k === 'D') && masksOpen && dev.layerId) {
         e.preventDefault()
         return dev.compId ? duplicateComponent(dev.compId) : duplicateMask(dev.layerId)
       }
       if (mod) return
+      // Delete / Backspace in Heal: the selected spot.
+      if ((k === 'Delete' || k === 'Backspace') && healOpen && t.tagName !== 'INPUT') {
+        if (dev.spotId) deleteSpot(dev.spotId)
+        return
+      }
+      // Q: the Heal tool (Lightroom's spot removal key).
+      if (k === 'q' || k === 'Q')
+        return selectPanel(healOpen ? useUi.getState().previousPanel : 'heal')
       // Delete / Backspace: the selected mask component, or else the selected mask.
       if ((k === 'Delete' || k === 'Backspace') && masksOpen && t.tagName !== 'INPUT') {
         const layer = dev.recipe?.layers.find((l) => l.id === dev.layerId)
@@ -504,6 +529,8 @@ function useShortcuts(): void {
         }
         return selectPanel('masks', { tool: t })
       }
+      // H in Heal shows or hides the spots.
+      if ((k === 'h' || k === 'H') && healOpen) return ui.setHeal({ showAll: !ui.heal.showAll })
       // H hides or shows the selected mask; Shift+H cycles the pins Auto → Always → Never.
       if (k === 'h' && masksOpen && dev.layerId) {
         const layer = dev.recipe?.layers.find((l) => l.id === dev.layerId)
@@ -539,6 +566,12 @@ function useShortcuts(): void {
         // In the crop tool O cycles the composition guides, as in Lightroom.
         if (dev.tool === 'crop') return ui.cycleCropGuide()
         return dev.setOverlay(!dev.overlay)
+      }
+      if ((k === '[' || k === ']') && healOpen) {
+        const size = ui.heal.size
+        return ui.setHeal({
+          size: k === '[' ? Math.max(0.002, size / 1.15) : Math.min(0.25, size * 1.15)
+        })
       }
       if (k === '[' || k === ']') {
         const size = ui.brushes[ui.brushSlot].size
@@ -588,10 +621,18 @@ export default function App(): React.JSX.Element {
             .getState()
             .patchItems([{ ...it, thumbUrl: url ?? it.thumbUrl, unreadable: !!unreadable }])
       }),
+      api.library.onHdr(({ photoId, hdr }) => {
+        const mine = useLibrary
+          .getState()
+          .items.filter((i) => i.photoId === photoId && i.hdr !== hdr)
+        if (mine.length) useLibrary.getState().patchItems(mine.map((i) => ({ ...i, hdr })))
+      }),
       api.library.onChanged(({ folder }) => useLibrary.getState().onChanged(folder)),
       api.library.onSourcesChanged(() => void useLibrary.getState().onSourcesChanged()),
       api.develop.onRendered((e) => useDevelop.getState().onRendered(e)),
       startWheelMemory(),
+      startDenoiseUpkeep(),
+      startHdrUpkeep(),
       api.app.onRenderScale(onRenderScale),
       api.app.onOpenPaths((paths) => void openPaths(paths)),
       api.develop.onRenderError((e) =>
@@ -602,6 +643,7 @@ export default function App(): React.JSX.Element {
         void aiJobEnded(e)
       }),
       api.app.onOpenPreferences(() => useLibrary.getState().setDialog('preferences')),
+      api.app.onOpenEngineReport(openEngineReport),
       reportErrors()
     ]
     void useAiJobs

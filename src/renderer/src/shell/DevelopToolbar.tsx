@@ -4,6 +4,7 @@ import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { loupeZoom } from '../views/loupe/zoom'
+import { selectPanel } from '../develop/tools'
 
 /** The second tier in Develop: back to the library, history, how to look, and what to do with the photo. */
 export function DevelopToolbar(): React.JSX.Element {
@@ -11,6 +12,11 @@ export function DevelopToolbar(): React.JSX.Element {
   const setCompare = useDevelop((s) => s.setCompare)
   const clipping = useDevelop((s) => s.clipping)
   const setClipping = useDevelop((s) => s.setClipping)
+  const headroom = useDevelop((s) => s.headroom)
+  const setHeadroom = useDevelop((s) => s.setHeadroom)
+  const gainMapEdit = useDevelop((s) => s.recipe?.gainMap ?? 'base')
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
   const zoomed = useDevelop((s) => s.zoom.scale !== 'fit')
   const undo = useDevelop((s) => s.undo)
   const redo = useDevelop((s) => s.redoStep)
@@ -43,6 +49,17 @@ export function DevelopToolbar(): React.JSX.Element {
       toggle: () => setClipping(!clipping),
       title: 'Clipping (J)'
     },
+    ...(session?.isHdr
+      ? [
+          {
+            label: 'Headroom',
+            k: '',
+            on: headroom,
+            toggle: () => setHeadroom(!headroom),
+            title: 'Where the picture rises above white: amber just above, magenta at the peak'
+          }
+        ]
+      : []),
     {
       label: '1:1',
       k: 'Z',
@@ -80,11 +97,46 @@ export function DevelopToolbar(): React.JSX.Element {
             title={v.title}
           >
             {v.label}
-            <span className="k">{v.k}</span>
+            {v.k && <span className="k">{v.k}</span>}
           </button>
         ))}
       </div>
+      {session?.info.gain_map && (
+        <>
+          <span className="vsep" />
+          <div className="seg lg" role="group" aria-label="Edit the photo as">
+            {(['base', 'hdr'] as const).map((m) => (
+              <button
+                key={m}
+                className={gainMapEdit === m ? 'on' : ''}
+                aria-pressed={gainMapEdit === m}
+                onClick={() => {
+                  if (gainMapEdit === m) return
+                  edit((r) => (r.gainMap = m))
+                  commit(m === 'hdr' ? 'Edit as HDR' : 'Edit as SDR')
+                }}
+                title={
+                  m === 'hdr'
+                    ? 'Edit the HDR rendition the gain map lifts this photo to (it is written as HDR, or as SDR with a gain map)'
+                    : 'Edit the SDR picture the file stores (what a display without HDR shows)'
+                }
+              >
+                {m === 'hdr' ? 'HDR' : 'SDR'}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       <span className="spacer" />
+      <button
+        className="icon ghost lg"
+        onClick={() => setDialog('engine')}
+        disabled={!session}
+        title="Engine report (Ctrl+Alt+E)"
+        aria-label="Engine report"
+      >
+        <Icon name="engine" />
+      </button>
       <button
         className="ghost lg"
         onClick={async () => {
@@ -104,8 +156,8 @@ export function DevelopToolbar(): React.JSX.Element {
       </button>
       <button
         className="lg"
-        onClick={() => setDialog('enhance')}
-        title="Enhance → Super Resolution"
+        onClick={() => selectPanel('enhance')}
+        title="Enhance: JPEG restore, deblur, super-resolution"
       >
         <Icon name="enhance" />
         Enhance

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { absoluteWb } from '../../../shared/compile'
+import { absoluteWb, isIdentityCurve } from '../../../shared/compile'
 import type { LutProfile } from '../../../shared/ipc'
 import {
   HSL_BANDS,
@@ -13,6 +13,7 @@ import {
 } from '../../../shared/recipe'
 import { WB_PRESETS } from '../../../shared/wb'
 import { opOf, wbFromSaved } from '../../../shared/wbconvert'
+import { AddColourControl } from '../components/AddColour'
 import { ColorWheel, CurveEditor } from '../components/editors'
 import { Section, Select, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
 import { api, errorText } from '../lib/api'
@@ -23,6 +24,9 @@ import { ASPECTS, aspectValue } from '../lib/aspects'
 import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../lib/geometry'
 import { Icon, PathIcon } from '../components/icons'
 import { CurvePresets } from './CurvePresets'
+import { AiDenoise } from './AiDenoise'
+import { applyUpright, startGuides } from '../lib/upright'
+import type { UprightMode } from '../../../shared/upright'
 
 type Read = (r: Recipe) => number
 type Write = (r: Recipe, v: number) => void
@@ -583,6 +587,17 @@ export function ToneCurvePanel(): React.JSX.Element | null {
             Reset {channel}
           </button>
         </div>
+        <Slider
+          label="Refine saturation"
+          value={recipe.toneCurve.refineSaturation}
+          min={0}
+          max={100}
+          def={100}
+          disabled={isIdentityCurve(recipe.toneCurve.master)}
+          title="How much saturation the RGB curve brings as it steepens: lower keeps colours as they were"
+          onChange={(v, live) => edit((r) => (r.toneCurve.refineSaturation = v), live)}
+          onCommit={() => commit('Refine saturation')}
+        />
       </Section>
     </ToolPanel>
   )
@@ -840,6 +855,14 @@ export function ColorGradePanel(): React.JSX.Element | null {
         read={(r) => r.colorGrade.balance}
         write={(r, v) => (r.colorGrade.balance = v)}
       />
+      <Section id="grade.add" title="Add colour">
+        <AddColourControl
+          target="grade"
+          value={recipe.colorGrade.add}
+          onChange={(v, live) => edit((r) => (r.colorGrade.add = v), live)}
+          hint="Coloured light on the whole scene, added in linear light after exposure."
+        />
+      </Section>
     </ToolPanel>
   )
 }
@@ -851,6 +874,8 @@ export function DetailPanel(): React.JSX.Element | null {
   const noise = useDevelop((s) => s.noise)
   const measure = useDevelop((s) => s.measureNoise)
   const report = useDevelop((s) => s.report)
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
   const [measuring, setMeasuring] = useState(false)
   if (!recipe) return null
   const seen = report?.gradeLines.filter((l) => l.includes('denoise')) ?? []
@@ -891,55 +916,72 @@ export function DetailPanel(): React.JSX.Element | null {
         />
       </Section>
       <Section id="detail.noise" title="Noise reduction">
-        <RS
-          label="Luminance"
-          read={(r) => r.detail.noiseLuminance}
-          write={(r, v) => (r.detail.noiseLuminance = v)}
-          min={0}
-          max={100}
+        <Tabs
+          value={recipe.detail.ai.enabled ? 'ai' : 'classic'}
+          tabs={[
+            { value: 'classic', label: 'Classic' },
+            { value: 'ai', label: 'AI' }
+          ]}
+          onChange={(v) => {
+            edit((r) => (r.detail.ai.enabled = v === 'ai'))
+            commit(v === 'ai' ? 'AI denoise' : 'Classic denoise')
+          }}
         />
-        <RS
-          label="Detail"
-          read={(r) => r.detail.noiseLuminanceDetail}
-          write={(r, v) => (r.detail.noiseLuminanceDetail = v)}
-          min={0}
-          max={100}
-          def={50}
-        />
-        <RS
-          label="Colour"
-          read={(r) => r.detail.noiseColor}
-          write={(r, v) => (r.detail.noiseColor = v)}
-          min={0}
-          max={100}
-        />
-        <RS
-          label="Detail"
-          read={(r) => r.detail.noiseColorDetail}
-          write={(r, v) => (r.detail.noiseColorDetail = v)}
-          min={0}
-          max={100}
-          def={50}
-        />
-        <div className="noise-readout">
-          <button
-            disabled={measuring}
-            onClick={() => {
-              setMeasuring(true)
-              void runJob('Measuring noise', () => measure(), {
-                detail: 'Estimating σ̂ on each plane, as the denoiser does'
-              }).finally(() => setMeasuring(false))
-            }}
-          >
-            {measuring ? 'Measuring…' : 'Measure noise'}
-          </button>
-          {noise && (
-            <span title="σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values">
-              σ̂ luma {(noise.luminance * 255).toFixed(2)} · chroma{' '}
-              {noise.color.map((c) => (c * 255).toFixed(2)).join(' / ')}
-            </span>
-          )}
-        </div>
+        {recipe.detail.ai.enabled ? (
+          <AiDenoise />
+        ) : (
+          <>
+            <RS
+              label="Luminance"
+              read={(r) => r.detail.noiseLuminance}
+              write={(r, v) => (r.detail.noiseLuminance = v)}
+              min={0}
+              max={100}
+            />
+            <RS
+              label="Detail"
+              read={(r) => r.detail.noiseLuminanceDetail}
+              write={(r, v) => (r.detail.noiseLuminanceDetail = v)}
+              min={0}
+              max={100}
+              def={50}
+            />
+            <RS
+              label="Colour"
+              read={(r) => r.detail.noiseColor}
+              write={(r, v) => (r.detail.noiseColor = v)}
+              min={0}
+              max={100}
+            />
+            <RS
+              label="Detail"
+              read={(r) => r.detail.noiseColorDetail}
+              write={(r, v) => (r.detail.noiseColorDetail = v)}
+              min={0}
+              max={100}
+              def={50}
+            />
+            <div className="noise-readout">
+              <button
+                disabled={measuring}
+                onClick={() => {
+                  setMeasuring(true)
+                  void runJob('Measuring noise', () => measure(), {
+                    detail: 'Estimating σ̂ on each plane, as the denoiser does'
+                  }).finally(() => setMeasuring(false))
+                }}
+              >
+                {measuring ? 'Measuring…' : 'Measure noise'}
+              </button>
+              {noise && (
+                <span title="σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values">
+                  σ̂ luma {(noise.luminance * 255).toFixed(2)} · chroma{' '}
+                  {noise.color.map((c) => (c * 255).toFixed(2)).join(' / ')}
+                </span>
+              )}
+            </div>
+          </>
+        )}
         {seen.length > 0 && (
           <pre className="report-lines">{seen.map((l) => l.trim()).join('\n')}</pre>
         )}
@@ -951,10 +993,33 @@ export function DetailPanel(): React.JSX.Element | null {
 
 // ── Effects ──────────────────────────────────────────────────────────────────
 
-export function EffectsPanel(): React.JSX.Element {
+export function EffectsPanel(): React.JSX.Element | null {
+  const recipe = useDevelop((s) => s.recipe)
+  const isHdr = useDevelop((s) => s.session?.isHdr === true)
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
+  if (!recipe) return null
+  const paint = recipe.effects.vignetteStyle === 'paint'
   return (
     <ToolPanel>
       <Section id="effects.vignette" title="Post-crop vignette">
+        <Select
+          label="Style"
+          value={recipe.effects.vignetteStyle}
+          options={[
+            { value: 'highlight', label: 'Highlight priority' },
+            { value: 'paint', label: 'Paint overlay' }
+          ]}
+          title={
+            isHdr && paint
+              ? 'Paint overlay needs an SDR picture: this HDR photo keeps highlight priority'
+              : 'Highlight priority darkens like light falling off; paint overlay mixes toward black or white'
+          }
+          onChange={(v) => {
+            edit((r) => (r.effects.vignetteStyle = v))
+            commit('Vignette style')
+          }}
+        />
         <RS
           label="Amount"
           read={(r) => r.effects.vignetteAmount}
@@ -981,12 +1046,27 @@ export function EffectsPanel(): React.JSX.Element {
           max={100}
           def={50}
         />
-        <RS
-          label="Highlights"
-          read={(r) => r.effects.vignetteHighlights}
-          write={(r, v) => (r.effects.vignetteHighlights = v)}
-          min={0}
-          max={100}
+        {(!paint || isHdr) && (
+          <RS
+            label="Highlights"
+            read={(r) => r.effects.vignetteHighlights}
+            write={(r, v) => (r.effects.vignetteHighlights = v)}
+            min={0}
+            max={100}
+          />
+        )}
+        {isHdr && paint && (
+          <p className="note small">
+            Paint overlay needs an SDR picture; this HDR photo keeps highlight priority.
+          </p>
+        )}
+      </Section>
+      <Section id="effects.wash" title="Colour wash">
+        <AddColourControl
+          target="wash"
+          value={recipe.effects.wash}
+          onChange={(v, live) => edit((r) => (r.effects.wash = v), live)}
+          hint="A lift toward the colour on the finished look, blacks as much as whites: a wash or a light leak."
         />
       </Section>
       <Section id="effects.grain" title="Grain">
@@ -1085,6 +1165,8 @@ export function GeometryPanel(): React.JSX.Element | null {
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
   const setGesture = useDevelop((s) => s.setGesture)
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
   if (!recipe || !session) return null
   const g = recipe.geometry
   return (
@@ -1129,6 +1211,128 @@ export function GeometryPanel(): React.JSX.Element | null {
         format={(v) => `${v.toFixed(2)}°`}
         onGesture={(on) => setGesture(on ? 'straighten' : null)}
       />
+      <Section id="crop.upright" title="Upright">
+        <div className="seg upright-modes" role="group" aria-label="Upright">
+          {UPRIGHT_MODES.map((m) => (
+            <button
+              key={m.value}
+              className={g.upright.mode === m.value ? 'on' : ''}
+              aria-pressed={g.upright.mode === m.value}
+              title={m.title}
+              onClick={() => void applyUpright(m.value)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        {g.upright.mode === 'guided' && tool !== 'upright-guide' && (
+          <div className="row">
+            <button className="sm" onClick={startGuides}>
+              Edit guides ({g.upright.guides.length})
+            </button>
+          </div>
+        )}
+        <p className="muted small">
+          {g.upright.mode === 'off'
+            ? 'Levels and makes upright from the straight lines in the photo.'
+            : 'The crop fits the corrected picture; the sliders below add to it.'}
+        </p>
+      </Section>
+      <Section
+        id="crop.transform"
+        title="Transform"
+        right={
+          <button
+            className="sm ghost"
+            title="The sliders back to zero (the Upright mode stays)"
+            onClick={() => {
+              const u = g.upright
+              if (
+                !u.vertical &&
+                !u.horizontal &&
+                !u.rotate &&
+                !u.aspect &&
+                u.scale === 100 &&
+                !u.offsetX &&
+                !u.offsetY
+              )
+                return
+              edit((r) =>
+                Object.assign(r.geometry.upright, {
+                  vertical: 0,
+                  horizontal: 0,
+                  rotate: 0,
+                  aspect: 0,
+                  scale: 100,
+                  offsetX: 0,
+                  offsetY: 0
+                })
+              )
+              commit('Transform: reset')
+            }}
+          >
+            Reset
+          </button>
+        }
+      >
+        <RS
+          label="Vertical"
+          read={(r) => r.geometry.upright.vertical}
+          write={(r, v) => (r.geometry.upright.vertical = v)}
+          title="Tilt top and bottom: straightens converging verticals"
+        />
+        <RS
+          label="Horizontal"
+          read={(r) => r.geometry.upright.horizontal}
+          write={(r, v) => (r.geometry.upright.horizontal = v)}
+        />
+        <RS
+          label="Rotate"
+          read={(r) => r.geometry.upright.rotate}
+          write={(r, v) => (r.geometry.upright.rotate = v)}
+          step={0.5}
+        />
+        <RS
+          label="Aspect"
+          read={(r) => r.geometry.upright.aspect}
+          write={(r, v) => (r.geometry.upright.aspect = v)}
+        />
+        <RS
+          label="Scale"
+          read={(r) => r.geometry.upright.scale}
+          write={(r, v) => (r.geometry.upright.scale = v)}
+          min={50}
+          max={150}
+          def={100}
+        />
+        <RS
+          label="X offset"
+          read={(r) => r.geometry.upright.offsetX}
+          write={(r, v) => (r.geometry.upright.offsetX = v)}
+        />
+        <RS
+          label="Y offset"
+          read={(r) => r.geometry.upright.offsetY}
+          write={(r, v) => (r.geometry.upright.offsetY = v)}
+        />
+      </Section>
     </ToolPanel>
   )
 }
+
+const UPRIGHT_MODES: { value: UprightMode; label: string; title: string }[] = [
+  { value: 'off', label: 'Off', title: 'No perspective correction' },
+  {
+    value: 'auto',
+    label: 'Auto',
+    title: 'The most the lines support: Full, else Vertical, else Level'
+  },
+  { value: 'level', label: 'Level', title: 'Horizontal lines level' },
+  { value: 'vertical', label: 'Vertical', title: 'Level, and vertical lines upright' },
+  { value: 'full', label: 'Full', title: 'Level, vertical and horizontal perspective' },
+  {
+    value: 'guided',
+    label: 'Guided',
+    title: 'Draw two to four lines that should be upright or level'
+  }
+]

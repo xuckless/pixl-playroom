@@ -49,6 +49,13 @@ export const TOOLS: ToolInfo[] = [
     icon: 'M4 20 20 4M4 12l8-8M12 20l8-8'
   },
   {
+    id: 'lens',
+    name: 'Lens Corrections',
+    short: 'Lens',
+    desc: 'Profile, chromatic aberration, distortion, vignetting and defringe.',
+    icon: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M7.5 9.5a5 5 0 0 1 4.5-3'
+  },
+  {
     id: 'effects',
     name: 'Effects',
     short: 'Effects',
@@ -61,6 +68,13 @@ export const TOOLS: ToolInfo[] = [
     short: 'Masks',
     desc: 'Brush, gradients, lasso and ranges, each with its own adjustments.',
     icon: 'M4 20c2-6 8-6 10-12M16 6a2 2 0 1 0 4 0 2 2 0 0 0-4 0'
+  },
+  {
+    id: 'heal',
+    name: 'Heal',
+    short: 'Heal',
+    desc: 'Heal, clone and fill spots; red eye and pet eye.',
+    icon: 'M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z'
   },
   {
     id: 'crop',
@@ -77,11 +91,11 @@ export const TOOLS: ToolInfo[] = [
     icon: 'M12 3v18M3 12h18M6 6l12 12M18 6 6 18'
   },
   {
-    id: 'advanced',
-    name: 'Advanced',
-    short: 'Engine',
-    desc: 'The engine report, the compiled grade, custom layers.',
-    icon: 'M8 9l-4 3 4 3M16 9l4 3-4 3M13 5l-2 14'
+    id: 'enhance',
+    name: 'Enhance',
+    short: 'Enhance',
+    desc: 'JPEG restore, deblur and super-resolution, into a new file.',
+    icon: 'M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8'
   }
 ]
 
@@ -102,6 +116,8 @@ export function selectPanel(id: ToolId, opts: { tool?: Tool } = {}): void {
   const from = ui.panel
   if (from !== id) {
     ui.setPanel(id)
+    // A picker belongs to the panel that started it.
+    if (dev.tool === 'fringe-pick' || dev.tool === 'add-pick') dev.setTool('none')
     // Entering or leaving Masks starts or stops the mask thumbnails.
     if ((from === 'masks') !== (id === 'masks')) dev.pushView()
   }
@@ -117,8 +133,12 @@ export function selectPanel(id: ToolId, opts: { tool?: Tool } = {}): void {
     cropTimer = setTimeout(() => {
       if (useUi.getState().panel === 'crop') useDevelop.getState().setTool('crop')
     }, CROP_SETTLE_MS)
-  } else if (id !== 'crop' && dev.tool === 'crop') dev.setTool('none')
+  } else if (id !== 'crop' && (dev.tool === 'crop' || dev.tool === 'upright-guide'))
+    dev.setTool('none')
   if (id !== 'masks' && MASK_TOOLS.includes(dev.tool)) dev.setTool('none')
+  // The Heal tool is on while its panel shows, as Lightroom's spot removal is.
+  if (id === 'heal' && dev.tool === 'none') dev.setTool('heal')
+  else if (id !== 'heal' && dev.tool === 'heal') dev.setTool('none')
 }
 
 /** Turn the wheel one place (wrapping). */

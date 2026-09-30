@@ -3,7 +3,7 @@ import { geometricCentre } from '../../../../shared/masks'
 import { baseToDisplay, type Rect, type ViewGeometry } from '../../../../shared/view'
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { loadImage } from '../../lib/image'
-import { useDevelop } from '../../state/develop'
+import { useDevelop, wholeFrameTool } from '../../state/develop'
 import { useUi } from '../../state/ui'
 
 const centroids = new Map<string, { x: number; y: number } | null>()
@@ -76,7 +76,7 @@ export function MaskPins({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urls])
-  if (!layers || panel !== 'masks' || pins === 'never' || tool === 'crop') return null
+  if (!layers || panel !== 'masks' || pins === 'never' || wholeFrameTool(tool)) return null
   return (
     <div
       className={`mask-pins ${pins}`}

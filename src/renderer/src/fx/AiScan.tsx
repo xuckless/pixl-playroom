@@ -35,6 +35,13 @@ export function AiScan({ rect }: { rect: Rect }): React.JSX.Element | null {
   const fx = useFxMode()
   if (!job) return null
   const ended = job.phase === 'done' || job.phase === 'error' || job.phase === 'cancelled'
+  // AI denoise shows its preview while the full resolution is made, and
+  // Enhance makes another file: the photo is not dimmed then, only the card
+  // says it goes on.
+  const quiet =
+    job.task === 'enhance' ||
+    (job.task === 'denoise' && job.stage !== 'model' && job.stage !== 'preview')
+  if (quiet) return <AiCard job={job} ended={ended} />
   return (
     <>
       <div

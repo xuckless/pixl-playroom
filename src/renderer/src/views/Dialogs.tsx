@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import {
   defaultExportSettings,
+  normaliseExportSettings,
+  supportsGainMap,
   depthsFor,
   supportsHdr,
   type ExportFormat,
@@ -17,12 +19,12 @@ import {
 } from '../../../shared/recipe'
 import { savedWhite } from '../../../shared/wbconvert'
 import { Modal } from '../components/ui'
-import { ProgressRing, Sphere, Spinner } from '../fx'
+import { Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
 import { autoWbBatch } from '../lib/autowb'
 import { useDevelop } from '../state/develop'
-import { useAiJobs } from '../state/jobs'
 import { useLibrary, useTargets } from '../state/library'
+import { WatermarkSection } from './WatermarkSection'
 
 function Field({
   label,
@@ -69,6 +71,7 @@ export function ExportDialog(): React.JSX.Element {
   const targets = useTargets()
   const setDialog = useLibrary((s) => s.setDialog)
   const say = useLibrary((s) => s.say)
+  const items = useLibrary((s) => s.items)
   const [s, setS] = useState<ExportSettings>(defaultExportSettings())
   const [presets, setPresets] = useState<ExportPreset[]>([])
   const [progress, setProgress] = useState<ExportProgress | null>(null)
@@ -76,7 +79,7 @@ export function ExportDialog(): React.JSX.Element {
   useEffect(() => {
     void api.app
       .getSetting<ExportSettings>('export.last')
-      .then((last) => last && setS({ ...defaultExportSettings(), ...last }))
+      .then((last) => last && setS(normaliseExportSettings(last)))
     void api.export.presets().then(setPresets)
     return api.export.onProgress(setProgress)
   }, [])
@@ -154,7 +157,7 @@ export function ExportDialog(): React.JSX.Element {
             value=""
             onChange={(e) => {
               const p = presets.find((x) => x.id === e.target.value)
-              if (p) setS({ ...defaultExportSettings(), ...p.settings })
+              if (p) setS(normaliseExportSettings(p.settings))
             }}
           >
             <option value="">Load preset…</option>
@@ -513,6 +516,11 @@ export function ExportDialog(): React.JSX.Element {
               : 'Applied after the resize, at the size the picture will be seen.'}
           </p>
         </fieldset>
+        <WatermarkSection
+          value={s.watermark}
+          onChange={(v) => up('watermark', v)}
+          thumbUrl={items.find((i) => i.key === targets[0])?.thumbUrl ?? null}
+        />
         <fieldset>
           <legend>Metadata</legend>
           <Field label="Include">
@@ -573,9 +581,19 @@ export function ExportDialog(): React.JSX.Element {
               <option value="expand" disabled={!supportsHdr(s.format)}>
                 Expand SDR to HDR
               </option>
+              <option value="gainmap" disabled={!supportsGainMap(s.format)}>
+                SDR + gain map (HDR sources)
+              </option>
             </select>
           </Field>
-          {s.hdr.mode === 'sdr' && (
+          {s.hdr.mode === 'gainmap' && (
+            <p className="muted small">
+              An HDR photo is written as its SDR picture with a gain map (UltraHDR in a JPEG): an
+              HDR display lifts it back, any other shows the SDR picture. SDR photos are written as
+              plain SDR.
+            </p>
+          )}
+          {(s.hdr.mode === 'sdr' || s.hdr.mode === 'gainmap') && (
             <>
               <Field label="Operator">
                 <select
@@ -601,6 +619,45 @@ export function ExportDialog(): React.JSX.Element {
                   onChange={(v) => up('hdr', { ...s.hdr, targetPeak: v })}
                 />
               </Field>
+            </>
+          )}
+          {s.hdr.mode === 'gainmap' && (
+            <Field label="Map quality">
+              <Num
+                value={s.hdr.gainMapQuality}
+                min={1}
+                max={100}
+                onChange={(v) => up('hdr', { ...s.hdr, gainMapQuality: v })}
+              />
+            </Field>
+          )}
+          {s.hdr.mode !== 'sdr' && (
+            <>
+              <Field label="Highlights">
+                <select
+                  value={s.hdr.limit}
+                  onChange={(e) =>
+                    up('hdr', {
+                      ...s.hdr,
+                      limit: e.target.value as ExportSettings['hdr']['limit']
+                    })
+                  }
+                  title="What happens to highlights an edit pushes above the peak"
+                >
+                  <option value="clip">Clip at the peak</option>
+                  <option value="rolloff">Roll off (BT.2390)</option>
+                </select>
+              </Field>
+              {s.hdr.limit === 'rolloff' && (
+                <Field label="Knee (%)">
+                  <Num
+                    value={s.hdr.knee}
+                    min={10}
+                    max={100}
+                    onChange={(v) => up('hdr', { ...s.hdr, knee: v })}
+                  />
+                </Field>
+              )}
             </>
           )}
           {s.hdr.mode === 'expand' && (
@@ -662,7 +719,7 @@ export function SyncDialog(): React.JSX.Element {
     clipboard?.groups ??
       (source
         ? changedGroups(source, defaultRecipe(false)).filter(
-            (g) => g !== 'crop' && g !== 'localAdjustments'
+            (g) => g !== 'crop' && g !== 'localAdjustments' && g !== 'retouch'
           )
         : [])
   )
@@ -788,7 +845,8 @@ export function SavePresetDialog(): React.JSX.Element {
     new Set(
       recipe
         ? changedGroups(recipe, defaultRecipe(false)).filter(
-            (g) => g !== 'crop' && g !== 'localAdjustments' && g !== 'orientation'
+            (g) =>
+              g !== 'crop' && g !== 'localAdjustments' && g !== 'orientation' && g !== 'retouch'
           )
         : []
     )
@@ -862,104 +920,6 @@ export function SavePresetDialog(): React.JSX.Element {
           </label>
         ))}
       </div>
-    </Modal>
-  )
-}
-
-export function EnhanceDialog(): React.JSX.Element {
-  const setDialog = useLibrary((s) => s.setDialog)
-  const targets = useTargets()
-  const [avail, setAvail] = useState<{ available: boolean; reason?: string } | null>(null)
-  const [cpu, setCpu] = useState(false)
-  const [started, setStarted] = useState<string[]>([])
-  const jobs = useAiJobs((s) => s.jobs)
-  useEffect(() => {
-    void api.enhance.available().then(setAvail)
-  }, [])
-  // Each photo's job as the queue last told it (the store keeps how finished ones ended).
-  const ended = useAiJobs((s) => s.ended)
-  const list = started.map((id) => jobs[id] ?? ended[id]).filter(Boolean)
-  const running = list.some((p) => p.phase === 'running' || p.phase === 'queued')
-  const done = list.filter((p) => p.phase === 'done').length
-  const failed = list.filter((p) => p.phase === 'error')
-  const current = list.find((p) => p.phase === 'running')
-  return (
-    <Modal
-      title="Enhance → Super Resolution"
-      onClose={() => setDialog(null)}
-      icon="enhance"
-      footer={
-        started.length === 0 ? (
-          <button
-            className="primary"
-            disabled={!avail?.available || targets.length === 0}
-            onClick={async () => {
-              const ids = await Promise.all(
-                targets.map((key) => api.ai.start({ task: 'enhance', key, cpu }))
-              )
-              setStarted(ids)
-            }}
-          >
-            Enhance {targets.length > 1 ? `${targets.length} photos` : ''}
-          </button>
-        ) : running ? (
-          <>
-            <button onClick={() => started.forEach((id) => void api.ai.cancel(id))}>Cancel</button>
-            <button
-              onClick={() => setDialog(null)}
-              title="Keep working; progress shows on the photo and in the top bar"
-            >
-              Run in the background
-            </button>
-          </>
-        ) : (
-          <button className="primary" onClick={() => setDialog(null)}>
-            Done
-          </button>
-        )
-      }
-    >
-      {started.length === 0 ? (
-        <>
-          <p>
-            Doubles the resolution with the bundled Real-ESRGAN ×2 model, before any edit, into a
-            new 16-bit TIFF beside the original. The new file starts with this photo&apos;s
-            settings. Photos are enhanced one at a time; you can keep editing meanwhile.
-          </p>
-          {avail && !avail.available && <p className="error">{avail.reason}</p>}
-          <label className="check">
-            <input type="checkbox" checked={cpu} onChange={(e) => setCpu(e.target.checked)} /> Run
-            on the CPU (slower, always available)
-          </label>
-        </>
-      ) : (
-        <div className="enhance-stage">
-          <div className="sphere-wrap">
-            <Sphere active={running} />
-            <ProgressRing progress={running ? (current?.progress ?? null) : 1} />
-          </div>
-          <div className="enhance-log" role="status" aria-live="polite">
-            <span className="micro">
-              {running ? 'Enhancing' : failed.length ? 'Finished with errors' : 'Finished'}
-            </span>
-            <span className="phase">
-              {done}/{started.length} done
-              {failed.length > 0 ? ` · ${failed.length} failed` : ''}
-            </span>
-            {current && (
-              <span className="msg">
-                {current.name} · {current.message}
-              </span>
-            )}
-            {failed.map((p) => (
-              <span key={p.jobId} className="msg error">
-                {p.name}: {p.message}
-              </span>
-            ))}
-            {!current && running && <span className="msg">Waiting for the upscaler…</span>}
-          </div>
-        </div>
-      )}
     </Modal>
   )
 }

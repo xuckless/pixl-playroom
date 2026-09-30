@@ -1,9 +1,19 @@
+/**
+ * The engine report: what the last render did (timings, where precision
+ * went, the grade line by line), the grade an export sends, and custom
+ * layers written in the engine's own terms. A dialog, from View ▸ Engine
+ * Report… (Ctrl+Alt+E) or the develop toolbar; it once was the wheel's last
+ * tool.
+ */
 import { useMemo, useState } from 'react'
-import { compile, orientedFrame } from '../../../shared/compile'
+import { compile } from '../../../shared/compile'
 import type { GradeLayer } from '../../../shared/engine-types'
+import { fromExif } from '../../../shared/orientation'
 import { newId } from '../../../shared/recipe'
-import { Section, ToolPanel } from '../components/ui'
+import { Icon } from '../components/icons'
+import { Modal, Section } from '../components/ui'
 import { useDevelop } from '../state/develop'
+import { useLibrary } from '../state/library'
 
 const TEMPLATE: GradeLayer = {
   name: 'custom',
@@ -85,12 +95,14 @@ function CustomLayers(): React.JSX.Element | null {
                 </button>
                 <button
                   className="icon"
+                  title="Remove this layer"
+                  aria-label="Remove this layer"
                   onClick={() => {
                     edit((r) => r.custom.splice(i, 1))
                     commit('Remove custom layer')
                   }}
                 >
-                  🗑
+                  <Icon name="trash" />
                 </button>
               </span>
             </div>
@@ -124,19 +136,21 @@ function CustomLayers(): React.JSX.Element | null {
   )
 }
 
-export function AdvancedPanel(): React.JSX.Element | null {
+export function EngineReportDialog(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
   const recipe = useDevelop((s) => s.recipe)
   const report = useDevelop((s) => s.report)
+  const engine = useLibrary((s) => s.engine)
+  const setDialog = useLibrary((s) => s.setDialog)
   const [show, setShow] = useState(false)
   const compiled = useMemo(() => {
     if (!session || !recipe || !show) return null
-    const { user } = orientedFrame(recipe, session.frameWidth, session.frameHeight)
-    void user
+    // As the exporter compiles it: the original, turned by its own
+    // orientation (a developed RAW is already upright), at full size.
     return compile(recipe, {
       isRaw: session.isRaw,
       asShot: session.asShot,
-      sourceOrientation: 'Normal',
+      sourceOrientation: session.isRaw ? 'Normal' : fromExif(session.info.orientation),
       frameWidth: session.frameWidth,
       frameHeight: session.frameHeight,
       scale: 1,
@@ -148,62 +162,88 @@ export function AdvancedPanel(): React.JSX.Element | null {
             .map((c) => [c.id, `<${c.kind} plane ${c.id}>`])
         )
       ),
-      applyCrop: true
+      applyCrop: true,
+      hdr: session.isHdr
     })
   }, [session, recipe, show])
   if (!session || !recipe) return null
   return (
-    <ToolPanel>
-      {report && (
-        <Section id="advanced.report" title="Last render">
-          <div className="muted small">
-            {report.totalMs} ms · decode {report.decodeMs} · colour {report.colorMs} · encode{' '}
-            {report.encodeMs}
-          </div>
-          <div className="muted small">
-            out: {report.colorSpace} · {report.loss.source_bits}→{report.loss.output_bits} bits ·{' '}
-            {report.loss.quantisations} rounding{report.loss.quantisations === 1 ? '' : 's'}
-            {report.loss.single_float_pass ? ', one float pass' : ''}
-            {report.clampedSamples > 0 ? ` · ${report.clampedSamples} samples clamped` : ''}
-          </div>
-          {report.notes.map((n) => (
-            <p key={n} className="note small">
-              {n}
-            </p>
-          ))}
-          <pre className="report-lines">
-            {report.gradeLines.join('\n') || 'no grade — the fast path'}
-          </pre>
-        </Section>
-      )}
-      <Section id="advanced.custom" title="Custom layers">
-        <CustomLayers />
-      </Section>
-      <Section
-        id="advanced.compiled"
-        title="Compiled grade"
-        right={
-          <button className="sm" onClick={() => setShow(!show)}>
-            {show ? 'Hide' : 'Show'}
-          </button>
-        }
-      >
-        <p className="muted small">What an export at full resolution sends to the engine.</p>
-        {compiled && (
-          <>
-            <pre className="json">
-              {JSON.stringify({ framing: compiled.framing, grade: compiled.grade }, null, 2)}
-            </pre>
-            <button
-              onClick={() =>
-                void navigator.clipboard.writeText(JSON.stringify(compiled.grade, null, 2))
-              }
-            >
-              Copy grade JSON
-            </button>
-          </>
-        )}
-      </Section>
-    </ToolPanel>
+    <Modal
+      title="Engine report"
+      icon="engine"
+      wide
+      className="engine-report"
+      onClose={() => setDialog(null)}
+    >
+      <p className="muted small engine-line">
+        PIXL engine {engine?.version ?? '—'}
+        {engine?.runtime
+          ? ` · ONNX Runtime ${engine.runtime.version} (${engine.runtime.providers.join(', ')})`
+          : ''}
+        {' · '}
+        {session.item.name}
+      </p>
+      <div className="engine-cols">
+        <div>
+          <Section id="engine.report" title="Last render">
+            {report ? (
+              <>
+                <div className="muted small">
+                  {report.totalMs} ms · decode {report.decodeMs} · colour {report.colorMs} · encode{' '}
+                  {report.encodeMs}
+                </div>
+                <div className="muted small">
+                  out: {report.colorSpace} · {report.loss.source_bits}→{report.loss.output_bits}{' '}
+                  bits · {report.loss.quantisations} rounding
+                  {report.loss.quantisations === 1 ? '' : 's'}
+                  {report.loss.single_float_pass ? ', one float pass' : ''}
+                  {report.clampedSamples > 0 ? ` · ${report.clampedSamples} samples clamped` : ''}
+                </div>
+                {report.notes.map((n) => (
+                  <p key={n} className="note small">
+                    {n}
+                  </p>
+                ))}
+                <pre className="report-lines">
+                  {report.gradeLines.join('\n') || 'no grade — the fast path'}
+                </pre>
+              </>
+            ) : (
+              <p className="muted small">Nothing rendered yet.</p>
+            )}
+          </Section>
+          <Section
+            id="engine.compiled"
+            title="Compiled grade"
+            right={
+              <button className="sm" onClick={() => setShow(!show)}>
+                {show ? 'Hide' : 'Show'}
+              </button>
+            }
+          >
+            <p className="muted small">What an export at full resolution sends to the engine.</p>
+            {compiled && (
+              <>
+                <pre className="json">
+                  {JSON.stringify({ framing: compiled.framing, grade: compiled.grade }, null, 2)}
+                </pre>
+                <button
+                  onClick={() =>
+                    void navigator.clipboard.writeText(JSON.stringify(compiled.grade, null, 2))
+                  }
+                >
+                  Copy grade JSON
+                </button>
+              </>
+            )}
+          </Section>
+        </div>
+        <div>
+          <Section id="engine.custom" title="Custom layers">
+            <CustomLayers />
+          </Section>
+        </div>
+      </div>
+    </Modal>
   )
 }

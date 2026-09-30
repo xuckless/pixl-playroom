@@ -9,18 +9,23 @@ import type {
   ColorSpaceRef,
   Depth,
   Encode,
+  GainMapEncode,
   GamutMap,
-  Grade,
+  HdrLimit,
+  SdrRendition,
   MetadataPolicy,
+  OutputSharpen,
   PngCompression,
   RenderingIntent,
   Resize,
   Sharpen,
+  YCbCrMatrix,
   Subsampling,
   TiffCompression,
   ToneMapOperator
 } from './engine-types'
 import type { PhotoMeta } from './ipc'
+import { DEFAULT_WATERMARK, type WatermarkSettings } from './watermark'
 import { flatSubjects } from './keywords'
 
 export type ExportFormat = 'jpeg' | 'png' | 'tiff' | 'webp' | 'avif' | 'jxl' | 'heic'
@@ -80,8 +85,18 @@ export interface ExportSettings {
   outputSharpen: OutputSharpenSetting
   dither: boolean
   hdr: {
-    /** sdr: an SDR file (HDR sources are tone mapped); keep: stay PQ/HLG; expand: SDR → PQ/HLG. */
-    mode: 'sdr' | 'keep' | 'expand'
+    /**
+     * sdr: an SDR file (HDR sources are tone mapped); keep: stay PQ/HLG;
+     * expand: SDR → PQ/HLG; gainmap: an HDR source as an SDR picture with a
+     * gain map (UltraHDR JPEG, AVIF, HEIC), which HDR displays lift back.
+     */
+    mode: 'sdr' | 'keep' | 'expand' | 'gainmap'
+    /** What happens above the HDR output's peak: a hard clip, or BT.2390's roll-off. */
+    limit: 'clip' | 'rolloff'
+    /** Where the roll-off starts, as a percentage of the highest knee BT.2390 allows. */
+    knee: number
+    /** The gain map image's own quality, 1…100. */
+    gainMapQuality: number
     operator: ToneMapOperator
     /** For tone mapping: cd/m² the source's brightest content reaches, or null to read it from the file. */
     sourcePeak: number | null
@@ -92,6 +107,8 @@ export interface ExportSettings {
     sdrWhite: number
     referenceWhite: number
   }
+  /** A PNG composited onto every exported picture (see `watermark.ts`). */
+  watermark: WatermarkSettings
   reveal: boolean
 }
 
@@ -134,8 +151,12 @@ export function defaultExportSettings(): ExportSettings {
       to: 'Rec2100Pq',
       peak: 1000,
       sdrWhite: 203,
-      referenceWhite: 203
+      referenceWhite: 203,
+      limit: 'clip',
+      knee: 100,
+      gainMapQuality: 85
     },
+    watermark: { ...DEFAULT_WATERMARK },
     reveal: true
   }
 }
@@ -155,13 +176,147 @@ export function depthsFor(format: ExportFormat): number[] {
   }
 }
 
+/** Formats that carry a gain map beside an SDR picture. */
+export function supportsGainMap(format: ExportFormat): boolean {
+  return format === 'jpeg' || format === 'avif' || format === 'heic'
+}
+
+/**
+ * Settings saved by an older build (or a preset), brought up to date: every
+ * field there is, nested ones included.
+ */
+export function normaliseExportSettings(
+  v: Partial<ExportSettings> | null | undefined
+): ExportSettings {
+  const d = defaultExportSettings()
+  if (!v) return d
+  return {
+    ...d,
+    ...v,
+    resize: { ...d.resize, ...v.resize },
+    metadata: { ...d.metadata, ...v.metadata },
+    outputSharpen: { ...d.outputSharpen, ...v.outputSharpen },
+    hdr: { ...d.hdr, ...v.hdr },
+    watermark: { ...d.watermark, ...v.watermark }
+  }
+}
+
+// ── HDR delivery ─────────────────────────────────────────────────────────────
+
+const PQ = { m1: 0.1593017578125, m2: 78.84375, c1: 0.8359375, c2: 18.8515625, c3: 18.6875 }
+
+/** Nits → the PQ signal (SMPTE ST 2084), 0…1. */
+export function pq(nits: number): number {
+  const y = Math.max(0, nits) / 10000
+  const p = y ** PQ.m1
+  return ((PQ.c1 + PQ.c2 * p) / (1 + PQ.c3 * p)) ** PQ.m2
+}
+
+/** The PQ signal → nits. */
+export function pqNits(e: number): number {
+  const p = Math.max(0, e) ** (1 / PQ.m2)
+  return 10000 * (Math.max(0, p - PQ.c1) / (PQ.c2 - PQ.c3 * p)) ** (1 / PQ.m1)
+}
+
+/**
+ * The highest knee BT.2390's roll-off takes for a peak and a source maximum
+ * (above it the curve would overshoot): KS = 1.5 · maxLum − 0.5 of the
+ * source range, in PQ.
+ */
+export function rolloffKneeMax(peak: number, sourceMax: number): number {
+  const range = pq(sourceMax)
+  const maxLum = pq(peak) / range
+  return pqNits(Math.max(0, 1.5 * maxLum - 0.5) * range)
+}
+
+/** How far above the peak a roll-off reaches: two stops, room for an edit's highlights. */
+const ROLLOFF_REACH = 4
+
+/** The output's limit at `peak` cd/m²: a clip, or a roll-off from the knee the settings choose. */
+export function hdrLimit(s: ExportSettings, peak: number): HdrLimit {
+  if (s.hdr.limit !== 'rolloff') return 'Clip'
+  const sourceMax = Math.min(10000, peak * ROLLOFF_REACH)
+  if (!(sourceMax > peak)) return 'Clip'
+  const max = rolloffKneeMax(peak, sourceMax)
+  const knee = Math.floor(max * Math.min(1, Math.max(0.1, s.hdr.knee / 100)))
+  return knee > 0
+    ? { Rolloff: { knee_nits: knee, source_max_nits: Math.round(sourceMax) } }
+    : 'Clip'
+}
+
+/** The SDR picture a gain-map export writes: the HDR master tone mapped as an SDR export would be. */
+export function sdrRendition(s: ExportSettings, peak: number): SdrRendition {
+  return {
+    to: s.colorSpace as ColorSpaceRef,
+    operator: s.hdr.operator,
+    source_peak_nits: peak,
+    target_peak_nits: s.hdr.targetPeak,
+    gamut: s.hdr.gamut,
+    intent: s.intent,
+    black_point_compensation: s.blackPointCompensation,
+    grade: null
+  }
+}
+
+/**
+ * The gain map beside it: one channel at half size (the map is smooth), its
+ * range the master's headroom over the SDR white — a little below 1 too, where
+ * the tone map lifted a shadow — and reaching full strength on a display with
+ * that much headroom.
+ */
+export function gainMapEncode(s: ExportSettings, peak: number): GainMapEncode {
+  const stops = Math.max(0.5, Math.log2(peak / s.hdr.targetPeak))
+  return {
+    scale: 2,
+    channels: 1,
+    quality: Math.round(Math.min(100, Math.max(1, s.hdr.gainMapQuality))),
+    gamma: 1,
+    offset_sdr: 1 / 64,
+    offset_hdr: 1 / 64,
+    gain_min_log2: -0.5,
+    gain_max_log2: Math.round(stops * 1000) / 1000,
+    hdr_capacity_min: 0,
+    hdr_capacity_max: Math.round(stops * 1000) / 1000
+  }
+}
+
+/** An encoder with a gain map, for the formats that carry one. */
+export function withGainMap(encode: Encode, map: GainMapEncode): Encode {
+  if (typeof encode !== 'object') return encode
+  if ('Jpeg' in encode) return { Jpeg: { ...encode.Jpeg, gain_map: map } }
+  if ('Avif' in encode) return { Avif: { ...encode.Avif, gain_map: map } }
+  if ('Heic' in encode) return { Heic: { ...encode.Heic, gain_map: map } }
+  return encode
+}
+
 export function supportsHdr(format: ExportFormat): boolean {
   return format === 'avif' || format === 'heic' || format === 'jxl' || format === 'png'
 }
 
-/** The encoder and the depth the engine must hand it. */
-export function buildEncode(s: ExportSettings, threads: number): { encode: Encode; depth: Depth } {
-  const deep = s.bitDepth > 8
+/**
+ * How a HEIF-family file turns RGB into Y/Cb/Cr: none at all for a lossless
+ * file (the one exact round trip), BT.2020's matrix for wide-gamut and HDR
+ * output, and BT.601 otherwise — what libheif assumed before the engine made
+ * it a choice, so an SDR export's pixels are unchanged.
+ */
+export function heifMatrix(s: ExportSettings, hdrOut: boolean): YCbCrMatrix {
+  if (s.lossless) return 'Identity'
+  if (hdrOut || s.colorSpace === 'Rec2020') return 'Bt2020Ncl'
+  return 'Bt601'
+}
+
+/**
+ * The encoder and the depth the engine must hand it. `hdrOut` when the file
+ * will hold PQ/HLG: those need at least 10 bits (the engine refuses 8-bit PQ
+ * out of a float pass, and it would band).
+ */
+export function buildEncode(
+  s: ExportSettings,
+  threads: number,
+  hdrOut = false
+): { encode: Encode; depth: Depth } {
+  const deep = s.bitDepth > 8 || hdrOut
+  const heifBits = hdrOut ? Math.max(10, s.bitDepth) : s.bitDepth
   switch (s.format) {
     case 'jpeg':
       return {
@@ -189,9 +344,10 @@ export function buildEncode(s: ExportSettings, threads: number): { encode: Encod
           Avif: {
             quality: s.quality,
             lossless: s.lossless,
-            bit_depth: s.bitDepth,
+            bit_depth: heifBits,
             chroma: s.lossless ? 'Full' : s.chroma,
-            speed: s.avifSpeed
+            speed: s.avifSpeed,
+            matrix: heifMatrix(s, hdrOut)
           }
         },
         depth: deep ? 'Sixteen' : 'Eight'
@@ -202,8 +358,9 @@ export function buildEncode(s: ExportSettings, threads: number): { encode: Encod
           Heic: {
             quality: s.quality,
             lossless: s.lossless,
-            bit_depth: s.bitDepth,
-            chroma: s.lossless ? 'Full' : s.chroma
+            bit_depth: heifBits,
+            chroma: s.lossless ? 'Full' : s.chroma,
+            matrix: heifMatrix(s, hdrOut)
           }
         },
         depth: deep ? 'Sixteen' : 'Eight'
@@ -285,7 +442,8 @@ export function buildColor(
       Expand: {
         to: s.hdr.to,
         operator: { Linear: { sdr_white_nits: s.hdr.sdrWhite } },
-        peak_nits: s.hdr.peak
+        peak_nits: s.hdr.peak,
+        limit: hdrLimit(s, s.hdr.peak)
       }
     }
   }
@@ -328,32 +486,19 @@ export function outputSharpen(s: ExportSettings): Sharpen | null {
 }
 
 /**
- * The grade of output sharpening's own pass: the one op, in the export's
+ * Output sharpening as the engine runs it: after the resize, in the export's
  * colour space as encoded, so it acts on the values the file will hold.
  */
-export function outputSharpenGrade(s: ExportSettings, sharpen: Sharpen): Grade {
+export function outputSharpenRequest(s: ExportSettings, sharpen: Sharpen): OutputSharpen {
   return {
-    layers: [
-      {
-        name: 'output-sharpen',
-        enabled: true,
-        opacity: 1,
-        mask: null,
-        blend: { mode: 'Normal', space: 'LinearWorking' },
-        stages: [
-          {
-            space: {
-              Encoded: {
-                space: s.colorSpace,
-                intent: s.intent,
-                black_point_compensation: s.blackPointCompensation
-              }
-            },
-            ops: [{ Sharpen: sharpen }]
-          }
-        ]
+    space: {
+      Encoded: {
+        space: s.colorSpace,
+        intent: s.intent,
+        black_point_compensation: s.blackPointCompensation
       }
-    ]
+    },
+    sharpen
   }
 }
 

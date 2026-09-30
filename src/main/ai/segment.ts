@@ -1,34 +1,53 @@
 /**
- * Segmentation (Select Subject / Sky / Background) as an AI job: a salient-
- * object model (U²-Net or ISNet, on the bundled ONNX Runtime, in a utility
- * process of its own so cancelling can kill it) turns the photo into a grey
- * plane in its base frame, which becomes a painted mask component. The model
- * is not bundled yet (TODO.md, "AI masks"); `PLAYROOM_FAKE_AI=1` runs a
- * stand-in with the same stages, timing and result, so the job queue, the
- * scan over the loupe and a mask landing on its photo can be tried end to end.
+ * Segmentation (Select Subject / Background) as an AI job: a salient-object
+ * model (U²-Net, or its small sibling U²-Netp — whichever is downloaded,
+ * the larger first) on the engine's bundled ONNX Runtime turns the photo's
+ * proxy into a grey plane, guided back to full resolution by the photo's own
+ * edges (the engine's `segment`). The plane is of the base frame after the
+ * lens correction — what masks are placed on — and becomes a painted mask
+ * component; Background is the same plane inverted.
+ *
+ * Sky has no model yet (the roster ships salient-object models only).
  */
-import type { AiStartRequest, SegmentTarget } from '../../shared/ai'
-import { SEGMENT_LABEL } from '../../shared/ai'
+import { writeFile } from 'fs/promises'
+import { join } from 'path'
+import type { AiStartRequest } from '../../shared/ai'
+import { estimate, SEGMENT_LABEL } from '../../shared/ai'
+import { lensCorrection } from '../../shared/lens'
 import { planeRef } from '../../shared/recipe'
+import type { EngineClient } from '../engine/client'
 import type { Library } from '../library'
-import { encodeGreyPng } from '../pngio'
-import { sourceOrientation } from '../source'
+import { decodePng, encodeGreyPng } from '../pngio'
 import type { PlaneStore } from '../planestore'
-import { pause, type AiContext, type AiRunner } from './jobs'
+import { paths } from '../paths'
+import { ensureProxies } from '../proxy'
+import type { DevelopSessions } from '../render'
+import { BACKGROUND_THREADS, blankRequest } from '../source'
+import { STRIP_ALL } from '../../shared/engine-types'
+import { Cancelled, type AiContext, type AiRunner } from './jobs'
+import { ModelMissing, type ModelStore } from './models'
 
 type SegmentRequest = Extract<AiStartRequest, { task: 'segment' }>
 
 /** Segment planes are this many pixels on their long edge (as painted planes are). */
 const PLANE_EDGE = 1024
 
-export const fakeAi = (): boolean => process.env.PLAYROOM_FAKE_AI === '1'
+/** The subject models, best first. */
+const SUBJECT_MODELS = ['u2net', 'u2netp']
+
+/** Below this the model saw nothing salient (a flat plane stretched to full range). */
+const NOTHING_SALIENT = 0.2
 
 export class SegmentRunner implements AiRunner<SegmentRequest> {
   readonly task = 'segment' as const
 
   constructor(
     private readonly library: Library,
-    private readonly planes: PlaneStore
+    private readonly planes: PlaneStore,
+    /** The AI engine: started when first needed. */
+    private readonly engine: EngineClient,
+    private readonly models: ModelStore,
+    private readonly sessions: () => DevelopSessions | undefined
   ) {}
 
   stages(): { id: string; label: string; weight: number }[] {
@@ -43,61 +62,89 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     return { title: 'Segmenting', subject: SEGMENT_LABEL[req.target] }
   }
 
+  /** The subject model to use: the best one downloaded, or null. */
+  async model(): Promise<string | null> {
+    for (const id of SUBJECT_MODELS) if (await this.models.installed(id)) return id
+    return null
+  }
+
   async run(
     ctx: AiContext,
     req: SegmentRequest
   ): Promise<{ kind: 'mask'; ref: string; width: number; height: number; label: string }> {
+    if (req.target === 'sky') throw new Error('No sky model ships yet')
+    ctx.stage('model', 0, 'Loading the model')
+    const id = await this.model()
+    if (!id) throw new ModelMissing(this.models.entry('u2netp'))
     const row = await this.library.photoRow(req.key)
     const info = await this.library.probe(row)
-    // The base frame: the file upright, as painted planes are kept.
-    const turned = ['Transpose', 'Rotate90', 'Transverse', 'Rotate270'].includes(
-      sourceOrientation(info, null)
-    )
-    const fw = turned ? info.height : info.width
-    const fh = turned ? info.width : info.height
-    const k = PLANE_EDGE / Math.max(fw, fh)
-    const w = Math.max(1, Math.round(fw * k))
-    const h = Math.max(1, Math.round(fh * k))
-    ctx.stage('model', 0, 'Loading the model')
-    await this.stand(ctx, 700)
+    if (this.engine.getStatus().status === 'starting') {
+      this.engine.start()
+      await this.engine.whenStarted()
+    }
+    const px = await ensureProxies(this.engine, row, info)
+    const recipe = this.sessions()?.liveRecipe(req.key) ?? (await this.library.recipe(req.key))
+    // One run of a small network: the CPU is done before an accelerator has
+    // compiled it (CoreML takes about a second to), so segmenting stays there.
+    const segmenter = await this.models.ref(id, 'Cpu')
+    if (ctx.signal.aborted) throw new Cancelled()
+
     ctx.stage('analyse', 0, `Finding the ${SEGMENT_LABEL[req.target].toLowerCase()}`)
-    await this.stand(ctx, 2200)
+    const t0 = Date.now()
+    const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, 2500), true), 200)
+    // The engine cannot stop a segment midway; cancelling restarts its process.
+    const stop = (): void => this.engine.restart()
+    ctx.signal.addEventListener('abort', stop, { once: true })
+    let report: { planes: { png: Uint8Array; raw_max: number; coverage: number }[] }
+    try {
+      report = (await this.engine.segment({
+        source: { Path: px.proxy.path },
+        input: px.proxy.input,
+        raw: null,
+        gain_map: null,
+        // The proxy is the base frame, upright: what masks are placed on.
+        orientation: 'Normal',
+        lens: lensCorrection(recipe.lens),
+        segmenter: { Classes: segmenter },
+        upsample: { Guided: { radius: 0.02, epsilon: 0.001 } },
+        png: { compression: 'Fast', filter: 'Sub' },
+        threads: BACKGROUND_THREADS
+      })) as unknown as typeof report
+    } catch (err) {
+      if (ctx.signal.aborted) throw new Cancelled()
+      throw err
+    } finally {
+      clearInterval(tick)
+      ctx.signal.removeEventListener('abort', stop)
+    }
+    const plane = report.planes[0]
+    if (!plane) throw new Error('the model returned no plane')
+    if (plane.raw_max < NOTHING_SALIENT)
+      throw new Error('No clear subject in this photo: try a brush or a range mask')
+
     ctx.stage('refine', 0, 'Refining the edges')
-    const plane = standInPlane(req.target, w, h)
-    await this.stand(ctx, 900)
-    const png = encodeGreyPng(plane, w, h).toString('base64')
+    // The frame-sized 16-bit plane, down to a painted plane's size, as 8 bits.
+    const full = join(paths.photoCache(row.id), `segment-${id}.png`)
+    await writeFile(full, plane.png)
+    const k = Math.min(1, PLANE_EDGE / Math.max(px.proxy.width, px.proxy.height))
+    const small = await this.engine.convert({
+      ...blankRequest(full, '', 'Png'),
+      sink: 'Bytes',
+      resize: k < 1 ? { Scale: { factor: k } } : 'None',
+      pixel: { depth: 'Eight', channels: 1 },
+      encode: { Png: { compression: 'Fast', filter: 'NoFilter' } },
+      metadata: STRIP_ALL,
+      color: 'Preserve',
+      threads: BACKGROUND_THREADS
+    })
+    if (!small.output) throw new Error('the engine returned no plane')
+    const d = decodePng(Buffer.from(small.output))
+    const grey = new Uint8Array(d.rows.subarray(0, d.width * d.height))
+    if (req.target === 'background') for (let i = 0; i < grey.length; i++) grey[i] = 255 - grey[i]
+    ctx.progress(0.8)
+    const png = encodeGreyPng(grey, d.width, d.height).toString('base64')
     const ref = planeRef(png)
     this.planes.put(ref, png)
-    return { kind: 'mask', ref, width: w, height: h, label: SEGMENT_LABEL[req.target] }
+    return { kind: 'mask', ref, width: d.width, height: d.height, label: SEGMENT_LABEL[req.target] }
   }
-
-  /** The stand-in's time on a stage, reported as the model would. */
-  private async stand(ctx: AiContext, ms: number): Promise<void> {
-    const steps = Math.max(1, Math.round(ms / 100))
-    for (let i = 1; i <= steps; i++) {
-      await pause(ms / steps, ctx.signal)
-      ctx.progress(i / steps)
-    }
-  }
-}
-
-/** The stand-in's plane: a soft figure for a subject, the top for a sky, and the rest for a background. */
-function standInPlane(target: SegmentTarget, w: number, h: number): Uint8Array {
-  const out = new Uint8Array(w * h)
-  const s = Math.min(w, h)
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) {
-      let v: number
-      if (target === 'sky') v = 1 - Math.min(1, Math.max(0, (y / h - 0.28) / 0.12))
-      else {
-        // A head over shoulders, centred.
-        const head = Math.hypot((x - w / 2) / (0.13 * s), (y - 0.36 * h) / (0.17 * s))
-        const body = Math.hypot((x - w / 2) / (0.3 * s), (y - 0.95 * h) / (0.42 * s))
-        const d = Math.min(head, body)
-        v = 1 - Math.min(1, Math.max(0, (d - 0.92) / 0.16))
-        if (target === 'background') v = 1 - v
-      }
-      out[y * w + x] = Math.round(v * 255)
-    }
-  return out
 }

@@ -90,6 +90,15 @@ const SHOTS = [
     }
   },
   {
+    // Manual corrections and defringe: something for every section to show.
+    id: 'lens',
+    photo: 3218,
+    edit: (r) => {
+      Object.assign(r.lens, { distortion: 18, vignetting: 25, vignettingMidpoint: 40 })
+      Object.assign(r.lens.defringe, { purpleAmount: 35, greenAmount: 15 })
+    }
+  },
+  {
     id: 'effects',
     photo: 3273,
     edit: (r) => {
@@ -179,18 +188,6 @@ const SHOTS = [
         blueHue: -12,
         blueSaturation: 22
       })
-    }
-  },
-  {
-    // The Engine panel lists the compiled grade, so give it one to list.
-    id: 'advanced',
-    photo: 3258,
-    edit: (r) => {
-      Object.assign(r.basic, { exposure: 0.2, contrast: 12, highlights: -30, shadows: 22 })
-      Object.assign(r.presence, { clarity: 8, vibrance: 16 })
-      Object.assign(r.colorGrade.shadows, { hue: 210, saturation: 14 })
-      Object.assign(r.colorGrade.highlights, { hue: 40, saturation: 10 })
-      Object.assign(r.effects, { vignetteAmount: -18 })
     }
   }
 ]

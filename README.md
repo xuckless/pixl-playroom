@@ -7,7 +7,8 @@
 A photo developer — the Lightroom kind — built on the **PIXL engine**. Every
 pixel on screen is a real engine render of the photo with its recipe, through
 the same compiler an export uses; the histogram and the colour-concentration
-chart are the engine's `analyze` of exactly what is shown.
+chart are the engine's measurement of exactly what is shown, taken as it
+renders.
 
 A near-black, matte-purple interface built around the photo: two slim bars,
 a rail that folds to a spine, one tool at a time chosen on a thumb-wheel, and
@@ -52,21 +53,24 @@ virtual copies, copy/paste/sync settings to a selection, batch export, Enhance.
 
 **Develop**
 
-| Panel          | What                                                                                                                                                                                                                                                                                                                                | Engine                                              |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Profile        | Neutral, Playroom Standard, Vivid, Monochrome, any imported `.cube` (with amount)                                                                                                                                                                                                                                                   | `Curves`, `Vibrance`, `Lut`                         |
-| White balance  | As shot / Auto / eyedropper / Custom / saved presets; RAWs show absolute Kelvin from the camera's as-shot white and offer Daylight, Cloudy…; a saved white (and a preset's) converts between a RAW's Kelvin and another photo's relative sliders; Sync copies it, converted, or measures each photo's own                           | `WhiteBalance` (Bradford), `probe().as_shot_white`  |
-| Tone           | Exposure (with a highlight shoulder for positive values), Contrast, Highlights, Shadows, Whites, Blacks, Auto (scene-aware: a flat, overcast frame gets contrast, not a highlight pull)                                                                                                                                             | `Primary`, 1D `Lut`, `Tone`                         |
-| Presence       | Texture, Clarity, Dehaze, Vibrance, Saturation                                                                                                                                                                                                                                                                                      | `LocalContrast` ×2, `Dehaze`, `Vibrance`, `Primary` |
-| Tone curve     | Parametric (4 regions, movable splits) and point curves (RGB, R, G, B); built-in and saved curve presets; the targeted tool (T) drags the curve at the tone under the pointer                                                                                                                                                       | `Curves`                                            |
-| HSL / B&W mix  | 8 bands × hue/sat/lum; B&W mix; Point colour (up to 8 colours picked off the photo, each shifted in hue, saturation and luminance with its own range); the targeted tool (T) drags the band under the pointer                                                                                                                       | `HslBands`, `Qualifier`, `Primary`                  |
-| Colour grading | Shadows/midtones/highlights/global wheels, blending, balance                                                                                                                                                                                                                                                                        | `ColorGrade`                                        |
-| Detail         | Sharpening (amount, radius, detail, masking); noise reduction (luminance/colour + detail); measured noise σ̂                                                                                                                                                                                                                         | `Sharpen`, `Denoise`, `analyze(noise)`              |
-| Effects        | Post-crop vignette (fitted to the crop, follows the straighten), grain (seeded)                                                                                                                                                                                                                                                     | `Vignette`, `Grain`                                 |
-| Calibration    | Shadows tint; red/green/blue primary hue & saturation                                                                                                                                                                                                                                                                               | `ChannelMixer`, `Primary`                           |
-| Crop & rotate  | Crop tool with aspect presets, straighten, rotate left/right, flip                                                                                                                                                                                                                                                                  | `Framing`                                           |
-| Masks          | Lightroom's masks panel (thumbnails; components joined by Add / Subtract / Intersect); brush A/B/erase with flow, density, pressure and Auto Mask; linear and radial gradients with pins; editable lasso; colour & luminance ranges with smoothness; Amount, blend, opacity, invert, 17 local sliders; five overlay modes, show all | `GradeLayer`, `Mask`, `Inspect::LayerMask`          |
-| Advanced       | The last render's engine report line by line, the compiled grade JSON, and custom layers written directly in the engine's terms (any op, any stage space, CDL, qualifiers)                                                                                                                                                          | the whole `Grade` model                             |
+| Panel          | What                                                                                                                                                                                                                                                                                                                                                                                                   | Engine                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| Profile        | Neutral, Playroom Standard, Vivid, Monochrome, any imported `.cube` (with amount)                                                                                                                                                                                                                                                                                                                      | `Curves`, `Vibrance`, `Lut`                                   |
+| White balance  | As shot / Auto / eyedropper / Custom / saved presets; RAWs show absolute Kelvin from the camera's as-shot white and offer Daylight, Cloudy…; a saved white (and a preset's) converts between a RAW's Kelvin and another photo's relative sliders; Sync copies it, converted, or measures each photo's own                                                                                              | `WhiteBalance` (Bradford), `probe().as_shot_white`            |
+| Tone           | Exposure (with a highlight shoulder for positive values), Contrast, Highlights, Shadows, Whites, Blacks, Auto (scene-aware: a flat, overcast frame gets contrast, not a highlight pull)                                                                                                                                                                                                                | `Primary`, 1D `Lut`, `Tone`                                   |
+| Presence       | Texture, Clarity, Dehaze, Vibrance, Saturation                                                                                                                                                                                                                                                                                                                                                         | `LocalContrast` ×2, `Dehaze`, `Vibrance`, `Primary`           |
+| Tone curve     | Parametric (4 regions, movable splits) and point curves (RGB, R, G, B) with Refine Saturation; built-in and saved curve presets; the targeted tool (T) drags the curve at the tone under the pointer                                                                                                                                                                                                   | `Curves` (`refine_saturation`)                                |
+| HSL / B&W mix  | 8 bands × hue/sat/lum; B&W mix; Point colour (up to 8 colours picked off the photo, each shifted in hue, saturation and luminance with its own range); the targeted tool (T) drags the band under the pointer                                                                                                                                                                                          | `HslBands`, `Qualifier`, `Primary`                            |
+| Colour grading | Shadows/midtones/highlights/global wheels, blending, balance; Add colour (coloured light, with Neutralise and Match pickers)                                                                                                                                                                                                                                                                           | `ColorGrade`, `AddColor`                                      |
+| Detail         | Sharpening (amount, radius, detail, masking); noise reduction, Classic (luminance/colour + detail; measured noise σ̂) or AI (SCUNet blind / DRUNet measured, strength)                                                                                                                                                                                                                                  | `Sharpen`, `Denoise`, `analyze(noise)`, `enhance`             |
+| Lens           | A profile for the lens the file names, found in the bundled Lensfun catalogue (1557 lenses, kept current from the models server) or imported, searchable, placed by the photo's crop factor and evaluated at its focal length, aperture and focus distance; Remove chromatic aberration, measured on the photo; manual distortion and vignetting; defringe (purple and green, on edges, with a picker) | `LensCorrection`, `suggestLateralCa`, `Defringe`              |
+| Effects        | Post-crop vignette (fitted to the crop, follows the straighten; highlight priority or paint overlay), colour wash (a lift toward a colour, with the same pickers), grain (seeded)                                                                                                                                                                                                                      | `Vignette`, `AddColor`, `Grain`                               |
+| Calibration    | Shadows tint; red/green/blue primary hue & saturation                                                                                                                                                                                                                                                                                                                                                  | `ChannelMixer`, `Primary`                                     |
+| Crop & rotate  | Crop tool with aspect presets, straighten, rotate left/right, flip; Upright (Auto, Level, Vertical, Full from the photo's lines; Guided from two to four drawn lines) and Transform sliders (vertical, horizontal, rotate, aspect, scale, offset), the photo kept centred and the crop fitted to the corrected picture                                                                                 | `Framing` (`transform`), `suggestUpright`, `uprightFromLines` |
+| Masks          | Lightroom's masks panel (thumbnails; components joined by Add / Subtract / Intersect); brush A/B/erase with flow, density, pressure and Auto Mask; linear and radial gradients with pins; editable lasso; colour & luminance ranges with smoothness; Amount, blend, opacity, invert, 17 local sliders and Add colour; five overlay modes, show all                                                     | `GradeLayer`, `Mask`, `Inspect::LayerMask`                    |
+| Heal           | Heal, clone and content-aware fill, Photoshop's way (click or paint, then drag from the spot to its source, live; or Alt-click a source first, later spots keep the offset), red eye and pet eye (drag over the pupil); outlines only while editing (hover or H shows them); a spot list; Q, H, ⌫, Enter, [ ]                                                                                          | `Retouch`, `suggestHealSource`                                |
+| Enhance        | JPEG restore (rebuilt from the file's coefficients, or FBCNN blind / at a quality), deblur (NAFNet), super-resolution (×2 Real-ESRGAN, ×4 general or keep-texture) into a new 16-bit TIFF with the recipe                                                                                                                                                                                              | `enhance` (JpegReconstruct, Model, Upscale)                   |
+| Engine report  | View ▸ Engine Report… (Ctrl+Alt+E) or the toolbar's `</>`: the last render's engine report line by line, the compiled grade JSON, and custom layers written directly in the engine's terms (any op, any stage space, CDL, qualifiers)                                                                                                                                                                  | the whole `Grade` model                                       |
 
 **Scopes** — RGB histogram with clipping markers and overlay (J), and the
 **colour-concentration chart**: 36 hue bins (10° each), bars coloured by hue
@@ -85,7 +89,7 @@ overlay, brush cursor, lasso and gradient handles.
 library, history, view modes, copy, enhance, export). The left rail is a
 spine of Presets, Snapshots, History and Info, one pane at a time, folding to
 the spine. The right column pins the scopes above a thumb-wheel that turns
-through the ten tools (scroll, drag, click, arrows, Ctrl+1…9) and shows one
+through the eleven tools (scroll, drag, click, arrows, Ctrl+1…9) and shows one
 at a time. The filmstrip waits under the loupe until its glass chip is
 clicked. Liquid glass (an SVG refraction filter as the backdrop filter) on
 the loupe's badges and bars, the wheel, dialogs, pins and popovers; a
@@ -101,18 +105,65 @@ only, to a batch, copied or measured per photo.
 template (`{name} {seq} {date} {rating} {copy} {ext}`), JPEG/PNG/TIFF/WebP/
 AVIF/JPEG XL/HEIC with each codec's knobs, bit depth, resize (long/short edge,
 width, height, megapixels, percent), colour space + intent + BPC, metadata
-blocks, dither, HDR (tone map HDR sources, keep HDR, expand SDR to PQ/HLG),
-export presets, batch with progress and cancel. Output sharpening after the
-resize (Screen, Matte or Glossy × Low, Standard or High; a second engine pass).
+blocks, dither, HDR (tone map HDR sources, keep HDR, expand SDR to PQ/HLG,
+or SDR + gain map: UltraHDR JPEG, AVIF, HEIC; highlights clipped at the peak
+or rolled off by BT.2390 from a chosen knee),
+a watermark (a PNG at one of nine anchors, sized and inset by the
+picture's shorter edge, with opacity and Normal / Multiply / Screen, previewed
+on the photo and composited after the resize so it stays sharp), export
+presets, batch with progress and cancel (it stops the file being
+written). Output sharpening after the resize (Screen, Matte or Glossy × Low,
+Standard or High), in the same engine pass.
 The photo's title, caption, keywords and copyright are written into the file
 (EXIF, XMP and IPTC, in the blocks kept), or only a copyright ("Copyright
 only"), with a default copyright for photos that have none and "Remove
 location" to strip GPS.
 
-**Enhance → Super Resolution** — ×2 with the bundled Real-ESRGAN model on the
-bundled ONNX Runtime (CoreML on macOS, CPU elsewhere, DirectML on Windows when
-a DirectML runtime is bundled) into a new 16-bit TIFF beside the original,
-which starts with the source's recipe.
+**Enhance** — the wheel's last tool (or the toolbar's Enhance) runs the
+engine's enhance chain over the photo's original, in its fixed order: a JPEG
+rebuilt from its DCT coefficients (no model) or FBCNN's JPEG restore, NAFNet's
+motion deblur, then Real-ESRGAN ×2 or ×4. The result is a new 16-bit TIFF
+beside the original (`-Enhanced`, numbered when taken), which starts with the
+source's recipe. The panel shows the output size, the file size and a time
+estimate learned from earlier runs, offers each missing model, and runs a
+selection as a batch. Models run on the ONNX Runtime the engine ships (CoreML
+on macOS, DirectML on Windows, or the CPU when the performance test finds it
+faster); one the accelerator cannot load (FBCNN, SCUNet under CoreML) moves to
+the CPU on its own.
+
+**AI models** — none ships with the app: Settings → AI models downloads each
+from models.pixlfoundation.com when wanted (resumable, checked against the
+engine's roster), shows its size, licence and what is known about its training
+data, and removes it. Select Subject and Background (Masks) run U²-Net.
+
+**Lens profiles** — the app ships Lensfun's database (CC BY-SA 3.0) as its lens
+catalogue, so every lens Lensfun knows is corrected offline, and checks the models server
+for a newer one at start and every six hours (only changed shards are downloaded, each
+checked by SHA-256). The Lens panel matches the file's lens (and, where the EXIF gives no
+35 mm focal, the camera's crop factor from the catalogue), shows what it found and at which
+crop, and searches the whole catalogue by hand; imported JSON profiles come first. Pasting,
+syncing or a preset re-resolves each photo at its own lens and focal length.
+`pnpm lens-profiles` rebuilds the catalogue from Lensfun, `--bucket <name>` publishes it.
+
+**HDR and gain maps** — the grid marks HDR photos (a gain map, PQ or HLG).
+A gain-map photo (an iPhone HEIC, an UltraHDR JPEG, an Apple JPEG) is edited
+on its SDR picture, or with the toolbar's **SDR | HDR** on the HDR rendition
+its map lifts it to: the map applied once at the file's headroom into a PQ
+master (`src/main/hdrsource.ts`), which the loupe, the 1:1 view, the
+thumbnails and the export then grade like any PQ photo, with the HDR
+histogram. **Headroom** in the view bar colours where the picture rises
+above white, amber to magenta at its peak. On an HDR photo the grade keeps
+its highlights: positive exposure has no SDR shoulder, and tone curves run on
+past white.
+
+**AI denoise** — Detail → Noise reduction → AI runs SCUNet (blind, for real
+camera noise) or DRUNet (told the noise it measures) over the photo once and
+keeps the result under the photo's cache, per model and strength: a denoised
+draft first (seconds; the loupe switches to it), then the full-resolution
+master, from which the proxies are remade. Every view, the 1:1 region,
+thumbnails and export then grade the denoised pixels, with the classic
+denoise off; an export that finds no master makes it. HDR photos are refused.
+A model the accelerator cannot load (SCUNet under CoreML) runs on the CPU.
 
 ## How it fits together
 
@@ -133,12 +184,15 @@ renderer (React)  ──IPC──>  main process ──postMessage──> utilit
   space; the look runs display-referred in Display P3. Pure, tested.
 - **Proxies** (`src/main/proxy.ts`): each photo is decoded once (a RAW
   developed once) into a 16-bit upright proxy (≤ 2560 px) and a draft
-  (≤ 1280 px); every preview grades those. Masks and radii are fractions of
+  (≤ 1280 px); every preview grades those — a lens correction baked into a
+  corrected copy of them once it settles, so no preview warps again. Masks and radii are fractions of
   the frame, so a preview and an export select and blur the same things.
 - **Render sessions** (`src/main/render.ts`): coalesced renders (a moving
   slider renders the draft, the full proxy follows when it settles; both
-  JPEG), each followed by `analyze`; the before render; mask planes via `Inspect`; 1:1
-  regions via `Region`; the eyedropper via a 5×5 region in linear sRGB.
+  JPEG, measured as they render); a newer edit cancels a settled render at
+  the engine's next stage; the before render; mask planes via `Inspect`; 1:1
+  regions via `Region`; the eyedropper via a 5×5 region in linear sRGB and
+  the engine's `whiteBalanceFromPixel`.
 - **Sidecars** (`<photo>.playroom.json`, `src/main/sidecar.ts`) are the
   truth: recipe, snapshots, virtual copies, rating, flag, label, stack. The
   descriptive metadata lives in a standard `.xmp` sidecar, so other apps read
@@ -189,7 +243,6 @@ with `read:packages` for it; see `.github/RELEASING.md`.
 
 ```sh
 pnpm install
-pnpm fetch-ai            # ONNX Runtime + Real-ESRGAN for this platform (Enhance)
 pnpm dev                 # the app (pnpm dev -- /path/to/photo.CR2 opens a photo)
 pnpm test                # the pure modules and the index (compiler, white balance, library rules…)
 pnpm typecheck && pnpm lint && pnpm build
@@ -204,9 +257,10 @@ offscreen-rendered window with a throwaway profile (`PLAYROOM_HIDDEN=1`,
 `tap x,y… [--dbl]`, `wheel <selector> <dy>`, `panel <tool>`, `ss <name>`,
 `eval <js>`).
 
-`PLAYROOM_FAKE_AI=1` turns on a stand-in segmentation model (Select Subject,
-Sky and Background in the mask tools): an AI job with real stages, progress,
-cancelling and a mask landing on its photo, until the real model ships.
+AI models download on demand (Settings → AI models) from
+models.pixlfoundation.com, mirrored there by `pnpm publish-models --bucket
+<bucket>`; `PLAYROOM_MODELS_URL` points at another mirror (`file://` works) for
+development, e.g. one made with `pnpm publish-models --dry-run --out <dir>`.
 `window.__maskPreview` reports the loupe's own mask preview (`stats`, and
 `read()` for its plane, to compare with the engine's).
 

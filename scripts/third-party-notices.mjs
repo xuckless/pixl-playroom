@@ -4,8 +4,8 @@
 //   node scripts/third-party-notices.mjs [--web <pixl-web dir>]
 // Three sources:
 //   - the native components npm can't see (build/third-party.json), with
-//     licence texts from build/licenses/ and, when fetched, ONNX Runtime's own
-//     notices (resources/ai/*/onnxruntime*/);
+//     licence texts from build/licenses/ and ONNX Runtime's own notices (from
+//     the engine's platform package, which ships the runtime);
 //   - the production npm packages (pnpm licenses), which ship in node_modules;
 //   - the packages bundled into the app's JavaScript (out/*/bundled-packages.json,
 //     written by electron.vite.config.ts), so run `electron-vite build` first.
@@ -96,19 +96,27 @@ const { components } = JSON.parse(
   fs.readFileSync(path.join(ROOT, 'build', 'third-party.json'), 'utf8')
 )
 const ids = new Set()
-/** ONNX Runtime's own LICENSE and ThirdPartyNotices.txt, from the first fetched runtime. */
+/**
+ * ONNX Runtime's own LICENSE and ThirdPartyNotices.txt, from the engine's
+ * platform package installed here (0.15+ ships the runtime beside the addon).
+ */
 function ortNotices() {
-  const ai = path.join(ROOT, 'resources', 'ai')
-  for (const target of fs.existsSync(ai) ? fs.readdirSync(ai).sort() : []) {
-    const dir = path.join(ai, target)
-    const ort = fs.readdirSync(dir).find((n) => n.toLowerCase().startsWith('onnxruntime'))
-    if (!ort) continue
-    const base = path.join(dir, ort)
-    const texts = ['LICENSE', 'ThirdPartyNotices.txt']
-      .map((n) => path.join(base, n))
-      .filter((f) => fs.existsSync(f))
-      .map((f) => fs.readFileSync(f, 'utf8').trim())
-    if (texts.length) return texts.join(`\n\n${RULE}\n\n`)
+  // pnpm keeps the platform package beside the base one in its store.
+  const base = path.join(ROOT, 'node_modules', '@xuckless', 'pixl-engine')
+  const roots = [
+    ...(fs.existsSync(base) ? [path.dirname(fs.realpathSync(base))] : []),
+    path.join(ROOT, 'node_modules', '@xuckless')
+  ]
+  for (const root of roots) {
+    for (const pkg of fs.existsSync(root) ? fs.readdirSync(root).sort() : []) {
+      if (!pkg.startsWith('pixl-engine-')) continue
+      const dir = fs.realpathSync(path.join(root, pkg))
+      const texts = ['onnxruntime-LICENSE.txt', 'onnxruntime-ThirdPartyNotices.txt']
+        .map((n) => path.join(dir, n))
+        .filter((f) => fs.existsSync(f))
+        .map((f) => fs.readFileSync(f, 'utf8').trim())
+      if (texts.length) return texts.join(`\n\n${RULE}\n\n`)
+    }
   }
   return null
 }
@@ -128,12 +136,12 @@ say(
   'available from the addresses given; we will also provide it on request, for three',
   'years from when you received this copy, from hello@pixlfoundation.com.',
   '',
-  '  1. Native components and the AI model',
+  '  1. Native components and the AI models',
   '  2. npm packages',
   '  3. Licence texts',
   '',
   RULE,
-  '1. NATIVE COMPONENTS AND THE AI MODEL',
+  '1. NATIVE COMPONENTS AND THE AI MODELS',
   RULE
 )
 for (const c of components) {
@@ -160,7 +168,39 @@ for (const c of components) {
           .join('\n')
       )
     else
-      console.warn('third-party-notices: no ONNX Runtime found under resources/ai (pnpm fetch-ai)')
+      console.warn("third-party-notices: no ONNX Runtime notices in the engine's platform package")
+  }
+}
+
+// The AI models are not in the app: each is downloaded when first wanted
+// (Settings → AI models). Every one the app can download is credited here,
+// with the licence text the engine's roster carries for it.
+{
+  const modelsDir = path.join(ROOT, 'node_modules', '@xuckless', 'pixl-models')
+  const roster = JSON.parse(fs.readFileSync(path.join(modelsDir, 'roster.json'), 'utf8'))
+  say('', 'AI models, downloaded on demand from models.pixlfoundation.com:')
+  for (const m of roster.models.filter((x) => x.ship)) {
+    ids.add(m.licence.spdx)
+    say(
+      '',
+      m.title,
+      `  Used for:  ${m.role}`,
+      `  Licence:   ${m.licence.spdx} (section 3)`,
+      `  Source:    ${m.upstream.repo}`,
+      `  ${m.licence.holder}`,
+      `  Training data: ${m.caveat}`
+    )
+    const own = path.join(modelsDir, 'licences', m.licence.text)
+    if (fs.existsSync(own))
+      say(
+        '',
+        fs
+          .readFileSync(own, 'utf8')
+          .trim()
+          .split('\n')
+          .map((l) => `    ${l}`)
+          .join('\n')
+      )
   }
 }
 

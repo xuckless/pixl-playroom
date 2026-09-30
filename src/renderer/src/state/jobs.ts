@@ -20,7 +20,7 @@ export interface Reveal {
 
 interface JobsState {
   jobs: Record<string, AiJobEvent>
-  /** How the last jobs ended, by id, after they leave `jobs` (for the Enhance dialog's tally). */
+  /** How the last jobs ended, by id, after they leave `jobs` (for the Enhance panel's list). */
   ended: Record<string, AiJobEvent>
   capabilities: AiCapabilities | null
   reveal: Reveal | null
@@ -57,6 +57,10 @@ export const useAiJobs = create<JobsState>((set, get) => ({
     const [list, capabilities] = await Promise.all([api.ai.list(), api.ai.capabilities()])
     set({ capabilities })
     for (const e of list) get().onEvent(e)
+    // A model downloaded or removed changes what can run.
+    api.models.onEvent(() => {
+      void api.ai.capabilities().then((c) => set({ capabilities: c }))
+    })
   },
   setReveal(layerId) {
     set({ reveal: { layerId, at: performance.now() } })

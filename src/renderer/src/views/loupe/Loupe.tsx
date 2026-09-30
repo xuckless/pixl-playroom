@@ -30,10 +30,16 @@ import { api, errorText } from '../../lib/api'
 import { emptyRange, hsvOf } from '../../lib/helpers'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { samplePatch } from '../../lib/image'
-import { useDevelop } from '../../state/develop'
+import { pickAdd } from '../../lib/addpick'
+import { fringeFrom } from '../../lib/helpers'
+import { useDevelop, wholeFrameTool } from '../../state/develop'
+import { useUi } from '../../state/ui'
+import { UprightGuides } from './UprightGuides'
+import { HealTool } from './HealTool'
 import { useLibrary } from '../../state/library'
 import { BrushLayer } from './BrushTool'
 import { ClippingOverlay } from './ClippingOverlay'
+import { HeadroomOverlay } from './HeadroomOverlay'
 import { CropTool } from './CropTool'
 import { DecodedImage } from './DecodedImage'
 import { Guides } from './Guides'
@@ -93,6 +99,8 @@ export function Loupe(): React.JSX.Element {
   const tool = useDevelop((s) => s.tool)
   const compare = useDevelop((s) => s.compare)
   const clipping = useDevelop((s) => s.clipping)
+  const headroom = useDevelop((s) => s.headroom && s.session?.isHdr === true)
+  const headroomPlane = useDevelop((s) => s.headroomPlane)
   const zoom = useDevelop((s) => s.zoom)
   const layerId = useDevelop((s) => s.layerId)
   const loading = useDevelop((s) => s.loading)
@@ -120,10 +128,17 @@ export function Loupe(): React.JSX.Element {
     return () => clearTimeout(t)
   }, [size.w, size.h, setTargetEdge])
 
+  const panel = useUi((s) => s.panel)
   const g = useMemo(
     () =>
       session && recipe
-        ? viewGeometry(recipe, session.frameWidth, session.frameHeight, tool === 'crop')
+        ? viewGeometry(
+            recipe,
+            session.frameWidth,
+            session.frameHeight,
+            tool === 'crop',
+            tool === 'upright-guide'
+          )
         : null,
     [session, recipe, tool]
   )
@@ -139,7 +154,7 @@ export function Loupe(): React.JSX.Element {
       const d = displaySize(g)
       return fitRect(size, d.width, d.height)
     }
-    if (tool === 'crop')
+    if (wholeFrameTool(tool))
       return fromGeometry() ?? (picture ? fitRect(size, picture.width, picture.height, 4) : null)
     if (picture && !picture.cropMode) return fitRect(size, picture.width, picture.height, 4)
     return fromGeometry() ?? (picture ? fitRect(size, picture.width, picture.height, 4) : null)
@@ -369,6 +384,27 @@ export function Loupe(): React.JSX.Element {
         replace(next, 'Pick range')
         madeComponent(madeId)
         setTool('none')
+      } else if (tool === 'fringe-pick' && picture) {
+        const f = fringeFrom(hsvOf(...(await samplePatch(picture.url, p.x, p.y))))
+        if (!f) {
+          useLibrary.getState().say('That is not a purple or green fringe', 'error')
+        } else {
+          const next = structuredClone(recipe)
+          const d = next.lens.defringe
+          if (f.band === 'purple') {
+            d.purpleHue = f.hue
+            if (d.purpleAmount === 0) d.purpleAmount = 50
+          } else {
+            d.greenHue = f.hue
+            if (d.greenAmount === 0) d.greenAmount = 50
+          }
+          replace(next, `Lens: pick ${f.band} fringe`)
+        }
+        setTool('none')
+      } else if (tool === 'add-pick' && picture) {
+        // The picture as shown, in its own Display P3: what the complement
+        // has to turn white (or into the second colour).
+        pickAdd(await samplePatch(picture.url, p.x, p.y, 5, 'display-p3'))
       } else if (tool === 'point-picker' && picture) {
         const s = hsvOf(...(await samplePatch(picture.url, p.x, p.y)))
         const sample = {
@@ -444,7 +480,14 @@ export function Loupe(): React.JSX.Element {
       onPointerCancel={endTat}
       onPointerLeave={() => setPointer(null)}
       onClick={(e) => {
-        if (tool === 'wb-picker' || tool === 'range-picker' || tool === 'point-picker') void pick(e)
+        if (
+          tool === 'wb-picker' ||
+          tool === 'range-picker' ||
+          tool === 'point-picker' ||
+          tool === 'add-pick' ||
+          tool === 'fringe-pick'
+        )
+          void pick(e)
       }}
       onDoubleClick={(e) => {
         if (tool !== 'none') return
@@ -478,6 +521,9 @@ export function Loupe(): React.JSX.Element {
             )}
             <MaskOverlay g={g ?? null} w={vrect.w} h={vrect.h} />
             {clipping && picture && <ClippingOverlay url={picture.url} />}
+            {headroom && headroomPlane && compare !== 'before' && (
+              <HeadroomOverlay url={headroomPlane.url} />
+            )}
           </div>
         )}
         {compare === 'split' && vrect && (
@@ -526,8 +572,10 @@ export function Loupe(): React.JSX.Element {
         {vrect && <AiScan rect={vrect} />}
         {tool === 'brush' && vrect && g && <BrushLayer rect={vrect} box={size} g={g} />}
         {tool === 'polygon' && vrect && g && <PolygonLayer rect={vrect} g={g} />}
-        {tool !== 'crop' && vrect && g && <GradientTools rect={vrect} g={g} />}
-        {tool !== 'crop' && vrect && g && <LassoEditor rect={vrect} g={g} />}
+        {!wholeFrameTool(tool) && vrect && g && <GradientTools rect={vrect} g={g} />}
+        {!wholeFrameTool(tool) && vrect && g && <LassoEditor rect={vrect} g={g} />}
+        {tool === 'upright-guide' && rect && <UprightGuides rect={rect} />}
+        {panel === 'heal' && !wholeFrameTool(tool) && vrect && g && <HealTool rect={vrect} g={g} />}
       </div>
       <LoupeHud scale={scale} />
     </div>

@@ -8,7 +8,11 @@
  * Every recipe is complete: no field is optional, so an old sidecar is
  * brought up to date by `normaliseRecipe` rather than by `?.` everywhere.
  */
+import { NO_ADD, type AddColourSetting } from './addcolor'
 import type { BlendMode, KeyBand, MaskMode } from './engine-types'
+import { defaultLens, type LensSetting } from './lens'
+import { defaultUpright, type UprightSetting } from './upright'
+import type { RetouchSpot } from './retouch'
 
 export const RECIPE_VERSION = 1
 
@@ -119,6 +123,11 @@ export interface ToneCurveSetting {
   red: CurvePointSetting[]
   green: CurvePointSetting[]
   blue: CurvePointSetting[]
+  /**
+   * 0…100: how much saturation the RGB point curve brings with it as it
+   * steepens (Refine Saturation). 100 is the curve as it has always run.
+   */
+  refineSaturation: number
 }
 
 export interface WheelSetting {
@@ -134,6 +143,8 @@ export interface ColorGradeSetting {
   global: WheelSetting
   blending: number
   balance: number
+  /** Coloured light added over the whole picture (see `addcolor.ts`). */
+  add: AddColourSetting
 }
 
 export interface DetailSetting {
@@ -145,6 +156,20 @@ export interface DetailSetting {
   noiseLuminanceDetail: number
   noiseColor: number
   noiseColorDetail: number
+  /**
+   * AI noise reduction: a model's denoise of the photo, made once and kept
+   * (see `main/ai/denoise.ts`), in place of the classic sliders.
+   */
+  ai: AiDenoiseSetting
+}
+
+export type AiDenoiseModel = 'scunet-color-real' | 'drunet-color'
+
+export interface AiDenoiseSetting {
+  enabled: boolean
+  model: AiDenoiseModel
+  /** 1…100: how much of the model's result replaces the photo. */
+  strength: number
 }
 
 export interface EffectsSetting {
@@ -153,6 +178,10 @@ export interface EffectsSetting {
   vignetteRoundness: number
   vignetteFeather: number
   vignetteHighlights: number
+  /** Highlight priority darkens like light falling off; paint overlay mixes toward black or white. */
+  vignetteStyle: 'highlight' | 'paint'
+  /** A lift toward a colour on the look's code values (see `addcolor.ts`). */
+  wash: AddColourSetting
   grainAmount: number
   grainSize: number
   grainRoughness: number
@@ -178,6 +207,8 @@ export interface GeometrySetting {
   crop: { x: number; y: number; width: number; height: number } | null
   /** Width over height the crop tool holds, or null for free. */
   aspect: number | null
+  /** Perspective correction (see `upright.ts`). */
+  upright: UprightSetting
 }
 
 // ── Local adjustments ────────────────────────────────────────────────────────
@@ -280,6 +311,10 @@ export interface LocalAdjust {
   /** A colour laid over the selection: hue 0…360, strength 0…100. */
   tintHue: number
   tintAmount: number
+  /** Coloured light added in the selection: hue 0…360, saturation and amount 0…100. */
+  addHue: number
+  addSaturation: number
+  addAmount: number
 }
 
 export interface LocalLayer {
@@ -324,12 +359,24 @@ export interface Recipe {
   pointColors: PointColorSetting[]
   colorGrade: ColorGradeSetting
   detail: DetailSetting
+  /** Lens corrections: profile, manual, chromatic aberration, defringe (see `lens.ts`). */
+  lens: LensSetting
   effects: EffectsSetting
   calibration: CalibrationSetting
   geometry: GeometrySetting
+  /** Heal, clone and fill spots, red and pet eye, in the order they run (see `retouch.ts`). */
+  retouch: RetouchSpot[]
   layers: LocalLayer[]
   custom: CustomLayer[]
+  /**
+   * A photo with a gain map (an iPhone HEIC, an UltraHDR JPEG) edited on its
+   * SDR base, or on the HDR rendition the map lifts it to. Other photos
+   * ignore it.
+   */
+  gainMap: GainMapEdit
 }
+
+export type GainMapEdit = 'base' | 'hdr'
 
 // ── Defaults ─────────────────────────────────────────────────────────────────
 
@@ -366,7 +413,10 @@ export const ZERO_LOCAL: LocalAdjust = {
   sharpness: 0,
   noise: 0,
   tintHue: 0,
-  tintAmount: 0
+  tintAmount: 0,
+  addHue: 0,
+  addSaturation: 0,
+  addAmount: 0
 }
 
 /**
@@ -380,6 +430,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     profile: isRaw ? { kind: 'standard' } : { kind: 'neutral' },
     profileAmount: 100,
     treatment: 'color',
+    gainMap: 'base',
     wb: { mode: 'as-shot', temperature: 0, tint: 0, preset: null },
     basic: { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 },
     presence: { texture: 0, clarity: 0, dehaze: 0, vibrance: 0, saturation: 0 },
@@ -392,7 +443,8 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       master: IDENTITY_CURVE(),
       red: IDENTITY_CURVE(),
       green: IDENTITY_CURVE(),
-      blue: IDENTITY_CURVE()
+      blue: IDENTITY_CURVE(),
+      refineSaturation: 100
     },
     hsl: zeroBands(),
     bwMix: zeroMix(),
@@ -403,7 +455,8 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       highlights: zeroWheel(),
       global: zeroWheel(),
       blending: 50,
-      balance: 0
+      balance: 0,
+      add: { ...NO_ADD }
     },
     detail: {
       sharpenAmount: isRaw ? 40 : 0,
@@ -413,14 +466,18 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       noiseLuminance: 0,
       noiseLuminanceDetail: 50,
       noiseColor: isRaw ? 25 : 0,
-      noiseColorDetail: 50
+      noiseColorDetail: 50,
+      ai: { enabled: false, model: 'scunet-color-real', strength: 100 }
     },
+    lens: defaultLens(),
     effects: {
       vignetteAmount: 0,
       vignetteMidpoint: 50,
       vignetteRoundness: 0,
       vignetteFeather: 50,
       vignetteHighlights: 0,
+      vignetteStyle: 'highlight',
+      wash: { ...NO_ADD },
       grainAmount: 0,
       grainSize: 25,
       grainRoughness: 50
@@ -434,7 +491,15 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       blueHue: 0,
       blueSaturation: 0
     },
-    geometry: { quarterTurns: 0, flipHorizontal: false, straighten: 0, crop: null, aspect: null },
+    geometry: {
+      quarterTurns: 0,
+      flipHorizontal: false,
+      straighten: 0,
+      crop: null,
+      aspect: null,
+      upright: defaultUpright()
+    },
+    retouch: [],
     layers: [],
     custom: []
   }
@@ -464,6 +529,7 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   const base = defaultRecipe(isRaw)
   const r = fill(base, value)
   r.version = RECIPE_VERSION
+  if (r.gainMap !== 'hdr') r.gainMap = 'base'
   if (!isObject(value) || !isObject((value as Record<string, unknown>).profile)) {
     r.profile = base.profile
   }
@@ -478,6 +544,14 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
       .map(normaliseComponent)
       .filter((c): c is MaskComponentSetting => c !== null)
   }))
+  r.retouch = (Array.isArray(r.retouch) ? (r.retouch as unknown[]) : []).filter(
+    (s): s is RetouchSpot =>
+      isObject(s) &&
+      typeof s.id === 'string' &&
+      typeof s.kind === 'string' &&
+      Array.isArray(s.points) &&
+      typeof s.radius === 'number'
+  )
   r.pointColors = (Array.isArray(r.pointColors) ? (r.pointColors as unknown[]) : [])
     .map(normalisePointColor)
     .filter((p): p is PointColorSetting => p !== null)
@@ -590,13 +664,16 @@ export const RECIPE_GROUPS = [
   'colorGrade',
   'detailSharpen',
   'detailNoise',
+  'lens',
   'effects',
   'calibration',
   'treatment',
   'crop',
   'orientation',
+  'retouch',
   'localAdjustments',
-  'custom'
+  'custom',
+  'hdr'
 ] as const
 export type RecipeGroup = (typeof RECIPE_GROUPS)[number]
 
@@ -610,13 +687,16 @@ export const GROUP_LABELS: Record<RecipeGroup, string> = {
   colorGrade: 'Colour grading',
   detailSharpen: 'Sharpening',
   detailNoise: 'Noise reduction',
+  lens: 'Lens corrections',
   effects: 'Effects',
   calibration: 'Calibration',
   treatment: 'Treatment (colour / B&W)',
   crop: 'Crop & straighten',
   orientation: 'Rotation & flip',
+  retouch: 'Spot removal & eyes',
   localAdjustments: 'Masks & local adjustments',
-  custom: 'Advanced layers'
+  custom: 'Advanced layers',
+  hdr: 'HDR editing (gain map)'
 }
 
 /** Copy the chosen groups of `from` onto `to`, returning a new recipe. */
@@ -660,6 +740,13 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.detail.noiseLuminanceDetail = f.detail.noiseLuminanceDetail
         r.detail.noiseColor = f.detail.noiseColor
         r.detail.noiseColorDetail = f.detail.noiseColorDetail
+        r.detail.ai = f.detail.ai
+        break
+      case 'lens':
+        r.lens = f.lens
+        break
+      case 'retouch':
+        r.retouch = f.retouch
         break
       case 'effects':
         r.effects = f.effects
@@ -684,6 +771,9 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         break
       case 'custom':
         r.custom = f.custom
+        break
+      case 'hdr':
+        r.gainMap = f.gainMap
         break
     }
   }

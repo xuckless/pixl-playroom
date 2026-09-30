@@ -1,5 +1,6 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import log from 'electron-log/main'
 import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { cpus } from 'os'
@@ -36,9 +37,14 @@ import { autoWbBatch, setWbBatch } from './autowb'
 import { crashConsent, reportRendererError, setCrashConsent } from './crash'
 import { activateLicence, deactivateLicence, licence, validateLicence } from './licence'
 import type { AiCapabilities, AiStartRequest } from '../shared/ai'
-import { enhanceAvailability } from './enhance'
+import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
+import type { LensProfile } from '../shared/lens'
+import type { GuideLine } from '../shared/upright'
+import type { P as SpotPoint } from '../shared/retouch'
+import { enhanceAvailability, enhanceRates } from './enhance'
+import { readWatermark } from './watermark'
 import type { AiJobs } from './ai/jobs'
-import { fakeAi } from './ai/segment'
+import { modelName, type ModelStore } from './ai/models'
 import type { Exporter } from './exporter'
 import { parseKey } from './keys'
 import type { Library } from './library'
@@ -82,6 +88,24 @@ export interface Services {
   ai: AiJobs
   engine: EngineClient
   bgEngine: EngineClient
+  /** AI jobs' engine (started when first needed). */
+  aiEngine: EngineClient
+  models: ModelStore
+  lenses: LensProfileStore
+}
+
+/** A photo that is not open, as lens matching needs it: probed, with its camera. */
+async function lensShotOf(s: Services, key: string): Promise<LensShot> {
+  const row = await s.library.photoRow(key)
+  const info = await s.library.probe(row)
+  const item = await s.library.item(key)
+  return {
+    lens: info.lens ?? null,
+    camera: item ? { make: item.camera.make, model: item.camera.model } : null,
+    // Only the frame's shape matters, and a RAW's developed frame keeps it.
+    width: info.width,
+    height: info.height
+  }
 }
 
 export function registerIpc(s: Services): void {
@@ -171,7 +195,20 @@ export function registerIpc(s: Services): void {
           sourceWb && target ? { ...recipe, wb: convertWb(recipe.wb, sourceWb, target) } : recipe
         const live = s.sessions.liveRecipe(key)
         const base = live ?? saved.get(key)
-        if (base) pairs.push({ key, recipe: applyGroups(base, from, groups) })
+        if (!base) continue
+        const next = applyGroups(base, from, groups)
+        // A lens profile is resolved per photo: each target at its own lens,
+        // focal length, aperture and crop factor (an automatic one finds
+        // each target's own lens), not the source's numbers.
+        if (groups.includes('lens') && next.lens.profile.enabled) {
+          try {
+            const shot = live ? await s.sessions.lensShot(key) : await lensShotOf(s, key)
+            next.lens.profile.resolved = s.lenses.resolve(shot, next.lens.profile.id).resolved
+          } catch (err) {
+            log.info('lens profile not re-resolved for', key, (err as Error).message)
+          }
+        }
+        pairs.push({ key, recipe: next })
       }
       // One message, one transaction: a batch commits once.
       const items = await s.index.saveRecipes(pairs)
@@ -273,6 +310,21 @@ export function registerIpc(s: Services): void {
   )
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))
+  handle(IPC.develop.measureCa, (key: string) => s.sessions.measureCa(key))
+  handle(IPC.develop.denoiseState, (key: string) => s.sessions.denoiseState(key))
+  handle(
+    IPC.develop.suggestHeal,
+    (key: string, points: SpotPoint[], radius: number, feather: number, kind: 'heal' | 'clone') =>
+      s.sessions.suggestHeal(key, points, radius, feather, kind)
+  )
+  handle(
+    IPC.develop.suggestUpright,
+    (key: string, mode: 'Level' | 'Vertical' | 'Full', focal: number) =>
+      s.sessions.suggestUpright(key, mode, focal)
+  )
+  handle(IPC.develop.uprightFromLines, (key: string, lines: GuideLine[], focal: number) =>
+    s.sessions.uprightFromLines(key, lines, focal)
+  )
   handle(IPC.develop.sample, (key: string, x: number, y: number) => s.sessions.sample(key, x, y))
   handle(IPC.develop.autoTone, (key: string) => s.sessions.autoTone(key))
   handle(IPC.develop.autoWb, (key: string) => s.sessions.autoWb(key))
@@ -337,6 +389,25 @@ export function registerIpc(s: Services): void {
       .filter((f) => f.toLowerCase().endsWith('.cube'))
       .map((f) => ({ name: basename(f, '.cube'), path: join(paths.luts(), f) }))
   )
+  // ── lens profiles ──
+  handle(IPC.lens.status, () => s.lenses.status())
+  handle(IPC.lens.check, () => s.lenses.check())
+  handle(IPC.lens.search, (query: string) => s.lenses.search(query))
+  handle(IPC.lens.resolve, async (key: string, id: string | null) =>
+    s.lenses.resolve(await s.sessions.lensShot(key), id)
+  )
+  handle(IPC.lens.importProfiles, async (): Promise<LensProfile[]> => {
+    const w = win()
+    const opts = {
+      properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[],
+      filters: [{ name: 'Lens profile', extensions: ['json'] }]
+    }
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    if (r.canceled) return []
+    const added = await importProfiles(r.filePaths)
+    await s.lenses.reloadImported()
+    return added
+  })
   handle(IPC.presets.importLut, async (): Promise<LutProfile[]> => {
     const w = win()
     const opts = {
@@ -363,6 +434,17 @@ export function registerIpc(s: Services): void {
     const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
     return r.canceled ? null : r.filePaths[0]
   })
+  handle(IPC.export.chooseWatermark, async () => {
+    const w = win()
+    const opts = {
+      title: 'Choose a watermark',
+      properties: ['openFile'] as 'openFile'[],
+      filters: [{ name: 'PNG', extensions: ['png'] }]
+    }
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    return r.canceled || !r.filePaths[0] ? null : readWatermark(r.filePaths[0])
+  })
+  handle(IPC.export.readWatermark, (path: string) => readWatermark(path))
   handle(IPC.export.start, (keys: string[], settings: ExportSettings) => {
     void s.index.setSetting('export.last', settings).catch(() => {})
     return s.exporter.start(keys, settings)
@@ -377,23 +459,38 @@ export function registerIpc(s: Services): void {
   handle(IPC.export.removePreset, (id: string) => s.index.removeExportPreset(id))
 
   // ── enhance ──
-  handle(IPC.enhance.available, () => enhanceAvailability(s.bgEngine.getStatus().enhance === true))
+  handle(IPC.enhance.rates, () => enhanceRates(s.index))
+
+  // ── AI models ──
+  handle(IPC.models.list, () => s.models.list())
+  // A download runs on; its progress arrives as `models:event`.
+  handle(IPC.models.download, (id: string) => void s.models.download(id))
+  handle(IPC.models.cancel, (id: string) => s.models.cancel(id))
+  handle(IPC.models.remove, (id: string) => s.models.remove(id))
+  handle(IPC.models.provider, () => s.models.providerInfo())
+  handle(IPC.models.benchmark, () => s.models.benchmark(s.aiEngine))
 
   // ── AI jobs ──
   handle(IPC.ai.start, (req: AiStartRequest) => s.ai.start(req))
   handle(IPC.ai.cancel, (jobId: string) => s.ai.cancel(jobId))
   handle(IPC.ai.list, () => s.ai.list())
   handle(IPC.ai.capabilities, async (): Promise<AiCapabilities> => {
-    const enhance = await enhanceAvailability(s.bgEngine.getStatus().enhance === true)
-    const segment = fakeAi()
+    const enhance = enhanceAvailability(s.bgEngine.getStatus())
+    const subject = (await s.models.installed('u2net')) || (await s.models.installed('u2netp'))
+    // Models run on the engine's bundled runtime; each denoise model is
+    // offered for download where it is picked (Detail → Noise reduction).
+    const models = s.bgEngine.getStatus().enhance === true
+    const segment = models && subject
     return {
       enhance: enhance.available,
       segment,
-      denoise: false,
+      denoise: models,
       why: {
         ...(enhance.available ? {} : { enhance: enhance.reason }),
-        ...(segment ? {} : { segment: 'needs a segmentation model' }),
-        denoise: 'needs a denoising model'
+        ...(segment
+          ? {}
+          : { segment: `download ${modelName(s.models.entry('u2netp'))} in Settings → AI models` }),
+        ...(models ? {} : { denoise: 'this engine build runs no models' })
       }
     }
   })
