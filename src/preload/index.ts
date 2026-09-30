@@ -34,6 +34,7 @@ import {
   type UpdateState,
   type ViewState
 } from '../shared/ipc'
+import type { LicenceStatus } from '../shared/licence'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
 
@@ -76,6 +77,13 @@ const api = {
     install: () => call<void>(IPC.updates.install),
     setChannel: (channel: UpdateChannel) => call<UpdateState>(IPC.updates.setChannel, channel),
     onState: (cb: (s: UpdateState) => void) => on(IPC.updates.event, cb)
+  },
+  licence: {
+    status: () => call<LicenceStatus>(IPC.licence.status),
+    activate: (key: string) => call<LicenceStatus>(IPC.licence.activate, key),
+    deactivate: () => call<LicenceStatus>(IPC.licence.deactivate),
+    validate: () => call<LicenceStatus>(IPC.licence.validate),
+    onChange: (cb: (s: LicenceStatus) => void) => on(IPC.licence.changed, cb)
   },
   prefs: {
     get: () => call<Prefs>(IPC.prefs.get),

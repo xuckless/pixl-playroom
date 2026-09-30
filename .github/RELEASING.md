@@ -121,6 +121,15 @@ components in `build/third-party.json`, with licence texts from `build/licenses/
 update `build/third-party.json`. To refresh the copy on the website:
 `node scripts/third-party-notices.mjs --web ../pixl-web`.
 
+## Licences
+
+Lemon Squeezy's licence API, called straight from the app (`src/shared/licence.ts`; no
+API key needed): activate with the key and a device name, validate at most once a day at
+launch, deactivate from _Settings_. `userData/licence.json` holds the record with the key
+sealed by `safeStorage`. Nothing is enforced (`LICENCE_ENFORCED`), and the Licence section
+only shows in development or with `PLAYROOM_LICENCE_UI=1`. `PLAYROOM_LICENCE_API` points the
+app at another server, for testing or for routing through the pixl-web Worker later.
+
 ## Crash reports
 
 Opt-in (asked once at first launch, then in _Settings_), stored as `crashReports` in

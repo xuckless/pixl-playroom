@@ -24,6 +24,7 @@ import {
   type ViewState
 } from '../shared/ipc'
 import { convertWb, type WbContext } from '../shared/wbconvert'
+import { LicenceError } from '../shared/licence'
 import { BUILTIN_PRESETS } from '../shared/presets'
 import { applyGroups, newId, planeRef, type Recipe, type RecipeGroup } from '../shared/recipe'
 import type { IndexClient } from './indexer/client'
@@ -33,6 +34,7 @@ import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
 import { autoWbBatch, setWbBatch } from './autowb'
 import { crashConsent, reportRendererError, setCrashConsent } from './crash'
+import { activateLicence, deactivateLicence, licence, validateLicence } from './licence'
 import type { AiCapabilities, AiStartRequest } from '../shared/ai'
 import { enhanceAvailability } from './enhance'
 import type { AiJobs } from './ai/jobs'
@@ -49,6 +51,7 @@ import { checkForUpdates, installUpdate, setUpdateChannel, updateState } from '.
 function toAppError(err: unknown): AppError {
   if (err instanceof EngineError) return { message: err.message, code: err.code, field: err.field }
   if (err instanceof IndexError) return { message: err.message, code: err.code }
+  if (err instanceof LicenceError) return { message: err.message, code: err.code }
   return { message: err instanceof Error ? err.message : String(err), code: 'Error' }
 }
 
@@ -113,6 +116,12 @@ export function registerIpc(s: Services): void {
     arch: process.arch
   }))
   handle(IPC.prefs.setCrashReports, (c: CrashConsent) => setCrashConsent(c))
+
+  // ── licence (not enforced yet: shared/licence.ts) ──
+  handle(IPC.licence.status, () => licence())
+  handle(IPC.licence.activate, (key: string) => activateLicence(key))
+  handle(IPC.licence.deactivate, () => deactivateLicence())
+  handle(IPC.licence.validate, () => validateLicence())
 
   // ── opens (Open With, second launch) ── workstream E
   handle(IPC.app.takeOpens, () => takeOpens())

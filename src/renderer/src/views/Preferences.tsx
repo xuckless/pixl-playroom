@@ -1,9 +1,10 @@
 /**
- * Settings (⌘, / Ctrl+,): updates, crash reports, and the legal pages. And
- * the one question the first launch asks: may crash reports be sent?
+ * Settings (⌘, / Ctrl+,): the licence, updates, crash reports, and the legal
+ * pages. And the one question the first launch asks: may crash reports be sent?
  */
 import { useEffect, useState } from 'react'
 import type { Prefs, UpdateState } from '../../../shared/ipc'
+import { ACCOUNT_URL, BUY_URL, type LicenceStatus } from '../../../shared/licence'
 import { Modal, Select } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
@@ -31,6 +32,111 @@ function updateLine(s: UpdateState): string {
   }
 }
 
+function licenceLine(s: LicenceStatus): string {
+  const st = s.state
+  switch (st.kind) {
+    case 'trial':
+      return `Free trial: ${st.daysLeft} day${st.daysLeft === 1 ? '' : 's'} left.`
+    case 'trial-ended':
+      return 'Your free trial has ended.'
+    case 'licensed': {
+      const who = s.customerName ? `Licensed to ${s.customerName}` : 'Licensed'
+      const devices =
+        s.devicesUsed !== undefined ? ` · ${s.devicesUsed} of ${s.deviceLimit} devices` : ''
+      return `${who}${devices}.`
+    }
+    case 'revalidate':
+      return 'Connect to the internet so Playroom can confirm your licence.'
+    case 'inactive':
+      return `This device is no longer activated: ${st.reason}`
+  }
+}
+
+/** The licence: trial days, or who it's licensed to and on how many devices; activate or free this device. */
+function LicenceSection(): React.JSX.Element | null {
+  const say = useLibrary((s) => s.say)
+  const [status, setStatus] = useState<LicenceStatus | null>(null)
+  const [key, setKey] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    void api.licence.status().then(setStatus)
+    return api.licence.onChange(setStatus)
+  }, [])
+  if (!status?.visible) return null
+  const run = async (fn: () => Promise<LicenceStatus>, done?: string): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      setStatus(await fn())
+      if (done) say(done)
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const kind = status.state.kind
+  const active = kind === 'licensed' || kind === 'revalidate'
+  return (
+    <fieldset>
+      <legend>Licence</legend>
+      <p className="prefs-status" role="status" aria-live="polite">
+        {licenceLine(status)}
+        {active && status.keyHint ? <span className="muted"> Key {status.keyHint}</span> : null}
+      </p>
+      {!status.enforced && (
+        <p className="muted small">
+          Licences aren&apos;t required yet: every feature works either way.
+        </p>
+      )}
+      {active ? (
+        <div className="prefs-row">
+          <button disabled={busy} onClick={() => void run(() => api.licence.validate())}>
+            Check now
+          </button>
+          <button
+            disabled={busy}
+            title="Frees this device's place, so the licence can be used on another"
+            onClick={() => void run(() => api.licence.deactivate(), 'This device is deactivated')}
+          >
+            Deactivate this device
+          </button>
+          <a href={ACCOUNT_URL} target="_blank" rel="noreferrer">
+            Manage devices
+          </a>
+        </div>
+      ) : (
+        <form
+          className="prefs-row"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void run(() => api.licence.activate(key), 'Licence activated').then(() => setKey(''))
+          }}
+        >
+          <input
+            className="licence-key"
+            value={key}
+            placeholder="Licence key"
+            aria-label="Licence key"
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(e) => setKey(e.target.value)}
+            onKeyDown={(e) => e.stopPropagation()}
+          />
+          <button type="submit" className="primary" disabled={busy || !key.trim()}>
+            Activate
+          </button>
+          <a href={BUY_URL} target="_blank" rel="noreferrer">
+            Buy a licence
+          </a>
+        </form>
+      )}
+      {error && <p className="error small">{error}</p>}
+    </fieldset>
+  )
+}
+
 function useUpdates(): UpdateState | null {
   const [state, setState] = useState<UpdateState | null>(null)
   useEffect(() => {
@@ -51,6 +157,7 @@ export function PreferencesDialog(): React.JSX.Element {
   const busy = update?.phase === 'checking' || update?.phase === 'downloading'
   return (
     <Modal title="Settings" onClose={() => setDialog(null)} icon="settings" className="prefs">
+      <LicenceSection />
       <fieldset>
         <legend>Updates</legend>
         <p className="muted small">

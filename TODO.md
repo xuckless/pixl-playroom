@@ -59,9 +59,24 @@ first paid release.
 
 ## Business: licensing and accounts
 
-- [ ] Licence keys, 3-device activation and a 14-day trial (Lemon Squeezy),
-      and the website account that manages them: Phase 5 of the web and
-      release plan.
+- [x] Licence keys, 3-device activation, a 14-day trial and a 30-day offline
+      grace, against Lemon Squeezy's licence API (`src/shared/licence.ts`,
+      `src/main/licence.ts`, Settings → Licence; tests in
+      `tests/licence.test.ts`). **Not enforced**: `LICENCE_ENFORCED` is false,
+      and the Licence section only shows in development or with
+      `PLAYROOM_LICENCE_UI=1`.
+- [ ] The Lemon Squeezy store: create it, the Playroom product with an
+      activation limit of 3, then set `LS_PRODUCT` (store and product ids) in
+      `src/shared/licence.ts` so other products' keys are refused. Test with a
+      test-mode key (`PLAYROOM_LICENCE_UI=1` in a packaged build).
+- [ ] Enforcement, once checkout is live: decide what an ended trial and an
+      unconfirmed licence (`revalidate`) lock (exports? the whole Develop
+      view?), gate it with `allows()` and flip `LICENCE_ENFORCED`. The trial's
+      start lives in `licence.json`, which deleting resets; if that matters,
+      record trials on the server by device.
+- [ ] Lost devices: the app can only free its own place. Until the website
+      account lists devices, freeing a lost one is by email (the account page
+      says so).
 - [ ] Update policy in writing: 1.x updates included, major versions a
       discounted paid upgrade (the EULA draft says so).
 - [ ] AI harness (MCP, bring your own agent; every agent action a history

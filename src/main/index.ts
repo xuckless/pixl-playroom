@@ -15,6 +15,7 @@ import { EnhanceRunner } from './enhance'
 import { Exporter } from './exporter'
 import { openIndex } from './indexer/client'
 import { registerIpc } from './ipc'
+import { startLicence } from './licence'
 import { Library } from './library'
 import { buildMenu } from './menu'
 import {
@@ -210,6 +211,7 @@ app.whenReady().then(() => {
   onRenderScale(buildMenu)
   createWindow()
   setupUpdater()
+  startLicence()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

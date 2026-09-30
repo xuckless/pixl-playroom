@@ -39,6 +39,14 @@ export const IPC = {
     get: 'prefs:get',
     setCrashReports: 'prefs:set-crash-reports'
   },
+  licence: {
+    status: 'licence:status',
+    activate: 'licence:activate',
+    deactivate: 'licence:deactivate',
+    validate: 'licence:validate',
+    /** main → renderer: the licence changed */
+    changed: 'licence:changed'
+  },
   library: {
     chooseFolder: 'library:choose-folder',
     openFolder: 'library:open-folder',
