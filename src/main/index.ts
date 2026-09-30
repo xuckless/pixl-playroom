@@ -193,12 +193,7 @@ app.whenReady().then(() => {
   const planes = new PlaneStore(index)
   const ai = new AiJobs(
     {
-      enhance: new EnhanceRunner(
-        library,
-        aiEngine,
-        () => bgEngine.getStatus(),
-        index
-      ),
+      enhance: new EnhanceRunner(library, aiEngine, () => bgEngine.getStatus(), index),
       ...(fakeAi() ? { segment: new SegmentRunner(library, planes) } : {})
     },
     async (key) => (await library.photoRow(key)).name,

@@ -1,7 +1,9 @@
 /**
  * The menu bar: Electron's default menus, less page zoom (⌘+ / ⌘− / ⌘0 zoom
- * the loupe instead), with View ▸ Rendering where the window's display offers
- * a choice (macOS), Settings… (⌘, / Ctrl+,) and Help's legal pages.
+ * the loupe instead), with View ▸ Engine Report… (the develop view's last
+ * render, compiled grade and custom layers), View ▸ Rendering where the
+ * window's display offers a choice (macOS), Settings… (⌘, / Ctrl+,) and
+ * Help's legal pages.
  */
 import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import { IPC, type RenderMode } from '../shared/ipc'
@@ -11,13 +13,21 @@ import { paths } from './paths'
 const SITE = 'https://playroom.pixlfoundation.com'
 const LEGAL = 'https://playroom.pixlfoundation.com/legal'
 
+const toRenderer = (channel: string) => (): void => {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  win?.webContents.send(channel)
+}
+
 const settings: MenuItemConstructorOptions = {
   label: 'Settings…',
   accelerator: 'CmdOrCtrl+,',
-  click: () => {
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-    win?.webContents.send(IPC.app.openPreferences)
-  }
+  click: toRenderer(IPC.app.openPreferences)
+}
+
+const engineReport: MenuItemConstructorOptions = {
+  label: 'Engine Report…',
+  accelerator: 'CmdOrCtrl+Alt+E',
+  click: toRenderer(IPC.app.openEngineReport)
 }
 
 const help: MenuItemConstructorOptions[] = [
@@ -34,6 +44,8 @@ export function buildMenu(): void {
   const mac = process.platform === 'darwin'
   const s = renderScale()
   const view: MenuItemConstructorOptions[] = [
+    engineReport,
+    { type: 'separator' },
     { role: 'reload' },
     { role: 'forceReload' },
     { role: 'toggleDevTools' },

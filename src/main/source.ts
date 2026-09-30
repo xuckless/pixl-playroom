@@ -134,7 +134,9 @@ export const BACKGROUND_THREADS = Math.max(1, Math.min(4, Math.floor(cpus().leng
  * read: the engine requires the choice exactly when the file carries one.
  * Playroom reads the SDR base.
  */
-export function gainMapOf(info: Pick<SourceInfo, 'gain_map'> | null | undefined): GainMapMode | null {
+export function gainMapOf(
+  info: Pick<SourceInfo, 'gain_map'> | null | undefined
+): GainMapMode | null {
   return info?.gain_map ? 'Base' : null
 }
 

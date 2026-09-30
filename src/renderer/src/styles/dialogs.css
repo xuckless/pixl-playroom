@@ -268,3 +268,19 @@ button.link:hover {
   min-width: 0;
   font-family: var(--font-mono);
 }
+
+/* Engine report: the last render and the compiled grade beside custom layers */
+.modal.engine-report .engine-line {
+  margin: 0 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+.modal.engine-report .engine-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+.modal.engine-report .report-lines,
+.modal.engine-report .json {
+  max-height: 46vh;
+}

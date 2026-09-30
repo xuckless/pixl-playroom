@@ -1,6 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, type ComponentType } from 'react'
-import { AdvancedPanel } from '../panels/advanced'
 import {
   BasicPanel,
   CalibrationPanel,
@@ -23,8 +22,7 @@ const PANELS: Record<ToolId, ComponentType> = {
   effects: EffectsPanel,
   masks: MasksPanel,
   crop: GeometryPanel,
-  calibration: CalibrationPanel,
-  advanced: AdvancedPanel
+  calibration: CalibrationPanel
 }
 
 /** Exactly one tool, springing in as the wheel lands on it. */

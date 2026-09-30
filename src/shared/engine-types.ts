@@ -196,8 +196,7 @@ export interface UpscalerRef {
 
 export type ConditionValue = { Stated: { value: number } } | { MeasuredNoise: { gain: number } }
 export type Conditioning =
-  | { Channel: { value: ConditionValue } }
-  | { Tensor: { name: string; value: ConditionValue } }
+  { Channel: { value: ConditionValue } } | { Tensor: { name: string; value: ConditionValue } }
 
 /** A restoring model, ×1: denoise, deblur, JPEG artefacts. */
 export interface EnhancerRef {
@@ -224,9 +223,7 @@ export interface JpegReconstruct {
 
 /** One step of `ConvertRequest.enhance`, run straight after decode and orientation. */
 export type EnhanceStep =
-  | { JpegReconstruct: JpegReconstruct }
-  | { Model: EnhancerRef }
-  | { Upscale: UpscalerRef }
+  { JpegReconstruct: JpegReconstruct } | { Model: EnhancerRef } | { Upscale: UpscalerRef }
 
 // ── Encoders ─────────────────────────────────────────────────────────────────
 
@@ -710,10 +707,7 @@ export interface EdgeKey {
 }
 
 export type MaskShape =
-  | { Polygon: Polygon }
-  | { Range: HslKey }
-  | { Raster: RasterMask }
-  | { Edges: EdgeKey }
+  { Polygon: Polygon } | { Range: HslKey } | { Raster: RasterMask } | { Edges: EdgeKey }
 
 export interface MaskComponent {
   shape: MaskShape
@@ -770,10 +764,7 @@ export interface GradeReport {
 // ── Lens, retouch, overlays ──────────────────────────────────────────────────
 
 export type RadiusUnit =
-  | 'HalfShorterSide'
-  | 'HalfDiagonal'
-  | 'FarthestCorner'
-  | { Focal: { x: number; y: number } }
+  'HalfShorterSide' | 'HalfDiagonal' | 'FarthestCorner' | { Focal: { x: number; y: number } }
 
 export interface LensGeometry {
   centre: Point
@@ -854,8 +845,7 @@ export interface LensReport {
 
 /** Positions are fractions of the frame; radii fractions of its shorter side. */
 export type SpotShape =
-  | { Circle: { centre: Point; radius: number } }
-  | { Stroke: { points: Point[]; radius: number } }
+  { Circle: { centre: Point; radius: number } } | { Stroke: { points: Point[]; radius: number } }
 
 export interface Spot {
   shape: SpotShape
@@ -897,11 +887,7 @@ export interface PetEye {
 }
 
 export type RetouchStep =
-  | { Clone: Spot }
-  | { Heal: Spot }
-  | { Fill: ContentFill }
-  | { RedEye: RedEye }
-  | { PetEye: PetEye }
+  { Clone: Spot } | { Heal: Spot } | { Fill: ContentFill } | { RedEye: RedEye } | { PetEye: PetEye }
 
 /** Run after the lens correction, before a region, the grade and framing. */
 export interface Retouch {
@@ -954,8 +940,7 @@ export interface SdrRendition {
 
 /** Which rendition of a gain-map file to read. Required exactly when the file has one. */
 export type GainMapMode =
-  | 'Base'
-  | { Apply: { headroom_stops: number; signal: 'Rec2100Pq' | 'Rec2100Hlg' } }
+  'Base' | { Apply: { headroom_stops: number; signal: 'Rec2100Pq' | 'Rec2100Hlg' } }
 
 export interface GainMapEncode {
   /** 1, 2, 4 or 8: the map's downscale from the base. */

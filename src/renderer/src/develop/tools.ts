@@ -75,13 +75,6 @@ export const TOOLS: ToolInfo[] = [
     short: 'Calib',
     desc: 'Shadow tint; red, green and blue primaries.',
     icon: 'M12 3v18M3 12h18M6 6l12 12M18 6 6 18'
-  },
-  {
-    id: 'advanced',
-    name: 'Advanced',
-    short: 'Engine',
-    desc: 'The engine report, the compiled grade, custom layers.',
-    icon: 'M8 9l-4 3 4 3M16 9l4 3-4 3M13 5l-2 14'
   }
 ]
 

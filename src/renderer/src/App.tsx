@@ -32,6 +32,7 @@ import { useBoot } from './state/boot'
 import { useLibrary } from './state/library'
 import { OVERLAY_MODES, useUi } from './state/ui'
 import { EnhanceDialog, ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
+import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
@@ -112,6 +113,7 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'enhance' && <EnhanceDialog key="enhance" />}
       {dialog === 'preferences' && <PreferencesDialog key="preferences" />}
       {dialog === 'crash-consent' && <CrashConsentDialog key="crash-consent" />}
+      {dialog === 'engine' && <EngineReportDialog key="engine" />}
     </AnimatePresence>
   )
 }
@@ -277,6 +279,13 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
     useDevelop.getState().setOverlay(true)
     useAiJobs.getState().setReveal(r.into.layerId)
   }
+}
+
+/** View ▸ Engine Report…: the open photo's, so only in Develop. */
+function openEngineReport(): void {
+  const lib = useLibrary.getState()
+  if (lib.view === 'develop' && useDevelop.getState().session) lib.setDialog('engine')
+  else lib.say('Open a photo in Develop to see its engine report')
 }
 
 /** Uncaught errors and rejections go to main: the log, and a crash report when opted in. */
@@ -602,6 +611,7 @@ export default function App(): React.JSX.Element {
         void aiJobEnded(e)
       }),
       api.app.onOpenPreferences(() => useLibrary.getState().setDialog('preferences')),
+      api.app.onOpenEngineReport(openEngineReport),
       reportErrors()
     ]
     void useAiJobs

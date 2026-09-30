@@ -66,7 +66,7 @@ virtual copies, copy/paste/sync settings to a selection, batch export, Enhance.
 | Calibration    | Shadows tint; red/green/blue primary hue & saturation                                                                                                                                                                                                                                                                               | `ChannelMixer`, `Primary`                           |
 | Crop & rotate  | Crop tool with aspect presets, straighten, rotate left/right, flip                                                                                                                                                                                                                                                                  | `Framing`                                           |
 | Masks          | Lightroom's masks panel (thumbnails; components joined by Add / Subtract / Intersect); brush A/B/erase with flow, density, pressure and Auto Mask; linear and radial gradients with pins; editable lasso; colour & luminance ranges with smoothness; Amount, blend, opacity, invert, 17 local sliders; five overlay modes, show all | `GradeLayer`, `Mask`, `Inspect::LayerMask`          |
-| Advanced       | The last render's engine report line by line, the compiled grade JSON, and custom layers written directly in the engine's terms (any op, any stage space, CDL, qualifiers)                                                                                                                                                          | the whole `Grade` model                             |
+| Engine report  | View ▸ Engine Report… (Ctrl+Alt+E) or the toolbar's `</>`: the last render's engine report line by line, the compiled grade JSON, and custom layers written directly in the engine's terms (any op, any stage space, CDL, qualifiers) | the whole `Grade` model |
 
 **Scopes** — RGB histogram with clipping markers and overlay (J), and the
 **colour-concentration chart**: 36 hue bins (10° each), bars coloured by hue
@@ -110,9 +110,9 @@ only"), with a default copyright for photos that have none and "Remove
 location" to strip GPS.
 
 **Enhance → Super Resolution** — ×2 with the bundled Real-ESRGAN model on the
-bundled ONNX Runtime (CoreML on macOS, CPU elsewhere, DirectML on Windows when
-a DirectML runtime is bundled) into a new 16-bit TIFF beside the original,
-which starts with the source's recipe.
+ONNX Runtime the engine ships (CoreML on macOS, DirectML on Windows, the CPU
+as the fallback) into a new 16-bit TIFF beside the original, which starts with
+the source's recipe.
 
 ## How it fits together
 

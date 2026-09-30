@@ -261,6 +261,40 @@ masters are in `build/brand/`.
       shows neither. They need rendering to BMP if the installer becomes
       assisted (`oneClick: false`).
 
+## Upgrade to pixl-engine 0.15.0
+
+Phased; each phase is tested and committed before the next.
+
+- [x] Phase 1 — the port, no change in output: request shapes brought up to
+      0.15 (`Framing.outside` with a straighten, `Vignette.style`,
+      `Curves.refine_saturation`, HDR `limit: 'Clip'`, `AnalyzeRequest.hdr`
+      as an `HdrSignal`, `gain_map: 'Base'` for iPhone HEIC and UltraHDR
+      originals, HEIF `matrix` — BT.601 as libheif assumed, BT.2020 wide or
+      HDR, Identity lossless); Screen, Overlay, Soft and Hard Light blend on
+      the PQ signal in an HDR pipeline (0.14 refuses them above white);
+      Enhance on the engine's bundled ONNX Runtime and the new `UpscalerRef`
+      (fetch-ai fetches only the model now); the Engine tool left the wheel
+      for View ▸ Engine Report… (Ctrl+Alt+E).
+- [ ] Phase 2 — cancel in-flight renders and exports, `measure` instead of
+      the analyze round trip, one-pass `output_sharpen`, the engine's WB
+      eyedropper.
+- [ ] Phase 3 — native ParametricCurve, refine saturation, paint-overlay
+      vignette, Additive Colour (Grading, Effects, masks) with complement
+      pickers.
+- [ ] Phase 4 — Lens tool (manual, auto CA, defringe, a profile system).
+- [ ] Phase 5 — Upright in Crop & Rotate.
+- [ ] Phase 6 — Heal tool (heal, clone, fill, red eye, pet eye).
+- [ ] Phase 7 — AI models on demand (models.pixlfoundation.com), real
+      subject and background masks.
+- [ ] Phase 8 — AI denoise in Detail (a cached denoised master).
+- [ ] Phase 9 — Enhance on the wheel (JPEG restore, deblur, upscale ×2/×4).
+- [ ] Phase 10 — HDR gain maps: read, grade and write.
+- [ ] Phase 11 — export watermark.
+- [ ] Phase 12 — real lens profiles (lensfun, DNG opcodes and maker notes,
+      vendor profiles as user imports).
+- [ ] HEIC export: the published engine's libheif has no HEVC encoder
+      (`EncoderUnavailable`); AVIF works.
+
 ## Upgrade to pixl-engine 0.13.0 (done)
 
 - [x] Pinned 0.13.0; `AnalyzeRequest.hdr`, `ImageStats.range_max` and

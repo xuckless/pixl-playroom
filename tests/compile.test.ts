@@ -158,7 +158,9 @@ test('the vignette is the exposure style, with its highlights', () => {
   const r = defaultRecipe(false)
   r.effects.vignetteAmount = -40
   r.effects.vignetteHighlights = 30
-  const op = compile(r, ctx).grade!.layers[0].stages.flatMap((s) => s.ops).find((o) => 'Vignette' in o)
+  const op = compile(r, ctx)
+    .grade!.layers[0].stages.flatMap((s) => s.ops)
+    .find((o) => 'Vignette' in o)
   assert.ok(op && 'Vignette' in op)
   assert.deepEqual(op.Vignette.style, { Exposure: { highlights: 0.3 } })
 })

@@ -86,6 +86,15 @@ export function DevelopToolbar(): React.JSX.Element {
       </div>
       <span className="spacer" />
       <button
+        className="icon ghost lg"
+        onClick={() => setDialog('engine')}
+        disabled={!session}
+        title="Engine report (Ctrl+Alt+E)"
+        aria-label="Engine report"
+      >
+        <Icon name="engine" />
+      </button>
+      <button
         className="ghost lg"
         onClick={async () => {
           if (!session) return

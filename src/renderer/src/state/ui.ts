@@ -59,17 +59,22 @@ export interface MaskOverlaySettings {
   pins: PinsMode
 }
 
-export type ToolId =
-  | 'basic'
-  | 'curve'
-  | 'hsl'
-  | 'grade'
-  | 'detail'
-  | 'effects'
-  | 'masks'
-  | 'crop'
-  | 'calibration'
-  | 'advanced'
+/** Every tool the wheel can hold (its order is `TOOLS`, in develop/tools.ts). */
+export const TOOL_IDS = [
+  'basic',
+  'curve',
+  'hsl',
+  'grade',
+  'detail',
+  'effects',
+  'masks',
+  'crop',
+  'calibration'
+] as const
+
+export type ToolId = (typeof TOOL_IDS)[number]
+
+const isToolId = (v: unknown): v is ToolId => TOOL_IDS.includes(v as ToolId)
 
 interface UiState {
   /** Which pane the left rail shows, and whether it is open or folded to its spine. */
@@ -155,6 +160,21 @@ export const useUi = create<UiState>()(
         set({ cropGuide: CROP_GUIDES[(i + 1) % CROP_GUIDES.length].value })
       }
     }),
-    { name: 'playroom.ui', storage, version: 1 }
+    {
+      name: 'playroom.ui',
+      storage,
+      version: 1,
+      // A tool saved by an older build that the wheel no longer has (the
+      // Engine tool, now a dialog) comes back as Basic.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<UiState>
+        return {
+          ...current,
+          ...p,
+          panel: isToolId(p.panel) ? p.panel : current.panel,
+          previousPanel: isToolId(p.previousPanel) ? p.previousPanel : current.previousPanel
+        }
+      }
+    }
   )
 )

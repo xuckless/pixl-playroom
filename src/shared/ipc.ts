@@ -22,6 +22,8 @@ export const IPC = {
     renderScaleChanged: 'app:render-scale-changed',
     /** main → renderer: the menu's Settings… was chosen */
     openPreferences: 'app:open-preferences',
+    /** main → renderer: the menu's Engine Report… was chosen */
+    openEngineReport: 'app:open-engine-report',
     /** An uncaught error in the renderer, for the log and (opted in) a crash report. */
     reportError: 'app:report-error',
     /** The bundled THIRD_PARTY_NOTICES.txt, opened in the system's text viewer. */

@@ -68,6 +68,7 @@ const api = {
     onOpenPaths: (cb: (paths: string[]) => void) => on(IPC.app.openPaths, cb),
     pathOf: (file: File) => webUtils.getPathForFile(file),
     onOpenPreferences: (cb: () => void) => on(IPC.app.openPreferences, cb),
+    onOpenEngineReport: (cb: () => void) => on(IPC.app.openEngineReport, cb),
     reportError: (e: ErrorReport) => call<void>(IPC.app.reportError, e),
     openNotices: () => call<void>(IPC.app.openNotices)
   },

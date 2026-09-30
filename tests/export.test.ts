@@ -217,7 +217,8 @@ test('location is removed only where it could be', () => {
 
 test('HEIF files state their matrix: BT.601 for SDR as before, BT.2020 wide or HDR, none lossless', () => {
   const s = { ...defaultExportSettings(), format: 'heic' as const, bitDepth: 8 }
-  const heic = (e: ReturnType<typeof buildEncode>['encode']) => {
+  type Heic = Extract<ReturnType<typeof buildEncode>['encode'], { Heic: unknown }>['Heic']
+  const heic = (e: ReturnType<typeof buildEncode>['encode']): Heic => {
     assert.ok(typeof e === 'object' && 'Heic' in e)
     return e.Heic
   }
