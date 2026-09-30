@@ -125,15 +125,26 @@ jobs:
           # is given; finding none yields an unsigned build with a warning.
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' && 'true' || 'false' }}
 
-      # Each macOS job's latest-mac.yml lists only the arch it packaged, and
-      # the two jobs overwrite each other's copy on the release. Keep both so
+      # The feed is named for the channel electron-builder derives from the
+      # version: latest-mac.yml for 0.3.0, beta-mac.yml for 0.3.0-beta.1.
+      - name: Update channel
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          tag='${{ inputs.tag }}'
+          channel=latest
+          if [[ "$tag" == *-* ]]; then pre="${tag#*-}"; channel="${pre%%.*}"; fi
+          echo "CHANNEL=$channel" >> "$GITHUB_ENV"
+
+      # Each macOS job's feed lists only the arch it packaged, and the two
+      # jobs overwrite each other's copy on the release. Keep both so
       # `mac-channel` below can publish one feed covering both.
       - name: Save this arch's macOS update manifest
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v7
         with:
           name: mac-channel-${{ matrix.arch }}
-          path: dist/latest-mac.yml
+          path: dist/${{ env.CHANNEL }}-mac.yml
           if-no-files-found: error
           retention-days: 7
 
@@ -157,12 +168,16 @@ jobs:
       # rather than publish such a feed.
       - name: Merge the per-arch manifests
         run: |
+          tag='${{ inputs.tag }}'
+          channel=latest
+          if [[ "$tag" == *-* ]]; then pre="${tag#*-}"; channel="${pre%%.*}"; fi
+          echo "CHANNEL=$channel" >> "$GITHUB_ENV"
           node build/merge-mac-channel.mjs \
-            mac-channel/mac-channel-x64/latest-mac.yml \
-            mac-channel/mac-channel-arm64/latest-mac.yml > latest-mac.yml
-          cat latest-mac.yml
+            "mac-channel/mac-channel-x64/$channel-mac.yml" \
+            "mac-channel/mac-channel-arm64/$channel-mac.yml" > "$channel-mac.yml"
+          cat "$channel-mac.yml"
 
       - name: Replace the manifest on the release
-        run: gh release upload "${{ inputs.tag }}" latest-mac.yml --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "${{ inputs.tag }}" "$CHANNEL-mac.yml" --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
