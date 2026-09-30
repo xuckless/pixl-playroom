@@ -12,6 +12,9 @@
 //   node scripts/lensfun-profiles.mjs --ref <sha|tag>          a pinned Lensfun commit
 //   node scripts/lensfun-profiles.mjs --out ./mirror/lens-profiles/v1 --bucket pixl-models
 //                                                             …and upload to R2 (wrangler login or CLOUDFLARE_API_TOKEN)
+//   node scripts/lensfun-profiles.mjs --publish-only --bucket pixl-models
+//                                                             upload the catalogue as it is (the one the app
+//                                                             bundles), checked against its index, unchanged
 //
 // What it keeps: every lens with a calibration, its names, mounts, focal
 // range and the calibration camera's crop factor and aspect ratio (what the
@@ -45,6 +48,50 @@ const bucket = arg('bucket')
 /** Where the catalogue sits in the bucket; the app's default URL names the same. */
 const PREFIX = 'lens-profiles/v1'
 const FORMAT = 1
+
+/** Upload a catalogue to R2: shards first, the index last, so an app never sees an index naming a shard that is not there yet. */
+function upload(shards) {
+  const put = (file) =>
+    execFileSync(
+      'npx',
+      [
+        'wrangler',
+        'r2',
+        'object',
+        'put',
+        `${bucket}/${PREFIX}/${file}`,
+        '--file',
+        join(out, file),
+        '--content-type',
+        'application/json',
+        '--remote'
+      ],
+      { stdio: ['ignore', 'ignore', 'inherit'], env: { ...process.env, npm_config_yes: 'true' } }
+    )
+  for (const s of shards) {
+    put(s.file)
+    process.stdout.write('.')
+  }
+  put('index.json')
+  console.log(`\nuploaded to ${bucket}/${PREFIX}/`)
+}
+
+// Publish what is built, as it is: the bundled catalogue and the online one
+// then share a version, and installed apps download nothing.
+if (process.argv.includes('--publish-only')) {
+  if (!bucket) throw new Error('--publish-only needs --bucket <name>')
+  const index = JSON.parse(readFileSync(join(out, 'index.json'), 'utf8'))
+  for (const s of index.shards) {
+    const sum = createHash('sha256')
+      .update(readFileSync(join(out, s.file)))
+      .digest('hex')
+    if (sum !== s.sha256)
+      throw new Error(`${s.file}: checksum differs from the index; rebuild first`)
+  }
+  console.log(`publishing ${index.lenses} lenses, version ${index.version}, from ${out}`)
+  upload(index.shards)
+  process.exit(0)
+}
 
 // ── Lensfun ──────────────────────────────────────────────────────────────────
 
@@ -316,31 +363,5 @@ console.log(
 
 // ── Upload ───────────────────────────────────────────────────────────────────
 
-if (bucket) {
-  const put = (file, type) =>
-    execFileSync(
-      'npx',
-      [
-        'wrangler',
-        'r2',
-        'object',
-        'put',
-        `${bucket}/${PREFIX}/${file}`,
-        '--file',
-        join(out, file),
-        '--content-type',
-        type,
-        '--remote'
-      ],
-      { stdio: ['ignore', 'ignore', 'inherit'] }
-    )
-  // Shards first, the index last: an app never sees an index naming a shard
-  // that is not there yet.
-  for (const s of shards) {
-    put(s.file, 'application/json')
-    process.stdout.write('.')
-  }
-  put('index.json', 'application/json')
-  console.log(`\nuploaded to ${bucket}/${PREFIX}/`)
-}
+if (bucket) upload(shards)
 if (work) rmSync(work, { recursive: true, force: true })

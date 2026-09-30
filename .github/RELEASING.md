@@ -40,6 +40,14 @@ feed.
 
 **Channels.** Derived from the version: `0.3.0` → `latest`, `0.3.0-beta.1` → `beta`.
 
+**Betas (now).** `release-please-config.json` sets `"prerelease": true`, `"versioning":
+"prerelease"` and `"prerelease-type": "beta"`: release PRs propose beta versions
+(`0.1.1-beta`, then `0.1.1-beta.1`…), and each GitHub release is flagged _Pre-release_, so it
+publishes only the `beta` feed and `releases/latest` (stable updates, the website's download
+links) never points at it. To cut a stable release, remove those three settings (or set
+`"prerelease": false` and drop `versioning`) in the PR before merging the release PR, or pin
+a version with a `Release-As: X.Y.Z` commit footer.
+
 **Engine updates.** `bump-engine.yml` opens a `fix(engine): bump pixl-engine to X` PR, on a
 `pixl-engine-released` repository dispatch or by hand (_Actions → Bump engine → Run
 workflow_ with the version).
@@ -115,20 +123,20 @@ AI models and the lens catalogue are served from one Cloudflare R2 bucket behind
 user downloads one (`src/main/ai/models.ts`), the lens catalogue a little after start and
 every six hours (`src/main/lensprofiles.ts`). Nothing here is part of a release.
 
-**Once:** `npx wrangler login` (or set `CLOUDFLARE_API_TOKEN`), create the bucket
-(`npx wrangler r2 bucket create <bucket>`), and attach the custom domain in the Cloudflare
-dashboard (R2 → the bucket → Settings → Custom domains → `models.pixlfoundation.com`), or
-with `npx wrangler r2 bucket domain add <bucket> --domain models.pixlfoundation.com
---zone-id <pixlfoundation.com's zone id>`. Until the domain answers, apps fall back to each
-model's public upstream and keep the lens catalogue they ship.
+**Set up (done):** the bucket is `pixl-models`, with the custom domain
+`models.pixlfoundation.com` attached (zone `pixlfoundation.com`). Wrangler reads
+`CLOUDFLARE_API_TOKEN` from the project's `.env` (git-ignored); `npx wrangler whoami`
+confirms it. The site's media is a separate bucket, `pixl-media`
+(`media.pixlfoundation.com`).
 
-**Models:** `pnpm publish-models --bucket <bucket>` when the engine's roster changes.
+**Models:** `pnpm publish-models --bucket pixl-models` when the engine's roster changes.
 
 **Lens profiles:** `pnpm lens-profiles` converts Lensfun's current database into
 `resources/lens-profiles/` (commit it: it is the catalogue the next release ships, and works
-offline). `pnpm lens-profiles --bucket <bucket>` also uploads it to
-`<bucket>/lens-profiles/v1/`, shards first and `index.json` last; every installed app picks
-it up at its next check, downloading only the shards whose SHA-256 changed. Pin a Lensfun
+offline). `pnpm lens-profiles --publish-only --bucket pixl-models` uploads that committed
+catalogue unchanged to `pixl-models/lens-profiles/v1/`, shards first and `index.json` last
+(so the online and the bundled catalogue share a version); every installed app picks up a
+newer one at its next check, downloading only the shards whose SHA-256 changed. Pin a Lensfun
 commit with `--ref <sha>`. `PLAYROOM_LENS_PROFILES_URL=file:///…/lens-profiles/v1` points a
 development build at a local copy of that layout.
 
