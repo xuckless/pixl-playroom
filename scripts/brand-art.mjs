@@ -2,8 +2,8 @@
 //   dmg: build/brand/dmg.html → build/background.png (660×400) and
 //        build/background@2x.png (1320×800), which electron-builder merges
 //        into one HiDPI TIFF.
-//   og:  build/brand/og.html → site/assets/og.png (1200×630), the website's
-//        link card.
+//   og:  build/brand/og.html → ../pixl-web/public/playroom/og.png (1200×630),
+//        the website's link card.
 //   pnpm exec electron scripts/brand-art.mjs [dmg] [og]     (no names: all)
 import { app, BrowserWindow } from 'electron'
 import { writeFileSync } from 'node:fs'
@@ -16,7 +16,7 @@ const ART = [
   {
     name: 'og',
     page: 'build/brand/og.html',
-    out: 'site/assets/og',
+    out: '../pixl-web/public/playroom/og',
     width: 1200,
     height: 630,
     only1x: true

@@ -183,9 +183,11 @@ masters are in `build/brand/`.
 - [x] Document icons from the kit's "Files Playroom opens" board, for RAW,
       DNG, JXL, HEIC, TIFF, JPEG, PNG, WebP and AVIF (`pnpm doc-icons` →
       `build/doc-icons/`), handed to `fileAssociations`.
-- [x] Website: `site/`, deployed to GitHub Pages by `.github/workflows/pages.yml`
-      (media rebuilt by `scripts/site-media.sh`); downloads say "Available
-      soon" until the first release.
+- [x] Website: playroom.pixlfoundation.com, in the pixl-web repo (one
+      Cloudflare Worker for every PIXL site); media rebuilt from here by
+      `scripts/site-media.sh`, tool screenshots by `scripts/site-tools.mjs`.
+      `site/` is only a redirect from the old GitHub Pages address. Downloads
+      say "Soon" until the first release.
 - [ ] Windows installer art: the kit's installer sidebar (164×314) and
       banner (150×57) are unused while the NSIS installer is one-click, which
       shows neither. They need rendering to BMP if the installer becomes

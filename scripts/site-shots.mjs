@@ -1,4 +1,4 @@
-// The website's app screenshots (site/assets/shots), taken from the built app.
+// The website's app screenshots (pixl-web: public/playroom/shots), taken from the built app.
 //   node scripts/site-shots.mjs <card dir> <work dir> <out dir>
 // Copies a few dozen CR2s (and their sidecars) from the card into three
 // folders under <work dir> — the card is only read — then drives the app on

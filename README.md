@@ -1,7 +1,8 @@
 # Pixl Playroom
 
-**Website:** https://xuckless.github.io/pixl-playroom/ (source in [`site/`](site/), published by
-`.github/workflows/pages.yml`; its media are rebuilt with `scripts/site-media.sh`)
+**Website:** https://playroom.pixlfoundation.com (source in the
+[pixl-web](https://github.com/xuckless/pixl-web) repo; its media are rebuilt from here with
+`scripts/site-media.sh`)
 
 A photo developer — the Lightroom kind — built on the **PIXL engine**. Every
 pixel on screen is a real engine render of the photo with its recipe, through
@@ -193,7 +194,7 @@ pnpm dev                 # the app (pnpm dev -- /path/to/photo.CR2 opens a photo
 pnpm test                # the pure modules and the index (compiler, white balance, library rules…)
 pnpm typecheck && pnpm lint && pnpm build
 pnpm doc-icons           # re-render the document icons (build/doc-icons/)
-scripts/site-media.sh    # rebuild the website's media (site/assets/)
+scripts/site-media.sh    # rebuild the website's media (../pixl-web/public/)
 ```
 
 `node scripts/drive.mjs` drives the built app for automation: a hidden,
