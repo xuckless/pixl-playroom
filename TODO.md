@@ -333,9 +333,12 @@ Phased; each phase is tested and committed before the next.
   - [ ] Upright's focal length from the 35 mm equivalent only; a file that
         states only the real focal length and no crop factor gets 35 mm.
 - [x] Phase 6 — the Heal tool (after Masks; Q): heal, clone and
-      content-aware fill as round spots or painted strokes, the source picked
-      by `suggestHealSource` (texture for heal, difference for clone) and
-      draggable; red eye and pet eye as dragged ellipses. Spots are stored in
+      content-aware fill as round spots or painted strokes, Photoshop's way:
+      a heal or clone starts with its source on the spot and is dragged to
+      where it copies from (live), or Alt-click sets the source first and
+      later spots keep the offset (aligned); outlines go once a spot is set
+      (hover or H shows them); "Find a source automatically" asks
+      `suggestHealSource`. Red eye and pet eye as dragged ellipses. Spots are stored in
       the base frame like masks (`src/shared/retouch.ts`), a source that would
       read outside the frame is pulled back inside, and spots are baked into
       the prepared proxies with the lens correction, so they cost nothing per

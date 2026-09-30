@@ -44,27 +44,29 @@ async function sourceFor(
   }
 }
 
-/** Place a spot of the tool's mode (heal and clone look for a source first). */
-export async function addSpot(
+/**
+ * Place a spot of the tool's mode. A heal or clone copies from `source`: the
+ * spot itself (it changes nothing until its source is dragged away), or a
+ * point set beforehand with Alt-click, as Photoshop's clone stamp does.
+ * Returns the new spot's id.
+ */
+export function addSpot(
   kind: SpotKind,
   points: P[],
-  shape?: { radius: number; radiusY: number; rotate: number }
-): Promise<void> {
+  opts: { shape?: { radius: number; radiusY: number; rotate: number }; source?: P } = {}
+): string | null {
   const dev = useDevelop.getState()
-  if (!dev.recipe || points.length === 0) return
+  if (!dev.recipe || points.length === 0) return null
   const h = useUi.getState().heal
-  const spot = newSpot(newId(), kind, points, shape?.radius ?? h.size, h.feather, h.opacity)
-  if (shape) {
-    spot.radiusY = shape.radiusY
-    spot.rotate = shape.rotate
+  const spot = newSpot(newId(), kind, points, opts.shape?.radius ?? h.size, h.feather, h.opacity)
+  if (opts.shape) {
+    spot.radiusY = opts.shape.radiusY
+    spot.rotate = opts.shape.rotate
   }
-  if (kind === 'heal' || kind === 'clone')
-    spot.source = await sourceFor(points, spot.radius, spot.feather, kind)
-  const cur = useDevelop.getState()
-  if (!cur.recipe) return
-  cur.edit((r) => r.retouch.push(spot))
-  cur.commit(`${SPOT_LABEL[kind]}: add`)
-  cur.setSpotId(spot.id)
+  if (kind === 'heal' || kind === 'clone') spot.source = opts.source ?? { ...points[0] }
+  dev.edit((r) => r.retouch.push(spot))
+  dev.commit(`${SPOT_LABEL[kind]}: add`)
+  return spot.id
 }
 
 /** Change a spot; `live` while a handle or slider moves (no history). */
@@ -90,7 +92,7 @@ export function deleteSpot(id: string): void {
   if (dev.spotId === id) dev.setSpotId(null)
 }
 
-/** Ask the engine again where a heal or clone should copy from. */
+/** Ask the engine where a heal or clone should copy from (the panel's button). */
 export async function findSource(id: string): Promise<void> {
   const s = useDevelop.getState().recipe?.retouch.find((x) => x.id === id)
   if (!s || (s.kind !== 'heal' && s.kind !== 'clone')) return

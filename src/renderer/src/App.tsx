@@ -524,7 +524,7 @@ function useShortcuts(): void {
         return selectPanel('masks', { tool: t })
       }
       // H in Heal shows or hides the spots.
-      if ((k === 'h' || k === 'H') && healOpen) return ui.setHeal({ showSpots: !ui.heal.showSpots })
+      if ((k === 'h' || k === 'H') && healOpen) return ui.setHeal({ showAll: !ui.heal.showAll })
       // H hides or shows the selected mask; Shift+H cycles the pins Auto → Always → Never.
       if (k === 'h' && masksOpen && dev.layerId) {
         const layer = dev.recipe?.layers.find((l) => l.id === dev.layerId)

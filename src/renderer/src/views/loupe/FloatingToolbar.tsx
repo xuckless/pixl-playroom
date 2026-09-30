@@ -188,7 +188,7 @@ const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
   'point-picker': { title: 'Point colour', hint: 'Click the colour to shift on its own' },
   heal: {
     title: 'Heal',
-    hint: 'Click a spot · drag to paint · drag a circle to move it · ⌫ deletes · [ ] size'
+    hint: 'Click or paint · drag the spot to its source · Alt-click sets a source · ⌫ deletes · [ ] size'
   },
   'fringe-pick': {
     title: 'Defringe',

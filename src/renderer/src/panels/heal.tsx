@@ -19,8 +19,9 @@ const MODES: { value: SpotKind; label: string }[] = [
 ]
 
 const HINT: Record<SpotKind, string> = {
-  heal: 'Copies texture from nearby and blends it into the tone around the spot.',
-  clone: 'Copies pixels from nearby as they are.',
+  heal: 'Click or paint over the flaw, then drag from it to where it should copy from: the texture comes from there, the tone from around the spot. Alt-click first to set the source.',
+  clone:
+    'Click or paint over the flaw, then drag from it to where it should copy from: the pixels come as they are. Alt-click first to set the source.',
   fill: 'Rebuilds the spot from the rest of the photo (content-aware).',
   redeye: 'Drag over a red pupil (or click it) to darken it to neutral.',
   peteye: 'Drag over a glowing pet pupil (or click it) to bring it to dark.'
@@ -81,11 +82,11 @@ export function HealPanel(): React.JSX.Element | null {
       <p className="muted small">{HINT[kind]}</p>
       <div className="row">
         <Toggle
-          on={heal.showSpots}
-          onChange={(on) => setHeal({ showSpots: on })}
-          title="Show the spots on the photo (H)"
+          on={heal.showAll}
+          onChange={(on) => setHeal({ showAll: on })}
+          title="Show every spot's outline (H); otherwise a spot shows while it is edited or under the pointer"
         >
-          Show spots
+          Show all spots
         </Toggle>
         <button className="sm ghost" disabled title="Needs an inpainting model; none ships yet">
           Remove (AI)
@@ -157,7 +158,7 @@ export function HealPanel(): React.JSX.Element | null {
           <div className="row">
             {(sel.kind === 'heal' || sel.kind === 'clone') && (
               <button className="sm" onClick={() => void findSource(sel.id)}>
-                Find another source
+                Find a source automatically
               </button>
             )}
             <span className="spacer" />

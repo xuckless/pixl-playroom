@@ -558,20 +558,28 @@
 .heal-layer {
   pointer-events: none;
 }
+.heal-layer svg {
+  pointer-events: none;
+}
 .heal-layer.active {
   pointer-events: auto;
-  cursor: crosshair;
+  /* The brush circle stands in for the pointer. */
+  cursor: none;
+}
+.heal-layer.active.over-spot {
+  cursor: move;
+}
+.heal-layer .heal-brush {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 1;
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9));
 }
 .heal-layer .spot {
   fill: rgba(255, 255, 255, 0.04);
   stroke: rgba(255, 255, 255, 0.85);
   stroke-width: 1.5;
   filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
-}
-.heal-layer.active .spot,
-.heal-layer.active .spot-src {
-  pointer-events: auto;
-  cursor: move;
 }
 .heal-layer .spot.stroke,
 .heal-layer .spot-src.stroke {
@@ -587,6 +595,10 @@
 .heal-layer .spot.stroke.selected {
   stroke: rgba(157, 139, 234, 0.45);
 }
+.heal-layer .spot.faint,
+.heal-layer .spot-source.faint {
+  opacity: 0.55;
+}
 .heal-layer .spot.off {
   stroke-dasharray: 2 3;
   opacity: 0.5;
@@ -597,16 +609,21 @@
 }
 .heal-layer .spot-src {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.6);
+  stroke: rgba(255, 255, 255, 0.7);
   stroke-dasharray: 4 3;
   stroke-width: 1.2;
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9));
 }
 .heal-layer .spot-source.selected .spot-src {
   stroke: var(--acc);
+}
+.heal-layer .spot-cross {
+  stroke: #fff;
+  stroke-width: 1.2;
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.9));
 }
 .heal-layer .spot-link {
   stroke: rgba(255, 255, 255, 0.5);
   stroke-width: 1;
   stroke-dasharray: 2 3;
-  pointer-events: none;
 }
