@@ -39,6 +39,7 @@ import { HealTool } from './HealTool'
 import { useLibrary } from '../../state/library'
 import { BrushLayer } from './BrushTool'
 import { ClippingOverlay } from './ClippingOverlay'
+import { HeadroomOverlay } from './HeadroomOverlay'
 import { CropTool } from './CropTool'
 import { DecodedImage } from './DecodedImage'
 import { Guides } from './Guides'
@@ -98,6 +99,8 @@ export function Loupe(): React.JSX.Element {
   const tool = useDevelop((s) => s.tool)
   const compare = useDevelop((s) => s.compare)
   const clipping = useDevelop((s) => s.clipping)
+  const headroom = useDevelop((s) => s.headroom && s.session?.isHdr === true)
+  const headroomPlane = useDevelop((s) => s.headroomPlane)
   const zoom = useDevelop((s) => s.zoom)
   const layerId = useDevelop((s) => s.layerId)
   const loading = useDevelop((s) => s.loading)
@@ -518,6 +521,9 @@ export function Loupe(): React.JSX.Element {
             )}
             <MaskOverlay g={g ?? null} w={vrect.w} h={vrect.h} />
             {clipping && picture && <ClippingOverlay url={picture.url} />}
+            {headroom && headroomPlane && compare !== 'before' && (
+              <HeadroomOverlay url={headroomPlane.url} />
+            )}
           </div>
         )}
         {compare === 'split' && vrect && (

@@ -96,7 +96,7 @@ first paid release.
       drawn by the host into 512 px raster planes (`src/shared/gradients.ts`,
       cached in the photo's cache) and reach the engine as `Raster` masks.
       Add `MaskShape::Linear { start, end }` and `MaskShape::Radial { centre,
-  radii, angle, softness }` to the engine so they are resolution-free at
+radii, angle, softness }` to the engine so they are resolution-free at
       export, then retire the planes and their cache.
 - [ ] **AI masks**: Select Subject, Select Sky, Select Background (their
       entries are in the tool picker, disabled until a model ships), Select
@@ -179,9 +179,9 @@ first paid release.
       HEIC export fails.
 - [ ] Raw-domain noise reduction (engine). (AI denoise: Phase 8.)
 - [ ] Soft proofing (output profile preview + gamut warning).
-- [ ] Full HDR editing and preview: render HDR previews (PQ AVIF / PNG cICP)
-      on HDR displays, an HDR histogram, grade HDR sources in HDR (engine
-      `HdrWorking` with PQ look stages), gain-map (ISO 21496-1) export.
+- [ ] HDR preview on HDR displays (render PQ AVIF / PNG cICP to the loupe);
+      the loupe shows HDR photos tone mapped for SDR today. (Grading in HDR,
+      the HDR histogram and gain-map export: Phase 10.)
 - [ ] Merge to HDR / panorama / HDR panorama; focus stacking.
 - [ ] ProRAW and DNG gain maps (engine).
 - [ ] Sharpening/NR previews at fit size (today sharpening is shown only when
@@ -394,7 +394,24 @@ Phased; each phase is tested and committed before the next.
   - [ ] FBCNN is ~50 s/MP on the CPU and CoreML cannot load it: ask the engine
         for a CoreML-loadable export.
   - [ ] A long-edge limit for ×4 (the request's `resize` after the chain).
-- [ ] Phase 10 — HDR gain maps: read, grade and write.
+- [x] Phase 10 — HDR gain maps: read, grade and write. The grid's HDR badge
+      (probe kind, kept per file version: migration 3); SDR | HDR for
+      gain-map photos (recipe `gainMap`, a PQ master of the applied map,
+      `hdrsource.ts`; switching reopens the session); the Headroom overlay
+      (`Inspect::Headroom`); export mode SDR + gain map (`sdr` rendition +
+      `encode.gain_map`) and a Clip / Roll-off limit with its knee.
+      Fixed on the way: HDR grades flattened everything above white (the
+      exposure shoulder and tone curves ending at 1), and HEIF/AVIF photos
+      were turned twice (libheif applies `irot`; the EXIF tag is now ignored,
+      and older sideways working copies are remade).
+  - [ ] HEIC gain-map export needs the engine's HEIC encoder (this build has
+        none; JPEG and AVIF work).
+  - [ ] A LUT profile flattens an HDR photo's highlights (a table is 0…1):
+        HDR-aware profiles, or the table on the SDR range only.
+  - [ ] Exporting an SDR-edited gain-map photo drops its map; carry the
+        original map (or remake it) so the export stays HDR-capable.
+  - [ ] Existing edits on HEIC photos were placed on the sideways frame
+        (crops, masks): they now land turned. Offer to rotate them once.
 - [ ] Phase 11 — export watermark.
 - [ ] Phase 12 — real lens profiles (lensfun, DNG opcodes and maker notes,
       vendor profiles as user imports).

@@ -15,6 +15,7 @@ import { ToolPanelHost } from './develop/ToolPanelHost'
 import { selectPanel, stepPanel, TOOLS } from './develop/tools'
 import { startWheelMemory } from './develop/wheelMemory'
 import { startDenoiseUpkeep } from './lib/denoise'
+import { startHdrUpkeep } from './lib/hdr'
 import { deleteSpot } from './lib/heal'
 import {
   componentLabel,
@@ -620,11 +621,18 @@ export default function App(): React.JSX.Element {
             .getState()
             .patchItems([{ ...it, thumbUrl: url ?? it.thumbUrl, unreadable: !!unreadable }])
       }),
+      api.library.onHdr(({ photoId, hdr }) => {
+        const mine = useLibrary
+          .getState()
+          .items.filter((i) => i.photoId === photoId && i.hdr !== hdr)
+        if (mine.length) useLibrary.getState().patchItems(mine.map((i) => ({ ...i, hdr })))
+      }),
       api.library.onChanged(({ folder }) => useLibrary.getState().onChanged(folder)),
       api.library.onSourcesChanged(() => void useLibrary.getState().onSourcesChanged()),
       api.develop.onRendered((e) => useDevelop.getState().onRendered(e)),
       startWheelMemory(),
       startDenoiseUpkeep(),
+      startHdrUpkeep(),
       api.app.onRenderScale(onRenderScale),
       api.app.onOpenPaths((paths) => void openPaths(paths)),
       api.develop.onRenderError((e) =>

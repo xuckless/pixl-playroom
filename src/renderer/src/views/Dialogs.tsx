@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import {
   defaultExportSettings,
+  normaliseExportSettings,
+  supportsGainMap,
   depthsFor,
   supportsHdr,
   type ExportFormat,
@@ -75,7 +77,7 @@ export function ExportDialog(): React.JSX.Element {
   useEffect(() => {
     void api.app
       .getSetting<ExportSettings>('export.last')
-      .then((last) => last && setS({ ...defaultExportSettings(), ...last }))
+      .then((last) => last && setS(normaliseExportSettings(last)))
     void api.export.presets().then(setPresets)
     return api.export.onProgress(setProgress)
   }, [])
@@ -153,7 +155,7 @@ export function ExportDialog(): React.JSX.Element {
             value=""
             onChange={(e) => {
               const p = presets.find((x) => x.id === e.target.value)
-              if (p) setS({ ...defaultExportSettings(), ...p.settings })
+              if (p) setS(normaliseExportSettings(p.settings))
             }}
           >
             <option value="">Load preset…</option>
@@ -572,9 +574,19 @@ export function ExportDialog(): React.JSX.Element {
               <option value="expand" disabled={!supportsHdr(s.format)}>
                 Expand SDR to HDR
               </option>
+              <option value="gainmap" disabled={!supportsGainMap(s.format)}>
+                SDR + gain map (HDR sources)
+              </option>
             </select>
           </Field>
-          {s.hdr.mode === 'sdr' && (
+          {s.hdr.mode === 'gainmap' && (
+            <p className="muted small">
+              An HDR photo is written as its SDR picture with a gain map (UltraHDR in a JPEG): an
+              HDR display lifts it back, any other shows the SDR picture. SDR photos are written as
+              plain SDR.
+            </p>
+          )}
+          {(s.hdr.mode === 'sdr' || s.hdr.mode === 'gainmap') && (
             <>
               <Field label="Operator">
                 <select
@@ -600,6 +612,45 @@ export function ExportDialog(): React.JSX.Element {
                   onChange={(v) => up('hdr', { ...s.hdr, targetPeak: v })}
                 />
               </Field>
+            </>
+          )}
+          {s.hdr.mode === 'gainmap' && (
+            <Field label="Map quality">
+              <Num
+                value={s.hdr.gainMapQuality}
+                min={1}
+                max={100}
+                onChange={(v) => up('hdr', { ...s.hdr, gainMapQuality: v })}
+              />
+            </Field>
+          )}
+          {s.hdr.mode !== 'sdr' && (
+            <>
+              <Field label="Highlights">
+                <select
+                  value={s.hdr.limit}
+                  onChange={(e) =>
+                    up('hdr', {
+                      ...s.hdr,
+                      limit: e.target.value as ExportSettings['hdr']['limit']
+                    })
+                  }
+                  title="What happens to highlights an edit pushes above the peak"
+                >
+                  <option value="clip">Clip at the peak</option>
+                  <option value="rolloff">Roll off (BT.2390)</option>
+                </select>
+              </Field>
+              {s.hdr.limit === 'rolloff' && (
+                <Field label="Knee (%)">
+                  <Num
+                    value={s.hdr.knee}
+                    min={10}
+                    max={100}
+                    onChange={(v) => up('hdr', { ...s.hdr, knee: v })}
+                  />
+                </Field>
+              )}
             </>
           )}
           {s.hdr.mode === 'expand' && (

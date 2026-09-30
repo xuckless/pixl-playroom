@@ -23,6 +23,7 @@ import {
   type FolderListing,
   type HistoryLog,
   type KeywordNode,
+  type HdrKind,
   type LibraryItem,
   type LibrarySource,
   type LutProfile,
@@ -114,6 +115,8 @@ const api = {
     prioritize: (keys: string[]) => call<void>(IPC.library.prioritize, keys),
     onThumb: (cb: (p: { key: string; url: string | null; unreadable?: boolean }) => void) =>
       on(IPC.library.thumb, cb),
+    /** A photo's HDR kind, learned from its probe (every copy of it shares it). */
+    onHdr: (cb: (p: { photoId: number; hdr: HdrKind | null }) => void) => on(IPC.library.hdr, cb),
     onChanged: (cb: (p: { folder: string }) => void) => on(IPC.library.changed, cb),
     openSource: (source: LibrarySource) => call<SourceListing>(IPC.library.openSource, source),
     resolvePaths: (paths: string[]) =>

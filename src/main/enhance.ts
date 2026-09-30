@@ -36,7 +36,13 @@ import type { EngineStatus } from '../shared/ipc'
 import { exists } from './exists'
 import { ModelMissing, type ModelStore } from './ai/models'
 import type { Library } from './library'
-import { BACKGROUND_THREADS, blankRequest, RAW_DEVELOP, sourceOrientation } from './source'
+import {
+  BACKGROUND_THREADS,
+  blankRequest,
+  RAW_DEVELOP,
+  sourceOrientation,
+  uprightFraming
+} from './source'
 import { estimate } from '../shared/ai'
 
 export interface EnhanceAvailability {
@@ -183,10 +189,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           encode: { Tiff: { compression: 'Deflate' } },
           metadata: raw ? { ...PRESERVE_ALL, icc: true } : PRESERVE_ALL,
           color: 'Preserve',
-          framing:
-            orientation === 'Normal'
-              ? null
-              : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null },
+          framing: uprightFraming(orientation, info),
           threads: BACKGROUND_THREADS * 2
         },
         { signal: ctx.signal }

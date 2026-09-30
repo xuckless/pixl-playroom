@@ -34,7 +34,13 @@ import type { Library } from '../library'
 import { paths } from '../paths'
 import { DRAFT_EDGE, ensureProxies, type Proxies, type ProxyFile } from '../proxy'
 import type { DevelopSessions } from '../render'
-import { BACKGROUND_THREADS, blankRequest, RAW_DEVELOP, sourceOrientation } from '../source'
+import {
+  BACKGROUND_THREADS,
+  blankRequest,
+  RAW_DEVELOP,
+  sourceOrientation,
+  versionStamp
+} from '../source'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
 import { ModelMissing, modelName, type ModelStore } from './models'
 
@@ -47,9 +53,7 @@ export interface DenoiseSet {
   master: ProxyFile | null
 }
 
-function stamp(photo: PhotoRow): string {
-  return `${Math.round(photo.mtime)}-${photo.size}`
-}
+const stamp = versionStamp
 
 /** What names a denoise: the photo's version, the model and its strength. */
 export function denoiseKey(photo: PhotoRow, ai: AiDenoiseSetting): string {

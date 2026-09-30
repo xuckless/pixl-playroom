@@ -80,6 +80,7 @@ import {
   type Proxies,
   type ProxyFile
 } from './proxy'
+import { editsHdr, ensureHdrSource } from './hdrsource'
 import {
   blankRequest,
   BACKGROUND_THREADS,
@@ -218,7 +219,11 @@ class Session {
     readonly info: SourceInfo,
     readonly px: Proxies,
     public recipe: Recipe,
-    private readonly owner: DevelopSessions
+    private readonly owner: DevelopSessions,
+    /** The file as probed; `info` is what is graded (a gain map's HDR master, when edited so). */
+    readonly file: SourceInfo = info,
+    /** A gain-map photo edited as HDR: the applied rendition at full resolution. */
+    readonly hdrMaster: ProxyFile | null = null
   ) {
     this.dir = rendersDir(row.id)
   }
@@ -456,6 +461,7 @@ class Session {
       if (kind === 'full' && !this.closed && !this.pending && !this.bakePending()) {
         if (this.view.maskLayer) await this.renderMask('full', signal)
         if (this.view.before) await this.renderBefore(signal)
+        if (this.view.headroom) await this.renderHeadroom(signal)
         if (this.view.maskThumbs) await this.renderMaskThumbs(signal)
       }
     } catch (err) {
@@ -632,6 +638,55 @@ class Session {
     } catch (err) {
       if (!isCancelled(err)) log.info('HDR histogram unavailable', (err as Error).message)
       return undefined
+    }
+  }
+
+  /**
+   * Where an HDR picture rises above its white, as the engine measures it on
+   * the pixels an HDR export would hold: a grey plane, 0 at and below white,
+   * 1 at the working peak (`stops` above white). The loupe colours it.
+   */
+  private async renderHeadroom(signal: AbortSignal): Promise<void> {
+    const hdr = this.hdrWorking
+    if (!hdr) return
+    const src = this.source('full')
+    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
+    // A plane has one channel, so a warp's transparent corners cannot be said.
+    if (framingTransparent(compiled.framing)) return
+    const stops = Math.max(0.5, Math.log2(hdr.peak_nits / hdr.reference_white_nits))
+    const out = this.nextFile('headroom', 'png')
+    try {
+      const r = await this.owner.engine.convert(
+        {
+          ...blankRequest(src.path, out, src.input),
+          pixel: { depth: 'Eight', channels: 1 },
+          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+          metadata: STRIP_ALL,
+          color: 'Preserve',
+          hdr,
+          grade: compiled.grade,
+          framing: compiled.framing,
+          lens: compiled.lens,
+          retouch: compiled.retouch,
+          inspect: { Headroom: { stops } },
+          threads: INTERACTIVE_THREADS
+        },
+        { signal }
+      )
+      if (this.closed) return
+      this.owner.send(IPC.develop.rendered, {
+        key: this.key,
+        seq: this.seq,
+        kind: 'headroom',
+        cropMode: this.view.cropMode,
+        url: cacheUrl(out, `${Date.now()}`),
+        width: r.width,
+        height: r.height,
+        stops
+      } satisfies RenderEvent)
+    } catch (err) {
+      if (isCancelled(err)) throw err
+      log.info('headroom overlay unavailable', (err as Error).message)
     }
   }
 
@@ -897,14 +952,16 @@ class Session {
     const raw = this.isRaw
     const src: ProxyFile = denoisedMaster
       ? denoisedMaster
-      : raw
-        ? await ensureMaster(this.owner.bgEngine, this.row)
-        : {
-            path: this.row.path,
-            input: this.info.input,
-            width: this.px.frameWidth,
-            height: this.px.frameHeight
-          }
+      : this.hdrMaster
+        ? this.hdrMaster
+        : raw
+          ? await ensureMaster(this.owner.bgEngine, this.row)
+          : {
+              path: this.row.path,
+              input: this.info.input,
+              width: this.px.frameWidth,
+              height: this.px.frameHeight
+            }
     const { user, width, height } = orientedFrame(
       this.recipe,
       this.px.frameWidth,
@@ -914,7 +971,8 @@ class Session {
     const compiled = compile(this.recipe, {
       isRaw: raw,
       asShot: this.info.as_shot_white,
-      sourceOrientation: raw || denoisedMaster ? 'Normal' : sourceOrientation(this.info, null),
+      sourceOrientation:
+        raw || denoisedMaster || this.hdrMaster ? 'Normal' : sourceOrientation(this.info, null),
       frameWidth: this.px.frameWidth,
       frameHeight: this.px.frameHeight,
       scale: zoom,
@@ -932,7 +990,7 @@ class Session {
     this.regionSlot = (this.regionSlot + 1) % 4
     const out = join(this.dir, `region-${this.regionSlot}.png`)
     // The original (not a RAW's master) states its gain-map rendition.
-    const original = raw || denoisedMaster ? null : this.info
+    const original = raw || denoisedMaster || this.hdrMaster ? null : this.file
     await this.owner.engine.convert(
       {
         ...blankRequest(src.path, out, src.input, original),
@@ -1142,10 +1200,10 @@ class Session {
     const raw = this.isRaw ? RAW_DEVELOP : null
     const r = (await this.owner.bgEngine.suggestLateralCa({
       source: { Path: this.row.path },
-      input: this.info.input,
+      input: this.file.input,
       raw,
-      gain_map: gainMapOf(this.info),
-      orientation: sourceOrientation(this.info, raw),
+      gain_map: gainMapOf(this.file),
+      orientation: sourceOrientation(this.file, raw),
       geometry: MANUAL_GEOMETRY,
       model: 'Scale',
       threads: BACKGROUND_THREADS
@@ -1248,12 +1306,12 @@ class Session {
   async noise(): Promise<NoiseEstimate | null> {
     const src: ProxyFile = this.isRaw
       ? await ensureMaster(this.owner.bgEngine, this.row)
-      : { path: this.row.path, input: this.info.input, width: 0, height: 0 }
+      : { path: this.row.path, input: this.file.input, width: 0, height: 0 }
     const s = await this.owner.bgEngine.analyze({
       ...analyzeRequest(src.path, 'Png', 1),
       input: src.input,
       raw: null,
-      gain_map: this.isRaw ? null : gainMapOf(this.info),
+      gain_map: this.isRaw ? null : gainMapOf(this.file),
       noise: true,
       hue_bins: 1,
       bins: 16,
@@ -1303,11 +1361,14 @@ export class DevelopSessions {
     }
     const { row, recipe, item, snapshots } = await this.library.index.openData(key)
     const info = await this.library.probe(row)
-    const px = await ensureProxies(this.engine, row, info)
+    // A gain-map photo edited as HDR opens on its applied rendition.
+    const hdr = editsHdr(recipe, info) ? await ensureHdrSource(this.engine, row, info) : null
+    const graded = hdr?.info ?? info
+    const px = hdr?.px ?? (await ensureProxies(this.engine, row, info))
     await mkdir(rendersDir(row.id), { recursive: true })
     let session = this.sessions.get(key)
     if (!session) {
-      session = new Session(key, row, info, px, recipe, this)
+      session = new Session(key, row, graded, px, recipe, this, info, hdr?.master ?? null)
       this.sessions.set(key, session)
       // A photo with AI denoise on opens on what the model made for it.
       await session.refreshDenoise()
@@ -1317,7 +1378,7 @@ export class DevelopSessions {
       item,
       info,
       isRaw: row.is_raw === 1,
-      isHdr: info.is_hdr,
+      isHdr: graded.is_hdr,
       asShot: info.as_shot_white,
       frameWidth: px.frameWidth,
       frameHeight: px.frameHeight,

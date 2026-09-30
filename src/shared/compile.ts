@@ -156,6 +156,32 @@ function curve(points: CurvePointSetting[]): Curve {
   return { points: out }
 }
 
+/**
+ * How far a display-referred stage's values reach on an HDR pipeline: PQ's
+ * 10 000 cd/m² over a 203 cd/m² white, in sRGB's extended encoding.
+ */
+const HDR_ENCODED_TOP = 5.3
+
+/**
+ * A tonal curve (master, red, green, blue). On an HDR pipeline a
+ * display-referred stage holds the highlights above 1 — two stops over white
+ * is about 1.8 — and a curve is flat past its last point, so one ending at
+ * (1, y) would flatten every highlight to y. There it goes on past white at
+ * slope 1, as far as PQ reaches, and the highlights keep their room.
+ */
+function tonal(points: CurvePointSetting[], hdr: boolean): Curve {
+  const c = curve(points)
+  const last = c.points[c.points.length - 1]
+  if (!hdr || !last) return c
+  return {
+    points: [
+      ...c.points,
+      { x: round4(last.x + 0.5), y: round4(last.y + 0.5) },
+      { x: HDR_ENCODED_TOP, y: round4(last.y + HDR_ENCODED_TOP - last.x) }
+    ]
+  }
+}
+
 export function isIdentityCurve(points: CurvePointSetting[]): boolean {
   return points.every((p) => Math.abs(p.x - p.y) < 1e-6)
 }
@@ -823,6 +849,7 @@ function baseStages(
 ): { space: GradeSpace; ops: GradeOp[] }[] {
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
+  const hdr = ctx.hdr === true
   const d = r.detail
   const denoise =
     !ctx.aiDenoised && (d.noiseLuminance > 0 || d.noiseColor > 0)
@@ -847,7 +874,9 @@ function baseStages(
   if (mix) linear.push({ ChannelMixer: { red: mix[0], green: mix[1], blue: mix[2] } })
   if (r.basic.exposure !== 0) {
     linear.push({ Primary: primary({ exposure: round4(r.basic.exposure), contrast_pivot: 0.18 }) })
-    if (r.basic.exposure > 0) {
+    // An SDR picture's highlights are rolled onto white; an HDR one has
+    // room above white for them (and a shoulder there would flatten it).
+    if (r.basic.exposure > 0 && !ctx.hdr) {
       linear.push({ Lut: { lut: { Cube: shoulderCube(r.basic.exposure) }, amount: 1 } })
     }
   }
@@ -867,16 +896,20 @@ function baseStages(
   }
   switch (r.profile.kind) {
     case 'standard':
-      look.push(curvesOp({ master: curve(STANDARD_CURVE) }))
+      look.push(curvesOp({ master: tonal(STANDARD_CURVE, hdr) }))
       break
     case 'vivid':
-      look.push(curvesOp({ master: curve(VIVID_CURVE) }))
+      look.push(curvesOp({ master: tonal(VIVID_CURVE, hdr) }))
       look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7 } })
       break
     case 'monochrome':
-      look.push(curvesOp({ master: curve(STANDARD_CURVE) }))
+      look.push(curvesOp({ master: tonal(STANDARD_CURVE, hdr) }))
       break
     case 'lut':
+      // A table is defined on 0…1: on an HDR pipeline everything above white
+      // gets its value at white.
+      if (hdr && r.profileAmount > 0)
+        notes.push('The LUT profile flattens the highlights above white on this HDR photo')
       if (r.profileAmount > 0) {
         look.push({
           Lut: { lut: { Path: r.profile.path }, amount: clamp(r.profileAmount / 100, 0, 1) }
@@ -916,13 +949,13 @@ function baseStages(
     })
   }
   const para = parametricCurve(r.toneCurve)
-  if (para) look.push(curvesOp({ master: curve(para) }))
+  if (para) look.push(curvesOp({ master: tonal(para, hdr) }))
   const tc = r.toneCurve
   const pc: Partial<Curves> = {}
-  if (!isIdentityCurve(tc.master)) pc.master = curve(tc.master)
-  if (!isIdentityCurve(tc.red)) pc.red = curve(tc.red)
-  if (!isIdentityCurve(tc.green)) pc.green = curve(tc.green)
-  if (!isIdentityCurve(tc.blue)) pc.blue = curve(tc.blue)
+  if (!isIdentityCurve(tc.master)) pc.master = tonal(tc.master, hdr)
+  if (!isIdentityCurve(tc.red)) pc.red = tonal(tc.red, hdr)
+  if (!isIdentityCurve(tc.green)) pc.green = tonal(tc.green, hdr)
+  if (!isIdentityCurve(tc.blue)) pc.blue = tonal(tc.blue, hdr)
   // Refine Saturation only means something with an RGB curve to refine;
   // 100 is the curve as it has always run.
   if (pc.master && tc.refineSaturation < 100)

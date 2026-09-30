@@ -32,7 +32,7 @@ import type { EngineClient } from './engine/client'
 import { exists } from './exists'
 import type { PhotoRow } from './db'
 import { paths } from './paths'
-import { blankRequest, RAW_DEVELOP, sourceOrientation } from './source'
+import { blankRequest, RAW_DEVELOP, sourceOrientation, versionStamp } from './source'
 
 export const PROXY_EDGE = 2560
 export const DRAFT_EDGE = 1280
@@ -54,9 +54,7 @@ export interface Proxies {
 
 const building = new Map<string, Promise<Proxies>>()
 
-function stamp(photo: PhotoRow): string {
-  return `${Math.round(photo.mtime)}-${photo.size}`
-}
+const stamp = versionStamp
 
 /** Make (or find) a photo's proxy and draft. Concurrent callers share one build. */
 export function ensureProxies(

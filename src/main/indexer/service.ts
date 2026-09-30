@@ -21,6 +21,7 @@ import type {
   Flag,
   HistoryLog,
   KeywordNode,
+  HdrKind,
   LibraryItem,
   LibrarySource,
   MetaPatch,
@@ -46,7 +47,7 @@ import {
   type Sidecar,
   type SidecarStack
 } from '../sidecar'
-import { IMAGE_EXTENSIONS, isRawExt } from '../source'
+import { IMAGE_EXTENSIONS, isRawExt, versionStamp } from '../source'
 import type { IndexEvent } from './protocol'
 import {
   applyMetaPatch,
@@ -523,6 +524,7 @@ export class IndexService {
           ? cacheUrlIn(this.cacheRoot, thumbPath, thumbKey ?? '')
           : null,
       unreadable: this.failed.has(versionOf(row)),
+      ...(row.hdr_key === versionOf(row) ? { hdr: (row.hdr || null) as HdrKind | null } : {}),
       camera: row.camera_json ? (JSON.parse(row.camera_json) as CameraInfo) : emptyCamera(),
       folder: row.folder,
       title: row.title ?? null,
@@ -1226,7 +1228,7 @@ export class IndexService {
     if (!existing) return null
     const recipe = this.recipe(keyOf(row.id, copyId))
     const edited = isEdited(recipe, row.is_raw === 1)
-    const stamp = `${Math.round(row.mtime)}-${row.size}-${edited ? hash32(JSON.stringify(recipe)).toString(16) : 'plain'}`
+    const stamp = `${versionStamp(row)}-${edited ? hash32(JSON.stringify(recipe)).toString(16) : 'plain'}`
     if (existing.thumb_key === stamp && existing.thumb_path && existsSync(existing.thumb_path))
       return null
     return { row, recipe, edited, stamp }
@@ -1234,6 +1236,12 @@ export class IndexService {
 
   setThumb(photoId: number, copyId: string | null, path: string, stamp: string): void {
     this.store.setThumb(photoId, copyId, path, stamp)
+  }
+
+  /** What kind of HDR a file version is ('' none), from its probe. */
+  setHdr(photoId: number, kind: string): void {
+    const row = this.store.photo(photoId)
+    if (row) this.store.setHdr(photoId, kind, versionOf(row))
   }
 
   /** Once per version of the file: one that cannot be read is not tried again until it changes. */

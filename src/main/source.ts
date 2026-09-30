@@ -16,6 +16,7 @@ import type {
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
 import { fromExif } from '../shared/orientation'
+import type { PhotoRow } from './db'
 import { execFileSync } from 'child_process'
 import { cpus } from 'os'
 
@@ -80,7 +81,37 @@ export function sourceOrientation(info: SourceInfo, raw: RawMode | null): Orient
   // A developed RAW (rawler's or the scene-linear one) comes out upright;
   // every other path carries the tag.
   if (info.input === 'Raw' && raw !== null && raw !== 'EmbeddedPreview') return 'Normal'
+  // A HEIF or AVIF is decoded (by libheif) with its own transforms — irot,
+  // imir — applied, and the spec says the EXIF tag must then be ignored: an
+  // iPhone writes both, so turning by the tag too lays a portrait on its side.
+  if (info.input === 'Heif') return 'Normal'
   return fromExif(info.orientation)
+}
+
+/**
+ * Framing that only turns a source upright, for a new file that keeps the
+ * source's EXIF: null when nothing turns, except for a HEIF, whose EXIF tag
+ * still says to turn pixels libheif has already turned — a stated framing
+ * makes the engine reset that tag to 1.
+ */
+export function uprightFraming(
+  orientation: Orientation,
+  info: Pick<SourceInfo, 'input'>
+): Framing | null {
+  if (orientation === 'Normal' && info.input !== 'Heif') return null
+  return { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
+}
+
+/** HEIF and AVIF files, whose working copies an older build laid on their side. */
+const HEIF_EXT = /^(heic|heif|hif|avif)$/i
+
+/**
+ * What names a file version in the caches made from it: its time and size,
+ * and a mark on HEIF/AVIF copies made since their orientation was fixed, so
+ * the older (sideways) ones are made again.
+ */
+export function versionStamp(photo: Pick<PhotoRow, 'mtime' | 'size' | 'ext'>): string {
+  return `${Math.round(photo.mtime)}-${photo.size}${HEIF_EXT.test(photo.ext) ? '-u' : ''}`
 }
 
 /** The peak an HDR source is assumed to reach when it states none. */

@@ -618,3 +618,9 @@ aside.right .panels {
   white-space: nowrap;
   animation: nameIn 0.5s var(--spring);
 }
+.badge.hdr {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(90deg, rgba(255, 180, 84, 0.8), rgba(170, 120, 255, 0.8));
+  box-shadow: 0 0 10px -3px rgba(255, 190, 120, 0.7);
+}

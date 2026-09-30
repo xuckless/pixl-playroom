@@ -17,10 +17,15 @@ import {
   buildResize,
   expandTemplate,
   FORMAT_EXT,
+  gainMapEncode,
+  hdrLimit,
   metadataPlan,
   outputSharpen,
   outputSharpenRequest,
+  sdrRendition,
+  supportsGainMap,
   supportsHdr,
+  withGainMap,
   type ExportSettings
 } from '../shared/export'
 import { IPC, type ExportProgress } from '../shared/ipc'
@@ -32,6 +37,7 @@ import { isCancelled, type EngineClient } from './engine/client'
 import type { Library } from './library'
 import { ensureProxies, type ProxyFile } from './proxy'
 import { buildMaster, denoiseKey, denoiseRefusal, findDenoised } from './ai/denoise'
+import { editsHdr, ensureHdrSource } from './hdrsource'
 import type { ModelStore } from './ai/models'
 import type { PhotoRow } from './db'
 import type { SourceInfo } from '../shared/engine-types'
@@ -42,6 +48,7 @@ import {
   blankRequest,
   RAW_DEVELOP,
   sourceOrientation,
+  uprightFraming,
   INTERACTIVE_THREADS
 } from './source'
 
@@ -147,10 +154,15 @@ export class Exporter {
     const row = await this.library.photoRow(key)
     const item = await this.library.item(key)
     const recipe = this.sessions.liveRecipe(key) ?? (await this.library.recipe(key))
-    const info = await this.library.probe(row)
+    const file = await this.library.probe(row)
+    // A gain-map photo edited as HDR is exported from its applied rendition,
+    // a PQ master: from here on it is an HDR source like any other.
+    const hdrSource = editsHdr(recipe, file) ? await ensureHdrSource(this.engine, row, file) : null
+    const info = hdrSource?.info ?? file
     // AI denoise: the full-resolution denoised master is the source (made
     // now when the photo has only its preview, or nothing yet).
-    const master = await this.denoisedMaster(row, info, recipe, signal)
+    const master = hdrSource?.master ?? (await this.denoisedMaster(row, info, recipe, signal))
+    const denoised = master !== null && hdrSource === null
     const raw = master ? null : info.input === 'Raw' ? RAW_DEVELOP : null
     const srcOrientation = master ? 'Normal' : sourceOrientation(info, raw)
     // The full-resolution frame, upright. A RAW's developed frame is smaller
@@ -178,7 +190,7 @@ export class Exporter {
       seed: hash32(row.path),
       brushPaths: await brushPlanes(row.id, recipe, user),
       applyCrop: true,
-      aiDenoised: master !== null,
+      aiDenoised: denoised,
       hdr: info.is_hdr || hdrOut
     })
     const cw = Math.round((compiled.crop?.width ?? 1) * width)
@@ -211,21 +223,29 @@ export class Exporter {
     // An HDR source stays HDR only where the settings ask and the format can
     // say so; otherwise it is tone mapped like any SDR delivery.
     const hdrKeep = info.is_hdr && s.hdr.mode === 'keep' && supportsHdr(s.format)
+    // An HDR source as an SDR picture with a gain map, where the format
+    // carries one: the grade states the HDR master, the engine renders its
+    // SDR picture and writes the map between them. An SDR source has nothing
+    // above white to map, and is written as plain SDR.
+    const gainMapOut = info.is_hdr && s.hdr.mode === 'gainmap' && supportsGainMap(s.format)
     const effective: ExportSettings =
-      info.is_hdr && s.hdr.mode === 'keep' && !hdrKeep
+      (info.is_hdr && s.hdr.mode === 'keep' && !hdrKeep) ||
+      (s.hdr.mode === 'gainmap' && !gainMapOut)
         ? { ...s, hdr: { ...s.hdr, mode: 'sdr' } }
         : s
+    const peak = info.peak_nits ?? s.hdr.peak
     const floatWork =
       compiled.grade !== null ||
       compiled.lens !== null ||
       compiled.retouch !== null ||
       framingWarps(compiled.framing)
     const resize = buildResize(s, cw, ch)
-    const color = buildColor(effective, info.is_hdr, info.peak_nits)
+    const color = gainMapOut ? 'Preserve' : buildColor(effective, info.is_hdr, info.peak_nits)
     // Dither acts on the one float → integer rounding, so it is only asked
     // for when there is one (the engine refuses it otherwise).
     const floatPath =
       floatWork ||
+      gainMapOut ||
       (resize !== 'None' && !hdrKeep) ||
       (typeof color === 'object' && ('ToneMap' in color || 'Expand' in color))
     const dither: Dither =
@@ -242,20 +262,25 @@ export class Exporter {
       // because that path needs the working white stated.
       linear_resample: hdrKeep ? floatWork : true,
       pixel: { depth, channels: 3 },
-      encode,
-      metadata: plan.policy,
+      encode: gainMapOut ? withGainMap(encode, gainMapEncode(s, peak)) : encode,
+      // A reader reaches the base's linear light, which the map multiplies,
+      // through its colour description.
+      metadata: gainMapOut ? { ...plan.policy, icc: true } : plan.policy,
       color,
+      sdr: gainMapOut ? sdrRendition(s, peak) : null,
       grade: compiled.grade,
-      framing: compiled.framing,
+      // A HEIF's EXIF says to turn what libheif has already turned: a stated
+      // framing resets the tag in what is written.
+      framing: compiled.framing ?? (master ? null : uprightFraming('Normal', info)),
       lens: compiled.lens,
       retouch: compiled.retouch,
       dither: floatPath ? dither : 'None',
       hdr:
-        hdrKeep && floatWork
+        gainMapOut || (hdrKeep && floatWork)
           ? {
               reference_white_nits: s.hdr.referenceWhite,
-              peak_nits: info.peak_nits ?? s.hdr.peak,
-              limit: 'Clip'
+              peak_nits: peak,
+              limit: hdrLimit(s, peak)
             }
           : null,
       threads: BACKGROUND_THREADS * 2

@@ -69,6 +69,7 @@ export const IPC = {
     prioritize: 'library:prioritize',
     /** main → renderer: a thumbnail (re)rendered */
     thumb: 'library:thumb',
+    hdr: 'library:hdr',
     /** main → renderer: the folder's items changed (new file, new copy) */
     changed: 'library:changed',
     /** The items of any source: a folder, a collection, a keyword, the duplicates. */
@@ -264,7 +265,12 @@ export interface LibraryItem {
   stack: StackInfo | null
   /** The file is not where the index last saw it (a collection's item on an unplugged drive). */
   offline?: boolean
+  /** HDR, and how; null when it is not; absent until the file has been probed. */
+  hdr?: HdrKind | null
 }
+
+/** A gain map over an SDR base (iPhone, UltraHDR), or a PQ / HLG signal. */
+export type HdrKind = 'gainmap' | 'pq' | 'hlg'
 
 export interface StackInfo {
   id: string
@@ -416,6 +422,8 @@ export interface ViewState {
   targetEdge: number
   /** Upright's guides are being drawn: show the whole frame before the warp. */
   guides?: boolean
+  /** An HDR photo: also render where the picture rises above white (the headroom overlay). */
+  headroom?: boolean
 }
 
 export interface RenderReport {
@@ -437,7 +445,7 @@ export interface RenderEvent {
   seq: number
   /** The renderer's number for the recipe this was rendered from (see `develop.update`). */
   rev?: number
-  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb'
+  kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb' | 'headroom'
   url: string
   /** A mask's (or mask thumbnail's) layer. */
   layerId?: string
@@ -455,6 +463,8 @@ export interface RenderEvent {
    * white; the histograms span `0…range_max`).
    */
   hdrStats?: ImageStats
+  /** A headroom plane: how many stops above white its full scale stands for. */
+  stops?: number
   report?: RenderReport
 }
 

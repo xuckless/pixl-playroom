@@ -368,7 +368,15 @@ export interface Recipe {
   retouch: RetouchSpot[]
   layers: LocalLayer[]
   custom: CustomLayer[]
+  /**
+   * A photo with a gain map (an iPhone HEIC, an UltraHDR JPEG) edited on its
+   * SDR base, or on the HDR rendition the map lifts it to. Other photos
+   * ignore it.
+   */
+  gainMap: GainMapEdit
 }
+
+export type GainMapEdit = 'base' | 'hdr'
 
 // ── Defaults ─────────────────────────────────────────────────────────────────
 
@@ -422,6 +430,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     profile: isRaw ? { kind: 'standard' } : { kind: 'neutral' },
     profileAmount: 100,
     treatment: 'color',
+    gainMap: 'base',
     wb: { mode: 'as-shot', temperature: 0, tint: 0, preset: null },
     basic: { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 },
     presence: { texture: 0, clarity: 0, dehaze: 0, vibrance: 0, saturation: 0 },
@@ -520,6 +529,7 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   const base = defaultRecipe(isRaw)
   const r = fill(base, value)
   r.version = RECIPE_VERSION
+  if (r.gainMap !== 'hdr') r.gainMap = 'base'
   if (!isObject(value) || !isObject((value as Record<string, unknown>).profile)) {
     r.profile = base.profile
   }
@@ -662,7 +672,8 @@ export const RECIPE_GROUPS = [
   'orientation',
   'retouch',
   'localAdjustments',
-  'custom'
+  'custom',
+  'hdr'
 ] as const
 export type RecipeGroup = (typeof RECIPE_GROUPS)[number]
 
@@ -684,7 +695,8 @@ export const GROUP_LABELS: Record<RecipeGroup, string> = {
   orientation: 'Rotation & flip',
   retouch: 'Spot removal & eyes',
   localAdjustments: 'Masks & local adjustments',
-  custom: 'Advanced layers'
+  custom: 'Advanced layers',
+  hdr: 'HDR editing (gain map)'
 }
 
 /** Copy the chosen groups of `from` onto `to`, returning a new recipe. */
@@ -728,6 +740,7 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.detail.noiseLuminanceDetail = f.detail.noiseLuminanceDetail
         r.detail.noiseColor = f.detail.noiseColor
         r.detail.noiseColorDetail = f.detail.noiseColorDetail
+        r.detail.ai = f.detail.ai
         break
       case 'lens':
         r.lens = f.lens
@@ -758,6 +771,9 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         break
       case 'custom':
         r.custom = f.custom
+        break
+      case 'hdr':
+        r.gainMap = f.gainMap
         break
     }
   }

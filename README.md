@@ -105,7 +105,9 @@ only, to a batch, copied or measured per photo.
 template (`{name} {seq} {date} {rating} {copy} {ext}`), JPEG/PNG/TIFF/WebP/
 AVIF/JPEG XL/HEIC with each codec's knobs, bit depth, resize (long/short edge,
 width, height, megapixels, percent), colour space + intent + BPC, metadata
-blocks, dither, HDR (tone map HDR sources, keep HDR, expand SDR to PQ/HLG),
+blocks, dither, HDR (tone map HDR sources, keep HDR, expand SDR to PQ/HLG,
+or SDR + gain map: UltraHDR JPEG, AVIF, HEIC; highlights clipped at the peak
+or rolled off by BT.2390 from a chosen knee),
 export presets, batch with progress and cancel (it stops the file being
 written). Output sharpening after the resize (Screen, Matte or Glossy × Low,
 Standard or High), in the same engine pass.
@@ -130,6 +132,17 @@ the CPU on its own.
 from models.pixlfoundation.com when wanted (resumable, checked against the
 engine's roster), shows its size, licence and what is known about its training
 data, and removes it. Select Subject and Background (Masks) run U²-Net.
+
+**HDR and gain maps** — the grid marks HDR photos (a gain map, PQ or HLG).
+A gain-map photo (an iPhone HEIC, an UltraHDR JPEG, an Apple JPEG) is edited
+on its SDR picture, or with the toolbar's **SDR | HDR** on the HDR rendition
+its map lifts it to: the map applied once at the file's headroom into a PQ
+master (`src/main/hdrsource.ts`), which the loupe, the 1:1 view, the
+thumbnails and the export then grade like any PQ photo, with the HDR
+histogram. **Headroom** in the view bar colours where the picture rises
+above white, amber to magenta at its peak. On an HDR photo the grade keeps
+its highlights: positive exposure has no SDR shoulder, and tone curves run on
+past white.
 
 **AI denoise** — Detail → Noise reduction → AI runs SCUNet (blind, for real
 camera noise) or DRUNet (told the noise it measures) over the photo once and

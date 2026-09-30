@@ -246,6 +246,8 @@ function groupOf(path: Seg[]): RecipeGroup | null {
       return 'localAdjustments'
     case 'retouch':
       return 'retouch'
+    case 'gainMap':
+      return 'hdr'
     case 'presence':
     case 'lens':
     case 'toneCurve':

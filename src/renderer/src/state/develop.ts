@@ -103,6 +103,10 @@ interface DevelopState {
   overlay: boolean
   compare: Compare
   clipping: boolean
+  /** An HDR photo: colour where the picture rises above white. */
+  headroom: boolean
+  /** The engine's headroom plane for the view on screen. */
+  headroomPlane: RenderEvent | null
   /** How the loupe looks at the picture: fitted, or zoomed about a point. */
   zoom: ZoomView
   hslFocus: HslBand | null
@@ -123,6 +127,9 @@ interface DevelopState {
 
   open(key: string): Promise<void>
   close(): Promise<void>
+  /** Open the photo again from its saved recipe (its HDR editing turned on or off). */
+  reopen(): Promise<void>
+  setHeadroom(on: boolean): void
   /** Change the recipe. Interactive edits render the draft and write no history. */
   edit(change: (r: Recipe) => void, interactive?: boolean): void
   /** Settle an edit: render in full and record it in the history under `label`. */
@@ -250,6 +257,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   overlay: true,
   compare: 'off',
   clipping: false,
+  headroom: false,
+  headroomPlane: null,
   zoom: FIT,
   hslFocus: null,
   hslTab: 'all',
@@ -278,6 +287,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       mask: null,
       stats: null,
       hdrStats: null,
+      headroomPlane: null,
       report: null,
       noise: null,
       layerId: null,
@@ -440,6 +450,19 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     set({ clipping })
   },
 
+  setHeadroom(headroom) {
+    set({ headroom, headroomPlane: headroom ? get().headroomPlane : null })
+    get().pushView()
+  },
+
+  async reopen() {
+    const s = get().session
+    if (!s) return
+    await api.develop.close(s.key)
+    set({ session: null })
+    await get().open(s.key)
+  },
+
   setZoom(zoom) {
     set({ zoom })
   },
@@ -501,6 +524,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       // With a range selected its mask comes with every draft: only the
       // engine knows exactly what the key selects in the graded picture.
       maskLive: rangeSelected(get()),
+      headroom: get().headroom && session.isHdr,
       targetEdge
     }
     set({ rendering: true })
@@ -511,7 +535,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     const { session } = get()
     if (!session || e.key !== session.key) return
     if (e.kind === 'before') set({ before: e })
-    else if (e.kind === 'mask') {
+    else if (e.kind === 'headroom') {
+      if (get().headroom && Boolean(e.cropMode) === wholeFrameTool(get().tool))
+        set({ headroomPlane: e })
+    } else if (e.kind === 'mask') {
       // Only the selected mask's plane, and never an older one than shown.
       if (e.layerId !== get().layerId) return
       const cur = get().mask
