@@ -150,6 +150,14 @@ export class EngineClient {
   ): Promise<Transform> {
     return this.call('uprightFromLines', [lines, width, height, focal]) as Promise<Transform>
   }
+  /** Run a segmentation model on a photo (`segment`); each plane's PNG is a Buffer. */
+  segment(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.call('segment', [request]) as Promise<Record<string, unknown>>
+  }
+  /** Time models on providers (`benchmark`). */
+  benchmark(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.call('benchmark', [request]) as Promise<Record<string, unknown>>
+  }
   /** Where a heal or clone should copy from (see `retouch/suggest.rs`). */
   suggestHealSource(request: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.call('suggestHealSource', [request]) as Promise<Record<string, unknown>>

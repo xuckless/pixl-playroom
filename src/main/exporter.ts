@@ -30,7 +30,12 @@ import { embedMetadata } from './exiftool'
 import { exists } from './exists'
 import { isCancelled, type EngineClient } from './engine/client'
 import type { Library } from './library'
-import { ensureProxies } from './proxy'
+import { ensureProxies, type ProxyFile } from './proxy'
+import { buildMaster, denoiseKey, denoiseRefusal, findDenoised } from './ai/denoise'
+import type { ModelStore } from './ai/models'
+import type { PhotoRow } from './db'
+import type { SourceInfo } from '../shared/engine-types'
+import type { Recipe } from '../shared/recipe'
 import type { DevelopSessions } from './render'
 import {
   BACKGROUND_THREADS,
@@ -51,7 +56,8 @@ export class Exporter {
   constructor(
     private readonly library: Library,
     private readonly sessions: DevelopSessions,
-    private readonly engine: EngineClient
+    private readonly engine: EngineClient,
+    private readonly models: ModelStore
   ) {}
 
   private send(p: ExportProgress): void {
@@ -107,6 +113,26 @@ export class Exporter {
   }
 
   /**
+   * The AI-denoised master a photo's recipe asks for, made now if it is not
+   * yet; null when AI denoise is off, or cannot run on this photo.
+   */
+  private async denoisedMaster(
+    row: PhotoRow,
+    info: SourceInfo,
+    recipe: Recipe,
+    signal: AbortSignal
+  ): Promise<ProxyFile | null> {
+    const ai = recipe.detail.ai
+    if (!ai.enabled || denoiseRefusal(info)) return null
+    const key = denoiseKey(row, ai)
+    const set = await findDenoised(row, key)
+    if (set?.master) return set.master
+    const plain = await ensureProxies(this.engine, row, info)
+    const made = await buildMaster(this.engine, this.models, row, info, plain, ai, key, signal)
+    return made.master
+  }
+
+  /**
    * Export one item. Returns the written path, or null when skipped. What
    * goes wrong after the file is written (its metadata) is a `warn`.
    */
@@ -122,8 +148,11 @@ export class Exporter {
     const item = await this.library.item(key)
     const recipe = this.sessions.liveRecipe(key) ?? (await this.library.recipe(key))
     const info = await this.library.probe(row)
-    const raw = info.input === 'Raw' ? RAW_DEVELOP : null
-    const srcOrientation = sourceOrientation(info, raw)
+    // AI denoise: the full-resolution denoised master is the source (made
+    // now when the photo has only its preview, or nothing yet).
+    const master = await this.denoisedMaster(row, info, recipe, signal)
+    const raw = master ? null : info.input === 'Raw' ? RAW_DEVELOP : null
+    const srcOrientation = master ? 'Normal' : sourceOrientation(info, raw)
     // The full-resolution frame, upright. A RAW's developed frame is smaller
     // than its mosaic and not always the same shape (a Canon's masked borders
     // make 6288×4056 of a 6000×4000 picture), and an exact resize takes the
@@ -132,8 +161,8 @@ export class Exporter {
     // the file's orientation.
     const swap = ['Transpose', 'Rotate90', 'Transverse', 'Rotate270'].includes(srcOrientation)
     const developed = raw ? await ensureProxies(this.engine, row, info) : null
-    const frameW = developed?.frameWidth ?? (swap ? info.height : info.width)
-    const frameH = developed?.frameHeight ?? (swap ? info.width : info.height)
+    const frameW = master?.width ?? developed?.frameWidth ?? (swap ? info.height : info.width)
+    const frameH = master?.height ?? developed?.frameHeight ?? (swap ? info.width : info.height)
     const { user, width, height } = orientedFrame(recipe, frameW, frameH)
     // PQ/HLG out: an HDR source kept HDR, or an SDR one expanded.
     const hdrOut =
@@ -149,6 +178,7 @@ export class Exporter {
       seed: hash32(row.path),
       brushPaths: await brushPlanes(row.id, recipe, user),
       applyCrop: true,
+      aiDenoised: master !== null,
       hdr: info.is_hdr || hdrOut
     })
     const cw = Math.round((compiled.crop?.width ?? 1) * width)
@@ -202,7 +232,9 @@ export class Exporter {
       s.dither && depth === 'Eight' ? { TriangularNoise: { seed: hash32(row.path) } } : 'None'
     const plan = metadataPlan(s, item ?? null)
     const request: ConvertRequest = {
-      ...blankRequest(row.path, out, info.input, info),
+      ...(master
+        ? blankRequest(master.path, out, master.input)
+        : blankRequest(row.path, out, info.input, info)),
       raw,
       resize,
       resampler: 'Lanczos3',

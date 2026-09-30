@@ -121,6 +121,8 @@ export const IPC = {
     uprightFromLines: 'develop:upright-from-lines',
     /** Heal / clone: the best place to copy a spot from. */
     suggestHeal: 'develop:suggest-heal',
+    /** Where the open photo's AI denoise stands. */
+    denoiseState: 'develop:denoise-state',
     /** main → renderer: a render finished */
     rendered: 'develop:rendered',
     /** main → renderer: a render failed */
@@ -132,6 +134,17 @@ export const IPC = {
     remove: 'presets:remove',
     importLut: 'presets:import-lut',
     luts: 'presets:luts'
+  },
+  models: {
+    list: 'models:list',
+    download: 'models:download',
+    cancel: 'models:cancel',
+    remove: 'models:remove',
+    /** Time the models on the CPU and the accelerator; keep the faster. */
+    benchmark: 'models:benchmark',
+    provider: 'models:provider',
+    /** main → renderer: the models' state changed (a download's progress, one installed). */
+    event: 'models:event'
   },
   lens: {
     profiles: 'lens:profiles',
@@ -579,4 +592,35 @@ export interface CaMeasurement {
   red: [number, number]
   blue: [number, number]
   points: number
+}
+
+/** One AI model, as Settings lists it. */
+export interface ModelInfo {
+  id: string
+  title: string
+  role: 'upscale' | 'denoise' | 'deblur' | 'restore' | 'segment' | 'inpaint'
+  bytes: number
+  licence: string
+  holder: string
+  /** What is known about the training data's own terms. */
+  caveat: string
+  installed: boolean
+  /** 0…1 while downloading, else null. */
+  progress: number | null
+  error?: string
+}
+
+/** Which provider AI models run on, and what the performance test measured. */
+export interface ProviderInfo {
+  choice: 'cpu' | 'accelerated'
+  /** The accelerator the bundled runtime offers ('coreml', 'directml'), if any. */
+  accelerator: string | null
+  measured?: { cpuMs: number | null; acceleratedMs: number | null }
+}
+
+/** Where a photo's AI denoise stands: nothing made yet, the preview, or the full resolution. */
+export interface DenoiseState {
+  made: 'none' | 'preview' | 'full'
+  /** Why this photo cannot be AI-denoised (an HDR photo). */
+  refused?: string
 }

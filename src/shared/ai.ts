@@ -21,6 +21,8 @@ export interface AiStage {
 
 export type AiResult =
   | { kind: 'file'; path: string }
+  /** The photo itself changed (AI denoise): its renders pick it up. */
+  | { kind: 'applied'; label: string }
   | {
       kind: 'mask'
       /** The plane, grey, in the photo's base frame, held by the plane store. */
@@ -62,6 +64,7 @@ export type AiStartRequest =
       target: SegmentTarget
       into?: { layerId: string; mode: MaskMode }
     }
+  | { task: 'denoise'; key: string }
 
 export interface AiCapabilities {
   enhance: boolean

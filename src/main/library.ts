@@ -25,6 +25,7 @@ import type { IndexClient } from './indexer/client'
 import { brushPlanes } from './brushes'
 import { keyOf } from './keys'
 import { paths } from './paths'
+import { denoiseKey, denoiseRefusal, findDenoised } from './ai/denoise'
 import { ensureProxies } from './proxy'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
@@ -266,7 +267,12 @@ export class Library {
     out: string,
     base: Record<string, unknown>
   ): Promise<void> {
-    const px = await ensureProxies(this.engine, row, info)
+    // AI denoise: its proxies when it has been made (the develop view or an
+    // export makes it; a thumbnail never waits on a model).
+    const ai = recipe.detail.ai
+    const aiOn = ai.enabled && !denoiseRefusal(info)
+    const denoised = aiOn ? await findDenoised(row, denoiseKey(row, ai)) : null
+    const px = denoised?.px ?? (await ensureProxies(this.engine, row, info))
     const { user, width, height } = orientedFrame(recipe, px.frameWidth, px.frameHeight)
     const cropOf = compile(recipe, {
       isRaw: row.is_raw === 1,
@@ -291,6 +297,7 @@ export class Library {
       seed: hash32(row.path),
       brushPaths: await brushPlanes(row.id, recipe, user),
       applyCrop: true,
+      aiDenoised: aiOn,
       hdr: info.is_hdr
     })
     const cropW = (compiled.crop?.width ?? 1) * width

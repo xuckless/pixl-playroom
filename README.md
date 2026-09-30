@@ -62,7 +62,7 @@ virtual copies, copy/paste/sync settings to a selection, batch export, Enhance.
 | Tone curve     | Parametric (4 regions, movable splits) and point curves (RGB, R, G, B) with Refine Saturation; built-in and saved curve presets; the targeted tool (T) drags the curve at the tone under the pointer | `Curves` (`refine_saturation`) |
 | HSL / B&W mix  | 8 bands × hue/sat/lum; B&W mix; Point colour (up to 8 colours picked off the photo, each shifted in hue, saturation and luminance with its own range); the targeted tool (T) drags the band under the pointer                                                                                                                       | `HslBands`, `Qualifier`, `Primary`                  |
 | Colour grading | Shadows/midtones/highlights/global wheels, blending, balance; Add colour (coloured light, with Neutralise and Match pickers) | `ColorGrade`, `AddColor` |
-| Detail         | Sharpening (amount, radius, detail, masking); noise reduction (luminance/colour + detail); measured noise σ̂                                                                                                                                                                                                                         | `Sharpen`, `Denoise`, `analyze(noise)`              |
+| Detail         | Sharpening (amount, radius, detail, masking); noise reduction, Classic (luminance/colour + detail; measured noise σ̂) or AI (SCUNet blind / DRUNet measured, strength)                                                                                                                                                              | `Sharpen`, `Denoise`, `analyze(noise)`, `enhance`   |
 | Lens           | A profile for the lens the file names (imported JSON, Lensfun's models, interpolated to the shot's focal length and aperture); Remove chromatic aberration, measured on the photo; manual distortion and vignetting; defringe (purple and green, on edges, with a picker) | `LensCorrection`, `suggestLateralCa`, `Defringe` |
 | Effects        | Post-crop vignette (fitted to the crop, follows the straighten; highlight priority or paint overlay), colour wash (a lift toward a colour, with the same pickers), grain (seeded) | `Vignette`, `AddColor`, `Grain` |
 | Calibration    | Shadows tint; red/green/blue primary hue & saturation                                                                                                                                                                                                                                                                               | `ChannelMixer`, `Primary`                           |
@@ -113,10 +113,24 @@ The photo's title, caption, keywords and copyright are written into the file
 only"), with a default copyright for photos that have none and "Remove
 location" to strip GPS.
 
-**Enhance → Super Resolution** — ×2 with the bundled Real-ESRGAN model on the
-ONNX Runtime the engine ships (CoreML on macOS, DirectML on Windows, the CPU
-as the fallback) into a new 16-bit TIFF beside the original, which starts with
-the source's recipe.
+**Enhance → Super Resolution** — ×2 with the Real-ESRGAN model (downloaded
+on first use) on the ONNX Runtime the engine ships (CoreML on macOS, DirectML
+on Windows, or the CPU when the performance test finds it faster) into a new
+16-bit TIFF beside the original, which starts with the source's recipe.
+
+**AI models** — none ships with the app: Settings → AI models downloads each
+from models.pixlfoundation.com when wanted (resumable, checked against the
+engine's roster), shows its size, licence and what is known about its training
+data, and removes it. Select Subject and Background (Masks) run U²-Net.
+
+**AI denoise** — Detail → Noise reduction → AI runs SCUNet (blind, for real
+camera noise) or DRUNet (told the noise it measures) over the photo once and
+keeps the result under the photo's cache, per model and strength: a denoised
+draft first (seconds; the loupe switches to it), then the full-resolution
+master, from which the proxies are remade. Every view, the 1:1 region,
+thumbnails and export then grade the denoised pixels, with the classic
+denoise off; an export that finds no master makes it. HDR photos are refused.
+A model the accelerator cannot load (SCUNet under CoreML) runs on the CPU.
 
 ## How it fits together
 
@@ -196,7 +210,6 @@ with `read:packages` for it; see `.github/RELEASING.md`.
 
 ```sh
 pnpm install
-pnpm fetch-ai            # ONNX Runtime + Real-ESRGAN for this platform (Enhance)
 pnpm dev                 # the app (pnpm dev -- /path/to/photo.CR2 opens a photo)
 pnpm test                # the pure modules and the index (compiler, white balance, library rules…)
 pnpm typecheck && pnpm lint && pnpm build
@@ -211,9 +224,10 @@ offscreen-rendered window with a throwaway profile (`PLAYROOM_HIDDEN=1`,
 `tap x,y… [--dbl]`, `wheel <selector> <dy>`, `panel <tool>`, `ss <name>`,
 `eval <js>`).
 
-`PLAYROOM_FAKE_AI=1` turns on a stand-in segmentation model (Select Subject,
-Sky and Background in the mask tools): an AI job with real stages, progress,
-cancelling and a mask landing on its photo, until the real model ships.
+AI models download on demand (Settings → AI models) from
+models.pixlfoundation.com, mirrored there by `pnpm publish-models --bucket
+<bucket>`; `PLAYROOM_MODELS_URL` points at another mirror (`file://` works) for
+development, e.g. one made with `pnpm publish-models --dry-run --out <dir>`.
 `window.__maskPreview` reports the loupe's own mask preview (`stats`, and
 `read()` for its plane, to compare with the engine's).
 

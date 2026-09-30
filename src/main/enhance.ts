@@ -1,6 +1,6 @@
 /**
- * Enhance → Super Resolution: the engine's generative upscaler (a bundled
- * Real-ESRGAN ×2 model on the ONNX Runtime the engine ships) enlarges a photo's
+ * Enhance → Super Resolution: the engine's generative upscaler (Real-ESRGAN
+ * ×2, downloaded on first use, on the ONNX Runtime the engine ships) enlarges a photo's
  * *original*, before any grade — the model wants display-referred pixels and
  * the engine refuses a grade beside it — into a new 16-bit TIFF beside the
  * original. The new file joins the folder with the source's recipe copied
@@ -9,7 +9,7 @@
 import log from 'electron-log/main'
 import { unlink } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
-import type { ExecutionProvider, TensorSpec, UpscalerRef } from '../shared/engine-types'
+import type { UpscalerRef } from '../shared/engine-types'
 import { PRESERVE_ALL } from '../shared/engine-types'
 import type { AiStartRequest } from '../shared/ai'
 import { baseWhite } from '../shared/compile'
@@ -19,67 +19,37 @@ import type { EngineClient } from './engine/client'
 import type { IndexClient } from './indexer/client'
 import type { EngineStatus } from '../shared/ipc'
 import { exists } from './exists'
+import { modelName, type ModelStore } from './ai/models'
 import type { Library } from './library'
-import { paths } from './paths'
 import { BACKGROUND_THREADS, blankRequest, RAW_DEVELOP, sourceOrientation } from './source'
 import { estimate } from '../shared/ai'
 
-export const MODEL_FILE = 'real_esrgan_x2.onnx'
+/** The model Super Resolution runs (the roster's id). */
+export const UPSCALER = 'real-esrgan-x2plus'
 
 export interface EnhanceAvailability {
   available: boolean
   reason?: string
-  model?: string
-  runtime?: string
-  providers?: string[]
 }
 
 /**
  * Whether Super Resolution can run: an engine built with its model support,
- * the ONNX Runtime it ships (0.15+) and the model file.
+ * the ONNX Runtime it ships (0.15+) and the model, downloaded.
  */
-export async function enhanceAvailability(status: EngineStatus): Promise<EnhanceAvailability> {
+export async function enhanceAvailability(
+  status: EngineStatus,
+  models: ModelStore
+): Promise<EnhanceAvailability> {
   if (status.enhance !== true)
     return { available: false, reason: 'this build of the engine has no generative upscaler' }
   if (!status.runtime)
     return { available: false, reason: 'this build of the engine ships no ONNX Runtime' }
-  const model = join(paths.ai(), MODEL_FILE)
-  if (!(await exists(model)))
-    return { available: false, reason: `the model is not bundled (${model}); run pnpm fetch-ai` }
-  return {
-    available: true,
-    model,
-    runtime: status.runtime.library,
-    providers: status.runtime.providers
-  }
-}
-
-/**
- * The accelerated provider the bundled runtime offers — CoreML (all units,
- * as an ML program) on a Mac, DirectML on Windows — or the CPU.
- */
-function provider(choice: 'auto' | 'cpu', providers: string[]): ExecutionProvider {
-  if (choice === 'cpu') return 'Cpu'
-  if (providers.includes('coreml'))
+  if (!(await models.installed(UPSCALER)))
     return {
-      CoreMl: {
-        units: 'All',
-        format: 'MlProgram',
-        static_shapes: false,
-        low_precision_gpu: false
-      }
+      available: false,
+      reason: `download ${modelName(models.entry(UPSCALER))} in Settings → AI models`
     }
-  if (providers.includes('directml')) return { DirectMl: { device: 0 } }
-  return 'Cpu'
-}
-
-/** Real-ESRGAN's tensors: `[1, 3, h, w]`, RGB, 0…1, f32 both ways. */
-const ESRGAN_TENSOR: Omit<TensorSpec, 'name'> = {
-  layout: 'Nchw',
-  order: 'Rgb',
-  element: 'F32',
-  mean: { r: 0, g: 0, b: 0 },
-  std: { r: 1, g: 1, b: 1 }
+  return { available: true }
 }
 
 type EnhanceRequest = Extract<AiStartRequest, { task: 'enhance' }>
@@ -103,6 +73,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     /** The AI engine: started when first needed. */
     private readonly engine: EngineClient,
     private readonly status: () => EngineStatus,
+    private readonly models: ModelStore,
     private readonly settings: IndexClient
   ) {}
 
@@ -121,9 +92,8 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
   async run(ctx: AiContext, req: EnhanceRequest): Promise<{ kind: 'file'; path: string }> {
     const { key } = req
     ctx.stage('model', 0, 'Loading the model')
-    const avail = await enhanceAvailability(this.status())
-    if (!avail.available || !avail.model || !avail.runtime)
-      throw new Error(avail.reason ?? 'unavailable')
+    const avail = await enhanceAvailability(this.status(), this.models)
+    if (!avail.available) throw new Error(avail.reason ?? 'unavailable')
     const row = await this.library.photoRow(key)
     const info = await this.library.probe(row)
     // The model wants display-referred SDR; the engine refuses PQ/HLG pixels
@@ -142,21 +112,10 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     if (ctx.signal.aborted) throw new Cancelled()
     const raw = info.input === 'Raw' ? RAW_DEVELOP : null
     const orientation = sourceOrientation(info, raw)
-    const upscaler: UpscalerRef = {
-      model: {
-        model_path: avail.model,
-        runtime_library: avail.runtime,
-        provider: provider(req.cpu ? 'cpu' : 'auto', avail.providers ?? []),
-        session: { threads: BACKGROUND_THREADS * 2, optimisation: 'All', deterministic: false }
-      },
-      model_space: 'Srgb',
-      input: { name: 'input', ...ESRGAN_TENSOR },
-      output: { name: 'output', ...ESRGAN_TENSOR },
-      scale: 2,
-      tiling: { Dynamic: { tile: 256, overlap: 16, multiple: 2 } },
-      then: null,
-      alpha: { Resample: 'Lanczos3' }
-    }
+    const upscaler = (await this.models.ref(
+      UPSCALER,
+      req.cpu ? 'Cpu' : undefined
+    )) as unknown as UpscalerRef
     const tryRun = (up: UpscalerRef): Promise<unknown> =>
       this.engine.convert(
         {

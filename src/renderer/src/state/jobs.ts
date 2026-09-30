@@ -57,6 +57,10 @@ export const useAiJobs = create<JobsState>((set, get) => ({
     const [list, capabilities] = await Promise.all([api.ai.list(), api.ai.capabilities()])
     set({ capabilities })
     for (const e of list) get().onEvent(e)
+    // A model downloaded or removed changes what can run.
+    api.models.onEvent(() => {
+      void api.ai.capabilities().then((c) => set({ capabilities: c }))
+    })
   },
   setReveal(layerId) {
     set({ reveal: { layerId, at: performance.now() } })

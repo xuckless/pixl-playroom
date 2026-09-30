@@ -27,6 +27,7 @@ import {
 } from '../shared/compile'
 import { lensCorrection, MANUAL_GEOMETRY } from '../shared/lens'
 import { compileRetouch, featherOf, spotShape, type P as SpotPoint } from '../shared/retouch'
+import { denoiseKey, denoiseRefusal, findDenoised, type DenoiseSet } from './ai/denoise'
 import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
 import type {
   HdrWorking,
@@ -45,6 +46,7 @@ import {
   IPC,
   type BasicSetting,
   type CaMeasurement,
+  type DenoiseState,
   type DevelopSession,
   type RegionRequest,
   type RegionResult,
@@ -226,14 +228,17 @@ class Session {
   }
 
   /**
-   * Compile a recipe for a source. A source from the lens-corrected set
-   * already carries the correction: the frame is that set's, and the engine
-   * is not asked to correct it again.
+   * Compile a recipe for a source. A source from the prepared set already
+   * carries the lens correction and the spots, and one from (or prepared
+   * from) the AI-denoised set its noise reduction: the frame is that set's,
+   * and the engine is not asked to do those again.
    */
   async compileFor(recipe: Recipe, source: ProxyFile, applyCrop: boolean): Promise<Compiled> {
-    const baked =
-      this.lensed && (source === this.lensed.px.proxy || source === this.lensed.px.draft)
-    const px = baked ? this.lensed!.px : this.px
+    const of = (px: Proxies | undefined): boolean =>
+      !!px && (source === px.proxy || source === px.draft)
+    const baked = of(this.lensed?.px)
+    const denoised = baked ? this.lensed!.denoised : of(this.denoised?.px)
+    const px = baked ? this.lensed!.px : denoised ? this.denoised!.px : this.px
     const { user } = orientedFrame(recipe, px.frameWidth, px.frameHeight)
     const compiled = compile(recipe, {
       isRaw: this.isRaw,
@@ -246,17 +251,74 @@ class Session {
       brushPaths: await brushPlanes(this.row.id, recipe, user),
       applyCrop,
       hdr: this.info.is_hdr,
-      showTransform: !this.view.guides
+      showTransform: !this.view.guides,
+      // In AI mode the classic denoise stays off, made or not.
+      aiDenoised: denoised || this.denoiseKeyOf(recipe) !== ''
     })
     return baked ? { ...compiled, lens: null, retouch: null } : compiled
+  }
+
+  // ── AI denoise ──
+
+  /** The recipe's AI denoise, as the key of what it makes: '' when off (or refused). */
+  private denoiseKeyOf(recipe: Recipe): string {
+    return recipe.detail.ai.enabled && !denoiseRefusal(this.info)
+      ? denoiseKey(this.row, recipe.detail.ai)
+      : ''
+  }
+
+  /**
+   * The AI-denoised set in use while AI denoise is on: the recipe's, or
+   * while a new model or strength is being made, the last one made.
+   */
+  private denoisedSet(): DenoiseSet | null {
+    return this.denoiseKeyOf(this.recipe) ? this.denoised : null
+  }
+
+  /** The proxies everything else starts from: the AI-denoised ones when made, else the plain. */
+  private basePx(): Proxies {
+    return this.denoisedSet()?.px ?? this.px
+  }
+
+  /**
+   * Look for what the recipe's AI denoise has made (the job writes it; this
+   * picks it up), and render again when that changed.
+   */
+  async refreshDenoise(): Promise<void> {
+    const key = this.denoiseKeyOf(this.recipe)
+    const set = key ? await findDenoised(this.row, key) : null
+    if (this.closed) return
+    const was = this.denoised
+    // Nothing made for the new key yet: the last one stands until it is.
+    if (key && !set) return
+    if (was?.key === set?.key && was?.master?.path === set?.master?.path) return
+    this.denoised = set
+    this.schedule('full')
+  }
+
+  /** Where the photo's AI denoise stands, for the Detail panel. */
+  async denoiseState(): Promise<DenoiseState> {
+    const refused = denoiseRefusal(this.info)
+    const key = this.denoiseKeyOf(this.recipe)
+    const set = key ? await findDenoised(this.row, key) : null
+    return {
+      refused: refused ?? undefined,
+      made: set ? (set.master ? 'full' : 'preview') : 'none'
+    }
   }
 
   /**
    * What the prepared proxies hold for a recipe: its lens correction and
    * its spots, placed on the base frame (the proxy's own).
    */
-  private prepared(recipe: Recipe): { lens: LensCorrection | null; retouch: Retouch | null } {
+  private prepared(recipe: Recipe): {
+    lens: LensCorrection | null
+    retouch: Retouch | null
+    /** The proxies they are prepared from: the plain ones or the AI-denoised. */
+    base: string
+  } {
     return {
+      base: this.basePx().proxy.path,
       lens: lensCorrection(recipe.lens),
       retouch: compileRetouch(recipe.retouch, 'Normal', this.px.frameWidth, this.px.frameHeight)
     }
@@ -275,7 +337,7 @@ class Session {
    */
   private viewPx(): Proxies {
     const key = this.lensKey(this.recipe)
-    return key && this.lensed?.key === key ? this.lensed.px : this.px
+    return key && this.lensed?.key === key ? this.lensed.px : this.basePx()
   }
 
   /** A correction waiting for its corrected proxies. */
@@ -295,11 +357,13 @@ class Session {
     const key = this.lensKey(this.recipe)
     if (!key || this.lensed?.key === key || this.baking === key) return
     const { lens, retouch } = this.prepared(this.recipe)
+    const base = this.basePx()
+    const denoised = base !== this.px
     this.baking = key
     ensureLensedProxies(
       this.owner.bgEngine,
       this.row,
-      this.px,
+      base,
       lens,
       retouch,
       key,
@@ -309,7 +373,7 @@ class Session {
         if (this.baking === key) this.baking = null
         if (this.closed) return
         if (this.lensKey(this.recipe) === key) {
-          this.lensed = { key, px }
+          this.lensed = { key, px, denoised }
           this.schedule('full')
         } else this.bake()
       },
@@ -321,8 +385,12 @@ class Session {
   }
 
   update(recipe: Recipe, interactive: boolean, rev?: number): void {
+    const denoiseWas = this.denoiseKeyOf(this.recipe)
     this.recipe = recipe
     if (rev !== undefined) this.rev = rev
+    // AI denoise turned on or off, or its model or strength changed: find
+    // what is made for the new one (or go back to the plain proxies).
+    if (this.denoiseKeyOf(recipe) !== denoiseWas) void this.refreshDenoise()
     // A settled render of the old recipe is only in the way; so is anything
     // in flight when the slider is let go (the full render follows at once).
     if (this.inflight && (this.inflightKind === 'full' || !interactive)) this.abort?.abort()
@@ -810,15 +878,19 @@ class Session {
     const abort = new AbortController()
     this.regionAbort = abort
     const { signal } = abort
+    // AI denoise's master when it is made: the same pixels an export uses.
+    const denoisedMaster = this.denoisedSet()?.master ?? null
     const raw = this.isRaw
-    const src: ProxyFile = raw
-      ? await ensureMaster(this.owner.bgEngine, this.row)
-      : {
-          path: this.row.path,
-          input: this.info.input,
-          width: this.px.frameWidth,
-          height: this.px.frameHeight
-        }
+    const src: ProxyFile = denoisedMaster
+      ? denoisedMaster
+      : raw
+        ? await ensureMaster(this.owner.bgEngine, this.row)
+        : {
+            path: this.row.path,
+            input: this.info.input,
+            width: this.px.frameWidth,
+            height: this.px.frameHeight
+          }
     const { user, width, height } = orientedFrame(
       this.recipe,
       this.px.frameWidth,
@@ -828,14 +900,15 @@ class Session {
     const compiled = compile(this.recipe, {
       isRaw: raw,
       asShot: this.info.as_shot_white,
-      sourceOrientation: raw ? 'Normal' : sourceOrientation(this.info, null),
+      sourceOrientation: raw || denoisedMaster ? 'Normal' : sourceOrientation(this.info, null),
       frameWidth: this.px.frameWidth,
       frameHeight: this.px.frameHeight,
       scale: zoom,
       seed: hash32(this.row.path),
       brushPaths: await brushPlanes(this.row.id, this.recipe, user),
       applyCrop: false,
-      hdr: this.info.is_hdr
+      hdr: this.info.is_hdr,
+      aiDenoised: denoisedMaster !== null || this.denoiseKeyOf(this.recipe) !== ''
     })
     const x = Math.max(0, Math.min(width - 1, Math.floor(req.x)))
     const y = Math.max(0, Math.min(height - 1, Math.floor(req.y)))
@@ -845,7 +918,7 @@ class Session {
     this.regionSlot = (this.regionSlot + 1) % 4
     const out = join(this.dir, `region-${this.regionSlot}.png`)
     // The original (not a RAW's master) states its gain-map rendition.
-    const original = raw ? null : this.info
+    const original = raw || denoisedMaster ? null : this.info
     await this.owner.engine.convert(
       {
         ...blankRequest(src.path, out, src.input, original),
@@ -908,7 +981,9 @@ class Session {
   /** Per lens correction and frame size, the shrink its crop makes (1 when none). */
   private lensScale = new Map<string, number>()
   /** The recipe's lens correction baked into proxies (see `ensureLensedProxies`). */
-  private lensed: { key: string; px: Proxies } | null = null
+  private lensed: { key: string; px: Proxies; denoised: boolean } | null = null
+  /** What the recipe's AI denoise has made (see `ai/denoise.ts`). */
+  private denoised: DenoiseSet | null = null
 
   /**
    * A rectangle of the oriented frame (`width × height` pixels) as a region
@@ -1220,6 +1295,8 @@ export class DevelopSessions {
     if (!session) {
       session = new Session(key, row, info, px, recipe, this)
       this.sessions.set(key, session)
+      // A photo with AI denoise on opens on what the model made for it.
+      await session.refreshDenoise()
     }
     return {
       key,
@@ -1279,6 +1356,15 @@ export class DevelopSessions {
 
   measureCa(key: string): Promise<CaMeasurement> {
     return this.get(key).measureCa()
+  }
+
+  /** The AI denoise job made something for a photo: an open session picks it up. */
+  denoiseChanged(key: string): void {
+    void this.sessions.get(key)?.refreshDenoise()
+  }
+
+  denoiseState(key: string): Promise<DenoiseState> {
+    return this.get(key).denoiseState()
   }
 
   suggestHeal(

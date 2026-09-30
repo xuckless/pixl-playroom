@@ -30,15 +30,12 @@ export const paths = {
   luts: (): string => dir('luts'),
   /** Imported lens profiles, one JSON file per lens (`shared/lens.ts`). */
   lensProfiles: (): string => dir('lens-profiles'),
+  /** Downloaded AI models, `<id>/<version>/<files>` (see `ai/models.ts`). */
+  models: (): string => dir('models'),
   cacheRoot: (): string => dir('cache'),
   /** THIRD_PARTY_NOTICES.txt: beside the app's resources when packaged, in build/ in a checkout. */
   notices: (): string =>
     app.isPackaged
       ? join(process.resourcesPath, 'THIRD_PARTY_NOTICES.txt')
-      : join(app.getAppPath(), 'build', 'THIRD_PARTY_NOTICES.txt'),
-  /** The bundled AI runtime and model: resources/ai/<platform>-<arch>. */
-  ai: (): string =>
-    app.isPackaged
-      ? join(process.resourcesPath, 'ai')
-      : join(app.getAppPath(), 'resources', 'ai', `${process.platform}-${process.arch}`)
+      : join(app.getAppPath(), 'build', 'THIRD_PARTY_NOTICES.txt')
 }

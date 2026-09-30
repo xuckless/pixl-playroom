@@ -14,6 +14,7 @@ import { ToolDial } from './develop/ToolDial'
 import { ToolPanelHost } from './develop/ToolPanelHost'
 import { selectPanel, stepPanel, TOOLS } from './develop/tools'
 import { startWheelMemory } from './develop/wheelMemory'
+import { startDenoiseUpkeep } from './lib/denoise'
 import { deleteSpot } from './lib/heal'
 import {
   componentLabel,
@@ -256,6 +257,11 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
   if (e.phase === 'error') return lib.say(`${e.title}: ${e.message ?? 'failed'}`, 'error')
   if (e.phase !== 'done') return
   const r = e.result
+  if (r?.kind === 'applied') {
+    // The photo's renders switched over already; say so only when it is not in view.
+    if (useDevelop.getState().session?.key !== e.key) lib.say(`${r.label} made for ${e.name}`)
+    return
+  }
   if (r?.kind === 'file') {
     lib.say(`${e.title}: wrote ${r.path.split(/[\\/]/).pop()}`)
     return void lib.refresh()
@@ -619,6 +625,7 @@ export default function App(): React.JSX.Element {
       api.library.onSourcesChanged(() => void useLibrary.getState().onSourcesChanged()),
       api.develop.onRendered((e) => useDevelop.getState().onRendered(e)),
       startWheelMemory(),
+      startDenoiseUpkeep(),
       api.app.onRenderScale(onRenderScale),
       api.app.onOpenPaths((paths) => void openPaths(paths)),
       api.develop.onRenderError((e) =>

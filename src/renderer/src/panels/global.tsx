@@ -24,6 +24,7 @@ import { ASPECTS, aspectValue } from '../lib/aspects'
 import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../lib/geometry'
 import { Icon, PathIcon } from '../components/icons'
 import { CurvePresets } from './CurvePresets'
+import { AiDenoise } from './AiDenoise'
 import { applyUpright, startGuides } from '../lib/upright'
 import type { UprightMode } from '../../../shared/upright'
 
@@ -873,6 +874,8 @@ export function DetailPanel(): React.JSX.Element | null {
   const noise = useDevelop((s) => s.noise)
   const measure = useDevelop((s) => s.measureNoise)
   const report = useDevelop((s) => s.report)
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
   const [measuring, setMeasuring] = useState(false)
   if (!recipe) return null
   const seen = report?.gradeLines.filter((l) => l.includes('denoise')) ?? []
@@ -913,55 +916,72 @@ export function DetailPanel(): React.JSX.Element | null {
         />
       </Section>
       <Section id="detail.noise" title="Noise reduction">
-        <RS
-          label="Luminance"
-          read={(r) => r.detail.noiseLuminance}
-          write={(r, v) => (r.detail.noiseLuminance = v)}
-          min={0}
-          max={100}
+        <Tabs
+          value={recipe.detail.ai.enabled ? 'ai' : 'classic'}
+          tabs={[
+            { value: 'classic', label: 'Classic' },
+            { value: 'ai', label: 'AI' }
+          ]}
+          onChange={(v) => {
+            edit((r) => (r.detail.ai.enabled = v === 'ai'))
+            commit(v === 'ai' ? 'AI denoise' : 'Classic denoise')
+          }}
         />
-        <RS
-          label="Detail"
-          read={(r) => r.detail.noiseLuminanceDetail}
-          write={(r, v) => (r.detail.noiseLuminanceDetail = v)}
-          min={0}
-          max={100}
-          def={50}
-        />
-        <RS
-          label="Colour"
-          read={(r) => r.detail.noiseColor}
-          write={(r, v) => (r.detail.noiseColor = v)}
-          min={0}
-          max={100}
-        />
-        <RS
-          label="Detail"
-          read={(r) => r.detail.noiseColorDetail}
-          write={(r, v) => (r.detail.noiseColorDetail = v)}
-          min={0}
-          max={100}
-          def={50}
-        />
-        <div className="noise-readout">
-          <button
-            disabled={measuring}
-            onClick={() => {
-              setMeasuring(true)
-              void runJob('Measuring noise', () => measure(), {
-                detail: 'Estimating σ̂ on each plane, as the denoiser does'
-              }).finally(() => setMeasuring(false))
-            }}
-          >
-            {measuring ? 'Measuring…' : 'Measure noise'}
-          </button>
-          {noise && (
-            <span title="σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values">
-              σ̂ luma {(noise.luminance * 255).toFixed(2)} · chroma{' '}
-              {noise.color.map((c) => (c * 255).toFixed(2)).join(' / ')}
-            </span>
-          )}
-        </div>
+        {recipe.detail.ai.enabled ? (
+          <AiDenoise />
+        ) : (
+          <>
+            <RS
+              label="Luminance"
+              read={(r) => r.detail.noiseLuminance}
+              write={(r, v) => (r.detail.noiseLuminance = v)}
+              min={0}
+              max={100}
+            />
+            <RS
+              label="Detail"
+              read={(r) => r.detail.noiseLuminanceDetail}
+              write={(r, v) => (r.detail.noiseLuminanceDetail = v)}
+              min={0}
+              max={100}
+              def={50}
+            />
+            <RS
+              label="Colour"
+              read={(r) => r.detail.noiseColor}
+              write={(r, v) => (r.detail.noiseColor = v)}
+              min={0}
+              max={100}
+            />
+            <RS
+              label="Detail"
+              read={(r) => r.detail.noiseColorDetail}
+              write={(r, v) => (r.detail.noiseColorDetail = v)}
+              min={0}
+              max={100}
+              def={50}
+            />
+            <div className="noise-readout">
+              <button
+                disabled={measuring}
+                onClick={() => {
+                  setMeasuring(true)
+                  void runJob('Measuring noise', () => measure(), {
+                    detail: 'Estimating σ̂ on each plane, as the denoiser does'
+                  }).finally(() => setMeasuring(false))
+                }}
+              >
+                {measuring ? 'Measuring…' : 'Measure noise'}
+              </button>
+              {noise && (
+                <span title="σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values">
+                  σ̂ luma {(noise.luminance * 255).toFixed(2)} · chroma{' '}
+                  {noise.color.map((c) => (c * 255).toFixed(2)).join(' / ')}
+                </span>
+              )}
+            </div>
+          </>
+        )}
         {seen.length > 0 && (
           <pre className="report-lines">{seen.map((l) => l.trim()).join('\n')}</pre>
         )}

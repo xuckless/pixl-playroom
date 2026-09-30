@@ -104,6 +104,11 @@ export interface CompileContext {
    * one expanded to HDR on export. Changes where bounded blends run.
    */
   hdr?: boolean
+  /**
+   * The source is the AI-denoised photo: the classic noise reduction steps
+   * aside (the model has done it).
+   */
+  aiDenoised?: boolean
   /** False while Upright's guides are drawn: the frame as it is before the warp. */
   showTransform?: boolean
 }
@@ -820,7 +825,7 @@ function baseStages(
   const look: GradeOp[] = []
   const d = r.detail
   const denoise =
-    d.noiseLuminance > 0 || d.noiseColor > 0
+    !ctx.aiDenoised && (d.noiseLuminance > 0 || d.noiseColor > 0)
       ? ({
           Denoise: {
             luminance: clamp(d.noiseLuminance / 100, 0, 1),

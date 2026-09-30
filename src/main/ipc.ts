@@ -42,7 +42,7 @@ import type { GuideLine } from '../shared/upright'
 import type { P as SpotPoint } from '../shared/retouch'
 import { enhanceAvailability } from './enhance'
 import type { AiJobs } from './ai/jobs'
-import { fakeAi } from './ai/segment'
+import { modelName, type ModelStore } from './ai/models'
 import type { Exporter } from './exporter'
 import { parseKey } from './keys'
 import type { Library } from './library'
@@ -86,6 +86,9 @@ export interface Services {
   ai: AiJobs
   engine: EngineClient
   bgEngine: EngineClient
+  /** AI jobs' engine (started when first needed). */
+  aiEngine: EngineClient
+  models: ModelStore
 }
 
 export function registerIpc(s: Services): void {
@@ -278,6 +281,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))
   handle(IPC.develop.measureCa, (key: string) => s.sessions.measureCa(key))
+  handle(IPC.develop.denoiseState, (key: string) => s.sessions.denoiseState(key))
   handle(
     IPC.develop.suggestHeal,
     (key: string, points: SpotPoint[], radius: number, feather: number, kind: 'heal' | 'clone') =>
@@ -406,23 +410,38 @@ export function registerIpc(s: Services): void {
   handle(IPC.export.removePreset, (id: string) => s.index.removeExportPreset(id))
 
   // ── enhance ──
-  handle(IPC.enhance.available, () => enhanceAvailability(s.bgEngine.getStatus()))
+  handle(IPC.enhance.available, () => enhanceAvailability(s.bgEngine.getStatus(), s.models))
+
+  // ── AI models ──
+  handle(IPC.models.list, () => s.models.list())
+  // A download runs on; its progress arrives as `models:event`.
+  handle(IPC.models.download, (id: string) => void s.models.download(id))
+  handle(IPC.models.cancel, (id: string) => s.models.cancel(id))
+  handle(IPC.models.remove, (id: string) => s.models.remove(id))
+  handle(IPC.models.provider, () => s.models.providerInfo())
+  handle(IPC.models.benchmark, () => s.models.benchmark(s.aiEngine))
 
   // ── AI jobs ──
   handle(IPC.ai.start, (req: AiStartRequest) => s.ai.start(req))
   handle(IPC.ai.cancel, (jobId: string) => s.ai.cancel(jobId))
   handle(IPC.ai.list, () => s.ai.list())
   handle(IPC.ai.capabilities, async (): Promise<AiCapabilities> => {
-    const enhance = await enhanceAvailability(s.bgEngine.getStatus())
-    const segment = fakeAi()
+    const enhance = await enhanceAvailability(s.bgEngine.getStatus(), s.models)
+    const subject = (await s.models.installed('u2net')) || (await s.models.installed('u2netp'))
+    // Models run on the engine's bundled runtime; each denoise model is
+    // offered for download where it is picked (Detail → Noise reduction).
+    const models = s.bgEngine.getStatus().enhance === true
+    const segment = models && subject
     return {
       enhance: enhance.available,
       segment,
-      denoise: false,
+      denoise: models,
       why: {
         ...(enhance.available ? {} : { enhance: enhance.reason }),
-        ...(segment ? {} : { segment: 'needs a segmentation model' }),
-        denoise: 'needs a denoising model'
+        ...(segment
+          ? {}
+          : { segment: `download ${modelName(s.models.entry('u2netp'))} in Settings → AI models` }),
+        ...(models ? {} : { denoise: 'this engine build runs no models' })
       }
     }
   })

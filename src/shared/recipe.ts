@@ -156,6 +156,20 @@ export interface DetailSetting {
   noiseLuminanceDetail: number
   noiseColor: number
   noiseColorDetail: number
+  /**
+   * AI noise reduction: a model's denoise of the photo, made once and kept
+   * (see `main/ai/denoise.ts`), in place of the classic sliders.
+   */
+  ai: AiDenoiseSetting
+}
+
+export type AiDenoiseModel = 'scunet-color-real' | 'drunet-color'
+
+export interface AiDenoiseSetting {
+  enabled: boolean
+  model: AiDenoiseModel
+  /** 1…100: how much of the model's result replaces the photo. */
+  strength: number
 }
 
 export interface EffectsSetting {
@@ -443,7 +457,8 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       noiseLuminance: 0,
       noiseLuminanceDetail: 50,
       noiseColor: isRaw ? 25 : 0,
-      noiseColorDetail: 50
+      noiseColorDetail: 50,
+      ai: { enabled: false, model: 'scunet-color-real', strength: 100 }
     },
     lens: defaultLens(),
     effects: {

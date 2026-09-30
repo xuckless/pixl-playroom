@@ -10,6 +10,9 @@ import {
   type AutoWbResult,
   type BasicSetting,
   type CaMeasurement,
+  type DenoiseState,
+  type ModelInfo,
+  type ProviderInfo,
   type Collection,
   type CrashConsent,
   type ErrorReport,
@@ -153,6 +156,7 @@ const api = {
     autoWb: (key: string) => call<SampleResult['wb']>(IPC.develop.autoWb, key),
     noise: (key: string) => call<NoiseEstimate | null>(IPC.develop.noise, key),
     measureCa: (key: string) => call<CaMeasurement>(IPC.develop.measureCa, key),
+    denoiseState: (key: string) => call<DenoiseState>(IPC.develop.denoiseState, key),
     suggestHeal: (
       key: string,
       points: SpotPoint[],
@@ -179,6 +183,15 @@ const api = {
     onRenderError: (
       cb: (e: { key: string; message: string; code: string; field?: string }) => void
     ) => on(IPC.develop.renderError, cb)
+  },
+  models: {
+    list: () => call<ModelInfo[]>(IPC.models.list),
+    download: (id: string) => call<void>(IPC.models.download, id),
+    cancel: (id: string) => call<void>(IPC.models.cancel, id),
+    remove: (id: string) => call<void>(IPC.models.remove, id),
+    provider: () => call<ProviderInfo>(IPC.models.provider),
+    benchmark: () => call<ProviderInfo>(IPC.models.benchmark),
+    onEvent: (cb: (models: ModelInfo[]) => void) => on(IPC.models.event, cb)
   },
   lens: {
     profiles: () => call<LensProfile[]>(IPC.lens.profiles),

@@ -59,9 +59,6 @@ nodeGypRebuild: false
 # one of them.
 afterPack: ./build/after-pack.mjs
 
-# Enhance → Super Resolution: the Real-ESRGAN model fetched
-# per target by `pnpm fetch-ai <platform>-<arch>` into resources/ai/, carried
-# outside the asar as `resources/ai` (src/main/paths.ts reads it there).
 mac:
   category: public.app-category.photography
   target:
@@ -79,9 +76,6 @@ mac:
   # APPLE_TEAM_ID are set; the Developer ID certificate comes from CSC_LINK /
   # CSC_KEY_PASSWORD. Without them the build is unsigned.
   notarize: true
-  extraResources:
-    - from: resources/ai/darwin-${arch}
-      to: ai
   extendInfo:
     NSPhotoLibraryUsageDescription: Pixl Playroom opens the photos you choose to develop.
     NSDesktopFolderUsageDescription: Pixl Playroom opens folders of photos you choose.
@@ -160,9 +154,6 @@ win:
   target:
     - target: nsis
       arch: [x64]
-  extraResources:
-    - from: resources/ai/win32-${arch}
-      to: ai
     # The document icons build/installer.nsh points the file types at.
     - from: build/doc-icons
       to: doc-icons
@@ -196,9 +187,6 @@ linux:
   target:
     - target: AppImage
       arch: [x64]
-  extraResources:
-    - from: resources/ai/linux-${arch}
-      to: ai
 
 appImage:
   artifactName: ${name}-linux-${arch}.${ext}

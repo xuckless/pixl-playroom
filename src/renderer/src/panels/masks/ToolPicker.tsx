@@ -1,6 +1,7 @@
 import { Icon } from '../../components/icons'
 import { useDevelop } from '../../state/develop'
 import { useAiJobs } from '../../state/jobs'
+import { useLibrary } from '../../state/library'
 import { MASK_TOOL_GROUPS, startMaskTool, type MaskToolInfo, type MaskToolKind } from './model'
 
 /**
@@ -17,9 +18,11 @@ export function ToolPicker({
 }): React.JSX.Element {
   const addMode = useDevelop((s) => s.addMode)
   const caps = useAiJobs((s) => s.capabilities)
-  // A model's tool is there when the build has the model.
+  // A model's tool is there when its model is downloaded; until then it
+  // says why, and a click opens Settings to get it.
   const needs = (t: MaskToolInfo): string | undefined =>
-    t.ai && caps?.[t.ai] ? undefined : t.needs
+    t.ai && caps?.[t.ai] ? undefined : ((t.ai && caps?.why[t.ai]) ?? t.needs)
+  const downloadable = (t: MaskToolInfo): boolean => Boolean(t.ai && needs(t))
   const pick = (kind: MaskToolKind): void => {
     startMaskTool(kind)
     onDone?.()
@@ -44,18 +47,24 @@ export function ToolPicker({
               <button
                 key={t.kind}
                 className="tp-tool"
-                disabled={Boolean(needs(t))}
+                disabled={Boolean(needs(t)) && !downloadable(t)}
                 title={
                   needs(t)
                     ? `${t.label} — ${needs(t)}`
                     : `${t.label}${t.ai ? ' (found by a model)' : ''}${t.key ? ` (${t.key})` : ''}`
                 }
-                onClick={() => pick(t.kind)}
+                onClick={() => {
+                  if (downloadable(t)) {
+                    onDone?.()
+                    return useLibrary.getState().setDialog('preferences')
+                  }
+                  pick(t.kind)
+                }}
               >
                 <Icon name={t.icon} />
                 <span className="tp-label">{t.label}</span>
                 {t.key && <span className="kbd">{t.key}</span>}
-                {needs(t) && <span className="tp-needs">soon</span>}
+                {needs(t) && <span className="tp-needs">{downloadable(t) ? 'get' : 'soon'}</span>}
                 {t.ai && !needs(t) && <span className="tp-needs ai">AI</span>}
               </button>
             ))}

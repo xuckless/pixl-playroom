@@ -46,19 +46,16 @@ jobs:
             runner: macos-15
             args: --mac --arm64
             arch: arm64
-            ai: darwin-arm64
           - name: macOS x64
             # Intel runners: macos-13 was retired; macos-15-intel is the
             # current Intel label. Adjust if GitHub renames it.
             runner: macos-15-intel
             args: --mac --x64
             arch: x64
-            ai: darwin-x64
           - name: Windows x64
             runner: windows-latest
             args: --win --x64
             arch: x64
-            ai: win32-x64
     env:
       # actions/setup-node writes ~/.npmrc with an auth placeholder that pnpm
       # expands from this variable (pnpm ignores ${ENV} in a project .npmrc).
@@ -81,12 +78,6 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
-
-      # Enhance → Super Resolution bundles the Real-ESRGAN model for this
-      # job's own target (resources/ai/<target>, which electron-builder.yml
-      # carries as `ai`). ONNX Runtime ships in the engine's platform package.
-      - name: Enhance bundle
-        run: pnpm fetch-ai ${{ matrix.ai }}
 
       - name: Build renderer, preload and main
         run: pnpm exec electron-vite build

@@ -41,6 +41,15 @@ test('a RAW starts with its profile curve, capture sharpening and colour noise r
   assert.deepEqual(kinds(stages[1].ops), ['Curves', 'Sharpen'])
 })
 
+test('AI-denoised pixels get no classic noise reduction on top', () => {
+  const r = defaultRecipe(true)
+  r.detail.noiseLuminance = 40
+  const c = compile(r, { ...ctx, isRaw: true, scale: 1, aiDenoised: true })
+  const ops = c.grade!.layers[0].stages.flatMap((s) => kinds(s.ops))
+  assert.ok(!ops.includes('Denoise'))
+  assert.ok(ops.includes('Sharpen'))
+})
+
 test('sharpening is left out where its radius falls under half a pixel', () => {
   const c = compile(defaultRecipe(true), { ...ctx, isRaw: true, scale: 0.3 })
   assert.ok(!kinds(c.grade!.layers[0].stages[1].ops).includes('Sharpen'))

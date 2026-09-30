@@ -136,12 +136,12 @@ say(
   'available from the addresses given; we will also provide it on request, for three',
   'years from when you received this copy, from hello@pixlfoundation.com.',
   '',
-  '  1. Native components and the AI model',
+  '  1. Native components and the AI models',
   '  2. npm packages',
   '  3. Licence texts',
   '',
   RULE,
-  '1. NATIVE COMPONENTS AND THE AI MODEL',
+  '1. NATIVE COMPONENTS AND THE AI MODELS',
   RULE
 )
 for (const c of components) {
@@ -169,6 +169,38 @@ for (const c of components) {
       )
     else
       console.warn("third-party-notices: no ONNX Runtime notices in the engine's platform package")
+  }
+}
+
+// The AI models are not in the app: each is downloaded when first wanted
+// (Settings → AI models). Every one the app can download is credited here,
+// with the licence text the engine's roster carries for it.
+{
+  const modelsDir = path.join(ROOT, 'node_modules', '@xuckless', 'pixl-models')
+  const roster = JSON.parse(fs.readFileSync(path.join(modelsDir, 'roster.json'), 'utf8'))
+  say('', 'AI models, downloaded on demand from models.pixlfoundation.com:')
+  for (const m of roster.models.filter((x) => x.ship)) {
+    ids.add(m.licence.spdx)
+    say(
+      '',
+      m.title,
+      `  Used for:  ${m.role}`,
+      `  Licence:   ${m.licence.spdx} (section 3)`,
+      `  Source:    ${m.upstream.repo}`,
+      `  ${m.licence.holder}`,
+      `  Training data: ${m.caveat}`
+    )
+    const own = path.join(modelsDir, 'licences', m.licence.text)
+    if (fs.existsSync(own))
+      say(
+        '',
+        fs
+          .readFileSync(own, 'utf8')
+          .trim()
+          .split('\n')
+          .map((l) => `    ${l}`)
+          .join('\n')
+      )
   }
 }
 

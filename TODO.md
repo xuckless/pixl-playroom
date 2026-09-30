@@ -177,7 +177,7 @@ first paid release.
       in the engine's JPEG writer and the repair becomes a no-op.
 - [ ] Engine: this build has no HEIC encoder ("libheif has no encoder"), so
       HEIC export fails.
-- [ ] AI denoise and raw-domain noise reduction (engine).
+- [ ] Raw-domain noise reduction (engine). (AI denoise: Phase 8.)
 - [ ] Soft proofing (output profile preview + gamut warning).
 - [ ] Full HDR editing and preview: render HDR previews (PQ AVIF / PNG cICP)
       on HDR displays, an HDR histogram, grade HDR sources in HDR (engine
@@ -347,9 +347,41 @@ Phased; each phase is tested and committed before the next.
         were trained on Places2, non-commercial).
   - [ ] Spots under an Upright warp are placed round on the unwarped frame
         and show as circles on the warped one (close, not exact).
-- [ ] Phase 7 — AI models on demand (models.pixlfoundation.com), real
-      subject and background masks.
-- [ ] Phase 8 — AI denoise in Detail (a cached denoised master).
+- [x] Phase 7 — AI models on demand: the engine's roster
+      (`@xuckless/pixl-models`), downloaded into `userData/models` from
+      `models.pixlfoundation.com/<id>/<version>/<file>` (resumable, checked
+      against the roster's SHA-256), listed in Settings → AI models with
+      size, licence and training-data caveat; the provider test (engine
+      `benchmark`) picks CoreML/DirectML or the CPU. Select Subject and
+      Background run U²-Net(p) through the engine's `segment` on the
+      lens-corrected proxy (CPU: faster than compiling for CoreML for one
+      run). Enhance ×2 takes its model from the store; `fetch-ai`,
+      `resources/ai` and the release step are gone; every model is credited
+      in the notices from the roster.
+  - [ ] **Before release:** run `pnpm publish-models --bucket <bucket>` (your
+        GitHub Packages token and `wrangler login`) and point the
+        `models.pixlfoundation.com` custom domain at the bucket. Until then the
+        app falls back to each file's public upstream (Hugging Face, rembg's
+        GitHub releases; same checksum), which covers six of the ten; NAFNet,
+        the two FBCNNs and Real-ESRGAN general WDN are only in the engine's
+        private release and wait for the mirror. `PLAYROOM_MODELS_URL` points
+        at another mirror (`file://` works) for development.
+  - [ ] Sky: no sky model in the roster yet.
+- [x] Phase 8 — AI denoise in Detail (a cached denoised master). Classic | AI
+      in Noise reduction; SCUNet or DRUNet with strength; an AI job makes a
+      denoised draft (the loupe switches at once) then a 16-bit master and
+      proxies from it (`src/main/ai/denoise.ts`), kept per photo, model and
+      strength (three sets per photo). Develop, the 1:1 region, thumbnails and
+      export use it; the renderer (`lib/denoise.ts`) starts or restarts the
+      job when the settings ask for something not made. SCUNet cannot load
+      under CoreML (ONNX Runtime refuses a reshape) and falls back to the CPU.
+  - [ ] SCUNet on the CPU is ~27 s/MP (a 24 MP RAW takes ~10 min): ask the
+        engine for a CoreML-loadable SCUNet export, or an fp16 one.
+  - [ ] DRUNet's `MeasuredNoise` gain (1.33) under-states synthetic
+        per-channel noise (halves σ 7 rather than removing it); check it on
+        high-ISO RAWs and expose a Noise level override if needed.
+  - [ ] Virtual copies share the photo's denoise sets; pruning keeps the
+        newest three, which a copy with other settings may lose (it rebuilds).
 - [ ] Phase 9 — Enhance on the wheel (JPEG restore, deblur, upscale ×2/×4).
 - [ ] Phase 10 — HDR gain maps: read, grade and write.
 - [ ] Phase 11 — export watermark.

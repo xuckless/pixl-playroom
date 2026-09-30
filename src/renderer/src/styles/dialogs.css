@@ -284,3 +284,38 @@ button.link:hover {
 .modal.engine-report .json {
   max-height: 46vh;
 }
+
+/* Settings → AI models */
+.models-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.models-table td {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hair);
+  vertical-align: middle;
+}
+.models-table .model-title {
+  color: var(--text);
+  cursor: help;
+}
+.models-table .model-act {
+  text-align: right;
+  white-space: nowrap;
+  width: 1%;
+  padding-left: 12px;
+}
+.model-bar {
+  display: inline-block;
+  width: 90px;
+  height: 3px;
+  margin-right: 8px;
+  vertical-align: middle;
+  background: var(--hair2);
+}
+.model-bar span {
+  display: block;
+  height: 100%;
+  background: var(--acc);
+  transition: width 0.2s var(--ease);
+}

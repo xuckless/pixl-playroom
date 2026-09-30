@@ -8,6 +8,7 @@ import { ACCOUNT_URL, BUY_URL, type LicenceStatus } from '../../../shared/licenc
 import { Modal, Select } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
+import { ModelsSection } from './ModelsSection'
 
 const LEGAL = 'https://playroom.pixlfoundation.com/legal'
 
@@ -196,6 +197,8 @@ export function PreferencesDialog(): React.JSX.Element {
           </>
         )}
       </fieldset>
+
+      <ModelsSection />
 
       <fieldset>
         <legend>Privacy</legend>
