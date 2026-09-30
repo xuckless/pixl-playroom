@@ -2,13 +2,12 @@
  * Export: each photo's original, developed once more at full resolution with
  * its recipe and written where the settings say. The same compiler as the
  * previews, at scale 1. One file at a time, in the background engine, with
- * progress and cancellation between files (the engine itself is synchronous
- * and never cancels mid-file).
+ * progress; cancelling stops the file being written at the engine's next
+ * stage (a cancelled conversion writes nothing) and the rest are not begun.
  */
 import { BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
-import { randomUUID } from 'crypto'
-import { mkdir, unlink } from 'fs/promises'
+import { mkdir } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import { compile, orientedFrame } from '../shared/compile'
 import type { ConvertRequest, Dither } from '../shared/engine-types'
@@ -20,7 +19,7 @@ import {
   FORMAT_EXT,
   metadataPlan,
   outputSharpen,
-  outputSharpenGrade,
+  outputSharpenRequest,
   supportsHdr,
   type ExportSettings
 } from '../shared/export'
@@ -29,9 +28,8 @@ import { hash32 } from '../shared/recipe'
 import { brushPlanes } from './brushes'
 import { embedMetadata } from './exiftool'
 import { exists } from './exists'
-import type { EngineClient } from './engine/client'
+import { isCancelled, type EngineClient } from './engine/client'
 import type { Library } from './library'
-import { paths } from './paths'
 import { ensureProxies } from './proxy'
 import type { DevelopSessions } from './render'
 import {
@@ -44,7 +42,7 @@ import {
 
 interface Job {
   id: string
-  cancelled: boolean
+  abort: AbortController
 }
 
 export class Exporter {
@@ -61,12 +59,11 @@ export class Exporter {
   }
 
   cancel(id: string): void {
-    const j = this.jobs.get(id)
-    if (j) j.cancelled = true
+    this.jobs.get(id)?.abort.abort()
   }
 
   start(keys: string[], settings: ExportSettings): string {
-    const job: Job = { id: Math.random().toString(36).slice(2), cancelled: false }
+    const job: Job = { id: Math.random().toString(36).slice(2), abort: new AbortController() }
     this.jobs.set(job.id, job)
     void this.run(job, keys, settings).finally(() => this.jobs.delete(job.id))
     return job.id
@@ -82,18 +79,21 @@ export class Exporter {
       finished: false,
       outputs: []
     }
+    const { signal } = job.abort
     for (const [i, key] of keys.entries()) {
-      if (job.cancelled) break
+      if (signal.aborted) break
       const item = await this.library.item(key)
       progress.current = item?.name ?? key
       this.send(progress)
       const name = item?.name ?? key
       try {
-        const out = await this.one(key, s, i + 1, (message) =>
+        const out = await this.one(key, s, i + 1, signal, (message) =>
           progress.errors.push({ name, message, warning: true })
         )
         if (out) progress.outputs.push(out)
       } catch (err) {
+        // Stopped by Cancel: the file was never written, and nothing failed.
+        if (isCancelled(err)) break
         log.warn('export failed', key, err)
         progress.errors.push({ name, message: (err as Error).message })
       }
@@ -114,6 +114,7 @@ export class Exporter {
     key: string,
     s: ExportSettings,
     seq: number,
+    signal: AbortSignal,
     warn: (message: string) => void
   ): Promise<string | null> {
     await this.sessions.flush(key)
@@ -221,53 +222,21 @@ export class Exporter {
           : null,
       threads: BACKGROUND_THREADS * 2
     }
-    // Only an SDR file is sharpened for output.
+    // Only an SDR file is sharpened for output, after the resize, on the
+    // values the file will hold.
     const sdrOut = typeof color === 'object' && ('ConvertTo' in color || 'ToneMap' in color)
     const sharpen = sdrOut ? outputSharpen(s) : null
-    if (!sharpen) {
-      await this.engine.convert(request)
-    } else {
-      // Output sharpening belongs after the resize, which the engine does
-      // after the grade: so the picture is developed as always into a
-      // lossless 16-bit TIFF in the output space, then sharpened on its way
-      // into the file.
-      const dir = join(paths.cacheRoot(), 'export-tmp')
-      await mkdir(dir, { recursive: true })
-      const tmp = join(dir, `${randomUUID()}.tif`)
-      try {
-        await this.engine.convert({
-          ...request,
-          sink: { Path: tmp },
-          pixel: { depth: 'Sixteen', channels: 3 },
-          encode: { Tiff: { compression: 'None' } },
-          // Pass 2 reads the space from the profile, so it is always written.
-          metadata: { ...plan.policy, icc: true },
-          dither: 'None'
-        })
-        // Converting into the space it is already in changes nothing. Pass 1
-        // wrote upright pixels and reset the orientation, so the EXIF it
-        // carried over is copied on as it is.
-        await this.engine.convert({
-          ...blankRequest(tmp, out, 'Tiff'),
-          pixel: { depth, channels: 3 },
-          encode,
-          metadata: plan.policy,
-          color: {
-            ConvertTo: {
-              to: s.colorSpace,
-              intent: s.intent,
-              black_point_compensation: s.blackPointCompensation
-            }
-          },
-          grade: outputSharpenGrade(s, sharpen),
-          // The sharpen is a float pass of its own, so dither always applies.
-          dither,
-          threads: BACKGROUND_THREADS * 2
-        })
-      } finally {
-        await unlink(tmp).catch(() => {})
-      }
-    }
+    await this.engine.convert(
+      sharpen
+        ? {
+            ...request,
+            output_sharpen: outputSharpenRequest(s, sharpen),
+            // The sharpen is a float pass of its own, so dither always applies.
+            dither
+          }
+        : request,
+      { signal }
+    )
 
     // The engine copies blocks as they are; the photo's own fields, the
     // copyright and the location are ExifTool's. The picture is written by

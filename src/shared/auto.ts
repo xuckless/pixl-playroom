@@ -5,7 +5,14 @@
  */
 import type { ImageStats, WhitePoint } from './engine-types'
 import type { BasicSetting } from './recipe'
-import { absoluteFromOp, opNeutralising, relativeFromOp, TINT_UNITS_PER_DUV, type Vec3 } from './wb'
+import {
+  absoluteFromOp,
+  opNeutralising,
+  relativeFromOp,
+  TINT_UNITS_PER_DUV,
+  type OpWhite,
+  type Vec3
+} from './wb'
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
 
@@ -150,7 +157,19 @@ export function wbSliders(
   asShot: WhitePoint | null
 ): { temperature: number; tint: number; clamped: boolean } | null {
   const op = opNeutralising(linearRec2020)
-  if (!op) return null
+  return op ? wbSlidersFromOp(op, isRaw, asShot) : null
+}
+
+/**
+ * The sliders that set the op white `op` (the engine's
+ * `whiteBalanceFromPixel`, or `opNeutralising`): absolute for a RAW with an
+ * as-shot white, relative otherwise.
+ */
+export function wbSlidersFromOp(
+  op: OpWhite,
+  isRaw: boolean,
+  asShot: WhitePoint | null
+): { temperature: number; tint: number; clamped: boolean } {
   if (isRaw && asShot) {
     const abs = absoluteFromOp(op, asShot)
     return {

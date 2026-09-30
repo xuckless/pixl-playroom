@@ -1,25 +1,28 @@
 /**
  * The develop view's renderer. Every preview is a real engine render of the
  * photo's proxy with the compiled recipe — the same compiler and the same
- * engine an export uses — followed by an `analyze` of what was rendered, so
- * the histogram and the hue chart describe the pixels on screen.
+ * engine an export uses — measured by the engine as it renders, so the
+ * histogram and the hue chart describe the pixels on screen.
  *
  * Renders are coalesced: while one is in flight only the newest recipe waits,
  * and a moving slider renders the small draft proxy; the full proxy follows
  * once the slider settles (longer when that is the large proxy a Retina
- * loupe asks for), or at once when it is let go. Both are JPEGs, quick to
- * write and to read back for the histogram and the loupe.
+ * loupe asks for), or at once when it is let go. A newer edit stops a settled
+ * render (and the masks, "before" and thumbnails after it) at the engine's
+ * next stage; a draft in flight finishes, so a moving slider keeps showing
+ * frames. Both are JPEGs, quick to write and for the loupe to read.
  */
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { mkdir } from 'fs/promises'
 import { join } from 'path'
-import { autoTone, linearSrgbToRec2020, wbSliders } from '../shared/auto'
+import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020 } from '../shared/auto'
 import { compile, orientedFrame, type Compiled } from '../shared/compile'
 import type {
   HdrWorking,
   ConvertReport,
   ImageStats,
+  Measure,
   NoiseEstimate,
   SourceInfo
 } from '../shared/engine-types'
@@ -37,10 +40,17 @@ import {
 } from '../shared/ipc'
 import { defaultRecipe, hash32, type Recipe } from '../shared/recipe'
 import type { Vec3 } from '../shared/wb'
-import { analyzeRequest, hdrSignalOf, hdrWorkingOf, measureAutoWb, rendersDir } from './autowb'
+import {
+  analyzeRequest,
+  engineWbSliders,
+  hdrSignalOf,
+  hdrWorkingOf,
+  measureAutoWb,
+  rendersDir
+} from './autowb'
 import { brushPlanes } from './brushes'
 import type { PhotoRow } from './db'
-import { EngineError, type EngineClient } from './engine/client'
+import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import { parseKey } from './keys'
 import type { Library } from './library'
 import { pngToFloats } from './pngio'
@@ -70,6 +80,32 @@ const SETTLE_LARGE_MS = 500
 const EMPTY = 'empty'
 /** How long an edit must rest before the sidecar is written. */
 const SAVE_MS = 600
+
+/**
+ * What the histogram, the hue chart and auto tone read, measured by the
+ * engine on the pixels it hands the encoder: `analyze`'s numbers without
+ * decoding the file again.
+ */
+function measureOf(stride: number): Measure {
+  return {
+    at: 'Output',
+    domain: 'Encoded',
+    bins: 256,
+    percentiles: [...AUTO_PERCENTILES, 1, 99],
+    clip_low: 0,
+    clip_high: 1,
+    hue_bins: 36,
+    stride,
+    transparent: 'Include',
+    noise: false
+  }
+}
+
+/** The measurement a `measure` asked for; the engine returns it whenever one was. */
+function statsOf(r: ConvertReport): ImageStats {
+  if (!r.stats) throw new Error('the engine measured nothing')
+  return r.stats
+}
 
 function reportOf(
   r: ConvertReport,
@@ -118,6 +154,11 @@ class Session {
   rev = 0
   view: ViewState = { cropMode: false, before: false, maskLayer: null, targetEdge: 2560 }
   private inflight = false
+  /** What is rendering, and how to stop it. */
+  private inflightKind: Kind | null = null
+  private abort: AbortController | null = null
+  /** The 1:1 region being rendered: a newer one stops it. */
+  private regionAbort: AbortController | null = null
   private pending: Kind | null = null
   private settle: NodeJS.Timeout | undefined
   private save: NodeJS.Timeout | undefined
@@ -180,6 +221,9 @@ class Session {
   update(recipe: Recipe, interactive: boolean, rev?: number): void {
     this.recipe = recipe
     if (rev !== undefined) this.rev = rev
+    // A settled render of the old recipe is only in the way; so is anything
+    // in flight when the slider is let go (the full render follows at once).
+    if (this.inflight && (this.inflightKind === 'full' || !interactive)) this.abort?.abort()
     clearTimeout(this.save)
     this.save = setTimeout(() => this.persist(), SAVE_MS)
     this.schedule(interactive ? 'draft' : 'full')
@@ -216,17 +260,23 @@ class Session {
 
   private async run(kind: Kind): Promise<void> {
     this.inflight = true
+    this.inflightKind = kind
+    const abort = new AbortController()
+    this.abort = abort
+    const { signal } = abort
     try {
-      await this.renderPicture(kind)
+      await this.renderPicture(kind, signal)
       // A newer edit waiting behind this render will redo what follows.
       if (kind === 'draft' && this.view.maskLive && this.view.maskLayer && !this.closed)
-        await this.renderMask('draft')
+        await this.renderMask('draft', signal)
       if (kind === 'full' && !this.closed && !this.pending) {
-        if (this.view.maskLayer) await this.renderMask('full')
-        if (this.view.before) await this.renderBefore()
-        if (this.view.maskThumbs) await this.renderMaskThumbs()
+        if (this.view.maskLayer) await this.renderMask('full', signal)
+        if (this.view.before) await this.renderBefore(signal)
+        if (this.view.maskThumbs) await this.renderMaskThumbs(signal)
       }
     } catch (err) {
+      // Stopped for a newer edit, which renders next: nothing went wrong.
+      if (isCancelled(err)) return
       const e = err as EngineError
       log.warn('render failed', e.code, e.message)
       this.owner.send(IPC.develop.renderError, {
@@ -237,6 +287,8 @@ class Session {
       })
     } finally {
       this.inflight = false
+      this.inflightKind = null
+      this.abort = null
       const next = this.pending
       this.pending = null
       if (next && !this.closed) void this.run(next)
@@ -254,7 +306,7 @@ class Session {
     return join(this.dir, `${stem}-${this.slot}.${ext}`)
   }
 
-  private async renderPicture(kind: Kind): Promise<void> {
+  private async renderPicture(kind: Kind, signal: AbortSignal): Promise<void> {
     const t0 = performance.now()
     const src = this.source(kind)
     // The view is read once, here: the event says which view it was made for.
@@ -272,22 +324,25 @@ class Session {
       return
     }
     const out = this.nextFile('view', 'jpg')
-    const hdrStats = kind === 'full' ? this.measureHdr(cropMode) : Promise.resolve(undefined)
-    const report = await this.owner.engine.convert({
-      ...blankRequest(src.path, out, src.input),
-      pixel: { depth: 'Eight', channels: 3 },
-      encode: {
-        Jpeg: { quality: kind === 'draft' ? 92 : 95, subsampling: 'None', optimize: false }
+    const hdrStats =
+      kind === 'full' ? this.measureHdr(cropMode, signal) : Promise.resolve(undefined)
+    const report = await this.owner.engine.convert(
+      {
+        ...blankRequest(src.path, out, src.input),
+        pixel: { depth: 'Eight', channels: 3 },
+        encode: {
+          Jpeg: { quality: kind === 'draft' ? 92 : 95, subsampling: 'None', optimize: false }
+        },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        color: displayPolicy(this.info, 'DisplayP3'),
+        grade: compiled.grade,
+        framing: compiled.framing,
+        threads: INTERACTIVE_THREADS,
+        measure: measureOf(kind === 'draft' ? 2 : 1)
       },
-      metadata: { exif: false, icc: true, xmp: false, iptc: false },
-      color: displayPolicy(this.info, 'DisplayP3'),
-      grade: compiled.grade,
-      framing: compiled.framing,
-      threads: INTERACTIVE_THREADS
-    })
-    const stats = await this.owner.engine.analyze(
-      analyzeRequest(out, 'Jpeg', kind === 'draft' ? 2 : 1)
+      { signal }
     )
+    const stats = statsOf(report)
     if (kind === 'full') {
       this.lastFull = out
       this.lastFullFor = { [sig]: out }
@@ -323,14 +378,20 @@ class Session {
    * highlights above reference white. Runs beside the preview; a failure
    * only loses the HDR histogram.
    */
-  private async measureHdr(cropMode: boolean): Promise<ImageStats | undefined> {
+  private async measureHdr(
+    cropMode: boolean,
+    signal: AbortSignal
+  ): Promise<ImageStats | undefined> {
     const hdr = this.hdrWorking
     if (!hdr) return undefined
     try {
       const src = this.px.draft
       const compiled = await this.compileFor(this.recipe, src, !cropMode)
       const out = join(this.dir, 'hdr-stats.png')
-      await this.owner.engine.convert({
+      // Fine bins: the chart re-bins them onto a stops axis, where the
+      // shadows need the resolution.
+      const bins = 4096
+      const request = {
         ...blankRequest(src.path, out, src.input),
         pixel: { depth: 'Sixteen', channels: 3 },
         encode: { Png: { compression: 'Fast', filter: 'Sub' } },
@@ -338,21 +399,27 @@ class Session {
         color: 'Preserve',
         grade: compiled.grade,
         framing: compiled.framing,
-        // Without a grade the signal passes through as it is; the engine
-        // refuses a working space nothing would use.
-        hdr: compiled.grade ? hdr : null,
         threads: INTERACTIVE_THREADS
-      })
-      return await this.owner.engine.analyze({
-        ...analyzeRequest(out, 'Png', 1),
-        domain: 'Linear',
-        // Fine bins: the chart re-bins them onto a stops axis, where the
-        // shadows need the resolution.
-        bins: 4096,
-        hdr: hdrSignalOf(hdr)
-      })
+      } as const
+      // With float work the engine measures its own output in linear light
+      // by the working white; without, the signal passes through untouched
+      // (the engine refuses a working space nothing would use), so the file
+      // is measured afterwards by the same numbers.
+      const floatWork = compiled.grade !== null || (compiled.framing?.rotate_degrees ?? 0) !== 0
+      if (floatWork) {
+        const r = await this.owner.engine.convert(
+          { ...request, hdr, measure: { ...measureOf(1), domain: 'Linear', bins } },
+          { signal }
+        )
+        return statsOf(r)
+      }
+      await this.owner.engine.convert(request, { signal })
+      return await this.owner.engine.analyze(
+        { ...analyzeRequest(out, 'Png', 1), domain: 'Linear', bins, hdr: hdrSignalOf(hdr) },
+        { signal }
+      )
     } catch (err) {
-      log.info('HDR histogram unavailable', (err as Error).message)
+      if (!isCancelled(err)) log.info('HDR histogram unavailable', (err as Error).message)
       return undefined
     }
   }
@@ -364,7 +431,7 @@ class Session {
    * plane again re-sends its event, stamped with the current recipe, so the
    * loupe's preview knows the engine agrees with it.
    */
-  private async renderMask(kind: Kind): Promise<void> {
+  private async renderMask(kind: Kind, signal: AbortSignal): Promise<void> {
     const src = kind === 'draft' ? this.px.draft : this.source('full')
     const rev = this.rev
     const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
@@ -404,28 +471,35 @@ class Session {
       return
     }
     const out = this.nextFile('mask', 'png')
-    const report = await this.owner.engine.convert({
-      ...blankRequest(src.path, out, src.input),
-      pixel: { depth: 'Eight', channels: 1 },
-      encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-      metadata: STRIP_ALL,
-      color: 'Preserve',
-      grade: compiled.grade,
-      framing: compiled.framing,
-      inspect: { LayerMask: { layer: index } },
-      hdr: this.hdrWorking
-    })
+    const report = await this.owner.engine.convert(
+      {
+        ...blankRequest(src.path, out, src.input),
+        pixel: { depth: 'Eight', channels: 1 },
+        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        metadata: STRIP_ALL,
+        color: 'Preserve',
+        grade: compiled.grade,
+        framing: compiled.framing,
+        inspect: { LayerMask: { layer: index } },
+        hdr: this.hdrWorking
+      },
+      { signal }
+    )
     // The picture the renderer shows is the last full render; measure it
     // through the plane. `weights` is an engine feature that may be missing
     // from an older build — the overlay still shows without it.
     let maskStats: ImageStats | undefined
     if (measure) {
       try {
-        maskStats = await this.owner.engine.analyze({
-          ...analyzeRequest(this.lastFull, 'Jpeg', 1),
-          weights: { source: { Png: out }, resampler: 'Bilinear' }
-        })
+        maskStats = await this.owner.engine.analyze(
+          {
+            ...analyzeRequest(this.lastFull, 'Jpeg', 1),
+            weights: { source: { Png: out }, resampler: 'Bilinear' }
+          },
+          { signal }
+        )
       } catch (err) {
+        if (isCancelled(err)) throw err
         log.info('masked analysis unavailable', (err as Error).message)
       }
     }
@@ -445,7 +519,7 @@ class Session {
    * what shapes its mask changed (not its sliders), and the loop yields to a
    * newer edit waiting behind it.
    */
-  private async renderMaskThumbs(): Promise<void> {
+  private async renderMaskThumbs(signal: AbortSignal): Promise<void> {
     const src = this.px.draft
     const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
     const live = new Set<string>()
@@ -485,17 +559,20 @@ class Session {
       )
       if (this.thumbSig[layer.id] === sig) continue
       const out = join(this.dir, `mthumb-${layer.id}-${sig}.png`)
-      const report = await this.owner.engine.convert({
-        ...blankRequest(src.path, out, src.input),
-        pixel: { depth: 'Eight', channels: 1 },
-        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-        metadata: STRIP_ALL,
-        color: 'Preserve',
-        grade: compiled.grade,
-        framing: compiled.framing,
-        inspect: { LayerMask: { layer: index } },
-        hdr: this.hdrWorking
-      })
+      const report = await this.owner.engine.convert(
+        {
+          ...blankRequest(src.path, out, src.input),
+          pixel: { depth: 'Eight', channels: 1 },
+          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+          metadata: STRIP_ALL,
+          color: 'Preserve',
+          grade: compiled.grade,
+          framing: compiled.framing,
+          inspect: { LayerMask: { layer: index } },
+          hdr: this.hdrWorking
+        },
+        { signal }
+      )
       this.thumbSig[layer.id] = sig
       if (this.closed) return
       this.owner.send(IPC.develop.rendered, {
@@ -532,7 +609,7 @@ class Session {
   private lastFullFor: Record<string, string> = {}
 
   /** The default recipe with the same framing: the "before", and the ghost bars. */
-  private async renderBefore(): Promise<void> {
+  private async renderBefore(signal: AbortSignal): Promise<void> {
     const before = defaultRecipe(this.isRaw)
     before.geometry = structuredClone(this.recipe.geometry)
     const src = this.source('full')
@@ -542,16 +619,20 @@ class Session {
     const key = JSON.stringify([compiled.framing, src.path, this.view.cropMode])
     if (key === this.beforeKey) return
     const out = join(this.dir, `before-${hash32(key).toString(16)}.png`)
-    const report = await this.owner.engine.convert({
-      ...blankRequest(src.path, out, src.input),
-      pixel: { depth: 'Eight', channels: 3 },
-      encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-      metadata: { exif: false, icc: true, xmp: false, iptc: false },
-      color: displayPolicy(this.info, 'DisplayP3'),
-      grade: compiled.grade,
-      framing: compiled.framing
-    })
-    const stats = await this.owner.engine.analyze(analyzeRequest(out, 'Png', 1))
+    const report = await this.owner.engine.convert(
+      {
+        ...blankRequest(src.path, out, src.input),
+        pixel: { depth: 'Eight', channels: 3 },
+        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        color: displayPolicy(this.info, 'DisplayP3'),
+        grade: compiled.grade,
+        framing: compiled.framing,
+        measure: measureOf(1)
+      },
+      { signal }
+    )
+    const stats = statsOf(report)
     this.beforeKey = key
     if (this.closed) return
     this.owner.send(IPC.develop.rendered, {
@@ -569,6 +650,11 @@ class Session {
   /** A 1:1 (or smaller) render of part of the full-resolution frame. */
   async region(req: RegionRequest): Promise<RegionResult> {
     const t0 = performance.now()
+    // The loupe asks again as it pans and zooms: only the newest view matters.
+    this.regionAbort?.abort()
+    const abort = new AbortController()
+    this.regionAbort = abort
+    const { signal } = abort
     const raw = this.isRaw
     const src: ProxyFile = raw
       ? await ensureMaster(this.owner.bgEngine, this.row)
@@ -604,42 +690,50 @@ class Session {
     const out = join(this.dir, `region-${this.regionSlot}.png`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw ? null : this.info
-    await this.owner.engine.convert({
-      ...blankRequest(src.path, out, src.input, original),
-      raw: null,
-      resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
-      pixel: { depth: 'Eight', channels: 3 },
-      encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-      metadata: { exif: false, icc: true, xmp: false, iptc: false },
-      color: displayPolicy(this.info, 'DisplayP3'),
-      grade: compiled.grade,
-      framing: orientOnly(compiled.framing),
-      region: { x, y, width: w, height: h, margin: 96 }
-    })
+    await this.owner.engine.convert(
+      {
+        ...blankRequest(src.path, out, src.input, original),
+        raw: null,
+        resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
+        pixel: { depth: 'Eight', channels: 3 },
+        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        color: displayPolicy(this.info, 'DisplayP3'),
+        grade: compiled.grade,
+        framing: orientOnly(compiled.framing),
+        region: { x, y, width: w, height: h, margin: 96 }
+      },
+      { signal }
+    )
     // The overlay at 1:1: the same region through the layer's mask.
     let maskUrl: string | undefined
     const index = req.maskLayer ? compiled.layerIndex[req.maskLayer] : undefined
     if (index !== undefined && compiled.grade) {
       const maskOut = join(this.dir, `region-mask-${this.regionSlot}.png`)
       try {
-        await this.owner.engine.convert({
-          ...blankRequest(src.path, maskOut, src.input, original),
-          raw: null,
-          resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
-          pixel: { depth: 'Eight', channels: 1 },
-          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-          metadata: STRIP_ALL,
-          color: 'Preserve',
-          grade: compiled.grade,
-          framing: orientOnly(compiled.framing),
-          region: { x, y, width: w, height: h, margin: 96 },
-          inspect: { LayerMask: { layer: index } }
-        })
+        await this.owner.engine.convert(
+          {
+            ...blankRequest(src.path, maskOut, src.input, original),
+            raw: null,
+            resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
+            pixel: { depth: 'Eight', channels: 1 },
+            encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+            metadata: STRIP_ALL,
+            color: 'Preserve',
+            grade: compiled.grade,
+            framing: orientOnly(compiled.framing),
+            region: { x, y, width: w, height: h, margin: 96 },
+            inspect: { LayerMask: { layer: index } }
+          },
+          { signal }
+        )
         maskUrl = cacheUrl(maskOut, `${Date.now()}`)
       } catch (err) {
+        if (isCancelled(err)) throw err
         log.info('region mask unavailable', (err as Error).message)
       }
     }
+    if (this.regionAbort === abort) this.regionAbort = null
     return {
       maskUrl,
       url: cacheUrl(out, `${Date.now()}`),
@@ -701,7 +795,8 @@ class Session {
     const n = px.width * px.height
     for (let i = 0; i < n; i++) for (let c = 0; c < 3; c++) sum[c] += px.data[i * px.channels + c]
     const rgb = linearSrgbToRec2020([sum[0] / n, sum[1] / n, sum[2] / n])
-    return { linear: rgb, wb: wbSliders(rgb, this.isRaw, this.info.as_shot_white) }
+    const wb = await engineWbSliders(this.owner.engine, rgb, this.isRaw, this.info.as_shot_white)
+    return { linear: rgb, wb }
   }
 
   /** Auto tone: measure the picture with the tone sliders at zero. */
@@ -712,17 +807,17 @@ class Session {
     const src = this.px.draft
     const compiled = await this.compileFor(flat, src, true)
     const out = join(this.dir, 'auto-tone.png')
-    await this.owner.engine.convert({
+    const report = await this.owner.engine.convert({
       ...blankRequest(src.path, out, src.input),
       pixel: { depth: 'Eight', channels: 3 },
       encode: { Png: { compression: 'Fast', filter: 'Sub' } },
       metadata: { exif: false, icc: true, xmp: false, iptc: false },
       color: displayPolicy(this.info, 'DisplayP3'),
       grade: compiled.grade,
-      framing: compiled.framing
+      framing: compiled.framing,
+      measure: measureOf(1)
     })
-    const stats = await this.owner.engine.analyze(analyzeRequest(out, 'Png', 1))
-    return autoTone(stats)
+    return autoTone(statsOf(report))
   }
 
   /** Auto white balance, measured on the draft proxy (see `autowb.ts`). */
@@ -759,6 +854,8 @@ class Session {
   close(): Promise<void> {
     this.closed = true
     clearTimeout(this.settle)
+    this.abort?.abort()
+    this.regionAbort?.abort()
     return this.save ? this.persist() : Promise.resolve()
   }
 }

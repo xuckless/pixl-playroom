@@ -92,15 +92,15 @@ const FIRST_GUESS_MS_PER_MP = 1500
  * Enhance as an AI job: Model (load and check) → Upscale (the engine's
  * run, its progress estimated from the photo's size and how fast the last
  * runs went) → Save (the new file joins the folder with the look). It runs
- * in its own engine process, so cancelling kills that process and nothing
- * else; a cancelled or failed run leaves no half-written file.
+ * in its own engine process; cancelling stops the engine between model
+ * tiles, and a cancelled or failed run leaves no half-written file.
  */
 export class EnhanceRunner implements AiRunner<EnhanceRequest> {
   readonly task = 'enhance' as const
 
   constructor(
     private readonly library: Library,
-    /** The AI engine: started when first needed, restarted to cancel. */
+    /** The AI engine: started when first needed. */
     private readonly engine: EngineClient,
     private readonly status: () => EngineStatus,
     private readonly settings: IndexClient
@@ -158,22 +158,25 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
       alpha: { Resample: 'Lanczos3' }
     }
     const tryRun = (up: UpscalerRef): Promise<unknown> =>
-      this.engine.convert({
-        ...blankRequest(row.path, out, info.input, info),
-        raw,
-        resize: { Scale: { factor: 2 } },
-        resampler: 'Ai',
-        upscaler: up,
-        pixel: { depth: 'Sixteen', channels: 3 },
-        encode: { Tiff: { compression: 'Deflate' } },
-        metadata: raw ? { ...PRESERVE_ALL, icc: true } : PRESERVE_ALL,
-        color: 'Preserve',
-        framing:
-          orientation === 'Normal'
-            ? null
-            : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null },
-        threads: BACKGROUND_THREADS * 2
-      })
+      this.engine.convert(
+        {
+          ...blankRequest(row.path, out, info.input, info),
+          raw,
+          resize: { Scale: { factor: 2 } },
+          resampler: 'Ai',
+          upscaler: up,
+          pixel: { depth: 'Sixteen', channels: 3 },
+          encode: { Tiff: { compression: 'Deflate' } },
+          metadata: raw ? { ...PRESERVE_ALL, icc: true } : PRESERVE_ALL,
+          color: 'Preserve',
+          framing:
+            orientation === 'Normal'
+              ? null
+              : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null },
+          threads: BACKGROUND_THREADS * 2
+        },
+        { signal: ctx.signal }
+      )
     // The engine says nothing until it is done: the bar follows the clock.
     const mp = (info.width * info.height) / 1e6
     const rate = await this.rate()
@@ -181,8 +184,6 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const t0 = Date.now()
     ctx.stage('upscale', 0, `Upscaling ${row.name}`)
     const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 250)
-    const stop = (): void => this.engine.restart()
-    ctx.signal.addEventListener('abort', stop, { once: true })
     try {
       try {
         await tryRun(upscaler)
@@ -226,7 +227,6 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
       throw err
     } finally {
       clearInterval(tick)
-      ctx.signal.removeEventListener('abort', stop)
     }
   }
 

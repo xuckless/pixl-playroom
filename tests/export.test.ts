@@ -6,7 +6,7 @@ import {
   defaultExportSettings,
   metadataPlan,
   outputSharpen,
-  outputSharpenGrade,
+  outputSharpenRequest,
   type ExportSettings,
   type MetadataPlan,
   type OutputSharpenSetting
@@ -70,26 +70,18 @@ test('every setting stays inside the ranges the compiler gives the engine', () =
   }
 })
 
-test('the sharpening pass runs in the export space as encoded', () => {
+test('output sharpening runs in the export space as encoded', () => {
   const s = { ...withSharpen({}), colorSpace: 'AdobeRgb' as const }
-  const g = outputSharpenGrade(s, outputSharpen(s)!)
-  assert.equal(g.layers.length, 1)
-  const [layer] = g.layers
-  assert.deepEqual(layer.blend, { mode: 'Normal', space: 'LinearWorking' })
-  assert.equal(layer.mask, null)
-  assert.equal(layer.opacity, 1)
-  assert.deepEqual(layer.stages, [
-    {
-      space: {
-        Encoded: {
-          space: 'AdobeRgb',
-          intent: s.intent,
-          black_point_compensation: s.blackPointCompensation
-        }
-      },
-      ops: [{ Sharpen: outputSharpen(s)! }]
-    }
-  ])
+  assert.deepEqual(outputSharpenRequest(s, outputSharpen(s)!), {
+    space: {
+      Encoded: {
+        space: 'AdobeRgb',
+        intent: s.intent,
+        black_point_compensation: s.blackPointCompensation
+      }
+    },
+    sharpen: outputSharpen(s)!
+  })
 })
 
 test('the defaults carry the sharpening and metadata settings', () => {

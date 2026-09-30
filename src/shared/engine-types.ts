@@ -1400,6 +1400,14 @@ export interface EngineRequestMessage {
   id: number
   method: EngineMethod
   args: unknown[]
+  /** The call may be cancelled (`convert` and `analyze` take a signal). */
+  cancellable?: boolean
+}
+
+/** Stop request `id`: the engine returns `Cancelled` at its next stage boundary. */
+export interface EngineCancelMessage {
+  kind: 'cancel'
+  id: number
 }
 
 export interface EngineHelloMessage {
@@ -1423,4 +1431,4 @@ export interface EngineResponseMessage {
 }
 
 export type HostToMain = EngineHelloMessage | EngineResponseMessage
-export type MainToHost = EngineRequestMessage
+export type MainToHost = EngineRequestMessage | EngineCancelMessage

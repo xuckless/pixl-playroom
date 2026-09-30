@@ -10,8 +10,8 @@ import type {
   Depth,
   Encode,
   GamutMap,
-  Grade,
   MetadataPolicy,
+  OutputSharpen,
   PngCompression,
   RenderingIntent,
   Resize,
@@ -353,32 +353,19 @@ export function outputSharpen(s: ExportSettings): Sharpen | null {
 }
 
 /**
- * The grade of output sharpening's own pass: the one op, in the export's
+ * Output sharpening as the engine runs it: after the resize, in the export's
  * colour space as encoded, so it acts on the values the file will hold.
  */
-export function outputSharpenGrade(s: ExportSettings, sharpen: Sharpen): Grade {
+export function outputSharpenRequest(s: ExportSettings, sharpen: Sharpen): OutputSharpen {
   return {
-    layers: [
-      {
-        name: 'output-sharpen',
-        enabled: true,
-        opacity: 1,
-        mask: null,
-        blend: { mode: 'Normal', space: 'LinearWorking' },
-        stages: [
-          {
-            space: {
-              Encoded: {
-                space: s.colorSpace,
-                intent: s.intent,
-                black_point_compensation: s.blackPointCompensation
-              }
-            },
-            ops: [{ Sharpen: sharpen }]
-          }
-        ]
+    space: {
+      Encoded: {
+        space: s.colorSpace,
+        intent: s.intent,
+        black_point_compensation: s.blackPointCompensation
       }
-    ]
+    },
+    sharpen
   }
 }
 

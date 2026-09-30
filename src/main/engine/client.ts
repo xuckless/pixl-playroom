@@ -15,9 +15,12 @@ import type {
   ConvertRequest,
   EngineErrorShape,
   EngineMethod,
+  GradeSpace,
   HostToMain,
   ImageStats,
-  SourceInfo
+  Rgb,
+  SourceInfo,
+  WhiteBalance
 } from '../../shared/engine-types'
 import type { EngineStatus } from '../../shared/ipc'
 
@@ -31,6 +34,11 @@ export class EngineError extends Error {
     this.detail = shape.detail
   }
 
+  /** A stop the caller asked for, not a failure: nothing to report. */
+  get cancelled(): boolean {
+    return this.code === 'Cancelled'
+  }
+
   /** The request field the engine named, for `InvalidRequest`. */
   get field(): string | undefined {
     const d = this.detail?.['InvalidRequest']
@@ -42,6 +50,16 @@ interface Pending {
   resolve: (v: unknown) => void
   reject: (e: Error) => void
   method: EngineMethod
+}
+
+/** A call that can be stopped: the engine returns `Cancelled` at its next stage boundary. */
+export interface CallOptions {
+  signal?: AbortSignal
+}
+
+/** True for an error that only says the call was stopped. */
+export function isCancelled(err: unknown): boolean {
+  return err instanceof EngineError && err.cancelled
 }
 
 const MAX_RESTARTS = 5
@@ -100,11 +118,15 @@ export class EngineClient {
   probe(path: string): Promise<SourceInfo> {
     return this.call('probe', [path]) as Promise<SourceInfo>
   }
-  convert(request: ConvertRequest): Promise<ConvertReport> {
-    return this.call('convert', [request]) as Promise<ConvertReport>
+  convert(request: ConvertRequest, opts: CallOptions = {}): Promise<ConvertReport> {
+    return this.call('convert', [request], opts.signal) as Promise<ConvertReport>
   }
-  analyze(request: AnalyzeRequest): Promise<ImageStats> {
-    return this.call('analyze', [request]) as Promise<ImageStats>
+  analyze(request: AnalyzeRequest, opts: CallOptions = {}): Promise<ImageStats> {
+    return this.call('analyze', [request], opts.signal) as Promise<ImageStats>
+  }
+  /** The white that makes a linear sample neutral, as the `WhiteBalance` op names it. */
+  whiteBalanceFromPixel(rgb: Rgb, space: GradeSpace): Promise<WhiteBalance> {
+    return this.call('whiteBalanceFromPixel', [rgb, space]) as Promise<WhiteBalance>
   }
 
   private spawn(): void {
@@ -180,7 +202,15 @@ export class EngineClient {
     }
   }
 
-  private call(method: EngineMethod, args: unknown[]): Promise<unknown> {
+  /**
+   * One call to the host. With a signal, aborting it tells the host to stop
+   * and settles the call at once as `Cancelled`; the engine lets go of the
+   * work at its next stage boundary, and its late answer is dropped.
+   */
+  private call(method: EngineMethod, args: unknown[], signal?: AbortSignal): Promise<unknown> {
+    const cancelled = (): EngineError =>
+      new EngineError({ message: `${method}: cancelled`, code: 'Cancelled' })
+    if (signal?.aborted) return Promise.reject(cancelled())
     const child = this.child
     if (!child) {
       return Promise.reject(
@@ -192,8 +222,20 @@ export class EngineClient {
     }
     const id = this.nextId++
     return new Promise((resolve, reject) => {
-      this.inflight.set(id, { resolve, reject, method })
-      child.postMessage({ kind: 'request', id, method, args })
+      const onAbort = (): void => {
+        if (!this.inflight.delete(id)) return
+        this.child?.postMessage({ kind: 'cancel', id })
+        reject(cancelled())
+      }
+      const done =
+        <T>(settle: (v: T) => void) =>
+        (v: T): void => {
+          signal?.removeEventListener('abort', onAbort)
+          settle(v)
+        }
+      this.inflight.set(id, { resolve: done(resolve), reject: done(reject), method })
+      signal?.addEventListener('abort', onAbort, { once: true })
+      child.postMessage({ kind: 'request', id, method, args, cancellable: signal !== undefined })
     })
   }
 }

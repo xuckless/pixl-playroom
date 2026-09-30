@@ -167,8 +167,8 @@ first paid release.
       or the curve under the pointer (`src/shared/tat.ts`).
 - [x] Tone curve presets (built-in and saved, `src/shared/curves.ts`).
 - [ ] Tone curve: per-channel parametric (the region sliders are master only).
-- [x] Output sharpening on export, as a second engine pass after the resize
-      (Screen / Matte / Glossy × Low / Standard / High).
+- [x] Output sharpening on export, after the resize, in the same engine
+      pass (`output_sharpen`; Screen / Matte / Glossy × Low / Standard / High).
 - [ ] Portrait RAWs: IMG_3086.CR2 (EXIF "Rotate 270 CW") shows and exports
       landscape; check how the RAW's orientation reaches the develop.
 - [ ] Engine: every JPEG export writes a malformed APP1 (the `Exif\0\0`
@@ -189,13 +189,15 @@ first paid release.
 - [ ] Sharp zoom of a straightened photo: the zoomed loupe enlarges the
       preview instead (the engine refuses a region with a straighten);
       needs a canvas-space region in the engine.
-- [ ] Cancellation of an in-flight render (the engine is synchronous; a
-      stale render finishes and is dropped).
-- [ ] **Preview round trip.** Each preview is written to disk as a JPEG,
-      decoded again by `analyze` for the histogram, and a third time by the
-      loupe. Have `convert` return the histogram itself (an engine change),
-      and in time hand the renderer raw RGBA over a `MessagePort` into a
-      canvas, with no file and no decode.
+- [x] Cancellation of an in-flight render: a newer edit stops a settled
+      render and what follows it, a newer 1:1 region the last one, Cancel
+      the file being exported, and Enhance between model tiles (engine
+      0.15's signal, checked between stages — a RAW decode still finishes).
+- [ ] **Preview round trip.** The histogram now comes from the render
+      itself (`measure`, engine 0.15); the preview is still written as a
+      JPEG and decoded by the loupe. Hand the renderer raw pixels
+      (`Encode::Pixels`, 0.15) over a `MessagePort` into a canvas, with no
+      file and no decode.
 - [ ] A ~1920 px proxy between the draft and the 2560 proxy, if a Retina
       loupe in Native mode still waits on settled renders.
 - [ ] Re-check the engine hosts' libuv pools (8 interactive, 4 background)
@@ -275,9 +277,11 @@ Phased; each phase is tested and committed before the next.
       Enhance on the engine's bundled ONNX Runtime and the new `UpscalerRef`
       (fetch-ai fetches only the model now); the Engine tool left the wheel
       for View ▸ Engine Report… (Ctrl+Alt+E).
-- [ ] Phase 2 — cancel in-flight renders and exports, `measure` instead of
-      the analyze round trip, one-pass `output_sharpen`, the engine's WB
-      eyedropper.
+- [x] Phase 2 — cancel in-flight renders, 1:1 regions, exports and
+      Enhance; the histogram, hue chart, "before" ghosts, auto tone and HDR
+      histogram measured by the render itself (`measure`); one-pass
+      `output_sharpen`; the eyedropper and Auto WB take the engine's own
+      neutral white (`whiteBalanceFromPixel`).
 - [ ] Phase 3 — native ParametricCurve, refine saturation, paint-overlay
       vignette, Additive Colour (Grading, Effects, masks) with complement
       pickers.

@@ -7,7 +7,8 @@
 A photo developer — the Lightroom kind — built on the **PIXL engine**. Every
 pixel on screen is a real engine render of the photo with its recipe, through
 the same compiler an export uses; the histogram and the colour-concentration
-chart are the engine's `analyze` of exactly what is shown.
+chart are the engine's measurement of exactly what is shown, taken as it
+renders.
 
 A near-black, matte-purple interface built around the photo: two slim bars,
 a rail that folds to a spine, one tool at a time chosen on a thumb-wheel, and
@@ -102,8 +103,9 @@ template (`{name} {seq} {date} {rating} {copy} {ext}`), JPEG/PNG/TIFF/WebP/
 AVIF/JPEG XL/HEIC with each codec's knobs, bit depth, resize (long/short edge,
 width, height, megapixels, percent), colour space + intent + BPC, metadata
 blocks, dither, HDR (tone map HDR sources, keep HDR, expand SDR to PQ/HLG),
-export presets, batch with progress and cancel. Output sharpening after the
-resize (Screen, Matte or Glossy × Low, Standard or High; a second engine pass).
+export presets, batch with progress and cancel (it stops the file being
+written). Output sharpening after the resize (Screen, Matte or Glossy × Low,
+Standard or High), in the same engine pass.
 The photo's title, caption, keywords and copyright are written into the file
 (EXIF, XMP and IPTC, in the blocks kept), or only a copyright ("Copyright
 only"), with a default copyright for photos that have none and "Remove
@@ -137,8 +139,10 @@ renderer (React)  ──IPC──>  main process ──postMessage──> utilit
   the frame, so a preview and an export select and blur the same things.
 - **Render sessions** (`src/main/render.ts`): coalesced renders (a moving
   slider renders the draft, the full proxy follows when it settles; both
-  JPEG), each followed by `analyze`; the before render; mask planes via `Inspect`; 1:1
-  regions via `Region`; the eyedropper via a 5×5 region in linear sRGB.
+  JPEG, measured as they render); a newer edit cancels a settled render at
+  the engine's next stage; the before render; mask planes via `Inspect`; 1:1
+  regions via `Region`; the eyedropper via a 5×5 region in linear sRGB and
+  the engine's `whiteBalanceFromPixel`.
 - **Sidecars** (`<photo>.playroom.json`, `src/main/sidecar.ts`) are the
   truth: recipe, snapshots, virtual copies, rating, flag, label, stack. The
   descriptive metadata lives in a standard `.xmp` sidecar, so other apps read

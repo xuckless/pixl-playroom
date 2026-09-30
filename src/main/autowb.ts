@@ -7,7 +7,8 @@
 import log from 'electron-log/main'
 import { mkdir } from 'fs/promises'
 import { join } from 'path'
-import { AUTO_PERCENTILES, wbSliders } from '../shared/auto'
+import { AUTO_PERCENTILES, wbSliders, wbSlidersFromOp } from '../shared/auto'
+import { KELVIN_MAX, KELVIN_MIN, type Vec3 } from '../shared/wb'
 import type {
   AnalyzeRequest,
   HdrSignal,
@@ -176,7 +177,37 @@ export async function measureAutoWb(
     const s = await engine.analyze(linearReq)
     means = s.channel_mean
   }
-  return wbSliders([means[0], means[1], means[2]], isRaw, asShot)
+  return engineWbSliders(engine, [means[0], means[1], means[2]], isRaw, asShot)
+}
+
+/** The engine's `WhiteBalance` op range; a white at its edge was clamped. */
+const TINT_LIMIT = 0.1
+
+/**
+ * The sliders that neutralise a colour in linear Rec.2020 (the working
+ * space), with the white the engine itself says neutralises it — the same
+ * model its `WhiteBalance` op runs. An engine that cannot answer (a channel
+ * at zero) leaves it to Playroom's own model of the op, which says null.
+ */
+export async function engineWbSliders(
+  engine: EngineClient,
+  linearRec2020: Vec3,
+  isRaw: boolean,
+  asShot: WhitePoint | null
+): Promise<SampleResult['wb']> {
+  const [r, g, b] = linearRec2020
+  if (!(r > 0 && g > 0 && b > 0)) return null
+  try {
+    const w = await engine.whiteBalanceFromPixel({ r, g, b }, 'LinearWorking')
+    const clamped =
+      w.temperature_kelvin <= KELVIN_MIN + 0.5 ||
+      w.temperature_kelvin >= KELVIN_MAX - 0.5 ||
+      Math.abs(w.tint) >= TINT_LIMIT - 1e-6
+    return wbSlidersFromOp({ kelvin: w.temperature_kelvin, tint: w.tint, clamped }, isRaw, asShot)
+  } catch (err) {
+    log.info('engine white balance unavailable, using the app model', (err as Error).message)
+    return wbSliders(linearRec2020, isRaw, asShot)
+  }
 }
 
 export interface WbServices {
