@@ -14,7 +14,8 @@
 }
 .loupe.tool-wb-picker,
 .loupe.tool-range-picker,
-.loupe.tool-point-picker {
+.loupe.tool-point-picker,
+.loupe.tool-add-pick {
   cursor: crosshair;
 }
 /* the targeted adjustment tool: drag up or down */

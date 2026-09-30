@@ -282,9 +282,18 @@ Phased; each phase is tested and committed before the next.
       histogram measured by the render itself (`measure`); one-pass
       `output_sharpen`; the eyedropper and Auto WB take the engine's own
       neutral white (`whiteBalanceFromPixel`).
-- [ ] Phase 3 — native ParametricCurve, refine saturation, paint-overlay
-      vignette, Additive Colour (Grading, Effects, masks) with complement
-      pickers.
+- [x] Phase 3 — Refine Saturation under the RGB point curve; the vignette's
+      paint-overlay style (HDR photos keep highlight priority: the engine
+      refuses paint over white); Additive Colour — light in Colour grading
+      and masks (linear sRGB, in the linear stage), a wash in Effects
+      (Display P3 code values, before the grain) — with Neutralise and
+      Match pickers that sample the shown picture in Display P3 and add
+      onto what is there (`src/shared/addcolor.ts`).
+- [ ] Native `ParametricCurve`: not adopted. At ±1 the engine moves a
+      region by half the gap to its neighbour (0.0625 at the default
+      splits); Playroom's own curve moves 0.25, so switching would weaken
+      every existing region edit about fourfold. Revisit if the engine takes
+      a strength, or with a recipe migration that rescales the sliders.
 - [ ] Phase 4 — Lens tool (manual, auto CA, defringe, a profile system).
 - [ ] Phase 5 — Upright in Crop & Rotate.
 - [ ] Phase 6 — Heal tool (heal, clone, fill, red eye, pet eye).
@@ -327,5 +336,6 @@ Phased; each phase is tested and committed before the next.
 - [ ] Region + straighten (engine). Still open in 0.13.0.
 - [x] Qualifier blur edges inside a region: fixed in engine 0.13.0 (the
       key's blur is exact inside a region, at any thread count).
-- [ ] Dehaze memory (~580 MB at 24 MP), vignette styles beyond highlight
-      priority, calibrating the new ops' constants against a reference.
+- [ ] Dehaze memory (~580 MB at 24 MP), a colour-priority vignette style
+      (the engine has highlight priority and paint overlay), calibrating the
+      new ops' constants against a reference.

@@ -26,8 +26,23 @@ export type Tool =
   | 'wb-picker'
   | 'range-picker'
   | 'point-picker'
+  | 'add-pick'
   | 'tat'
 export type Compare = 'off' | 'before' | 'split'
+
+/** Where an added colour lives: Colour grading, the Effects wash, or a mask. */
+export type AddTarget = 'grade' | 'wash' | { layer: string }
+
+/**
+ * The additive-colour picker at work (tool `add-pick`): `white` takes one
+ * click, the colour to neutralise; `match` takes two, the colour to change
+ * and the one it should become (`first` holds the first, in the target's space).
+ */
+export interface AddPick {
+  target: AddTarget
+  mode: 'white' | 'match'
+  first: [number, number, number] | null
+}
 export type CurveChannel = 'master' | 'red' | 'green' | 'blue'
 /** A geometry gesture in progress: the loupe draws its grid while one runs. */
 export type Gesture = 'straighten' | 'crop' | 'rotate' | null
@@ -76,6 +91,7 @@ interface DevelopState {
   hslTab: 'hue' | 'saturation' | 'luminance' | 'all' | 'point'
   /** The selected swatch of the colour mixer's Point tab. */
   pointId: string | null
+  addPick: AddPick | null
   /** The point curve's channel on show (the targeted tool moves that one). */
   curveChannel: CurveChannel
   /** What the targeted adjustment tool moves: the HSL bands or the point curve. */
@@ -112,6 +128,8 @@ interface DevelopState {
   setHslFocus(b: HslBand | null): void
   setHslTab(t: DevelopState['hslTab']): void
   setPointId(id: string | null): void
+  /** Start (or, with null, stop) the additive-colour picker. */
+  setAddPick(p: AddPick | null): void
   setCurveChannel(c: CurveChannel): void
   setTatTarget(t: DevelopState['tatTarget']): void
   setTargetEdge(n: number): void
@@ -212,6 +230,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   hslFocus: null,
   hslTab: 'all',
   pointId: null,
+  addPick: null,
   curveChannel: 'master',
   tatTarget: 'hsl',
   noise: null,
@@ -344,6 +363,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   setTool(tool) {
     const prev = get().tool
+    if (tool !== 'add-pick' && get().addPick) set({ addPick: null })
     if ((prev === 'crop') === (tool === 'crop')) return set({ tool })
     // Show the other view's last picture at once; a fresh one follows.
     const { pictures, picture } = get()
@@ -400,6 +420,12 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   setHslTab(hslTab) {
     set({ hslTab })
+  },
+
+  setAddPick(addPick) {
+    if (!addPick) return get().setTool('none')
+    set({ addPick })
+    get().setTool('add-pick')
   },
 
   setPointId(pointId) {

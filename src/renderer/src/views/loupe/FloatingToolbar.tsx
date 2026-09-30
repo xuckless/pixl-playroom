@@ -4,6 +4,7 @@ import { ASPECTS, aspectValue } from '../../lib/aspects'
 import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../../lib/geometry'
 import { useDevelop } from '../../state/develop'
 import { CROP_GUIDES, useUi, type BrushSlot } from '../../state/ui'
+import { addLabel, addPickHint } from '../../lib/addpick'
 
 /** A compact range for the floating bar: label, rail and value. */
 export function BarRange({
@@ -197,8 +198,16 @@ export function FloatingToolbar(): React.JSX.Element | null {
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
   const hasPhoto = useDevelop((s) => s.session !== null)
+  const addPick = useDevelop((s) => s.addPick)
+  const recipe = useDevelop((s) => s.recipe)
   if (tool === 'none' || !hasPhoto) return null
-  const hint = HINTS[tool]
+  const hint =
+    tool === 'add-pick' && addPick
+      ? {
+          title: addLabel(recipe, addPick.target),
+          hint: addPickHint(addPick.mode, addPick.first !== null)
+        }
+      : HINTS[tool]
   return (
     <LiquidGlass className="floating-toolbar" radius={2} bezel={10} key={tool}>
       {tool === 'crop' && <CropBar />}

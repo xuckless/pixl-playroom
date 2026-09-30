@@ -30,6 +30,7 @@ import { api, errorText } from '../../lib/api'
 import { emptyRange, hsvOf } from '../../lib/helpers'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { samplePatch } from '../../lib/image'
+import { pickAdd } from '../../lib/addpick'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { BrushLayer } from './BrushTool'
@@ -369,6 +370,10 @@ export function Loupe(): React.JSX.Element {
         replace(next, 'Pick range')
         madeComponent(madeId)
         setTool('none')
+      } else if (tool === 'add-pick' && picture) {
+        // The picture as shown, in its own Display P3: what the complement
+        // has to turn white (or into the second colour).
+        pickAdd(await samplePatch(picture.url, p.x, p.y, 5, 'display-p3'))
       } else if (tool === 'point-picker' && picture) {
         const s = hsvOf(...(await samplePatch(picture.url, p.x, p.y)))
         const sample = {
@@ -444,7 +449,13 @@ export function Loupe(): React.JSX.Element {
       onPointerCancel={endTat}
       onPointerLeave={() => setPointer(null)}
       onClick={(e) => {
-        if (tool === 'wb-picker' || tool === 'range-picker' || tool === 'point-picker') void pick(e)
+        if (
+          tool === 'wb-picker' ||
+          tool === 'range-picker' ||
+          tool === 'point-picker' ||
+          tool === 'add-pick'
+        )
+          void pick(e)
       }}
       onDoubleClick={(e) => {
         if (tool !== 'none') return

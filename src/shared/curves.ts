@@ -65,7 +65,8 @@ export function defaultToneCurve(): ToneCurveSetting {
     master: IDENTITY(),
     red: IDENTITY(),
     green: IDENTITY(),
-    blue: IDENTITY()
+    blue: IDENTITY(),
+    refineSaturation: 100
   }
 }
 

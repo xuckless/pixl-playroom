@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { absoluteWb } from '../../../shared/compile'
+import { absoluteWb, isIdentityCurve } from '../../../shared/compile'
 import type { LutProfile } from '../../../shared/ipc'
 import {
   HSL_BANDS,
@@ -13,6 +13,7 @@ import {
 } from '../../../shared/recipe'
 import { WB_PRESETS } from '../../../shared/wb'
 import { opOf, wbFromSaved } from '../../../shared/wbconvert'
+import { AddColourControl } from '../components/AddColour'
 import { ColorWheel, CurveEditor } from '../components/editors'
 import { Section, Select, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
 import { api, errorText } from '../lib/api'
@@ -583,6 +584,17 @@ export function ToneCurvePanel(): React.JSX.Element | null {
             Reset {channel}
           </button>
         </div>
+        <Slider
+          label="Refine saturation"
+          value={recipe.toneCurve.refineSaturation}
+          min={0}
+          max={100}
+          def={100}
+          disabled={isIdentityCurve(recipe.toneCurve.master)}
+          title="How much saturation the RGB curve brings as it steepens: lower keeps colours as they were"
+          onChange={(v, live) => edit((r) => (r.toneCurve.refineSaturation = v), live)}
+          onCommit={() => commit('Refine saturation')}
+        />
       </Section>
     </ToolPanel>
   )
@@ -840,6 +852,14 @@ export function ColorGradePanel(): React.JSX.Element | null {
         read={(r) => r.colorGrade.balance}
         write={(r, v) => (r.colorGrade.balance = v)}
       />
+      <Section id="grade.add" title="Add colour">
+        <AddColourControl
+          target="grade"
+          value={recipe.colorGrade.add}
+          onChange={(v, live) => edit((r) => (r.colorGrade.add = v), live)}
+          hint="Coloured light on the whole scene, added in linear light after exposure."
+        />
+      </Section>
     </ToolPanel>
   )
 }
@@ -951,10 +971,33 @@ export function DetailPanel(): React.JSX.Element | null {
 
 // ── Effects ──────────────────────────────────────────────────────────────────
 
-export function EffectsPanel(): React.JSX.Element {
+export function EffectsPanel(): React.JSX.Element | null {
+  const recipe = useDevelop((s) => s.recipe)
+  const isHdr = useDevelop((s) => s.session?.isHdr === true)
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
+  if (!recipe) return null
+  const paint = recipe.effects.vignetteStyle === 'paint'
   return (
     <ToolPanel>
       <Section id="effects.vignette" title="Post-crop vignette">
+        <Select
+          label="Style"
+          value={recipe.effects.vignetteStyle}
+          options={[
+            { value: 'highlight', label: 'Highlight priority' },
+            { value: 'paint', label: 'Paint overlay' }
+          ]}
+          title={
+            isHdr && paint
+              ? 'Paint overlay needs an SDR picture: this HDR photo keeps highlight priority'
+              : 'Highlight priority darkens like light falling off; paint overlay mixes toward black or white'
+          }
+          onChange={(v) => {
+            edit((r) => (r.effects.vignetteStyle = v))
+            commit('Vignette style')
+          }}
+        />
         <RS
           label="Amount"
           read={(r) => r.effects.vignetteAmount}
@@ -981,12 +1024,27 @@ export function EffectsPanel(): React.JSX.Element {
           max={100}
           def={50}
         />
-        <RS
-          label="Highlights"
-          read={(r) => r.effects.vignetteHighlights}
-          write={(r, v) => (r.effects.vignetteHighlights = v)}
-          min={0}
-          max={100}
+        {(!paint || isHdr) && (
+          <RS
+            label="Highlights"
+            read={(r) => r.effects.vignetteHighlights}
+            write={(r, v) => (r.effects.vignetteHighlights = v)}
+            min={0}
+            max={100}
+          />
+        )}
+        {isHdr && paint && (
+          <p className="note small">
+            Paint overlay needs an SDR picture; this HDR photo keeps highlight priority.
+          </p>
+        )}
+      </Section>
+      <Section id="effects.wash" title="Colour wash">
+        <AddColourControl
+          target="wash"
+          value={recipe.effects.wash}
+          onChange={(v, live) => edit((r) => (r.effects.wash = v), live)}
+          hint="A lift toward the colour on the finished look, blacks as much as whites: a wash or a light leak."
         />
       </Section>
       <Section id="effects.grain" title="Grain">

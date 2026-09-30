@@ -231,6 +231,7 @@ function groupOf(path: Seg[]): RecipeGroup | null {
       return 'basicTone'
     case 'hsl':
     case 'bwMix':
+    case 'pointColors':
       return 'hsl'
     case 'detail':
       return typeof sub === 'string' && DETAIL_SHARPEN.has(sub) ? 'detailSharpen' : 'detailNoise'

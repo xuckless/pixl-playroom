@@ -25,12 +25,14 @@ import type {
   HslBands,
   HslKey,
   Mask,
+  Vignette,
   MaskComponent,
   Orientation,
   Primary,
   Rgb,
   WhitePoint
 } from './engine-types'
+import { addColorOp } from './addcolor'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
 import {
   HSL_BANDS,
@@ -476,17 +478,20 @@ export function smoothnessFeather(smoothness: number): number {
   return (clamp(smoothness, 0, 100) / 100) * 0.01
 }
 
+/** The sliders that say which colour, not how much: Amount leaves them be. */
+const DIRECTIONS = new Set<keyof LocalAdjust>(['tintHue', 'addHue', 'addSaturation'])
+
 /**
- * A mask's Amount: every adjustment scaled by amount/100 (the tint's hue is
- * a direction, not a strength, and stays). The sliders' own clamps bound the
- * 200% end.
+ * A mask's Amount: every adjustment scaled by amount/100 (the tint's hue and
+ * the added colour are directions, not strengths, and stay). The sliders'
+ * own clamps bound the 200% end.
  */
 export function scaleLocalAdjust(a: LocalAdjust, amount: number): LocalAdjust {
   const k = clamp(amount, 0, 200) / 100
   if (k === 1) return a
   const out = { ...a }
   for (const key of Object.keys(out) as (keyof LocalAdjust)[]) {
-    if (key === 'tintHue') continue
+    if (DIRECTIONS.has(key)) continue
     out[key] = a[key] * k
   }
   return out
@@ -773,6 +778,9 @@ function baseStages(
       linear.push({ Lut: { lut: { Cube: shoulderCube(r.basic.exposure) }, amount: 1 } })
     }
   }
+  // Coloured light on the scene, after the exposure it is lit at.
+  const light = addColorOp(r.colorGrade.add, 'light')
+  if (light) linear.push(light)
 
   // ── the look ──
   if (denoise && !ctx.isRaw) look.push(denoise)
@@ -839,6 +847,10 @@ function baseStages(
   if (!isIdentityCurve(tc.red)) pc.red = curve(tc.red)
   if (!isIdentityCurve(tc.green)) pc.green = curve(tc.green)
   if (!isIdentityCurve(tc.blue)) pc.blue = curve(tc.blue)
+  // Refine Saturation only means something with an RGB curve to refine;
+  // 100 is the curve as it has always run.
+  if (pc.master && tc.refineSaturation < 100)
+    pc.refine_saturation = round4(clamp(tc.refineSaturation / 100, 0, 1))
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
   const bw = r.treatment === 'bw' || r.profile.kind === 'monochrome'
   const hsl = hslOp(bw ? { ...r, treatment: 'bw' } : r)
@@ -877,13 +889,16 @@ function baseStages(
         midpoint: clamp(e.vignetteMidpoint / 100, 0, 1),
         roundness: clamp(e.vignetteRoundness / 100, -1, 1),
         feather: clamp(e.vignetteFeather / 100, 0, 1),
-        style: { Exposure: { highlights: clamp(e.vignetteHighlights / 100, 0, 1) } },
+        style: vignetteStyle(e, ctx.hdr === true, notes),
         centre: { x: round4(v.centre.x), y: round4(v.centre.y) },
         half_size: { x: round4(Math.max(v.half.x, 1e-4)), y: round4(Math.max(v.half.y, 1e-4)) },
         rotation_degrees: clamp(v.rotation, -45, 45)
       }
     })
   }
+  // The wash sits on the finished look; only grain goes over it.
+  const wash = addColorOp(e.wash, 'wash')
+  if (wash) look.push(wash)
   if (e.grainAmount > 0) {
     look.push({
       Grain: {
@@ -895,6 +910,21 @@ function baseStages(
     })
   }
   return [...stage('LinearWorking', linear), ...stage(LOOK_SPACE, look)]
+}
+
+/**
+ * The vignette's style. Paint overlay mixes toward black or white, which
+ * means nothing where the look carries light above white: an HDR pipeline
+ * keeps highlight priority, and says so.
+ */
+function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vignette['style'] {
+  const exposure = { Exposure: { highlights: clamp(e.vignetteHighlights / 100, 0, 1) } }
+  if (e.vignetteStyle !== 'paint') return exposure
+  if (hdr) {
+    notes.push('Paint overlay needs an SDR picture; this HDR photo keeps highlight priority')
+    return exposure
+  }
+  return 'PaintOverlay'
 }
 
 /** A local layer's stages from its sliders. */
@@ -912,6 +942,11 @@ function localStages(
   }
   if (a.exposure !== 0)
     linear.push({ Primary: primary({ exposure: a.exposure, contrast_pivot: 0.18 }) })
+  const light = addColorOp(
+    { hue: a.addHue, saturation: a.addSaturation, amount: a.addAmount },
+    'light'
+  )
+  if (light) linear.push(light)
   if (a.dehaze !== 0) look.push({ Dehaze: { amount: clamp(a.dehaze / 100, -1, 1), radius: 0.01 } })
   if (a.noise > 0) {
     look.push({

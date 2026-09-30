@@ -8,6 +8,7 @@
  * Every recipe is complete: no field is optional, so an old sidecar is
  * brought up to date by `normaliseRecipe` rather than by `?.` everywhere.
  */
+import { NO_ADD, type AddColourSetting } from './addcolor'
 import type { BlendMode, KeyBand, MaskMode } from './engine-types'
 
 export const RECIPE_VERSION = 1
@@ -119,6 +120,11 @@ export interface ToneCurveSetting {
   red: CurvePointSetting[]
   green: CurvePointSetting[]
   blue: CurvePointSetting[]
+  /**
+   * 0…100: how much saturation the RGB point curve brings with it as it
+   * steepens (Refine Saturation). 100 is the curve as it has always run.
+   */
+  refineSaturation: number
 }
 
 export interface WheelSetting {
@@ -134,6 +140,8 @@ export interface ColorGradeSetting {
   global: WheelSetting
   blending: number
   balance: number
+  /** Coloured light added over the whole picture (see `addcolor.ts`). */
+  add: AddColourSetting
 }
 
 export interface DetailSetting {
@@ -153,6 +161,10 @@ export interface EffectsSetting {
   vignetteRoundness: number
   vignetteFeather: number
   vignetteHighlights: number
+  /** Highlight priority darkens like light falling off; paint overlay mixes toward black or white. */
+  vignetteStyle: 'highlight' | 'paint'
+  /** A lift toward a colour on the look's code values (see `addcolor.ts`). */
+  wash: AddColourSetting
   grainAmount: number
   grainSize: number
   grainRoughness: number
@@ -280,6 +292,10 @@ export interface LocalAdjust {
   /** A colour laid over the selection: hue 0…360, strength 0…100. */
   tintHue: number
   tintAmount: number
+  /** Coloured light added in the selection: hue 0…360, saturation and amount 0…100. */
+  addHue: number
+  addSaturation: number
+  addAmount: number
 }
 
 export interface LocalLayer {
@@ -366,7 +382,10 @@ export const ZERO_LOCAL: LocalAdjust = {
   sharpness: 0,
   noise: 0,
   tintHue: 0,
-  tintAmount: 0
+  tintAmount: 0,
+  addHue: 0,
+  addSaturation: 0,
+  addAmount: 0
 }
 
 /**
@@ -392,7 +411,8 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       master: IDENTITY_CURVE(),
       red: IDENTITY_CURVE(),
       green: IDENTITY_CURVE(),
-      blue: IDENTITY_CURVE()
+      blue: IDENTITY_CURVE(),
+      refineSaturation: 100
     },
     hsl: zeroBands(),
     bwMix: zeroMix(),
@@ -403,7 +423,8 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       highlights: zeroWheel(),
       global: zeroWheel(),
       blending: 50,
-      balance: 0
+      balance: 0,
+      add: { ...NO_ADD }
     },
     detail: {
       sharpenAmount: isRaw ? 40 : 0,
@@ -421,6 +442,8 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       vignetteRoundness: 0,
       vignetteFeather: 50,
       vignetteHighlights: 0,
+      vignetteStyle: 'highlight',
+      wash: { ...NO_ADD },
       grainAmount: 0,
       grainSize: 25,
       grainRoughness: 50

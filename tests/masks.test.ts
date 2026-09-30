@@ -68,6 +68,14 @@ test('Amount scales every adjustment but the tint hue', () => {
   assert.equal(scaleLocalAdjust(a, 200).contrast, 40)
 })
 
+test('Amount scales how much colour is added, not which colour', () => {
+  const a = { ...ZERO_LOCAL, addHue: 30, addSaturation: 60, addAmount: 20 }
+  const half = scaleLocalAdjust(a, 50)
+  assert.equal(half.addAmount, 10)
+  assert.equal(half.addHue, 30)
+  assert.equal(half.addSaturation, 60)
+})
+
 test('Amount 0 still leaves the mask inspectable', () => {
   const r = defaultRecipe(false)
   const l = newLocalLayer('m')

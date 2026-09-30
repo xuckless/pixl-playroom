@@ -217,3 +217,74 @@ test('the parametric curve pins black and white', () => {
   assert.equal(pts[0].y, 0)
   assert.equal(pts[pts.length - 1].y, 1)
 })
+
+const lookOps = (r: ReturnType<typeof defaultRecipe>, hdr = false): GradeOp[] =>
+  compile(r, { ...ctx, hdr }).grade!.layers[0].stages.flatMap((s) => s.ops)
+
+test('refine saturation rides on the RGB point curve, and only below 100', () => {
+  const r = defaultRecipe(false)
+  r.toneCurve.refineSaturation = 40
+  // No RGB curve: nothing to refine.
+  assert.equal(compile(r, ctx).grade, null)
+  r.toneCurve.master = [
+    { x: 0, y: 0 },
+    { x: 0.5, y: 0.6 },
+    { x: 1, y: 1 }
+  ]
+  const c = lookOps(r).find((o) => 'Curves' in o)
+  assert.ok(c && 'Curves' in c)
+  assert.equal(c.Curves.refine_saturation, 0.4)
+  r.toneCurve.refineSaturation = 100
+  const d = lookOps(r).find((o) => 'Curves' in o)
+  assert.ok(d && 'Curves' in d && d.Curves.refine_saturation === null)
+})
+
+test('paint overlay is the paint style, and highlight priority on an HDR photo', () => {
+  const r = defaultRecipe(false)
+  r.effects.vignetteAmount = -40
+  r.effects.vignetteStyle = 'paint'
+  const v = lookOps(r).find((o) => 'Vignette' in o)
+  assert.ok(v && 'Vignette' in v && v.Vignette.style === 'PaintOverlay')
+  const c = compile(r, { ...ctx, hdr: true })
+  const h = c.grade!.layers[0].stages.flatMap((s) => s.ops).find((o) => 'Vignette' in o)
+  assert.ok(h && 'Vignette' in h && typeof h.Vignette.style === 'object')
+  assert.ok(c.notes.some((n) => /Paint overlay/.test(n)))
+})
+
+test('added light ends the linear stage; the wash comes just before the grain', () => {
+  const r = defaultRecipe(false)
+  r.basic.exposure = 0.5
+  r.colorGrade.add = { hue: 30, saturation: 60, amount: 20 }
+  r.effects.wash = { hue: 200, saturation: 40, amount: 10 }
+  r.effects.grainAmount = 20
+  const [linear, look] = compile(r, ctx).grade!.layers[0].stages
+  assert.equal(linear.space, 'LinearWorking')
+  assert.equal(kinds(linear.ops).at(-1), 'AddColor')
+  assert.deepEqual(kinds(look.ops).slice(-2), ['AddColor', 'Grain'])
+})
+
+test('a mask adds its colour in linear light', () => {
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('m')
+  l.components.push({
+    id: 'p',
+    kind: 'polygon',
+    mode: 'Add',
+    invert: false,
+    feather: 10,
+    opacity: 100,
+    points: [
+      { x: 0.2, y: 0.2 },
+      { x: 0.8, y: 0.2 },
+      { x: 0.5, y: 0.8 }
+    ]
+  })
+  l.adjust.addHue = 120
+  l.adjust.addSaturation = 80
+  l.adjust.addAmount = 30
+  r.layers.push(l)
+  const c = compile(r, ctx)
+  const stages = c.grade!.layers[c.layerIndex[l.id]].stages
+  assert.equal(stages[0].space, 'LinearWorking')
+  assert.ok(kinds(stages[0].ops).includes('AddColor'))
+})
