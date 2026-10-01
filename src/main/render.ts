@@ -778,14 +778,17 @@ class Session {
     try {
       const src = this.viewPx().draft
       const compiled = await this.compileFor(this.recipe, src, !cropMode)
-      const out = join(this.dir, 'hdr-stats.png')
+      // Written only to be measured (or not even read, with float work): an
+      // uncompressed TIFF, not a PNG to deflate and inflate again. The signal
+      // is stated to the analysis, so the file needs no cICP to carry it.
+      const out = join(this.dir, 'hdr-stats.tiff')
       // Fine bins: the chart re-bins them onto a stops axis, where the
       // shadows need the resolution.
       const bins = 4096
       const request = {
         ...blankRequest(src.path, out, src.input),
         pixel: { depth: 'Sixteen', channels: framingTransparent(compiled.framing) ? 4 : 3 },
-        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        encode: { Tiff: { compression: 'None' } },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: 'Preserve',
         grade: compiled.grade,
@@ -812,7 +815,7 @@ class Session {
       }
       await this.owner.engine.convert(request, { signal })
       return await this.owner.engine.analyze(
-        { ...analyzeRequest(out, 'Png', 1), domain: 'Linear', bins, hdr: hdrSignalOf(hdr) },
+        { ...analyzeRequest(out, 'Tiff', 1), domain: 'Linear', bins, hdr: hdrSignalOf(hdr) },
         { signal }
       )
     } catch (err) {
@@ -1199,7 +1202,9 @@ class Session {
     const h = Math.max(1, Math.min(height - y, Math.ceil(req.height)))
     const region = await this.correctedRegion(compiled.lens, width, height, { x, y, w, h })
     this.regionSlot = (this.regionSlot + 1) % 4
-    const out = join(this.dir, `region-${this.regionSlot}.png`)
+    // A JPEG at full chroma: as sharp at 1:1 as the PNG it was, a fraction
+    // of the time to write and decode at the screen's size.
+    const out = join(this.dir, `region-${this.regionSlot}.jpg`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
     await this.owner.engine.convert(
@@ -1208,7 +1213,7 @@ class Session {
         raw: null,
         resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
         pixel: { depth: 'Eight', channels: 3 },
-        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        encode: { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: displayPolicy(this.info, 'DisplayP3'),
         grade: compiled.grade,

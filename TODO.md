@@ -435,17 +435,21 @@ Each release runs picture → mask → before → headroom → mask thumbnails
 
 ### Pass 22 — HDR and pixel-step formats · 5 pts
 
-- [ ] **M** · **HDR paths inflate 16-bit PNGs per render**: PQ/HLG proxies
+- [x] **M** · **HDR paths inflate 16-bit PNGs per render**: PQ/HLG proxies
       are 16-bit PNG (`proxy.ts:117-122`); `measureHdr` runs a second graded
       pass written as a 16-bit PNG only to measure it (`render.ts:597, 666`);
       the gain-map master is a 16-bit PNG (`hdrsource.ts:95-110`, 1–2 s to
       inflate per 1:1 tile); 1:1 tiles are PNG at device size
       (`render.ts:1017-1072`). Uncompressed TIFF where cICP isn't needed, a
       cheap encoder for the stats pass, JPEG tiles.
-- [ ] **S** · **Pixel steps**: `layOn` runs proxy then draft in sequence
+      _Done: the stats pass is an uncompressed TIFF, 1:1 tiles are JPEG.
+      Left for E34: the PQ/HLG proxies and the gain-map master need cICP._
+- [x] **S** · **Pixel steps**: `layOn` runs proxy then draft in sequence
       (`working.ts:344-357`), and `stepImage`/`sized()` write full-resolution
       16-bit PNG caches (`working.ts:113-172`). `Promise.all`; TIFF.
-- [ ] **M** · **HeadroomOverlay is a full-preview CPU pass**
+      _Done: proxy and draft are laid on together. Left for E33: overlays
+      take only PNG._
+- [x] **M** · **HeadroomOverlay is a full-preview CPU pass**
       (`HeadroomOverlay.tsx:49-58`: `getImageData` + LUT + `putImageData`, ~5 MP
       per settled HDR render). A GPU LUT, as `ClippingOverlay` does.
 
@@ -861,6 +865,8 @@ Playroom work that starts once the engine request lands
 - [ ] **S** · Move mask shift/harden to the engine, if E14 lands.
 - [ ] **S** · Highlight recovery on RAW, in the develop (E15).
 - [ ] **S** · Raw-domain noise reduction controls (E16).
+- [ ] **S** · Pixel steps' image caches as uncompressed TIFF overlays (E33).
+- [ ] **S** · PQ/HLG proxies and the gain-map master as uncompressed TIFF (E34).
 - [ ] **S** · ProRAW and DNG gain maps (E17).
 - [ ] **S** · Fisheye distortion from Lensfun profiles (E18).
 - [ ] **M** · Native `ParametricCurve`, with a recipe migration that

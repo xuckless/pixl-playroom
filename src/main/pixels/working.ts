@@ -369,14 +369,19 @@ async function makeProxies(
   const prev = await previousSet(deps, version, steps)
   const last = steps[steps.length - 1]
   let set: WorkingSet
+  // The proxy and the draft side by side: neither needs the other.
   if (prev) {
-    const proxy = await layOn(deps, prev.px.proxy, join(dir, 'proxy.tiff'), [last])
-    const draft = await layOn(deps, prev.px.draft, join(dir, 'draft.tiff'), [last])
+    const [proxy, draft] = await Promise.all([
+      layOn(deps, prev.px.proxy, join(dir, 'proxy.tiff'), [last]),
+      layOn(deps, prev.px.draft, join(dir, 'draft.tiff'), [last])
+    ])
     set = { key, px: { ...prev.px, proxy, draft }, master: null }
   } else {
     // The proxies keep their size: an upscale shows as its picture, not its pixels.
-    const proxy = await layOn(deps, plain.proxy, join(dir, 'proxy.tiff'), steps)
-    const draft = await layOn(deps, plain.draft, join(dir, 'draft.tiff'), steps)
+    const [proxy, draft] = await Promise.all([
+      layOn(deps, plain.proxy, join(dir, 'proxy.tiff'), steps),
+      layOn(deps, plain.draft, join(dir, 'draft.tiff'), steps)
+    ])
     set = {
       key,
       px: { proxy, draft, frameWidth: frame.width, frameHeight: frame.height },
