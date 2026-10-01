@@ -239,7 +239,7 @@ export function landingWork(p: Promise<void>): void {
     .catch(() => undefined)
 }
 
-/** Undo and Redo, one at a time: each reads the history the one before left. */
+/** History changes, one at a time: each reads the history the one before left. */
 let historyOps: Promise<void> = Promise.resolve()
 function queueHistoryOp(op: () => Promise<void>): void {
   historyOps = historyOps.then(op).catch((err) => useDevelop.getState().onError(errorText(err)))
@@ -397,7 +397,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     if (!session || !recipe) return
     set({ rendering: true })
     sendNow(session.key, recipe, (m) => get().onError(m))
-    void api.develop.historyAppend(session.key, label, recipe).then((history) => {
+    // In line with Undo and Redo: one pressed straight after waits for this step.
+    queueHistoryOp(async () => {
+      const history = await api.develop.historyAppend(session.key, label, recipe)
       if (get().session?.key === session.key) set({ history, redo: [] })
     })
     const item = useLibrary.getState().items.find((i) => i.key === session.key)
