@@ -22,7 +22,6 @@ export interface AiStage {
 }
 
 export type AiResult =
-  | { kind: 'file'; path: string }
   /** The photo itself changed: its renders pick it up. */
   | { kind: 'applied'; label: string }
   /** A pixel step was added to the photo's recipe (an AI denoise): History records it. */
@@ -61,7 +60,13 @@ export interface AiJobEvent {
 }
 
 export type AiStartRequest =
-  | { task: 'enhance'; key: string; settings: EnhanceSettings }
+  | {
+      task: 'enhance'
+      key: string
+      settings: EnhanceSettings
+      /** Deblur and JPEG restore inside this mask (frozen as it is now); an upscale is the whole photo. */
+      layerId?: string | null
+    }
   | {
       task: 'segment'
       key: string

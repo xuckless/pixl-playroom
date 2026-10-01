@@ -205,7 +205,14 @@ app.whenReady().then(() => {
   const planes = new PlaneStore(index)
   const ai = new AiJobs(
     {
-      enhance: new EnhanceRunner(library, aiEngine, () => bgEngine.getStatus(), models, index),
+      enhance: new EnhanceRunner(
+        library,
+        aiEngine,
+        () => bgEngine.getStatus(),
+        models,
+        index,
+        () => sessions
+      ),
       segment: new SegmentRunner(library, planes, aiEngine, models, () => sessions),
       denoise: new DenoiseRunner(library, aiEngine, models, index, () => sessions)
     },

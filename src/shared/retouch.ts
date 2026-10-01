@@ -107,6 +107,9 @@ function reach(
   }
 }
 
+/** The long edge of the smallest frame spots are rendered on (the develop view's draft). */
+const SMALLEST_RENDER = 1280
+
 /**
  * The offset to the source, pulled back so everything it reads (the spot's
  * reach, and a heal's one-pixel ring) lies inside the frame, as the engine
@@ -121,7 +124,11 @@ export function fitOffset(
   h: number
 ): P | null {
   const r = reach(points, radius, feather, w, h)
-  const ring = { x: 1.5 / w, y: 1.5 / h }
+  // The spot is rendered at every size from the 1280 px draft up, and the
+  // engine counts whole pixels at each: the margin is two of the smallest's
+  // (a heal's one-pixel ring, and rounding), not a fraction of the largest's.
+  const k = Math.min(1, SMALLEST_RENDER / Math.max(w, h))
+  const ring = { x: 2 / (w * k), y: 2 / (h * k) }
   const lo = { x: -(r.minX - ring.x), y: -(r.minY - ring.y) }
   const hi = { x: 1 - (r.maxX + ring.x), y: 1 - (r.maxY + ring.y) }
   if (lo.x > hi.x || lo.y > hi.y) return null

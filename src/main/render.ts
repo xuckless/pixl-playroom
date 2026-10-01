@@ -243,8 +243,8 @@ class Session {
    */
   async compileFor(recipe: Recipe, source: ProxyFile, applyCrop: boolean): Promise<Compiled> {
     const baked = this.isBaked(source)
-    // The working pixels (steps laid on) and the plain share the frame.
-    const px = baked ? this.lensed!.px : this.px
+    // The working pixels' frame: the photo's, or an upscale step's.
+    const px = baked ? this.lensed!.px : this.basePx()
     const { user } = orientedFrame(recipe, px.frameWidth, px.frameHeight)
     const compiled = compile(recipe, {
       isRaw: this.isRaw,
@@ -303,7 +303,9 @@ class Session {
     const key = this.stepsKey(this.recipe)
     if (this.working?.key === key) return
     if (this.recipe.pixels.length === 0) {
+      const was = this.frameSize()
       this.working = null
+      this.frameChanged(was)
       this.schedule('full')
       return
     }
@@ -316,7 +318,9 @@ class Session {
         null
       )
       if (this.closed || this.stepsKey(this.recipe) !== set.key) return
+      const was = this.frameSize()
       this.working = set
+      this.frameChanged(was)
       this.schedule('full')
     } catch (err) {
       log.warn('working pixels failed', (err as Error).message)
@@ -326,6 +330,15 @@ class Session {
         code: 'Pixels'
       })
     }
+  }
+
+  /**
+   * The full-resolution frame's size: the photo's, or (an upscale step in
+   * the recipe) the steps'. What a 1:1 view and the renderer measure in.
+   */
+  frameSize(): { width: number; height: number } {
+    const px = this.recipe.pixels.length > 0 ? (this.working?.px ?? this.px) : this.px
+    return { width: px.frameWidth, height: px.frameHeight }
   }
 
   /** The full-resolution working frame (the recipe's steps on the photo at full size): 1:1 and export. */
@@ -339,6 +352,17 @@ class Session {
       () => ensureBase(this.owner.bgEngine, this.row, this.file)
     )
     return set.master
+  }
+
+  /** An upscale step added or undone: the renderer measures in the new frame. */
+  private frameChanged(was: { width: number; height: number }): void {
+    const now = this.frameSize()
+    if (now.width === was.width && now.height === was.height) return
+    this.owner.send(IPC.develop.frame, {
+      key: this.key,
+      frameWidth: now.width,
+      frameHeight: now.height
+    })
   }
 
   /** Show a pixel step's draft while it is made (null: back to the recipe's pixels). */
@@ -362,7 +386,12 @@ class Session {
     return {
       base: this.basePx().proxy.path,
       lens: lensCorrection(recipe.lens),
-      retouch: compileRetouch(recipe.retouch, 'Normal', this.px.frameWidth, this.px.frameHeight)
+      retouch: compileRetouch(
+        recipe.retouch,
+        'Normal',
+        this.basePx().frameWidth,
+        this.basePx().frameHeight
+      )
     }
   }
 
@@ -991,19 +1020,16 @@ class Session {
               width: this.px.frameWidth,
               height: this.px.frameHeight
             }
-    const { user, width, height } = orientedFrame(
-      this.recipe,
-      this.px.frameWidth,
-      this.px.frameHeight
-    )
+    const frame = this.frameSize()
+    const { user, width, height } = orientedFrame(this.recipe, frame.width, frame.height)
     const zoom = Math.min(1, req.zoom)
     const compiled = compile(this.recipe, {
       isRaw: raw,
       asShot: this.info.as_shot_white,
       sourceOrientation:
         raw || stepsMaster || this.hdrMaster ? 'Normal' : sourceOrientation(this.info, null),
-      frameWidth: this.px.frameWidth,
-      frameHeight: this.px.frameHeight,
+      frameWidth: frame.width,
+      frameHeight: frame.height,
       scale: zoom,
       seed: seedOf(this.row),
       brushPaths: await brushPlanes(this.row.id, this.recipe, user),
@@ -1409,8 +1435,9 @@ export class DevelopSessions {
       isRaw: row.is_raw === 1,
       isHdr: graded.is_hdr,
       asShot: info.as_shot_white,
-      frameWidth: px.frameWidth,
-      frameHeight: px.frameHeight,
+      // The working frame: an upscale step makes it larger than the file.
+      frameWidth: session.frameSize().width,
+      frameHeight: session.frameSize().height,
       proxyWidth: px.proxy.width,
       proxyHeight: px.proxy.height,
       recipe: session.recipe,

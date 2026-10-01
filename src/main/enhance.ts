@@ -2,47 +2,67 @@
  * Enhance (the wheel's last tool): the engine's enhance chain — a JPEG
  * rebuilt from its coefficients, FBCNN's JPEG restore, NAFNet's deblur,
  * Real-ESRGAN's super-resolution, whichever are chosen, in that order — run
- * over a photo's *original*, before any grade (the models want
- * display-referred pixels), into a new 16-bit TIFF beside it. The new file
- * joins the folder with the source's recipe copied over, so the look carries
- * across, as Lightroom's Enhance does. The steps and their numbers are
- * `shared/enhance.ts`'s.
+ * once over the photo's pixels as they are (its earlier steps laid on), before
+ * any grade, and kept in its project as a pixel step (shared/pixels.ts): it
+ * undoes, redoes and hides in History like any edit, and no file is written
+ * beside the photo. An upscale makes the photo's frame larger from that step
+ * on. Deblur and restore can keep to a mask (frozen as it is when made).
+ * The steps and their numbers are `shared/enhance.ts`'s.
  */
 import log from 'electron-log/main'
-import { unlink } from 'fs/promises'
-import { basename, extname, join } from 'path'
-import type { EnhanceStep, EnhancerRef, SourceInfo, UpscalerRef } from '../shared/engine-types'
-import { PRESERVE_ALL } from '../shared/engine-types'
+import { rm } from 'fs/promises'
+import { join } from 'path'
+import type {
+  ConvertReport,
+  EnhanceStep,
+  EnhancerRef,
+  SourceInfo,
+  UpscalerRef
+} from '../shared/engine-types'
 import type { AiStartRequest } from '../shared/ai'
-import { baseWhite } from '../shared/compile'
+import type { PixelStep } from '../shared/pixels'
+import { newId, type Recipe } from '../shared/recipe'
 import {
   chainSubject,
   enhanceRefusal,
   estimateMs,
   FALLBACK_JPEG_QUALITY,
   fbcnnQuality,
+  jpegRestoreRefusal,
   learnRates,
   planSteps,
   reconstructParams,
+  scaleOf,
   type EnhanceRates,
   type EnhanceSettings,
   type PlannedStep
 } from '../shared/enhance'
-import { relativeFromOp } from '../shared/wb'
 import { Cancelled, type AiContext, type AiRunner } from './ai/jobs'
 import type { EngineClient } from './engine/client'
 import type { IndexClient } from './indexer/client'
 import type { EngineStatus } from '../shared/ipc'
-import { exists } from './exists'
 import { ModelMissing, type ModelStore } from './ai/models'
 import type { Library } from './library'
 import {
   BACKGROUND_THREADS,
   blankRequest,
-  RAW_DEVELOP,
+  seedOf,
   sourceOrientation,
-  uprightFraming
+  uprightFraming,
+  versionStamp
 } from './source'
+import { LOSSLESS_KEY } from './ai/denoise'
+import { keyOf, parseKey } from './keys'
+import { paths } from './paths'
+import { ensureProxies } from './proxy'
+import type { DevelopSessions } from './render'
+import { ensureBase, pixelDeps } from './pixels/base'
+import { freezeMask } from './pixels/freeze'
+import { addPixelStep, storesLossless } from './pixels/steps'
+import { ensureWorking } from './pixels/working'
+
+const TIFF = { Tiff: { compression: 'None' } } as const
+const ICC_ONLY = { exif: false, icc: true, xmp: false, iptc: false } as const
 import { estimate } from '../shared/ai'
 
 export interface EnhanceAvailability {
@@ -71,14 +91,6 @@ export const RATE_KEY = 'ai.enhance.rates'
 export async function enhanceRates(settings: IndexClient): Promise<EnhanceRates> {
   const r: unknown = await settings.getSetting(RATE_KEY).catch(() => null)
   return r && typeof r === 'object' ? (r as EnhanceRates) : {}
-}
-
-/** A name beside the original that is not taken: IMG-Enhanced.tif, IMG-Enhanced-2.tif… */
-async function freeName(dir: string, stem: string): Promise<string> {
-  for (let n = 1; ; n++) {
-    const out = join(dir, `${stem}-Enhanced${n > 1 ? `-${n}` : ''}.tif`)
-    if (!(await exists(out))) return out
-  }
 }
 
 /** The chain the engine runs, the models' references filled in. */
@@ -142,7 +154,8 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     private readonly engine: EngineClient,
     private readonly status: () => EngineStatus,
     private readonly models: ModelStore,
-    private readonly settings: IndexClient
+    private readonly settings: IndexClient,
+    private readonly sessions: () => DevelopSessions | undefined
   ) {}
 
   stages(): { id: string; label: string; weight: number }[] {
@@ -157,86 +170,164 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     return { title: 'Enhancing', subject: chainSubject(planSteps(req.settings, true)) }
   }
 
-  async run(ctx: AiContext, req: EnhanceRequest): Promise<{ kind: 'file'; path: string }> {
+  async run(ctx: AiContext, req: EnhanceRequest): Promise<{ kind: 'step'; label: string }> {
     const { key, settings } = req
     ctx.stage('model', 0, 'Checking the models')
     const avail = enhanceAvailability(this.status())
     if (!avail.available) throw new Error(avail.reason ?? 'unavailable')
+    const sessions = this.sessions()
+    const recipe: Recipe = sessions?.liveRecipe(key) ?? (await this.library.recipe(key))
     const row = await this.library.photoRow(key)
     const info = await this.library.probe(row)
     const isJpeg = info.input === 'Jpeg'
-    const refused = enhanceRefusal(settings, { isJpeg, isHdr: info.is_hdr })
+    const refused =
+      enhanceRefusal(settings, { isJpeg, isHdr: info.is_hdr }) ??
+      jpegRestoreRefusal(settings, isJpeg, recipe.pixels.length)
     if (refused) throw new Error(`${row.name}: ${refused}`)
     const steps = planSteps(settings, isJpeg)
     const ids = steps.flatMap((p) => (p.model ? [p.model] : []))
     for (const id of ids)
       if (!(await this.models.installed(id))) throw new ModelMissing(this.models.entry(id))
-    const out = await freeName(row.folder, basename(row.name, extname(row.name)))
+    const k = scaleOf(settings)
+    // An upscale is the whole photo; deblur and restore can keep to a mask.
+    const layer =
+      req.layerId && k === 1 ? recipe.layers.find((l) => l.id === req.layerId) : undefined
+    if (req.layerId && k === 1 && !layer) throw new Error('the mask is gone')
     if (this.engine.getStatus().status === 'starting') {
       this.engine.start()
       await this.engine.whenStarted()
     }
     if (ctx.signal.aborted) throw new Cancelled()
-    const raw = info.input === 'Raw' ? RAW_DEVELOP : null
-    const orientation = sourceOrientation(info, raw)
-    const convert = async (onCpu: ReadonlySet<string>): Promise<unknown> =>
-      this.engine.convert(
-        {
-          ...blankRequest(row.path, out, info.input, info),
-          raw,
-          enhance: await chainOf(this.models, steps, settings, info, onCpu),
-          pixel: { depth: 'Sixteen', channels: 3 },
-          encode: { Tiff: { compression: 'Deflate' } },
-          metadata: raw ? { ...PRESERVE_ALL, icc: true } : PRESERVE_ALL,
-          color: 'Preserve',
-          framing: uprightFraming(orientation, info),
-          threads: BACKGROUND_THREADS * 2
-        },
+
+    // What the chain reads: the photo's pixels as they are (its steps laid
+    // on), or, to restore a JPEG, the file itself (its compressed data is
+    // what is restored, so it can only be the first step).
+    const deps = pixelDeps(this.engine, this.library.index, row)
+    const restoresJpeg = steps.some((p) => p.kind === 'reconstruct' || p.kind.startsWith('fbcnn'))
+    const plain = await ensureProxies(this.engine, row, info)
+    const working = await ensureWorking(deps, versionStamp(row), plain, recipe.pixels, () =>
+      ensureBase(this.engine, row, info)
+    )
+    const master = working.master!
+    const dir = paths.photoCache(row.id)
+    const stamp = Date.now().toString(36)
+    const out = join(dir, `enhance-${stamp}.tiff`)
+    const files = [out]
+    const convert = async (onCpu: ReadonlySet<string>): Promise<ConvertReport> => {
+      const chain = await chainOf(this.models, steps, settings, info, onCpu)
+      const common = {
+        enhance: chain,
+        pixel: { depth: 'Sixteen' as const, channels: 3 as const },
+        encode: TIFF,
+        metadata: ICC_ONLY,
+        color: 'Preserve' as const,
+        threads: BACKGROUND_THREADS * 2
+      }
+      if (restoresJpeg) {
+        const orientation = sourceOrientation(info, null)
+        return this.engine.convert(
+          {
+            ...blankRequest(row.path, out, info.input, info),
+            ...common,
+            framing: uprightFraming(orientation, info)
+          },
+          { signal: ctx.signal }
+        )
+      }
+      return this.engine.convert(
+        { ...blankRequest(master.path, out, master.input), ...common },
         { signal: ctx.signal }
       )
+    }
     // The engine says nothing until it is done: the bar follows the clock.
     const rates = await enhanceRates(this.settings)
-    const expected = Math.max(1000, estimateMs(steps, info.width, info.height, rates))
+    const expected = Math.max(1000, estimateMs(steps, master.width, master.height, rates))
     const t0 = Date.now()
     ctx.stage('enhance', 0, `${chainSubject(steps)} · ${row.name}`)
     const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 250)
     try {
+      let report: ConvertReport
       try {
-        await this.models.withCpuFallback(ids, convert, ctx.signal)
+        report = (await this.models.withCpuFallback(ids, convert, ctx.signal)) as ConvertReport
       } catch (err) {
         if (ctx.signal.aborted) throw new Cancelled()
         throw err
+      } finally {
+        clearInterval(tick)
       }
       if (ctx.signal.aborted) throw new Cancelled()
       void this.settings
         .setSetting(RATE_KEY, learnRates(steps, rates, Date.now() - t0, expected))
         .catch(() => {})
-      ctx.stage('save', 0.2, 'Adding it to the folder')
-      // The enhanced file starts with the source's look.
-      const recipe = await this.library.recipe(key)
-      recipe.geometry = { ...recipe.geometry, quarterTurns: 0, flipHorizontal: false }
-      // A RAW's absolute white balance becomes the same white as relative
-      // sliders: the enhanced file was developed with the as-shot white.
-      if (raw && recipe.wb.mode === 'custom') {
-        const op = baseWhite(recipe, { isRaw: true, asShot: info.as_shot_white })
-        const rel = op ? relativeFromOp(op) : { temperature: 0, tint: 0 }
-        recipe.wb = {
-          mode: 'custom',
-          temperature: Math.round(rel.temperature),
-          tint: Math.round(rel.tint),
-          preset: null
-        }
+
+      ctx.stage('save', 0.1, 'Keeping it in the project')
+      const lossless = await storesLossless(row.is_raw === 1, () =>
+        this.settings.getSetting(LOSSLESS_KEY)
+      )
+      const jxl = join(dir, `enhance-${stamp}.jxl`)
+      files.push(jxl)
+      await this.engine.convert({
+        ...blankRequest(out, jxl, 'Tiff'),
+        pixel: { depth: 'Sixteen', channels: 3 },
+        encode: lossless
+          ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
+          : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
+        metadata: ICC_ONLY,
+        color: 'Preserve'
+      })
+      const photoKey = keyOf(row.id, null)
+      const blob = await this.library.index.putBlob(photoKey, jxl, {
+        kind: 'pixels',
+        codec: lossless ? 'jxl-lossless' : 'jxl',
+        width: report.width,
+        height: report.height
+      })
+      let alpha: string | null = null
+      if (layer) {
+        ctx.progress(0.6)
+        const plane = await freezeMask(
+          deps,
+          {
+            photoId: row.id,
+            isRaw: row.is_raw === 1,
+            asShot: info.as_shot_white,
+            seed: seedOf(row),
+            master
+          },
+          recipe,
+          layer.id
+        )
+        if (!plane) throw new Error(`${layer.name} selects nothing`)
+        files.push(plane)
+        alpha = await this.library.index.putBlob(photoKey, plane, {
+          kind: 'mask',
+          codec: 'png',
+          width: master.width,
+          height: master.height
+        })
       }
-      await this.library.index.seedRecipe(out, recipe)
-      await this.library.openFolder(row.folder)
-      return { kind: 'file', path: out }
+      const subject = chainSubject(steps)
+      const step: PixelStep = {
+        id: newId(),
+        kind: 'enhance',
+        label: layer ? `Enhance · ${subject} in ${layer.name}` : `Enhance · ${subject}`,
+        blob,
+        alpha,
+        scope: layer?.name ?? null,
+        opacity: 100,
+        width: report.width,
+        height: report.height,
+        params: { chain: subject, scale: k, resizes: k > 1, lossless }
+      }
+      await addPixelStep(this.library, sessions, key, step)
+      const { photoId, copyId } = parseKey(key)
+      this.library.queueThumb(photoId, copyId, true)
+      return { kind: 'step', label: step.label }
     } catch (err) {
-      // Half a file is no file.
-      await unlink(out).catch(() => {})
       if (!(err instanceof Cancelled)) log.warn('enhance failed', row.name, err)
       throw err
     } finally {
-      clearInterval(tick)
+      for (const f of files) await rm(f, { force: true }).catch(() => undefined)
     }
   }
 }

@@ -12,9 +12,11 @@
  * The develop view sees a whole-photo denoise long before it is done: the
  * draft (≤ 1280 px) denoised first, shown while the full resolution is made.
  *
- * Stored near-losslessly by default (JPEG XL at distance 0.1, a sixth of a
- * lossless one's size and indistinguishable), or losslessly when the setting
- * `pixels.lossless` says so. What is laid over the photo is always the stored
+ * A RAW's result is stored losslessly, always: it is the RAW's developed,
+ * linear pixels (white balance, camera profile and tone curve still to come
+ * in the grade), and its latitude is the point of a RAW. Anything else is
+ * stored near-losslessly by default (JPEG XL at distance 0.1, a sixth of a
+ * lossless one's size), or losslessly when the setting `pixels.lossless` says so. What is laid over the photo is always the stored
  * result decoded, never the model's output itself: what the photo shows now
  * is what it shows after a reload, on another machine, from the project alone.
  */
@@ -36,6 +38,7 @@ import type { DevelopSessions } from '../render'
 import { BACKGROUND_THREADS, blankRequest, seedOf, versionStamp } from '../source'
 import { ensureBase, pixelDeps } from '../pixels/base'
 import { freezeMask } from '../pixels/freeze'
+import { addPixelStep, storesLossless } from '../pixels/steps'
 import { ensureWorking } from '../pixels/working'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
 import { ModelMissing, modelName, type ModelStore } from './models'
@@ -252,7 +255,11 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       }
 
       ctx.stage('save', 0, 'Keeping it in the project')
-      const lossless = (await this.settings.getSetting(LOSSLESS_KEY).catch(() => null)) === true
+      // A RAW's result is its developed, linear pixels: kept losslessly, so
+      // exposure and white balance pushed later show nothing of compression.
+      const lossless = await storesLossless(row.is_raw === 1, () =>
+        this.settings.getSetting(LOSSLESS_KEY)
+      )
       const jxl = join(dir, `denoise-${stamp}.jxl`)
       files.push(jxl)
       await this.engine.convert({
@@ -309,7 +316,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         height: master.height,
         params: { model: req.model, lossless }
       }
-      await this.add(req.key, step)
+      await addPixelStep(this.library, this.sessions(), req.key, step)
       const { photoId, copyId } = parseKey(req.key)
       this.library.queueThumb(photoId, copyId, true)
       return { kind: 'step', label: step.label }
@@ -317,19 +324,6 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       sessions?.pixelPreview(req.key, null)
       for (const f of files) await rm(f, { force: true }).catch(() => undefined)
     }
-  }
-
-  /** The step onto the photo: its open session's recipe, else its saved one. */
-  private async add(key: string, step: PixelStep): Promise<void> {
-    const sessions = this.sessions()
-    const live = sessions?.liveRecipe(key)
-    if (live && sessions) {
-      sessions.update(key, { ...live, pixels: [...live.pixels, step] }, false)
-      await sessions.flush(key)
-      return
-    }
-    const saved = await this.library.recipe(key)
-    await this.library.saveRecipe(key, { ...saved, pixels: [...saved.pixels, step] })
   }
 
   private async rate(model: string): Promise<number> {

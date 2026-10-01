@@ -1,20 +1,22 @@
 /**
  * Enhance (the wheel's last tool): JPEG restore, deblur and super-resolution
- * over the photo's original, into a new 16-bit TIFF beside it that starts
- * with this photo's look. The steps run in the engine's order; what they
- * need, the size and the time are `shared/enhance.ts`'s arithmetic. The
- * settings are the panel's own (kept for the next photo), not the recipe's.
+ * over the photo's pixels as they are, kept in its project as a pixel step
+ * (undone, redone and hidden in History like any edit; no file is written
+ * beside the photo). With a mask selected, deblur and restore keep to it;
+ * an upscale is always the whole photo. The steps run in the engine's
+ * order; what they need, the size and the time are `shared/enhance.ts`'s
+ * arithmetic. The settings are the panel's own (kept for the next photo).
  */
 import { useEffect, useState } from 'react'
 import type { AiJobEvent } from '../../../shared/ai'
 import {
   enhanceRefusal,
   estimateMs,
+  jpegRestoreRefusal,
   LARGE_OUTPUT_MP,
   neededModels,
   planSteps,
   scaleOf,
-  tiffBytes,
   type EnhanceRates,
   type JpegRestore,
   type UpscaleChoice
@@ -26,6 +28,7 @@ import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useAiJobs } from '../state/jobs'
 import { useLibrary, useTargets } from '../state/library'
+import { useScope } from '../state/scope'
 import { useUi } from '../state/ui'
 
 const JPEG_OPTIONS: { value: JpegRestore; label: string }[] = [
@@ -67,6 +70,8 @@ let batch: string[] = []
 
 export function EnhancePanel(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
+  const stepsBefore = useDevelop((s) => s.recipe?.pixels.length ?? 0)
+  const { layer } = useScope()
   const s = useUi((u) => u.enhance)
   const set = useUi((u) => u.setEnhance)
   const targets = useTargets()
@@ -93,7 +98,8 @@ export function EnhancePanel(): React.JSX.Element | null {
   const refusal =
     capable && !capable.enhance
       ? (capable.why.enhance ?? 'Enhance is not available')
-      : enhanceRefusal(s, { isJpeg, isHdr: session.isHdr })
+      : (enhanceRefusal(s, { isJpeg, isHdr: session.isHdr }) ??
+        jpegRestoreRefusal(s, isJpeg, stepsBefore))
   const ready = !refusal && allInstalled(models, need)
   // The frame as it will be written: upright, before the user's turns.
   const k = scaleOf(s)
@@ -110,7 +116,15 @@ export function EnhancePanel(): React.JSX.Element | null {
     const keys = many ? targets : [session.key]
     try {
       const started = await Promise.all(
-        keys.map((key) => api.ai.start({ task: 'enhance', key, settings: s }))
+        keys.map((key) =>
+          api.ai.start({
+            task: 'enhance',
+            key,
+            settings: s,
+            // The selected mask belongs to this photo only.
+            layerId: key === session.key ? (layer?.id ?? null) : null
+          })
+        )
       )
       batch = started
       setIds(started)
@@ -235,7 +249,7 @@ export function EnhancePanel(): React.JSX.Element | null {
         )}
       </Section>
 
-      <Section id="enhance.run" title="New file">
+      <Section id="enhance.run" title="Apply">
         <div className="enhance-sum">
           <span>
             {session.frameWidth} × {session.frameHeight}
@@ -249,7 +263,8 @@ export function EnhancePanel(): React.JSX.Element | null {
             )}
           </span>
           <span className="muted">
-            {outMp.toFixed(0)} MP · ~{bytes(tiffBytes(outW, outH))} 16-bit TIFF
+            {outMp.toFixed(0)} MP · ~{bytes(outW * outH * (session.isRaw ? 2.3 : 0.4))} in the
+            project
           </span>
           {steps.length > 0 && (
             <span className="muted" title="From how fast earlier runs went here">
@@ -263,7 +278,11 @@ export function EnhancePanel(): React.JSX.Element | null {
         {refusal && <p className="muted small">{refusal}</p>}
         <div className="enhance-run">
           <button className="primary" disabled={!ready} onClick={() => void run()}>
-            {many ? `Enhance ${targets.length} photos` : 'Enhance'}
+            {many
+              ? `Enhance ${targets.length} photos`
+              : layer && k === 1
+                ? `Enhance inside ${layer.name}`
+                : 'Enhance'}
           </button>
           {running && (
             <button
@@ -288,9 +307,7 @@ export function EnhancePanel(): React.JSX.Element | null {
                     : j.phase === 'queued'
                       ? 'Waiting'
                       : j.phase === 'done'
-                        ? j.result?.kind === 'file'
-                          ? j.result.path.split(/[\\/]/).pop()
-                          : 'Done'
+                        ? 'Added'
                         : j.phase === 'cancelled'
                           ? 'Cancelled'
                           : (j.message ?? 'Failed')}
@@ -299,9 +316,15 @@ export function EnhancePanel(): React.JSX.Element | null {
             ))}
           </ul>
         )}
+        {layer && k > 1 && (
+          <p className="muted small">
+            An upscale is always the whole photo: {layer.name} is left out of this one.
+          </p>
+        )}
         <p className="muted small">
-          Written beside the original, before any edit, and added to the folder with this
-          photo&apos;s settings.
+          Kept in the photo&apos;s project as a step: undo, redo and History never run the models
+          again, and no file is written beside the photo. An upscale makes the photo larger from
+          this step on (crop, masks and spots keep their places).
         </p>
       </Section>
     </ToolPanel>

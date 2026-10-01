@@ -230,25 +230,28 @@ Its fields:
 ## Pixel steps
 
 `recipe.pixels` lists what changed the photo's pixels rather than its
-settings (an AI denoise), in the order they apply. Each is an image computed
+settings (an AI denoise, an Enhance), in the order they apply. Each is an image computed
 once and kept as a blob, so undoing, redoing or changing its strength never
 computes it again.
 
 | field             | meaning                                                                                                                                                       |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`              | the step's id (history patches name it, as they name masks)                                                                                                   |
-| `kind`            | `denoise`                                                                                                                                                     |
+| `kind`            | `denoise` or `enhance`                                                                                                                                        |
 | `label`           | what it is called ("AI Denoise · SCUNet in Mask 1")                                                                                                           |
 | `blob`            | the image it made: a `blobs.hash`, the whole frame (`width × height`), 16-bit RGB in JPEG XL (`codec` `jxl` near-lossless at distance 0.1, or `jxl-lossless`) |
 | `alpha`           | the mask it was made inside, frozen as it was then: a `blobs.hash` of an 8-bit grey PNG of the same size; null for the whole frame                            |
 | `scope`           | that mask's name, for showing                                                                                                                                 |
 | `opacity`         | 0–100: how much of it is laid on                                                                                                                              |
 | `width`, `height` | the frame it was made at                                                                                                                                      |
-| `params`          | how it was made (`model`, `lossless`)                                                                                                                         |
+| `params`          | how it was made (`model`, `chain`, `scale`, `lossless`); `resizes: true` for an upscale                                                                       |
 
 - **The source frame:** steps live on the photo's own pixels at full size,
   upright (the file's orientation applied), before lens correction. A mask drawn
   over the corrected picture is put back onto that frame when frozen.
+- **Upscales:** a step with `params.resizes` (an upscale) is larger than the
+  frame before it; from it on, the frame is its size, and the steps before it
+  are resampled to it. Positions in the recipe are fractions, so nothing moves.
 - **Applying them:** the developed picture is the source frame with each step's
   image laid over it in order, in linear light, through `alpha` (or
   everywhere) at `opacity`. Lens correction, retouch, the grade and framing

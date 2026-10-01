@@ -237,3 +237,115 @@ test(
     rmSync(dir, { recursive: true })
   }
 )
+
+test(
+  'a step laid on a proxy of a slightly different shape fits it exactly',
+  { skip: engine === null ? 'the engine is not built for this platform' : false },
+  async () => {
+    const dir = tmp()
+    // The step at the photo's size; the proxy rounded (30 × 20 → 22 × 14, where
+    // keeping the step's shape would make it 14.67, so 15, rows tall).
+    const blobs = join(dir, 'cache', 'blobs')
+    mkdirSync(blobs, { recursive: true })
+    const blob = H('d')
+    writeFileSync(
+      join(blobs, `${blob}.png`),
+      encodePng16(new Uint16Array(30 * 20 * 3).fill(40000), 30, 20, 3)
+    )
+    writeFileSync(
+      join(dir, 'plain.png'),
+      encodePng16(new Uint16Array(22 * 14 * 3).fill(1000), 22, 14, 3)
+    )
+    const deps: PixelDeps = {
+      engine: engine as unknown as PixelDeps['engine'],
+      cacheDir: join(dir, 'cache'),
+      blobFile: async () => null,
+      work: async () => undefined
+    }
+    const p = { path: join(dir, 'plain.png'), input: 'Png' as const, width: 22, height: 14 }
+    const set = await ensureWorking(
+      deps,
+      'v1',
+      { proxy: p, draft: p, frameWidth: 30, frameHeight: 20 },
+      [step({ blob, width: 30, height: 20 })],
+      null
+    )
+    assert.equal(set.px.proxy.width, 22)
+    assert.equal(set.px.proxy.height, 14)
+    rmSync(dir, { recursive: true })
+  }
+)
+
+test('an upscale step makes the frame its size from then on', async () => {
+  const { frameOf } = await import('../src/main/pixels/working')
+  const up = step({
+    id: 'u',
+    kind: 'enhance',
+    width: 12000,
+    height: 8000,
+    params: { resizes: true }
+  })
+  const dn = step({ id: 'd', width: 6000, height: 4000 })
+  assert.deepEqual(frameOf([], 6000, 4000), { width: 6000, height: 4000 })
+  assert.deepEqual(frameOf([dn, up], 6000, 4000), { width: 12000, height: 8000 })
+  // A denoise made after the upscale is at the upscale's size already.
+  assert.deepEqual(frameOf([up, { ...dn, width: 12000, height: 8000 }], 6000, 4000), {
+    width: 12000,
+    height: 8000
+  })
+  // An upscale at 0% lays nothing on, and sizes nothing.
+  assert.deepEqual(frameOf([{ ...up, opacity: 0 }], 6000, 4000), { width: 6000, height: 4000 })
+})
+
+test('JPEG restore must be a photo’s first pixel step', async () => {
+  const { jpegRestoreRefusal, DEFAULT_ENHANCE } = await import('../src/shared/enhance')
+  const restore = { ...DEFAULT_ENHANCE, jpeg: 'fbcnn' as const }
+  assert.equal(jpegRestoreRefusal(restore, true, 0), null)
+  assert.match(jpegRestoreRefusal(restore, true, 1) ?? '', /must come first/)
+  // Not a JPEG: nothing to restore, nothing refused here.
+  assert.equal(jpegRestoreRefusal(restore, false, 1), null)
+  assert.equal(jpegRestoreRefusal({ ...DEFAULT_ENHANCE, upscale: 'x2' }, true, 3), null)
+})
+
+test(
+  'with an upscale, the full-size working frame is the upscale’s, the proxies keep their size',
+  { skip: engine === null ? 'the engine is not built for this platform' : false },
+  async () => {
+    const dir = tmp()
+    const blobs = join(dir, 'cache', 'blobs')
+    mkdirSync(blobs, { recursive: true })
+    const blob = H('e')
+    writeFileSync(
+      join(blobs, `${blob}.png`),
+      encodePng16(new Uint16Array(64 * 48 * 3).fill(30000), 64, 48, 3)
+    )
+    writeFileSync(
+      join(dir, 'base.png'),
+      encodePng16(new Uint16Array(32 * 24 * 3).fill(500), 32, 24, 3)
+    )
+    writeFileSync(
+      join(dir, 'proxy.png'),
+      encodePng16(new Uint16Array(16 * 12 * 3).fill(500), 16, 12, 3)
+    )
+    const deps: PixelDeps = {
+      engine: engine as unknown as PixelDeps['engine'],
+      cacheDir: join(dir, 'cache'),
+      blobFile: async () => null,
+      work: async () => undefined
+    }
+    const proxy = { path: join(dir, 'proxy.png'), input: 'Png' as const, width: 16, height: 12 }
+    const up = step({ blob, kind: 'enhance', width: 64, height: 48, params: { resizes: true } })
+    const set = await ensureWorking(
+      deps,
+      'v1',
+      { proxy, draft: proxy, frameWidth: 32, frameHeight: 24 },
+      [up],
+      async () => ({ path: join(dir, 'base.png'), input: 'Png' as const, width: 32, height: 24 })
+    )
+    assert.equal(set.px.frameWidth, 64)
+    assert.equal(set.px.proxy.width, 16)
+    assert.equal(set.master!.width, 64)
+    assert.equal(set.master!.height, 48)
+    rmSync(dir, { recursive: true })
+  }
+)

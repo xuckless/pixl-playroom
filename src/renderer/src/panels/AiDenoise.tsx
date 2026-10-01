@@ -17,6 +17,7 @@ import { applyDenoise } from '../lib/denoise'
 import { useDevelop } from '../state/develop'
 import { useAiJobs } from '../state/jobs'
 import { useLibrary } from '../state/library'
+import { askConfirm } from '../state/confirm'
 import { useScope } from '../state/scope'
 import { useUi } from '../state/ui'
 
@@ -88,6 +89,7 @@ function StepRow({ step }: { step: PixelStep }): React.JSX.Element {
 export function AiDenoise(): React.JSX.Element | null {
   const key = useDevelop((s) => s.session?.key ?? null)
   const isHdr = useDevelop((s) => s.session?.isHdr === true)
+  const isRaw = useDevelop((s) => s.session?.isRaw === true)
   const pixels = useDevelop((s) => s.recipe?.pixels)
   const frame = useDevelop((s) =>
     s.session ? (s.session.frameWidth * s.session.frameHeight) / 1e6 : 0
@@ -121,13 +123,15 @@ export function AiDenoise(): React.JSX.Element | null {
   else if (model && !model.installed) status = 'The model is not downloaded yet'
   else if (job?.phase === 'error') status = job.message ?? 'Failed'
 
-  const setStorage = (on: boolean): void => {
+  const setStorage = async (on: boolean): Promise<void> => {
     if (on) {
       const mb = (x: number): string => `${Math.max(1, Math.round(x))} MB`
-      const ok = window.confirm(
-        `Store AI results losslessly?\n\nEach denoise step of this photo would take about ${mb(frame * 2.3)} in its project, instead of about ${mb(frame * 0.4)} near-losslessly (which cannot be told apart).\n\nSteps already made keep how they were stored.`
-      )
-      if (!ok) return
+      const yes = await askConfirm({
+        title: 'Store AI results losslessly?',
+        body: `Each denoise step of a photo this size would take about ${mb(frame * 2.3)} in its project, instead of about ${mb(frame * 0.4)} near-losslessly.\n\nLossless keeps the most room for editing afterwards: pushing exposure or shadows far shows nothing of compression. Steps already made keep how they were stored. RAW photos are always stored losslessly.`,
+        confirm: 'Store losslessly'
+      })
+      if (!yes) return
     }
     setLossless(on)
     void api.app.setSetting(LOSSLESS_KEY, on).catch((e) => say(errorText(e), 'error'))
@@ -178,13 +182,31 @@ export function AiDenoise(): React.JSX.Element | null {
           ))}
         </div>
       )}
-      <label className="check">
-        <input type="checkbox" checked={lossless} onChange={(e) => setStorage(e.target.checked)} />
-        Store results losslessly
-      </label>
+      {isRaw ? (
+        <p className="muted small">
+          On a RAW, denoise works on its developed, linear pixels: white balance, profile and tone
+          stay as editable as before, and the result is kept losslessly so pushing it later shows no
+          compression. Best done once the exposure is roughly right, before fine colour work.
+        </p>
+      ) : (
+        <>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={lossless}
+              onChange={(e) => void setStorage(e.target.checked)}
+            />
+            Store results losslessly
+          </label>
+          <p className="muted small">
+            Near-lossless (the default) is about a sixth of the size and cannot be told apart, but
+            leaves a little less room for heavy edits afterwards (strong exposure or shadow pushes).
+          </p>
+        </>
+      )}
       <p className="muted small">
         Made once and kept in the photo&apos;s project: undo, redo and Strength never run the model
-        again. Results are stored near-losslessly unless you choose otherwise.
+        again.
       </p>
     </div>
   )

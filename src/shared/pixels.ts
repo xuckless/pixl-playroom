@@ -1,6 +1,6 @@
 /**
  * Pixel steps: what changes a photo's pixels rather than its settings (an AI
- * denoise now; Enhance and baked heal strokes later). Each is computed once,
+ * denoise, an Enhance; baked heal strokes later). Each is computed once,
  * its result stored in the photo's `.pixl` project by content hash, and the
  * step kept in the recipe like any setting, so it undoes, redoes and hides
  * in History without anything being computed again.
@@ -12,7 +12,7 @@
  * is the photo with every step laid on (main/pixels/working.ts).
  */
 
-export type PixelStepKind = 'denoise'
+export type PixelStepKind = 'denoise' | 'enhance'
 
 export interface PixelStep {
   id: string
@@ -33,12 +33,16 @@ export interface PixelStep {
   /** The frame it was made at, upright, before lens correction. */
   width: number
   height: number
-  /** How it was made: the model, and anything else worth showing. */
+  /**
+   * How it was made: the model, and anything else worth showing. `resizes`
+   * true: it made the frame larger (an upscale): the frame is its size from it on.
+   */
   params: Record<string, string | number | boolean | null>
 }
 
 export const PIXEL_LABEL: Record<PixelStepKind, string> = {
-  denoise: 'AI Denoise'
+  denoise: 'AI Denoise',
+  enhance: 'Enhance'
 }
 
 const HEX64 = /^[0-9a-f]{64}$/
@@ -48,7 +52,7 @@ export function normalisePixelStep(v: unknown): PixelStep | null {
   if (!v || typeof v !== 'object') return null
   const s = v as Record<string, unknown>
   if (typeof s.id !== 'string' || typeof s.blob !== 'string' || !HEX64.test(s.blob)) return null
-  if (s.kind !== 'denoise') return null
+  if (s.kind !== 'denoise' && s.kind !== 'enhance') return null
   const num = (x: unknown, d: number): number =>
     typeof x === 'number' && Number.isFinite(x) ? x : d
   return {
@@ -68,6 +72,11 @@ export function normalisePixelStep(v: unknown): PixelStep | null {
 /** What the steps lay on, in order: what names the working pixels they make (see working.ts). */
 export function stackSignature(steps: PixelStep[]): string {
   return JSON.stringify(steps.map((s) => [s.blob, s.alpha, Math.round(s.opacity * 10) / 10]))
+}
+
+/** Whether a step made the frame larger (an upscale). */
+export function resizes(s: PixelStep): boolean {
+  return s.params.resizes === true
 }
 
 /** Why a photo cannot take pixel steps, or null. */

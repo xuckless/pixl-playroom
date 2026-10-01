@@ -190,7 +190,9 @@ const api = {
     onRendered: (cb: (e: RenderEvent) => void) => on(IPC.develop.rendered, cb),
     onRenderError: (
       cb: (e: { key: string; message: string; code: string; field?: string }) => void
-    ) => on(IPC.develop.renderError, cb)
+    ) => on(IPC.develop.renderError, cb),
+    onFrame: (cb: (e: { key: string; frameWidth: number; frameHeight: number }) => void) =>
+      on(IPC.develop.frame, cb)
   },
   models: {
     list: () => call<ModelInfo[]>(IPC.models.list),

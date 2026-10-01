@@ -128,7 +128,9 @@ export const IPC = {
     /** main → renderer: a render finished */
     rendered: 'develop:rendered',
     /** main → renderer: a render failed */
-    renderError: 'develop:render-error'
+    renderError: 'develop:render-error',
+    /** The working frame changed size (an upscale step added or undone). */
+    frame: 'develop:frame'
   },
   presets: {
     list: 'presets:list',

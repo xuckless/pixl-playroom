@@ -91,13 +91,51 @@ async function overlaySource(deps: PixelDeps, step: PixelStep): Promise<string> 
   return out
 }
 
-/** The engine overlays for a list of steps, in order. */
-export async function overlaysOf(deps: PixelDeps, steps: PixelStep[]): Promise<Overlay[]> {
+/**
+ * A step's overlay at exactly `w × h`: the engine places an overlay by width
+ * and keeps its shape, so one resampled to a frame of a slightly different
+ * shape (a proxy rounds its size) would land a pixel past the edge. Made once
+ * per size.
+ */
+async function sized(
+  deps: PixelDeps,
+  src: string,
+  step: PixelStep,
+  w: number,
+  h: number
+): Promise<string> {
+  if (w === step.width && h === step.height) return src
+  const out = src.replace(/\.png$/, `-${w}x${h}.png`)
+  if (await exists(out)) return out
+  const tmp = `${out}.part.png`
+  await deps.engine.convert({
+    ...blankRequest(src, tmp, 'Png'),
+    resize: { Exact: { width: w, height: h } },
+    resampler: 'Lanczos3',
+    // Downscaled in linear light, as the proxies are; alpha (a mask) kept.
+    linear_resample: true,
+    pixel: { depth: 'Sixteen', channels: step.alpha ? 4 : 3 },
+    encode: PNG,
+    metadata: ICC_ONLY,
+    color: 'Preserve',
+    threads: BACKGROUND_THREADS
+  })
+  await rename(tmp, out)
+  return out
+}
+
+/** The engine overlays for a list of steps over a `w × h` frame, in order. */
+export async function overlaysOf(
+  deps: PixelDeps,
+  steps: PixelStep[],
+  w: number,
+  h: number
+): Promise<Overlay[]> {
   const out: Overlay[] = []
   for (const s of steps) {
     if (s.opacity <= 0) continue
     out.push({
-      source: { Png: await overlaySource(deps, s) },
+      source: { Png: await sized(deps, await overlaySource(deps, s), s, w, h) },
       rect: { x: 0, y: 0, width: 1 },
       opacity: Math.min(1, s.opacity / 100),
       // In linear light, as light mixes; a step at 100% replaces exactly.
@@ -108,13 +146,14 @@ export async function overlaysOf(deps: PixelDeps, steps: PixelStep[]): Promise<O
   return out
 }
 
-/** `from` with the overlays laid on (each resampled to its size), as a 16-bit TIFF at `out`. */
+/** `from` with the steps laid on (each sized to it), as a 16-bit TIFF at `out`. */
 async function layOn(
   deps: PixelDeps,
   from: ProxyFile,
   out: string,
-  overlays: Overlay[]
+  steps: PixelStep[]
 ): Promise<ProxyFile> {
+  const overlays = await overlaysOf(deps, steps, from.width, from.height)
   const r = await deps.engine.convert({
     ...blankRequest(from.path, out, from.input),
     pixel: { depth: 'Sixteen', channels: 3 },
@@ -126,6 +165,40 @@ async function layOn(
     threads: BACKGROUND_THREADS
   })
   return { path: out, input: 'Tiff', width: r.width, height: r.height }
+}
+
+/**
+ * The working frame's size: the photo's, or the last step's that changed it
+ * (an upscale: `params.resizes`). Steps before it are laid on resampled to it.
+ */
+export function frameOf(
+  steps: PixelStep[],
+  width: number,
+  height: number
+): { width: number; height: number } {
+  const last = steps.findLast((s) => s.params.resizes === true && s.opacity > 0)
+  return last ? { width: last.width, height: last.height } : { width, height }
+}
+
+/** `from` resampled to exactly `w × h` (an upscale's frame, for the steps before it and its blend). */
+async function resized(
+  deps: PixelDeps,
+  from: ProxyFile,
+  out: string,
+  w: number,
+  h: number
+): Promise<ProxyFile> {
+  await deps.engine.convert({
+    ...blankRequest(from.path, out, from.input),
+    resize: { Exact: { width: w, height: h } },
+    resampler: 'Lanczos3',
+    pixel: { depth: 'Sixteen', channels: 3 },
+    encode: TIFF,
+    metadata: ICC_ONLY,
+    color: 'Preserve',
+    threads: BACKGROUND_THREADS
+  })
+  return { path: out, input: 'Tiff', width: w, height: h }
 }
 
 const building = new Map<string, Promise<WorkingSet>>()
@@ -170,18 +243,26 @@ async function make(
   if (set && !(await filesThere(set))) set = null
   if (set && (!base || set.master)) return set
   await mkdir(dir, { recursive: true })
-  const overlays = await overlaysOf(deps, steps)
+  const frame = frameOf(steps, plain.frameWidth, plain.frameHeight)
   if (!set) {
-    const proxy = await layOn(deps, plain.proxy, join(dir, 'proxy.tiff'), overlays)
-    const draft = await layOn(deps, plain.draft, join(dir, 'draft.tiff'), overlays)
+    // The proxies keep their size: an upscale shows as its picture, not its pixels.
+    const proxy = await layOn(deps, plain.proxy, join(dir, 'proxy.tiff'), steps)
+    const draft = await layOn(deps, plain.draft, join(dir, 'draft.tiff'), steps)
     set = {
       key,
-      px: { proxy, draft, frameWidth: plain.frameWidth, frameHeight: plain.frameHeight },
+      px: { proxy, draft, frameWidth: frame.width, frameHeight: frame.height },
       master: null
     }
   }
-  if (base)
-    set = { ...set, master: await layOn(deps, await base(), join(dir, 'master.tiff'), overlays) }
+  if (base) {
+    // At full size the frame is the steps' own: an upscale's, when one made it larger.
+    const from = await base()
+    const start =
+      from.width === frame.width && from.height === frame.height
+        ? from
+        : await resized(deps, from, join(dir, 'base.tiff'), frame.width, frame.height)
+    set = { ...set, master: await layOn(deps, start, join(dir, 'master.tiff'), steps) }
+  }
   await writeFile(meta, JSON.stringify(set))
   await prune(deps, key)
   return set

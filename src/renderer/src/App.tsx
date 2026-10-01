@@ -5,6 +5,7 @@ import type { LibrarySource, RenderScale } from '../../shared/ipc'
 import { api, errorText } from './lib/api'
 import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
+import { ConfirmHost } from './components/ConfirmHost'
 import { Scopes } from './develop/Scopes'
 import { ToolDial } from './develop/ToolDial'
 import { ToolPanelHost } from './develop/ToolPanelHost'
@@ -257,10 +258,6 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
     useDevelop.getState().replace(s.recipe, r.label)
     return
   }
-  if (r?.kind === 'file') {
-    lib.say(`${e.title}: wrote ${r.path.split(/[\\/]/).pop()}`)
-    return void lib.refresh()
-  }
   if (r?.kind !== 'mask') return
   const dev = useDevelop.getState()
   if (dev.session?.key !== e.key) {
@@ -382,6 +379,14 @@ export default function App(): React.JSX.Element {
       startHdrUpkeep(),
       api.app.onRenderScale(onRenderScale),
       api.app.onOpenPaths((paths) => void openPaths(paths)),
+      // An upscale step added or undone: the photo's full-size frame is another size.
+      api.develop.onFrame((e) => {
+        const s = useDevelop.getState().session
+        if (s && s.key === e.key)
+          useDevelop.setState({
+            session: { ...s, frameWidth: e.frameWidth, frameHeight: e.frameHeight }
+          })
+      }),
       api.develop.onRenderError((e) =>
         useDevelop.getState().onError(e.field ? `${e.message} (${e.field})` : e.message)
       ),
@@ -431,6 +436,7 @@ export default function App(): React.JSX.Element {
       <div className="app">
         <Screens />
         <DialogHost />
+        <ConfirmHost />
         <Toast />
         <EngineBanner />
         <Splash />

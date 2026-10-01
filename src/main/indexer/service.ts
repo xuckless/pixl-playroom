@@ -1697,13 +1697,6 @@ export class IndexService {
     )
   }
 
-  /** Give a file the index has not seen yet (Enhance's output) a recipe in its sidecar. */
-  seedRecipe(photoPath: string, recipe: Recipe): void {
-    const { sidecar } = readSidecar(photoPath, false)
-    sidecar.photo.recipe = recipe
-    writeSidecar(photoPath, sidecar)
-  }
-
   // ── thumbnails ──
 
   /** The thumbnail to render for an item, or null when the one it has is current (or it cannot be read). */
