@@ -44,5 +44,10 @@ export const paths = {
   notices: (): string =>
     app.isPackaged
       ? join(process.resourcesPath, 'THIRD_PARTY_NOTICES.txt')
-      : join(app.getAppPath(), 'build', 'THIRD_PARTY_NOTICES.txt')
+      : join(app.getAppPath(), 'build', 'THIRD_PARTY_NOTICES.txt'),
+  /** The beta terms the app ships (scripts/legal-copy.mjs), beside its resources or in build/legal/. */
+  betaTerms: (): string =>
+    app.isPackaged
+      ? join(process.resourcesPath, 'legal', 'beta-terms.txt')
+      : join(app.getAppPath(), 'build', 'legal', 'beta-terms.txt')
 }

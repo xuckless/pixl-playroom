@@ -35,6 +35,10 @@ const help: MenuItemConstructorOptions[] = [
   { label: 'Report a Problem…', click: toRenderer(IPC.app.openReport) },
   { type: 'separator' },
   { label: 'Licence Agreement', click: () => void shell.openExternal(`${LEGAL}/eula/`) },
+  // The copy this build shipped with, offline too.
+  ...(app.getVersion().includes('-beta')
+    ? [{ label: 'Beta Terms', click: () => void shell.openPath(paths.betaTerms()) }]
+    : []),
   { label: 'Privacy Policy', click: () => void shell.openExternal(`${LEGAL}/privacy/`) },
   { label: 'Third-Party Notices', click: () => void shell.openPath(paths.notices()) }
 ]

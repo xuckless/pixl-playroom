@@ -582,3 +582,10 @@ button.keybind-key.waiting {
 .gate-card .prefs-devices {
   margin: 4px 0;
 }
+.gate-card .gate-fine {
+  font-size: 12px;
+  color: var(--muted);
+}
+.gate-card .gate-fine .link {
+  font-size: inherit;
+}

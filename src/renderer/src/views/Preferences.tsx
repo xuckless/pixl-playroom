@@ -531,6 +531,14 @@ function GeneralSettings(): React.JSX.Element {
           >
             Third-party notices
           </button>
+          {prefs?.version.includes('-beta') && (
+            <button
+              className="link"
+              onClick={() => void api.app.openBetaTerms().catch((e) => say(errorText(e), 'error'))}
+            >
+              Beta terms
+            </button>
+          )}
         </div>
       </fieldset>
     </>

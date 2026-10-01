@@ -2,7 +2,7 @@
 # https://www.electron.build/configuration
 appId: com.xuckless.pixlplayroom
 productName: Pixl Playroom
-copyright: Copyright © 2026 xuckless
+copyright: Copyright © 2026 Syed Ali (PIXL Foundation)
 # No ${version} in any artifact name, so `releases/latest/download/<name>`
 # links keep working from release to release (release-please cannot stamp a
 # version into these names either). The version lives in the app, in
@@ -33,6 +33,9 @@ files:
 extraResources:
   - from: build/THIRD_PARTY_NOTICES.txt
     to: THIRD_PARTY_NOTICES.txt
+  # The beta terms, as published (scripts/legal-copy.mjs): Help → Beta Terms.
+  - from: build/legal/beta-terms.txt
+    to: legal/beta-terms.txt
   # The offline lens catalogue (scripts/lensfun-profiles.mjs); the app keeps
   # a newer one from the models server beside it (src/main/lensprofiles.ts).
   - from: resources/lens-profiles

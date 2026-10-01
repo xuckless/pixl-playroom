@@ -181,6 +181,15 @@ export function BetaGate({ gate }: { gate: GateState | null }): React.JSX.Elemen
     </button>
   )
   const err = error && <p className="gate-error">{error}</p>
+  const terms = (
+    <p className="gate-fine">
+      The beta is free and comes as is: joining means accepting the{' '}
+      <button className="link" onClick={() => void api.app.openBetaTerms()}>
+        beta terms
+      </button>
+      , including that there is no warranty and that PIXL Foundation accepts no liability for it.
+    </p>
+  )
 
   switch (gate.kind) {
     case 'sign-in':
@@ -208,6 +217,7 @@ export function BetaGate({ gate }: { gate: GateState | null }): React.JSX.Elemen
             This is a beta of Pixl Playroom. Sign in with the PIXL account you joined the beta with,
             and the app opens.
           </p>
+          {terms}
           {account?.signingIn && (
             <p className="gate-status" role="status">
               Finish signing in in your browser…
@@ -232,6 +242,7 @@ export function BetaGate({ gate }: { gate: GateState | null }): React.JSX.Elemen
             You’re signed in{who}, but this account isn’t in the beta yet. Join it on the beta page;
             the app opens as soon as you come back.
           </p>
+          {terms}
           {err}
         </GateScreen>
       )
