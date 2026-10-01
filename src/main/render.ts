@@ -129,6 +129,8 @@ const SAVE_MS = 600
 const MASK_THUMB_EDGE = 512
 /** How long editing pauses before an open photo's thumbnail is made again. */
 const THUMB_IDLE_MS = 4000
+/** The middle proxy serves a view up to 1/MID_SHORTFALL its size. */
+const MID_SHORTFALL = 0.8
 /** Picture files of each kind kept on disk besides any a kept event names. */
 const KEEP_RENDERS = 6
 
@@ -306,12 +308,12 @@ class Session {
   /** Whether a source is one of the prepared set's (lens and spots baked in). */
   private isBaked(source: ProxyFile): boolean {
     const px = this.lensed?.px
-    return !!px && (source === px.proxy || source === px.draft)
+    return !!px && (source === px.proxy || source === px.mid || source === px.draft)
   }
 
   /** Whether a source is the plain photo's (no pixel step laid on). */
   private isPlain(source: ProxyFile): boolean {
-    return source === this.px.proxy || source === this.px.draft
+    return source === this.px.proxy || source === this.px.mid || source === this.px.draft
   }
 
   // ── pixel steps (shared/pixels.ts, pixels/working.ts) ──
@@ -662,8 +664,13 @@ class Session {
     // A correction still being baked: the draft, corrected live, stands in
     // (a large proxy warped on every render is what the bake avoids).
     if (this.bakePending()) return px.draft
-    const long = Math.max(px.draft.width, px.draft.height)
-    return this.view.targetEdge <= long ? px.draft : px.proxy
+    const long = (f: ProxyFile): number => Math.max(f.width, f.height)
+    if (this.view.targetEdge <= long(px.draft)) return px.draft
+    // The middle size up to a little short of the view (the screen scales it
+    // the last stretch): a 1200 pt loupe on a Retina screen grades 44% fewer
+    // pixels than from the full proxy.
+    if (px.mid && this.view.targetEdge * MID_SHORTFALL <= long(px.mid)) return px.mid
+    return px.proxy
   }
 
   private nextFile(stem: string, ext: string): string {

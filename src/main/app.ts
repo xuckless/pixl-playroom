@@ -104,6 +104,10 @@ const engine = new EngineClient('interactive', 8)
 const bgEngine = new EngineClient('background', 4, true)
 /** AI jobs, one at a time: started when first needed, restarted to cancel one. */
 const aiEngine = new EngineClient('ai', 4, true)
+// One scheduler across them: new background and AI work waits (briefly)
+// while a preview is being rendered, rather than splitting the cores with it.
+bgEngine.holdFor(engine)
+aiEngine.holdFor(engine)
 /** The SQLite index and the sidecars, in their own process. */
 const index = openIndex()
 let sessions: DevelopSessions | undefined

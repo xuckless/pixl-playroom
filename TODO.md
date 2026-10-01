@@ -573,13 +573,19 @@ After: Pass 28. A `.pixl` format version bump (docs/pixl-format.md).
 
 After: Pass 15.
 
-- [ ] **L** · Hold background requests while interactive renders are in
+- [x] **L** · Hold background requests while interactive renders are in
       flight; don't start the next render until a cancelled one has stopped
       (`client.ts:258-263` settles at once; better with E6). The libuv pools
       (8/4) aren't the bottleneck; too many engine threads are.
-- [ ] **M** · A ~1920 px proxy between the draft and the 2560: on a Retina
+      _Done: the client tracks calls the host is still on (cancelled ones
+      too); background and AI calls wait up to 1.5 s behind interactive work
+      (`holdFor`), a cancellable call up to 250 ms for cancelled ones._
+- [x] **M** · A ~1920 px proxy between the draft and the 2560: on a Retina
       loupe `targetEdge` is box × DPR, so nearly every settled render uses
       2560 (`render.ts:559-560`); ~44% fewer pixels on a 1200 pt loupe.
+      _Done: `mid` (1920) beside the plain and lens-corrected proxies, used
+      for a view up to 1.25× its size (`MID_SHORTFALL`); pixel-step and HDR
+      sets have none and use the 2560._
 
 ### Pass 32 — The preview as pixels, not a file · 4 pts
 

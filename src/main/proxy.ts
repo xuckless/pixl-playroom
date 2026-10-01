@@ -6,6 +6,8 @@
  * frame, and pixel-sized knobs are scaled by `scale` in `compile.ts`.
  *
  * - `proxy`: long edge ≤ 2560, for settled previews and thumbnails of edits;
+ * - `mid`: long edge ≤ 1920, made from the proxy, for settled previews on a
+ *   loupe it nearly fills (44% fewer pixels to grade than the proxy);
  * - `draft`: long edge ≤ 1280, made from the proxy, for renders while a
  *   slider is moving;
  * - `master`: full resolution, only for RAWs, only when a 1:1 view asks —
@@ -42,6 +44,7 @@ import {
 } from './source'
 
 export const PROXY_EDGE = 2560
+export const MID_EDGE = 1920
 export const DRAFT_EDGE = 1280
 
 export interface ProxyFile {
@@ -53,6 +56,8 @@ export interface ProxyFile {
 
 export interface Proxies {
   proxy: ProxyFile
+  /** Between the two, when the proxy is larger than MID_EDGE (absent from sets made before it). */
+  mid?: ProxyFile
   draft: ProxyFile
   /** The full-resolution base frame (upright, before the user's turns). */
   frameWidth: number
@@ -96,8 +101,14 @@ async function build(
       (await exists(known.draft.path)) &&
       Number.isFinite(known.frameWidth) &&
       Number.isFinite(known.frameHeight)
-    )
-      return known
+    ) {
+      // A set made before the middle size: it gains one, once.
+      if (known.mid || Math.max(known.proxy.width, known.proxy.height) <= MID_EDGE) return known
+      const mid = await shrink(engine, known.proxy, join(dir, `mid-${s}`), MID_EDGE, threads)
+      const out = { ...known, mid }
+      await writeFile(meta, JSON.stringify(out))
+      return out
+    }
   }
   // An older version of the file: clear its working copies.
   for (const f of await readdir(dir)) {
@@ -105,6 +116,7 @@ async function build(
       f.startsWith('proxies-') ||
       f.startsWith('proxy-') ||
       f.startsWith('draft-') ||
+      f.startsWith('mid-') ||
       f.startsWith('master-') ||
       f.startsWith('lens-')
     ) {
@@ -168,8 +180,13 @@ async function build(
     width: draftReport.width,
     height: draftReport.height
   }
+  const mid =
+    Math.max(proxy.width, proxy.height) > MID_EDGE
+      ? await shrink(engine, proxy, join(dir, `mid-${s}`), MID_EDGE, threads)
+      : undefined
   const out: Proxies = {
     proxy,
+    ...(mid ? { mid } : {}),
     draft,
     // An engine build that does not report the frame gets it from the proxy,
     // scaled back up: close enough for geometry, and never NaN.
@@ -182,6 +199,31 @@ async function build(
   }
   await writeFile(meta, JSON.stringify(out))
   return out
+}
+
+/** `from` made smaller, to a long edge of `edge` (or `factor` of it), in its own format. */
+async function shrink(
+  engine: EngineClient,
+  from: ProxyFile,
+  stem: string,
+  edge: number,
+  threads: number,
+  factor = Math.min(1, edge / Math.max(from.width, from.height))
+): Promise<ProxyFile> {
+  const png = from.input === 'Png'
+  const path = `${stem}.${png ? 'png' : 'tiff'}`
+  const report = await engine.convert({
+    ...blankRequest(from.path, path, from.input),
+    resize: factor < 1 ? { Scale: { factor } } : 'None',
+    pixel: { depth: 'Sixteen', channels: null },
+    encode: png
+      ? { Png: { compression: 'Fast', filter: 'Sub' } }
+      : { Tiff: { compression: 'None' } },
+    metadata: { exif: false, icc: true, xmp: false, iptc: false },
+    color: 'Preserve',
+    threads
+  })
+  return { path, input: from.input, width: report.width, height: report.height }
 }
 
 const lensing = new Map<string, Promise<Proxies>>()
@@ -265,8 +307,19 @@ async function bakeLens(
     threads: BACKGROUND_THREADS
   })
   const k = report.width / px.proxy.width
+  const mid = px.mid
+    ? await shrink(
+        engine,
+        proxy,
+        join(dir, `${prefix}-mid`),
+        MID_EDGE,
+        BACKGROUND_THREADS,
+        px.mid.width / px.proxy.width
+      )
+    : undefined
   const out: Proxies = {
     proxy,
+    ...(mid ? { mid } : {}),
     draft: {
       path: draftPath,
       input: px.proxy.input,

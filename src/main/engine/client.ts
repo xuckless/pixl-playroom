@@ -70,6 +70,10 @@ export function isCancelled(err: unknown): boolean {
 }
 
 const MAX_RESTARTS = 5
+/** The longest a background call is held while interactive renders run (exports still move). */
+const HOLD_MAX_MS = 1500
+/** The longest a new cancellable call waits for cancelled ones to let go of the cores. */
+const DRAIN_MAX_MS = 250
 
 /** A helper process put below normal priority (the OS may refuse: it then runs as it is). */
 export function lowerPriority(pid: number | undefined): void {
@@ -85,6 +89,17 @@ export class EngineClient {
   private child: UtilityProcess | undefined
   private nextId = 1
   private inflight = new Map<number, Pending>()
+  /**
+   * Calls the host is working on, whether or not their callers still wait
+   * (a cancelled one runs on to its next stage boundary): what `quiet` and
+   * `drained` watch.
+   */
+  private running = new Set<number>()
+  /** The cancelled ones among them. */
+  private draining = new Set<number>()
+  private settleWaiters: (() => void)[] = []
+  /** An engine whose work this one's new calls wait behind (see `holdFor`). */
+  private yieldTo: EngineClient | undefined
   private status: EngineStatus = { status: 'starting', restarts: 0 }
   private stopped = false
   private readyWaiters: (() => void)[] = []
@@ -129,7 +144,59 @@ export class EngineClient {
       p.reject(new EngineError({ message: `${p.method}: cancelled`, code: 'Cancelled' }))
     }
     child.kill()
+    this.ended()
     if (!this.stopped) this.spawn()
+  }
+
+  /**
+   * Hold this engine's new calls while `other` (the interactive engine) has
+   * work in flight, for at most HOLD_MAX_MS each: thumbnails and exports
+   * start between renders, not on top of them. What is already running here
+   * goes on.
+   */
+  holdFor(other: EngineClient): void {
+    this.yieldTo = other
+  }
+
+  /** Resolves when no call is running here, or after `maxMs`. */
+  quiet(maxMs: number): Promise<void> {
+    return this.until(() => this.running.size === 0, maxMs)
+  }
+
+  /** Resolves when no cancelled call is still running here, or after `maxMs`. */
+  private drained(maxMs: number): Promise<void> {
+    return this.until(() => this.draining.size === 0, maxMs)
+  }
+
+  private until(done: () => boolean, maxMs: number): Promise<void> {
+    if (done()) return Promise.resolve()
+    return new Promise((resolve) => {
+      let over = false
+      const finish = (): void => {
+        over = true
+        clearTimeout(timer)
+        resolve()
+      }
+      const timer = setTimeout(finish, maxMs)
+      const check = (): void => {
+        if (over) return
+        if (done()) finish()
+        else this.settleWaiters.push(check)
+      }
+      this.settleWaiters.push(check)
+    })
+  }
+
+  /** A call the host was working on has ended (answered, or the host gone). */
+  private ended(id?: number): void {
+    if (id === undefined) {
+      this.running.clear()
+      this.draining.clear()
+    } else {
+      this.running.delete(id)
+      this.draining.delete(id)
+    }
+    for (const w of this.settleWaiters.splice(0)) w()
   }
 
   getStatus(): EngineStatus {
@@ -221,6 +288,7 @@ export class EngineClient {
         this.inflight.delete(id)
         p.reject(new EngineError({ message: `${p.method}: ${reason}`, code: 'EngineCrashed' }))
       }
+      this.ended()
       if (this.stopped) return
       const restarts = this.status.restarts + 1
       if (restarts > MAX_RESTARTS) {
@@ -259,6 +327,8 @@ export class EngineClient {
       return
     }
     if (msg.kind === 'response') {
+      // A cancelled call's late answer still says the host has let go of it.
+      this.ended(msg.id)
       const p = this.inflight.get(msg.id)
       if (!p) return
       this.inflight.delete(msg.id)
@@ -270,16 +340,30 @@ export class EngineClient {
   /**
    * One call to the host. With a signal, aborting it tells the host to stop
    * and settles the call at once as `Cancelled`; the engine lets go of the
-   * work at its next stage boundary, and its late answer is dropped.
+   * work at its next stage boundary, and its late answer is dropped. Before
+   * it starts, a call waits (briefly) behind the interactive engine's work
+   * (`holdFor`), and a cancellable one behind cancelled calls still letting
+   * go: two renders never fight over the cores.
    */
   private call(method: EngineMethod, args: unknown[], signal?: AbortSignal): Promise<unknown> {
+    const hold = this.yieldTo && this.yieldTo.running.size > 0
+    const drain = signal !== undefined && this.draining.size > 0
+    if (!hold && !drain) return this.post(method, args, signal)
+    return (async () => {
+      if (hold) await this.yieldTo!.quiet(HOLD_MAX_MS)
+      if (drain) await this.drained(DRAIN_MAX_MS)
+      return this.post(method, args, signal)
+    })()
+  }
+
+  private post(method: EngineMethod, args: unknown[], signal?: AbortSignal): Promise<unknown> {
     const cancelled = (): EngineError =>
       new EngineError({ message: `${method}: cancelled`, code: 'Cancelled' })
     if (signal?.aborted) return Promise.reject(cancelled())
     // Held back from the launch: started by the first call that wants it.
     if (!this.spawned && !this.stopped) {
       this.start()
-      return this.whenStarted().then(() => this.call(method, args, signal))
+      return this.whenStarted().then(() => this.post(method, args, signal))
     }
     const child = this.child
     if (!child) {
@@ -295,6 +379,8 @@ export class EngineClient {
       const onAbort = (): void => {
         if (!this.inflight.delete(id)) return
         this.child?.postMessage({ kind: 'cancel', id })
+        // Still running in the host until its answer comes.
+        if (this.running.has(id)) this.draining.add(id)
         reject(cancelled())
       }
       const done =
@@ -305,6 +391,7 @@ export class EngineClient {
         }
       this.inflight.set(id, { resolve: done(resolve), reject: done(reject), method })
       signal?.addEventListener('abort', onAbort, { once: true })
+      this.running.add(id)
       child.postMessage({ kind: 'request', id, method, args, cancellable: signal !== undefined })
     })
   }
