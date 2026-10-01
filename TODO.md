@@ -179,7 +179,9 @@ the sign-in and consent pages), and its redirect-URI spike.
       `scripts/mock-account.mjs`. Checked end to end against the mock
       (sign in, sealed on disk, kept across a relaunch, sign out ends the
       server session), and the real pixl-core accepts the authorize request.
-      A real sign-in waits on pixl-web's consent page._
+      Real sign-in checked 2026-10-01 against production (pixl-web's
+      sign-in and consent pages): the code came back to the loopback, and
+      the session was kept sealed._
 - [ ] **S** · Tokens at rest: the refresh token is encrypted with Electron's
       `safeStorage` (Keychain or DPAPI), the rotated token is saved on every
       refresh, and "Sign out" forgets the tokens and the entitlement. A grant
@@ -227,9 +229,13 @@ After: Pass 25, and pixl-web's entitlement API.
       freeing a device, a hand-edited licence.json refused, sign-out).
       Limit: a copy that's offline can restore an older token of its own
       from a backup and keep it until that token's month runs out._
-      _Still to do: put the Worker's real key set in when pixl-web's
-      handoff (c) lands (nothing changes in the app), then run end to end
-      against the real Worker._
+      _Checked 2026-10-01 against the real Worker: before joining the beta
+      it answered `no_beta`; after joining through playroom.pixlfoundation.com/beta/
+      the app got a token signed by `ent-2026-10`, in a key set signed by
+      root-1, for this Mac's device hash (beta, 30 days, refresh after 24 h),
+      and it checks out offline against the production roots alone.
+      The licence actions now log their outcome (`licence: check done
+      (beta)`), which the test showed was missing._
 - [x] **S** · "Start 14-day trial" asks the server. It refuses a second
       trial on the account, or on this device under any account, and the app
       says which. The local trial (`trialStartedAt`) goes.

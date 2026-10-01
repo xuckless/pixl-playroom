@@ -91,28 +91,40 @@ export function requireLicence(what: Licensed): void {
   }
 }
 
+/** Runs what the user asked for, logging how it went (the error also goes back to Settings). */
+async function logged(what: string, fn: () => Promise<void>): Promise<LicenceStatus> {
+  try {
+    await fn()
+  } catch (err) {
+    log.warn(`licence: ${what} failed`, err)
+    throw err
+  }
+  const status = licence()
+  log.info(`licence: ${what} done (${status.state.kind})`)
+  return status
+}
+
 /** Check now: asks the account, whatever the token's refresh time. */
-export async function refreshLicence(): Promise<LicenceStatus> {
-  await access.refresh()
-  return licence()
+export function refreshLicence(): Promise<LicenceStatus> {
+  return logged('check', () => access.refresh())
 }
 
-export async function startTrial(): Promise<LicenceStatus> {
-  await access.startTrial()
-  log.info('licence: trial started (or already running)')
-  return licence()
+/** Starts the trial, or answers with the one running. */
+export function startTrial(): Promise<LicenceStatus> {
+  return logged('starting the trial', () => access.startTrial())
 }
 
-export async function freeDevice(id: string): Promise<LicenceStatus> {
-  await access.freeDevice(id)
-  log.info('licence: freed a device on the account')
-  return licence()
+export function freeDevice(id: string): Promise<LicenceStatus> {
+  return logged('freeing a device', () => access.freeDevice(id))
 }
 
 /** Refreshes when due, quietly: failures are logged, and the token there is stands. */
 function refreshIfDue(why: string): void {
   if (!access.due()) return
-  void access.refresh().catch((err) => log.warn(`licence: refresh (${why}) failed`, err))
+  void access
+    .refresh()
+    .then(() => log.info(`licence: refreshed (${why}): ${licence().state.kind}`))
+    .catch((err) => log.warn(`licence: refresh (${why}) failed`, err))
 }
 
 /** At ready: read the device, move the clock mark up, and refresh when due. */
@@ -130,7 +142,10 @@ export function startLicence(): void {
     if (s.signedIn === signedIn) return
     signedIn = s.signedIn
     if (signedIn) {
-      void access.refresh().catch((err) => log.warn('licence: refresh after sign-in failed', err))
+      void access
+        .refresh()
+        .then(() => log.info(`licence: refreshed after sign-in: ${licence().state.kind}`))
+        .catch((err) => log.warn('licence: refresh after sign-in failed', err))
     } else access.forget()
   })
   // Automation asks for nothing in the background.
