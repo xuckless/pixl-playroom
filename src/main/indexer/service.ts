@@ -238,7 +238,7 @@ export class IndexService {
   private xmpChain: Promise<unknown> = Promise.resolve()
   private closed = false
   /** The `.pixl` projects open now (see pixlfile.ts). */
-  private readonly projects = new ProjectPool()
+  private readonly projects = new ProjectPool(2000, (path) => this.committed(path))
   /** What each project file names, by its path, while the file is unchanged. */
   private readonly origins = new Map<string, { stamp: string | null; origin: Origin | null }>()
 
@@ -262,12 +262,27 @@ export class IndexService {
     if (on) this.held.add(photoId)
     else this.held.delete(photoId)
     const path = this.projectOf(this.row(key))
-    if (path) this.projects.pin(path, on)
+    if (!path) return
+    this.projects.pin(path, on)
+    // Leaving Develop: the photo's last edits go to disk now.
+    if (!on) this.projects.flush(path)
+  }
+
+  /** Commit what every project has gathered (before a quit, or a backup). */
+  flushProjects(): void {
+    this.projects.flush()
+  }
+
+  /** A project's batch is on disk: its new mtime is the index's own write, not a change to read back. */
+  private committed(path: string): void {
+    if (this.closed || !existsSync(path)) return
+    this.store.projectCommitted(path, statSync(path).mtimeMs)
   }
 
   close(): void {
-    this.closed = true
+    // Batches commit first, and their mtimes are noted while the store is open.
     this.projects.drop()
+    this.closed = true
     this.store.close()
     void this.xmp.end().catch(() => {})
   }
@@ -422,7 +437,10 @@ export class IndexService {
       hit.stamp = stamp
       return hit.origin
     }
-    const origin = PixlFile.peekOrigin(path)
+    // One the index has open is read through it (it may hold uncommitted writes).
+    const origin = this.projects.isOpen(path)
+      ? this.projects.use(path, (p) => p.origin())
+      : PixlFile.peekOrigin(path)
     this.origins.set(path, { stamp, origin })
     return origin
   }
@@ -496,10 +514,12 @@ export class IndexService {
         .projectsNamed(row.name, row.size)
         .find((c) => !taken.has(c.path) && existsSync(c.path) && !existsSync(c.origin_path))
       if (!found) continue
-      this.projects.use(found.path, (p) => {
+      this.projects.write(found.path, (p) => {
         const o = p.origin()
         if (o) p.setOrigin({ ...o, path: row.path })
       })
+      // A relink is on disk at once: other readers find the photo by it.
+      this.projects.flush(found.path)
       this.store.registerProject(found.path, row.name, row.size, row.path)
       this.origins.delete(found.path)
       link(row, found.path)
@@ -512,9 +532,10 @@ export class IndexService {
         (r) => !claimed.has(r.id) && !this.projectOf(r) && isRenamed(origin, r)
       )
       if (renamed) {
-        this.projects.use(path, (p) =>
+        this.projects.write(path, (p) =>
           p.setOrigin({ ...origin, name: renamed.name, path: renamed.path })
         )
+        this.projects.flush(path)
         this.store.registerProject(path, renamed.name, renamed.size, renamed.path)
         this.origins.delete(path)
         link(renamed, path)
@@ -716,7 +737,7 @@ export class IndexService {
     const row = this.row(key)
     const project = this.projectOf(row)
     if (!project) return
-    this.projects.use(project, (p) => {
+    this.projects.write(project, (p) => {
       const hash = p.putBlobFile(file, {
         kind: 'original',
         codec: info.codec,
@@ -745,7 +766,7 @@ export class IndexService {
     info: { kind: string; codec: string; width: number | null; height: number | null }
   ): string {
     const project = this.ensureProject(this.row(key))
-    const hash = this.projects.use(project, (p) =>
+    const hash = this.projects.write(project, (p) =>
       p.putBlobFile(file, { ...info, channels: null, depth: null })
     )
     this.noteProjectWrite(key)
@@ -772,7 +793,7 @@ export class IndexService {
   originalFailed(key: string, note: string): void {
     const project = this.projectOf(this.row(key))
     if (!project) return
-    this.projects.use(project, (p) =>
+    this.projects.write(project, (p) =>
       p.setOriginal({ kind: 'verbatim', blob: null, state: 'failed', note })
     )
     this.noteProjectWrite(key)
@@ -1715,7 +1736,7 @@ export class IndexService {
     const raw = row.is_raw === 1
     const project = this.projectOf(row)
     if (project) {
-      const truth = this.projects.use(project, (p) => {
+      const truth = this.projects.write(project, (p) => {
         // By reference: what the change leaves alone goes back as it was.
         const s = p.read(raw, false)
         change(s)
@@ -1872,7 +1893,7 @@ export class IndexService {
     try {
       const jpeg = readFileSync(path)
       const size = jpegSize(jpeg)
-      this.projects.use(project, (p) => p.setPreview(jpeg, size?.width ?? 0, size?.height ?? 0))
+      this.projects.write(project, (p) => p.setPreview(jpeg, size?.width ?? 0, size?.height ?? 0))
       this.store.setProject(row.id, project, statSync(project).mtimeMs)
     } catch (err) {
       console.warn('project preview not saved', project, (err as Error).message)
@@ -1907,7 +1928,7 @@ export class IndexService {
   ): T {
     const path = this.projectOf(this.row(key))
     if (!path) return index()
-    const out = this.projects.use(path, (p) => project(p, itemKeyOf(parseKey(key).copyId)))
+    const out = this.projects.write(path, (p) => project(p, itemKeyOf(parseKey(key).copyId)))
     this.noteProjectWrite(key)
     return out
   }
@@ -1977,7 +1998,7 @@ export class IndexService {
       this.ensureProject(this.row(key))
       return change
     }
-    const log = this.projects.use(path, (p) =>
+    const log = this.projects.write(path, (p) =>
       p.tx(() => {
         this.saveRecipe(key, recipe)
         return this.appendIn(p, itemKeyOf(parseKey(key).copyId), label, step)

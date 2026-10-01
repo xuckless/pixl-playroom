@@ -20,6 +20,7 @@ import {
   BLOB_CHUNK,
   jpegSize,
   PixlFile,
+  ProjectPool,
   sha256File,
   type Origin
 } from '../src/main/project/pixlfile'
@@ -518,5 +519,54 @@ test('a blob a snapshot names is kept', () => {
   p.gc()
   assert.ok(p.blob(hash))
   p.close()
+  rmSync(dir, { recursive: true })
+})
+
+test('writes gather into one batch, committed after a moment or when flushed', async () => {
+  const dir = tmp()
+  const path = join(dir, 'a.pixl')
+  PixlFile.create(path, origin(dir)).close()
+  const committed: string[] = []
+  const pool = new ProjectPool(2000, (p) => committed.push(p), 30)
+  const outside = (): number => {
+    const f = PixlFile.open(path)
+    try {
+      return f.history.history('').steps.length
+    } finally {
+      f.close()
+    }
+  }
+  const r = defaultRecipe(false)
+  pool.write(path, (p) => p.history.append('', 'Opened', r))
+  const next = structuredClone(r)
+  next.basic.exposure = 1
+  pool.write(path, (p) => p.history.append('', 'Exposure', next))
+  // The pool reads its own writes; another connection sees none of them yet.
+  assert.equal(
+    pool.use(path, (p) => p.history.history('').steps.length),
+    1
+  )
+  assert.equal(PixlFile.peekOrigin(path)?.name, 'a.jpg')
+  assert.equal(committed.length, 0)
+  await new Promise((res) => setTimeout(res, 80))
+  assert.deepEqual(committed, [path])
+  assert.equal(outside(), 1)
+
+  // A transaction that fails inside a batch undoes only itself.
+  pool.write(path, (p) => p.setMeta('kept', 'yes'))
+  assert.throws(() =>
+    pool.write(path, (p) =>
+      p.tx(() => {
+        p.setMeta('lost', 'yes')
+        throw new Error('no')
+      })
+    )
+  )
+  pool.flush(path)
+  const f = PixlFile.open(path)
+  assert.equal(f.meta('kept'), 'yes')
+  assert.equal(f.meta('lost'), undefined)
+  f.close()
+  pool.drop()
   rmSync(dir, { recursive: true })
 })

@@ -548,7 +548,9 @@ test('stacks live in the sidecar and survive a lost index', async () => {
         [copy.key, 0, 3]
       ]
     )
-    // a's is in its sidecar; c has a virtual copy, so its truth is its project.
+    // a's is in its sidecar; c has a virtual copy, so its truth is its project
+    // (read by another connection: what the index gathered is committed first).
+    f.index.flushProjects()
     assert.equal(JSON.parse(readFileSync(a.path + '.playroom.json', 'utf8')).stack.position, 1)
     const project = PixlFile.open(f.index.projectPath(c.key)!)
     assert.equal(project.read(false).stack?.position, 0)

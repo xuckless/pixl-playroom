@@ -687,6 +687,11 @@ export class Store {
     )
   }
 
+  /** Every photo using the project at `path`: its mtime is now `mtime` (the index's own commit). */
+  projectCommitted(path: string, mtime: number): void {
+    this.prepare('UPDATE photos SET project_mtime = ? WHERE project_path = ?').run(mtime, path)
+  }
+
   setSidecarMtime(id: number, mtime: number | null): void {
     this.prepare('UPDATE photos SET sidecar_mtime = ? WHERE id = ?').run(mtime, id)
   }

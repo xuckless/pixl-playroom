@@ -47,7 +47,8 @@ one file, written transactionally, readable by any SQLite tool or library.
 
 **Writing a file**
 
-- Every change is one transaction.
+- Every change is one transaction (a writer may gather several changes made
+  within a moment into one).
 - Writers never use WAL, so no `-wal` or `-shm` files sit beside the photo.
   Projects live in folders that are copied, synced and backed up.
 - A writer closes the file when idle.

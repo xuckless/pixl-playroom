@@ -529,9 +529,12 @@ After: Passes 2, 13.
 
 After: Pass 27.
 
-- [ ] **L** · Merge recipe, history and preview writes within ~250 ms into
+- [x] **L** · Merge recipe, history and preview writes within ~250 ms into
       one transaction; flush on idle, session close and quit.
-- [ ] **S** · Then `PRAGMA fullfsync` on macOS: `synchronous=FULL` alone
+      _Done: `ProjectPool.write` opens a batch committed after 250 ms (or on
+      leaving Develop, idle close, drop and quit); `tx` inside it is a
+      savepoint; the index notes each commit's mtime (`projectCommitted`)._
+- [x] **S** · Then `PRAGMA fullfsync` on macOS: `synchronous=FULL` alone
       doesn't reach stable storage, so the "every commit on disk" comment
       (`pixlfile.ts:190`) is false today. Measured 15.6 ms per commit,
       affordable once batched.

@@ -198,14 +198,19 @@ export class PixlFile {
   private readonly statements = new Map<string, StatementSync>()
   private depth = 0
   private closed = false
+  /** A batch is open: writes wait for `commitBatch` (see ProjectPool.write). */
+  private batch = false
 
   private constructor(path: string, db: DatabaseSync) {
     this.path = path
     this.db = db
-    // Every open: a rollback journal (never WAL), every commit on disk.
-    // A sync client or a second app reading it is waited for, not failed on.
+    // Every open: a rollback journal (never WAL), every commit on disk. On
+    // macOS an fsync only reaches the drive's cache: F_FULLFSYNC (fullfsync)
+    // is what makes a commit survive power loss, affordable now that commits
+    // are batched (ProjectPool.write). A sync client or a second app reading
+    // it is waited for, not failed on.
     db.exec(
-      'PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;'
+      'PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL; PRAGMA fullfsync = ON; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;'
     )
     this.history = new HistoryTable({
       prepare: (sql) => this.prepare(sql),
@@ -293,8 +298,42 @@ export class PixlFile {
     this.statements.clear()
     // Our own flag: `DatabaseSync.isOpen` is newer than some Node 22 builds.
     if (this.closed) return
+    // Whatever a batch holds is committed, not lost with the connection.
+    this.commitBatch()
     this.closed = true
     this.db.close()
+  }
+
+  /** Whether writes are being gathered into one transaction. */
+  get batching(): boolean {
+    return this.batch
+  }
+
+  /**
+   * Gather the writes that follow into one transaction, until `commitBatch`:
+   * a commit (and its fsyncs) for many edits. Each `tx` inside it is a
+   * savepoint, so one that fails still undoes only itself.
+   */
+  beginBatch(): void {
+    if (this.batch || this.depth > 0 || this.closed) return
+    this.db.exec('BEGIN IMMEDIATE')
+    this.batch = true
+  }
+
+  /** Commit the batch (nothing when none is open). A failed commit rolls it back and throws. */
+  commitBatch(): void {
+    if (!this.batch) return
+    this.batch = false
+    try {
+      this.db.exec('COMMIT')
+    } catch (err) {
+      try {
+        this.db.exec('ROLLBACK')
+      } catch {
+        // Already rolled back by SQLite.
+      }
+      throw err
+    }
   }
 
   prepare(sql: string): StatementSync {
@@ -307,10 +346,20 @@ export class PixlFile {
   }
 
   tx<T>(fn: () => T): T {
-    if (this.depth > 0) {
+    // Inside another transaction (or a batch): a savepoint, so this one
+    // still commits or fails as a whole.
+    if (this.depth > 0 || this.batch) {
+      const sp = `tx${this.depth}`
       this.depth++
+      this.db.exec(`SAVEPOINT ${sp}`)
       try {
-        return fn()
+        const out = fn()
+        this.db.exec(`RELEASE ${sp}`)
+        return out
+      } catch (err) {
+        this.db.exec(`ROLLBACK TO ${sp}`)
+        this.db.exec(`RELEASE ${sp}`)
+        throw err
       } finally {
         this.depth--
       }
@@ -705,36 +754,56 @@ export function fileStamp(path: string): string | null {
   }
 }
 
+/** How long a project's writes are gathered before they are committed together. */
+export const BATCH_MS = 250
+
 /**
  * The index's open projects. Each stays open while it is in use and closes
  * after a moment idle (`IDLE_MS`), so the file sits quiet and whole for
  * Finder, backups and sync. One the disk changed under (synced in, replaced,
  * restored) is reopened, never written through a stale handle.
+ *
+ * Writes (`write`) are gathered per project: the first opens a transaction,
+ * and everything written in the next BATCH_MS (a slider's steps, the recipe
+ * saved with each, the preview) commits with it, once. A crash loses at most
+ * that window. Closing, dropping, `flush` and quitting commit at once.
  */
 export class ProjectPool {
   private readonly open = new Map<
     string,
-    { file: PixlFile; stamp: string | null; timer: ReturnType<typeof setTimeout> | null }
+    {
+      file: PixlFile
+      stamp: string | null
+      timer: ReturnType<typeof setTimeout> | null
+      commit: ReturnType<typeof setTimeout> | null
+    }
   >()
   private readonly idleMs: number
+  private readonly batchMs: number
+  /** Told after a batch is committed (the file's mtime has moved on). */
+  private readonly onCommit: (path: string) => void
   /** The stamp each project was left at by this pool's own last use (kept after it closes). */
   private readonly own = new Map<string, string | null>()
   /** Projects kept open while idle (the photo open in Develop): its statements stay prepared. */
   private readonly pinned = new Set<string>()
 
-  constructor(idleMs = 2000) {
+  constructor(idleMs = 2000, onCommit: (path: string) => void = () => {}, batchMs = BATCH_MS) {
     this.idleMs = idleMs
+    this.onCommit = onCommit
+    this.batchMs = batchMs
   }
 
-  /** Run `fn` on the project at `path`. */
+  /** Run `fn` on the project at `path`, to read it (or to write at once). */
   use<T>(path: string, fn: (p: PixlFile) => T): T {
     let e = this.open.get(path)
-    if (e && e.stamp !== fileStamp(path)) {
+    // A project mid-batch holds the write lock: no other writer can have
+    // changed it, and pages it spilled may have moved its stamp.
+    if (e && !e.file.batching && e.stamp !== fileStamp(path)) {
       this.drop(path)
       e = undefined
     }
     if (!e) {
-      e = { file: PixlFile.open(path), stamp: null, timer: null }
+      e = { file: PixlFile.open(path), stamp: null, timer: null, commit: null }
       this.open.set(path, e)
     }
     if (e.timer) clearTimeout(e.timer)
@@ -745,6 +814,45 @@ export class ProjectPool {
       this.own.set(path, e.stamp)
       e.timer = this.pinned.has(path) ? null : this.idleTimer(path)
     }
+  }
+
+  /** Run `fn`, which writes, on the project: its writes join the batch committed within BATCH_MS. */
+  write<T>(path: string, fn: (p: PixlFile) => T): T {
+    return this.use(path, (p) => {
+      if (!p.batching) {
+        p.beginBatch()
+        const e = this.open.get(path)!
+        e.commit = setTimeout(() => this.commit(path), this.batchMs)
+        e.commit.unref?.()
+      }
+      return fn(p)
+    })
+  }
+
+  /** Whether the pool has the project open. */
+  isOpen(path: string): boolean {
+    return this.open.has(path)
+  }
+
+  /** Commit a project's batch now (one project, or all). */
+  flush(path?: string): void {
+    for (const p of [...this.open.keys()]) if (path === undefined || p === path) this.commit(p)
+  }
+
+  private commit(path: string): void {
+    const e = this.open.get(path)
+    if (!e) return
+    if (e.commit) clearTimeout(e.commit)
+    e.commit = null
+    if (!e.file.batching) return
+    try {
+      e.file.commitBatch()
+    } catch (err) {
+      console.warn('project batch not committed', path, (err as Error).message)
+    }
+    e.stamp = fileStamp(path)
+    this.own.set(path, e.stamp)
+    this.onCommit(path)
   }
 
   private idleTimer(path: string): ReturnType<typeof setTimeout> {
@@ -772,8 +880,9 @@ export class ProjectPool {
 
   /** Close one project (before it is moved or replaced), or all. */
   drop(path?: string): void {
-    for (const [p, e] of this.open) {
+    for (const [p, e] of [...this.open]) {
       if (path !== undefined && p !== path) continue
+      this.commit(p)
       if (e.timer) clearTimeout(e.timer)
       e.file.close()
       this.open.delete(p)
