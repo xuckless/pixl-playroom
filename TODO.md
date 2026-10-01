@@ -421,14 +421,14 @@ Each release runs picture → mask → before → headroom → mask thumbnails
 
 ### Pass 21 — Disk cache hygiene · 4 pts
 
-- [ ] **M** · **Caches grow without limit** (12 GB in `cache/photos` on the
+- [x] **M** · **Caches grow without limit** (12 GB in `cache/photos` on the
       dev machine; 158 `lens-*` files ≈ 1.6 GB for one photo; 2,623 thumbnails
       on disk, 646 referenced). Delete the previous lens set when a new one is
       installed (keep current + one; today only on close, fire-and-forget,
       `render.ts:1443`); unlink the old thumbnail in `setThumb` (`db.ts:680`,
       `library.ts:309`); prune `before-*.png`, `mthumb-*`, `brush-*`, `heal-*`
       and `freeze-*`.
-- [ ] **M** · **The frozen-mask cache misses on every stroke**: keyed on
+- [x] **M** · **The frozen-mask cache misses on every stroke**: keyed on
       `master.path`, which changes per stroke, so a stroke inside a mask
       re-freezes it at full resolution; when it hits, it ignores the grade a
       colour-range mask depends on. Key on the steps' content and the grade.

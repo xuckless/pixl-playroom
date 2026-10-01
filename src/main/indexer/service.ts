@@ -16,6 +16,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   unlinkSync
 } from 'fs'
@@ -1856,7 +1857,13 @@ export class IndexService {
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, stamp: string): void {
+    // The one it replaces goes from the disk (each version has its own name).
+    const was =
+      copyId === null
+        ? this.store.photo(photoId)?.thumb_path
+        : this.store.copiesOf(photoId).find((c) => c.copy_id === copyId)?.thumb_path
     this.store.setThumb(photoId, copyId, path, stamp)
+    if (was && was !== path) rmSync(was, { force: true })
     // The photo's thumbnail is its project's preview too (what a file browser could show).
     const row = this.store.photo(photoId)
     const project = row && copyId === null ? this.projectOf(row) : null
@@ -2016,6 +2023,35 @@ export class IndexService {
    * by reference (presets and sidecars hold the PNGs), so this is safe
    * before anything else has asked for one: at the first start.
    */
+  /**
+   * Drop the thumbnails in `dir` no photo or copy names any more (made for a
+   * recipe since changed, before a replaced one was deleted with it), an hour
+   * old at least so one being written now is not taken. Returns how many went.
+   */
+  pruneThumbs(dir: string): number {
+    const named = this.store.thumbPaths()
+    const now = Date.now()
+    let n = 0
+    let names: string[]
+    try {
+      names = readdirSync(dir)
+    } catch {
+      return 0
+    }
+    for (const name of names) {
+      const file = join(dir, name)
+      if (named.has(file)) continue
+      try {
+        if (now - statSync(file).mtimeMs < 60 * 60 * 1000) continue
+        unlinkSync(file)
+        n++
+      } catch {
+        // Gone already, or not ours to take.
+      }
+    }
+    return n
+  }
+
   prunePlanes(): number {
     // Those stored since the index opened are in use (a stroke not yet in a
     // step, an open project's planes): kept, so this can run after start.

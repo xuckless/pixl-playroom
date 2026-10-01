@@ -32,6 +32,7 @@ import {
   rendererGone,
   takeHandOff
 } from './open'
+import { paths } from './paths'
 import { PlaneStore } from './planestore'
 import { pixels } from './workers/pool'
 import { registerProtocol, registerSchemePrivileges } from './protocol'
@@ -187,6 +188,13 @@ app.whenReady().then(() => {
   // The background engine waits off the launch's path: it starts with the
   // first work for it (a thumbnail, a probe), or a few seconds in.
   setTimeout(() => bgEngine.ensureStarted(), 3000)
+  // Thumbnails nothing names any more, once the launch has settled.
+  setTimeout(() => {
+    void index
+      .pruneThumbs(paths.thumbs())
+      .then((n) => n > 0 && log.info(`pruned ${n} unused thumbnails`))
+      .catch((err) => log.warn('pruning thumbnails failed', err))
+  }, 20_000)
   void engine.whenStarted().then(() => setAbout(engine.getStatus().version))
   const library = new Library(index, bgEngine)
   sessions = new DevelopSessions(library, engine, bgEngine)

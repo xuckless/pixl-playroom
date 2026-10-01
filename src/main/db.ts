@@ -689,6 +689,14 @@ export class Store {
     ).run(JSON.stringify(camera), ...cameraColumns(camera), id)
   }
 
+  /** Every thumbnail file a photo or copy names. */
+  thumbPaths(): Set<string> {
+    const rows = this.prepare(
+      'SELECT thumb_path FROM photos WHERE thumb_path IS NOT NULL UNION SELECT thumb_path FROM copies WHERE thumb_path IS NOT NULL'
+    ).all() as { thumb_path: string }[]
+    return new Set(rows.map((r) => r.thumb_path))
+  }
+
   /** A file version that could not be read (`key` names it), and why. */
   setFailed(photoId: number, key: string, reason: string): void {
     this.prepare('UPDATE photos SET failed_key = ?, failed_reason = ? WHERE id = ?').run(

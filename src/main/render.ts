@@ -76,6 +76,8 @@ import {
   rendersDir
 } from './autowb'
 import { brushPlanes } from './brushes'
+import { paths } from './paths'
+import { sweepPhoto } from './sweep'
 import type { PhotoRow } from './db'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import { keyOf, parseKey } from './keys'
@@ -503,8 +505,12 @@ class Session {
         if (this.baking === key) this.baking = null
         if (this.closed) return
         if (this.lensKey(this.recipe) === key) {
+          const before = this.lensed?.key
           this.lensed = { key, px }
           this.schedule('full')
+          // The sets before the last go now, not only when the photo closes
+          // (each is two proxies: a session of lens edits made gigabytes).
+          void pruneLensed(this.row, this.key, key, before)
         } else this.bake()
       },
       (err) => {
@@ -1584,6 +1590,7 @@ class Session {
     this.regionAbort?.abort()
     // Corrected proxies for any other correction are no longer read.
     void pruneLensed(this.row, this.key, this.lensKey(this.recipe))
+    void sweepPhoto(this.dir, paths.photoCache(this.row.id))
     const saved = (this.save ? this.persist() : Promise.resolve()).then(() => {
       // A thumbnail still waiting for a pause is made now.
       if (this.thumbTimer) this.thumbLater(true)

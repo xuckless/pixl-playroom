@@ -12,7 +12,8 @@
  * pixels: the stroke's region rendered with it and without it, and the patch
  * is where the two differ (times the selected mask, frozen, when one clips it).
  */
-import { readFileSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
+import { rm } from 'fs/promises'
 import { join } from 'path'
 import type { LensCorrection } from '../../shared/engine-types'
 import type { PixelStep } from '../../shared/pixels'
@@ -158,47 +159,69 @@ export async function bakeSpot(
   }
   const a = join(deps.cacheDir, `heal-${stamp}-with.png`)
   const b = join(deps.cacheDir, `heal-${stamp}-without.png`)
-  await Promise.all([render(a, true), render(b, false)])
-  const layer = layerId ? ctx.recipe.layers.find((l) => l.id === layerId) : undefined
-  let mask: { path: string; at: { x: number; y: number } } | undefined
-  if (layer) {
-    const sig = JSON.stringify([master.path, layer.components, layer.invert, ctx.lens])
-    let plane = frozen.get(sig)
-    if (!plane) {
-      plane = (await ctx.freeze(ctx.recipe, layer.id)) ?? undefined
-      if (!plane) return null
-      if (frozen.size > 16) frozen.clear()
-      frozen.set(sig, plane)
-    }
-    mask = { path: plane, at: { x: region.x, y: region.y } }
-  }
   const patchFile = join(deps.cacheDir, `heal-${stamp}-patch.png`)
-  const placed = (await deps.work({
-    op: 'patch',
-    withStroke: a,
-    without: b,
-    out: patchFile,
-    mask
-  })) as { x: number; y: number; w: number; h: number } | null
-  if (!placed) return null
-  const blob = await ctx.store(patchFile, {
-    kind: 'pixels',
-    codec: 'png',
-    width: placed.w,
-    height: placed.h
-  })
-  const what = SPOT_LABEL[spot.kind]
-  return {
-    id: newId(),
-    kind: 'retouch',
-    label: layer ? `${what} in ${layer.name}` : what,
-    blob,
-    alpha: null,
-    scope: layer?.name ?? null,
-    opacity: 100,
-    width: W,
-    height: H,
-    rect: { x: region.x + placed.x, y: region.y + placed.y, w: placed.w, h: placed.h },
-    params: { spot: spot.kind }
+  const bake = async (): Promise<PixelStep | null> => {
+    await Promise.all([render(a, true), render(b, false)])
+    const layer = layerId ? ctx.recipe.layers.find((l) => l.id === layerId) : undefined
+    let mask: { path: string; at: { x: number; y: number } } | undefined
+    if (layer) {
+      // What shapes the frozen mask: its components over this frame through
+      // the lens; a colour or luminance range also keys on the picture (the
+      // pixels and the grade under it). Not the master's file, which every
+      // stroke renames.
+      const keyed = layer.components.some((c) => c.kind === 'range')
+      const sig = JSON.stringify([
+        W,
+        H,
+        layer.components,
+        layer.invert,
+        ctx.lens,
+        keyed ? [master.path, { ...ctx.recipe, layers: [], pixels: [], retouch: [] }] : null
+      ])
+      let plane = frozen.get(sig)
+      // Swept since (a day unused): frozen again.
+      if (plane && !existsSync(plane)) plane = undefined
+      if (!plane) {
+        plane = (await ctx.freeze(ctx.recipe, layer.id)) ?? undefined
+        if (!plane) return null
+        if (frozen.size > 16) frozen.clear()
+        frozen.set(sig, plane)
+      }
+      mask = { path: plane, at: { x: region.x, y: region.y } }
+    }
+    const placed = (await deps.work({
+      op: 'patch',
+      withStroke: a,
+      without: b,
+      out: patchFile,
+      mask
+    })) as { x: number; y: number; w: number; h: number } | null
+    if (!placed) return null
+    const blob = await ctx.store(patchFile, {
+      kind: 'pixels',
+      codec: 'png',
+      width: placed.w,
+      height: placed.h
+    })
+    const what = SPOT_LABEL[spot.kind]
+    return {
+      id: newId(),
+      kind: 'retouch',
+      label: layer ? `${what} in ${layer.name}` : what,
+      blob,
+      alpha: null,
+      scope: layer?.name ?? null,
+      opacity: 100,
+      width: W,
+      height: H,
+      rect: { x: region.x + placed.x, y: region.y + placed.y, w: placed.w, h: placed.h },
+      params: { spot: spot.kind }
+    }
+  }
+  // Its renders and patch are only on the way to the project: gone after.
+  try {
+    return await bake()
+  } finally {
+    for (const f of [a, b, patchFile]) await rm(f, { force: true }).catch(() => undefined)
   }
 }

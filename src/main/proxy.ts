@@ -289,7 +289,9 @@ async function bakeLens(
 export async function pruneLensed(
   photo: PhotoRow,
   itemKey: string,
-  keepKey: string
+  keepKey: string,
+  /** Kept too: the set before (a quick undo back to it finds it made). */
+  alsoKeep?: string
 ): Promise<void> {
   const dir = paths.photoCache(photo.id)
   const file = join(dir, 'keep-lensed.json')
@@ -303,7 +305,9 @@ export async function pruneLensed(
   if (keepKey) kept[itemKey] = keepKey
   else delete kept[itemKey]
   await writeFile(file, JSON.stringify(kept)).catch(() => undefined)
-  const keep = Object.values(kept).map((k) => `lens-${stamp(photo)}-${k}`)
+  const keep = [...Object.values(kept), ...(alsoKeep ? [alsoKeep] : [])].map(
+    (k) => `lens-${stamp(photo)}-${k}`
+  )
   for (const f of await readdir(dir).catch(() => [] as string[])) {
     const isKept = (k: string): boolean => f.startsWith(`${k}.`) || f.startsWith(`${k}-`)
     if (f.startsWith('lens-') && !keep.some(isKept)) await unlink(join(dir, f)).catch(() => {})
