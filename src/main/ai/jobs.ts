@@ -27,6 +27,12 @@ export interface AiContext {
   stage(id: string, p?: number, message?: string): void
   /** How far the current stage is (0…1); `estimated` when it is a guess from time. */
   progress(p: number, estimated?: boolean): void
+  /**
+   * The result is about to be kept (a step added to the photo): throws
+   * `Cancelled` if the job was stopped, and after it a Cancel no longer
+   * stops it — the job ends done, as what it made is the photo's now.
+   */
+  commit(): void
 }
 
 export interface AiRunner<R extends AiStartRequest = AiStartRequest> {
@@ -147,6 +153,7 @@ export class AiJobs {
       }
     }
     update({ phase: 'running' }, true)
+    let committed = false
     const ctx: AiContext = {
       jobId: job.event.jobId,
       key: job.event.key,
@@ -162,16 +169,20 @@ export class AiJobs {
       progress: (p, estimated = false) => {
         stageP = p
         update({ progress: overallProgress(stages, stage, stageP), estimated })
+      },
+      commit: () => {
+        if (job.control.signal.aborted) throw new Cancelled()
+        committed = true
       }
     }
     try {
       const result = await runner.run(ctx, job.req as never)
-      if (job.control.signal.aborted) throw new Cancelled()
+      if (job.control.signal.aborted && !committed) throw new Cancelled()
       job.event = { ...job.event, result, progress: 1, stage: stages.at(-1)?.id ?? stage }
       await this.onResult(job.event)
       this.finish(job, { phase: 'done' })
     } catch (err) {
-      if (job.control.signal.aborted || err instanceof Cancelled) {
+      if (!committed && (job.control.signal.aborted || err instanceof Cancelled)) {
         this.finish(job, { phase: 'cancelled', message: 'Cancelled' })
         return
       }

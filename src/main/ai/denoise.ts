@@ -262,15 +262,18 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       )
       const jxl = join(dir, `denoise-${stamp}.jxl`)
       files.push(jxl)
-      await this.engine.convert({
-        ...blankRequest(result, jxl, 'Tiff'),
-        pixel: { depth: 'Sixteen', channels: 3 },
-        encode: lossless
-          ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
-          : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
-        metadata: ICC_ONLY,
-        color: 'Preserve'
-      })
+      await this.engine.convert(
+        {
+          ...blankRequest(result, jxl, 'Tiff'),
+          pixel: { depth: 'Sixteen', channels: 3 },
+          encode: lossless
+            ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
+            : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
+          metadata: ICC_ONLY,
+          color: 'Preserve'
+        },
+        { signal: ctx.signal }
+      )
       const key = keyOf(row.id, null)
       const blob = await this.library.index.putBlob(key, jxl, {
         kind: 'pixels',
@@ -319,6 +322,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       }
       // Computed on the steps there were when it began: it goes after them,
       // under any (a heal) added while it ran.
+      ctx.commit()
       await addPixelStep(
         this.library,
         this.sessions(),

@@ -113,7 +113,7 @@ After: Pass 1.
 - [x] **S** · **Partial lens map; colliding freeze names.**
       `pixels/lensmap.ts:49` can return a partially written map;
       `freeze.ts:72` names files by `Date.now()` alone.
-- [ ] **S** · **An AI job says "Cancelled" after it applied.** Enhance adds the
+- [x] **S** · **An AI job says "Cancelled" after it applied.** Enhance adds the
       step inside `run()`; Cancel in the save stage throws `Cancelled`
       (`ai/jobs.ts:169`) and skips `onResult`. Check the signal before
       committing, finish as done once committed; give the JXL convert in

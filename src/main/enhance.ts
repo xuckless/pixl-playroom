@@ -266,15 +266,18 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
       )
       const jxl = join(dir, `enhance-${stamp}.jxl`)
       files.push(jxl)
-      await this.engine.convert({
-        ...blankRequest(out, jxl, 'Tiff'),
-        pixel: { depth: 'Sixteen', channels: 3 },
-        encode: lossless
-          ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
-          : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
-        metadata: ICC_ONLY,
-        color: 'Preserve'
-      })
+      await this.engine.convert(
+        {
+          ...blankRequest(out, jxl, 'Tiff'),
+          pixel: { depth: 'Sixteen', channels: 3 },
+          encode: lossless
+            ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
+            : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
+          metadata: ICC_ONLY,
+          color: 'Preserve'
+        },
+        { signal: ctx.signal }
+      )
       const photoKey = keyOf(row.id, null)
       const blob = await this.library.index.putBlob(photoKey, jxl, {
         kind: 'pixels',
@@ -321,6 +324,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         params: { chain: subject, scale: k, resizes: k > 1, lossless }
       }
       // Over the steps there were when it began, under any added while it ran.
+      ctx.commit()
       await addPixelStep(
         this.library,
         sessions,
