@@ -15,8 +15,11 @@ import {
   type Step
 } from '../src/shared/history'
 import {
+  applyGroups,
+  changedGroups,
   defaultRecipe,
   GROUP_LABELS,
+  isEdited,
   newLocalLayer,
   type Recipe,
   type RangeComponent
@@ -132,6 +135,19 @@ test('the summary names the groups a step changed', () => {
     GROUP_LABELS.detailSharpen,
     GROUP_LABELS.orientation
   ])
+  const c = structuredClone(a)
+  c.geometry.upright.vertical = 20
+  assert.deepEqual(patchSummary(diffRecipe(a, c)), [GROUP_LABELS.upright])
+})
+
+test('an Upright-only edit is an edit, in its own group', () => {
+  const plain = defaultRecipe(true)
+  const r = structuredClone(plain)
+  r.geometry.upright.vertical = 20
+  assert.equal(isEdited(r, true), true)
+  assert.deepEqual(changedGroups(r, plain), ['upright'])
+  assert.deepEqual(applyGroups(plain, r, ['upright']).geometry.upright, r.geometry.upright)
+  assert.deepEqual(applyGroups(plain, r, ['crop']).geometry.upright, plain.geometry.upright)
 })
 
 function withStore(fn: (store: Store, file: string) => void): void {

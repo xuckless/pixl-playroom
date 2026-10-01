@@ -242,6 +242,7 @@ function groupOf(path: Seg[]): RecipeGroup | null {
     case 'detail':
       return typeof sub === 'string' && DETAIL_SHARPEN.has(sub) ? 'detailSharpen' : 'detailNoise'
     case 'geometry':
+      if (sub === 'upright') return 'upright'
       return typeof sub === 'string' && GEOMETRY_ORIENTATION.has(sub) ? 'orientation' : 'crop'
     case 'layers':
       return 'localAdjustments'

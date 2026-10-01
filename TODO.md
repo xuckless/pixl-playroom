@@ -1,19 +1,945 @@
 # TODO — Pixl Playroom
 
-Everything the first pass deliberately left out, and what it found along the
-way. Grouped by area; roughly in priority order within each.
+Everything still open in Playroom, as numbered **passes**: small, ordered
+batches of related work a model (or you) can take one at a time. Work the
+engine has to do is in [ENGINE-REQUESTS.md](ENGINE-REQUESTS.md) (E1, E2…);
+Playroom work that waits on it is under "Waiting on the engine". Things only
+you can do (accounts, certificates, lawyers, decisions) are under "Owner
+tasks". What is finished is under "Done" at the end. Re-planned 2026-10-01
+from the old TODO and a full performance and bug sweep.
 
-## Before a first release
+## How to read this
 
-- [ ] **Enhance in the published engine.** The published binding is built
-      without the engine's Enhance support, so `hasEnhance()` is false and
-      Enhance says so; the release still bundles the runtime and model.
-- [ ] **Code signing**: CI, release-please and the release builds
-      (GitHub-hosted, per-arch, `pnpm fetch-ai` per target) are set up as in
-      space-pixl, but builds are unsigned until the signing secrets exist. The
-      steps (Apple Developer ID and notarization; Azure Trusted Signing or an
-      OV/EV certificate on Windows) are in `.github/RELEASING.md`. Start now:
-      both take days.
+| Size            | Points   | Roughly                                                 |
+| --------------- | -------- | ------------------------------------------------------- |
+| S               | 1        | a local fix in one or two files                         |
+| M               | 2        | a few files, or one with a test to write                |
+| L               | 3        | a feature or refactor across several modules            |
+| XL              | 4        | a large feature, several days                           |
+| XXL             | 5        | the largest that still fits one pass                    |
+| XXXL, 4XL, 5XL… | 6, 7, 8… | each extra X adds a point: an epic, split across passes |
+
+- A pass is at most **5 points**. An item over 5 points is an epic, and its
+  parts are graded and spread over consecutive passes (marked "1/3", "2/3"…).
+- Passes are in order. "After" names the passes (or engine requests) a pass
+  depends on; otherwise passes in the same phase can be taken in any order.
+- Each pass is tested and committed before the next.
+- File references are where the 2026-10-01 sweep found the problem; check
+  they still hold before changing anything.
+
+---
+
+## Phase A — Bugs: lost edits and wrong output (passes 1–11)
+
+### Pass 1 — Lost and misdirected edits · 5 pts
+
+- [ ] **S** · **An Upright-only edit is lost on save.** `geometry.upright` is
+      in no recipe group (`shared/recipe.ts:707-831`), so `isEdited` is false
+      and `saveRecipe` stores `null` (`indexer/service.ts:1608`); Upright also
+      can't be pasted, synced or put in a preset. Add it to the `crop` group
+      (or its own) and test.
+- [ ] **M** · **Switching photos quickly can open the wrong one.**
+      `develop.open` (`state/develop.ts:287-334`) has no generation check after
+      its awaits, and `session` keeps the old photo while loading; main's
+      `DevelopSessions.open` (`render.ts:1467-1491`) closes other sessions
+      before its own awaits, so two can stay live. Arrowing through the
+      filmstrip can show B while C is selected, and edits go to the wrong
+      photo. Add an open token on both sides; clear `session` at the start.
+- [ ] **S** · **Undo can hide the wrong step.** `commit` fires
+      `historyAppend` without awaiting it (`develop.ts:369`); `undo` waits only
+      for `landing`, so a quick Cmd+Z hides the previous step and the commit's
+      `.then` clears `redo`. Chain the append through `queueHistoryOp`.
+- [ ] **S** · **Paste and Sync in Develop skip history.**
+      `commands.ts:438-441` and `Dialogs.tsx:752-755` set the recipe with no
+      step, so Cmd+Z undoes the edit before the paste. Use
+      `replace(recipe, 'Paste settings')`; add a `.catch` (errors are
+      swallowed).
+
+### Pass 2 — Saves, exports and thumbnails · 5 pts
+
+After: Pass 1.
+
+- [ ] **M** · **A crash can silently revert the last edits.** The recipe is
+      saved 600 ms after its history step and a failed `persist` is only logged
+      (`render.ts:488-491`); on the next open the stale recipe is recorded as
+      "Opened as saved" (`develop.ts:316-322`). Write the history step and the
+      recipe in one project transaction; tell the user when a save fails.
+- [ ] **S** · **Export can overwrite the original on a case-insensitive
+      disk.** The guard is `out === row.path` (`exporter.ts:223`), so
+      `IMG_1.jpg` passes for `IMG_1.JPG` with collision "overwrite". Compare
+      `realpath` or dev+inode (or case-fold on darwin/win32), before the
+      collision branch.
+- [ ] **S** · **Stale thumbnail and preview after an edit.** `queueThumb`
+      skips a key still in `queued` (`library.ts:259-263, 279-283`), so an
+      edit saved while that photo's thumbnail renders never re-queues. Mark it
+      dirty and render again after.
+- [ ] **S** · **Two thumbnail renders can write the same file.**
+      `hashPicture` calls `this.thumb()` directly (`library.ts:183`), bypassing
+      the queue; same stamp, same output name (`library.ts:309-312`). Route it
+      through the queue.
+
+### Pass 3 — Render file races · 5 pts
+
+- [ ] **M** · **Two builds of the same working set at once.** The in-flight
+      key includes `m`/`p` (`pixels/working.ts:286`), so after a heal stroke
+      `bakeSpot` (`render.ts:1411`) and `refreshWorking` both write
+      `proxy.tiff`/`draft.tiff` in place; a render can read a half-written
+      file, and `set.json` (last writer wins) can lose `master`. One in-flight
+      build per key, master chained after proxies; write to a temp name and
+      rename (see E5).
+- [ ] **M** · **A recycled preview slot can show the wrong picture.**
+      `lastEvent[kind]` keeps `view-<slot>`, but the 6 slots are shared with
+      mask and headroom (`render.ts:563-593`); a full render matching an
+      earlier signature re-sends a file that now holds another draft. Masked
+      stats and pickers read it too. Name each render's file uniquely and
+      prune, or drop `lastEvent` when its slot is reused.
+- [ ] **S** · **One failed lens bake degrades the session until the next
+      edit.** `bakePending()` stays true (`render.ts:458-461, 526, 558`), so
+      settled renders use the draft and mask/before/headroom never run.
+      Remember the failed key, treat it as not pending, schedule a full render.
+
+### Pass 4 — Denoise, virtual copies, AI jobs · 5 pts
+
+- [ ] **M** · **Denoise can drop heals, then flashes the original.** The
+      denoise step is computed on the steps that existed when it started and
+      appended on top of heals made meanwhile (`ai/denoise.ts:166-201`);
+      `addPixelStep` doesn't wait for the working pixels (`steps.ts:18-19`) and
+      `finally` clears the preview (`denoise.ts:325`), and the preview TIFF is
+      deleted while a queued render may read it. Insert at the computed
+      position (or serialise the jobs); await `refreshWorking`, then delete.
+- [ ] **S** · **Closing one virtual copy deletes the others' lens-corrected
+      proxies.** `pruneLensed` keeps only the closing copy's set
+      (`render.ts:1443`, `proxy.ts:291-297`); keep every copy's current set.
+- [ ] **S** · **Partial lens map; colliding freeze names.**
+      `pixels/lensmap.ts:49` can return a partially written map;
+      `freeze.ts:72` names files by `Date.now()` alone.
+- [ ] **S** · **An AI job says "Cancelled" after it applied.** Enhance adds the
+      step inside `run()`; Cancel in the save stage throws `Cancelled`
+      (`ai/jobs.ts:169`) and skips `onResult`. Check the signal before
+      committing, finish as done once committed; give the JXL convert in
+      `enhance.ts` (~268) the signal.
+
+### Pass 5 — Crop and orientation · 5 pts
+
+- [ ] **M** · **A crop collapses to 0×0 under Upright.** `dragCrop` calls
+      `cropFits` without `g.transform` (`crop.ts:45`), so crops reach the empty
+      wedges; `fitCrop` (`compile.ts:436-461`) only shrinks about the centre and
+      ends at width 0, which the engine refuses. Pass the transform; in
+      `fitCrop` move the centre in when it doesn't fit, with a minimum size.
+      (Reproduced: Upright Scale 75, crop {0.8, 0.8, 0.2, 0.2}.)
+- [ ] **M** · **Flip and Rotate leave geometry in the old frame.** Flip keeps
+      the crop and straighten unmirrored (`renderer/lib/geometry.ts:17`), so the
+      other half shows and a level horizon is 6° off; Rotate keeps the aspect
+      lock (a 3:2 crop cuts 56% after rotating) and Upright's `suggested` and
+      guides in the old orientation (`geometry.ts:14-16`, `render.ts:1296`).
+      Mirror `crop.x` and negate straighten and Upright on flip; invert the
+      aspect and clear or remap Upright on an odd turn.
+- [ ] **S** · **A tiny straighten is refused.** Under 5e-5 it rounds to
+      `rotate_degrees: 0` but still sets `outside: 'Crop'`
+      (`compile.ts:1196`). Test the rounded value.
+
+### Pass 6 — Mask and heal precision · 5 pts
+
+- [ ] **S** · **A Subtract component becomes Add** when the one before it is
+      dropped (a brush whose plane didn't hydrate, a one-point lasso):
+      `compile.ts:725-730` promotes it. Drop leading non-Add components.
+- [ ] **S** · **Heal lens map read with the wrong pixel convention**:
+      written as i/(mw−1), read as a fraction by `toSource` and as v·(w−1) by
+      `unwarpMask` (`pixels/heal.ts:58-70`, `ops.ts:93`); ±2.8 px at the edges
+      of 6000 px. Use (v·(mw−1)+0.5)/mw.
+- [ ] **S** · **Heal radius not mapped through the lens correction.**
+- [ ] **S** · **Proxy heal patches snap to whole pixels** (a 15.8 px patch is
+      drawn at 17 px).
+- [ ] **S** · **Mask overlay draws gradients compile drops** (no plane file
+      yet), so the overlay shows a mask that isn't applied.
+
+### Pass 7 — Lens, presets and paste · 5 pts
+
+- [ ] **S** · **Lens profile resolve throws at f-number 0** (manual or adapted
+      lenses): `stops(0)` is −Infinity, the aperture filter returns `[]`, and
+      `interpolate([])` crashes (`lens.ts:446-453`, `lensprofiles.ts:355`).
+      Treat ≤ 0 or non-finite as null; guard the empty list.
+- [ ] **S** · **Lens paste carries the source's measured CA** to every target
+      (`main/ipc.ts:206-214`); a failed re-resolve keeps the source's profile;
+      Develop presets re-resolve nothing. Clear or re-measure `ca`; set
+      `resolved = null` in the catch.
+- [ ] **S** · **Old saved presets are never normalised** (`db.ts:815`,
+      `left.tsx:41`); one saved before `colorGrade.add`/`effects.wash` makes
+      compile throw. Normalise when listing.
+- [ ] **S** · **Sync and Save Preset on an untouched RAW pre-tick profile,
+      sharpening and noise** (`Dialogs.tsx:722, 853` compare against
+      `defaultRecipe(false)`); syncing to JPEGs gives them the Standard
+      profile, sharpening 40 and colour NR 25. Use `defaultRecipe(isRaw)`.
+- [ ] **S** · **A pasted crop isn't rebuilt to the locked aspect** on a
+      differently shaped photo.
+
+### Pass 8 — Recipe hardening · 5 pts
+
+- [ ] **M** · **`normaliseRecipe` doesn't validate inside arrays**
+      (`recipe.ts:568-607`): `layers: [null]` throws; a layer without
+      `enabled`/`opacity`/`blend` compiles to `opacity: null`; `splits: [25]`
+      gives null curve values; a null curve point throws; a one-point curve
+      reaches the engine; a non-object crop compiles to NaN. Normalise layer
+      fields, splits, curve points and the crop rectangle; add fuzz cases.
+- [ ] **S** · **`curve()` dedupes before `round4`**, so 0.50001 and 0.50004
+      both become 0.5 (not strictly increasing).
+- [ ] **S** · **`changedGroups`/`isNeutral` compare with `JSON.stringify`**,
+      so the same values in another key order count as changed.
+- [ ] **S** · **Vignette rotation is clamped to ±45 after Upright's rotate is
+      subtracted.**
+
+### Pass 9 — App-level bugs · 5 pts
+
+- [ ] **S** · **Shortcuts leak through the confirm dialog.** `App.tsx:333`
+      checks only `lib.dialog`; Esc on a confirm also runs `develop.escape`
+      (can jump to the Library), Delete removes the selected mask, digits rate.
+      Also return when `useConfirm.getState().open`.
+- [ ] **S** · **The updater loses a downloaded update.** The 4-hour re-check
+      after a download sets `checking`, then `error` offline
+      (`updater.ts:51`); `installUpdate` (`updater.ts:63`) then refuses. Skip
+      checks once downloaded, or keep a `downloaded` flag.
+- [ ] **S** · **A finished model `.part` never resumes**: quitting during the
+      checksum makes the next try send `Range: bytes=<size>-` → HTTP 416,
+      forever (`ai/models.ts` `fetchFile`). If `from === bytes`, verify and
+      rename; on 416, delete the part and restart.
+- [ ] **S** · **ImageBitmaps are never closed** (`MaskCanvas.tsx:159, 172,
+    226-227`): drafts arrive per frame and hold tens of MB until GC. Close
+      on replace and eviction.
+- [ ] **S** · **exifr leaks a FileHandle on Node 26**
+      (`exifr/src/file-readers/FsReader.mjs:27-28`: `fh.stat(path)` is refused
+      and the handle is garbage-collected; a truncated JPEG kills the
+      process). Electron 44 (Node 24) is fine today. Read the head ourselves
+      (as `headOf` does) and pass exifr a Buffer (`camera.ts:56`); add a real
+      JPEG fixture. Replaces the old "indexer test fails on Node 26" item,
+      which passes now.
+
+### Pass 10 — Projects and durability · 5 pts
+
+- [ ] **L** · **Projects are linked to photos by name only**
+      (`service.ts:399-408`). A new `IMG_0001.JPG` after a counter reset
+      inherits an old project (recipe, history, embedded original); a renamed
+      photo detaches and its project shows as a stand-in. Check size and SHA-1
+      from `origin`; follow a rename by hash.
+- [ ] **M** · **Quit and create can leave a torn project.** `stop()` kills the
+      index host after 2 s (`indexer/client.ts:79-82`), mid-transaction during
+      an embed or scan, leaving a hot `.pixl-journal` beside the photo;
+      `createProject` renames into place without a directory fsync, then
+      deletes the sidecar and index history (`service.ts:516-521`,
+      `pixlfile.ts:234`). Ask the host to finish its transaction and close;
+      fsync the directory before deleting the old copies.
+
+### Pass 11 — Behaviour calls (needs your decision first) · 4 pts
+
+- [ ] **M** · **On a B&W photo a mask's Temp/Tint adds colour**: mask layers
+      run after the base layer's saturation 0 (`compile.ts:1044`). Decide:
+      keep (it's a tint tool) or run masks before B&W.
+- [ ] **M** · **Built-in presets replace whole groups**: "Soft portrait"
+      resets exposure and whites to 0; "Warm film" deletes point colours.
+      Decide: partial presets (only the fields they set) or keep.
+
+---
+
+## Phase B — Performance: quick wins (passes 12–22)
+
+Biggest felt lag first: slider jank, save cost, background contention.
+
+### Pass 12 — Slider jank · 5 pts
+
+- [ ] **M** · **`edit()` deep-clones the whole recipe on every input event**
+      (`state/develop.ts:354`: `structuredClone`), so every subscriber to any
+      slice re-renders per tick: the Loupe, both `MasksWindow`s, every slider
+      in the open panel, the presets rail. Use structural sharing (immer
+      `produce`) so untouched slices keep their identity; have `RS`
+      (`global.tsx:63`) select its own number.
+- [ ] **S** · **Loupe geometry and mask redraw per tick.** Memoise
+      `viewGeometry` (`Loupe.tsx:131`) on the geometry/lens slices so
+      `SharpTile`, `BrushLayer`, `GradientTools`, `LassoEditor` keep `memo`;
+      `MaskCanvas` compares `layer.components` by identity instead of a global
+      subscribe with `JSON.stringify` (`MaskCanvas.tsx:122-123`) and stops the
+      GL `compose()` per tick (`:308`).
+- [ ] **S** · **`edit()` + `commit()` send two identical updates** (hydrate,
+      normalise and compile twice; the first render aborted):
+      `masks/model.ts:280-302`, `BrushTool.tsx:226-250`, `ui.tsx:140-153`.
+- [ ] **S** · **Listener and poll churn**: `Slider`'s effect has no deps and
+      re-adds two window listeners every render (`ui.tsx:131`); `ProjectRows`
+      polls IPC every 4 s forever (`left.tsx:321`); `usePresets(4000)`
+      (`hooks.ts:13`) re-sets the list every 4 s; `BrushLayer` sets state per
+      pointermove for the cursor (`BrushTool.tsx:269-270`).
+
+### Pass 13 — History and save cost · 5 pts
+
+- [ ] **S** · **History replay clones the whole recipe per step**
+      (`history.ts:144`), and `append` reads the whole history three times
+      (`historytable.ts:130-152`): ~20 ms at 200 steps, linear, in the index
+      process every commit and on the renderer's main thread every undo.
+      Clone once, apply ops in place (measured ~18 ms → ~0.3 ms); build the
+      log in memory.
+- [ ] **S** · **Reading history takes a write lock and records a write**:
+      `BEGIN IMMEDIATE` (`historytable.ts:90`, `pixlfile.ts:298`) and
+      `noteProjectWrite` (`service.ts:1758-1768`) on a read. Drop both.
+- [ ] **S** · **Every save rewrites every item and snapshot**
+      (`service.ts:1586-1590`, `pixlfile.ts:406-442`). Update the changed row
+      only; skip `putPlane` for refs already stored.
+- [ ] **S** · **Thumbnail jobs read and hash whole hydrated projects**
+      (`service.ts:1694-1714`): read one item, keep it slim, hash the slim
+      recipe.
+- [ ] **S** · **The origin cache misses after our own writes** (keyed on the
+      file stamp, `service.ts:300-308`), opening a second connection per edit.
+      Invalidate on `setOrigin` or a foreign change only.
+
+### Pass 14 — Index plumbing · 5 pts
+
+After: Pass 13.
+
+- [ ] **S** · **The open photo's project closes after 2 s idle**
+      (`pixlfile.ts:665`), dropping its statement cache. Keep the Develop
+      photo's project open until its session closes.
+- [ ] **S** · **No busy timeout, loose transactions, a missing index**: set
+      `busy_timeout` 2–5 s; wrap `mirror` and `openData`'s plane copies in a
+      transaction; `CREATE INDEX photos_project ON photos(project_path)`.
+- [ ] **S** · **Opening a photo waits on sequential calls**
+      (`develop.ts:311-322`): run `open` and `historyList` together; compare
+      recipes with a deep-equal, not `JSON.stringify` (key order makes a
+      spurious "Opened as saved").
+- [ ] **S** · **`isEdited` does ~76 deep clones per call** (19 groups × 2
+      `applyGroups`), per photo in the indexer (`service.ts:703, 713, 1608,
+    1710`). Compare each group's fields directly; stop at the first change.
+- [ ] **S** · **A thumbnail render and preview write at every 600 ms pause**
+      (`render.ts:479, 489`; `library.ts:353-418`): a full graded render on the
+      background engine that warps the lens live. Queue them on session close
+      or after a few seconds idle.
+
+### Pass 15 — Background work stops competing with editing · 5 pts
+
+- [ ] **M** · **Background engine work uses every core.** `blankRequest`
+      defaults to `INTERACTIVE_THREADS` (`source.ts:216`) and `proxy.ts` never
+      overrides it: proxy builds, the bake after every lens/heal edit
+      (`render.ts:435-462`), `ensureMaster`, export encode (`exporter.ts:199`),
+      Auto WB analyze (`autowb.ts:51`). Pass `BACKGROUND_THREADS` from
+      background callers.
+- [ ] **S** · **No process is niced.** `os.setPriority(pid, 10)` for the
+      background and AI engines and the index host.
+- [ ] **M** · **Batches that can't be stopped or bounded.** Auto WB queues
+      every photo at once with `Promise.all` (`autowb.ts:269`); 500 RAWs = 500
+      proxy builds, no cancel. Whole-library duplicates (dHash renders) keep
+      going after you navigate away (`library.ts:161-179`). Limit Auto WB to 2
+      at a time with Cancel; tie duplicates to an AbortSignal.
+
+### Pass 16 — The settled-render chain · 5 pts
+
+Each release runs picture → mask → before → headroom → mask thumbnails
+(`render.ts:526-531`), each decoding and grading again.
+
+- [ ] **S** · **The mask plane re-renders after every slider change**: its
+      key includes `lastFull`, a rotating file name (`render.ts:795`), then
+      `analyze` decodes the JPEG and plane again (`:830`). Give the plane its
+      own key; re-analyze only when the picture changed.
+- [ ] **S** · **Mask thumbnails render at 1280 for ~64 px tiles**, and range
+      masks' keys include the grade (`render.ts:859, 896`). Render at ~256.
+- [ ] **S** · **"Before" is a 2560 PNG even without alpha**
+      (`render.ts:977-983`). JPEG when there is no transparency.
+- [ ] **S** · **Previews are JPEG q95 with no chroma subsampling**
+      (`render.ts:606`). Use 4:2:0 for full renders.
+- [ ] **S** · **The plane store LRU holds 48** (`planestore.ts:12`): a photo
+      with more brush components misses on every update. Size it by bytes.
+
+### Pass 17 — Compile hot path and opening a photo · 5 pts
+
+- [ ] **M** · **Per-frame hashing on the main process**: `brushPlanes`
+      re-hashes each brush PNG per compile (`brushes.ts:56`) though the key
+      equals `planeRef`; `lensKey()` runs 4–6 times per update
+      (`render.ts:407, 424, 502, 554, 558`); the cache key stringifies a
+      ~28 KB `.cube` whenever exposure > 0 (`compile.ts:959`). Key brushes by
+      ref; memoise `lensKey` on lens/retouch identity; key the cube by hash.
+- [ ] **M** · **Opening a photo is one long serial path**
+      (`render.ts:1475-1490`): `probe` runs on the background engine
+      (`library.ts:95`) behind thumbnails and exports, its cache is in memory
+      only, and the first render is a full 2560 render plus a 2560 before.
+      Probe on the interactive engine and persist probes; render a draft
+      first.
+- [ ] **S** · **An untouched framing misses the engine's fast path**: an
+      aspect equal to the frame's emits a `{0,0,1,1}` crop.
+
+### Pass 18 — Glass and UI loops · 5 pts
+
+- [ ] **S** · **The liquid-glass filter re-filters every frame during pan,
+      zoom, brush and window drags**: only `edit()` sets `data-interacting`
+      (`develop.ts:359`; `primitives.css:747-751`). Call `touchInteracting()`
+      in `Loupe.tsx:186` `preview`, the brush pointermove and `startDrag`.
+- [ ] **S** · **A WebGL gradient renders at 30 fps behind every dialog**
+      (`fx/AmbientGradient.tsx:71`, `DialogBackdrop.tsx:14`) under refracting
+      glass. Stop its clock after one frame there; flat glass for modals.
+- [ ] **S** · **An open Popover runs a layout-forcing rAF loop**
+      (`Popover.tsx:79-100`). ResizeObserver plus scroll/resize listeners.
+- [ ] **S** · **Range masks re-decode the full preview on every draft**
+      (`MaskCanvas.tsx:167-177, 308`). Decode downscaled; refresh on settled
+      renders only.
+- [ ] **S** · **Dragging the masks window writes localStorage per pointer
+      move** (`MasksWindow.tsx:695` → `ui.ts:177`, no `partialize`). Move it by
+      transform, commit on pointer-up; `partialize` and throttle storage.
+
+### Pass 19 — Library responsiveness and the startup chain · 5 pts
+
+- [ ] **M** · **The library re-sorts everything on every thumbnail.**
+      `onThumb` does `items.find` + `patchItems` over all items
+      (`App.tsx:360-367` → `library.ts:265-276`): O(n²) while a folder fills.
+      `useVisible()` filters and sorts 3–5 times per change; the inline
+      `onOpen`/`onPick` defeat `memo` (`Library.tsx:468`, `Filmstrip.tsx:38`);
+      `selection.includes` per tile (`Library.tsx:49`); `MetadataEditor.tsx:236`
+      is O(N·K); search filters per keystroke. Batch thumbnail events per frame
+      with a key→index map; compute `visible` once; stable callbacks by key; a
+      `Set` selection; `Intl.Collator`; `useDeferredValue` on the search.
+- [ ] **S** · **The startup chain is serial**: the index host runs
+      `prunePlanes` (a regex over all history JSON, 3.5 MB and growing) before
+      hello (`indexer/host.ts:31-38`); the renderer loads recents,
+      collections and keywords before opening the last folder
+      (`App.tsx:410-422`). Say hello first and prune when idle; open the last
+      source alongside.
+- [ ] **S** · **Startup does work it could defer**: both lens catalogues are
+      parsed, hashed and validated (`lensprofiles.ts:207-210`, and again in
+      `check()` at `:266`) — compare `generated` dates and parse the newer;
+      `bgEngine.start()` is eager (`index.ts:192`); `sysctl` via
+      `execFileSync` at module load (`source.ts:146`).
+- [ ] **S** · **Unreadable files are retried every launch** (failures in
+      memory only, `service.ts:174`). Persist them with the version key.
+
+### Pass 20 — Startup relaunch and folder open · 4 pts
+
+- [ ] **M** · **A packaged launch on a Retina Mac starts twice**, after
+      loading every static import (electron-updater ~65 ms, exiftool-vendored
+      ~36 ms): `bootScale` relaunches when the scale switch is missing
+      (`display.ts:38, 92-101`; `index.ts:55-59`). A tiny entry that runs
+      `bootScale` first, then imports the app; load the updater only when
+      packaged and exiftool only for export and metadata.
+- [ ] **M** · **Opening a folder redoes all per-item work.** A full rescan
+      every time (`service.ts:217-222`), an unchunked `statSync` loop in
+      `fillXmp` (`:757-765`), a thumbnail job per item (`library.ts:136, 151`)
+      whose `recipe()` opens each sidecar or `.pixl`, and `fillCameras`
+      triggering a second full `refresh()`. Store the recipe hash in the row so
+      a thumbnail job compares stamps without reading files; skip a rescan done
+      seconds ago; chunk `fillXmp`.
+
+### Pass 21 — Disk cache hygiene · 4 pts
+
+- [ ] **M** · **Caches grow without limit** (12 GB in `cache/photos` on the
+      dev machine; 158 `lens-*` files ≈ 1.6 GB for one photo; 2,623 thumbnails
+      on disk, 646 referenced). Delete the previous lens set when a new one is
+      installed (keep current + one; today only on close, fire-and-forget,
+      `render.ts:1443`); unlink the old thumbnail in `setThumb` (`db.ts:680`,
+      `library.ts:309`); prune `before-*.png`, `mthumb-*`, `brush-*`, `heal-*`
+      and `freeze-*`.
+- [ ] **M** · **The frozen-mask cache misses on every stroke**: keyed on
+      `master.path`, which changes per stroke, so a stroke inside a mask
+      re-freezes it at full resolution; when it hits, it ignores the grade a
+      colour-range mask depends on. Key on the steps' content and the grade.
+
+### Pass 22 — HDR and pixel-step formats · 5 pts
+
+- [ ] **M** · **HDR paths inflate 16-bit PNGs per render**: PQ/HLG proxies
+      are 16-bit PNG (`proxy.ts:117-122`); `measureHdr` runs a second graded
+      pass written as a 16-bit PNG only to measure it (`render.ts:597, 666`);
+      the gain-map master is a 16-bit PNG (`hdrsource.ts:95-110`, 1–2 s to
+      inflate per 1:1 tile); 1:1 tiles are PNG at device size
+      (`render.ts:1017-1072`). Uncompressed TIFF where cICP isn't needed, a
+      cheap encoder for the stats pass, JPEG tiles.
+- [ ] **S** · **Pixel steps**: `layOn` runs proxy then draft in sequence
+      (`working.ts:344-357`), and `stepImage`/`sized()` write full-resolution
+      16-bit PNG caches (`working.ts:113-172`). `Promise.all`; TIFF.
+- [ ] **M** · **HeadroomOverlay is a full-preview CPU pass**
+      (`HeadroomOverlay.tsx:49-58`: `getImageData` + LUT + `putImageData`, ~5 MP
+      per settled HDR render). A GPU LUT, as `ClippingOverlay` does.
+
+---
+
+## Phase C — Release code (passes 23–26)
+
+Code that ships with the first paid release. Each waits on an owner task.
+
+### Pass 23 — Licence enforcement · 3 pts
+
+After: Owner tasks "Lemon Squeezy store" and "What a lapsed licence locks".
+
+- [ ] **S** · Set `LS_PRODUCT` (store and product ids) in
+      `src/shared/licence.ts` so other products' keys are refused; test with a
+      test-mode key (`PLAYROOM_LICENCE_UI=1` in a packaged build).
+- [ ] **M** · Gate what an ended trial and an unconfirmed licence
+      (`revalidate`) lock with `allows()`, show the Licence section in
+      production, and flip `LICENCE_ENFORCED`.
+
+### Pass 24 — Crash reports kept · 5 pts
+
+After: Owner task "Where crash reports live". Partly in pixl-web.
+
+- [ ] **L** · Store crash reports: R2 with the retention period (the Worker
+      only logs a summary today), or Sentry's Electron SDK taking over from
+      `crashReporter` (`src/main/crash.ts`).
+- [ ] **M** · Symbol files for minidumps, uploaded by the release build.
+
+### Pass 25 — Trials recorded on the server · 3 pts
+
+After: Pass 23. pixl-web plus `src/main/licence.ts`.
+
+- [ ] **L** · The trial's start lives in `licence.json`, which deleting
+      resets. Record trials on the server by device, if that matters.
+
+### Pass 26 — Freeing a lost device · 3 pts
+
+After: Pass 23. pixl-web.
+
+- [ ] **L** · The website account lists a licence's devices and frees one
+      (the app can only free its own place; today it's by email).
+
+---
+
+## Phase D — Performance: architecture (passes 27–35)
+
+### Pass 27 — History keyframes · 3 pts
+
+After: Passes 2, 13.
+
+- [ ] **L** · Store a full recipe every K steps (or a cached head) so
+      appending is O(1) and hide/show replays from the nearest keyframe; make
+      `items.recipe` the history head, written in the same transaction.
+
+### Pass 28 — One write-behind queue per project · 4 pts
+
+After: Pass 27.
+
+- [ ] **L** · Merge recipe, history and preview writes within ~250 ms into
+      one transaction; flush on idle, session close and quit.
+- [ ] **S** · Then `PRAGMA fullfsync` on macOS: `synchronous=FULL` alone
+      doesn't reach stable storage, so the "every commit on disk" comment
+      (`pixlfile.ts:190`) is false today. Measured 15.6 ms per commit,
+      affordable once batched.
+
+### Pass 29 — Mask planes as content-addressed blobs · 4 pts
+
+After: Pass 28. A `.pixl` format version bump (docs/pixl-format.md).
+
+- [ ] **XL** · Store planes as binary BLOBs keyed by SHA-256 in the existing
+      `blobs` table instead of base64 TEXT (a third larger); only refs cross
+      IPC (today `saveRecipe`, `thumbJob`, `openData` and `slim` ship PNGs
+      between processes, ~800 KB with two brush masks). Retires the 32-bit
+      `hash32` + length ref, where a collision under `INSERT OR IGNORE` could
+      silently swap masks. Migrate existing projects.
+
+### Pass 30 — Off the index request loop · 5 pts
+
+- [ ] **L** · Embedding the original (`putBlobFile`, `pixlfile.ts:507`: a
+      SHA-256 of the whole file, synchronous) and `gc` block every index
+      request, saves included. Move them to a worker with its own connection,
+      or chunk them in small transactions with `state=pending`.
+- [ ] **M** · Take the library thumbnail from the picture Develop already
+      rendered instead of a second background render.
+
+### Pass 31 — One engine scheduler · 5 pts
+
+After: Pass 15.
+
+- [ ] **L** · Hold background requests while interactive renders are in
+      flight; don't start the next render until a cancelled one has stopped
+      (`client.ts:258-263` settles at once; better with E6). The libuv pools
+      (8/4) aren't the bottleneck; too many engine threads are.
+- [ ] **M** · A ~1920 px proxy between the draft and the 2560: on a Retina
+      loupe `targetEdge` is box × DPR, so nearly every settled render uses
+      2560 (`render.ts:559-560`); ~44% fewer pixels on a 1200 pt loupe.
+
+### Pass 32 — The preview as pixels, not a file · 4 pts
+
+After: Pass 31.
+
+- [ ] **XL** · Each settled render writes a 2–4 MB JPEG, streams it back
+      through `protocol.handle` in main-process JS (`protocol.ts:43-48`), and
+      the loupe decodes it (~30–50 ms). Hand the renderer raw pixels
+      (`Encode::Pixels`, engine 0.15) over a transferred `MessagePort` into a
+      canvas; no file, no decode. The histogram already comes from `measure`.
+
+### Pass 33 — A virtualised library · 5 pts
+
+After: Pass 19.
+
+- [ ] **L** · Virtualise the grid and the filmstrip (today only
+      `content-visibility: auto`, `library.css:101`, which still pays React and
+      DOM cost for N nodes).
+- [ ] **M** · Near-duplicate grouping compares every pair, synchronously in
+      the index host (`dupes.ts:74-83`). A BK-tree or multi-index hash.
+
+### Pass 34 — Folders as a tree; warm neighbours · 5 pts
+
+- [ ] **L** · Recursive folders and a folder tree in the sources sidebar.
+- [ ] **M** · Build proxies for the filmstrip neighbours of the open photo
+      ahead of time, on the background engine.
+
+### Pass 35 — Watching folders · 3 pts
+
+After: Pass 34.
+
+- [ ] **L** · Watch open folders (FSEvents / `fs.watch`) in the index host
+      instead of rescanning on open or refresh; changes made outside the app
+      appear as they happen.
+
+---
+
+## Phase E — Masks, retouch and geometry (passes 36–39)
+
+**Epic — AI subject and lasso masks bloom past their edge · XXXL (6):
+passes 36–37.** The AI plane is soft (model probabilities) and low resolution
+(1024 px, `ai/segment.ts`), upsampled over the photo; a lasso's feather is
+symmetric about its edge, so half falls outside. The engine has only
+`feather { radius, edge }` (an optional engine route is E14).
+
+### Pass 36 — Mask edges 1/2 · 4 pts
+
+- [ ] **M** · Add `edge: { shift: −100…100, harden: 0…100 }` to
+      `ComponentBase` and apply it where raster planes are written
+      (`planes.ts` `writeBrushPlane`, in the pixels worker): a min/max filter
+      of `shift` pixels contracts or expands; a levels curve around 50%
+      hardens. Covers AI masks, brushes and gradients. Default new AI masks to
+      a small contract and some harden (`ai/apply.ts`).
+- [ ] **S** · A lasso "inside" feather: offset the polygon inward by the
+      feather radius before it reaches the engine (`compile.ts`
+      `maskComponent`).
+- [ ] **S** · Shift and Harden on the component card (`MaskTool.tsx`
+      `ComponentCard`).
+
+### Pass 37 — Mask edges 2/2; intersect brushes · 4 pts
+
+After: Pass 36.
+
+- [ ] **M** · The loupe's live mask preview applies the same shift and harden
+      (`maskgl` shaders).
+- [ ] **M** · Brush: intersect-with brushes.
+
+### Pass 38 — Mask overlays and spots · 5 pts
+
+- [ ] **L** · A per-component overlay colour: needs a rendered plane per
+      component (the overlay is one plane per mask today).
+- [ ] **M** · Visualise spots for the Heal tool (show dust and spots on a
+      high-contrast view).
+
+### Pass 39 — Geometry follow-ups · 5 pts
+
+- [ ] **M** · Heal spots under an Upright warp are placed round on the
+      unwarped frame and show as circles on the warped one (close, not exact).
+- [ ] **S** · Upright's focal length comes from the 35 mm equivalent only; a
+      file stating only the real focal length and no crop factor gets 35 mm.
+      Use the camera list's crop factor.
+- [ ] **M** · Portrait RAWs: IMG_3086.CR2 (EXIF "Rotate 270 CW") shows and
+      exports landscape. `source.ts:82-84` assumes a developed RAW comes out
+      upright; check what rawler returns and fix here, or raise E25.
+
+---
+
+## Phase F — Develop features and phase leftovers (passes 40–52)
+
+### Pass 40 — Tone and detail · 5 pts
+
+- [ ] **L** · Tone curve: per-channel parametric (the region sliders are
+      master only).
+- [ ] **M** · Sharpening/NR previews at fit size (today sharpening shows only
+      when its radius is ≥ half a proxy pixel, i.e. at 1:1).
+
+### Pass 41 — Denoise and Enhance limits · 5 pts
+
+- [ ] **M** · DRUNet's `MeasuredNoise` gain (1.33) under-states synthetic
+      per-channel noise (halves σ 7 rather than removing it): check on
+      high-ISO RAWs; add a Noise level override if needed.
+- [ ] **M** · Virtual copies share the photo's denoise sets; pruning keeps the
+      newest three, which a copy with other settings may lose (it rebuilds).
+      Keep each live copy's set.
+- [ ] **S** · A long-edge limit for Enhance ×4 (the request's `resize` after
+      the chain).
+
+### Pass 42 — Enhance previews and HDR · 4 pts
+
+- [ ] **M** · A before/after preview of a crop before running Enhance: crop to
+      a temp file first (the engine refuses `region` with a chain, E4; a JPEG
+      rebuild needs the whole file).
+- [ ] **M** · Enhance on HDR by tone mapping to SDR first, then upscaling as
+      a second conversion (output SDR). Refused up front today.
+
+### Pass 43 — HDR follow-ups · 4 pts
+
+- [ ] **M** · Exporting an SDR-edited gain-map photo drops its map; carry the
+      original map (or remake it) so the export stays HDR-capable.
+- [ ] **M** · A LUT profile flattens an HDR photo's highlights: apply the
+      table to the SDR range only, until E20.
+
+### Pass 44 — One-time migrations and merges · 4 pts
+
+- [ ] **M** · Existing edits on HEIC photos were placed on the sideways frame
+      (crops, masks) and now land turned: offer to rotate them once.
+- [ ] **M** · Importing collections adds copies; offer merging into existing
+      collections of the same name.
+
+### Pass 45 — Watermarks · 4 pts
+
+- [ ] **M** · Text watermarks: a copyright line typed in the dialog, rendered
+      to a PNG in the renderer (canvas) and handed over as a file.
+- [ ] **M** · A watermark per preset folder of logos (light and dark
+      versions, chosen by the picture's brightness under the mark).
+
+### Pass 46 — Lens data · 5 pts
+
+- [ ] **M** · Lensfun lens-centre offsets (`<center>`, unused in today's data)
+      and its focal-spline interpolation (we interpolate linearly).
+- [ ] **L** · Adobe LCP import (the user's own, not redistributable): LCP's
+      perspective model and `Focal` unit map directly.
+
+**Epic — Lens corrections the file carries · 8XL (11): passes 47–49.** Read
+with ExifTool. Needs sample files (Owner tasks).
+
+### Pass 47 — Corrections from the file 1/3 · 5 pts
+
+- [ ] **L** · DNG `OpcodeList3`: WarpRectilinear → the engine's
+      `Rectilinear`, `FarthestCorner`; FixVignetteRadial → `Multiply` at
+      `Corrected`.
+- [ ] **M** · Sony maker-note distortion and vignetting.
+
+### Pass 48 — Corrections from the file 2/3 · 4 pts
+
+- [ ] **M** · Fujifilm maker-note distortion and vignetting.
+- [ ] **M** · Olympus/OM maker-note distortion and vignetting.
+
+### Pass 49 — Corrections from the file 3/3; Constrain Crop off · 5 pts
+
+- [ ] **M** · Panasonic maker-note distortion and vignetting.
+- [ ] **L** · Constrain Crop off: keep a warped frame's empty corners as
+      transparent (needs an alpha preview path; today a warp always crops).
+
+### Pass 50 — Profile browser · 3 pts
+
+- [ ] **L** · A profile browser with previews (camera-matching DCP and Adobe
+      `.xmp` profiles wait on E21).
+
+### Pass 51 — Soft proofing · 3 pts
+
+- [ ] **L** · Soft proofing: preview through the output profile (the gamut
+      warning waits on E22).
+
+### Pass 52 — HDR on HDR displays · 3 pts
+
+After: Pass 32.
+
+- [ ] **L** · Show HDR photos as HDR on HDR displays (render PQ AVIF / PNG
+      cICP to the loupe); today they are tone mapped for SDR.
+
+---
+
+## Phase G — Library, output and design (passes 53–64)
+
+### Pass 53 — Compare and survey · 5 pts
+
+- [ ] **L** · Compare view (two photos side by side).
+- [ ] **M** · Survey view.
+
+### Pass 54 — File operations · 4 pts
+
+- [ ] **M** · Batch rename.
+- [ ] **M** · Move, copy, and delete to trash.
+
+### Pass 55 — Map; history that travels · 4 pts
+
+- [ ] **L** · Catalog: map/GPS.
+- [ ] **S** · History travels with a `.pixl` now; check what a sidecar-only
+      photo keeps when its folder moves to another machine (the old item:
+      snapshots but not history), and close or fix.
+
+**Epic — Lightroom `crs:` interop · XXXL (6): passes 56–57.**
+
+### Pass 56 — XMP interop 1/2 · 3 pts
+
+- [ ] **L** · Read Lightroom `crs:` settings from `.xmp` where they map.
+
+### Pass 57 — XMP interop 2/2 · 3 pts
+
+- [ ] **L** · Write `crs:` settings where they map.
+
+### Pass 58 — Slideshow · 3 pts
+
+- [ ] **L** · Slideshow.
+
+### Pass 59 — Print · 4 pts
+
+- [ ] **XL** · Print module.
+
+### Pass 60 — Web gallery · 4 pts
+
+- [ ] **XL** · Web gallery.
+
+**Epic — Book · XXXL (6): passes 61–62.**
+
+### Pass 61 — Book 1/2 · 3 pts
+
+- [ ] **L** · Page layout model and templates.
+
+### Pass 62 — Book 2/2 · 3 pts
+
+- [ ] **L** · Book editor and export.
+
+### Pass 63 — Tethered capture · 5 pts
+
+- [ ] **XXL** · Tethered capture.
+
+### Pass 64 — Design polish · 5 pts
+
+- [ ] **L** · A light theme.
+- [ ] **M** · User-reorderable tools on the wheel.
+
+---
+
+## Phase H — Epics (passes 65–71)
+
+**Epic — Layer-based editing · 15XL (18): passes 65–68.** Every manipulation
+can be its own layer (exposure, a curve, an HSL move, a colour grade, a LUT…),
+each with a name, visibility, opacity, blend mode, optional mask and a place in
+an ordered stack. Today the global panels are one flat set of sliders per
+recipe, and only masked local adjustments (`LocalLayer`) are layers.
+After: Passes 8, 27.
+
+### Pass 65 — Layers 1/4 · 5 pts
+
+- [ ] **L** · A layer stack in the recipe (name, visibility, opacity, blend,
+      mask ref, order).
+- [ ] **M** · Migrate today's global settings to a base layer (recipes,
+      presets, history bases).
+
+### Pass 66 — Layers 2/4 · 5 pts
+
+- [ ] **L** · The compiler emits one engine stage per layer, in stack order.
+- [ ] **M** · Optional masks per layer, reusing the mask components.
+
+### Pass 67 — Layers 3/4 · 5 pts
+
+- [ ] **L** · A layers panel in Develop: add, rename, show/hide, opacity,
+      blend, reorder, duplicate, delete.
+- [ ] **M** · Layer groups.
+
+### Pass 68 — Layers 4/4 · 3 pts
+
+- [ ] **L** · Per-layer copy/paste, sync and presets.
+
+**Epic — AI harness, cloud tiers and credits · 12XL (15): passes 69–71.**
+MCP, bring your own agent; every agent action a history step tagged with actor
+and run ID. After: Pass 27; Owner task "Tiers and credits".
+
+### Pass 69 — AI harness 1/3 · 5 pts
+
+- [ ] **M** · History steps carry an actor and a run ID.
+- [ ] **L** · An MCP server with read-only tools (library, photo, recipe,
+      history).
+
+### Pass 70 — AI harness 2/3 · 5 pts
+
+- [ ] **L** · MCP edit tools, each action a tagged history step.
+- [ ] **M** · Review an agent's run: list, accept or undo its steps.
+
+### Pass 71 — AI harness 3/3 · 5 pts
+
+- [ ] **L** · A credits ledger (pixl-web).
+- [ ] **M** · Cloud tiers gated in the app.
+
+---
+
+## Waiting on the engine
+
+Playroom work that starts once the engine request lands
+([ENGINE-REQUESTS.md](ENGINE-REQUESTS.md)). Becomes a pass then.
+
+- [ ] **S** · Drop `repairJpegExif` once JPEG EXIF is written correctly (E1).
+- [ ] **S** · HEIC export and HEIC gain-map export (E2).
+- [ ] **M** · Sharp 1:1 zoom and 1:1 tiles on straightened, Upright and
+      lens-warped photos (E3).
+- [ ] **S** · Enhance crop preview by `region` instead of a temp file (E4).
+- [ ] **S** · Drop the host's temp-and-rename around engine writes (E5).
+- [ ] **S** · The scheduler waits for a cancel to finish (E6).
+- [ ] **M** · Fast 1:1 pans from a cached or tiled source (E7).
+- [ ] **M** · Retire the 512 px gradient planes and their cache for native
+      linear and radial shapes (E11).
+- [ ] **M** · Depth range mask (its picker entry is disabled) (E12).
+- [ ] **M** · Smoothed range masks and an edge-aware brush in the tools (E13).
+- [ ] **S** · Move mask shift/harden to the engine, if E14 lands.
+- [ ] **S** · Highlight recovery on RAW, in the develop (E15).
+- [ ] **S** · Raw-domain noise reduction controls (E16).
+- [ ] **S** · ProRAW and DNG gain maps (E17).
+- [ ] **S** · Fisheye distortion from Lensfun profiles (E18).
+- [ ] **M** · Native `ParametricCurve`, with a recipe migration that
+      rescales the region sliders (E19).
+- [ ] **S** · HDR-aware LUT profiles replace the SDR-range fallback (E20).
+- [ ] **M** · Camera-matching DCP and Adobe `.xmp` profiles (E21).
+- [ ] **M** · Gamut warning in soft proofing (E22).
+- [ ] **XL** · Merge to HDR, panorama, HDR panorama, focus stacking (E23).
+- [ ] **S** · AI denoise (SCUNet) and Enhance (FBCNN) on the accelerator
+      (E26, E27).
+- [ ] **M** · Select Sky (its picker entry is disabled) (E28).
+- [ ] **L** · AI Remove (generative remove) in the Heal tool (E29).
+- [ ] **L** · Select People: face, skin, hair, eyes, lips, teeth, clothes
+      (E30).
+- [ ] **L** · Objects by brush or box (E30).
+- [ ] **L** · Catalog: people (E30).
+- [ ] **M** · Learned auto white balance beside the grey-pixel estimate (E31).
+- [ ] **M** · An adaptive/learned auto tone (E31).
+- [ ] **S** · DirectML on Windows (E32).
+
+## Owner tasks (not model passes)
+
+- [ ] **L** · **Code signing**: Apple Developer ID and notarization; Azure
+      Trusted Signing or an OV/EV certificate on Windows. Steps in
+      `.github/RELEASING.md`. Start now: both take days. Builds are unsigned
+      until the secrets exist, and macOS in-app updates need signed builds.
+- [ ] **M** · **Legal pages**: fill in the [bracketed] parts of the licence
+      agreement and privacy policy on pixlfoundation.com/legal/ (pixl-web
+      `src/legal/`: legal entity, jurisdiction, address, refunds, what a
+      finished trial does, crash-report retention); have a lawyer review both.
+- [ ] **S** · **Licensing view**: a lawyer's view on jpegxl-sys (GPL) and
+      rawler (LGPL, static) before the first paid release (engine side: E8–E10).
+- [ ] **S** · **Lemon Squeezy store**: create it and the Playroom product with
+      an activation limit of 3; hand over the store and product ids (Pass 23).
+- [ ] **S** · **What a lapsed licence locks**: exports? the whole Develop
+      view? And whether trials must be recorded on the server (Passes 23, 25).
+- [ ] **S** · **Update policy in writing**: 1.x updates included, major
+      versions a discounted paid upgrade (the EULA draft says so).
+- [ ] **S** · **Where crash reports live**: R2 or Sentry, and the retention
+      period for the privacy policy (Pass 24).
+- [ ] **M** · **Tiers and credits**: what the cloud tiers include and cost
+      (Pass 71).
+- [ ] **S** · **Windows "Open with"**: `build/installer.nsh`
+      (OpenWithProgids, never the default) has never been compiled or run;
+      check it on a Windows machine (see `.github/RELEASING.md`).
+- [ ] **S** · **Sample files** for Passes 47–49: a DNG carrying
+      `OpcodeList3` (the local one from Adobe DNG Converter has none), and
+      Sony, Fujifilm, OM and Panasonic RAWs with lens corrections in the maker
+      notes.
+- [ ] **S** · **Windows installer art**: the kit's sidebar (164×314) and
+      banner (150×57) need rendering to BMP only if the installer becomes
+      assisted (`oneClick: false`).
+- [ ] **S** · **Behaviour calls** for Pass 11 (B&W mask colour; partial
+      presets).
+
+---
+
+## Done
+
+Kept for reference: what was built, and where.
+
+### Closed in the 2026-10-01 re-plan
+
+- [x] **Enhance in the published engine**: the 0.15.0 binding reports
+      `hasEnhance()` true; Enhance runs on the engine's bundled ONNX Runtime.
+- [x] Red-eye / pet-eye correction: done in Phase 6 (dragged ellipses).
+- [x] Healing / clone / content-aware fill: done in Phase 6. Generative remove
+      waits on E29; visualise spots is Pass 38.
+- [x] Lens corrections (profiles, manual, defringe): Phases 4 and 12. File
+      corrections are Passes 47–49; fisheye waits on E18.
+- [x] Transform/Upright: Phase 5. Spots under a warp are Pass 39.
+- [x] Re-check the engine hosts' libuv pools: the sweep found the pools (8
+      interactive, 4 background) aren't the bottleneck; thread
+      oversubscription is (Passes 15, 31).
+- [x] `tests/indexer.test.ts` on Node 26: passes now (19/19, five runs); the
+      underlying exifr FileHandle leak is Pass 9.
+
+### Before a first release
+
 - [x] **In-app updates**: electron-updater against the GitHub releases
       (`src/main/updater.ts`), Stable/Beta in Settings. macOS updates start
       working once the builds are signed.
@@ -22,42 +948,13 @@ way. Grouped by area; roughly in priority order within each.
 - [x] **Opt-in crash reporting** (`src/main/crash.ts`): asked once at first
       launch. Minidumps and scrubbed JSON reports to
       `pixlfoundation.com/api/crash`.
-  - [ ] Somewhere to keep them: the Worker only logs a summary. Store them in
-        R2 with a retention period (and put that period in the privacy policy),
-        or send them to Sentry (its Electron SDK can take over from
-        `crashReporter`); symbol files for minidumps either way.
 - [x] **Third-party notices** (`pnpm notices` → `build/THIRD_PARTY_NOTICES.txt`,
       shipped and opened from Settings/Help, copied to
       pixlfoundation.com/legal/third-party/).
-- [ ] **Legal pages**: licence agreement and privacy policy are drafts on
-      pixlfoundation.com/legal/ (pixl-web `src/legal/`). Fill in the
-      [bracketed] parts (legal entity, jurisdiction, address, refunds, what a
-      finished trial does, crash-report retention) and have a lawyer review
-      both before launch.
-- [ ] `tests/indexer.test.ts` fails on Node 26 ("A FileHandle object was
-      closed during garbage collection"), on `main` too; CI's Node 22 passes.
-      Close the FileHandle explicitly in the indexer.
+- [x] CI, release-please and the release builds (GitHub-hosted, per-arch) are
+      set up as in space-pixl; unsigned until the signing secrets exist.
 
-## Licensing compliance (before selling)
-
-Found while writing the third-party notices; needs a lawyer's view before the
-first paid release.
-
-- [ ] **jpegxl-sys is GPL-3.0-or-later** (0.12.1 in pixl-engine's Cargo.lock)
-      and is compiled into the engine, which ships inside a proprietary app.
-      libjxl itself is BSD-3-Clause; only the Rust binding crate is GPL. Likely
-      fix in the engine: replace it with our own bindgen bindings to libjxl
-      (the engine already wraps it in `src/encode/jxl.rs`).
-- [ ] **rawler is LGPL-2.1** (0.7.2), statically linked into the engine.
-      Static linking under the LGPL means users must be able to relink with a
-      modified rawler (object files or source for the rest). Options: ship the
-      engine's object files on request, move RAW decoding into a separately
-      loaded library, or confirm with the author.
-- [ ] A complete list of the engine's Rust crates and their licences, from
-      its own release build (`cargo about` in pixl-engine), merged into
-      `build/third-party.json` instead of the one summary line there now.
-
-## Business: licensing and accounts
+### Business: licensing and accounts
 
 - [x] Licence keys, 3-device activation, a 14-day trial and a 30-day offline
       grace, against Lemon Squeezy's licence API (`src/shared/licence.ts`,
@@ -65,104 +962,27 @@ first paid release.
       `tests/licence.test.ts`). **Not enforced**: `LICENCE_ENFORCED` is false,
       and the Licence section only shows in development or with
       `PLAYROOM_LICENCE_UI=1`.
-- [ ] The Lemon Squeezy store: create it, the Playroom product with an
-      activation limit of 3, then set `LS_PRODUCT` (store and product ids) in
-      `src/shared/licence.ts` so other products' keys are refused. Test with a
-      test-mode key (`PLAYROOM_LICENCE_UI=1` in a packaged build).
-- [ ] Enforcement, once checkout is live: decide what an ended trial and an
-      unconfirmed licence (`revalidate`) lock (exports? the whole Develop
-      view?), gate it with `allows()` and flip `LICENCE_ENFORCED`. The trial's
-      start lives in `licence.json`, which deleting resets; if that matters,
-      record trials on the server by device.
-- [ ] Lost devices: the app can only free its own place. Until the website
-      account lists devices, freeing a lost one is by email (the account page
-      says so).
-- [ ] Update policy in writing: 1.x updates included, major versions a
-      discounted paid upgrade (the EULA draft says so).
-- [ ] AI harness (MCP, bring your own agent; every agent action a history
-      step tagged with actor and run ID) and the cloud tiers and credits.
-- [ ] **Windows DirectML**: bundle a DirectML build of ONNX Runtime (the
-      GitHub zip is CPU-only; the provider falls back to the CPU and says so).
-- [ ] Design polish still open: a light theme; user-reorderable tools on the
-      wheel.
 - [x] Remembering the wheel's tool per photo (index setting
       `wheel.byPhoto`, `src/renderer/src/develop/wheelMemory.ts`; Crop is
       never restored). Keyboard focus in the glass popovers: focus moves in
       on open and back on close, menus take arrow keys, Home and End.
 
-## Masks and local tools
+### Masks and local tools
 
-- [ ] **Tone down AI subject and lasso masks blooming past their edge.**
-      An AI subject or background mask spills a soft halo outside the
-      subject, and so does a lasso. The AI plane is soft (model
-      probabilities) and low resolution (1024 px, `ai/segment.ts`), so it is
-      upsampled over the photo; a lasso's feather is symmetric about its
-      edge, so half of it always falls outside the shape. The engine has no
-      choke or contract on a mask component (only `feather { radius, edge }`),
-      so the fix is on the host. Add `edge: { shift: −100…100, harden: 0…100 }`
-      to `ComponentBase` and apply it where raster planes are written
-      (`planes.ts` `writeBrushPlane`, in the pixels worker): a min/max filter
-      of `shift` pixels contracts or expands, a levels curve around 50%
-      hardens the soft probabilities. That covers AI masks, brushes and
-      gradients. For a lasso, add an "inside" feather that offsets the polygon
-      inward by the feather radius before it reaches the engine (`compile.ts`
-      `maskComponent`). Default new AI masks to a small contract and some
-      harden (`ai/apply.ts`). Show the controls on the component card
-      (`MaskTool.tsx` `ComponentCard`), and give the loupe's live preview the
-      same shift and harden (`maskgl` shaders).
-
-- [ ] **Engine-native gradient shapes.** Linear and radial gradients are
-      drawn by the host into 512 px raster planes (`src/shared/gradients.ts`,
-      cached in the photo's cache) and reach the engine as `Raster` masks.
-      Add `MaskShape::Linear { start, end }` and `MaskShape::Radial { centre,
-radii, angle, softness }` to the engine so they are resolution-free at
-      export, then retire the planes and their cache.
-- [ ] **AI masks**: Select Subject, Select Sky, Select Background (their
-      entries are in the tool picker, disabled until a model ships), Select
-      People (face/skin/hair/eyes/lips/teeth/clothes), Objects by brush or
-      box. A segmentation model (e.g. U²-Net/ISNet for subject, a sky model)
-      fetched by `pnpm fetch-ai`, run on the bundled ONNX Runtime (a mask
-      seam beside the engine's `enhance` upscaler, or in the host), producing
-      a grey plane stored as a raster component. The job side is built:
-      `main/ai/segment.ts` is the runner (stages, progress, cancel, the plane
-      into the plane store, the mask applied to its photo), and
-      `PLAYROOM_FAKE_AI=1` runs it with a stand-in plane; what is missing is
-      the model itself, in a utility process that cancelling can kill.
-- [ ] **Depth range mask** (its picker entry is disabled): a depth map from
-      iPhone HEIC/ProRAW auxiliary images or a monocular depth model, and a
-      `MaskShape::DepthRange` in the engine.
-- [ ] Other engine mask shapes: a luminance/colour range keyed on a smoothed
-      plane (guided-filter refine) rather than a box blur; an edge-aware
-      brush (Auto Mask is colour-only today).
-- [ ] Brush: intersect-with brushes.
 - [x] Auto Mask off the main thread: it runs on the brush worker
       (`src/renderer/src/workers/brush.worker.ts`), on the GPU with a CPU
       fallback.
 - [x] Mask presets (a mask's sliders and Amount, index setting
       `mask.presets`); renaming components; an overlay colour per mask.
-- [ ] Per-component overlay colour: needs a rendered plane per component
-      (the overlay is one plane per mask today).
 - [x] Brush planes by reference: `src/main/planestore.ts` swaps PNGs for
       refs across IPC; the index keeps them in its `planes` table.
-- [ ] Healing / clone / content-aware remove (spot removal, generative
-      remove), with visualise spots.
-- [ ] Red-eye / pet-eye correction.
+- [x] AI masks, Select Subject and Background: U²-Net(p) through the
+      engine's `segment` (Phase 7); the job side (`main/ai/segment.ts`:
+      stages, progress, cancel, the plane into the plane store) is built, and
+      `PLAYROOM_FAKE_AI=1` runs it with a stand-in plane.
 
-## Develop
+### Develop
 
-- [ ] **Layer-based editing.** Every manipulation can be its own layer:
-      the user adds a layer (exposure, a curve, an HSL move, a colour
-      grade, a LUT…), and each layer has a name, visibility, opacity, a
-      blend mode, an optional mask and a place in an ordered stack that can
-      be reordered, duplicated, grouped and deleted. Today the global panels
-      are one flat set of sliders per recipe, and only masked local
-      adjustments (`LocalLayer`) are layers. Needs a layer stack in the
-      recipe (with a migration of today's global settings to a base layer),
-      the compiler emitting one engine stage per layer in stack order, a
-      layers panel in develop, and per-layer copy/paste, sync and presets.
-- [ ] **Industry-standard white balance fixer**: learned auto WB (a colour
-      constancy model, e.g. FFCC or a small CNN) beside today's grey-pixel
-      estimate (grey-world when too few grey pixels).
 - [x] Per-photo auto WB across a batch (`library.autoWb`,
       `src/main/autowb.ts`; Cmd/Ctrl+Shift+U, the Library's Auto WB, or
       "Auto per photo" in Sync), with history per photo and Undo.
@@ -171,56 +991,18 @@ radii, angle, softness }` to the engine so they are resolution-free at
       RAW's absolute Kelvin and relative sliders.
 - [x] Auto tone tuned: gentler and scene-aware (flat vs hot frames, low- and
       high-key targets; `src/shared/auto.ts`, `tests/auto.test.ts`).
-- [ ] An adaptive/learned auto tone.
-- [ ] Highlight recovery on RAW: rawler clips at sensor white; reconstruct
-      clipped channels before the develop's clamp (engine).
-- [ ] Profiles: camera-matching profiles (DCP support), Adobe-compatible
-      `.xmp` profiles, profile browser with previews.
-- [ ] Lens corrections: distortion, chromatic aberration, vignetting from a
-      profile database (lensfun) and manual; defringe.
-- [ ] Transform/Upright: perspective correction (vertical, horizontal, auto,
-      guided), scale, aspect.
 - [x] Colour mixer "point colour": the HSL panel's Point tab, up to 8
       picked colours compiled to engine `Qualifier` ops.
 - [x] Targeted adjustment tool (T): drag on the photo to move the HSL band
       or the curve under the pointer (`src/shared/tat.ts`).
 - [x] Tone curve presets (built-in and saved, `src/shared/curves.ts`).
-- [ ] Tone curve: per-channel parametric (the region sliders are master only).
 - [x] Output sharpening on export, after the resize, in the same engine
       pass (`output_sharpen`; Screen / Matte / Glossy × Low / Standard / High).
-- [ ] Portrait RAWs: IMG_3086.CR2 (EXIF "Rotate 270 CW") shows and exports
-      landscape; check how the RAW's orientation reaches the develop.
-- [ ] Engine: every JPEG export writes a malformed APP1 (the `Exif\0\0`
-      header twice), so EXIF is unreadable until the exporter's ExifTool
-      pass repairs it (`repairJpegExif` in `src/main/exiftool.ts`). Fix it
-      in the engine's JPEG writer and the repair becomes a no-op.
-- [ ] Engine: this build has no HEIC encoder ("libheif has no encoder"), so
-      HEIC export fails.
-- [ ] Raw-domain noise reduction (engine). (AI denoise: Phase 8.)
-- [ ] Soft proofing (output profile preview + gamut warning).
-- [ ] HDR preview on HDR displays (render PQ AVIF / PNG cICP to the loupe);
-      the loupe shows HDR photos tone mapped for SDR today. (Grading in HDR,
-      the HDR histogram and gain-map export: Phase 10.)
-- [ ] Merge to HDR / panorama / HDR panorama; focus stacking.
-- [ ] ProRAW and DNG gain maps (engine).
-- [ ] Sharpening/NR previews at fit size (today sharpening is shown only when
-      its radius is ≥ half a proxy pixel, i.e. at 1:1).
-- [ ] Sharp zoom of a straightened photo: the zoomed loupe enlarges the
-      preview instead (the engine refuses a region with a straighten);
-      needs a canvas-space region in the engine.
 - [x] Cancellation of an in-flight render: a newer edit stops a settled
       render and what follows it, a newer 1:1 region the last one, Cancel
       the file being exported, and Enhance between model tiles (engine
       0.15's signal, checked between stages — a RAW decode still finishes).
-- [ ] **Preview round trip.** The histogram now comes from the render
-      itself (`measure`, engine 0.15); the preview is still written as a
-      JPEG and decoded by the loupe. Hand the renderer raw pixels
-      (`Encode::Pixels`, 0.15) over a `MessagePort` into a canvas, with no
-      file and no decode.
-- [ ] A ~1920 px proxy between the draft and the 2560 proxy, if a Retina
-      loupe in Native mode still waits on settled renders.
-- [ ] Re-check the engine hosts' libuv pools (8 interactive, 4 background)
-      against the calls actually in flight.
+- [x] The histogram comes from the render itself (`measure`, engine 0.15).
 - [x] **Interactive edit history.** Every step can be hidden, shown or
       deleted from any position (`src/shared/history.ts`, the History pane);
       hiding or deleting a step that made a mask takes the steps that use it
@@ -228,43 +1010,29 @@ radii, angle, softness }` to the engine so they are resolution-free at
       it again.
 - [x] Edit history stored as diffs: the index keeps a base recipe and a
       patch per step; older whole-recipe rows convert when first read.
-- [ ] Folder watching in the index host (today a folder is rescanned when it
-      is opened or refreshed; changes made outside the app appear then).
+- [x] `.pixl` projects: one photo's edits in one SQLite file (recipe, virtual
+      copies, snapshots, history, mask planes, preview; embedding the
+      original), documented in `docs/pixl-format.md`.
 
-## Library and workflow
+### Library and workflow
 
 - [x] Catalog: a sources sidebar (folders, pinned folders, collections,
       keywords, duplicates); manual collections, smart collections with
       nested rules (`src/shared/smart.ts`) and sets, exported and imported as
       JSON; hierarchical keywords; search and filters by metadata; stacks
       (kept in the sidecar); exact and near duplicates (SHA-1, dHash).
-- [ ] Catalog: people, map/GPS.
-- [ ] Collections import adds copies; merging into existing collections of
-      the same name is not offered.
-- [ ] Recursive folders / folder tree, watch folders for changes.
 - [x] Metadata editing: title, caption, copyright and keywords written to
       `.xmp` sidecars through ExifTool (`IMG.xmp` for a RAW, `IMG.jpg.xmp`
       otherwise; originals are never written), in the Library's Info drawer
       and Develop's Info pane; embedded into exports, with "copyright only"
       and "remove location".
-- [ ] XMP sidecar interop (read/write Lightroom `crs:` settings where they
-      map).
-- [ ] Compare view (two photos side by side) and survey view.
-- [ ] Batch rename, move/copy/delete to trash.
-- [ ] Watermarks, print module, slideshow, web gallery, book.
-- [ ] Tethered capture.
-- [ ] History persisted with the recipe in the sidecar (today the index keeps
-      it; moving a folder to another machine keeps snapshots but not
-      history).
 - [x] **Open with Pixl Playroom**: `fileAssociations` on macOS
       (`LSHandlerRank: Alternate`), `open-file` and a second instance's argv
       (`src/main/open.ts`), surviving the display-scale relaunch; the photo
       opens in Develop.
-- [ ] Windows "Open with": `build/installer.nsh` (OpenWithProgids, never the
-      default) has never been compiled or run; check it on a Windows machine
-      (see `.github/RELEASING.md`).
+- [x] Watermarks on export (Phase 11).
 
-## Branding
+### Branding
 
 The PIXL Brand Kit design canvas holds the source for all of this; the SVG
 masters are in `build/brand/`.
@@ -277,14 +1045,8 @@ masters are in `build/brand/`.
       `scripts/site-media.sh`, tool screenshots by `scripts/site-tools.mjs`.
       `site/` is only a redirect from the old GitHub Pages address. Downloads
       say "Soon" until the first release.
-- [ ] Windows installer art: the kit's installer sidebar (164×314) and
-      banner (150×57) are unused while the NSIS installer is one-click, which
-      shows neither. They need rendering to BMP if the installer becomes
-      assisted (`oneClick: false`).
 
-## Upgrade to pixl-engine 0.15.0
-
-Phased; each phase is tested and committed before the next.
+### Upgrade to pixl-engine 0.15.0
 
 - [x] Phase 1 — the port, no change in output: request shapes brought up to
       0.15 (`Framing.outside` with a straighten, `Vignette.style`,
@@ -308,11 +1070,8 @@ Phased; each phase is tested and committed before the next.
       (Display P3 code values, before the grain) — with Neutralise and
       Match pickers that sample the shown picture in Display P3 and add
       onto what is there (`src/shared/addcolor.ts`).
-- [ ] Native `ParametricCurve`: not adopted. At ±1 the engine moves a
-      region by half the gap to its neighbour (0.0625 at the default
-      splits); Playroom's own curve moves 0.25, so switching would weaken
-      every existing region edit about fourfold. Revisit if the engine takes
-      a strength, or with a recipe migration that rescales the sliders.
+- [x] Native `ParametricCurve`: not adopted (see E19 and "Waiting on the
+      engine").
 - [x] Phase 4 — the Lens tool (after Detail): lens profiles
       (`src/shared/lens.ts`: JSON, Lensfun's poly3/poly5/ptlens distortion,
       linear/poly3 TCA and `pa` vignetting, matched on the file's lens model,
@@ -338,8 +1097,6 @@ Phased; each phase is tested and committed before the next.
       is refused and Auto tries the next. The crop tool shows the warp whole,
       its empty corners transparent (a PNG preview with alpha; mask planes
       wait while it is open).
-  - [ ] 1:1 sharp tiles with a warp or a straighten (the engine renders a
-        region only of the plain frame).
 - [x] Preview speed with lens corrections: a lens warp (distortion, CA,
       vignetting) cost ~1 s per settled 2.5K render and again for "before"
       and the mask renders (IMG_1750.CR2: 2.0 s). The correction is now
@@ -349,23 +1106,17 @@ Phased; each phase is tested and committed before the next.
       in the background. Same photo: 0.57–0.88 s settled, ~0.17 s drafts.
       Graded thumbnails render from the draft proxy. Engine 0.15 itself is
       as fast as 0.13 for the same work.
-  - [ ] Upright's focal length from the 35 mm equivalent only; a file that
-        states only the real focal length and no crop factor gets 35 mm.
 - [x] Phase 6 — the Heal tool (after Masks; Q): heal, clone and
       content-aware fill as round spots or painted strokes, Photoshop's way:
       a heal or clone starts with its source on the spot and is dragged to
       where it copies from (live), or Alt-click sets the source first and
       later spots keep the offset (aligned); outlines go once a spot is set
       (hover or H shows them); "Find a source automatically" asks
-      `suggestHealSource`. Red eye and pet eye as dragged ellipses. Spots are stored in
-      the base frame like masks (`src/shared/retouch.ts`), a source that would
-      read outside the frame is pulled back inside, and spots are baked into
-      the prepared proxies with the lens correction, so they cost nothing per
-      render once placed. Not in Sync or presets by default.
-  - [ ] AI Remove: needs an inpainting model we can ship (LaMa's weights
-        were trained on Places2, non-commercial).
-  - [ ] Spots under an Upright warp are placed round on the unwarped frame
-        and show as circles on the warped one (close, not exact).
+      `suggestHealSource`. Red eye and pet eye as dragged ellipses. Spots are
+      stored in the base frame like masks (`src/shared/retouch.ts`), a source
+      that would read outside the frame is pulled back inside, and spots are
+      baked into the prepared proxies with the lens correction, so they cost
+      nothing per render once placed. Not in Sync or presets by default.
 - [x] Phase 7 — AI models on demand: the engine's roster
       (`@xuckless/pixl-models`), downloaded into `userData/models` from
       `models.pixlfoundation.com/<id>/<version>/<file>` (resumable, checked
@@ -382,7 +1133,6 @@ Phased; each phase is tested and committed before the next.
         Real-ESRGAN general WDN, which have no public upstream.
         `PLAYROOM_MODELS_URL` points at another mirror (`file://` works) for
         development.
-  - [ ] Sky: no sky model in the roster yet.
 - [x] Phase 8 — AI denoise in Detail (a cached denoised master). Classic | AI
       in Noise reduction; SCUNet or DRUNet with strength; an AI job makes a
       denoised draft (the loupe switches at once) then a 16-bit master and
@@ -391,25 +1141,12 @@ Phased; each phase is tested and committed before the next.
       export use it; the renderer (`lib/denoise.ts`) starts or restarts the
       job when the settings ask for something not made. SCUNet cannot load
       under CoreML (ONNX Runtime refuses a reshape) and falls back to the CPU.
-  - [ ] SCUNet on the CPU is ~27 s/MP (a 24 MP RAW takes ~10 min): ask the
-        engine for a CoreML-loadable SCUNet export, or an fp16 one.
-  - [ ] DRUNet's `MeasuredNoise` gain (1.33) under-states synthetic
-        per-channel noise (halves σ 7 rather than removing it); check it on
-        high-ISO RAWs and expose a Noise level override if needed.
-  - [ ] Virtual copies share the photo's denoise sets; pruning keeps the
-        newest three, which a copy with other settings may lose (it rebuilds).
 - [x] Phase 9 — Enhance on the wheel (JPEG restore, deblur, upscale ×2/×4).
       `panels/enhance.tsx` replaces the dialog; `shared/enhance.ts` plans the
       chain (JpegReconstruct → FBCNN → NAFNet → Upscale), sizes and times it
       (per-step ms/MP, learned); `main/enhance.ts` runs it into
       `<stem>-Enhanced.tif`. A model the accelerator cannot load moves to the
       CPU alone (`ModelStore.withCpuFallback`, per model).
-  - [ ] A before/after preview of a crop before running (the engine refuses
-        `region` with a chain: crop to a temp file first; a JPEG rebuild needs
-        the whole file).
-  - [ ] FBCNN is ~50 s/MP on the CPU and CoreML cannot load it: ask the engine
-        for a CoreML-loadable export.
-  - [ ] A long-edge limit for ×4 (the request's `resize` after the chain).
 - [x] Phase 10 — HDR gain maps: read, grade and write. The grid's HDR badge
       (probe kind, kept per file version: migration 3); SDR | HDR for
       gain-map photos (recipe `gainMap`, a PQ master of the applied map,
@@ -420,24 +1157,12 @@ Phased; each phase is tested and committed before the next.
       exposure shoulder and tone curves ending at 1), and HEIF/AVIF photos
       were turned twice (libheif applies `irot`; the EXIF tag is now ignored,
       and older sideways working copies are remade).
-  - [ ] HEIC gain-map export needs the engine's HEIC encoder (this build has
-        none; JPEG and AVIF work).
-  - [ ] A LUT profile flattens an HDR photo's highlights (a table is 0…1):
-        HDR-aware profiles, or the table on the SDR range only.
-  - [ ] Exporting an SDR-edited gain-map photo drops its map; carry the
-        original map (or remake it) so the export stays HDR-capable.
-  - [ ] Existing edits on HEIC photos were placed on the sideways frame
-        (crops, masks): they now land turned. Offer to rotate them once.
 - [x] Phase 11 — export watermark. `shared/watermark.ts` places a PNG
       (anchor, inset and size as shares of the shorter edge, opacity, blend)
       in whole output pixels and hands the engine an `overlays` entry; the
       export dialog's Watermark section previews it on the first photo; it is
       kept in the last settings and in export presets. SDR files blend in
       sRGB, HDR ones (Keep, Expand, SDR + gain map) on the PQ signal.
-  - [ ] Text watermarks (a copyright line typed in the dialog): render the
-        text to a PNG in the renderer (canvas) and hand it over as a file.
-  - [ ] A watermark per preset folder of logos (light and dark versions,
-        chosen by the picture's brightness under the mark).
 - [x] Phase 12 — real lens profiles. Lensfun's database (1557 lenses, 1057
       cameras) converted by `scripts/lensfun-profiles.mjs` into
       `resources/lens-profiles` (bundled, works offline) and, with `--bucket`,
@@ -455,24 +1180,8 @@ Phased; each phase is tested and committed before the next.
   - [x] **R2**: bucket `pixl-models` with `models.pixlfoundation.com`
         attached; the lens catalogue (version 9f8904d4) and the models are
         published there. See `.github/RELEASING.md`.
-  - [ ] Corrections the file carries: DNG `OpcodeList3` (WarpRectilinear →
-        the engine's `Rectilinear`, `FarthestCorner`; FixVignetteRadial →
-        `Multiply` at `Corrected`), read with ExifTool; then Sony, Fujifilm,
-        Olympus/OM and Panasonic maker-note distortion and vignetting. Needs
-        sample files (the one local DNG, from Adobe DNG Converter, carries no
-        OpcodeList3).
-  - [ ] Adobe LCP import (the user's own, not redistributable): LCP's
-        perspective model and `Focal` unit map directly.
-  - [ ] Lensfun lens-centre offsets (`<center>`, unused in today's data) and
-        its focal-spline interpolation (we interpolate linearly).
-  - [ ] Fisheye lenses: their distortion is left out (it needs a projection
-        change the engine does not make); TCA and vignetting apply.
-  - [ ] Constrain Crop off (keep the warped frame's empty corners as
-        transparent) needs an alpha preview path; today a warp always crops.
-- [ ] HEIC export: the published engine's libheif has no HEVC encoder
-      (`EncoderUnavailable`); AVIF works.
 
-## Upgrade to pixl-engine 0.13.0 (done)
+### Upgrade to pixl-engine 0.13.0
 
 - [x] Pinned 0.13.0; `AnalyzeRequest.hdr`, `ImageStats.range_max` and
       `bindingVersion()` mirrored in `src/shared/engine-types.ts`.
@@ -489,17 +1198,11 @@ Phased; each phase is tested and committed before the next.
       marked, headroom shaded; the HDR chip switches views).
 - [x] Enhance on HDR: refused up front with a reason per photo; the dialog
       lists every failure.
-- [ ] Enhance on HDR by tone mapping to SDR first, then upscaling as a
-      second conversion (output SDR).
 
-## Engine gaps found while building this
+### Engine gaps fixed upstream
 
 - [x] Grading a single-channel source: fixed in engine 0.13.0 (grey
       sources are graded through a grey profile). Playroom has no grey
       export yet; check one when it gets one.
-- [ ] Region + straighten (engine). Still open in 0.13.0.
 - [x] Qualifier blur edges inside a region: fixed in engine 0.13.0 (the
       key's blur is exact inside a region, at any thread count).
-- [ ] Dehaze memory (~580 MB at 24 MP), a colour-priority vignette style
-      (the engine has highlight priority and paint overlay), calibrating the
-      new ops' constants against a reference.

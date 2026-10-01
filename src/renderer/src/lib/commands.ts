@@ -403,7 +403,12 @@ export const COMMANDS: KeyCommand[] = [
       const d = dev()
       if (!d.recipe) return
       const groups = RECIPE_GROUPS.filter(
-        (g) => g !== 'crop' && g !== 'orientation' && g !== 'localAdjustments' && g !== 'retouch'
+        (g) =>
+          g !== 'crop' &&
+          g !== 'upright' &&
+          g !== 'orientation' &&
+          g !== 'localAdjustments' &&
+          g !== 'retouch'
       )
       lib().setClipboard({
         recipe: structuredClone(d.recipe),

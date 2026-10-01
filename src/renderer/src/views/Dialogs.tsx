@@ -720,7 +720,7 @@ export function SyncDialog(): React.JSX.Element {
     clipboard?.groups ??
       (source
         ? changedGroups(source, defaultRecipe(false)).filter(
-            (g) => g !== 'crop' && g !== 'localAdjustments' && g !== 'retouch'
+            (g) => g !== 'crop' && g !== 'upright' && g !== 'localAdjustments' && g !== 'retouch'
           )
         : [])
   )
@@ -852,7 +852,11 @@ export function SavePresetDialog(): React.JSX.Element {
       recipe
         ? changedGroups(recipe, defaultRecipe(false)).filter(
             (g) =>
-              g !== 'crop' && g !== 'localAdjustments' && g !== 'orientation' && g !== 'retouch'
+              g !== 'crop' &&
+              g !== 'upright' &&
+              g !== 'localAdjustments' &&
+              g !== 'orientation' &&
+              g !== 'retouch'
           )
         : []
     )

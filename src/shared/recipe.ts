@@ -719,6 +719,7 @@ export const RECIPE_GROUPS = [
   'calibration',
   'treatment',
   'crop',
+  'upright',
   'orientation',
   'retouch',
   'localAdjustments',
@@ -742,6 +743,7 @@ export const GROUP_LABELS: Record<RecipeGroup, string> = {
   calibration: 'Calibration',
   treatment: 'Treatment (colour / B&W)',
   crop: 'Crop & straighten',
+  upright: 'Upright (perspective)',
   orientation: 'Rotation & flip',
   retouch: 'Spot removal & eyes',
   localAdjustments: 'Masks & local adjustments',
@@ -811,6 +813,10 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.geometry.crop = f.geometry.crop
         r.geometry.straighten = f.geometry.straighten
         r.geometry.aspect = f.geometry.aspect
+        break
+      case 'upright':
+        // As measured on the source: a mode re-applied on the target measures its own lines.
+        r.geometry.upright = f.geometry.upright
         break
       case 'orientation':
         r.geometry.quarterTurns = f.geometry.quarterTurns
