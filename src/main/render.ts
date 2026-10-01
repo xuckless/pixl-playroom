@@ -22,6 +22,7 @@ import {
   fitCrop,
   framingTransparent,
   framingWarps,
+  gradeKey,
   orientedFrame,
   type Compiled
 } from '../shared/compile'
@@ -441,7 +442,19 @@ class Session {
   }
 
   /** What names the prepared proxies a recipe needs: '' for none (the plain proxies serve). */
+  /** The last `lensKey` asked for, by what it is made from (asked several times per update). */
+  private lensKeyMemo: { lens: unknown; retouch: unknown; base: Proxies; key: string } | null = null
+
   private lensKey(recipe: Recipe): string {
+    const base = this.basePx()
+    const m = this.lensKeyMemo
+    if (m && m.lens === recipe.lens && m.retouch === recipe.retouch && m.base === base) return m.key
+    const key = this.lensKeyOf(recipe)
+    this.lensKeyMemo = { lens: recipe.lens, retouch: recipe.retouch, base, key }
+    return key
+  }
+
+  private lensKeyOf(recipe: Recipe): string {
     const p = this.prepared(recipe)
     return p.lens || p.retouch ? hash32(JSON.stringify(p)).toString(16) : ''
   }
@@ -566,8 +579,17 @@ class Session {
     this.thumbTimer = setTimeout(queue, THUMB_IDLE_MS)
   }
 
+  /** Whether the view has been asked for yet: the first picture comes as a draft, at once. */
+  private viewed = false
+
   setView(view: ViewState): void {
     this.view = view
+    // Opening: the draft first (a fraction of the pixels), the full picture
+    // and what follows it once that is up.
+    if (!this.viewed) {
+      this.viewed = true
+      return this.schedule('draft')
+    }
     this.schedule('full')
   }
 
@@ -655,7 +677,7 @@ class Session {
     const seq = ++this.seq
     const sig = String(
       hash32(
-        JSON.stringify([
+        gradeKey([
           src.path,
           cropMode,
           compiled.grade,
@@ -900,7 +922,7 @@ class Session {
     const keyed = layer.mask?.components.some((c) => 'Range' in c.shape) ?? false
     const sig = String(
       hash32(
-        JSON.stringify([
+        gradeKey([
           src.path,
           layerId,
           index,
@@ -994,7 +1016,7 @@ class Session {
       }
       const sig = String(
         hash32(
-          JSON.stringify([
+          gradeKey([
             src.path,
             layer.components,
             layer.invert,
@@ -1619,7 +1641,7 @@ export class DevelopSessions {
     const { recipe, item, snapshots } = data
     // The original, or the copy its project carries when it is gone.
     const row = await this.library.readable(data.row)
-    const info = await this.library.probe(row)
+    const info = await this.library.probe(row, this.engine)
     // A gain-map photo edited as HDR opens on its applied rendition.
     const hdr = editsHdr(recipe, info) ? await ensureHdrSource(this.engine, row, info) : null
     const graded = hdr?.info ?? info

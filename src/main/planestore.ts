@@ -63,7 +63,11 @@ export class PlaneStore {
     return slimRecipe(recipe, (ref, png) => this.put(ref, png))
   }
 
-  /** Coming in: every referenced plane filled in, the references dropped. */
+  /**
+   * Coming in: every referenced plane filled in. The reference stays beside
+   * it (it is the plane's content hash): what names a plane by it, a plane
+   * file or a slim copy going out again, need not hash the PNG.
+   */
   async hydrate(recipe: Recipe): Promise<Recipe> {
     const wants = recipe.layers.some((l) =>
       l.components.some((c) => c.kind === 'brush' && !c.png && c.ref)
@@ -80,9 +84,7 @@ export class PlaneStore {
               const png = await this.get(c.ref)
               if (png === undefined)
                 throw new Error('a painted mask is missing from the plane store')
-              const { ref: _ref, ...rest } = c
-              void _ref
-              return { ...rest, png }
+              return { ...c, png }
             })
           )
         }))

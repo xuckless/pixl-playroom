@@ -273,10 +273,28 @@ export function shoulderCube(exposure: number, size = 1024): string {
   let cube = shoulders.get(key)
   if (cube === undefined) {
     cube = buildShoulder(exposure, size)
-    if (shoulders.size >= 64) shoulders.delete(shoulders.keys().next().value as string)
+    if (shoulders.size >= 64) {
+      const old = shoulders.keys().next().value as string
+      cubeNames.delete(shoulders.get(old)!)
+      shoulders.delete(old)
+    }
     shoulders.set(key, cube)
+    cubeNames.set(cube, `shoulder:${key}`)
   }
   return cube
+}
+
+/** Each shoulder table by a short name, for keys (the table itself is ~28 KB). */
+const cubeNames = new Map<string, string>()
+
+/**
+ * `value` as a key: JSON, with every shoulder table by its name rather than
+ * its 28 KB of text (what a render's signature stringifies on every update).
+ */
+export function gradeKey(value: unknown): string {
+  return JSON.stringify(value, (k, v: unknown) =>
+    k === 'Cube' && typeof v === 'string' ? (cubeNames.get(v) ?? v) : v
+  )
 }
 
 function buildShoulder(exposure: number, size: number): string {
@@ -524,11 +542,24 @@ export function aspectCrop(
 export function effectiveCrop(r: Pick<Recipe, 'geometry'>, w: number, h: number): CropRect | null {
   const { straighten, crop, aspect } = r.geometry
   const t = uprightTransform(r.geometry.upright, w, h)
-  if (crop) return fitCrop(crop, straighten, w, h, t)
-  if (aspect !== null && aspect > 0) return aspectCrop(aspect, straighten, w, h, t)
-  if (t) return fitCrop({ x: 0, y: 0, width: 1, height: 1 }, straighten, w, h, t)
-  if (straighten !== 0) return autoCrop(straighten, w, h)
-  return null
+  const c = crop
+    ? fitCrop(crop, straighten, w, h, t)
+    : aspect !== null && aspect > 0
+      ? aspectCrop(aspect, straighten, w, h, t)
+      : t
+        ? fitCrop({ x: 0, y: 0, width: 1, height: 1 }, straighten, w, h, t)
+        : straighten !== 0
+          ? autoCrop(straighten, w, h)
+          : null
+  // The whole frame (an aspect lock at the photo's own shape, a crop dragged
+  // back out) is no crop: the engine's fast path stays open.
+  return c && isWhole(c) ? null : c
+}
+
+/** Whether a crop is the whole frame, to well under a pixel. */
+function isWhole(c: CropRect): boolean {
+  const e = 1e-5
+  return c.x <= e && c.y <= e && c.width >= 1 - e && c.height >= 1 - e
 }
 
 /**

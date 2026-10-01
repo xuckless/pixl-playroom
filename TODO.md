@@ -345,19 +345,19 @@ Each release runs picture → mask → before → headroom → mask thumbnails
 
 ### Pass 17 — Compile hot path and opening a photo · 5 pts
 
-- [ ] **M** · **Per-frame hashing on the main process**: `brushPlanes`
+- [x] **M** · **Per-frame hashing on the main process**: `brushPlanes`
       re-hashes each brush PNG per compile (`brushes.ts:56`) though the key
       equals `planeRef`; `lensKey()` runs 4–6 times per update
       (`render.ts:407, 424, 502, 554, 558`); the cache key stringifies a
       ~28 KB `.cube` whenever exposure > 0 (`compile.ts:959`). Key brushes by
       ref; memoise `lensKey` on lens/retouch identity; key the cube by hash.
-- [ ] **M** · **Opening a photo is one long serial path**
+- [x] **M** · **Opening a photo is one long serial path**
       (`render.ts:1475-1490`): `probe` runs on the background engine
       (`library.ts:95`) behind thumbnails and exports, its cache is in memory
       only, and the first render is a full 2560 render plus a 2560 before.
       Probe on the interactive engine and persist probes; render a draft
       first.
-- [ ] **S** · **An untouched framing misses the engine's fast path**: an
+- [x] **S** · **An untouched framing misses the engine's fast path**: an
       aspect equal to the frame's emits a `{0,0,1,1}` crop.
 
 ### Pass 18 — Glass and UI loops · 5 pts

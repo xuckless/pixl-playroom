@@ -9,7 +9,7 @@
 import { join } from 'path'
 import type { Orientation } from '../shared/engine-types'
 import { gradientKey } from '../shared/gradients'
-import { hash32, type Recipe } from '../shared/recipe'
+import { planeRef, type Recipe } from '../shared/recipe'
 import { exists } from './exists'
 import { paths } from './paths'
 import { pruneGradientsSometimes, writeBrushPlane, writeGradientPlane } from './planes'
@@ -53,7 +53,9 @@ export async function brushPlanes(
         continue
       }
       if (c.kind !== 'brush' || !c.png) continue
-      const file = join(dir, `brush-${hash32(c.png).toString(16)}-${c.png.length}-${user}.png`)
+      // Named by its plane's reference (its content hash), reused when it has
+      // one: hashing megabytes of PNG on every compile is what it saves.
+      const file = join(dir, `brush-${c.ref ?? planeRef(c.png)}-${user}.png`)
       work.push(ensure(file, { op: 'brush', file, png: c.png, user }))
       out[c.id] = file
     }

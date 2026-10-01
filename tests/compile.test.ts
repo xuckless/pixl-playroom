@@ -342,3 +342,9 @@ test('on a black-and-white photo the masks run before the conversion, which stay
   // The toning is on the grey, after the conversion.
   assert.ok(kinds(finish).indexOf('ColorGrade') > kinds(finish).indexOf('Primary'))
 })
+
+test('an aspect lock at the photo’s own shape is no crop: nothing to frame', () => {
+  const r = defaultRecipe(false)
+  r.geometry.aspect = 6000 / 4000
+  assert.equal(compile(r, ctx).framing, null)
+})

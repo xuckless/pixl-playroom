@@ -9,9 +9,10 @@
  * until it has been edited, the photo's own pixels otherwise, and the graded
  * picture (from its proxy) once it has a recipe.
  */
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { existsSync } from 'fs'
+import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { compile } from '../shared/compile'
 import { dhashFromGrey } from '../shared/dupes'
@@ -67,6 +68,7 @@ interface ThumbJob {
 
 export class Library {
   private probes = new Map<string, SourceInfo>()
+  private probing = new Map<string, Promise<SourceInfo>>()
   /** JPEGs being rebuilt from a project's JPEG XL repack, by where they go. */
   private rebuilding = new Map<string, Promise<void>>()
   private queue: ThumbJob[] = []
@@ -95,12 +97,38 @@ export class Library {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload)
   }
 
-  /** A photo's probe, cached per file version. */
-  async probe(photo: PhotoRow): Promise<SourceInfo> {
+  /**
+   * A photo's probe, cached per file version: in memory, and on disk beside
+   * its proxies so a photo opened again (another day) does not ask the
+   * engine. `engine`: the one to ask when it must (opening a photo asks the
+   * interactive one, not the background one busy with thumbnails).
+   */
+  async probe(photo: PhotoRow, engine: EngineClient = this.engine): Promise<SourceInfo> {
     const k = versionOf(photo)
     const hit = this.probes.get(k)
     if (hit) return hit
-    const info = await this.engine.probe(photo.path)
+    let p = this.probing.get(k)
+    if (!p) {
+      p = this.probeOnce(photo, k, engine).finally(() => this.probing.delete(k))
+      this.probing.set(k, p)
+    }
+    return p
+  }
+
+  private async probeOnce(photo: PhotoRow, k: string, engine: EngineClient): Promise<SourceInfo> {
+    // Per app version too: the engine ships with it, and a newer one may say more.
+    const file = join(
+      paths.photoCache(photo.id),
+      `probe-${hash32(`${k}:${app.getVersion()}`).toString(16)}.json`
+    )
+    let info: SourceInfo | null = null
+    try {
+      info = JSON.parse(await readFile(file, 'utf8')) as SourceInfo
+    } catch {
+      info = await engine.probe(photo.path)
+      await mkdir(paths.photoCache(photo.id), { recursive: true })
+      await writeFile(file, JSON.stringify(info)).catch(() => undefined)
+    }
     this.probes.set(k, info)
     // The grid's HDR badge learns what the file is.
     const kind = hdrKindOf(info)
