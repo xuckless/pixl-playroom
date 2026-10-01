@@ -6,7 +6,15 @@
  * cache's bookkeeping. Deleting it loses nothing a sidecar holds.
  */
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
-import type { CameraInfo, ColorLabel, ExportPreset, Flag, HistoryLog, Preset } from '../shared/ipc'
+import type {
+  CameraInfo,
+  ColorLabel,
+  ExportPreset,
+  Flag,
+  HistoryAppend,
+  HistoryLog,
+  Preset
+} from '../shared/ipc'
 import type { ExportSettings } from '../shared/export'
 import { HistoryTable, type HistoryRow } from './historytable'
 import { normaliseRecipe, RECIPE_GROUPS, type Recipe, type RecipeGroup } from '../shared/recipe'
@@ -777,7 +785,7 @@ export class Store {
     return this.hist.history(itemKey)
   }
 
-  appendHistory(itemKey: string, label: string, recipe: Recipe): HistoryLog {
+  appendHistory(itemKey: string, label: string, recipe: Recipe): HistoryAppend {
     return this.hist.append(itemKey, label, recipe)
   }
 

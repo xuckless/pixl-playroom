@@ -16,6 +16,7 @@
  * Pure: shared by the index (which stores and folds steps) and the renderer
  * (which replays them).
  */
+import type { HistoryAppend, HistoryLog } from './ipc'
 import { GROUP_LABELS, type Recipe, type RecipeGroup } from './recipe'
 
 /** A key into an object, or an entity (mask, component, advanced layer) by id. */
@@ -155,6 +156,17 @@ export function replay(base: Recipe, steps: readonly Step[]): Recipe {
   const out = structuredClone(base) as unknown as Obj
   for (const s of steps) if (!s.hidden) for (const op of s.patch) applyOp(out, op)
   return out as unknown as Recipe
+}
+
+/** `log` with an append laid on it: the folded steps gone, the new base, the step. */
+export function appendToLog(log: HistoryLog, a: HistoryAppend): HistoryLog {
+  if (!a.step && !a.base) return log
+  const folded = new Set(a.folded)
+  const steps = folded.size > 0 ? log.steps.filter((s) => !folded.has(s.seq)) : log.steps
+  return {
+    base: a.base ?? log.base,
+    steps: a.step ? [...steps, a.step] : steps
+  }
 }
 
 /** The entity ids a patch adds. */

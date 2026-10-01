@@ -101,15 +101,15 @@ The photo and its virtual copies, one row each.
 
 Each item's edit history.
 
-| column     | meaning                                                      |
-| ---------- | ------------------------------------------------------------ |
-| `item_key` | the item's `item_id`                                         |
-| `seq`      | 1, 2, …, in order                                            |
-| `label`    | what the step did ("Exposure", "Mask 1: Contrast")           |
-| `at`       | ISO 8601 time                                                |
-| `recipe`   | the base's whole recipe (first row); `''` for a step         |
-| `patch`    | NULL for the base; for a step, the JSON patch it made        |
-| `hidden`   | 1 for a step that is undone (hidden steps are kept for redo) |
+| column     | meaning                                                             |
+| ---------- | ------------------------------------------------------------------- |
+| `item_key` | the item's `item_id`                                                |
+| `seq`      | 1, 2, …, in order                                                   |
+| `label`    | what the step did ("Exposure", "Mask 1: Contrast")                  |
+| `at`       | ISO 8601 time                                                       |
+| `recipe`   | the base's whole recipe (first row); for a step, `''` or a keyframe |
+| `patch`    | NULL for the base; for a step, the JSON patch it made               |
+| `hidden`   | 1 for a step that is undone (hidden steps are kept for redo)        |
 
 - **The base:** the first row of an item, a whole recipe.
 - **Patches:** a patch is an array of operations:
@@ -121,6 +121,12 @@ Each item's edit history.
   custom layers are addressed this way.
 - **The current recipe:** the base with every visible step's patch applied,
   in order.
+- **Keyframes:** a step's `recipe` may hold the whole current recipe as of
+  that step (the base with every visible step up to it applied). Writers keep
+  one every 25 steps, so the current recipe is the latest keyframe with the
+  steps after it applied. Hiding, showing or deleting a step clears the
+  keyframes from it on. A reader may ignore keyframes and replay from the
+  base: the result is the same.
 - **Folding:** past 200 rows, the oldest steps fold into the base, and a hidden
   one is dropped.
 

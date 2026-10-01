@@ -21,6 +21,7 @@ import {
   type ExportPreset,
   type ExportProgress,
   type FolderListing,
+  type HistoryAppend,
   type HistoryLog,
   type KeywordNode,
   type HdrKind,
@@ -188,7 +189,7 @@ const api = {
       call<void>(IPC.develop.saveSnapshots, key, snapshots),
     historyList: (key: string) => call<HistoryLog>(IPC.develop.historyList, key),
     historyAppend: (key: string, label: string, recipe: Recipe) =>
-      call<HistoryLog>(IPC.develop.historyAppend, key, label, recipe),
+      call<HistoryAppend>(IPC.develop.historyAppend, key, label, recipe),
     historySetHidden: (key: string, seqs: number[], hidden: boolean) =>
       call<HistoryLog>(IPC.develop.historySetHidden, key, seqs, hidden),
     historyDelete: (key: string, seqs: number[]) =>

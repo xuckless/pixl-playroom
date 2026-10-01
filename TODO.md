@@ -516,9 +516,14 @@ After: Pass 23. pixl-web.
 
 After: Passes 2, 13.
 
-- [ ] **L** · Store a full recipe every K steps (or a cached head) so
+- [x] **L** · Store a full recipe every K steps (or a cached head) so
       appending is O(1) and hide/show replays from the nearest keyframe; make
       `items.recipe` the history head, written in the same transaction.
+      _Done: a keyframe every 25 steps (`historytable.ts`); an append reads
+      at most 25 rows and returns only what changed (`HistoryAppend`,
+      `appendToLog`); hide/show/delete rebuild keyframes and send the head,
+      so the renderer doesn't replay. The recipe and step were already one
+      transaction (`commitEdit`, Pass 2)._
 
 ### Pass 28 — One write-behind queue per project · 4 pts
 

@@ -28,6 +28,7 @@ import type {
   DuplicateGroup,
   ExportPreset,
   Flag,
+  HistoryAppend,
   HistoryLog,
   KeywordNode,
   HdrKind,
@@ -1932,19 +1933,21 @@ export class IndexService {
   appendHistory(key: string, label: string, recipe: Recipe): HistoryLog {
     const row = this.row(key)
     if (!this.projectOf(row)) {
-      const log = this.store.appendHistory(key, label, recipe)
+      this.store.appendHistory(key, label, recipe)
+      const log = this.store.history(key)
       if (log.steps.length === 0) return log
       this.ensureProject(row)
       return this.history(key)
     }
-    return this.inHistory(
+    this.inHistory(
       key,
       (p, k) => this.appendIn(p, k, label, recipe),
       () => this.store.appendHistory(key, label, recipe)
     )
+    return this.history(key)
   }
 
-  private appendIn(p: PixlFile, itemKey: string, label: string, recipe: Recipe): HistoryLog {
+  private appendIn(p: PixlFile, itemKey: string, label: string, recipe: Recipe): HistoryAppend {
     const log = p.history.append(itemKey, label, recipe)
     // The planes it names go into the project with it.
     for (const ref of refsIn(JSON.stringify(recipe))) {
@@ -1959,19 +1962,20 @@ export class IndexService {
    * A settled edit: its history step (`step`, planes by reference) and the
    * recipe the photo now has (`recipe`, whole) written together, so a crash
    * never leaves the history ahead of the saved recipe, which the next open
-   * would record as where the photo stands.
+   * would record as where the photo stands. Returns what changed in the
+   * history, not all of it.
    */
-  commitEdit(key: string, label: string, step: Recipe, recipe: Recipe): HistoryLog {
+  commitEdit(key: string, label: string, step: Recipe, recipe: Recipe): HistoryAppend {
     const row = this.row(key)
     const path = this.projectOf(row)
     if (!path) {
-      const log = this.store.appendHistory(key, label, step)
+      const change = this.store.appendHistory(key, label, step)
       // The "Opened" base only records what is saved already.
-      if (log.steps.length === 0) return log
-      // A real edit makes the project, which takes the index's history with it.
+      if (!change.step) return change
+      // A real edit makes the project, which takes the index's history (as it is) with it.
       this.saveRecipe(key, recipe)
       this.ensureProject(this.row(key))
-      return this.history(key)
+      return change
     }
     const log = this.projects.use(path, (p) =>
       p.tx(() => {

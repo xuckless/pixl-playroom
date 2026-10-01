@@ -409,6 +409,22 @@ export interface HistoryBase {
 export interface HistoryLog {
   base: HistoryBase | null
   steps: Step[]
+  /**
+   * The recipe it describes, when the sender worked it out (from a keyframe,
+   * after a hide, show or delete), so the receiver need not replay it.
+   */
+  head?: Recipe
+}
+
+/**
+ * What recording an edit changed (`appendToLog` lays it on the log): the
+ * step (null when the edit changed nothing), a new base (the first edit, or
+ * the oldest steps folding into it), and the steps folded away.
+ */
+export interface HistoryAppend {
+  base: HistoryBase | null
+  step: Step | null
+  folded: number[]
 }
 
 export interface DevelopSession {

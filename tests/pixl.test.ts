@@ -137,8 +137,8 @@ test('history lives in the project, and gc drops planes nothing names', () => {
   p.history.append('', 'Opened', r)
   const next = structuredClone(r)
   next.basic.contrast = 20
-  const log = p.history.append('', 'Contrast', next)
-  assert.equal(log.steps.length, 1)
+  p.history.append('', 'Contrast', next)
+  assert.equal(p.history.history('').steps.length, 1)
   p.putPlane('orphan', 'x')
   p.putPlane('kept', 'y')
   const named = structuredClone(next)
@@ -250,12 +250,13 @@ test('a committed edit saves its step and the recipe together', async () => {
   const a = (await index.listFolder(folder))[0].key
   const r = defaultRecipe(false)
   // The base only records what is saved: no project, nothing written.
-  assert.equal(index.commitEdit(a, 'Opened', r, r).steps.length, 0)
+  assert.equal(index.commitEdit(a, 'Opened', r, r).step, null)
   assert.equal(index.projectPath(a), null)
   // The first step makes the project with the recipe in it.
   const one = structuredClone(r)
   one.basic.exposure = 1
-  assert.equal(index.commitEdit(a, 'Exposure', one, one).steps.length, 1)
+  assert.equal(index.commitEdit(a, 'Exposure', one, one).step?.label, 'Exposure')
+  assert.equal(index.history(a).steps.length, 1)
   assert.ok(index.projectPath(a))
   assert.equal(index.recipe(a).basic.exposure, 1)
   // In a project: the step, and the live recipe (newer than the step) saved with it.
@@ -263,8 +264,8 @@ test('a committed edit saves its step and the recipe together', async () => {
   two.basic.contrast = 20
   const live = structuredClone(two)
   live.basic.contrast = 30
-  const log = index.commitEdit(a, 'Contrast', two, live)
-  assert.equal(log.steps.length, 2)
+  index.commitEdit(a, 'Contrast', two, live)
+  assert.equal(index.history(a).steps.length, 2)
   assert.equal(index.recipe(a).basic.contrast, 30)
   assert.equal(index.item(a)?.edited, true)
   await settle()

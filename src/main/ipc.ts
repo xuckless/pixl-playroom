@@ -401,7 +401,8 @@ export function registerIpc(s: Services): void {
   // Stored recipes and patches hold planes by reference; the base crosses slim.
   const slimLog = (log: HistoryLog): HistoryLog => ({
     ...log,
-    base: log.base && { ...log.base, recipe: s.planes.slim(log.base.recipe) }
+    base: log.base && { ...log.base, recipe: s.planes.slim(log.base.recipe) },
+    ...(log.head ? { head: s.planes.slim(log.head) } : {})
   })
   handle(IPC.develop.historyList, async (key: string) => slimLog(await s.index.history(key)))
   handle(IPC.develop.historyAppend, async (key: string, label: string, recipe: Recipe) => {
@@ -410,9 +411,11 @@ export function registerIpc(s: Services): void {
     // its own save of that recipe is not needed after.
     const live = s.sessions.liveRecipe(key)
     const full = live ?? (await s.planes.hydrate(recipe))
-    const log = await s.index.commitEdit(key, label, s.planes.slim(recipe), full)
+    const change = await s.index.commitEdit(key, label, s.planes.slim(recipe), full)
     if (live) s.sessions.saved(key, live)
-    return slimLog(log)
+    return change.base
+      ? { ...change, base: { ...change.base, recipe: s.planes.slim(change.base.recipe) } }
+      : change
   })
   handle(IPC.develop.historySetHidden, async (key: string, seqs: number[], hidden: boolean) =>
     slimLog(await s.index.setHistoryHidden(key, seqs, hidden))

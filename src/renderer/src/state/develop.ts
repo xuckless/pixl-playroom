@@ -9,7 +9,7 @@ import type {
   Snapshot,
   ViewState
 } from '../../../shared/ipc'
-import { replay } from '../../../shared/history'
+import { appendToLog, replay } from '../../../shared/history'
 import {
   newId,
   normaliseRecipe,
@@ -234,8 +234,9 @@ function applyLog(key: string, history: HistoryLog): void {
   const { session } = useDevelop.getState()
   if (!session || session.key !== key || !history.base) return
   // A base saved by an older version can lack fields added since (AI denoise's).
-  const recipe = normaliseRecipe(replay(history.base.recipe, history.steps), session.isRaw)
-  useDevelop.setState({ history, recipe, rendering: true })
+  const { head, ...log } = history
+  const recipe = normaliseRecipe(head ?? replay(log.base!.recipe, log.steps), session.isRaw)
+  useDevelop.setState({ history: log, recipe, rendering: true })
   sendNow(session.key, recipe, (m) => useDevelop.getState().onError(m))
 }
 
@@ -348,13 +349,16 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         api.develop.historyList(key)
       ])
       if (stale()) return
-      let history = listed
+      const { head, ...rest } = listed
+      let history: HistoryLog = rest
       if (!history.base) {
-        history = await api.develop.historyAppend(key, 'Opened', session.recipe)
-      } else if (!sameValue(replay(history.base.recipe, history.steps), session.recipe)) {
+        const opened = await api.develop.historyAppend(key, 'Opened', session.recipe)
+        history = appendToLog(history, opened)
+      } else if (!sameValue(head ?? replay(history.base.recipe, history.steps), session.recipe)) {
         // Changed where no history is written (a paste or sync in the
         // library, an older version's undo): record where it stands now.
-        history = await api.develop.historyAppend(key, 'Opened as saved', session.recipe)
+        const saved = await api.develop.historyAppend(key, 'Opened as saved', session.recipe)
+        history = appendToLog(history, saved)
       }
       if (stale()) return
       openingKey = null
@@ -421,8 +425,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     }
     // In line with Undo and Redo: one pressed straight after waits for this step.
     queueHistoryOp(async () => {
-      const history = await api.develop.historyAppend(session.key, label, recipe)
-      if (get().session?.key === session.key) set({ history, redo: [] })
+      const change = await api.develop.historyAppend(session.key, label, recipe)
+      if (get().session?.key === session.key)
+        set({ history: appendToLog(get().history, change), redo: [] })
     })
     const item = useLibrary.getState().items.find((i) => i.key === session.key)
     if (item && !item.edited) useLibrary.getState().patchItems([{ ...item, edited: true }])
