@@ -16,6 +16,7 @@ import { createHash } from 'crypto'
 import {
   closeSync,
   existsSync,
+  fsyncSync,
   openSync,
   readSync,
   renameSync,
@@ -24,6 +25,7 @@ import {
   writeSync
 } from 'fs'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
+import { dirname } from 'path'
 import type { ColorLabel, Flag, Snapshot } from '../../shared/ipc'
 import { hydrateRecipe, normaliseRecipe, slimRecipe, type Recipe } from '../../shared/recipe'
 import { HISTORY_SCHEMA, HistoryTable, type HistoryRow } from '../historytable'
@@ -103,6 +105,19 @@ export interface Origin {
   path: string
   isRaw: boolean
   sha1: string | null
+}
+
+/** Make a directory's entries (a rename into it) durable. Not every platform can (Windows). */
+export function syncDir(dir: string): void {
+  let fd: number | undefined
+  try {
+    fd = openSync(dir, 'r')
+    fsyncSync(fd)
+  } catch {
+    // A directory that cannot be opened or synced: the rename stands as it is.
+  } finally {
+    if (fd !== undefined) closeSync(fd)
+  }
 }
 
 /** Blobs are stored in chunks of this many bytes. */
@@ -232,6 +247,9 @@ export class PixlFile {
     }
     file.close()
     renameSync(tmp, path)
+    // The rename on disk before anything it replaces (the sidecar, the
+    // index's history) is deleted: a crash then finds one or the other.
+    syncDir(dirname(path))
     return PixlFile.open(path)
   }
 

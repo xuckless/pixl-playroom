@@ -48,7 +48,13 @@ interface Pending {
 }
 
 const MAX_RESTARTS = 5
-const STOP_WAIT_MS = 2000
+/**
+ * How long a quit waits for the index to close. It answers once the work in
+ * hand ends (its transactions are synchronous, so it is never mid-one when it
+ * reads the close); killed sooner, a long scan or an embed would leave a hot
+ * journal beside a photo's project.
+ */
+const STOP_WAIT_MS = 20_000
 
 class Connection implements IndexControl {
   private child: UtilityProcess | undefined

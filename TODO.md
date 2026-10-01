@@ -220,7 +220,7 @@ After: Pass 1.
       inherits an old project (recipe, history, embedded original); a renamed
       photo detaches and its project shows as a stand-in. Check size and SHA-1
       from `origin`; follow a rename by hash.
-- [ ] **M** · **Quit and create can leave a torn project.** `stop()` kills the
+- [x] **M** · **Quit and create can leave a torn project.** `stop()` kills the
       index host after 2 s (`indexer/client.ts:79-82`), mid-transaction during
       an embed or scan, leaving a hot `.pixl-journal` beside the photo;
       `createProject` renames into place without a directory fsync, then
