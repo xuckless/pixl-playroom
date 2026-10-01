@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Color, type ShaderMaterial } from 'three'
 import { useFrameLimit } from './frames'
 import { watchContext } from './mode'
@@ -50,9 +50,10 @@ void main() {
 }
 `
 
-function Surface({ intensity }: { intensity: number }): React.JSX.Element {
+function Surface({ intensity, still }: { intensity: number; still: boolean }): React.JSX.Element {
   const mat = useRef<ShaderMaterial>(null)
   const size = useThree((s) => s.size)
+  const invalidate = useThree((s) => s.invalidate)
   const uniforms = useMemo(
     () => ({
       uTime: { value: START_TIME },
@@ -68,7 +69,11 @@ function Surface({ intensity }: { intensity: number }): React.JSX.Element {
     []
   )
   // A slow scene: thirty frames a second is plenty, and nothing while hidden.
-  useFrameLimit(30)
+  // Still (behind a dialog, under its glass): one frame, then no clock.
+  useFrameLimit(30, !still)
+  useEffect(() => {
+    if (still) invalidate()
+  }, [still, invalidate, size])
   useFrame((state, dt) => {
     const m = mat.current
     if (!m) return
@@ -92,9 +97,11 @@ function Surface({ intensity }: { intensity: number }): React.JSX.Element {
 
 /** A slow shader gradient in the accent's purples: the empty and idle canvases, and behind dialogs. */
 export default function AmbientGradient({
-  intensity = 1
+  intensity = 1,
+  still = false
 }: {
   intensity?: number
+  still?: boolean
 }): React.JSX.Element {
   return (
     <Canvas
@@ -107,7 +114,7 @@ export default function AmbientGradient({
         watchContext(gl.domElement)
       }}
     >
-      <Surface intensity={intensity} />
+      <Surface intensity={intensity} still={still} />
     </Canvas>
   )
 }

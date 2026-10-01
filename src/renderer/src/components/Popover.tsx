@@ -96,10 +96,33 @@ export function Popover({
         box.style.maxHeight = `${p.maxHeight}px`
         box.dataset.side = p.side
       }
-      frame = requestAnimationFrame(place)
+    }
+    // Placed again when something could have moved it (not measured every
+    // frame, which forced a layout per frame while it was open): a scroll, a
+    // resize, either box changing size, and a slow look for an anchor that
+    // moves on its own (a row sliding in).
+    const schedule = (): void => {
+      if (!frame)
+        frame = requestAnimationFrame(() => {
+          frame = 0
+          place()
+        })
     }
     place()
-    return () => cancelAnimationFrame(frame)
+    window.addEventListener('scroll', schedule, { capture: true, passive: true })
+    window.addEventListener('resize', schedule)
+    const ro = new ResizeObserver(schedule)
+    ro.observe(box)
+    const a = anchorEl()
+    if (a) ro.observe(a)
+    const slow = setInterval(schedule, 250)
+    return () => {
+      cancelAnimationFrame(frame)
+      clearInterval(slow)
+      ro.disconnect()
+      window.removeEventListener('scroll', schedule, { capture: true })
+      window.removeEventListener('resize', schedule)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [align, side, anchor])
 

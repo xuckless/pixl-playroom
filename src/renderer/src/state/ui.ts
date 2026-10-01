@@ -164,14 +164,47 @@ interface UiState {
   resetKeyBindings(): void
 }
 
-/** localStorage may be missing or refuse writes (private profiles, quota); the app works without it. */
-const storage = createJSONStorage(() => {
+/**
+ * localStorage may be missing or refuse writes (private profiles, quota); the
+ * app works without it. Writes are gathered and made a moment later (a slider
+ * in a panel, a resize, a drag would write the whole state each tick), and
+ * whatever waits is written as the window goes.
+ */
+const WRITE_MS = 400
+const waiting = new Map<string, string>()
+let writeTimer: ReturnType<typeof setTimeout> | undefined
+const local = (): Storage | undefined => {
   try {
     return window.localStorage
   } catch {
-    return undefined as unknown as Storage
+    return undefined
   }
-})
+}
+const flushWrites = (): void => {
+  clearTimeout(writeTimer)
+  writeTimer = undefined
+  const ls = local()
+  for (const [k, v] of waiting) {
+    try {
+      ls?.setItem(k, v)
+    } catch {
+      // Quota or a private profile: kept for this session only.
+    }
+  }
+  waiting.clear()
+}
+if (typeof window !== 'undefined') window.addEventListener('beforeunload', flushWrites)
+const storage = createJSONStorage(() => ({
+  getItem: (k: string) => waiting.get(k) ?? local()?.getItem(k) ?? null,
+  setItem: (k: string, v: string) => {
+    waiting.set(k, v)
+    writeTimer ??= setTimeout(flushWrites, WRITE_MS)
+  },
+  removeItem: (k: string) => {
+    waiting.delete(k)
+    local()?.removeItem(k)
+  }
+}))
 
 export const useUi = create<UiState>()(
   persist(

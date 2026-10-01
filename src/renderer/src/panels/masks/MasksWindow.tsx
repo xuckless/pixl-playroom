@@ -27,6 +27,7 @@ import { SelectedMask } from './MaskTool'
 import { ToolPicker } from './ToolPicker'
 import { useReorder } from './useReorder'
 import { keyHint, withKey } from '../../lib/commands'
+import { touchInteracting } from '../../lib/interacting'
 
 /** The drawing and range tools, one click from the selected mask's add bar. */
 const ADD_TOOLS: { kind: MaskToolKind; icon: IconName; label: string }[] = [
@@ -677,9 +678,14 @@ function startDrag(e: React.PointerEvent, onTap?: () => void): void {
   const from = { x: e.clientX, y: e.clientY }
   let moved = false
   let near = false
+  // Where it is going: moved by a transform while dragged, kept (and
+  // saved) once, on release, not stored at every pointer move.
+  let to: { x: number; y: number } | null = null
+  const shown = (): HTMLElement | null => stage.querySelector('.masks-win, .mf-pill')
   const move = (ev: PointerEvent): void => {
     if (!moved && Math.hypot(ev.clientX - from.x, ev.clientY - from.y) < 4) return
     moved = true
+    touchInteracting()
     const ui = useUi.getState()
     // A docked window's pill floats once it is dragged.
     if (ui.masksWin.docked && ui.masksWin.minimized) ui.setMasksWin({ docked: false })
@@ -693,17 +699,20 @@ function startDrag(e: React.PointerEvent, onTap?: () => void): void {
     const b = stage.getBoundingClientRect()
     near = ev.clientX - b.left < DOCK_SNAP
     stage.classList.toggle('dock-hint', near)
-    ui.setMasksWin(
-      clampTo(ev.clientX - grab.dx - b.left, ev.clientY - grab.dy - b.top, b.width, b.height)
-    )
+    to = clampTo(ev.clientX - grab.dx - b.left, ev.clientY - grab.dy - b.top, b.width, b.height)
+    const el = shown()
+    if (el) el.style.transform = `translate(${to.x - ui.masksWin.x}px, ${to.y - ui.masksWin.y}px)`
   }
   const up = (): void => {
     window.removeEventListener('pointermove', move, true)
     window.removeEventListener('pointerup', up, true)
     window.removeEventListener('pointercancel', up, true)
     stage.classList.remove('dock-hint')
+    const el = shown()
+    if (el) el.style.transform = ''
     if (!moved) return onTap?.()
     if (near) useUi.getState().setMasksWin({ docked: true, minimized: false })
+    else if (to) useUi.getState().setMasksWin(to)
   }
   // In the capture phase: the loupe's own tools (pins, the gradient and lasso
   // editors) stop the pointer's events over the photo, and the drag must

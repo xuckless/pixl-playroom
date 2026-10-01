@@ -52,18 +52,25 @@ export function Sphere({ active = true }: { active?: boolean }): React.JSX.Eleme
 }
 
 /** The ambient shader gradient behind empty canvases and dialogs. */
-export function Ambient({ intensity = 1 }: { intensity?: number }): React.JSX.Element {
+export function Ambient({
+  intensity = 1,
+  still = false
+}: {
+  intensity?: number
+  /** One frame and no clock (behind a dialog). */
+  still?: boolean
+}): React.JSX.Element {
   const mode = useFxMode()
   return (
     <div className="ambient" aria-hidden>
       {mode === 'webgl' ? (
         <ErrorBoundary fallback={<CssAmbient intensity={intensity} />} onError={disableWebgl}>
           <Suspense fallback={<CssAmbient intensity={intensity} />}>
-            <AmbientGl intensity={intensity} />
+            <AmbientGl intensity={intensity} still={still} />
           </Suspense>
         </ErrorBoundary>
       ) : (
-        <CssAmbient still={mode === 'static'} intensity={intensity} />
+        <CssAmbient still={still || mode === 'static'} intensity={intensity} />
       )}
       <div className="vignette" />
     </div>

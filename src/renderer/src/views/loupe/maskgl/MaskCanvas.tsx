@@ -50,8 +50,16 @@ const decodeOpts: ImageBitmapOptions = {
   colorSpaceConversion: 'none'
 }
 
-async function bitmapOf(url: string): Promise<ImageBitmap> {
-  return createImageBitmap(await (await fetch(url)).blob(), decodeOpts)
+/** The picture for keying ranges: the mask is drawn at most this wide, so no larger. */
+const PICTURE_EDGE = 1024
+
+/** A picture decoded, straight to `width` across when given (its height follows). */
+async function bitmapOf(url: string, width?: number): Promise<ImageBitmap> {
+  const blob = await (await fetch(url)).blob()
+  return createImageBitmap(
+    blob,
+    width ? { ...decodeOpts, resizeWidth: width, resizeQuality: 'medium' } : decodeOpts
+  )
 }
 
 /** Painted planes, decoded, by what the component holds (its reference or its PNG). */
@@ -106,7 +114,11 @@ export function MaskCanvas({
   )
   const overlayHue = useDevelop((s) => s.recipe?.layers.find((l) => l.id === s.layerId)?.overlayHue)
   const mask = useDevelop((s) => (s.mask && s.mask.layerId === s.layerId ? s.mask : null))
-  const pictureUrl = useDevelop((s) => s.picture?.url ?? null)
+  // The picture a range keys on: the settled one (a draft per tick would be
+  // decoded per tick), its last one kept while drafts come and go.
+  const pictureUrl = useDevelop((s) =>
+    s.picture && s.picture.kind !== 'draft' ? s.picture.url : null
+  )
   const overlay = useDevelop((s) => s.overlay)
   const o = useUi((s) => s.maskOverlay)
   const [bitmapTick, setBitmapTick] = useState(0)
@@ -192,7 +204,11 @@ export function MaskCanvas({
   useEffect(() => {
     if (!hasRange || !pictureUrl) return
     let on = true
-    void bitmapOf(pictureUrl)
+    // Decoded straight to the size the mask is keyed at, not the render's.
+    const p = useDevelop.getState().picture
+    const k = p ? Math.min(1, PICTURE_EDGE / Math.max(p.width, p.height)) : 1
+    const width = p && k < 1 ? Math.max(1, Math.round(p.width * k)) : undefined
+    void bitmapOf(pictureUrl, width)
       .then((bmp) => {
         if (!on) return bmp.close()
         setPicture((was) => {

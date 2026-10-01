@@ -10,6 +10,7 @@ import {
   type ViewGeometry
 } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
+import { touchInteracting } from '../../lib/interacting'
 import { planePng, rememberPlane } from '../../lib/planes'
 import type { Affine, Dab } from '../../workers/brush.worker'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
@@ -284,6 +285,7 @@ export const BrushLayer = memo(function BrushLayer({
         placeCursor()
         if (!hovering) setHovering(true)
         if (!stroke.current) return
+        touchInteracting()
         // Every sample the pointer made since the last frame, for smooth strokes.
         const samples = e.nativeEvent.getCoalescedEvents?.() ?? [e.nativeEvent]
         for (const ev of samples.length ? samples : [e.nativeEvent])

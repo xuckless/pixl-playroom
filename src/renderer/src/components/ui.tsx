@@ -338,6 +338,9 @@ export function Modal({
           bezel={18}
           strength={0.7}
           frost={6}
+          // Frosted, not refracting: a dialog's glass is large, and a refraction
+          // filter that size costs every frame it animates or scrolls.
+          flat
           role="dialog"
           aria-label={title}
           onMouseDown={(e) => e.stopPropagation()}

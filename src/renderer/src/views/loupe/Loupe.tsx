@@ -27,6 +27,7 @@ import {
   type ZoomView
 } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
+import { touchInteracting } from '../../lib/interacting'
 import { emptyRange, hsvOf } from '../../lib/helpers'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { samplePatch } from '../../lib/image'
@@ -192,6 +193,8 @@ export function Loupe(): React.JSX.Element {
       const from = laidOut.current
       const to = viewport ? zoomedRect(viewport, next) : null
       live.current = next
+      // A pan or zoom in motion: the glass over the loupe holds its last frame.
+      touchInteracting()
       if (el && from && to) {
         const k = to.w / from.w
         el.style.willChange = 'transform'

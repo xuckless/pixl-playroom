@@ -362,19 +362,19 @@ Each release runs picture → mask → before → headroom → mask thumbnails
 
 ### Pass 18 — Glass and UI loops · 5 pts
 
-- [ ] **S** · **The liquid-glass filter re-filters every frame during pan,
+- [x] **S** · **The liquid-glass filter re-filters every frame during pan,
       zoom, brush and window drags**: only `edit()` sets `data-interacting`
       (`develop.ts:359`; `primitives.css:747-751`). Call `touchInteracting()`
       in `Loupe.tsx:186` `preview`, the brush pointermove and `startDrag`.
-- [ ] **S** · **A WebGL gradient renders at 30 fps behind every dialog**
+- [x] **S** · **A WebGL gradient renders at 30 fps behind every dialog**
       (`fx/AmbientGradient.tsx:71`, `DialogBackdrop.tsx:14`) under refracting
       glass. Stop its clock after one frame there; flat glass for modals.
-- [ ] **S** · **An open Popover runs a layout-forcing rAF loop**
+- [x] **S** · **An open Popover runs a layout-forcing rAF loop**
       (`Popover.tsx:79-100`). ResizeObserver plus scroll/resize listeners.
-- [ ] **S** · **Range masks re-decode the full preview on every draft**
+- [x] **S** · **Range masks re-decode the full preview on every draft**
       (`MaskCanvas.tsx:167-177, 308`). Decode downscaled; refresh on settled
       renders only.
-- [ ] **S** · **Dragging the masks window writes localStorage per pointer
+- [x] **S** · **Dragging the masks window writes localStorage per pointer
       move** (`MasksWindow.tsx:695` → `ui.ts:177`, no `partialize`). Move it by
       transform, commit on pointer-up; `partialize` and throttle storage.
 
