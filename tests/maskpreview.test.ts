@@ -7,6 +7,7 @@ import {
   featherRadius,
   keyValues,
   layerValue,
+  maskJoins,
   planeKey,
   previewable,
   rangeWeight
@@ -117,4 +118,38 @@ test("a plane's key ignores how it joins, and follows its shape and feather", ()
   assert.notEqual(planeKey(c), planeKey({ ...c, feather: 11 }))
   assert.notEqual(planeKey(c), planeKey({ ...c, centre: { x: 0.51, y: 0.5 } }))
   near(featherRadius(c), 0.01)
+})
+
+test('the loupe joins components as compile does: first made adds, a Subtract left first goes', () => {
+  const r = (id: string, mode: 'Add' | 'Subtract'): RadialComponent => ({
+    id,
+    kind: 'radial',
+    mode,
+    opacity: 100,
+    invert: false,
+    feather: 0,
+    centre: { x: 0.5, y: 0.5 },
+    radiusX: 0.2,
+    radiusY: 0.2,
+    angle: 0,
+    softness: 50,
+    width: 512,
+    height: 512
+  })
+  const lasso = {
+    id: 'l',
+    kind: 'polygon' as const,
+    mode: 'Add' as const,
+    opacity: 100,
+    invert: false,
+    feather: 0,
+    points: [{ x: 0.1, y: 0.1 }]
+  }
+  const modes = (cs: Parameters<typeof maskJoins>[0]): string[] =>
+    maskJoins(cs).map((j) => `${j.c.id}:${j.mode}`)
+  // Made first, a Subtract adds (as the masks panel shows it).
+  assert.deepEqual(modes([r('a', 'Subtract'), r('b', 'Subtract')]), ['a:Add', 'b:Subtract'])
+  // A first lasso of one point cannot be drawn: the Subtract after it is not made an Add.
+  assert.deepEqual(modes([lasso, r('b', 'Subtract'), r('c', 'Add')]), ['c:Add'])
+  assert.deepEqual(modes([lasso, r('b', 'Subtract')]), [])
 })

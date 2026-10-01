@@ -176,10 +176,13 @@ async function patchOverlay(
   const r = step.rect!
   const kx = w / step.width
   const ky = h / step.height
-  const x0 = Math.max(0, Math.floor(r.x * kx))
-  const y0 = Math.max(0, Math.floor(r.y * ky))
-  const x1 = Math.min(w, Math.ceil((r.x + r.w) * kx))
-  const y1 = Math.min(h, Math.ceil((r.y + r.h) * ky))
+  // The engine places an overlay on whole pixels: the patch goes at its
+  // nearest, at its own size rounded (not stretched over every pixel it
+  // touches, which grew a 15.8 px patch to 17).
+  const x0 = Math.max(0, Math.round(r.x * kx))
+  const y0 = Math.max(0, Math.round(r.y * ky))
+  const x1 = Math.min(w, x0 + Math.max(1, Math.round(r.w * kx)))
+  const y1 = Math.min(h, y0 + Math.max(1, Math.round(r.h * ky)))
   const pw = x1 - x0
   const ph = y1 - y0
   if (pw < 1 || ph < 1) return null

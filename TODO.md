@@ -143,14 +143,14 @@ After: Pass 1.
 - [x] **S** · **A Subtract component becomes Add** when the one before it is
       dropped (a brush whose plane didn't hydrate, a one-point lasso):
       `compile.ts:725-730` promotes it. Drop leading non-Add components.
-- [ ] **S** · **Heal lens map read with the wrong pixel convention**:
+- [x] **S** · **Heal lens map read with the wrong pixel convention**:
       written as i/(mw−1), read as a fraction by `toSource` and as v·(w−1) by
       `unwarpMask` (`pixels/heal.ts:58-70`, `ops.ts:93`); ±2.8 px at the edges
       of 6000 px. Use (v·(mw−1)+0.5)/mw.
-- [ ] **S** · **Heal radius not mapped through the lens correction.**
-- [ ] **S** · **Proxy heal patches snap to whole pixels** (a 15.8 px patch is
+- [x] **S** · **Heal radius not mapped through the lens correction.**
+- [x] **S** · **Proxy heal patches snap to whole pixels** (a 15.8 px patch is
       drawn at 17 px).
-- [ ] **S** · **Mask overlay draws gradients compile drops** (no plane file
+- [x] **S** · **Mask overlay draws gradients compile drops** (no plane file
       yet), so the overlay shows a mask that isn't applied.
 
 ### Pass 7 — Lens, presets and paste · 5 pts

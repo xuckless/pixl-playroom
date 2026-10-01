@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { drawable } from '../../../../../shared/maskpreview'
+import { maskJoins } from '../../../../../shared/maskpreview'
 import type { LocalLayer } from '../../../../../shared/recipe'
 import { displayToBase, type P, type ViewGeometry } from '../../../../../shared/view'
 import { planePng } from '../../../lib/planes'
@@ -205,14 +205,14 @@ export function MaskCanvas({
     // Painted planes: decode what is missing, and come back when it is.
     const joins: Join[] = []
     let waiting = false
-    for (const comp of layer.components.filter(drawable)) {
+    for (const { c: comp, mode } of maskJoins(layer.components)) {
       if (comp.kind !== 'brush') {
-        joins.push({ c: comp })
+        joins.push({ c: comp, mode })
         continue
       }
       const key = brushKey(comp)
       const got = brushBitmaps.get(key)
-      if (got instanceof ImageBitmap) joins.push({ c: comp, bitmap: got })
+      if (got instanceof ImageBitmap) joins.push({ c: comp, mode, bitmap: got })
       else {
         waiting = true
         if (!got) {

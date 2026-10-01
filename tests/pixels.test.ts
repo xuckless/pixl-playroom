@@ -121,6 +121,13 @@ test('a mask is put back on the photo through the lens map', () => {
   assert.equal(moved[15 * w + 17], 255)
   assert.equal(moved[15 * w + 12], 0)
   assert.equal(moved[15 * w + 24], 255)
+  // A map smaller than the photo (as lens maps are): read by pixel centres,
+  // no correction still puts the mask back where it was.
+  writeRamp(join(dir, 'small.png'), w / 2, h / 2)
+  unwarpMask(join(dir, 'mask.png'), join(dir, 'small.png'), w, h, join(dir, 'small-out.png'))
+  const small = decodePng(readFileSync(join(dir, 'small-out.png'))).rows
+  for (let y = 2; y < h - 2; y++)
+    for (let x = 2; x < w - 2; x++) assert.equal(small[y * w + x], plane[y * w + x], `${x},${y}`)
   rmSync(dir, { recursive: true })
 })
 
@@ -616,4 +623,42 @@ test('a step made over earlier steps goes after them, under any added while it r
   // The step it followed is gone, or no base given: last.
   assert.deepEqual(ids(placeStep([heal], made, ['a'])), ['heal', 'denoise'])
   assert.deepEqual(ids(placeStep([a], made)), ['a', 'denoise'])
+})
+
+test('a heal drawn on the corrected picture keeps its size on the photo', async () => {
+  const { localScale } = await import('../src/main/pixels/heal')
+  // A correction that shrinks the photo 1.2× into the corrected frame: what
+  // was drawn there is 1.2× as large on the photo.
+  const map = (p: { x: number; y: number }): { x: number; y: number } => ({
+    x: 0.5 + (p.x - 0.5) * 1.2,
+    y: 0.5 + (p.y - 0.5) * 1.2
+  })
+  assert.ok(Math.abs(localScale(map, { x: 0.3, y: 0.6 }, 6000, 4000) - 1.2) < 1e-9)
+  assert.ok(Math.abs(localScale((p) => p, { x: 0.5, y: 0.5 }, 6000, 4000) - 1) < 1e-9)
+})
+
+test('a heal patch on a proxy goes at its own size, not stretched over every pixel it touches', async () => {
+  const { overlaysOf } = await import('../src/main/pixels/working')
+  const dir = tmp()
+  const resized: { width: number; height: number }[] = []
+  const deps: PixelDeps = {
+    engine: {
+      convert: async (r: { sink: { Path: string }; resize: unknown }) => {
+        const e = (r.resize as { Exact?: { width: number; height: number } }).Exact
+        if (e) resized.push(e)
+        writeFileSync(r.sink.Path, '')
+        return { width: 0, height: 0 }
+      }
+    } as unknown as PixelDeps['engine'],
+    cacheDir: dir,
+    blobFile: async () => join(dir, 'patch.png'),
+    work: async () => undefined
+  }
+  // 40 px at x = 1000 on 6000 px, drawn on a 2370 px proxy: 15.8 px at 395.
+  const patch = step({ width: 6000, height: 4000, rect: { x: 1000, y: 1000, w: 40, h: 40 } })
+  const [o] = await overlaysOf(deps, [patch], 2370, 1580)
+  assert.deepEqual(resized, [{ width: 16, height: 16 }])
+  assert.ok(Math.abs(o.rect.x * 2370 - 395) < 1e-9)
+  assert.ok(Math.abs(o.rect.width * 2370 - 16) < 1e-9)
+  rmSync(dir, { recursive: true })
 })

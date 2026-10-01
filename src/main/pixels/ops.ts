@@ -55,6 +55,15 @@ export function writeRamp(file: string, w: number, h: number): void {
 }
 
 /**
+ * A ramp value read back (`v`, 0…1, from a ramp `n` pixels across) as a
+ * fraction of the frame, pixel centres at (i + 0.5) / n: the ramp holds
+ * i / (n − 1) at pixel i.
+ */
+export function rampFraction(v: number, n: number): number {
+  return (v * Math.max(1, n - 1) + 0.5) / n
+}
+
+/**
  * A mask drawn over the lens-corrected picture, put back on the photo's own
  * pixels (`w × h`, before the correction), through `map`: the ramp the same
  * correction was run over, so each corrected pixel holds where in the photo
@@ -90,8 +99,9 @@ export function unwarpMask(mask: string, map: string, w: number, h: number, out:
       const bil = (c: number): number =>
         (at(x0, y0, c) * (1 - fx) + at(x1, y0, c) * fx) * (1 - fy) +
         (at(x0, y1, c) * (1 - fx) + at(x1, y1, c) * fx) * fy
-      const px = bil(0) * (w - 1)
-      const py = bil(1) * (h - 1)
+      // Where in the photo, in its pixels (centres at whole numbers).
+      const px = rampFraction(bil(0), mw) * w - 0.5
+      const py = rampFraction(bil(1), mh) * h - 0.5
       const v = m.rows[cy * cw + cx] / 255
       const ix = Math.floor(px)
       const iy = Math.floor(py)

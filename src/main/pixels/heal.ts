@@ -28,6 +28,7 @@ import { pngSamples16 } from '../pngio'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
 import type { FreezeContext } from './freeze'
 import { lensMap, moves } from './lensmap'
+import { rampFraction } from './ops'
 import type { PixelDeps } from './working'
 
 export interface BakeContext extends FreezeContext {
@@ -67,12 +68,28 @@ async function toSource(ctx: BakeContext): Promise<(p: P) => P> {
       const bil = (c: number): number =>
         (at(x0, y0, c) * (1 - fx) + at(x1, y0, c) * fx) * (1 - fy) +
         (at(x0, y1, c) * (1 - fx) + at(x1, y1, c) * fx) * fy
-      return { x: bil(0), y: bil(1) }
+      return { x: rampFraction(bil(0), m.width), y: rampFraction(bil(1), m.height) }
     }
     if (mappers.size > 8) mappers.clear()
     mappers.set(path, f)
   }
   return f
+}
+
+/**
+ * How much the lens map stretches distances about `p` (corrected-frame
+ * fractions) on a `w × h` frame: a spot's size on the photo is its drawn
+ * size times this.
+ */
+export function localScale(map: (p: P) => P, p: P, w: number, h: number): number {
+  const e = 0.005
+  const a = map(p)
+  const bx = map({ x: p.x + e, y: p.y })
+  const by = map({ x: p.x, y: p.y + e })
+  const sx = Math.hypot((bx.x - a.x) * w, (bx.y - a.y) * h) / (e * w)
+  const sy = Math.hypot((by.x - a.x) * w, (by.y - a.y) * h) / (e * h)
+  const k = (sx + sy) / 2
+  return Number.isFinite(k) && k > 0 ? k : 1
 }
 
 /** The pixels a spot can touch on a `w × h` frame: its points, its size and its feather, and a little more. */
@@ -109,10 +126,19 @@ export async function bakeSpot(
   const W = master.width
   const H = master.height
   const map = await toSource(ctx)
+  // Its size too: drawn on the corrected picture, the correction stretches it
+  // on the photo (the feather is a share of the size, and follows).
+  const centre = {
+    x: spot.points.reduce((t, p) => t + p.x, 0) / Math.max(1, spot.points.length),
+    y: spot.points.reduce((t, p) => t + p.y, 0) / Math.max(1, spot.points.length)
+  }
+  const k = moves(ctx.lens) ? localScale(map, centre, W, H) : 1
   const onPhoto: RetouchSpot = {
     ...spot,
     points: spot.points.map(map),
-    source: spot.source ? map(spot.source) : null
+    source: spot.source ? map(spot.source) : null,
+    radius: spot.radius * k,
+    radiusY: spot.radiusY ? spot.radiusY * k : spot.radiusY
   }
   const retouch = compileRetouch([onPhoto], 'Normal', W, H)
   if (!retouch) return null

@@ -42,6 +42,8 @@ interface Plane {
 
 export interface Join {
   c: MaskComponentSetting
+  /** How it joins the mask (see `maskJoins`). */
+  mode: MaskMode
   /** For a painted component: its plane, decoded (turned upside down, as GL keeps it). */
   bitmap?: ImageBitmap
 }
@@ -338,7 +340,7 @@ export class MaskGl {
       this.bind(p, 1, 'uComp', plane.target.tex)
       gl.uniform1i(this.u(p, 'uFirst'), i === 0 ? 1 : 0)
       gl.uniform1i(this.u(p, 'uBase'), plane.base ? 1 : 0)
-      gl.uniform1i(this.u(p, 'uMode'), MODE_INDEX[i === 0 ? 'Add' : j.c.mode])
+      gl.uniform1i(this.u(p, 'uMode'), MODE_INDEX[j.mode])
       gl.uniform1i(this.u(p, 'uInvert'), j.c.invert ? 1 : 0)
       gl.uniform1f(this.u(p, 'uOpacity'), Math.min(1, Math.max(0, j.c.opacity / 100)))
       this.run(p, into, cw, ch)
