@@ -148,6 +148,30 @@ interface ListingContext {
 /** A file's content version, for its cached SHA-1. */
 const hashKeyOf = (row: PhotoRow): string => `${row.mtime}-${row.size}`
 
+/** The row's content hash, when the one recorded is of the file as it is now. */
+const knownHash = (row: PhotoRow): string | null =>
+  row.hash_key === hashKeyOf(row) ? row.content_hash : null
+
+/**
+ * Whether a project's recorded original is this file: the same bytes where
+ * both hashes are known, else the same size. A new photo that took an old
+ * one's name (a camera's counter reset) is not; neither is an original
+ * rewritten by another app.
+ */
+function isOriginOf(origin: Origin, row: PhotoRow): boolean {
+  const hash = knownHash(row)
+  if (origin.sha1 && hash) return origin.sha1 === hash
+  return origin.size === row.size
+}
+
+/** Whether `row` is a project's original under another name: a rename keeps the bytes, the size and the time. */
+function isRenamed(origin: Origin, row: PhotoRow): boolean {
+  if (row.ext.toLowerCase() !== origin.ext.toLowerCase()) return false
+  const hash = knownHash(row)
+  if (origin.sha1 && hash) return origin.sha1 === hash
+  return origin.size === row.size && origin.mtime === row.mtime
+}
+
 function sha1(path: string): Promise<string> {
   return new Promise((resolveHash, reject) => {
     const h = createHash('sha1')
@@ -377,6 +401,13 @@ export class IndexService {
       }
       if (this.syncProject(row)) n++
     }
+    /** A photo that loses a project not its own: only what a sidecar says again. */
+    const unlink = (row: PhotoRow): void => {
+      this.store.setProject(row.id, null, null)
+      row.project_path = null
+      row.sidecar_mtime = -1
+      if (this.syncSidecar(row)) n++
+    }
     const orphans: { path: string; origin: Origin }[] = []
     for (const dir of projectDirsFor(folder, this.projectRoots())) {
       for (const path of projectFilesIn(dir)) {
@@ -384,7 +415,9 @@ export class IndexService {
         if (!origin) continue
         this.store.registerProject(path, origin.name, origin.size, origin.path)
         const row = byName.get(origin.name)
-        if (!row) {
+        if (!row || !isOriginOf(origin, row)) {
+          // Not its photo, though of its name: the project stands for its own.
+          if (row?.project_path === path) unlink(row)
           orphans.push({ path, origin })
           continue
         }
@@ -409,9 +442,22 @@ export class IndexService {
       this.origins.delete(found.path)
       link(row, found.path)
     }
-    // Projects whose photo is nowhere: each is its photo now.
+    // Projects whose photo is nowhere: one renamed in the folder is followed
+    // (its project takes the new name); else each is its photo now.
     for (const { path, origin } of orphans) {
       if (taken.has(path)) continue
+      const renamed = photos.find(
+        (r) => !claimed.has(r.id) && !this.projectOf(r) && isRenamed(origin, r)
+      )
+      if (renamed) {
+        this.projects.use(path, (p) =>
+          p.setOrigin({ ...origin, name: renamed.name, path: renamed.path })
+        )
+        this.store.registerProject(path, renamed.name, renamed.size, renamed.path)
+        this.origins.delete(path)
+        link(renamed, path)
+        continue
+      }
       const elsewhere = this.store
         .photosWithProject(path)
         .some((r) => r.path !== path && existsSync(r.path))
@@ -482,7 +528,7 @@ export class IndexService {
       mtime: row.mtime,
       path: row.path,
       isRaw: row.is_raw === 1,
-      sha1: row.hash_key === hashKeyOf(row) ? row.content_hash : null
+      sha1: knownHash(row)
     }
     const keys = [null, ...truth.copies.map((c) => c.id)].map((copyId) => ({
       copyId,

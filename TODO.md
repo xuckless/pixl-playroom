@@ -215,7 +215,7 @@ After: Pass 1.
 
 ### Pass 10 — Projects and durability · 5 pts
 
-- [ ] **L** · **Projects are linked to photos by name only**
+- [x] **L** · **Projects are linked to photos by name only**
       (`service.ts:399-408`). A new `IMG_0001.JPG` after a counter reset
       inherits an old project (recipe, history, embedded original); a renamed
       photo detaches and its project shows as a stand-in. Check size and SHA-1

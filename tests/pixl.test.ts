@@ -31,6 +31,7 @@ import { emptySidecar, sidecarPath } from '../src/main/sidecar'
 import type { XmpIo } from '../src/main/indexer/xmp'
 import { defaultRecipe, newLocalLayer, type BrushComponent } from '../src/shared/recipe'
 import { keyOf } from '../src/main/keys'
+import type { LibraryItem } from '../src/shared/ipc'
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'pixl-'))
 
@@ -266,6 +267,48 @@ test('a committed edit saves its step and the recipe together', async () => {
   assert.equal(log.steps.length, 2)
   assert.equal(index.recipe(a).basic.contrast, 30)
   assert.equal(index.item(a)?.edited, true)
+  await settle()
+  index.close()
+  rmSync(root, { recursive: true })
+})
+
+test('a renamed photo keeps its project; a new photo of an old name does not take it', async () => {
+  const root = tmp()
+  const folder = join(root, 'photos')
+  mkdirSync(folder)
+  writeFileSync(join(folder, 'IMG_0001.jpg'), 'the first photo')
+  writeFileSync(join(folder, 'IMG_0002.jpg'), 'the second photo, longer')
+  let index = new IndexService({ userData: join(root, 'ud'), emit: () => {}, xmp: noXmp })
+  const items = await index.listFolder(folder)
+  const r = defaultRecipe(false)
+  r.basic.exposure = 0.5
+  for (const it of items) index.saveRecipe(it.key, r)
+  await settle()
+  index.close()
+
+  // One renamed (same bytes, same time); the other deleted and a new photo
+  // of its name taken (a counter reset).
+  renameSync(join(folder, 'IMG_0001.jpg'), join(folder, 'Beach.jpg'))
+  rmSync(join(folder, 'IMG_0002.jpg'))
+  writeFileSync(join(folder, 'IMG_0002.jpg'), 'a new photo')
+  index = new IndexService({ userData: join(root, 'ud'), emit: () => {}, xmp: noXmp })
+  await index.rescan(folder)
+  const listed = await index.listFolder(folder)
+  const named = (n: string): LibraryItem[] =>
+    listed.filter((i) => i.name === n && i.copyId === null)
+  const beach = named('Beach.jpg')
+  assert.equal(beach.length, 1)
+  assert.equal(beach[0].edited, true)
+  assert.equal(index.recipe(beach[0].key).basic.exposure, 0.5)
+  // No stand-in left for the renamed one.
+  assert.equal(named('IMG_0001.jpg').length, 0)
+  // The new IMG_0002 is unedited; the old one's project stands for it beside.
+  const two = named('IMG_0002.jpg')
+  assert.equal(two.length, 2)
+  const fresh = two.find((i) => i.path === join(folder, 'IMG_0002.jpg'))!
+  assert.equal(fresh.edited, false)
+  const old = two.find((i) => i !== fresh)!
+  assert.equal(old.edited, true)
   await settle()
   index.close()
   rmSync(root, { recursive: true })
