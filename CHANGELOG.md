@@ -1,5 +1,84 @@
 # Changelog
 
+## [0.1.1-beta.1](https://github.com/xuckless/pixl-playroom/compare/v0.1.1-beta...v0.1.1-beta.1) (2026-10-01)
+
+
+### Features
+
+* account and abuse hardening, added protections, checks for accouts ([cf9fa23](https://github.com/xuckless/pixl-playroom/commit/cf9fa2363a405eec3e204f066f1bab0a6850c212))
+* beta terms inside the app; no-liability notice on the beta gate ([e77dc4f](https://github.com/xuckless/pixl-playroom/commit/e77dc4f6e16b9ad945e92bef5a6e4cfdfa1f0d04))
+* colour each mask component on the overlay; Visualise Spots for the Heal tool; fix: the clipping and headroom overlays were upside down ([4078300](https://github.com/xuckless/pixl-playroom/commit/407830079bad6efe178762dac6fc258f46387122))
+* crash reports, problem reports in R2 ([4e8a89c](https://github.com/xuckless/pixl-playroom/commit/4e8a89c5a91ff8027a9b493220c3d42e3f040c26))
+* Denoise in an area, indexing denoise better ([dd2a452](https://github.com/xuckless/pixl-playroom/commit/dd2a45215b214eedcd7f5a47083ba889e27d92d3))
+* end to end tested the updates and release pipeline ([44393cf](https://github.com/xuckless/pixl-playroom/commit/44393cfa8c98b7e3b5b5a16cd748edbb41bde9d4))
+* folders open out into a tree, and a Subfolders toggle lists the photos below; the open photo's neighbours get their proxies ahead ([bae02bb](https://github.com/xuckless/pixl-playroom/commit/bae02bb4786cc776ec7002c99e430e527ade8221))
+* key bindings editor. ([4f9cfe6](https://github.com/xuckless/pixl-playroom/commit/4f9cfe6ef132c87c5706dbde4f76f6c3b46a8184))
+* mask edges: shift and harden on painted, AI and gradient planes (an octagon min/max filter and a levels curve), a lasso's shift and inside feather as a polygon offset; new AI masks start pulled in ([7e71de4](https://github.com/xuckless/pixl-playroom/commit/7e71de4905cbf54656e5450590c77072ce95b1fd))
+* masks become detached and powerful and heal/clone brush fix ([2dcb4d3](https://github.com/xuckless/pixl-playroom/commit/2dcb4d333cdafedf2de16109d1f2e145428edde9))
+* masks everywhere, .pixl projects, pixel steps and baked heal ([2cb1016](https://github.com/xuckless/pixl-playroom/commit/2cb10161d7b7420a0e180e41d99035fb60b75ced))
+* masks run before a black-and-white conversion; built-in presets set only their own sliders ([9d9e42e](https://github.com/xuckless/pixl-playroom/commit/9d9e42e4bf172c9de2b6e54a2208a24c12e6220e))
+* mock accounts, tesks and building towards real account support. ([d2fb858](https://github.com/xuckless/pixl-playroom/commit/d2fb85872629dbbaa9d4004c70a5d72d2ecb2701))
+* packing and embedding into my own file format ([0c4646a](https://github.com/xuckless/pixl-playroom/commit/0c4646aaac04b397232557d9e91298ac8bb84430))
+* road to beta, setting up login, guards, and builders ([44b3068](https://github.com/xuckless/pixl-playroom/commit/44b3068be57d9b5c4218b9ec576c0c3dea8a4cbe))
+* the beta terms ship inside the app (Help → Beta Terms, Settings, the beta gate), copied from pixl-web by scripts/legal-copy.mjs; the gate says the beta is free with no warranty and no liability; credit to Syed Ali (PIXL Foundation) ([1e2859a](https://github.com/xuckless/pixl-playroom/commit/1e2859a0a7858238823c0395fe2b0b634935eee6))
+* the folder shown is watched; changes made outside the app appear as they happen, and a watched folder is not rescanned on open ([ee49184](https://github.com/xuckless/pixl-playroom/commit/ee491844cc3994cb64abedb2902949dd45479a2c))
+* the live mask preview shifts and hardens edges as the engine's planes do; fix: a recipe handed out by reference brings its project's planes into the store (thumbnails of photos not opened this session), and only an engine read failure marks a photo unreadable ([51a4732](https://github.com/xuckless/pixl-playroom/commit/51a47321abefbbb83e777ea7a773c189a324eb26))
+
+
+### Bug Fixes
+
+* a crop under Upright stays in the picture and never collapses ([9f701d6](https://github.com/xuckless/pixl-playroom/commit/9f701d6699aa7b8a3152e84190c85c75fa2df52e))
+* a history step and the recipe are saved together; a failed save is said ([4979e5e](https://github.com/xuckless/pixl-playroom/commit/4979e5e8e9fc97275d41188c7c30b1ab93be5292))
+* a project is its photo's by size or hash, not name alone; a renamed photo keeps its project ([96aa69e](https://github.com/xuckless/pixl-playroom/commit/96aa69e7d06691d09d48995c2ec8f010e21b35e9))
+* a Subtract left first by a mask part that could not be drawn is dropped, not made an Add ([756aafd](https://github.com/xuckless/pixl-playroom/commit/756aafddfdc2d423e8fdfcc9ad0a08ce71d2fe4a))
+* a thumbnail edited while it renders renders again; one render per key ([2c1e1b1](https://github.com/xuckless/pixl-playroom/commit/2c1e1b1b90fb424e9b6071773f94c4386d81d0c5))
+* added queue for undo/redo ([3d1c27e](https://github.com/xuckless/pixl-playroom/commit/3d1c27ef6a3d4f1450f44835c2eb976c45956cb9))
+* added upright copy section. ([b3f0859](https://github.com/xuckless/pixl-playroom/commit/b3f08596d569379e4a65fae806d3396a778cf622))
+* an AI job that kept its step ends done, not cancelled; the save stage can be stopped ([12ae38d](https://github.com/xuckless/pixl-playroom/commit/12ae38d3abab69bd7837a57c6f31c88215843723))
+* beta tester updates ([0ca3657](https://github.com/xuckless/pixl-playroom/commit/0ca365761409ab95d9dbf0acf0fc1370f969995c))
+* closing a copy keeps the others' lens sets; lens maps written whole; unique freeze names ([d3ec46e](https://github.com/xuckless/pixl-playroom/commit/d3ec46e6812951a3488479a382f57f16e2ad79ed))
+* color profile mismatch on heal and clone and fix. With the new ([4100e48](https://github.com/xuckless/pixl-playroom/commit/4100e482fd39223d7aab33a6ee0613969ae505c3))
+* confirm holds the keyboard, a downloaded update is kept, finished model parts verified, bitmaps closed, exifr reads bytes not paths ([0d682d0](https://github.com/xuckless/pixl-playroom/commit/0d682d0ff8e1226d3f6412c8ad0babe92c11e652))
+* denoise and enhance land after the steps they were made on; preview kept until replaced ([5421421](https://github.com/xuckless/pixl-playroom/commit/54214210c556a659181b51dea1acfe0de33b967e))
+* each preview render its own file; a failed lens bake stops holding renders back ([59441b0](https://github.com/xuckless/pixl-playroom/commit/59441b0666a237259c2ef86948234a74b0ab3c0d))
+* export compares files, not names, before overwriting the original ([1744240](https://github.com/xuckless/pixl-playroom/commit/1744240a340ede53069f69d8d7114edb12f430b8))
+* flip and rotate carry the crop, straighten, aspect and Upright; rotate follows the button when flipped; a tiny straighten is none ([3f1e4d9](https://github.com/xuckless/pixl-playroom/commit/3f1e4d90ee10faeb24d02ad1ab4e24efaa82b7cd))
+* heal lens map read by pixel centres, heal size through the correction, proxy patches at their own size, overlay joins masks as compile does ([920eb4b](https://github.com/xuckless/pixl-playroom/commit/920eb4b536ab2d7013fb580619b90edc1937a81d))
+* lens at f/0, per-photo CA and profiles on paste and presets, old presets normalised, RAW defaults in sync and presets, locked crops refitted on paste ([86aeab0](https://github.com/xuckless/pixl-playroom/commit/86aeab04784c24d39d6e5aae419804b26ee72b56))
+* masks window fix, ([1258b45](https://github.com/xuckless/pixl-playroom/commit/1258b45a1c717102eb0a92348078551db31c19f1))
+* one working-set build per key, master after proxies, files written whole ([a0d1416](https://github.com/xuckless/pixl-playroom/commit/a0d141653757485d318bc32c58aca059ece5f7be))
+* optimization errors, and some bugs ([57fa60b](https://github.com/xuckless/pixl-playroom/commit/57fa60b23d862cc306734d10c76741e8eeb2fdf0))
+* paste and sync in Develop are history steps ([fc1ca17](https://github.com/xuckless/pixl-playroom/commit/fc1ca170f2983b4126cda33f90f13edc1bc432e9))
+* **projects:** close a .pixl without DatabaseSync.isOpen ([14f78e6](https://github.com/xuckless/pixl-playroom/commit/14f78e6a5810e54c285fb5327eb4ef67de06e038))
+* quit lets the index finish before it closes; a new project's rename is durable before its old copies go ([633e4e7](https://github.com/xuckless/pixl-playroom/commit/633e4e737c47622f13a91fc9286d1c7922c861ae))
+* recipes normalised inside arrays, curves strictly increasing, comparisons by value, vignette turned past 45° kept ([ac2207f](https://github.com/xuckless/pixl-playroom/commit/ac2207fad0567b3fe4ddd45508ef3b590371dffd))
+* **release:** publish the macOS feed of the release's channel ([628725f](https://github.com/xuckless/pixl-playroom/commit/628725f8a8e2cdd65d40424409538a9b34027ac6))
+* **release:** publish the macOS feed of the release's channel ([70045bd](https://github.com/xuckless/pixl-playroom/commit/70045bda50bf41e21113c0e4cb0ce855d71e61ff))
+* session management ([13026fe](https://github.com/xuckless/pixl-playroom/commit/13026fe8c7380385ec347bc867dae62760405768))
+* Upright's focal length from the focal length and the camera's crop when the file gives no 35 mm figure; heal outlines follow the Upright warp; portrait RAWs checked upright ([d232e4d](https://github.com/xuckless/pixl-playroom/commit/d232e4d0c10d873b282703a2b1b533b46d6120db))
+
+
+### Performance
+
+* a project's writes gather into one transaction committed within 250 ms (or on leaving Develop, closing and quitting), with full fsync on macOS ([1fff42e](https://github.com/xuckless/pixl-playroom/commit/1fff42ea0ea3849626c23e5cc73a1857ab2f388e))
+* a relaunching process leaves before loading the app; the updater and exiftool load when used; a folder listed again skips a fresh scan; thumbnails checked from the row's recipe key; xmp fill yields ([3520e30](https://github.com/xuckless/pixl-playroom/commit/3520e303c5576943622cde7be75dad81eb15eb24))
+* background engine work takes its share of the cores at lower priority; auto WB two at a time; a duplicate search stops when you leave it ([0046aa9](https://github.com/xuckless/pixl-playroom/commit/0046aa9af5890bd3b20963975c7acfe804928cd7))
+* brushes keyed by their reference, lensKey memoised, shoulder tables keyed by name; probes on the interactive engine and kept on disk; a draft first on open; a whole-frame crop is none ([6df86e0](https://github.com/xuckless/pixl-playroom/commit/6df86e0bb04e079b60525510be4e0f31a042b1be))
+* caches kept in bounds: old lens sets pruned as new ones land, replaced and orphaned thumbnails removed, heal leftovers deleted, per-photo caches swept on close; frozen masks keyed on what shapes them ([4cc2655](https://github.com/xuckless/pixl-playroom/commit/4cc2655da60c78e2402df3385fabbf3c4303560b))
+* drafts go to the window as pixels on their own port from the engine host, drawn on a canvas: no file, no protocol read, no decode ([efd0873](https://github.com/xuckless/pixl-playroom/commit/efd087337df61c5150fb1df9a5e8ed1f210a1fdb))
+* glass holds still while panning, painting and dragging; a still gradient and frosted glass behind dialogs; popovers placed on events; range masks key on settled, smaller pictures; UI state written in batches ([13d2786](https://github.com/xuckless/pixl-playroom/commit/13d27863bf1b944addb01d66a9b605e00f6fb9f9))
+* HDR stats through an uncompressed TIFF, JPEG 1:1 tiles, proxy and draft laid on together, the headroom overlay on the GPU ([156d25b](https://github.com/xuckless/pixl-playroom/commit/156d25b9c8961510242fbdb33a23d7638c1e192a))
+* history keyframes every 25 steps; an append reads only from the last one and returns just what changed; hide, show and delete send the head ([166dfd9](https://github.com/xuckless/pixl-playroom/commit/166dfd92aa5287d1f23e876ccd48d54d8ce23386))
+* history replays with one clone and appends with one read; reads take no lock; saves write only changed items; thumbnails checked from the slim item; origin cache survives own writes ([1fccdf4](https://github.com/xuckless/pixl-playroom/commit/1fccdf4e3ee60c1d3cfd6ac92e67cf4409ba71e7))
+* mask planes keyed on what shapes them and measured only for a new picture; small mask thumbnails; JPEG before; 4:2:0 settled previews; plane cache by bytes ([2de9bba](https://github.com/xuckless/pixl-playroom/commit/2de9bba3825780b9600db904ec8cf73b6310e0b4))
+* one engine scheduler (background waits behind previews, a render waits for a cancelled one to let go); a 1920 px proxy for settled previews ([986fced](https://github.com/xuckless/pixl-playroom/commit/986fcedd6ff731afdcd66b88733245d42422980d))
+* originals and pixel steps stored in pieces off the index's request loop, gc later with a stepped vacuum; thumbnails shrunk from Develop's settled picture ([f5d4054](https://github.com/xuckless/pixl-playroom/commit/f5d4054e0f6c71c648f7b87fd86c0386201807c3))
+* painted planes as binary blobs named by SHA-256 (.pixl format 2, upgraded on open; index migration 9); recipes cross between main and the index by reference ([57c32ac](https://github.com/xuckless/pixl-playroom/commit/57c32ac84f203e561cd489866d8447f11834271a))
+* slider ticks re-render only what they change (immer), loupe geometry and mask compose memoised, no double sends, no idle polling ([856766e](https://github.com/xuckless/pixl-playroom/commit/856766e468c8462346579552564beb97bb8ae567))
+* the library grid and filmstrip virtualised (@tanstack/react-virtual); near duplicates grouped by multi-index hashing, not every pair ([26fcffb](https://github.com/xuckless/pixl-playroom/commit/26fcffb28a5909768fdbd7c5d0c82be98c61d8d3))
+* the open photo's project stays open; busy timeouts, transactions and a project index; open asks in parallel; isEdited compares in place; thumbnails wait for a pause ([6bd6633](https://github.com/xuckless/pixl-playroom/commit/6bd6633ad0304ba98fd8aed36b34f74d4f2b5131))
+* thumbnails patched once a frame, visible items computed once, stable tile callbacks, deferred search; hello before pruning, the last folder opened alongside the lists; newer lens catalogue only, lazy thread count, background engine deferred; unreadable files remembered ([8167356](https://github.com/xuckless/pixl-playroom/commit/81673561807dbec4f694658737f56c4a53b984e2))
+
 ## [0.1.1-beta](https://github.com/xuckless/pixl-playroom/compare/v0.1.0...v0.1.1-beta) (2026-09-30)
 
 
