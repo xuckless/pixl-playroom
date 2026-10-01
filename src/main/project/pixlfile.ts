@@ -182,6 +182,7 @@ export class PixlFile {
   private readonly db: DatabaseSync
   private readonly statements = new Map<string, StatementSync>()
   private depth = 0
+  private closed = false
 
   private constructor(path: string, db: DatabaseSync) {
     this.path = path
@@ -269,7 +270,10 @@ export class PixlFile {
 
   close(): void {
     this.statements.clear()
-    if (this.db.isOpen) this.db.close()
+    // Our own flag: `DatabaseSync.isOpen` is newer than some Node 22 builds.
+    if (this.closed) return
+    this.closed = true
+    this.db.close()
   }
 
   prepare(sql: string): StatementSync {
