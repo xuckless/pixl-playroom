@@ -80,7 +80,7 @@ After: Pass 1.
 
 ### Pass 3 — Render file races · 5 pts
 
-- [ ] **M** · **Two builds of the same working set at once.** The in-flight
+- [x] **M** · **Two builds of the same working set at once.** The in-flight
       key includes `m`/`p` (`pixels/working.ts:286`), so after a heal stroke
       `bakeSpot` (`render.ts:1411`) and `refreshWorking` both write
       `proxy.tiff`/`draft.tiff` in place; a render can read a half-written

@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'module'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { normalisePixelStep, stackSignature, type PixelStep } from '../src/shared/pixels'
 import { diffRecipe, replay, type Step } from '../src/shared/history'
 import { defaultRecipe, normaliseRecipe, isEdited } from '../src/shared/recipe'
@@ -178,6 +178,22 @@ test(
     // The same steps again: the set made before, not a new one.
     const again = await ensureWorking(deps, 'v1', plain, [full], null)
     assert.equal(again.px.proxy.path, set.px.proxy.path)
+    // Asked for at once with and without the master: one build of the
+    // proxies, the master after them and kept, nothing half written left.
+    const half = [{ ...full, opacity: 50 }]
+    const [proxies, withMaster] = await Promise.all([
+      ensureWorking(deps, 'v1', plain, half, null),
+      ensureWorking(deps, 'v1', plain, half, async () => plain.proxy)
+    ])
+    assert.equal(proxies.px.proxy.path, withMaster.px.proxy.path)
+    assert.ok(withMaster.master)
+    const setDir = dirname(withMaster.px.proxy.path)
+    assert.ok(JSON.parse(readFileSync(join(setDir, 'set.json'), 'utf8')).master)
+    assert.deepEqual(
+      readdirSync(setDir).filter((f) => f.includes('.part')),
+      []
+    )
+    assert.ok((await ensureWorking(deps, 'v1', plain, half, null)).master)
     // At 0% nothing is laid on.
     const none = await ensureWorking(deps, 'v1', plain, [{ ...full, opacity: 0 }], null)
     assert.equal(await px(none.px.proxy.path), 10000)
