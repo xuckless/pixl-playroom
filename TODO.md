@@ -127,14 +127,14 @@ After: Pass 1.
       ends at width 0, which the engine refuses. Pass the transform; in
       `fitCrop` move the centre in when it doesn't fit, with a minimum size.
       (Reproduced: Upright Scale 75, crop {0.8, 0.8, 0.2, 0.2}.)
-- [ ] **M** · **Flip and Rotate leave geometry in the old frame.** Flip keeps
+- [x] **M** · **Flip and Rotate leave geometry in the old frame.** Flip keeps
       the crop and straighten unmirrored (`renderer/lib/geometry.ts:17`), so the
       other half shows and a level horizon is 6° off; Rotate keeps the aspect
       lock (a 3:2 crop cuts 56% after rotating) and Upright's `suggested` and
       guides in the old orientation (`geometry.ts:14-16`, `render.ts:1296`).
       Mirror `crop.x` and negate straighten and Upright on flip; invert the
       aspect and clear or remap Upright on an odd turn.
-- [ ] **S** · **A tiny straighten is refused.** Under 5e-5 it rounds to
+- [x] **S** · **A tiny straighten is refused.** Under 5e-5 it rounds to
       `rotate_degrees: 0` but still sets `outside: 'Crop'`
       (`compile.ts:1196`). Test the rounded value.
 

@@ -1212,7 +1212,9 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
   }
 
   const orientation = compose(ctx.sourceOrientation, oriented.user)
-  const straighten = ctx.applyCrop ? r.geometry.straighten : 0
+  // As the engine is told it: a straighten that rounds to nothing is none
+  // (an `outside` with no rotation is refused).
+  const straighten = ctx.applyCrop ? round4(r.geometry.straighten) : 0
   const shownCrop = ctx.applyCrop ? crop : null
   // With the crop tool open the warp shows whole, its empty wedges
   // transparent, so the crop is drawn over the canvas it cuts; guides are

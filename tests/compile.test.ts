@@ -33,6 +33,13 @@ test('an untouched JPEG compiles to nothing at all', () => {
   assert.equal(c.framing, null)
 })
 
+test('a straighten too small to say is none: no outside the engine would refuse', () => {
+  const r = defaultRecipe(false)
+  r.geometry.straighten = 3e-5
+  const f = compile(r, ctx).framing
+  assert.ok(!f || (f.rotate_degrees === 0 && f.outside === undefined))
+})
+
 test('a RAW starts with its profile curve, capture sharpening and colour noise reduction', () => {
   const c = compile(defaultRecipe(true), { ...ctx, isRaw: true, scale: 1 })
   const stages = c.grade!.layers[0].stages
