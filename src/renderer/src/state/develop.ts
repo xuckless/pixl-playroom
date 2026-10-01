@@ -9,7 +9,13 @@ import type {
   ViewState
 } from '../../../shared/ipc'
 import { replay } from '../../../shared/history'
-import { newId, normaliseRecipe, type HslBand, type Recipe } from '../../../shared/recipe'
+import {
+  newId,
+  normaliseRecipe,
+  sameValue,
+  type HslBand,
+  type Recipe
+} from '../../../shared/recipe'
 import { FIT, type ZoomView } from '../../../shared/view'
 import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
@@ -333,10 +339,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       if (stale()) return
       if (!history.base) {
         history = await api.develop.historyAppend(key, 'Opened', session.recipe)
-      } else if (
-        JSON.stringify(replay(history.base.recipe, history.steps)) !==
-        JSON.stringify(session.recipe)
-      ) {
+      } else if (!sameValue(replay(history.base.recipe, history.steps), session.recipe)) {
         // Changed where no history is written (a paste or sync in the
         // library, an older version's undo): record where it stands now.
         history = await api.develop.historyAppend(key, 'Opened as saved', session.recipe)

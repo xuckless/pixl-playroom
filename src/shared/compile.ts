@@ -149,11 +149,13 @@ function curve(points: CurvePointSetting[]): Curve {
   const sorted = [...points].sort((a, b) => a.x - b.x)
   const out: CurvePointSetting[] = []
   for (const p of sorted) {
-    const x = clamp(p.x, 0, 1)
+    // Rounded first: two points that round to one x would not be strictly
+    // increasing, which the engine refuses.
+    const x = round4(clamp(p.x, 0, 1))
     if (out.length > 0 && x <= out[out.length - 1].x) continue
     // The engine refuses a point above 1 in a display-referred stage, and a
     // sidecar written elsewhere may hold one.
-    out.push({ x: round4(x), y: round4(clamp(p.y, 0, 1)) })
+    out.push({ x, y: round4(clamp(p.y, 0, 1)) })
   }
   return { points: out }
 }
@@ -527,6 +529,24 @@ export function effectiveCrop(r: Recipe, w: number, h: number): CropRect | null 
   if (t) return fitCrop({ x: 0, y: 0, width: 1, height: 1 }, straighten, w, h, t)
   if (straighten !== 0) return autoCrop(straighten, w, h)
   return null
+}
+
+/**
+ * A rectangle's half sizes (fractions of a `w × h` frame) and turn, said with
+ * the turn inside ±45°: one turned θ is the same rectangle turned θ ∓ 90°
+ * with its sides swapped (a straighten and Upright's rotate together reach
+ * past 45°, where a clamp would turn the vignette the wrong way).
+ */
+export function within45(
+  half: { x: number; y: number },
+  rotation: number,
+  w: number,
+  h: number
+): { half: { x: number; y: number }; rotation: number } {
+  let r = rotation - 180 * Math.round(rotation / 180)
+  if (Math.abs(r) <= 45) return { half, rotation: r }
+  r -= 90 * Math.sign(r)
+  return { half: { x: (half.y * h) / w, y: (half.x * w) / h }, rotation: r }
 }
 
 /**
@@ -1118,6 +1138,7 @@ function settingsStages(
       oriented.height,
       uprightTransform(geometry.upright, oriented.width, oriented.height)
     )
+    const turned = within45(v.half, v.rotation, oriented.width, oriented.height)
     look.push({
       Vignette: {
         amount: clamp(e.vignetteAmount / 100, -1, 1),
@@ -1126,8 +1147,11 @@ function settingsStages(
         feather: clamp(e.vignetteFeather / 100, 0, 1),
         style: vignetteStyle(e, ctx.hdr === true, notes),
         centre: { x: round4(v.centre.x), y: round4(v.centre.y) },
-        half_size: { x: round4(Math.max(v.half.x, 1e-4)), y: round4(Math.max(v.half.y, 1e-4)) },
-        rotation_degrees: clamp(v.rotation, -45, 45)
+        half_size: {
+          x: round4(Math.max(turned.half.x, 1e-4)),
+          y: round4(Math.max(turned.half.y, 1e-4))
+        },
+        rotation_degrees: clamp(turned.rotation, -45, 45)
       }
     })
   }

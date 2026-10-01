@@ -9,7 +9,7 @@
  * brought up to date by `normaliseRecipe` rather than by `?.` everywhere.
  */
 import { NO_ADD, type AddColourSetting } from './addcolor'
-import type { BlendMode, KeyBand, MaskMode } from './engine-types'
+import type { BlendMode, CropRect, KeyBand, MaskMode } from './engine-types'
 import { defaultLens, type LensSetting } from './lens'
 import { defaultUpright, type UprightSetting } from './upright'
 import type { RetouchSpot } from './retouch'
@@ -573,17 +573,27 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   if (!isObject(value) || !isObject((value as Record<string, unknown>).profile)) {
     r.profile = base.profile
   }
-  r.layers = (r.layers ?? []).map(({ overlayHue, ...withOld }) => {
+  r.toneCurve = normaliseToneCurve(r.toneCurve)
+  r.geometry.crop = normaliseCrop(r.geometry.crop)
+  r.layers = (r.layers ?? []).filter(isObject).map(({ overlayHue, ...withOld }) => {
     // Version 1's sliders become settings (`layerSettingsOf`) and go.
     const l: typeof withOld & { adjust?: unknown } = { ...withOld }
     delete l.adjust
+    const settings = layerSettingsOf(withOld as unknown as Record<string, unknown>)
+    settings.toneCurve = normaliseToneCurve(settings.toneCurve)
     return {
       ...l,
+      id: typeof l.id === 'string' && l.id ? l.id : newId(),
+      name: typeof l.name === 'string' ? l.name : 'Mask',
+      enabled: l.enabled !== false,
+      opacity: num(l.opacity, 100, 0, 100),
+      blend: BLEND_MODES.includes(l.blend) ? l.blend : 'Normal',
+      invert: l.invert === true,
       ...(typeof overlayHue === 'number' && Number.isFinite(overlayHue)
         ? { overlayHue: ((overlayHue % 360) + 360) % 360 }
         : {}),
       amount: num(l.amount, 100, 0, 200),
-      settings: layerSettingsOf(withOld as unknown as Record<string, unknown>),
+      settings,
       components: (Array.isArray(l.components) ? (l.components as unknown[]) : [])
         .map(normaliseComponent)
         .filter((c): c is MaskComponentSetting => c !== null)
@@ -605,6 +615,66 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     .filter((p): p is PointColorSetting => p !== null)
     .slice(0, MAX_POINT_COLORS)
   return r
+}
+
+const BLEND_MODES: BlendMode[] = [
+  'Normal',
+  'Multiply',
+  'Screen',
+  'Overlay',
+  'SoftLight',
+  'HardLight',
+  'Darken',
+  'Lighten',
+  'Difference',
+  'Add'
+]
+
+/**
+ * A point curve: its points that are points (in 0…1), in order; fewer than
+ * two (which the engine refuses) is the identity.
+ */
+function normaliseCurve(v: unknown): CurvePointSetting[] {
+  const points = (Array.isArray(v) ? (v as unknown[]) : [])
+    .filter(isObject)
+    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+    .map((p) => ({ x: num(p.x, 0, 0, 1), y: num(p.y, 0, 0, 1) }))
+    .sort((a, b) => a.x - b.x)
+  return points.length >= 2 ? points : IDENTITY_CURVE()
+}
+
+function normaliseToneCurve(tc: ToneCurveSetting): ToneCurveSetting {
+  const raw = Array.isArray(tc.splits) ? (tc.splits as unknown[]) : []
+  const splits = raw
+    .filter((x): x is number => typeof x === 'number' && Number.isFinite(x))
+    .sort((a, b) => a - b)
+  // Three region splits strictly in order inside 0…100, or Lightroom's.
+  const ok =
+    raw.length === 3 &&
+    splits.length === 3 &&
+    splits[0] > 0 &&
+    splits[0] < splits[1] &&
+    splits[1] < splits[2] &&
+    splits[2] < 100
+  return {
+    ...tc,
+    splits: ok ? (splits as [number, number, number]) : [25, 50, 75],
+    master: normaliseCurve(tc.master),
+    red: normaliseCurve(tc.red),
+    green: normaliseCurve(tc.green),
+    blue: normaliseCurve(tc.blue)
+  }
+}
+
+/** A crop rectangle inside its frame, or none. */
+function normaliseCrop(v: unknown): CropRect | null {
+  if (!isObject(v)) return null
+  const x = num(v.x, NaN, 0, 1)
+  const y = num(v.y, NaN, 0, 1)
+  const width = num(v.width, NaN, 0, 1 - x)
+  const height = num(v.height, NaN, 0, 1 - y)
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null
+  return { x, y, width, height }
 }
 
 function normalisePointColor(value: unknown): PointColorSetting | null {
@@ -836,15 +906,32 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
   return r
 }
 
+/**
+ * Whether two plain values are the same, whatever order their keys were
+ * written in (a field set to undefined counts as absent, as in JSON).
+ */
+export function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((x, i) => sameValue(x, b[i]))
+    )
+  }
+  if (!isObject(a) || !isObject(b)) return false
+  const ka = Object.keys(a).filter((k) => a[k] !== undefined)
+  const kb = Object.keys(b).filter((k) => b[k] !== undefined)
+  return ka.length === kb.length && ka.every((k) => sameValue(a[k], b[k]))
+}
+
 /** The groups where `a` and `b` differ — what a preset or a sync would carry. */
 export function changedGroups(a: Recipe, b: Recipe): RecipeGroup[] {
-  const probe = (g: RecipeGroup): string => {
-    const empty = defaultRecipe(false)
-    return JSON.stringify(applyGroups(empty, a, [g])) === JSON.stringify(applyGroups(empty, b, [g]))
-      ? ''
-      : g
-  }
-  return RECIPE_GROUPS.filter((g) => probe(g) !== '')
+  const empty = defaultRecipe(false)
+  return RECIPE_GROUPS.filter(
+    (g) => !sameValue(applyGroups(empty, a, [g]), applyGroups(empty, b, [g]))
+  )
 }
 
 /** Whether a recipe differs from the default for its kind of file. */
@@ -943,7 +1030,7 @@ export function neutralSettings(): LayerSettings {
 
 /** Whether a mask's settings change nothing. */
 export function isNeutral(s: LayerSettings): boolean {
-  return JSON.stringify(s) === JSON.stringify(neutralSettings())
+  return sameValue(s, neutralSettings())
 }
 
 /**

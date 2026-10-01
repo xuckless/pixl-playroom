@@ -175,17 +175,17 @@ After: Pass 1.
 
 ### Pass 8 — Recipe hardening · 5 pts
 
-- [ ] **M** · **`normaliseRecipe` doesn't validate inside arrays**
+- [x] **M** · **`normaliseRecipe` doesn't validate inside arrays**
       (`recipe.ts:568-607`): `layers: [null]` throws; a layer without
       `enabled`/`opacity`/`blend` compiles to `opacity: null`; `splits: [25]`
       gives null curve values; a null curve point throws; a one-point curve
       reaches the engine; a non-object crop compiles to NaN. Normalise layer
       fields, splits, curve points and the crop rectangle; add fuzz cases.
-- [ ] **S** · **`curve()` dedupes before `round4`**, so 0.50001 and 0.50004
+- [x] **S** · **`curve()` dedupes before `round4`**, so 0.50001 and 0.50004
       both become 0.5 (not strictly increasing).
-- [ ] **S** · **`changedGroups`/`isNeutral` compare with `JSON.stringify`**,
+- [x] **S** · **`changedGroups`/`isNeutral` compare with `JSON.stringify`**,
       so the same values in another key order count as changed.
-- [ ] **S** · **Vignette rotation is clamped to ±45 after Upright's rotate is
+- [x] **S** · **Vignette rotation is clamped to ±45 after Upright's rotate is
       subtracted.**
 
 ### Pass 9 — App-level bugs · 5 pts
