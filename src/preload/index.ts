@@ -91,6 +91,7 @@ const api = {
     reportError: (e: ErrorReport) => call<void>(IPC.app.reportError, e),
     reportProblem: (r: ProblemInput) => call<string>(IPC.app.reportProblem, r),
     openNotices: () => call<void>(IPC.app.openNotices),
+    openBetaTerms: () => call<void>(IPC.app.openBetaTerms),
     gate: () => call<GateState>(IPC.app.gate),
     onGate: (cb: (g: GateState) => void) => on(IPC.app.gateChanged, cb)
   },

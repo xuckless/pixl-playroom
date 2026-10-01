@@ -40,6 +40,8 @@ export const IPC = {
     reportProblem: 'app:report-problem',
     /** The bundled THIRD_PARTY_NOTICES.txt, opened in the system's text viewer. */
     openNotices: 'app:open-notices',
+    /** The bundled beta terms, opened in the system's text viewer. */
+    openBetaTerms: 'app:open-beta-terms',
     /** The beta gate (shared/gate.ts): what stands in front of the window. */
     gate: 'app:gate',
     /** main → renderer: the gate changed */

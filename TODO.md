@@ -184,6 +184,12 @@ After: Pass 23.
       `publisherName` check), Intel Mac, a differential download (needs a
       third build), the floor and rollout checks, a tampered update refused.
       The staging folder is kept for that._
+- [x] **S** · The beta terms ship inside the app: `build/legal/beta-terms.txt`
+      (plain text made from pixl-web's `src/legal/beta.md` by
+      `scripts/legal-copy.mjs`; `--check` says whether it's stale), packaged
+      to `legal/beta-terms.txt`, opened from Help → Beta Terms and Settings →
+      About in beta builds, and from the beta gate's sign-in and join
+      screens. Re-sync it before a release whenever the terms change.
 - [ ] **S** · Sign and notarize the DMG itself, not only the app in it:
       `spctl -t open` rejects the DMG ("no usable signature"), though the
       app inside is notarized and opens. electron-builder can sign it

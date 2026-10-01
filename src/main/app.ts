@@ -183,7 +183,7 @@ function setAbout(engineVersion?: string): void {
     applicationName: 'Pixl Playroom',
     applicationVersion: app.getVersion(),
     credits: engineVersion ? `Powered by PIXL Engine ${engineVersion}` : 'Powered by PIXL Engine',
-    copyright: 'Copyright © 2026 xuckless',
+    copyright: 'Copyright © 2026 Syed Ali (PIXL Foundation)',
     iconPath: icon
   })
 }
