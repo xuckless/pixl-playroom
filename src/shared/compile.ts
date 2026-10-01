@@ -428,10 +428,16 @@ export function orientedFrame(
   return { user, width: swap ? frameHeight : frameWidth, height: swap ? frameWidth : frameHeight }
 }
 
+/** The least a fitted crop keeps across, as a fraction of the canvas: never nothing, which the engine refuses. */
+const MIN_FIT = 0.05
+
 /**
  * Shrink `crop` about its centre (and pull it inside the canvas) until every
- * corner lies inside the picture rotated by `degrees`. A straighten changed
- * after a crop was drawn must never hand the engine a crop it will refuse.
+ * corner lies inside the picture rotated by `degrees` (and warped by
+ * `transform`). A straighten or Upright changed after a crop was drawn must
+ * never hand the engine a crop it will refuse. A crop whose centre has no
+ * picture under it (an Upright warp's empty wedge) moves in toward the
+ * canvas's centre, as little as will do, rather than shrink to nothing.
  */
 export function fitCrop(
   crop: CropRect,
@@ -440,24 +446,49 @@ export function fitCrop(
   h: number,
   transform: Transform | null = null
 ): CropRect {
-  const cx = Math.min(1, Math.max(0, crop.x + crop.width / 2))
-  const cy = Math.min(1, Math.max(0, crop.y + crop.height / 2))
-  const at = (k: number): CropRect => {
+  const fits = (c: CropRect): boolean => cropFits(c, degrees, w, h, transform)
+  const c0 = {
+    x: Math.min(1, Math.max(0, crop.x + crop.width / 2)),
+    y: Math.min(1, Math.max(0, crop.y + crop.height / 2))
+  }
+  const at = (c: { x: number; y: number }, k: number): CropRect => {
     const cw = Math.min(crop.width * k, 1)
     const ch = Math.min(crop.height * k, 1)
-    const x = Math.min(Math.max(0, cx - cw / 2), 1 - cw)
-    const y = Math.min(Math.max(0, cy - ch / 2), 1 - ch)
+    const x = Math.min(Math.max(0, c.x - cw / 2), 1 - cw)
+    const y = Math.min(Math.max(0, c.y - ch / 2), 1 - ch)
     return { x, y, width: cw, height: ch }
   }
-  if (cropFits(at(1), degrees, w, h, transform)) return at(1)
+  if (fits(at(c0, 1))) return at(c0, 1)
+  const kMin = Math.min(1, Math.max(MIN_FIT / crop.width, MIN_FIT / crop.height))
+  /** The largest `k` from `kMin` that fits about `c` (which `kMin` does). */
+  const largest = (c: { x: number; y: number }): number => {
+    let lo = kMin
+    let hi = 1
+    for (let i = 0; i < 30; i++) {
+      const k = (lo + hi) / 2
+      if (fits(at(c, k))) lo = k
+      else hi = k
+    }
+    return Math.max(kMin, lo * 0.999)
+  }
+  if (fits(at(c0, kMin))) return at(c0, largest(c0))
+  // No picture under its centre: moved toward the canvas's centre, as little
+  // as the largest crop that fits there needs.
+  const mid = { x: 0.5, y: 0.5 }
+  if (!fits(at(mid, kMin))) return at(mid, kMin)
+  const k = fits(at(mid, 1)) ? 1 : largest(mid)
+  const along = (t: number): { x: number; y: number } => ({
+    x: c0.x + (mid.x - c0.x) * t,
+    y: c0.y + (mid.y - c0.y) * t
+  })
   let lo = 0
   let hi = 1
   for (let i = 0; i < 30; i++) {
-    const mid = (lo + hi) / 2
-    if (cropFits(at(mid), degrees, w, h, transform)) lo = mid
-    else hi = mid
+    const t = (lo + hi) / 2
+    if (fits(at(along(t), k))) hi = t
+    else lo = t
   }
-  return at(lo * 0.999)
+  return at(along(hi), k)
 }
 
 /** The largest centred crop of `aspect` (width/height, in pixels) inside the rotated picture. */

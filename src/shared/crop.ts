@@ -42,5 +42,6 @@ export function dragCrop(
     }
   }
   const next = { x, y, width, height }
-  return cropFits(next, g.straighten, g.width, g.height) ? next : null
+  // Inside the picture as Upright warps it, too: not in its empty wedges.
+  return cropFits(next, g.straighten, g.width, g.height, g.transform) ? next : null
 }

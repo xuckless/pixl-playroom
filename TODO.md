@@ -121,7 +121,7 @@ After: Pass 1.
 
 ### Pass 5 — Crop and orientation · 5 pts
 
-- [ ] **M** · **A crop collapses to 0×0 under Upright.** `dragCrop` calls
+- [x] **M** · **A crop collapses to 0×0 under Upright.** `dragCrop` calls
       `cropFits` without `g.transform` (`crop.ts:45`), so crops reach the empty
       wedges; `fitCrop` (`compile.ts:436-461`) only shrinks about the centre and
       ends at width 0, which the engine refuses. Pass the transform; in
