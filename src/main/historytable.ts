@@ -11,7 +11,7 @@
  */
 import type { StatementSync } from 'node:sqlite'
 import type { HistoryLog } from '../shared/ipc'
-import { applyPatch, diffRecipe, replay, type Patch, type Step } from '../shared/history'
+import { diffRecipe, replay, type Patch, type Step } from '../shared/history'
 import type { Recipe } from '../shared/recipe'
 
 export const HISTORY_LIMIT = 200
@@ -87,39 +87,49 @@ export class HistoryTable {
    * became steps hold whole recipes; they are turned into patches here, once.
    */
   history(itemKey: string): HistoryLog {
-    return this.db.tx(() => {
-      const rows = this.rows(itemKey)
-      if (rows.length === 0) return { base: null, steps: [] }
-      const [first, ...rest] = rows
-      if (rest.some((r) => r.patch === null)) {
-        const update = this.db.prepare(
-          "UPDATE history SET patch = ?, recipe = '' WHERE item_key = ? AND seq = ?"
-        )
-        let prev = JSON.parse(first.recipe) as Recipe
-        for (const r of rest) {
-          if (r.patch !== null) continue
-          const cur = JSON.parse(r.recipe) as Recipe
-          r.patch = JSON.stringify(diffRecipe(prev, cur))
-          update.run(r.patch, itemKey, r.seq)
-          prev = cur
-        }
-      }
-      return {
-        base: {
-          seq: first.seq,
-          label: first.label,
-          at: first.at,
-          recipe: JSON.parse(first.recipe) as Recipe
-        },
-        steps: rest.map((r): Step => ({
-          seq: r.seq,
-          label: r.label,
-          at: r.at,
-          patch: JSON.parse(r.patch ?? '[]') as Patch,
-          hidden: r.hidden !== 0
-        }))
-      }
-    })
+    // A read takes no write lock; only old rows to convert do.
+    const rows = this.rows(itemKey)
+    if (rows.length === 0) return { base: null, steps: [] }
+    if (rows.slice(1).some((r) => r.patch === null)) return this.db.tx(() => this.convert(itemKey))
+    return this.logOf(rows)
+  }
+
+  /** Rows from before history became steps, turned into patches (once), and the log. */
+  private convert(itemKey: string): HistoryLog {
+    const rows = this.rows(itemKey)
+    const [first, ...rest] = rows
+    if (!first) return { base: null, steps: [] }
+    const update = this.db.prepare(
+      "UPDATE history SET patch = ?, recipe = '' WHERE item_key = ? AND seq = ?"
+    )
+    let prev = JSON.parse(first.recipe) as Recipe
+    for (const r of rest) {
+      if (r.patch !== null) continue
+      const cur = JSON.parse(r.recipe) as Recipe
+      r.patch = JSON.stringify(diffRecipe(prev, cur))
+      update.run(r.patch, itemKey, r.seq)
+      prev = cur
+    }
+    return this.logOf(rows)
+  }
+
+  private logOf(rows: HistoryRow[]): HistoryLog {
+    const [first, ...rest] = rows
+    return {
+      base: {
+        seq: first.seq,
+        label: first.label,
+        at: first.at,
+        recipe: JSON.parse(first.recipe) as Recipe
+      },
+      steps: rest.map((r): Step => ({
+        seq: r.seq,
+        label: r.label,
+        at: r.at,
+        patch: JSON.parse(r.patch ?? '[]') as Patch,
+        hidden: r.hidden !== 0
+      }))
+    }
   }
 
   /**
@@ -134,32 +144,35 @@ export class HistoryTable {
       const insert = this.db.prepare(
         'INSERT INTO history(item_key, seq, label, at, recipe, patch, hidden) VALUES (?, ?, ?, ?, ?, ?, 0)'
       )
+      // Read once; what was written is added to it here, not read back.
       if (!log.base) {
-        insert.run(itemKey, 1, label, at, JSON.stringify(recipe), null)
-        return this.history(itemKey)
+        const json = JSON.stringify(recipe)
+        insert.run(itemKey, 1, label, at, json, null)
+        return { base: { seq: 1, label, at, recipe: JSON.parse(json) as Recipe }, steps: [] }
       }
       const patch = diffRecipe(replay(log.base.recipe, log.steps), recipe)
       if (patch.length === 0) return log
       const seq = (log.steps.at(-1)?.seq ?? log.base.seq) + 1
-      insert.run(itemKey, seq, label, at, '', JSON.stringify(patch))
-      this.fold(itemKey)
-      return this.history(itemKey)
+      const json = JSON.stringify(patch)
+      insert.run(itemKey, seq, label, at, '', json)
+      const step: Step = { seq, label, at, patch: JSON.parse(json) as Patch, hidden: false }
+      return this.fold(itemKey, { base: log.base, steps: [...log.steps, step] })
     })
   }
 
   /** Past the limit, the oldest steps fold into the base (a hidden one is dropped). */
-  private fold(itemKey: string): void {
-    const log = this.history(itemKey)
+  private fold(itemKey: string, log: HistoryLog): HistoryLog {
     const excess = log.steps.length + 1 - HISTORY_LIMIT
-    if (!log.base || excess <= 0) return
+    if (!log.base || excess <= 0) return log
     const old = log.steps.slice(0, excess)
-    const base = old.reduce((r, s) => (s.hidden ? r : applyPatch(r, s.patch)), log.base.recipe)
+    const base = replay(log.base.recipe, old)
     this.db
       .prepare('UPDATE history SET recipe = ? WHERE item_key = ? AND seq = ?')
       .run(JSON.stringify(base), itemKey, log.base.seq)
     this.db
       .prepare('DELETE FROM history WHERE item_key = ? AND seq > ? AND seq <= ?')
       .run(itemKey, log.base.seq, old[old.length - 1].seq)
+    return { base: { ...log.base, recipe: base }, steps: log.steps.slice(excess) }
   }
 
   /** Hide or show steps (never the base). */

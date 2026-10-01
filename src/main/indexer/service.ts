@@ -41,7 +41,14 @@ import type {
 } from '../../shared/ipc'
 import { groupNear } from '../../shared/dupes'
 import { keywordPrefixes, normaliseKeyword } from '../../shared/keywords'
-import { defaultRecipe, hash32, isEdited, newId, type Recipe } from '../../shared/recipe'
+import {
+  defaultRecipe,
+  hash32,
+  isEdited,
+  newId,
+  slimRecipe,
+  type Recipe
+} from '../../shared/recipe'
 import { memberResolver, remapCollections, type SmartGroup } from '../../shared/smart'
 import { cacheUrlIn } from '../cache-url'
 import { emptyCamera, readCamera } from '../camera'
@@ -359,7 +366,12 @@ export class IndexService {
   private originOf(path: string): Origin | null {
     const stamp = fileStamp(path)
     const hit = this.origins.get(path)
-    if (hit && hit.stamp === stamp) return hit.origin
+    // Changed by the index's own writes (an edit), the origin is as it was:
+    // only `setOrigin` changes it, and that forgets it here.
+    if (hit && (hit.stamp === stamp || this.projects.leftAs(path, stamp))) {
+      hit.stamp = stamp
+      return hit.origin
+    }
     const origin = PixlFile.peekOrigin(path)
     this.origins.set(path, { stamp, origin })
     return origin
@@ -1578,6 +1590,17 @@ export class IndexService {
     return it?.recipe ?? defaultRecipe(row.is_raw === 1)
   }
 
+  /** A key's recipe with its planes by reference: its project's one item, or its sidecar's, slimmed. */
+  private slimRecipeOf(key: string): Recipe {
+    const row = this.row(key)
+    const raw = row.is_raw === 1
+    const project = this.projectOf(row)
+    const r = project
+      ? this.projects.use(project, (p) => p.itemRecipe(itemKeyOf(parseKey(key).copyId), raw))
+      : (itemOf(readSidecar(row.path, raw).sidecar, parseKey(key).copyId)?.recipe ?? null)
+    return r ? slimRecipe(r) : defaultRecipe(raw)
+  }
+
   recipes(keys: string[]): { key: string; row: PhotoRow; recipe: Recipe }[] {
     return keys.map((key) => ({ key, row: this.row(key), recipe: this.recipe(key) }))
   }
@@ -1752,12 +1775,15 @@ export class IndexService {
     const existing =
       copyId === null ? row : this.store.copiesOf(row.id).find((c) => c.copy_id === copyId)
     if (!existing) return null
-    const recipe = this.recipe(keyOf(row.id, copyId))
-    const edited = isEdited(recipe, row.is_raw === 1)
-    const stamp = `${versionStamp(row)}-${edited ? hash32(JSON.stringify(recipe)).toString(16) : 'plain'}`
+    // Whether the thumbnail is current is asked of the slim recipe (planes by
+    // reference), from the one item: only one to render reads it whole.
+    const key = keyOf(row.id, copyId)
+    const slim = this.slimRecipeOf(key)
+    const edited = isEdited(slim, row.is_raw === 1)
+    const stamp = `${versionStamp(row)}-${edited ? hash32(JSON.stringify(slim)).toString(16) : 'plain'}`
     if (existing.thumb_key === stamp && existing.thumb_path && existsSync(existing.thumb_path))
       return null
-    return { row: this.withOriginal(row), recipe, edited, stamp }
+    return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp }
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, stamp: string): void {
@@ -1814,11 +1840,10 @@ export class IndexService {
   }
 
   history(key: string): HistoryLog {
-    return this.inHistory(
-      key,
-      (p, k) => p.history.history(k),
-      () => this.store.history(key)
-    )
+    // A read: no write to note (its mtime stays the one the index knows).
+    const path = this.projectOf(this.row(key))
+    if (!path) return this.store.history(key)
+    return this.projects.use(path, (p) => p.history.history(itemKeyOf(parseKey(key).copyId)))
   }
 
   /**

@@ -146,11 +146,15 @@ export function applyPatch(recipe: Recipe, patch: Patch): Recipe {
   return out as unknown as Recipe
 }
 
-/** The recipe the history describes: the base and every visible step, in order. */
+/**
+ * The recipe the history describes: the base and every visible step, in
+ * order. Cloned once and patched in place (each op clones what it writes),
+ * not cloned again per step.
+ */
 export function replay(base: Recipe, steps: readonly Step[]): Recipe {
-  let r = base
-  for (const s of steps) if (!s.hidden) r = applyPatch(r, s.patch)
-  return r
+  const out = structuredClone(base) as unknown as Obj
+  for (const s of steps) if (!s.hidden) for (const op of s.patch) applyOp(out, op)
+  return out as unknown as Recipe
 }
 
 /** The entity ids a patch adds. */

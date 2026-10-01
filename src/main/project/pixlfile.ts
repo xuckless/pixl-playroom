@@ -380,6 +380,15 @@ export class PixlFile {
    * The project's items as a sidecar holds them: recipes with their planes
    * filled in, or (`hydrate` false, to change and write back) by reference.
    */
+  /** One item's recipe (null when it has none), planes by reference unless `hydrate`. */
+  itemRecipe(itemId: string, isRaw: boolean, hydrate = false): Recipe | null {
+    const row = this.prepare('SELECT recipe FROM items WHERE item_id = ?').get(itemId) as
+      { recipe: string | null } | undefined
+    if (!row?.recipe) return null
+    const r = JSON.parse(row.recipe) as Recipe
+    return normaliseRecipe(hydrate ? hydrateRecipe(r, (ref) => this.plane(ref)) : r, isRaw)
+  }
+
   read(isRaw: boolean, hydrate = true): Sidecar {
     const rows = this.prepare('SELECT * FROM items ORDER BY sort, item_id').all() as {
       item_id: string
@@ -424,7 +433,29 @@ export class PixlFile {
   write(s: Sidecar): void {
     this.tx(() => {
       const now = new Date().toISOString()
-      const slim = (r: Recipe): Recipe => slimRecipe(r, (ref, png) => this.putPlane(ref, png))
+      // A plane already stored is not handed to SQLite again (megabytes of PNG each).
+      const slim = (r: Recipe): Recipe =>
+        slimRecipe(r, (ref, png) => {
+          if (!this.hasPlane(ref)) this.putPlane(ref, png)
+        })
+      // Only the items that changed are written: a rating or one copy's edit
+      // does not rewrite every item and snapshot.
+      const existing = new Map(
+        (
+          this.prepare(
+            'SELECT item_id, name, sort, rating, flag, label, recipe, snapshots FROM items'
+          ).all() as {
+            item_id: string
+            name: string
+            sort: number
+            rating: number
+            flag: string | null
+            label: string | null
+            recipe: string | null
+            snapshots: string
+          }[]
+        ).map((r) => [r.item_id, r])
+      )
       const put = this.prepare(
         `INSERT INTO items(item_id, name, sort, rating, flag, label, recipe, snapshots, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -433,24 +464,28 @@ export class PixlFile {
            recipe = excluded.recipe, snapshots = excluded.snapshots, updated_at = excluded.updated_at`
       )
       const row = (id: string, name: string, sort: number, it: SidecarItem): void => {
-        put.run(
-          id,
-          name,
-          sort,
-          it.rating,
-          it.flag,
-          it.label,
-          it.recipe ? JSON.stringify(slim(it.recipe)) : null,
-          JSON.stringify(it.snapshots.map((sn) => ({ ...sn, recipe: slim(sn.recipe) }))),
-          now
+        const recipe = it.recipe ? JSON.stringify(slim(it.recipe)) : null
+        const snapshots = JSON.stringify(
+          it.snapshots.map((sn) => ({ ...sn, recipe: slim(sn.recipe) }))
         )
+        const was = existing.get(id)
+        if (
+          was &&
+          was.name === name &&
+          was.sort === sort &&
+          was.rating === it.rating &&
+          was.flag === (it.flag ?? null) &&
+          was.label === (it.label ?? null) &&
+          was.recipe === recipe &&
+          was.snapshots === snapshots
+        )
+          return
+        put.run(id, name, sort, it.rating, it.flag, it.label, recipe, snapshots, now)
       }
       row(PHOTO, this.origin()?.name ?? '', 0, s.photo)
       s.copies.forEach((c, i) => row(c.id, c.name, i + 1, c))
       const keep = new Set([PHOTO, ...s.copies.map((c) => c.id)])
-      for (const { item_id } of this.prepare('SELECT item_id FROM items').all() as {
-        item_id: string
-      }[]) {
+      for (const item_id of existing.keys()) {
         if (keep.has(item_id)) continue
         this.prepare('DELETE FROM items WHERE item_id = ?').run(item_id)
         this.history.remove(item_id)
@@ -679,6 +714,8 @@ export class ProjectPool {
     { file: PixlFile; stamp: string | null; timer: ReturnType<typeof setTimeout> | null }
   >()
   private readonly idleMs: number
+  /** The stamp each project was left at by this pool's own last use (kept after it closes). */
+  private readonly own = new Map<string, string | null>()
 
   constructor(idleMs = 2000) {
     this.idleMs = idleMs
@@ -700,9 +737,15 @@ export class ProjectPool {
       return fn(e.file)
     } finally {
       e.stamp = fileStamp(path)
+      this.own.set(path, e.stamp)
       e.timer = setTimeout(() => this.drop(path), this.idleMs)
       e.timer.unref?.()
     }
+  }
+
+  /** Whether a project's file is as this pool last left it (its own writes, not another's). */
+  leftAs(path: string, stamp: string | null): boolean {
+    return this.own.has(path) && this.own.get(path) === stamp
   }
 
   /** Close one project (before it is moved or replaced), or all. */

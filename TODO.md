@@ -268,22 +268,22 @@ Biggest felt lag first: slider jank, save cost, background contention.
 
 ### Pass 13 — History and save cost · 5 pts
 
-- [ ] **S** · **History replay clones the whole recipe per step**
+- [x] **S** · **History replay clones the whole recipe per step**
       (`history.ts:144`), and `append` reads the whole history three times
       (`historytable.ts:130-152`): ~20 ms at 200 steps, linear, in the index
       process every commit and on the renderer's main thread every undo.
       Clone once, apply ops in place (measured ~18 ms → ~0.3 ms); build the
       log in memory.
-- [ ] **S** · **Reading history takes a write lock and records a write**:
+- [x] **S** · **Reading history takes a write lock and records a write**:
       `BEGIN IMMEDIATE` (`historytable.ts:90`, `pixlfile.ts:298`) and
       `noteProjectWrite` (`service.ts:1758-1768`) on a read. Drop both.
-- [ ] **S** · **Every save rewrites every item and snapshot**
+- [x] **S** · **Every save rewrites every item and snapshot**
       (`service.ts:1586-1590`, `pixlfile.ts:406-442`). Update the changed row
       only; skip `putPlane` for refs already stored.
-- [ ] **S** · **Thumbnail jobs read and hash whole hydrated projects**
+- [x] **S** · **Thumbnail jobs read and hash whole hydrated projects**
       (`service.ts:1694-1714`): read one item, keep it slim, hash the slim
       recipe.
-- [ ] **S** · **The origin cache misses after our own writes** (keyed on the
+- [x] **S** · **The origin cache misses after our own writes** (keyed on the
       file stamp, `service.ts:300-308`), opening a second connection per edit.
       Invalidate on `setOrigin` or a foreign change only.
 
