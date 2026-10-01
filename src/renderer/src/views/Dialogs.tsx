@@ -22,6 +22,7 @@ import { Modal } from '../components/ui'
 import { Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
 import { autoWbBatch } from '../lib/autowb'
+import { presetsChanged } from '../lib/hooks'
 import { useDevelop } from '../state/develop'
 import { useLibrary, useTargets } from '../state/library'
 import { WatermarkSection } from './WatermarkSection'
@@ -891,6 +892,7 @@ export function SavePresetDialog(): React.JSX.Element {
                 recipe,
                 ...(wbOp ? { wbOp } : {})
               })
+              presetsChanged()
               say(`Saved preset ${name.trim()}`)
               setDialog(null)
             } catch (err) {

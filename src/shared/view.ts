@@ -31,7 +31,7 @@ export interface ViewGeometry {
 }
 
 export function viewGeometry(
-  r: Recipe,
+  r: Pick<Recipe, 'geometry'>,
   frameWidth: number,
   frameHeight: number,
   cropMode: boolean,

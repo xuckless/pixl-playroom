@@ -72,8 +72,12 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
 }
 
 /** What decides a layer's mask (not its sliders): a change to it means the engine is behind. */
-const shapeOf = (l: LocalLayer | undefined): string =>
-  l ? JSON.stringify([l.components, l.invert]) : ''
+const shapeOf = (
+  l: LocalLayer | undefined
+): { components: LocalLayer['components'] | undefined; invert: boolean } => ({
+  components: l?.components,
+  invert: l?.invert ?? false
+})
 
 /**
  * The selected mask over the photo, drawn by the loupe itself from the
@@ -94,7 +98,13 @@ export function MaskCanvas({
   const canvas = useRef<HTMLCanvasElement>(null)
   const glRef = useRef<MaskGl | null>(null)
   const layerId = useDevelop((s) => s.layerId)
-  const layer = useDevelop((s) => s.recipe?.layers.find((l) => l.id === s.layerId))
+  // The selected mask's shape, by identity: its sliders moving leave these
+  // as they are, so nothing here redraws on a slider's tick.
+  const components = useDevelop((s) => s.recipe?.layers.find((l) => l.id === s.layerId)?.components)
+  const layerInvert = useDevelop(
+    (s) => s.recipe?.layers.find((l) => l.id === s.layerId)?.invert ?? false
+  )
+  const overlayHue = useDevelop((s) => s.recipe?.layers.find((l) => l.id === s.layerId)?.overlayHue)
   const mask = useDevelop((s) => (s.mask && s.mask.layerId === s.layerId ? s.mask : null))
   const pictureUrl = useDevelop((s) => s.picture?.url ?? null)
   const overlay = useDevelop((s) => s.overlay)
@@ -127,7 +137,8 @@ export function MaskCanvas({
     let shape = shapeOf(s0.recipe?.layers.find((l) => l.id === id))
     return useDevelop.subscribe((s) => {
       const next = shapeOf(s.recipe?.layers.find((l) => l.id === s.layerId))
-      if (next === shape && s.layerId === id) return
+      if (next.components === shape.components && next.invert === shape.invert && s.layerId === id)
+        return
       // A different mask selected shows the engine's plane as soon as it
       // has one for it; an edit waits for the engine to draw that edit.
       target.current = s.layerId === id ? lastSentRev() + 1 : 0
@@ -177,7 +188,7 @@ export function MaskCanvas({
   }, [mask?.url])
 
   // The picture, for ranges.
-  const hasRange = layer?.components.some((c) => c.kind === 'range') ?? false
+  const hasRange = components?.some((c) => c.kind === 'range') ?? false
   useEffect(() => {
     if (!hasRange || !pictureUrl) return
     let on = true
@@ -200,6 +211,7 @@ export function MaskCanvas({
   const cw = Math.max(1, Math.round(w * dpr * k))
   const ch = Math.max(1, Math.round(h * dpr * k))
 
+  // The loupe's own mask, composed when its shape (or the frame) changes.
   useEffect(() => {
     const gl = glRef.current
     const c = canvas.current
@@ -208,23 +220,11 @@ export function MaskCanvas({
       c.width = cw
       c.height = ch
     }
-    if (!layer) {
-      gl.haveAcc = false
-      gl.setEngine(null, '')
-      gl.shade({
-        layerInvert: false,
-        live: 0,
-        view: 'colour',
-        tint: [0, 0, 0],
-        alpha: 0,
-        reveal: 1
-      })
-      return
-    }
+    if (!components || !layerId) return
     // Painted planes: decode what is missing, and come back when it is.
     const joins: Join[] = []
     let waiting = false
-    for (const { c: comp, mode } of maskJoins(layer.components)) {
+    for (const { c: comp, mode } of maskJoins(components)) {
       if (comp.kind !== 'brush') {
         joins.push({ c: comp, mode })
         continue
@@ -263,7 +263,7 @@ export function MaskCanvas({
       joins.length > 0 &&
       gl.compose({
         joins,
-        layerInvert: layer.invert,
+        layerInvert,
         toBase: toBaseMat(g),
         baseW: base.w,
         baseH: base.h,
@@ -278,10 +278,30 @@ export function MaskCanvas({
     if (composed) {
       stats.composes++
       stats.lastComposeMs = Math.round((performance.now() - t0) * 10) / 10
-      lastLayer.current = layer.id
-    } else if (lastLayer.current !== layer.id || joins.length === 0) {
+      lastLayer.current = layerId
+    } else if (lastLayer.current !== layerId || joins.length === 0) {
       // Nothing of this mask's own yet: only the engine's plane can show.
       gl.haveAcc = false
+    }
+  }, [components, layerInvert, layerId, picture, g, cw, ch, bitmapTick])
+
+  // Shown: the loupe's mask or the engine's, handed over as the engine catches up.
+  useEffect(() => {
+    const gl = glRef.current
+    const c = canvas.current
+    if (!gl || !c) return
+    if (!components) {
+      gl.haveAcc = false
+      gl.setEngine(null, '')
+      gl.shade({
+        layerInvert: false,
+        live: 0,
+        view: 'colour',
+        tint: [0, 0, 0],
+        alpha: 0,
+        reveal: 1
+      })
+      return
     }
     gl.setEngine(engineBmp?.url === mask?.url ? (engineBmp?.bmp ?? null) : null, mask?.url ?? '')
 
@@ -294,11 +314,11 @@ export function MaskCanvas({
       mask.url === engineBmp?.url
     stats.engineRev = mask?.rev ?? -1
     const goal = !gl.haveAcc ? 0 : agreed ? 0 : 1
-    const tint = hslToRgb(layer.overlayHue ?? o.hue, 0.9, 0.55)
+    const tint = hslToRgb(overlayHue ?? o.hue, 0.9, 0.55)
     const draw = (): void => {
       const ghost = !overlay
       gl.shade({
-        layerInvert: layer.invert,
+        layerInvert,
         live: live.current,
         view: ghost ? 'outline' : viewOf(o.mode),
         tint,
@@ -328,7 +348,21 @@ export function MaskCanvas({
       if (t < 1) frame.current = requestAnimationFrame(step)
     }
     frame.current = requestAnimationFrame(step)
-  }, [layer, layerId, mask, engineBmp, picture, overlay, o, g, cw, ch, bitmapTick])
+  }, [
+    components,
+    layerInvert,
+    overlayHue,
+    layerId,
+    mask,
+    engineBmp,
+    picture,
+    overlay,
+    o,
+    g,
+    cw,
+    ch,
+    bitmapTick
+  ])
 
   useEffect(() => () => cancelAnimationFrame(frame.current), [])
 

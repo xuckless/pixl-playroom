@@ -422,7 +422,7 @@ export function framingTransparent(f: Framing | null): boolean {
 
 /** The user-oriented frame's size and orientation for a recipe. */
 export function orientedFrame(
-  r: Recipe,
+  r: Pick<Recipe, 'geometry'>,
   frameWidth: number,
   frameHeight: number
 ): { user: Orientation; width: number; height: number } {
@@ -521,7 +521,7 @@ export function aspectCrop(
  * auto-fit for a bare straighten or Upright — always clear of the corners a
  * rotation or a perspective warp leaves without picture.
  */
-export function effectiveCrop(r: Recipe, w: number, h: number): CropRect | null {
+export function effectiveCrop(r: Pick<Recipe, 'geometry'>, w: number, h: number): CropRect | null {
   const { straighten, crop, aspect } = r.geometry
   const t = uprightTransform(r.geometry.upright, w, h)
   if (crop) return fitCrop(crop, straighten, w, h, t)

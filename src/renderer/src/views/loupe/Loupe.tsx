@@ -128,18 +128,21 @@ export function Loupe(): React.JSX.Element {
   }, [size.w, size.h, setTargetEdge])
 
   const panel = useUi((s) => s.panel)
+  // On the geometry alone (a slider elsewhere keeps it), so what takes `g`
+  // stays memoised through a drag.
+  const geometry = useDevelop((s) => s.recipe?.geometry)
   const g = useMemo(
     () =>
-      session && recipe
+      session && geometry
         ? viewGeometry(
-            recipe,
+            { geometry },
             session.frameWidth,
             session.frameHeight,
             tool === 'crop',
             tool === 'upright-guide'
           )
         : null,
-    [session, recipe, tool]
+    [session, geometry, tool]
   )
 
   // Where the picture sits in the loupe. In the crop tool the frame comes

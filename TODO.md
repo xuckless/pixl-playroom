@@ -245,22 +245,22 @@ Biggest felt lag first: slider jank, save cost, background contention.
 
 ### Pass 12 — Slider jank · 5 pts
 
-- [ ] **M** · **`edit()` deep-clones the whole recipe on every input event**
+- [x] **M** · **`edit()` deep-clones the whole recipe on every input event**
       (`state/develop.ts:354`: `structuredClone`), so every subscriber to any
       slice re-renders per tick: the Loupe, both `MasksWindow`s, every slider
       in the open panel, the presets rail. Use structural sharing (immer
       `produce`) so untouched slices keep their identity; have `RS`
       (`global.tsx:63`) select its own number.
-- [ ] **S** · **Loupe geometry and mask redraw per tick.** Memoise
+- [x] **S** · **Loupe geometry and mask redraw per tick.** Memoise
       `viewGeometry` (`Loupe.tsx:131`) on the geometry/lens slices so
       `SharpTile`, `BrushLayer`, `GradientTools`, `LassoEditor` keep `memo`;
       `MaskCanvas` compares `layer.components` by identity instead of a global
       subscribe with `JSON.stringify` (`MaskCanvas.tsx:122-123`) and stops the
       GL `compose()` per tick (`:308`).
-- [ ] **S** · **`edit()` + `commit()` send two identical updates** (hydrate,
+- [x] **S** · **`edit()` + `commit()` send two identical updates** (hydrate,
       normalise and compile twice; the first render aborted):
       `masks/model.ts:280-302`, `BrushTool.tsx:226-250`, `ui.tsx:140-153`.
-- [ ] **S** · **Listener and poll churn**: `Slider`'s effect has no deps and
+- [x] **S** · **Listener and poll churn**: `Slider`'s effect has no deps and
       re-adds two window listeners every render (`ui.tsx:131`); `ProjectRows`
       polls IPC every 4 s forever (`left.tsx:321`); `usePresets(4000)`
       (`hooks.ts:13`) re-sets the list every 4 s; `BrushLayer` sets state per

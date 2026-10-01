@@ -5,7 +5,7 @@ import { applyFields, applyGroups } from '../../../shared/recipe'
 import { wbFromSaved } from '../../../shared/wbconvert'
 import { Icon } from '../components/icons'
 import { api, errorText } from '../lib/api'
-import { usePresets } from '../lib/hooks'
+import { presetsChanged, usePresets } from '../lib/hooks'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { MetadataEditor } from '../views/library/MetadataEditor'
@@ -29,7 +29,7 @@ export function PresetsPane(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
   const session = useDevelop((s) => s.session)
   const replace = useDevelop((s) => s.replace)
-  const [presets, reload] = usePresets(4000)
+  const [presets, reload] = usePresets()
   const [applied, setApplied] = useState<string | null>(null)
   if (!recipe) return <p className="rail-empty">Open a photo to use presets.</p>
   const apply = async (p: Preset): Promise<void> => {
@@ -98,7 +98,10 @@ export function PresetsPane(): React.JSX.Element | null {
                       title="Delete preset"
                       onClick={(e) => {
                         e.stopPropagation()
-                        void api.presets.remove(p.id).then(reload)
+                        void api.presets.remove(p.id).then(() => {
+                          reload()
+                          presetsChanged()
+                        })
                       }}
                     >
                       <Icon name="trash" />
@@ -330,21 +333,27 @@ const ORIGINAL_KIND: Record<string, string> = {
 /** The photo's project, and the copy of its original it carries. */
 function ProjectRows({ sessionKey }: { sessionKey: string }): React.JSX.Element | null {
   const [info, setInfo] = useState<ProjectInfo | null>(null)
+  // A first edit makes the project: looked at again as the history grows.
+  const steps = useDevelop((s) => s.history.steps.length)
   useEffect(() => {
     let live = true
+    let t: ReturnType<typeof setTimeout> | undefined
     const load = (): void =>
       void api.library
         .projectInfo(sessionKey)
-        .then((i) => live && setInfo(i))
+        .then((i) => {
+          if (!live) return
+          setInfo(i)
+          // The original is embedded in the background: look again only while it is.
+          if (i.project && i.state !== 'ready' && i.state !== 'failed') t = setTimeout(load, 4000)
+        })
         .catch(() => undefined)
     load()
-    // The original is embedded in the background: look again while it is.
-    const t = setInterval(load, 4000)
     return () => {
       live = false
-      clearInterval(t)
+      clearTimeout(t)
     }
-  }, [sessionKey])
+  }, [sessionKey, steps])
   if (!info?.project) return null
   const original =
     info.state === 'ready'

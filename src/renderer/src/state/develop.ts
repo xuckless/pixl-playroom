@@ -1,3 +1,4 @@
+import { produce, setAutoFreeze } from 'immer'
 import { create } from 'zustand'
 import type { ImageStats, MaskMode, NoiseEstimate } from '../../../shared/engine-types'
 import type {
@@ -188,6 +189,9 @@ interface DevelopState {
  * Anything that settles an edit sends straight away and drops what waits.
  */
 let queued: { key: string; recipe: Recipe } | null = null
+// Recipes are handed on and changed in place elsewhere (a clone first, but
+// not everywhere): frozen ones would throw there.
+setAutoFreeze(false)
 /** Counts opens: one that finds a newer one started (or a close) shows nothing. */
 let openToken = 0
 /** The photo an open is loading, until it is shown. */
@@ -206,14 +210,19 @@ function flushQueued(onError: (message: string) => void): void {
   frame = 0
   const q = queued
   queued = null
-  if (q)
-    void api.develop.update(q.key, q.recipe, true, ++rev).catch((err) => onError(errorText(err)))
+  if (!q) return
+  settled = null
+  void api.develop.update(q.key, q.recipe, true, ++rev).catch((err) => onError(errorText(err)))
 }
+
+/** The last recipe sent settled (not mid-drag): sent again it would only render twice. */
+let settled: { key: string; recipe: Recipe } | null = null
 
 function sendNow(key: string, recipe: Recipe, onError: (message: string) => void): void {
   cancelAnimationFrame(frame)
   frame = 0
   queued = null
+  settled = { key, recipe }
   void api.develop.update(key, recipe, false, ++rev).catch((err) => onError(errorText(err)))
 }
 
@@ -385,8 +394,12 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   edit(change, interactive = false) {
     const { session, recipe } = get()
     if (!session || !recipe) return
-    const next = structuredClone(recipe)
-    change(next)
+    // What the change leaves alone keeps its identity, so only what reads
+    // the part that moved re-renders (a slider tick, not the whole develop view).
+    const next = produce(recipe, (draft) => {
+      change(draft as Recipe)
+    })
+    if (next === recipe) return
     set({ recipe: next, rendering: true })
     const onError = (m: string): void => get().onError(m)
     if (!interactive) return sendNow(session.key, next, onError)
@@ -398,8 +411,11 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   commit(label) {
     const { session, recipe } = get()
     if (!session || !recipe) return
-    set({ rendering: true })
-    sendNow(session.key, recipe, (m) => get().onError(m))
+    // An edit sent settled just before (edit, then commit) is not sent again.
+    if (settled?.key !== session.key || settled.recipe !== recipe || queued || frame) {
+      set({ rendering: true })
+      sendNow(session.key, recipe, (m) => get().onError(m))
+    }
     // In line with Undo and Redo: one pressed straight after waits for this step.
     queueHistoryOp(async () => {
       const history = await api.develop.historyAppend(session.key, label, recipe)

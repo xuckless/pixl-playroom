@@ -121,22 +121,27 @@ export function Slider({
   const [text, setText] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const drag = useRef(false)
-  const end = (): void => {
-    if (drag.current) {
+  const commitRef = useRef(onCommit)
+  useEffect(() => {
+    commitRef.current = onCommit
+  })
+  // Listening for the release only while a drag is on (not added again on
+  // every render of every slider).
+  useEffect(() => {
+    if (!dragging) return
+    const up = (): void => {
+      if (!drag.current) return
       drag.current = false
       setDragging(false)
-      onCommit()
+      commitRef.current()
     }
-  }
-  useEffect(() => {
-    const up = (): void => end()
     window.addEventListener('pointerup', up)
     window.addEventListener('pointercancel', up)
     return () => {
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
     }
-  })
+  }, [dragging])
   const reset = (): void => {
     onChange(def, false)
     onCommit()
