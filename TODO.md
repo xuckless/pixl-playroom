@@ -69,11 +69,11 @@ After: Pass 1.
       `IMG_1.jpg` passes for `IMG_1.JPG` with collision "overwrite". Compare
       `realpath` or dev+inode (or case-fold on darwin/win32), before the
       collision branch.
-- [ ] **S** · **Stale thumbnail and preview after an edit.** `queueThumb`
+- [x] **S** · **Stale thumbnail and preview after an edit.** `queueThumb`
       skips a key still in `queued` (`library.ts:259-263, 279-283`), so an
       edit saved while that photo's thumbnail renders never re-queues. Mark it
       dirty and render again after.
-- [ ] **S** · **Two thumbnail renders can write the same file.**
+- [x] **S** · **Two thumbnail renders can write the same file.**
       `hashPicture` calls `this.thumb()` directly (`library.ts:183`), bypassing
       the queue; same stamp, same output name (`library.ts:309-312`). Route it
       through the queue.

@@ -70,7 +70,13 @@ export class Library {
   /** JPEGs being rebuilt from a project's JPEG XL repack, by where they go. */
   private rebuilding = new Map<string, Promise<void>>()
   private queue: ThumbJob[] = []
+  /** Keys waiting in the queue. */
   private queued = new Set<string>()
+  /** Keys rendering now, and those changed since theirs began (rendered again after). */
+  private rendering = new Set<string>()
+  private stale = new Set<string>()
+  /** Who waits for a key's thumbnail: told when a render of it ends. */
+  private waiting = new Map<string, (() => void)[]>()
   private running = 0
 
   constructor(
@@ -180,7 +186,7 @@ export class Library {
 
   /** A photo's 64-bit dHash, of its thumbnail shrunk to 9×8 by the engine. */
   private async hashPicture(photoId: number, thumbPath: string | null): Promise<void> {
-    if (!thumbPath) await this.thumb({ photoId, copyId: null })
+    if (!thumbPath) await this.thumbFor(photoId, null)
     const row = await this.index.row(keyOf(photoId, null))
     if (!row.thumb_path || !row.thumb_key || !existsSync(row.thumb_path)) return
     const report = await this.engine.convert({
@@ -258,11 +264,28 @@ export class Library {
 
   queueThumb(photoId: number, copyId: string | null, urgent = false): void {
     const k = keyOf(photoId, copyId)
-    if (this.queued.has(k)) return
+    // One rendering now may be of the recipe before this change: it goes again after.
+    if (this.rendering.has(k)) {
+      this.stale.add(k)
+      return
+    }
+    if (this.queued.has(k)) {
+      if (urgent) this.prioritize([k])
+      return
+    }
     this.queued.add(k)
     if (urgent) this.queue.unshift({ photoId, copyId })
     else this.queue.push({ photoId, copyId })
     this.pump()
+  }
+
+  /** A key's thumbnail, rendered through the queue (never beside it); resolves when it is current. */
+  private thumbFor(photoId: number, copyId: string | null): Promise<void> {
+    const k = keyOf(photoId, copyId)
+    return new Promise((resolve) => {
+      this.waiting.set(k, [...(this.waiting.get(k) ?? []), resolve])
+      this.queueThumb(photoId, copyId, true)
+    })
   }
 
   /** Move these keys' waiting thumbnails to the front of the queue. */
@@ -276,6 +299,9 @@ export class Library {
   private pump(): void {
     while (this.running < 2 && this.queue.length > 0) {
       const job = this.queue.shift() as ThumbJob
+      const k = keyOf(job.photoId, job.copyId)
+      this.queued.delete(k)
+      this.rendering.add(k)
       this.running++
       this.thumb(job)
         .catch((err) => {
@@ -291,7 +317,12 @@ export class Library {
         })
         .finally(() => {
           this.running--
-          this.queued.delete(keyOf(job.photoId, job.copyId))
+          this.rendering.delete(k)
+          if (this.stale.delete(k)) this.queueThumb(job.photoId, job.copyId, true)
+          else {
+            for (const done of this.waiting.get(k) ?? []) done()
+            this.waiting.delete(k)
+          }
           this.pump()
         })
     }
