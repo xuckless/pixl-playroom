@@ -55,7 +55,7 @@ import {
   type SampleResult,
   type ViewState
 } from '../shared/ipc'
-import { defaultRecipe, hash32, type Recipe } from '../shared/recipe'
+import { defaultRecipe, hash32, normaliseRecipe, type Recipe } from '../shared/recipe'
 import type { Vec3 } from '../shared/wb'
 import {
   analyzeRequest,
@@ -401,8 +401,11 @@ class Session {
     )
   }
 
-  update(recipe: Recipe, interactive: boolean, rev?: number): void {
+  update(next: Recipe, interactive: boolean, rev?: number): void {
     const denoiseWas = this.denoiseKeyOf(this.recipe)
+    // Whatever the renderer replayed (an old history base can lack fields
+    // added since), the session only ever holds a complete recipe.
+    const recipe = normaliseRecipe(next, this.isRaw)
     this.recipe = recipe
     if (rev !== undefined) this.rev = rev
     // AI denoise turned on or off, or its model or strength changed: find

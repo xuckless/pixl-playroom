@@ -631,16 +631,30 @@ const DOCK_SNAP = 32
 const UNDOCK_PULL = 36
 const MARGIN = 8
 
-const stageEl = (): HTMLElement | null => document.querySelector('.develop .stage')
+/** A folded or headed window keeps this much of itself on the stage (px). */
+const KEEP_H = 56
 
-/** Keep a floating window's top-left inside a stage of `w`×`h` (x < 0: the default, top right). */
+/** The stage beside a window, whether that window floats on it or is docked next to it. */
+const stageOf = (el: HTMLElement): HTMLElement | null =>
+  el.closest('.develop-body')?.querySelector<HTMLElement>('.stage') ?? null
+
+/** Keep a dragged window's top-left inside a stage of `w`×`h`. */
 function clampTo(x: number, y: number, w: number, h: number): { x: number; y: number } {
-  const maxX = Math.max(MARGIN, w - WIDTH - MARGIN)
-  const maxY = Math.max(MARGIN, h - 56)
   return {
-    x: x < 0 ? Math.max(MARGIN, w - WIDTH - 14) : Math.min(maxX, Math.max(MARGIN, x)),
-    y: Math.min(maxY, Math.max(MARGIN, y))
+    x: Math.min(Math.max(MARGIN, w - WIDTH - MARGIN), Math.max(MARGIN, x)),
+    y: Math.min(Math.max(MARGIN, h - KEEP_H), Math.max(MARGIN, y))
   }
+}
+
+/**
+ * Where a floating window sits, kept on the stage by the stage itself (CSS
+ * against its containing block), so a stage that grows or shrinks never
+ * needs measuring. x < 0 is the default: the top right.
+ */
+function placeOnStage(x: number, y: number, width: number): React.CSSProperties {
+  const top = `max(${MARGIN}px, min(${y}px, calc(100% - ${KEEP_H}px)))`
+  if (x < 0) return { right: 14, top }
+  return { left: `max(${MARGIN}px, min(${x}px, calc(100% - ${width + MARGIN}px)))`, top }
 }
 
 /**
@@ -655,6 +669,8 @@ function startDrag(e: React.PointerEvent, onTap?: () => void): void {
     return
   const win = (e.currentTarget as HTMLElement).closest('.masks-win, .mf-pill') as HTMLElement
   if (!win) return
+  const stage = stageOf(win)
+  if (!stage) return
   e.preventDefault()
   const r = win.getBoundingClientRect()
   let grab = { dx: e.clientX - r.left, dy: e.clientY - r.top }
@@ -665,8 +681,6 @@ function startDrag(e: React.PointerEvent, onTap?: () => void): void {
     if (!moved && Math.hypot(ev.clientX - from.x, ev.clientY - from.y) < 4) return
     moved = true
     const ui = useUi.getState()
-    const stage = stageEl()
-    if (!stage) return
     // A docked window's pill floats once it is dragged.
     if (ui.masksWin.docked && ui.masksWin.minimized) ui.setMasksWin({ docked: false })
     else if (ui.masksWin.docked) {
@@ -684,29 +698,19 @@ function startDrag(e: React.PointerEvent, onTap?: () => void): void {
     )
   }
   const up = (): void => {
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', up)
-    window.removeEventListener('pointercancel', up)
-    stageEl()?.classList.remove('dock-hint')
+    window.removeEventListener('pointermove', move, true)
+    window.removeEventListener('pointerup', up, true)
+    window.removeEventListener('pointercancel', up, true)
+    stage.classList.remove('dock-hint')
     if (!moved) return onTap?.()
     if (near) useUi.getState().setMasksWin({ docked: true, minimized: false })
   }
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', up)
-  window.addEventListener('pointercancel', up)
-}
-
-/** The stage's size, for keeping a floating window on it. */
-function useStageSize(): { w: number; h: number } | null {
-  const [size, setSize] = useState<{ w: number; h: number } | null>(null)
-  useEffect(() => {
-    const el = stageEl()
-    if (!el) return
-    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-  return size
+  // In the capture phase: the loupe's own tools (pins, the gradient and lasso
+  // editors) stop the pointer's events over the photo, and the drag must
+  // still hear every one of them, wherever the pointer goes.
+  window.addEventListener('pointermove', move, true)
+  window.addEventListener('pointerup', up, true)
+  window.addEventListener('pointercancel', up, true)
 }
 
 /**
@@ -728,7 +732,6 @@ export function MasksWindow({ place }: { place: 'dock' | 'stage' }): React.JSX.E
   const setAddMode = useDevelop((s) => s.setAddMode)
   const addMode = useDevelop((s) => s.addMode)
   const win = useUi((s) => s.masksWin)
-  const size = useStageSize()
   const [picker, setPicker] = useState(false)
   const masks = useReorder((from, to) => {
     const l = useDevelop.getState().recipe?.layers[from]
@@ -742,13 +745,12 @@ export function MasksWindow({ place }: { place: 'dock' | 'stage' }): React.JSX.E
     if (!up || win.minimized) useDevelop.getState().setHoverLayer(null)
   }, [up, win.minimized])
   if (!up || !here) return null
-  const pos =
-    place === 'stage' && size
+  const style =
+    place === 'stage'
       ? win.docked
-        ? { x: MARGIN, y: MARGIN }
-        : clampTo(win.x, win.y, size.w, size.h)
-      : null
-  const style = pos ? { left: pos.x, top: pos.y } : undefined
+        ? { left: MARGIN, top: MARGIN }
+        : placeOnStage(win.x, win.y, win.minimized ? 180 : WIDTH)
+      : undefined
 
   if (win.minimized) {
     const sel = layers.find((l) => l.id === layerId)

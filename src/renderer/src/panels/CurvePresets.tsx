@@ -8,7 +8,7 @@ import {
 import type { ToneCurveSetting } from '../../../shared/recipe'
 import { Select } from '../components/ui'
 import { api } from '../lib/api'
-import { useDevelop } from '../state/develop'
+import { scoped, useScope } from '../state/scope'
 import { useLibrary } from '../state/library'
 
 /** A whole tone curve the user saved under a name. */
@@ -27,8 +27,8 @@ const CURVE_PRESETS_KEY = 'curve.presets'
  * of the same shape), or that it is a curve of its own.
  */
 export function CurvePresets(): React.JSX.Element {
-  const replace = useDevelop((s) => s.replace)
-  const toneCurve = useDevelop((s) => s.recipe?.toneCurve)
+  const { replace, recipe: shown } = useScope()
+  const toneCurve = shown?.toneCurve
   const [saved, setSaved] = useState<SavedCurve[]>([])
   const [naming, setNaming] = useState<string | null>(null)
   useEffect(() => {
@@ -41,13 +41,13 @@ export function CurvePresets(): React.JSX.Element {
     await api.app.setSetting(CURVE_PRESETS_KEY, next)
   }
   const apply = (p: CurvePreset): void => {
-    const recipe = useDevelop.getState().recipe
+    const recipe = scoped.recipe()
     if (!recipe) return
     // Fill from the untouched curve, so what a preset leaves out is reset.
     replace({ ...recipe, toneCurve: presetCurve(p) }, `Curve preset: ${p.name}`)
   }
   const saveCurrent = async (name: string): Promise<void> => {
-    const recipe = useDevelop.getState().recipe
+    const recipe = scoped.recipe()
     if (!recipe) return
     const entry: SavedCurve = { name, curve: structuredClone(recipe.toneCurve) }
     await store([...saved.filter((p) => p.name !== name), entry])

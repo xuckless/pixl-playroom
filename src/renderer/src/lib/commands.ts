@@ -19,6 +19,7 @@ import {
 } from '../panels/masks/model'
 import { runJob } from '../state/busy'
 import { useDevelop } from '../state/develop'
+import { scoped } from '../state/scope'
 import { useLibrary } from '../state/library'
 import { OVERLAY_MODES, useUi } from '../state/ui'
 import { flashHud } from '../views/loupe/hudNote'
@@ -293,7 +294,7 @@ export const COMMANDS: KeyCommand[] = [
   // ── develop ──
   {
     id: 'develop.escape',
-    label: 'Put the tool down, fit, or back to the library',
+    label: 'Put the tool down, edit the whole photo, fit, or back to the library',
     group: 'Navigation',
     context: 'develop',
     keys: ['Escape'],
@@ -306,6 +307,8 @@ export const COMMANDS: KeyCommand[] = [
         if (wasCrop && u.panel === 'crop') u.setPanel(u.previousPanel)
         return
       }
+      // A selected mask is what the panels edit: Esc gives them the whole photo back.
+      if (scoped.layer()) return d.setLayer(null)
       if (d.zoom.scale !== 'fit') return loupeZoom.fit()
       lib().setView('library')
     }

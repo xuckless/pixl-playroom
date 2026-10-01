@@ -111,7 +111,9 @@ function MatchTarget({
 const HUE_TRACK = 'linear-gradient(90deg,red,yellow,lime,cyan,blue,magenta,red)'
 
 const sameTarget = (a: AddTarget, b: AddTarget): boolean =>
-  typeof a === 'string' || typeof b === 'string' ? a === b : a.layer === b.layer
+  typeof a === 'string' || typeof b === 'string'
+    ? a === b
+    : a.layer === b.layer && a.part === b.part
 
 export function AddColourControl({
   target,

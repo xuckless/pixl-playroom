@@ -1,7 +1,6 @@
 import type { BlendMode, KeyBand, MaskMode } from '../../../../shared/engine-types'
-import { ZERO_LOCAL, type LocalAdjust, type MaskComponentSetting } from '../../../../shared/recipe'
+import { isNeutral, neutralSettings, type MaskComponentSetting } from '../../../../shared/recipe'
 import { Icon } from '../../components/icons'
-import { AddColourControl } from '../../components/AddColour'
 import { Section, Select, Slider, Toggle } from '../../components/ui'
 import { useDevelop } from '../../state/develop'
 import {
@@ -109,127 +108,41 @@ function RangeEditor({
   )
 }
 
-const LOCAL_SLIDERS: {
-  key: keyof LocalAdjust
-  label: string
-  min: number
-  max: number
-  step?: number
-}[] = [
-  { key: 'temperature', label: 'Temp', min: -100, max: 100 },
-  { key: 'tint', label: 'Tint', min: -100, max: 100 },
-  { key: 'exposure', label: 'Exposure', min: -4, max: 4, step: 0.01 },
-  { key: 'contrast', label: 'Contrast', min: -100, max: 100 },
-  { key: 'highlights', label: 'Highlights', min: -100, max: 100 },
-  { key: 'shadows', label: 'Shadows', min: -100, max: 100 },
-  { key: 'whites', label: 'Whites', min: -100, max: 100 },
-  { key: 'blacks', label: 'Blacks', min: -100, max: 100 },
-  { key: 'texture', label: 'Texture', min: -100, max: 100 },
-  { key: 'clarity', label: 'Clarity', min: -100, max: 100 },
-  { key: 'dehaze', label: 'Dehaze', min: -100, max: 100 },
-  { key: 'hue', label: 'Hue', min: -100, max: 100 },
-  { key: 'saturation', label: 'Saturation', min: -100, max: 100 },
-  { key: 'sharpness', label: 'Sharpness', min: 0, max: 100 },
-  { key: 'noise', label: 'Noise', min: 0, max: 100 },
-  { key: 'tintHue', label: 'Colour hue', min: 0, max: 360 },
-  { key: 'tintAmount', label: 'Colour amount', min: 0, max: 100 }
-]
-
-/** The mask's sliders, in Lightroom's groups. */
-const ADJUST_GROUPS: { id: string; title: string; keys: (keyof LocalAdjust)[] }[] = [
-  { id: 'masks.colour', title: 'Colour', keys: ['temperature', 'tint', 'hue', 'saturation'] },
-  {
-    id: 'masks.light',
-    title: 'Light',
-    keys: ['exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks']
-  },
-  { id: 'masks.presence', title: 'Presence', keys: ['texture', 'clarity', 'dehaze'] },
-  { id: 'masks.detail', title: 'Detail', keys: ['sharpness', 'noise'] },
-  { id: 'masks.tint', title: 'Colour tint', keys: ['tintHue', 'tintAmount'] }
-]
-
+/**
+ * The mask's settings: what it does is edited in the panels on the right
+ * while it is selected; here are its presets and a way back to neutral.
+ */
 function Adjustments(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
   const layerId = useDevelop((s) => s.layerId)
   const commit = useDevelop((s) => s.commit)
   const layer = layerOf(recipe, layerId)
   if (!layer) return null
-  const changed = (Object.keys(ZERO_LOCAL) as (keyof LocalAdjust)[]).some(
-    (k) => layer.adjust[k] !== ZERO_LOCAL[k]
-  )
   return (
-    <>
-      <Section id="masks.presets" title="Presets">
-        <MaskPresets layer={layer} />
-      </Section>
-      {ADJUST_GROUPS.map((g) => (
-        <Section
-          key={g.id}
-          id={g.id}
-          title={g.title}
-          right={
-            g.id === 'masks.colour' && changed ? (
-              <button
-                className="sm ghost"
-                title="Every slider of this mask back to zero"
-                onClick={() => {
-                  changeLayer((l) => (l.adjust = { ...ZERO_LOCAL }))
-                  commit(`${layer.name}: reset sliders`)
-                }}
-              >
-                Reset all
-              </button>
-            ) : undefined
-          }
-        >
-          {g.keys.map((key) => {
-            const s = LOCAL_SLIDERS.find((x) => x.key === key)
-            if (!s) return null
-            return (
-              <Slider
-                key={key}
-                label={s.label}
-                value={layer.adjust[key]}
-                min={s.min}
-                max={s.max}
-                step={s.step ?? 1}
-                def={ZERO_LOCAL[key]}
-                format={s.step ? (v) => (v > 0 ? '+' : '') + v.toFixed(2) : undefined}
-                track={
-                  key === 'tintHue'
-                    ? 'linear-gradient(90deg,red,yellow,lime,cyan,blue,magenta,red)'
-                    : key === 'temperature'
-                      ? 'linear-gradient(90deg,#5b8cff,#fff,#ffb44d)'
-                      : key === 'tint'
-                        ? 'linear-gradient(90deg,#4dff6a,#fff,#ff4de1)'
-                        : undefined
-                }
-                onChange={(v, live) => changeLayer((l) => (l.adjust[key] = v), live)}
-                onCommit={() => commit(`${layer.name}: ${s.label}`)}
-              />
-            )
-          })}
-        </Section>
-      ))}
-      <Section id="masks.add" title="Add colour">
-        <AddColourControl
-          target={{ layer: layer.id }}
-          value={{
-            hue: layer.adjust.addHue,
-            saturation: layer.adjust.addSaturation,
-            amount: layer.adjust.addAmount
-          }}
-          onChange={(v, live) =>
-            changeLayer((l) => {
-              l.adjust.addHue = v.hue
-              l.adjust.addSaturation = v.saturation
-              l.adjust.addAmount = v.amount
-            }, live)
-          }
-          hint="Coloured light added where the mask selects, in linear light."
-        />
-      </Section>
-    </>
+    <Section
+      id="masks.presets"
+      title="Settings"
+      right={
+        isNeutral(layer.settings) ? undefined : (
+          <button
+            className="sm ghost"
+            title="Every setting of this mask back to no change"
+            onClick={() => {
+              changeLayer((l) => (l.settings = neutralSettings()))
+              commit(`${layer.name}: reset`)
+            }}
+          >
+            Reset all
+          </button>
+        )
+      }
+    >
+      <p className="muted small">
+        The panels on the right (Basic, Tone Curve, HSL, Colour Grading, Detail, Effects,
+        Calibration) edit this mask while it is selected.
+      </p>
+      <MaskPresets layer={layer} />
+    </Section>
   )
 }
 

@@ -9,7 +9,7 @@ import type {
   ViewState
 } from '../../../shared/ipc'
 import { replay } from '../../../shared/history'
-import { newId, type HslBand, type Recipe } from '../../../shared/recipe'
+import { newId, normaliseRecipe, type HslBand, type Recipe } from '../../../shared/recipe'
 import { FIT, type ZoomView } from '../../../shared/view'
 import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
@@ -44,7 +44,8 @@ export function wholeFrameTool(t: Tool): boolean {
 }
 
 /** Where an added colour lives: Colour grading, the Effects wash, or a mask. */
-export type AddTarget = 'grade' | 'wash' | { layer: string }
+/** Where an added colour lives: the photo's colour grading or wash, or a mask's. */
+export type AddTarget = 'grade' | 'wash' | { layer: string; part: 'grade' | 'wash' }
 
 /**
  * The additive-colour picker at work (tool `add-pick`): `white` takes one
@@ -211,7 +212,8 @@ function sendNow(key: string, recipe: Recipe, onError: (message: string) => void
 function applyLog(key: string, history: HistoryLog): void {
   const { session } = useDevelop.getState()
   if (!session || session.key !== key || !history.base) return
-  const recipe = replay(history.base.recipe, history.steps)
+  // A base saved by an older version can lack fields added since (AI denoise's).
+  const recipe = normaliseRecipe(replay(history.base.recipe, history.steps), session.isRaw)
   useDevelop.setState({ history, recipe, rendering: true })
   sendNow(session.key, recipe, (m) => useDevelop.getState().onError(m))
 }
