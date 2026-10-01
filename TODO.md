@@ -87,13 +87,13 @@ After: Pass 1.
       file, and `set.json` (last writer wins) can lose `master`. One in-flight
       build per key, master chained after proxies; write to a temp name and
       rename (see E5).
-- [ ] **M** · **A recycled preview slot can show the wrong picture.**
+- [x] **M** · **A recycled preview slot can show the wrong picture.**
       `lastEvent[kind]` keeps `view-<slot>`, but the 6 slots are shared with
       mask and headroom (`render.ts:563-593`); a full render matching an
       earlier signature re-sends a file that now holds another draft. Masked
       stats and pickers read it too. Name each render's file uniquely and
       prune, or drop `lastEvent` when its slot is reused.
-- [ ] **S** · **One failed lens bake degrades the session until the next
+- [x] **S** · **One failed lens bake degrades the session until the next
       edit.** `bakePending()` stays true (`render.ts:458-461, 526, 558`), so
       settled renders use the draft and mask/before/headroom never run.
       Remember the failed key, treat it as not pending, schedule a full render.

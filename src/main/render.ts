@@ -14,7 +14,7 @@
  */
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import { mkdir } from 'fs/promises'
+import { mkdir, readdir, rm } from 'fs/promises'
 import { join } from 'path'
 import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020 } from '../shared/auto'
 import {
@@ -118,6 +118,8 @@ const SETTLE_LARGE_MS = 500
 const EMPTY = 'empty'
 /** How long an edit must rest before the sidecar is written. */
 const SAVE_MS = 600
+/** Picture files of each kind kept on disk besides any a kept event names. */
+const KEEP_RENDERS = 6
 
 /**
  * What the histogram, the hue chart and auto tone read, measured by the
@@ -200,7 +202,16 @@ class Session {
   private pending: Kind | null = null
   private settle: NodeJS.Timeout | undefined
   private save: NodeJS.Timeout | undefined
-  private slot = 0
+  /**
+   * Picture, mask and headroom files: each render its own name, so an event
+   * kept for re-sending (or the picture pickers measure) still finds what it
+   * was made as. The newest few of each are kept, and any one still named.
+   */
+  private readonly tag = Date.now().toString(36)
+  private fileSeq = 0
+  private files: Record<string, string[]> = {}
+  private lastOut: Record<Kind, string> = { draft: '', full: '' }
+  private lastMaskOut = ''
   private regionSlot = 0
   private beforeKey = ''
   /**
@@ -238,6 +249,15 @@ class Session {
     readonly hdrMaster: ProxyFile | null = null
   ) {
     this.dir = rendersDir(row.id)
+    void this.clearEarlier()
+  }
+
+  /** An earlier session's picture files: nothing names them now. */
+  private async clearEarlier(): Promise<void> {
+    for (const name of await readdir(this.dir).catch(() => [] as string[])) {
+      if (/^(view|mask|headroom)-/.test(name) && !name.includes(`-${this.tag}-`))
+        await rm(join(this.dir, name), { force: true }).catch(() => undefined)
+    }
   }
 
   get isRaw(): boolean {
@@ -419,13 +439,15 @@ class Session {
     return key && this.lensed?.key === key ? this.lensed.px : this.basePx()
   }
 
-  /** A correction waiting for its corrected proxies. */
+  /** A correction waiting for its corrected proxies (one whose bake failed is corrected live). */
   private bakePending(): boolean {
     const key = this.lensKey(this.recipe)
-    return key !== '' && this.lensed?.key !== key
+    return key !== '' && this.lensed?.key !== key && key !== this.bakeFailed
   }
 
   private baking: string | null = null
+  /** The correction whose bake failed: not tried again this session. */
+  private bakeFailed: string | null = null
 
   /**
    * Make the recipe's lens-corrected proxies in the background (once the
@@ -434,7 +456,7 @@ class Session {
    */
   private bake(): void {
     const key = this.lensKey(this.recipe)
-    if (!key || this.lensed?.key === key || this.baking === key) return
+    if (!key || this.lensed?.key === key || this.baking === key || this.bakeFailed === key) return
     const { lens, retouch } = this.prepared(this.recipe)
     const base = this.basePx()
     this.baking = key
@@ -458,6 +480,9 @@ class Session {
       (err) => {
         if (this.baking === key) this.baking = null
         log.warn('lens proxies failed; correcting live', (err as Error).message)
+        this.bakeFailed = key
+        // The settled render, mask, before and headroom waited for the bake: they run now.
+        if (!this.closed && this.lensKey(this.recipe) === key) this.schedule('full')
       }
     )
   }
@@ -577,8 +602,13 @@ class Session {
   }
 
   private nextFile(stem: string, ext: string): string {
-    this.slot = (this.slot + 1) % 6
-    return join(this.dir, `${stem}-${this.slot}.${ext}`)
+    const out = join(this.dir, `${stem}-${this.tag}-${++this.fileSeq}.${ext}`)
+    const list = [...(this.files[stem] ?? []), out]
+    const held = new Set([this.lastOut.draft, this.lastOut.full, this.lastFull, this.lastMaskOut])
+    const drop = new Set(list.slice(0, -KEEP_RENDERS).filter((f) => !held.has(f)))
+    this.files[stem] = list.filter((f) => !drop.has(f))
+    for (const f of drop) void rm(f, { force: true }).catch(() => undefined)
+    return out
   }
 
   private async renderPicture(kind: Kind, signal: AbortSignal): Promise<void> {
@@ -661,6 +691,7 @@ class Session {
     }
     this.lastSig[kind] = sig
     this.lastEvent[kind] = event
+    this.lastOut[kind] = out
     this.owner.send(IPC.develop.rendered, event)
   }
 
@@ -856,6 +887,7 @@ class Session {
       }
     }
     this.maskSig = sig
+    this.lastMaskOut = out
     send({
       cropMode: this.view.cropMode,
       url: cacheUrl(out, `${this.seq}-m`),
