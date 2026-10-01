@@ -200,6 +200,8 @@ class Session {
   /** The 1:1 region being rendered: a newer one stops it. */
   private regionAbort: AbortController | null = null
   private pending: Kind | null = null
+  /** The render running now, or the last one. */
+  private current: Promise<void> = Promise.resolve()
   private settle: NodeJS.Timeout | undefined
   private save: NodeJS.Timeout | undefined
   /**
@@ -307,6 +309,8 @@ class Session {
   private working: WorkingSet | null = null
   /** A pixel step being made: its draft, shown in its place until the step lands. */
   private preview: Proxies | null = null
+  /** The working pixels being made for the recipe's steps (resolved once they are). */
+  workingJob: Promise<void> = Promise.resolve()
 
   private stepsKey(recipe: Recipe): string {
     return workingKey(versionStamp(this.row), recipe.pixels)
@@ -399,6 +403,11 @@ class Session {
       ? { proxy: draft, draft, frameWidth: this.px.frameWidth, frameHeight: this.px.frameHeight }
       : null
     this.schedule('full')
+  }
+
+  /** Resolves when the render running now (which may read a preview just cleared) has ended. */
+  whenIdle(): Promise<void> {
+    return this.inflight ? this.current : Promise.resolve()
   }
 
   /**
@@ -496,7 +505,7 @@ class Session {
     if (rev !== undefined) this.rev = rev
     // A pixel step added, undone, hidden or its strength changed: the working
     // pixels for the steps now (made already, for an undo or a redo).
-    if (stackSignature(recipe.pixels) !== stepsWere) void this.refreshWorking()
+    if (stackSignature(recipe.pixels) !== stepsWere) this.workingJob = this.refreshWorking()
     // A settled render of the old recipe is only in the way; so is anything
     // in flight when the slider is let go (the full render follows at once).
     if (this.inflight && (this.inflightKind === 'full' || !interactive)) this.abort?.abort()
@@ -547,7 +556,7 @@ class Session {
       this.pending = this.pending === 'full' || kind === 'full' ? 'full' : 'draft'
       return
     }
-    void this.run(kind)
+    this.current = this.run(kind)
   }
 
   private async run(kind: Kind): Promise<void> {
@@ -587,7 +596,7 @@ class Session {
       this.abort = null
       const next = this.pending
       this.pending = null
-      if (next && !this.closed) void this.run(next)
+      if (next && !this.closed) this.current = this.run(next)
     }
   }
 
@@ -1555,7 +1564,8 @@ export class DevelopSessions {
       session = new Session(key, row, graded, px, recipe, this, info, hdr?.master ?? null)
       this.sessions.set(key, session)
       // A photo with pixel steps opens on them.
-      await session.refreshWorking()
+      session.workingJob = session.refreshWorking()
+      await session.workingJob
     }
     return {
       key,
@@ -1640,6 +1650,19 @@ export class DevelopSessions {
   /** A pixel step's draft shown on the photo while it is made (null when it is done or failed). */
   pixelPreview(key: string, draft: ProxyFile | null): void {
     this.sessions.get(key)?.showPreview(draft)
+  }
+
+  /** The preview gone, and no render still reading it: its file can be deleted. */
+  async clearPreview(key: string): Promise<void> {
+    const s = this.sessions.get(key)
+    if (!s) return
+    s.showPreview(null)
+    await s.whenIdle()
+  }
+
+  /** Resolves once an open photo's working pixels are made for its steps. */
+  workingReady(key: string): Promise<void> {
+    return this.sessions.get(key)?.workingJob ?? Promise.resolve()
   }
 
   bakeSpot(

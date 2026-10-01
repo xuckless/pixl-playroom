@@ -100,7 +100,7 @@ After: Pass 1.
 
 ### Pass 4 — Denoise, virtual copies, AI jobs · 5 pts
 
-- [ ] **M** · **Denoise can drop heals, then flashes the original.** The
+- [x] **M** · **Denoise can drop heals, then flashes the original.** The
       denoise step is computed on the steps that existed when it started and
       appended on top of heals made meanwhile (`ai/denoise.ts:166-201`);
       `addPixelStep` doesn't wait for the working pixels (`steps.ts:18-19`) and

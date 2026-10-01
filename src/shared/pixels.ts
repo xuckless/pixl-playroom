@@ -107,3 +107,17 @@ export function resizes(s: PixelStep): boolean {
 export function pixelStepRefusal(info: { is_hdr: boolean }): string | null {
   return info.is_hdr ? 'HDR photos cannot take AI pixel steps yet' : null
 }
+
+/**
+ * `steps` with `step` added where it was made: right after `basedOn` (the ids
+ * of the steps it was computed on), so steps added while it ran stay on top
+ * of it rather than under it. Without `basedOn`, or when the step it followed
+ * is gone, it goes last.
+ */
+export function placeStep(steps: PixelStep[], step: PixelStep, basedOn?: string[]): PixelStep[] {
+  if (!basedOn) return [...steps, step]
+  const after = basedOn.at(-1)
+  const i = after === undefined ? 0 : steps.findIndex((s) => s.id === after) + 1
+  if (after !== undefined && i === 0) return [...steps, step]
+  return [...steps.slice(0, i), step, ...steps.slice(i)]
+}

@@ -4,7 +4,7 @@ import { createRequire } from 'module'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
-import { normalisePixelStep, stackSignature, type PixelStep } from '../src/shared/pixels'
+import { normalisePixelStep, placeStep, stackSignature, type PixelStep } from '../src/shared/pixels'
 import { diffRecipe, replay, type Step } from '../src/shared/history'
 import { defaultRecipe, normaliseRecipe, isEdited } from '../src/shared/recipe'
 import { composeMasked, unwarpMask, writeRamp } from '../src/main/pixels/ops'
@@ -603,3 +603,17 @@ test(
     rmSync(dir, { recursive: true })
   }
 )
+
+test('a step made over earlier steps goes after them, under any added while it ran', () => {
+  const a = step({ id: 'a' })
+  const heal = step({ id: 'heal' })
+  const made = step({ id: 'denoise' })
+  const ids = (l: PixelStep[]): string[] => l.map((s) => s.id)
+  // Made over [a]; a heal came meanwhile: the denoise goes under the heal.
+  assert.deepEqual(ids(placeStep([a, heal], made, ['a'])), ['a', 'denoise', 'heal'])
+  // Made over nothing: first.
+  assert.deepEqual(ids(placeStep([heal], made, [])), ['denoise', 'heal'])
+  // The step it followed is gone, or no base given: last.
+  assert.deepEqual(ids(placeStep([heal], made, ['a'])), ['heal', 'denoise'])
+  assert.deepEqual(ids(placeStep([a], made)), ['a', 'denoise'])
+})

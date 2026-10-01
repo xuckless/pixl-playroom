@@ -320,7 +320,14 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         rect: null,
         params: { chain: subject, scale: k, resizes: k > 1, lossless }
       }
-      await addPixelStep(this.library, sessions, key, step)
+      // Over the steps there were when it began, under any added while it ran.
+      await addPixelStep(
+        this.library,
+        sessions,
+        key,
+        step,
+        recipe.pixels.map((s) => s.id)
+      )
       const { photoId, copyId } = parseKey(key)
       this.library.queueThumb(photoId, copyId, true)
       return { kind: 'step', label: step.label }

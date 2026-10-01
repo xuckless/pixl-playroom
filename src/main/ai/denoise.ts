@@ -317,12 +317,20 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         rect: null,
         params: { model: req.model, lossless }
       }
-      await addPixelStep(this.library, this.sessions(), req.key, step)
+      // Computed on the steps there were when it began: it goes after them,
+      // under any (a heal) added while it ran.
+      await addPixelStep(
+        this.library,
+        this.sessions(),
+        req.key,
+        step,
+        recipe.pixels.map((s) => s.id)
+      )
       const { photoId, copyId } = parseKey(req.key)
       this.library.queueThumb(photoId, copyId, true)
       return { kind: 'step', label: step.label }
     } finally {
-      sessions?.pixelPreview(req.key, null)
+      await sessions?.clearPreview(req.key).catch(() => undefined)
       for (const f of files) await rm(f, { force: true }).catch(() => undefined)
     }
   }
