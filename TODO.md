@@ -107,10 +107,10 @@ After: Pass 1.
       `finally` clears the preview (`denoise.ts:325`), and the preview TIFF is
       deleted while a queued render may read it. Insert at the computed
       position (or serialise the jobs); await `refreshWorking`, then delete.
-- [ ] **S** · **Closing one virtual copy deletes the others' lens-corrected
+- [x] **S** · **Closing one virtual copy deletes the others' lens-corrected
       proxies.** `pruneLensed` keeps only the closing copy's set
       (`render.ts:1443`, `proxy.ts:291-297`); keep every copy's current set.
-- [ ] **S** · **Partial lens map; colliding freeze names.**
+- [x] **S** · **Partial lens map; colliding freeze names.**
       `pixels/lensmap.ts:49` can return a partially written map;
       `freeze.ts:72` names files by `Date.now()` alone.
 - [ ] **S** · **An AI job says "Cancelled" after it applied.** Enhance adds the

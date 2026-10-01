@@ -79,7 +79,10 @@ async function atomically<T>(out: string, build: (tmp: string) => Promise<T>): P
  * the first.
  */
 const making = new Map<string, Promise<void>>()
-async function makeOnce(out: string, build: (tmp: string) => Promise<unknown>): Promise<void> {
+export async function makeOnce(
+  out: string,
+  build: (tmp: string) => Promise<unknown>
+): Promise<void> {
   if (await exists(out)) return
   let p = making.get(out)
   if (!p) {

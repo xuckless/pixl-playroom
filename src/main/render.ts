@@ -1497,7 +1497,7 @@ class Session {
     this.abort?.abort()
     this.regionAbort?.abort()
     // Corrected proxies for any other correction are no longer read.
-    void pruneLensed(this.row, this.lensKey(this.recipe))
+    void pruneLensed(this.row, this.key, this.lensKey(this.recipe))
     return this.save ? this.persist() : Promise.resolve()
   }
 }

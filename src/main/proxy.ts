@@ -262,15 +262,32 @@ async function bakeLens(
 }
 
 /**
- * Drop a photo's lens-corrected sets but the one for `keepKey` (none when
- * empty) — when the photo closes, so no render still reads them.
+ * Drop a photo's lens-corrected sets but each of its items' current one —
+ * when an item closes (`itemKey`, its set now `keepKey`, none when empty), so
+ * no render still reads them. Virtual copies share the photo's cache: one
+ * closing keeps the sets the others were left on.
  */
-export async function pruneLensed(photo: PhotoRow, keepKey: string): Promise<void> {
+export async function pruneLensed(
+  photo: PhotoRow,
+  itemKey: string,
+  keepKey: string
+): Promise<void> {
   const dir = paths.photoCache(photo.id)
-  const keep = keepKey ? `lens-${stamp(photo)}-${keepKey}` : null
+  const file = join(dir, 'keep-lensed.json')
+  let kept: Record<string, string> = {}
+  try {
+    const parsed: unknown = JSON.parse(await readFile(file, 'utf8'))
+    if (parsed && typeof parsed === 'object') kept = parsed as Record<string, string>
+  } catch {
+    // None yet, or unreadable: only this item's set is known.
+  }
+  if (keepKey) kept[itemKey] = keepKey
+  else delete kept[itemKey]
+  await writeFile(file, JSON.stringify(kept)).catch(() => undefined)
+  const keep = Object.values(kept).map((k) => `lens-${stamp(photo)}-${k}`)
   for (const f of await readdir(dir).catch(() => [] as string[])) {
-    if (f.startsWith('lens-') && (!keep || !f.startsWith(keep)))
-      await unlink(join(dir, f)).catch(() => {})
+    const isKept = (k: string): boolean => f.startsWith(`${k}.`) || f.startsWith(`${k}-`)
+    if (f.startsWith('lens-') && !keep.some(isKept)) await unlink(join(dir, f)).catch(() => {})
   }
 }
 
