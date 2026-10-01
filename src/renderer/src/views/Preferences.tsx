@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { MAX_PROBLEM_TEXT } from '../../../shared/crash'
 import type { AccountStatus } from '../../../shared/account'
 import type { Prefs, UpdateState } from '../../../shared/ipc'
-import { ACCOUNT_URL, BUY_URL, type LicenceStatus } from '../../../shared/licence'
+import { ACCOUNT_URL, BUY_URL, LICENCE_RULES, type LicenceStatus } from '../../../shared/licence'
 import { Modal, Select, Tabs } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { takeReportFocus } from '../lib/report'
@@ -194,28 +194,38 @@ function AccountSection(): React.JSX.Element | null {
 function licenceLine(s: LicenceStatus): string {
   const st = s.state
   switch (st.kind) {
+    case 'signed-out':
+      return 'Sign in above to start your free trial, or to use your licence.'
+    case 'checking':
+      return 'Checking your account…'
+    case 'no-trial':
+      return `Your ${LICENCE_RULES.trialDays}-day free trial is ready to start.`
     case 'trial':
       return `Free trial: ${st.daysLeft} day${st.daysLeft === 1 ? '' : 's'} left.`
     case 'trial-ended':
       return 'Your free trial has ended.'
-    case 'licensed': {
-      const who = s.customerName ? `Licensed to ${s.customerName}` : 'Licensed'
-      const devices =
-        s.devicesUsed !== undefined ? ` · ${s.devicesUsed} of ${s.deviceLimit} devices` : ''
-      return `${who}${devices}.`
-    }
+    case 'licensed':
+      return `Licensed. Pixl Playroom works on up to ${s.deviceLimit} of your devices.`
+    case 'beta':
+      return 'Beta access. Thanks for testing.'
     case 'revalidate':
       return 'Connect to the internet so Playroom can confirm your licence.'
-    case 'inactive':
-      return `This device is no longer activated: ${st.reason}`
+    case 'device-limit':
+      return `Your licence is already on ${s.deviceLimit} devices. Free one to use it here.`
   }
 }
 
-/** The licence: trial days, or who it's licensed to and on how many devices; activate or free this device. */
+const shortDate = (unixS: number): string =>
+  new Date(unixS * 1000).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  })
+
+/** Access from the PIXL account: the trial, the licence or beta access; start the trial, free a device. */
 function LicenceSection(): React.JSX.Element | null {
   const say = useLibrary((s) => s.say)
   const [status, setStatus] = useState<LicenceStatus | null>(null)
-  const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
@@ -236,62 +246,71 @@ function LicenceSection(): React.JSX.Element | null {
     }
   }
   const kind = status.state.kind
-  const active = kind === 'licensed' || kind === 'revalidate'
+  const check = (
+    <button disabled={busy} onClick={() => void run(() => api.licence.refresh())}>
+      Check now
+    </button>
+  )
+  const buy = (
+    <a href={BUY_URL} target="_blank" rel="noreferrer">
+      Buy a licence
+    </a>
+  )
   return (
     <fieldset>
       <legend>Licence</legend>
       <p className="prefs-status" role="status" aria-live="polite">
         {licenceLine(status)}
-        {active && status.keyHint ? <span className="muted"> Key {status.keyHint}</span> : null}
       </p>
       {status.locked && <p className="note small">{status.locked}</p>}
+      {status.discount && (
+        <p className="small">
+          Your tester discount: <strong>{status.discount.code}</strong>, until{' '}
+          {shortDate(status.discount.expires)}.
+        </p>
+      )}
       {!status.enforced && (
         <p className="muted small">
           Licences aren&apos;t required yet: every feature works either way. Once they are, an ended
           trial stops exporting only; editing keeps working.
         </p>
       )}
-      {active ? (
+      {status.state.kind === 'device-limit' && (
+        <ul className="prefs-devices">
+          {status.state.devices.map((d) => (
+            <li key={d.id}>
+              <span>{d.name}</span>
+              <button
+                disabled={busy}
+                onClick={() => void run(() => api.licence.freeDevice(d.id), `${d.name} freed`)}
+              >
+                Free
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {kind !== 'signed-out' && (
         <div className="prefs-row">
-          <button disabled={busy} onClick={() => void run(() => api.licence.validate())}>
-            Check now
-          </button>
-          <button
-            disabled={busy}
-            title="Frees this device's place, so the licence can be used on another"
-            onClick={() => void run(() => api.licence.deactivate(), 'This device is deactivated')}
-          >
-            Deactivate this device
-          </button>
-          <a href={ACCOUNT_URL} target="_blank" rel="noreferrer">
-            Manage devices
-          </a>
+          {kind === 'no-trial' && (
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => void run(() => api.licence.startTrial(), 'Free trial started')}
+            >
+              Start free trial
+            </button>
+          )}
+          {kind !== 'no-trial' && check}
+          {kind === 'no-trial' || kind === 'trial' || kind === 'trial-ended' || kind === 'beta'
+            ? buy
+            : null}
+          {(kind === 'licensed' || kind === 'device-limit') && (
+            <a href={ACCOUNT_URL} target="_blank" rel="noreferrer">
+              Manage devices
+            </a>
+          )}
         </div>
-      ) : (
-        <form
-          className="prefs-row"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void run(() => api.licence.activate(key), 'Licence activated').then(() => setKey(''))
-          }}
-        >
-          <input
-            className="licence-key"
-            value={key}
-            placeholder="Licence key"
-            aria-label="Licence key"
-            spellCheck={false}
-            autoComplete="off"
-            onChange={(e) => setKey(e.target.value)}
-            onKeyDown={(e) => e.stopPropagation()}
-          />
-          <button type="submit" className="primary" disabled={busy || !key.trim()}>
-            Activate
-          </button>
-          <a href={BUY_URL} target="_blank" rel="noreferrer">
-            Buy a licence
-          </a>
-        </form>
       )}
       {error && <p className="error small">{error}</p>}
     </fieldset>

@@ -205,12 +205,34 @@ once; `POST /mock/revoke` ends every session.
 
 ## Licences
 
-Lemon Squeezy's licence API, called straight from the app (`src/shared/licence.ts`; no
-API key needed): activate with the key and a device name, validate at most once a day at
-launch, deactivate from _Settings_. `userData/licence.json` holds the record with the key
-sealed by `safeStorage`. Nothing is enforced (`LICENCE_ENFORCED`), and the Licence section
-only shows in development or with `PLAYROOM_LICENCE_UI=1`. `PLAYROOM_LICENCE_API` points the
-app at another server, for testing or for routing through the pixl-web Worker later.
+Access comes from the PIXL account, not keys. pixlfoundation.com's Worker answers
+`/api/entitlements` (and `/api/trials`) with an entitlement token for this account, app
+and device: beta access, the trial, the licence. The token is an Ed25519 JWS that lasts up
+to 30 days offline. The app checks it itself (`src/main/account/entitlement.ts`,
+`access.ts`), so editing `userData/licence.json` grants nothing, and turning the clock back
+doesn't stretch the month. Nothing is enforced (`LICENCE_ENFORCED`), and the Licence
+section only shows in development or with `PLAYROOM_LICENCE_UI=1`. Buying (Lemon Squeezy)
+happens on the website; the app only opens the pricing page and sees the licence on the
+account.
+
+The Worker's signing keys can change without a release. The app ships only root public
+keys (`ROOT_KEYS` in `src/shared/account.ts`; `root-2` is a spare). Each answer brings a
+key set, the signing keys valid now, signed by a root. The app keeps only the newest key
+set it has seen.
+- **Rotate a signing key.** Sign a key set holding the old and new keys, switch the Worker
+  to the new key, then later sign one without the old key.
+- **Revoke a leaked key.** Sign a key set without it. Apps stop accepting it at their next
+  refresh. A copy offline can still use the last token it had until that token expires.
+- **Sign a key set.** Run `node scripts/entitlement-keys.mjs sign-keyset root-1 <kid>=<public>`
+  on the machine holding `~/.pixl-secrets/entitlement-root-1.pem`, and put the output in
+  the Worker's `ENTITLEMENT_KEYSET` secret. `verify <jws>` checks a key set.
+- **Changing a root is the only key change that needs a release.**
+
+To work on it locally, run `scripts/mock-account.mjs`, then start the app with
+`PLAYROOM_ACCOUNT_URL=http://127.0.0.1:54321/api` as well as `PLAYROOM_AUTH_URL`. The mock
+signs its key sets with the development root (`scripts/dev-entitlement-root.mjs`), which
+only unpackaged builds trust. Its `/mock/grant` and `/mock/policy` routes set what an
+account holds.
 
 ## Crash reports
 

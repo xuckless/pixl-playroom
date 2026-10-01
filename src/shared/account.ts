@@ -41,6 +41,49 @@ export const AUTH_CONFIG: AuthConfig = {
   scopes: SCOPES
 }
 
+/**
+ * The roots the app trusts: Ed25519 public keys (base64url, raw 32 bytes)
+ * whose private halves are kept offline by the owner, never on a server
+ * (scripts/entitlement-keys.mjs). A root signs the key set the Worker sends
+ * with each token, naming the signing keys valid now, so those can be
+ * rotated or revoked without a release. root-2 is the spare: changing roots
+ * is the only key change that needs a release.
+ */
+export const ROOT_KEYS: Record<string, string> = {
+  'root-1': 'C9EdMvVbY6ZY3MM9_3pg-YxeJuGLiHLTqhFxEz2cd0g',
+  'root-2': 'CRSgddfssdTYmQQriIHmyOc-IEjaDGZz_U0Oi0Tvu8U'
+}
+
+/**
+ * The development root, trusted only by unpackaged builds: its private key
+ * is in scripts/mock-account.mjs, in the open, so the mock can sign.
+ */
+export const DEV_ROOT_KEYS: Record<string, string> = {
+  'dev-root': 'mvSbsudfbttEQ4sOYN5zX8IBPisy9FoykmgqoMis_FM'
+}
+
+/** What /api/entitlements and /api/trials answer. */
+export interface EntitlementResponse {
+  /** The entitlement token (a JWS, EdDSA). */
+  token: string
+  /** The signing keys valid now (a JWS, signed by a root). */
+  keyset: string
+}
+
+/** What a device sends with each request. */
+export interface DeviceInfo {
+  deviceHash: string
+  deviceName: string
+  os: 'macos' | 'windows' | 'linux'
+}
+
+/** A device on the account, as `device_limit` lists them. */
+export interface AccountDevice {
+  id: string
+  name: string
+  lastSeen?: string
+}
+
 /** What an entitlement token holds for this account, product and device. */
 export interface Entitlements {
   /** Beta access; no `until` means until the beta ends. */

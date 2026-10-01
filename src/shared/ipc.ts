@@ -63,9 +63,11 @@ export const IPC = {
   },
   licence: {
     status: 'licence:status',
-    activate: 'licence:activate',
-    deactivate: 'licence:deactivate',
-    validate: 'licence:validate',
+    /** Check now: ask the account for this device's access. */
+    refresh: 'licence:refresh',
+    startTrial: 'licence:start-trial',
+    /** Free one of the account's devices (the device-limit list), by its id. */
+    freeDevice: 'licence:free-device',
     /** main → renderer: the licence changed */
     changed: 'licence:changed'
   },

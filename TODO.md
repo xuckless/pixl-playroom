@@ -182,7 +182,7 @@ the sign-in and consent pages), and its redirect-URI spike.
 
 After: Pass 25, and pixl-web's entitlement API.
 
-- [ ] **L** · Replace Lemon Squeezy's licence API in `src/main/licence.ts`
+- [x] **L** · Replace Lemon Squeezy's licence API in `src/main/licence.ts`
       with pixl-web's `/api/entitlements`. It returns a signed token (Ed25519,
       with a key id; the public keys are built into the app) for this
       account, product and device: what it holds (beta, trial, licence,
@@ -191,22 +191,39 @@ After: Pass 25, and pixl-web's entitlement API.
       offline grace is the token's lifetime (30 days, as now). The app
       refreshes at launch and daily. `LS_PRODUCT` and the key field go;
       update `tests/licence.test.ts`.
-      _Started: the offline check is `src/main/account/entitlement.ts`
-      (EdDSA, `kid`, iss/aud/dev/exp, and a clock set back is judged at the
-      latest moment seen), tested in `tests/account.test.ts` with a
-      throwaway key. Still to do: the real public keys (pixl-web's
-      handoff (c)), `/api/entitlements` and `/api/trials` in the mock, and
-      replacing `src/main/licence.ts`._
-- [ ] **S** · "Start 14-day trial" asks the server. It refuses a second
+      _Done: `src/main/account/access.ts` (fetch, keep and check the token),
+      `api.ts` (the Worker's API, a 401 refreshed once), `entitlement.ts`
+      (the token and the key set), `src/shared/licence.ts` (the states:
+      signed out, checking, no trial, trial, trial ended, licensed, beta,
+      revalidate, device limit), Settings → Licence, `src/main/licence.ts`
+      (refresh at launch when due, after signing in, hourly when due, on
+      focus after 10 minutes; forgotten on sign-out). Lemon Squeezy is
+      gone from the app; buying is the website's. Signing keys are
+      hot-swappable: the app ships only roots (`ROOT_KEYS`, root-1 plus a
+      spare root-2), and each answer brings a key set signed by a root
+      (`scripts/entitlement-keys.mjs`; agreed with pixl-web). Checked end to
+      end against the mock (beta, no_beta, licence, the device limit and
+      freeing a device, a hand-edited licence.json refused, sign-out).
+      Limit: a copy that's offline can restore an older token of its own
+      from a backup and keep it until that token's month runs out._
+      _Still to do: put the Worker's real key set in when pixl-web's
+      handoff (c) lands (nothing changes in the app), then run end to end
+      against the real Worker._
+- [x] **S** · "Start 14-day trial" asks the server. It refuses a second
       trial on the account, or on this device under any account, and the app
       says which. The local trial (`trialStartedAt`) goes.
-- [ ] **S** · The fourth device: the server refuses it, and the app links to
+      _Done: Settings → Licence "Start free trial"; `trial_used_account`
+      and `trial_used_device` show their own message._
+- [x] **S** · The fourth device: the server refuses it, and the app links to
       the account page to free one (that page is pixl-web's).
+      _Done: the app lists the account's devices with Free beside each
+      (`DELETE /api/devices/:id`), and links to the account page as well._
 - [x] **M** · Gate what an ended trial and an unconfirmed licence lock with
       `allows()`.
       _Done (behind `LICENCE_ENFORCED`, still off): a lapsed licence locks
       exporting only (`LICENSED`); `requireLicence('export')` refuses
-      `export:start`, and the Export dialog says why, with Enter a key / Buy._
+      `export:start`, and the Export dialog says why, with Open Settings… /
+      Buy._
 
 ### Pass 26a — The beta gate, and the switch to 1.0 · 5 pts
 
@@ -218,6 +235,10 @@ After: Pass 26 and Pass 23a (`policy.json`).
       process enforces it too: `handle()` refuses every channel but account,
       updates, prefs and app info, so a patched renderer opens nothing.
       Development and automation (`PLAYROOM_HIDDEN`) skip the gate.
+- [ ] **M** · Say why there's no access: today a `no_beta` or `beta_ended`
+      refusal forgets the token and Settings shows "Checking your account…".
+      Keep the refusal in `Access` (as the device limit is), so the gate
+      can say "not in the beta" or "the beta has ended".
 - [ ] **M** · The beta ends: once `policy.json` or the entitlement says so,
       a beta build shows "The beta has ended" with the update to 1.0. 1.0
       ignores beta access, offers the trial, and shows the tester's discount
@@ -1156,6 +1177,15 @@ Playroom work that starts once the engine request lands
       finished trial does, crash-report retention); have a lawyer review both.
 - [ ] **S** · **Licensing view**: a lawyer's view on jpegxl-sys (GPL) and
       rawler (LGPL, static) before the first paid release (engine side: E8–E10).
+- [ ] **S** · **Back up the entitlement roots**: `~/.pixl-secrets/entitlement-root-1.pem`
+      and `entitlement-root-2.pem` (made 2026-10-01; their public halves are
+      `ROOT_KEYS` in `src/shared/account.ts`). Keep a copy offline (a password
+      manager, or an encrypted USB key) and never on a server. If both are
+      lost, rotating the Worker's signing key takes a release with new roots.
+- [ ] **S** · **Sign the Worker's key set** when pixl-web generates its
+      signing key (handoff (c)): `node scripts/entitlement-keys.mjs
+      sign-keyset root-1 <kid>=<public>`, into the Worker's
+      `ENTITLEMENT_KEYSET` secret (RELEASING.md "Licences").
 - [ ] **S** · **Lemon Squeezy store**: create it and the Playroom product
       (US$69.99, pay once; no licence keys needed, since access lives on the
       account), the webhook, and an API key for the Worker (discount codes,

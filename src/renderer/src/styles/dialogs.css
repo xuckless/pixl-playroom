@@ -225,10 +225,21 @@ button.link {
 button.link:hover {
   color: var(--text);
 }
-.prefs-row .licence-key {
-  flex: 1 1 260px;
-  min-width: 0;
-  font-family: var(--font-mono);
+/* The account's devices, when the licence is on as many as it allows */
+.prefs-devices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.prefs-devices li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text);
 }
 
 /* Report a problem */

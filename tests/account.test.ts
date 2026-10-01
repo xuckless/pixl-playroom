@@ -451,4 +451,6 @@ test('anything else is refused, and says why', () => {
   )
   assert.equal(problem(mint(k.priv, { ...claims(), ent: undefined })), 'malformed')
   assert.equal(problem(mint(k.priv, claims({ exp: T0 }))), 'expired')
+  // Longer than the contract's month: refused, whoever signed it.
+  assert.equal(problem(mint(k.priv, claims({ exp: T0 + 365 * DAY_S }))), 'malformed')
 })

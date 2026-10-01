@@ -43,13 +43,7 @@ import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
 import { autoWbBatch, setWbBatch } from './autowb'
 import { crashConsent, reportRendererError, sendProblemReport, setCrashConsent } from './crash'
-import {
-  activateLicence,
-  deactivateLicence,
-  licence,
-  requireLicence,
-  validateLicence
-} from './licence'
+import { freeDevice, licence, refreshLicence, requireLicence, startTrial } from './licence'
 import type { AiCapabilities, AiStartRequest } from '../shared/ai'
 import type { ProblemInput } from '../shared/crash'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
@@ -68,6 +62,7 @@ import type { Library } from './library'
 import { MAIN_DIR } from './dirs'
 import { appPage } from './guard'
 import { accountStatus, cancelSignIn, signIn, signOut } from './account'
+import { AccountError } from './account/api'
 import { OAuthError } from './account/oauth'
 import { takeOpens } from './open'
 import { paths } from './paths'
@@ -80,6 +75,7 @@ function toAppError(err: unknown): AppError {
   if (err instanceof IndexError) return { message: err.message, code: err.code }
   if (err instanceof LicenceError) return { message: err.message, code: err.code }
   if (err instanceof OAuthError) return { message: err.message, code: err.code }
+  if (err instanceof AccountError) return { message: err.message, code: err.code }
   return { message: err instanceof Error ? err.message : String(err), code: 'Error' }
 }
 
@@ -193,11 +189,14 @@ export function registerIpc(s: Services): void {
   }))
   handle(IPC.prefs.setCrashReports, (c: CrashConsent) => setCrashConsent(c))
 
-  // ── licence (not enforced yet: shared/licence.ts; exports check it) ──
+  // ── access from the PIXL account (not enforced yet: shared/licence.ts; exports check it) ──
   handle(IPC.licence.status, () => licence())
-  handle(IPC.licence.activate, (key: string) => activateLicence(key))
-  handle(IPC.licence.deactivate, () => deactivateLicence())
-  handle(IPC.licence.validate, () => validateLicence())
+  handle(IPC.licence.refresh, () => refreshLicence())
+  handle(IPC.licence.startTrial, () => startTrial())
+  handle(IPC.licence.freeDevice, (id: string) => {
+    if (typeof id !== 'string' || !id) throw new Error('No device to free.')
+    return freeDevice(id)
+  })
 
   // ── opens (Open With, second launch) ── workstream E
   handle(IPC.app.takeOpens, () => takeOpens())

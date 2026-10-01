@@ -165,7 +165,7 @@ export function ExportDialog(): React.JSX.Element {
         <div className="licence-lock" role="alert">
           <p>{locked}</p>
           <div className="prefs-row">
-            <button onClick={() => setDialog('preferences')}>Enter a licence key…</button>
+            <button onClick={() => setDialog('preferences')}>Open Settings…</button>
             <a href={BUY_URL} target="_blank" rel="noreferrer">
               Buy a licence
             </a>

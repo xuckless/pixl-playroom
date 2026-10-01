@@ -107,9 +107,9 @@ const api = {
   },
   licence: {
     status: () => call<LicenceStatus>(IPC.licence.status),
-    activate: (key: string) => call<LicenceStatus>(IPC.licence.activate, key),
-    deactivate: () => call<LicenceStatus>(IPC.licence.deactivate),
-    validate: () => call<LicenceStatus>(IPC.licence.validate),
+    refresh: () => call<LicenceStatus>(IPC.licence.refresh),
+    startTrial: () => call<LicenceStatus>(IPC.licence.startTrial),
+    freeDevice: (id: string) => call<LicenceStatus>(IPC.licence.freeDevice, id),
     onChange: (cb: (s: LicenceStatus) => void) => on(IPC.licence.changed, cb)
   },
   prefs: {

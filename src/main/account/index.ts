@@ -95,12 +95,25 @@ export function accountStatus(): AccountStatus {
   }
 }
 
+const listeners: ((status: AccountStatus) => void)[] = []
+
+/** Tells `fn` whenever someone signs in or out, or a sign-in starts or ends (main/licence.ts). */
+export function onAccountChange(fn: (status: AccountStatus) => void): void {
+  listeners.push(fn)
+}
+
 function broadcast(): AccountStatus {
   const status = accountStatus()
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send(IPC.account.changed, status)
   }
+  for (const fn of listeners) fn(status)
   return status
+}
+
+/** A new access token, the last one having been refused by the account API. */
+export function refreshAccess(): Promise<string> {
+  return theSession().refresh()
 }
 
 /** A current access token for the account API (main only; never handed to the renderer). */
