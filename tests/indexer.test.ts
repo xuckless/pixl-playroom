@@ -822,3 +822,27 @@ test('a folder listed with its subfolders takes theirs in; the tree reads one le
     f.done()
   }
 })
+
+test('the folder shown is watched: a photo copied in is found and announced', async () => {
+  const f = fixture(['a.jpg'])
+  try {
+    await f.index.listSource({ kind: 'folder', path: f.folder })
+    f.events.length = 0
+    writeFileSync(join(f.folder, 'b.jpg'), 'not really a photo')
+    // The listing's own background work settles first; then only the watcher can find b.
+    await settle()
+    f.events.length = 0
+    const until = Date.now() + 5000
+    while (Date.now() < until && f.index.items(f.folder).length < 2) await settle()
+    assert.ok(f.events.some((e) => e.name === 'changed' && e.folder === f.folder))
+    assert.deepEqual(
+      f.index.items(f.folder).map((i) => i.name),
+      ['a.jpg', 'b.jpg']
+    )
+    // Listed again while watched: the index answers without walking it again.
+    const listed = await f.index.listSource({ kind: 'folder', path: f.folder })
+    assert.equal(listed.items.length, 2)
+  } finally {
+    f.done()
+  }
+})

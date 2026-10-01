@@ -19,7 +19,9 @@ import {
   rmSync,
   statSync,
   unlinkSync,
-  type Dirent
+  watch,
+  type Dirent,
+  type FSWatcher
 } from 'fs'
 import { dirname, extname, join, resolve } from 'path'
 import type {
@@ -110,6 +112,13 @@ const DEEP_MAX_FOLDERS = 300
 const DEEP_MAX_DEPTH = 8
 /** Folder names as a person sorts them: "Day 2" before "Day 10". */
 const NAME_ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+/** How long a burst of changes in a watched folder settles before it is scanned again. */
+const WATCH_SETTLE_MS = 400
+/**
+ * Changes that are the index's own passing files (a project's journal while
+ * it commits, one being made or written out): no reason to look again.
+ */
+const PASSING_FILE = /(-journal|\.creating-\d+|\.part-\d+)$/
 /** Folders that are files to the user (an app, a Photos or Lightroom library): never walked into. */
 const PACKAGE_DIR = /\.(app|bundle|photoslibrary|lrdata|lrlibrary|fcpbundle|imovielibrary)$/i
 /** How long after a change that orphans planes or blobs the project is cleared of them. */
@@ -245,6 +254,12 @@ export class IndexService {
   private readonly emit: (event: IndexEvent) => void
   /** When each folder was last scanned (a listing a moment after needs no walk). */
   private readonly scannedAt = new Map<string, { at: number; dirMtime: number | null }>()
+  /** The folder shown, watched (with those below it when `deep`), and since when. */
+  private readonly watchers = new Map<
+    string,
+    { watcher: FSWatcher; since: number; deep: boolean }
+  >()
+  private readonly watchTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   /** Files whose thumbnail failed, per version, with why (and in the row, for the next launch). */
   private readonly failed = new Map<string, string>()
@@ -303,6 +318,7 @@ export class IndexService {
   }
 
   close(): void {
+    this.watchOnly(null)
     // Batches commit first, and their mtimes are noted while the store is open.
     this.projects.drop()
     this.closed = true
@@ -332,6 +348,9 @@ export class IndexService {
       const last = this.scannedAt.get(folder)
       if (last && Date.now() - last.at < RESCAN_FRESH_MS && last.dirMtime === folderMtime(folder))
         return this.items(folder)
+      // Watched since before its last scan: every change since was seen.
+      const since = this.watchedSince(folder)
+      if (last && since !== undefined && since <= last.at) return this.items(folder)
       // After this answer, not before it.
       setImmediate(() => {
         if (this.closed) return
@@ -341,6 +360,59 @@ export class IndexService {
       await this.rescan(folder, false)
     }
     return this.items(folder)
+  }
+
+  /**
+   * Watch the folder shown (with those below it when `deep`), and no other:
+   * a change made outside the app (a file copied in, renamed, deleted, a
+   * sidecar edited) is scanned a moment later, and the library hears of it
+   * as `changed`. Null stops watching.
+   */
+  watchOnly(folder: string | null, deep = false): void {
+    for (const [f, w] of this.watchers) {
+      if (f === folder && w.deep === deep) continue
+      w.watcher.close()
+      this.watchers.delete(f)
+    }
+    if (!folder || this.closed || this.watchers.has(folder)) return
+    try {
+      const watcher = watch(folder, { recursive: deep, persistent: false }, (_type, name) =>
+        this.changedOnDisk(folder, deep, name === null ? '' : String(name))
+      )
+      // Unplugged, or gone: it is listed again from the index, unwatched.
+      watcher.on('error', () => {
+        watcher.close()
+        if (this.watchers.get(folder)?.watcher === watcher) this.watchers.delete(folder)
+      })
+      this.watchers.set(folder, { watcher, since: Date.now(), deep })
+    } catch (err) {
+      console.warn('cannot watch', folder, (err as Error).message)
+    }
+  }
+
+  /** Since when a watcher has covered `folder`, or undefined when none does. */
+  private watchedSince(folder: string): number | undefined {
+    for (const [root, w] of this.watchers) {
+      if (root === folder) return w.since
+      if (w.deep && folder.startsWith(root) && /[\\/]/.test(folder[root.length] ?? ''))
+        return w.since
+    }
+    return undefined
+  }
+
+  /** Something changed under a watched folder: the folder it is in is scanned once it settles. */
+  private changedOnDisk(root: string, deep: boolean, name: string): void {
+    if (this.closed || PASSING_FILE.test(name)) return
+    const dir = deep && name ? dirname(join(root, name)) : root
+    clearTimeout(this.watchTimers.get(dir))
+    const t = setTimeout(() => {
+      this.watchTimers.delete(dir)
+      if (this.closed) return
+      // A folder made in the tree is scanned whole (it was never listed).
+      this.rescan(dir).catch((err) => console.warn('scan failed', dir, err))
+    }, WATCH_SETTLE_MS)
+    t.unref?.()
+    this.watchTimers.set(dir, t)
   }
 
   /** A folder's subfolders, one level (by name): what the sidebar's tree opens out. */
@@ -1208,8 +1280,12 @@ export class IndexService {
 
   /** The items of a folder, a collection, a keyword (and every keyword under it) or the duplicates. */
   async listSource(src: LibrarySource): Promise<SourceListing> {
+    // Only a folder shown is watched (a collection's photos are anywhere).
+    if (src.kind !== 'folder') this.watchOnly(null)
     switch (src.kind) {
       case 'folder':
+        // Watched from before it is listed, so nothing between falls through.
+        this.watchOnly(src.path, !!src.deep)
         return {
           source: src,
           items: await (src.deep ? this.listFolderDeep(src.path) : this.listFolder(src.path))

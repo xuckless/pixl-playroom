@@ -635,9 +635,12 @@ After: Pass 19.
 
 After: Pass 34.
 
-- [ ] **L** · Watch open folders (FSEvents / `fs.watch`) in the index host
+- [x] **L** · Watch open folders (FSEvents / `fs.watch`) in the index host
       instead of rescanning on open or refresh; changes made outside the app
       appear as they happen.
+      _Done: the folder shown is watched (recursively with Subfolders); a
+      change settles 400 ms, then its folder is rescanned and announced; a
+      folder watched since its last scan is not walked again on open._
 
 ---
 
