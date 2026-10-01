@@ -120,6 +120,16 @@ After: Owner task "Updates bucket". The bucket and its cache rules are pixl-web'
       channel, which the bridge release uploads._
 - [ ] **S** · After the bridge release is out: remove the `github` entry
       from `publish` and the bridge steps from `release.yml`.
+- [x] **S** · A beta build follows the beta channel, always.
+      _Done 2026-10-01: it used to default to Stable, whose feed holds no
+      betas, so beta testers would never have heard of the next beta.
+      `updater.ts` now uses `beta` in any `-beta` build, and Settings says so
+      instead of offering the choice. Checked: the app reads `beta-mac.yml`.
+      The same default limits the bridge. A 0.1.1-beta still on Stable
+      (the default then) asks GitHub for the latest non-prerelease release,
+      and there is none, so only testers who chose Beta get the bridge
+      release. The rest need the download link from the beta page or an
+      email; the release notes should say so._
 
 ### Pass 23a — Rollouts, an update floor, a tested update · 5 pts
 
@@ -221,7 +231,7 @@ words, log tails and memory fragments.
 After: pixl-web "PIXL account" (the Supabase project, the OAuth server and
 the sign-in and consent pages), and its redirect-URI spike.
 
-- [ ] **L** · "Sign in" (Settings → Account, and the beta gate) runs OAuth
+- [x] **L** · "Sign in" (Settings → Account, and the beta gate) runs OAuth
       2.1 authorization code with PKCE against Supabase Auth as a public
       client: the system browser opens at `/oauth/authorize`, the code comes
       back on `http://127.0.0.1:47823/callback` (a fixed port, as Supabase
@@ -239,7 +249,7 @@ the sign-in and consent pages), and its redirect-URI spike.
       Real sign-in checked 2026-10-01 against production (pixl-web's
       sign-in and consent pages): the code came back to the loopback, and
       the session was kept sealed._
-- [ ] **S** · Tokens at rest: the refresh token is encrypted with Electron's
+- [x] **S** · Tokens at rest: the refresh token is encrypted with Electron's
       `safeStorage` (Keychain or DPAPI), the rotated token is saved on every
       refresh, and "Sign out" forgets the tokens and the entitlement. A grant
       revoked from the account page ("Signed-in apps") signs the app out at
@@ -250,7 +260,7 @@ the sign-in and consent pages), and its redirect-URI spike.
       Sign out also calls Supabase's `/logout?scope=local`, best effort.
       That call is only tested against the mock; check it on pixl-core once
       a real sign-in works. The entitlement isn't wired up yet (Pass 26)._
-- [ ] **S** · Device identity: the app sends an HMAC-SHA256 of the OS machine
+- [x] **S** · Device identity: the app sends an HMAC-SHA256 of the OS machine
       id (IOPlatformUUID on macOS, MachineGuid on Windows), keyed per
       product, never the raw id, plus a name for the account page ("Studio
       (macOS)").
@@ -313,22 +323,47 @@ After: Pass 25, and pixl-web's entitlement API.
 
 After: Pass 26 and Pass 23a (`policy.json`).
 
-- [ ] **M** · A beta build (a version with `-beta`) needs beta access: until
+- [x] **M** · A beta build (a version with `-beta`) needs beta access: until
       the user signs in with an account that has it, the window shows only
       "Sign in" and "Join the beta" (which opens the beta page). The main
       process enforces it too: `handle()` refuses every channel but account,
       updates, prefs and app info, so a patched renderer opens nothing.
       Development and automation (`PLAYROOM_HIDDEN`) skip the gate.
-- [ ] **M** · Say why there's no access: today a `no_beta` or `beta_ended`
+      _Done: `src/shared/gate.ts` (`gateFor`, `allowedWhileGated`),
+      `src/main/gate.ts` (fed by the account, access and policy, told to
+      the window on `app:gate-changed`, refusing other IPC with `Gated`),
+      `views/Gate.tsx` (sign in, join, checking or offline, free a device,
+      beta ended). The renderer's launch waits until the gate first opens.
+      Coming back to the window while gated asks the account again, so
+      joining in the browser opens the app. `PLAYROOM_BETA_GATE=1` brings
+      it back in development. Checked end to end against the mock: signed
+      out → sign-in (library refused); no beta → join (refused); joined →
+      open, the library starts; `betaOpen: false` → beta ended (refused)._
+- [x] **M** · Say why there's no access: today a `no_beta` or `beta_ended`
       refusal forgets the token and Settings shows "Checking your account…".
       Keep the refusal in `Access` (as the device limit is), so the gate
       can say "not in the beta" or "the beta has ended".
-- [ ] **M** · The beta ends: once `policy.json` or the entitlement says so,
+      _Done: the `no-beta` and `beta-ended` states._
+- [x] **M** · The beta ends: once `policy.json` or the entitlement says so,
       a beta build shows "The beta has ended" with the update to 1.0. 1.0
       ignores beta access, offers the trial, and shows the tester's discount
       code on the trial and Buy screens.
-- [ ] **S** · For 1.0: turn on `LICENCE_ENFORCED`, and show Settings →
+      _Done: `betaOpen: false` (scripts/policy.mjs) or `beta_ended` from
+      the Worker shows it, with the update (a stable release writes the
+      beta feeds, so beta builds are offered 1.0) and the download link.
+      In 1.0 the beta gate is off, and Settings → Licence offers the trial
+      and shows the discount from the token._
+- [x] **S** · For 1.0: turn on `LICENCE_ENFORCED`, and show Settings →
       Account in production.
+      _Done: automatic. `licenceEnforced(version)` is true from 1.0.0 (not
+      in betas or 0.x), and the Account and Licence sections show in beta
+      builds and once enforced._
+
+- [ ] **S** · A flaky test, found 2026-10-01: `tests/indexer.test.ts`, "a listing
+      answers from the index, and a rescan with nothing new says nothing",
+      fails under load (3 of 8 runs with four suites at once; about 1 in 15
+      alone). `settle()` waits a fixed 50 ms, and the first scan's `changed`
+      event can come after it. Wait for that event instead of a time.
 
 ### Pass 26b — Hardening, so the gate means something · 3 pts
 
@@ -1266,15 +1301,17 @@ Playroom work that starts once the engine request lands
       `ROOT_KEYS` in `src/shared/account.ts`). Keep a copy offline (a password
       manager, or an encrypted USB key) and never on a server. If both are
       lost, rotating the Worker's signing key takes a release with new roots.
-- [ ] **S** · **Sign the Worker's key set** when pixl-web generates its
+- [x] **S** · **Sign the Worker's key set** when pixl-web generates its
       signing key (handoff (c)): `node scripts/entitlement-keys.mjs
       sign-keyset root-1 <kid>=<public>`, into the Worker's
       `ENTITLEMENT_KEYSET` secret (RELEASING.md "Licences").
+      _Done 2026-10-01: the Worker sends a key set signed by root-1 holding
+      `ent-2026-10`, verified from the app against production._
 - [ ] **S** · **Lemon Squeezy store**: create it and the Playroom product
       (US$69.99, pay once; no licence keys needed, since access lives on the
       account), the webhook, and an API key for the Worker (discount codes,
       nightly checks). Hand over the store and product ids (pixl-web "Billing").
-- [ ] **S** · **Supabase project for PIXL accounts**: `pixl-core` (ref
+- [x] **S** · **Supabase project for PIXL accounts**: `pixl-core` (ref
       `lskosagqyekwklxyuczi`, "pixl" org on Pro, ca-central-1). Its OAuth 2.1
       server is on (consent at `/oauth/consent`) and it signs with ES256.
       Mail, CAPTCHA and URLs are set (pixl-web TODO). For now it uses

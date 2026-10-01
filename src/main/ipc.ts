@@ -61,6 +61,7 @@ import type { OriginalEmbedder } from './project/embed'
 import type { Library } from './library'
 import { MAIN_DIR } from './dirs'
 import { appPage } from './guard'
+import { gate, gateRefuses } from './gate'
 import { accountStatus, cancelSignIn, signIn, signOut } from './account'
 import { AccountError } from './account/api'
 import { OAuthError } from './account/oauth'
@@ -90,6 +91,13 @@ function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => Pro
     if (!isAppPage(e.senderFrame?.url)) {
       log.warn(`ipc: refused ${channel} from ${e.senderFrame?.url ?? 'a closed frame'}`)
       return { ok: false, error: { message: 'Not allowed.', code: 'Forbidden' } }
+    }
+    // The beta gate holds everything but signing in, access, updates and settings.
+    if (gateRefuses(channel)) {
+      return {
+        ok: false,
+        error: { message: 'Pixl Playroom is locked until beta access is confirmed.', code: 'Gated' }
+      }
     }
     try {
       const value = await fn(...(args as A))
@@ -172,6 +180,7 @@ export function registerIpc(s: Services): void {
   })
 
   // ── the account, updates and preferences ──
+  handle(IPC.app.gate, () => gate())
   handle(IPC.account.status, () => accountStatus())
   handle(IPC.account.signIn, () => signIn())
   handle(IPC.account.cancelSignIn, () => cancelSignIn())

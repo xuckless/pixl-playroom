@@ -54,6 +54,7 @@ export class Access {
   private readonly d: AccessDeps
   private device: DeviceInfo | null = null
   private deviceLimit: AccountDevice[] | null = null
+  private refusal: 'no_beta' | 'beta_ended' | null = null
   private fetching: Promise<void> | null = null
 
   constructor(deps: AccessDeps) {
@@ -91,6 +92,7 @@ export class Access {
       claims: c?.ok ? c.claims : null,
       expired: c?.ok === false && c.problem === 'expired',
       deviceLimit: this.deviceLimit,
+      refusal: this.refusal,
       betaBuild: this.d.betaBuild,
       now: effectiveNow(this.d.now(), f.seenAt)
     }
@@ -120,6 +122,7 @@ export class Access {
     // The key set and seenAt stay: they are about the server and the clock, not the account.
     this.d.save({ keyset: f.keyset, keysetIat: f.keysetIat, seenAt: f.seenAt })
     this.deviceLimit = null
+    this.refusal = null
     this.d.onChange()
   }
 
@@ -145,6 +148,7 @@ export class Access {
         'network'
       )
     this.deviceLimit = null
+    this.refusal = null
     this.d.save(next)
   }
 
@@ -182,8 +186,12 @@ export class Access {
         const f = this.d.load()
         this.d.save({ keyset: f.keyset, keysetIat: f.keysetIat, seenAt: f.seenAt })
         this.deviceLimit = err.devices ?? []
-      } else if (err.code === 'no_beta' || err.code === 'beta_ended' || err.code === 'signed-out')
+        this.refusal = null
+      } else if (err.code === 'no_beta' || err.code === 'beta_ended') {
+        // Remembered until the next answer, so the gate can say which.
         this.forget()
+        this.refusal = err.code
+      } else if (err.code === 'signed-out') this.forget()
     }
   }
 

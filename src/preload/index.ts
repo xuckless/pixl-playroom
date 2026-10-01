@@ -50,6 +50,7 @@ import {
 } from '../shared/ipc'
 import type { LicenceStatus } from '../shared/licence'
 import type { AccountStatus } from '../shared/account'
+import type { GateState } from '../shared/gate'
 import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
@@ -89,7 +90,9 @@ const api = {
     onOpenReport: (cb: () => void) => on(IPC.app.openReport, cb),
     reportError: (e: ErrorReport) => call<void>(IPC.app.reportError, e),
     reportProblem: (r: ProblemInput) => call<string>(IPC.app.reportProblem, r),
-    openNotices: () => call<void>(IPC.app.openNotices)
+    openNotices: () => call<void>(IPC.app.openNotices),
+    gate: () => call<GateState>(IPC.app.gate),
+    onGate: (cb: (g: GateState) => void) => on(IPC.app.gateChanged, cb)
   },
   updates: {
     getState: () => call<UpdateState>(IPC.updates.getState),

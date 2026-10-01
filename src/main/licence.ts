@@ -5,8 +5,9 @@
  * launch when due, after signing in, hourly when it asks to be refreshed,
  * and when the window comes back to the front after a while. Signing out
  * forgets it. The rules are in shared/licence.ts and the logic in
- * account/access.ts; nothing is enforced yet (LICENCE_ENFORCED), and with
- * it off `requireLicence` never refuses.
+ * account/access.ts. Licences are enforced from 1.0 (`licenceEnforced`);
+ * before that `requireLicence` never refuses, and a beta build is held by
+ * the beta gate (gate.ts) instead.
  */
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
@@ -14,14 +15,16 @@ import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { ACCOUNT_API, DEV_ROOT_KEYS, PRODUCT, ROOT_KEYS } from '../shared/account'
 import { IPC } from '../shared/ipc'
-import { LicenceError, type LicenceStatus, type Licensed } from '../shared/licence'
+import { LicenceError, licenceEnforced, type LicenceStatus, type Licensed } from '../shared/licence'
 import { accessToken, accountStatus, onAccountChange, refreshAccess } from './account'
 import { Access, type AccessFile } from './account/access'
 import { AccountApi } from './account/api'
 import { deviceHash, deviceName, deviceOs, machineId } from './account/device'
 
-/** The access section shows in development, or when asked for, until licensing is enforced. */
-const visible = !app.isPackaged || process.env['PLAYROOM_LICENCE_UI'] === '1'
+const betaBuild = app.getVersion().includes('-beta')
+const enforced = licenceEnforced(app.getVersion())
+/** The access section shows in development, in a beta build, when asked for, or once enforced. */
+const visible = !app.isPackaged || betaBuild || process.env['PLAYROOM_LICENCE_UI'] === '1'
 const hidden = process.env['PLAYROOM_HIDDEN'] === '1'
 /** How often a running app looks at whether its token wants refreshing. */
 const CHECK_EVERY_MS = 60 * 60 * 1000
@@ -64,22 +67,36 @@ const access = new Access({
   // The development root signs the mock's key sets; a packaged app never trusts it.
   roots: app.isPackaged ? ROOT_KEYS : { ...ROOT_KEYS, ...DEV_ROOT_KEYS },
   product: PRODUCT,
-  betaBuild: app.getVersion().includes('-beta'),
+  betaBuild,
   signedIn: () => accountStatus().signedIn,
   now: Date.now,
   onChange: () => broadcast()
 })
+
+const listeners: (() => void)[] = []
+let ready = false
+
+/** Told whenever the access status may have changed (gate.ts). */
+export function onLicenceChange(fn: () => void): void {
+  listeners.push(fn)
+}
+
+/** Whether the device has been read, so the status can judge the token. */
+export function licenceReady(): boolean {
+  return ready
+}
 
 function broadcast(): LicenceStatus {
   const status = licence()
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send(IPC.licence.changed, status)
   }
+  for (const fn of listeners) fn()
   return status
 }
 
 export function licence(): LicenceStatus {
-  return access.status(visible)
+  return access.status(visible, enforced)
 }
 
 /** Throws (code `locked`) when this device's access doesn't allow `what`. */
@@ -132,6 +149,7 @@ export function startLicence(): void {
   void access
     .ready()
     .then(() => {
+      ready = true
       access.touch()
       broadcast()
       if (!hidden) refreshIfDue('launch')

@@ -10,11 +10,22 @@
  * Buying happens on the website (Lemon Squeezy, set up there): the app only
  * opens BUY_URL and sees the licence on the account.
  *
- * Not enforced yet: with LICENCE_ENFORCED false, `allows` says yes to
- * everything, whatever the state.
+ * Enforced from 1.0 (`licenceEnforced`): before that, `allows` says yes to
+ * everything, whatever the state, and a beta build is held by the beta gate
+ * (shared/gate.ts) instead.
  */
 import type { AccountDevice, EntitlementClaims } from './account'
 
+/**
+ * Whether this version enforces licences: a release from 1.0.0 on. Betas
+ * and 0.x releases don't (the beta gate holds beta builds).
+ */
+export function licenceEnforced(version: string): boolean {
+  const m = /^(\d+)\.\d+\.\d+(-.+)?$/.exec(version)
+  return !!m && Number(m[1]) >= 1 && m[2] === undefined
+}
+
+/** Kept for callers that don't know the version: off. main/licence.ts passes the real answer. */
 export const LICENCE_ENFORCED = false
 
 /**
@@ -53,6 +64,10 @@ export type LicenceState =
   | { kind: 'revalidate' }
   /** The licence is on as many devices as it allows; free one to use it here. */
   | { kind: 'device-limit'; devices: AccountDevice[] }
+  /** A beta build, and the account hasn't joined the beta. */
+  | { kind: 'no-beta' }
+  /** A beta build, after the beta has ended. */
+  | { kind: 'beta-ended' }
 
 export interface LicenceInput {
   signedIn: boolean
@@ -62,6 +77,8 @@ export interface LicenceInput {
   expired: boolean
   /** The server refused this device for the device limit, with the account's devices. */
   deviceLimit: AccountDevice[] | null
+  /** The server refused this beta build: not in the beta, or the beta has ended. */
+  refusal?: 'no_beta' | 'beta_ended' | null
   betaBuild: boolean
   /** Now, in Unix seconds, never earlier than a moment already seen. */
   now: number
@@ -70,6 +87,8 @@ export interface LicenceInput {
 export function licenceState(i: LicenceInput): LicenceState {
   if (!i.signedIn) return { kind: 'signed-out' }
   if (i.deviceLimit) return { kind: 'device-limit', devices: i.deviceLimit }
+  if (i.refusal === 'beta_ended') return { kind: 'beta-ended' }
+  if (i.refusal === 'no_beta') return { kind: 'no-beta' }
   const c = i.claims
   if (!c) return i.expired ? { kind: 'revalidate' } : { kind: 'checking' }
   const offlineDaysLeft = Math.max(0, Math.floor((c.exp - i.now) / DAY_S))
@@ -139,6 +158,10 @@ export function lockedReason(state: LicenceState, enforced = LICENCE_ENFORCED): 
       return 'Playroom needs to confirm your licence before it exports again. Connect to the internet, then choose Check now in Settings.'
     case 'device-limit':
       return `Your licence is already on ${LICENCE_RULES.deviceLimit} devices. Free one in Settings to use it here. ${editing}`
+    case 'no-beta':
+      return 'This account isn’t in the beta. Join it on the beta page, or use the released Pixl Playroom.'
+    case 'beta-ended':
+      return 'The beta has ended. Update to the released Pixl Playroom to keep going.'
     default:
       return null
   }

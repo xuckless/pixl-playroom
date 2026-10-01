@@ -19,6 +19,13 @@ import { onPolicy } from './policy'
 import { readSettings, writeSettings } from './settings'
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
+/**
+ * A beta build always follows the beta channel: the stable feed holds no
+ * betas, so a beta install reading it would never hear of the next beta,
+ * and the beta feed gets every stable release too.
+ */
+const betaBuild = app.getVersion().includes('-beta')
+const channelFor = (chosen: UpdateChannel): UpdateChannel => (betaBuild ? 'beta' : chosen)
 
 let state: UpdateState = {
   phase: 'idle',
@@ -73,7 +80,7 @@ export function installUpdate(): void {
 }
 
 export async function setUpdateChannel(channel: UpdateChannel): Promise<UpdateState> {
-  if (channel !== 'latest' && channel !== 'beta') return state
+  if ((channel !== 'latest' && channel !== 'beta') || betaBuild) return state
   writeSettings({ updateChannel: channel })
   setState({ channel, phase: enabled ? 'idle' : state.phase, version: undefined, error: undefined })
   if (!enabled) return state
@@ -83,7 +90,7 @@ export async function setUpdateChannel(channel: UpdateChannel): Promise<UpdateSt
 
 /** Wire electron-updater. Call once, after `app.whenReady()`. */
 export async function setupUpdater(): Promise<void> {
-  state = { ...state, channel: readSettings().updateChannel }
+  state = { ...state, channel: channelFor(readSettings().updateChannel) }
   // In development there is nothing to update against. PLAYROOM_FORCE_UPDATER=1
   // reads dev-app-update.yml instead, to exercise the flow from `pnpm dev`.
   // Automation (PLAYROOM_HIDDEN) never updates.

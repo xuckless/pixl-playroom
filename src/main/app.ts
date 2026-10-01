@@ -22,6 +22,7 @@ import { registerIpc } from './ipc'
 import { LensProfileStore } from './lensprofiles'
 import { startLicence } from './licence'
 import { startAccount } from './account'
+import { startGate } from './gate'
 import { Library } from './library'
 import { OriginalEmbedder } from './project/embed'
 import { buildMenu } from './menu'
@@ -268,6 +269,7 @@ app.whenReady().then(() => {
   void setupUpdater().catch((err) => log.warn('updater setup failed', err))
   startLicence()
   startAccount()
+  startGate()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

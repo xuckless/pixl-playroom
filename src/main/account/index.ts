@@ -17,6 +17,7 @@ import {
   type AuthConfig
 } from '../../shared/account'
 import { IPC } from '../../shared/ipc'
+import { licenceEnforced } from '../../shared/licence'
 import { endSession, OAuthError } from './oauth'
 import { Session, type SessionStore, type StoredSession } from './session'
 
@@ -24,8 +25,12 @@ const cfg: AuthConfig = {
   ...AUTH_CONFIG,
   authUrl: (process.env['PLAYROOM_AUTH_URL'] || AUTH_CONFIG.authUrl).replace(/\/+$/, '')
 }
-/** As the licence section: shown in development, or when asked for, until licences are enforced. */
-const visible = !app.isPackaged || process.env['PLAYROOM_LICENCE_UI'] === '1'
+/** As the licence section: shown in development, in a beta build, when asked for, or once enforced. */
+const visible =
+  !app.isPackaged ||
+  app.getVersion().includes('-beta') ||
+  licenceEnforced(app.getVersion()) ||
+  process.env['PLAYROOM_LICENCE_UI'] === '1'
 
 /** What account.json holds: who, and the refresh token sealed. */
 interface Stored {

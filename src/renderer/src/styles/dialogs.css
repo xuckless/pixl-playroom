@@ -514,8 +514,7 @@ button.keybind-key.waiting {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(60% 50% at 50% 40%, var(--acc-a10), transparent 70%),
-    rgba(0, 0, 0, 0.92);
+    radial-gradient(60% 50% at 50% 40%, var(--acc-a10), transparent 70%), rgba(0, 0, 0, 0.92);
 }
 .gate-card {
   width: 460px;
@@ -575,4 +574,11 @@ button.keybind-key.waiting {
 }
 .gate-link.strong {
   font-weight: 600;
+}
+.gate-card .gate-error {
+  color: var(--danger);
+  font-size: 13px;
+}
+.gate-card .prefs-devices {
+  margin: 4px 0;
 }

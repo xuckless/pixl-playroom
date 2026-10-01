@@ -212,6 +212,10 @@ function licenceLine(s: LicenceStatus): string {
       return 'Connect to the internet so Playroom can confirm your licence.'
     case 'device-limit':
       return `Your licence is already on ${s.deviceLimit} devices. Free one to use it here.`
+    case 'no-beta':
+      return 'This account isn’t in the beta yet.'
+    case 'beta-ended':
+      return 'The beta has ended.'
   }
 }
 
@@ -448,17 +452,24 @@ function GeneralSettings(): React.JSX.Element {
         </p>
         {update && (
           <>
-            <Select
-              label="Channel"
-              value={update.channel}
-              options={[
-                { value: 'latest', label: 'Stable' },
-                { value: 'beta', label: 'Beta (early builds)' }
-              ]}
-              onChange={(c) =>
-                void api.updates.setChannel(c).catch((e) => say(errorText(e), 'error'))
-              }
-            />
+            {update.currentVersion.includes('-beta') ? (
+              <p className="muted small">
+                This beta follows the beta channel: it gets every beta, and the release when it
+                comes.
+              </p>
+            ) : (
+              <Select
+                label="Channel"
+                value={update.channel}
+                options={[
+                  { value: 'latest', label: 'Stable' },
+                  { value: 'beta', label: 'Beta (early builds)' }
+                ]}
+                onChange={(c) =>
+                  void api.updates.setChannel(c).catch((e) => say(errorText(e), 'error'))
+                }
+              />
+            )}
             <p className="prefs-status" role="status" aria-live="polite">
               {updateLine(update)}
             </p>

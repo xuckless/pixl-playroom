@@ -446,6 +446,21 @@ test('the device limit, freeing a device, and signing out', async () => {
   assert.equal(access.due(), false)
 })
 
+test('a beta refusal is remembered until the next answer', async () => {
+  const { access, worker } = setup()
+  await access.ready()
+  worker.refuse = new AccountError('no', 'no_beta')
+  await assert.rejects(access.refresh())
+  assert.equal(access.status(true).state.kind, 'no-beta')
+  worker.refuse = new AccountError('over', 'beta_ended')
+  await assert.rejects(access.refresh())
+  assert.equal(access.status(true).state.kind, 'beta-ended')
+  worker.refuse = null
+  worker.ent = { beta: {}, addons: [] }
+  await access.refresh()
+  assert.notEqual(access.status(true).state.kind, 'beta-ended')
+})
+
 test('concurrent refreshes share one request', async () => {
   const { access, worker } = setup()
   await access.ready()

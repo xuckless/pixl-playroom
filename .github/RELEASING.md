@@ -298,6 +298,23 @@ To work on it without pixl-web, run `node scripts/mock-account.mjs`, then start 
 with `PLAYROOM_AUTH_URL=http://127.0.0.1:54321/auth/v1`. The mock approves every sign-in at
 once; `POST /mock/revoke` ends every session.
 
+## The beta gate
+
+A beta build (a version with `-beta`) opens only for an account with beta access
+(`src/shared/gate.ts`, `src/main/gate.ts`). Until then the window shows one of these: sign
+in, join the beta (it opens playroom.pixlfoundation.com/beta/, and coming back to the
+window checks again), checking or offline, free a device, or the beta has ended. The main
+process refuses everything but signing in, access, updates and settings meanwhile. The
+renderer's launch waits for the gate to open.
+
+The beta ends for every beta build when `node scripts/policy.mjs set --beta-open false` runs,
+or when the Worker answers `beta_ended`. Those builds then show the update to the release:
+a stable release writes the beta feeds too, so it's offered. Development and automation skip
+the gate, and `PLAYROOM_BETA_GATE=1` brings it back to try it out.
+
+From 1.0.0 (a version with no prerelease), licences are enforced (`licenceEnforced`) and the
+beta gate is off.
+
 ## Licences
 
 Access comes from the PIXL account, not keys. pixlfoundation.com's Worker answers
@@ -305,8 +322,9 @@ Access comes from the PIXL account, not keys. pixlfoundation.com's Worker answer
 and device: beta access, the trial, the licence. The token is an Ed25519 JWS that lasts up
 to 30 days offline. The app checks it itself (`src/main/account/entitlement.ts`,
 `access.ts`), so editing `userData/licence.json` grants nothing, and turning the clock back
-doesn't stretch the month. Nothing is enforced (`LICENCE_ENFORCED`), and the Licence
-section only shows in development or with `PLAYROOM_LICENCE_UI=1`. Buying (Lemon Squeezy)
+doesn't stretch the month. Enforced from 1.0.0 (`licenceEnforced`); the Licence and
+Account sections show in development, in beta builds, with `PLAYROOM_LICENCE_UI=1`, and
+once enforced. Buying (Lemon Squeezy)
 happens on the website; the app only opens the pricing page and sees the licence on the
 account.
 

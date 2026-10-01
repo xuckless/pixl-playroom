@@ -39,7 +39,11 @@ export const IPC = {
     /** A problem report the user wrote (Settings); answers the server's reference. */
     reportProblem: 'app:report-problem',
     /** The bundled THIRD_PARTY_NOTICES.txt, opened in the system's text viewer. */
-    openNotices: 'app:open-notices'
+    openNotices: 'app:open-notices',
+    /** The beta gate (shared/gate.ts): what stands in front of the window. */
+    gate: 'app:gate',
+    /** main → renderer: the gate changed */
+    gateChanged: 'app:gate-changed'
   },
   updates: {
     getState: 'updates:get-state',

@@ -1,5 +1,5 @@
 import { AnimatePresence, MotionConfig } from 'motion/react'
-import { memo, useEffect } from 'react'
+import { memo, useEffect, useState } from 'react'
 import type { AiJobEvent } from '../../shared/ai'
 import type { LibraryItem, LibrarySource, RenderScale } from '../../shared/ipc'
 import { api, errorText } from './lib/api'
@@ -25,7 +25,8 @@ import { chordOf } from './lib/keys'
 import { ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
-import { UpdateRequiredGate } from './views/Gate'
+import { BetaGate, UpdateRequiredGate } from './views/Gate'
+import { useGate } from './lib/gate'
 import { isFrame, whenFrame } from './lib/frames'
 import { openReport } from './lib/report'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
@@ -379,7 +380,14 @@ function useShortcuts(): void {
 
 export default function App(): React.JSX.Element {
   useShortcuts()
+  const gate = useGate()
+  // The launch (the index, the last folder, the listeners) waits until the
+  // beta gate first opens, then runs once: main refuses those calls while
+  // it's shut, and the splash stays behind the gate meanwhile.
+  const [booted, setBooted] = useState(false)
+  if (!booted && gate?.kind === 'open') setBooted(true)
   useEffect(() => {
+    if (!booted) return
     const offs = [
       api.library.onThumb((e) => {
         thumbsWaiting.set(e.key, e)
@@ -462,7 +470,7 @@ export default function App(): React.JSX.Element {
       offs.forEach((off) => off())
       clearInterval(t)
     }
-  }, [])
+  }, [booted])
   return (
     <MotionConfig reducedMotion="user">
       <div className="app">
@@ -472,6 +480,7 @@ export default function App(): React.JSX.Element {
         <Toast />
         <EngineBanner />
         <Splash />
+        <BetaGate gate={gate} />
         <UpdateRequiredGate />
       </div>
     </MotionConfig>
