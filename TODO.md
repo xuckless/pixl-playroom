@@ -59,7 +59,7 @@ from the old TODO and a full performance and bug sweep.
 
 After: Pass 1.
 
-- [ ] **M** · **A crash can silently revert the last edits.** The recipe is
+- [x] **M** · **A crash can silently revert the last edits.** The recipe is
       saved 600 ms after its history step and a failed `persist` is only logged
       (`render.ts:488-491`); on the next open the stale recipe is recorded as
       "Opened as saved" (`develop.ts:316-322`). Write the history step and the

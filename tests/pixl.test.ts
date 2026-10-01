@@ -240,6 +240,37 @@ test('the first edit makes the project: the sidecar and the index history move i
   rmSync(root, { recursive: true })
 })
 
+test('a committed edit saves its step and the recipe together', async () => {
+  const root = tmp()
+  const folder = join(root, 'photos')
+  mkdirSync(folder)
+  writeFileSync(join(folder, 'a.jpg'), 'not really a photo')
+  const index = new IndexService({ userData: join(root, 'ud'), emit: () => {}, xmp: noXmp })
+  const a = (await index.listFolder(folder))[0].key
+  const r = defaultRecipe(false)
+  // The base only records what is saved: no project, nothing written.
+  assert.equal(index.commitEdit(a, 'Opened', r, r).steps.length, 0)
+  assert.equal(index.projectPath(a), null)
+  // The first step makes the project with the recipe in it.
+  const one = structuredClone(r)
+  one.basic.exposure = 1
+  assert.equal(index.commitEdit(a, 'Exposure', one, one).steps.length, 1)
+  assert.ok(index.projectPath(a))
+  assert.equal(index.recipe(a).basic.exposure, 1)
+  // In a project: the step, and the live recipe (newer than the step) saved with it.
+  const two = structuredClone(one)
+  two.basic.contrast = 20
+  const live = structuredClone(two)
+  live.basic.contrast = 30
+  const log = index.commitEdit(a, 'Contrast', two, live)
+  assert.equal(log.steps.length, 2)
+  assert.equal(index.recipe(a).basic.contrast, 30)
+  assert.equal(index.item(a)?.edited, true)
+  await settle()
+  index.close()
+  rmSync(root, { recursive: true })
+})
+
 test('a project the user deletes lets the photo go back to unedited', async () => {
   const root = tmp()
   const folder = join(root, 'photos')

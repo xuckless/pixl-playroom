@@ -362,9 +362,16 @@ export function registerIpc(s: Services): void {
     base: log.base && { ...log.base, recipe: s.planes.slim(log.base.recipe) }
   })
   handle(IPC.develop.historyList, async (key: string) => slimLog(await s.index.history(key)))
-  handle(IPC.develop.historyAppend, async (key: string, label: string, recipe: Recipe) =>
-    slimLog(await s.index.appendHistory(key, label, s.planes.slim(recipe)))
-  )
+  handle(IPC.develop.historyAppend, async (key: string, label: string, recipe: Recipe) => {
+    // The step and the recipe the photo has now go into its project together.
+    // An open photo saves its live recipe (as new as the step or newer), and
+    // its own save of that recipe is not needed after.
+    const live = s.sessions.liveRecipe(key)
+    const full = live ?? (await s.planes.hydrate(recipe))
+    const log = await s.index.commitEdit(key, label, s.planes.slim(recipe), full)
+    if (live) s.sessions.saved(key, live)
+    return slimLog(log)
+  })
   handle(IPC.develop.historySetHidden, async (key: string, seqs: number[], hidden: boolean) =>
     slimLog(await s.index.setHistoryHidden(key, seqs, hidden))
   )

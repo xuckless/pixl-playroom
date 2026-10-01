@@ -1789,18 +1789,48 @@ export class IndexService {
     }
     return this.inHistory(
       key,
-      (p, k) => {
-        const log = p.history.append(k, label, recipe)
-        // The planes it names go into the project with it.
-        for (const ref of refsIn(JSON.stringify(recipe))) {
-          if (p.hasPlane(ref)) continue
-          const png = this.store.plane(ref)
-          if (png !== undefined) p.putPlane(ref, png)
-        }
-        return log
-      },
+      (p, k) => this.appendIn(p, k, label, recipe),
       () => this.store.appendHistory(key, label, recipe)
     )
+  }
+
+  private appendIn(p: PixlFile, itemKey: string, label: string, recipe: Recipe): HistoryLog {
+    const log = p.history.append(itemKey, label, recipe)
+    // The planes it names go into the project with it.
+    for (const ref of refsIn(JSON.stringify(recipe))) {
+      if (p.hasPlane(ref)) continue
+      const png = this.store.plane(ref)
+      if (png !== undefined) p.putPlane(ref, png)
+    }
+    return log
+  }
+
+  /**
+   * A settled edit: its history step (`step`, planes by reference) and the
+   * recipe the photo now has (`recipe`, whole) written together, so a crash
+   * never leaves the history ahead of the saved recipe, which the next open
+   * would record as where the photo stands.
+   */
+  commitEdit(key: string, label: string, step: Recipe, recipe: Recipe): HistoryLog {
+    const row = this.row(key)
+    const path = this.projectOf(row)
+    if (!path) {
+      const log = this.store.appendHistory(key, label, step)
+      // The "Opened" base only records what is saved already.
+      if (log.steps.length === 0) return log
+      // A real edit makes the project, which takes the index's history with it.
+      this.saveRecipe(key, recipe)
+      this.ensureProject(this.row(key))
+      return this.history(key)
+    }
+    const log = this.projects.use(path, (p) =>
+      p.tx(() => {
+        this.saveRecipe(key, recipe)
+        return this.appendIn(p, itemKeyOf(parseKey(key).copyId), label, step)
+      })
+    )
+    this.noteProjectWrite(key)
+    return log
   }
 
   setHistoryHidden(key: string, seqs: number[], hidden: boolean): HistoryLog {

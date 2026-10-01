@@ -487,8 +487,24 @@ class Session {
     const { photoId, copyId } = parseKey(this.key)
     return this.owner.library.saveRecipe(this.key, this.recipe).then(
       () => this.owner.library.queueThumb(photoId, copyId, true),
-      (err) => log.error('saving recipe failed', err)
+      (err) => {
+        log.error('saving recipe failed', err)
+        this.owner.send(IPC.develop.renderError, {
+          key: this.key,
+          message: `Edits to ${this.row.name} were not saved: ${(err as Error).message}`,
+          code: 'Save'
+        })
+      }
     )
+  }
+
+  /** `recipe` was saved elsewhere (with a history step): a save of it still waiting is not needed. */
+  saved(recipe: Recipe): void {
+    if (recipe !== this.recipe || !this.save) return
+    clearTimeout(this.save)
+    this.save = undefined
+    const { photoId, copyId } = parseKey(this.key)
+    this.owner.library.queueThumb(photoId, copyId, true)
   }
 
   setView(view: ViewState): void {
@@ -1628,6 +1644,11 @@ export class DevelopSessions {
   /** The recipe an open session holds, which may be newer than the sidecar. */
   liveRecipe(key: string): Recipe | undefined {
     return this.sessions.get(key)?.recipe
+  }
+
+  /** An open session's recipe was saved elsewhere: see `Session.saved`. */
+  saved(key: string, recipe: Recipe): void {
+    this.sessions.get(key)?.saved(recipe)
   }
 
   /** Save an open session's recipe now; resolves once it is saved. */
