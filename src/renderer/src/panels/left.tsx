@@ -351,7 +351,7 @@ function ProjectRows({ sessionKey }: { sessionKey: string }): React.JSX.Element 
 }
 
 export function InfoPane(): React.JSX.Element {
-  const session = useDevelop((s) => s.session)
+  const session = useDevelop((s) => s.shown)
   if (!session) return <p className="rail-empty">Open a photo to see its details.</p>
   const { info, item } = session
   const c = item.camera

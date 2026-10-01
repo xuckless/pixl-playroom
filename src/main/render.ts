@@ -1447,6 +1447,10 @@ class Session {
 
 export class DevelopSessions {
   private sessions = new Map<string, Session>()
+  /** Counts fresh opens: an open that finds a later one started makes no session. */
+  private opening = 0
+  /** The photo a fresh open is loading, until its session is made. */
+  private openingKey: string | null = null
 
   constructor(
     readonly library: Library,
@@ -1464,13 +1468,24 @@ export class DevelopSessions {
     return s
   }
 
-  async open(key: string): Promise<DevelopSession> {
-    // One photo at a time: closing the others writes their pending edits.
+  /** One photo at a time: closing the others writes their pending edits. */
+  private closeOthers(key: string): void {
     for (const [k, s] of this.sessions) {
       if (k !== key) {
         void s.close()
         this.sessions.delete(k)
       }
+    }
+  }
+
+  async open(key: string): Promise<DevelopSession> {
+    // Opening a photo not yet open takes over from any open still on its way;
+    // asking again for the open one (to read its recipe) changes nothing.
+    const fresh = !this.sessions.has(key)
+    const token = fresh ? ++this.opening : this.opening
+    if (fresh) {
+      this.openingKey = key
+      this.closeOthers(key)
     }
     const data = await this.library.index.openData(key)
     const { recipe, item, snapshots } = data
@@ -1484,6 +1499,11 @@ export class DevelopSessions {
     await mkdir(rendersDir(row.id), { recursive: true })
     let session = this.sessions.get(key)
     if (!session) {
+      // A later open (or a close) came while this one loaded, or the photo
+      // being read again was closed meanwhile: it makes nothing.
+      if (!fresh || token !== this.opening) throw new Error(`opening ${key} was superseded`)
+      this.openingKey = null
+      this.closeOthers(key)
       session = new Session(key, row, graded, px, recipe, this, info, hdr?.master ?? null)
       this.sessions.set(key, session)
       // A photo with pixel steps opens on them.
@@ -1509,7 +1529,14 @@ export class DevelopSessions {
 
   close(key: string): Promise<void> {
     const s = this.sessions.get(key)
-    if (!s) return Promise.resolve()
+    if (!s) {
+      // Closed while still opening: the open makes nothing.
+      if (key === this.openingKey) {
+        ++this.opening
+        this.openingKey = null
+      }
+      return Promise.resolve()
+    }
     this.sessions.delete(key)
     return s.close()
   }

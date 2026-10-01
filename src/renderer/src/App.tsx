@@ -382,10 +382,10 @@ export default function App(): React.JSX.Element {
       // An upscale step added or undone: the photo's full-size frame is another size.
       api.develop.onFrame((e) => {
         const s = useDevelop.getState().session
-        if (s && s.key === e.key)
-          useDevelop.setState({
-            session: { ...s, frameWidth: e.frameWidth, frameHeight: e.frameHeight }
-          })
+        if (s && s.key === e.key) {
+          const session = { ...s, frameWidth: e.frameWidth, frameHeight: e.frameHeight }
+          useDevelop.setState({ session, shown: session })
+        }
       }),
       api.develop.onRenderError((e) =>
         useDevelop.getState().onError(e.field ? `${e.message} (${e.field})` : e.message)

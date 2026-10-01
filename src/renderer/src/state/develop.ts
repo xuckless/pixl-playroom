@@ -68,6 +68,11 @@ export type Gesture = 'straighten' | 'crop' | 'rotate' | null
 
 interface DevelopState {
   session: DevelopSession | null
+  /**
+   * The photo on screen, for what only shows its facts: the session, or
+   * while the next photo loads, the last one (edits need `session`).
+   */
+  shown: DevelopSession | null
   loading: boolean
   recipe: Recipe | null
   /** The photo's edit history: the recipe is its base with every visible step replayed. */
@@ -177,6 +182,10 @@ interface DevelopState {
  * Anything that settles an edit sends straight away and drops what waits.
  */
 let queued: { key: string; recipe: Recipe } | null = null
+/** Counts opens: one that finds a newer one started (or a close) shows nothing. */
+let openToken = 0
+/** The photo an open is loading, until it is shown. */
+let openingKey: string | null = null
 let frame = 0
 /** Numbers each recipe sent to the engine; every render says which one it drew. */
 let rev = 0
@@ -247,6 +256,7 @@ type Pictures = { framed: RenderEvent | null; crop: RenderEvent | null }
 
 export const useDevelop = create<DevelopState>((set, get) => ({
   session: null,
+  shown: null,
   loading: false,
   recipe: null,
   history: { base: null, steps: [] },
@@ -286,8 +296,15 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   async open(key) {
     const prev = get().session
-    if (prev?.key === key) return
+    if (prev?.key === key || openingKey === key) return
+    const token = ++openToken
+    openingKey = key
+    // A slider's last frame is the photo being left's: it goes to that photo first.
+    flushQueued((m) => get().onError(m))
+    // The last photo's recipe stays in view until this one's arrives, but
+    // nothing edits it: every edit needs the session.
     set({
+      session: null,
       loading: true,
       error: null,
       picture: null,
@@ -307,9 +324,13 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       tool: 'none',
       zoom: FIT
     })
+    // A later open (or a close) took over: what this one found is not shown.
+    const stale = (): boolean => token !== openToken
     try {
       const session = await api.develop.open(key)
+      if (stale()) return
       let history = await api.develop.historyList(key)
+      if (stale()) return
       if (!history.base) {
         history = await api.develop.historyAppend(key, 'Opened', session.recipe)
       } else if (
@@ -320,8 +341,11 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         // library, an older version's undo): record where it stands now.
         history = await api.develop.historyAppend(key, 'Opened as saved', session.recipe)
       }
+      if (stale()) return
+      openingKey = null
       set({
         session,
+        shown: session,
         recipe: session.recipe,
         history,
         redo: [],
@@ -330,16 +354,23 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       })
       get().pushView()
     } catch (err) {
-      set({ loading: false, error: errorText(err) })
+      if (stale()) return
+      openingKey = null
+      set({ shown: null, loading: false, error: errorText(err) })
     }
   },
 
   async close() {
-    const s = get().session
-    if (s) await api.develop.close(s.key)
+    // An open still on its way is dropped, and its photo closed in main too.
+    ++openToken
+    const key = get().session?.key ?? openingKey
+    openingKey = null
+    if (key) await api.develop.close(key)
     queued = null
     set({
       session: null,
+      shown: null,
+      loading: false,
       recipe: null,
       picture: null,
       pictures: { framed: null, crop: null },

@@ -111,7 +111,7 @@ export function IdentityBar({
 
 /** The develop view's identity: file, kind, copy, and the frame's facts. */
 export function DevelopIdentity(): React.JSX.Element {
-  const session = useDevelop((s) => s.session)
+  const session = useDevelop((s) => s.shown)
   if (!session) return <IdentityBar />
   const { item, info } = session
   const mp = (session.frameWidth * session.frameHeight) / 1e6
