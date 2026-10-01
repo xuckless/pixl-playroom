@@ -32,8 +32,12 @@ export const IPC = {
     openPreferences: 'app:open-preferences',
     /** main → renderer: the menu's Engine Report… was chosen */
     openEngineReport: 'app:open-engine-report',
+    /** main → renderer: Help → Report a Problem (Settings, at that section). */
+    openReport: 'app:open-report',
     /** An uncaught error in the renderer, for the log and (opted in) a crash report. */
     reportError: 'app:report-error',
+    /** A problem report the user wrote (Settings); answers the server's reference. */
+    reportProblem: 'app:report-problem',
     /** The bundled THIRD_PARTY_NOTICES.txt, opened in the system's text viewer. */
     openNotices: 'app:open-notices'
   },

@@ -10,6 +10,7 @@ import {
   type ResizeMode
 } from '../../../shared/export'
 import type { ExportPreset, ExportProgress } from '../../../shared/ipc'
+import { BUY_URL } from '../../../shared/licence'
 import {
   changedGroups,
   defaultRecipe,
@@ -78,12 +79,20 @@ export function ExportDialog(): React.JSX.Element {
   const [presets, setPresets] = useState<ExportPreset[]>([])
   const [progress, setProgress] = useState<ExportProgress | null>(null)
   const [presetName, setPresetName] = useState('')
+  /** Why a lapsed licence refuses exporting (never while licensing isn't enforced). */
+  const [locked, setLocked] = useState<string | null>(null)
   useEffect(() => {
     void api.app
       .getSetting<ExportSettings>('export.last')
       .then((last) => last && setS(normaliseExportSettings(last)))
     void api.export.presets().then(setPresets)
-    return api.export.onProgress(setProgress)
+    void api.licence.status().then((l) => setLocked(l.locked))
+    const offLicence = api.licence.onChange((l) => setLocked(l.locked))
+    const offProgress = api.export.onProgress(setProgress)
+    return () => {
+      offLicence()
+      offProgress()
+    }
   }, [])
   const up = <K extends keyof ExportSettings>(k: K, v: ExportSettings[K]): void =>
     setS((x) => ({ ...x, [k]: v }))
@@ -143,7 +152,7 @@ export function ExportDialog(): React.JSX.Element {
           ) : (
             <button
               className="primary"
-              disabled={targets.length === 0}
+              disabled={targets.length === 0 || locked !== null}
               onClick={() => void start()}
             >
               Export
@@ -152,6 +161,17 @@ export function ExportDialog(): React.JSX.Element {
         </>
       }
     >
+      {locked && (
+        <div className="licence-lock" role="alert">
+          <p>{locked}</p>
+          <div className="prefs-row">
+            <button onClick={() => setDialog('preferences')}>Enter a licence key…</button>
+            <a href={BUY_URL} target="_blank" rel="noreferrer">
+              Buy a licence
+            </a>
+          </div>
+        </div>
+      )}
       <div className="export-grid">
         <fieldset>
           <legend>Presets</legend>

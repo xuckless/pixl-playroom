@@ -125,6 +125,25 @@ jobs:
           # is given; finding none yields an unsigned build with a warning.
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' && 'true' || 'false' }}
 
+      # Breakpad symbols for the native code Electron doesn't ship (the engine
+      # binding and its libraries), into the pixl-reports R2 bucket, so
+      # minidumps from this release can be read (scripts/upload-symbols.mjs).
+      # Skipped, with a notice, until the Cloudflare secrets exist; a failure
+      # here never fails the release.
+      - name: Crash symbols
+        shell: bash
+        continue-on-error: true
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::CLOUDFLARE_SYMBOLS_TOKEN or CLOUDFLARE_ACCOUNT_ID not set: no crash symbols"
+            exit 0
+          fi
+          cargo install dump_syms --locked
+          node scripts/upload-symbols.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_SYMBOLS_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       # The feed is named for the channel electron-builder derives from the
       # version: latest-mac.yml for 0.3.0, beta-mac.yml for 0.3.0-beta.1.
       - name: Update channel

@@ -25,6 +25,7 @@ import { chordOf } from './lib/keys'
 import { ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
+import { openReport } from './lib/report'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
 import { CollectionDialog } from './views/library/CollectionDialog'
@@ -415,6 +416,7 @@ export default function App(): React.JSX.Element {
       }),
       api.app.onOpenPreferences(() => useLibrary.getState().setDialog('preferences')),
       api.app.onOpenEngineReport(openEngineReport),
+      api.app.onOpenReport(openReport),
       reportErrors()
     ]
     void useAiJobs

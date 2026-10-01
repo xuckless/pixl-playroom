@@ -48,6 +48,7 @@ import {
   type ProjectInfo
 } from '../shared/ipc'
 import type { LicenceStatus } from '../shared/licence'
+import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
 import type { EnhanceRates } from '../shared/enhance'
@@ -83,7 +84,9 @@ const api = {
     pathOf: (file: File) => webUtils.getPathForFile(file),
     onOpenPreferences: (cb: () => void) => on(IPC.app.openPreferences, cb),
     onOpenEngineReport: (cb: () => void) => on(IPC.app.openEngineReport, cb),
+    onOpenReport: (cb: () => void) => on(IPC.app.openReport, cb),
     reportError: (e: ErrorReport) => call<void>(IPC.app.reportError, e),
+    reportProblem: (r: ProblemInput) => call<string>(IPC.app.reportProblem, r),
     openNotices: () => call<void>(IPC.app.openNotices)
   },
   updates: {

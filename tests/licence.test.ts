@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   activate,
   allows,
+  lockedReason,
   deactivate,
   dueForValidation,
   keyHint,
@@ -110,10 +111,21 @@ test('the trial counts down from the first launch, then ends', () => {
 })
 
 test('nothing is gated while licensing is not enforced', () => {
-  assert.equal(allows({ kind: 'trial-ended' }), true)
-  assert.equal(allows({ kind: 'revalidate' }), true)
-  assert.equal(allows({ kind: 'trial-ended' }, true), false)
-  assert.equal(allows({ kind: 'licensed', offlineDaysLeft: 3 }, true), true)
+  assert.equal(allows({ kind: 'trial-ended' }, 'export'), true)
+  assert.equal(allows({ kind: 'revalidate' }, 'export'), true)
+  assert.equal(lockedReason({ kind: 'trial-ended' }), null)
+})
+
+test('enforced, a lapsed licence locks exporting, with the reason', () => {
+  assert.equal(allows({ kind: 'trial-ended' }, 'export', true), false)
+  assert.equal(allows({ kind: 'revalidate' }, 'export', true), false)
+  assert.equal(allows({ kind: 'inactive', reason: 'Refunded.' }, 'export', true), false)
+  assert.equal(allows({ kind: 'trial', daysLeft: 2 }, 'export', true), true)
+  assert.equal(allows({ kind: 'licensed', offlineDaysLeft: 3 }, 'export', true), true)
+  assert.match(lockedReason({ kind: 'trial-ended' }, true) ?? '', /trial has ended/)
+  assert.match(lockedReason({ kind: 'revalidate' }, true) ?? '', /confirm your licence/)
+  assert.match(lockedReason({ kind: 'inactive', reason: 'Refunded.' }, true) ?? '', /Refunded/)
+  assert.equal(lockedReason({ kind: 'licensed', offlineDaysLeft: 3 }, true), null)
 })
 
 test('activating a key licenses this device and records the customer', async () => {

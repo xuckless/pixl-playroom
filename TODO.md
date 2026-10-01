@@ -466,18 +466,31 @@ After: Owner tasks "Lemon Squeezy store" and "What a lapsed licence locks".
 - [ ] **S** · Set `LS_PRODUCT` (store and product ids) in
       `src/shared/licence.ts` so other products' keys are refused; test with a
       test-mode key (`PLAYROOM_LICENCE_UI=1` in a packaged build).
-- [ ] **M** · Gate what an ended trial and an unconfirmed licence
+      _Waits on the store. Then flip `LICENCE_ENFORCED`, which also shows the
+      Licence section in production._
+- [x] **M** · Gate what an ended trial and an unconfirmed licence
       (`revalidate`) lock with `allows()`, show the Licence section in
       production, and flip `LICENCE_ENFORCED`.
+      _Done (behind the flag, still off): a lapsed licence locks exporting
+      only (`LICENSED`); `requireLicence('export')` refuses `export:start`,
+      and the Export dialog says why, with Enter a key / Buy._
 
 ### Pass 24 — Crash reports kept · 5 pts
 
 After: Owner task "Where crash reports live". Partly in pixl-web.
 
-- [ ] **L** · Store crash reports: R2 with the retention period (the Worker
+- [x] **L** · Store crash reports: R2 with the retention period (the Worker
       only logs a summary today), or Sentry's Electron SDK taking over from
       `crashReporter` (`src/main/crash.ts`).
-- [ ] **M** · Symbol files for minidumps, uploaded by the release build.
+      _Done: R2 (pixl-web `worker/api.ts`, bucket `pixl-reports`, 90 days
+      until confirmed; `scripts/reports-bucket.sh` there), rate limited.
+      Also new: Settings → Report a problem (and Help → Report a Problem…)
+      sends the user's words, an optional email and the scrubbed end of the
+      log to `/api/report`, kept a year._
+- [x] **M** · Symbol files for minidumps, uploaded by the release build.
+      _Done: `scripts/upload-symbols.mjs`, the release workflow's Crash
+      symbols step (needs the `CLOUDFLARE_SYMBOLS_TOKEN` and
+      `CLOUDFLARE_ACCOUNT_ID` secrets). The engine's frames wait on E35._
 
 ### Pass 25 — Trials recorded on the server · 3 pts
 
@@ -485,6 +498,7 @@ After: Pass 23. pixl-web plus `src/main/licence.ts`.
 
 - [ ] **L** · The trial's start lives in `licence.json`, which deleting
       resets. Record trials on the server by device, if that matters.
+      _Deferred (2026-10-01): waits on the account system in pixl-web._
 
 ### Pass 26 — Freeing a lost device · 3 pts
 
@@ -492,6 +506,7 @@ After: Pass 23. pixl-web.
 
 - [ ] **L** · The website account lists a licence's devices and frees one
       (the app can only free its own place; today it's by email).
+      _Deferred (2026-10-01): waits on the account system in pixl-web._
 
 ---
 
@@ -867,6 +882,8 @@ Playroom work that starts once the engine request lands
 - [ ] **S** · Raw-domain noise reduction controls (E16).
 - [ ] **S** · Pixel steps' image caches as uncompressed TIFF overlays (E33).
 - [ ] **S** · PQ/HLG proxies and the gain-map master as uncompressed TIFF (E34).
+- [ ] **S** · Engine frames in crash reports: feed the binding's published
+      debug symbols to `scripts/upload-symbols.mjs` (E35).
 - [ ] **S** · ProRAW and DNG gain maps (E17).
 - [ ] **S** · Fisheye distortion from Lensfun profiles (E18).
 - [ ] **M** · Native `ParametricCurve`, with a recipe migration that
@@ -901,12 +918,16 @@ Playroom work that starts once the engine request lands
       rawler (LGPL, static) before the first paid release (engine side: E8–E10).
 - [ ] **S** · **Lemon Squeezy store**: create it and the Playroom product with
       an activation limit of 3; hand over the store and product ids (Pass 23).
-- [ ] **S** · **What a lapsed licence locks**: exports? the whole Develop
-      view? And whether trials must be recorded on the server (Passes 23, 25).
+- [x] **S** · **What a lapsed licence locks**: exports only (2026-10-01).
+      Trials on the server: not for now (Pass 25 deferred).
 - [ ] **S** · **Update policy in writing**: 1.x updates included, major
       versions a discounted paid upgrade (the EULA draft says so).
-- [ ] **S** · **Where crash reports live**: R2 or Sentry, and the retention
-      period for the privacy policy (Pass 24).
+- [x] **S** · **Where crash reports live**: R2 (2026-10-01).
+- [ ] **S** · **Reports bucket and retention**: confirm 90 days for crash
+      reports and a year for problem reports (the privacy policy has both in
+      brackets), run pixl-web's `scripts/reports-bucket.sh` before deploying
+      the Worker, and add the `CLOUDFLARE_SYMBOLS_TOKEN` and
+      `CLOUDFLARE_ACCOUNT_ID` secrets to the playroom repository (Pass 24).
 - [ ] **M** · **Tiers and credits**: what the cloud tiers include and cost
       (Pass 71).
 - [ ] **S** · **Windows "Open with"**: `build/installer.nsh`

@@ -6,10 +6,18 @@
  * main/licence.ts keeps the file and talks to the bridge.
  *
  * Not enforced yet: with LICENCE_ENFORCED false, `allows` says yes to
- * everything, whatever the state.
+ * everything, whatever the state. Turning it on also needs LS_PRODUCT set.
  */
 
 export const LICENCE_ENFORCED = false
+
+/**
+ * What a lapsed licence (an ended trial, a licence not confirmed within the
+ * offline grace, a device no longer activated) locks: exporting, and nothing
+ * else. Browsing and editing stay open, so nothing already made is held back.
+ */
+export const LICENSED = ['export'] as const
+export type Licensed = (typeof LICENSED)[number]
 
 export const LICENCE_RULES = {
   /** Set as the activation limit on the product in Lemon Squeezy; this is what the app shows. */
@@ -77,6 +85,8 @@ export interface LicenceStatus {
   customerName?: string
   customerEmail?: string
   lastValidatedAt?: string
+  /** Why exporting is refused, in plain words; null while it is allowed. */
+  locked: string | null
   /** Settings shows the licence section (development, or PLAYROOM_LICENCE_UI=1, or once enforced). */
   visible: boolean
 }
@@ -102,8 +112,9 @@ export function licenceState(file: LicenceFile, now: Date): LicenceState {
 
 export function licenceStatus(file: LicenceFile, now: Date, visible: boolean): LicenceStatus {
   const l = file.licence
+  const state = licenceState(file, now)
   return {
-    state: licenceState(file, now),
+    state,
     enforced: LICENCE_ENFORCED,
     deviceLimit: l?.activationLimit ?? LICENCE_RULES.deviceLimit,
     ...(l
@@ -115,14 +126,31 @@ export function licenceStatus(file: LicenceFile, now: Date, visible: boolean): L
           lastValidatedAt: l.lastValidatedAt
         }
       : {}),
+    locked: lockedReason(state),
     visible: visible || LICENCE_ENFORCED
   }
 }
 
-/** Whether the app lets the user work. Always yes until licensing is enforced. */
-export function allows(state: LicenceState, enforced = LICENCE_ENFORCED): boolean {
+/** Whether `what` is allowed in `state`. Always yes until licensing is enforced. */
+export function allows(state: LicenceState, what: Licensed, enforced = LICENCE_ENFORCED): boolean {
+  void what // every licensed feature is locked by the same states
   if (!enforced) return true
   return state.kind === 'trial' || state.kind === 'licensed'
+}
+
+/** Why exporting is refused in `state`, or null when it isn't. */
+export function lockedReason(state: LicenceState, enforced = LICENCE_ENFORCED): string | null {
+  if (allows(state, 'export', enforced)) return null
+  switch (state.kind) {
+    case 'trial-ended':
+      return 'Your free trial has ended. Buy a licence, or enter your key in Settings, to export again. Editing still works.'
+    case 'revalidate':
+      return 'Playroom needs to confirm your licence before it exports again. Connect to the internet, then choose Check now in Settings.'
+    case 'inactive':
+      return `This device is no longer activated (${state.reason}). Enter your key in Settings to export again.`
+    default:
+      return null
+  }
 }
 
 /** Whether a launch should confirm the licence with the server. */
@@ -135,8 +163,12 @@ export function dueForValidation(file: LicenceFile, now: Date): boolean {
 // ── Lemon Squeezy ────────────────────────────────────────────────────────────
 
 export class LicenceError extends Error {
-  /** network: couldn't reach the server; rejected: the server said no; wrong-product: a key for something else. */
-  readonly code: 'network' | 'rejected' | 'wrong-product'
+  /**
+   * network: couldn't reach the server; rejected: the server said no;
+   * wrong-product: a key for something else; locked: what was asked for needs
+   * a licence (`allows`).
+   */
+  readonly code: 'network' | 'rejected' | 'wrong-product' | 'locked'
   constructor(message: string, code: LicenceError['code']) {
     super(message)
     this.name = 'LicenceError'

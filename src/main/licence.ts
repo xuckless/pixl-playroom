@@ -2,7 +2,8 @@
  * This device's licence: userData/licence.json (the key encrypted with the
  * OS keychain through safeStorage where it can be), the trial's start, and a
  * quiet re-check with the licence server at launch. The rules are in
- * shared/licence.ts; nothing is enforced yet (LICENCE_ENFORCED).
+ * shared/licence.ts; nothing is enforced yet (LICENCE_ENFORCED), and with it
+ * off `requireLicence` never refuses.
  */
 import { app, BrowserWindow, safeStorage } from 'electron'
 import log from 'electron-log/main'
@@ -15,11 +16,13 @@ import {
   deactivate,
   dueForValidation,
   LICENCE_API,
+  LicenceError,
   LicenceServer,
   licenceStatus,
   validate,
   type LicenceFile,
-  type LicenceStatus
+  type LicenceStatus,
+  type Licensed
 } from '../shared/licence'
 
 /** What is written: the record without its key, and the key sealed or plain. */
@@ -87,6 +90,15 @@ function deviceName(): string {
 
 export function licence(): LicenceStatus {
   return licenceStatus(load(), new Date(), visible)
+}
+
+/** Throws (code `locked`) when this device's licence doesn't allow `what`. */
+export function requireLicence(what: Licensed): void {
+  const s = licence()
+  if (s.locked) {
+    log.info(`licence: ${what} refused (${s.state.kind})`)
+    throw new LicenceError(s.locked, 'locked')
+  }
 }
 
 export async function activateLicence(key: string): Promise<LicenceStatus> {

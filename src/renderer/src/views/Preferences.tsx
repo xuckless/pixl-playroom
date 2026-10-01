@@ -1,18 +1,105 @@
 /**
- * Settings (⌘, / Ctrl+,): the licence, updates, crash reports, the legal
- * pages, and the key bindings. And the one question the first launch asks:
- * may crash reports be sent?
+ * Settings (⌘, / Ctrl+,): the licence, updates, crash reports, reporting a
+ * problem, the legal pages, and the key bindings. And the one question the
+ * first launch asks: may crash reports be sent?
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { MAX_PROBLEM_TEXT } from '../../../shared/crash'
 import type { Prefs, UpdateState } from '../../../shared/ipc'
 import { ACCOUNT_URL, BUY_URL, type LicenceStatus } from '../../../shared/licence'
 import { Modal, Select, Tabs } from '../components/ui'
 import { api, errorText } from '../lib/api'
+import { takeReportFocus } from '../lib/report'
 import { useLibrary } from '../state/library'
 import { KeyBindingsSection } from './KeyBindings'
 import { ModelsSection } from './ModelsSection'
 
 const LEGAL = 'https://playroom.pixlfoundation.com/legal'
+
+/**
+ * A problem the user found, in their words, sent when they press Send: with
+ * an email if they want a reply, and the end of the app's log unless they
+ * untick it (scrubbed of the home folder in main).
+ */
+function ReportSection(): React.JSX.Element {
+  const [message, setMessage] = useState('')
+  const [email, setEmail] = useState('')
+  const [includeLog, setIncludeLog] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [sent, setSent] = useState<string | null>(null)
+  const field = useRef<HTMLFieldSetElement>(null)
+  const text = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (!takeReportFocus()) return
+    field.current?.scrollIntoView({ block: 'start' })
+    text.current?.focus()
+  }, [])
+  const send = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      setSent(await api.app.reportProblem({ message, email, includeLog }))
+      setMessage('')
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const stop = (e: React.KeyboardEvent): void => e.stopPropagation()
+  return (
+    <fieldset ref={field}>
+      <legend>Report a problem</legend>
+      <p className="muted small">
+        Found a bug? Say what you did, what happened and what you expected. It goes to the Playroom
+        team only; add an email if you&apos;d like a reply.
+      </p>
+      <textarea
+        ref={text}
+        className="report-text"
+        value={message}
+        maxLength={MAX_PROBLEM_TEXT}
+        placeholder="What happened?"
+        aria-label="What happened?"
+        onChange={(e) => {
+          setMessage(e.target.value)
+          setSent(null)
+        }}
+        onKeyDown={stop}
+      />
+      <input
+        type="email"
+        value={email}
+        placeholder="Email for a reply (optional)"
+        aria-label="Email for a reply (optional)"
+        autoComplete="email"
+        onChange={(e) => setEmail(e.target.value)}
+        onKeyDown={stop}
+      />
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={includeLog}
+          onChange={(e) => setIncludeLog(e.target.checked)}
+        />
+        Include Playroom&apos;s recent log (it names the files it worked on; your home folder is
+        hidden)
+      </label>
+      <div className="prefs-row">
+        <button className="primary" disabled={busy || !message.trim()} onClick={() => void send()}>
+          {busy ? 'Sending…' : 'Send report'}
+        </button>
+        {sent && (
+          <span className="prefs-status" role="status">
+            Sent, thank you. Reference {sent}.
+          </span>
+        )}
+      </div>
+      {error && <p className="error small">{error}</p>}
+    </fieldset>
+  )
+}
 
 function updateLine(s: UpdateState): string {
   switch (s.phase) {
@@ -88,9 +175,11 @@ function LicenceSection(): React.JSX.Element | null {
         {licenceLine(status)}
         {active && status.keyHint ? <span className="muted"> Key {status.keyHint}</span> : null}
       </p>
+      {status.locked && <p className="note small">{status.locked}</p>}
       {!status.enforced && (
         <p className="muted small">
-          Licences aren&apos;t required yet: every feature works either way.
+          Licences aren&apos;t required yet: every feature works either way. Once they are, an ended
+          trial stops exporting only; editing keeps working.
         </p>
       )}
       {active ? (
@@ -324,6 +413,8 @@ function GeneralSettings(): React.JSX.Element {
           the app version and your system. Never your photos, and never your folder names.
         </p>
       </fieldset>
+
+      <ReportSection />
 
       <fieldset>
         <legend>About</legend>

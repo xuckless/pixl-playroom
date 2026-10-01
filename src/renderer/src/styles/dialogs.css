@@ -231,6 +231,33 @@ button.link:hover {
   font-family: var(--font-mono);
 }
 
+/* Report a problem */
+.report-text {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+}
+
+/* Export, when a lapsed licence refuses it: why, and the way back. */
+.licence-lock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+.licence-lock p {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--text);
+}
+.licence-lock .prefs-row a {
+  color: var(--acc);
+}
+
 /* Engine report: the last render and the compiled grade beside custom layers */
 .modal.engine-report .engine-line {
   margin: 0 0 12px;

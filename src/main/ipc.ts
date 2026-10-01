@@ -38,9 +38,16 @@ import type { PlaneStore } from './planestore'
 import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
 import { autoWbBatch, setWbBatch } from './autowb'
-import { crashConsent, reportRendererError, setCrashConsent } from './crash'
-import { activateLicence, deactivateLicence, licence, validateLicence } from './licence'
+import { crashConsent, reportRendererError, sendProblemReport, setCrashConsent } from './crash'
+import {
+  activateLicence,
+  deactivateLicence,
+  licence,
+  requireLicence,
+  validateLicence
+} from './licence'
 import type { AiCapabilities, AiStartRequest } from '../shared/ai'
+import type { ProblemInput } from '../shared/crash'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
 import type { GuideLine } from '../shared/upright'
@@ -141,6 +148,9 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.restart, () => restart())
 
   handle(IPC.app.reportError, (e: ErrorReport) => reportRendererError(e))
+  handle(IPC.app.reportProblem, (r: ProblemInput) =>
+    sendProblemReport(r, s.engine.getStatus().version)
+  )
   handle(IPC.app.openNotices, async () => {
     const err = await shell.openPath(paths.notices())
     if (err) throw new Error(`Couldn't open the third-party notices: ${err}`)
@@ -160,7 +170,7 @@ export function registerIpc(s: Services): void {
   }))
   handle(IPC.prefs.setCrashReports, (c: CrashConsent) => setCrashConsent(c))
 
-  // ── licence (not enforced yet: shared/licence.ts) ──
+  // ── licence (not enforced yet: shared/licence.ts; exports check it) ──
   handle(IPC.licence.status, () => licence())
   handle(IPC.licence.activate, (key: string) => activateLicence(key))
   handle(IPC.licence.deactivate, () => deactivateLicence())
@@ -496,6 +506,7 @@ export function registerIpc(s: Services): void {
   })
   handle(IPC.export.readWatermark, (path: string) => readWatermark(path))
   handle(IPC.export.start, (keys: string[], settings: ExportSettings) => {
+    requireLicence('export')
     void s.index.setSetting('export.last', settings).catch(() => {})
     return s.exporter.start(keys, settings)
   })

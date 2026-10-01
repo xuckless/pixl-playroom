@@ -166,5 +166,20 @@ app at another server, for testing or for routing through the pixl-web Worker la
 Opt-in (asked once at first launch, then in _Settings_), stored as `crashReports` in
 `userData/settings.json`. Native crashes go through Electron's `crashReporter` (minidumps),
 JavaScript errors and processes that die abnormally as JSON (`src/main/crash.ts`,
-`src/shared/crash.ts`), to `https://pixlfoundation.com/api/crash`. The pixl-web Worker only
-logs a summary of each for now; see its TODO.md.
+`src/shared/crash.ts`), to `https://pixlfoundation.com/api/crash`. Problem reports the user
+writes (_Settings → Report a problem_, or _Help → Report a Problem…_) go to
+`https://pixlfoundation.com/api/report`, with the end of the log unless they untick it. The
+pixl-web Worker keeps both in the `pixl-reports` R2 bucket (`crash/`, `minidump/`, `report/`, one
+folder a day), each deleted after the period the privacy policy states; see its TODO.md and
+`scripts/reports-bucket.sh`.
+
+**Symbols.** The release workflow's _Crash symbols_ step runs `scripts/upload-symbols.mjs`: Breakpad
+`.sym` files for the engine binding and its libraries go to `symbols/` in the same bucket, with
+`symbols/releases/<version>/<platform>-<arch>.json` naming the Electron and engine versions. It
+needs two repository secrets: `CLOUDFLARE_SYMBOLS_TOKEN` (an API token with R2 write on
+`pixl-reports`) and `CLOUDFLARE_ACCOUNT_ID`; without them the step is skipped. Electron's own
+symbols are served from `https://symbols.electronjs.org`. To read a minidump, unpack it from its
+multipart body, sync `symbols/` locally, and run
+`minidump-stackwalk --symbols-url https://symbols.electronjs.org --symbols-path <dir> <dump>`.
+The engine's `.node` is built stripped, so its frames name little until the engine publishes debug
+symbols (ENGINE-REQUESTS.md, E35).
