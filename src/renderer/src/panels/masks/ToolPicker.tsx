@@ -2,6 +2,7 @@ import { Icon } from '../../components/icons'
 import { useDevelop } from '../../state/develop'
 import { useAiJobs } from '../../state/jobs'
 import { useLibrary } from '../../state/library'
+import { keyHint } from '../../lib/commands'
 import { MASK_TOOL_GROUPS, startMaskTool, type MaskToolInfo, type MaskToolKind } from './model'
 
 /**
@@ -51,7 +52,7 @@ export function ToolPicker({
                 title={
                   needs(t)
                     ? `${t.label} — ${needs(t)}`
-                    : `${t.label}${t.ai ? ' (found by a model)' : ''}${t.key ? ` (${t.key})` : ''}`
+                    : `${t.label}${t.ai ? ' (found by a model)' : ''}${t.command && keyHint(t.command) ? ` (${keyHint(t.command)})` : ''}`
                 }
                 onClick={() => {
                   if (downloadable(t)) {
@@ -63,7 +64,9 @@ export function ToolPicker({
               >
                 <Icon name={t.icon} />
                 <span className="tp-label">{t.label}</span>
-                {t.key && <span className="kbd">{t.key}</span>}
+                {t.command && keyHint(t.command) && (
+                  <span className="kbd">{keyHint(t.command)}</span>
+                )}
                 {needs(t) && <span className="tp-needs">{downloadable(t) ? 'get' : 'soon'}</span>}
                 {t.ai && !needs(t) && <span className="tp-needs ai">AI</span>}
               </button>

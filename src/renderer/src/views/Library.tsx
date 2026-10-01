@@ -5,7 +5,7 @@ import { Icon } from '../components/icons'
 import { Stars } from '../components/ui'
 import { Ambient, Spinner } from '../fx'
 import { autoWbBatch } from '../lib/autowb'
-import { LABEL_COLOURS, MOD } from '../lib/helpers'
+import { LABEL_COLOURS } from '../lib/helpers'
 import { folderName, KEYS_MIME, sourceTrail } from '../lib/sources'
 import { useThumbFirst } from '../lib/thumbs'
 import { IdentityBar } from '../shell/IdentityBar'
@@ -13,6 +13,7 @@ import { useDevelop } from '../state/develop'
 import { useLibrary, useTargets, useVisible, type SortKey } from '../state/library'
 import { useUi } from '../state/ui'
 import { DuplicateControls, FilterButton, OrganiseMenu } from './library/ToolbarMenus'
+import { keyHint, withKey } from '../lib/commands'
 
 /** A tile's part in a stack: the cover (collapsed or open), or a member of an open one. */
 interface StackRole {
@@ -222,7 +223,7 @@ export function Toolbar(): React.JSX.Element {
     <nav className={`toolbar tool-bar library-bar${dupes ? ' dupes' : ''}`}>
       <button
         className={`icon lg${sidebar ? ' on' : ''}`}
-        title={`Sources (${MOD === '⌘' ? '⇧⌘L' : 'Ctrl+Shift+L'} or \\)`}
+        title={withKey('Sources', 'library.sidebar')}
         aria-label="Show the sources"
         aria-pressed={sidebar}
         onClick={() => setSidebar(!sidebar)}
@@ -292,7 +293,7 @@ export function Toolbar(): React.JSX.Element {
       <button
         className="lg"
         disabled={targets.length === 0}
-        title="Auto white balance on each selected photo (Ctrl+Shift+U)"
+        title={withKey('Auto white balance on each selected photo', 'autoWbBatch')}
         onClick={() => void autoWbBatch(targets)}
       >
         <Icon name="picker" />
@@ -301,7 +302,7 @@ export function Toolbar(): React.JSX.Element {
       <button
         className="lg"
         disabled={!focus}
-        title="Develop the focused photo (D)"
+        title={withKey('Develop the focused photo', 'library.develop')}
         onClick={() => {
           if (!focus) return
           setView('develop')
@@ -315,14 +316,14 @@ export function Toolbar(): React.JSX.Element {
         className="primary lg"
         flat
         onClick={() => setDialog('export')}
-        title="Export selected (Ctrl+Shift+E)"
+        title={withKey('Export selected', 'export')}
       >
         <Icon name="export" />
         Export
       </LiquidGlass>
       <button
         className={`icon lg${info ? ' on' : ''}`}
-        title="Info and metadata (I)"
+        title={withKey('Info and metadata', 'library.info')}
         aria-label="Show info"
         aria-pressed={info}
         onClick={() => setInfo(!info)}
@@ -513,9 +514,13 @@ export function LibraryStatus(): React.JSX.Element | null {
       <span className="spacer" />
       <span className="keys">
         <span className="kbd">0–5</span> rate <span className="kbd">6–9</span> label{' '}
-        <span className="kbd">P</span> <span className="kbd">X</span> <span className="kbd">U</span>{' '}
-        flag <span className="kbd">{MOD}G</span> stack <span className="kbd">I</span> info{' '}
-        <span className="kbd">Enter</span> develop <span className="kbd">Ctrl+Shift+S</span> sync
+        <span className="kbd">{keyHint('flag.pick')}</span>{' '}
+        <span className="kbd">{keyHint('flag.reject')}</span>{' '}
+        <span className="kbd">{keyHint('flag.clear')}</span> flag{' '}
+        <span className="kbd">{keyHint('library.stack')}</span> stack{' '}
+        <span className="kbd">{keyHint('library.info')}</span> info{' '}
+        <span className="kbd">{keyHint('library.develop')}</span> develop{' '}
+        <span className="kbd">{keyHint('sync')}</span> sync
       </span>
     </footer>
   )

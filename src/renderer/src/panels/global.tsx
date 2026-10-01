@@ -27,6 +27,7 @@ import { CurvePresets } from './CurvePresets'
 import { AiDenoise } from './AiDenoise'
 import { applyUpright, startGuides } from '../lib/upright'
 import type { UprightMode } from '../../../shared/upright'
+import { withKey } from '../lib/commands'
 
 type Read = (r: Recipe) => number
 type Write = (r: Recipe, v: number) => void
@@ -285,7 +286,7 @@ function WhiteBalanceRows(): React.JSX.Element | null {
         <Toggle
           on={tool === 'wb-picker'}
           onChange={(on) => setTool(on ? 'wb-picker' : 'none')}
-          title="Pick a neutral in the photo (W)"
+          title={withKey('Pick a neutral in the photo', 'tool.wb')}
         >
           ⌖ Pick
         </Toggle>
@@ -408,7 +409,11 @@ export function BasicPanel(): React.JSX.Element | null {
         id="basic.tone"
         title="Tone"
         right={
-          <button className="sm" onClick={() => void auto()} title="Auto tone (Shift+A)">
+          <button
+            className="sm"
+            onClick={() => void auto()}
+            title={withKey('Auto tone', 'autoTone')}
+          >
             Auto
           </button>
         }
@@ -493,7 +498,7 @@ function TatToggle({ target }: { target: 'hsl' | 'curve' }): React.JSX.Element {
         s.setTatTarget(target)
         s.setTool(v ? 'tat' : 'none')
       }}
-      title="Targeted adjustment: drag up or down on the photo (T)"
+      title={withKey('Targeted adjustment: drag up or down on the photo', 'tool.tat')}
     >
       <PathIcon d={TAT_ICON} />
     </Toggle>
@@ -985,7 +990,9 @@ export function DetailPanel(): React.JSX.Element | null {
         {seen.length > 0 && (
           <pre className="report-lines">{seen.map((l) => l.trim()).join('\n')}</pre>
         )}
-        <p className="muted small">Sharpening and noise reduction read true at 100% (Z).</p>
+        <p className="muted small">
+          Sharpening and noise reduction read true at {withKey('100%', 'zoom.toggle')}.
+        </p>
       </Section>
     </ToolPanel>
   )
@@ -1175,7 +1182,7 @@ export function GeometryPanel(): React.JSX.Element | null {
         <Toggle
           on={tool === 'crop'}
           onChange={(on) => setTool(on ? 'crop' : 'none')}
-          title="Crop tool (R)"
+          title={withKey('Crop tool', 'tool.crop')}
         >
           <Icon name="crop" />
           Crop

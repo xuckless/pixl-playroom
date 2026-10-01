@@ -25,6 +25,7 @@ import { autoWbBatch } from '../lib/autowb'
 import { useDevelop } from '../state/develop'
 import { useLibrary, useTargets } from '../state/library'
 import { WatermarkSection } from './WatermarkSection'
+import { keyHint, withKey } from '../lib/commands'
 
 function Field({
   label,
@@ -768,7 +769,12 @@ export function SyncDialog(): React.JSX.Element {
         </button>
       }
     >
-      {!source && <p>Copy settings from a photo first (Ctrl+C in Develop).</p>}
+      {!source && (
+        <p>
+          Copy settings from a photo first ({keyHint('settings.copy') || 'Copy settings'} in
+          Develop).
+        </p>
+      )}
       <p>
         Chosen groups overwrite the same groups on each target. Everything else on the targets is
         kept.
@@ -823,7 +829,7 @@ export function SyncDialog(): React.JSX.Element {
               role="radio"
               aria-checked={wbMode === 'auto'}
               onClick={() => setWbMode('auto')}
-              title="Measure each photo's own white (Ctrl+Shift+U)"
+              title={withKey("Measure each photo's own white", 'autoWbBatch')}
             >
               Auto per photo
             </button>

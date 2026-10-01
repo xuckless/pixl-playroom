@@ -5,11 +5,11 @@ import { keywordLabel, keywordPaths } from '../../../../shared/keywords'
 import { cameraName } from '../../../../shared/smart'
 import { Icon } from '../../components/icons'
 import { Menu, Popover, type MenuItem } from '../../components/Popover'
-import { LABEL_COLOURS, MOD } from '../../lib/helpers'
+import { LABEL_COLOURS } from '../../lib/helpers'
 import { useLibrary, useTargets } from '../../state/library'
+import { keyHint } from '../../lib/commands'
 
 const stop = (e: React.KeyboardEvent): void => e.stopPropagation()
-const SHIFT_MOD = MOD === '⌘' ? '⇧⌘' : 'Ctrl+Shift+'
 
 /** Distinct non-empty values, sorted. */
 const distinct = (values: (string | null)[]): string[] =>
@@ -352,13 +352,13 @@ export function OrganiseMenu(): React.JSX.Element {
   const items: (MenuItem | 'sep')[] = [
     {
       label: 'Stack selection',
-      hint: `${MOD}G`,
+      hint: keyHint('library.stack'),
       disabled: targets.length < 2,
       onSelect: () => void lib().stackTargets()
     },
     {
       label: 'Unstack',
-      hint: `${SHIFT_MOD}G`,
+      hint: keyHint('library.unstack'),
       disabled: !inStack,
       onSelect: () => void lib().unstackTargets()
     },
@@ -370,7 +370,7 @@ export function OrganiseMenu(): React.JSX.Element {
     },
     {
       label: 'Make cover',
-      hint: 'Shift+S',
+      hint: keyHint('library.makeCover'),
       disabled: !stackId || focusItem?.stack?.position === 0,
       onSelect: () => focusItem && void lib().makeCover(focusItem.key)
     },

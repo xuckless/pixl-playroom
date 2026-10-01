@@ -14,6 +14,7 @@ import {
 } from './model'
 import { MaskPresets } from './MaskPresets'
 import { ToolPicker } from './ToolPicker'
+import { withKey } from '../../lib/commands'
 
 const BLENDS: BlendMode[] = [
   'Normal',
@@ -405,7 +406,11 @@ export function MasksPanel(): React.JSX.Element | null {
         <>
           <span className="mask-title">{layer.name}</span>
           <span className="spacer" />
-          <Toggle on={overlay} onChange={setOverlay} title="Show the mask overlay (O)">
+          <Toggle
+            on={overlay}
+            onChange={setOverlay}
+            title={withKey('Show the mask overlay', 'mask.overlay')}
+          >
             <Icon name="overlay" />
             Overlay
           </Toggle>

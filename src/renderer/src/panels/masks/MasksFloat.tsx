@@ -24,6 +24,7 @@ import {
 } from './model'
 import { ToolPicker } from './ToolPicker'
 import { useReorder } from './useReorder'
+import { keyHint, withKey } from '../../lib/commands'
 
 /** The drawing and range tools, one click from the selected mask's add bar. */
 const ADD_TOOLS: { kind: MaskToolKind; icon: IconName; label: string }[] = [
@@ -229,7 +230,7 @@ function ComponentRow({
                 { label: 'Rename', onSelect: () => setRename(c.name ?? '') },
                 {
                   label: 'Duplicate',
-                  hint: on ? 'Ctrl+D' : undefined,
+                  hint: on ? keyHint('mask.duplicate') : undefined,
                   onSelect: () => duplicateComponent(c.id)
                 },
                 'sep',
@@ -442,7 +443,7 @@ function MaskRow({
           </button>
           <button
             className="icon sm mf-act mf-eye"
-            title={layer.enabled ? 'Hide this mask (H)' : 'Show this mask (H)'}
+            title={withKey(layer.enabled ? 'Hide this mask' : 'Show this mask', 'mask.hide')}
             aria-pressed={!layer.enabled}
             onClick={toggleHidden}
           >
@@ -465,7 +466,7 @@ function MaskRow({
                   { label: 'Rename', onSelect: () => setRenaming(layer.name) },
                   {
                     label: 'Duplicate',
-                    hint: selected && !compId ? 'Ctrl+D' : undefined,
+                    hint: selected && !compId ? keyHint('mask.duplicate') : undefined,
                     onSelect: () => duplicateMask(layer.id)
                   },
                   { label: 'Invert', checked: layer.invert, onSelect: invert },
@@ -536,7 +537,7 @@ function OverlayControls(): React.JSX.Element {
   const [open, setOpen] = useState(false)
   return (
     <div className="mf-foot">
-      <label className="check" title="Show the overlay (O)">
+      <label className="check" title={withKey('Show the overlay', 'mask.overlay')}>
         <input type="checkbox" checked={overlay} onChange={(e) => setOverlay(e.target.checked)} />
         Overlay
       </label>
@@ -552,7 +553,9 @@ function OverlayControls(): React.JSX.Element {
         </button>
         {open && (
           <Popover onClose={() => setOpen(false)} align="right" side="top" className="overlay-pop">
-            <span className="micro">Overlay · Shift+O cycles</span>
+            <span className="micro">
+              Overlay{keyHint('mask.overlayMode') && ` · ${keyHint('mask.overlayMode')} cycles`}
+            </span>
             <select
               value={o.mode}
               onChange={(e) => set({ mode: e.target.value as OverlayMode })}
@@ -597,8 +600,10 @@ function OverlayControls(): React.JSX.Element {
               />
               Show all masks
             </label>
-            <span className="micro">Pins · Shift+H cycles</span>
-            <div className="seg" role="group" aria-label="Pins (Shift+H)">
+            <span className="micro">
+              Pins{keyHint('mask.pins') && ` · ${keyHint('mask.pins')} cycles`}
+            </span>
+            <div className="seg" role="group" aria-label={withKey('Pins', 'mask.pins')}>
               {(['auto', 'always', 'never'] as PinsMode[]).map((p) => (
                 <button
                   key={p}

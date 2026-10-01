@@ -6,6 +6,7 @@
 import { create } from 'zustand'
 import { DEFAULT_ENHANCE, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind } from '../../../shared/retouch'
+import type { Bindings, Chord } from '../lib/keys'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 export type CropGuide = 'thirds' | 'grid' | 'golden' | 'diagonal' | 'none'
@@ -128,6 +129,14 @@ interface UiState {
   setFilmstrip(open: boolean): void
   setCropGuide(g: CropGuide): void
   cycleCropGuide(): void
+  /**
+   * The user's own key bindings, by command id: only the ones changed from the
+   * defaults, so a default that changes in a later version still arrives.
+   */
+  keyBindings: Bindings
+  /** Bind a command's keys (`[]` unbinds it), or `null` to go back to its default. */
+  setKeyBinding(id: string, keys: Chord[] | null): void
+  resetKeyBindings(): void
 }
 
 /** localStorage may be missing or refuse writes (private profiles, quota); the app works without it. */
@@ -184,7 +193,16 @@ export const useUi = create<UiState>()(
       cycleCropGuide: () => {
         const i = CROP_GUIDES.findIndex((g) => g.value === get().cropGuide)
         set({ cropGuide: CROP_GUIDES[(i + 1) % CROP_GUIDES.length].value })
-      }
+      },
+      keyBindings: {},
+      setKeyBinding: (id, keys) =>
+        set((s) => {
+          const next = { ...s.keyBindings }
+          if (keys) next[id] = keys
+          else delete next[id]
+          return { keyBindings: next }
+        }),
+      resetKeyBindings: () => set({ keyBindings: {} })
     }),
     {
       name: 'playroom.ui',
@@ -199,6 +217,7 @@ export const useUi = create<UiState>()(
           ...p,
           // Settings saved before a field existed take its default.
           enhance: { ...DEFAULT_ENHANCE, ...p.enhance },
+          keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
           panel: isToolId(p.panel) ? p.panel : current.panel,
           previousPanel: isToolId(p.previousPanel) ? p.previousPanel : current.previousPanel
         }

@@ -2,30 +2,15 @@ import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect } from 'react'
 import type { AiJobEvent } from '../../shared/ai'
 import type { LibrarySource, RenderScale } from '../../shared/ipc'
-import { nextOf } from '../../shared/masks'
-import { RECIPE_GROUPS } from '../../shared/recipe'
 import { api, errorText } from './lib/api'
-import { autoWbBatch } from './lib/autowb'
-import { runJob } from './state/busy'
 import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
 import { Scopes } from './develop/Scopes'
 import { ToolDial } from './develop/ToolDial'
 import { ToolPanelHost } from './develop/ToolPanelHost'
-import { selectPanel, stepPanel, TOOLS } from './develop/tools'
 import { startWheelMemory } from './develop/wheelMemory'
 import { startDenoiseUpkeep } from './lib/denoise'
 import { startHdrUpkeep } from './lib/hdr'
-import { deleteSpot } from './lib/heal'
-import {
-  componentLabel,
-  deleteComponent,
-  deleteMask,
-  duplicateComponent,
-  duplicateMask,
-  patchMask,
-  startMaskTool
-} from './panels/masks/model'
 import { DevelopToolbar } from './shell/DevelopToolbar'
 import { DevelopIdentity } from './shell/IdentityBar'
 import { LeftRail } from './shell/LeftRail'
@@ -33,7 +18,8 @@ import { Splash } from './shell/Splash'
 import { useDevelop } from './state/develop'
 import { useBoot } from './state/boot'
 import { useLibrary } from './state/library'
-import { OVERLAY_MODES, useUi } from './state/ui'
+import { commandFor, COMMANDS, currentBindings } from './lib/commands'
+import { chordOf } from './lib/keys'
 import { ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
@@ -43,10 +29,9 @@ import { CollectionDialog } from './views/library/CollectionDialog'
 import { InfoDrawer } from './views/library/InfoDrawer'
 import { Sidebar } from './views/library/Sidebar'
 import { FloatingToolbar } from './views/loupe/FloatingToolbar'
-import { flashHud } from './views/loupe/hudNote'
 import { MasksFloat } from './panels/masks/MasksFloat'
 import { Loupe } from './views/loupe/Loupe'
-import { loupeZoom, setSpace } from './views/loupe/zoom'
+import { setSpace } from './views/loupe/zoom'
 
 /**
  * Develop: identity and tools across the top; the rail, the loupe and the
@@ -337,265 +322,17 @@ function useShortcuts(): void {
       // A focused slider owns its arrow keys.
       if (t.tagName === 'INPUT' && e.key.startsWith('Arrow')) return
       const lib = useLibrary.getState()
-      const dev = useDevelop.getState()
       // An open dialog has the keyboard (it closes itself on Escape).
       if (lib.dialog) return
-      const mod = e.ctrlKey || e.metaKey
-      const inDevelop = lib.view === 'develop'
-      const k = e.key
-      // ── both views ──
-      if (!mod && k >= '0' && k <= '5') return void lib.setMeta({ rating: Number(k) })
-      if (!mod && k >= '6' && k <= '9') {
-        const label = (['red', 'yellow', 'green', 'blue'] as const)[Number(k) - 6]
-        const current = lib.items.find((i) => i.key === lib.focus)?.label
-        return void lib.setMeta({ label: current === label ? null : label })
-      }
-      if (!mod && (k === 'p' || k === 'P')) return void lib.setMeta({ flag: 'pick' })
-      if (!mod && (k === 'x' || k === 'X')) return void lib.setMeta({ flag: 'reject' })
-      if (!mod && (k === 'u' || k === 'U')) return void lib.setMeta({ flag: null })
-      if (mod && e.shiftKey && (k === 'e' || k === 'E')) return lib.setDialog('export')
-      if (mod && e.shiftKey && (k === 's' || k === 'S')) return lib.setDialog('sync')
-      if (mod && e.shiftKey && (k === 'u' || k === 'U')) return void autoWbBatch(lib.targets())
-      if (k === 'ArrowRight' || k === 'ArrowLeft') {
-        const vis = lib.visible()
-        const i = vis.findIndex((it) => it.key === lib.focus)
-        const next = vis[Math.min(vis.length - 1, Math.max(0, i + (k === 'ArrowRight' ? 1 : -1)))]
-        if (!next) return
-        lib.setFocus(next.key)
-        if (inDevelop) void dev.open(next.key)
-        return e.preventDefault()
-      }
-      if (!inDevelop) {
-        if (k === 'Enter' || k === 'd' || k === 'D' || k === 'e' || k === 'E') {
-          if (!lib.focus) return
-          lib.setView('develop')
-          return void dev.open(lib.focus)
-        }
-        if (mod && (k === 'a' || k === 'A')) {
-          lib.selectAll()
-          return e.preventDefault()
-        }
-        if (mod && (k === 'v' || k === 'V')) return lib.setDialog('sync')
-        // Stacks: ⌘G stacks the selection under the focused photo, ⇧⌘G undoes
-        // it, S opens or closes the focused stack, Shift+S makes it the cover.
-        if (mod && (k === 'g' || k === 'G')) {
-          void (e.shiftKey ? lib.unstackTargets() : lib.stackTargets())
-          return e.preventDefault()
-        }
-        const focused = lib.items.find((i) => i.key === lib.focus)
-        if (!mod && !e.shiftKey && k === 's' && focused?.stack)
-          return lib.toggleStack(focused.stack.id)
-        if (!mod && e.shiftKey && k === 'S' && focused?.stack)
-          return void lib.makeCover(focused.key)
-        const ui = useUi.getState()
-        if (!mod && (k === 'i' || k === 'I')) return ui.setLibraryInfo(!ui.libraryInfo)
-        if ((!mod && k === '\\') || (mod && e.shiftKey && (k === 'l' || k === 'L'))) {
-          ui.setLibrarySidebar(!ui.librarySidebar)
-          return e.preventDefault()
-        }
-        return
-      }
-      // ── develop ──
-      if (k === 'g' || k === 'G' || k === 'Escape') {
-        if (k === 'Escape' && dev.tool !== 'none') {
-          const wasCrop = dev.tool === 'crop'
-          dev.setTool('none')
-          const u = useUi.getState()
-          if (wasCrop && u.panel === 'crop') u.setPanel(u.previousPanel)
-          return
-        }
-        if (k === 'Escape' && dev.zoom.scale !== 'fit') return loupeZoom.fit()
-        return lib.setView('library')
-      }
-      // ⌘+ / ⌘− / ⌘0 zoom the loupe (the page itself does not zoom).
-      if (mod && (k === '=' || k === '+')) {
-        loupeZoom.in()
-        return e.preventDefault()
-      }
-      if (mod && (k === '-' || k === '_')) {
-        loupeZoom.out()
-        return e.preventDefault()
-      }
-      if (mod && k === '0') {
-        loupeZoom.fit()
-        return e.preventDefault()
-      }
-      if (mod && !e.shiftKey && (k === 'z' || k === 'Z')) return dev.undo()
-      if (mod && e.shiftKey && (k === 'z' || k === 'Z')) return dev.redoStep()
-      // The thumb-wheel: Ctrl/Cmd+1…9 jump to a tool, Ctrl/Cmd+↑/↓ turn it.
-      if (mod && !e.shiftKey && k >= '1' && k <= '9') {
-        const t = TOOLS[Number(k) - 1]
-        if (t) selectPanel(t.id)
-        return e.preventDefault()
-      }
-      if (mod && (k === 'ArrowUp' || k === 'ArrowDown')) {
-        stepPanel(k === 'ArrowUp' ? -1 : 1)
-        return e.preventDefault()
-      }
-      if (mod && (k === 'c' || k === 'C') && dev.recipe) {
-        const groups = RECIPE_GROUPS.filter(
-          (g) => g !== 'crop' && g !== 'orientation' && g !== 'localAdjustments' && g !== 'retouch'
-        )
-        lib.setClipboard({
-          recipe: structuredClone(dev.recipe),
-          groups: [...groups],
-          source: dev.session?.key ?? null
-        })
-        return lib.say('Settings copied (Ctrl+V to paste, Ctrl+Shift+S to choose)')
-      }
-      if (mod && (k === 'v' || k === 'V') && lib.clipboard && dev.recipe && dev.session) {
-        const targets = lib.targets()
-        void api.library
-          .applyRecipe(
-            targets,
-            lib.clipboard.recipe,
-            lib.clipboard.groups,
-            lib.clipboard.source ?? undefined
-          )
-          .then(async (items) => {
-            lib.patchItems(items)
-            const s = await api.develop.open(dev.session!.key)
-            useDevelop.setState({ recipe: s.recipe })
-            lib.say(`Pasted onto ${targets.length} photo${targets.length === 1 ? '' : 's'}`)
-          })
-        return
-      }
-      if (mod && k === "'") {
-        if (dev.session) void api.library.createCopy(dev.session.key).then(() => lib.refresh())
-        return
-      }
-      const masksOpen = useUi.getState().panel === 'masks'
-      const healOpen = useUi.getState().panel === 'heal'
-      // ⌘D duplicates the selected mask component, or else the selected mask.
-      if (mod && !e.shiftKey && (k === 'd' || k === 'D') && masksOpen && dev.layerId) {
-        e.preventDefault()
-        return dev.compId ? duplicateComponent(dev.compId) : duplicateMask(dev.layerId)
-      }
-      if (mod) return
-      // Delete / Backspace in Heal: the selected spot.
-      if ((k === 'Delete' || k === 'Backspace') && healOpen && t.tagName !== 'INPUT') {
-        if (dev.spotId) deleteSpot(dev.spotId)
-        return
-      }
-      // Q: the Heal tool (Lightroom's spot removal key).
-      if (k === 'q' || k === 'Q')
-        return selectPanel(healOpen ? useUi.getState().previousPanel : 'heal')
-      // Delete / Backspace: the selected mask component, or else the selected mask.
-      if ((k === 'Delete' || k === 'Backspace') && masksOpen && t.tagName !== 'INPUT') {
-        const layer = dev.recipe?.layers.find((l) => l.id === dev.layerId)
-        if (!layer) return
-        e.preventDefault()
-        const comp = layer.components.find((c) => c.id === dev.compId)
-        if (comp) deleteComponent(comp.id)
-        else deleteMask(layer.id)
-        return lib.say(`Deleted ${comp ? componentLabel(comp) : layer.name} — Ctrl+Z to undo`)
-      }
-      if (k === '\\') return dev.setCompare(dev.compare === 'before' ? 'off' : 'before')
-      if (k === 'y' || k === 'Y') return dev.setCompare(dev.compare === 'split' ? 'off' : 'split')
-      if (k === 'j' || k === 'J') return dev.setClipping(!dev.clipping)
-      if (k === 'z' || k === 'Z') return loupeZoom.toggle()
-      // Space held: drag to pan the zoomed picture.
-      if (k === ' ') {
-        setSpace(true)
-        return e.preventDefault()
-      }
-      const ui = useUi.getState()
-      if (k === 'r' || k === 'R') {
-        // R toggles the crop tool, returning to the tool that was showing.
-        if (dev.tool === 'crop') {
-          dev.setTool('none')
-          return selectPanel(ui.panel === 'crop' ? ui.previousPanel : ui.panel)
-        }
-        return selectPanel('crop', { tool: 'crop' })
-      }
-      // Brush and lasso: into the selected mask, or (as in Lightroom) a new one.
-      if (k === 'b' || k === 'B' || k === 'k' || k === 'K') {
-        if (dev.tool === 'brush') return dev.setTool('none')
-        if (!dev.layerId) return startMaskTool('brush')
-        return selectPanel('masks', { tool: 'brush' })
-      }
-      if (k === 'l' || k === 'L') {
-        if (dev.tool === 'polygon') return dev.setTool('none')
-        if (!dev.layerId) return startMaskTool('polygon')
-        return selectPanel('masks', { tool: 'polygon' })
-      }
-      // M: linear gradient, Shift+M: radial gradient (into the selected mask, or a new one).
-      if (k === 'm' || k === 'M') {
-        const t = e.shiftKey ? 'radial' : 'linear'
-        if (dev.tool === t) return dev.setTool('none')
-        if (!dev.layerId) {
-          startMaskTool(t)
-          return
-        }
-        return selectPanel('masks', { tool: t })
-      }
-      // H in Heal shows or hides the spots.
-      if ((k === 'h' || k === 'H') && healOpen) return ui.setHeal({ showAll: !ui.heal.showAll })
-      // H hides or shows the selected mask; Shift+H cycles the pins Auto → Always → Never.
-      if (k === 'h' && masksOpen && dev.layerId) {
-        const layer = dev.recipe?.layers.find((l) => l.id === dev.layerId)
-        if (!layer) return
-        return patchMask(layer.id, layer.enabled ? 'Hide mask' : 'Show mask', (l) => {
-          l.enabled = !l.enabled
-        })
-      }
-      if (k === 'H' || k === 'h') {
-        const order = ['auto', 'always', 'never'] as const
-        const cur = order.indexOf(ui.maskOverlay.pins)
-        return ui.setMaskOverlay({ pins: order[(cur + 1) % order.length] })
-      }
-      if (k === 'w' || k === 'W')
-        return dev.setTool(dev.tool === 'wb-picker' ? 'none' : 'wb-picker')
-      // T: the targeted adjustment tool, for the HSL or Tone Curve panel on show.
-      if ((k === 't' || k === 'T') && (ui.panel === 'hsl' || ui.panel === 'curve')) {
-        if (dev.tool === 'tat') return dev.setTool('none')
-        dev.setTatTarget(ui.panel)
-        return dev.setTool('tat')
-      }
-      // Shift+O cycles how the overlay shows a mask (and shows it).
-      if (k === 'O' && e.shiftKey && dev.tool !== 'crop') {
-        const mode = nextOf(
-          OVERLAY_MODES.map((m) => m.value),
-          ui.maskOverlay.mode
-        )
-        ui.setMaskOverlay({ mode })
-        dev.setOverlay(true)
-        return flashHud(OVERLAY_MODES.find((m) => m.value === mode)?.label ?? mode)
-      }
-      if (k === 'o' || k === 'O') {
-        // In the crop tool O cycles the composition guides, as in Lightroom.
-        if (dev.tool === 'crop') return ui.cycleCropGuide()
-        return dev.setOverlay(!dev.overlay)
-      }
-      if ((k === '[' || k === ']') && healOpen) {
-        const size = ui.heal.size
-        return ui.setHeal({
-          size: k === '[' ? Math.max(0.002, size / 1.15) : Math.min(0.25, size * 1.15)
-        })
-      }
-      if (k === '[' || k === ']') {
-        const size = ui.brushes[ui.brushSlot].size
-        return ui.setBrush({
-          size:
-            k === '['
-              ? Math.max(4, Math.round(size / 1.15))
-              : Math.min(500, Math.round(size * 1.15))
-        })
-      }
-      if (k === 'A' && e.shiftKey && dev.session && dev.recipe) {
-        const key = dev.session.key
-        void runJob('Auto tone', () => api.develop.autoTone(key), {
-          detail: 'Measuring the picture with the tone sliders at zero'
-        })
-          .then((basic) => {
-            const r = useDevelop.getState().recipe
-            if (r) useDevelop.getState().replace({ ...r, basic }, 'Auto tone')
-          })
-          .catch((err) => lib.say(errorText(err), 'error'))
-      }
+      const cmd = commandFor(e, lib.view === 'develop')
+      if (cmd) cmd.run(e)
     }
     const onKeyUp = (e: KeyboardEvent): void => {
-      if (e.key === ' ') setSpace(false)
+      // A held command lets go when its key does, whatever else is still down.
+      const code = chordOf(e).code
+      const bindings = currentBindings()
+      for (const c of COMMANDS)
+        if (c.hold && bindings[c.id]?.some((b) => b.code === code)) setSpace(false)
     }
     const onBlur = (): void => setSpace(false)
     window.addEventListener('keydown', onKey)

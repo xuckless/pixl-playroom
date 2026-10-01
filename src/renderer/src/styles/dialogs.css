@@ -362,3 +362,106 @@ button.link:hover {
   width: 100%;
   min-width: 0;
 }
+
+/* Settings → Key bindings */
+.modal.prefs.keys {
+  width: 680px;
+}
+.modal.prefs .tabs {
+  align-self: flex-start;
+}
+.keybinds {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.keybinds p {
+  margin: 0;
+}
+.keybinds-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.keybinds-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+.keybinds-search input {
+  flex: 1;
+  min-width: 0;
+}
+.keybinds-conflict {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(232, 197, 71, 0.45);
+  border-radius: var(--r);
+  background: rgba(232, 197, 71, 0.08);
+  color: var(--text);
+}
+.keybinds-group h3 {
+  margin: 6px 0 4px;
+  font-family: var(--font);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.keybind {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--hair);
+}
+.keybind-label {
+  color: var(--text2);
+}
+.keybind.changed .keybind-label {
+  color: var(--acc);
+}
+.keybind-keys {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+button.keybind-key {
+  height: auto;
+  min-width: 28px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+button.keybind-key:hover {
+  border-color: var(--acc);
+}
+button.keybind-key.waiting {
+  color: var(--acc);
+  border-color: var(--acc);
+  box-shadow: 0 0 12px -4px var(--glow);
+}
+.keybind-add,
+.keybind-reset {
+  width: 24px;
+  height: 24px;
+  opacity: 0.6;
+}
+.keybind-add:hover,
+.keybind-reset:hover:not(:disabled) {
+  opacity: 1;
+}
+.keybind-reset:disabled {
+  visibility: hidden;
+}

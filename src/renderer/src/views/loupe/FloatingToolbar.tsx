@@ -7,6 +7,7 @@ import { CROP_GUIDES, useUi, type BrushSlot } from '../../state/ui'
 import { addLabel, addPickHint } from '../../lib/addpick'
 import { applyGuides } from '../../lib/upright'
 import { MAX_GUIDES } from './UprightGuides'
+import { withKey } from '../../lib/commands'
 
 /** A compact range for the floating bar: label, rail and value. */
 export function BarRange({
@@ -67,7 +68,12 @@ function CropBar(): React.JSX.Element | null {
           </option>
         ))}
       </select>
-      <div className="seg" role="group" aria-label="Guides (O)" title="Guides (O)">
+      <div
+        className="seg"
+        role="group"
+        aria-label={withKey('Guides', 'crop.guides')}
+        title={withKey('Guides', 'crop.guides')}
+      >
         {CROP_GUIDES.map((g) => (
           <button
             key={g.value}

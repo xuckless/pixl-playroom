@@ -3,6 +3,7 @@ import type { HueBin, ImageStats } from '../../../shared/engine-types'
 import type { HslBand } from '../../../shared/recipe'
 import { stopsBins, stopsX } from '../../../shared/scopes'
 import { bandOfHue } from '../lib/helpers'
+import { withKey } from '../lib/commands'
 
 function areaPath(counts: number[], w: number, h: number, max: number, log: boolean): string {
   const n = counts.length
@@ -90,7 +91,10 @@ export function Histogram({
       </svg>
       <button
         className={`clip-marker low ${lowClip > 0.001 ? 'hot' : ''} ${clipping ? 'on' : ''}`}
-        title={`Shadows clipped: ${(lowClip * 100).toFixed(2)}% — click to show (J)`}
+        title={withKey(
+          `Shadows clipped: ${(lowClip * 100).toFixed(2)}% — click to show`,
+          'view.clipping'
+        )}
         onClick={() => onClipping(!clipping)}
       >
         ◣
@@ -99,8 +103,14 @@ export function Histogram({
         className={`clip-marker high ${highClip > 0.001 ? 'hot' : ''} ${clipping ? 'on' : ''}`}
         title={
           showHdr
-            ? `Above the ${peak.toFixed(1)}× peak: ${(highClip * 100).toFixed(2)}% — click to show (J)`
-            : `Highlights clipped: ${(highClip * 100).toFixed(2)}% — click to show (J)`
+            ? withKey(
+                `Above the ${peak.toFixed(1)}× peak: ${(highClip * 100).toFixed(2)}% — click to show`,
+                'view.clipping'
+              )
+            : withKey(
+                `Highlights clipped: ${(highClip * 100).toFixed(2)}% — click to show`,
+                'view.clipping'
+              )
         }
         onClick={() => onClipping(!clipping)}
       >

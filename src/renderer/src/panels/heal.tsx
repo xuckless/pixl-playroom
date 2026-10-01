@@ -9,6 +9,7 @@ import { Section, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
 import { changeSpot, commitSpot, deleteSpot, findSource, spotName } from '../lib/heal'
 import { useDevelop } from '../state/develop'
 import { useUi } from '../state/ui'
+import { withKey } from '../lib/commands'
 
 const MODES: { value: SpotKind; label: string }[] = [
   { value: 'heal', label: 'Heal' },
@@ -84,7 +85,7 @@ export function HealPanel(): React.JSX.Element | null {
         <Toggle
           on={heal.showAll}
           onChange={(on) => setHeal({ showAll: on })}
-          title="Show every spot's outline (H); otherwise a spot shows while it is edited or under the pointer"
+          title={`${withKey("Show every spot's outline", 'heal.showAll')}; otherwise a spot shows while it is edited or under the pointer`}
         >
           Show all spots
         </Toggle>

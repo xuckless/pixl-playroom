@@ -1,13 +1,15 @@
 /**
- * Settings (⌘, / Ctrl+,): the licence, updates, crash reports, and the legal
- * pages. And the one question the first launch asks: may crash reports be sent?
+ * Settings (⌘, / Ctrl+,): the licence, updates, crash reports, the legal
+ * pages, and the key bindings. And the one question the first launch asks:
+ * may crash reports be sent?
  */
 import { useEffect, useState } from 'react'
 import type { Prefs, UpdateState } from '../../../shared/ipc'
 import { ACCOUNT_URL, BUY_URL, type LicenceStatus } from '../../../shared/licence'
-import { Modal, Select } from '../components/ui'
+import { Modal, Select, Tabs } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
+import { KeyBindingsSection } from './KeyBindings'
 import { ModelsSection } from './ModelsSection'
 
 const LEGAL = 'https://playroom.pixlfoundation.com/legal'
@@ -149,6 +151,28 @@ function useUpdates(): UpdateState | null {
 
 export function PreferencesDialog(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
+  const [tab, setTab] = useState<'general' | 'keys'>('general')
+  return (
+    <Modal
+      title="Settings"
+      onClose={() => setDialog(null)}
+      icon="settings"
+      className={`prefs${tab === 'keys' ? ' keys' : ''}`}
+    >
+      <Tabs
+        value={tab}
+        tabs={[
+          { value: 'general', label: 'General' },
+          { value: 'keys', label: 'Key bindings' }
+        ]}
+        onChange={setTab}
+      />
+      {tab === 'keys' ? <KeyBindingsSection /> : <GeneralSettings />}
+    </Modal>
+  )
+}
+
+function GeneralSettings(): React.JSX.Element {
   const say = useLibrary((s) => s.say)
   const update = useUpdates()
   const [prefs, setPrefs] = useState<Prefs | null>(null)
@@ -157,7 +181,7 @@ export function PreferencesDialog(): React.JSX.Element {
   }, [])
   const busy = update?.phase === 'checking' || update?.phase === 'downloading'
   return (
-    <Modal title="Settings" onClose={() => setDialog(null)} icon="settings" className="prefs">
+    <>
       <LicenceSection />
       <fieldset>
         <legend>Updates</legend>
@@ -237,7 +261,7 @@ export function PreferencesDialog(): React.JSX.Element {
           </button>
         </div>
       </fieldset>
-    </Modal>
+    </>
   )
 }
 
