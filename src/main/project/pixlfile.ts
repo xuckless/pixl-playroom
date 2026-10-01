@@ -203,7 +203,10 @@ export class PixlFile {
     this.path = path
     this.db = db
     // Every open: a rollback journal (never WAL), every commit on disk.
-    db.exec('PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON;')
+    // A sync client or a second app reading it is waited for, not failed on.
+    db.exec(
+      'PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;'
+    )
     this.history = new HistoryTable({
       prepare: (sql) => this.prepare(sql),
       tx: (fn) => this.tx(fn)
@@ -716,6 +719,8 @@ export class ProjectPool {
   private readonly idleMs: number
   /** The stamp each project was left at by this pool's own last use (kept after it closes). */
   private readonly own = new Map<string, string | null>()
+  /** Projects kept open while idle (the photo open in Develop): its statements stay prepared. */
+  private readonly pinned = new Set<string>()
 
   constructor(idleMs = 2000) {
     this.idleMs = idleMs
@@ -738,8 +743,25 @@ export class ProjectPool {
     } finally {
       e.stamp = fileStamp(path)
       this.own.set(path, e.stamp)
-      e.timer = setTimeout(() => this.drop(path), this.idleMs)
-      e.timer.unref?.()
+      e.timer = this.pinned.has(path) ? null : this.idleTimer(path)
+    }
+  }
+
+  private idleTimer(path: string): ReturnType<typeof setTimeout> {
+    const t = setTimeout(() => this.drop(path), this.idleMs)
+    t.unref?.()
+    return t
+  }
+
+  /** Keep a project open while idle (`on`), or let it close after its idle time again. */
+  pin(path: string, on: boolean): void {
+    const e = this.open.get(path)
+    if (on) {
+      this.pinned.add(path)
+      if (e?.timer) clearTimeout(e.timer)
+      if (e) e.timer = null
+    } else if (this.pinned.delete(path) && e && !e.timer) {
+      e.timer = this.idleTimer(path)
     }
   }
 

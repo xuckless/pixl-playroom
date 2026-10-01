@@ -291,20 +291,20 @@ Biggest felt lag first: slider jank, save cost, background contention.
 
 After: Pass 13.
 
-- [ ] **S** · **The open photo's project closes after 2 s idle**
+- [x] **S** · **The open photo's project closes after 2 s idle**
       (`pixlfile.ts:665`), dropping its statement cache. Keep the Develop
       photo's project open until its session closes.
-- [ ] **S** · **No busy timeout, loose transactions, a missing index**: set
+- [x] **S** · **No busy timeout, loose transactions, a missing index**: set
       `busy_timeout` 2–5 s; wrap `mirror` and `openData`'s plane copies in a
       transaction; `CREATE INDEX photos_project ON photos(project_path)`.
-- [ ] **S** · **Opening a photo waits on sequential calls**
+- [x] **S** · **Opening a photo waits on sequential calls**
       (`develop.ts:311-322`): run `open` and `historyList` together; compare
       recipes with a deep-equal, not `JSON.stringify` (key order makes a
       spurious "Opened as saved").
-- [ ] **S** · **`isEdited` does ~76 deep clones per call** (19 groups × 2
+- [x] **S** · **`isEdited` does ~76 deep clones per call** (19 groups × 2
       `applyGroups`), per photo in the indexer (`service.ts:703, 713, 1608,
     1710`). Compare each group's fields directly; stop at the first change.
-- [ ] **S** · **A thumbnail render and preview write at every 600 ms pause**
+- [x] **S** · **A thumbnail render and preview write at every 600 ms pause**
       (`render.ts:479, 489`; `library.ts:353-418`): a full graded render on the
       background engine that warps the lens live. Queue them on session close
       or after a few seconds idle.

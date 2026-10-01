@@ -342,10 +342,13 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     // A later open (or a close) took over: what this one found is not shown.
     const stale = (): boolean => token !== openToken
     try {
-      const session = await api.develop.open(key)
+      // Asked together: neither waits on the other.
+      const [session, listed] = await Promise.all([
+        api.develop.open(key),
+        api.develop.historyList(key)
+      ])
       if (stale()) return
-      let history = await api.develop.historyList(key)
-      if (stale()) return
+      let history = listed
       if (!history.base) {
         history = await api.develop.historyAppend(key, 'Opened', session.recipe)
       } else if (!sameValue(replay(history.base.recipe, history.steps), session.recipe)) {

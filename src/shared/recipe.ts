@@ -957,17 +957,66 @@ export function applyFields(to: Recipe, from: Recipe, fields: string[][]): Recip
   return r
 }
 
-/** The groups where `a` and `b` differ — what a preset or a sync would carry. */
-export function changedGroups(a: Recipe, b: Recipe): RecipeGroup[] {
-  const empty = defaultRecipe(false)
-  return RECIPE_GROUPS.filter(
-    (g) => !sameValue(applyGroups(empty, a, [g]), applyGroups(empty, b, [g]))
-  )
+/** What a group carries of a recipe (the fields `applyGroups` copies), read in place. */
+function groupValues(r: Recipe, g: RecipeGroup): unknown[] {
+  const d = r.detail
+  switch (g) {
+    case 'profile':
+      return [r.profile, r.profileAmount]
+    case 'whiteBalance':
+      return [r.wb]
+    case 'basicTone':
+      return [r.basic]
+    case 'presence':
+      return [r.presence]
+    case 'toneCurve':
+      return [r.toneCurve]
+    case 'hsl':
+      return [r.hsl, r.bwMix, r.pointColors]
+    case 'colorGrade':
+      return [r.colorGrade]
+    case 'detailSharpen':
+      return [d.sharpenAmount, d.sharpenRadius, d.sharpenDetail, d.sharpenMasking]
+    case 'detailNoise':
+      return [d.noiseLuminance, d.noiseLuminanceDetail, d.noiseColor, d.noiseColorDetail, d.ai]
+    case 'lens':
+      return [r.lens]
+    case 'retouch':
+      return [r.retouch]
+    case 'effects':
+      return [r.effects]
+    case 'calibration':
+      return [r.calibration]
+    case 'treatment':
+      return [r.treatment]
+    case 'crop':
+      return [r.geometry.crop, r.geometry.straighten, r.geometry.aspect]
+    case 'upright':
+      return [r.geometry.upright]
+    case 'orientation':
+      return [r.geometry.quarterTurns, r.geometry.flipHorizontal]
+    case 'localAdjustments':
+      return [r.layers]
+    case 'custom':
+      return [r.custom]
+    case 'hdr':
+      return [r.gainMap]
+  }
 }
 
-/** Whether a recipe differs from the default for its kind of file. */
+const groupChanged = (a: Recipe, b: Recipe, g: RecipeGroup): boolean =>
+  !sameValue(groupValues(a, g), groupValues(b, g))
+
+/** The groups where `a` and `b` differ — what a preset or a sync would carry. */
+export function changedGroups(a: Recipe, b: Recipe): RecipeGroup[] {
+  return RECIPE_GROUPS.filter((g) => groupChanged(a, b, g))
+}
+
+/** Whether a recipe differs from the default for its kind of file (stopping at the first change). */
 export function isEdited(r: Recipe, isRaw: boolean): boolean {
-  return r.pixels.length > 0 || changedGroups(r, defaultRecipe(isRaw)).length > 0
+  if (r.pixels.length > 0) return true
+  const def = defaultRecipe(isRaw)
+  return RECIPE_GROUPS.some((g) => groupChanged(r, def, g))
 }
 
 export function newId(): string {

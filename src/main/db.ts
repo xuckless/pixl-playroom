@@ -243,7 +243,9 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
       size INTEGER NOT NULL,
       origin_path TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS projects_name ON projects(name, size);`)
+    CREATE INDEX IF NOT EXISTS projects_name ON projects(name, size);`),
+  // 6. Photos by project: who has a project (linking, a project gone), without a scan.
+  (db) => db.exec('CREATE INDEX IF NOT EXISTS photos_project ON photos(project_path)')
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -338,7 +340,9 @@ export class Store {
 
   static open(file: string): Store {
     const db = new DatabaseSync(file)
-    db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;')
+    // Another process holding a write (a second window's index, a backup)
+    // is waited for, not failed on at once.
+    db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 3000;')
     db.exec(SCHEMA)
     migrate(db)
     return new Store(db)

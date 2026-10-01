@@ -118,6 +118,8 @@ const SETTLE_LARGE_MS = 500
 const EMPTY = 'empty'
 /** How long an edit must rest before the sidecar is written. */
 const SAVE_MS = 600
+/** How long editing pauses before an open photo's thumbnail is made again. */
+const THUMB_IDLE_MS = 4000
 /** Picture files of each kind kept on disk besides any a kept event names. */
 const KEEP_RENDERS = 6
 
@@ -518,9 +520,8 @@ class Session {
   persist(): Promise<void> {
     clearTimeout(this.save)
     this.save = undefined
-    const { photoId, copyId } = parseKey(this.key)
     return this.owner.library.saveRecipe(this.key, this.recipe).then(
-      () => this.owner.library.queueThumb(photoId, copyId, true),
+      () => this.thumbLater(),
       (err) => {
         log.error('saving recipe failed', err)
         this.owner.send(IPC.develop.renderError, {
@@ -537,8 +538,26 @@ class Session {
     if (recipe !== this.recipe || !this.save) return
     clearTimeout(this.save)
     this.save = undefined
-    const { photoId, copyId } = parseKey(this.key)
-    this.owner.library.queueThumb(photoId, copyId, true)
+    this.thumbLater()
+  }
+
+  private thumbTimer: NodeJS.Timeout | undefined
+
+  /**
+   * The thumbnail (and the project's preview) once editing pauses for a
+   * while, or the photo closes: a full graded render on the background
+   * engine is not made at every save.
+   */
+  private thumbLater(now = false): void {
+    clearTimeout(this.thumbTimer)
+    this.thumbTimer = undefined
+    const queue = (): void => {
+      this.thumbTimer = undefined
+      const { photoId, copyId } = parseKey(this.key)
+      this.owner.library.queueThumb(photoId, copyId, true)
+    }
+    if (now) return queue()
+    this.thumbTimer = setTimeout(queue, THUMB_IDLE_MS)
   }
 
   setView(view: ViewState): void {
@@ -1498,7 +1517,14 @@ class Session {
     this.regionAbort?.abort()
     // Corrected proxies for any other correction are no longer read.
     void pruneLensed(this.row, this.key, this.lensKey(this.recipe))
-    return this.save ? this.persist() : Promise.resolve()
+    const saved = (this.save ? this.persist() : Promise.resolve()).then(() => {
+      // A thumbnail still waiting for a pause is made now.
+      if (this.thumbTimer) this.thumbLater(true)
+    })
+    // Its project may close when idle again, once its last edit is saved.
+    return saved.then(() =>
+      this.owner.library.index.holdOpen(this.key, false).catch(() => undefined)
+    )
   }
 }
 
@@ -1563,6 +1589,7 @@ export class DevelopSessions {
       this.closeOthers(key)
       session = new Session(key, row, graded, px, recipe, this, info, hdr?.master ?? null)
       this.sessions.set(key, session)
+      void this.library.index.holdOpen(key, true).catch(() => undefined)
       // A photo with pixel steps opens on them.
       session.workingJob = session.refreshWorking()
       await session.workingJob

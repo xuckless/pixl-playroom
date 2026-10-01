@@ -223,6 +223,21 @@ export class IndexService {
     this.xmp = opts.xmp ?? exiftoolXmp()
   }
 
+  /** Photos open in Develop: their projects stay open between edits (see `holdOpen`). */
+  private readonly held = new Set<number>()
+
+  /**
+   * Keep a photo's project open while it is in Develop (`on`), so every edit
+   * finds its connection and prepared statements; let it close when it leaves.
+   */
+  holdOpen(key: string, on: boolean): void {
+    const { photoId } = parseKey(key)
+    if (on) this.held.add(photoId)
+    else this.held.delete(photoId)
+    const path = this.projectOf(this.row(key))
+    if (path) this.projects.pin(path, on)
+  }
+
   close(): void {
     this.closed = true
     this.projects.drop()
@@ -583,6 +598,7 @@ export class IndexService {
     this.mirror(row, truth, mtime, 'project')
     // Main makes the project's copy of the original (it has the engine).
     this.emit({ name: 'project', key: keyOf(row.id, null) })
+    if (this.held.has(row.id)) this.projects.pin(path, true)
     return path
   }
 
@@ -751,6 +767,16 @@ export class IndexService {
     sidecar: Sidecar,
     mtime: number | null,
     from: 'sidecar' | 'project' = 'sidecar'
+  ): void {
+    // One transaction: the photo's row, its copies and its stack change together.
+    this.store.tx(() => this.mirrorRows(row, sidecar, mtime, from))
+  }
+
+  private mirrorRows(
+    row: PhotoRow,
+    sidecar: Sidecar,
+    mtime: number | null,
+    from: 'sidecar' | 'project'
   ): void {
     const raw = row.is_raw === 1
     const p = sidecar.photo
@@ -1613,9 +1639,11 @@ export class IndexService {
     // (its history names them by reference).
     const project = this.projectOf(row)
     if (project)
-      this.projects.use(project, (p) => {
-        for (const { ref, png } of p.planes()) this.store.putPlane(ref, png)
-      })
+      this.projects.use(project, (p) =>
+        this.store.tx(() => {
+          for (const { ref, png } of p.planes()) this.store.putPlane(ref, png)
+        })
+      )
     const it = itemOf(this.sidecar(row), parseKey(key).copyId)
     return {
       row: this.withOriginal(row),
