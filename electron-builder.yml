@@ -59,6 +59,19 @@ asarUnpack:
 npmRebuild: false
 nodeGypRebuild: false
 
+# Electron's fuses, flipped in the packaged binary before it is signed. The
+# app can't be run as plain Node or opened to a debugger, and it loads only
+# its own app.asar, checked against the hash signed into the app, so an
+# edited app.asar (say, with the beta gate or the licence check cut out)
+# refuses to start instead of running. Check with
+# `npx @electron/fuses read --app <the .app or .exe>`.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+
 # Fails the build before anything is signed, zipped or uploaded when the
 # packaged app carries a binding for the wrong platform or arch, or more than
 # one of them.

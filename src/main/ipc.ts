@@ -4,6 +4,8 @@ import log from 'electron-log/main'
 import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { cpus } from 'os'
+import { pathToFileURL } from 'url'
+import { is } from '@electron-toolkit/utils'
 import type { ExportSettings } from '../shared/export'
 import {
   IPC,
@@ -63,6 +65,8 @@ import type { Exporter } from './exporter'
 import { keyOf, parseKey } from './keys'
 import type { OriginalEmbedder } from './project/embed'
 import type { Library } from './library'
+import { MAIN_DIR } from './dirs'
+import { appPage } from './guard'
 import { takeOpens } from './open'
 import { paths } from './paths'
 import type { DevelopSessions } from './render'
@@ -76,8 +80,18 @@ function toAppError(err: unknown): AppError {
   return { message: err instanceof Error ? err.message : String(err), code: 'Error' }
 }
 
+/** The window's own page (src/main/app.ts loads it); no other frame may call in. */
+const isAppPage = appPage(
+  pathToFileURL(join(MAIN_DIR, '../renderer/index.html')).href,
+  is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
+)
+
 function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => Promise<R> | R): void {
-  ipcMain.handle(channel, async (_e, ...args: unknown[]) => {
+  ipcMain.handle(channel, async (e, ...args: unknown[]) => {
+    if (!isAppPage(e.senderFrame?.url)) {
+      log.warn(`ipc: refused ${channel} from ${e.senderFrame?.url ?? 'a closed frame'}`)
+      return { ok: false, error: { message: 'Not allowed.', code: 'Forbidden' } }
+    }
     try {
       const value = await fn(...(args as A))
       return { ok: true, value }

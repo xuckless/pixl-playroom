@@ -29,6 +29,208 @@ from the old TODO and a full performance and bug sweep.
 
 ---
 
+## Top priority — Phase C: updates, the PIXL account and the beta (passes 23–26b)
+
+**Top priority (2026-10-01)**: this phase comes before everything else
+still open below. It is listed first, out of number order.
+
+Next up, in order:
+
+1. Owner: verify the Gmail destination in Cloudflare Email Routing (the
+   `support@` and `hello@` rules go in after that); add `support@` to
+   Gmail's "Send mail as"; create the Lemon Squeezy store; create the R2
+   API token for release.yml.
+2. pixl-web: the redirect-URI spike, then the schema, the sign-in and
+   consent pages, and `/api/entitlements` (its "PIXL account" section).
+3. Here: Pass 23, 23a, 25, 26 and 26a, in that order. Pass 23 and 23a don't
+   wait on pixl-web, so they can start now; nor do the token check, the
+   device hash and the sign-in flow against a local mock (Pass 25 and 26).
+
+The app↔web contract (endpoints, the token's claims, the device hash, error
+codes, the redirect URI) was agreed with the pixl-web session on 2026-10-01
+and lives in pixl-web's TODO ("PIXL account" → "Contract with the apps");
+`src/shared/account.ts` will mirror it.
+
+Already set up: code signing on both platforms; the `pixl-updates`
+bucket on updates.pixlfoundation.com; Supabase `pixl-core` with the
+OAuth server, email codes through Resend, Turnstile, and Google and Apple
+sign-in.
+
+What has to work before builds go out: updates served from our own bucket,
+signing in with a PIXL account, and access (beta, trial, licence, add-ons)
+read from that account instead of licence keys. **Nothing is published
+until this phase is done.** Linux comes later. The website half is in
+pixl-web's TODO ("PIXL account", "Open beta", "Billing", "Updates").
+
+How it fits together (decided 2026-10-01):
+
+- **One PIXL account for every app**, as JetBrains does: Supabase Auth is the
+  identity provider and an OAuth 2.1 server. Each app (Playroom, later Space
+  Pixl) is a public OAuth client that signs in through the browser.
+- **Access lives on the account**: beta access, the trial, the licence and
+  add-on subscriptions are entitlements in Supabase Postgres. Nobody types a
+  key. The Worker signs an entitlement token per account, product and
+  device; the app checks it offline against a public key built into it.
+- **Lemon Squeezy handles checkout, billing, tax and refunds only.** Its
+  webhooks grant and revoke entitlements. Pay once, US$69.99, 3 devices.
+- **The trial needs an account**: 14 days, no card, one per account _and_
+  one per device (a hashed machine id), so new accounts on one machine get
+  no new trial.
+- **The beta locks the whole app** until the user signs in with a beta
+  account. When 1.0 ships, beta access ends; testers get the normal trial
+  plus a one-use discount code on their account.
+- **Updates move from GitHub Releases to R2** (updates.pixlfoundation.com).
+
+### Pass 23 — Updates from updates.pixlfoundation.com · 5 pts
+
+After: Owner task "Updates bucket". The bucket and its cache rules are pixl-web's.
+
+- [ ] **L** · Publish to R2 instead of GitHub Releases: `publish` becomes
+      the `generic` provider at `https://updates.pixlfoundation.com/playroom/`
+      (the `latest` and `beta` feeds side by side, as now), and
+      `dev-app-update.yml` matches it. release.yml uploads the installers,
+      zips and blockmaps through R2's S3 API, then the merged feeds
+      (`build/merge-mac-channel.mjs`) last, so no install sees a feed before
+      its files exist. GitHub Releases keeps only release-please's notes.
+- [ ] **M** · Move the installs already out to R2: v0.1.1-beta reads
+      GitHub's feed, so the next release goes to GitHub and R2 both, and the
+      `app-update.yml` it carries points at R2. Windows installs of 0.1.1-beta
+      will refuse that release whatever we do (their `publisherName` is
+      `xuckless`); their users must reinstall once, which the release notes
+      and the beta page must say. Also check: 0.1.1-beta's release has only
+      `latest*.yml`, no `beta*.yml`, so the Beta channel saw nothing.
+
+### Pass 23a — Rollouts, an update floor, a tested update · 5 pts
+
+After: Pass 23.
+
+- [ ] **S** · Staged rollouts: a `stagingPercentage` input on release.yml
+      that goes into the feed (electron-updater gives each install a stable
+      id), and a script that raises it or stops a bad release. A downgrade is
+      never offered (`allowDowngrade` false), so a bad release is fixed by
+      releasing again, not by rolling back. RELEASING.md says so.
+- [ ] **M** · An update floor: the app reads
+      `updates.pixlfoundation.com/playroom/policy.json` at launch
+      (`minVersion`, `betaOpen`, a message). Below `minVersion` it says an
+      update is required and installs it. Pass 26a reads the same file to
+      know the beta has ended.
+- [ ] **M** · Test one real update before any release goes out: install a
+      signed N on a Mac and on Windows, publish N+1 to a staging prefix (a
+      test build reads `PLAYROOM_UPDATE_URL`), and check the download, the
+      differential download (blockmap), "Restart to update", installing on
+      quit, and that an unsigned or tampered N+1 is refused on both. Write it
+      into RELEASING.md as the pre-release checklist.
+
+### Pass 24 — Crash reports kept · 5 pts
+
+After: Owner task "Where crash reports live". Partly in pixl-web.
+
+- [x] **L** · Store crash reports: R2 with the retention period (the Worker
+      only logs a summary today), or Sentry's Electron SDK taking over from
+      `crashReporter` (`src/main/crash.ts`).
+      _Done: R2 (pixl-web `worker/api.ts`, bucket `pixl-reports`, 90 days
+      until confirmed; `scripts/reports-bucket.sh` there), rate limited.
+      Also new: Settings → Report a problem (and Help → Report a Problem…)
+      sends the user's words, an optional email and the scrubbed end of the
+      log to `/api/report`, kept a year._
+- [x] **M** · Symbol files for minidumps, uploaded by the release build.
+      _Done: `scripts/upload-symbols.mjs`, the release workflow's Crash
+      symbols step (needs the `CLOUDFLARE_SYMBOLS_TOKEN` and
+      `CLOUDFLARE_ACCOUNT_ID` secrets). The engine's frames wait on E35._
+
+### Pass 25 — Signing in with a PIXL account · 5 pts
+
+After: pixl-web "PIXL account" (the Supabase project, the OAuth server and
+the sign-in and consent pages), and its redirect-URI spike.
+
+- [ ] **L** · "Sign in" (Settings → Account, and the beta gate) runs OAuth
+      2.1 authorization code with PKCE against Supabase Auth as a public
+      client: the system browser opens at `/oauth/authorize`, the code comes
+      back on `http://127.0.0.1:47823/callback` (a fixed port, as Supabase
+      matches redirect URIs exactly; `pixlplayroom://auth/callback` is the
+      fallback if pixl-web's spike shows loopback refused), `state` is
+      checked, and the code is
+      exchanged at `/oauth/token`. All of it runs in the main process; the
+      renderer never sees a token.
+- [ ] **S** · Tokens at rest: the refresh token is encrypted with Electron's
+      `safeStorage` (Keychain or DPAPI), the rotated token is saved on every
+      refresh, and "Sign out" forgets the tokens and the entitlement. A grant
+      revoked from the account page ("Signed-in apps") signs the app out at
+      its next refresh.
+- [ ] **S** · Device identity: the app sends an HMAC-SHA256 of the OS machine
+      id (IOPlatformUUID on macOS, MachineGuid on Windows), keyed per
+      product, never the raw id, plus a name for the account page ("Studio
+      (macOS)").
+
+### Pass 26 — Access from the account replaces licence keys · 5 pts
+
+After: Pass 25, and pixl-web's entitlement API.
+
+- [ ] **L** · Replace Lemon Squeezy's licence API in `src/main/licence.ts`
+      with pixl-web's `/api/entitlements`. It returns a signed token (Ed25519,
+      with a key id; the public keys are built into the app) for this
+      account, product and device: what it holds (beta, trial, licence,
+      add-ons), until when, and when to refresh. The app checks the token
+      offline, so editing `licence.json` no longer grants anything. The
+      offline grace is the token's lifetime (30 days, as now). The app
+      refreshes at launch and daily. `LS_PRODUCT` and the key field go;
+      update `tests/licence.test.ts`.
+- [ ] **S** · "Start 14-day trial" asks the server. It refuses a second
+      trial on the account, or on this device under any account, and the app
+      says which. The local trial (`trialStartedAt`) goes.
+- [ ] **S** · The fourth device: the server refuses it, and the app links to
+      the account page to free one (that page is pixl-web's).
+- [x] **M** · Gate what an ended trial and an unconfirmed licence lock with
+      `allows()`.
+      _Done (behind `LICENCE_ENFORCED`, still off): a lapsed licence locks
+      exporting only (`LICENSED`); `requireLicence('export')` refuses
+      `export:start`, and the Export dialog says why, with Enter a key / Buy._
+
+### Pass 26a — The beta gate, and the switch to 1.0 · 5 pts
+
+After: Pass 26 and Pass 23a (`policy.json`).
+
+- [ ] **M** · A beta build (a version with `-beta`) needs beta access: until
+      the user signs in with an account that has it, the window shows only
+      "Sign in" and "Join the beta" (which opens the beta page). The main
+      process enforces it too: `handle()` refuses every channel but account,
+      updates, prefs and app info, so a patched renderer opens nothing.
+      Development and automation (`PLAYROOM_HIDDEN`) skip the gate.
+- [ ] **M** · The beta ends: once `policy.json` or the entitlement says so,
+      a beta build shows "The beta has ended" with the update to 1.0. 1.0
+      ignores beta access, offers the trial, and shows the tester's discount
+      code on the trial and Buy screens.
+- [ ] **S** · For 1.0: turn on `LICENCE_ENFORCED`, and show Settings →
+      Account in production.
+
+### Pass 26b — Hardening, so the gate means something · 3 pts
+
+After: nothing.
+
+- [x] **S** · Only the app's own page may call the main process: `handle()`
+      refuses a frame whose URL isn't the packaged `index.html` (or the dev
+      server under `pnpm dev`), and logs it.
+      _Done: `src/main/guard.ts` (`appPage`), `tests/guard.test.ts`; checked
+      with a second window on the same preload, which is refused._
+- [x] **S** · The window never leaves the app: `will-navigate` and
+      `will-attach-webview` are denied, and links open in the browser only to
+      pixlfoundation.com (and its subdomains) and lemonsqueezy.com, over
+      https (`externalAllowed`).
+- [x] **S** · The renderer runs sandboxed (`sandbox: true`); the preload
+      needs only `contextBridge`, `ipcRenderer` and `webUtils`.
+      _Done: library, develop and previews checked with `scripts/drive.mjs`._
+- [x] **S** · Electron fuses in `electron-builder.yml`: no run-as-node, no
+      `NODE_OPTIONS`, no `--inspect`, the app only from `app.asar`, and
+      asar integrity checked. An edited `app.asar` refuses to start
+      ("ASAR Integrity Violation").
+      _Done: checked on a local unsigned macOS arm64 package (ad-hoc signed
+      for the run). The fuses break Playwright on a packaged build, so
+      `scripts/drive.mjs` drives only `out/`, as it always has._
+- [ ] **S** · Check the same on a signed Windows build: the fuses read back,
+      the app starts, and an edited `app.asar` is refused.
+
+---
+
 ## Phase A — Bugs: lost edits and wrong output (passes 1–11)
 
 ### Pass 1 — Lost and misdirected edits · 5 pts
@@ -452,61 +654,6 @@ Each release runs picture → mask → before → headroom → mask thumbnails
 - [x] **M** · **HeadroomOverlay is a full-preview CPU pass**
       (`HeadroomOverlay.tsx:49-58`: `getImageData` + LUT + `putImageData`, ~5 MP
       per settled HDR render). A GPU LUT, as `ClippingOverlay` does.
-
----
-
-## Phase C — Release code (passes 23–26)
-
-Code that ships with the first paid release. Each waits on an owner task.
-
-### Pass 23 — Licence enforcement · 3 pts
-
-After: Owner tasks "Lemon Squeezy store" and "What a lapsed licence locks".
-
-- [ ] **S** · Set `LS_PRODUCT` (store and product ids) in
-      `src/shared/licence.ts` so other products' keys are refused; test with a
-      test-mode key (`PLAYROOM_LICENCE_UI=1` in a packaged build).
-      _Waits on the store. Then flip `LICENCE_ENFORCED`, which also shows the
-      Licence section in production._
-- [x] **M** · Gate what an ended trial and an unconfirmed licence
-      (`revalidate`) lock with `allows()`, show the Licence section in
-      production, and flip `LICENCE_ENFORCED`.
-      _Done (behind the flag, still off): a lapsed licence locks exporting
-      only (`LICENSED`); `requireLicence('export')` refuses `export:start`,
-      and the Export dialog says why, with Enter a key / Buy._
-
-### Pass 24 — Crash reports kept · 5 pts
-
-After: Owner task "Where crash reports live". Partly in pixl-web.
-
-- [x] **L** · Store crash reports: R2 with the retention period (the Worker
-      only logs a summary today), or Sentry's Electron SDK taking over from
-      `crashReporter` (`src/main/crash.ts`).
-      _Done: R2 (pixl-web `worker/api.ts`, bucket `pixl-reports`, 90 days
-      until confirmed; `scripts/reports-bucket.sh` there), rate limited.
-      Also new: Settings → Report a problem (and Help → Report a Problem…)
-      sends the user's words, an optional email and the scrubbed end of the
-      log to `/api/report`, kept a year._
-- [x] **M** · Symbol files for minidumps, uploaded by the release build.
-      _Done: `scripts/upload-symbols.mjs`, the release workflow's Crash
-      symbols step (needs the `CLOUDFLARE_SYMBOLS_TOKEN` and
-      `CLOUDFLARE_ACCOUNT_ID` secrets). The engine's frames wait on E35._
-
-### Pass 25 — Trials recorded on the server · 3 pts
-
-After: Pass 23. pixl-web plus `src/main/licence.ts`.
-
-- [ ] **L** · The trial's start lives in `licence.json`, which deleting
-      resets. Record trials on the server by device, if that matters.
-      _Deferred (2026-10-01): waits on the account system in pixl-web._
-
-### Pass 26 — Freeing a lost device · 3 pts
-
-After: Pass 23. pixl-web.
-
-- [ ] **L** · The website account lists a licence's devices and frees one
-      (the app can only free its own place; today it's by email).
-      _Deferred (2026-10-01): waits on the account system in pixl-web._
 
 ---
 
@@ -974,21 +1121,54 @@ Playroom work that starts once the engine request lands
 
 ## Owner tasks (not model passes)
 
-- [ ] **L** · **Code signing**: a Developer ID Application certificate and an
+- [x] **L** · **Code signing**: a Developer ID Application certificate and an
       App Store Connect API key (macOS); Azure Trusted Signing with identity
       validation (Windows). Steps and the secrets/variables to add in
-      `.github/RELEASING.md`; `release.yml` signs with whatever exists. Builds
-      are unsigned until then, and macOS in-app updates need signed builds.
+      `.github/RELEASING.md`; `release.yml` signs with whatever exists.
+      _Done 2026-10-01: all secrets and variables are set; macOS signing and
+      notarization tested locally, Windows signing tested against Azure. The
+      service principal's secret (`rbac`) expires 2028-10-01._
 - [ ] **M** · **Legal pages**: fill in the [bracketed] parts of the licence
       agreement and privacy policy on pixlfoundation.com/legal/ (pixl-web
       `src/legal/`: legal entity, jurisdiction, address, refunds, what a
       finished trial does, crash-report retention); have a lawyer review both.
 - [ ] **S** · **Licensing view**: a lawyer's view on jpegxl-sys (GPL) and
       rawler (LGPL, static) before the first paid release (engine side: E8–E10).
-- [ ] **S** · **Lemon Squeezy store**: create it and the Playroom product with
-      an activation limit of 3; hand over the store and product ids (Pass 23).
+- [ ] **S** · **Lemon Squeezy store**: create it and the Playroom product
+      (US$69.99, pay once; no licence keys needed, since access lives on the
+      account), the webhook, and an API key for the Worker (discount codes,
+      nightly checks). Hand over the store and product ids (pixl-web "Billing").
+- [ ] **S** · **Supabase project for PIXL accounts**: `pixl-core` (ref
+      `lskosagqyekwklxyuczi`, "pixl" org on Pro, ca-central-1). Its OAuth 2.1
+      server is on (consent at `/oauth/consent`) and it signs with ES256.
+      Mail, CAPTCHA and URLs are set (pixl-web TODO). For now it uses
+      Supabase's own domain, with no custom auth domain. The OAuth server is
+      in beta at Supabase.
+- [x] **S** · **Email sender for sign-in mail**: Resend, on
+      pixlfoundation.com (2026-10-01).
+- [ ] **S** · **Updates bucket**: R2 bucket `pixl-updates` on
+      updates.pixlfoundation.com, plus an R2 API token (S3 access key) as
+      playroom repository secrets for release.yml (Pass 23).
+      _Bucket and domain created 2026-10-01; the R2 API token is still to do._
+- [x] **M** · **Beta and account decisions** (2026-10-01): sign in with an
+      email code, Google or Apple; the beta is open to anyone; testers get 3
+      devices, like a licence; the tester discount must be redeemed within 90
+      days of 1.0; refunds follow each country's legal minimum (Lemon Squeezy,
+      as merchant of record, applies it; the lawyer confirms the EULA's
+      wording). The Supabase org is "pixl", on Pro, with a custom auth domain.
+- [x] **S** · **Google and Apple sign-in** (2026-10-01): Google Cloud
+      project `pixl-core`, web client `135859589278-siu6…`; Apple Services ID
+      `com.pixlfoundation.signin.web` (App ID `com.pixlfoundation.signin`,
+      key `37K7A3NV3J`). Both are on in Supabase. The credentials are in
+      `~/.pixl-secrets/` and `~/.apple-signing/`.
+- [ ] **S** · **Renew Apple's client secret before 2027-03-30**: run
+      `node scripts/apple-client-secret.mts --apply` in pixl-web. It lasts
+      six months; if it lapses, Apple sign-in stops.
+- [ ] **M** · **Legal for accounts**: beta terms, and the privacy policy's
+      account, hashed device id and entitlement checks, go to the lawyer
+      with the other legal pages.
 - [x] **S** · **What a lapsed licence locks**: exports only (2026-10-01).
-      Trials on the server: not for now (Pass 25 deferred).
+      Trials: on the server, against the account and the device (Pass 26).
 - [ ] **S** · **Update policy in writing**: 1.x updates included, major
       versions a discounted paid upgrade (the EULA draft says so).
 - [x] **S** · **Where crash reports live**: R2 (2026-10-01).

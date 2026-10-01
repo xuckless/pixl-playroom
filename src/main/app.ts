@@ -9,6 +9,7 @@ import { startCrashReporting } from './crash'
 import { onRenderScale, settleScale, watchDisplay } from './display'
 import { EngineClient } from './engine/client'
 import { endExiftool } from './exiftool'
+import { externalAllowed } from './guard'
 import { AiJobs } from './ai/jobs'
 import { applyMaskResult } from './ai/apply'
 import { SegmentRunner } from './ai/segment'
@@ -127,7 +128,8 @@ function createWindow(): void {
     ...(process.platform !== 'darwin' ? { icon } : {}),
     webPreferences: {
       preload: join(MAIN_DIR, '../preload/index.js'),
-      sandbox: false,
+      // The preload needs nothing beyond contextBridge, ipcRenderer and webUtils.
+      sandbox: true,
       backgroundThrottling: !hidden,
       // Automation renders offscreen: a hidden window stops painting after
       // its first frame, and nothing appears on the user's screen.
@@ -149,10 +151,20 @@ function createWindow(): void {
     if (mainWindow === win) mainWindow = undefined
   })
 
+  // The window stays on the app's page: links open in the browser, and only
+  // to our own sites and the checkout (guard.ts); nothing navigates the
+  // window itself or embeds a webview.
   win.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    if (externalAllowed(details.url)) void shell.openExternal(details.url)
+    else log.warn(`refused to open ${details.url}`)
     return { action: 'deny' }
   })
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url === win.webContents.getURL()) return
+    event.preventDefault()
+    if (externalAllowed(url)) void shell.openExternal(url)
+  })
+  win.webContents.on('will-attach-webview', (event) => event.preventDefault())
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(process.env['ELECTRON_RENDERER_URL'])
