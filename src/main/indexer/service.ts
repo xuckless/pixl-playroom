@@ -46,11 +46,12 @@ import { keywordPrefixes, normaliseKeyword } from '../../shared/keywords'
 import {
   defaultRecipe,
   hash32,
+  hydrateRecipe,
   isEdited,
   newId,
-  slimRecipe,
   type Recipe
 } from '../../shared/recipe'
+import { slim } from '../planeref'
 import { memberResolver, remapCollections, type SmartGroup } from '../../shared/smart'
 import { cacheUrlIn } from '../cache-url'
 import { emptyCamera, readCamera } from '../camera'
@@ -63,6 +64,7 @@ import {
   sidecarPath,
   writeSidecar,
   type Sidecar,
+  type SidecarItem,
   type SidecarStack
 } from '../sidecar'
 import {
@@ -168,10 +170,20 @@ function folderMtime(folder: string): number | null {
   }
 }
 
+/** `s` with `fn` applied to every recipe in it (each item's and each snapshot's). */
+function mapRecipes(s: Sidecar, fn: (r: Recipe) => Recipe): Sidecar {
+  const item = <T extends SidecarItem>(it: T): T => ({
+    ...it,
+    recipe: it.recipe && fn(it.recipe),
+    snapshots: it.snapshots.map((sn) => ({ ...sn, recipe: fn(sn.recipe) }))
+  })
+  return { ...s, photo: item(s.photo), copies: s.copies.map(item) }
+}
+
 /** A recipe as its thumbnail knows it: 'plain' when unedited, else its slim form's hash. */
 function thumbRecipeKey(recipe: Recipe | null, raw: boolean): string {
   if (!recipe || !isEdited(recipe, raw)) return 'plain'
-  return hash32(JSON.stringify(slimRecipe(recipe))).toString(16)
+  return hash32(JSON.stringify(slim(recipe))).toString(16)
 }
 
 /** The row's content hash, when the one recorded is of the file as it is now. */
@@ -575,7 +587,7 @@ export class IndexService {
     if (!path) return false
     const mtime = statSync(path).mtimeMs
     if (mtime === row.project_mtime) return false
-    const truth = this.projects.use(path, (p) => p.read(row.is_raw === 1))
+    const truth = this.projects.use(path, (p) => p.read(row.is_raw === 1, false))
     this.mirror(row, truth, mtime, 'project')
     return true
   }
@@ -618,7 +630,7 @@ export class IndexService {
       key: keyOf(row.id, copyId)
     }))
     const fill = (p: PixlFile): void => {
-      p.write(truth)
+      p.write(truth, this.planeOf)
       for (const { copyId, key } of keys) {
         const rows = this.store.historyRows(key)
         if (rows.length === 0) continue
@@ -801,10 +813,7 @@ export class IndexService {
 
   /** Make sure the photo has a project (made from its sidecar if not). Returns its path. */
   private ensureProject(row: PhotoRow): string {
-    return (
-      this.projectOf(row) ??
-      this.createProject(row, readSidecar(row.path, row.is_raw === 1).sidecar)
-    )
+    return this.projectOf(row) ?? this.createProject(row, this.readSide(row))
   }
 
   /** Re-read a sidecar into the index when it changed on disk. Returns whether it had. */
@@ -812,8 +821,7 @@ export class IndexService {
     const file = row.path + SIDECAR_SUFFIX
     const mtime = existsSync(file) ? statSync(file).mtimeMs : null
     if (mtime === row.sidecar_mtime) return false
-    const { sidecar } = readSidecar(row.path, row.is_raw === 1)
-    this.mirror(row, sidecar, mtime)
+    this.mirror(row, this.readSide(row), mtime)
     return true
   }
 
@@ -1665,11 +1673,30 @@ export class IndexService {
     return row
   }
 
-  /** What the photo's truth says: its project's, else its sidecar's. */
+  /**
+   * What the photo's truth says: its project's, else its sidecar's. Its
+   * recipes name their planes (kept in the store), as every recipe the index
+   * hands out or takes in does; only a sidecar file carries them.
+   */
   private sidecar(row: PhotoRow): Sidecar {
     const project = this.projectOf(row)
-    if (project) return this.projects.use(project, (p) => p.read(row.is_raw === 1))
-    return readSidecar(row.path, row.is_raw === 1).sidecar
+    if (project) return this.projects.use(project, (p) => p.read(row.is_raw === 1, false))
+    return this.readSide(row)
+  }
+
+  /** A plane from the store, for a project or sidecar being written. */
+  private readonly planeOf = (ref: string): string | undefined => this.store.plane(ref)
+
+  /** The photo's sidecar file, its planes taken into the store and named. */
+  private readSide(row: PhotoRow): Sidecar {
+    return mapRecipes(readSidecar(row.path, row.is_raw === 1).sidecar, (r) =>
+      slim(r, (ref, png) => this.store.putPlane(ref, png))
+    )
+  }
+
+  /** A sidecar to write to its file: planes carried, not named (other apps read it alone). */
+  private fullSide(s: Sidecar): Sidecar {
+    return mapRecipes(s, (r) => hydrateRecipe(r, this.planeOf))
   }
 
   recipe(key: string): Recipe {
@@ -1685,8 +1712,8 @@ export class IndexService {
     const project = this.projectOf(row)
     const r = project
       ? this.projects.use(project, (p) => p.itemRecipe(itemKeyOf(parseKey(key).copyId), raw))
-      : (itemOf(readSidecar(row.path, raw).sidecar, parseKey(key).copyId)?.recipe ?? null)
-    return r ? slimRecipe(r) : defaultRecipe(raw)
+      : (itemOf(this.readSide(row), parseKey(key).copyId)?.recipe ?? null)
+    return r ? slim(r) : defaultRecipe(raw)
   }
 
   recipes(keys: string[]): { key: string; row: PhotoRow; recipe: Recipe }[] {
@@ -1740,19 +1767,19 @@ export class IndexService {
         // By reference: what the change leaves alone goes back as it was.
         const s = p.read(raw, false)
         change(s)
-        p.write(s)
+        p.write(s, this.planeOf)
         return s
       })
       this.mirror(row, truth, statSync(project).mtimeMs, 'project')
       return truth
     }
-    const { sidecar } = readSidecar(row.path, raw)
+    const sidecar = this.readSide(row)
     change(sidecar)
     if (needsProject?.(sidecar)) {
       this.createProject(row, sidecar)
       return sidecar
     }
-    const mtime = writeSidecar(row.path, sidecar)
+    const mtime = writeSidecar(row.path, this.fullSide(sidecar))
     this.mirror(row, sidecar, mtime)
     return sidecar
   }

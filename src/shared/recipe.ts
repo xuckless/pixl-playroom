@@ -1037,18 +1037,18 @@ export function newLocalLayer(name: string): LocalLayer {
   }
 }
 
-/** A small, stable 32-bit hash for seeds (grain) and cache keys. */
-/** A brush plane's reference: its content hash and length. */
-export function planeRef(png: string): string {
-  return `${hash32(png).toString(16)}-${png.length}`
-}
-
 /**
  * The recipe with its brush planes as references, the PNGs left out: what
- * crosses IPC. `known` receives each PNG it takes out, by reference. The same
- * recipe comes back when it holds no PNG.
+ * crosses IPC and what is stored. A plane is named by its `ref` when it
+ * carries one, else by `refOf` (main/planeref.ts: its SHA-256). `known`
+ * receives each PNG it takes out, by reference. The same recipe comes back
+ * when it holds no PNG.
  */
-export function slimRecipe(r: Recipe, known?: (ref: string, png: string) => void): Recipe {
+export function slimRecipe(
+  r: Recipe,
+  refOf: (png: string) => string,
+  known?: (ref: string, png: string) => void
+): Recipe {
   if (!r.layers.some((l) => l.components.some((c) => c.kind === 'brush' && c.png))) return r
   return {
     ...r,
@@ -1056,7 +1056,7 @@ export function slimRecipe(r: Recipe, known?: (ref: string, png: string) => void
       ...l,
       components: l.components.map((c) => {
         if (c.kind !== 'brush' || !c.png) return c
-        const ref = c.ref ?? planeRef(c.png)
+        const ref = c.ref ?? refOf(c.png)
         known?.(ref, c.png)
         return { ...c, png: '', ref }
       })
@@ -1088,6 +1088,7 @@ export function hydrateRecipe(r: Recipe, get: (ref: string) => string | undefine
   }
 }
 
+/** A small, stable 32-bit hash for seeds (grain) and cache keys. */
 export function hash32(text: string): number {
   let h = 0x811c9dc5
   for (let i = 0; i < text.length; i++) {

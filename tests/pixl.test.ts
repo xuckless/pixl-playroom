@@ -32,9 +32,13 @@ import { emptySidecar, sidecarPath } from '../src/main/sidecar'
 import type { XmpIo } from '../src/main/indexer/xmp'
 import { defaultRecipe, newLocalLayer, type BrushComponent } from '../src/shared/recipe'
 import { keyOf } from '../src/main/keys'
+import { planeRef } from '../src/main/planeref'
+import { Store } from '../src/main/db'
 import type { LibraryItem } from '../src/shared/ipc'
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'pixl-'))
+/** A painted plane's base64 (any bytes: the project keeps them as they are). */
+const PLANE_ONE = Buffer.from('plane one').toString('base64')
 
 const origin = (dir: string): Origin => ({
   name: 'a.jpg',
@@ -97,7 +101,7 @@ test('what a sidecar holds goes in and comes back, planes kept once by reference
   const r = defaultRecipe(false)
   r.basic.exposure = 0.7
   const l = newLocalLayer('Mask 1')
-  l.components.push(brush('iVBORw0KGgo-plane-one'))
+  l.components.push(brush(PLANE_ONE))
   r.layers.push(l)
   s.photo = { rating: 4, flag: 'pick', label: 'red', recipe: r, snapshots: [] }
   s.copies.push({
@@ -118,7 +122,7 @@ test('what a sidecar holds goes in and comes back, planes kept once by reference
   assert.equal(back.photo.flag, 'pick')
   assert.equal(back.photo.recipe?.basic.exposure, 0.7)
   const c = back.photo.recipe!.layers[0].components[0] as BrushComponent
-  assert.equal(c.png, 'iVBORw0KGgo-plane-one')
+  assert.equal(c.png, PLANE_ONE)
   assert.equal(back.copies.length, 1)
   assert.equal(back.copies[0].snapshots[0].name, 'Before')
   assert.deepEqual(back.stack, { id: 'st', position: 1 })
@@ -140,15 +144,15 @@ test('history lives in the project, and gc drops planes nothing names', () => {
   next.basic.contrast = 20
   p.history.append('', 'Contrast', next)
   assert.equal(p.history.history('').steps.length, 1)
-  p.putPlane('orphan', 'x')
-  p.putPlane('kept', 'y')
+  p.putPlane('orphan', Buffer.from('x').toString('base64'))
+  p.putPlane('kept', Buffer.from('y').toString('base64'))
   const named = structuredClone(next)
   const l = newLocalLayer('m')
   l.components.push({ ...brush(''), ref: 'kept' })
   named.layers.push(l)
   p.history.append('', 'Mask', named)
   assert.equal(p.gc(), 1)
-  assert.equal(p.plane('kept'), 'y')
+  assert.equal(p.plane('kept'), Buffer.from('y').toString('base64'))
   assert.equal(p.plane('orphan'), undefined)
   p.close()
   rmSync(dir, { recursive: true })
@@ -568,5 +572,76 @@ test('writes gather into one batch, committed after a moment or when flushed', a
   assert.equal(f.meta('lost'), undefined)
   f.close()
   pool.drop()
+  rmSync(dir, { recursive: true })
+})
+
+test('a version-1 project is upgraded on open: planes become blobs, renamed where they are named', () => {
+  const dir = tmp()
+  const path = join(dir, 'a.pixl')
+  const p = PixlFile.create(path, origin(dir))
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('m')
+  l.components.push({ ...brush(''), ref: 'abc123-40' })
+  r.layers.push(l)
+  p.write({
+    ...emptySidecar(),
+    photo: { rating: 0, flag: null, label: null, recipe: r, snapshots: [] }
+  })
+  p.history.append('', 'Opened', defaultRecipe(false))
+  p.history.append('', 'Mask', r)
+  p.close()
+  // As version 1 kept it: base64 text in `planes`, by the old name.
+  const db = new DatabaseSync(path)
+  db.exec('CREATE TABLE planes (ref TEXT PRIMARY KEY, png TEXT NOT NULL)')
+  db.prepare('INSERT INTO planes VALUES (?, ?)').run('abc123-40', PLANE_ONE)
+  db.exec(
+    "DELETE FROM blob_chunks; DELETE FROM blobs; PRAGMA user_version = 1; UPDATE meta SET value = '1' WHERE key = 'format_version'"
+  )
+  db.close()
+
+  const up = PixlFile.open(path)
+  const hash = planeRef(PLANE_ONE)
+  assert.equal(up.plane(hash), PLANE_ONE)
+  assert.equal(up.meta('format_version'), String(PIXL_FORMAT_VERSION))
+  const c = up.read(false, false).photo.recipe!.layers[0].components[0] as BrushComponent
+  assert.equal(c.ref, hash)
+  const full = up.read(false).photo.recipe!.layers[0].components[0] as BrushComponent
+  assert.equal(full.png, PLANE_ONE)
+  const log = up.history.history('')
+  assert.ok(JSON.stringify(log.steps).includes(hash))
+  assert.ok(!JSON.stringify(log.steps).includes('abc123-40'))
+  up.close()
+  const raw = new DatabaseSync(path, { readOnly: true })
+  assert.equal(
+    (raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version,
+    PIXL_FORMAT_VERSION
+  )
+  assert.equal(raw.prepare("SELECT 1 FROM sqlite_master WHERE name = 'planes'").get(), undefined)
+  raw.close()
+  rmSync(dir, { recursive: true })
+})
+
+test('an index from before binary planes keeps them, renamed, with its history', () => {
+  const dir = tmp()
+  const file = join(dir, 'index.db')
+  const fresh = Store.open(file)
+  fresh.appendHistory('k', 'Opened', defaultRecipe(false))
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('m')
+  l.components.push({ ...brush(''), ref: 'abc123-40' })
+  r.layers.push(l)
+  fresh.appendHistory('k', 'Mask', r)
+  fresh.close()
+  const db = new DatabaseSync(file)
+  db.exec('CREATE TABLE planes (ref TEXT PRIMARY KEY, png TEXT NOT NULL); PRAGMA user_version = 8')
+  db.prepare('INSERT INTO planes VALUES (?, ?)').run('abc123-40', PLANE_ONE)
+  db.close()
+
+  const store = Store.open(file)
+  const hash = planeRef(PLANE_ONE)
+  assert.equal(store.plane(hash), PLANE_ONE)
+  const steps = JSON.stringify(store.history('k').steps)
+  assert.ok(steps.includes(hash) && !steps.includes('abc123-40'))
+  store.close()
   rmSync(dir, { recursive: true })
 })

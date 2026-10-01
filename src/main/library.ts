@@ -29,6 +29,7 @@ import { hash32, type Recipe } from '../shared/recipe'
 import type { EngineClient } from './engine/client'
 import type { PhotoRow } from './db'
 import type { IndexClient } from './indexer/client'
+import type { PlaneStore } from './planestore'
 import { brushPlanes } from './brushes'
 import { keyOf } from './keys'
 import { paths } from './paths'
@@ -85,7 +86,9 @@ export class Library {
 
   constructor(
     readonly index: IndexClient,
-    private readonly engine: EngineClient
+    private readonly engine: EngineClient,
+    /** Painted planes: the index hands recipes out and takes them in by reference. */
+    readonly planes: PlaneStore
   ) {
     index.on((e) => {
       if (e.name === 'changed') this.broadcast(IPC.library.changed, { folder: e.folder })
@@ -290,12 +293,14 @@ export class Library {
     return { ...row, path: jpg }
   }
 
-  recipe(key: string): Promise<Recipe> {
-    return this.index.recipe(key)
+  /** A key's saved recipe, its planes filled in. */
+  async recipe(key: string): Promise<Recipe> {
+    return this.planes.hydrate(await this.index.recipe(key))
   }
 
+  /** Save a key's recipe; its planes cross by reference. */
   saveRecipe(key: string, recipe: Recipe): Promise<void> {
-    return this.index.saveRecipe(key, recipe)
+    return this.index.saveRecipe(key, this.planes.slim(recipe))
   }
 
   // ── thumbnails ──
@@ -369,7 +374,8 @@ export class Library {
   private async thumb(job: ThumbJob): Promise<void> {
     const work = await this.index.thumbJob(job.photoId, job.copyId)
     if (!work) return
-    const { recipe, edited, stamp } = work
+    const { edited, stamp } = work
+    const recipe = await this.planes.hydrate(work.recipe)
     const row = await this.readable(work.row)
     const key = keyOf(row.id, job.copyId)
     const raw = row.is_raw === 1

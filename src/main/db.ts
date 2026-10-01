@@ -17,6 +17,7 @@ import type {
 } from '../shared/ipc'
 import type { ExportSettings } from '../shared/export'
 import { HistoryTable, type HistoryRow } from './historytable'
+import { planeRef, renameRefs } from './planeref'
 import { normaliseRecipe, RECIPE_GROUPS, type Recipe, type RecipeGroup } from '../shared/recipe'
 
 export interface PhotoRow {
@@ -150,7 +151,7 @@ CREATE TABLE IF NOT EXISTS presets (
 );
 CREATE TABLE IF NOT EXISTS export_presets (id TEXT PRIMARY KEY, name TEXT NOT NULL, settings TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS planes (ref TEXT PRIMARY KEY, png TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS plane_blobs (hash TEXT PRIMARY KEY, png BLOB NOT NULL);
 `
 
 const columnsOf = (db: DatabaseSync, table: string): string[] =>
@@ -269,6 +270,44 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   (db) => {
     addColumns(db, 'photos', { recipe_key: 'TEXT' })
     addColumns(db, 'copies', { recipe_key: 'TEXT' })
+  },
+  // 9. Painted planes as binary named by their SHA-256 (`planeRef`), not
+  // base64 text named by a 32-bit hash and its length; the edit history
+  // follows them to their new names.
+  (db) => {
+    const old = db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'planes'")
+      .get()
+    if (!old) return
+    const names = new Map<string, string>()
+    const put = db.prepare('INSERT OR IGNORE INTO plane_blobs(hash, png) VALUES (?, ?)')
+    for (const { ref, png } of db.prepare('SELECT ref, png FROM planes').all() as {
+      ref: string
+      png: string
+    }[]) {
+      const hash = planeRef(png)
+      names.set(ref, hash)
+      put.run(hash, Buffer.from(png, 'base64'))
+    }
+    if (names.size > 0) {
+      const set = db.prepare(
+        'UPDATE history SET recipe = ?, patch = ? WHERE item_key = ? AND seq = ?'
+      )
+      for (const r of db
+        .prepare(
+          `SELECT item_key, seq, recipe, patch FROM history
+           WHERE recipe LIKE '%"ref":%' OR patch LIKE '%"ref":%'`
+        )
+        .all() as { item_key: string; seq: number; recipe: string; patch: string | null }[]) {
+        set.run(
+          renameRefs(r.recipe, names),
+          r.patch && renameRefs(r.patch, names),
+          r.item_key,
+          r.seq
+        )
+      }
+    }
+    db.exec('DROP TABLE planes')
   }
 ]
 
@@ -812,8 +851,12 @@ export class Store {
   }
 
   // ── painted planes, by reference (see planestore.ts) ──
+  /** Keep a plane (a base64 PNG) by its name, its SHA-256 (`planeRef`), as bytes. */
   putPlane(ref: string, png: string): void {
-    this.prepare('INSERT OR IGNORE INTO planes(ref, png) VALUES (?, ?)').run(ref, png)
+    this.prepare('INSERT OR IGNORE INTO plane_blobs(hash, png) VALUES (?, ?)').run(
+      ref,
+      Buffer.from(png, 'base64')
+    )
     this.planesPut.add(ref)
   }
 
@@ -821,9 +864,11 @@ export class Store {
   readonly planesPut = new Set<string>()
 
   plane(ref: string): string | undefined {
-    const row = this.prepare('SELECT png FROM planes WHERE ref = ?').get(ref) as
-      { png: string } | undefined
-    return row?.png
+    const row = this.prepare('SELECT png FROM plane_blobs WHERE hash = ?').get(ref) as
+      { png: Uint8Array } | undefined
+    return (
+      row && Buffer.from(row.png.buffer, row.png.byteOffset, row.png.byteLength).toString('base64')
+    )
   }
 
   /** Every stored recipe or patch that may name a plane by reference: the edit history's. */
@@ -833,14 +878,14 @@ export class Store {
 
   /** Drop the planes not in `keep`. Returns how many went. */
   prunePlanes(keep: Set<string>): number {
-    const refs = (this.prepare('SELECT ref FROM planes').all() as { ref: string }[]).map(
-      (r) => r.ref
+    const refs = (this.prepare('SELECT hash FROM plane_blobs').all() as { hash: string }[]).map(
+      (r) => r.hash
     )
     let removed = 0
     this.tx(() => {
       for (const ref of refs) {
         if (keep.has(ref)) continue
-        this.prepare('DELETE FROM planes WHERE ref = ?').run(ref)
+        this.prepare('DELETE FROM plane_blobs WHERE hash = ?').run(ref)
         removed++
       }
     })

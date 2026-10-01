@@ -543,12 +543,17 @@ After: Pass 27.
 
 After: Pass 28. A `.pixl` format version bump (docs/pixl-format.md).
 
-- [ ] **XL** · Store planes as binary BLOBs keyed by SHA-256 in the existing
+- [x] **XL** · Store planes as binary BLOBs keyed by SHA-256 in the existing
       `blobs` table instead of base64 TEXT (a third larger); only refs cross
       IPC (today `saveRecipe`, `thumbJob`, `openData` and `slim` ship PNGs
       between processes, ~800 KB with two brush masks). Retires the 32-bit
       `hash32` + length ref, where a collision under `INSERT OR IGNORE` could
       silently swap masks. Migrate existing projects.
+      _Done: planes are SHA-256-named binary blobs (`planeref.ts`; the
+      project's `blobs`, kind `plane`; the index's `plane_blobs`, migration
+      9); format 2, version-1 projects upgrade on open, renaming every ref.
+      Recipes cross between main and the index by reference only (`Library`
+      slims and hydrates; the index hydrates only sidecar files)._
 
 ### Pass 30 — Off the index request loop · 5 pts
 

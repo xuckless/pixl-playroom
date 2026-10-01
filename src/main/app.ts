@@ -196,7 +196,8 @@ app.whenReady().then(() => {
       .catch((err) => log.warn('pruning thumbnails failed', err))
   }, 20_000)
   void engine.whenStarted().then(() => setAbout(engine.getStatus().version))
-  const library = new Library(index, bgEngine)
+  const planes = new PlaneStore(index)
+  const library = new Library(index, bgEngine, planes)
   sessions = new DevelopSessions(library, engine, bgEngine)
   // A photo's new project gets its original carried inside it.
   const embedder = new OriginalEmbedder(index, library, bgEngine)
@@ -207,7 +208,6 @@ app.whenReady().then(() => {
   const lenses = new LensProfileStore()
   void lenses.start()
   const exporter = new Exporter(library, sessions, bgEngine)
-  const planes = new PlaneStore(index)
   const ai = new AiJobs(
     {
       enhance: new EnhanceRunner(

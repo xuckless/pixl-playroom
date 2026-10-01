@@ -5,7 +5,8 @@
  * stores each plane once. Every recipe coming in is hydrated here before
  * anything renders or saves it; sidecars always get the PNGs themselves.
  */
-import { slimRecipe, type Recipe } from '../shared/recipe'
+import type { Recipe } from '../shared/recipe'
+import { slim } from './planeref'
 import type { IndexClient } from './indexer/client'
 
 /**
@@ -60,7 +61,7 @@ export class PlaneStore {
 
   /** Going out: planes by reference (and kept, so they can come back). */
   slim(recipe: Recipe): Recipe {
-    return slimRecipe(recipe, (ref, png) => this.put(ref, png))
+    return slim(recipe, (ref, png) => this.put(ref, png))
   }
 
   /**

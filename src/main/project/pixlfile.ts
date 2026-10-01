@@ -1,9 +1,9 @@
 /**
  * A `.pixl` project: one photo's edits in one file — its recipe, virtual
  * copies, snapshots, rating, flag, label and stack (what a sidecar holds), its
- * whole edit history, the painted mask planes all of those name, and a
- * preview. Later versions add the original itself and stored pixel results
- * (tables `original`, `blobs`, `blob_chunks`, already here and empty).
+ * whole edit history, the painted mask planes all of those name (binary, as
+ * blobs named by their SHA-256), a preview, the original itself and stored
+ * pixel results.
  *
  * The file is a SQLite database, so it is written transactionally (a crash
  * never leaves half an edit), readable by any SQLite tool, and documented in
@@ -29,13 +29,19 @@ import { dirname } from 'path'
 import type { ColorLabel, Flag, Snapshot } from '../../shared/ipc'
 import { hydrateRecipe, normaliseRecipe, slimRecipe, type Recipe } from '../../shared/recipe'
 import { HISTORY_SCHEMA, HistoryTable, type HistoryRow } from '../historytable'
+import { planeRef, pngSize, renameRefs } from '../planeref'
 import type { Sidecar, SidecarItem, SidecarStack } from '../sidecar'
 
 export const PIXL_EXT = '.pixl'
 /** `PRAGMA application_id`: "PIXL". */
 export const PIXL_APPLICATION_ID = 0x5049584c
-/** The format's version (`meta.format_version`, and `PRAGMA user_version`). */
-export const PIXL_FORMAT_VERSION = 1
+/**
+ * The format's version (`meta.format_version`, and `PRAGMA user_version`).
+ * 2: painted planes are binary blobs named by their SHA-256 (1 kept them as
+ * base64 text in `planes`, by a 32-bit hash); a version-1 file is upgraded
+ * when it is opened.
+ */
+export const PIXL_FORMAT_VERSION = 2
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -61,7 +67,6 @@ CREATE TABLE IF NOT EXISTS items (
   updated_at TEXT NOT NULL
 );
 ${HISTORY_SCHEMA}
-CREATE TABLE IF NOT EXISTS planes (ref TEXT PRIMARY KEY, png TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS preview (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   width INTEGER NOT NULL,
@@ -271,13 +276,75 @@ export class PixlFile {
       const v = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
       if (v > PIXL_FORMAT_VERSION)
         throw new Error(`${path} was made by a newer Pixl Playroom (format ${v})`)
-      // Tables a later minor version adds are made on open; nothing is ever dropped.
+      // Tables a later minor version adds are made on open.
       db.exec(SCHEMA)
+      const file = new PixlFile(path, db)
+      if (v < PIXL_FORMAT_VERSION) file.upgrade(v)
+      return file
     } catch (err) {
       db.close()
       throw err
     }
-    return new PixlFile(path, db)
+  }
+
+  /**
+   * A file from an older version brought up to this one, in one transaction.
+   * 1 → 2: each plane in `planes` becomes a blob named by its SHA-256, and
+   * every recipe, snapshot and history row naming it by its old name names
+   * it by the new one.
+   */
+  private upgrade(from: number): void {
+    this.tx(() => {
+      const hasPlanes =
+        this.prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'planes'"
+        ).get() !== undefined
+      if (from < 2 && hasPlanes) {
+        const names = new Map<string, string>()
+        for (const { ref, png } of this.prepare('SELECT ref, png FROM planes').all() as {
+          ref: string
+          png: string
+        }[]) {
+          const hash = planeRef(png)
+          names.set(ref, hash)
+          this.putPlane(hash, png)
+        }
+        if (names.size > 0) {
+          const items = this.prepare('SELECT item_id, recipe, snapshots FROM items').all() as {
+            item_id: string
+            recipe: string | null
+            snapshots: string
+          }[]
+          const setItem = this.prepare(
+            'UPDATE items SET recipe = ?, snapshots = ? WHERE item_id = ?'
+          )
+          for (const it of items) {
+            const recipe = it.recipe && renameRefs(it.recipe, names)
+            const snapshots = renameRefs(it.snapshots, names)
+            if (recipe !== it.recipe || snapshots !== it.snapshots)
+              setItem.run(recipe, snapshots, it.item_id)
+          }
+          const rows = this.prepare('SELECT item_key, seq, recipe, patch FROM history').all() as {
+            item_key: string
+            seq: number
+            recipe: string
+            patch: string | null
+          }[]
+          const setRow = this.prepare(
+            'UPDATE history SET recipe = ?, patch = ? WHERE item_key = ? AND seq = ?'
+          )
+          for (const r of rows) {
+            const recipe = renameRefs(r.recipe, names)
+            const patch = r.patch && renameRefs(r.patch, names)
+            if (recipe !== r.recipe || patch !== r.patch)
+              setRow.run(recipe, patch, r.item_key, r.seq)
+          }
+        }
+        this.db.exec('DROP TABLE planes')
+      }
+      this.setMeta('format_version', String(PIXL_FORMAT_VERSION))
+      this.db.exec(`PRAGMA user_version = ${PIXL_FORMAT_VERSION}`)
+    })
   }
 
   /** The photo a project names, read without keeping it open; null for a file that is not one. */
@@ -481,13 +548,17 @@ export class PixlFile {
     }
   }
 
-  /** Write what a sidecar holds: every item (copies gone from it are removed), the stack. */
-  write(s: Sidecar): void {
+  /**
+   * Write what a sidecar holds: every item (copies gone from it are removed),
+   * the stack. Recipes may carry their planes or name them; a named plane the
+   * project lacks is taken from `planeOf` (the index's store).
+   */
+  write(s: Sidecar, planeOf?: (ref: string) => string | undefined): void {
     this.tx(() => {
       const now = new Date().toISOString()
       // A plane already stored is not handed to SQLite again (megabytes of PNG each).
       const slim = (r: Recipe): Recipe =>
-        slimRecipe(r, (ref, png) => {
+        slimRecipe(r, planeRef, (ref, png) => {
           if (!this.hasPlane(ref)) this.putPlane(ref, png)
         })
       // Only the items that changed are written: a rating or one copy's edit
@@ -533,6 +604,11 @@ export class PixlFile {
         )
           return
         put.run(id, name, sort, it.rating, it.flag, it.label, recipe, snapshots, now)
+        for (const ref of refsIn(`${recipe ?? ''} ${snapshots}`)) {
+          if (this.hasPlane(ref)) continue
+          const png = planeOf?.(ref)
+          if (png !== undefined) this.putPlane(ref, png)
+        }
       }
       row(PHOTO, this.origin()?.name ?? '', 0, s.photo)
       s.copies.forEach((c, i) => row(c.id, c.name, i + 1, c))
@@ -554,25 +630,74 @@ export class PixlFile {
     this.history.insertRows(itemKeyOf(copyId), rows)
   }
 
+  /** Keep a painted plane (a base64 PNG) as a blob named `ref`, its SHA-256 (`planeRef`). */
   putPlane(ref: string, png: string): void {
-    this.prepare('INSERT OR IGNORE INTO planes(ref, png) VALUES (?, ?)').run(ref, png)
+    if (this.hasPlane(ref)) return
+    const bytes = Buffer.from(png, 'base64')
+    const size = pngSize(bytes)
+    this.putBlobBytes(ref, bytes, {
+      kind: 'plane',
+      codec: 'png',
+      width: size?.width ?? null,
+      height: size?.height ?? null,
+      channels: 1,
+      depth: 8
+    })
   }
 
   hasPlane(ref: string): boolean {
-    return this.prepare('SELECT 1 FROM planes WHERE ref = ?').get(ref) !== undefined
+    return this.prepare('SELECT 1 FROM blobs WHERE hash = ?').get(ref) !== undefined
   }
 
+  /** A plane as a base64 PNG, or undefined when the project has none by that name. */
   plane(ref: string): string | undefined {
-    const row = this.prepare('SELECT png FROM planes WHERE ref = ?').get(ref) as
-      { png: string } | undefined
-    return row?.png
+    const info = this.blob(ref)
+    if (info?.kind !== 'plane') return undefined
+    return this.blobBytes(ref).toString('base64')
   }
 
   *planes(): Generator<{ ref: string; png: string }> {
-    yield* this.prepare('SELECT ref, png FROM planes').iterate() as Iterable<{
-      ref: string
-      png: string
-    }>
+    for (const { hash } of this.prepare("SELECT hash FROM blobs WHERE kind = 'plane'").all() as {
+      hash: string
+    }[])
+      yield { ref: hash, png: this.blobBytes(hash).toString('base64') }
+  }
+
+  /** A blob's bytes, whole (for small ones: planes). */
+  private blobBytes(hash: string): Buffer {
+    const parts = (
+      this.prepare('SELECT data FROM blob_chunks WHERE hash = ? ORDER BY idx').all(hash) as {
+        data: Uint8Array
+      }[]
+    ).map((r) => r.data)
+    return Buffer.concat(parts)
+  }
+
+  /** Store bytes already in memory as the blob `hash`, in chunks. */
+  private putBlobBytes(
+    hash: string,
+    bytes: Uint8Array,
+    info: Omit<BlobInfo, 'hash' | 'bytes'>
+  ): void {
+    this.tx(() => {
+      const put = this.prepare('INSERT INTO blob_chunks(hash, idx, data) VALUES (?, ?, ?)')
+      for (let idx = 0, at = 0; at < bytes.length || idx === 0; idx++, at += BLOB_CHUNK)
+        put.run(hash, idx, bytes.subarray(at, Math.min(bytes.length, at + BLOB_CHUNK)))
+      this.prepare(
+        `INSERT INTO blobs(hash, kind, codec, width, height, channels, depth, bytes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        hash,
+        info.kind,
+        info.codec,
+        info.width,
+        info.height,
+        info.channels,
+        info.depth,
+        bytes.length,
+        new Date().toISOString()
+      )
+    })
   }
 
   // ── blobs: large binaries, by content (the original; later, pixel results) ──
@@ -702,7 +827,8 @@ export class PixlFile {
 
   /**
    * Drop what nothing refers to: planes no recipe, snapshot or history step
-   * names. Then give the freed pages back to the disk.
+   * names, and other blobs nothing names. Then give the freed pages back to
+   * the disk. Returns how many planes went.
    */
   gc(): number {
     const keep = new Set<string>()
@@ -727,19 +853,24 @@ export class PixlFile {
     // One stored a moment ago may be on its way into a recipe (a step being
     // committed): only those older than an hour are fair game.
     const fresh = new Date(Date.now() - 3600_000).toISOString()
-    for (const { hash } of this.prepare('SELECT hash FROM blobs WHERE created_at < ?').all(
-      fresh
-    ) as { hash: string }[])
-      if (!named.has(hash)) this.removeBlob(hash)
     let removed = 0
+    let freed = 0
     this.tx(() => {
-      for (const { ref } of this.prepare('SELECT ref FROM planes').all() as { ref: string }[]) {
-        if (keep.has(ref)) continue
-        this.prepare('DELETE FROM planes WHERE ref = ?').run(ref)
-        removed++
+      for (const b of this.prepare('SELECT hash, kind, created_at FROM blobs').all() as {
+        hash: string
+        kind: string
+        created_at: string
+      }[]) {
+        // A plane goes as soon as nothing names it; it is written with what names it.
+        if (b.kind === 'plane') {
+          if (keep.has(b.hash)) continue
+          removed++
+        } else if (named.has(b.hash) || b.created_at >= fresh) continue
+        this.removeBlob(b.hash)
+        freed++
       }
     })
-    if (removed > 0) this.db.exec('PRAGMA incremental_vacuum')
+    if (freed > 0) this.db.exec('PRAGMA incremental_vacuum')
     return removed
   }
 }

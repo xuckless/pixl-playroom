@@ -255,7 +255,9 @@ async function commitWb(
     await s.index.appendHistory(key, beforeLabel, s.planes.slim(before))
     await s.index.appendHistory(key, label, s.planes.slim(next))
   }
-  const items = await s.index.saveRecipes(changes.map((c) => ({ key: c.key, recipe: c.next })))
+  const items = await s.index.saveRecipes(
+    changes.map((c) => ({ key: c.key, recipe: s.planes.slim(c.next) }))
+  )
   for (const { key, next } of changes) {
     if (s.sessions.liveRecipe(key)) s.sessions.update(key, next, false)
     const { photoId, copyId } = parseKey(key)

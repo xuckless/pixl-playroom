@@ -27,7 +27,8 @@ import {
 import { convertWb, type WbContext } from '../shared/wbconvert'
 import { LicenceError } from '../shared/licence'
 import { BUILTIN_PRESETS } from '../shared/presets'
-import { applyGroups, newId, planeRef, type Recipe, type RecipeGroup } from '../shared/recipe'
+import { applyGroups, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
+import { planeRef } from './planeref'
 import { orientedFrame } from '../shared/compile'
 import { cropAtAspect } from '../shared/crop'
 import { ensureProxies } from './proxy'
@@ -256,8 +257,10 @@ export function registerIpc(s: Services): void {
         }
         pairs.push({ key, recipe: next })
       }
-      // One message, one transaction: a batch commits once.
-      const items = await s.index.saveRecipes(pairs)
+      // One message, one transaction: a batch commits once. Planes by reference.
+      const items = await s.index.saveRecipes(
+        pairs.map((p) => ({ key: p.key, recipe: s.planes.slim(p.recipe) }))
+      )
       for (const { key, recipe: next } of pairs) {
         if (s.sessions.liveRecipe(key)) s.sessions.update(key, next, false)
         const { photoId, copyId } = parseKey(key)
@@ -392,12 +395,13 @@ export function registerIpc(s: Services): void {
     if (png === undefined) throw new Error('a painted mask is missing from the plane store')
     return png
   })
-  handle(IPC.develop.saveSnapshots, async (key: string, snapshots: Snapshot[]) => {
-    const full = await Promise.all(
-      snapshots.map(async (sn) => ({ ...sn, recipe: await s.planes.hydrate(sn.recipe) }))
+  // Snapshots come and go by reference: the index keeps the planes they name.
+  handle(IPC.develop.saveSnapshots, (key: string, snapshots: Snapshot[]) =>
+    s.index.saveSnapshots(
+      key,
+      snapshots.map((sn) => ({ ...sn, recipe: s.planes.slim(sn.recipe) }))
     )
-    await s.index.saveSnapshots(key, full)
-  })
+  )
   // Stored recipes and patches hold planes by reference; the base crosses slim.
   const slimLog = (log: HistoryLog): HistoryLog => ({
     ...log,
@@ -410,8 +414,8 @@ export function registerIpc(s: Services): void {
     // An open photo saves its live recipe (as new as the step or newer), and
     // its own save of that recipe is not needed after.
     const live = s.sessions.liveRecipe(key)
-    const full = live ?? (await s.planes.hydrate(recipe))
-    const change = await s.index.commitEdit(key, label, s.planes.slim(recipe), full)
+    const saved = live ? s.planes.slim(live) : recipe
+    const change = await s.index.commitEdit(key, label, s.planes.slim(recipe), saved)
     if (live) s.sessions.saved(key, live)
     return change.base
       ? { ...change, base: { ...change.base, recipe: s.planes.slim(change.base.recipe) } }

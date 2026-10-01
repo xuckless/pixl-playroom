@@ -18,7 +18,8 @@ import type { IndexEvent } from '../src/main/indexer/protocol'
 import type { XmpIo } from '../src/main/indexer/xmp'
 import type { Store } from '../src/main/db'
 import type { PhotoMeta } from '../src/shared/ipc'
-import { defaultRecipe, newLocalLayer, planeRef, type BrushComponent } from '../src/shared/recipe'
+import { defaultRecipe, newLocalLayer, type BrushComponent } from '../src/shared/recipe'
+import { planeRef } from '../src/main/planeref'
 
 interface Fixture {
   root: string
@@ -242,8 +243,8 @@ test('pruning keeps the planes the history names, and only those', async () => {
   const f = fixture()
   try {
     const [a] = await f.index.listFolder(f.folder)
-    const kept = 'iVBORw0KGgo=kept'
-    const dropped = 'iVBORw0KGgo=dropped'
+    const kept = Buffer.from('a plane kept').toString('base64')
+    const dropped = Buffer.from('a plane dropped').toString('base64')
     f.index.putPlane(planeRef(kept), kept)
     f.index.putPlane(planeRef(dropped), dropped)
     const r = defaultRecipe(false)

@@ -1650,7 +1650,9 @@ export class DevelopSessions {
       this.closeOthers(key)
     }
     const data = await this.library.index.openData(key)
-    const { recipe, item, snapshots } = data
+    const { item, snapshots } = data
+    // The index names planes; the session renders them.
+    const recipe = await this.library.planes.hydrate(data.recipe)
     // The original, or the copy its project carries when it is gone.
     const row = await this.library.readable(data.row)
     const info = await this.library.probe(row, this.engine)

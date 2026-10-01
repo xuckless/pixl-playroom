@@ -29,9 +29,9 @@ one file, written transactionally, readable by any SQLite tool or library.
 | ----------------------- | ------------------------------- |
 | Extension               | `.pixl`                         |
 | `PRAGMA application_id` | `0x5049584C` (`"PIXL"`)         |
-| `PRAGMA user_version`   | the format's major version, `1` |
+| `PRAGMA user_version`   | the format's major version, `2` |
 | `meta.format`           | `pixl-project`                  |
-| `meta.format_version`   | `1`                             |
+| `meta.format_version`   | `2`                             |
 | Page size               | 16384                           |
 | Auto-vacuum             | incremental                     |
 | Journal                 | rollback (`DELETE`); never WAL  |
@@ -64,7 +64,7 @@ one file, written transactionally, readable by any SQLite tool or library.
 | key              | value                                                                                    |
 | ---------------- | ---------------------------------------------------------------------------------------- |
 | `format`         | `pixl-project`                                                                           |
-| `format_version` | `1`                                                                                      |
+| `format_version` | `2`                                                                                      |
 | `created_at`     | ISO 8601 time                                                                            |
 | `created_by`     | the application that made it                                                             |
 | `stack`          | JSON `{ "id": string, "position": number }` (position 0 is the stack's cover), or absent |
@@ -131,15 +131,20 @@ Each item's edit history.
 - **Folding:** past 200 rows, the oldest steps fold into the base, and a hidden
   one is dropped.
 
-### `planes`
+### Painted planes
 
-`ref TEXT PRIMARY KEY, png TEXT NOT NULL`. Painted mask planes, each kept once.
+Painted mask planes are blobs (below) of `kind` `plane`, `codec` `png`: an
+8-bit grey PNG, its bytes as they are. Each is kept once.
 
-- `png` is an 8-bit grey PNG, base64.
-- `ref` is how recipes name the plane: a brush component with `"png": ""` and
-  `"ref": "<ref>"` uses this plane. A component with a non-empty `png`
-  carries its plane inline.
+- A plane's name (its `blobs.hash`) is the SHA-256 of its PNG bytes.
+- Recipes name a plane by it: a brush component with `"png": ""` and
+  `"ref": "<sha256>"` uses that plane. A component with a non-empty `png`
+  (base64) carries its plane inline.
 - A plane no item, snapshot or history row names may be removed.
+- **Version 1** kept planes as base64 text in a `planes(ref, png)` table, named
+  by a 32-bit hash and the text's length. Opening a version-1 file upgrades
+  it: each plane becomes a blob, every `"ref"` naming it is renamed, the
+  `planes` table is dropped and `user_version` becomes 2.
 
 ### `preview`
 
@@ -150,15 +155,15 @@ One row (`id = 1`): a JPEG of the photo as developed (`jpeg`), `width` and
 
 Large binaries, stored once by content.
 
-| `blobs` column      | meaning                                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `hash`              | SHA-256 of the bytes, lower-case hex (the blob's name)                                                       |
-| `kind`              | what it is: `original`, `pixels` (a step's image) or `mask` (a step's frozen mask)                           |
-| `codec`             | how the bytes are encoded: `dng`, `jxl-jpeg`, `jxl`, or the original's own extension (`jpg`, `cr3`, `heic`…) |
-| `width`, `height`   | its pixel size when known (a JPEG XL reports it turned by the orientation)                                   |
-| `channels`, `depth` | when known                                                                                                   |
-| `bytes`             | its length                                                                                                   |
-| `created_at`        | ISO 8601 time                                                                                                |
+| `blobs` column      | meaning                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `hash`              | SHA-256 of the bytes, lower-case hex (the blob's name)                                                        |
+| `kind`              | what it is: `original`, `pixels` (a step's image), `mask` (a step's frozen mask) or `plane` (a painted plane) |
+| `codec`             | how the bytes are encoded: `dng`, `jxl-jpeg`, `jxl`, or the original's own extension (`jpg`, `cr3`, `heic`…)  |
+| `width`, `height`   | its pixel size when known (a JPEG XL reports it turned by the orientation)                                    |
+| `channels`, `depth` | when known                                                                                                    |
+| `bytes`             | its length                                                                                                    |
+| `created_at`        | ISO 8601 time                                                                                                 |
 
 `blob_chunks(hash, idx, data)` holds the bytes:
 
@@ -167,7 +172,8 @@ Large binaries, stored once by content.
 - a reader concatenates the chunks.
 
 A blob nothing names may be removed. Names are `original.blob`, and any
-`"blob"` or `"alpha"` field holding a 64-hex hash in a recipe or history row.
+`"blob"`, `"alpha"` or `"ref"` field holding a 64-hex hash in a recipe,
+snapshot or history row.
 
 ### `original`
 
