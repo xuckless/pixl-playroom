@@ -28,6 +28,9 @@ import { convertWb, type WbContext } from '../shared/wbconvert'
 import { LicenceError } from '../shared/licence'
 import { BUILTIN_PRESETS } from '../shared/presets'
 import { applyGroups, newId, planeRef, type Recipe, type RecipeGroup } from '../shared/recipe'
+import { orientedFrame } from '../shared/compile'
+import { cropAtAspect } from '../shared/crop'
+import { ensureProxies } from './proxy'
 import type { IndexClient } from './indexer/client'
 import { IndexError } from './indexer/client'
 import type { PlaneStore } from './planestore'
@@ -96,6 +99,17 @@ export interface Services {
   aiEngine: EngineClient
   models: ModelStore
   lenses: LensProfileStore
+}
+
+/** A photo's base frame (upright, before the user's turns): the open session's, else its proxies'. */
+async function baseFrame(s: Services, key: string): Promise<{ width: number; height: number }> {
+  if (s.sessions.liveRecipe(key)) {
+    const shot = await s.sessions.lensShot(key)
+    return { width: shot.width, height: shot.height }
+  }
+  const row = await s.library.photoRow(key)
+  const px = await ensureProxies(s.bgEngine, row, await s.library.probe(row))
+  return { width: px.frameWidth, height: px.frameHeight }
 }
 
 /** A photo that is not open, as lens matching needs it: probed, with its camera. */
@@ -201,6 +215,21 @@ export function registerIpc(s: Services): void {
         const base = live ?? saved.get(key)
         if (!base) continue
         const next = applyGroups(base, from, groups)
+        // A crop locked to an aspect keeps it on a photo of another shape:
+        // the same centre and share of the frame, the aspect's shape.
+        const g = next.geometry
+        if (groups.includes('crop') && g.crop && g.aspect && key !== sourceKey) {
+          try {
+            const frame = await baseFrame(s, key)
+            const o = orientedFrame(next, frame.width, frame.height)
+            g.crop = cropAtAspect(g.crop, g.aspect, o.width, o.height)
+          } catch (err) {
+            log.info('pasted crop not refitted for', key, (err as Error).message)
+          }
+        }
+        // Chromatic aberration is measured per photo: a target keeps its own
+        // measurement (or none, the profile's then), never the source's.
+        if (groups.includes('lens') && key !== sourceKey) next.lens.ca = base.lens.ca
         // A lens profile is resolved per photo: each target at its own lens,
         // focal length, aperture and crop factor (an automatic one finds
         // each target's own lens), not the source's numbers.
@@ -209,6 +238,8 @@ export function registerIpc(s: Services): void {
             const shot = live ? await s.sessions.lensShot(key) : await lensShotOf(s, key)
             next.lens.profile.resolved = s.lenses.resolve(shot, next.lens.profile.id).resolved
           } catch (err) {
+            // Not the source's numbers on another lens: none, until it resolves.
+            next.lens.profile.resolved = null
             log.info('lens profile not re-resolved for', key, (err as Error).message)
           }
         }

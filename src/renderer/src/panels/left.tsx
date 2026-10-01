@@ -32,13 +32,31 @@ export function PresetsPane(): React.JSX.Element | null {
   const [presets, reload] = usePresets(4000)
   const [applied, setApplied] = useState<string | null>(null)
   if (!recipe) return <p className="rail-empty">Open a photo to use presets.</p>
-  const apply = (p: Preset): void => {
+  const apply = async (p: Preset): Promise<void> => {
+    if (!session) return
     setApplied(p.id)
     // A saved custom white balance is in the units of the photo it was made
     // on; on a photo of the other kind it goes through the engine's white.
     const from =
       p.wbOp && session ? { ...p.recipe, wb: wbFromSaved(p.recipe.wb, p.wbOp, session) } : p.recipe
-    replace(applyGroups(recipe, from, p.groups), `Preset: ${p.name}`)
+    // A lens profile is this photo's lens's at its focal length and aperture,
+    // not the numbers it had where the preset was saved.
+    const lens = p.groups.includes('lens') && from.lens.profile.enabled
+    const resolved = lens
+      ? await api.lens.resolve(session.key, from.lens.profile.id).then(
+          (m) => m.resolved,
+          () => null
+        )
+      : null
+    const now = useDevelop.getState()
+    if (now.session?.key !== session.key || !now.recipe) return
+    const next = applyGroups(now.recipe, from, p.groups)
+    if (p.groups.includes('lens')) {
+      // Chromatic aberration is measured per photo: this one keeps its own.
+      next.lens.ca = now.recipe.lens.ca
+      if (lens) next.lens.profile.resolved = resolved
+    }
+    replace(next, `Preset: ${p.name}`)
   }
   // Presets keep the groups they were saved under.
   const groups = [...new Set(presets.map((p) => p.group))]
@@ -59,9 +77,9 @@ export function PresetsPane(): React.JSX.Element | null {
                   role="button"
                   tabIndex={0}
                   className={`preset rail-item${applied === p.id ? ' on' : ''}`}
-                  onClick={() => apply(p)}
+                  onClick={() => void apply(p)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') apply(p)
+                    if (e.key === 'Enter') void apply(p)
                   }}
                   title={`Carries: ${p.groups.join(', ')}`}
                 >

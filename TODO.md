@@ -155,22 +155,22 @@ After: Pass 1.
 
 ### Pass 7 — Lens, presets and paste · 5 pts
 
-- [ ] **S** · **Lens profile resolve throws at f-number 0** (manual or adapted
+- [x] **S** · **Lens profile resolve throws at f-number 0** (manual or adapted
       lenses): `stops(0)` is −Infinity, the aperture filter returns `[]`, and
       `interpolate([])` crashes (`lens.ts:446-453`, `lensprofiles.ts:355`).
       Treat ≤ 0 or non-finite as null; guard the empty list.
-- [ ] **S** · **Lens paste carries the source's measured CA** to every target
+- [x] **S** · **Lens paste carries the source's measured CA** to every target
       (`main/ipc.ts:206-214`); a failed re-resolve keeps the source's profile;
       Develop presets re-resolve nothing. Clear or re-measure `ca`; set
       `resolved = null` in the catch.
-- [ ] **S** · **Old saved presets are never normalised** (`db.ts:815`,
+- [x] **S** · **Old saved presets are never normalised** (`db.ts:815`,
       `left.tsx:41`); one saved before `colorGrade.add`/`effects.wash` makes
       compile throw. Normalise when listing.
-- [ ] **S** · **Sync and Save Preset on an untouched RAW pre-tick profile,
+- [x] **S** · **Sync and Save Preset on an untouched RAW pre-tick profile,
       sharpening and noise** (`Dialogs.tsx:722, 853` compare against
       `defaultRecipe(false)`); syncing to JPEGs gives them the Standard
       profile, sharpening 40 and colour NR 25. Use `defaultRecipe(isRaw)`.
-- [ ] **S** · **A pasted crop isn't rebuilt to the locked aspect** on a
+- [x] **S** · **A pasted crop isn't rebuilt to the locked aspect** on a
       differently shaped photo.
 
 ### Pass 8 — Recipe hardening · 5 pts

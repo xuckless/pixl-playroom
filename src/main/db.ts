@@ -9,7 +9,7 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import type { CameraInfo, ColorLabel, ExportPreset, Flag, HistoryLog, Preset } from '../shared/ipc'
 import type { ExportSettings } from '../shared/export'
 import { HistoryTable, type HistoryRow } from './historytable'
-import type { Recipe, RecipeGroup } from '../shared/recipe'
+import { normaliseRecipe, RECIPE_GROUPS, type Recipe, type RecipeGroup } from '../shared/recipe'
 
 export interface PhotoRow {
   id: number
@@ -811,8 +811,10 @@ export class Store {
       name: r.name,
       group: r.grp,
       builtin: false,
-      groups: JSON.parse(r.groups) as RecipeGroup[],
-      recipe: JSON.parse(r.recipe) as Recipe,
+      // Saved by an older version: groups it named that are gone go, and the
+      // recipe gains what was added since (as a photo's does when read).
+      groups: (JSON.parse(r.groups) as RecipeGroup[]).filter((g) => RECIPE_GROUPS.includes(g)),
+      recipe: normaliseRecipe(JSON.parse(r.recipe), false),
       ...(r.wb_op ? { wbOp: JSON.parse(r.wb_op) as NonNullable<Preset['wbOp']> } : {})
     }))
   }

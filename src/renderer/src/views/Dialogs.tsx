@@ -715,11 +715,14 @@ export function SyncDialog(): React.JSX.Element {
   const clipboard = useLibrary((s) => s.clipboard)
   const developRecipe = useDevelop((s) => s.recipe)
   const developKey = useDevelop((s) => s.session?.key)
+  const developRaw = useDevelop((s) => s.session?.isRaw ?? false)
   const source = clipboard?.recipe ?? developRecipe
+  // What differs from the photo's own defaults (a RAW's profile, sharpening
+  // and noise reduction are not edits).
   const initial = new Set<RecipeGroup>(
     clipboard?.groups ??
       (source
-        ? changedGroups(source, defaultRecipe(false)).filter(
+        ? changedGroups(source, defaultRecipe(developRaw)).filter(
             (g) => g !== 'crop' && g !== 'upright' && g !== 'localAdjustments' && g !== 'retouch'
           )
         : [])
@@ -852,7 +855,7 @@ export function SavePresetDialog(): React.JSX.Element {
   const [groups, setGroups] = useState<Set<RecipeGroup>>(
     new Set(
       recipe
-        ? changedGroups(recipe, defaultRecipe(false)).filter(
+        ? changedGroups(recipe, defaultRecipe(session?.isRaw ?? false)).filter(
             (g) =>
               g !== 'crop' &&
               g !== 'upright' &&
