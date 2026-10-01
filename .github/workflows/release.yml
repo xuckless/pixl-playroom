@@ -1,13 +1,21 @@
 name: Release
 
-# Builds, signs and publishes installers for one tag on every platform, and
-# attaches them to the tag's GitHub release, which is also the update feed
-# installed apps poll. Called by release-please.yml after a release is cut,
-# or by hand for a tag.
+# Builds, signs and publishes installers for one tag on every platform to
+# updates.pixlfoundation.com (the pixl-updates R2 bucket), the feed installed
+# apps poll: each version's files in playroom/<version>/, then the feeds in
+# playroom/, last, so no app reads a feed before its files exist. They also
+# go to the tag's GitHub release, the bridge for apps up to 0.1.1-beta, which
+# still read GitHub's feed (electron-builder.yml `publish`). Called by
+# release-please.yml after a release is cut, or by hand for a tag.
 #
 # Channel: electron-builder derives it from the version. 0.3.0 publishes
-# latest.yml / latest-mac.yml; 0.3.0-beta.1 publishes beta.yml / beta-mac.yml.
-# Stable users never see a prerelease.
+# latest.yml / latest-mac.yml and beta.yml / beta-mac.yml (so the beta channel
+# gets it too); 0.3.0-beta.1 publishes beta.yml / beta-mac.yml only. Stable
+# users never see a prerelease.
+#
+# Needs the R2 API token (secrets R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY;
+# variable R2_ENDPOINT, https://<account>.r2.cloudflarestorage.com): without
+# it the release fails before anything reaches the feed.
 #
 # All jobs run on GitHub-hosted runners (free for a public repository).
 
@@ -146,7 +154,7 @@ jobs:
           AZURE_CLIENT_ID_IN: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET_IN: ${{ secrets.AZURE_CLIENT_SECRET }}
 
-      - name: Package and publish to the GitHub release
+      - name: Package (and publish to the GitHub release, the bridge)
         # bash on every runner, so the Azure options below pass as separate
         # arguments (the publisher name can hold spaces).
         shell: bash
@@ -206,26 +214,77 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_SYMBOLS_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      # The feed is named for the channel electron-builder derives from the
-      # version: latest-mac.yml for 0.3.0, beta-mac.yml for 0.3.0-beta.1.
-      - name: Update channel
-        if: runner.os == 'macOS'
+      # The channels this version is published to, as electron-builder named
+      # the feeds: latest and beta for 0.3.0, beta alone for 0.3.0-beta.1.
+      - name: Version and channels
         shell: bash
         run: |
-          tag='${{ inputs.tag }}'
-          channel=latest
-          if [[ "$tag" == *-* ]]; then pre="${tag#*-}"; channel="${pre%%.*}"; fi
-          echo "CHANNEL=$channel" >> "$GITHUB_ENV"
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != '${{ inputs.tag }}' ]; then
+            echo "::error::package.json says $version, but the tag is ${{ inputs.tag }}"
+            exit 1
+          fi
+          channels='latest beta'
+          if [[ "$version" == *-* ]]; then pre="${version#*-}"; channels="${pre%%.*}"; fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "CHANNELS=$channels" >> "$GITHUB_ENV"
 
-      # Each macOS job's feed lists only the arch it packaged, and the two
-      # jobs overwrite each other's copy on the release. Keep both so
-      # `mac-channel` below can publish one feed covering both.
-      - name: Save this arch's macOS update manifest
+      # This job's installers, zips and blockmaps into playroom/<version>/.
+      # Windows then puts up its feeds; the macOS feeds wait for both arches
+      # (mac-channel below). Files can be uploaded again while no feed names
+      # the version (a rerun after a failure); once one does, they are live,
+      # cached for a year, and never replaced: release a new version instead.
+      - name: Upload to updates.pixlfoundation.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ENDPOINT:-}" ]; then
+            echo "::error::R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY or R2_ENDPOINT not set: nothing can reach the update feed"
+            exit 1
+          fi
+          s3() { aws s3 "$@" --endpoint-url "$R2_ENDPOINT" --no-progress; }
+          base="s3://$R2_BUCKET/playroom"
+          suffix=$([ "$RUNNER_OS" = macOS ] && echo -mac || true)
+          first="${CHANNELS%% *}"
+          live=$(s3 cp "$base/$first$suffix.yml" - 2>/dev/null | sed -n 's/^version: //p' || true)
+          if [ "$live" = "$VERSION" ]; then
+            echo "::error::$first$suffix.yml already offers $VERSION; its files are live and won't be replaced"
+            exit 1
+          fi
+          files=(dist/pixl-playroom-*.zip dist/pixl-playroom-*.dmg dist/pixl-playroom-*.exe dist/pixl-playroom-*.blockmap)
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::nothing to upload in dist/"; exit 1; fi
+          for f in "${files[@]}"; do
+            s3 cp "$f" "$base/$VERSION/$(basename "$f")" --cache-control 'public, max-age=31536000, immutable'
+          done
+          if [ "$RUNNER_OS" = Windows ]; then
+            mkdir -p feeds
+            for ch in $CHANNELS; do
+              node build/prefix-feed.mjs "dist/$ch.yml" > "feeds/$ch.yml"
+              s3 cp "feeds/$ch.yml" "$base/$ch.yml" --cache-control 'no-cache' --content-type 'text/yaml'
+            done
+          fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # R2 refuses the checksum headers newer AWS CLIs send by default.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+          R2_BUCKET: pixl-updates
+
+      # Each macOS job's feeds list only the arch it packaged. Keep both
+      # jobs' (the R2 ones in dist/, GitHub's in dist/github/) so
+      # `mac-channel` below can publish feeds covering both.
+      - name: Save this arch's macOS update manifests
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v7
         with:
           name: mac-channel-${{ matrix.arch }}
-          path: dist/${{ env.CHANNEL }}-mac.yml
+          path: |
+            dist/*-mac.yml
+            dist/github/*-mac.yml
           if-no-files-found: error
           retention-days: 7
 
@@ -243,22 +302,53 @@ jobs:
           pattern: mac-channel-*
           path: mac-channel
 
-      # Both arches in one feed. electron-updater keeps the arm64 file on
-      # Apple Silicon and drops every arm64 file on Intel, so a feed carrying
-      # one arch leaves the other unable to update. The script fails the job
-      # rather than publish such a feed.
+      # Both arches in one feed per channel. electron-updater keeps the arm64
+      # file on Apple Silicon and drops every arm64 file on Intel, so a feed
+      # carrying one arch leaves the other unable to update. The script fails
+      # the job rather than publish such a feed.
       - name: Merge the per-arch manifests
         run: |
-          tag='${{ inputs.tag }}'
-          channel=latest
-          if [[ "$tag" == *-* ]]; then pre="${tag#*-}"; channel="${pre%%.*}"; fi
-          echo "CHANNEL=$channel" >> "$GITHUB_ENV"
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          channels='latest beta'
+          if [[ "$version" == *-* ]]; then pre="${version#*-}"; channels="${pre%%.*}"; fi
+          echo "CHANNELS=$channels" >> "$GITHUB_ENV"
+          mkdir -p r2 github
+          for ch in $channels; do
+            node build/merge-mac-channel.mjs \
+              "mac-channel/mac-channel-x64/$ch-mac.yml" \
+              "mac-channel/mac-channel-arm64/$ch-mac.yml" > "merged-$ch-mac.yml"
+            node build/prefix-feed.mjs "merged-$ch-mac.yml" > "r2/$ch-mac.yml"
+            cat "r2/$ch-mac.yml"
+          done
+          # GitHub's feed for the bridge: the release's own channel only.
+          ch="${channels%% *}"
           node build/merge-mac-channel.mjs \
-            "mac-channel/mac-channel-x64/$channel-mac.yml" \
-            "mac-channel/mac-channel-arm64/$channel-mac.yml" > "$channel-mac.yml"
-          cat "$channel-mac.yml"
+            "mac-channel/mac-channel-x64/github/$ch-mac.yml" \
+            "mac-channel/mac-channel-arm64/github/$ch-mac.yml" > "github/$ch-mac.yml"
 
-      - name: Replace the manifest on the release
-        run: gh release upload "${{ inputs.tag }}" "$CHANNEL-mac.yml" --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Put the feeds on updates.pixlfoundation.com
+        run: |
+          set -euo pipefail
+          if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ENDPOINT:-}" ]; then
+            echo "::error::R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY or R2_ENDPOINT not set"
+            exit 1
+          fi
+          for ch in $CHANNELS; do
+            aws s3 cp "r2/$ch-mac.yml" "s3://pixl-updates/playroom/$ch-mac.yml" \
+              --endpoint-url "$R2_ENDPOINT" --no-progress --cache-control 'no-cache' --content-type 'text/yaml'
+          done
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+
+      - name: Replace the manifest on the GitHub release (the bridge)
+        run: |
+          ch="${CHANNELS%% *}"
+          gh release upload "${{ inputs.tag }}" "github/$ch-mac.yml" --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

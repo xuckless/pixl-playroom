@@ -228,14 +228,26 @@ linux:
 appImage:
   artifactName: ${name}-linux-${arch}.${ext}
 
-# Installers and update manifests are attached to the GitHub release of the
-# tag being built. release-please has already published that release when the
-# build runs, so `releaseType: release` makes electron-builder upload to it
-# instead of drafting a new one (release.yml sets EP_GH_IGNORE_TIME for older
-# releases). The channel is derived from the version: 0.2.0 → latest.yml,
-# 0.2.0-beta.1 → beta.yml on a prerelease.
+# Updates come from updates.pixlfoundation.com (the pixl-updates R2 bucket):
+# the first provider is what the app's app-update.yml points at. release.yml
+# builds with `--publish always`, which skips `generic` (nothing to upload
+# to), then uploads the installers into playroom/<version>/ and the feeds,
+# rewritten to point there (build/prefix-feed.mjs), last.
+#
+# The channel is derived from the version: 0.2.0 → latest.yml, 0.2.0-beta.1
+# → beta.yml. A stable release also writes beta.yml (and alpha.yml, unused),
+# so the beta channel is offered a stable release newer than its last beta.
+#
+# GitHub is the bridge: apps up to 0.1.1-beta read GitHub's feed, so the
+# next release goes to the tag's GitHub release too (its feeds in
+# dist/github/; release-please has already published the release, hence
+# `releaseType: release`, and EP_GH_IGNORE_TIME for older tags). Once that
+# release is out, the github entry goes.
+generateUpdatesFilesForAllChannels: true
 publish:
-  provider: github
-  owner: xuckless
-  repo: pixl-playroom
-  releaseType: release
+  - provider: generic
+    url: https://updates.pixlfoundation.com/playroom
+  - provider: github
+    owner: xuckless
+    repo: pixl-playroom
+    releaseType: release

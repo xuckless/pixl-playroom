@@ -1,7 +1,6 @@
 # Read by electron-updater in development only, when PLAYROOM_FORCE_UPDATER=1
 # (see src/main/updater.ts). A packaged app reads the app-update.yml
 # electron-builder writes from `publish` in electron-builder.yml.
-provider: github
-owner: xuckless
-repo: pixl-playroom
+provider: generic
+url: https://updates.pixlfoundation.com/playroom
 updaterCacheDirName: pixl-playroom-updater

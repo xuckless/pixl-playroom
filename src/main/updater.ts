@@ -1,8 +1,11 @@
 /**
- * In-app updates through electron-updater, against the GitHub releases
- * electron-builder publishes (electron-builder.yml `publish`). Ported from
+ * In-app updates through electron-updater, from updates.pixlfoundation.com
+ * (electron-builder.yml `publish`; release.yml uploads there). Ported from
  * space-pixl's updater. Checks at launch and every four hours, downloads in
  * the background, and installs on quit or on "Restart to update".
+ * PLAYROOM_UPDATE_URL reads another feed (a staging folder) instead, to test
+ * an update before it goes out (RELEASING.md); the update is still checked
+ * against the app's signature on both platforms.
  *
  * macOS only accepts a signed, notarized update (Squirrel.Mac): until the
  * builds are signed a check there ends in an error, which the settings show.
@@ -95,6 +98,11 @@ export async function setupUpdater(): Promise<void> {
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
   if (!app.isPackaged) autoUpdater.forceDevUpdateConfig = true
+  const feed = process.env['PLAYROOM_UPDATE_URL']
+  if (feed) {
+    log.info(`updates: reading ${feed} (PLAYROOM_UPDATE_URL)`)
+    autoUpdater.setFeedURL({ provider: 'generic', url: feed.replace(/\/+$/, '') })
+  }
   applyChannel(state.channel)
 
   autoUpdater.on('checking-for-update', () => {

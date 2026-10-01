@@ -22,11 +22,16 @@ engine. If `pnpm dev` fails with `Error: Electron uninstall`, fetch the binary w
 1. Commit to `main` through PRs with conventional commits. `feat` and `fix` bump the patch
    while pre-1.0 (`bump-patch-for-minor-pre-major`); `docs`/`chore` bump nothing.
 2. `release-please.yml` keeps a release PR open with the next version and CHANGELOG.
-3. Merging that PR tags `vX.Y.Z`, creates the GitHub release, and `release.yml` builds
-   macOS arm64, macOS x64 and Windows x64 on GitHub-hosted runners: `electron-vite build`, then `electron-builder --publish always`, which
-   signs and notarizes macOS when the secrets exist and attaches installers plus
-   `latest*.yml` manifests. A final `mac-channel` job replaces `latest-mac.yml` with both
-   arches merged.
+3. Merging that PR tags `vX.Y.Z` and creates the GitHub release. `release.yml` then builds
+   macOS arm64, macOS x64 and Windows x64 on GitHub-hosted runners:
+   - `electron-vite build`, then `electron-builder --publish always`, which signs, and
+     notarizes macOS, when the secrets exist;
+   - each job uploads its installers, zips and blockmaps to updates.pixlfoundation.com,
+     under `playroom/<version>/`;
+   - Windows then puts up its feeds (`latest.yml`, `beta.yml`);
+   - a final `mac-channel` job merges the two arches' macOS feeds and puts them up last.
+
+   The feeds are rewritten to point into the version's folder (`build/prefix-feed.mjs`).
 
 **One arch per job.** The engine binding is a platform package that pnpm installs for the
 runner it runs on, so a job can only package its own architecture. `mac.target` in
@@ -35,10 +40,36 @@ both), `build/after-pack.mjs` fails the build if the app and its binding disagre
 `build/merge-mac-channel.mjs` stitches the two single-arch `latest-mac.yml` files into one
 feed.
 
-**Asset names carry no version** (`artifactName` in `electron-builder.yml`), so
-`releases/latest/download/<name>` links survive every release.
+**The update bucket.** `pixl-updates` (R2) behind `https://updates.pixlfoundation.com`:
+- `playroom/<version>/` holds that version's files, cached for a year (immutable);
+- `playroom/<channel>.yml` and `playroom/<channel>-mac.yml` are the feeds (`no-cache`).
 
-**Channels.** Derived from the version: `0.3.0` → `latest`, `0.3.0-beta.1` → `beta`.
+A folder per version keeps a beta release from overwriting the stable one's files (the asset
+names carry no version), and lets differential updates find the old version's blockmap.
+
+`release.yml` needs the secrets `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`, from an R2 API
+token with Object Read & Write on `pixl-updates`, and the variable `R2_ENDPOINT`
+(`https://<account id>.r2.cloudflarestorage.com`). Without them the release fails before any
+feed changes.
+
+A rerun of a failed release uploads the files again, as long as no feed names that version
+yet. Once one does, the version is live and its files are never replaced: fix a bad release
+by releasing again.
+
+**The GitHub bridge.** Apps up to 0.1.1-beta read GitHub's feed, so the next release also
+goes to the tag's GitHub release (the `github` entry in `publish`, its feeds in
+`dist/github/`), and its own `app-update.yml` points at the bucket. After that release, the
+`github` entry and the bridge steps in `release.yml` go.
+- Windows installs of 0.1.1-beta refuse that release whatever we do (their `publisherName`
+  was `xuckless`). Their users reinstall once, and the release notes and the beta page say
+  so.
+
+**Asset names carry no version** (`artifactName` in `electron-builder.yml`), so the website's
+download links can name a file and a version folder without guessing.
+
+**Channels.** Derived from the version: `0.3.0` → `latest`, `0.3.0-beta.1` → `beta`. A
+stable release also writes the `beta` feeds (`generateUpdatesFilesForAllChannels`), so the
+beta channel is offered a stable release newer than its last beta.
 
 **Betas (now).** `release-please-config.json` sets `"prerelease": true`, `"versioning":
 "prerelease"` and `"prerelease-type": "beta"`: release PRs propose beta versions
@@ -142,15 +173,19 @@ certificate type skips that any more).
 
 ## Updates
 
-`src/main/updater.ts` (ported from space-pixl) reads the GitHub releases through the
-`app-update.yml` electron-builder writes from `publish`. It checks at launch and every four
+`src/main/updater.ts` (ported from space-pixl) reads updates.pixlfoundation.com through
+the `app-update.yml` electron-builder writes from `publish`. It checks at launch and every four
 hours, downloads in the background and installs on quit or on _Settings → Restart to update_.
 The channel (Stable / Beta) is in _Settings_ and in `userData/settings.json`.
 
 - **macOS updates need signing.** Squirrel.Mac refuses an unsigned update, so until the
   Apple secrets exist a Mac check ends in an error, which Settings shows.
 - **From a checkout:** `PLAYROOM_FORCE_UPDATER=1 pnpm dev` reads `dev-app-update.yml`
-  (the same GitHub feed). Without it the updater is off in development.
+  (the same feed). Without it the updater is off in development.
+- **Another feed:** `PLAYROOM_UPDATE_URL=<base>` (for example a staging folder,
+  `https://updates.pixlfoundation.com/staging/playroom`) reads `<base>/latest-mac.yml` and
+  the rest from there. It works in a signed build too, and the update is still checked
+  against the app's signature.
 
 ## Models and lens profiles (R2)
 

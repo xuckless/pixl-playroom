@@ -85,20 +85,41 @@ How it fits together (decided 2026-10-01):
 
 After: Owner task "Updates bucket". The bucket and its cache rules are pixl-web's.
 
-- [ ] **L** · Publish to R2 instead of GitHub Releases: `publish` becomes
+- [x] **L** · Publish to R2 instead of GitHub Releases: `publish` becomes
       the `generic` provider at `https://updates.pixlfoundation.com/playroom/`
       (the `latest` and `beta` feeds side by side, as now), and
       `dev-app-update.yml` matches it. release.yml uploads the installers,
       zips and blockmaps through R2's S3 API, then the merged feeds
       (`build/merge-mac-channel.mjs`) last, so no install sees a feed before
       its files exist. GitHub Releases keeps only release-please's notes.
-- [ ] **M** · Move the installs already out to R2: v0.1.1-beta reads
+      _Done: files in `playroom/<version>/` (so a beta never overwrites
+      stable's files, and differential updates find the old blockmap),
+      feeds rewritten to point there (`build/prefix-feed.mjs`), the
+      `mac-channel` job merging and uploading both channels' macOS feeds.
+      A stable release also writes the beta feeds
+      (`generateUpdatesFilesForAllChannels`). `PLAYROOM_UPDATE_URL` reads
+      another feed. Checked locally: a stable-version build writes the
+      feeds expected; merge and prefix give correct feeds; electron-updater
+      (as 0.1.1-beta) read such a feed from a local copy of the layout,
+      found 0.2.0 and downloaded it from `0.2.0/` with its sha512
+      checked. Not run in CI yet: it needs the R2 token (owner task), and
+      nothing gets released until Phase C is done._
+- [x] **M** · Move the installs already out to R2: v0.1.1-beta reads
       GitHub's feed, so the next release goes to GitHub and R2 both, and the
       `app-update.yml` it carries points at R2. Windows installs of 0.1.1-beta
       will refuse that release whatever we do (their `publisherName` is
       `xuckless`); their users must reinstall once, which the release notes
       and the beta page must say. Also check: 0.1.1-beta's release has only
       `latest*.yml`, no `beta*.yml`, so the Beta channel saw nothing.
+      _Done: `publish` lists generic (R2) first and GitHub second, so the
+      next release's `app-update.yml` points at R2 while its files and
+      feeds still go to the GitHub release (`dist/github/`, and the merged
+      macOS feed for the release's channel). RELEASING.md says when to take
+      the GitHub entry out, and about the Windows reinstall. 0.1.1-beta's
+      missing `beta*.yml`: GitHub's provider follows the release's own
+      channel, which the bridge release uploads._
+- [ ] **S** · After the bridge release is out: remove the `github` entry
+      from `publish` and the bridge steps from `release.yml`.
 
 ### Pass 23a — Rollouts, an update floor, a tested update · 5 pts
 
@@ -1201,7 +1222,11 @@ Playroom work that starts once the engine request lands
 - [ ] **S** · **Updates bucket**: R2 bucket `pixl-updates` on
       updates.pixlfoundation.com, plus an R2 API token (S3 access key) as
       playroom repository secrets for release.yml (Pass 23).
-      _Bucket and domain created 2026-10-01; the R2 API token is still to do._
+      _Bucket and domain created 2026-10-01; the R2 API token is still to do:
+      Cloudflare → R2 → Manage API tokens → Object Read & Write, scoped to
+      `pixl-updates` only. Then add the secrets `R2_ACCESS_KEY_ID` and
+      `R2_SECRET_ACCESS_KEY`, and the variable `R2_ENDPOINT`
+      (`https://<account id>.r2.cloudflarestorage.com`)._
 - [x] **M** · **Beta and account decisions** (2026-10-01): sign in with an
       email code, Google or Apple; the beta is open to anyone; testers get 3
       devices, like a licence; the tester discount must be redeemed within 90
