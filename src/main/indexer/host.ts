@@ -12,6 +12,9 @@ import { setExiftoolPath } from '../exiftool'
 import type { HostToMain, MainToHost } from './protocol'
 import { IndexService } from './service'
 
+/** How long after start the unused painted planes are pruned (the launch's own work first). */
+const PRUNE_AFTER_MS = 5000
+
 function send(msg: HostToMain): void {
   process.parentPort.postMessage(msg)
 }
@@ -30,16 +33,20 @@ const service = new IndexService({
   emit: (event) => send({ kind: 'event', ...event })
 })
 
-if (process.argv.includes('--prune')) {
-  try {
-    const removed = service.prunePlanes()
-    if (removed > 0) console.log(`pruned ${removed} unused painted planes`)
-  } catch (err) {
-    console.warn('pruning planes failed', err)
-  }
-}
-
 send({ kind: 'hello' })
+
+// After hello, once the first requests (the folder being opened) are answered:
+// a regex over all the history is not what a launch should wait for.
+if (process.argv.includes('--prune')) {
+  setTimeout(() => {
+    try {
+      const removed = service.prunePlanes()
+      if (removed > 0) console.log(`pruned ${removed} unused painted planes`)
+    } catch (err) {
+      console.warn('pruning planes failed', err)
+    }
+  }, PRUNE_AFTER_MS).unref?.()
+}
 
 process.parentPort.on('message', (e) => {
   const msg = e.data as MainToHost

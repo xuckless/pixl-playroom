@@ -1,7 +1,7 @@
 import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect } from 'react'
 import type { AiJobEvent } from '../../shared/ai'
-import type { LibrarySource, RenderScale } from '../../shared/ipc'
+import type { LibraryItem, LibrarySource, RenderScale } from '../../shared/ipc'
 import { api, errorText } from './lib/api'
 import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
@@ -220,14 +220,16 @@ async function openPaths(paths: string[]): Promise<void> {
  * keyword), else the last folder (a profile from before sources, or a
  * collection since deleted).
  */
-async function openLastSource(): Promise<void> {
+async function openLastSource(lists: Promise<void>): Promise<void> {
   const [src, folder] = await Promise.all([
     api.app.getSetting<LibrarySource>('library.lastSource').catch(() => null),
     api.app.getSetting<string>('library.lastFolder').catch(() => null)
   ])
   const lib = useLibrary.getState()
   if (folder) useLibrary.setState({ lastFolder: folder })
-  // A collection deleted since falls through quietly to the folder.
+  // A collection deleted since falls through quietly to the folder (known
+  // once the collections are loaded; a folder needs not wait for them).
+  if (src?.kind === 'collection') await lists.catch(() => undefined)
   const gone =
     src?.kind === 'collection' && !useLibrary.getState().collections.some((c) => c.id === src.id)
   if (src && src.kind !== 'duplicates' && !gone && (await lib.openSource(src))) return
@@ -279,6 +281,24 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
     useDevelop.getState().setOverlay(true)
     useAiJobs.getState().setReveal(r.into.layerId)
   }
+}
+
+/**
+ * Thumbnails as they come, gathered and patched in once a frame: a folder
+ * filling would otherwise find and patch one item (and re-sort the grid)
+ * per thumbnail.
+ */
+const thumbsWaiting = new Map<string, { url: string | null; unreadable?: boolean }>()
+let thumbFrame = 0
+function flushThumbs(): void {
+  thumbFrame = 0
+  const patch: LibraryItem[] = []
+  for (const it of useLibrary.getState().items) {
+    const t = thumbsWaiting.get(it.key)
+    if (t) patch.push({ ...it, thumbUrl: t.url ?? it.thumbUrl, unreadable: !!t.unreadable })
+  }
+  thumbsWaiting.clear()
+  if (patch.length) useLibrary.getState().patchItems(patch)
 }
 
 /** View ▸ Engine Report…: the open photo's, so only in Develop. */
@@ -358,13 +378,9 @@ export default function App(): React.JSX.Element {
   useShortcuts()
   useEffect(() => {
     const offs = [
-      api.library.onThumb(({ key, url, unreadable }) => {
-        const items = useLibrary.getState().items
-        const it = items.find((i) => i.key === key)
-        if (it)
-          useLibrary
-            .getState()
-            .patchItems([{ ...it, thumbUrl: url ?? it.thumbUrl, unreadable: !!unreadable }])
+      api.library.onThumb((e) => {
+        thumbsWaiting.set(e.key, e)
+        thumbFrame ||= requestAnimationFrame(flushThumbs)
       }),
       api.library.onHdr(({ photoId, hdr }) => {
         const mine = useLibrary
@@ -410,18 +426,23 @@ export default function App(): React.JSX.Element {
     const boot = useBoot.getState()
     const engineUp = waitForEngine().then(() => boot.finish('engine'))
     const libraryUp = (async () => {
-      const [recent, pinned] = await Promise.all([
-        api.library.recentFolders(),
-        api.app.getSetting<string[]>('library.pinned')
-      ])
-      useLibrary.setState({ recent, pinned: Array.isArray(pinned) ? pinned : [] })
-      await useLibrary.getState().loadSources()
-      boot.finish('index')
+      // The rail's lists and the last source load side by side, not one
+      // after the other: the folder is what the launch is waiting to see.
+      const lists = (async () => {
+        const [recent, pinned] = await Promise.all([
+          api.library.recentFolders(),
+          api.app.getSetting<string[]>('library.pinned')
+        ])
+        useLibrary.setState({ recent, pinned: Array.isArray(pinned) ? pinned : [] })
+        await useLibrary.getState().loadSources()
+        boot.finish('index')
+      })()
       onRenderScale(await api.app.renderScale())
       // Photos opened from outside take the place of the last source.
       const opens = await api.app.takeOpens().catch(() => [])
       if (opens.length) await openPaths(opens)
-      else await openLastSource()
+      else await openLastSource(lists)
+      await lists
       boot.finish('folder')
     })()
     void Promise.allSettled([engineUp, libraryUp]).then(() => {

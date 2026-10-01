@@ -51,6 +51,9 @@ export interface PhotoRow {
   /** The photo's `.pixl` project (the truth about its edits once it has one), and its mtime as mirrored. */
   project_path: string | null
   project_mtime: number | null
+  /** The file version that could not be read (its thumbnail failed), and why. */
+  failed_key?: string | null
+  failed_reason?: string | null
   /**
    * Not columns: what the index adds for whoever reads the original
    * (`IndexService.sourceRow`). `seed_path` is the path a grain seed hashes
@@ -245,7 +248,10 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
     );
     CREATE INDEX IF NOT EXISTS projects_name ON projects(name, size);`),
   // 6. Photos by project: who has a project (linking, a project gone), without a scan.
-  (db) => db.exec('CREATE INDEX IF NOT EXISTS photos_project ON photos(project_path)')
+  (db) => db.exec('CREATE INDEX IF NOT EXISTS photos_project ON photos(project_path)'),
+  // 7. A file version that could not be read, and why: not tried again at
+  // every launch, only once it changes.
+  (db) => addColumns(db, 'photos', { failed_key: 'TEXT', failed_reason: 'TEXT' })
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -677,6 +683,15 @@ export class Store {
     ).run(JSON.stringify(camera), ...cameraColumns(camera), id)
   }
 
+  /** A file version that could not be read (`key` names it), and why. */
+  setFailed(photoId: number, key: string, reason: string): void {
+    this.prepare('UPDATE photos SET failed_key = ?, failed_reason = ? WHERE id = ?').run(
+      key,
+      reason,
+      photoId
+    )
+  }
+
   setHdr(photoId: number, kind: string, key: string): void {
     this.prepare('UPDATE photos SET hdr = ?, hdr_key = ? WHERE id = ?').run(kind, key, photoId)
   }
@@ -770,7 +785,11 @@ export class Store {
   // ── painted planes, by reference (see planestore.ts) ──
   putPlane(ref: string, png: string): void {
     this.prepare('INSERT OR IGNORE INTO planes(ref, png) VALUES (?, ?)').run(ref, png)
+    this.planesPut.add(ref)
   }
+
+  /** Planes stored since this index opened: in use now, whatever the history says (see `prunePlanes`). */
+  readonly planesPut = new Set<string>()
 
   plane(ref: string): string | undefined {
     const row = this.prepare('SELECT png FROM planes WHERE ref = ?').get(ref) as

@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from 'react'
+import { memo, useCallback, useEffect, useRef } from 'react'
 import type { DuplicateGroup, LibraryItem } from '../../../shared/ipc'
 import { LiquidGlass } from '../components/glass/LiquidGlass'
 import { Icon } from '../components/icons'
@@ -11,7 +11,7 @@ import { folderName, KEYS_MIME, sourceTrail } from '../lib/sources'
 import { useThumbFirst } from '../lib/thumbs'
 import { IdentityBar } from '../shell/IdentityBar'
 import { useDevelop } from '../state/develop'
-import { useLibrary, useTargets, useVisible, type SortKey } from '../state/library'
+import { selectionSet, useLibrary, useTargets, useVisible, type SortKey } from '../state/library'
 import { useUi } from '../state/ui'
 import { DuplicateControls, FilterButton, OrganiseMenu } from './library/ToolbarMenus'
 import { keyHint, withKey } from '../lib/commands'
@@ -44,9 +44,9 @@ const Thumb = memo(function Thumb({
   stackSize: number
   stackCover: boolean
   stackOpen: boolean
-  onOpen: () => void
+  onOpen: (key: string) => void
 }): React.JSX.Element {
-  const selected = useLibrary((s) => s.selection.includes(item.key))
+  const selected = useLibrary((s) => selectionSet(s.selection).has(item.key))
   const focus = useLibrary((s) => s.focus === item.key)
   const select = useLibrary((s) => s.select)
   const setMeta = useLibrary((s) => s.setMeta)
@@ -89,7 +89,7 @@ const Thumb = memo(function Thumb({
       onClick={(e) =>
         select(item.key, e.shiftKey ? 'range' : e.metaKey || e.ctrlKey ? 'toggle' : 'only')
       }
-      onDoubleClick={onOpen}
+      onDoubleClick={() => onOpen(item.key)}
     >
       <div className="thumb-img" style={{ height: size * 0.72 }}>
         {item.thumbUrl ? (
@@ -441,6 +441,15 @@ export function LibraryView(): React.JSX.Element {
   const setView = useLibrary((s) => s.setView)
   const setFocus = useLibrary((s) => s.setFocus)
   const open = useDevelop((s) => s.open)
+  // One callback for every tile (a new one per tile per render undid their memo).
+  const openTile = useCallback(
+    (key: string): void => {
+      setFocus(key)
+      setView('develop')
+      void open(key)
+    },
+    [setFocus, setView, open]
+  )
   if (!source && !opening) return <EmptyLibrary />
   if (opening?.kind === 'duplicates' && source?.kind !== 'duplicates')
     return (
@@ -465,11 +474,7 @@ export function LibraryView(): React.JSX.Element {
         stackSize={role?.size ?? 0}
         stackCover={role?.cover ?? false}
         stackOpen={role?.open ?? false}
-        onOpen={() => {
-          setFocus(it.key)
-          setView('develop')
-          void open(it.key)
-        }}
+        onOpen={openTile}
       />
     )
   }

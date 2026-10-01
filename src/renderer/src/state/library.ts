@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useDeferredValue, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { create } from 'zustand'
 import { applyFilter, DEFAULT_FILTER, type Filter } from '../../../shared/filter'
@@ -465,24 +465,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
 
   visible() {
     const { items, filter, sort, groups, expandedStacks } = get()
-    const shown = [...applyFilter(items, filter)]
-    // The duplicates keep their groups' order, every member showing.
-    if (groups) {
-      const at = new Map<string, number>()
-      for (const g of groups) for (const k of g.keys) if (!at.has(k)) at.set(k, at.size)
-      return shown
-        .filter((i) => at.has(i.key))
-        .sort((a, b) => (at.get(a.key) as number) - (at.get(b.key) as number))
-    }
-    const by: Record<SortKey, (a: LibraryItem, b: LibraryItem) => number> = {
-      name: (a, b) =>
-        a.name.localeCompare(b.name) || (a.copyId ?? '').localeCompare(b.copyId ?? ''),
-      captured: (a, b) => (a.camera.capturedAt ?? '').localeCompare(b.camera.capturedAt ?? ''),
-      rating: (a, b) => b.rating - a.rating,
-      size: (a, b) => b.size - a.size,
-      edited: (a, b) => Number(b.edited) - Number(a.edited)
-    }
-    return collapseStacks(shown.sort(by[sort]), expandedStacks)
+    return visibleFor(items, filter, sort, groups, expandedStacks)
   },
 
   targets() {
@@ -491,19 +474,92 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   }
 }))
 
+/** The selection as a set, made once per selection (tiles ask "am I selected?" per change). */
+let selected: { of: string[]; set: Set<string> } | null = null
+export function selectionSet(selection: string[]): Set<string> {
+  if (selected?.of !== selection) selected = { of: selection, set: new Set(selection) }
+  return selected.set
+}
+
+let visibleMemo: {
+  items: LibraryItem[]
+  filter: Filter
+  sort: SortKey
+  groups: LibraryState['groups']
+  expanded: Set<string>
+  out: LibraryItem[]
+} | null = null
+
+/**
+ * The visible items, once per change of what they depend on, however many
+ * ask (the grid, the filmstrip, the counts): filtering and sorting a big
+ * folder is not free.
+ */
+function visibleFor(
+  items: LibraryItem[],
+  filter: Filter,
+  sort: SortKey,
+  groups: LibraryState['groups'],
+  expanded: Set<string>
+): LibraryItem[] {
+  const m = visibleMemo
+  if (
+    m &&
+    m.items === items &&
+    m.filter === filter &&
+    m.sort === sort &&
+    m.groups === groups &&
+    m.expanded === expanded
+  )
+    return m.out
+  const out = computeVisible(items, filter, sort, groups, expanded)
+  visibleMemo = { items, filter, sort, groups, expanded, out }
+  return out
+}
+
+/** Names compared as `localeCompare` does, without building a collator per comparison. */
+const collator = new Intl.Collator()
+
+function computeVisible(
+  items: LibraryItem[],
+  filter: Filter,
+  sort: SortKey,
+  groups: LibraryState['groups'],
+  expandedStacks: Set<string>
+): LibraryItem[] {
+  const shown = [...applyFilter(items, filter)]
+  // The duplicates keep their groups' order, every member showing.
+  if (groups) {
+    const at = new Map<string, number>()
+    for (const g of groups) for (const k of g.keys) if (!at.has(k)) at.set(k, at.size)
+    return shown
+      .filter((i) => at.has(i.key))
+      .sort((a, b) => (at.get(a.key) as number) - (at.get(b.key) as number))
+  }
+  const by: Record<SortKey, (a: LibraryItem, b: LibraryItem) => number> = {
+    name: (a, b) =>
+      collator.compare(a.name, b.name) || collator.compare(a.copyId ?? '', b.copyId ?? ''),
+    captured: (a, b) => (a.camera.capturedAt ?? '').localeCompare(b.camera.capturedAt ?? ''),
+    rating: (a, b) => b.rating - a.rating,
+    size: (a, b) => b.size - a.size,
+    edited: (a, b) => Number(b.edited) - Number(a.edited)
+  }
+  return collapseStacks(shown.sort(by[sort]), expandedStacks)
+}
+
 /**
  * The visible items, memoised on what they depend on. (A selector that builds
  * a new array every call would re-render forever.)
  */
 export function useVisible(): LibraryItem[] {
   const items = useLibrary((s) => s.items)
-  const filter = useLibrary((s) => s.filter)
+  // Typing a search: the grid follows a moment behind the keys, not per key.
+  const filter = useDeferredValue(useLibrary((s) => s.filter))
   const sort = useLibrary((s) => s.sort)
   const groups = useLibrary((s) => s.groups)
   const expanded = useLibrary((s) => s.expandedStacks)
   return useMemo(
-    () => useLibrary.getState().visible(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => visibleFor(items, filter, sort, groups, expanded),
     [items, filter, sort, groups, expanded]
   )
 }

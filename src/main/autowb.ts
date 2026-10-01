@@ -28,14 +28,14 @@ import { paths } from './paths'
 import type { PlaneStore } from './planestore'
 import { ensureProxies, type ProxyFile } from './proxy'
 import type { DevelopSessions } from './render'
-import { BACKGROUND_THREADS, blankRequest, INTERACTIVE_THREADS } from './source'
+import { BACKGROUND_THREADS, blankRequest, interactiveThreads } from './source'
 
 /** An `analyze` of a proxy file, with the percentiles auto tone reads. */
 export function analyzeRequest(
   path: string,
   input: 'Png' | 'Jpeg' | 'Tiff',
   stride: number,
-  threads: number = INTERACTIVE_THREADS
+  threads: number = interactiveThreads()
 ): AnalyzeRequest {
   return {
     source: { Path: path },
@@ -89,7 +89,7 @@ export async function measureAutoWb(
   isRaw: boolean,
   asShot: WhitePoint | null,
   /** A batch measures on its share of the cores; the open photo on all of them. */
-  threads: number = INTERACTIVE_THREADS
+  threads: number = interactiveThreads()
 ): Promise<SampleResult['wb']> {
   // A PQ/HLG draft is measured in linear light as `convert` grades it
   // (1.0 = reference white); the engine refuses it in Linear without `hdr`.

@@ -35,7 +35,7 @@ import { paths } from './paths'
 import {
   BACKGROUND_THREADS,
   blankRequest,
-  INTERACTIVE_THREADS,
+  interactiveThreads,
   RAW_DEVELOP,
   sourceOrientation,
   versionStamp
@@ -69,7 +69,7 @@ export function ensureProxies(
   photo: PhotoRow,
   info: SourceInfo,
   /** A photo being opened takes every core; work in the background takes its share. */
-  threads: number = INTERACTIVE_THREADS
+  threads: number = interactiveThreads()
 ): Promise<Proxies> {
   const key = `${photo.id}:${stamp(photo)}`
   let p = building.get(key)

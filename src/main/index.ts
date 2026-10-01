@@ -189,7 +189,9 @@ app.whenReady().then(() => {
   registerProtocol()
   index.start()
   engine.start()
-  bgEngine.start()
+  // The background engine waits off the launch's path: it starts with the
+  // first work for it (a thumbnail, a probe), or a few seconds in.
+  setTimeout(() => bgEngine.ensureStarted(), 3000)
   void engine.whenStarted().then(() => setAbout(engine.getStatus().version))
   const library = new Library(index, bgEngine)
   sessions = new DevelopSessions(library, engine, bgEngine)

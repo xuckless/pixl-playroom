@@ -201,8 +201,13 @@ export class IndexService {
   private readonly store: Store
   private readonly cacheRoot: string
   private readonly emit: (event: IndexEvent) => void
-  /** Files whose thumbnail failed, per version, with why. */
+  /** Files whose thumbnail failed, per version, with why (and in the row, for the next launch). */
   private readonly failed = new Map<string, string>()
+
+  private isFailed(row: PhotoRow): boolean {
+    const v = versionOf(row)
+    return this.failed.has(v) || row.failed_key === v
+  }
   private readonly scans = new Map<string, Scan>()
   private readonly filling = new Set<string>()
   private readonly fillAgain = new Set<string>()
@@ -1040,7 +1045,7 @@ export class IndexService {
         thumbPath && !ctx.bare && existsSync(thumbPath)
           ? cacheUrlIn(this.cacheRoot, thumbPath, thumbKey ?? '')
           : null,
-      unreadable: this.failed.has(versionOf(row)),
+      unreadable: this.isFailed(row),
       ...(row.hdr_key === versionOf(row) ? { hdr: (row.hdr || null) as HdrKind | null } : {}),
       camera: row.camera_json ? (JSON.parse(row.camera_json) as CameraInfo) : emptyCamera(),
       folder: row.folder,
@@ -1532,7 +1537,7 @@ export class IndexService {
     return this.store
       .photosInScope(folder)
       .filter((r) => !(r.dhash && r.thumb_key && r.dhash_key === r.thumb_key))
-      .filter((r) => !this.failed.has(versionOf(r)) && existsSync(r.path))
+      .filter((r) => !this.isFailed(r) && existsSync(r.path))
       .map((r) => ({
         photoId: r.id,
         thumbPath: r.thumb_path && existsSync(r.thumb_path) ? r.thumb_path : null
@@ -1799,7 +1804,7 @@ export class IndexService {
   /** The thumbnail to render for an item, or null when the one it has is current (or it cannot be read). */
   thumbJob(photoId: number, copyId: string | null): ThumbWork | null {
     const row = this.store.photo(photoId)
-    if (!row || this.failed.has(versionOf(row))) return null
+    if (!row || this.isFailed(row)) return null
     const existing =
       copyId === null ? row : this.store.copiesOf(row.id).find((c) => c.copy_id === copyId)
     if (!existing) return null
@@ -1839,7 +1844,10 @@ export class IndexService {
   /** Once per version of the file: one that cannot be read is not tried again until it changes. */
   markFailed(photoId: number, reason: string): void {
     const row = this.store.photo(photoId)
-    if (row) this.failed.set(versionOf(row), reason)
+    if (!row) return
+    this.failed.set(versionOf(row), reason)
+    // Kept: the next launch does not try this version again.
+    this.store.setFailed(photoId, versionOf(row), reason)
   }
 
   // ── history ──
@@ -1973,7 +1981,9 @@ export class IndexService {
    * before anything else has asked for one: at the first start.
    */
   prunePlanes(): number {
-    const keep = new Set<string>()
+    // Those stored since the index opened are in use (a stroke not yet in a
+    // step, an open project's planes): kept, so this can run after start.
+    const keep = new Set<string>(this.store.planesPut)
     for (const json of this.store.historyRecipes()) {
       for (const m of json.matchAll(/"ref":"([^"]+)"/g)) keep.add(m[1])
     }

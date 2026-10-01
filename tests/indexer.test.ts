@@ -264,7 +264,19 @@ test('pruning keeps the planes the history names, and only those', async () => {
     r.layers.push(layer)
     f.index.appendHistory(a.key, 'Brush', r)
 
-    assert.equal(f.index.prunePlanes(), 1)
+    // Stored since the index opened: in use, kept whatever the history says.
+    assert.equal(f.index.prunePlanes(), 0)
+    // At the next start the one nothing names goes.
+    const again = new IndexService({
+      userData: join(f.root, 'userData'),
+      emit: () => {},
+      xmp: f.xmp
+    })
+    try {
+      assert.equal(again.prunePlanes(), 1)
+    } finally {
+      again.close()
+    }
     assert.equal(f.index.plane(planeRef(kept)), kept)
     assert.equal(f.index.plane(planeRef(dropped)), undefined)
   } finally {

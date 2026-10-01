@@ -95,9 +95,17 @@ export class EngineClient {
     private readonly background = false
   ) {}
 
+  private spawned = false
+
   start(): void {
     this.stopped = false
+    this.spawned = true
     this.spawn()
+  }
+
+  /** Start it if it never was (one held back from the launch's path). */
+  ensureStarted(): void {
+    if (!this.spawned && !this.stopped) this.start()
   }
 
   stop(): void {
@@ -267,6 +275,11 @@ export class EngineClient {
     const cancelled = (): EngineError =>
       new EngineError({ message: `${method}: cancelled`, code: 'Cancelled' })
     if (signal?.aborted) return Promise.reject(cancelled())
+    // Held back from the launch: started by the first call that wants it.
+    if (!this.spawned && !this.stopped) {
+      this.start()
+      return this.whenStarted().then(() => this.call(method, args, signal))
+    }
     const child = this.child
     if (!child) {
       return Promise.reject(

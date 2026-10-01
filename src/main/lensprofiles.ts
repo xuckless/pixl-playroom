@@ -100,6 +100,15 @@ function readIndex(v: unknown): CatalogIndex | null {
   return i
 }
 
+/** A catalogue directory's index alone (small), or null when there is none or it does not read. */
+async function readIndexAt(dir: string): Promise<CatalogIndex | null> {
+  try {
+    return readIndex(JSON.parse(await readFile(join(dir, 'index.json'), 'utf8')))
+  } catch {
+    return null
+  }
+}
+
 /** A catalogue directory read whole, every shard checked; null when any part is missing or wrong. */
 async function readCatalog(dir: string, origin: Catalog['origin']): Promise<Catalog | null> {
   // Nothing downloaded yet is not a fault.
@@ -204,12 +213,28 @@ export class LensProfileStore {
 
   /** The bundled and the downloaded catalogue, whichever is newer, and the imported profiles. */
   async load(): Promise<void> {
-    const [bundled, online] = await Promise.all([
-      readCatalog(paths.bundledLensCatalog(), 'bundled'),
-      readCatalog(paths.lensCatalog(), 'online')
+    // The indexes say which is newer; only that one is read whole (its
+    // shards parsed, hashed and checked), the other only should it not read.
+    const [bundledIndex, onlineIndex] = await Promise.all([
+      readIndexAt(paths.bundledLensCatalog()),
+      readIndexAt(paths.lensCatalog())
     ])
-    this.catalog =
-      online && (!bundled || online.index.generated >= bundled.index.generated) ? online : bundled
+    const onlineFirst =
+      !!onlineIndex && (!bundledIndex || onlineIndex.generated >= bundledIndex.generated)
+    const order: [string, Catalog['origin']][] = onlineFirst
+      ? [
+          [paths.lensCatalog(), 'online'],
+          [paths.bundledLensCatalog(), 'bundled']
+        ]
+      : [
+          [paths.bundledLensCatalog(), 'bundled'],
+          [paths.lensCatalog(), 'online']
+        ]
+    this.catalog = null
+    for (const [dir, origin] of order) {
+      this.catalog = await readCatalog(dir, origin)
+      if (this.catalog) break
+    }
     this.imported = await listImported().catch(() => [])
     if (!this.catalog) log.warn('no lens catalogue: neither the bundled nor a downloaded one reads')
   }
@@ -263,7 +288,12 @@ export class LensProfileStore {
       await mkdir(staging, { recursive: true })
       // What is already here, by checksum: the bundled and the current shards.
       const have = new Map<string, string>()
-      for (const c of [current, await readCatalog(paths.bundledLensCatalog(), 'bundled')])
+      const bundledDir = paths.bundledLensCatalog()
+      const bundledIndex = await readIndexAt(bundledDir)
+      for (const c of [
+        current && { index: current.index, dir: current.dir },
+        bundledIndex && { index: bundledIndex, dir: bundledDir }
+      ])
         for (const s of c?.index.shards ?? []) have.set(s.sha256, join(c!.dir, s.file))
       let fetched = 0
       for (const s of index.shards) {

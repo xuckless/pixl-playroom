@@ -97,7 +97,7 @@ import {
   BACKGROUND_THREADS,
   displayPolicy,
   gainMapOf,
-  INTERACTIVE_THREADS,
+  interactiveThreads,
   orientOnly,
   RAW_DEVELOP,
   sourceOrientation,
@@ -719,7 +719,7 @@ class Session {
         framing: compiled.framing,
         lens: compiled.lens,
         retouch: compiled.retouch,
-        threads: INTERACTIVE_THREADS,
+        threads: interactiveThreads(),
         // A warp shown whole counts its empty corners (as black) rather than
         // risk measuring nothing when little of the picture is left.
         measure: measureOf(kind === 'draft' ? 2 : 1)
@@ -786,7 +786,7 @@ class Session {
         framing: compiled.framing,
         lens: compiled.lens,
         retouch: compiled.retouch,
-        threads: INTERACTIVE_THREADS
+        threads: interactiveThreads()
       } as const
       // With float work the engine measures its own output in linear light
       // by the working white; without, the signal passes through untouched
@@ -843,7 +843,7 @@ class Session {
           lens: compiled.lens,
           retouch: compiled.retouch,
           inspect: { Headroom: { stops } },
-          threads: INTERACTIVE_THREADS
+          threads: interactiveThreads()
         },
         { signal }
       )
@@ -1445,7 +1445,7 @@ class Session {
       lens: lensCorrection(this.recipe.lens),
       mode,
       focal,
-      threads: INTERACTIVE_THREADS
+      threads: interactiveThreads()
     })) as unknown as { transform: Transform }
     this.usableUpright(r.transform, src.width, src.height)
     return r.transform

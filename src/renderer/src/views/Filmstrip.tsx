@@ -1,10 +1,10 @@
-import { memo, useRef, useState } from 'react'
+import { memo, useCallback, useRef, useState } from 'react'
 import type { LibraryItem } from '../../../shared/ipc'
 import { LiquidGlass } from '../components/glass/LiquidGlass'
 import { Icon } from '../components/icons'
 import { useThumbFirst } from '../lib/thumbs'
 import { useDevelop } from '../state/develop'
-import { useLibrary, useVisible } from '../state/library'
+import { selectionSet, useLibrary, useVisible } from '../state/library'
 import { useUi } from '../state/ui'
 import { AiChip } from '../fx/AiScan'
 
@@ -18,7 +18,19 @@ export const Filmstrip = memo(function Filmstrip(): React.JSX.Element {
   const focus = useLibrary((s) => s.focus)
   const selection = useLibrary((s) => s.selection)
   const select = useLibrary((s) => s.select)
+  const chosen = selectionSet(selection)
   const open = useDevelop((s) => s.open)
+  const pick = useCallback(
+    (key: string, e: React.MouseEvent): void => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey) {
+        select(key, e.shiftKey ? 'range' : 'toggle')
+        return
+      }
+      select(key, 'only')
+      void open(key)
+    },
+    [select, open]
+  )
   const shown = useUi((s) => s.filmstrip)
   // Once opened, its pictures stay loaded.
   const [loaded, setLoaded] = useState(shown)
@@ -32,17 +44,10 @@ export const Filmstrip = memo(function Filmstrip(): React.JSX.Element {
             item={it}
             index={i}
             focus={it.key === focus}
-            selected={selection.includes(it.key)}
+            selected={chosen.has(it.key)}
             // Folded away, it loads no pictures.
             load={loaded}
-            onPick={(e) => {
-              if (e.ctrlKey || e.metaKey || e.shiftKey) {
-                select(it.key, e.shiftKey ? 'range' : 'toggle')
-                return
-              }
-              select(it.key, 'only')
-              void open(it.key)
-            }}
+            onPick={pick}
           />
         ))}
       </div>
@@ -63,7 +68,7 @@ const FilmTile = memo(function FilmTile({
   focus: boolean
   selected: boolean
   load: boolean
-  onPick: (e: React.MouseEvent) => void
+  onPick: (key: string, e: React.MouseEvent) => void
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   useThumbFirst(ref, item.key, load && !item.thumbUrl && !item.unreadable)
@@ -72,7 +77,7 @@ const FilmTile = memo(function FilmTile({
       ref={ref}
       className={`film${focus ? ' focus' : ''}${selected ? ' selected' : ''}`}
       style={{ animationDelay: `${Math.min(index, 14) * 25}ms` }}
-      onClick={onPick}
+      onClick={(e) => onPick(item.key, e)}
       title={item.name}
     >
       {load && item.thumbUrl ? (

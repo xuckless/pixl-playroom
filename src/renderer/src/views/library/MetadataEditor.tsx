@@ -233,7 +233,9 @@ export function MetadataEditor({
   /** Also show the camera's facts (for one photo). */
   facts?: boolean
 }): React.JSX.Element {
-  const items = useLibrary(useShallow((s) => s.items.filter((i) => keys.includes(i.key))))
+  // A set, not `keys.includes` per item: a big selection over a big folder was N·K.
+  const want = useMemo(() => new Set(keys), [keys])
+  const items = useLibrary(useShallow((s) => s.items.filter((i) => want.has(i.key))))
   const setMetadata = useLibrary((s) => s.setMetadata)
   if (items.length === 0)
     return <p className="rail-empty">Select a photo to see and edit its details.</p>

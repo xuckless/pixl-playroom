@@ -380,7 +380,7 @@ Each release runs picture → mask → before → headroom → mask thumbnails
 
 ### Pass 19 — Library responsiveness and the startup chain · 5 pts
 
-- [ ] **M** · **The library re-sorts everything on every thumbnail.**
+- [x] **M** · **The library re-sorts everything on every thumbnail.**
       `onThumb` does `items.find` + `patchItems` over all items
       (`App.tsx:360-367` → `library.ts:265-276`): O(n²) while a folder fills.
       `useVisible()` filters and sorts 3–5 times per change; the inline
@@ -389,18 +389,18 @@ Each release runs picture → mask → before → headroom → mask thumbnails
       is O(N·K); search filters per keystroke. Batch thumbnail events per frame
       with a key→index map; compute `visible` once; stable callbacks by key; a
       `Set` selection; `Intl.Collator`; `useDeferredValue` on the search.
-- [ ] **S** · **The startup chain is serial**: the index host runs
+- [x] **S** · **The startup chain is serial**: the index host runs
       `prunePlanes` (a regex over all history JSON, 3.5 MB and growing) before
       hello (`indexer/host.ts:31-38`); the renderer loads recents,
       collections and keywords before opening the last folder
       (`App.tsx:410-422`). Say hello first and prune when idle; open the last
       source alongside.
-- [ ] **S** · **Startup does work it could defer**: both lens catalogues are
+- [x] **S** · **Startup does work it could defer**: both lens catalogues are
       parsed, hashed and validated (`lensprofiles.ts:207-210`, and again in
       `check()` at `:266`) — compare `generated` dates and parse the newer;
       `bgEngine.start()` is eager (`index.ts:192`); `sysctl` via
       `execFileSync` at module load (`source.ts:146`).
-- [ ] **S** · **Unreadable files are retried every launch** (failures in
+- [x] **S** · **Unreadable files are retried every launch** (failures in
       memory only, `service.ts:174`). Persist them with the version key.
 
 ### Pass 20 — Startup relaunch and folder open · 4 pts

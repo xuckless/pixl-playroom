@@ -50,7 +50,6 @@ import {
   RAW_DEVELOP,
   sourceOrientation,
   uprightFraming,
-  INTERACTIVE_THREADS,
   seedOf,
   versionStamp
 } from './source'
@@ -196,7 +195,8 @@ export class Exporter {
     })
     const cw = Math.round((compiled.crop?.width ?? 1) * width)
     const ch = Math.round((compiled.crop?.height ?? 1) * height)
-    const { encode, depth } = buildEncode(s, INTERACTIVE_THREADS, hdrOut)
+    // An export runs behind the editing: the encoder takes the export's share too.
+    const { encode, depth } = buildEncode(s, BACKGROUND_THREADS * 2, hdrOut)
 
     // Beside the photo: where it is listed (its copy may be the project's own).
     const folder = s.folder ?? row.folder
