@@ -26,8 +26,16 @@ import {
   type Compiled
 } from '../shared/compile'
 import { lensCorrection, MANUAL_GEOMETRY } from '../shared/lens'
-import { compileRetouch, featherOf, spotShape, type P as SpotPoint } from '../shared/retouch'
-import { stackSignature } from '../shared/pixels'
+import {
+  compileRetouch,
+  featherOf,
+  spotShape,
+  type P as SpotPoint,
+  type RetouchSpot
+} from '../shared/retouch'
+import { stackSignature, type PixelStep } from '../shared/pixels'
+import { bakeSpot } from './pixels/heal'
+import { freezeMask } from './pixels/freeze'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking, workingKey, type WorkingSet } from './pixels/working'
 import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
@@ -69,7 +77,7 @@ import {
 import { brushPlanes } from './brushes'
 import type { PhotoRow } from './db'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
-import { parseKey } from './keys'
+import { keyOf, parseKey } from './keys'
 import type { Library } from './library'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
@@ -1337,7 +1345,8 @@ class Session {
     feather: number,
     kind: 'heal' | 'clone'
   ): Promise<SpotPoint> {
-    const src = this.px.proxy
+    // The photo as it is now: a source is never picked from what a stroke healed away.
+    const src = this.basePx().proxy
     const r = (await this.owner.bgEngine.suggestHealSource({
       source: { Path: src.path },
       input: src.input,
@@ -1352,6 +1361,58 @@ class Session {
     })) as unknown as { source_offset: SpotPoint }
     const at = points[0]
     return { x: at.x + r.source_offset.x, y: at.y + r.source_offset.y }
+  }
+
+  /**
+   * Bake a heal, clone, fill or eye stroke into a pixel step (pixels/heal.ts),
+   * on the photo with `steps` laid on (the recipe's, as the renderer has it,
+   * strokes before this one included). Null when it changed nothing.
+   */
+  async bakeSpot(
+    spot: RetouchSpot,
+    layerId: string | null,
+    steps: PixelStep[]
+  ): Promise<PixelStep | null> {
+    const deps = pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row)
+    const set = await ensureWorking(deps, versionStamp(this.row), this.px, steps, () =>
+      ensureBase(this.owner.bgEngine, this.row, this.file)
+    )
+    const key = keyOf(this.row.id, null)
+    const step = await bakeSpot(
+      {
+        deps,
+        recipe: this.recipe,
+        lens: lensCorrection(this.recipe.lens),
+        photoId: this.row.id,
+        isRaw: this.isRaw,
+        asShot: this.info.as_shot_white,
+        seed: seedOf(this.row),
+        master: set.master!,
+        freeze: (recipe, layerId) =>
+          freezeMask(
+            deps,
+            {
+              photoId: this.row.id,
+              isRaw: this.isRaw,
+              asShot: this.info.as_shot_white,
+              seed: seedOf(this.row),
+              master: set.master!
+            },
+            recipe,
+            layerId
+          ),
+        store: (file, info) => this.owner.library.index.putBlob(key, file, info)
+      },
+      spot,
+      layerId
+    )
+    // The full-size frame with this stroke, started now: a 1:1 view wants it
+    // the moment the step lands, and it is the last one plus a small patch.
+    if (step)
+      void ensureWorking(deps, versionStamp(this.row), this.px, [...steps, step], () =>
+        ensureBase(this.owner.bgEngine, this.row, this.file)
+      ).catch(() => undefined)
+    return step
   }
 
   /** The noise the denoiser would measure, on the full-resolution frame. */
@@ -1504,6 +1565,15 @@ export class DevelopSessions {
   /** A pixel step's draft shown on the photo while it is made (null when it is done or failed). */
   pixelPreview(key: string, draft: ProxyFile | null): void {
     this.sessions.get(key)?.showPreview(draft)
+  }
+
+  bakeSpot(
+    key: string,
+    spot: RetouchSpot,
+    layerId: string | null,
+    steps: PixelStep[]
+  ): Promise<PixelStep | null> {
+    return this.get(key).bakeSpot(spot, layerId, steps)
   }
 
   suggestHeal(

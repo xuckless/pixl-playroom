@@ -7,7 +7,7 @@
 import { parentPort } from 'worker_threads'
 import { pruneGradientsSometimes, writeBrushPlane, writeGradientPlane } from '../planes'
 import type { PixelsJob } from './pool'
-import { composeMasked, unwarpMask, writeRamp } from '../pixels/ops'
+import { buildPatch, composeMasked, unwarpMask, writeRamp } from '../pixels/ops'
 
 parentPort?.on('message', (job: PixelsJob & { id: number }) => {
   try {
@@ -17,7 +17,12 @@ parentPort?.on('message', (job: PixelsJob & { id: number }) => {
     } else if (job.op === 'brush') writeBrushPlane(job.file, job.png, job.user)
     else if (job.op === 'compose') composeMasked(job.image, job.mask, job.out)
     else if (job.op === 'ramp') writeRamp(job.file, job.w, job.h)
-    else unwarpMask(job.mask, job.map, job.w, job.h, job.out)
+    else if (job.op === 'unwarp') unwarpMask(job.mask, job.map, job.w, job.h, job.out)
+    else {
+      const value = buildPatch(job.withStroke, job.without, job.out, job.mask)
+      parentPort?.postMessage({ id: job.id, value })
+      return
+    }
     parentPort?.postMessage({ id: job.id, value: null })
   } catch (err) {
     parentPort?.postMessage({ id: job.id, error: (err as Error).message ?? String(err) })

@@ -117,8 +117,6 @@ interface DevelopState {
   addPick: AddPick | null
   /** Upright's guides while they are drawn (tool `upright-guide`), frame fractions. */
   guides: GuideLine[]
-  /** The selected spot of the Heal tool. */
-  spotId: string | null
   /** The point curve's channel on show (the targeted tool moves that one). */
   curveChannel: CurveChannel
   /** What the targeted adjustment tool moves: the HSL bands or the point curve. */
@@ -159,7 +157,6 @@ interface DevelopState {
   setHslTab(t: DevelopState['hslTab']): void
   setPointId(id: string | null): void
   setGuides(g: GuideLine[]): void
-  setSpotId(id: string | null): void
   /** Start (or, with null, stop) the additive-colour picker. */
   setAddPick(p: AddPick | null): void
   setCurveChannel(c: CurveChannel): void
@@ -218,6 +215,21 @@ function applyLog(key: string, history: HistoryLog): void {
   sendNow(session.key, recipe, (m) => useDevelop.getState().onError(m))
 }
 
+/**
+ * Work that lands in the recipe a moment later (a heal stroke being baked):
+ * Undo and Redo wait for it, so they undo what the user did last, not what
+ * was there before it landed.
+ */
+let landing: Promise<void> = Promise.resolve()
+export function landingWork(p: Promise<void>): void {
+  landing = landing
+    .then(
+      () => p,
+      () => p
+    )
+    .catch(() => undefined)
+}
+
 /** Undo and Redo, one at a time: each reads the history the one before left. */
 let historyOps: Promise<void> = Promise.resolve()
 function queueHistoryOp(op: () => Promise<void>): void {
@@ -267,7 +279,6 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   pointId: null,
   addPick: null,
   guides: [],
-  spotId: null,
   curveChannel: 'master',
   tatTarget: 'hsl',
   noise: null,
@@ -369,6 +380,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   undo() {
     queueHistoryOp(async () => {
+      await landing
       const last = get().history.steps.findLast((s) => !s.hidden)
       if (!last) return
       await get().setStepsHidden([last.seq], true)
@@ -378,6 +390,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   redoStep() {
     queueHistoryOp(async () => {
+      await landing
       const { redo, history } = get()
       // Skip what was shown again by hand since.
       const stack = redo.filter((seq) => history.steps.some((s) => s.seq === seq && s.hidden))
@@ -485,10 +498,6 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   setGuides(guides) {
     set({ guides })
-  },
-
-  setSpotId(spotId) {
-    set({ spotId })
   },
 
   setPointId(pointId) {

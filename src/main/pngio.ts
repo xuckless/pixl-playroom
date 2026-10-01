@@ -61,12 +61,35 @@ export function encodeGreyPng(data: Uint8Array, w: number, h: number, level = 6)
  * each, unfiltered: the masked composites and lens maps the engine reads
  * once (so `level` is low by default).
  */
+/** The chunks that say what a PNG's numbers mean as colour: its ICC profile, sRGB, gamma, primaries, CICP. */
+const COLOUR_CHUNKS = new Set(['iCCP', 'sRGB', 'gAMA', 'cHRM', 'cICP'])
+
+/**
+ * A PNG's colour chunks, whole (length, type, data, CRC), to carry into a PNG
+ * made from its pixels: without them the engine would read linear-light
+ * numbers (a RAW's working pixels) as sRGB, and the result would come out dark.
+ */
+export function colourChunks(png: Buffer): Buffer[] {
+  const out: Buffer[] = []
+  let off = 8
+  while (off + 12 <= png.length) {
+    const len = png.readUInt32BE(off)
+    const type = png.toString('ascii', off + 4, off + 8)
+    if (type === 'IDAT' || type === 'IEND') break
+    if (COLOUR_CHUNKS.has(type)) out.push(Buffer.from(png.subarray(off, off + 12 + len)))
+    off += 12 + len
+  }
+  return out
+}
+
 export function encodePng16(
   samples: Uint16Array,
   w: number,
   h: number,
   channels: 3 | 4,
-  level = 1
+  level = 1,
+  /** Colour chunks to carry (`colourChunks` of the PNG the pixels came from). */
+  colour: Buffer[] = []
 ): Buffer {
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(w, 0)
@@ -83,6 +106,7 @@ export function encodePng16(
   return Buffer.concat([
     SIGNATURE,
     chunk('IHDR', ihdr),
+    ...colour,
     chunk('IDAT', deflateSync(raw, { level })),
     chunk('IEND', Buffer.alloc(0))
   ])

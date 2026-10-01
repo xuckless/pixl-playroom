@@ -70,8 +70,6 @@ export interface HealSettings {
   /** 0…100 */
   feather: number
   opacity: number
-  /** Show every spot's outline (H); otherwise only the selected one and the one under the pointer. */
-  showAll: boolean
 }
 
 /** Every tool the wheel can hold (its order is `TOOLS`, in develop/tools.ts). */
@@ -195,7 +193,7 @@ export const useUi = create<UiState>()(
       },
       brushSlot: 'A',
       setBrushSlot: (brushSlot) => set({ brushSlot }),
-      heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100, showAll: false },
+      heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100 },
       setHeal: (p) => set((s) => ({ heal: { ...s.heal, ...p } })),
       enhance: DEFAULT_ENHANCE,
       setEnhance: (p) => set((s) => ({ enhance: { ...s.enhance, ...p } })),

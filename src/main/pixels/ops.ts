@@ -3,7 +3,7 @@
  * frame's worth of samples at a time). Pure: files in, files out.
  */
 import { readFileSync, renameSync, writeFileSync } from 'fs'
-import { decodePng, encodeGreyPng, encodePng16, pngSamples16 } from '../pngio'
+import { colourChunks, decodePng, encodeGreyPng, encodePng16, pngSamples16 } from '../pngio'
 
 /** Write `data` to `file` whole or not at all (a reader never sees half of it). */
 function writeWhole(file: string, data: Buffer): void {
@@ -18,7 +18,8 @@ function writeWhole(file: string, data: Buffer): void {
  * engine lays over the frame.
  */
 export function composeMasked(image: string, mask: string, out: string): void {
-  const img = decodePng(readFileSync(image))
+  const imageBytes = readFileSync(image)
+  const img = decodePng(imageBytes)
   if (img.bitDepth !== 16 || img.colorType !== 2)
     throw new Error('the step image is not 16-bit RGB')
   const m = decodePng(readFileSync(mask))
@@ -37,7 +38,8 @@ export function composeMasked(image: string, mask: string, out: string): void {
     rgba[d + 2] = (rows[s + 4] << 8) | rows[s + 5]
     rgba[d + 3] = m.rows[i] * 257
   }
-  writeWhole(out, encodePng16(rgba, img.width, img.height, 4))
+  // The image's colour (a RAW's linear light) goes with its pixels.
+  writeWhole(out, encodePng16(rgba, img.width, img.height, 4, 1, colourChunks(imageBytes)))
 }
 
 /** A coordinate ramp: R across, G down, both 0…65535 over the frame (see lensmap.ts). */
@@ -146,4 +148,78 @@ export function unwarpMask(mask: string, map: string, w: number, h: number, out:
     if (filled === 0) break
   }
   writeWhole(out, encodeGreyPng(plane, w, h, 3))
+}
+
+/**
+ * A baked heal's patch: two renders of the same region of the frame, with the
+ * stroke (`withStroke`) and without it (`without`), both 16-bit RGB PNGs. The
+ * patch is the first's pixels where they differ from the second's (alpha 1;
+ * 0 elsewhere), times a frozen mask when one clips the stroke (`mask`, an
+ * 8-bit grey plane of the whole frame, the region at `at` on it), cropped to
+ * what changed. Returns where in the region it lies, or null when nothing did.
+ */
+export function buildPatch(
+  withStroke: string,
+  without: string,
+  out: string,
+  mask?: { path: string; at: { x: number; y: number } }
+): { x: number; y: number; w: number; h: number } | null {
+  const withBytes = readFileSync(withStroke)
+  const a = decodePng(withBytes)
+  const b = decodePng(readFileSync(without))
+  if (a.width !== b.width || a.height !== b.height)
+    throw new Error('the two renders differ in size')
+  if (a.bitDepth !== 16 || a.colorType !== 2 || b.bitDepth !== 16 || b.colorType !== 2)
+    throw new Error('the renders are not 16-bit RGB')
+  const w = a.width
+  const h = a.height
+  const m = mask ? decodePng(readFileSync(mask.path)) : null
+  if (m && (m.bitDepth !== 8 || m.colorType !== 0))
+    throw new Error('the mask is not an 8-bit grey plane')
+  const alpha = new Uint16Array(w * h)
+  let x0 = w
+  let y0 = h
+  let x1 = -1
+  let y1 = -1
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x
+      const o = i * 6
+      let differs = false
+      for (let c = 0; c < 6; c++)
+        if (a.rows[o + c] !== b.rows[o + c]) {
+          differs = true
+          break
+        }
+      if (!differs) continue
+      let v = 65535
+      if (m && mask) {
+        const mx = mask.at.x + x
+        const my = mask.at.y + y
+        v = mx < m.width && my < m.height ? m.rows[my * m.width + mx] * 257 : 0
+        if (v === 0) continue
+      }
+      alpha[i] = v
+      if (x < x0) x0 = x
+      if (y < y0) y0 = y
+      if (x > x1) x1 = x
+      if (y > y1) y1 = y
+    }
+  if (x1 < 0) return null
+  const pw = x1 - x0 + 1
+  const ph = y1 - y0 + 1
+  const rgba = new Uint16Array(pw * ph * 4)
+  for (let y = 0; y < ph; y++)
+    for (let x = 0; x < pw; x++) {
+      const i = (y0 + y) * w + (x0 + x)
+      const o = i * 6
+      const d = (y * pw + x) * 4
+      rgba[d] = (a.rows[o] << 8) | a.rows[o + 1]
+      rgba[d + 1] = (a.rows[o + 2] << 8) | a.rows[o + 3]
+      rgba[d + 2] = (a.rows[o + 4] << 8) | a.rows[o + 5]
+      rgba[d + 3] = alpha[i]
+    }
+  // The renders' colour (a RAW's linear light) goes with the patch.
+  writeWhole(out, encodePng16(rgba, pw, ph, 4, 6, colourChunks(withBytes)))
+  return { x: x0, y: y0, w: pw, h: ph }
 }

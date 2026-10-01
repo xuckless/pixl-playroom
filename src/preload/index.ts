@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { NoiseEstimate, Transform } from '../shared/engine-types'
 import type { GuideLine } from '../shared/upright'
-import type { P as SpotPoint } from '../shared/retouch'
+import type { P as SpotPoint, RetouchSpot } from '../shared/retouch'
+import type { PixelStep } from '../shared/pixels'
 import type { ExportSettings } from '../shared/export'
 import type { LensProfile } from '../shared/lens'
 import {
@@ -165,6 +166,8 @@ const api = {
     autoWb: (key: string) => call<SampleResult['wb']>(IPC.develop.autoWb, key),
     noise: (key: string) => call<NoiseEstimate | null>(IPC.develop.noise, key),
     measureCa: (key: string) => call<CaMeasurement>(IPC.develop.measureCa, key),
+    bakeSpot: (key: string, spot: RetouchSpot, layerId: string | null, steps: PixelStep[]) =>
+      call<PixelStep | null>(IPC.develop.bakeSpot, key, spot, layerId, steps),
     suggestHeal: (
       key: string,
       points: SpotPoint[],

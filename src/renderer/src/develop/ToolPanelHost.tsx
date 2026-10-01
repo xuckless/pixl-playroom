@@ -33,7 +33,18 @@ const PANELS: Record<ToolId, ComponentType> = {
 }
 
 /** The tools whose settings a selected mask carries (see `scope.ts`). */
-const SCOPED: ToolId[] = ['basic', 'curve', 'hsl', 'grade', 'detail', 'effects', 'calibration']
+const SCOPED: ToolId[] = [
+  'basic',
+  'curve',
+  'hsl',
+  'grade',
+  'detail',
+  'effects',
+  'calibration',
+  // Strokes, and deblur and restore, keep inside the mask.
+  'heal',
+  'enhance'
+]
 
 /**
  * Which part of the photo the panel edits: with a mask selected, a chip in

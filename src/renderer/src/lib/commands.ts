@@ -26,7 +26,6 @@ import { flashHud } from '../views/loupe/hudNote'
 import { loupeZoom, setSpace } from '../views/loupe/zoom'
 import { api, errorText } from './api'
 import { autoWbBatch } from './autowb'
-import { deleteSpot } from './heal'
 import {
   allConflicts,
   chordLabel,
@@ -470,18 +469,6 @@ export const COMMANDS: KeyCommand[] = [
     }
   },
   {
-    id: 'heal.delete',
-    label: 'Delete the selected spot',
-    group: 'Heal',
-    context: 'develop.heal',
-    keys: ['Delete', 'Backspace'],
-    when: (e) => healOpen() && notInField(e),
-    run: () => {
-      const id = dev().spotId
-      if (id) deleteSpot(id)
-    }
-  },
-  {
     id: 'tool.heal',
     label: 'Heal tool',
     group: 'Tools',
@@ -605,15 +592,6 @@ export const COMMANDS: KeyCommand[] = [
     context: 'develop',
     keys: ['Alt+M'],
     run: () => maskTool('radial')
-  },
-  {
-    id: 'heal.showAll',
-    label: "Show every spot's outline",
-    group: 'Heal',
-    context: 'develop.heal',
-    keys: ['H', 'Shift+H'],
-    when: () => healOpen(),
-    run: () => ui().setHeal({ showAll: !ui().heal.showAll })
   },
   {
     id: 'mask.hide',

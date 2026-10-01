@@ -40,7 +40,8 @@ import type { AiCapabilities, AiStartRequest } from '../shared/ai'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
 import type { GuideLine } from '../shared/upright'
-import type { P as SpotPoint } from '../shared/retouch'
+import type { P as SpotPoint, RetouchSpot } from '../shared/retouch'
+import type { PixelStep } from '../shared/pixels'
 import { enhanceAvailability, enhanceRates } from './enhance'
 import { readWatermark } from './watermark'
 import type { AiJobs } from './ai/jobs'
@@ -317,6 +318,11 @@ export function registerIpc(s: Services): void {
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))
   handle(IPC.develop.measureCa, (key: string) => s.sessions.measureCa(key))
+  handle(
+    IPC.develop.bakeSpot,
+    (key: string, spot: RetouchSpot, layerId: string | null, steps: PixelStep[]) =>
+      s.sessions.bakeSpot(key, spot, layerId, steps)
+  )
   handle(
     IPC.develop.suggestHeal,
     (key: string, points: SpotPoint[], radius: number, feather: number, kind: 'heal' | 'clone') =>

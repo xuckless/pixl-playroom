@@ -230,25 +230,30 @@ Its fields:
 ## Pixel steps
 
 `recipe.pixels` lists what changed the photo's pixels rather than its
-settings (an AI denoise, an Enhance), in the order they apply. Each is an image computed
+settings (an AI denoise, an Enhance, a baked heal stroke), in the order they apply. Each is an image computed
 once and kept as a blob, so undoing, redoing or changing its strength never
 computes it again.
 
 | field             | meaning                                                                                                                                                       |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`              | the step's id (history patches name it, as they name masks)                                                                                                   |
-| `kind`            | `denoise` or `enhance`                                                                                                                                        |
+| `kind`            | `denoise`, `enhance` or `retouch` (a heal, clone, fill or eye stroke)                                                                                         |
 | `label`           | what it is called ("AI Denoise · SCUNet in Mask 1")                                                                                                           |
 | `blob`            | the image it made: a `blobs.hash`, the whole frame (`width × height`), 16-bit RGB in JPEG XL (`codec` `jxl` near-lossless at distance 0.1, or `jxl-lossless`) |
 | `alpha`           | the mask it was made inside, frozen as it was then: a `blobs.hash` of an 8-bit grey PNG of the same size; null for the whole frame                            |
 | `scope`           | that mask's name, for showing                                                                                                                                 |
 | `opacity`         | 0–100: how much of it is laid on                                                                                                                              |
 | `width`, `height` | the frame it was made at                                                                                                                                      |
+| `rect`            | a patch's place on the frame (`retouch` steps), else null                                                                                                     |
 | `params`          | how it was made (`model`, `chain`, `scale`, `lossless`); `resizes: true` for an upscale                                                                       |
 
 - **The source frame:** steps live on the photo's own pixels at full size,
   upright (the file's orientation applied), before lens correction. A mask drawn
   over the corrected picture is put back onto that frame when frozen.
+- **Patches:** a `retouch` step's `blob` is only the pixels the stroke changed:
+  a 16-bit RGBA PNG whose alpha is where it changed (times the mask that clipped
+  it), placed at `rect` (`{ x, y, w, h }`, pixels of its `width × height`
+  frame).
 - **Upscales:** a step with `params.resizes` (an upscale) is larger than the
   frame before it; from it on, the frame is its size, and the steps before it
   are resampled to it. Positions in the recipe are fractions, so nothing moves.

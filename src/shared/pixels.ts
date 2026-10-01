@@ -12,14 +12,18 @@
  * is the photo with every step laid on (main/pixels/working.ts).
  */
 
-export type PixelStepKind = 'denoise' | 'enhance'
+export type PixelStepKind = 'denoise' | 'enhance' | 'retouch'
 
 export interface PixelStep {
   id: string
   kind: PixelStepKind
   /** What History and the panels call it ("AI Denoise · SCUNet"). */
   label: string
-  /** SHA-256 of the image it made, the whole frame, in the project's blobs. */
+  /**
+   * SHA-256 of the image it made, in the project's blobs: the whole frame, or
+   * (a baked heal, `rect` set) just the patch it changed, a 16-bit RGBA PNG
+   * whose alpha is where it changed.
+   */
   blob: string
   /**
    * SHA-256 of its mask, frozen when it was made (8-bit grey PNG, the source
@@ -33,6 +37,8 @@ export interface PixelStep {
   /** The frame it was made at, upright, before lens correction. */
   width: number
   height: number
+  /** A patch's place on that frame, in its pixels; null for a whole-frame image. */
+  rect: { x: number; y: number; w: number; h: number } | null
   /**
    * How it was made: the model, and anything else worth showing. `resizes`
    * true: it made the frame larger (an upscale): the frame is its size from it on.
@@ -42,7 +48,8 @@ export interface PixelStep {
 
 export const PIXEL_LABEL: Record<PixelStepKind, string> = {
   denoise: 'AI Denoise',
-  enhance: 'Enhance'
+  enhance: 'Enhance',
+  retouch: 'Heal'
 }
 
 const HEX64 = /^[0-9a-f]{64}$/
@@ -52,7 +59,7 @@ export function normalisePixelStep(v: unknown): PixelStep | null {
   if (!v || typeof v !== 'object') return null
   const s = v as Record<string, unknown>
   if (typeof s.id !== 'string' || typeof s.blob !== 'string' || !HEX64.test(s.blob)) return null
-  if (s.kind !== 'denoise' && s.kind !== 'enhance') return null
+  if (s.kind !== 'denoise' && s.kind !== 'enhance' && s.kind !== 'retouch') return null
   const num = (x: unknown, d: number): number =>
     typeof x === 'number' && Number.isFinite(x) ? x : d
   return {
@@ -65,13 +72,30 @@ export function normalisePixelStep(v: unknown): PixelStep | null {
     opacity: Math.max(0, Math.min(100, num(s.opacity, 100))),
     width: Math.max(1, Math.round(num(s.width, 1))),
     height: Math.max(1, Math.round(num(s.height, 1))),
+    rect: rectOf(s.rect),
     params: s.params && typeof s.params === 'object' ? (s.params as PixelStep['params']) : {}
   }
 }
 
+function rectOf(v: unknown): PixelStep['rect'] {
+  if (!v || typeof v !== 'object') return null
+  const r = v as Record<string, unknown>
+  const n = (x: unknown): number | null =>
+    typeof x === 'number' && Number.isFinite(x) ? Math.round(x) : null
+  const x = n(r.x)
+  const y = n(r.y)
+  const w = n(r.w)
+  const h = n(r.h)
+  return x !== null && y !== null && w !== null && h !== null && w > 0 && h > 0
+    ? { x, y, w, h }
+    : null
+}
+
 /** What the steps lay on, in order: what names the working pixels they make (see working.ts). */
 export function stackSignature(steps: PixelStep[]): string {
-  return JSON.stringify(steps.map((s) => [s.blob, s.alpha, Math.round(s.opacity * 10) / 10]))
+  return JSON.stringify(
+    steps.map((s) => [s.blob, s.alpha, Math.round(s.opacity * 10) / 10, s.rect])
+  )
 }
 
 /** Whether a step made the frame larger (an upscale). */

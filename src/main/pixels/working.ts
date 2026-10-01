@@ -55,6 +55,34 @@ export function workingKey(version: string, steps: PixelStep[]): string {
 
 const dirOf = (deps: PixelDeps, key: string): string => join(deps.cacheDir, `work-${key}`)
 
+/**
+ * Make a cache file once: a second ask for the same file (the proxies, the
+ * master and a bake can all want one patch at one size at once) waits for
+ * the first, and each maker writes its own temporary file, renamed whole
+ * into place.
+ */
+const making = new Map<string, Promise<void>>()
+async function makeOnce(out: string, build: (tmp: string) => Promise<unknown>): Promise<void> {
+  if (await exists(out)) return
+  let p = making.get(out)
+  if (!p) {
+    p = (async (): Promise<void> => {
+      const tmp = out.replace(
+        /(\.[a-z]+)$/,
+        `.${process.pid}-${Math.random().toString(36).slice(2)}.part$1`
+      )
+      try {
+        await build(tmp)
+        await rename(tmp, out)
+      } finally {
+        await rm(tmp, { force: true }).catch(() => undefined)
+      }
+    })().finally(() => making.delete(out))
+    making.set(out, p)
+  }
+  await p
+}
+
 /** A step's image as a 16-bit PNG in the cache (decoded from its blob once). */
 export async function stepImage(deps: PixelDeps, step: PixelStep): Promise<string> {
   const out = join(deps.cacheDir, 'blobs', `${step.blob}.png`)
@@ -62,16 +90,16 @@ export async function stepImage(deps: PixelDeps, step: PixelStep): Promise<strin
   const jxl = await deps.blobFile(step.blob, 'jxl')
   if (!jxl) throw new Error(`${step.label}: its image is missing from the project`)
   await mkdir(join(deps.cacheDir, 'blobs'), { recursive: true })
-  const tmp = `${out}.part.png`
-  await deps.engine.convert({
-    ...blankRequest(jxl, tmp, 'Jxl'),
-    pixel: { depth: 'Sixteen', channels: 3 },
-    encode: PNG,
-    metadata: ICC_ONLY,
-    color: 'Preserve',
-    threads: BACKGROUND_THREADS
-  })
-  await rename(tmp, out)
+  await makeOnce(out, (tmp) =>
+    deps.engine.convert({
+      ...blankRequest(jxl, tmp, 'Jxl'),
+      pixel: { depth: 'Sixteen', channels: 3 },
+      encode: PNG,
+      metadata: ICC_ONLY,
+      color: 'Preserve',
+      threads: BACKGROUND_THREADS
+    })
+  )
   return out
 }
 
@@ -106,22 +134,68 @@ async function sized(
 ): Promise<string> {
   if (w === step.width && h === step.height) return src
   const out = src.replace(/\.png$/, `-${w}x${h}.png`)
-  if (await exists(out)) return out
-  const tmp = `${out}.part.png`
-  await deps.engine.convert({
-    ...blankRequest(src, tmp, 'Png'),
-    resize: { Exact: { width: w, height: h } },
-    resampler: 'Lanczos3',
-    // Downscaled in linear light, as the proxies are; alpha (a mask) kept.
-    linear_resample: true,
-    pixel: { depth: 'Sixteen', channels: step.alpha ? 4 : 3 },
-    encode: PNG,
-    metadata: ICC_ONLY,
-    color: 'Preserve',
-    threads: BACKGROUND_THREADS
-  })
-  await rename(tmp, out)
+  await makeOnce(out, (tmp) =>
+    deps.engine.convert({
+      ...blankRequest(src, tmp, 'Png'),
+      resize: { Exact: { width: w, height: h } },
+      resampler: 'Lanczos3',
+      // Downscaled in linear light, as the proxies are; alpha (a mask) kept.
+      linear_resample: true,
+      pixel: { depth: 'Sixteen', channels: step.alpha ? 4 : 3 },
+      encode: PNG,
+      metadata: ICC_ONLY,
+      color: 'Preserve',
+      threads: BACKGROUND_THREADS
+    })
+  )
   return out
+}
+
+/**
+ * A patch (a baked heal) over a `w × h` frame: its pixels resized to the
+ * whole pixels it covers there, and placed on them. At the frame it was made
+ * on it goes as it is.
+ */
+async function patchOverlay(
+  deps: PixelDeps,
+  step: PixelStep,
+  w: number,
+  h: number
+): Promise<Overlay | null> {
+  const r = step.rect!
+  const kx = w / step.width
+  const ky = h / step.height
+  const x0 = Math.max(0, Math.floor(r.x * kx))
+  const y0 = Math.max(0, Math.floor(r.y * ky))
+  const x1 = Math.min(w, Math.ceil((r.x + r.w) * kx))
+  const y1 = Math.min(h, Math.ceil((r.y + r.h) * ky))
+  const pw = x1 - x0
+  const ph = y1 - y0
+  if (pw < 1 || ph < 1) return null
+  const src = await deps.blobFile(step.blob, 'png')
+  if (!src) throw new Error(`${step.label}: its pixels are missing from the project`)
+  let path = src
+  if (pw !== r.w || ph !== r.h) {
+    path = src.replace(/\.png$/, `-${pw}x${ph}.png`)
+    await makeOnce(path, (tmp) =>
+      deps.engine.convert({
+        ...blankRequest(src, tmp, 'Png'),
+        resize: { Exact: { width: pw, height: ph } },
+        resampler: 'Lanczos3',
+        pixel: { depth: 'Sixteen', channels: 4 },
+        encode: PNG,
+        metadata: ICC_ONLY,
+        color: 'Preserve'
+      })
+    )
+  }
+  return {
+    source: { Png: path },
+    rect: { x: x0 / w, y: y0 / h, width: pw / w },
+    opacity: Math.min(1, step.opacity / 100),
+    blend: { mode: 'Normal', space: 'LinearWorking' },
+    resampler: 'Lanczos3'
+  }
 }
 
 /** The engine overlays for a list of steps over a `w × h` frame, in order. */
@@ -134,6 +208,11 @@ export async function overlaysOf(
   const out: Overlay[] = []
   for (const s of steps) {
     if (s.opacity <= 0) continue
+    if (s.rect) {
+      const o = await patchOverlay(deps, s, w, h)
+      if (o) out.push(o)
+      continue
+    }
     out.push({
       source: { Png: await sized(deps, await overlaySource(deps, s), s, w, h) },
       rect: { x: 0, y: 0, width: 1 },
@@ -219,7 +298,7 @@ export function ensureWorking(
   const flight = `${deps.cacheDir}:${key}:${base ? 'm' : 'p'}`
   let p = building.get(flight)
   if (!p) {
-    p = make(deps, key, plain, steps, base).finally(() => building.delete(flight))
+    p = make(deps, version, key, plain, steps, base).finally(() => building.delete(flight))
     building.set(flight, p)
   }
   return p
@@ -227,6 +306,7 @@ export function ensureWorking(
 
 async function make(
   deps: PixelDeps,
+  version: string,
   key: string,
   plain: Proxies,
   steps: PixelStep[],
@@ -244,6 +324,21 @@ async function make(
   if (set && (!base || set.master)) return set
   await mkdir(dir, { recursive: true })
   const frame = frameOf(steps, plain.frameWidth, plain.frameHeight)
+  // One step more than a set already made (a heal stroke after another): the
+  // new step laid on that set, not every step on the photo again.
+  const last = steps[steps.length - 1]
+  const prev =
+    steps.length > 1 && !last.params.resizes
+      ? await findSet(deps, workingKey(version, steps.slice(0, -1)))
+      : null
+  if (!set && prev) {
+    const proxy = await layOn(deps, prev.px.proxy, join(dir, 'proxy.tiff'), [last])
+    const draft = await layOn(deps, prev.px.draft, join(dir, 'draft.tiff'), [last])
+    set = { key, px: { ...prev.px, proxy, draft }, master: null }
+  }
+  if (base && prev?.master && set && !set.master) {
+    set = { ...set, master: await layOn(deps, prev.master, join(dir, 'master.tiff'), [last]) }
+  }
   if (!set) {
     // The proxies keep their size: an upscale shows as its picture, not its pixels.
     const proxy = await layOn(deps, plain.proxy, join(dir, 'proxy.tiff'), steps)
@@ -254,7 +349,7 @@ async function make(
       master: null
     }
   }
-  if (base) {
+  if (base && !set.master) {
     // At full size the frame is the steps' own: an upscale's, when one made it larger.
     const from = await base()
     const start =
@@ -266,6 +361,14 @@ async function make(
   await writeFile(meta, JSON.stringify(set))
   await prune(deps, key)
   return set
+}
+
+/** A set made before, by its key, if its files are all still there. */
+async function findSet(deps: PixelDeps, key: string): Promise<WorkingSet | null> {
+  const meta = join(dirOf(deps, key), 'set.json')
+  if (!(await exists(meta))) return null
+  const set = JSON.parse(await readFile(meta, 'utf8')) as WorkingSet
+  return (await filesThere(set)) ? set : null
 }
 
 async function filesThere(set: WorkingSet): Promise<boolean> {

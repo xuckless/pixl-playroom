@@ -317,6 +317,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         opacity: 100,
         width: report.width,
         height: report.height,
+        rect: null,
         params: { chain: subject, scale: k, resizes: k > 1, lossless }
       }
       await addPixelStep(this.library, sessions, key, step)

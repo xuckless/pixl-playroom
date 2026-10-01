@@ -124,6 +124,7 @@ export const IPC = {
     uprightFromLines: 'develop:upright-from-lines',
     /** Heal / clone: the best place to copy a spot from. */
     suggestHeal: 'develop:suggest-heal',
+    bakeSpot: 'develop:bake-spot',
     /** Where the open photo's AI denoise stands. */
     /** main → renderer: a render finished */
     rendered: 'develop:rendered',

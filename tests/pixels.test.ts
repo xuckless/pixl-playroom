@@ -25,6 +25,7 @@ const step = (over: Partial<PixelStep> = {}): PixelStep => ({
   opacity: 100,
   width: 8,
   height: 6,
+  rect: null,
   params: { model: 'scunet-color-real' },
   ...over
 })
@@ -346,6 +347,243 @@ test(
     assert.equal(set.px.proxy.width, 16)
     assert.equal(set.master!.width, 64)
     assert.equal(set.master!.height, 48)
+    rmSync(dir, { recursive: true })
+  }
+)
+
+// ── baked heal strokes ──
+
+test('a patch is what changed between the two renders, clipped by a mask', async () => {
+  const { buildPatch } = await import('../src/main/pixels/ops')
+  const dir = tmp()
+  const w = 10
+  const h = 8
+  const before = new Uint16Array(w * h * 3).fill(1000)
+  const after = before.slice()
+  // A 3 × 2 block changed, at (4, 3).
+  for (let y = 3; y < 5; y++)
+    for (let x = 4; x < 7; x++) after.fill(50000, (y * w + x) * 3, (y * w + x) * 3 + 3)
+  writeFileSync(join(dir, 'a.png'), encodePng16(after, w, h, 3))
+  writeFileSync(join(dir, 'b.png'), encodePng16(before, w, h, 3))
+  const at = buildPatch(join(dir, 'a.png'), join(dir, 'b.png'), join(dir, 'p.png'))
+  assert.deepEqual(at, { x: 4, y: 3, w: 3, h: 2 })
+  const p = pngSamples16(readFileSync(join(dir, 'p.png')))
+  assert.equal(p.channels, 4)
+  assert.equal(p.data[0], 50000)
+  assert.equal(p.data[3], 65535)
+  // A mask over the frame that keeps only the block's left column.
+  const frame = new Uint8Array(20 * 20)
+  for (let y = 0; y < 20; y++) frame[y * 20 + 2 + 4] = 255
+  writeFileSync(join(dir, 'm.png'), encodeGreyPng(frame, 20, 20))
+  const clipped = buildPatch(join(dir, 'a.png'), join(dir, 'b.png'), join(dir, 'q.png'), {
+    path: join(dir, 'm.png'),
+    at: { x: 2, y: 0 }
+  })
+  assert.deepEqual(clipped, { x: 4, y: 3, w: 1, h: 2 })
+  // Nothing changed: no patch.
+  assert.equal(buildPatch(join(dir, 'b.png'), join(dir, 'b.png'), join(dir, 'r.png')), null)
+  rmSync(dir, { recursive: true })
+})
+
+test(
+  'a heal stroke is baked into a patch where it changed the photo, and laid on in place',
+  { skip: engine === null ? 'the engine is not built for this platform' : false },
+  async () => {
+    const { bakeSpot } = await import('../src/main/pixels/heal')
+    const { buildPatch } = await import('../src/main/pixels/ops')
+    const { newSpot } = await import('../src/shared/retouch')
+    const dir = tmp()
+    const w = 200
+    const h = 150
+    // A flat grey photo with a dark blemish at (100, 75).
+    const px = new Uint16Array(w * h * 3).fill(30000)
+    for (let y = 70; y < 80; y++)
+      for (let x = 95; x < 105; x++) px.fill(2000, (y * w + x) * 3, (y * w + x) * 3 + 3)
+    writeFileSync(join(dir, 'master.png'), encodePng16(px, w, h, 3))
+    const blobs = join(dir, 'cache', 'blobs')
+    mkdirSync(blobs, { recursive: true })
+    const deps: PixelDeps = {
+      engine: engine as unknown as PixelDeps['engine'],
+      cacheDir: join(dir, 'cache'),
+      blobFile: async (hash, ext) => join(blobs, `${hash}.${ext}`),
+      work: async (job) =>
+        job.op === 'patch' ? buildPatch(job.withStroke, job.without, job.out, job.mask) : undefined
+    }
+    const { sha256File } = await import('../src/main/project/pixlfile')
+    const { copyFileSync } = await import('fs')
+    const spot = newSpot('s1', 'heal', [{ x: 0.5, y: 0.5 }], 0.08, 50, 100)
+    spot.source = { x: 0.25, y: 0.5 }
+    const step = await bakeSpot(
+      {
+        deps,
+        recipe: defaultRecipe(false),
+        lens: null,
+        photoId: 1,
+        isRaw: false,
+        asShot: null,
+        seed: 1,
+        master: { path: join(dir, 'master.png'), input: 'Png', width: w, height: h },
+        freeze: async () => null,
+        store: async (file) => {
+          const hash = sha256File(file)
+          copyFileSync(file, join(blobs, `${hash}.png`))
+          return hash
+        }
+      },
+      spot,
+      null
+    )
+    assert.ok(step, 'the stroke changed the photo')
+    assert.equal(step!.kind, 'retouch')
+    // The patch covers the blemish, and not the whole photo.
+    const r = step!.rect!
+    assert.ok(r.x <= 95 && r.x + r.w >= 105 && r.y <= 70 && r.y + r.h >= 80, JSON.stringify(r))
+    assert.ok(r.w < w && r.h < h)
+    // Laid on in place, the blemish is gone.
+    const set = await ensureWorking(
+      deps,
+      'v1',
+      {
+        proxy: { path: join(dir, 'master.png'), input: 'Png', width: w, height: h },
+        draft: { path: join(dir, 'master.png'), input: 'Png', width: w, height: h },
+        frameWidth: w,
+        frameHeight: h
+      },
+      [step!],
+      null
+    )
+    const out = join(dir, 'healed.png')
+    await engine!.convert({
+      ...blankRequest(set.px.proxy.path, out, 'Tiff'),
+      pixel: { depth: 'Sixteen', channels: 3 },
+      encode: { Png: { compression: 'Fast', filter: 'Sub' } }
+    })
+    const healed = pngSamples16(readFileSync(out)).data
+    assert.ok(healed[(75 * w + 100) * 3] > 20000, `the blemish is ${healed[(75 * w + 100) * 3]}`)
+    // Far from the stroke nothing changed.
+    assert.equal(healed[(10 * w + 10) * 3], 30000)
+    rmSync(dir, { recursive: true })
+  }
+)
+
+test('a patch keeps the colour profile of the pixels it came from', async () => {
+  const { buildPatch } = await import('../src/main/pixels/ops')
+  const { colourChunks } = await import('../src/main/pngio')
+  const dir = tmp()
+  // A PNG chunk, as a profile would be (the bytes are what matter, not a real ICC).
+  const iccp = (() => {
+    const data = Buffer.concat([Buffer.from('linear\0\0'), Buffer.from([1, 2, 3, 4])])
+    const len = Buffer.alloc(4)
+    len.writeUInt32BE(data.length)
+    return Buffer.concat([len, Buffer.from('iCCP'), data, Buffer.alloc(4)])
+  })()
+  const a = new Uint16Array(4 * 4 * 3).fill(100)
+  const b = a.slice()
+  a[0] = 60000
+  writeFileSync(join(dir, 'a.png'), encodePng16(a, 4, 4, 3, 1, [iccp]))
+  writeFileSync(join(dir, 'b.png'), encodePng16(b, 4, 4, 3, 1, [iccp]))
+  buildPatch(join(dir, 'a.png'), join(dir, 'b.png'), join(dir, 'p.png'))
+  const chunks = colourChunks(readFileSync(join(dir, 'p.png')))
+  assert.equal(chunks.length, 1)
+  assert.equal(chunks[0].toString('ascii', 4, 8), 'iCCP')
+  rmSync(dir, { recursive: true })
+})
+
+const CR2 = '/Users/ali/photos-card/IMG_3257.CR2'
+
+test(
+  'on a RAW’s linear pixels, a baked heal keeps the photo’s brightness',
+  {
+    skip:
+      engine === null
+        ? 'the engine is not built for this platform'
+        : !(await import('fs')).existsSync(CR2)
+          ? 'no RAW to test on here'
+          : false
+  },
+  async () => {
+    const { bakeSpot } = await import('../src/main/pixels/heal')
+    const { buildPatch } = await import('../src/main/pixels/ops')
+    const { newSpot } = await import('../src/shared/retouch')
+    const { sha256File } = await import('../src/main/project/pixlfile')
+    const { copyFileSync } = await import('fs')
+    const { RAW_DEVELOP } = await import('../src/main/source')
+    const dir = tmp()
+    // The RAW developed as the app's master is (linear, 16-bit, its profile), small.
+    const master = join(dir, 'master.tiff')
+    const r = await engine!.convert({
+      ...blankRequest(CR2, master, 'Raw'),
+      raw: RAW_DEVELOP,
+      resize: { Scale: { factor: 0.1 } },
+      pixel: { depth: 'Sixteen', channels: 3 },
+      encode: { Tiff: { compression: 'None' } },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      color: 'Preserve'
+    })
+    const blobs = join(dir, 'cache', 'blobs')
+    mkdirSync(blobs, { recursive: true })
+    const deps: PixelDeps = {
+      engine: engine as unknown as PixelDeps['engine'],
+      cacheDir: join(dir, 'cache'),
+      blobFile: async (hash, ext) => join(blobs, `${hash}.${ext}`),
+      work: async (job) =>
+        job.op === 'patch' ? buildPatch(job.withStroke, job.without, job.out, job.mask) : undefined
+    }
+    const frame = { path: master, input: 'Tiff' as const, width: r.width, height: r.height }
+    const spot = newSpot('s', 'clone', [{ x: 0.5, y: 0.5 }], 0.05, 0, 100)
+    spot.source = { x: 0.52, y: 0.5 }
+    const step = await bakeSpot(
+      {
+        deps,
+        recipe: defaultRecipe(true),
+        lens: null,
+        photoId: 1,
+        isRaw: true,
+        asShot: null,
+        seed: 1,
+        master: frame,
+        freeze: async () => null,
+        store: async (file) => {
+          const hash = sha256File(file)
+          copyFileSync(file, join(blobs, `${hash}.png`))
+          return hash
+        }
+      },
+      spot,
+      null
+    )
+    assert.ok(step)
+    const set = await ensureWorking(
+      deps,
+      'raw',
+      { proxy: frame, draft: frame, frameWidth: frame.width, frameHeight: frame.height },
+      [step!],
+      null
+    )
+    // Read the same point of the source and of the cloned spot, as one does.
+    const read = async (file: string): Promise<Uint16Array> => {
+      const png = join(dir, `read-${Math.random()}.png`)
+      await engine!.convert({
+        ...blankRequest(file, png, 'Tiff'),
+        pixel: { depth: 'Sixteen', channels: 3 },
+        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        color: 'Preserve'
+      })
+      return pngSamples16(readFileSync(png)).data
+    }
+    const before = await read(master)
+    const after = await read(set.px.proxy.path)
+    const at = (d: Uint16Array, x: number, y: number): number => {
+      let s = 0
+      for (let c = 0; c < 3; c++) s += d[(y * frame.width + x) * 3 + c]
+      return s / 3
+    }
+    const cy = Math.round(frame.height / 2)
+    const dest = at(after, Math.round(frame.width * 0.5), cy)
+    const src = at(before, Math.round(frame.width * 0.52), cy)
+    // A clone copies: the spot is the source's brightness (not darkened).
+    assert.ok(Math.abs(dest - src) / Math.max(1, src) < 0.05, `spot ${dest}, source ${src}`)
     rmSync(dir, { recursive: true })
   }
 )

@@ -314,6 +314,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         opacity: kept ? 100 : Math.max(1, Math.min(100, Math.round(req.strength))),
         width: master.width,
         height: master.height,
+        rect: null,
         params: { model: req.model, lossless }
       }
       await addPixelStep(this.library, this.sessions(), req.key, step)
