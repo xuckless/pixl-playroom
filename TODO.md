@@ -125,22 +125,42 @@ After: Owner task "Updates bucket". The bucket and its cache rules are pixl-web'
 
 After: Pass 23.
 
-- [ ] **S** · Staged rollouts: a `stagingPercentage` input on release.yml
+- [x] **S** · Staged rollouts: a `stagingPercentage` input on release.yml
       that goes into the feed (electron-updater gives each install a stable
       id), and a script that raises it or stops a bad release. A downgrade is
       never offered (`allowDowngrade` false), so a bad release is fixed by
       releasing again, not by rolling back. RELEASING.md says so.
-- [ ] **M** · An update floor: the app reads
+      _Done: the `rollout` input (default 100, kept at 0 when given 0),
+      written by `build/prefix-feed.mjs`; `scripts/rollout.mjs` shows and
+      changes it on the live feeds, through `scripts/r2.mjs` (Signature V4,
+      with no AWS CLI needed). Tried against the real bucket on a throwaway
+      prefix: set to 25, served with caching off, cleared at 100._
+- [x] **M** · An update floor: the app reads
       `updates.pixlfoundation.com/playroom/policy.json` at launch
       (`minVersion`, `betaOpen`, a message). Below `minVersion` it says an
       update is required and installs it. Pass 26a reads the same file to
       know the beta has ended.
+      _Done: `src/shared/policy.ts` (parsing, semver order, the floor),
+      `src/main/policy.ts` (launch, every 4 hours, kept for offline
+      launches), the full-window _Update required_ screen
+      (`src/renderer/src/views/Gate.tsx`, which the beta gate will reuse) with
+      progress, Restart to update and a download link, and
+      `scripts/policy.mjs` to set it. Checked in the app with a local
+      policy at 9.9.9. That check found an unreleased bug from the lazy
+      updater import (`3520e30`): `autoUpdater` came back undefined from
+      `import()`, so the updater never started. It's fixed, and 0.1.1-beta
+      (static import) never had it. The screen blocks the window and its
+      shortcuts; refusing IPC in main comes with the beta gate (Pass 26a)._
 - [ ] **M** · Test one real update before any release goes out: install a
       signed N on a Mac and on Windows, publish N+1 to a staging prefix (a
       test build reads `PLAYROOM_UPDATE_URL`), and check the download, the
       differential download (blockmap), "Restart to update", installing on
       quit, and that an unsigned or tampered N+1 is refused on both. Write it
       into RELEASING.md as the pre-release checklist.
+      _Ready: the checklist is in RELEASING.md ("Before a release goes out"),
+      and release.yml takes `target: staging` (into `staging/playroom/`, no
+      GitHub release) with a `version` to build as. Running it needs the R2
+      token and real machines (owner)._
 
 ### Pass 24 — Crash reports kept · 5 pts
 
@@ -158,6 +178,43 @@ After: Owner task "Where crash reports live". Partly in pixl-web.
       _Done: `scripts/upload-symbols.mjs`, the release workflow's Crash
       symbols step (needs the `CLOUDFLARE_SYMBOLS_TOKEN` and
       `CLOUDFLARE_ACCOUNT_ID` secrets). The engine's frames wait on E35._
+
+### Pass 24a — Reports become GitHub issues (app side) · 5 pts · deferred
+
+**Deferred (owner, 2026-10-01): not being done now.** Kept here as the plan
+for when it is picked up.
+
+After: Pass 24. The watcher that files the issues is pixl-web's ("Reports
+become GitHub issues"); this pass makes the reports worth filing. Not part of
+Phase C's gate: take it once builds are out and reports start arriving.
+
+Owner decision first: the issues go to a **private** triage repository
+(e.g. `xuckless/pixl-triage`), never to this public one. Reports carry users'
+words, log tails and memory fragments.
+
+- [ ] **S** · What each report carries, for grouping and for starting a fix:
+  - the commit the build came from, the channel (beta or stable), and the
+    app version;
+  - for JSON crashes, the stack as it was thrown. The Worker takes the
+    fingerprint from it, so the app sends no fingerprint of its own.
+  - This goes in `src/shared/crash.ts` (`ErrorPayload`), in the same
+    scrubbing as now; `tests/crash.test.ts`.
+- [ ] **M** · Readable renderer stacks: the release build uploads its source
+      maps next to `symbols/`, under `sourcemaps/<version>/`, through
+      `scripts/upload-symbols.mjs`. The issue then shows `File.tsx:123`, not
+      a bundle offset. The maps are not shipped in the app.
+- [ ] **L** · Minidump triage workflow, in the triage repository, triggered
+      by pixl-web's `repository_dispatch`:
+  - fetch the dump from R2 and unpack Crashpad's multipart and gzip;
+  - run `minidump-stackwalk` with `symbols/` and
+    https://symbols.electronjs.org (engine frames after E35);
+  - send the crashing thread's top frames to pixl-web's
+    `/api/triage/issue`, which groups them and files or updates the issue.
+- [ ] **S** · Releases close the loop:
+  - Fix commits name the triage issue ("fixes pixl-triage#12"). The
+    release workflow closes those issues with "Fixed in <version>".
+  - A report from that version or later then reopens the issue as a
+    regression (pixl-web).
 
 ### Pass 25 — Signing in with a PIXL account · 5 pts
 

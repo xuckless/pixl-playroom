@@ -40,6 +40,7 @@ import { pixels } from './workers/pool'
 import { registerProtocol, registerSchemePrivileges } from './protocol'
 import { DevelopSessions } from './render'
 import { setupUpdater } from './updater'
+import { startPolicy } from './policy'
 import { IPC } from '../shared/ipc'
 
 log.initialize()
@@ -263,6 +264,7 @@ app.whenReady().then(() => {
   buildMenu()
   onRenderScale(buildMenu)
   createWindow()
+  startPolicy()
   void setupUpdater().catch((err) => log.warn('updater setup failed', err))
   startLicence()
   startAccount()

@@ -691,6 +691,8 @@ export interface UpdateState {
   progress?: UpdateProgress
   error?: string
   lastCheckedAt?: string
+  /** This version is below the release policy's floor: it must update before it goes on. */
+  required?: { minVersion: string; message?: string }
 }
 
 // ── Preferences ──────────────────────────────────────────────────────────────

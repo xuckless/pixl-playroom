@@ -25,6 +25,7 @@ import { chordOf } from './lib/keys'
 import { ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
+import { UpdateRequiredGate } from './views/Gate'
 import { isFrame, whenFrame } from './lib/frames'
 import { openReport } from './lib/report'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
@@ -471,6 +472,7 @@ export default function App(): React.JSX.Element {
         <Toast />
         <EngineBanner />
         <Splash />
+        <UpdateRequiredGate />
       </div>
     </MotionConfig>
   )

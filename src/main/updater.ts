@@ -14,6 +14,8 @@ import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import type { AppUpdater, ProgressInfo, UpdateInfo } from 'electron-updater'
 import { IPC, type UpdateChannel, type UpdateState } from '../shared/ipc'
+import { belowFloor } from '../shared/policy'
+import { onPolicy } from './policy'
 import { readSettings, writeSettings } from './settings'
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
@@ -92,7 +94,11 @@ export async function setupUpdater(): Promise<void> {
     state = { ...state, phase: 'disabled' }
     return
   }
-  autoUpdater = (await import('electron-updater')).autoUpdater
+  // electron-updater exports autoUpdater through a getter Node's import of a
+  // CommonJS module doesn't see, so from import() it is only on `default`.
+  const updater = await import('electron-updater')
+  autoUpdater =
+    updater.autoUpdater ?? (updater as unknown as { default: typeof updater }).default.autoUpdater
   enabled = true
   autoUpdater.logger = log
   autoUpdater.autoDownload = true
@@ -129,7 +135,21 @@ export async function setupUpdater(): Promise<void> {
     setState({ phase: 'downloaded', version: info.version, progress: undefined })
   })
   autoUpdater.on('error', (err: Error) => {
-    setState({ phase: 'error', error: err.message })
+    // electron-updater's messages run on with headers and a stack: the log
+    // keeps all of it, the window says the first line.
+    setState({ phase: 'error', error: err.message.split('\n')[0] })
+  })
+
+  // Below the release policy's floor (policy.json): the window says an
+  // update is required, and the update is looked for at once.
+  onPolicy((p) => {
+    const required = belowFloor(app.getVersion(), p)
+      ? { minVersion: p.minVersion as string, message: p.message }
+      : undefined
+    if (JSON.stringify(required) === JSON.stringify(state.required)) return
+    if (required) log.warn(`updates: ${app.getVersion()} is below the floor ${required.minVersion}`)
+    setState({ required })
+    if (required) void checkForUpdates()
   })
 
   void checkForUpdates()

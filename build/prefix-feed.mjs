@@ -11,7 +11,10 @@
  * version's blockmap: electron-updater looks for it at the new file's path
  * with the new version swapped for the old.
  *
- * Usage: node build/prefix-feed.mjs <manifest> > <manifest for R2>
+ * Usage: node build/prefix-feed.mjs <manifest> [rollout %] > <manifest for R2>
+ *
+ * A rollout under 100 adds `stagingPercentage` (a staged rollout:
+ * scripts/rollout.mjs raises or stops it later).
  *
  * Takes the version from the feed itself, rewrites only the `url:` and
  * `path:` lines, and throws on anything it doesn't expect, so a format change
@@ -20,7 +23,9 @@
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
-export function prefixFeed(text, source = 'feed') {
+export function prefixFeed(text, source = 'feed', rollout = 100) {
+  if (!(Number.isInteger(rollout) && rollout >= 0 && rollout <= 100))
+    throw new Error(`${source}: not a whole percentage: ${rollout}`)
   const version = /^version: (\S+)$/m.exec(text)?.[1]
   if (!version || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version))
     throw new Error(`${source}: no version, or not one we publish`)
@@ -38,11 +43,17 @@ export function prefixFeed(text, source = 'feed') {
   })
   if (urls === 0) throw new Error(`${source}: no files`)
   if (paths !== 1) throw new Error(`${source}: expected one path line, found ${paths}`)
+  if (text.includes('\nstagingPercentage:')) throw new Error(`${source}: already staged`)
+  if (rollout < 100) {
+    const end = out.at(-1) === '' ? out.length - 1 : out.length
+    out.splice(end, 0, `stagingPercentage: ${rollout}`)
+  }
   return out.join('\n')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const source = process.argv[2]
-  if (!source) throw new Error('usage: node build/prefix-feed.mjs <manifest>')
-  process.stdout.write(prefixFeed(readFileSync(source, 'utf8'), source))
+  if (!source) throw new Error('usage: node build/prefix-feed.mjs <manifest> [rollout %]')
+  const rollout = process.argv[3] === undefined ? 100 : Number(process.argv[3])
+  process.stdout.write(prefixFeed(readFileSync(source, 'utf8'), source, rollout))
 }

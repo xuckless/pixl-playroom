@@ -64,6 +64,32 @@ goes to the tag's GitHub release (the `github` entry in `publish`, its feeds in
   was `xuckless`). Their users reinstall once, and the release notes and the beta page say
   so.
 
+**Staged rollouts.** _Actions → Release → Run workflow_ takes `rollout`, the percentage of
+the channel offered the release (100 by default; release-please's runs use 100). Below 100,
+the feeds carry `stagingPercentage`. electron-updater gives each install a stable random id,
+and an install outside the percentage hears "no update".
+- `node scripts/rollout.mjs <latest|beta>` shows each feed's version and percentage.
+- `node scripts/rollout.mjs <latest|beta> <percent>` changes it. 100 offers the release to
+  everyone; 0 stops it reaching anyone else.
+- A downgrade is never offered (`allowDowngrade` is false). A bad release is stopped with
+  0 and fixed by releasing again; installs that already have it keep it until then.
+
+**The release policy.** `playroom/policy.json`, `{ minVersion, betaOpen, message }`, is read
+by every install at launch and every four hours, and kept for offline launches
+(`src/main/policy.ts`).
+- Below `minVersion`, the window shows only _Update required_: the update downloading,
+  _Restart to update_, and a download link. Use it for a release that must not stay out (a
+  data-losing bug, a security fix), and only once the fixed version is in the feeds.
+- `betaOpen: false` tells beta builds the beta has ended (Pass 26a).
+- `node scripts/policy.mjs` shows it. `node scripts/policy.mjs set --min 0.2.3 --message "…"`
+  changes it, and so do `--no-min` and `--beta-open false`.
+- Development builds never block on it.
+
+`scripts/rollout.mjs` and `scripts/policy.mjs` talk to the bucket through `scripts/r2.mjs`, with
+the same `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_ENDPOINT` the workflow uses (an
+R2 API token with write access to `pixl-updates`). `--prefix staging/playroom` works on the
+staging folder instead.
+
 **Asset names carry no version** (`artifactName` in `electron-builder.yml`), so the website's
 download links can name a file and a version folder without guessing.
 
@@ -186,6 +212,40 @@ The channel (Stable / Beta) is in _Settings_ and in `userData/settings.json`.
   `https://updates.pixlfoundation.com/staging/playroom`) reads `<base>/latest-mac.yml` and
   the rest from there. It works in a signed build too, and the update is still checked
   against the app's signature.
+
+### Before a release goes out: test one real update
+
+Do this before the first release from the bucket, and again whenever the updater, signing or
+`release.yml` change. It uses the staging folder (`staging/playroom/`), which no install reads
+unless told to.
+
+1. Build N to staging: _Actions → Release → Run workflow_ with any ref, `target: staging` and
+   `version: <N>`, a version below what you're about to release (for example `0.2.0-beta.90`).
+   Install it from `https://updates.pixlfoundation.com/staging/playroom/<N>/…` on a Mac (Apple
+   Silicon, and Intel if one is at hand) and on Windows.
+2. Build N+1 to staging the same way (`version: <N+1>`, for example `0.2.0-beta.91`).
+3. Start N reading the staging feed:
+   - macOS: `PLAYROOM_UPDATE_URL=https://updates.pixlfoundation.com/staging/playroom "/Applications/Pixl Playroom.app/Contents/MacOS/Pixl Playroom"`
+   - Windows: `set PLAYROOM_UPDATE_URL=https://updates.pixlfoundation.com/staging/playroom` and
+     then `"%LOCALAPPDATA%\Programs\pixl-playroom\Pixl Playroom.exe"`
+
+   Set _Settings → Updates_ to the channel N+1 is in.
+4. Check, on each machine:
+   - _Settings_ shows N+1 downloading, then ready, and the log
+     (`~/Library/Logs/pixl-playroom/main.log`, `%APPDATA%\pixl-playroom\logs\main.log`) shows a
+     differential download from N's blockmap, not a full one. A first update after a fresh
+     install may download in full on macOS.
+   - _Restart to update_ comes back as N+1 with the library and edits as they were.
+   - Quitting with N+1 downloaded (on a fresh N) installs it on quit.
+   - A floor: `node scripts/policy.mjs set --prefix staging/playroom --min <N+1>`. N then shows
+     only _Update required_ and updates from there. Clear it after with `--no-min`.
+   - A staged rollout: `node scripts/rollout.mjs <channel> 0 --prefix staging/playroom` makes N
+     say it's up to date. Restore it with 100.
+   - Tampered or unsigned updates are refused. Replace N+1's zip (macOS) or installer (Windows)
+     in the staging folder with an unsigned build of the same version, and fix the feed's
+     sha512 to match. N must refuse it: on Windows "not signed by the application owner", and
+     on macOS Squirrel's code-signature check.
+5. Empty `staging/playroom/` afterwards.
 
 ## Models and lens profiles (R2)
 
