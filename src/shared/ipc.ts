@@ -64,6 +64,8 @@ export const IPC = {
   library: {
     chooseFolder: 'library:choose-folder',
     openFolder: 'library:open-folder',
+    /** A folder's subfolders (one level): the sidebar's folder tree. */
+    subfolders: 'library:subfolders',
     recentFolders: 'library:recent-folders',
     setMeta: 'library:set-meta',
     createCopy: 'library:create-copy',
@@ -105,6 +107,8 @@ export const IPC = {
   },
   develop: {
     open: 'develop:open',
+    /** Make these photos' proxies ahead (the open one's neighbours in the filmstrip). */
+    warm: 'develop:warm',
     close: 'develop:close',
     update: 'develop:update',
     view: 'develop:view',
@@ -301,7 +305,8 @@ export interface StackInfo {
 }
 
 export type LibrarySource =
-  | { kind: 'folder'; path: string }
+  /** `deep`: the photos in its subfolders too. */
+  | { kind: 'folder'; path: string; deep?: boolean }
   /** A manual collection, a smart one or a set (the union of its children). */
   | { kind: 'collection'; id: string }
   | { kind: 'keyword'; path: string }

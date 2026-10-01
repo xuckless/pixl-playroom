@@ -17,8 +17,9 @@ import type { Recipe, RecipeGroup } from '../../../shared/recipe'
 import type { SmartGroup } from '../../../shared/smart'
 import { collapseStacks } from '../../../shared/stacks'
 import { api, errorText } from '../lib/api'
-import { folderName } from '../lib/sources'
+import { folderName, isUnder } from '../lib/sources'
 import { useBusy } from './busy'
+import { useUi } from './ui'
 
 export type { Filter, FlagFilter } from '../../../shared/filter'
 export type SortKey = 'name' | 'captured' | 'rating' | 'size' | 'edited'
@@ -186,7 +187,9 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   },
 
   openFolder(path) {
-    return get().openSource({ kind: 'folder', path })
+    // With its subfolders' photos too, when that is how folders open.
+    const deep = useUi.getState().subfolders
+    return get().openSource({ kind: 'folder', path, ...(deep ? { deep } : {}) })
   },
 
   async chooseFolder() {
@@ -221,7 +224,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     if (!src) return
     const mine =
       src.kind === 'folder'
-        ? src.path === folder
+        ? src.path === folder || (src.deep === true && isUnder(folder, src.path))
         : src.kind === 'duplicates'
           ? src.folder === null || src.folder === folder
           : true

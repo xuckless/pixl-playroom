@@ -119,6 +119,9 @@ interface UiState {
   railOpen: boolean
   /** The filmstrip under the loupe; hidden until asked for. */
   filmstrip: boolean
+  /** A folder opens with the photos in its subfolders too. */
+  subfolders: boolean
+  setSubfolders(on: boolean): void
   /** The library's sources down the left, and its info drawer on the right. */
   librarySidebar: boolean
   libraryInfo: boolean
@@ -212,6 +215,8 @@ export const useUi = create<UiState>()(
       rail: 'presets',
       railOpen: true,
       filmstrip: false,
+      subfolders: false,
+      setSubfolders: (subfolders) => set({ subfolders }),
       librarySidebar: true,
       libraryInfo: false,
       setLibrarySidebar: (librarySidebar) => set({ librarySidebar }),

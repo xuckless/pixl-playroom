@@ -217,6 +217,9 @@ export function Toolbar(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
   const focus = useLibrary((s) => s.focus)
   const dupes = useLibrary((s) => (s.opening ?? s.source)?.kind === 'duplicates')
+  const source = useLibrary((s) => s.source)
+  const openSource = useLibrary((s) => s.openSource)
+  const setSubfolders = useUi((s) => s.setSubfolders)
   const sidebar = useUi((s) => s.librarySidebar)
   const setSidebar = useUi((s) => s.setLibrarySidebar)
   const info = useUi((s) => s.libraryInfo)
@@ -246,6 +249,25 @@ export function Toolbar(): React.JSX.Element {
       >
         <Icon name="folder" />
       </button>
+      {source?.kind === 'folder' && (
+        <button
+          className={`chip subfolders${source.deep ? ' on' : ''}`}
+          aria-pressed={!!source.deep}
+          title={
+            source.deep
+              ? 'Showing the photos in its subfolders too: show this folder’s own'
+              : 'Show the photos in its subfolders too'
+          }
+          onClick={() => {
+            const deep = !source.deep
+            // How folders open from now on, too.
+            setSubfolders(deep)
+            void openSource({ kind: 'folder', path: source.path, ...(deep ? { deep } : {}) })
+          }}
+        >
+          Subfolders
+        </button>
+      )}
       <span className="vsep" />
       <label className="search-field">
         <Icon name="search" />

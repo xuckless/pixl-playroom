@@ -193,6 +193,7 @@ export function registerIpc(s: Services): void {
     items: await s.library.openFolder(folder)
   }))
   handle(IPC.library.recentFolders, () => s.index.recentFolders())
+  handle(IPC.library.subfolders, (folder: string) => s.index.subfolders(folder))
   handle(IPC.library.setMeta, (keys: string[], patch: MetaPatch) => s.index.setMeta(keys, patch))
   handle(IPC.library.createCopy, async (key: string) => {
     await s.sessions.flush(key)
@@ -408,6 +409,7 @@ export function registerIpc(s: Services): void {
     base: log.base && { ...log.base, recipe: s.planes.slim(log.base.recipe) },
     ...(log.head ? { head: s.planes.slim(log.head) } : {})
   })
+  handle(IPC.develop.warm, (keys: string[]) => s.library.warm(keys))
   handle(IPC.develop.historyList, async (key: string) => slimLog(await s.index.history(key)))
   handle(IPC.develop.historyAppend, async (key: string, label: string, recipe: Recipe) => {
     // The step and the recipe the photo has now go into its project together.

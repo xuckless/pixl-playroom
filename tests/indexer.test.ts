@@ -791,3 +791,34 @@ test('resolvePaths: the first file’s folder and each file’s key; a folder al
     f.done()
   }
 })
+
+test('a folder listed with its subfolders takes theirs in; the tree reads one level, in order', async () => {
+  const f = fixture(['a.jpg'])
+  try {
+    for (const d of ['Day 10', 'Day 2', join('Day 2', 'inner'), '.hidden', 'Old.photoslibrary'])
+      mkdirSync(join(f.folder, d))
+    for (const p of [
+      join('Day 10', 'b.jpg'),
+      join('Day 2', 'c.jpg'),
+      join('Day 2', 'inner', 'd.jpg'),
+      join('.hidden', 'e.jpg'),
+      join('Old.photoslibrary', 'f.jpg')
+    ])
+      writeFileSync(join(f.folder, p), 'not really a photo')
+    assert.deepEqual(
+      f.index.subfolders(f.folder).map((s) => s.name),
+      ['Day 2', 'Day 10']
+    )
+    const own = await f.index.listSource({ kind: 'folder', path: f.folder })
+    assert.deepEqual(
+      own.items.map((i) => i.name),
+      ['a.jpg']
+    )
+    const deep = await f.index.listSource({ kind: 'folder', path: f.folder, deep: true })
+    assert.deepEqual(deep.items.map((i) => i.name).sort(), ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg'])
+    // Only the folder opened becomes a recent one.
+    assert.deepEqual(f.index.recentFolders(), [f.folder])
+  } finally {
+    f.done()
+  }
+})

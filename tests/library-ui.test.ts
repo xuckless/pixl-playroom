@@ -6,6 +6,7 @@ import { isoDay, ruleCount, withOp } from '../src/renderer/src/lib/rules'
 import {
   collectionTree,
   folderName,
+  isUnder,
   sameSource,
   setsFor,
   sourceTrail
@@ -160,4 +161,12 @@ test('a rule given another operator keeps what it can, in the shape it needs', (
     }),
     2
   )
+})
+
+test('isUnder: inside at any depth, not a sibling sharing a prefix', () => {
+  assert.equal(isUnder('/p/Day 2/inner', '/p'), true)
+  assert.equal(isUnder('/p/Day 2', '/p/'), true)
+  assert.equal(isUnder('/p', '/p'), false)
+  assert.equal(isUnder('/photos', '/p'), false)
+  assert.equal(isUnder('C:\\p\\a', 'C:\\p'), true)
 })

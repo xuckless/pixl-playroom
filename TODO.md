@@ -621,9 +621,15 @@ After: Pass 19.
 
 ### Pass 34 — Folders as a tree; warm neighbours · 5 pts
 
-- [ ] **L** · Recursive folders and a folder tree in the sources sidebar.
-- [ ] **M** · Build proxies for the filmstrip neighbours of the open photo
+- [x] **L** · Recursive folders and a folder tree in the sources sidebar.
+      _Done: folder rows open out into their subfolders (read a level at a
+      time); a Subfolders toggle (off by default, remembered) lists the
+      photos below too (`deep`, up to 300 folders, 8 deep, no packages or
+      links followed)._
+- [x] **M** · Build proxies for the filmstrip neighbours of the open photo
       ahead of time, on the background engine.
+      _Done: opening a photo asks for the next, previous and next-but-one
+      (`develop:warm`); one at a time, newest request first._
 
 ### Pass 35 — Watching folders · 3 pts
 

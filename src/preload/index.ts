@@ -111,6 +111,8 @@ const api = {
   library: {
     chooseFolder: () => call<string | null>(IPC.library.chooseFolder),
     openFolder: (folder: string) => call<FolderListing>(IPC.library.openFolder, folder),
+    subfolders: (folder: string) =>
+      call<{ path: string; name: string }[]>(IPC.library.subfolders, folder),
     recentFolders: () => call<string[]>(IPC.library.recentFolders),
     setMeta: (keys: string[], patch: MetaPatch) =>
       call<(LibraryItem | undefined)[]>(IPC.library.setMeta, keys, patch),
@@ -188,6 +190,7 @@ const api = {
     saveSnapshots: (key: string, snapshots: Snapshot[]) =>
       call<void>(IPC.develop.saveSnapshots, key, snapshots),
     historyList: (key: string) => call<HistoryLog>(IPC.develop.historyList, key),
+    warm: (keys: string[]) => call<void>(IPC.develop.warm, keys),
     historyAppend: (key: string, label: string, recipe: Recipe) =>
       call<HistoryAppend>(IPC.develop.historyAppend, key, label, recipe),
     historySetHidden: (key: string, seqs: number[], hidden: boolean) =>

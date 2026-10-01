@@ -18,7 +18,8 @@ import {
   readFileSync,
   rmSync,
   statSync,
-  unlinkSync
+  unlinkSync,
+  type Dirent
 } from 'fs'
 import { dirname, extname, join, resolve } from 'path'
 import type {
@@ -104,6 +105,13 @@ import {
 const CHUNK = 200
 /** A folder scanned this recently is not walked again when listed (its own reload after a fill). */
 const RESCAN_FRESH_MS = 10_000
+/** The most folders a folder listed with its subfolders takes in (a home folder opened deep stops there). */
+const DEEP_MAX_FOLDERS = 300
+const DEEP_MAX_DEPTH = 8
+/** Folder names as a person sorts them: "Day 2" before "Day 10". */
+const NAME_ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+/** Folders that are files to the user (an app, a Photos or Lightroom library): never walked into. */
+const PACKAGE_DIR = /\.(app|bundle|photoslibrary|lrdata|lrlibrary|fcpbundle|imovielibrary)$/i
 /** How long after a change that orphans planes or blobs the project is cleared of them. */
 const GC_DELAY_MS = 1500
 
@@ -315,8 +323,8 @@ export class IndexService {
    * afterwards and a `changed` event follows only if it differs. A folder
    * the index has never seen is scanned first.
    */
-  async listFolder(folder: string): Promise<LibraryItem[]> {
-    this.store.touchFolder(folder)
+  async listFolder(folder: string, recent = true): Promise<LibraryItem[]> {
+    if (recent) this.store.touchFolder(folder)
     if (this.store.hasPhotosIn(folder)) {
       // A folder scanned a moment ago (its own `changed` reloading it, a
       // quick back and forth) is as it was: not walked again.
@@ -333,6 +341,41 @@ export class IndexService {
       await this.rescan(folder, false)
     }
     return this.items(folder)
+  }
+
+  /** A folder's subfolders, one level (by name): what the sidebar's tree opens out. */
+  subfolders(folder: string): { path: string; name: string }[] {
+    let entries: Dirent[]
+    try {
+      entries = readdirSync(folder, { withFileTypes: true })
+    } catch {
+      return []
+    }
+    return entries
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !PACKAGE_DIR.test(e.name))
+      .map((e) => ({ path: join(folder, e.name), name: e.name }))
+      .sort((a, b) => NAME_ORDER.compare(a.name, b.name))
+  }
+
+  /**
+   * A folder's items with its subfolders' (breadth first, within
+   * DEEP_MAX_FOLDERS and DEEP_MAX_DEPTH; links to folders are not followed).
+   * Only the folder itself joins the recent ones.
+   */
+  async listFolderDeep(folder: string): Promise<LibraryItem[]> {
+    const items = [...(await this.listFolder(folder))]
+    const queue: { path: string; depth: number }[] = this.subfolders(folder).map((f) => ({
+      path: f.path,
+      depth: 1
+    }))
+    for (let n = 1; queue.length > 0 && n < DEEP_MAX_FOLDERS; n++) {
+      const { path, depth } = queue.shift()!
+      if (this.closed) break
+      items.push(...(await this.listFolder(path, false)))
+      if (depth < DEEP_MAX_DEPTH)
+        queue.push(...this.subfolders(path).map((f) => ({ path: f.path, depth: depth + 1 })))
+    }
+    return items
   }
 
   /**
@@ -1167,7 +1210,10 @@ export class IndexService {
   async listSource(src: LibrarySource): Promise<SourceListing> {
     switch (src.kind) {
       case 'folder':
-        return { source: src, items: await this.listFolder(src.path) }
+        return {
+          source: src,
+          items: await (src.deep ? this.listFolderDeep(src.path) : this.listFolder(src.path))
+        }
       case 'keyword': {
         const ids = this.store.photoIdsWithKeyword(normaliseKeyword(src.path))
         // Copies share their photo's keywords.

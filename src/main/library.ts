@@ -51,6 +51,8 @@ import {
 export { keyOf, parseKey } from './keys'
 
 export const THUMB_EDGE = 400
+/** The most photos whose proxies are made ahead at once (see `warm`). */
+const WARM_MAX = 3
 
 /** A file's version: its path, size and modification time. */
 const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.size}`
@@ -177,6 +179,35 @@ export class Library {
         }
       }
       this.hdrRunning = false
+    })()
+  }
+
+  /** Photos whose proxies are to be made ahead, the newest asked for first. */
+  private warming: string[] = []
+  private warmRunning = false
+
+  /**
+   * Make these photos' proxies ahead, on the background engine (behind any
+   * preview being rendered): the photos either side of the open one, so
+   * stepping to the next opens at once. Asking again replaces what has not
+   * started; one is made at a time.
+   */
+  warm(keys: string[]): void {
+    this.warming = keys.slice(0, WARM_MAX)
+    if (this.warmRunning) return
+    this.warmRunning = true
+    void (async () => {
+      while (this.warming.length > 0) {
+        const key = this.warming.shift()!
+        try {
+          const row = await this.readable(await this.photoRow(key))
+          await ensureProxies(this.engine, row, await this.probe(row), BACKGROUND_THREADS)
+        } catch (err) {
+          // Not readable, or gone: its own open will say so.
+          log.info('proxies not made ahead for', key, (err as Error).message)
+        }
+      }
+      this.warmRunning = false
     })()
   }
 

@@ -227,6 +227,21 @@ function sendNow(key: string, recipe: Recipe, onError: (message: string) => void
 }
 
 /**
+ * The photos either side of `key` in the library's order and filters (the
+ * next first, as the arrow keys most often go): their proxies are made
+ * ahead, so stepping to one opens at once.
+ */
+function warmNeighbours(key: string): void {
+  const list = useLibrary.getState().visible()
+  const at = list.findIndex((i) => i.key === key)
+  if (at < 0) return
+  const near = [list[at + 1], list[at - 1], list[at + 2]]
+    .filter((i): i is (typeof list)[number] => !!i && !i.offline && !i.unreadable)
+    .map((i) => i.key)
+  if (near.length > 0) void api.develop.warm(near).catch(() => undefined)
+}
+
+/**
  * Show what a changed history describes: its replayed recipe becomes the
  * photo's (rendered and saved like any settled edit).
  */
@@ -372,6 +387,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         loading: false
       })
       get().pushView()
+      warmNeighbours(key)
     } catch (err) {
       if (stale()) return
       openingKey = null
