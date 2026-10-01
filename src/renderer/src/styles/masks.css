@@ -1,23 +1,101 @@
-/* ── the floating masks panel ──────────────────────────────────── */
-.masks-float {
-  position: absolute;
-  right: 14px;
-  top: 70px;
-  width: 268px;
-  max-height: calc(100% - 140px);
+/* ── the masks window: floating over the photo, or docked ──────── */
+.masks-win {
+  width: 300px;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+.masks-win.floating {
+  position: absolute;
+  max-height: calc(100% - 28px);
   z-index: 8;
   animation: floatIn 0.55s var(--spring) both;
 }
-.masks-float.liquid,
-.masks-float.liquid.refracting {
+.masks-win.docked {
+  flex: none;
+  border-right: 1px solid transparent;
+  border-image: var(--hl-y) 1;
+  animation: none;
+}
+.masks-win.liquid,
+.masks-win.liquid.refracting {
   background:
     linear-gradient(155deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.01) 50%),
     rgba(8, 8, 12, 0.66);
 }
-.masks-float::after {
+.masks-win.docked.liquid,
+.masks-win.docked.liquid.refracting {
+  background: var(--s1);
+}
+.masks-win::after {
   display: none;
+}
+.mf-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.mf-selected {
+  padding: 4px 14px 14px;
+  border-top: 1px solid transparent;
+  border-image: var(--hl-x) 1;
+}
+.mf-selected-title {
+  margin: 10px 0 6px;
+  color: var(--acc);
+}
+.mf-head-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.mf-head-tools .icon.sm {
+  width: 26px;
+  height: 26px;
+}
+/* Folded: a pill naming the selected mask; a click unfolds it, a drag moves it. */
+.mf-pill {
+  position: absolute;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  max-width: 260px;
+  padding: 0 12px;
+  color: var(--text);
+  cursor: grab;
+  animation: floatIn 0.45s var(--spring) both;
+}
+.mf-pill.liquid,
+.mf-pill.liquid.refracting {
+  background: rgba(8, 8, 12, 0.7);
+}
+.mf-pill-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mf-pill-count {
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  padding: 0 5px;
+}
+/* Dragging the window to the photo's left edge: where it will dock. */
+.stage.dock-hint::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 300px;
+  z-index: 7;
+  background: linear-gradient(90deg, rgba(157, 139, 234, 0.22), rgba(157, 139, 234, 0.04));
+  border-right: 1px solid var(--acc);
+  box-shadow: 0 0 24px -6px var(--glow);
+  pointer-events: none;
 }
 .mf-head {
   display: flex;
@@ -25,18 +103,20 @@
   justify-content: space-between;
   gap: 8px;
   height: 46px;
-  padding: 0 10px 0 14px;
+  padding: 0 8px 0 14px;
   border-bottom: 1px solid transparent;
   border-image: var(--hl-x) 1;
   flex: none;
+  cursor: grab;
+  user-select: none;
+}
+.mf-head:active {
+  cursor: grabbing;
 }
 .mf-head .micro {
   color: var(--text);
 }
 .mf-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   padding: 8px;
   display: flex;
   flex-direction: column;
@@ -817,15 +897,19 @@ button.mode-badge:disabled {
 .floating-toolbar .bar-hint {
   min-width: 0;
 }
-/* With the masks panel at the right edge, the tool bar centres in what is left. */
-.stage:has(.masks-float) .masks-float {
-  top: 14px;
-  max-height: calc(100% - 80px);
-}
-.stage:has(.masks-float) .floating-toolbar {
-  left: calc((100% - 296px) / 2);
-  max-width: calc(100% - 324px);
-}
 .tp-needs.ai {
   color: var(--acc);
+}
+/* The develop toolbar's Masks button: lit while the window is up, with a count. */
+.masks-toggle.on {
+  color: var(--acc);
+  border-color: var(--acc-a55);
+}
+.masks-count {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  padding: 0 5px;
 }

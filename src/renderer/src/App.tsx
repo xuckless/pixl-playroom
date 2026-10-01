@@ -29,7 +29,7 @@ import { CollectionDialog } from './views/library/CollectionDialog'
 import { InfoDrawer } from './views/library/InfoDrawer'
 import { Sidebar } from './views/library/Sidebar'
 import { FloatingToolbar } from './views/loupe/FloatingToolbar'
-import { MasksFloat } from './panels/masks/MasksFloat'
+import { MasksWindow } from './panels/masks/MasksWindow'
 import { Loupe } from './views/loupe/Loupe'
 import { setSpace } from './views/loupe/zoom'
 
@@ -45,11 +45,12 @@ const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
       <DevelopToolbar />
       <div className="develop-body">
         <LeftRail />
+        <MasksWindow place="dock" />
         <main className="centre">
           <div className="stage">
             <Loupe />
             <FloatingToolbar />
-            <MasksFloat />
+            <MasksWindow place="stage" />
             <ProcessingOverlay />
             <FilmToggle />
           </div>

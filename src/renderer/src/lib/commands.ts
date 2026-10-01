@@ -7,7 +7,7 @@
 import { useSyncExternalStore } from 'react'
 import { nextOf } from '../../../shared/masks'
 import { RECIPE_GROUPS } from '../../../shared/recipe'
-import { selectPanel, stepPanel, TOOLS } from '../develop/tools'
+import { masksOpen, openMasks, selectPanel, stepPanel, toggleMasks, TOOLS } from '../develop/tools'
 import {
   componentLabel,
   deleteComponent,
@@ -69,7 +69,6 @@ const dev = (): ReturnType<typeof useDevelop.getState> => useDevelop.getState()
 const ui = (): ReturnType<typeof useUi.getState> => useUi.getState()
 
 const panelIs = (id: string): boolean => ui().panel === id
-const masksOpen = (): boolean => panelIs('masks')
 const healOpen = (): boolean => panelIs('heal')
 const notInField = (e: KeyboardEvent): boolean => (e.target as HTMLElement)?.tagName !== 'INPUT'
 const focusedItem = (): ReturnType<typeof lib>['items'][number] | undefined =>
@@ -84,7 +83,9 @@ function maskTool(t: 'brush' | 'polygon' | 'linear' | 'radial'): void {
   const d = dev()
   if (d.tool === t) return d.setTool('none')
   if (!d.layerId) return void startMaskTool(t)
-  selectPanel('masks', { tool: t })
+  openMasks()
+  // A mask tool takes the canvas from Heal (whose panel stays up).
+  d.setTool(t)
 }
 
 const rating = [0, 1, 2, 3, 4, 5].map<KeyCommand>((n) => ({
@@ -579,11 +580,19 @@ export const COMMANDS: KeyCommand[] = [
     run: () => maskTool('polygon')
   },
   {
+    id: 'masks.toggle',
+    label: 'Show or hide the masks window',
+    group: 'Masks',
+    context: 'develop',
+    keys: ['M'],
+    run: () => toggleMasks()
+  },
+  {
     id: 'mask.linear',
     label: 'Linear gradient mask',
     group: 'Masks',
     context: 'develop',
-    keys: ['M'],
+    keys: ['Shift+M'],
     run: () => maskTool('linear')
   },
   {
@@ -591,7 +600,7 @@ export const COMMANDS: KeyCommand[] = [
     label: 'Radial gradient mask',
     group: 'Masks',
     context: 'develop',
-    keys: ['Shift+M'],
+    keys: ['Alt+M'],
     run: () => maskTool('radial')
   },
   {

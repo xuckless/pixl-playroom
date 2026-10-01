@@ -4,7 +4,8 @@ import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { loupeZoom } from '../views/loupe/zoom'
-import { selectPanel } from '../develop/tools'
+import { selectPanel, toggleMasks } from '../develop/tools'
+import { useUi } from '../state/ui'
 import { useKeyHint, withKey } from '../lib/commands'
 
 /** The second tier in Develop: back to the library, history, how to look, and what to do with the photo. */
@@ -29,6 +30,8 @@ export function DevelopToolbar(): React.JSX.Element {
   const refresh = useLibrary((s) => s.refresh)
   const say = useLibrary((s) => s.say)
   const k = useKeyHint()
+  const masksUp = useUi((s) => s.masksWin.open && !s.masksWin.minimized)
+  const maskCount = useDevelop((s) => s.recipe?.layers.length ?? 0)
   const views: { label: string; k: string; on: boolean; toggle: () => void; title: string }[] = [
     {
       label: 'Before',
@@ -138,6 +141,17 @@ export function DevelopToolbar(): React.JSX.Element {
           </div>
         </>
       )}
+      <span className="vsep" />
+      <button
+        className={`ghost lg masks-toggle${masksUp ? ' on' : ''}`}
+        aria-pressed={masksUp}
+        onClick={toggleMasks}
+        title={withKey('Masks window', 'masks.toggle')}
+      >
+        <Icon name="overlay" />
+        Masks
+        {maskCount > 0 && <span className="masks-count">{maskCount}</span>}
+      </button>
       <span className="spacer" />
       <button
         className="icon ghost lg"

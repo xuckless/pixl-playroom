@@ -82,7 +82,6 @@ export const TOOL_IDS = [
   'detail',
   'lens',
   'effects',
-  'masks',
   'heal',
   'crop',
   'calibration',
@@ -90,6 +89,28 @@ export const TOOL_IDS = [
 ] as const
 
 export type ToolId = (typeof TOOL_IDS)[number]
+
+/**
+ * The masks window: open or not, floating over the photo (its top-left, in px
+ * from the stage's) or docked as a column beside the left rail, and folded to
+ * a pill or not. Masks are not a wheel tool: the window stays up whatever the
+ * right column shows.
+ */
+export interface MasksWindow {
+  open: boolean
+  docked: boolean
+  minimized: boolean
+  x: number
+  y: number
+}
+
+const DEFAULT_MASKS_WIN: MasksWindow = {
+  open: false,
+  docked: false,
+  minimized: false,
+  x: -1,
+  y: 14
+}
 
 const isToolId = (v: unknown): v is ToolId => TOOL_IDS.includes(v as ToolId)
 
@@ -118,6 +139,8 @@ interface UiState {
   setEnhance(p: Partial<EnhanceSettings>): void
   /** Change the current brush's settings. */
   setBrush(p: Partial<BrushSettings>): void
+  masksWin: MasksWindow
+  setMasksWin(p: Partial<MasksWindow>): void
   /** The one tool the right column shows, chosen on the thumb-wheel. */
   panel: ToolId
   /** The tool before the last change, for a shortcut that toggles back. */
@@ -176,6 +199,8 @@ export const useUi = create<UiState>()(
         set((s) => ({
           brushes: { ...s.brushes, [s.brushSlot]: { ...s.brushes[s.brushSlot], ...p } }
         })),
+      masksWin: DEFAULT_MASKS_WIN,
+      setMasksWin: (p) => set((s) => ({ masksWin: { ...s.masksWin, ...p } })),
       panel: 'basic',
       previousPanel: 'basic',
       setPanel: (panel) => {
@@ -217,6 +242,7 @@ export const useUi = create<UiState>()(
           ...p,
           // Settings saved before a field existed take its default.
           enhance: { ...DEFAULT_ENHANCE, ...p.enhance },
+          masksWin: { ...DEFAULT_MASKS_WIN, ...p.masksWin },
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
           panel: isToolId(p.panel) ? p.panel : current.panel,
           previousPanel: isToolId(p.previousPanel) ? p.previousPanel : current.previousPanel

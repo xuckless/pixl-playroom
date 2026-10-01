@@ -2,7 +2,7 @@ import type { BlendMode, KeyBand, MaskMode } from '../../../../shared/engine-typ
 import { ZERO_LOCAL, type LocalAdjust, type MaskComponentSetting } from '../../../../shared/recipe'
 import { Icon } from '../../components/icons'
 import { AddColourControl } from '../../components/AddColour'
-import { Section, Select, Slider, Toggle, ToolPanel } from '../../components/ui'
+import { Section, Select, Slider, Toggle } from '../../components/ui'
 import { useDevelop } from '../../state/develop'
 import {
   changeLayer,
@@ -13,8 +13,6 @@ import {
   MODE_MARK
 } from './model'
 import { MaskPresets } from './MaskPresets'
-import { ToolPicker } from './ToolPicker'
-import { withKey } from '../../lib/commands'
 
 const BLENDS: BlendMode[] = [
   'Normal',
@@ -366,30 +364,19 @@ function ComponentCard({
 }
 
 /**
- * The Masks tool in the right column. With no mask selected it offers the
- * tools to make one; with one selected, its Amount, the selected
- * component, the mask's blend and the seventeen local sliders.
+ * The selected mask's own settings, under the list in the masks window: its
+ * Amount, the selected component, its sliders and its blend. Nothing when no
+ * mask is selected.
  */
-export function MasksPanel(): React.JSX.Element | null {
+export function SelectedMask(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
   const layerId = useDevelop((s) => s.layerId)
   const compId = useDevelop((s) => s.compId)
-  const overlay = useDevelop((s) => s.overlay)
-  const setOverlay = useDevelop((s) => s.setOverlay)
   const commit = useDevelop((s) => s.commit)
   const report = useDevelop((s) => s.report)
   if (!recipe) return null
   const layer = layerOf(recipe, layerId)
-  if (!layer)
-    return (
-      <ToolPanel>
-        <p className="masks-intro">
-          A mask limits adjustments to part of the photo. Make one with a tool below, or from the
-          masks panel on the photo.
-        </p>
-        <ToolPicker inline />
-      </ToolPanel>
-    )
+  if (!layer) return null
   const index = layer.components.findIndex((c) => c.id === compId)
   const comp = index >= 0 ? layer.components[index] : undefined
   const measured = report?.layers?.[layer.id]
@@ -401,22 +388,8 @@ export function MasksPanel(): React.JSX.Element | null {
         ? null
         : `Covers ${(measured.coverage * 100).toFixed(1)}% of the photo`
   return (
-    <ToolPanel
-      actions={
-        <>
-          <span className="mask-title">{layer.name}</span>
-          <span className="spacer" />
-          <Toggle
-            on={overlay}
-            onChange={setOverlay}
-            title={withKey('Show the mask overlay', 'mask.overlay')}
-          >
-            <Icon name="overlay" />
-            Overlay
-          </Toggle>
-        </>
-      }
-    >
+    <div className="mf-selected">
+      <div className="mf-selected-title micro">{layer.name}</div>
       <Slider
         label="Amount"
         value={layer.amount ?? 100}
@@ -467,6 +440,6 @@ export function MasksPanel(): React.JSX.Element | null {
         </div>
         {coverage && <p className="muted small">{coverage}</p>}
       </Section>
-    </ToolPanel>
+    </div>
   )
 }

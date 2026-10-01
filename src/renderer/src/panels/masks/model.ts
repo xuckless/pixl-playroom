@@ -14,7 +14,7 @@ import {
   type Recipe
 } from '../../../../shared/recipe'
 import type { IconName } from '../../components/icons'
-import { selectPanel } from '../../develop/tools'
+import { openMasks } from '../../develop/tools'
 import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
 import { useLibrary } from '../../state/library'
@@ -175,13 +175,13 @@ export function startMaskTool(kind: MaskToolKind): void {
       })
       .catch((err) => useLibrary.getState().say(errorText(err), 'error'))
     d.setAddMode(null)
-    selectPanel('masks')
+    openMasks()
     return
   }
   if (!adding) {
     if (!createMask()) return
   }
-  selectPanel('masks')
+  openMasks()
   const tools: Partial<Record<MaskToolKind, Tool>> = {
     brush: 'brush',
     linear: 'linear',
