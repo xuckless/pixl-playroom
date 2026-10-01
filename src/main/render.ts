@@ -118,6 +118,12 @@ const SETTLE_LARGE_MS = 500
 const EMPTY = 'empty'
 /** How long an edit must rest before the sidecar is written. */
 const SAVE_MS = 600
+/**
+ * The long edge mask thumbnails are rendered at: shown at a few dozen pixels
+ * in the panel, and stretched over the loupe as a soft tint by hover and
+ * "show all", which this still serves.
+ */
+const MASK_THUMB_EDGE = 512
 /** How long editing pauses before an open photo's thumbnail is made again. */
 const THUMB_IDLE_MS = 4000
 /** Picture files of each kind kept on disk besides any a kept event names. */
@@ -677,7 +683,13 @@ class Session {
         encode: alpha
           ? { Png: { compression: 'Fast', filter: 'Sub' } }
           : {
-              Jpeg: { quality: kind === 'draft' ? 92 : 95, subsampling: 'None', optimize: false }
+              // A settled picture is a few MB less as 4:2:0, which a screen
+              // shows the same; the draft keeps full chroma at its lower quality.
+              Jpeg: {
+                quality: kind === 'draft' ? 92 : 95,
+                subsampling: kind === 'draft' ? 'None' : 'Quarter',
+                optimize: false
+              }
             },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: displayPolicy(this.info, 'DisplayP3'),
@@ -837,6 +849,30 @@ class Session {
    * plane again re-sends its event, stamped with the current recipe, so the
    * loupe's preview knows the engine agrees with it.
    */
+  /** The last picture `measureMask` measured through the plane. */
+  private maskStatsFor: string | null = null
+
+  /**
+   * The picture the renderer shows (the last full render) measured through a
+   * plane. `weights` is an engine feature that may be missing from an older
+   * build: the overlay still shows without it.
+   */
+  private async measureMask(plane: string, signal: AbortSignal): Promise<ImageStats | undefined> {
+    try {
+      return await this.owner.engine.analyze(
+        {
+          ...analyzeRequest(this.lastFull, 'Jpeg', 1),
+          weights: { source: { Png: plane }, resampler: 'Bilinear' }
+        },
+        { signal }
+      )
+    } catch (err) {
+      if (isCancelled(err)) throw err
+      log.info('masked analysis unavailable', (err as Error).message)
+      return undefined
+    }
+  }
+
   private async renderMask(kind: Kind, signal: AbortSignal): Promise<void> {
     const src = kind === 'draft' ? this.viewPx().draft : this.source('full')
     const rev = this.rev
@@ -857,24 +893,37 @@ class Session {
       return
     }
     const measure = kind === 'full'
+    // The plane is the mask's own shapes over the frame; only a colour or
+    // luminance range also depends on the picture the layers before it make.
+    // The mask layer's own sliders, and anything after it, do not move it.
+    const layer = compiled.grade.layers[index]
+    const keyed = layer.mask?.components.some((c) => 'Range' in c.shape) ?? false
     const sig = String(
       hash32(
         JSON.stringify([
           src.path,
           layerId,
           index,
-          compiled.grade,
+          layer.mask,
+          keyed ? compiled.grade.layers.slice(0, index) : null,
           compiled.framing,
           compiled.lens,
-          compiled.retouch,
-          measure ? this.lastFull : null
+          compiled.retouch
         ])
       )
     )
-    // The same plane over the same picture: say so again, for this recipe.
-    if (sig === this.maskSig && this.lastMask) {
+    const statsFor = measure ? this.lastFull : null
+    // The same plane: said again for this recipe, and measured again only
+    // when the picture under it is a new one.
+    if (sig === this.maskSig && this.lastMask && this.lastMaskOut) {
+      const restamp = { ...this.lastMask, seq: this.seq, rev }
+      if (statsFor !== null && statsFor !== this.maskStatsFor) {
+        const maskStats = await this.measureMask(this.lastMaskOut, signal)
+        this.maskStatsFor = statsFor
+        restamp.maskStats = maskStats
+      }
       if (!this.closed) {
-        this.lastMask = { ...this.lastMask, seq: this.seq, rev }
+        this.lastMask = restamp
         this.owner.send(IPC.develop.rendered, this.lastMask)
       }
       return
@@ -896,24 +945,8 @@ class Session {
       },
       { signal }
     )
-    // The picture the renderer shows is the last full render; measure it
-    // through the plane. `weights` is an engine feature that may be missing
-    // from an older build — the overlay still shows without it.
-    let maskStats: ImageStats | undefined
-    if (measure) {
-      try {
-        maskStats = await this.owner.engine.analyze(
-          {
-            ...analyzeRequest(this.lastFull, 'Jpeg', 1),
-            weights: { source: { Png: out }, resampler: 'Bilinear' }
-          },
-          { signal }
-        )
-      } catch (err) {
-        if (isCancelled(err)) throw err
-        log.info('masked analysis unavailable', (err as Error).message)
-      }
-    }
+    const maskStats = measure ? await this.measureMask(out, signal) : undefined
+    this.maskStatsFor = statsFor
     this.maskSig = sig
     this.lastMaskOut = out
     send({
@@ -968,16 +1001,23 @@ class Session {
             compiled.framing,
             compiled.lens,
             this.view.cropMode,
-            // A range keys on the graded colours, so the grade under it counts too.
-            layer.components.some((c) => c.kind === 'range') ? compiled.grade : null
+            // A range keys on the colours the layers before it make; its own
+            // sliders and the layers after it do not move its plane.
+            layer.components.some((c) => c.kind === 'range')
+              ? compiled.grade.layers.slice(0, index)
+              : null
           ])
         )
       )
       if (this.thumbSig[layer.id] === sig) continue
       const out = join(this.dir, `mthumb-${layer.id}-${sig}.png`)
+      // Made small, not at the draft's size (see MASK_THUMB_EDGE).
+      const k = Math.min(1, MASK_THUMB_EDGE / Math.max(src.width, src.height))
       const report = await this.owner.engine.convert(
         {
           ...blankRequest(src.path, out, src.input),
+          resize: k < 1 ? { Scale: { factor: k } } : 'None',
+          resampler: 'Bilinear',
           pixel: { depth: 'Eight', channels: 1 },
           encode: { Png: { compression: 'Fast', filter: 'Sub' } },
           metadata: STRIP_ALL,
@@ -1050,12 +1090,17 @@ class Session {
       this.view.cropMode
     ])
     if (key === this.beforeKey) return
-    const out = join(this.dir, `before-${hash32(key).toString(16)}.png`)
+    // PNG only where it has transparent corners to keep (the crop tool's
+    // warp); else a JPEG, as the picture beside it is.
+    const alpha = framingTransparent(compiled.framing)
+    const out = join(this.dir, `before-${hash32(key).toString(16)}.${alpha ? 'png' : 'jpg'}`)
     const report = await this.owner.engine.convert(
       {
         ...blankRequest(src.path, out, src.input),
-        pixel: { depth: 'Eight', channels: framingTransparent(compiled.framing) ? 4 : 3 },
-        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
+        encode: alpha
+          ? { Png: { compression: 'Fast', filter: 'Sub' } }
+          : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: displayPolicy(this.info, 'DisplayP3'),
         grade: compiled.grade,

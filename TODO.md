@@ -330,17 +330,17 @@ After: Pass 13.
 Each release runs picture → mask → before → headroom → mask thumbnails
 (`render.ts:526-531`), each decoding and grading again.
 
-- [ ] **S** · **The mask plane re-renders after every slider change**: its
+- [x] **S** · **The mask plane re-renders after every slider change**: its
       key includes `lastFull`, a rotating file name (`render.ts:795`), then
       `analyze` decodes the JPEG and plane again (`:830`). Give the plane its
       own key; re-analyze only when the picture changed.
-- [ ] **S** · **Mask thumbnails render at 1280 for ~64 px tiles**, and range
+- [x] **S** · **Mask thumbnails render at 1280 for ~64 px tiles**, and range
       masks' keys include the grade (`render.ts:859, 896`). Render at ~256.
-- [ ] **S** · **"Before" is a 2560 PNG even without alpha**
+- [x] **S** · **"Before" is a 2560 PNG even without alpha**
       (`render.ts:977-983`). JPEG when there is no transparency.
-- [ ] **S** · **Previews are JPEG q95 with no chroma subsampling**
+- [x] **S** · **Previews are JPEG q95 with no chroma subsampling**
       (`render.ts:606`). Use 4:2:0 for full renders.
-- [ ] **S** · **The plane store LRU holds 48** (`planestore.ts:12`): a photo
+- [x] **S** · **The plane store LRU holds 48** (`planestore.ts:12`): a photo
       with more brush components misses on every update. Size it by bytes.
 
 ### Pass 17 — Compile hot path and opening a photo · 5 pts
