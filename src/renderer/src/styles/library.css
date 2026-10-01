@@ -70,18 +70,26 @@
 .grid {
   flex: 1;
   overflow-y: auto;
-  display: grid;
-  /* Rows as tall as their tiles: `auto` rows shrink to nothing once the
-     tiles (which clip their overflow) no longer fit the height. */
-  grid-auto-rows: max-content;
-  gap: 16px;
-  padding: 20px 22px 28px;
-  align-content: start;
+  /* Rows are placed by the virtualiser (Library.tsx); top and bottom padding are its. */
+  padding: 0 22px;
   background: var(--bg);
+}
+.grid-space {
+  position: relative;
+  width: 100%;
+}
+.grid-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 16px;
+  /* The gap below a row is part of it, so measuring a row measures its place. */
+  padding-bottom: 16px;
 }
 .grid-empty {
   color: var(--muted);
-  grid-column: 1 / -1;
   text-align: center;
   margin-top: 60px;
 }
@@ -96,10 +104,10 @@
     transform 0.45s var(--spring),
     border-color 0.25s,
     box-shadow 0.4s var(--ease);
+}
+/* Only the tiles of a folder just opened fly in; rows scrolled to just appear. */
+.grid.entering .thumb {
   animation: thumbIn 0.7s var(--spring) both;
-  /* off-screen tiles skip layout and paint; `auto` remembers their size */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 240px;
 }
 .thumb:hover {
   transform: translateY(-4px);
@@ -721,22 +729,22 @@
 }
 
 /* ── duplicates ────────────────────────────────────────────────── */
-.dupe-group {
-  display: contents;
-}
 .dupe-head {
-  grid-column: 1 / -1;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 10px;
+  padding: 10px 0 16px;
   color: var(--text2);
   font-size: 12px;
   font-family: var(--font-body);
   animation: rowIn 0.55s var(--spring) both;
 }
-.dupe-group:first-child .dupe-head {
-  margin-top: 0;
+.dupe-head.first {
+  padding-top: 0;
 }
 .dupe-head .line {
   flex: 1;

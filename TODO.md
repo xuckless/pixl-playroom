@@ -607,11 +607,17 @@ After: Pass 31.
 
 After: Pass 19.
 
-- [ ] **L** · Virtualise the grid and the filmstrip (today only
+- [x] **L** · Virtualise the grid and the filmstrip (today only
       `content-visibility: auto`, `library.css:101`, which still pays React and
       DOM cost for N nodes).
-- [ ] **M** · Near-duplicate grouping compares every pair, synchronously in
+      _Done with @tanstack/react-virtual: the grid by rows (columns as
+      `auto-fill` worked them out; duplicate headings are rows), the
+      filmstrip by tile; focus scrolls into view; tiles fly in only as a
+      folder or the strip opens._
+- [x] **M** · Near-duplicate grouping compares every pair, synchronously in
       the index host (`dupes.ts:74-83`). A BK-tree or multi-index hash.
+      _Done: equal hashes joined first, then multi-index hashing (threshold
+      + 1 blocks); tested equal to all pairs._
 
 ### Pass 34 — Folders as a tree; warm neighbours · 5 pts
 

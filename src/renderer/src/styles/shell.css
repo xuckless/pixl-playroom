@@ -386,7 +386,8 @@ aside.right .panels {
 .filmstrip-wrap .filmstrip {
   height: 104px;
 }
-.filmstrip-wrap.open .film {
+/* Only as the strip opens: tiles scrolled to just appear. */
+.filmstrip-wrap.open.entering .film {
   animation: filmIn 0.55s var(--spring) both;
 }
 .film-toggle {

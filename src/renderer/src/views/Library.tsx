@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useRef } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type { DuplicateGroup, LibraryItem } from '../../../shared/ipc'
 import { LiquidGlass } from '../components/glass/LiquidGlass'
 import { Icon } from '../components/icons'
@@ -15,6 +16,7 @@ import { selectionSet, useLibrary, useTargets, useVisible, type SortKey } from '
 import { useUi } from '../state/ui'
 import { DuplicateControls, FilterButton, OrganiseMenu } from './library/ToolbarMenus'
 import { keyHint, withKey } from '../lib/commands'
+import { useEntering } from '../lib/hooks'
 
 /** A tile's part in a stack: the cover (collapsed or open), or a member of an open one. */
 interface StackRole {
@@ -53,9 +55,6 @@ const Thumb = memo(function Thumb({
   const toggleStack = useLibrary((s) => s.toggleStack)
   const ref = useRef<HTMLDivElement>(null)
   useThumbFirst(ref, item.key, !item.thumbUrl && !item.unreadable && !item.offline)
-  useEffect(() => {
-    if (focus) ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  }, [focus])
   const cls = [
     'thumb',
     selected && 'selected',
@@ -72,12 +71,7 @@ const Thumb = memo(function Thumb({
     <div
       ref={ref}
       className={cls}
-      style={{
-        width: size,
-        animationDelay: `${Math.min(index, 24) * 18}ms`,
-        // An off-screen tile skips layout at about its real height (picture and caption).
-        containIntrinsicSize: `auto ${Math.round(size * 0.72 + (showFolder ? 48 : 34))}px`
-      }}
+      style={{ width: size, animationDelay: `${Math.min(index, 24) * 18}ms` }}
       draggable
       onDragStart={(e) => {
         // Dragging a selected photo drags the selection; any other, just itself.
@@ -430,6 +424,52 @@ function duplicateSections(
     .filter((s) => s.items.length > 1)
 }
 
+/** The grid's spacing (as `.grid` and `.grid-row` lay it out). */
+const GRID_GAP = 16
+const GRID_PAD_X = 22
+
+/** A row of the grid: a duplicate group's heading, or a row of tiles. */
+type GridRow =
+  | { kind: 'head'; key: string; group: DuplicateGroup; count: number; first: boolean }
+  | { kind: 'tiles'; key: string; items: LibraryItem[]; group?: number; start: number }
+
+/** The grid as rows of `cols` tiles (each duplicate group starting a row under its heading). */
+function gridRows(items: LibraryItem[], groups: DuplicateGroup[] | null, cols: number): GridRow[] {
+  const rows: GridRow[] = []
+  let start = 0
+  const tiles = (list: LibraryItem[], group?: number): void => {
+    for (let i = 0; i < list.length; i += cols) {
+      const part = list.slice(i, i + cols)
+      rows.push({
+        kind: 'tiles',
+        key: `${group ?? ''}:${part[0].key}`,
+        items: part,
+        group,
+        start
+      })
+      start += part.length
+    }
+  }
+  if (!groups) tiles(items)
+  else
+    duplicateSections(groups, items).forEach(({ group, items: members }, g) => {
+      rows.push({
+        kind: 'head',
+        key: `head:${group.keys.join(',')}`,
+        group,
+        count: members.length,
+        first: g === 0
+      })
+      tiles(members, g)
+    })
+  return rows
+}
+
+/**
+ * The library grid, virtualised: only the rows in view (and a few either
+ * side) are in the page, whatever the folder holds. Columns are worked out
+ * as `auto-fill` did: as many tiles of at least the chosen size as fit.
+ */
 export function LibraryView(): React.JSX.Element {
   const items = useVisible()
   const source = useLibrary((s) => s.source)
@@ -438,6 +478,7 @@ export function LibraryView(): React.JSX.Element {
   const expanded = useLibrary((s) => s.expandedStacks)
   const total = useLibrary((s) => s.items.length)
   const size = useLibrary((s) => s.thumbSize)
+  const focus = useLibrary((s) => s.focus)
   const setView = useLibrary((s) => s.setView)
   const setFocus = useLibrary((s) => s.setFocus)
   const open = useDevelop((s) => s.open)
@@ -450,24 +491,64 @@ export function LibraryView(): React.JSX.Element {
     },
     [setFocus, setView, open]
   )
-  if (!source && !opening) return <EmptyLibrary />
-  if (opening?.kind === 'duplicates' && source?.kind !== 'duplicates')
+  const scroller = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(0)
+  const waiting = !source && !opening
+  const dupesLoading = opening?.kind === 'duplicates' && source?.kind !== 'duplicates'
+  useLayoutEffect(() => {
+    const el = scroller.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [waiting, dupesLoading])
+  const cols = Math.max(1, Math.floor((width - 2 * GRID_PAD_X + GRID_GAP) / (size + GRID_GAP)))
+  const rows = useMemo(() => gridRows(items, groups, cols), [items, groups, cols])
+  const showFolder = source?.kind !== 'folder'
+  const tileHeight = Math.round(size * 0.72 + (showFolder ? 48 : 34)) + 2
+  // The virtualiser is mutable by design (it re-renders this on scroll): the
+  // compiler lint's warning about it does not apply to a build without it.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virtual = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scroller.current,
+    estimateSize: (i) => (rows[i]?.kind === 'head' ? 44 : tileHeight + GRID_GAP),
+    getItemKey: (i) => rows[i]?.key ?? i,
+    overscan: 3,
+    paddingStart: 20,
+    paddingEnd: 12
+  })
+  // The focused photo kept in view (it may be rows away, not in the page at
+  // all) when the focus moves; not when the rows change under it (a
+  // thumbnail arriving), which would pull the grid back from a scroll.
+  const rowsNow = useRef(rows)
+  useEffect(() => {
+    rowsNow.current = rows
+  }, [rows])
+  useEffect(() => {
+    if (!focus) return
+    const i = rowsNow.current.findIndex(
+      (r) => r.kind === 'tiles' && r.items.some((it) => it.key === focus)
+    )
+    if (i >= 0) virtual.scrollToIndex(i, { align: 'auto' })
+  }, [focus, virtual])
+  const entering = useEntering(source)
+  if (waiting) return <EmptyLibrary />
+  if (dupesLoading)
     return (
       <div className="grid-wait">
         <Spinner size={22} />
         <p>Looking for duplicates… the first look reads every picture, so it takes a while.</p>
       </div>
     )
-  const showFolder = source?.kind !== 'folder'
   const roles = stackRoles(items, expanded)
-  let index = 0
-  const tile = (it: LibraryItem, group?: number): React.JSX.Element => {
+  const tile = (it: LibraryItem, index: number, group?: number): React.JSX.Element => {
     const role = groups ? undefined : roles.get(it.key)
     return (
       <Thumb
         key={group === undefined ? it.key : `${group}:${it.key}`}
         item={it}
-        index={index++}
+        index={index}
         size={size}
         showFolder={showFolder}
         stackId={role?.id ?? null}
@@ -480,28 +561,49 @@ export function LibraryView(): React.JSX.Element {
   }
   return (
     <div
-      className={`grid${opening ? ' loading' : ''}`}
-      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${size}px, 1fr))` }}
+      ref={scroller}
+      className={`grid${opening ? ' loading' : ''}${entering ? ' entering' : ''}`}
     >
-      {groups
-        ? duplicateSections(groups, items).map(({ group, items: members }, g) => (
-            <section key={group.keys.join(',')} className="dupe-group" role="group">
-              <header className="dupe-head">
-                <span className={`badge${group.kind === 'exact' ? '' : ' ghost'}`}>
-                  {group.kind === 'exact' ? 'Exact' : 'Similar'}
+      <div className="grid-space" style={{ height: virtual.getTotalSize() }}>
+        {virtual.getVirtualItems().map((v) => {
+          const row = rows[v.index]
+          if (row.kind === 'head')
+            return (
+              <header
+                key={v.key}
+                data-index={v.index}
+                ref={virtual.measureElement}
+                className={`dupe-head${row.first ? ' first' : ''}`}
+                style={{ transform: `translateY(${v.start}px)` }}
+              >
+                <span className={`badge${row.group.kind === 'exact' ? '' : ' ghost'}`}>
+                  {row.group.kind === 'exact' ? 'Exact' : 'Similar'}
                 </span>
                 <span className="t-num">
-                  {members.length} photos
-                  {group.kind === 'near' && group.distance !== undefined
-                    ? ` · distance ≤ ${group.distance}`
+                  {row.count} photos
+                  {row.group.kind === 'near' && row.group.distance !== undefined
+                    ? ` · distance ≤ ${row.group.distance}`
                     : ' · same file contents'}
                 </span>
                 <span className="line" />
               </header>
-              {members.map((it) => tile(it, g))}
-            </section>
-          ))
-        : items.map((it) => tile(it))}
+            )
+          return (
+            <div
+              key={v.key}
+              data-index={v.index}
+              ref={virtual.measureElement}
+              className="grid-row"
+              style={{
+                transform: `translateY(${v.start}px)`,
+                gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`
+              }}
+            >
+              {row.items.map((it, i) => tile(it, row.start + i, row.group))}
+            </div>
+          )
+        })}
+      </div>
       {items.length === 0 && (
         <p className="grid-empty">
           {groups
