@@ -699,14 +699,21 @@ After: Pass 36.
 
 ### Pass 39 — Geometry follow-ups · 5 pts
 
-- [ ] **M** · Heal spots under an Upright warp are placed round on the
+- [x] **M** · Heal spots under an Upright warp are placed round on the
       unwarped frame and show as circles on the warped one (close, not exact).
-- [ ] **S** · Upright's focal length comes from the 35 mm equivalent only; a
+      _Done: the brush and the spot being placed draw the base circle carried
+      through the warp (`spotOutline`), the shape that is healed._
+- [x] **S** · Upright's focal length comes from the 35 mm equivalent only; a
       file stating only the real focal length and no crop factor gets 35 mm.
       Use the camera list's crop factor.
-- [ ] **M** · Portrait RAWs: IMG_3086.CR2 (EXIF "Rotate 270 CW") shows and
+      _Done: `equivalentFocal`, with the lens catalogue's crop (`crop()`),
+      sent with the session (`focal35`)._
+- [x] **M** · Portrait RAWs: IMG_3086.CR2 (EXIF "Rotate 270 CW") shows and
       exports landscape. `source.ts:82-84` assumes a developed RAW comes out
       upright; check what rawler returns and fix here, or raise E25.
+      _Checked 2026-10-01: engine 0.15 develops it upright (6288×4056 sensor,
+      orientation 8 → 4000×6000 out, no framing asked), so `source.ts` is
+      right and the app shows it portrait; E25 is not needed._
 
 ---
 

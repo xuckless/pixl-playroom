@@ -7,11 +7,14 @@ import {
   fitScale,
   normalisedIn,
   panBy,
+  spotOutline,
+  viewGeometry,
   visiblePart,
   zoomAt,
   zoomTo,
   zoomedRect
 } from '../src/shared/view'
+import { defaultRecipe } from '../src/shared/recipe'
 
 test('fitRect centres a wide picture in a tall box', () => {
   const r = fitRect({ w: 400, h: 400 }, 6000, 4000)
@@ -88,4 +91,22 @@ test('visiblePart clips a zoomed rect to the box', () => {
     w: 100,
     h: 50
   })
+})
+
+test('a spot shows round without a warp, and as the warp bends it under one', () => {
+  const r = defaultRecipe(false)
+  const flat = viewGeometry(r, 3000, 2000, false)
+  const pts = spotOutline(flat, { x: 0.5, y: 0.5 }, 0.1)
+  // 10% of the 2000-pixel side: 200 pixels from the centre every way round.
+  for (const p of pts)
+    assert.ok(Math.abs(Math.hypot((p.x - 0.5) * 3000, (p.y - 0.5) * 2000) - 200) < 1e-6)
+  r.geometry.upright = { ...r.geometry.upright, mode: 'off', vertical: 30 }
+  const warped = viewGeometry(r, 3000, 2000, false)
+  const bent = spotOutline(warped, { x: 0.5, y: 0.2 }, 0.1)
+  const radii = bent.map((p, _i, all) => {
+    const cx = all.reduce((t, q) => t + q.x, 0) / all.length
+    const cy = all.reduce((t, q) => t + q.y, 0) / all.length
+    return Math.hypot((p.x - cx) * 3000, (p.y - cy) * 2000)
+  })
+  assert.ok(Math.max(...radii) - Math.min(...radii) > 1, 'no longer a circle on the display')
 })

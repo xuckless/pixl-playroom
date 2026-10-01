@@ -7,6 +7,7 @@ import {
   canvasToFrame,
   cropFitsWarp,
   defaultUpright,
+  equivalentFocal,
   focalOf,
   frameToCanvas,
   uprightTransform
@@ -130,4 +131,12 @@ test('a crop in an empty wedge moves in rather than shrink to nothing', () => {
   // toward the corner it was drawn in.
   assert.ok(Math.abs(crop.width - 0.2) < 1e-9 && Math.abs(crop.height - 0.2) < 1e-9)
   assert.ok(crop.x + crop.width / 2 > 0.5 && crop.y + crop.height / 2 > 0.5)
+})
+
+test("Upright's focal length: the file's 35 mm figure, else the focal length times the camera's crop", () => {
+  assert.equal(equivalentFocal({ focal_mm: 50, focal_35mm: 80 }, 1.6), 80)
+  assert.equal(equivalentFocal({ focal_mm: 50, focal_35mm: null }, 1.6), 80)
+  assert.equal(equivalentFocal({ focal_mm: 23, focal_35mm: null }, 1.53), 35.2)
+  assert.equal(equivalentFocal({ focal_mm: 50, focal_35mm: null }, null), null)
+  assert.equal(equivalentFocal(null, 1.5), null)
 })

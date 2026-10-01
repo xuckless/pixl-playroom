@@ -452,6 +452,8 @@ export interface DevelopSession {
   recipe: Recipe
   snapshots: Snapshot[]
   seed: number
+  /** The 35 mm-equivalent focal length (`equivalentFocal`): what Upright's perspective assumes. */
+  focal35?: number | null
 }
 
 export interface ViewState {

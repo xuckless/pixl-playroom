@@ -13,7 +13,7 @@
  */
 import type { CropRect, Orientation, Transform } from './engine-types'
 import { effectiveCrop, orientedFrame } from './compile'
-import { inverse, transformPoint } from './orientation'
+import { inverse, swapsAxes, transformPoint } from './orientation'
 import type { Recipe } from './recipe'
 import { canvasToFrame, frameToCanvas, uprightTransform } from './upright'
 
@@ -103,6 +103,26 @@ export function displayToBase(g: ViewGeometry, p: P): P {
 
 export function baseToDisplay(g: ViewGeometry, p: P): P {
   return orientedToDisplay(g, baseToOriented(g, p))
+}
+
+/**
+ * A spot's outline as it shows: a circle of `radius` (a fraction of the
+ * frame's shorter side) about `centre` on the base frame, where spots live,
+ * carried through the turns, the Upright warp and the crop to the display.
+ * Round without a warp; under one, the shape the engine heals.
+ */
+export function spotOutline(g: ViewGeometry, centre: P, radius: number, n = 48): P[] {
+  const swap = swapsAxes(g.user)
+  const bw = swap ? g.height : g.width
+  const bh = swap ? g.width : g.height
+  const r = radius * Math.min(bw, bh)
+  return Array.from({ length: n }, (_, i) => {
+    const t = (i / n) * 2 * Math.PI
+    return baseToDisplay(g, {
+      x: centre.x + (r * Math.cos(t)) / bw,
+      y: centre.y + (r * Math.sin(t)) / bh
+    })
+  })
 }
 
 /** The displayed picture's size in oriented-frame pixels (what one display unit spans). */

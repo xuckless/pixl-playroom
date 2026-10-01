@@ -46,7 +46,7 @@ export async function applyUpright(mode: UprightMode): Promise<void> {
   const session = dev.session
   if (!session || !dev.recipe) return
   if (mode === 'guided') return startGuides()
-  const focal = focalOf(session.info.lens?.focal_35mm)
+  const focal = focalOf(session.focal35 ?? session.info.lens?.focal_35mm)
   if (mode === 'off') return keep('off', null, focal, dev.recipe.geometry.upright.guides)
   const tries = mode === 'auto' ? (['full', 'vertical', 'level'] as const) : [mode]
   let why = ''
@@ -89,7 +89,7 @@ export async function applyGuides(): Promise<void> {
   const lines = dev.guides
   if (lines.length < 2)
     return useLibrary.getState().say('Draw at least two guides along edges', 'error')
-  const focal = focalOf(session.info.lens?.focal_35mm)
+  const focal = focalOf(session.focal35 ?? session.info.lens?.focal_35mm)
   try {
     const t = await api.develop.uprightFromLines(session.key, lines, focal)
     dev.setTool('none')

@@ -12,9 +12,9 @@
 import { memo, useRef, useState } from 'react'
 import type { P } from '../../../../shared/retouch'
 import {
-  displaySize,
   displayToBase,
   normalisedIn,
+  spotOutline,
   type Rect,
   type ViewGeometry
 } from '../../../../shared/view'
@@ -56,15 +56,20 @@ export const HealTool = memo(function HealTool({
   // Mounted only while Heal shows: it takes the photo unless another tool has it.
   const active = tool === 'heal' || tool === 'none'
 
-  const d = displaySize(g)
-  // The frame's shorter side, in screen pixels.
-  const shortPx = (Math.min(g.width, g.height) * rect.w) / d.width
   const at = (e: React.PointerEvent): P =>
     normalisedIn(e.clientX, e.clientY, box.current!.getBoundingClientRect())
   const screenOf = (p: P): Screen => ({ x: p.x * rect.w, y: p.y * rect.h })
   const copies = heal.mode === 'heal' || heal.mode === 'clone'
   const eyes = heal.mode === 'redeye' || heal.mode === 'peteye'
-  const brushR = (eyes ? heal.size / 2 : heal.size) * shortPx
+  /**
+   * The brush's outline about a display point: round on the base frame,
+   * where the spot is made, so under an Upright warp it shows the shape that
+   * will be healed (a circle without one).
+   */
+  const outline = (p: P): string => {
+    const pts = spotOutline(g, displayToBase(g, p), eyes ? heal.size / 2 : heal.size)
+    return `M${pts.map((q) => `${q.x * rect.w} ${q.y * rect.h}`).join('L')}Z`
+  }
 
   const release = (): void => {
     if (!placing) return
@@ -127,7 +132,7 @@ export const HealTool = memo(function HealTool({
                   <>
                     <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="spot-link" />
                     <g className="spot-anchor">
-                      <circle cx={b.x} cy={b.y} r={brushR} className="spot-src" />
+                      <path d={outline(placing.source)} className="spot-src" />
                       <path
                         d={`M${b.x - 7} ${b.y}h14M${b.x} ${b.y - 7}v14`}
                         className="spot-cross"
@@ -135,13 +140,13 @@ export const HealTool = memo(function HealTool({
                     </g>
                   </>
                 )}
-                <circle cx={a.x} cy={a.y} r={brushR} className="spot selected" />
+                <path d={outline(placing.at)} className="spot selected" />
               </g>
             )
           })()}
         {/* The brush, following the pointer. */}
         {active && hover && !placing && (
-          <circle cx={hover.x} cy={hover.y} r={brushR} className="heal-brush" />
+          <path d={outline({ x: hover.x / rect.w, y: hover.y / rect.h })} className="heal-brush" />
         )}
       </svg>
       {placing && (

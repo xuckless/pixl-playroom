@@ -29,6 +29,7 @@ import { LicenceError } from '../shared/licence'
 import { BUILTIN_PRESETS } from '../shared/presets'
 import { applyGroups, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
 import { planeRef } from './planeref'
+import { equivalentFocal } from '../shared/upright'
 import { orientedFrame } from '../shared/compile'
 import { cropAtAspect } from '../shared/crop'
 import { ensureProxies } from './proxy'
@@ -349,8 +350,19 @@ export function registerIpc(s: Services): void {
     const d = await s.sessions.open(key)
     // A project made before its original could be carried (or interrupted) catches up.
     s.embedder.request(keyOf(parseKey(key).photoId, null))
+    // Upright's perspective: the file's 35 mm figure, else focal length × the camera's crop.
+    const focal35 = d.info.lens?.focal_35mm
+      ? d.info.lens.focal_35mm
+      : equivalentFocal(
+          d.info.lens,
+          await s.sessions
+            .lensShot(key)
+            .then((shot) => s.lenses.crop(shot))
+            .catch(() => null)
+        )
     return {
       ...d,
+      focal35,
       recipe: s.planes.slim(d.recipe),
       snapshots: d.snapshots.map((sn) => ({ ...sn, recipe: s.planes.slim(sn.recipe) }))
     }

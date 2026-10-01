@@ -360,6 +360,12 @@ export class LensProfileStore {
    * its lens — resolved at its focal length, aperture, crop factor and
    * frame, with how it was found.
    */
+  /** A shot's crop factor: from its EXIF, else its camera's in the catalogue; null when neither says. */
+  crop(shot: LensShot): number | null {
+    const camera = findCamera(shot.camera, this.catalog?.cameras ?? [])
+    return shotCrop(shot.lens, camera)?.value ?? null
+  }
+
   resolve(shot: LensShot, id: string | null): LensMatch {
     const camera = findCamera(shot.camera, this.catalog?.cameras ?? [])
     const crop = shotCrop(shot.lens, camera)

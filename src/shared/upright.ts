@@ -58,6 +58,21 @@ export function defaultUpright(): UprightSetting {
   }
 }
 
+/**
+ * A shot's 35 mm-equivalent focal length: as the file states it, else its
+ * real focal length times its camera's crop factor (the lens catalogue's),
+ * else null.
+ */
+export function equivalentFocal(
+  lens: { focal_mm?: number | null; focal_35mm?: number | null } | null | undefined,
+  crop: number | null | undefined
+): number | null {
+  if (lens?.focal_35mm && lens.focal_35mm > 0) return lens.focal_35mm
+  if (lens?.focal_mm && lens.focal_mm > 0 && crop && crop > 0)
+    return Math.round(lens.focal_mm * crop * 10) / 10
+  return null
+}
+
 /** The focal fraction for a shot: its 35 mm-equivalent focal length over the full frame's diagonal. */
 export function focalOf(focal35: number | null | undefined): number {
   return focal35 && focal35 > 0 ? Math.min(20, Math.max(0.05, focal35 / 43.27)) : DEFAULT_FOCAL
