@@ -676,9 +676,13 @@ symmetric about its edge, so half falls outside. The engine has only
 
 After: Pass 36.
 
-- [ ] **M** · The loupe's live mask preview applies the same shift and harden
+- [x] **M** · The loupe's live mask preview applies the same shift and harden
       (`maskgl` shaders).
-- [ ] **M** · Brush: intersect-with brushes.
+      _Done: a min/max shader runs the octagon's passes and hardens
+      (`MORPH_FS`); lassos are offset as compiled._
+- [x] **M** · Brush: intersect-with brushes.
+      _Already worked (masks window: Intersect, then Brush paints a new
+      intersecting brush component); checked end to end in the app._
 
 ### Pass 38 — Mask overlays and spots · 5 pts
 

@@ -26,7 +26,7 @@ import {
 } from '../shared/ipc'
 import { orientedFrame } from '../shared/compile'
 import { hash32, type Recipe } from '../shared/recipe'
-import type { EngineClient } from './engine/client'
+import { EngineError, type EngineClient } from './engine/client'
 import type { PhotoRow } from './db'
 import type { IndexClient } from './indexer/client'
 import type { PlaneStore } from './planestore'
@@ -397,8 +397,11 @@ export class Library {
       this.thumb(job)
         .catch((err) => {
           log.warn('thumbnail failed', job, err?.message ?? err)
-          // Once per version of the file: a photo that cannot be read is not
-          // tried again until it changes.
+          // Only the engine failing to read the file says the photo is
+          // unreadable (once per version of it: not tried again until it
+          // changes). Anything else (the index stopping at quit, a plane not
+          // found) leaves it to be tried another time.
+          if (!(err instanceof EngineError) || err.cancelled) return
           void this.index.markFailed(job.photoId, String(err?.message ?? err)).catch(() => {})
           this.broadcast(IPC.library.thumb, {
             key: keyOf(job.photoId, job.copyId),

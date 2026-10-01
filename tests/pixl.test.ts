@@ -675,3 +675,28 @@ test('a blob written in pieces comes back whole; pieces of a cut-short write are
   p.close()
   rmSync(dir, { recursive: true })
 })
+
+test('a recipe the index hands out by reference finds its planes, even from a new index', async () => {
+  const root = tmp()
+  const folder = join(root, 'photos')
+  mkdirSync(folder)
+  writeFileSync(join(folder, 'a.jpg'), 'not really a photo')
+  const index = new IndexService({ userData: join(root, 'ud'), emit: () => {}, xmp: noXmp })
+  const a = (await index.listFolder(folder))[0].key
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('m')
+  l.components.push(brush(PLANE_ONE))
+  r.layers.push(l)
+  index.saveRecipe(a, r)
+  await settle()
+  index.close()
+  // Another index (a lost one, another machine): the plane is only in the project.
+  const again = new IndexService({ userData: join(root, 'ud2'), emit: () => {}, xmp: noXmp })
+  const key = (await again.listFolder(folder))[0].key
+  const c = again.recipe(key).layers[0].components[0] as BrushComponent
+  assert.equal(c.png, '')
+  assert.equal(again.plane(c.ref!), PLANE_ONE)
+  await settle()
+  again.close()
+  rmSync(root, { recursive: true })
+})

@@ -1833,8 +1833,25 @@ export class IndexService {
    */
   private sidecar(row: PhotoRow): Sidecar {
     const project = this.projectOf(row)
-    if (project) return this.projects.use(project, (p) => p.read(row.is_raw === 1, false))
-    return this.readSide(row)
+    if (!project) return this.readSide(row)
+    return this.projects.use(project, (p) => {
+      const truth = p.read(row.is_raw === 1, false)
+      this.storePlanes(p, JSON.stringify(truth))
+      return truth
+    })
+  }
+
+  /**
+   * The planes a recipe handed out names, from its project into the store,
+   * where main asks for them (a photo never opened this session has had
+   * none copied over yet).
+   */
+  private storePlanes(p: PixlFile, json: string): void {
+    for (const ref of refsIn(json)) {
+      if (this.store.hasPlane(ref)) continue
+      const png = p.plane(ref)
+      if (png !== undefined) this.store.putPlane(ref, png)
+    }
   }
 
   /** A plane from the store, for a project or sidecar being written. */
@@ -1864,7 +1881,11 @@ export class IndexService {
     const raw = row.is_raw === 1
     const project = this.projectOf(row)
     const r = project
-      ? this.projects.use(project, (p) => p.itemRecipe(itemKeyOf(parseKey(key).copyId), raw))
+      ? this.projects.use(project, (p) => {
+          const r = p.itemRecipe(itemKeyOf(parseKey(key).copyId), raw)
+          if (r) this.storePlanes(p, JSON.stringify(r))
+          return r
+        })
       : (itemOf(this.readSide(row), parseKey(key).copyId)?.recipe ?? null)
     return r ? slim(r) : defaultRecipe(raw)
   }

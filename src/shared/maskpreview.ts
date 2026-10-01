@@ -129,7 +129,12 @@ export function maskJoins<C extends MaskComponentSetting>(
  */
 export function planeKey(c: MaskComponentSetting): string {
   if (c.kind === 'brush')
-    return JSON.stringify([c.kind, c.ref ?? `${c.png.length}:${c.png.slice(-32)}`, c.feather])
+    return JSON.stringify([
+      c.kind,
+      c.ref ?? `${c.png.length}:${c.png.slice(-32)}`,
+      c.feather,
+      c.edge ?? null
+    ])
   return JSON.stringify(c, (k, v) => (JOINING.has(k) ? undefined : v))
 }
 const JOINING = new Set(['id', 'name', 'mode', 'opacity', 'invert'])

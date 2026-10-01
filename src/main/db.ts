@@ -863,6 +863,10 @@ export class Store {
   /** Planes stored since this index opened: in use now, whatever the history says (see `prunePlanes`). */
   readonly planesPut = new Set<string>()
 
+  hasPlane(ref: string): boolean {
+    return this.prepare('SELECT 1 FROM plane_blobs WHERE hash = ?').get(ref) !== undefined
+  }
+
   plane(ref: string): string | undefined {
     const row = this.prepare('SELECT png FROM plane_blobs WHERE hash = ?').get(ref) as
       { png: Uint8Array } | undefined

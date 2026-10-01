@@ -68,6 +68,29 @@ void main() {
   o = vec4(sum / wsum, 0.0, 0.0, 1.0);
 }`
 
+/**
+ * One pass of a min (erode) or max (dilate) filter along uStep, uR texels
+ * each way, the plane's edge texels standing for what lies past it; then a
+ * levels curve through 0.5, uHarden times as steep (1: none).
+ * See shared/maskedge.ts, which the engine's planes are made with.
+ */
+export const MORPH_FS = `${HEAD}
+uniform sampler2D uSrc;
+uniform vec2 uStep;       // one texel along the pass, top-down uv
+uniform int uR;           // texels each way (≤ 128)
+uniform bool uGrow;
+uniform float uHarden;
+void main() {
+  vec2 p = here();
+  float v = S(uSrc, p);
+  for (int i = -128; i <= 128; i++) {
+    if (i < -uR || i > uR) continue;
+    float x = S(uSrc, clamp(p + uStep * float(i), vec2(0.0), vec2(1.0)));
+    v = uGrow ? max(v, x) : min(v, x);
+  }
+  o = vec4(clamp((v - 0.5) * uHarden + 0.5, 0.0, 1.0), 0.0, 0.0, 1.0);
+}`
+
 /** A range key on the picture as shown (see maskpreview.ts `rangeWeight`). */
 export const RANGE_FS = `${HEAD}
 uniform sampler2D uPicture;
