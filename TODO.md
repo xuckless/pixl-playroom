@@ -169,8 +169,26 @@ After: Pass 23.
       into RELEASING.md as the pre-release checklist.
       _Ready: the checklist is in RELEASING.md ("Before a release goes out"),
       and release.yml takes `target: staging` (into `staging/playroom/`, no
-      GitHub release) with a `version` to build as. Running it needs the R2
-      token and real machines (owner)._
+      GitHub release) with a `version` to build as._
+      _2026-10-01: staging builds 0.2.0-beta.90 and .91 ran green on all
+      three runners. Uploads, the merged macOS feed, Azure signing (app,
+      installer, uninstaller, helpers) and macOS notarization with fuses all
+      worked. On this Mac (Apple Silicon): .90 read the staging feed,
+      downloaded .91 (in full, since it was a first update), and installed
+      it on quit in about 4 s; the updated app is valid and notarized.
+      macOS asked for an administrator password at that install: Squirrel
+      does when it can't write to the app's folder (the test ran from
+      /private/tmp, root-owned). Repeat from /Applications, where an admin
+      user's install shouldn't ask, and check a standard (non-admin) user.
+      Still to do: Windows (an install of .90, update to .91,
+      `publisherName` check), Intel Mac, a differential download (needs a
+      third build), the floor and rollout checks, a tampered update refused.
+      The staging folder is kept for that._
+- [ ] **S** · Sign and notarize the DMG itself, not only the app in it:
+      `spctl -t open` rejects the DMG ("no usable signature"), though the
+      app inside is notarized and opens. electron-builder can sign it
+      (`dmg.sign: true`); notarizing it takes a `notarytool` step in
+      release.yml, as `friends-dmg.sh` did by hand.
 
 ### Pass 24 — Crash reports kept · 5 pts
 
