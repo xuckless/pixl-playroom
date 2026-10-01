@@ -53,6 +53,14 @@ export const IPC = {
     get: 'prefs:get',
     setCrashReports: 'prefs:set-crash-reports'
   },
+  account: {
+    status: 'account:status',
+    signIn: 'account:sign-in',
+    cancelSignIn: 'account:cancel-sign-in',
+    signOut: 'account:sign-out',
+    /** main → renderer: signed in or out, or a sign-in started or ended */
+    changed: 'account:changed'
+  },
   licence: {
     status: 'licence:status',
     activate: 'licence:activate',

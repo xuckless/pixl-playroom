@@ -49,6 +49,7 @@ import {
   type ProjectInfo
 } from '../shared/ipc'
 import type { LicenceStatus } from '../shared/licence'
+import type { AccountStatus } from '../shared/account'
 import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
@@ -96,6 +97,13 @@ const api = {
     install: () => call<void>(IPC.updates.install),
     setChannel: (channel: UpdateChannel) => call<UpdateState>(IPC.updates.setChannel, channel),
     onState: (cb: (s: UpdateState) => void) => on(IPC.updates.event, cb)
+  },
+  account: {
+    status: () => call<AccountStatus>(IPC.account.status),
+    signIn: () => call<AccountStatus>(IPC.account.signIn),
+    cancelSignIn: () => call<AccountStatus>(IPC.account.cancelSignIn),
+    signOut: () => call<AccountStatus>(IPC.account.signOut),
+    onChange: (cb: (s: AccountStatus) => void) => on(IPC.account.changed, cb)
   },
   licence: {
     status: () => call<LicenceStatus>(IPC.licence.status),

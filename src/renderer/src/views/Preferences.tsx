@@ -1,10 +1,11 @@
 /**
- * Settings (⌘, / Ctrl+,): the licence, updates, crash reports, reporting a
+ * Settings (⌘, / Ctrl+,): the PIXL account, the licence, updates, crash reports, reporting a
  * problem, the legal pages, and the key bindings. And the one question the
  * first launch asks: may crash reports be sent?
  */
 import { useEffect, useRef, useState } from 'react'
 import { MAX_PROBLEM_TEXT } from '../../../shared/crash'
+import type { AccountStatus } from '../../../shared/account'
 import type { Prefs, UpdateState } from '../../../shared/ipc'
 import { ACCOUNT_URL, BUY_URL, type LicenceStatus } from '../../../shared/licence'
 import { Modal, Select, Tabs } from '../components/ui'
@@ -120,6 +121,74 @@ function updateLine(s: UpdateState): string {
     default:
       return 'Playroom checks for updates at launch and every few hours.'
   }
+}
+
+/** The PIXL account: sign in through the browser, or who is signed in and Sign out. */
+function AccountSection(): React.JSX.Element | null {
+  const say = useLibrary((s) => s.say)
+  const [status, setStatus] = useState<AccountStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    void api.account.status().then(setStatus)
+    return api.account.onChange(setStatus)
+  }, [])
+  if (!status?.visible) return null
+  const run = async (fn: () => Promise<AccountStatus>, done?: string): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      const next = await fn()
+      setStatus(next)
+      if (done && next.signedIn === (done === 'Signed in')) say(done)
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const who = status.name && status.email ? `${status.name} (${status.email})` : status.email
+  return (
+    <fieldset>
+      <legend>PIXL account</legend>
+      <p className="prefs-status" role="status" aria-live="polite">
+        {status.signedIn
+          ? `Signed in as ${who ?? 'your PIXL account'}.`
+          : status.signingIn
+            ? 'Finish signing in in your browser…'
+            : 'Not signed in.'}
+      </p>
+      <p className="muted small">
+        One account for every PIXL app. Beta access, your trial and your licence live on it.
+      </p>
+      <div className="prefs-row">
+        {status.signedIn ? (
+          <>
+            <button
+              disabled={busy}
+              onClick={() => void run(() => api.account.signOut(), 'Signed out')}
+            >
+              Sign out
+            </button>
+            <a href={ACCOUNT_URL} target="_blank" rel="noreferrer">
+              Manage account
+            </a>
+          </>
+        ) : status.signingIn ? (
+          <button onClick={() => void api.account.cancelSignIn()}>Cancel</button>
+        ) : (
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={() => void run(() => api.account.signIn(), 'Signed in')}
+          >
+            Sign in…
+          </button>
+        )}
+      </div>
+      {error && <p className="error small">{error}</p>}
+    </fieldset>
+  )
 }
 
 function licenceLine(s: LicenceStatus): string {
@@ -350,6 +419,7 @@ function GeneralSettings(): React.JSX.Element {
   const busy = update?.phase === 'checking' || update?.phase === 'downloading'
   return (
     <>
+      <AccountSection />
       <LicenceSection />
       <fieldset>
         <legend>Updates</legend>

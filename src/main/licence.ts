@@ -8,9 +8,9 @@
 import { app, BrowserWindow, safeStorage } from 'electron'
 import log from 'electron-log/main'
 import { readFileSync, writeFileSync } from 'fs'
-import { hostname } from 'os'
 import { join } from 'path'
 import { IPC } from '../shared/ipc'
+import { deviceName } from './account/device'
 import {
   activate,
   deactivate,
@@ -80,12 +80,6 @@ function broadcast(status: LicenceStatus): LicenceStatus {
     if (!win.isDestroyed()) win.webContents.send(IPC.licence.changed, status)
   }
   return status
-}
-
-/** How this device appears in the licence's device list. */
-function deviceName(): string {
-  const os = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }[process.platform as string]
-  return `${hostname().replace(/\.local$/, '')} (${os ?? process.platform})`
 }
 
 export function licence(): LicenceStatus {

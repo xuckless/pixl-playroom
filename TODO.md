@@ -152,15 +152,31 @@ the sign-in and consent pages), and its redirect-URI spike.
       checked, and the code is
       exchanged at `/oauth/token`. All of it runs in the main process; the
       renderer never sees a token.
+      _Done: `src/main/account/` (`oauth.ts`, `session.ts`, `index.ts`),
+      `src/shared/account.ts` (client `83eab600-…`, from pixl-web's spike),
+      Settings → PIXL account (Sign in… / Cancel / Sign out),
+      `scripts/mock-account.mjs`. Checked end to end against the mock
+      (sign in, sealed on disk, kept across a relaunch, sign out ends the
+      server session), and the real pixl-core accepts the authorize request.
+      A real sign-in waits on pixl-web's consent page._
 - [ ] **S** · Tokens at rest: the refresh token is encrypted with Electron's
       `safeStorage` (Keychain or DPAPI), the rotated token is saved on every
       refresh, and "Sign out" forgets the tokens and the entitlement. A grant
       revoked from the account page ("Signed-in apps") signs the app out at
       its next refresh.
+      _Done: refreshes are single-flight (pixl-core doesn't catch a refresh
+      token used twice); only a 400/401 signs out, so a rate limit or an
+      outage keeps the session; without the keychain nothing is written.
+      Sign out also calls Supabase's `/logout?scope=local`, best effort.
+      That call is only tested against the mock; check it on pixl-core once
+      a real sign-in works. The entitlement isn't wired up yet (Pass 26)._
 - [ ] **S** · Device identity: the app sends an HMAC-SHA256 of the OS machine
       id (IOPlatformUUID on macOS, MachineGuid on Windows), keyed per
       product, never the raw id, plus a name for the account page ("Studio
       (macOS)").
+      _Done: `src/main/account/device.ts`, keyed `pixl:<product>:device:v1`
+      as agreed, with the ids read through absolute paths; `deviceName`
+      moved there from `licence.ts`. Not yet sent: Pass 26 sends it._
 
 ### Pass 26 — Access from the account replaces licence keys · 5 pts
 
@@ -175,6 +191,12 @@ After: Pass 25, and pixl-web's entitlement API.
       offline grace is the token's lifetime (30 days, as now). The app
       refreshes at launch and daily. `LS_PRODUCT` and the key field go;
       update `tests/licence.test.ts`.
+      _Started: the offline check is `src/main/account/entitlement.ts`
+      (EdDSA, `kid`, iss/aud/dev/exp, and a clock set back is judged at the
+      latest moment seen), tested in `tests/account.test.ts` with a
+      throwaway key. Still to do: the real public keys (pixl-web's
+      handoff (c)), `/api/entitlements` and `/api/trials` in the mock, and
+      replacing `src/main/licence.ts`._
 - [ ] **S** · "Start 14-day trial" asks the server. It refuses a second
       trial on the account, or on this device under any account, and the app
       says which. The local trial (`trialStartedAt`) goes.

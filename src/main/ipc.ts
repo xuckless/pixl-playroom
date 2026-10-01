@@ -67,6 +67,8 @@ import type { OriginalEmbedder } from './project/embed'
 import type { Library } from './library'
 import { MAIN_DIR } from './dirs'
 import { appPage } from './guard'
+import { accountStatus, cancelSignIn, signIn, signOut } from './account'
+import { OAuthError } from './account/oauth'
 import { takeOpens } from './open'
 import { paths } from './paths'
 import type { DevelopSessions } from './render'
@@ -77,6 +79,7 @@ function toAppError(err: unknown): AppError {
   if (err instanceof EngineError) return { message: err.message, code: err.code, field: err.field }
   if (err instanceof IndexError) return { message: err.message, code: err.code }
   if (err instanceof LicenceError) return { message: err.message, code: err.code }
+  if (err instanceof OAuthError) return { message: err.message, code: err.code }
   return { message: err instanceof Error ? err.message : String(err), code: 'Error' }
 }
 
@@ -172,7 +175,11 @@ export function registerIpc(s: Services): void {
     if (err) throw new Error(`Couldn't open the third-party notices: ${err}`)
   })
 
-  // ── updates and preferences ──
+  // ── the account, updates and preferences ──
+  handle(IPC.account.status, () => accountStatus())
+  handle(IPC.account.signIn, () => signIn())
+  handle(IPC.account.cancelSignIn, () => cancelSignIn())
+  handle(IPC.account.signOut, () => signOut())
   handle(IPC.updates.getState, () => updateState())
   handle(IPC.updates.check, () => checkForUpdates())
   handle(IPC.updates.install, () => installUpdate())

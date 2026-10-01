@@ -188,6 +188,21 @@ components in `build/third-party.json`, with licence texts from `build/licenses/
 update `build/third-party.json`. To refresh the copy on the website:
 `node scripts/third-party-notices.mjs --web ../pixl-web`.
 
+## The PIXL account
+
+Signing in (_Settings → PIXL account_) is OAuth 2.1 with PKCE against Supabase Auth on
+pixl-core, as the public client "Pixl Playroom" (`src/shared/account.ts`). The browser
+comes back to `http://127.0.0.1:47823/callback`, a fixed port because Supabase matches
+redirect URIs exactly. Everything runs in the main process (`src/main/account/`), and the
+renderer never sees a token. `userData/account.json` holds who is signed in, plus the refresh
+token sealed by `safeStorage`. Without the keychain nothing is written, and the session lasts
+that launch only. A launch refreshes the session, so one revoked from the account page signs
+out. The section shows where the Licence section does.
+
+To work on it without pixl-web, run `node scripts/mock-account.mjs`, then start the app
+with `PLAYROOM_AUTH_URL=http://127.0.0.1:54321/auth/v1`. The mock approves every sign-in at
+once; `POST /mock/revoke` ends every session.
+
 ## Licences
 
 Lemon Squeezy's licence API, called straight from the app (`src/shared/licence.ts`; no
