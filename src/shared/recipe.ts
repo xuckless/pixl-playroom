@@ -926,6 +926,37 @@ export function sameValue(a: unknown, b: unknown): boolean {
   return ka.length === kb.length && ka.every((k) => sameValue(a[k], b[k]))
 }
 
+/**
+ * Where `a` differs from `b`, field by field: each path to a value (a number,
+ * a string, a list such as a curve's points) that is not the same in both.
+ */
+export function changedFields(a: unknown, b: unknown, at: string[] = []): string[][] {
+  if (isObject(a) && isObject(b)) {
+    return Object.keys(a).flatMap((k) => changedFields(a[k], b[k], [...at, k]))
+  }
+  return sameValue(a, b) ? [] : [at]
+}
+
+/** `to` with each of `fields` (paths, as `changedFields` gives them) taken from `from`. */
+export function applyFields(to: Recipe, from: Recipe, fields: string[][]): Recipe {
+  const r = structuredClone(to)
+  for (const path of fields) {
+    if (path.length === 0) continue
+    let src: unknown = from
+    let dst: Record<string, unknown> = r as unknown as Record<string, unknown>
+    for (let i = 0; i < path.length - 1; i++) {
+      src = isObject(src) ? src[path[i]] : undefined
+      const next = dst[path[i]]
+      if (!isObject(next)) break
+      dst = next
+    }
+    const last = path[path.length - 1]
+    src = isObject(src) ? src[last] : undefined
+    if (src !== undefined && last in dst) dst[last] = structuredClone(src)
+  }
+  return r
+}
+
 /** The groups where `a` and `b` differ — what a preset or a sync would carry. */
 export function changedGroups(a: Recipe, b: Recipe): RecipeGroup[] {
   const empty = defaultRecipe(false)

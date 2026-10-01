@@ -1,10 +1,11 @@
 /**
- * The looks Playroom ships with. A preset is a recipe plus the groups it
- * carries: applying it copies those groups onto the photo and leaves the
- * rest (white balance, crop, masks) alone.
+ * The looks Playroom ships with. A built-in carries only the sliders it
+ * sets (its `fields`): applying "Soft portrait" lifts the shadows and softens
+ * the skin, and leaves the photo's exposure, whites and the rest as they
+ * were. Its groups say what kind of thing it touches.
  */
 import type { Preset } from './ipc'
-import { defaultRecipe, type Recipe, type RecipeGroup } from './recipe'
+import { changedFields, defaultRecipe, type Recipe, type RecipeGroup } from './recipe'
 
 function preset(
   id: string,
@@ -15,7 +16,8 @@ function preset(
 ): Preset {
   const recipe = defaultRecipe(false)
   edit(recipe)
-  return { id: `builtin:${id}`, name, group, builtin: true, groups, recipe }
+  const fields = changedFields(recipe, defaultRecipe(false))
+  return { id: `builtin:${id}`, name, group, builtin: true, groups, recipe, fields }
 }
 
 export const BUILTIN_PRESETS: Preset[] = [

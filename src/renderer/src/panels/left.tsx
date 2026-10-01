@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { dependents, patchSummary, prerequisites, type Step } from '../../../shared/history'
 import type { Preset, ProjectInfo } from '../../../shared/ipc'
-import { applyGroups } from '../../../shared/recipe'
+import { applyFields, applyGroups } from '../../../shared/recipe'
 import { wbFromSaved } from '../../../shared/wbconvert'
 import { Icon } from '../components/icons'
 import { api, errorText } from '../lib/api'
@@ -50,7 +50,10 @@ export function PresetsPane(): React.JSX.Element | null {
       : null
     const now = useDevelop.getState()
     if (now.session?.key !== session.key || !now.recipe) return
-    const next = applyGroups(now.recipe, from, p.groups)
+    // A built-in sets only its own sliders; a saved preset its whole groups.
+    const next = p.fields
+      ? applyFields(now.recipe, from, p.fields)
+      : applyGroups(now.recipe, from, p.groups)
     if (p.groups.includes('lens')) {
       // Chromatic aberration is measured per photo: this one keeps its own.
       next.lens.ca = now.recipe.lens.ca

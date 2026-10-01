@@ -230,10 +230,10 @@ After: Pass 1.
 
 ### Pass 11 — Behaviour calls (needs your decision first) · 4 pts
 
-- [ ] **M** · **On a B&W photo a mask's Temp/Tint adds colour**: mask layers
+- [x] **M** · **On a B&W photo a mask's Temp/Tint adds colour**: mask layers
       run after the base layer's saturation 0 (`compile.ts:1044`). Decide:
       keep (it's a tint tool) or run masks before B&W.
-- [ ] **M** · **Built-in presets replace whole groups**: "Soft portrait"
+- [x] **M** · **Built-in presets replace whole groups**: "Soft portrait"
       resets exposure and whites to 0; "Warm film" deletes point colours.
       Decide: partial presets (only the fields they set) or keep.
 

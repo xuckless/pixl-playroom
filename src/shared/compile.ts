@@ -981,7 +981,13 @@ function settingsStages(
   ctx: CompileContext,
   crop: CropRect | null,
   oriented: { width: number; height: number },
-  notes: string[]
+  notes: string[],
+  /**
+   * A black-and-white photo with masks: the conversion and what follows it
+   * (toning, sharpening, effects) go here, to run after the masks, so a
+   * mask's colour changes feed the mix rather than colour the grey.
+   */
+  finish?: GradeOp[]
 ): { space: GradeSpace; ops: GradeOp[] }[] {
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
@@ -1099,26 +1105,27 @@ function settingsStages(
     pc.refine_saturation = round4(clamp(tc.refineSaturation / 100, 0, 1))
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
   const bw = !!base && (base.treatment === 'bw' || base.profile.kind === 'monochrome')
+  const tail = bw && finish ? finish : look
   const hsl = hslOp(r.hsl, bw ? base.bwMix : null)
-  if (hsl) look.push(hsl)
+  if (hsl) tail.push(hsl)
   if (!bw) {
     const keyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }
-    look.push(...pointColorOps(r.pointColors, keyScale))
+    tail.push(...pointColorOps(r.pointColors, keyScale))
   }
   if (!bw && p.vibrance !== 0) {
-    look.push({ Vibrance: { amount: clamp(p.vibrance / 100, -1, 1), skin_protection: 0.6 } })
+    tail.push({ Vibrance: { amount: clamp(p.vibrance / 100, -1, 1), skin_protection: 0.6 } })
   }
-  if (bw) look.push({ Primary: primary({ saturation: 0 }) })
+  if (bw) tail.push({ Primary: primary({ saturation: 0 }) })
   else if (p.saturation !== 0)
-    look.push({ Primary: primary({ saturation: round4(Math.max(0, 1 + p.saturation / 100)) }) })
+    tail.push({ Primary: primary({ saturation: round4(Math.max(0, 1 + p.saturation / 100)) }) })
   // Hue turns every colour (a mask's Hue slider).
   if (!bw && p.hue)
-    look.push({ Primary: primary({ hue_shift: round4(clamp(p.hue, -100, 100) * 0.6) }) })
+    tail.push({ Primary: primary({ hue_shift: round4(clamp(p.hue, -100, 100) * 0.6) }) })
   const cg = colorGradeOp(r.colorGrade)
-  if (cg) look.push(cg)
+  if (cg) tail.push(cg)
   if (r.calibration.shadowsTint !== 0) {
     const a = round4((r.calibration.shadowsTint / 100) * 0.02)
-    look.push({ Primary: primary({ lift: { r: a / 2, g: -a, b: a / 2 } }) })
+    tail.push({ Primary: primary({ lift: { r: a / 2, g: -a, b: a / 2 } }) })
   }
   const sharpen = sharpenOp(
     d.sharpenAmount,
@@ -1128,7 +1135,7 @@ function settingsStages(
     ctx.scale,
     notes
   )
-  if (sharpen) look.push(sharpen)
+  if (sharpen) tail.push(sharpen)
   const e = r.effects
   if (e.vignetteAmount !== 0) {
     const v = vignettePlacement(
@@ -1139,7 +1146,7 @@ function settingsStages(
       uprightTransform(geometry.upright, oriented.width, oriented.height)
     )
     const turned = within45(v.half, v.rotation, oriented.width, oriented.height)
-    look.push({
+    tail.push({
       Vignette: {
         amount: clamp(e.vignetteAmount / 100, -1, 1),
         midpoint: clamp(e.vignetteMidpoint / 100, 0, 1),
@@ -1157,9 +1164,9 @@ function settingsStages(
   }
   // The wash sits on the finished look; only grain goes over it.
   const wash = addColorOp(e.wash, 'wash')
-  if (wash) look.push(wash)
+  if (wash) tail.push(wash)
   if (e.grainAmount > 0) {
-    look.push({
+    tail.push({
       Grain: {
         amount: clamp(e.grainAmount / 100, 0, 1),
         size: round4(0.0004 + (clamp(e.grainSize, 0, 100) / 100) * 0.004),
@@ -1197,7 +1204,10 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
 
   const layers: GradeLayer[] = []
   const layerIndex: Record<string, number> = {}
-  const base = settingsStages(r, r, r.geometry, ctx, crop, oriented, notes)
+  const bw = r.treatment === 'bw' || r.profile.kind === 'monochrome'
+  const masked = r.layers.some((l) => layerMask(l, oriented.user, ctx.brushPaths) !== null)
+  const finish: GradeOp[] | undefined = bw && masked ? [] : undefined
+  const base = settingsStages(r, r, r.geometry, ctx, crop, oriented, notes, finish)
   if (base.length > 0) {
     layers.push({
       name: 'base',
@@ -1231,6 +1241,16 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
       mask,
       blend: blendFor(l.blend, ctx.hdr === true),
       stages
+    })
+  }
+  if (finish && finish.length > 0) {
+    layers.push({
+      name: 'black & white',
+      enabled: true,
+      opacity: 1,
+      mask: null,
+      blend: { mode: 'Normal', space: 'LinearWorking' },
+      stages: stage(LOOK_SPACE, finish)
     })
   }
   for (const c of r.custom) {

@@ -143,3 +143,34 @@ test('a vignette turned past 45° is the same rectangle turned back, its sides s
   assert.ok(Math.abs(t.half.x * 6000 - 1200) < 1e-9 && Math.abs(t.half.y * 4000 - 2400) < 1e-9)
   assert.ok(Math.abs(within45(half, -170, 6000, 4000).rotation - 10) < 1e-9)
 })
+
+test('a built-in preset sets its own sliders and leaves the rest of the photo alone', async () => {
+  const { BUILTIN_PRESETS } = await import('../src/shared/presets')
+  const { applyFields } = await import('../src/shared/recipe')
+  const photo = defaultRecipe(false)
+  photo.basic.exposure = 1
+  photo.basic.whites = 20
+  photo.pointColors = [
+    {
+      id: 'pc',
+      hue: 30,
+      saturation: 0.5,
+      luminance: 0.5,
+      shiftHue: 10,
+      shiftSat: 0,
+      shiftLum: 0,
+      range: 50
+    }
+  ]
+  const portrait = BUILTIN_PRESETS.find((p) => p.id === 'builtin:portrait')!
+  const a = applyFields(photo, portrait.recipe, portrait.fields!)
+  assert.equal(a.basic.exposure, 1)
+  assert.equal(a.basic.whites, 20)
+  assert.equal(a.basic.shadows, 15)
+  assert.equal(a.presence.texture, -20)
+  const film = BUILTIN_PRESETS.find((p) => p.id === 'builtin:warm-film')!
+  const b = applyFields(photo, film.recipe, film.fields!)
+  assert.equal(b.pointColors.length, 1)
+  assert.equal(b.effects.grainAmount, 18)
+  assert.deepEqual(b.toneCurve.master, film.recipe.toneCurve.master)
+})

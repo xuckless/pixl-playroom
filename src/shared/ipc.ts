@@ -529,6 +529,11 @@ export interface Preset {
   groups: RecipeGroup[]
   recipe: Recipe
   /**
+   * The fields it sets, when it sets only those (a built-in look): applied,
+   * the photo's other sliders in the same groups stay as they are.
+   */
+  fields?: string[][]
+  /**
    * A custom white balance as the engine's white (`opOf`), so the preset can
    * be converted onto a photo of the other kind (RAW ↔ anything else);
    * `absolute` says which kind `recipe.wb` is in (absolute Kelvin on a RAW),

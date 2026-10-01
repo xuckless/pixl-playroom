@@ -302,3 +302,43 @@ test('a mask adds its colour in linear light', () => {
   assert.equal(stages[0].space, 'LinearWorking')
   assert.ok(kinds(stages[0].ops).includes('AddColor'))
 })
+
+test('on a black-and-white photo the masks run before the conversion, which stays grey', () => {
+  const r = defaultRecipe(false)
+  r.treatment = 'bw'
+  r.colorGrade.shadows = { ...r.colorGrade.shadows, saturation: 30 }
+  const grey = (ops: GradeOp[]): boolean =>
+    ops.some(
+      (o) => 'Primary' in o && (o as { Primary: { saturation: number } }).Primary.saturation === 0
+    )
+  // No masks: one layer, as it always was.
+  const plain = compile(r, ctx).grade!
+  assert.equal(plain.layers.length, 1)
+  assert.ok(grey(plain.layers[0].stages.flatMap((s) => s.ops)))
+  // A mask warming part of it: base, the mask, then the conversion and toning over both.
+  const l = newLocalLayer('warm')
+  l.components.push({
+    id: 'p',
+    kind: 'polygon',
+    mode: 'Add',
+    opacity: 100,
+    invert: false,
+    feather: 0,
+    points: [
+      { x: 0.1, y: 0.1 },
+      { x: 0.9, y: 0.1 },
+      { x: 0.5, y: 0.9 }
+    ]
+  })
+  l.settings.wb = { mode: 'custom', temperature: 30, tint: 0, preset: null }
+  r.layers.push(l)
+  const g = compile(r, ctx).grade!
+  const names = g.layers.map((x) => x.name)
+  // (The base has nothing left before the conversion here, so it is left out.)
+  assert.deepEqual(names.slice(-2), ['warm', 'black & white'])
+  for (const x of g.layers.slice(0, -1)) assert.ok(!grey(x.stages.flatMap((st) => st.ops)))
+  const finish = g.layers[g.layers.length - 1].stages.flatMap((s) => s.ops)
+  assert.ok(grey(finish))
+  // The toning is on the grey, after the conversion.
+  assert.ok(kinds(finish).indexOf('ColorGrade') > kinds(finish).indexOf('Primary'))
+})
