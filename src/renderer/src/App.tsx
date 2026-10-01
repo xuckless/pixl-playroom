@@ -19,6 +19,7 @@ import { Splash } from './shell/Splash'
 import { useDevelop } from './state/develop'
 import { useBoot } from './state/boot'
 import { useLibrary } from './state/library'
+import { useConfirm } from './state/confirm'
 import { commandFor, COMMANDS, currentBindings } from './lib/commands'
 import { chordOf } from './lib/keys'
 import { ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
@@ -329,8 +330,8 @@ function useShortcuts(): void {
       // A focused slider owns its arrow keys.
       if (t.tagName === 'INPUT' && e.key.startsWith('Arrow')) return
       const lib = useLibrary.getState()
-      // An open dialog has the keyboard (it closes itself on Escape).
-      if (lib.dialog) return
+      // An open dialog, or a confirm, has the keyboard (it closes itself on Escape).
+      if (lib.dialog || useConfirm.getState().open) return
       const cmd = commandFor(e, lib.view === 'develop')
       if (cmd) cmd.run(e)
     }

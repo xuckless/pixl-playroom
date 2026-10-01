@@ -48,7 +48,9 @@ export function updateState(): UpdateState {
 }
 
 export async function checkForUpdates(): Promise<UpdateState> {
-  if (!enabled || state.phase === 'downloading') return state
+  // One downloaded waits to be installed: a re-check (the 4-hourly one,
+  // offline) would only put it behind 'checking' and 'error', and lose it.
+  if (!enabled || state.phase === 'downloading' || state.phase === 'downloaded') return state
   try {
     await autoUpdater.checkForUpdates()
   } catch (err) {

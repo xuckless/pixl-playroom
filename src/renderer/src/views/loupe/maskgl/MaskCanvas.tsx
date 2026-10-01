@@ -102,6 +102,12 @@ export function MaskCanvas({
   const [bitmapTick, setBitmapTick] = useState(0)
   const [engineBmp, setEngineBmp] = useState<{ url: string; bmp: ImageBitmap } | null>(null)
   const [picture, setPicture] = useState<{ url: string; bmp: ImageBitmap } | null>(null)
+  // What is held when the canvas goes, closed with it.
+  const held = useRef<ImageBitmap[]>([])
+  useEffect(() => {
+    held.current = [engineBmp?.bmp, picture?.bmp].filter((b): b is ImageBitmap => !!b)
+  }, [engineBmp, picture])
+  useEffect(() => () => held.current.forEach((b) => b.close()), [])
   // The recipe number the loupe's mask is ahead of the engine at, and how
   // far the handover has gone (1: the loupe's, 0: the engine's).
   const target = useRef(0)
@@ -151,12 +157,19 @@ export function MaskCanvas({
     }
   }, [])
 
-  // The engine's plane for this mask, decoded.
+  // The engine's plane for this mask, decoded. A bitmap holds its pixels
+  // until closed (tens of MB, a draft a frame): each goes when replaced.
   useEffect(() => {
     if (!mask?.url) return
     let on = true
     void bitmapOf(mask.url)
-      .then((bmp) => on && setEngineBmp({ url: mask.url, bmp }))
+      .then((bmp) => {
+        if (!on) return bmp.close()
+        setEngineBmp((was) => {
+          if (was && was.bmp !== bmp) was.bmp.close()
+          return { url: mask.url, bmp }
+        })
+      })
       .catch(() => undefined)
     return () => {
       on = false
@@ -169,7 +182,13 @@ export function MaskCanvas({
     if (!hasRange || !pictureUrl) return
     let on = true
     void bitmapOf(pictureUrl)
-      .then((bmp) => on && setPicture({ url: pictureUrl, bmp }))
+      .then((bmp) => {
+        if (!on) return bmp.close()
+        setPicture((was) => {
+          if (was && was.bmp !== bmp) was.bmp.close()
+          return { url: pictureUrl, bmp }
+        })
+      })
       .catch(() => undefined)
     return () => {
       on = false
@@ -223,8 +242,12 @@ export function MaskCanvas({
             })
             .then((bmp) => {
               brushBitmaps.set(key, bmp)
-              if (brushBitmaps.size > 24)
-                brushBitmaps.delete(brushBitmaps.keys().next().value as string)
+              if (brushBitmaps.size > 24) {
+                const oldest = brushBitmaps.keys().next().value as string
+                const gone = brushBitmaps.get(oldest)
+                if (gone instanceof ImageBitmap) gone.close()
+                brushBitmaps.delete(oldest)
+              }
               setBitmapTick((t) => t + 1)
               return bmp
             })

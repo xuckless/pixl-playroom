@@ -190,22 +190,22 @@ After: Pass 1.
 
 ### Pass 9 — App-level bugs · 5 pts
 
-- [ ] **S** · **Shortcuts leak through the confirm dialog.** `App.tsx:333`
+- [x] **S** · **Shortcuts leak through the confirm dialog.** `App.tsx:333`
       checks only `lib.dialog`; Esc on a confirm also runs `develop.escape`
       (can jump to the Library), Delete removes the selected mask, digits rate.
       Also return when `useConfirm.getState().open`.
-- [ ] **S** · **The updater loses a downloaded update.** The 4-hour re-check
+- [x] **S** · **The updater loses a downloaded update.** The 4-hour re-check
       after a download sets `checking`, then `error` offline
       (`updater.ts:51`); `installUpdate` (`updater.ts:63`) then refuses. Skip
       checks once downloaded, or keep a `downloaded` flag.
-- [ ] **S** · **A finished model `.part` never resumes**: quitting during the
+- [x] **S** · **A finished model `.part` never resumes**: quitting during the
       checksum makes the next try send `Range: bytes=<size>-` → HTTP 416,
       forever (`ai/models.ts` `fetchFile`). If `from === bytes`, verify and
       rename; on 416, delete the part and restart.
-- [ ] **S** · **ImageBitmaps are never closed** (`MaskCanvas.tsx:159, 172,
+- [x] **S** · **ImageBitmaps are never closed** (`MaskCanvas.tsx:159, 172,
     226-227`): drafts arrive per frame and hold tens of MB until GC. Close
       on replace and eviction.
-- [ ] **S** · **exifr leaks a FileHandle on Node 26**
+- [x] **S** · **exifr leaks a FileHandle on Node 26**
       (`exifr/src/file-readers/FsReader.mjs:27-28`: `fh.stat(path)` is refused
       and the handle is garbage-collected; a truncated JPEG kills the
       process). Electron 44 (Node 24) is fine today. Read the head ourselves
