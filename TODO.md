@@ -120,6 +120,14 @@ After: Owner task "Updates bucket". The bucket and its cache rules are pixl-web'
       channel, which the bridge release uploads._
 - [ ] **S** · After the bridge release is out: remove the `github` entry
       from `publish` and the bridge steps from `release.yml`.
+      _0.1.1-beta.1 (2026-10-01, the first release from the bucket) is the
+      bridge release. Its macOS feed job failed on the bridge part:
+      electron-builder's GitHub publisher writes `latest-mac.yml` whatever
+      the channel, and the job asked for `beta-mac.yml`. The R2 feed and the
+      GitHub feeds were then put up by hand from the run's artifacts, with
+      the same scripts. release.yml is fixed: the bridge is its own
+      best-effort step, merges `latest-mac.yml`, and attaches it as
+      `beta-mac.yml` too._
 - [x] **S** · A beta build follows the beta channel, always.
       _Done 2026-10-01: it used to default to Stable, whose feed holds no
       betas, so beta testers would never have heard of the next beta.
