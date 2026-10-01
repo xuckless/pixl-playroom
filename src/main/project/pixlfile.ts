@@ -13,6 +13,9 @@
  * process opens projects; see `ProjectPool` for how it keeps them.
  */
 import { createHash } from 'crypto'
+import { createReadStream } from 'fs'
+import { open as openFile } from 'fs/promises'
+import { setImmediate as yieldTurn } from 'timers/promises'
 import {
   closeSync,
   existsSync,
@@ -171,6 +174,75 @@ export function sha256File(file: string): string {
     closeSync(fd)
   }
   return h.digest('hex')
+}
+
+/** The SHA-256 of a file, hex, read as a stream (the process keeps answering meanwhile). */
+export async function sha256FileAsync(file: string): Promise<string> {
+  const h = createHash('sha256')
+  for await (const chunk of createReadStream(file, { highWaterMark: 1024 * 1024 }))
+    h.update(chunk as Buffer)
+  return h.digest('hex')
+}
+
+/** Blobs being written in pieces in this process: `gc` leaves their chunks alone. */
+const writing = new Set<string>()
+
+/**
+ * Store a file as a blob without holding up the process for it: hashed as a
+ * stream, its chunks written one at a time (each its own write through `use`,
+ * the process free between them), the `blobs` row last, so a reader never
+ * sees a blob without all its bytes. `onProject` runs a write on the project
+ * (the pool may reopen it between pieces). A blob already there is not stored
+ * again. Returns its hash.
+ */
+export async function putBlobFileInPieces(
+  onProject: <T>(fn: (p: PixlFile) => T) => T,
+  file: string,
+  info: Omit<BlobInfo, 'hash' | 'bytes'>
+): Promise<string> {
+  const hash = await sha256FileAsync(file)
+  if (onProject((p) => p.blob(hash)) || writing.has(hash)) return hash
+  writing.add(hash)
+  const fd = await openFile(file, 'r')
+  try {
+    const { size } = await fd.stat()
+    // Pieces of an earlier try that never finished.
+    onProject((p) => p.prepare('DELETE FROM blob_chunks WHERE hash = ?').run(hash))
+    const buf = Buffer.alloc(Math.min(BLOB_CHUNK, Math.max(1, size)))
+    for (let idx = 0, at = 0; at < size || idx === 0; idx++) {
+      const { bytesRead } = await fd.read(buf, 0, buf.length, at)
+      onProject((p) =>
+        p
+          .prepare('INSERT INTO blob_chunks(hash, idx, data) VALUES (?, ?, ?)')
+          .run(hash, idx, buf.subarray(0, bytesRead))
+      )
+      at += bytesRead
+      if (bytesRead === 0) break
+      await yieldTurn()
+    }
+    onProject((p) =>
+      p
+        .prepare(
+          `INSERT OR IGNORE INTO blobs(hash, kind, codec, width, height, channels, depth, bytes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          hash,
+          info.kind,
+          info.codec,
+          info.width,
+          info.height,
+          info.channels,
+          info.depth,
+          size,
+          new Date().toISOString()
+        )
+    )
+  } finally {
+    await fd.close()
+    writing.delete(hash)
+  }
+  return hash
 }
 
 /** The blob hashes a JSON text names (`"blob":"<sha256>"`, `"alpha":"<sha256>"`). */
@@ -369,6 +441,19 @@ export class PixlFile {
     this.commitBatch()
     this.closed = true
     this.db.close()
+  }
+
+  /**
+   * Give up to `pages` free pages back to the disk (16 KiB each). Returns
+   * whether more are left: a large blob's pages go back over several steps,
+   * not in one long write.
+   */
+  vacuumStep(pages = 256): boolean {
+    this.db.exec(`PRAGMA incremental_vacuum(${pages})`)
+    const { freelist_count } = this.prepare('PRAGMA freelist_count').get() as {
+      freelist_count: number
+    }
+    return freelist_count > 0
   }
 
   /** Whether writes are being gathered into one transaction. */
@@ -827,8 +912,8 @@ export class PixlFile {
 
   /**
    * Drop what nothing refers to: planes no recipe, snapshot or history step
-   * names, and other blobs nothing names. Then give the freed pages back to
-   * the disk. Returns how many planes went.
+   * names, and other blobs nothing names. The freed pages go back to the disk
+   * with `vacuumStep`, a little at a time. Returns how many planes went.
    */
   gc(): number {
     const keep = new Set<string>()
@@ -854,7 +939,6 @@ export class PixlFile {
     // committed): only those older than an hour are fair game.
     const fresh = new Date(Date.now() - 3600_000).toISOString()
     let removed = 0
-    let freed = 0
     this.tx(() => {
       for (const b of this.prepare('SELECT hash, kind, created_at FROM blobs').all() as {
         hash: string
@@ -867,10 +951,15 @@ export class PixlFile {
           removed++
         } else if (named.has(b.hash) || b.created_at >= fresh) continue
         this.removeBlob(b.hash)
-        freed++
       }
     })
-    if (freed > 0) this.db.exec('PRAGMA incremental_vacuum')
+    // Chunks no blob row owns: a write cut short (not one under way now).
+    for (const { hash } of this.prepare(
+      'SELECT DISTINCT hash FROM blob_chunks WHERE hash NOT IN (SELECT hash FROM blobs)'
+    ).all() as { hash: string }[]) {
+      if (writing.has(hash)) continue
+      this.prepare('DELETE FROM blob_chunks WHERE hash = ?').run(hash)
+    }
     return removed
   }
 }

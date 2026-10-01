@@ -557,12 +557,17 @@ After: Pass 28. A `.pixl` format version bump (docs/pixl-format.md).
 
 ### Pass 30 — Off the index request loop · 5 pts
 
-- [ ] **L** · Embedding the original (`putBlobFile`, `pixlfile.ts:507`: a
+- [x] **L** · Embedding the original (`putBlobFile`, `pixlfile.ts:507`: a
       SHA-256 of the whole file, synchronous) and `gc` block every index
       request, saves included. Move them to a worker with its own connection,
       or chunk them in small transactions with `state=pending`.
-- [ ] **M** · Take the library thumbnail from the picture Develop already
+      _Done: `putBlobFileInPieces` hashes as a stream and writes a chunk per
+      turn, the `blobs` row last (originals and pixel steps); `gc` runs a
+      moment later (`gcLater`) and vacuums 4 MB a step; orphaned chunks go._
+- [x] **M** · Take the library thumbnail from the picture Develop already
       rendered instead of a second background render.
+      _Done: the session offers its last whole settled JPEG when it shows the
+      saved recipe; the library shrinks it to sRGB, else grades as before._
 
 ### Pass 31 — One engine scheduler · 5 pts
 

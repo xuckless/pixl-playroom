@@ -67,6 +67,17 @@ interface ThumbJob {
   copyId: string | null
 }
 
+/**
+ * A picture Develop already rendered of the recipe just saved (its settled
+ * JPEG, Display P3): the thumbnail is made by shrinking it, not by grading
+ * the photo again on the background engine.
+ */
+export interface Picture {
+  path: string
+  width: number
+  height: number
+}
+
 export class Library {
   private probes = new Map<string, SourceInfo>()
   private probing = new Map<string, Promise<SourceInfo>>()
@@ -305,8 +316,14 @@ export class Library {
 
   // ── thumbnails ──
 
-  queueThumb(photoId: number, copyId: string | null, urgent = false): void {
+  /** Pictures offered for the next thumbnail of a key (see `Picture`). */
+  private readonly pictures = new Map<string, Picture>()
+
+  queueThumb(photoId: number, copyId: string | null, urgent = false, picture?: Picture): void {
     const k = keyOf(photoId, copyId)
+    // Only a picture of what is saved now: one queued without says the recipe moved on.
+    if (picture) this.pictures.set(k, picture)
+    else this.pictures.delete(k)
     // One rendering now may be of the recipe before this change: it goes again after.
     if (this.rendering.has(k)) {
       this.stale.add(k)
@@ -372,6 +389,8 @@ export class Library {
   }
 
   private async thumb(job: ThumbJob): Promise<void> {
+    const picture = this.pictures.get(keyOf(job.photoId, job.copyId))
+    this.pictures.delete(keyOf(job.photoId, job.copyId))
     const work = await this.index.thumbJob(job.photoId, job.copyId)
     if (!work) return
     const { edited, stamp } = work
@@ -415,11 +434,39 @@ export class Library {
         // Some RAWs have no usable embedded preview: develop instead.
         await this.graded(row, info, recipe, out, base)
       }
-    } else {
+    } else if (!picture || !(await this.shrunk(picture, out, base))) {
       await this.graded(row, info, recipe, out, base)
     }
     await this.index.setThumb(row.id, job.copyId, out, stamp)
     this.broadcast(IPC.library.thumb, { key, url: cacheUrl(out, stamp) })
+  }
+
+  /**
+   * A thumbnail shrunk from a picture Develop rendered (Display P3, so turned
+   * into sRGB on the way). False when it could not be (the picture already
+   * replaced by a newer one): the caller grades the photo instead.
+   */
+  private async shrunk(
+    picture: Picture,
+    out: string,
+    base: Record<string, unknown>
+  ): Promise<boolean> {
+    if (!existsSync(picture.path)) return false
+    const factor = Math.min(1, THUMB_EDGE / Math.max(picture.width, picture.height, 1))
+    try {
+      await this.engine.convert({
+        ...blankRequest(picture.path, out, 'Jpeg'),
+        ...base,
+        color: {
+          ConvertTo: { to: 'Srgb', intent: 'RelativeColorimetric', black_point_compensation: false }
+        },
+        resize: factor < 1 ? { Scale: { factor } } : 'None'
+      })
+      return true
+    } catch (err) {
+      log.info('thumbnail not shrunk from the develop picture', (err as Error).message)
+      return false
+    }
   }
 
   /**

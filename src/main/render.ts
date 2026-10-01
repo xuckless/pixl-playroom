@@ -81,7 +81,7 @@ import { sweepPhoto } from './sweep'
 import type { PhotoRow } from './db'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import { keyOf, parseKey } from './keys'
-import type { Library } from './library'
+import type { Library, Picture } from './library'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
 import {
@@ -579,7 +579,10 @@ class Session {
     const queue = (): void => {
       this.thumbTimer = undefined
       const { photoId, copyId } = parseKey(this.key)
-      this.owner.library.queueThumb(photoId, copyId, true)
+      // The settled picture of what was saved, when there is one: shrunk, not graded again.
+      const shown = this.fullPicture
+      const picture = shown?.recipe === this.recipe ? shown.picture : undefined
+      this.owner.library.queueThumb(photoId, copyId, true, picture)
     }
     if (now) return queue()
     this.thumbTimer = setTimeout(queue, THUMB_IDLE_MS)
@@ -679,8 +682,12 @@ class Session {
     // The view is read once, here: the event says which view it was made for.
     const cropMode = this.view.cropMode
     const rev = this.rev
-    const compiled = await this.compileFor(this.recipe, src, !cropMode)
+    const recipe = this.recipe
+    const compiled = await this.compileFor(recipe, src, !cropMode)
     const seq = ++this.seq
+    // A whole picture of this recipe (framed, no corners left empty): what
+    // the library's thumbnail can be shrunk from.
+    const whole = kind === 'full' && !cropMode && !framingTransparent(compiled.framing)
     const sig = String(
       hash32(
         gradeKey([
@@ -696,6 +703,11 @@ class Session {
     const last = this.lastEvent[kind]
     if (last && sig === this.lastSig[kind]) {
       if (kind === 'full') this.lastFull = this.lastFullFor[sig] ?? this.lastFull
+      if (whole)
+        this.fullPicture = {
+          recipe,
+          picture: { path: this.lastFull, width: last.width, height: last.height }
+        }
       if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq, rev })
       return
     }
@@ -736,6 +748,9 @@ class Session {
     if (kind === 'full') {
       this.lastFull = out
       this.lastFullFor = { [sig]: out }
+      this.fullPicture = whole
+        ? { recipe, picture: { path: out, width: report.width, height: report.height } }
+        : null
     }
     const hdr = await hdrStats
     if (this.closed) return
@@ -1096,6 +1111,8 @@ class Session {
   /** The most recent full render's file: what the masked hue chart measures. */
   private lastFull = ''
   private lastFullFor: Record<string, string> = {}
+  /** The last whole settled picture and the recipe it shows (see `thumbLater`). */
+  private fullPicture: { recipe: Recipe; picture: Picture } | null = null
 
   /** The default recipe with the same framing: the "before", and the ghost bars. */
   private async renderBefore(signal: AbortSignal): Promise<void> {

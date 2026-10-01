@@ -83,6 +83,7 @@ import {
   PIXL_EXT,
   PixlFile,
   ProjectPool,
+  putBlobFileInPieces,
   refsIn,
   type EmbeddedOriginal,
   type Origin
@@ -103,6 +104,8 @@ import {
 const CHUNK = 200
 /** A folder scanned this recently is not walked again when listed (its own reload after a fill). */
 const RESCAN_FRESH_MS = 10_000
+/** How long after a change that orphans planes or blobs the project is cleared of them. */
+const GC_DELAY_MS = 1500
 
 /** A file's version: its path, size and modification time. */
 const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.size}`
@@ -738,31 +741,57 @@ export class IndexService {
   /**
    * Store the original in the photo's project: `file` (made by main, in the
    * cache) holds it as `kind` says. The project keeps it from here; `file` is
-   * main's to remove.
+   * main's to remove. Written in pieces: every other request (an edit being
+   * saved) is answered between them, not after the whole file.
    */
-  putOriginal(
+  async putOriginal(
     key: string,
     file: string,
     kind: EmbeddedOriginal['kind'],
     info: { codec: string; width: number | null; height: number | null; note: string | null }
-  ): void {
-    const row = this.row(key)
-    const project = this.projectOf(row)
+  ): Promise<void> {
+    const project = this.projectOf(this.row(key))
     if (!project) return
-    this.projects.write(project, (p) => {
-      const hash = p.putBlobFile(file, {
-        kind: 'original',
-        codec: info.codec,
-        width: info.width,
-        height: info.height,
-        channels: null,
-        depth: null
-      })
+    const hash = await putBlobFileInPieces((fn) => this.projects.write(project, fn), file, {
+      kind: 'original',
+      codec: info.codec,
+      width: info.width,
+      height: info.height,
+      channels: null,
+      depth: null
+    })
+    if (!existsSync(project)) return
+    const replaced = this.projects.write(project, (p) => {
       const before = p.original()
       p.setOriginal({ kind, blob: hash, state: 'ready', note: info.note })
-      if (before?.blob && before.blob !== hash) p.gc()
+      return before?.blob && before.blob !== hash
     })
+    if (replaced) this.gcLater(project)
     this.noteProjectWrite(key)
+  }
+
+  /** Projects whose unused planes and blobs are due to go (see `gcLater`). */
+  private readonly gcDue = new Map<string, ReturnType<typeof setTimeout>>()
+
+  /**
+   * Clear a project of what nothing names, a moment after the change that
+   * left it (not inside that request), and give the space back to the disk a
+   * step at a time, answering other requests between the steps.
+   */
+  private gcLater(project: string): void {
+    clearTimeout(this.gcDue.get(project))
+    const t = setTimeout(() => {
+      this.gcDue.delete(project)
+      if (this.closed || !existsSync(project)) return
+      this.projects.write(project, (p) => p.gc())
+      const step = (): void => {
+        if (this.closed || !existsSync(project)) return
+        if (this.projects.write(project, (p) => p.vacuumStep())) setImmediate(step)
+      }
+      step()
+    }, GC_DELAY_MS)
+    t.unref?.()
+    this.gcDue.set(project, t)
   }
 
   // ── blobs: pixel steps' images and masks ──
@@ -772,15 +801,17 @@ export class IndexService {
    * content: a pixel step's image or mask. The photo gets its project if it
    * has none yet (a pixel step is an edit). Returns the blob's hash.
    */
-  putBlob(
+  async putBlob(
     key: string,
     file: string,
     info: { kind: string; codec: string; width: number | null; height: number | null }
-  ): string {
+  ): Promise<string> {
     const project = this.ensureProject(this.row(key))
-    const hash = this.projects.write(project, (p) =>
-      p.putBlobFile(file, { ...info, channels: null, depth: null })
-    )
+    const hash = await putBlobFileInPieces((fn) => this.projects.write(project, fn), file, {
+      ...info,
+      channels: null,
+      depth: null
+    })
     this.noteProjectWrite(key)
     return hash
   }
@@ -2048,7 +2079,7 @@ export class IndexService {
       key,
       (p, k) => {
         const log = p.history.delete(k, seqs)
-        p.gc()
+        this.gcLater(p.path)
         return log
       },
       () => this.store.deleteHistory(key, seqs)

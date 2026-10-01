@@ -21,6 +21,7 @@ import {
   jpegSize,
   PixlFile,
   ProjectPool,
+  putBlobFileInPieces,
   sha256File,
   type Origin
 } from '../src/main/project/pixlfile'
@@ -419,7 +420,7 @@ async function withProject(location?: unknown): Promise<{
   const r = defaultRecipe(false)
   r.basic.exposure = 0.8
   index.saveRecipe(key, r)
-  index.putOriginal(key, join(folder, 'a.jpg'), 'verbatim', {
+  await index.putOriginal(key, join(folder, 'a.jpg'), 'verbatim', {
     codec: 'jpg',
     width: 1,
     height: 1,
@@ -643,5 +644,34 @@ test('an index from before binary planes keeps them, renamed, with its history',
   const steps = JSON.stringify(store.history('k').steps)
   assert.ok(steps.includes(hash) && !steps.includes('abc123-40'))
   store.close()
+  rmSync(dir, { recursive: true })
+})
+
+test('a blob written in pieces comes back whole; pieces of a cut-short write are cleared', async () => {
+  const dir = tmp()
+  const p = PixlFile.create(join(dir, 'a.pixl'), origin(dir))
+  const file = join(dir, 'big.bin')
+  const bytes = randomBytes(BLOB_CHUNK * 2 + 123)
+  writeFileSync(file, bytes)
+  const info = { kind: 'pixels', codec: 'jxl', width: 1, height: 1, channels: null, depth: null }
+  const hash = await putBlobFileInPieces((fn) => fn(p), file, info)
+  assert.equal(hash, sha256File(file))
+  assert.equal(p.blob(hash)?.bytes, bytes.length)
+  const out = join(dir, 'out.bin')
+  assert.ok(p.writeBlobTo(hash, out))
+  assert.ok(readFileSync(out).equals(bytes))
+  // Chunks with no blob row (a write the app quit in the middle of) go at the next gc.
+  p.prepare('INSERT INTO blob_chunks(hash, idx, data) VALUES (?, 0, ?)').run(
+    'f'.repeat(64),
+    bytes.subarray(0, 10)
+  )
+  p.gc()
+  const left = p
+    .prepare('SELECT COUNT(*) AS n FROM blob_chunks WHERE hash = ?')
+    .get('f'.repeat(64)) as {
+    n: number
+  }
+  assert.equal(left.n, 0)
+  p.close()
   rmSync(dir, { recursive: true })
 })
