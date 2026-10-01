@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { IndexService } from '../src/main/indexer/service'
+import { PixlFile } from '../src/main/project/pixlfile'
 import type { IndexEvent } from '../src/main/indexer/protocol'
 import type { XmpIo } from '../src/main/indexer/xmp'
 import type { Store } from '../src/main/db'
@@ -535,8 +536,11 @@ test('stacks live in the sidecar and survive a lost index', async () => {
         [copy.key, 0, 3]
       ]
     )
-    const sidecar = JSON.parse(readFileSync(c.path + '.playroom.json', 'utf8'))
-    assert.equal(sidecar.stack.position, 0)
+    // a's is in its sidecar; c has a virtual copy, so its truth is its project.
+    assert.equal(JSON.parse(readFileSync(a.path + '.playroom.json', 'utf8')).stack.position, 1)
+    const project = PixlFile.open(f.index.projectPath(c.key)!)
+    assert.equal(project.read(false).stack?.position, 0)
+    project.close()
 
     // A fresh index reads the stacks back from the sidecars.
     const other = f.reopen()

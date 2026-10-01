@@ -4,6 +4,7 @@ import { LiquidGlass } from '../components/glass/LiquidGlass'
 import { Icon } from '../components/icons'
 import { Stars } from '../components/ui'
 import { Ambient, Spinner } from '../fx'
+import { api } from '../lib/api'
 import { autoWbBatch } from '../lib/autowb'
 import { LABEL_COLOURS } from '../lib/helpers'
 import { folderName, KEYS_MIME, sourceTrail } from '../lib/sources'
@@ -117,6 +118,19 @@ const Thumb = memo(function Thumb({
           </span>
         )}
         {item.edited && <span className="edited" title="Edited" />}
+        {item.project && (
+          <button
+            className="project-badge"
+            title={`Its edits and history are in ${item.project} — click to show it`}
+            onClick={(e) => {
+              e.stopPropagation()
+              void api.app.reveal(item.project!).catch(() => undefined)
+            }}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            .pixl
+          </button>
+        )}
         {item.copyId && <span className="copy-badge">{item.copyName}</span>}
         {item.hdr && (
           <span

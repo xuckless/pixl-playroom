@@ -140,6 +140,64 @@ function LicenceSection(): React.JSX.Element | null {
   )
 }
 
+type ProjectsLocation = 'beside' | 'home' | { folder: string }
+
+/**
+ * Where a photo's `.pixl` project is made, on its first edit: beside the
+ * photo, or in a projects folder (one subfolder per photo folder). Projects
+ * already made stay where they are.
+ */
+function ProjectsSection(): React.JSX.Element {
+  const say = useLibrary((s) => s.say)
+  const [loc, setLoc] = useState<ProjectsLocation>('beside')
+  useEffect(() => {
+    void api.app.getSetting<ProjectsLocation>('projects.location').then((v) => {
+      if (v === 'home' || (v && typeof v === 'object' && typeof v.folder === 'string')) setLoc(v)
+    })
+  }, [])
+  const save = (v: ProjectsLocation): void => {
+    setLoc(v)
+    void api.app.setSetting('projects.location', v).catch((e) => say(errorText(e), 'error'))
+  }
+  const choose = async (): Promise<void> => {
+    const folder = await api.library.chooseFolder()
+    if (folder) save({ folder })
+  }
+  const mode = typeof loc === 'object' ? 'folder' : loc
+  return (
+    <fieldset>
+      <legend>Projects</legend>
+      <p className="muted small">
+        A photo&apos;s first edit makes its project: one <b>.pixl</b> file with its edits, copies,
+        snapshots and whole history, so they go wherever the file goes.
+      </p>
+      <Select
+        label="Make projects"
+        value={mode}
+        options={[
+          { value: 'beside', label: 'Beside the photo' },
+          { value: 'home', label: 'In ~/Pixl Projects' },
+          { value: 'folder', label: 'In a folder of my choice…' }
+        ]}
+        onChange={(v) => {
+          if (v === 'folder') void choose()
+          else save(v as 'beside' | 'home')
+        }}
+      />
+      {typeof loc === 'object' && (
+        <div className="prefs-row">
+          <span className="muted small">{loc.folder}</span>
+          <button onClick={() => void choose()}>Change…</button>
+        </div>
+      )}
+      <p className="muted small">
+        A folder that cannot be written (a locked card) puts its projects in ~/Pixl Projects.
+        Projects already made stay where they are.
+      </p>
+    </fieldset>
+  )
+}
+
 function useUpdates(): UpdateState | null {
   const [state, setState] = useState<UpdateState | null>(null)
   useEffect(() => {
@@ -221,6 +279,8 @@ function GeneralSettings(): React.JSX.Element {
           </>
         )}
       </fieldset>
+
+      <ProjectsSection />
 
       <ModelsSection />
 

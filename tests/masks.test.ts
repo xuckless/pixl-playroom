@@ -361,3 +361,23 @@ test('a mask of shapes is centred between them; a painted one has no centre of i
   assert.equal(geometricCentre([radial, range(0)]), null)
   assert.equal(geometricCentre([]), null)
 })
+
+test('a brush plane held by reference keeps its reference through normalising', () => {
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('m')
+  l.components.push({
+    id: 'b',
+    kind: 'brush',
+    mode: 'Add',
+    opacity: 100,
+    invert: false,
+    feather: 0,
+    width: 4,
+    height: 4,
+    png: '',
+    ref: 'abc-12'
+  })
+  r.layers.push(l)
+  const c = normaliseRecipe(JSON.parse(JSON.stringify(r)), false).layers[0].components[0]
+  assert.equal(c.kind === 'brush' && c.ref, 'abc-12')
+})

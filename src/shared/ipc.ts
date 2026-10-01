@@ -275,6 +275,8 @@ export interface LibraryItem {
   offline?: boolean
   /** HDR, and how; null when it is not; absent until the file has been probed. */
   hdr?: HdrKind | null
+  /** Its `.pixl` project, once it has one (the truth about its edits and history). */
+  project?: string | null
 }
 
 /** A gain map over an SDR base (iPhone, UltraHDR), or a PQ / HLG signal. */

@@ -643,6 +643,8 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         ...base,
         kind: 'brush',
         png: c.png,
+        // A plane held by reference (IPC, history, a project) keeps its reference.
+        ...(typeof c.ref === 'string' && c.ref ? { ref: c.ref } : {}),
         width: num(c.width, 1),
         height: num(c.height, 1)
       }
@@ -872,6 +874,30 @@ export function slimRecipe(r: Recipe, known?: (ref: string, png: string) => void
         const ref = c.ref ?? planeRef(c.png)
         known?.(ref, c.png)
         return { ...c, png: '', ref }
+      })
+    }))
+  }
+}
+
+/**
+ * The recipe with every referenced plane filled in from `get` (and the
+ * references dropped), or the same recipe when it names none. A plane `get`
+ * does not have stays a reference.
+ */
+export function hydrateRecipe(r: Recipe, get: (ref: string) => string | undefined): Recipe {
+  if (!r.layers.some((l) => l.components.some((c) => c.kind === 'brush' && !c.png && c.ref)))
+    return r
+  return {
+    ...r,
+    layers: r.layers.map((l) => ({
+      ...l,
+      components: l.components.map((c) => {
+        if (c.kind !== 'brush' || c.png || !c.ref) return c
+        const png = get(c.ref)
+        if (png === undefined) return c
+        const out = { ...c, png }
+        delete out.ref
+        return out
       })
     }))
   }
