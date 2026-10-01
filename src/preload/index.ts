@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
-import type { NoiseEstimate, Transform } from '../shared/engine-types'
+import type { NoiseEstimate, PreviewFrame, Transform } from '../shared/engine-types'
 import type { GuideLine } from '../shared/upright'
 import type { P as SpotPoint, RetouchSpot } from '../shared/retouch'
 import type { PixelStep } from '../shared/pixels'
@@ -257,6 +257,30 @@ const api = {
 }
 
 export type PlayroomApi = typeof api
+
+/**
+ * Preview frames (drafts as pixels: `PreviewFrame`), from the interactive
+ * engine on a port of their own, or relayed by main. Handed to the page with
+ * `window.postMessage`, their bytes moved rather than copied
+ * (renderer/lib/frames.ts takes them).
+ */
+function toPage(m: PreviewFrame): void {
+  const whole = m.data.byteOffset === 0 && m.data.byteLength === m.data.buffer.byteLength
+  const bytes = whole ? m.data : m.data.slice()
+  const buffer = bytes.buffer as ArrayBuffer
+  window.postMessage(
+    { pixlFrame: { frame: m.frame, width: m.width, height: m.height, data: buffer } },
+    '*',
+    [buffer]
+  )
+}
+ipcRenderer.on(IPC.develop.previewPort, (e) => {
+  const port = e.ports[0]
+  if (!port) return
+  port.onmessage = (m: MessageEvent<PreviewFrame>) => toPage(m.data)
+  port.start()
+})
+ipcRenderer.on(IPC.develop.previewFrame, (_e, m: PreviewFrame) => toPage(m))
 
 if (process.contextIsolated) {
   try {

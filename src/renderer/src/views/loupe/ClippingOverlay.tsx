@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef } from 'react'
 import { markClipping } from '../../lib/clipping'
+import { isFrame, pictureBitmap } from '../../lib/frames'
 import { loadImage } from '../../lib/image'
 
 type Reply = { id: number; bitmap?: ImageBitmap; error?: string }
@@ -31,10 +32,10 @@ function clippingWorker(): Worker | null {
 }
 
 async function inPlace(url: string): Promise<ImageBitmap> {
-  const img = await loadImage(url)
+  const img = isFrame(url) ? await pictureBitmap(url) : await loadImage(url)
   const c = document.createElement('canvas')
-  c.width = img.naturalWidth
-  c.height = img.naturalHeight
+  c.width = 'naturalWidth' in img ? img.naturalWidth : img.width
+  c.height = 'naturalHeight' in img ? img.naturalHeight : img.height
   const ctx = c.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D
   ctx.drawImage(img, 0, 0)
   const data = ctx.getImageData(0, 0, c.width, c.height)
@@ -52,7 +53,13 @@ function clippingBitmap(url: string): Promise<ImageBitmap> {
       if (r.bitmap) resolve(r.bitmap)
       else inPlace(url).then(resolve, reject)
     })
-    w.postMessage({ id, url })
+    // A preview frame is no file the worker could fetch: its pixels go along.
+    if (isFrame(url))
+      void pictureBitmap(url).then(
+        (bitmap) => w.postMessage({ id, bitmap }, [bitmap]),
+        () => inPlace(url).then(resolve, reject)
+      )
+    else w.postMessage({ id, url })
   })
 }
 
@@ -129,10 +136,13 @@ async function drawOnGpu(c: HTMLCanvasElement, url: string, live: () => boolean)
   const g = glFor(c)
   if (!g) return false
   // Decoded off the main thread, the file's own values (clipping is in its encoding).
-  const bmp = await createImageBitmap(await (await fetch(url)).blob(), {
-    premultiplyAlpha: 'none',
-    colorSpaceConversion: 'none'
-  })
+  // A frame's values are its own already (it was never encoded).
+  const bmp = isFrame(url)
+    ? await pictureBitmap(url)
+    : await createImageBitmap(await (await fetch(url)).blob(), {
+        premultiplyAlpha: 'none',
+        colorSpaceConversion: 'none'
+      })
   if (!live()) {
     bmp.close()
     return true

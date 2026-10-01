@@ -1402,6 +1402,25 @@ export interface EngineRequestMessage {
   args: unknown[]
   /** The call may be cancelled (`convert` and `analyze` take a signal). */
   cancellable?: boolean
+  /**
+   * A `convert` to a `Bytes` sink whose output is a preview frame: the host
+   * posts the bytes straight to the window under this id (its preview port)
+   * and answers with the report alone.
+   */
+  frame?: string
+}
+
+/** One end of the channel previews travel to the window on (the message's port). */
+export interface EnginePortMessage {
+  kind: 'port'
+}
+
+/** A preview frame, as it reaches the window: RGBA bytes, 8 bits a sample, Display P3. */
+export interface PreviewFrame {
+  frame: string
+  width: number
+  height: number
+  data: Uint8Array
 }
 
 /** Stop request `id`: the engine returns `Cancelled` at its next stage boundary. */
@@ -1431,4 +1450,4 @@ export interface EngineResponseMessage {
 }
 
 export type HostToMain = EngineHelloMessage | EngineResponseMessage
-export type MainToHost = EngineRequestMessage | EngineCancelMessage
+export type MainToHost = EngineRequestMessage | EngineCancelMessage | EnginePortMessage

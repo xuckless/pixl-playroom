@@ -6,13 +6,15 @@
  * Playroom has no placeholder engine: every pixel on screen is the engine's.
  */
 import { createRequire } from 'module'
+import type { MessagePortMain } from 'electron'
 import type {
   EngineErrorShape,
   EngineHelloMessage,
   EngineMethod,
   HostToMain,
   MainToHost,
-  PixlEngineModule
+  PixlEngineModule,
+  PreviewFrame
 } from '../../shared/engine-types'
 
 const ENGINE_PACKAGE = '@xuckless/pixl-engine'
@@ -112,8 +114,30 @@ if (engine) {
 /** The calls that may still be stopped, by request id. */
 const aborts = new Map<number, AbortController>()
 
+/** The window's end of the preview channel: frames go to it, not through main. */
+let previews: MessagePortMain | undefined
+
+/**
+ * A preview frame's bytes sent to the window, and taken out of the report
+ * main gets. Without a port (none yet, the window reloading) the report
+ * keeps them and main relays them.
+ */
+function deliver(frame: string, result: unknown): void {
+  const r = result as { output?: Uint8Array | null; width: number; height: number } | null
+  if (!previews || !r?.output) return
+  const msg: PreviewFrame = { frame, width: r.width, height: r.height, data: r.output }
+  previews.postMessage(msg)
+  r.output = null
+}
+
 process.parentPort.on('message', (e) => {
   const msg = e.data as MainToHost
+  if (msg?.kind === 'port') {
+    previews?.close()
+    previews = e.ports[0]
+    previews?.start()
+    return
+  }
   if (msg?.kind === 'cancel') {
     aborts.get(msg.id)?.abort()
     return
@@ -146,10 +170,14 @@ process.parentPort.on('message', (e) => {
     aborts.set(id, abort)
     callArgs = [...args, { signal: abort.signal }]
   }
+  const frame = msg.frame
   Promise.resolve()
     .then(() => fn.apply(engine, callArgs))
     .then(
-      (result) => send({ kind: 'response', id, ok: true, result }),
+      (result) => {
+        if (frame) deliver(frame, result)
+        send({ kind: 'response', id, ok: true, result })
+      },
       (err) => send({ kind: 'response', id, ok: false, error: toErrorShape(err) })
     )
     .finally(() => aborts.delete(id))

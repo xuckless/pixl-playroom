@@ -6,7 +6,7 @@
  * a batch never queues in front of a slider and a crash in one never takes
  * the other down.
  */
-import { utilityProcess, type UtilityProcess } from 'electron'
+import { MessageChannelMain, utilityProcess, type UtilityProcess, type WebContents } from 'electron'
 import log from 'electron-log/main'
 import { constants, setPriority } from 'os'
 import { join } from 'path'
@@ -29,7 +29,7 @@ import type {
   Transform,
   WhiteBalance
 } from '../../shared/engine-types'
-import type { EngineStatus } from '../../shared/ipc'
+import { IPC, type EngineStatus } from '../../shared/ipc'
 
 export class EngineError extends Error {
   code: string
@@ -62,6 +62,8 @@ interface Pending {
 /** A call that can be stopped: the engine returns `Cancelled` at its next stage boundary. */
 export interface CallOptions {
   signal?: AbortSignal
+  /** A `Bytes` convert whose output is a preview frame for the window (see `sendPreviewsTo`). */
+  frame?: string
 }
 
 /** True for an error that only says the call was stopped. */
@@ -100,6 +102,8 @@ export class EngineClient {
   private settleWaiters: (() => void)[] = []
   /** An engine whose work this one's new calls wait behind (see `holdFor`). */
   private yieldTo: EngineClient | undefined
+  /** The window preview frames go to (see `sendPreviewsTo`). */
+  private previewsTo: WebContents | undefined
   private status: EngineStatus = { status: 'starting', restarts: 0 }
   private stopped = false
   private readyWaiters: (() => void)[] = []
@@ -158,6 +162,25 @@ export class EngineClient {
     this.yieldTo = other
   }
 
+  /**
+   * Send preview frames (`convert` with `frame`) straight from the host to
+   * this window, over a channel of their own: the pixels never pass through
+   * main. Called again when the window loads anew (its old port is gone).
+   */
+  sendPreviewsTo(wc: WebContents): void {
+    this.previewsTo = wc
+    this.connectPreviews()
+  }
+
+  private connectPreviews(): void {
+    const child = this.child
+    const wc = this.previewsTo
+    if (!child || !wc || wc.isDestroyed()) return
+    const { port1, port2 } = new MessageChannelMain()
+    child.postMessage({ kind: 'port' }, [port1])
+    wc.postMessage(IPC.develop.previewPort, null, [port2])
+  }
+
   /** Resolves when no call is running here, or after `maxMs`. */
   quiet(maxMs: number): Promise<void> {
     return this.until(() => this.running.size === 0, maxMs)
@@ -213,7 +236,7 @@ export class EngineClient {
     return this.call('probe', [path]) as Promise<SourceInfo>
   }
   convert(request: ConvertRequest, opts: CallOptions = {}): Promise<ConvertReport> {
-    return this.call('convert', [request], opts.signal) as Promise<ConvertReport>
+    return this.call('convert', [request], opts.signal, opts.frame) as Promise<ConvertReport>
   }
   analyze(request: AnalyzeRequest, opts: CallOptions = {}): Promise<ImageStats> {
     return this.call('analyze', [request], opts.signal) as Promise<ImageStats>
@@ -270,6 +293,8 @@ export class EngineClient {
     this.child = child
     this.status = { ...this.status, status: 'starting', reason: undefined }
     if (this.background) child.once('spawn', () => lowerPriority(child.pid))
+    // A host started again (after a crash) gets a fresh preview channel.
+    child.once('spawn', () => this.connectPreviews())
 
     child.stdout?.on('data', (d: Buffer) =>
       log.info(`[engine:${this.name}]`, d.toString().trimEnd())
@@ -345,25 +370,35 @@ export class EngineClient {
    * (`holdFor`), and a cancellable one behind cancelled calls still letting
    * go: two renders never fight over the cores.
    */
-  private call(method: EngineMethod, args: unknown[], signal?: AbortSignal): Promise<unknown> {
+  private call(
+    method: EngineMethod,
+    args: unknown[],
+    signal?: AbortSignal,
+    frame?: string
+  ): Promise<unknown> {
     const hold = this.yieldTo && this.yieldTo.running.size > 0
     const drain = signal !== undefined && this.draining.size > 0
-    if (!hold && !drain) return this.post(method, args, signal)
+    if (!hold && !drain) return this.post(method, args, signal, frame)
     return (async () => {
       if (hold) await this.yieldTo!.quiet(HOLD_MAX_MS)
       if (drain) await this.drained(DRAIN_MAX_MS)
-      return this.post(method, args, signal)
+      return this.post(method, args, signal, frame)
     })()
   }
 
-  private post(method: EngineMethod, args: unknown[], signal?: AbortSignal): Promise<unknown> {
+  private post(
+    method: EngineMethod,
+    args: unknown[],
+    signal?: AbortSignal,
+    frame?: string
+  ): Promise<unknown> {
     const cancelled = (): EngineError =>
       new EngineError({ message: `${method}: cancelled`, code: 'Cancelled' })
     if (signal?.aborted) return Promise.reject(cancelled())
     // Held back from the launch: started by the first call that wants it.
     if (!this.spawned && !this.stopped) {
       this.start()
-      return this.whenStarted().then(() => this.post(method, args, signal))
+      return this.whenStarted().then(() => this.post(method, args, signal, frame))
     }
     const child = this.child
     if (!child) {
@@ -392,7 +427,14 @@ export class EngineClient {
       this.inflight.set(id, { resolve: done(resolve), reject: done(reject), method })
       signal?.addEventListener('abort', onAbort, { once: true })
       this.running.add(id)
-      child.postMessage({ kind: 'request', id, method, args, cancellable: signal !== undefined })
+      child.postMessage({
+        kind: 'request',
+        id,
+        method,
+        args,
+        cancellable: signal !== undefined,
+        ...(frame ? { frame } : {})
+      })
     })
   }
 }

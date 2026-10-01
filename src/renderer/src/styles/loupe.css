@@ -31,7 +31,8 @@
     0 0 0 1px rgba(255, 255, 255, 0.05);
   transition: transform 0.12s linear;
 }
-.picture img {
+.picture img,
+.picture canvas.frame {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -40,7 +41,8 @@
   object-fit: contain;
   user-select: none;
 }
-.picture img.decoded-prev {
+.picture img.decoded-prev,
+.picture canvas.frame.decoded-prev {
   animation: decodedOut 140ms ease-out forwards;
 }
 .split-before {

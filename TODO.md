@@ -591,11 +591,17 @@ After: Pass 15.
 
 After: Pass 31.
 
-- [ ] **XL** · Each settled render writes a 2–4 MB JPEG, streams it back
+- [x] **XL** · Each settled render writes a 2–4 MB JPEG, streams it back
       through `protocol.handle` in main-process JS (`protocol.ts:43-48`), and
       the loupe decodes it (~30–50 ms). Hand the renderer raw pixels
       (`Encode::Pixels`, engine 0.15) over a transferred `MessagePort` into a
       canvas; no file, no decode. The histogram already comes from `measure`.
+      _Done for drafts (the renders while a slider moves): RGBA pixels from
+      the engine host straight to the window on their own port
+      (`sendPreviewsTo`, `lib/frames.ts`), drawn on a canvas; main relays if
+      no port is up. The settled picture stays a JPEG: main measures masks
+      through it (`measureMask`) and thumbnails shrink it, and the engine
+      cannot analyse from memory._
 
 ### Pass 33 — A virtualised library · 5 pts
 
@@ -930,10 +936,11 @@ Playroom work that starts once the engine request lands
 
 ## Owner tasks (not model passes)
 
-- [ ] **L** · **Code signing**: Apple Developer ID and notarization; Azure
-      Trusted Signing or an OV/EV certificate on Windows. Steps in
-      `.github/RELEASING.md`. Start now: both take days. Builds are unsigned
-      until the secrets exist, and macOS in-app updates need signed builds.
+- [ ] **L** · **Code signing**: a Developer ID Application certificate and an
+      App Store Connect API key (macOS); Azure Trusted Signing with identity
+      validation (Windows). Steps and the secrets/variables to add in
+      `.github/RELEASING.md`; `release.yml` signs with whatever exists. Builds
+      are unsigned until then, and macOS in-app updates need signed builds.
 - [ ] **M** · **Legal pages**: fill in the [bracketed] parts of the licence
       agreement and privacy policy on pixlfoundation.com/legal/ (pixl-web
       `src/legal/`: legal entity, jurisdiction, address, refunds, what a

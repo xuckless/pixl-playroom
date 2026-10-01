@@ -141,6 +141,9 @@ function createWindow(): void {
   })
   // A closed window or a reload boots a new renderer: opens queue until it takes them.
   win.webContents.on('did-start-loading', rendererGone)
+  // Previews' pixels go straight from the interactive engine to this page,
+  // on a channel each load of it gets afresh.
+  win.webContents.on('did-finish-load', () => engine.sendPreviewsTo(win.webContents))
   win.on('closed', () => {
     rendererGone()
     if (mainWindow === win) mainWindow = undefined

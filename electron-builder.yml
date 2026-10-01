@@ -181,10 +181,11 @@ win:
     - from: build/doc-icons
       to: doc-icons
       filter: ['*.ico']
-  # Signed when WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD are set; otherwise the
-  # installer ships unsigned and SmartScreen warns on first launch.
-  signtoolOptions:
-    publisherName: xuckless
+  # Signed through Azure Trusted Signing: release.yml adds `azureSignOptions`
+  # (with the certificate's publisher name) only when its secrets and
+  # variables exist. No publisher name here: one would go into an unsigned
+  # build's app-update.yml, and electron-updater would then refuse every
+  # update not signed by that name, including the first signed one.
 
 nsis:
   artifactName: ${name}-win-x64-setup.${ext}

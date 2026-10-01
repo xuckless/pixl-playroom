@@ -1,4 +1,5 @@
 import { useDevelop } from '../state/develop'
+import { Picture } from '../views/loupe/DecodedImage'
 import { useLibrary } from '../state/library'
 import { Ambient } from './index'
 
@@ -13,7 +14,7 @@ export function DialogBackdrop(): React.JSX.Element {
     <div className="dialog-backdrop" aria-hidden>
       {/* Still: a moving gradient would have the dialog's glass re-filter every frame. */}
       <Ambient intensity={0.55} still />
-      {inDevelop && picture && <img className="backdrop-photo" src={picture} alt="" />}
+      {inDevelop && picture && <Picture className="backdrop-photo" src={picture} />}
       <div className="scrim" />
     </div>
   )

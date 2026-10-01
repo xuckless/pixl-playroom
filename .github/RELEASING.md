@@ -69,40 +69,76 @@ the icons, that the default apps stay as they were, and that uninstalling remove
 
 ## Secrets
 
-| Name                                                         | Purpose                                                      |
-| ------------------------------------------------------------ | ------------------------------------------------------------ |
-| `PACKAGES_TOKEN`                                             | classic PAT with `read:packages` for `@xuckless/pixl-engine` |
-| `RELEASE_PLEASE_TOKEN`                                       | PAT with `repo` + `workflow` so release PRs get workflows    |
-| `CSC_LINK` / `CSC_KEY_PASSWORD`                              | base64 Developer ID Application `.p12` and its password      |
-| `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` | notarization                                                 |
-| `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`                      | Windows code-signing `.pfx` (optional)                       |
+| Name                                                          | Purpose                                                                     |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `PACKAGES_TOKEN`                                              | classic PAT with `read:packages` for `@xuckless/pixl-engine`                |
+| `RELEASE_PLEASE_TOKEN`                                        | PAT with `repo` + `workflow` so release PRs get workflows                   |
+| `CSC_LINK` / `CSC_KEY_PASSWORD`                               | base64 Developer ID Application `.p12` and its password                     |
+| `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER`     | notarization: the App Store Connect API key's `.p8` text, key ID, issuer ID |
+| `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` | the service principal allowed to sign with Azure Trusted Signing            |
+
+Repository **variables** (not secrets; _Settings → Secrets and variables → Actions →
+Variables_) for Windows signing: `AZURE_SIGNING_ENDPOINT` (the account's region endpoint,
+e.g. `https://eus.codesigning.azure.net`), `AZURE_SIGNING_ACCOUNT` (the Trusted Signing
+account name), `AZURE_SIGNING_PROFILE` (the certificate profile name) and
+`WIN_PUBLISHER_NAME` (the certificate's subject CN, exactly as Azure shows it).
 
 Until the Apple secrets exist, macOS builds are unsigned: Gatekeeper reports them as
-"damaged" (users clear quarantine with `xattr`). Windows works unsigned with a SmartScreen
-warning.
+"damaged" (users clear quarantine with `xattr`). Until the Azure secrets and variables all
+exist, the Windows installer is unsigned and SmartScreen warns.
 
-## Code signing (not set up yet)
+## Code signing
 
 Both take days of waiting on someone else, so start them before anything else on the
-release list.
+release list. `release.yml` signs whatever it has credentials for and leaves the rest
+unsigned.
 
 **macOS (Developer ID + notarization).**
 
-1. Enrol in the Apple Developer Program (individual or organisation; an organisation needs
-   a D-U-N-S number, which can take a week or two).
-2. In Xcode or the developer portal, create a **Developer ID Application** certificate and
-   export it with its private key as a `.p12`.
-3. Repository secrets: `CSC_LINK` (`base64 -i cert.p12 | pbcopy`), `CSC_KEY_PASSWORD`,
-   `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` (appleid.apple.com → App-Specific
-   Passwords) and `APPLE_TEAM_ID`.
-4. `electron-builder.yml` already has `hardenedRuntime`, the entitlements and
-   `notarize: true`; the next release is signed and notarized. Check with
-   `codesign --verify --deep --strict` and `spctl -a -vv` on the built app.
+1. On this Mac, Keychain Access → _Certificate Assistant → Request a Certificate From a
+   Certificate Authority…_, saved to disk. At developer.apple.com → _Certificates_ → **+** →
+   **Developer ID Application** (G2 Sub-CA), upload the request, download the `.cer` and
+   double-click it. `security find-identity -v -p codesigning` then lists
+   `Developer ID Application: <name> (<team id>)`. (An "Apple Development" identity cannot
+   sign for distribution.)
+2. Export it from Keychain Access (_My Certificates_, the certificate together with its
+   private key) as a `.p12` with a password. `CSC_LINK` is `base64 -i cert.p12`,
+   `CSC_KEY_PASSWORD` the password. Keep the `.p12` somewhere safe and off the repo.
+3. App Store Connect → _Users and Access → Integrations → App Store Connect API_ → **Team
+   Keys** → generate a key with the **Developer** role. Download the `.p8` (only once).
+   `APPLE_API_KEY` is the file's text (`pbcopy < AuthKey_XXXX.p8`), `APPLE_API_KEY_ID` the
+   key ID, `APPLE_API_ISSUER` the issuer ID above the list.
+4. Try it locally before a release: `APPLE_API_KEY=~/path/AuthKey_XXXX.p8
+APPLE_API_KEY_ID=… APPLE_API_ISSUER=… pnpm build:mac:arm64` (the identity is found in the
+   keychain), then `codesign --verify --deep --strict --verbose=2 "dist/mac-arm64/Pixl
+Playroom.app"`, `spctl -a -vv` on it (expect `source=Notarized Developer ID`) and
+   `xcrun stapler validate` on the app and the `.dmg`.
 
-**Windows.** Either Azure Trusted Signing (a monthly fee, no hardware token; electron-builder
-supports it through `win.azureSignOptions`, with its own secrets), or an OV/EV certificate
-from a CA as a `.pfx` in `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`. SmartScreen warnings
-fade as a signed build gathers reputation (an EV certificate skips that wait).
+`electron-builder.yml` already has `hardenedRuntime`, the entitlements and `notarize: true`.
+
+**Windows (Azure Trusted Signing).**
+
+1. An Azure subscription, then a **Trusted Signing account** (Basic tier) in a supported
+   region; note its endpoint URI.
+2. Give your own user the _Trusted Signing Identity Verifier_ role on the account, then
+   _Identity validation_ → **New** (Public, Individual or Organization). Individuals: US or
+   Canada; organisations: also the EU and UK. Approval takes from hours to days.
+3. A **certificate profile** (Public Trust) on the validated identity. Its subject CN is
+   `WIN_PUBLISHER_NAME`.
+4. Microsoft Entra ID → _App registrations_ → **New registration**; under _Certificates &
+   secrets_ add a client secret. Tenant ID, client (application) ID and the secret value are
+   the three `AZURE_*` secrets. On the Trusted Signing account, give this app the _Trusted
+   Signing Certificate Profile Signer_ role.
+5. Set the four variables above. The next release signs the app, the installer and the
+   uninstaller (electron-builder installs the `TrustedSigning` PowerShell module on the
+   runner). Check with _Properties → Digital Signatures_ on the installer, or
+   `Get-AuthenticodeSignature`.
+
+The publisher name goes into `app-update.yml`, and electron-updater refuses an update
+whose signer differs, so it must match the certificate exactly and stay the same from
+release to release. Builds before Windows signing carry no publisher name, so they accept
+the first signed update. SmartScreen warnings fade as signed builds gather reputation (no
+certificate type skips that any more).
 
 ## Updates
 

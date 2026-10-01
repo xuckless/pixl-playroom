@@ -720,24 +720,32 @@ class Session {
     }
     // A warp shown whole (the crop tool) keeps its empty corners: PNG with alpha.
     const alpha = framingTransparent(compiled.framing)
-    const out = this.nextFile('view', alpha ? 'png' : 'jpg')
+    // A draft (a slider moving) goes to the window as pixels, straight from
+    // the engine: no file written, served and decoded for a picture that is
+    // replaced a moment later. The settled picture stays a file: the mask's
+    // measuring and the thumbnail read it here.
+    const frame = kind === 'draft' ? `${this.tag}-${seq}` : undefined
+    const out = frame ? '' : this.nextFile('view', alpha ? 'png' : 'jpg')
     const hdrStats =
       kind === 'full' ? this.measureHdr(cropMode, signal) : Promise.resolve(undefined)
     const report = await this.owner.engine.convert(
       {
         ...blankRequest(src.path, out, src.input),
-        pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
-        encode: alpha
-          ? { Png: { compression: 'Fast', filter: 'Sub' } }
-          : {
-              // A settled picture is a few MB less as 4:2:0, which a screen
-              // shows the same; the draft keeps full chroma at its lower quality.
-              Jpeg: {
-                quality: kind === 'draft' ? 92 : 95,
-                subsampling: kind === 'draft' ? 'None' : 'Quarter',
-                optimize: false
-              }
-            },
+        ...(frame ? { sink: 'Bytes' as const } : {}),
+        pixel: { depth: 'Eight', channels: alpha || frame ? 4 : 3 },
+        encode: frame
+          ? { Pixels: { sample: 'U8' } }
+          : alpha
+            ? { Png: { compression: 'Fast', filter: 'Sub' } }
+            : {
+                // A settled picture is a few MB less as 4:2:0, which a screen
+                // shows the same; the draft keeps full chroma at its lower quality.
+                Jpeg: {
+                  quality: kind === 'draft' ? 92 : 95,
+                  subsampling: kind === 'draft' ? 'None' : 'Quarter',
+                  optimize: false
+                }
+              },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: displayPolicy(this.info, 'DisplayP3'),
         grade: compiled.grade,
@@ -749,8 +757,16 @@ class Session {
         // risk measuring nothing when little of the picture is left.
         measure: measureOf(kind === 'draft' ? 2 : 1)
       },
-      { signal }
+      { signal, frame }
     )
+    // The engine had no way to the window (it was reloading): main passes the frame on.
+    if (frame && report.output)
+      this.owner.send(IPC.develop.previewFrame, {
+        frame,
+        width: report.width,
+        height: report.height,
+        data: report.output
+      })
     const stats = statsOf(report)
     if (kind === 'full') {
       this.lastFull = out
@@ -767,7 +783,7 @@ class Session {
       rev,
       kind,
       cropMode,
-      url: cacheUrl(out, seq),
+      url: frame ? `frame:${frame}` : cacheUrl(out, seq),
       width: report.width,
       height: report.height,
       stats,

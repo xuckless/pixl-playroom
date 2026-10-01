@@ -118,6 +118,10 @@ export const IPC = {
     saveSnapshots: 'develop:save-snapshots',
     historyList: 'develop:history-list',
     historyAppend: 'develop:history-append',
+    /** main → renderer: the port preview frames arrive on, from the interactive engine */
+    previewPort: 'develop:preview-port',
+    /** main → renderer: a preview frame main relays (when the engine had no port) */
+    previewFrame: 'develop:preview-frame',
     historySetHidden: 'develop:history-set-hidden',
     historyDelete: 'develop:history-delete',
     noise: 'develop:noise',

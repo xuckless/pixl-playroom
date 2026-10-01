@@ -25,6 +25,7 @@ import { chordOf } from './lib/keys'
 import { ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
+import { isFrame, whenFrame } from './lib/frames'
 import { openReport } from './lib/report'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
@@ -391,7 +392,11 @@ export default function App(): React.JSX.Element {
       }),
       api.library.onChanged(({ folder }) => useLibrary.getState().onChanged(folder)),
       api.library.onSourcesChanged(() => void useLibrary.getState().onSourcesChanged()),
-      api.develop.onRendered((e) => useDevelop.getState().onRendered(e)),
+      api.develop.onRendered((e) => {
+        // A draft sent as pixels is shown once they are here (they come on their own port).
+        if (!isFrame(e.url)) return useDevelop.getState().onRendered(e)
+        void whenFrame(e.url).then((bmp) => bmp && useDevelop.getState().onRendered(e))
+      }),
       startWheelMemory(),
       startDenoiseUpkeep(),
       startHdrUpkeep(),

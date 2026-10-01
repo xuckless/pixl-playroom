@@ -10,6 +10,7 @@ import {
   type ViewGeometry
 } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
+import { isFrame, pictureBitmap as framePixels } from '../../lib/frames'
 import { touchInteracting } from '../../lib/interacting'
 import { planePng, rememberPlane } from '../../lib/planes'
 import type { Affine, Dab } from '../../workers/brush.worker'
@@ -197,16 +198,24 @@ export const BrushLayer = memo(function BrushLayer({
       stroke.current = null
       return useLibrary.getState().say(errorText(err), 'error')
     }
-    worker.post({
-      t: 'begin',
-      w: planeW,
-      h: planeH,
-      png,
-      softness: set.softness,
-      erase,
-      picture: set.autoMask ? (d.picture?.url ?? null) : null,
-      toDisplay: affine((q) => baseToDisplay(g, q))
-    })
+    const picture = set.autoMask ? (d.picture?.url ?? null) : null
+    // A preview frame is no file the worker could fetch: its pixels go along.
+    const pictureBitmap =
+      picture && isFrame(picture) ? await framePixels(picture).catch(() => undefined) : undefined
+    worker.post(
+      {
+        t: 'begin',
+        w: planeW,
+        h: planeH,
+        png,
+        softness: set.softness,
+        erase,
+        picture,
+        ...(pictureBitmap ? { pictureBitmap } : {}),
+        toDisplay: affine((q) => baseToDisplay(g, q))
+      },
+      pictureBitmap ? [pictureBitmap] : []
+    )
     const s = stroke.current
     if (!s) return
     s.started = true
