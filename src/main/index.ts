@@ -20,6 +20,7 @@ import { registerIpc } from './ipc'
 import { LensProfileStore } from './lensprofiles'
 import { startLicence } from './licence'
 import { Library } from './library'
+import { OriginalEmbedder } from './project/embed'
 import { buildMenu } from './menu'
 import {
   handOffOpens,
@@ -192,6 +193,11 @@ app.whenReady().then(() => {
   void engine.whenStarted().then(() => setAbout(engine.getStatus().version))
   const library = new Library(index, bgEngine)
   sessions = new DevelopSessions(library, engine, bgEngine)
+  // A photo's new project gets its original carried inside it.
+  const embedder = new OriginalEmbedder(index, library, bgEngine)
+  index.on((e) => {
+    if (e.name === 'project') embedder.request(e.key)
+  })
   const models = new ModelStore(index, () => bgEngine.getStatus())
   const lenses = new LensProfileStore()
   void lenses.start()
@@ -208,6 +214,7 @@ app.whenReady().then(() => {
   )
   registerIpc({
     index,
+    embedder,
     planes,
     library,
     sessions,

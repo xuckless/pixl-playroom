@@ -10,7 +10,7 @@
  */
 import log from 'electron-log/main'
 import { unlink } from 'fs/promises'
-import { basename, dirname, extname, join } from 'path'
+import { basename, extname, join } from 'path'
 import type { EnhanceStep, EnhancerRef, SourceInfo, UpscalerRef } from '../shared/engine-types'
 import { PRESERVE_ALL } from '../shared/engine-types'
 import type { AiStartRequest } from '../shared/ai'
@@ -171,7 +171,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const ids = steps.flatMap((p) => (p.model ? [p.model] : []))
     for (const id of ids)
       if (!(await this.models.installed(id))) throw new ModelMissing(this.models.entry(id))
-    const out = await freeName(dirname(row.path), basename(row.name, extname(row.name)))
+    const out = await freeName(row.folder, basename(row.name, extname(row.name)))
     if (this.engine.getStatus().status === 'starting') {
       this.engine.start()
       await this.engine.whenStarted()
@@ -228,7 +228,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         }
       }
       await this.library.index.seedRecipe(out, recipe)
-      await this.library.openFolder(dirname(row.path))
+      await this.library.openFolder(row.folder)
       return { kind: 'file', path: out }
     } catch (err) {
       // Half a file is no file.

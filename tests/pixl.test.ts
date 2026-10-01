@@ -1,15 +1,30 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync
+} from 'fs'
+import { randomBytes } from 'crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   PIXL_APPLICATION_ID,
   PIXL_FORMAT_VERSION,
+  BLOB_CHUNK,
+  jpegSize,
   PixlFile,
+  sha256File,
   type Origin
 } from '../src/main/project/pixlfile'
+import { planFor } from '../src/main/project/embedplan'
+import type { SourceInfo } from '../src/shared/engine-types'
 import { newProjectPath, projectName, projectsDirFor } from '../src/main/project/locate'
 import { IndexService } from '../src/main/indexer/service'
 import { emptySidecar, sidecarPath } from '../src/main/sidecar'
@@ -246,4 +261,158 @@ test('a project the user deletes lets the photo go back to unedited', async () =
   await settle()
   again.close()
   rmSync(root, { recursive: true })
+})
+
+test('a blob goes in by its hash, in chunks, and comes out whole', () => {
+  const dir = tmp()
+  const p = PixlFile.create(join(dir, 'a.pixl'), origin(dir))
+  const file = join(dir, 'big.bin')
+  writeFileSync(file, randomBytes(BLOB_CHUNK * 2 + 12345))
+  const info = { kind: 'original', codec: 'raw', width: 1, height: 1, channels: null, depth: null }
+  const hash = p.putBlobFile(file, info)
+  assert.equal(hash, sha256File(file))
+  // Stored once, however often it is put.
+  assert.equal(p.putBlobFile(file, info), hash)
+  const out = join(dir, 'out.bin')
+  assert.ok(p.writeBlobTo(hash, out))
+  assert.equal(sha256File(out), hash)
+  assert.equal(p.blob(hash)?.bytes, BLOB_CHUNK * 2 + 12345)
+  // Named by nothing, it goes at the next collection.
+  p.gc()
+  assert.equal(p.blob(hash), null)
+  p.close()
+  rmSync(dir, { recursive: true })
+})
+
+const probed = (input: SourceInfo['input'], more: Partial<SourceInfo> = {}): SourceInfo =>
+  ({ input, gain_map: null, ...more }) as SourceInfo
+
+test('each format is carried as compactly as it can be without losing a bit', () => {
+  const MB = 1024 * 1024
+  assert.equal(planFor('cr3', 30 * MB, probed('Raw')).kind, 'dng')
+  assert.equal(planFor('dng', 30 * MB, probed('Raw')).kind, 'verbatim')
+  assert.equal(planFor('jpg', 5 * MB, probed('Jpeg')).kind, 'jxl-jpeg')
+  assert.equal(
+    planFor('jpg', 5 * MB, probed('Jpeg', { gain_map: {} as SourceInfo['gain_map'] })).kind,
+    'verbatim'
+  )
+  assert.equal(planFor('png', 2 * MB, probed('Png')).kind, 'verbatim')
+  assert.equal(planFor('tif', 60 * MB, probed('Tiff')).kind, 'jxl-lossless')
+  assert.equal(planFor('heic', 3 * MB, probed('Heif')).kind, 'verbatim')
+  // A DNG holds the camera's EXIF only; everything else keeps all of it.
+  assert.equal(planFor('cr3', 30 * MB, probed('Raw')).metadata.icc, false)
+  assert.equal(planFor('jpg', 5 * MB, probed('Jpeg')).metadata.icc, true)
+})
+
+test('a JPEG preview knows its size', () => {
+  // SOI, APP0 (len 4), SOF0 with 300 high × 400 wide.
+  const b = Uint8Array.from([
+    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x01, 0x2c, 0x01,
+    0x90, 0x03, 0x00, 0x00, 0x00, 0x00
+  ])
+  assert.deepEqual(jpegSize(b), { width: 400, height: 300 })
+  assert.equal(jpegSize(Uint8Array.from([1, 2, 3])), null)
+})
+
+/** An index over a folder of stand-in photos, with a project for `a.jpg` carrying its original. */
+async function withProject(location?: unknown): Promise<{
+  root: string
+  folder: string
+  index: IndexService
+  key: string
+  project: string
+  done(): Promise<void>
+}> {
+  const root = tmp()
+  const folder = join(root, 'photos')
+  mkdirSync(folder)
+  writeFileSync(join(folder, 'a.jpg'), 'the original bytes')
+  writeFileSync(join(folder, 'b.jpg'), 'another photo')
+  const index = new IndexService({ userData: join(root, 'ud'), emit: () => {}, xmp: noXmp })
+  if (location !== undefined) index.setSetting('projects.location', location)
+  const items = await index.listFolder(folder)
+  const key = items.find((i) => i.name === 'a.jpg')!.key
+  const r = defaultRecipe(false)
+  r.basic.exposure = 0.8
+  index.saveRecipe(key, r)
+  index.putOriginal(key, join(folder, 'a.jpg'), 'verbatim', {
+    codec: 'jpg',
+    width: 1,
+    height: 1,
+    note: null
+  })
+  return {
+    root,
+    folder,
+    index,
+    key,
+    project: index.projectPath(key)!,
+    done: async () => {
+      await settle()
+      index.close()
+      rmSync(root, { recursive: true })
+    }
+  }
+}
+
+test('a photo whose file is gone develops from the copy its project carries', async () => {
+  const f = await withProject()
+  assert.equal(f.index.originalState(f.key).state, 'ready')
+  const before = f.index.sourceRow(f.key)
+  assert.equal(before.embedded, undefined)
+  assert.equal(before.seed_path, join(f.folder, 'a.jpg'))
+  rmSync(join(f.folder, 'a.jpg'))
+  const row = f.index.sourceRow(f.key)
+  assert.ok(row.embedded)
+  assert.equal(readFileSync(row.embedded!.path, 'utf8'), 'the original bytes')
+  // The grain stays where it was.
+  assert.equal(row.seed_path, join(f.folder, 'a.jpg'))
+  await f.done()
+})
+
+test('a project whose photo is gone stands in for it in the library', async () => {
+  const f = await withProject()
+  rmSync(join(f.folder, 'a.jpg'))
+  await f.index.rescan(f.folder)
+  const items = f.index.items(f.folder)
+  const a = items.find((i) => i.name === 'a.jpg')
+  assert.ok(a, 'the photo is still listed')
+  assert.equal(a!.path, f.project)
+  assert.equal(a!.project, f.project)
+  assert.equal(a!.edited, true)
+  assert.equal(f.index.recipe(a!.key).basic.exposure, 0.8)
+  assert.equal(readFileSync(f.index.sourceRow(a!.key).embedded!.path, 'utf8'), 'the original bytes')
+  // The photo comes back: it is the photo again, with its project.
+  writeFileSync(join(f.folder, 'a.jpg'), 'the original bytes')
+  await f.index.rescan(f.folder)
+  const back = f.index.items(f.folder).filter((i) => i.name === 'a.jpg')
+  assert.equal(back.length, 1)
+  assert.equal(back[0].path, join(f.folder, 'a.jpg'))
+  assert.equal(back[0].project, f.project)
+  await f.done()
+})
+
+test('a photo moved away from its project in a projects folder finds it again', async () => {
+  const root = tmp()
+  const f = await withProject({ folder: join(root, 'projects') })
+  assert.ok(f.project.startsWith(join(root, 'projects')))
+  const elsewhere = join(f.root, 'moved')
+  mkdirSync(elsewhere)
+  renameSync(join(f.folder, 'a.jpg'), join(elsewhere, 'a.jpg'))
+  const items = await f.index.listFolder(elsewhere)
+  const a = items.find((i) => i.name === 'a.jpg')!
+  assert.equal(a.project, f.project)
+  assert.equal(f.index.recipe(a.key).basic.exposure, 0.8)
+  // The project now names where the photo is.
+  assert.equal(PixlFile.peekOrigin(f.project)?.path, join(elsewhere, 'a.jpg'))
+  await f.done()
+  rmSync(root, { recursive: true })
+})
+
+test('opening a .pixl opens its photo', async () => {
+  const f = await withProject()
+  const { folder, keys } = await f.index.resolvePaths([f.project])
+  assert.equal(folder, f.folder)
+  assert.deepEqual(keys, [f.key])
+  await f.done()
 })

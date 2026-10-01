@@ -86,12 +86,29 @@ mac:
     NSDesktopFolderUsageDescription: Pixl Playroom opens folders of photos you choose.
     NSDocumentsFolderUsageDescription: Pixl Playroom opens folders of photos you choose.
     NSDownloadsFolderUsageDescription: Pixl Playroom opens folders of photos you choose.
+    # The .pixl project type, declared as Playroom's (docs/pixl-format.md): a
+    # SQLite database, so it conforms to public.data and public.database.
+    UTExportedTypeDeclarations:
+      - UTTypeIdentifier: com.xuckless.pixlplayroom.project
+        UTTypeDescription: Pixl Playroom project
+        UTTypeConformsTo: [public.data, public.database, public.content]
+        UTTypeIconFile: pixl.icns
+        UTTypeTagSpecification:
+          public.filename-extension: [pixl]
+          public.mime-type: [application/vnd.pixl.project]
   # Finder's "Open With" lists Playroom for every format it reads, with the
   # document icons from scripts/doc-icons.mjs. `rank: Alternate` on purpose:
   # Playroom never makes itself the default app for a photo. Windows gets the
   # same through build/installer.nsh (electron-builder's own NSIS
   # associations would claim the default).
   fileAssociations:
+    # Playroom's own project file: it owns this one (the default app for it),
+    # unlike the photo formats below. Its UTI is exported in `extendInfo`.
+    - name: Pixl Playroom project
+      ext: pixl
+      role: Editor
+      rank: Owner
+      icon: doc-icons/pixl
     - name: Camera RAW image
       # prettier-ignore
       ext: [cr2, cr3, crw, arw, srf, sr2, nef, nrw, raf, rw2, orf, pef, srw, mrw, 3fr, iiq, erf, kdc, x3f]

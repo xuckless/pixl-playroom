@@ -51,6 +51,15 @@ export interface PhotoRow {
   /** The photo's `.pixl` project (the truth about its edits once it has one), and its mtime as mirrored. */
   project_path: string | null
   project_mtime: number | null
+  /**
+   * Not columns: what the index adds for whoever reads the original
+   * (`IndexService.sourceRow`). `seed_path` is the path a grain seed hashes
+   * (the photo's path when its project was made, so grain survives a move);
+   * `embedded` is where the project's own copy of the original was written
+   * out, when the file itself is gone.
+   */
+  seed_path?: string
+  embedded?: { path: string; codec: string } | null
 }
 
 export interface CopyRow {
@@ -224,7 +233,17 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   (db) => addColumns(db, 'photos', { hdr: 'TEXT', hdr_key: 'TEXT' }),
   // 4. A photo's `.pixl` project, once it has one: where it is, and its
   // modification time as last mirrored (like a sidecar's).
-  (db) => addColumns(db, 'photos', { project_path: 'TEXT', project_mtime: 'REAL' })
+  (db) => addColumns(db, 'photos', { project_path: 'TEXT', project_mtime: 'REAL' }),
+  // 5. Every project the index has seen, with the photo it was made from: how
+  // a photo that moved away from its project (in a projects folder) finds it.
+  (db) =>
+    db.exec(`CREATE TABLE IF NOT EXISTS projects (
+      path TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      origin_path TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS projects_name ON projects(name, size);`)
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -611,6 +630,29 @@ export class Store {
       meta.edited ? 1 : 0,
       id
     )
+  }
+
+  /** Remember a project and the photo it names (see migration 5). */
+  registerProject(path: string, name: string, size: number, originPath: string): void {
+    this.prepare(
+      `INSERT INTO projects(path, name, size, origin_path) VALUES (?, ?, ?, ?)
+       ON CONFLICT(path) DO UPDATE SET name = excluded.name, size = excluded.size, origin_path = excluded.origin_path`
+    ).run(path, name, size, originPath)
+  }
+
+  /** Projects made from a photo of this name and size. */
+  projectsNamed(name: string, size: number): { path: string; origin_path: string }[] {
+    return this.prepare('SELECT path, origin_path FROM projects WHERE name = ? AND size = ?').all(
+      name,
+      size
+    ) as { path: string; origin_path: string }[]
+  }
+
+  /** The photos a project is tied to. */
+  photosWithProject(path: string): PhotoRow[] {
+    return this.prepare('SELECT * FROM photos WHERE project_path = ?').all(
+      path
+    ) as unknown as PhotoRow[]
   }
 
   setProject(id: number, path: string | null, mtime: number | null): void {

@@ -139,13 +139,61 @@ Each item's edit history.
 One row (`id = 1`): a JPEG of the photo as developed (`jpeg`), `width` and
 `height` (0 when not recorded), and `updated_at`.
 
-### Reserved for later versions
+### `blobs` and `blob_chunks`
 
-`original`, `blobs` and `blob_chunks` exist and are empty in version 1. They
-will hold the embedded original and stored pixel results:
+Large binaries, stored once by content.
 
-- blobs are content-addressed by hash;
-- they are stored in chunks of at most 4 MiB, in standard codecs (DNG, JXL, PNG).
+| `blobs` column      | meaning                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `hash`              | SHA-256 of the bytes, lower-case hex (the blob's name)                                                       |
+| `kind`              | what it is: `original` (later also `pixels`, `mask`)                                                         |
+| `codec`             | how the bytes are encoded: `dng`, `jxl-jpeg`, `jxl`, or the original's own extension (`jpg`, `cr3`, `heic`…) |
+| `width`, `height`   | its pixel size when known (a JPEG XL reports it turned by the orientation)                                   |
+| `channels`, `depth` | when known                                                                                                   |
+| `bytes`             | its length                                                                                                   |
+| `created_at`        | ISO 8601 time                                                                                                |
+
+`blob_chunks(hash, idx, data)` holds the bytes:
+
+- in order of `idx` from 0;
+- each chunk at most 4 MiB (`data` is a BLOB);
+- a reader concatenates the chunks.
+
+A blob nothing names may be removed. Names are `original.blob`, and any
+`"blob"` or `"alpha"` field holding a 64-hex hash in a recipe or history row.
+
+### `original`
+
+One row (`id = 1`): the original as the project carries it, so the project
+needs nothing outside itself.
+
+| column  | meaning                                                     |
+| ------- | ----------------------------------------------------------- |
+| `kind`  | how it is kept (below)                                      |
+| `blob`  | the `blobs.hash` holding it, or NULL while it is being made |
+| `state` | `pending`, `ready` or `failed`                              |
+| `note`  | why it was kept as it is, or why it failed                  |
+
+| `kind`         | made from                                                                                              | how to get the original back                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `dng`          | a camera RAW                                                                                           | the blob is a DNG with lossless JPEG-92 pixels (Adobe's converter's kind); it _is_ the photo's raw data, not its file           |
+| `jxl-jpeg`     | a JPEG                                                                                                 | the blob is a JPEG XL repack; reconstructing the JPEG from it gives the original file byte for byte (checked before it is kept) |
+| `jxl-lossless` | a PNG or TIFF of 5 MB or more                                                                          | the blob is mathematically lossless JPEG XL with the same pixels and metadata                                                   |
+| `verbatim`     | anything else, a DNG, a JPEG with a gain map, or a conversion that came out larger or failed its check | the blob is the original file's own bytes                                                                                       |
+
+## The photo and its project
+
+A project ties itself to its photo by `origin.name`, among the images in the
+folder beside it (or in the folder its projects subfolder belongs to).
+
+- **The photo is there:** it is read from its own file.
+- **The photo is gone:** the project stands in for it. It is listed as the
+  photo, and develops and exports from the original it carries.
+- **The photo comes back:** it takes its place again.
+- **The photo moved away from a project kept in a projects folder:** it is found
+  again by its name and size, and `origin.path` is updated.
+- **Grain:** the grain and dither seeds hash `origin.path` as it was when the
+  project was made, so a photo's grain does not change when it moves.
 
 ## Recipes
 

@@ -8,7 +8,7 @@
 import { BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
 import { mkdir } from 'fs/promises'
-import { basename, dirname, extname, join } from 'path'
+import { basename, extname, join } from 'path'
 import { compile, framingWarps, orientedFrame } from '../shared/compile'
 import type { ConvertRequest, Dither } from '../shared/engine-types'
 import {
@@ -29,7 +29,6 @@ import {
   type ExportSettings
 } from '../shared/export'
 import { IPC, type ExportProgress } from '../shared/ipc'
-import { hash32 } from '../shared/recipe'
 import { brushPlanes } from './brushes'
 import { embedMetadata } from './exiftool'
 import { exists } from './exists'
@@ -51,7 +50,8 @@ import {
   RAW_DEVELOP,
   sourceOrientation,
   uprightFraming,
-  INTERACTIVE_THREADS
+  INTERACTIVE_THREADS,
+  seedOf
 } from './source'
 
 interface Job {
@@ -189,7 +189,7 @@ export class Exporter {
       frameWidth: frameW,
       frameHeight: frameH,
       scale: 1,
-      seed: hash32(row.path),
+      seed: seedOf(row),
       brushPaths: await brushPlanes(row.id, recipe, user),
       applyCrop: true,
       aiDenoised: denoised,
@@ -199,7 +199,8 @@ export class Exporter {
     const ch = Math.round((compiled.crop?.height ?? 1) * height)
     const { encode, depth } = buildEncode(s, INTERACTIVE_THREADS, hdrOut)
 
-    const folder = s.folder ?? dirname(row.path)
+    // Beside the photo: where it is listed (its copy may be the project's own).
+    const folder = s.folder ?? row.folder
     const target = s.subfolder ? join(folder, s.subfolder) : folder
     await mkdir(target, { recursive: true })
     const stem = expandTemplate(s.template, {
@@ -281,7 +282,7 @@ export class Exporter {
       (resize !== 'None' && !hdrKeep) ||
       (typeof color === 'object' && ('ToneMap' in color || 'Expand' in color))
     const dither: Dither =
-      s.dither && depth === 'Eight' ? { TriangularNoise: { seed: hash32(row.path) } } : 'None'
+      s.dither && depth === 'Eight' ? { TriangularNoise: { seed: seedOf(row) } } : 'None'
     const plan = metadataPlan(s, item ?? null)
     const request: ConvertRequest = {
       ...(master

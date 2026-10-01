@@ -8,7 +8,8 @@ import { readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { extname, isAbsolute, join, resolve, sep } from 'path'
 import { IMAGE_EXTENSIONS } from './source'
 
-const OPENABLE = new Set(IMAGE_EXTENSIONS)
+// Photos, and Playroom's own projects (a .pixl opens as its photo).
+const OPENABLE = new Set([...IMAGE_EXTENSIONS, 'pixl'])
 
 /**
  * The photos and folders among a launch's arguments. `skip` drops the

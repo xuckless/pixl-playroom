@@ -12,7 +12,17 @@
  * up, and must never leave `-wal`/`-shm` files beside it. Only the index
  * process opens projects; see `ProjectPool` for how it keeps them.
  */
-import { existsSync, renameSync, statSync, unlinkSync } from 'fs'
+import { createHash } from 'crypto'
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeSync
+} from 'fs'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import type { ColorLabel, Flag, Snapshot } from '../../shared/ipc'
 import { hydrateRecipe, normaliseRecipe, slimRecipe, type Recipe } from '../../shared/recipe'
@@ -93,6 +103,59 @@ export interface Origin {
   path: string
   isRaw: boolean
   sha1: string | null
+}
+
+/** Blobs are stored in chunks of this many bytes. */
+export const BLOB_CHUNK = 4 * 1024 * 1024
+
+export interface BlobInfo {
+  /** SHA-256 of the bytes, hex. */
+  hash: string
+  /** What it is: `original`, and later `pixels`, `mask`… */
+  kind: string
+  /** How the bytes are encoded: `jpeg`, `jxl`, `jxl-jpeg` (a bit-exact JPEG repack), `dng`, `raw`, `png`, `tiff`… */
+  codec: string
+  width: number | null
+  height: number | null
+  channels: number | null
+  depth: number | null
+  bytes: number
+}
+
+/**
+ * The original carried inside the project. `kind` is how: `verbatim` (its own
+ * bytes), `dng` (a RAW as lossless DNG), `jxl-jpeg` (a JPEG repacked into JPEG
+ * XL, bit-exact and reversible), `jxl-lossless` (PNG, TIFF). `state` is
+ * `pending` while it is being made and `ready` once `blob` holds it.
+ */
+export interface EmbeddedOriginal {
+  kind: 'verbatim' | 'dng' | 'jxl-jpeg' | 'jxl-lossless'
+  blob: string | null
+  state: 'pending' | 'ready' | 'failed'
+  note: string | null
+}
+
+/** The SHA-256 of a file, hex, read in pieces. */
+export function sha256File(file: string): string {
+  const h = createHash('sha256')
+  const fd = openSync(file, 'r')
+  try {
+    const buf = Buffer.alloc(1024 * 1024)
+    for (
+      let n = readSync(fd, buf, 0, buf.length, null);
+      n > 0;
+      n = readSync(fd, buf, 0, buf.length, null)
+    )
+      h.update(buf.subarray(0, n))
+  } finally {
+    closeSync(fd)
+  }
+  return h.digest('hex')
+}
+
+/** The blob hashes a JSON text names (`"blob":"<sha256>"`, `"alpha":"<sha256>"`). */
+export function blobsIn(json: string): string[] {
+  return [...json.matchAll(/"(?:blob|alpha)":"([0-9a-f]{64})"/g)].map((m) => m[1])
 }
 
 /** The photo's own item; a virtual copy's id otherwise. */
@@ -403,6 +466,123 @@ export class PixlFile {
     }>
   }
 
+  // ── blobs: large binaries, by content (the original; later, pixel results) ──
+
+  blob(hash: string): BlobInfo | null {
+    const r = this.prepare('SELECT * FROM blobs WHERE hash = ?').get(hash) as
+      | {
+          hash: string
+          kind: string
+          codec: string
+          width: number | null
+          height: number | null
+          channels: number | null
+          depth: number | null
+          bytes: number
+        }
+      | undefined
+    return r
+      ? {
+          hash: r.hash,
+          kind: r.kind,
+          codec: r.codec,
+          width: r.width,
+          height: r.height,
+          channels: r.channels,
+          depth: r.depth,
+          bytes: r.bytes
+        }
+      : null
+  }
+
+  /**
+   * Store a file as a blob, by its SHA-256, in chunks of `BLOB_CHUNK` (one is
+   * never read whole into memory, and a sync service diffs pages, not the
+   * project). A blob already there is not stored again. Returns its hash.
+   */
+  putBlobFile(file: string, info: Omit<BlobInfo, 'hash' | 'bytes'>): string {
+    const hash = sha256File(file)
+    if (this.blob(hash)) return hash
+    const size = statSync(file).size
+    const fd = openSync(file, 'r')
+    try {
+      this.tx(() => {
+        const put = this.prepare('INSERT INTO blob_chunks(hash, idx, data) VALUES (?, ?, ?)')
+        const buf = Buffer.alloc(Math.min(BLOB_CHUNK, Math.max(1, size)))
+        for (let idx = 0, at = 0; at < size; idx++) {
+          const n = readSync(fd, buf, 0, buf.length, at)
+          put.run(hash, idx, buf.subarray(0, n))
+          at += n
+        }
+        this.prepare(
+          `INSERT INTO blobs(hash, kind, codec, width, height, channels, depth, bytes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          hash,
+          info.kind,
+          info.codec,
+          info.width,
+          info.height,
+          info.channels,
+          info.depth,
+          size,
+          new Date().toISOString()
+        )
+      })
+    } finally {
+      closeSync(fd)
+    }
+    return hash
+  }
+
+  /** Write a blob out to `file` (whole, or not at all). False when there is no such blob. */
+  writeBlobTo(hash: string, file: string): boolean {
+    if (!this.blob(hash)) return false
+    const tmp = `${file}.part-${process.pid}`
+    const fd = openSync(tmp, 'w')
+    try {
+      for (const { data } of this.prepare(
+        'SELECT data FROM blob_chunks WHERE hash = ? ORDER BY idx'
+      ).iterate(hash) as Iterable<{ data: Uint8Array }>)
+        writeSync(fd, data)
+    } finally {
+      closeSync(fd)
+    }
+    renameSync(tmp, file)
+    return true
+  }
+
+  removeBlob(hash: string): void {
+    this.tx(() => {
+      this.prepare('DELETE FROM blob_chunks WHERE hash = ?').run(hash)
+      this.prepare('DELETE FROM blobs WHERE hash = ?').run(hash)
+    })
+  }
+
+  // ── the original, embedded ──
+
+  /** The embedded original, if the project carries one (or is making it). */
+  original(): EmbeddedOriginal | null {
+    const r = this.prepare('SELECT kind, blob, state, note FROM original WHERE id = 1').get() as
+      { kind: string; blob: string | null; state: string; note: string | null } | undefined
+    return r
+      ? {
+          kind: r.kind as EmbeddedOriginal['kind'],
+          blob: r.blob,
+          state: r.state as EmbeddedOriginal['state'],
+          note: r.note
+        }
+      : null
+  }
+
+  setOriginal(o: EmbeddedOriginal): void {
+    this.prepare(
+      `INSERT INTO original(id, kind, blob, state, note) VALUES (1, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, blob = excluded.blob,
+         state = excluded.state, note = excluded.note`
+    ).run(o.kind, o.blob, o.state, o.note)
+  }
+
   setPreview(jpeg: Uint8Array, width: number, height: number): void {
     this.prepare(
       `INSERT INTO preview(id, width, height, jpeg, updated_at) VALUES (1, ?, ?, ?, ?)
@@ -424,6 +604,15 @@ export class PixlFile {
       for (const ref of refsIn(`${r.recipe ?? ''} ${r.snapshots}`)) keep.add(ref)
     }
     for (const json of this.history.json()) for (const ref of refsIn(json)) keep.add(ref)
+    // Blobs nothing names: neither the original nor (later) a pixel step.
+    const named = new Set<string>()
+    const o = this.original()
+    if (o?.blob) named.add(o.blob)
+    for (const json of this.history.json()) for (const h of blobsIn(json)) named.add(h)
+    for (const r of this.prepare('SELECT recipe FROM items').all() as { recipe: string | null }[])
+      for (const h of blobsIn(r.recipe ?? '')) named.add(h)
+    for (const { hash } of this.prepare('SELECT hash FROM blobs').all() as { hash: string }[])
+      if (!named.has(hash)) this.removeBlob(hash)
     let removed = 0
     this.tx(() => {
       for (const { ref } of this.prepare('SELECT ref FROM planes').all() as { ref: string }[]) {
@@ -494,4 +683,20 @@ export class ProjectPool {
       this.open.delete(p)
     }
   }
+}
+
+/** A JPEG's pixel size, from its first frame header; null when it is not one. */
+export function jpegSize(b: Uint8Array): { width: number; height: number } | null {
+  if (b[0] !== 0xff || b[1] !== 0xd8) return null
+  let i = 2
+  while (i + 9 < b.length) {
+    if (b[i] !== 0xff) return null
+    const marker = b[i + 1]
+    const len = (b[i + 2] << 8) | b[i + 3]
+    // SOF0…SOF15, but not DHT (C4), JPG (C8) or DAC (CC).
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc)
+      return { height: (b[i + 5] << 8) | b[i + 6], width: (b[i + 7] << 8) | b[i + 8] }
+    i += 2 + len
+  }
+  return null
 }

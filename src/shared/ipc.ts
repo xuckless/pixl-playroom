@@ -77,6 +77,7 @@ export const IPC = {
     openSource: 'library:open-source',
     /** Files → their folder and item keys (indexing the folder if new). */
     resolvePaths: 'library:resolve-paths',
+    projectInfo: 'library:project-info',
     setMetadata: 'library:set-metadata',
     keywordTree: 'library:keyword-tree',
     collections: 'library:collections',
@@ -369,6 +370,14 @@ export interface MetaPatch {
 }
 
 // ── Develop ──────────────────────────────────────────────────────────────────
+
+/** What a photo's `.pixl` project carries of its original (Info pane). */
+export interface ProjectInfo {
+  project: string | null
+  state: 'none' | 'pending' | 'ready' | 'failed'
+  kind: string | null
+  bytes: number | null
+}
 
 export interface Snapshot {
   id: string

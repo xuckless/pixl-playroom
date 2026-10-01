@@ -15,7 +15,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { compile } from '../shared/compile'
 import { dhashFromGrey } from '../shared/dupes'
-import type { SourceInfo } from '../shared/engine-types'
+import { PRESERVE_ALL, type SourceInfo } from '../shared/engine-types'
 import {
   IPC,
   type HdrKind,
@@ -36,7 +36,13 @@ import { editsHdr, ensureHdrSource } from './hdrsource'
 import { ensureProxies } from './proxy'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
-import { BACKGROUND_THREADS, blankRequest, displayPolicy, sourceOrientation } from './source'
+import {
+  BACKGROUND_THREADS,
+  blankRequest,
+  displayPolicy,
+  seedOf,
+  sourceOrientation
+} from './source'
 
 export { keyOf, parseKey } from './keys'
 
@@ -59,6 +65,8 @@ interface ThumbJob {
 
 export class Library {
   private probes = new Map<string, SourceInfo>()
+  /** JPEGs being rebuilt from a project's JPEG XL repack, by where they go. */
+  private rebuilding = new Map<string, Promise<void>>()
   private queue: ThumbJob[] = []
   private queued = new Set<string>()
   private running = 0
@@ -200,8 +208,40 @@ export class Library {
     return this.index.item(key)
   }
 
-  photoRow(key: string): Promise<PhotoRow> {
-    return this.index.row(key)
+  /** The photo's row, its path a file that can be read (see `readable`). */
+  async photoRow(key: string): Promise<PhotoRow> {
+    return this.readable(await this.index.sourceRow(key))
+  }
+
+  /**
+   * A row (from `sourceRow`, `openData` or `thumbJob`) whose path is a file
+   * the engine can read: the photo itself, or, when it is gone, the copy its
+   * project carries. A JPEG the project keeps repacked into JPEG XL is
+   * rebuilt into the very JPEG it was, byte for byte, once.
+   */
+  async readable(row: PhotoRow): Promise<PhotoRow> {
+    const e = row.embedded
+    if (e === undefined) return row
+    if (e === null)
+      throw new Error(`${row.name} is missing, and its project does not carry a copy of it yet`)
+    if (e.codec !== 'jxl-jpeg') return { ...row, path: e.path }
+    const jpg = e.path.replace(/\.jxl$/i, '.jpg')
+    if (!existsSync(jpg)) {
+      let made = this.rebuilding.get(jpg)
+      if (!made) {
+        made = this.engine
+          .convert({
+            ...blankRequest(e.path, jpg, 'Jxl'),
+            encode: 'JpegFromJxl',
+            metadata: PRESERVE_ALL
+          })
+          .then(() => undefined)
+          .finally(() => this.rebuilding.delete(jpg))
+        this.rebuilding.set(jpg, made)
+      }
+      await made
+    }
+    return { ...row, path: jpg }
   }
 
   recipe(key: string): Promise<Recipe> {
@@ -258,7 +298,8 @@ export class Library {
   private async thumb(job: ThumbJob): Promise<void> {
     const work = await this.index.thumbJob(job.photoId, job.copyId)
     if (!work) return
-    const { row, recipe, edited, stamp } = work
+    const { recipe, edited, stamp } = work
+    const row = await this.readable(work.row)
     const key = keyOf(row.id, job.copyId)
     const raw = row.is_raw === 1
 
@@ -347,7 +388,7 @@ export class Library {
       frameWidth: px.frameWidth,
       frameHeight: px.frameHeight,
       scale: src.width / px.frameWidth,
-      seed: hash32(row.path),
+      seed: seedOf(row),
       brushPaths: await brushPlanes(row.id, recipe, user),
       applyCrop: true,
       aiDenoised: aiOn,

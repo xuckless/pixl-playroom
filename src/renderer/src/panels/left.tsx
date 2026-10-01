@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { dependents, patchSummary, prerequisites, type Step } from '../../../shared/history'
-import type { Preset } from '../../../shared/ipc'
+import type { Preset, ProjectInfo } from '../../../shared/ipc'
 import { applyGroups } from '../../../shared/recipe'
 import { wbFromSaved } from '../../../shared/wbconvert'
 import { Icon } from '../components/icons'
@@ -299,6 +299,57 @@ function fmtShutter(t: number | null): string {
   return t >= 1 ? `${t}s` : `1/${Math.round(1 / t)}s`
 }
 
+const ORIGINAL_KIND: Record<string, string> = {
+  dng: 'lossless DNG',
+  'jxl-jpeg': 'JPEG repacked in JPEG XL (bit-exact)',
+  'jxl-lossless': 'lossless JPEG XL',
+  verbatim: 'as it is'
+}
+
+/** The photo's project, and the copy of its original it carries. */
+function ProjectRows({ sessionKey }: { sessionKey: string }): React.JSX.Element | null {
+  const [info, setInfo] = useState<ProjectInfo | null>(null)
+  useEffect(() => {
+    let live = true
+    const load = (): void =>
+      void api.library
+        .projectInfo(sessionKey)
+        .then((i) => live && setInfo(i))
+        .catch(() => undefined)
+    load()
+    // The original is embedded in the background: look again while it is.
+    const t = setInterval(load, 4000)
+    return () => {
+      live = false
+      clearInterval(t)
+    }
+  }, [sessionKey])
+  if (!info?.project) return null
+  const original =
+    info.state === 'ready'
+      ? `${ORIGINAL_KIND[info.kind ?? ''] ?? info.kind}${
+          info.bytes ? ` · ${(info.bytes / 1024 / 1024).toFixed(1)} MB` : ''
+        }`
+      : info.state === 'failed'
+        ? 'could not be embedded'
+        : 'being embedded…'
+  return (
+    <>
+      <dt>Project</dt>
+      <dd title={info.project}>
+        <button
+          className="link"
+          onClick={() => void api.app.reveal(info.project!).catch(() => undefined)}
+        >
+          {info.project.split(/[\\/]/).pop()}
+        </button>
+      </dd>
+      <dt>Original</dt>
+      <dd>{original}</dd>
+    </>
+  )
+}
+
 export function InfoPane(): React.JSX.Element {
   const session = useDevelop((s) => s.session)
   if (!session) return <p className="rail-empty">Open a photo to see its details.</p>
@@ -347,6 +398,7 @@ export function InfoPane(): React.JSX.Element {
         <dd>
           {session.proxyWidth} × {session.proxyHeight}
         </dd>
+        <ProjectRows sessionKey={session.key} />
       </dl>
       <button
         className="sm"

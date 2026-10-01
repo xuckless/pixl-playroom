@@ -90,7 +90,8 @@ import {
   INTERACTIVE_THREADS,
   orientOnly,
   RAW_DEVELOP,
-  sourceOrientation
+  sourceOrientation,
+  seedOf
 } from './source'
 
 type Kind = 'draft' | 'full'
@@ -251,7 +252,7 @@ class Session {
       frameWidth: px.frameWidth,
       frameHeight: px.frameHeight,
       scale: source.width / px.frameWidth,
-      seed: hash32(this.row.path),
+      seed: seedOf(this.row),
       brushPaths: await brushPlanes(this.row.id, recipe, user),
       applyCrop,
       hdr: this.info.is_hdr,
@@ -980,7 +981,7 @@ class Session {
       frameWidth: this.px.frameWidth,
       frameHeight: this.px.frameHeight,
       scale: zoom,
-      seed: hash32(this.row.path),
+      seed: seedOf(this.row),
       brushPaths: await brushPlanes(this.row.id, this.recipe, user),
       applyCrop: false,
       hdr: this.info.is_hdr,
@@ -1363,7 +1364,10 @@ export class DevelopSessions {
         this.sessions.delete(k)
       }
     }
-    const { row, recipe, item, snapshots } = await this.library.index.openData(key)
+    const data = await this.library.index.openData(key)
+    const { recipe, item, snapshots } = data
+    // The original, or the copy its project carries when it is gone.
+    const row = await this.library.readable(data.row)
     const info = await this.library.probe(row)
     // A gain-map photo edited as HDR opens on its applied rendition.
     const hdr = editsHdr(recipe, info) ? await ensureHdrSource(this.engine, row, info) : null
@@ -1390,7 +1394,7 @@ export class DevelopSessions {
       proxyHeight: px.proxy.height,
       recipe: session.recipe,
       snapshots,
-      seed: hash32(row.path)
+      seed: seedOf(row)
     }
   }
 

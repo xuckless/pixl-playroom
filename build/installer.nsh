@@ -67,6 +67,11 @@
 !macroend
 
 !macro customInstall
+  ; .pixl is Playroom's own project file: Playroom is its default app.
+  !insertmacro playroomProgId PIXL pixl "Pixl Playroom project"
+  WriteRegStr HKCU "${PLAYROOM_CLASSES}\.pixl" "" "PixlPlayroom.PIXL"
+  WriteRegStr HKCU "${PLAYROOM_CLASSES}\.pixl" "Content Type" "application/vnd.pixl.project"
+  !insertmacro playroomExt pixl PIXL
   !insertmacro playroomProgId RAW raw "Camera RAW image"
   !insertmacro playroomProgId DNG dng "DNG image"
   !insertmacro playroomProgId JPG jpg "JPEG image"
@@ -85,6 +90,11 @@
 
 !macro customUnInstall
   !insertmacro playroomExtensions playroomUnExt
+  !insertmacro playroomUnExt pixl PIXL
+  ReadRegStr $0 HKCU "${PLAYROOM_CLASSES}\.pixl" ""
+  StrCmp $0 "PixlPlayroom.PIXL" 0 +2
+    DeleteRegValue HKCU "${PLAYROOM_CLASSES}\.pixl" ""
+  DeleteRegKey HKCU "${PLAYROOM_CLASSES}\PixlPlayroom.PIXL"
   DeleteRegKey HKCU "${PLAYROOM_CLASSES}\PixlPlayroom.RAW"
   DeleteRegKey HKCU "${PLAYROOM_CLASSES}\PixlPlayroom.DNG"
   DeleteRegKey HKCU "${PLAYROOM_CLASSES}\PixlPlayroom.JPG"

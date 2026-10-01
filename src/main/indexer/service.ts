@@ -68,9 +68,12 @@ import {
 import {
   fileStamp,
   itemKeyOf,
+  jpegSize,
+  PIXL_EXT,
   PixlFile,
   ProjectPool,
   refsIn,
+  type EmbeddedOriginal,
   type Origin
 } from '../project/pixlfile'
 import { IMAGE_EXTENSIONS, isRawExt, versionStamp } from '../source'
@@ -307,8 +310,9 @@ export class IndexService {
         return n
       })
     }
+    // Projects first: one whose photo is gone keeps its place as the photo.
+    changed += this.store.tx(() => this.linkProjects(folder, present))
     changed += this.store.tx(() => this.store.removeMissing(folder, present))
-    changed += this.store.tx(() => this.linkProjects(folder))
     return changed
   }
 
@@ -344,32 +348,87 @@ export class IndexService {
 
   /**
    * Find the folder's projects (beside its photos and in the projects
-   * folders) and tie each to its photo by name; let go of projects that are
-   * gone. A photo's project is read into the index when it changed.
-   * Returns how many photos changed.
+   * folders) and tie each to its photo by name.
+   *
+   * - A project whose photo is not in the folder (moved, deleted) stands in
+   *   for it: it is listed as the photo, developed from the original it
+   *   carries. Its path joins `present`.
+   * - A photo with no project here looks for one made from a photo of its
+   *   name and size whose original is gone (it moved away from its project).
+   * - A photo whose project went has only what a sidecar says again.
+   *
+   * A photo's project is read into the index when it changed. Returns how
+   * many photos changed.
    */
-  private linkProjects(folder: string): number {
+  private linkProjects(folder: string, present: Set<string>): number {
     const rows = this.store.photosIn(folder)
-    const byName = new Map(rows.map((r) => [r.name, r]))
+    const photos = rows.filter((r) => present.has(r.path))
+    const byName = new Map(photos.map((r) => [r.name, r]))
     let n = 0
     const claimed = new Set<number>()
+    const taken = new Set<string>()
+    const link = (row: PhotoRow, path: string): void => {
+      claimed.add(row.id)
+      taken.add(path)
+      if (row.project_path !== path) {
+        this.store.setProject(row.id, path, null)
+        row.project_path = path
+        row.project_mtime = null
+      }
+      if (this.syncProject(row)) n++
+    }
+    const orphans: { path: string; origin: Origin }[] = []
     for (const dir of projectDirsFor(folder, this.projectRoots())) {
       for (const path of projectFilesIn(dir)) {
         const origin = this.originOf(path)
-        const row = origin ? byName.get(origin.name) : undefined
-        if (!row || claimed.has(row.id)) continue
+        if (!origin) continue
+        this.store.registerProject(path, origin.name, origin.size, origin.path)
+        const row = byName.get(origin.name)
+        if (!row) {
+          orphans.push({ path, origin })
+          continue
+        }
+        if (claimed.has(row.id)) continue
         // A photo keeps the project it has while that is still there.
         if (row.project_path && row.project_path !== path && existsSync(row.project_path)) continue
-        claimed.add(row.id)
-        if (row.project_path !== path) {
-          this.store.setProject(row.id, path, null)
-          row.project_path = path
-          row.project_mtime = null
-        }
-        if (this.syncProject(row)) n++
+        link(row, path)
       }
     }
-    for (const row of rows) {
+    // Photos that moved away from their projects (in a projects folder).
+    for (const row of photos) {
+      if (claimed.has(row.id) || this.projectOf(row)) continue
+      const found = this.store
+        .projectsNamed(row.name, row.size)
+        .find((c) => !taken.has(c.path) && existsSync(c.path) && !existsSync(c.origin_path))
+      if (!found) continue
+      this.projects.use(found.path, (p) => {
+        const o = p.origin()
+        if (o) p.setOrigin({ ...o, path: row.path })
+      })
+      this.store.registerProject(found.path, row.name, row.size, row.path)
+      this.origins.delete(found.path)
+      link(row, found.path)
+    }
+    // Projects whose photo is nowhere: each is its photo now.
+    for (const { path, origin } of orphans) {
+      if (taken.has(path)) continue
+      const elsewhere = this.store
+        .photosWithProject(path)
+        .some((r) => r.path !== path && existsSync(r.path))
+      if (elsewhere) continue
+      present.add(path)
+      const row = this.store.upsertPhoto({
+        path,
+        folder,
+        name: origin.name,
+        ext: origin.ext,
+        size: origin.size,
+        mtime: origin.mtime,
+        isRaw: origin.isRaw
+      })
+      link(row, path)
+    }
+    for (const row of photos) {
       if (!row.project_path || claimed.has(row.id) || existsSync(row.project_path)) continue
       // Its project went: the photo has only what a sidecar says again.
       this.store.setProject(row.id, null, null)
@@ -462,8 +521,116 @@ export class IndexService {
     row.project_path = path
     row.project_mtime = mtime
     this.origins.delete(path)
+    this.store.registerProject(path, row.name, row.size, row.path)
     this.mirror(row, truth, mtime, 'project')
+    // Main makes the project's copy of the original (it has the engine).
+    this.emit({ name: 'project', key: keyOf(row.id, null) })
     return path
+  }
+
+  // ── the original, as the project carries it ──
+
+  /**
+   * The photo's row for reading its original. With a project, `seed_path` is
+   * where the photo was when the project was made (a grain seed that
+   * survives a move), and when the file itself is gone (moved, deleted, or a
+   * project standing in for it) `embedded` is the project's own copy, written
+   * out to the cache once.
+   */
+  sourceRow(key: string): PhotoRow {
+    return this.withOriginal(this.row(key))
+  }
+
+  private withOriginal(row: PhotoRow): PhotoRow {
+    const project = this.projectOf(row)
+    if (!project) return row
+    const out: PhotoRow = { ...row }
+    const origin = this.originOf(project)
+    if (origin) out.seed_path = origin.path
+    if (row.path === project || !existsSync(row.path))
+      out.embedded = this.writeOriginal(row, project)
+    return out
+  }
+
+  /** The project's original written out to the photo's cache (once), or null when it has none yet. */
+  private writeOriginal(row: PhotoRow, project: string): { path: string; codec: string } | null {
+    return this.projects.use(project, (p) => {
+      const o = p.original()
+      if (o?.state !== 'ready' || !o.blob) return null
+      const info = p.blob(o.blob)
+      if (!info) return null
+      const ext = o.kind === 'verbatim' ? row.ext : o.kind === 'dng' ? 'dng' : 'jxl'
+      const dir = join(this.cacheRoot, 'photos', String(row.id))
+      mkdirSync(dir, { recursive: true })
+      const path = join(dir, `original-${o.blob.slice(0, 16)}.${ext}`)
+      if (!existsSync(path) && !p.writeBlobTo(o.blob, path)) return null
+      return { path, codec: info.codec }
+    })
+  }
+
+  /**
+   * What a photo's project carries of its original: nothing yet, being made,
+   * or ready (and how). `project` null: the photo has no project.
+   */
+  originalState(key: string): {
+    project: string | null
+    state: 'none' | 'pending' | 'ready' | 'failed'
+    kind: string | null
+    bytes: number | null
+  } {
+    const row = this.row(key)
+    const project = this.projectOf(row)
+    if (!project) return { project: null, state: 'none', kind: null, bytes: null }
+    return this.projects.use(project, (p) => {
+      const o = p.original()
+      if (!o) return { project, state: 'none' as const, kind: null, bytes: null }
+      return {
+        project,
+        state: o.state,
+        kind: o.kind,
+        bytes: o.blob ? (p.blob(o.blob)?.bytes ?? null) : null
+      }
+    })
+  }
+
+  /**
+   * Store the original in the photo's project: `file` (made by main, in the
+   * cache) holds it as `kind` says. The project keeps it from here; `file` is
+   * main's to remove.
+   */
+  putOriginal(
+    key: string,
+    file: string,
+    kind: EmbeddedOriginal['kind'],
+    info: { codec: string; width: number | null; height: number | null; note: string | null }
+  ): void {
+    const row = this.row(key)
+    const project = this.projectOf(row)
+    if (!project) return
+    this.projects.use(project, (p) => {
+      const hash = p.putBlobFile(file, {
+        kind: 'original',
+        codec: info.codec,
+        width: info.width,
+        height: info.height,
+        channels: null,
+        depth: null
+      })
+      const before = p.original()
+      p.setOriginal({ kind, blob: hash, state: 'ready', note: info.note })
+      if (before?.blob && before.blob !== hash) p.gc()
+    })
+    this.noteProjectWrite(key)
+  }
+
+  /** The original could not be embedded: say why, so it is not tried on every open. */
+  originalFailed(key: string, note: string): void {
+    const project = this.projectOf(this.row(key))
+    if (!project) return
+    this.projects.use(project, (p) =>
+      p.setOriginal({ kind: 'verbatim', blob: null, state: 'failed', note })
+    )
+    this.noteProjectWrite(key)
   }
 
   /** Make sure the photo has a project (made from its sidecar if not). Returns its path. */
@@ -587,6 +754,9 @@ export class IndexService {
    */
   async resolvePaths(paths: string[]): Promise<{ folder: string | null; keys: string[] }> {
     if (paths.length === 0) return { folder: null, keys: [] }
+    // A project stands for its photo: the folder is the photo's (or, when
+    // that is gone, the project's own), and the key the photo's.
+    if (paths.some((p) => p.toLowerCase().endsWith(PIXL_EXT))) return this.resolveProjects(paths)
     const first = resolve(paths[0])
     let isDir = false
     try {
@@ -607,6 +777,30 @@ export class IndexService {
         await this.rescan(dirname(p), false)
         row = this.store.photoByPath(p)
       }
+      if (row) keys.push(keyOf(row.id, null))
+    }
+    return { folder, keys }
+  }
+
+  private async resolveProjects(
+    paths: string[]
+  ): Promise<{ folder: string | null; keys: string[] }> {
+    const projects = paths.map((p) => resolve(p)).filter((p) => p.toLowerCase().endsWith(PIXL_EXT))
+    const origin = this.originOf(projects[0])
+    if (!origin) return { folder: null, keys: [] }
+    const home = dirname(origin.path)
+    const folder = existsSync(home) ? home : dirname(projects[0])
+    await this.rescan(folder, false)
+    // A project beside a photo in another folder: that folder is looked at too.
+    const keys: string[] = []
+    for (const p of projects) {
+      let rows = this.store.photosWithProject(p)
+      if (rows.length === 0) {
+        const o = this.originOf(p)
+        if (o) await this.rescan(existsSync(dirname(o.path)) ? dirname(o.path) : dirname(p), false)
+        rows = this.store.photosWithProject(p)
+      }
+      const row = rows.find((r) => existsSync(r.path)) ?? rows[0]
       if (row) keys.push(keyOf(row.id, null))
     }
     return { folder, keys }
@@ -1319,7 +1513,7 @@ export class IndexService {
       })
     const it = itemOf(this.sidecar(row), parseKey(key).copyId)
     return {
-      row,
+      row: this.withOriginal(row),
       recipe: it?.recipe ?? defaultRecipe(row.is_raw === 1),
       item,
       snapshots: it?.snapshots ?? []
@@ -1488,7 +1682,7 @@ export class IndexService {
     const stamp = `${versionStamp(row)}-${edited ? hash32(JSON.stringify(recipe)).toString(16) : 'plain'}`
     if (existing.thumb_key === stamp && existing.thumb_path && existsSync(existing.thumb_path))
       return null
-    return { row, recipe, edited, stamp }
+    return { row: this.withOriginal(row), recipe, edited, stamp }
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, stamp: string): void {
@@ -1499,7 +1693,8 @@ export class IndexService {
     if (!project || !row) return
     try {
       const jpeg = readFileSync(path)
-      this.projects.use(project, (p) => p.setPreview(jpeg, 0, 0))
+      const size = jpegSize(jpeg)
+      this.projects.use(project, (p) => p.setPreview(jpeg, size?.width ?? 0, size?.height ?? 0))
       this.store.setProject(row.id, project, statSync(project).mtimeMs)
     } catch (err) {
       console.warn('project preview not saved', project, (err as Error).message)

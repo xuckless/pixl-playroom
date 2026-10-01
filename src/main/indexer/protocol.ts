@@ -15,7 +15,11 @@ export type IndexResponse =
  * What the index finds out on its own, after a call has answered. `sources`:
  * keywords, collections or descriptive metadata changed (the sidebar's lists).
  */
-export type IndexEvent = { name: 'changed'; folder: string } | { name: 'sources' }
+export type IndexEvent =
+  | { name: 'changed'; folder: string }
+  | { name: 'sources' }
+  /** A photo got its project: its original can now be embedded in it (main's job). */
+  | { name: 'project'; key: string }
 
 export type HostToMain = { kind: 'hello' } | IndexResponse | ({ kind: 'event' } & IndexEvent)
 export type MainToHost = IndexRequest

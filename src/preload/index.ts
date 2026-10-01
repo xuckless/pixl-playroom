@@ -44,7 +44,8 @@ import {
   type SourceListing,
   type UpdateChannel,
   type UpdateState,
-  type ViewState
+  type ViewState,
+  type ProjectInfo
 } from '../shared/ipc'
 import type { LicenceStatus } from '../shared/licence'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
@@ -125,6 +126,7 @@ const api = {
     openSource: (source: LibrarySource) => call<SourceListing>(IPC.library.openSource, source),
     resolvePaths: (paths: string[]) =>
       call<{ folder: string | null; keys: string[] }>(IPC.library.resolvePaths, paths),
+    projectInfo: (key: string) => call<ProjectInfo>(IPC.library.projectInfo, key),
     setMetadata: (keys: string[], patch: MetaTextPatch) =>
       call<(LibraryItem | undefined)[]>(IPC.library.setMetadata, keys, patch),
     keywordTree: () => call<KeywordNode[]>(IPC.library.keywordTree),

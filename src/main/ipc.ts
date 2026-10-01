@@ -46,7 +46,8 @@ import { readWatermark } from './watermark'
 import type { AiJobs } from './ai/jobs'
 import { modelName, type ModelStore } from './ai/models'
 import type { Exporter } from './exporter'
-import { parseKey } from './keys'
+import { keyOf, parseKey } from './keys'
+import type { OriginalEmbedder } from './project/embed'
 import type { Library } from './library'
 import { takeOpens } from './open'
 import { paths } from './paths'
@@ -81,6 +82,8 @@ async function wbContext(library: Library, key: string): Promise<WbContext> {
 
 export interface Services {
   index: IndexClient
+  /** Carries each project's original inside it (project/embed.ts). */
+  embedder: OriginalEmbedder
   planes: PlaneStore
   library: Library
   sessions: DevelopSessions
@@ -234,6 +237,7 @@ export function registerIpc(s: Services): void {
   // ── library sources, metadata, collections, stacks, duplicates ── workstream D1
   handle(IPC.library.openSource, (src: LibrarySource) => s.library.openSource(src))
   handle(IPC.library.resolvePaths, (paths: string[]) => s.index.resolvePaths(paths))
+  handle(IPC.library.projectInfo, (key: string) => s.index.originalState(key))
   handle(IPC.library.setMetadata, (keys: string[], patch: MetaTextPatch) =>
     s.index.setMetadata(keys, patch)
   )
@@ -296,6 +300,8 @@ export function registerIpc(s: Services): void {
   // hydrated (planestore.ts): the renderer never holds the PNGs in its state.
   handle(IPC.develop.open, async (key: string) => {
     const d = await s.sessions.open(key)
+    // A project made before its original could be carried (or interrupted) catches up.
+    s.embedder.request(keyOf(parseKey(key).photoId, null))
     return {
       ...d,
       recipe: s.planes.slim(d.recipe),

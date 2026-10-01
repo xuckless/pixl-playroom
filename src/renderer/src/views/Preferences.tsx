@@ -150,7 +150,9 @@ type ProjectsLocation = 'beside' | 'home' | { folder: string }
 function ProjectsSection(): React.JSX.Element {
   const say = useLibrary((s) => s.say)
   const [loc, setLoc] = useState<ProjectsLocation>('beside')
+  const [embed, setEmbed] = useState(true)
   useEffect(() => {
+    void api.app.getSetting<boolean>('projects.embedOriginal').then((v) => setEmbed(v !== false))
     void api.app.getSetting<ProjectsLocation>('projects.location').then((v) => {
       if (v === 'home' || (v && typeof v === 'object' && typeof v.folder === 'string')) setLoc(v)
     })
@@ -193,6 +195,25 @@ function ProjectsSection(): React.JSX.Element {
       <p className="muted small">
         A folder that cannot be written (a locked card) puts its projects in ~/Pixl Projects.
         Projects already made stay where they are.
+      </p>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={embed}
+          onChange={(e) => {
+            setEmbed(e.target.checked)
+            void api.app
+              .setSetting('projects.embedOriginal', e.target.checked)
+              .catch((err) => say(errorText(err), 'error'))
+          }}
+        />
+        Carry a copy of the original in each project
+      </label>
+      <p className="muted small">
+        The project then needs nothing else: move or lose the photo and it still opens, develops and
+        exports. Each is kept as small as it can be without losing a bit: a RAW as lossless DNG, a
+        JPEG repacked into JPEG XL (about a fifth smaller, and the same JPEG comes back), large PNGs
+        and TIFFs as lossless JPEG XL. A project then takes about as much space as its photo again.
       </p>
     </fieldset>
   )
