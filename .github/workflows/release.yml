@@ -365,13 +365,6 @@ jobs:
             node build/prefix-feed.mjs "merged-$ch-mac.yml" "${ROLLOUT:-100}" > "r2/$ch-mac.yml"
             cat "r2/$ch-mac.yml"
           done
-          # GitHub's feed for the bridge: the release's own channel only
-          # (none for staging, which skips GitHub).
-          if [ "$TARGET" = staging ]; then exit 0; fi
-          ch="${channels%% *}"
-          node build/merge-mac-channel.mjs \
-            "mac-channel/mac-channel-x64/github/$ch-mac.yml" \
-            "mac-channel/mac-channel-arm64/github/$ch-mac.yml" > "github/$ch-mac.yml"
 
       - name: Put the feeds on updates.pixlfoundation.com
         run: |
@@ -392,10 +385,19 @@ jobs:
           AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
           R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
 
+      # The bridge for apps up to 0.1.1-beta, best effort: it never holds up
+      # the feeds above. electron-builder's GitHub publisher ignores channels
+      # and always writes latest-mac.yml, so that is merged, and attached as
+      # beta-mac.yml too (what a 0.1.1-beta on the Beta channel asks for).
       - name: Replace the manifest on the GitHub release (the bridge)
         if: env.TARGET == 'production'
+        continue-on-error: true
         run: |
-          ch="${CHANNELS%% *}"
-          gh release upload "${{ inputs.tag }}" "github/$ch-mac.yml" --clobber --repo "$GITHUB_REPOSITORY"
+          set -euo pipefail
+          node build/merge-mac-channel.mjs \
+            mac-channel/mac-channel-x64/github/latest-mac.yml \
+            mac-channel/mac-channel-arm64/github/latest-mac.yml > github/latest-mac.yml
+          cp github/latest-mac.yml github/beta-mac.yml
+          gh release upload "${{ inputs.tag }}" github/latest-mac.yml github/beta-mac.yml --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
