@@ -33,23 +33,23 @@ from the old TODO and a full performance and bug sweep.
 
 ### Pass 1 — Lost and misdirected edits · 5 pts
 
-- [ ] **S** · **An Upright-only edit is lost on save.** `geometry.upright` is
+- [x] **S** · **An Upright-only edit is lost on save.** `geometry.upright` is
       in no recipe group (`shared/recipe.ts:707-831`), so `isEdited` is false
       and `saveRecipe` stores `null` (`indexer/service.ts:1608`); Upright also
       can't be pasted, synced or put in a preset. Add it to the `crop` group
       (or its own) and test.
-- [ ] **M** · **Switching photos quickly can open the wrong one.**
+- [x] **M** · **Switching photos quickly can open the wrong one.**
       `develop.open` (`state/develop.ts:287-334`) has no generation check after
       its awaits, and `session` keeps the old photo while loading; main's
       `DevelopSessions.open` (`render.ts:1467-1491`) closes other sessions
       before its own awaits, so two can stay live. Arrowing through the
       filmstrip can show B while C is selected, and edits go to the wrong
       photo. Add an open token on both sides; clear `session` at the start.
-- [ ] **S** · **Undo can hide the wrong step.** `commit` fires
+- [x] **S** · **Undo can hide the wrong step.** `commit` fires
       `historyAppend` without awaiting it (`develop.ts:369`); `undo` waits only
       for `landing`, so a quick Cmd+Z hides the previous step and the commit's
       `.then` clears `redo`. Chain the append through `queueHistoryOp`.
-- [ ] **S** · **Paste and Sync in Develop skip history.**
+- [x] **S** · **Paste and Sync in Develop skip history.**
       `commands.ts:438-441` and `Dialogs.tsx:752-755` set the recipe with no
       step, so Cmd+Z undoes the edit before the paste. Use
       `replace(recipe, 'Paste settings')`; add a `.catch` (errors are

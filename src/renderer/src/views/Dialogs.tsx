@@ -751,9 +751,11 @@ export function SyncDialog(): React.JSX.Element {
                     clipboard?.source ?? developKey ?? undefined
                   )
                 )
-                if (developKey && keys.includes(developKey)) {
+                // The open photo's sync is a step of its history, undone on its own.
+                const dev = useDevelop.getState
+                if (developKey && keys.includes(developKey) && dev().session?.key === developKey) {
                   const s = await api.develop.open(developKey)
-                  useDevelop.setState({ recipe: s.recipe })
+                  if (dev().session?.key === developKey) dev().replace(s.recipe, 'Sync settings')
                 }
               }
               setDialog(null)
