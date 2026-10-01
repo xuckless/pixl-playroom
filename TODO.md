@@ -64,7 +64,7 @@ After: Pass 1.
       (`render.ts:488-491`); on the next open the stale recipe is recorded as
       "Opened as saved" (`develop.ts:316-322`). Write the history step and the
       recipe in one project transaction; tell the user when a save fails.
-- [ ] **S** · **Export can overwrite the original on a case-insensitive
+- [x] **S** · **Export can overwrite the original on a case-insensitive
       disk.** The guard is `out === row.path` (`exporter.ts:223`), so
       `IMG_1.jpg` passes for `IMG_1.JPG` with collision "overwrite". Compare
       `realpath` or dev+inode (or case-fold on darwin/win32), before the

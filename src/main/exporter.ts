@@ -31,7 +31,7 @@ import {
 import { IPC, type ExportProgress } from '../shared/ipc'
 import { brushPlanes } from './brushes'
 import { embedMetadata } from './exiftool'
-import { exists } from './exists'
+import { exists, sameFile } from './exists'
 import { isCancelled, type EngineClient } from './engine/client'
 import type { Library } from './library'
 import { ensureProxies, type ProxyFile } from './proxy'
@@ -220,7 +220,8 @@ export class Exporter {
         out = join(target, `${stem}-${n}.${ext}`)
       }
     }
-    if (out === row.path) throw new Error('the export would overwrite the original')
+    // By the file, not the name: IMG_1.jpg is IMG_1.JPG on a case-insensitive disk.
+    if (await sameFile(out, row.path)) throw new Error('the export would overwrite the original')
 
     // An HDR source stays HDR only where the settings ask and the format can
     // say so; otherwise it is tone mapped like any SDR delivery.
