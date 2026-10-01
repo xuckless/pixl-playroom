@@ -18,7 +18,8 @@ import type { IndexEvent } from '../src/main/indexer/protocol'
 import type { XmpIo } from '../src/main/indexer/xmp'
 import type { Store } from '../src/main/db'
 import type { PhotoMeta } from '../src/shared/ipc'
-import { defaultRecipe, newLocalLayer, planeRef, type BrushComponent } from '../src/shared/recipe'
+import { defaultRecipe, newLocalLayer, type BrushComponent } from '../src/shared/recipe'
+import { planeRef } from '../src/main/planeref'
 
 interface Fixture {
   root: string
@@ -242,8 +243,8 @@ test('pruning keeps the planes the history names, and only those', async () => {
   const f = fixture()
   try {
     const [a] = await f.index.listFolder(f.folder)
-    const kept = 'iVBORw0KGgo=kept'
-    const dropped = 'iVBORw0KGgo=dropped'
+    const kept = Buffer.from('a plane kept').toString('base64')
+    const dropped = Buffer.from('a plane dropped').toString('base64')
     f.index.putPlane(planeRef(kept), kept)
     f.index.putPlane(planeRef(dropped), dropped)
     const r = defaultRecipe(false)
@@ -264,7 +265,19 @@ test('pruning keeps the planes the history names, and only those', async () => {
     r.layers.push(layer)
     f.index.appendHistory(a.key, 'Brush', r)
 
-    assert.equal(f.index.prunePlanes(), 1)
+    // Stored since the index opened: in use, kept whatever the history says.
+    assert.equal(f.index.prunePlanes(), 0)
+    // At the next start the one nothing names goes.
+    const again = new IndexService({
+      userData: join(f.root, 'userData'),
+      emit: () => {},
+      xmp: f.xmp
+    })
+    try {
+      assert.equal(again.prunePlanes(), 1)
+    } finally {
+      again.close()
+    }
     assert.equal(f.index.plane(planeRef(kept)), kept)
     assert.equal(f.index.plane(planeRef(dropped)), undefined)
   } finally {
@@ -536,7 +549,9 @@ test('stacks live in the sidecar and survive a lost index', async () => {
         [copy.key, 0, 3]
       ]
     )
-    // a's is in its sidecar; c has a virtual copy, so its truth is its project.
+    // a's is in its sidecar; c has a virtual copy, so its truth is its project
+    // (read by another connection: what the index gathered is committed first).
+    f.index.flushProjects()
     assert.equal(JSON.parse(readFileSync(a.path + '.playroom.json', 'utf8')).stack.position, 1)
     const project = PixlFile.open(f.index.projectPath(c.key)!)
     assert.equal(project.read(false).stack?.position, 0)
@@ -772,6 +787,61 @@ test('resolvePaths: the first file’s folder and each file’s key; a folder al
     )
     assert.deepEqual(await f.index.resolvePaths([other]), { folder: other, keys: [] })
     assert.deepEqual(await f.index.resolvePaths([]), { folder: null, keys: [] })
+  } finally {
+    f.done()
+  }
+})
+
+test('a folder listed with its subfolders takes theirs in; the tree reads one level, in order', async () => {
+  const f = fixture(['a.jpg'])
+  try {
+    for (const d of ['Day 10', 'Day 2', join('Day 2', 'inner'), '.hidden', 'Old.photoslibrary'])
+      mkdirSync(join(f.folder, d))
+    for (const p of [
+      join('Day 10', 'b.jpg'),
+      join('Day 2', 'c.jpg'),
+      join('Day 2', 'inner', 'd.jpg'),
+      join('.hidden', 'e.jpg'),
+      join('Old.photoslibrary', 'f.jpg')
+    ])
+      writeFileSync(join(f.folder, p), 'not really a photo')
+    assert.deepEqual(
+      f.index.subfolders(f.folder).map((s) => s.name),
+      ['Day 2', 'Day 10']
+    )
+    const own = await f.index.listSource({ kind: 'folder', path: f.folder })
+    assert.deepEqual(
+      own.items.map((i) => i.name),
+      ['a.jpg']
+    )
+    const deep = await f.index.listSource({ kind: 'folder', path: f.folder, deep: true })
+    assert.deepEqual(deep.items.map((i) => i.name).sort(), ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg'])
+    // Only the folder opened becomes a recent one.
+    assert.deepEqual(f.index.recentFolders(), [f.folder])
+  } finally {
+    f.done()
+  }
+})
+
+test('the folder shown is watched: a photo copied in is found and announced', async () => {
+  const f = fixture(['a.jpg'])
+  try {
+    await f.index.listSource({ kind: 'folder', path: f.folder })
+    f.events.length = 0
+    writeFileSync(join(f.folder, 'b.jpg'), 'not really a photo')
+    // The listing's own background work settles first; then only the watcher can find b.
+    await settle()
+    f.events.length = 0
+    const until = Date.now() + 5000
+    while (Date.now() < until && f.index.items(f.folder).length < 2) await settle()
+    assert.ok(f.events.some((e) => e.name === 'changed' && e.folder === f.folder))
+    assert.deepEqual(
+      f.index.items(f.folder).map((i) => i.name),
+      ['a.jpg', 'b.jpg']
+    )
+    // Listed again while watched: the index answers without walking it again.
+    const listed = await f.index.listSource({ kind: 'folder', path: f.folder })
+    assert.equal(listed.items.length, 2)
   } finally {
     f.done()
   }

@@ -204,7 +204,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     // what is restored, so it can only be the first step).
     const deps = pixelDeps(this.engine, this.library.index, row)
     const restoresJpeg = steps.some((p) => p.kind === 'reconstruct' || p.kind.startsWith('fbcnn'))
-    const plain = await ensureProxies(this.engine, row, info)
+    const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const working = await ensureWorking(deps, versionStamp(row), plain, recipe.pixels, () =>
       ensureBase(this.engine, row, info)
     )
@@ -266,15 +266,18 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
       )
       const jxl = join(dir, `enhance-${stamp}.jxl`)
       files.push(jxl)
-      await this.engine.convert({
-        ...blankRequest(out, jxl, 'Tiff'),
-        pixel: { depth: 'Sixteen', channels: 3 },
-        encode: lossless
-          ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
-          : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
-        metadata: ICC_ONLY,
-        color: 'Preserve'
-      })
+      await this.engine.convert(
+        {
+          ...blankRequest(out, jxl, 'Tiff'),
+          pixel: { depth: 'Sixteen', channels: 3 },
+          encode: lossless
+            ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
+            : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
+          metadata: ICC_ONLY,
+          color: 'Preserve'
+        },
+        { signal: ctx.signal }
+      )
       const photoKey = keyOf(row.id, null)
       const blob = await this.library.index.putBlob(photoKey, jxl, {
         kind: 'pixels',
@@ -320,7 +323,15 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         rect: null,
         params: { chain: subject, scale: k, resizes: k > 1, lossless }
       }
-      await addPixelStep(this.library, sessions, key, step)
+      // Over the steps there were when it began, under any added while it ran.
+      ctx.commit()
+      await addPixelStep(
+        this.library,
+        sessions,
+        key,
+        step,
+        recipe.pixels.map((s) => s.id)
+      )
       const { photoId, copyId } = parseKey(key)
       this.library.queueThumb(photoId, copyId, true)
       return { kind: 'step', label: step.label }

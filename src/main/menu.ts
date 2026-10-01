@@ -32,6 +32,7 @@ const engineReport: MenuItemConstructorOptions = {
 
 const help: MenuItemConstructorOptions[] = [
   { label: 'Pixl Playroom Website', click: () => void shell.openExternal(SITE) },
+  { label: 'Report a Problem…', click: toRenderer(IPC.app.openReport) },
   { type: 'separator' },
   { label: 'Licence Agreement', click: () => void shell.openExternal(`${LEGAL}/eula/`) },
   { label: 'Privacy Policy', click: () => void shell.openExternal(`${LEGAL}/privacy/`) },

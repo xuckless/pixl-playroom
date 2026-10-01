@@ -6,10 +6,19 @@
  * cache's bookkeeping. Deleting it loses nothing a sidecar holds.
  */
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
-import type { CameraInfo, ColorLabel, ExportPreset, Flag, HistoryLog, Preset } from '../shared/ipc'
+import type {
+  CameraInfo,
+  ColorLabel,
+  ExportPreset,
+  Flag,
+  HistoryAppend,
+  HistoryLog,
+  Preset
+} from '../shared/ipc'
 import type { ExportSettings } from '../shared/export'
 import { HistoryTable, type HistoryRow } from './historytable'
-import type { Recipe, RecipeGroup } from '../shared/recipe'
+import { planeRef, renameRefs } from './planeref'
+import { normaliseRecipe, RECIPE_GROUPS, type Recipe, type RecipeGroup } from '../shared/recipe'
 
 export interface PhotoRow {
   id: number
@@ -51,6 +60,11 @@ export interface PhotoRow {
   /** The photo's `.pixl` project (the truth about its edits once it has one), and its mtime as mirrored. */
   project_path: string | null
   project_mtime: number | null
+  /** The file version that could not be read (its thumbnail failed), and why. */
+  failed_key?: string | null
+  /** Its recipe as its thumbnail knows it: 'plain', or the slim recipe's hash. */
+  recipe_key?: string | null
+  failed_reason?: string | null
   /**
    * Not columns: what the index adds for whoever reads the original
    * (`IndexService.sourceRow`). `seed_path` is the path a grain seed hashes
@@ -72,6 +86,8 @@ export interface CopyRow {
   edited: number
   thumb_path: string | null
   thumb_key: string | null
+  /** Its recipe as its thumbnail knows it (see `PhotoRow.recipe_key`). */
+  recipe_key?: string | null
 }
 
 export interface CollectionRow {
@@ -135,7 +151,7 @@ CREATE TABLE IF NOT EXISTS presets (
 );
 CREATE TABLE IF NOT EXISTS export_presets (id TEXT PRIMARY KEY, name TEXT NOT NULL, settings TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS planes (ref TEXT PRIMARY KEY, png TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS plane_blobs (hash TEXT PRIMARY KEY, png BLOB NOT NULL);
 `
 
 const columnsOf = (db: DatabaseSync, table: string): string[] =>
@@ -243,7 +259,56 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
       size INTEGER NOT NULL,
       origin_path TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS projects_name ON projects(name, size);`)
+    CREATE INDEX IF NOT EXISTS projects_name ON projects(name, size);`),
+  // 6. Photos by project: who has a project (linking, a project gone), without a scan.
+  (db) => db.exec('CREATE INDEX IF NOT EXISTS photos_project ON photos(project_path)'),
+  // 7. A file version that could not be read, and why: not tried again at
+  // every launch, only once it changes.
+  (db) => addColumns(db, 'photos', { failed_key: 'TEXT', failed_reason: 'TEXT' }),
+  // 8. Each item's recipe as its thumbnail knows it ('plain' or a hash), so
+  // a folder opened again finds its thumbnails current without reading files.
+  (db) => {
+    addColumns(db, 'photos', { recipe_key: 'TEXT' })
+    addColumns(db, 'copies', { recipe_key: 'TEXT' })
+  },
+  // 9. Painted planes as binary named by their SHA-256 (`planeRef`), not
+  // base64 text named by a 32-bit hash and its length; the edit history
+  // follows them to their new names.
+  (db) => {
+    const old = db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'planes'")
+      .get()
+    if (!old) return
+    const names = new Map<string, string>()
+    const put = db.prepare('INSERT OR IGNORE INTO plane_blobs(hash, png) VALUES (?, ?)')
+    for (const { ref, png } of db.prepare('SELECT ref, png FROM planes').all() as {
+      ref: string
+      png: string
+    }[]) {
+      const hash = planeRef(png)
+      names.set(ref, hash)
+      put.run(hash, Buffer.from(png, 'base64'))
+    }
+    if (names.size > 0) {
+      const set = db.prepare(
+        'UPDATE history SET recipe = ?, patch = ? WHERE item_key = ? AND seq = ?'
+      )
+      for (const r of db
+        .prepare(
+          `SELECT item_key, seq, recipe, patch FROM history
+           WHERE recipe LIKE '%"ref":%' OR patch LIKE '%"ref":%'`
+        )
+        .all() as { item_key: string; seq: number; recipe: string; patch: string | null }[]) {
+        set.run(
+          renameRefs(r.recipe, names),
+          r.patch && renameRefs(r.patch, names),
+          r.item_key,
+          r.seq
+        )
+      }
+    }
+    db.exec('DROP TABLE planes')
+  }
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -338,7 +403,9 @@ export class Store {
 
   static open(file: string): Store {
     const db = new DatabaseSync(file)
-    db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;')
+    // Another process holding a write (a second window's index, a backup)
+    // is waited for, not failed on at once.
+    db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 3000;')
     db.exec(SCHEMA)
     migrate(db)
     return new Store(db)
@@ -621,15 +688,11 @@ export class Store {
 
   setPhotoMeta(
     id: number,
-    meta: { rating: number; flag: Flag; label: ColorLabel; edited: boolean }
+    meta: { rating: number; flag: Flag; label: ColorLabel; edited: boolean; recipeKey?: string }
   ): void {
-    this.prepare('UPDATE photos SET rating = ?, flag = ?, label = ?, edited = ? WHERE id = ?').run(
-      meta.rating,
-      meta.flag,
-      meta.label,
-      meta.edited ? 1 : 0,
-      id
-    )
+    this.prepare(
+      'UPDATE photos SET rating = ?, flag = ?, label = ?, edited = ?, recipe_key = ? WHERE id = ?'
+    ).run(meta.rating, meta.flag, meta.label, meta.edited ? 1 : 0, meta.recipeKey ?? null, id)
   }
 
   /** Remember a project and the photo it names (see migration 5). */
@@ -663,6 +726,11 @@ export class Store {
     )
   }
 
+  /** Every photo using the project at `path`: its mtime is now `mtime` (the index's own commit). */
+  projectCommitted(path: string, mtime: number): void {
+    this.prepare('UPDATE photos SET project_mtime = ? WHERE project_path = ?').run(mtime, path)
+  }
+
   setSidecarMtime(id: number, mtime: number | null): void {
     this.prepare('UPDATE photos SET sidecar_mtime = ? WHERE id = ?').run(mtime, id)
   }
@@ -671,6 +739,23 @@ export class Store {
     this.prepare(
       'UPDATE photos SET camera_json = ?, captured_at = ?, iso = ?, focal = ?, fnumber = ?, exposure = ?, camera = ?, lens = ? WHERE id = ?'
     ).run(JSON.stringify(camera), ...cameraColumns(camera), id)
+  }
+
+  /** Every thumbnail file a photo or copy names. */
+  thumbPaths(): Set<string> {
+    const rows = this.prepare(
+      'SELECT thumb_path FROM photos WHERE thumb_path IS NOT NULL UNION SELECT thumb_path FROM copies WHERE thumb_path IS NOT NULL'
+    ).all() as { thumb_path: string }[]
+    return new Set(rows.map((r) => r.thumb_path))
+  }
+
+  /** A file version that could not be read (`key` names it), and why. */
+  setFailed(photoId: number, key: string, reason: string): void {
+    this.prepare('UPDATE photos SET failed_key = ?, failed_reason = ? WHERE id = ?').run(
+      key,
+      reason,
+      photoId
+    )
   }
 
   setHdr(photoId: number, kind: string, key: string): void {
@@ -714,12 +799,13 @@ export class Store {
       flag: Flag
       label: ColorLabel
       edited: boolean
+      recipeKey?: string
     }[]
   ): void {
     const existing = new Map(this.copiesOf(photoId).map((c) => [c.copy_id, c]))
     this.prepare('DELETE FROM copies WHERE photo_id = ?').run(photoId)
     const ins = this.prepare(
-      'INSERT INTO copies(photo_id, copy_id, name, rating, flag, label, edited, thumb_path, thumb_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO copies(photo_id, copy_id, name, rating, flag, label, edited, thumb_path, thumb_key, recipe_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
     for (const c of copies) {
       const old = existing.get(c.id)
@@ -732,7 +818,8 @@ export class Store {
         c.label,
         c.edited ? 1 : 0,
         old?.thumb_path ?? null,
-        old?.thumb_key ?? null
+        old?.thumb_key ?? null,
+        c.recipeKey ?? null
       )
     }
   }
@@ -742,7 +829,7 @@ export class Store {
     return this.hist.history(itemKey)
   }
 
-  appendHistory(itemKey: string, label: string, recipe: Recipe): HistoryLog {
+  appendHistory(itemKey: string, label: string, recipe: Recipe): HistoryAppend {
     return this.hist.append(itemKey, label, recipe)
   }
 
@@ -764,14 +851,28 @@ export class Store {
   }
 
   // ── painted planes, by reference (see planestore.ts) ──
+  /** Keep a plane (a base64 PNG) by its name, its SHA-256 (`planeRef`), as bytes. */
   putPlane(ref: string, png: string): void {
-    this.prepare('INSERT OR IGNORE INTO planes(ref, png) VALUES (?, ?)').run(ref, png)
+    this.prepare('INSERT OR IGNORE INTO plane_blobs(hash, png) VALUES (?, ?)').run(
+      ref,
+      Buffer.from(png, 'base64')
+    )
+    this.planesPut.add(ref)
+  }
+
+  /** Planes stored since this index opened: in use now, whatever the history says (see `prunePlanes`). */
+  readonly planesPut = new Set<string>()
+
+  hasPlane(ref: string): boolean {
+    return this.prepare('SELECT 1 FROM plane_blobs WHERE hash = ?').get(ref) !== undefined
   }
 
   plane(ref: string): string | undefined {
-    const row = this.prepare('SELECT png FROM planes WHERE ref = ?').get(ref) as
-      { png: string } | undefined
-    return row?.png
+    const row = this.prepare('SELECT png FROM plane_blobs WHERE hash = ?').get(ref) as
+      { png: Uint8Array } | undefined
+    return (
+      row && Buffer.from(row.png.buffer, row.png.byteOffset, row.png.byteLength).toString('base64')
+    )
   }
 
   /** Every stored recipe or patch that may name a plane by reference: the edit history's. */
@@ -781,14 +882,14 @@ export class Store {
 
   /** Drop the planes not in `keep`. Returns how many went. */
   prunePlanes(keep: Set<string>): number {
-    const refs = (this.prepare('SELECT ref FROM planes').all() as { ref: string }[]).map(
-      (r) => r.ref
+    const refs = (this.prepare('SELECT hash FROM plane_blobs').all() as { hash: string }[]).map(
+      (r) => r.hash
     )
     let removed = 0
     this.tx(() => {
       for (const ref of refs) {
         if (keep.has(ref)) continue
-        this.prepare('DELETE FROM planes WHERE ref = ?').run(ref)
+        this.prepare('DELETE FROM plane_blobs WHERE hash = ?').run(ref)
         removed++
       }
     })
@@ -811,8 +912,10 @@ export class Store {
       name: r.name,
       group: r.grp,
       builtin: false,
-      groups: JSON.parse(r.groups) as RecipeGroup[],
-      recipe: JSON.parse(r.recipe) as Recipe,
+      // Saved by an older version: groups it named that are gone go, and the
+      // recipe gains what was added since (as a photo's does when read).
+      groups: (JSON.parse(r.groups) as RecipeGroup[]).filter((g) => RECIPE_GROUPS.includes(g)),
+      recipe: normaliseRecipe(JSON.parse(r.recipe), false),
       ...(r.wb_op ? { wbOp: JSON.parse(r.wb_op) as NonNullable<Preset['wbOp']> } : {})
     }))
   }

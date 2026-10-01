@@ -7,6 +7,7 @@ import {
   canvasToFrame,
   cropFitsWarp,
   defaultUpright,
+  equivalentFocal,
   focalOf,
   frameToCanvas,
   uprightTransform
@@ -117,4 +118,25 @@ test('the loupe maps a point to the frame and back through crop, straighten and 
   // Guides are drawn on the frame itself.
   const guides = viewGeometry(r, 6000, 4000, false, true)
   assert.deepEqual(displayToOriented(guides, { x: 0.3, y: 0.4 }), { x: 0.3, y: 0.4 })
+})
+
+test('a crop in an empty wedge moves in rather than shrink to nothing', () => {
+  const r = defaultRecipe(false)
+  r.geometry.upright = { ...defaultUpright(), scale: 75 }
+  r.geometry.crop = { x: 0.8, y: 0.8, width: 0.2, height: 0.2 }
+  const crop = effectiveCrop(r, 6000, 4000)!
+  const t = uprightTransform(r.geometry.upright, 6000, 4000)
+  assert.ok(cropFitsWarp(crop, 0, t, 6000, 4000))
+  // Its size is kept (a crop that size fits nearer the centre), and it stays
+  // toward the corner it was drawn in.
+  assert.ok(Math.abs(crop.width - 0.2) < 1e-9 && Math.abs(crop.height - 0.2) < 1e-9)
+  assert.ok(crop.x + crop.width / 2 > 0.5 && crop.y + crop.height / 2 > 0.5)
+})
+
+test("Upright's focal length: the file's 35 mm figure, else the focal length times the camera's crop", () => {
+  assert.equal(equivalentFocal({ focal_mm: 50, focal_35mm: 80 }, 1.6), 80)
+  assert.equal(equivalentFocal({ focal_mm: 50, focal_35mm: null }, 1.6), 80)
+  assert.equal(equivalentFocal({ focal_mm: 23, focal_35mm: null }, 1.53), 35.2)
+  assert.equal(equivalentFocal({ focal_mm: 50, focal_35mm: null }, null), null)
+  assert.equal(equivalentFocal(null, 1.5), null)
 })

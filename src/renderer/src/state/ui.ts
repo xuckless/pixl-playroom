@@ -59,6 +59,8 @@ export interface MaskOverlaySettings {
   opacity: number
   /** Every mask at once, each in its own colour. */
   showAll: boolean
+  /** The selected mask's components each in a colour of their own (the colour view). */
+  byComponent?: boolean
   /** When the on-canvas pins and handles show. */
   pins: PinsMode
 }
@@ -70,6 +72,9 @@ export interface HealSettings {
   /** 0…100 */
   feather: number
   opacity: number
+  /** Visualise Spots: the picture as white specks on black, and how faint a speck still shows (0…100). */
+  visualise?: boolean
+  spotLevel?: number
 }
 
 /** Every tool the wheel can hold (its order is `TOOLS`, in develop/tools.ts). */
@@ -119,6 +124,9 @@ interface UiState {
   railOpen: boolean
   /** The filmstrip under the loupe; hidden until asked for. */
   filmstrip: boolean
+  /** A folder opens with the photos in its subfolders too. */
+  subfolders: boolean
+  setSubfolders(on: boolean): void
   /** The library's sources down the left, and its info drawer on the right. */
   librarySidebar: boolean
   libraryInfo: boolean
@@ -164,14 +172,47 @@ interface UiState {
   resetKeyBindings(): void
 }
 
-/** localStorage may be missing or refuse writes (private profiles, quota); the app works without it. */
-const storage = createJSONStorage(() => {
+/**
+ * localStorage may be missing or refuse writes (private profiles, quota); the
+ * app works without it. Writes are gathered and made a moment later (a slider
+ * in a panel, a resize, a drag would write the whole state each tick), and
+ * whatever waits is written as the window goes.
+ */
+const WRITE_MS = 400
+const waiting = new Map<string, string>()
+let writeTimer: ReturnType<typeof setTimeout> | undefined
+const local = (): Storage | undefined => {
   try {
     return window.localStorage
   } catch {
-    return undefined as unknown as Storage
+    return undefined
   }
-})
+}
+const flushWrites = (): void => {
+  clearTimeout(writeTimer)
+  writeTimer = undefined
+  const ls = local()
+  for (const [k, v] of waiting) {
+    try {
+      ls?.setItem(k, v)
+    } catch {
+      // Quota or a private profile: kept for this session only.
+    }
+  }
+  waiting.clear()
+}
+if (typeof window !== 'undefined') window.addEventListener('beforeunload', flushWrites)
+const storage = createJSONStorage(() => ({
+  getItem: (k: string) => waiting.get(k) ?? local()?.getItem(k) ?? null,
+  setItem: (k: string, v: string) => {
+    waiting.set(k, v)
+    writeTimer ??= setTimeout(flushWrites, WRITE_MS)
+  },
+  removeItem: (k: string) => {
+    waiting.delete(k)
+    local()?.removeItem(k)
+  }
+}))
 
 export const useUi = create<UiState>()(
   persist(
@@ -179,6 +220,8 @@ export const useUi = create<UiState>()(
       rail: 'presets',
       railOpen: true,
       filmstrip: false,
+      subfolders: false,
+      setSubfolders: (subfolders) => set({ subfolders }),
       librarySidebar: true,
       libraryInfo: false,
       setLibrarySidebar: (librarySidebar) => set({ librarySidebar }),

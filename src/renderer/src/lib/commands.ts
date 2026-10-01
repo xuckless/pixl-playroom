@@ -403,7 +403,12 @@ export const COMMANDS: KeyCommand[] = [
       const d = dev()
       if (!d.recipe) return
       const groups = RECIPE_GROUPS.filter(
-        (g) => g !== 'crop' && g !== 'orientation' && g !== 'localAdjustments' && g !== 'retouch'
+        (g) =>
+          g !== 'crop' &&
+          g !== 'upright' &&
+          g !== 'orientation' &&
+          g !== 'localAdjustments' &&
+          g !== 'retouch'
       )
       lib().setClipboard({
         recipe: structuredClone(d.recipe),
@@ -437,10 +442,14 @@ export const COMMANDS: KeyCommand[] = [
         )
         .then(async (items) => {
           lib().patchItems(items)
-          const s = await api.develop.open(key)
-          useDevelop.setState({ recipe: s.recipe })
+          // The open photo's paste is a step of its history, undone on its own.
+          if (targets.includes(key) && dev().session?.key === key) {
+            const s = await api.develop.open(key)
+            if (dev().session?.key === key) dev().replace(s.recipe, 'Paste settings')
+          }
           lib().say(`Pasted onto ${targets.length} photo${targets.length === 1 ? '' : 's'}`)
         })
+        .catch((err) => lib().say(errorText(err), 'error'))
     }
   },
   {

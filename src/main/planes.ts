@@ -10,6 +10,7 @@ import { threadId } from 'worker_threads'
 import type { Orientation } from '../shared/engine-types'
 import { rasteriseGradient } from '../shared/gradients'
 import { orientPlane } from '../shared/orientation'
+import { applyEdge, type MaskEdge } from '../shared/maskedge'
 import type { LinearComponent, RadialComponent } from '../shared/recipe'
 import { decodePng, encodeGreyPng } from './pngio'
 
@@ -38,15 +39,22 @@ export function writeGradientPlane(
 ): void {
   const w = Math.max(1, Math.round(c.width))
   const h = Math.max(1, Math.round(c.height))
-  const turned = orientPlane(user, rasteriseGradient(c), w, h)
+  const turned = orientPlane(user, applyEdge(rasteriseGradient(c), w, h, c.edge), w, h)
   writeAtomic(file, encodeGreyPng(turned.data, turned.width, turned.height, PLANE_DEFLATE))
 }
 
-export function writeBrushPlane(file: string, png: string, user: Orientation): void {
+/** A painted (or AI) plane turned to the user's orientation, its edge moved and hardened. */
+export function writeBrushPlane(
+  file: string,
+  png: string,
+  user: Orientation,
+  edge?: MaskEdge
+): void {
   const buf = Buffer.from(png, 'base64')
-  if (user === 'Normal') return writeAtomic(file, buf)
+  if (user === 'Normal' && !edge) return writeAtomic(file, buf)
   const d = decodePng(buf)
-  const turned = orientPlane(user, new Uint8Array(d.rows), d.width, d.height)
+  const shaped = applyEdge(new Uint8Array(d.rows), d.width, d.height, edge)
+  const turned = orientPlane(user, shaped, d.width, d.height)
   writeAtomic(file, encodeGreyPng(turned.data, turned.width, turned.height, PLANE_DEFLATE))
 }
 

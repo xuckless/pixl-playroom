@@ -360,6 +360,7 @@ function interpolate<T>(
   k: (s: T) => number[]
 ): number[] {
   const sorted = [...samples].sort((a, b) => key(a) - key(b))
+  if (sorted.length === 0) return []
   if (x === null || sorted.length === 1) return k(sorted[Math.floor(sorted.length / 2)])
   if (x <= key(sorted[0])) return k(sorted[0])
   const last = sorted[sorted.length - 1]
@@ -383,9 +384,12 @@ export function resolveProfile(
   lens: ShotLens | null,
   photo?: { crop: { value: number; from: 'exif' | 'camera' } | null; width: number; height: number }
 ): ResolvedProfile {
-  const focal = lens?.focal_mm ?? null
-  const aperture = lens?.f_number ?? null
-  const distanceM = lens?.focus_distance_m ?? null
+  // A manual or adapted lens reports 0 (or nothing): unknown, not a number to work with.
+  const known = (v: number | null | undefined): number | null =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
+  const focal = known(lens?.focal_mm)
+  const aperture = known(lens?.f_number)
+  const distanceM = known(lens?.focus_distance_m)
   let distortion: DistortionModel | null = null
   if (p.distortion?.length) {
     // One model per profile: the most common one's samples.
@@ -444,7 +448,7 @@ export function resolveProfile(
       const best = Math.min(...list.map(at))
       return list.filter((x) => at(x) - best < 1e-6)
     }
-    const nearest = byDistance(
+    const byAperture =
       aperture === null
         ? p.vignetting
         : (() => {
@@ -455,13 +459,17 @@ export function resolveProfile(
               (s) => Math.abs(Math.abs(stops(s.aperture) - stops(aperture)) - best) < 1e-6
             )
           })()
-    )
-    vignetting = interpolate(
-      nearest,
-      focal,
-      (s) => s.focal,
-      (s) => s.k
-    )
+    // A profile's own odd samples (an aperture of 0) match nothing: all of them, then.
+    const nearest = byDistance(byAperture.length > 0 ? byAperture : p.vignetting)
+    vignetting =
+      nearest.length > 0
+        ? interpolate(
+            nearest,
+            focal,
+            (s) => s.focal,
+            (s) => s.k
+          )
+        : null
   }
   const out: ResolvedProfile = {
     name: profileName(p),

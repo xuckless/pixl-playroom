@@ -7,6 +7,7 @@
  * engine's own planes.
  */
 import type { KeyBand, MaskMode } from './engine-types'
+import { effectiveMode } from './masks'
 import type { LocalLayer, MaskComponentSetting, RangeComponent } from './recipe'
 
 /**
@@ -92,7 +93,7 @@ export const MAX_PREVIEW_COMPONENTS = 8
 
 /** Whether the loupe can draw this mask itself. */
 export function previewable(l: LocalLayer): boolean {
-  const n = l.components.filter(drawable).length
+  const n = maskJoins(l.components).length
   return n > 0 && n <= MAX_PREVIEW_COMPONENTS
 }
 
@@ -105,13 +106,35 @@ export function drawable(c: MaskComponentSetting): boolean {
 }
 
 /**
+ * The components a mask joins and how each joins, as compile hands them to
+ * the engine: the first one made always adds; one that cannot be drawn is
+ * left out, and so is a Subtract or Intersect that leaves first (taken from
+ * nothing it selects nothing).
+ */
+export function maskJoins<C extends MaskComponentSetting>(
+  components: C[],
+  can: (c: C) => boolean = drawable
+): { c: C; mode: MaskMode }[] {
+  const drawn = components
+    .map((c, i) => ({ c, mode: effectiveMode(i, c.mode) }))
+    .filter((j) => can(j.c))
+  const first = drawn.findIndex((j) => j.mode === 'Add')
+  return first < 0 ? [] : drawn.slice(first)
+}
+
+/**
  * What a component's own plane depends on (its shape and feather, not its
  * mode, opacity or inversion, which apply as it joins): a plane is redrawn
  * only when this changes.
  */
 export function planeKey(c: MaskComponentSetting): string {
   if (c.kind === 'brush')
-    return JSON.stringify([c.kind, c.ref ?? `${c.png.length}:${c.png.slice(-32)}`, c.feather])
+    return JSON.stringify([
+      c.kind,
+      c.ref ?? `${c.png.length}:${c.png.slice(-32)}`,
+      c.feather,
+      c.edge ?? null
+    ])
   return JSON.stringify(c, (k, v) => (JOINING.has(k) ? undefined : v))
 }
 const JOINING = new Set(['id', 'name', 'mode', 'opacity', 'invert'])
@@ -122,9 +145,9 @@ export function layerValue(
   valueOf: (c: MaskComponentSetting) => number
 ): number {
   let m = 0
-  l.components.filter(drawable).forEach((c, i) => {
+  for (const { c, mode } of maskJoins(l.components)) {
     const v = componentValue(valueOf(c), c.invert, Math.min(1, Math.max(0, c.opacity / 100)))
-    m = combine(m, v, i === 0 ? 'Add' : c.mode)
-  })
+    m = combine(m, v, mode)
+  }
   return l.invert ? 1 - m : m
 }

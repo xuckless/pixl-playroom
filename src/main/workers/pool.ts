@@ -7,6 +7,7 @@ import log from 'electron-log/main'
 import { availableParallelism } from 'os'
 import type { Worker } from 'worker_threads'
 import type { Orientation } from '../../shared/engine-types'
+import type { MaskEdge } from '../../shared/maskedge'
 import type { LinearComponent, RadialComponent } from '../../shared/recipe'
 import createPixels from './pixels.worker?nodeWorker'
 
@@ -18,7 +19,7 @@ export type PixelsJob =
       c: LinearComponent | RadialComponent
       user: Orientation
     }
-  | { op: 'brush'; file: string; png: string; user: Orientation }
+  | { op: 'brush'; file: string; png: string; user: Orientation; edge?: MaskEdge }
   /** A masked pixel step's overlay (pixels/ops.ts). */
   | { op: 'compose'; image: string; mask: string; out: string }
   /** A coordinate ramp for a lens map (pixels/ops.ts). */

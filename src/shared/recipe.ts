@@ -9,11 +9,12 @@
  * brought up to date by `normaliseRecipe` rather than by `?.` everywhere.
  */
 import { NO_ADD, type AddColourSetting } from './addcolor'
-import type { BlendMode, KeyBand, MaskMode } from './engine-types'
+import type { BlendMode, CropRect, KeyBand, MaskMode } from './engine-types'
 import { defaultLens, type LensSetting } from './lens'
 import { defaultUpright, type UprightSetting } from './upright'
 import type { RetouchSpot } from './retouch'
 import { normalisePixelStep, type PixelStep } from './pixels'
+import { normaliseEdge, type MaskEdge } from './maskedge'
 
 export const RECIPE_VERSION = 2
 
@@ -227,6 +228,8 @@ interface ComponentBase {
   invert: boolean
   /** 0…100, a fraction of the frame's shorter side (100 = 10%). */
   feather: number
+  /** Its edge moved in or out and hardened (shared/maskedge.ts); absent changes nothing. */
+  edge?: MaskEdge
 }
 
 /**
@@ -573,17 +576,27 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   if (!isObject(value) || !isObject((value as Record<string, unknown>).profile)) {
     r.profile = base.profile
   }
-  r.layers = (r.layers ?? []).map(({ overlayHue, ...withOld }) => {
+  r.toneCurve = normaliseToneCurve(r.toneCurve)
+  r.geometry.crop = normaliseCrop(r.geometry.crop)
+  r.layers = (r.layers ?? []).filter(isObject).map(({ overlayHue, ...withOld }) => {
     // Version 1's sliders become settings (`layerSettingsOf`) and go.
     const l: typeof withOld & { adjust?: unknown } = { ...withOld }
     delete l.adjust
+    const settings = layerSettingsOf(withOld as unknown as Record<string, unknown>)
+    settings.toneCurve = normaliseToneCurve(settings.toneCurve)
     return {
       ...l,
+      id: typeof l.id === 'string' && l.id ? l.id : newId(),
+      name: typeof l.name === 'string' ? l.name : 'Mask',
+      enabled: l.enabled !== false,
+      opacity: num(l.opacity, 100, 0, 100),
+      blend: BLEND_MODES.includes(l.blend) ? l.blend : 'Normal',
+      invert: l.invert === true,
       ...(typeof overlayHue === 'number' && Number.isFinite(overlayHue)
         ? { overlayHue: ((overlayHue % 360) + 360) % 360 }
         : {}),
       amount: num(l.amount, 100, 0, 200),
-      settings: layerSettingsOf(withOld as unknown as Record<string, unknown>),
+      settings,
       components: (Array.isArray(l.components) ? (l.components as unknown[]) : [])
         .map(normaliseComponent)
         .filter((c): c is MaskComponentSetting => c !== null)
@@ -605,6 +618,66 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     .filter((p): p is PointColorSetting => p !== null)
     .slice(0, MAX_POINT_COLORS)
   return r
+}
+
+const BLEND_MODES: BlendMode[] = [
+  'Normal',
+  'Multiply',
+  'Screen',
+  'Overlay',
+  'SoftLight',
+  'HardLight',
+  'Darken',
+  'Lighten',
+  'Difference',
+  'Add'
+]
+
+/**
+ * A point curve: its points that are points (in 0…1), in order; fewer than
+ * two (which the engine refuses) is the identity.
+ */
+function normaliseCurve(v: unknown): CurvePointSetting[] {
+  const points = (Array.isArray(v) ? (v as unknown[]) : [])
+    .filter(isObject)
+    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+    .map((p) => ({ x: num(p.x, 0, 0, 1), y: num(p.y, 0, 0, 1) }))
+    .sort((a, b) => a.x - b.x)
+  return points.length >= 2 ? points : IDENTITY_CURVE()
+}
+
+function normaliseToneCurve(tc: ToneCurveSetting): ToneCurveSetting {
+  const raw = Array.isArray(tc.splits) ? (tc.splits as unknown[]) : []
+  const splits = raw
+    .filter((x): x is number => typeof x === 'number' && Number.isFinite(x))
+    .sort((a, b) => a - b)
+  // Three region splits strictly in order inside 0…100, or Lightroom's.
+  const ok =
+    raw.length === 3 &&
+    splits.length === 3 &&
+    splits[0] > 0 &&
+    splits[0] < splits[1] &&
+    splits[1] < splits[2] &&
+    splits[2] < 100
+  return {
+    ...tc,
+    splits: ok ? (splits as [number, number, number]) : [25, 50, 75],
+    master: normaliseCurve(tc.master),
+    red: normaliseCurve(tc.red),
+    green: normaliseCurve(tc.green),
+    blue: normaliseCurve(tc.blue)
+  }
+}
+
+/** A crop rectangle inside its frame, or none. */
+function normaliseCrop(v: unknown): CropRect | null {
+  if (!isObject(v)) return null
+  const x = num(v.x, NaN, 0, 1)
+  const y = num(v.y, NaN, 0, 1)
+  const width = num(v.width, NaN, 0, 1 - x)
+  const height = num(v.height, NaN, 0, 1 - y)
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null
+  return { x, y, width, height }
 }
 
 function normalisePointColor(value: unknown): PointColorSetting | null {
@@ -646,7 +719,8 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
     opacity: num(c.opacity, 100, 0, 100),
     invert: c.invert === true,
     feather: num(c.feather, 0, 0, 100),
-    ...(typeof c.name === 'string' && c.name.trim() ? { name: c.name.trim() } : {})
+    ...(typeof c.name === 'string' && c.name.trim() ? { name: c.name.trim() } : {}),
+    ...((e) => (e ? { edge: e } : {}))(normaliseEdge(c.edge))
   }
   switch (c.kind) {
     case 'brush':
@@ -719,6 +793,7 @@ export const RECIPE_GROUPS = [
   'calibration',
   'treatment',
   'crop',
+  'upright',
   'orientation',
   'retouch',
   'localAdjustments',
@@ -742,6 +817,7 @@ export const GROUP_LABELS: Record<RecipeGroup, string> = {
   calibration: 'Calibration',
   treatment: 'Treatment (colour / B&W)',
   crop: 'Crop & straighten',
+  upright: 'Upright (perspective)',
   orientation: 'Rotation & flip',
   retouch: 'Spot removal & eyes',
   localAdjustments: 'Masks & local adjustments',
@@ -812,6 +888,10 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.geometry.straighten = f.geometry.straighten
         r.geometry.aspect = f.geometry.aspect
         break
+      case 'upright':
+        // As measured on the source: a mode re-applied on the target measures its own lines.
+        r.geometry.upright = f.geometry.upright
+        break
       case 'orientation':
         r.geometry.quarterTurns = f.geometry.quarterTurns
         r.geometry.flipHorizontal = f.geometry.flipHorizontal
@@ -830,20 +910,117 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
   return r
 }
 
-/** The groups where `a` and `b` differ — what a preset or a sync would carry. */
-export function changedGroups(a: Recipe, b: Recipe): RecipeGroup[] {
-  const probe = (g: RecipeGroup): string => {
-    const empty = defaultRecipe(false)
-    return JSON.stringify(applyGroups(empty, a, [g])) === JSON.stringify(applyGroups(empty, b, [g]))
-      ? ''
-      : g
+/**
+ * Whether two plain values are the same, whatever order their keys were
+ * written in (a field set to undefined counts as absent, as in JSON).
+ */
+export function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((x, i) => sameValue(x, b[i]))
+    )
   }
-  return RECIPE_GROUPS.filter((g) => probe(g) !== '')
+  if (!isObject(a) || !isObject(b)) return false
+  const ka = Object.keys(a).filter((k) => a[k] !== undefined)
+  const kb = Object.keys(b).filter((k) => b[k] !== undefined)
+  return ka.length === kb.length && ka.every((k) => sameValue(a[k], b[k]))
 }
 
-/** Whether a recipe differs from the default for its kind of file. */
+/**
+ * Where `a` differs from `b`, field by field: each path to a value (a number,
+ * a string, a list such as a curve's points) that is not the same in both.
+ */
+export function changedFields(a: unknown, b: unknown, at: string[] = []): string[][] {
+  if (isObject(a) && isObject(b)) {
+    return Object.keys(a).flatMap((k) => changedFields(a[k], b[k], [...at, k]))
+  }
+  return sameValue(a, b) ? [] : [at]
+}
+
+/** `to` with each of `fields` (paths, as `changedFields` gives them) taken from `from`. */
+export function applyFields(to: Recipe, from: Recipe, fields: string[][]): Recipe {
+  const r = structuredClone(to)
+  for (const path of fields) {
+    if (path.length === 0) continue
+    let src: unknown = from
+    let dst: Record<string, unknown> = r as unknown as Record<string, unknown>
+    for (let i = 0; i < path.length - 1; i++) {
+      src = isObject(src) ? src[path[i]] : undefined
+      const next = dst[path[i]]
+      if (!isObject(next)) break
+      dst = next
+    }
+    const last = path[path.length - 1]
+    src = isObject(src) ? src[last] : undefined
+    if (src !== undefined && last in dst) dst[last] = structuredClone(src)
+  }
+  return r
+}
+
+/** What a group carries of a recipe (the fields `applyGroups` copies), read in place. */
+function groupValues(r: Recipe, g: RecipeGroup): unknown[] {
+  const d = r.detail
+  switch (g) {
+    case 'profile':
+      return [r.profile, r.profileAmount]
+    case 'whiteBalance':
+      return [r.wb]
+    case 'basicTone':
+      return [r.basic]
+    case 'presence':
+      return [r.presence]
+    case 'toneCurve':
+      return [r.toneCurve]
+    case 'hsl':
+      return [r.hsl, r.bwMix, r.pointColors]
+    case 'colorGrade':
+      return [r.colorGrade]
+    case 'detailSharpen':
+      return [d.sharpenAmount, d.sharpenRadius, d.sharpenDetail, d.sharpenMasking]
+    case 'detailNoise':
+      return [d.noiseLuminance, d.noiseLuminanceDetail, d.noiseColor, d.noiseColorDetail, d.ai]
+    case 'lens':
+      return [r.lens]
+    case 'retouch':
+      return [r.retouch]
+    case 'effects':
+      return [r.effects]
+    case 'calibration':
+      return [r.calibration]
+    case 'treatment':
+      return [r.treatment]
+    case 'crop':
+      return [r.geometry.crop, r.geometry.straighten, r.geometry.aspect]
+    case 'upright':
+      return [r.geometry.upright]
+    case 'orientation':
+      return [r.geometry.quarterTurns, r.geometry.flipHorizontal]
+    case 'localAdjustments':
+      return [r.layers]
+    case 'custom':
+      return [r.custom]
+    case 'hdr':
+      return [r.gainMap]
+  }
+}
+
+const groupChanged = (a: Recipe, b: Recipe, g: RecipeGroup): boolean =>
+  !sameValue(groupValues(a, g), groupValues(b, g))
+
+/** The groups where `a` and `b` differ — what a preset or a sync would carry. */
+export function changedGroups(a: Recipe, b: Recipe): RecipeGroup[] {
+  return RECIPE_GROUPS.filter((g) => groupChanged(a, b, g))
+}
+
+/** Whether a recipe differs from the default for its kind of file (stopping at the first change). */
 export function isEdited(r: Recipe, isRaw: boolean): boolean {
-  return r.pixels.length > 0 || changedGroups(r, defaultRecipe(isRaw)).length > 0
+  if (r.pixels.length > 0) return true
+  const def = defaultRecipe(isRaw)
+  return RECIPE_GROUPS.some((g) => groupChanged(r, def, g))
 }
 
 export function newId(): string {
@@ -864,18 +1041,18 @@ export function newLocalLayer(name: string): LocalLayer {
   }
 }
 
-/** A small, stable 32-bit hash for seeds (grain) and cache keys. */
-/** A brush plane's reference: its content hash and length. */
-export function planeRef(png: string): string {
-  return `${hash32(png).toString(16)}-${png.length}`
-}
-
 /**
  * The recipe with its brush planes as references, the PNGs left out: what
- * crosses IPC. `known` receives each PNG it takes out, by reference. The same
- * recipe comes back when it holds no PNG.
+ * crosses IPC and what is stored. A plane is named by its `ref` when it
+ * carries one, else by `refOf` (main/planeref.ts: its SHA-256). `known`
+ * receives each PNG it takes out, by reference. The same recipe comes back
+ * when it holds no PNG.
  */
-export function slimRecipe(r: Recipe, known?: (ref: string, png: string) => void): Recipe {
+export function slimRecipe(
+  r: Recipe,
+  refOf: (png: string) => string,
+  known?: (ref: string, png: string) => void
+): Recipe {
   if (!r.layers.some((l) => l.components.some((c) => c.kind === 'brush' && c.png))) return r
   return {
     ...r,
@@ -883,7 +1060,7 @@ export function slimRecipe(r: Recipe, known?: (ref: string, png: string) => void
       ...l,
       components: l.components.map((c) => {
         if (c.kind !== 'brush' || !c.png) return c
-        const ref = c.ref ?? planeRef(c.png)
+        const ref = c.ref ?? refOf(c.png)
         known?.(ref, c.png)
         return { ...c, png: '', ref }
       })
@@ -915,6 +1092,7 @@ export function hydrateRecipe(r: Recipe, get: (ref: string) => string | undefine
   }
 }
 
+/** A small, stable 32-bit hash for seeds (grain) and cache keys. */
 export function hash32(text: string): number {
   let h = 0x811c9dc5
   for (let i = 0; i < text.length; i++) {
@@ -937,7 +1115,7 @@ export function neutralSettings(): LayerSettings {
 
 /** Whether a mask's settings change nothing. */
 export function isNeutral(s: LayerSettings): boolean {
-  return JSON.stringify(s) === JSON.stringify(neutralSettings())
+  return sameValue(s, neutralSettings())
 }
 
 /**

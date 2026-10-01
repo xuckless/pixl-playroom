@@ -20,6 +20,8 @@ import {
   BLOB_CHUNK,
   jpegSize,
   PixlFile,
+  ProjectPool,
+  putBlobFileInPieces,
   sha256File,
   type Origin
 } from '../src/main/project/pixlfile'
@@ -31,8 +33,13 @@ import { emptySidecar, sidecarPath } from '../src/main/sidecar'
 import type { XmpIo } from '../src/main/indexer/xmp'
 import { defaultRecipe, newLocalLayer, type BrushComponent } from '../src/shared/recipe'
 import { keyOf } from '../src/main/keys'
+import { planeRef } from '../src/main/planeref'
+import { Store } from '../src/main/db'
+import type { LibraryItem } from '../src/shared/ipc'
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'pixl-'))
+/** A painted plane's base64 (any bytes: the project keeps them as they are). */
+const PLANE_ONE = Buffer.from('plane one').toString('base64')
 
 const origin = (dir: string): Origin => ({
   name: 'a.jpg',
@@ -95,7 +102,7 @@ test('what a sidecar holds goes in and comes back, planes kept once by reference
   const r = defaultRecipe(false)
   r.basic.exposure = 0.7
   const l = newLocalLayer('Mask 1')
-  l.components.push(brush('iVBORw0KGgo-plane-one'))
+  l.components.push(brush(PLANE_ONE))
   r.layers.push(l)
   s.photo = { rating: 4, flag: 'pick', label: 'red', recipe: r, snapshots: [] }
   s.copies.push({
@@ -116,7 +123,7 @@ test('what a sidecar holds goes in and comes back, planes kept once by reference
   assert.equal(back.photo.flag, 'pick')
   assert.equal(back.photo.recipe?.basic.exposure, 0.7)
   const c = back.photo.recipe!.layers[0].components[0] as BrushComponent
-  assert.equal(c.png, 'iVBORw0KGgo-plane-one')
+  assert.equal(c.png, PLANE_ONE)
   assert.equal(back.copies.length, 1)
   assert.equal(back.copies[0].snapshots[0].name, 'Before')
   assert.deepEqual(back.stack, { id: 'st', position: 1 })
@@ -136,17 +143,17 @@ test('history lives in the project, and gc drops planes nothing names', () => {
   p.history.append('', 'Opened', r)
   const next = structuredClone(r)
   next.basic.contrast = 20
-  const log = p.history.append('', 'Contrast', next)
-  assert.equal(log.steps.length, 1)
-  p.putPlane('orphan', 'x')
-  p.putPlane('kept', 'y')
+  p.history.append('', 'Contrast', next)
+  assert.equal(p.history.history('').steps.length, 1)
+  p.putPlane('orphan', Buffer.from('x').toString('base64'))
+  p.putPlane('kept', Buffer.from('y').toString('base64'))
   const named = structuredClone(next)
   const l = newLocalLayer('m')
   l.components.push({ ...brush(''), ref: 'kept' })
   named.layers.push(l)
   p.history.append('', 'Mask', named)
   assert.equal(p.gc(), 1)
-  assert.equal(p.plane('kept'), 'y')
+  assert.equal(p.plane('kept'), Buffer.from('y').toString('base64'))
   assert.equal(p.plane('orphan'), undefined)
   p.close()
   rmSync(dir, { recursive: true })
@@ -237,6 +244,80 @@ test('the first edit makes the project: the sidecar and the index history move i
   assert.equal(listed.filter((i) => i.copyId === null).length, 2)
   await settle()
   again.close()
+  rmSync(root, { recursive: true })
+})
+
+test('a committed edit saves its step and the recipe together', async () => {
+  const root = tmp()
+  const folder = join(root, 'photos')
+  mkdirSync(folder)
+  writeFileSync(join(folder, 'a.jpg'), 'not really a photo')
+  const index = new IndexService({ userData: join(root, 'ud'), emit: () => {}, xmp: noXmp })
+  const a = (await index.listFolder(folder))[0].key
+  const r = defaultRecipe(false)
+  // The base only records what is saved: no project, nothing written.
+  assert.equal(index.commitEdit(a, 'Opened', r, r).step, null)
+  assert.equal(index.projectPath(a), null)
+  // The first step makes the project with the recipe in it.
+  const one = structuredClone(r)
+  one.basic.exposure = 1
+  assert.equal(index.commitEdit(a, 'Exposure', one, one).step?.label, 'Exposure')
+  assert.equal(index.history(a).steps.length, 1)
+  assert.ok(index.projectPath(a))
+  assert.equal(index.recipe(a).basic.exposure, 1)
+  // In a project: the step, and the live recipe (newer than the step) saved with it.
+  const two = structuredClone(one)
+  two.basic.contrast = 20
+  const live = structuredClone(two)
+  live.basic.contrast = 30
+  index.commitEdit(a, 'Contrast', two, live)
+  assert.equal(index.history(a).steps.length, 2)
+  assert.equal(index.recipe(a).basic.contrast, 30)
+  assert.equal(index.item(a)?.edited, true)
+  await settle()
+  index.close()
+  rmSync(root, { recursive: true })
+})
+
+test('a renamed photo keeps its project; a new photo of an old name does not take it', async () => {
+  const root = tmp()
+  const folder = join(root, 'photos')
+  mkdirSync(folder)
+  writeFileSync(join(folder, 'IMG_0001.jpg'), 'the first photo')
+  writeFileSync(join(folder, 'IMG_0002.jpg'), 'the second photo, longer')
+  let index = new IndexService({ userData: join(root, 'ud'), emit: () => {}, xmp: noXmp })
+  const items = await index.listFolder(folder)
+  const r = defaultRecipe(false)
+  r.basic.exposure = 0.5
+  for (const it of items) index.saveRecipe(it.key, r)
+  await settle()
+  index.close()
+
+  // One renamed (same bytes, same time); the other deleted and a new photo
+  // of its name taken (a counter reset).
+  renameSync(join(folder, 'IMG_0001.jpg'), join(folder, 'Beach.jpg'))
+  rmSync(join(folder, 'IMG_0002.jpg'))
+  writeFileSync(join(folder, 'IMG_0002.jpg'), 'a new photo')
+  index = new IndexService({ userData: join(root, 'ud'), emit: () => {}, xmp: noXmp })
+  await index.rescan(folder)
+  const listed = await index.listFolder(folder)
+  const named = (n: string): LibraryItem[] =>
+    listed.filter((i) => i.name === n && i.copyId === null)
+  const beach = named('Beach.jpg')
+  assert.equal(beach.length, 1)
+  assert.equal(beach[0].edited, true)
+  assert.equal(index.recipe(beach[0].key).basic.exposure, 0.5)
+  // No stand-in left for the renamed one.
+  assert.equal(named('IMG_0001.jpg').length, 0)
+  // The new IMG_0002 is unedited; the old one's project stands for it beside.
+  const two = named('IMG_0002.jpg')
+  assert.equal(two.length, 2)
+  const fresh = two.find((i) => i.path === join(folder, 'IMG_0002.jpg'))!
+  assert.equal(fresh.edited, false)
+  const old = two.find((i) => i !== fresh)!
+  assert.equal(old.edited, true)
+  await settle()
+  index.close()
   rmSync(root, { recursive: true })
 })
 
@@ -339,7 +420,7 @@ async function withProject(location?: unknown): Promise<{
   const r = defaultRecipe(false)
   r.basic.exposure = 0.8
   index.saveRecipe(key, r)
-  index.putOriginal(key, join(folder, 'a.jpg'), 'verbatim', {
+  await index.putOriginal(key, join(folder, 'a.jpg'), 'verbatim', {
     codec: 'jpg',
     width: 1,
     height: 1,
@@ -444,4 +525,178 @@ test('a blob a snapshot names is kept', () => {
   assert.ok(p.blob(hash))
   p.close()
   rmSync(dir, { recursive: true })
+})
+
+test('writes gather into one batch, committed after a moment or when flushed', async () => {
+  const dir = tmp()
+  const path = join(dir, 'a.pixl')
+  PixlFile.create(path, origin(dir)).close()
+  const committed: string[] = []
+  const pool = new ProjectPool(2000, (p) => committed.push(p), 30)
+  const outside = (): number => {
+    const f = PixlFile.open(path)
+    try {
+      return f.history.history('').steps.length
+    } finally {
+      f.close()
+    }
+  }
+  const r = defaultRecipe(false)
+  pool.write(path, (p) => p.history.append('', 'Opened', r))
+  const next = structuredClone(r)
+  next.basic.exposure = 1
+  pool.write(path, (p) => p.history.append('', 'Exposure', next))
+  // The pool reads its own writes; another connection sees none of them yet.
+  assert.equal(
+    pool.use(path, (p) => p.history.history('').steps.length),
+    1
+  )
+  assert.equal(PixlFile.peekOrigin(path)?.name, 'a.jpg')
+  assert.equal(committed.length, 0)
+  await new Promise((res) => setTimeout(res, 80))
+  assert.deepEqual(committed, [path])
+  assert.equal(outside(), 1)
+
+  // A transaction that fails inside a batch undoes only itself.
+  pool.write(path, (p) => p.setMeta('kept', 'yes'))
+  assert.throws(() =>
+    pool.write(path, (p) =>
+      p.tx(() => {
+        p.setMeta('lost', 'yes')
+        throw new Error('no')
+      })
+    )
+  )
+  pool.flush(path)
+  const f = PixlFile.open(path)
+  assert.equal(f.meta('kept'), 'yes')
+  assert.equal(f.meta('lost'), undefined)
+  f.close()
+  pool.drop()
+  rmSync(dir, { recursive: true })
+})
+
+test('a version-1 project is upgraded on open: planes become blobs, renamed where they are named', () => {
+  const dir = tmp()
+  const path = join(dir, 'a.pixl')
+  const p = PixlFile.create(path, origin(dir))
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('m')
+  l.components.push({ ...brush(''), ref: 'abc123-40' })
+  r.layers.push(l)
+  p.write({
+    ...emptySidecar(),
+    photo: { rating: 0, flag: null, label: null, recipe: r, snapshots: [] }
+  })
+  p.history.append('', 'Opened', defaultRecipe(false))
+  p.history.append('', 'Mask', r)
+  p.close()
+  // As version 1 kept it: base64 text in `planes`, by the old name.
+  const db = new DatabaseSync(path)
+  db.exec('CREATE TABLE planes (ref TEXT PRIMARY KEY, png TEXT NOT NULL)')
+  db.prepare('INSERT INTO planes VALUES (?, ?)').run('abc123-40', PLANE_ONE)
+  db.exec(
+    "DELETE FROM blob_chunks; DELETE FROM blobs; PRAGMA user_version = 1; UPDATE meta SET value = '1' WHERE key = 'format_version'"
+  )
+  db.close()
+
+  const up = PixlFile.open(path)
+  const hash = planeRef(PLANE_ONE)
+  assert.equal(up.plane(hash), PLANE_ONE)
+  assert.equal(up.meta('format_version'), String(PIXL_FORMAT_VERSION))
+  const c = up.read(false, false).photo.recipe!.layers[0].components[0] as BrushComponent
+  assert.equal(c.ref, hash)
+  const full = up.read(false).photo.recipe!.layers[0].components[0] as BrushComponent
+  assert.equal(full.png, PLANE_ONE)
+  const log = up.history.history('')
+  assert.ok(JSON.stringify(log.steps).includes(hash))
+  assert.ok(!JSON.stringify(log.steps).includes('abc123-40'))
+  up.close()
+  const raw = new DatabaseSync(path, { readOnly: true })
+  assert.equal(
+    (raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version,
+    PIXL_FORMAT_VERSION
+  )
+  assert.equal(raw.prepare("SELECT 1 FROM sqlite_master WHERE name = 'planes'").get(), undefined)
+  raw.close()
+  rmSync(dir, { recursive: true })
+})
+
+test('an index from before binary planes keeps them, renamed, with its history', () => {
+  const dir = tmp()
+  const file = join(dir, 'index.db')
+  const fresh = Store.open(file)
+  fresh.appendHistory('k', 'Opened', defaultRecipe(false))
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('m')
+  l.components.push({ ...brush(''), ref: 'abc123-40' })
+  r.layers.push(l)
+  fresh.appendHistory('k', 'Mask', r)
+  fresh.close()
+  const db = new DatabaseSync(file)
+  db.exec('CREATE TABLE planes (ref TEXT PRIMARY KEY, png TEXT NOT NULL); PRAGMA user_version = 8')
+  db.prepare('INSERT INTO planes VALUES (?, ?)').run('abc123-40', PLANE_ONE)
+  db.close()
+
+  const store = Store.open(file)
+  const hash = planeRef(PLANE_ONE)
+  assert.equal(store.plane(hash), PLANE_ONE)
+  const steps = JSON.stringify(store.history('k').steps)
+  assert.ok(steps.includes(hash) && !steps.includes('abc123-40'))
+  store.close()
+  rmSync(dir, { recursive: true })
+})
+
+test('a blob written in pieces comes back whole; pieces of a cut-short write are cleared', async () => {
+  const dir = tmp()
+  const p = PixlFile.create(join(dir, 'a.pixl'), origin(dir))
+  const file = join(dir, 'big.bin')
+  const bytes = randomBytes(BLOB_CHUNK * 2 + 123)
+  writeFileSync(file, bytes)
+  const info = { kind: 'pixels', codec: 'jxl', width: 1, height: 1, channels: null, depth: null }
+  const hash = await putBlobFileInPieces((fn) => fn(p), file, info)
+  assert.equal(hash, sha256File(file))
+  assert.equal(p.blob(hash)?.bytes, bytes.length)
+  const out = join(dir, 'out.bin')
+  assert.ok(p.writeBlobTo(hash, out))
+  assert.ok(readFileSync(out).equals(bytes))
+  // Chunks with no blob row (a write the app quit in the middle of) go at the next gc.
+  p.prepare('INSERT INTO blob_chunks(hash, idx, data) VALUES (?, 0, ?)').run(
+    'f'.repeat(64),
+    bytes.subarray(0, 10)
+  )
+  p.gc()
+  const left = p
+    .prepare('SELECT COUNT(*) AS n FROM blob_chunks WHERE hash = ?')
+    .get('f'.repeat(64)) as {
+    n: number
+  }
+  assert.equal(left.n, 0)
+  p.close()
+  rmSync(dir, { recursive: true })
+})
+
+test('a recipe the index hands out by reference finds its planes, even from a new index', async () => {
+  const root = tmp()
+  const folder = join(root, 'photos')
+  mkdirSync(folder)
+  writeFileSync(join(folder, 'a.jpg'), 'not really a photo')
+  const index = new IndexService({ userData: join(root, 'ud'), emit: () => {}, xmp: noXmp })
+  const a = (await index.listFolder(folder))[0].key
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('m')
+  l.components.push(brush(PLANE_ONE))
+  r.layers.push(l)
+  index.saveRecipe(a, r)
+  await settle()
+  index.close()
+  // Another index (a lost one, another machine): the plane is only in the project.
+  const again = new IndexService({ userData: join(root, 'ud2'), emit: () => {}, xmp: noXmp })
+  const key = (await again.listFolder(folder))[0].key
+  const c = again.recipe(key).layers[0].components[0] as BrushComponent
+  assert.equal(c.png, '')
+  assert.equal(again.plane(c.ref!), PLANE_ONE)
+  await settle()
+  again.close()
+  rmSync(root, { recursive: true })
 })

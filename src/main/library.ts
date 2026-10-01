@@ -9,9 +9,10 @@
  * until it has been edited, the photo's own pixels otherwise, and the graded
  * picture (from its proxy) once it has a recipe.
  */
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { existsSync } from 'fs'
+import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { compile } from '../shared/compile'
 import { dhashFromGrey } from '../shared/dupes'
@@ -25,9 +26,10 @@ import {
 } from '../shared/ipc'
 import { orientedFrame } from '../shared/compile'
 import { hash32, type Recipe } from '../shared/recipe'
-import type { EngineClient } from './engine/client'
+import { EngineError, type EngineClient } from './engine/client'
 import type { PhotoRow } from './db'
 import type { IndexClient } from './indexer/client'
+import type { PlaneStore } from './planestore'
 import { brushPlanes } from './brushes'
 import { keyOf } from './keys'
 import { paths } from './paths'
@@ -49,6 +51,8 @@ import {
 export { keyOf, parseKey } from './keys'
 
 export const THUMB_EDGE = 400
+/** The most photos whose proxies are made ahead at once (see `warm`). */
+const WARM_MAX = 3
 
 /** A file's version: its path, size and modification time. */
 const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.size}`
@@ -65,17 +69,39 @@ interface ThumbJob {
   copyId: string | null
 }
 
+/**
+ * A picture Develop already rendered of the recipe just saved (its settled
+ * JPEG, Display P3): the thumbnail is made by shrinking it, not by grading
+ * the photo again on the background engine.
+ */
+export interface Picture {
+  path: string
+  width: number
+  height: number
+}
+
 export class Library {
   private probes = new Map<string, SourceInfo>()
+  private probing = new Map<string, Promise<SourceInfo>>()
   /** JPEGs being rebuilt from a project's JPEG XL repack, by where they go. */
   private rebuilding = new Map<string, Promise<void>>()
   private queue: ThumbJob[] = []
+  /** Keys waiting in the queue. */
   private queued = new Set<string>()
+  /** Keys rendering now, and those changed since theirs began (rendered again after). */
+  private rendering = new Set<string>()
+  private stale = new Set<string>()
+  /** Who waits for a key's thumbnail: told when a render of it ends. */
+  private waiting = new Map<string, (() => void)[]>()
   private running = 0
+  /** The duplicate search hashing pictures now, if any. */
+  private dupes: AbortController | null = null
 
   constructor(
     readonly index: IndexClient,
-    private readonly engine: EngineClient
+    private readonly engine: EngineClient,
+    /** Painted planes: the index hands recipes out and takes them in by reference. */
+    readonly planes: PlaneStore
   ) {
     index.on((e) => {
       if (e.name === 'changed') this.broadcast(IPC.library.changed, { folder: e.folder })
@@ -87,12 +113,38 @@ export class Library {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload)
   }
 
-  /** A photo's probe, cached per file version. */
-  async probe(photo: PhotoRow): Promise<SourceInfo> {
+  /**
+   * A photo's probe, cached per file version: in memory, and on disk beside
+   * its proxies so a photo opened again (another day) does not ask the
+   * engine. `engine`: the one to ask when it must (opening a photo asks the
+   * interactive one, not the background one busy with thumbnails).
+   */
+  async probe(photo: PhotoRow, engine: EngineClient = this.engine): Promise<SourceInfo> {
     const k = versionOf(photo)
     const hit = this.probes.get(k)
     if (hit) return hit
-    const info = await this.engine.probe(photo.path)
+    let p = this.probing.get(k)
+    if (!p) {
+      p = this.probeOnce(photo, k, engine).finally(() => this.probing.delete(k))
+      this.probing.set(k, p)
+    }
+    return p
+  }
+
+  private async probeOnce(photo: PhotoRow, k: string, engine: EngineClient): Promise<SourceInfo> {
+    // Per app version too: the engine ships with it, and a newer one may say more.
+    const file = join(
+      paths.photoCache(photo.id),
+      `probe-${hash32(`${k}:${app.getVersion()}`).toString(16)}.json`
+    )
+    let info: SourceInfo | null = null
+    try {
+      info = JSON.parse(await readFile(file, 'utf8')) as SourceInfo
+    } catch {
+      info = await engine.probe(photo.path)
+      await mkdir(paths.photoCache(photo.id), { recursive: true })
+      await writeFile(file, JSON.stringify(info)).catch(() => undefined)
+    }
     this.probes.set(k, info)
     // The grid's HDR badge learns what the file is.
     const kind = hdrKindOf(info)
@@ -130,6 +182,35 @@ export class Library {
     })()
   }
 
+  /** Photos whose proxies are to be made ahead, the newest asked for first. */
+  private warming: string[] = []
+  private warmRunning = false
+
+  /**
+   * Make these photos' proxies ahead, on the background engine (behind any
+   * preview being rendered): the photos either side of the open one, so
+   * stepping to the next opens at once. Asking again replaces what has not
+   * started; one is made at a time.
+   */
+  warm(keys: string[]): void {
+    this.warming = keys.slice(0, WARM_MAX)
+    if (this.warmRunning) return
+    this.warmRunning = true
+    void (async () => {
+      while (this.warming.length > 0) {
+        const key = this.warming.shift()!
+        try {
+          const row = await this.readable(await this.photoRow(key))
+          await ensureProxies(this.engine, row, await this.probe(row), BACKGROUND_THREADS)
+        } catch (err) {
+          // Not readable, or gone: its own open will say so.
+          log.info('proxies not made ahead for', key, (err as Error).message)
+        }
+      }
+      this.warmRunning = false
+    })()
+  }
+
   /** A folder's items as the index has them; its thumbnails are queued. */
   async openFolder(folder: string): Promise<LibraryItem[]> {
     const items = await this.index.listFolder(folder)
@@ -144,6 +225,8 @@ export class Library {
    * folders, so one rendered for a folder serves every collection too.
    */
   async openSource(src: LibrarySource): Promise<SourceListing> {
+    // Another source opened: a duplicate search still hashing is not wanted now.
+    if (src.kind !== 'duplicates') this.dupes?.abort()
     const listing =
       src.kind === 'duplicates'
         ? await this.duplicates(src.folder, src.threshold)
@@ -159,10 +242,14 @@ export class Library {
    * first where there is none) since this side has the engine.
    */
   async duplicates(folder: string | null, threshold = 6): Promise<SourceListing> {
+    // One search at a time: a new one (or another source opened) stops the last.
+    this.dupes?.abort()
+    const abort = new AbortController()
+    this.dupes = abort
     const work = await this.index.dhashWork(folder)
     let next = 0
     const worker = async (): Promise<void> => {
-      while (next < work.length) {
+      while (next < work.length && !abort.signal.aborted) {
         const w = work[next++]
         try {
           await this.hashPicture(w.photoId, w.thumbPath)
@@ -175,12 +262,14 @@ export class Library {
     }
     // Two at a time, as the thumbnail queue runs.
     await Promise.all([worker(), worker()])
+    if (this.dupes === abort) this.dupes = null
+    // Stopped: what was hashed is kept, and the rest waits for the next search.
     return this.index.duplicates(folder, threshold)
   }
 
   /** A photo's 64-bit dHash, of its thumbnail shrunk to 9×8 by the engine. */
   private async hashPicture(photoId: number, thumbPath: string | null): Promise<void> {
-    if (!thumbPath) await this.thumb({ photoId, copyId: null })
+    if (!thumbPath) await this.thumbFor(photoId, null)
     const row = await this.index.row(keyOf(photoId, null))
     if (!row.thumb_path || !row.thumb_key || !existsSync(row.thumb_path)) return
     const report = await this.engine.convert({
@@ -246,23 +335,48 @@ export class Library {
     return { ...row, path: jpg }
   }
 
-  recipe(key: string): Promise<Recipe> {
-    return this.index.recipe(key)
+  /** A key's saved recipe, its planes filled in. */
+  async recipe(key: string): Promise<Recipe> {
+    return this.planes.hydrate(await this.index.recipe(key))
   }
 
+  /** Save a key's recipe; its planes cross by reference. */
   saveRecipe(key: string, recipe: Recipe): Promise<void> {
-    return this.index.saveRecipe(key, recipe)
+    return this.index.saveRecipe(key, this.planes.slim(recipe))
   }
 
   // ── thumbnails ──
 
-  queueThumb(photoId: number, copyId: string | null, urgent = false): void {
+  /** Pictures offered for the next thumbnail of a key (see `Picture`). */
+  private readonly pictures = new Map<string, Picture>()
+
+  queueThumb(photoId: number, copyId: string | null, urgent = false, picture?: Picture): void {
     const k = keyOf(photoId, copyId)
-    if (this.queued.has(k)) return
+    // Only a picture of what is saved now: one queued without says the recipe moved on.
+    if (picture) this.pictures.set(k, picture)
+    else this.pictures.delete(k)
+    // One rendering now may be of the recipe before this change: it goes again after.
+    if (this.rendering.has(k)) {
+      this.stale.add(k)
+      return
+    }
+    if (this.queued.has(k)) {
+      if (urgent) this.prioritize([k])
+      return
+    }
     this.queued.add(k)
     if (urgent) this.queue.unshift({ photoId, copyId })
     else this.queue.push({ photoId, copyId })
     this.pump()
+  }
+
+  /** A key's thumbnail, rendered through the queue (never beside it); resolves when it is current. */
+  private thumbFor(photoId: number, copyId: string | null): Promise<void> {
+    const k = keyOf(photoId, copyId)
+    return new Promise((resolve) => {
+      this.waiting.set(k, [...(this.waiting.get(k) ?? []), resolve])
+      this.queueThumb(photoId, copyId, true)
+    })
   }
 
   /** Move these keys' waiting thumbnails to the front of the queue. */
@@ -276,12 +390,18 @@ export class Library {
   private pump(): void {
     while (this.running < 2 && this.queue.length > 0) {
       const job = this.queue.shift() as ThumbJob
+      const k = keyOf(job.photoId, job.copyId)
+      this.queued.delete(k)
+      this.rendering.add(k)
       this.running++
       this.thumb(job)
         .catch((err) => {
           log.warn('thumbnail failed', job, err?.message ?? err)
-          // Once per version of the file: a photo that cannot be read is not
-          // tried again until it changes.
+          // Only the engine failing to read the file says the photo is
+          // unreadable (once per version of it: not tried again until it
+          // changes). Anything else (the index stopping at quit, a plane not
+          // found) leaves it to be tried another time.
+          if (!(err instanceof EngineError) || err.cancelled) return
           void this.index.markFailed(job.photoId, String(err?.message ?? err)).catch(() => {})
           this.broadcast(IPC.library.thumb, {
             key: keyOf(job.photoId, job.copyId),
@@ -291,16 +411,24 @@ export class Library {
         })
         .finally(() => {
           this.running--
-          this.queued.delete(keyOf(job.photoId, job.copyId))
+          this.rendering.delete(k)
+          if (this.stale.delete(k)) this.queueThumb(job.photoId, job.copyId, true)
+          else {
+            for (const done of this.waiting.get(k) ?? []) done()
+            this.waiting.delete(k)
+          }
           this.pump()
         })
     }
   }
 
   private async thumb(job: ThumbJob): Promise<void> {
+    const picture = this.pictures.get(keyOf(job.photoId, job.copyId))
+    this.pictures.delete(keyOf(job.photoId, job.copyId))
     const work = await this.index.thumbJob(job.photoId, job.copyId)
     if (!work) return
-    const { recipe, edited, stamp } = work
+    const { edited, stamp } = work
+    const recipe = await this.planes.hydrate(work.recipe)
     const row = await this.readable(work.row)
     const key = keyOf(row.id, job.copyId)
     const raw = row.is_raw === 1
@@ -340,11 +468,39 @@ export class Library {
         // Some RAWs have no usable embedded preview: develop instead.
         await this.graded(row, info, recipe, out, base)
       }
-    } else {
+    } else if (!picture || !(await this.shrunk(picture, out, base))) {
       await this.graded(row, info, recipe, out, base)
     }
     await this.index.setThumb(row.id, job.copyId, out, stamp)
     this.broadcast(IPC.library.thumb, { key, url: cacheUrl(out, stamp) })
+  }
+
+  /**
+   * A thumbnail shrunk from a picture Develop rendered (Display P3, so turned
+   * into sRGB on the way). False when it could not be (the picture already
+   * replaced by a newer one): the caller grades the photo instead.
+   */
+  private async shrunk(
+    picture: Picture,
+    out: string,
+    base: Record<string, unknown>
+  ): Promise<boolean> {
+    if (!existsSync(picture.path)) return false
+    const factor = Math.min(1, THUMB_EDGE / Math.max(picture.width, picture.height, 1))
+    try {
+      await this.engine.convert({
+        ...blankRequest(picture.path, out, 'Jpeg'),
+        ...base,
+        color: {
+          ConvertTo: { to: 'Srgb', intent: 'RelativeColorimetric', black_point_compensation: false }
+        },
+        resize: factor < 1 ? { Scale: { factor } } : 'None'
+      })
+      return true
+    } catch (err) {
+      log.info('thumbnail not shrunk from the develop picture', (err as Error).message)
+      return false
+    }
   }
 
   /**
@@ -365,7 +521,7 @@ export class Library {
     if (hdr) base = { ...base, color: displayPolicy(info, 'Srgb') }
     // Pixel steps (an AI denoise) laid on: made from what the project keeps,
     // never by running a model.
-    const plain = hdr?.px ?? (await ensureProxies(this.engine, row, info))
+    const plain = hdr?.px ?? (await ensureProxies(this.engine, row, info, BACKGROUND_THREADS))
     const px =
       !hdr && recipe.pixels.length > 0
         ? (

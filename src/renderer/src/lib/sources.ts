@@ -19,7 +19,7 @@ export function sameSource(a: LibrarySource | null, b: LibrarySource | null): bo
   if (!a || !b) return a === b
   switch (a.kind) {
     case 'folder':
-      return b.kind === 'folder' && a.path === b.path
+      return b.kind === 'folder' && a.path === b.path && !!a.deep === !!b.deep
     case 'collection':
       return b.kind === 'collection' && a.id === b.id
     case 'keyword':
@@ -29,11 +29,17 @@ export function sameSource(a: LibrarySource | null, b: LibrarySource | null): bo
   }
 }
 
+/** Whether `path` is inside `folder` (at any depth), whichever slash the platform uses. */
+export function isUnder(path: string, folder: string): boolean {
+  const base = folder.replace(/[\\/]+$/, '')
+  return path.length > base.length && path.startsWith(base) && /[\\/]/.test(path[base.length])
+}
+
 /** The source as a trail of names: its kind, the sets it sits in, its own name. */
 export function sourceTrail(src: LibrarySource, collections: Collection[]): string[] {
   switch (src.kind) {
     case 'folder':
-      return [folderName(src.path)]
+      return [src.deep ? `${folderName(src.path)} and subfolders` : folderName(src.path)]
     case 'keyword':
       return ['Keywords', ...keywordLabel(src.path).split(' › ')]
     case 'duplicates':

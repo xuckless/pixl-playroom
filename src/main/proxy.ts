@@ -6,6 +6,8 @@
  * frame, and pixel-sized knobs are scaled by `scale` in `compile.ts`.
  *
  * - `proxy`: long edge ≤ 2560, for settled previews and thumbnails of edits;
+ * - `mid`: long edge ≤ 1920, made from the proxy, for settled previews on a
+ *   loupe it nearly fills (44% fewer pixels to grade than the proxy);
  * - `draft`: long edge ≤ 1280, made from the proxy, for renders while a
  *   slider is moving;
  * - `master`: full resolution, only for RAWs, only when a 1:1 view asks —
@@ -32,9 +34,17 @@ import type { EngineClient } from './engine/client'
 import { exists } from './exists'
 import type { PhotoRow } from './db'
 import { paths } from './paths'
-import { blankRequest, RAW_DEVELOP, sourceOrientation, versionStamp } from './source'
+import {
+  BACKGROUND_THREADS,
+  blankRequest,
+  interactiveThreads,
+  RAW_DEVELOP,
+  sourceOrientation,
+  versionStamp
+} from './source'
 
 export const PROXY_EDGE = 2560
+export const MID_EDGE = 1920
 export const DRAFT_EDGE = 1280
 
 export interface ProxyFile {
@@ -46,6 +56,8 @@ export interface ProxyFile {
 
 export interface Proxies {
   proxy: ProxyFile
+  /** Between the two, when the proxy is larger than MID_EDGE (absent from sets made before it). */
+  mid?: ProxyFile
   draft: ProxyFile
   /** The full-resolution base frame (upright, before the user's turns). */
   frameWidth: number
@@ -60,18 +72,25 @@ const stamp = versionStamp
 export function ensureProxies(
   engine: EngineClient,
   photo: PhotoRow,
-  info: SourceInfo
+  info: SourceInfo,
+  /** A photo being opened takes every core; work in the background takes its share. */
+  threads: number = interactiveThreads()
 ): Promise<Proxies> {
   const key = `${photo.id}:${stamp(photo)}`
   let p = building.get(key)
   if (!p) {
-    p = build(engine, photo, info).finally(() => building.delete(key))
+    p = build(engine, photo, info, threads).finally(() => building.delete(key))
     building.set(key, p)
   }
   return p
 }
 
-async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): Promise<Proxies> {
+async function build(
+  engine: EngineClient,
+  photo: PhotoRow,
+  info: SourceInfo,
+  threads: number
+): Promise<Proxies> {
   const dir = paths.photoCache(photo.id)
   const s = stamp(photo)
   const meta = join(dir, `proxies-${s}.json`)
@@ -82,8 +101,14 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
       (await exists(known.draft.path)) &&
       Number.isFinite(known.frameWidth) &&
       Number.isFinite(known.frameHeight)
-    )
-      return known
+    ) {
+      // A set made before the middle size: it gains one, once.
+      if (known.mid || Math.max(known.proxy.width, known.proxy.height) <= MID_EDGE) return known
+      const mid = await shrink(engine, known.proxy, join(dir, `mid-${s}`), MID_EDGE, threads)
+      const out = { ...known, mid }
+      await writeFile(meta, JSON.stringify(out))
+      return out
+    }
   }
   // An older version of the file: clear its working copies.
   for (const f of await readdir(dir)) {
@@ -91,6 +116,7 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
       f.startsWith('proxies-') ||
       f.startsWith('proxy-') ||
       f.startsWith('draft-') ||
+      f.startsWith('mid-') ||
       f.startsWith('master-') ||
       f.startsWith('lens-')
     ) {
@@ -132,7 +158,8 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
     framing:
       orientation === 'Normal'
         ? null
-        : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
+        : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null },
+    threads
   })
   const proxy: ProxyFile = { path: proxyPath, input, width: report.width, height: report.height }
 
@@ -144,7 +171,8 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
     pixel: { depth: 'Sixteen', channels: null },
     encode,
     metadata: { exif: false, icc: true, xmp: false, iptc: false },
-    color: 'Preserve'
+    color: 'Preserve',
+    threads
   })
   const draft: ProxyFile = {
     path: draftPath,
@@ -152,8 +180,13 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
     width: draftReport.width,
     height: draftReport.height
   }
+  const mid =
+    Math.max(proxy.width, proxy.height) > MID_EDGE
+      ? await shrink(engine, proxy, join(dir, `mid-${s}`), MID_EDGE, threads)
+      : undefined
   const out: Proxies = {
     proxy,
+    ...(mid ? { mid } : {}),
     draft,
     // An engine build that does not report the frame gets it from the proxy,
     // scaled back up: close enough for geometry, and never NaN.
@@ -166,6 +199,31 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
   }
   await writeFile(meta, JSON.stringify(out))
   return out
+}
+
+/** `from` made smaller, to a long edge of `edge` (or `factor` of it), in its own format. */
+async function shrink(
+  engine: EngineClient,
+  from: ProxyFile,
+  stem: string,
+  edge: number,
+  threads: number,
+  factor = Math.min(1, edge / Math.max(from.width, from.height))
+): Promise<ProxyFile> {
+  const png = from.input === 'Png'
+  const path = `${stem}.${png ? 'png' : 'tiff'}`
+  const report = await engine.convert({
+    ...blankRequest(from.path, path, from.input),
+    resize: factor < 1 ? { Scale: { factor } } : 'None',
+    pixel: { depth: 'Sixteen', channels: null },
+    encode: png
+      ? { Png: { compression: 'Fast', filter: 'Sub' } }
+      : { Tiff: { compression: 'None' } },
+    metadata: { exif: false, icc: true, xmp: false, iptc: false },
+    color: 'Preserve',
+    threads
+  })
+  return { path, input: from.input, width: report.width, height: report.height }
 }
 
 const lensing = new Map<string, Promise<Proxies>>()
@@ -227,7 +285,9 @@ async function bakeLens(
     // Placed on the base frame, which is what the proxy is.
     retouch,
     // A PQ/HLG proxy is corrected in the HDR working space it is graded in.
-    hdr
+    hdr,
+    // Baked behind the editing: its share of the cores, not all of them.
+    threads: BACKGROUND_THREADS
   })
   const proxy: ProxyFile = {
     path: proxyPath,
@@ -243,11 +303,23 @@ async function bakeLens(
     pixel: { depth: 'Sixteen', channels: null },
     encode,
     metadata: { exif: false, icc: true, xmp: false, iptc: false },
-    color: 'Preserve'
+    color: 'Preserve',
+    threads: BACKGROUND_THREADS
   })
   const k = report.width / px.proxy.width
+  const mid = px.mid
+    ? await shrink(
+        engine,
+        proxy,
+        join(dir, `${prefix}-mid`),
+        MID_EDGE,
+        BACKGROUND_THREADS,
+        px.mid.width / px.proxy.width
+      )
+    : undefined
   const out: Proxies = {
     proxy,
+    ...(mid ? { mid } : {}),
     draft: {
       path: draftPath,
       input: px.proxy.input,
@@ -262,15 +334,36 @@ async function bakeLens(
 }
 
 /**
- * Drop a photo's lens-corrected sets but the one for `keepKey` (none when
- * empty) — when the photo closes, so no render still reads them.
+ * Drop a photo's lens-corrected sets but each of its items' current one —
+ * when an item closes (`itemKey`, its set now `keepKey`, none when empty), so
+ * no render still reads them. Virtual copies share the photo's cache: one
+ * closing keeps the sets the others were left on.
  */
-export async function pruneLensed(photo: PhotoRow, keepKey: string): Promise<void> {
+export async function pruneLensed(
+  photo: PhotoRow,
+  itemKey: string,
+  keepKey: string,
+  /** Kept too: the set before (a quick undo back to it finds it made). */
+  alsoKeep?: string
+): Promise<void> {
   const dir = paths.photoCache(photo.id)
-  const keep = keepKey ? `lens-${stamp(photo)}-${keepKey}` : null
+  const file = join(dir, 'keep-lensed.json')
+  let kept: Record<string, string> = {}
+  try {
+    const parsed: unknown = JSON.parse(await readFile(file, 'utf8'))
+    if (parsed && typeof parsed === 'object') kept = parsed as Record<string, string>
+  } catch {
+    // None yet, or unreadable: only this item's set is known.
+  }
+  if (keepKey) kept[itemKey] = keepKey
+  else delete kept[itemKey]
+  await writeFile(file, JSON.stringify(kept)).catch(() => undefined)
+  const keep = [...Object.values(kept), ...(alsoKeep ? [alsoKeep] : [])].map(
+    (k) => `lens-${stamp(photo)}-${k}`
+  )
   for (const f of await readdir(dir).catch(() => [] as string[])) {
-    if (f.startsWith('lens-') && (!keep || !f.startsWith(keep)))
-      await unlink(join(dir, f)).catch(() => {})
+    const isKept = (k: string): boolean => f.startsWith(`${k}.`) || f.startsWith(`${k}-`)
+    if (f.startsWith('lens-') && !keep.some(isKept)) await unlink(join(dir, f)).catch(() => {})
   }
 }
 

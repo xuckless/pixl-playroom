@@ -25,7 +25,9 @@ const photos = (n: number): string => `${n} photo${n === 1 ? '' : 's'}`
 async function refreshDevelop(keys: string[]): Promise<void> {
   const key = useDevelop.getState().session?.key
   if (!key || !keys.includes(key)) return
-  const [s, history] = await Promise.all([api.develop.open(key), api.develop.historyList(key)])
+  const [s, listed] = await Promise.all([api.develop.open(key), api.develop.historyList(key)])
+  // The head is the session's recipe here; the state keeps only the log.
+  const history = { base: listed.base, steps: listed.steps }
   if (useDevelop.getState().session?.key === key)
     useDevelop.setState({ recipe: s.recipe, history, redo: [] })
 }

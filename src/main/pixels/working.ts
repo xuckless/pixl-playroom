@@ -56,28 +56,39 @@ export function workingKey(version: string, steps: PixelStep[]): string {
 const dirOf = (deps: PixelDeps, key: string): string => join(deps.cacheDir, `work-${key}`)
 
 /**
+ * Write `out` through a temporary file of its own, renamed whole into place:
+ * a render reading it never sees it half written.
+ */
+async function atomically<T>(out: string, build: (tmp: string) => Promise<T>): Promise<T> {
+  const tmp = out.replace(
+    /(\.[a-z]+)$/,
+    `.${process.pid}-${Math.random().toString(36).slice(2)}.part$1`
+  )
+  try {
+    const r = await build(tmp)
+    await rename(tmp, out)
+    return r
+  } finally {
+    await rm(tmp, { force: true }).catch(() => undefined)
+  }
+}
+
+/**
  * Make a cache file once: a second ask for the same file (the proxies, the
  * master and a bake can all want one patch at one size at once) waits for
- * the first, and each maker writes its own temporary file, renamed whole
- * into place.
+ * the first.
  */
 const making = new Map<string, Promise<void>>()
-async function makeOnce(out: string, build: (tmp: string) => Promise<unknown>): Promise<void> {
+export async function makeOnce(
+  out: string,
+  build: (tmp: string) => Promise<unknown>
+): Promise<void> {
   if (await exists(out)) return
   let p = making.get(out)
   if (!p) {
-    p = (async (): Promise<void> => {
-      const tmp = out.replace(
-        /(\.[a-z]+)$/,
-        `.${process.pid}-${Math.random().toString(36).slice(2)}.part$1`
-      )
-      try {
-        await build(tmp)
-        await rename(tmp, out)
-      } finally {
-        await rm(tmp, { force: true }).catch(() => undefined)
-      }
-    })().finally(() => making.delete(out))
+    p = atomically(out, build)
+      .then(() => undefined)
+      .finally(() => making.delete(out))
     making.set(out, p)
   }
   await p
@@ -165,10 +176,13 @@ async function patchOverlay(
   const r = step.rect!
   const kx = w / step.width
   const ky = h / step.height
-  const x0 = Math.max(0, Math.floor(r.x * kx))
-  const y0 = Math.max(0, Math.floor(r.y * ky))
-  const x1 = Math.min(w, Math.ceil((r.x + r.w) * kx))
-  const y1 = Math.min(h, Math.ceil((r.y + r.h) * ky))
+  // The engine places an overlay on whole pixels: the patch goes at its
+  // nearest, at its own size rounded (not stretched over every pixel it
+  // touches, which grew a 15.8 px patch to 17).
+  const x0 = Math.max(0, Math.round(r.x * kx))
+  const y0 = Math.max(0, Math.round(r.y * ky))
+  const x1 = Math.min(w, x0 + Math.max(1, Math.round(r.w * kx)))
+  const y1 = Math.min(h, y0 + Math.max(1, Math.round(r.h * ky)))
   const pw = x1 - x0
   const ph = y1 - y0
   if (pw < 1 || ph < 1) return null
@@ -233,16 +247,18 @@ async function layOn(
   steps: PixelStep[]
 ): Promise<ProxyFile> {
   const overlays = await overlaysOf(deps, steps, from.width, from.height)
-  const r = await deps.engine.convert({
-    ...blankRequest(from.path, out, from.input),
-    pixel: { depth: 'Sixteen', channels: 3 },
-    encode: TIFF,
-    metadata: ICC_ONLY,
-    color: 'Preserve',
-    // Every step at 0%: nothing to lay on (the engine refuses an empty list).
-    overlays: overlays.length > 0 ? overlays : null,
-    threads: BACKGROUND_THREADS
-  })
+  const r = await atomically(out, (tmp) =>
+    deps.engine.convert({
+      ...blankRequest(from.path, tmp, from.input),
+      pixel: { depth: 'Sixteen', channels: 3 },
+      encode: TIFF,
+      metadata: ICC_ONLY,
+      color: 'Preserve',
+      // Every step at 0%: nothing to lay on (the engine refuses an empty list).
+      overlays: overlays.length > 0 ? overlays : null,
+      threads: BACKGROUND_THREADS
+    })
+  )
   return { path: out, input: 'Tiff', width: r.width, height: r.height }
 }
 
@@ -267,20 +283,41 @@ async function resized(
   w: number,
   h: number
 ): Promise<ProxyFile> {
-  await deps.engine.convert({
-    ...blankRequest(from.path, out, from.input),
-    resize: { Exact: { width: w, height: h } },
-    resampler: 'Lanczos3',
-    pixel: { depth: 'Sixteen', channels: 3 },
-    encode: TIFF,
-    metadata: ICC_ONLY,
-    color: 'Preserve',
-    threads: BACKGROUND_THREADS
-  })
+  await atomically(out, (tmp) =>
+    deps.engine.convert({
+      ...blankRequest(from.path, tmp, from.input),
+      resize: { Exact: { width: w, height: h } },
+      resampler: 'Lanczos3',
+      pixel: { depth: 'Sixteen', channels: 3 },
+      encode: TIFF,
+      metadata: ICC_ONLY,
+      color: 'Preserve',
+      threads: BACKGROUND_THREADS
+    })
+  )
   return { path: out, input: 'Tiff', width: w, height: h }
 }
 
-const building = new Map<string, Promise<WorkingSet>>()
+/**
+ * Builds in flight, one per set and stage: the proxies, and the master
+ * chained after them. Two asks for one set (a heal's bake and the session
+ * catching up) share the build, so no two ever write its files at once.
+ */
+const buildingProxies = new Map<string, Promise<WorkingSet>>()
+const buildingMaster = new Map<string, Promise<WorkingSet>>()
+
+function once(
+  map: Map<string, Promise<WorkingSet>>,
+  flight: string,
+  build: () => Promise<WorkingSet>
+): Promise<WorkingSet> {
+  let p = map.get(flight)
+  if (!p) {
+    p = build().finally(() => map.delete(flight))
+    map.set(flight, p)
+  }
+  return p
+}
 
 /**
  * The working set for these steps over the plain proxies (and, with
@@ -295,72 +332,105 @@ export function ensureWorking(
   base: (() => Promise<ProxyFile>) | null
 ): Promise<WorkingSet> {
   const key = workingKey(version, steps)
-  const flight = `${deps.cacheDir}:${key}:${base ? 'm' : 'p'}`
-  let p = building.get(flight)
-  if (!p) {
-    p = make(deps, version, key, plain, steps, base).finally(() => building.delete(flight))
-    building.set(flight, p)
-  }
-  return p
+  const flight = `${deps.cacheDir}:${key}`
+  const proxies = once(buildingProxies, flight, () => makeProxies(deps, version, key, plain, steps))
+  if (!base) return proxies
+  return once(buildingMaster, flight, () =>
+    proxies.then((set) => makeMaster(deps, version, key, plain, steps, base, set))
+  )
 }
 
-async function make(
+/** The set made for the steps but the last, when the last can be laid on it alone. */
+function previousSet(
+  deps: PixelDeps,
+  version: string,
+  steps: PixelStep[]
+): Promise<WorkingSet | null> {
+  return steps.length > 1 && !steps[steps.length - 1].params.resizes
+    ? findSet(deps, workingKey(version, steps.slice(0, -1)))
+    : Promise.resolve(null)
+}
+
+async function makeProxies(
   deps: PixelDeps,
   version: string,
   key: string,
   plain: Proxies,
-  steps: PixelStep[],
-  base: (() => Promise<ProxyFile>) | null
+  steps: PixelStep[]
 ): Promise<WorkingSet> {
-  if (steps.length === 0) {
-    return { key, px: plain, master: base ? await base() : null }
-  }
+  if (steps.length === 0) return { key, px: plain, master: null }
+  const made = await findSet(deps, key)
+  if (made) return made
   const dir = dirOf(deps, key)
-  const meta = join(dir, 'set.json')
-  let set: WorkingSet | null = (await exists(meta))
-    ? (JSON.parse(await readFile(meta, 'utf8')) as WorkingSet)
-    : null
-  if (set && !(await filesThere(set))) set = null
-  if (set && (!base || set.master)) return set
   await mkdir(dir, { recursive: true })
   const frame = frameOf(steps, plain.frameWidth, plain.frameHeight)
   // One step more than a set already made (a heal stroke after another): the
   // new step laid on that set, not every step on the photo again.
+  const prev = await previousSet(deps, version, steps)
   const last = steps[steps.length - 1]
-  const prev =
-    steps.length > 1 && !last.params.resizes
-      ? await findSet(deps, workingKey(version, steps.slice(0, -1)))
-      : null
-  if (!set && prev) {
-    const proxy = await layOn(deps, prev.px.proxy, join(dir, 'proxy.tiff'), [last])
-    const draft = await layOn(deps, prev.px.draft, join(dir, 'draft.tiff'), [last])
+  let set: WorkingSet
+  // The proxy and the draft side by side: neither needs the other.
+  if (prev) {
+    const [proxy, draft] = await Promise.all([
+      layOn(deps, prev.px.proxy, join(dir, 'proxy.tiff'), [last]),
+      layOn(deps, prev.px.draft, join(dir, 'draft.tiff'), [last])
+    ])
     set = { key, px: { ...prev.px, proxy, draft }, master: null }
-  }
-  if (base && prev?.master && set && !set.master) {
-    set = { ...set, master: await layOn(deps, prev.master, join(dir, 'master.tiff'), [last]) }
-  }
-  if (!set) {
+  } else {
     // The proxies keep their size: an upscale shows as its picture, not its pixels.
-    const proxy = await layOn(deps, plain.proxy, join(dir, 'proxy.tiff'), steps)
-    const draft = await layOn(deps, plain.draft, join(dir, 'draft.tiff'), steps)
+    const [proxy, draft] = await Promise.all([
+      layOn(deps, plain.proxy, join(dir, 'proxy.tiff'), steps),
+      layOn(deps, plain.draft, join(dir, 'draft.tiff'), steps)
+    ])
     set = {
       key,
       px: { proxy, draft, frameWidth: frame.width, frameHeight: frame.height },
       master: null
     }
   }
-  if (base && !set.master) {
+  await writeSet(deps, set)
+  await prune(deps, key)
+  return set
+}
+
+/** The set's master, laid on after its proxies are made. */
+async function makeMaster(
+  deps: PixelDeps,
+  version: string,
+  key: string,
+  plain: Proxies,
+  steps: PixelStep[],
+  base: () => Promise<ProxyFile>,
+  set: WorkingSet
+): Promise<WorkingSet> {
+  if (set.master) return set
+  if (steps.length === 0) return { ...set, master: await base() }
+  const dir = dirOf(deps, key)
+  await mkdir(dir, { recursive: true })
+  const prev = await previousSet(deps, version, steps)
+  const last = steps[steps.length - 1]
+  let master: ProxyFile
+  if (prev?.master) {
+    master = await layOn(deps, prev.master, join(dir, 'master.tiff'), [last])
+  } else {
     // At full size the frame is the steps' own: an upscale's, when one made it larger.
+    const frame = frameOf(steps, plain.frameWidth, plain.frameHeight)
     const from = await base()
     const start =
       from.width === frame.width && from.height === frame.height
         ? from
         : await resized(deps, from, join(dir, 'base.tiff'), frame.width, frame.height)
-    set = { ...set, master: await layOn(deps, start, join(dir, 'master.tiff'), steps) }
+    master = await layOn(deps, start, join(dir, 'master.tiff'), steps)
   }
-  await writeFile(meta, JSON.stringify(set))
-  await prune(deps, key)
-  return set
+  const next = { ...set, master }
+  await writeSet(deps, next)
+  return next
+}
+
+async function writeSet(deps: PixelDeps, set: WorkingSet): Promise<void> {
+  await atomically(join(dirOf(deps, set.key), 'set.json'), (tmp) =>
+    writeFile(tmp, JSON.stringify(set))
+  )
 }
 
 /** A set made before, by its key, if its files are all still there. */

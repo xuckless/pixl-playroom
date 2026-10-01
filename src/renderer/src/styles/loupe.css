@@ -31,7 +31,8 @@
     0 0 0 1px rgba(255, 255, 255, 0.05);
   transition: transform 0.12s linear;
 }
-.picture img {
+.picture img,
+.picture canvas.frame {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -40,7 +41,8 @@
   object-fit: contain;
   user-select: none;
 }
-.picture img.decoded-prev {
+.picture img.decoded-prev,
+.picture canvas.frame.decoded-prev {
   animation: decodedOut 140ms ease-out forwards;
 }
 .split-before {
@@ -382,10 +384,21 @@
 /* ── 1:1 ───────────────────────────────────────────────────────── */
 /* ── filmstrip ─────────────────────────────────────────────────── */
 .filmstrip {
-  display: flex;
-  gap: 8px;
   overflow-x: auto;
-  padding: 0 12px;
+  overflow-y: hidden;
+  height: 100%;
+}
+/* Tiles are placed by the virtualiser (Filmstrip.tsx), each in a slot. */
+.filmstrip-space {
+  position: relative;
+  height: 100%;
+}
+.film-slot {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
   align-items: center;
 }
 .film {
@@ -393,8 +406,6 @@
   flex: 0 0 auto;
   width: 104px;
   height: 72px;
-  content-visibility: auto;
-  contain-intrinsic-size: 104px 72px;
   background: #000;
   display: flex;
   align-items: center;

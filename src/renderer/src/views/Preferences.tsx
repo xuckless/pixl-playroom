@@ -1,18 +1,106 @@
 /**
- * Settings (⌘, / Ctrl+,): the licence, updates, crash reports, the legal
- * pages, and the key bindings. And the one question the first launch asks:
- * may crash reports be sent?
+ * Settings (⌘, / Ctrl+,): the PIXL account, the licence, updates, crash reports, reporting a
+ * problem, the legal pages, and the key bindings. And the one question the
+ * first launch asks: may crash reports be sent?
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { MAX_PROBLEM_TEXT } from '../../../shared/crash'
+import type { AccountStatus } from '../../../shared/account'
 import type { Prefs, UpdateState } from '../../../shared/ipc'
-import { ACCOUNT_URL, BUY_URL, type LicenceStatus } from '../../../shared/licence'
+import { ACCOUNT_URL, BUY_URL, LICENCE_RULES, type LicenceStatus } from '../../../shared/licence'
 import { Modal, Select, Tabs } from '../components/ui'
 import { api, errorText } from '../lib/api'
+import { takeReportFocus } from '../lib/report'
 import { useLibrary } from '../state/library'
 import { KeyBindingsSection } from './KeyBindings'
 import { ModelsSection } from './ModelsSection'
 
 const LEGAL = 'https://playroom.pixlfoundation.com/legal'
+
+/**
+ * A problem the user found, in their words, sent when they press Send: with
+ * an email if they want a reply, and the end of the app's log unless they
+ * untick it (scrubbed of the home folder in main).
+ */
+function ReportSection(): React.JSX.Element {
+  const [message, setMessage] = useState('')
+  const [email, setEmail] = useState('')
+  const [includeLog, setIncludeLog] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [sent, setSent] = useState<string | null>(null)
+  const field = useRef<HTMLFieldSetElement>(null)
+  const text = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (!takeReportFocus()) return
+    field.current?.scrollIntoView({ block: 'start' })
+    text.current?.focus()
+  }, [])
+  const send = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      setSent(await api.app.reportProblem({ message, email, includeLog }))
+      setMessage('')
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const stop = (e: React.KeyboardEvent): void => e.stopPropagation()
+  return (
+    <fieldset ref={field}>
+      <legend>Report a problem</legend>
+      <p className="muted small">
+        Found a bug? Say what you did, what happened and what you expected. It goes to the Playroom
+        team only; add an email if you&apos;d like a reply.
+      </p>
+      <textarea
+        ref={text}
+        className="report-text"
+        value={message}
+        maxLength={MAX_PROBLEM_TEXT}
+        placeholder="What happened?"
+        aria-label="What happened?"
+        onChange={(e) => {
+          setMessage(e.target.value)
+          setSent(null)
+        }}
+        onKeyDown={stop}
+      />
+      <input
+        type="email"
+        value={email}
+        placeholder="Email for a reply (optional)"
+        aria-label="Email for a reply (optional)"
+        autoComplete="email"
+        onChange={(e) => setEmail(e.target.value)}
+        onKeyDown={stop}
+      />
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={includeLog}
+          onChange={(e) => setIncludeLog(e.target.checked)}
+        />
+        Include Playroom&apos;s recent log (it names the files it worked on; your home folder is
+        hidden)
+      </label>
+      <div className="prefs-row">
+        <button className="primary" disabled={busy || !message.trim()} onClick={() => void send()}>
+          {busy ? 'Sending…' : 'Send report'}
+        </button>
+        {sent && (
+          <span className="prefs-status" role="status">
+            Sent, thank you. Reference {sent}.
+          </span>
+        )}
+      </div>
+      {error && <p className="error small">{error}</p>}
+    </fieldset>
+  )
+}
 
 function updateLine(s: UpdateState): string {
   switch (s.phase) {
@@ -35,31 +123,113 @@ function updateLine(s: UpdateState): string {
   }
 }
 
+/** The PIXL account: sign in through the browser, or who is signed in and Sign out. */
+function AccountSection(): React.JSX.Element | null {
+  const say = useLibrary((s) => s.say)
+  const [status, setStatus] = useState<AccountStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    void api.account.status().then(setStatus)
+    return api.account.onChange(setStatus)
+  }, [])
+  if (!status?.visible) return null
+  const run = async (fn: () => Promise<AccountStatus>, done?: string): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      const next = await fn()
+      setStatus(next)
+      if (done && next.signedIn === (done === 'Signed in')) say(done)
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const who = status.name && status.email ? `${status.name} (${status.email})` : status.email
+  return (
+    <fieldset>
+      <legend>PIXL account</legend>
+      <p className="prefs-status" role="status" aria-live="polite">
+        {status.signedIn
+          ? `Signed in as ${who ?? 'your PIXL account'}.`
+          : status.signingIn
+            ? 'Finish signing in in your browser…'
+            : 'Not signed in.'}
+      </p>
+      <p className="muted small">
+        One account for every PIXL app. Beta access, your trial and your licence live on it.
+      </p>
+      <div className="prefs-row">
+        {status.signedIn ? (
+          <>
+            <button
+              disabled={busy}
+              onClick={() => void run(() => api.account.signOut(), 'Signed out')}
+            >
+              Sign out
+            </button>
+            <a href={ACCOUNT_URL} target="_blank" rel="noreferrer">
+              Manage account
+            </a>
+          </>
+        ) : status.signingIn ? (
+          <button onClick={() => void api.account.cancelSignIn()}>Cancel</button>
+        ) : (
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={() => void run(() => api.account.signIn(), 'Signed in')}
+          >
+            Sign in…
+          </button>
+        )}
+      </div>
+      {error && <p className="error small">{error}</p>}
+    </fieldset>
+  )
+}
+
 function licenceLine(s: LicenceStatus): string {
   const st = s.state
   switch (st.kind) {
+    case 'signed-out':
+      return 'Sign in above to start your free trial, or to use your licence.'
+    case 'checking':
+      return 'Checking your account…'
+    case 'no-trial':
+      return `Your ${LICENCE_RULES.trialDays}-day free trial is ready to start.`
     case 'trial':
       return `Free trial: ${st.daysLeft} day${st.daysLeft === 1 ? '' : 's'} left.`
     case 'trial-ended':
       return 'Your free trial has ended.'
-    case 'licensed': {
-      const who = s.customerName ? `Licensed to ${s.customerName}` : 'Licensed'
-      const devices =
-        s.devicesUsed !== undefined ? ` · ${s.devicesUsed} of ${s.deviceLimit} devices` : ''
-      return `${who}${devices}.`
-    }
+    case 'licensed':
+      return `Licensed. Pixl Playroom works on up to ${s.deviceLimit} of your devices.`
+    case 'beta':
+      return 'Beta access. Thanks for testing.'
     case 'revalidate':
       return 'Connect to the internet so Playroom can confirm your licence.'
-    case 'inactive':
-      return `This device is no longer activated: ${st.reason}`
+    case 'device-limit':
+      return `Your licence is already on ${s.deviceLimit} devices. Free one to use it here.`
+    case 'no-beta':
+      return 'This account isn’t in the beta yet.'
+    case 'beta-ended':
+      return 'The beta has ended.'
   }
 }
 
-/** The licence: trial days, or who it's licensed to and on how many devices; activate or free this device. */
+const shortDate = (unixS: number): string =>
+  new Date(unixS * 1000).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  })
+
+/** Access from the PIXL account: the trial, the licence or beta access; start the trial, free a device. */
 function LicenceSection(): React.JSX.Element | null {
   const say = useLibrary((s) => s.say)
   const [status, setStatus] = useState<LicenceStatus | null>(null)
-  const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
@@ -80,60 +250,71 @@ function LicenceSection(): React.JSX.Element | null {
     }
   }
   const kind = status.state.kind
-  const active = kind === 'licensed' || kind === 'revalidate'
+  const check = (
+    <button disabled={busy} onClick={() => void run(() => api.licence.refresh())}>
+      Check now
+    </button>
+  )
+  const buy = (
+    <a href={BUY_URL} target="_blank" rel="noreferrer">
+      Buy a licence
+    </a>
+  )
   return (
     <fieldset>
       <legend>Licence</legend>
       <p className="prefs-status" role="status" aria-live="polite">
         {licenceLine(status)}
-        {active && status.keyHint ? <span className="muted"> Key {status.keyHint}</span> : null}
       </p>
-      {!status.enforced && (
-        <p className="muted small">
-          Licences aren&apos;t required yet: every feature works either way.
+      {status.locked && <p className="note small">{status.locked}</p>}
+      {status.discount && (
+        <p className="small">
+          Your tester discount: <strong>{status.discount.code}</strong>, until{' '}
+          {shortDate(status.discount.expires)}.
         </p>
       )}
-      {active ? (
+      {!status.enforced && (
+        <p className="muted small">
+          Licences aren&apos;t required yet: every feature works either way. Once they are, an ended
+          trial stops exporting only; editing keeps working.
+        </p>
+      )}
+      {status.state.kind === 'device-limit' && (
+        <ul className="prefs-devices">
+          {status.state.devices.map((d) => (
+            <li key={d.id}>
+              <span>{d.name}</span>
+              <button
+                disabled={busy}
+                onClick={() => void run(() => api.licence.freeDevice(d.id), `${d.name} freed`)}
+              >
+                Free
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {kind !== 'signed-out' && (
         <div className="prefs-row">
-          <button disabled={busy} onClick={() => void run(() => api.licence.validate())}>
-            Check now
-          </button>
-          <button
-            disabled={busy}
-            title="Frees this device's place, so the licence can be used on another"
-            onClick={() => void run(() => api.licence.deactivate(), 'This device is deactivated')}
-          >
-            Deactivate this device
-          </button>
-          <a href={ACCOUNT_URL} target="_blank" rel="noreferrer">
-            Manage devices
-          </a>
+          {kind === 'no-trial' && (
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => void run(() => api.licence.startTrial(), 'Free trial started')}
+            >
+              Start free trial
+            </button>
+          )}
+          {kind !== 'no-trial' && check}
+          {kind === 'no-trial' || kind === 'trial' || kind === 'trial-ended' || kind === 'beta'
+            ? buy
+            : null}
+          {(kind === 'licensed' || kind === 'device-limit') && (
+            <a href={ACCOUNT_URL} target="_blank" rel="noreferrer">
+              Manage devices
+            </a>
+          )}
         </div>
-      ) : (
-        <form
-          className="prefs-row"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void run(() => api.licence.activate(key), 'Licence activated').then(() => setKey(''))
-          }}
-        >
-          <input
-            className="licence-key"
-            value={key}
-            placeholder="Licence key"
-            aria-label="Licence key"
-            spellCheck={false}
-            autoComplete="off"
-            onChange={(e) => setKey(e.target.value)}
-            onKeyDown={(e) => e.stopPropagation()}
-          />
-          <button type="submit" className="primary" disabled={busy || !key.trim()}>
-            Activate
-          </button>
-          <a href={BUY_URL} target="_blank" rel="noreferrer">
-            Buy a licence
-          </a>
-        </form>
       )}
       {error && <p className="error small">{error}</p>}
     </fieldset>
@@ -261,6 +442,7 @@ function GeneralSettings(): React.JSX.Element {
   const busy = update?.phase === 'checking' || update?.phase === 'downloading'
   return (
     <>
+      <AccountSection />
       <LicenceSection />
       <fieldset>
         <legend>Updates</legend>
@@ -270,17 +452,24 @@ function GeneralSettings(): React.JSX.Element {
         </p>
         {update && (
           <>
-            <Select
-              label="Channel"
-              value={update.channel}
-              options={[
-                { value: 'latest', label: 'Stable' },
-                { value: 'beta', label: 'Beta (early builds)' }
-              ]}
-              onChange={(c) =>
-                void api.updates.setChannel(c).catch((e) => say(errorText(e), 'error'))
-              }
-            />
+            {update.currentVersion.includes('-beta') ? (
+              <p className="muted small">
+                This beta follows the beta channel: it gets every beta, and the release when it
+                comes.
+              </p>
+            ) : (
+              <Select
+                label="Channel"
+                value={update.channel}
+                options={[
+                  { value: 'latest', label: 'Stable' },
+                  { value: 'beta', label: 'Beta (early builds)' }
+                ]}
+                onChange={(c) =>
+                  void api.updates.setChannel(c).catch((e) => say(errorText(e), 'error'))
+                }
+              />
+            )}
             <p className="prefs-status" role="status" aria-live="polite">
               {updateLine(update)}
             </p>
@@ -324,6 +513,8 @@ function GeneralSettings(): React.JSX.Element {
           the app version and your system. Never your photos, and never your folder names.
         </p>
       </fieldset>
+
+      <ReportSection />
 
       <fieldset>
         <legend>About</legend>

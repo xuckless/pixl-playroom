@@ -5,7 +5,9 @@ import { DatabaseSync } from 'node:sqlite'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { Store } from '../src/main/db'
+import { KEYFRAME_EVERY } from '../src/main/historytable'
 import {
+  appendToLog,
   applyPatch,
   dependents,
   diffRecipe,
@@ -15,8 +17,11 @@ import {
   type Step
 } from '../src/shared/history'
 import {
+  applyGroups,
+  changedGroups,
   defaultRecipe,
   GROUP_LABELS,
+  isEdited,
   newLocalLayer,
   type Recipe,
   type RangeComponent
@@ -132,6 +137,19 @@ test('the summary names the groups a step changed', () => {
     GROUP_LABELS.detailSharpen,
     GROUP_LABELS.orientation
   ])
+  const c = structuredClone(a)
+  c.geometry.upright.vertical = 20
+  assert.deepEqual(patchSummary(diffRecipe(a, c)), [GROUP_LABELS.upright])
+})
+
+test('an Upright-only edit is an edit, in its own group', () => {
+  const plain = defaultRecipe(true)
+  const r = structuredClone(plain)
+  r.geometry.upright.vertical = 20
+  assert.equal(isEdited(r, true), true)
+  assert.deepEqual(changedGroups(r, plain), ['upright'])
+  assert.deepEqual(applyGroups(plain, r, ['upright']).geometry.upright, r.geometry.upright)
+  assert.deepEqual(applyGroups(plain, r, ['crop']).geometry.upright, plain.geometry.upright)
 })
 
 function withStore(fn: (store: Store, file: string) => void): void {
@@ -149,18 +167,20 @@ function withStore(fn: (store: Store, file: string) => void): void {
 test('the store records steps, skips no-ops, hides and deletes', () => {
   withStore((store) => {
     const base = defaultRecipe(false)
-    let log = store.appendHistory('k', 'Opened', base)
-    assert.ok(log.base)
+    assert.ok(store.appendHistory('k', 'Opened', base).base)
+    let log = store.history('k')
     assert.equal(log.steps.length, 0)
     const a = structuredClone(base)
     a.basic.exposure = 0.5
     store.appendHistory('k', 'Exposure', a)
     const b = structuredClone(a)
     b.basic.contrast = 10
-    log = store.appendHistory('k', 'Contrast', b)
+    store.appendHistory('k', 'Contrast', b)
+    log = store.history('k')
     assert.equal(log.steps.length, 2)
     // The same recipe again records nothing.
-    assert.equal(store.appendHistory('k', 'Nothing', b).steps.length, 2)
+    assert.equal(store.appendHistory('k', 'Nothing', b).step, null)
+    assert.equal(store.history('k').steps.length, 2)
     const [exposure, contrast] = log.steps
     log = store.setHistoryHidden('k', [exposure.seq], true)
     assert.deepEqual(
@@ -171,7 +191,7 @@ test('the store records steps, skips no-ops, hides and deletes', () => {
     // A new edit diffs against what is shown, not against the hidden step.
     const c = replay(log.base!.recipe, log.steps)
     c.basic.whites = 5
-    log = store.appendHistory('k', 'Whites', c)
+    log = appendToLog(log, store.appendHistory('k', 'Whites', c))
     assert.deepEqual(
       log.steps.at(-1)!.patch.map((op) => op.path),
       [['basic', 'whites']]
@@ -195,6 +215,66 @@ test('past the limit the oldest steps fold into the base', () => {
     assert.equal(log.steps.length + 1, 200)
     assert.equal(log.base!.recipe.basic.exposure, 0.06)
     assert.equal(replay(log.base!.recipe, log.steps).basic.exposure, 2.05)
+  })
+})
+
+test('every KEYFRAME_EVERY steps a row keeps the whole recipe, and the head comes from it', () => {
+  withStore((store, file) => {
+    let r = defaultRecipe(false)
+    store.appendHistory('k', 'Opened', r)
+    for (let i = 1; i <= 60; i++) {
+      r = structuredClone(r)
+      r.basic.exposure = i / 100
+      store.appendHistory('k', `Exposure ${i}`, r)
+    }
+    const keyed = (): number[] => {
+      const db = new DatabaseSync(file, { readOnly: true })
+      try {
+        return (
+          db
+            .prepare(
+              "SELECT seq FROM history WHERE item_key = 'k' AND patch IS NOT NULL AND recipe <> '' ORDER BY seq"
+            )
+            .all() as { seq: number }[]
+        ).map((x) => x.seq)
+      } finally {
+        db.close()
+      }
+    }
+    // Seqs count from the base (1): step n is seq n + 1.
+    assert.deepEqual(keyed(), [KEYFRAME_EVERY + 1, 2 * KEYFRAME_EVERY + 1])
+    const log = store.history('k')
+    assert.equal(log.head?.basic.exposure, 0.6)
+    assert.deepEqual(log.head, replay(log.base!.recipe, log.steps))
+
+    // Hiding step 10 clears the keyframes after it and rebuilds them as they are now.
+    const hidden = store.setHistoryHidden('k', [log.steps[59].seq, log.steps[9].seq], true)
+    assert.deepEqual(keyed(), [KEYFRAME_EVERY + 1, 2 * KEYFRAME_EVERY + 1])
+    assert.equal(hidden.head?.basic.exposure, 0.59)
+    assert.deepEqual(hidden.head, replay(hidden.base!.recipe, hidden.steps))
+    // A new edit diffs against the rebuilt head.
+    const next = structuredClone(hidden.head!)
+    next.basic.contrast = 12
+    const added = store.appendHistory('k', 'Contrast', next)
+    assert.deepEqual(
+      added.step!.patch.map((op) => op.path),
+      [['basic', 'contrast']]
+    )
+  })
+})
+
+test('appends laid on a log, folds included, match the stored history', () => {
+  withStore((store) => {
+    let r = defaultRecipe(false)
+    let log = appendToLog({ base: null, steps: [] }, store.appendHistory('k', 'Opened', r))
+    for (let i = 1; i <= 230; i++) {
+      r = structuredClone(r)
+      r.basic.exposure = i / 100
+      log = appendToLog(log, store.appendHistory('k', `Exposure ${i}`, r))
+    }
+    const stored = store.history('k')
+    assert.deepEqual(log, { base: stored.base, steps: stored.steps })
+    assert.equal(stored.head?.basic.exposure, 2.3)
   })
 })
 

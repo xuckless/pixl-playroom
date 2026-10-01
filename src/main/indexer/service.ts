@@ -16,8 +16,12 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
-  unlinkSync
+  unlinkSync,
+  watch,
+  type Dirent,
+  type FSWatcher
 } from 'fs'
 import { dirname, extname, join, resolve } from 'path'
 import type {
@@ -27,6 +31,7 @@ import type {
   DuplicateGroup,
   ExportPreset,
   Flag,
+  HistoryAppend,
   HistoryLog,
   KeywordNode,
   HdrKind,
@@ -41,7 +46,15 @@ import type {
 } from '../../shared/ipc'
 import { groupNear } from '../../shared/dupes'
 import { keywordPrefixes, normaliseKeyword } from '../../shared/keywords'
-import { defaultRecipe, hash32, isEdited, newId, type Recipe } from '../../shared/recipe'
+import {
+  defaultRecipe,
+  hash32,
+  hydrateRecipe,
+  isEdited,
+  newId,
+  type Recipe
+} from '../../shared/recipe'
+import { slim } from '../planeref'
 import { memberResolver, remapCollections, type SmartGroup } from '../../shared/smart'
 import { cacheUrlIn } from '../cache-url'
 import { emptyCamera, readCamera } from '../camera'
@@ -54,6 +67,7 @@ import {
   sidecarPath,
   writeSidecar,
   type Sidecar,
+  type SidecarItem,
   type SidecarStack
 } from '../sidecar'
 import {
@@ -72,6 +86,7 @@ import {
   PIXL_EXT,
   PixlFile,
   ProjectPool,
+  putBlobFileInPieces,
   refsIn,
   type EmbeddedOriginal,
   type Origin
@@ -90,6 +105,24 @@ import {
 
 /** Files looked at per turn of a scan. */
 const CHUNK = 200
+/** A folder scanned this recently is not walked again when listed (its own reload after a fill). */
+const RESCAN_FRESH_MS = 10_000
+/** The most folders a folder listed with its subfolders takes in (a home folder opened deep stops there). */
+const DEEP_MAX_FOLDERS = 300
+const DEEP_MAX_DEPTH = 8
+/** Folder names as a person sorts them: "Day 2" before "Day 10". */
+const NAME_ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+/** How long a burst of changes in a watched folder settles before it is scanned again. */
+const WATCH_SETTLE_MS = 400
+/**
+ * Changes that are the index's own passing files (a project's journal while
+ * it commits, one being made or written out): no reason to look again.
+ */
+const PASSING_FILE = /(-journal|\.creating-\d+|\.part-\d+)$/
+/** Folders that are files to the user (an app, a Photos or Lightroom library): never walked into. */
+const PACKAGE_DIR = /\.(app|bundle|photoslibrary|lrdata|lrlibrary|fcpbundle|imovielibrary)$/i
+/** How long after a change that orphans planes or blobs the project is cleared of them. */
+const GC_DELAY_MS = 1500
 
 /** A file's version: its path, size and modification time. */
 const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.size}`
@@ -148,6 +181,55 @@ interface ListingContext {
 /** A file's content version, for its cached SHA-1. */
 const hashKeyOf = (row: PhotoRow): string => `${row.mtime}-${row.size}`
 
+/** A folder's own modification time (null when it cannot be read). */
+function folderMtime(folder: string): number | null {
+  try {
+    return statSync(folder).mtimeMs
+  } catch {
+    return null
+  }
+}
+
+/** `s` with `fn` applied to every recipe in it (each item's and each snapshot's). */
+function mapRecipes(s: Sidecar, fn: (r: Recipe) => Recipe): Sidecar {
+  const item = <T extends SidecarItem>(it: T): T => ({
+    ...it,
+    recipe: it.recipe && fn(it.recipe),
+    snapshots: it.snapshots.map((sn) => ({ ...sn, recipe: fn(sn.recipe) }))
+  })
+  return { ...s, photo: item(s.photo), copies: s.copies.map(item) }
+}
+
+/** A recipe as its thumbnail knows it: 'plain' when unedited, else its slim form's hash. */
+function thumbRecipeKey(recipe: Recipe | null, raw: boolean): string {
+  if (!recipe || !isEdited(recipe, raw)) return 'plain'
+  return hash32(JSON.stringify(slim(recipe))).toString(16)
+}
+
+/** The row's content hash, when the one recorded is of the file as it is now. */
+const knownHash = (row: PhotoRow): string | null =>
+  row.hash_key === hashKeyOf(row) ? row.content_hash : null
+
+/**
+ * Whether a project's recorded original is this file: the same bytes where
+ * both hashes are known, else the same size. A new photo that took an old
+ * one's name (a camera's counter reset) is not; neither is an original
+ * rewritten by another app.
+ */
+function isOriginOf(origin: Origin, row: PhotoRow): boolean {
+  const hash = knownHash(row)
+  if (origin.sha1 && hash) return origin.sha1 === hash
+  return origin.size === row.size
+}
+
+/** Whether `row` is a project's original under another name: a rename keeps the bytes, the size and the time. */
+function isRenamed(origin: Origin, row: PhotoRow): boolean {
+  if (row.ext.toLowerCase() !== origin.ext.toLowerCase()) return false
+  const hash = knownHash(row)
+  if (origin.sha1 && hash) return origin.sha1 === hash
+  return origin.size === row.size && origin.mtime === row.mtime
+}
+
 function sha1(path: string): Promise<string> {
   return new Promise((resolveHash, reject) => {
     const h = createHash('sha1')
@@ -170,8 +252,22 @@ export class IndexService {
   private readonly store: Store
   private readonly cacheRoot: string
   private readonly emit: (event: IndexEvent) => void
-  /** Files whose thumbnail failed, per version, with why. */
+  /** When each folder was last scanned (a listing a moment after needs no walk). */
+  private readonly scannedAt = new Map<string, { at: number; dirMtime: number | null }>()
+  /** The folder shown, watched (with those below it when `deep`), and since when. */
+  private readonly watchers = new Map<
+    string,
+    { watcher: FSWatcher; since: number; deep: boolean }
+  >()
+  private readonly watchTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+  /** Files whose thumbnail failed, per version, with why (and in the row, for the next launch). */
   private readonly failed = new Map<string, string>()
+
+  private isFailed(row: PhotoRow): boolean {
+    const v = versionOf(row)
+    return this.failed.has(v) || row.failed_key === v
+  }
   private readonly scans = new Map<string, Scan>()
   private readonly filling = new Set<string>()
   private readonly fillAgain = new Set<string>()
@@ -180,7 +276,7 @@ export class IndexService {
   private xmpChain: Promise<unknown> = Promise.resolve()
   private closed = false
   /** The `.pixl` projects open now (see pixlfile.ts). */
-  private readonly projects = new ProjectPool()
+  private readonly projects = new ProjectPool(2000, (path) => this.committed(path))
   /** What each project file names, by its path, while the file is unchanged. */
   private readonly origins = new Map<string, { stamp: string | null; origin: Origin | null }>()
 
@@ -192,9 +288,40 @@ export class IndexService {
     this.xmp = opts.xmp ?? exiftoolXmp()
   }
 
+  /** Photos open in Develop: their projects stay open between edits (see `holdOpen`). */
+  private readonly held = new Set<number>()
+
+  /**
+   * Keep a photo's project open while it is in Develop (`on`), so every edit
+   * finds its connection and prepared statements; let it close when it leaves.
+   */
+  holdOpen(key: string, on: boolean): void {
+    const { photoId } = parseKey(key)
+    if (on) this.held.add(photoId)
+    else this.held.delete(photoId)
+    const path = this.projectOf(this.row(key))
+    if (!path) return
+    this.projects.pin(path, on)
+    // Leaving Develop: the photo's last edits go to disk now.
+    if (!on) this.projects.flush(path)
+  }
+
+  /** Commit what every project has gathered (before a quit, or a backup). */
+  flushProjects(): void {
+    this.projects.flush()
+  }
+
+  /** A project's batch is on disk: its new mtime is the index's own write, not a change to read back. */
+  private committed(path: string): void {
+    if (this.closed || !existsSync(path)) return
+    this.store.projectCommitted(path, statSync(path).mtimeMs)
+  }
+
   close(): void {
-    this.closed = true
+    this.watchOnly(null)
+    // Batches commit first, and their mtimes are noted while the store is open.
     this.projects.drop()
+    this.closed = true
     this.store.close()
     void this.xmp.end().catch(() => {})
   }
@@ -212,9 +339,18 @@ export class IndexService {
    * afterwards and a `changed` event follows only if it differs. A folder
    * the index has never seen is scanned first.
    */
-  async listFolder(folder: string): Promise<LibraryItem[]> {
-    this.store.touchFolder(folder)
+  async listFolder(folder: string, recent = true): Promise<LibraryItem[]> {
+    if (recent) this.store.touchFolder(folder)
     if (this.store.hasPhotosIn(folder)) {
+      // A folder scanned a moment ago (its own `changed` reloading it, a
+      // quick back and forth) is as it was: not walked again.
+      // (A file added, removed or renamed changes the folder's own time.)
+      const last = this.scannedAt.get(folder)
+      if (last && Date.now() - last.at < RESCAN_FRESH_MS && last.dirMtime === folderMtime(folder))
+        return this.items(folder)
+      // Watched since before its last scan: every change since was seen.
+      const since = this.watchedSince(folder)
+      if (last && since !== undefined && since <= last.at) return this.items(folder)
       // After this answer, not before it.
       setImmediate(() => {
         if (this.closed) return
@@ -224,6 +360,94 @@ export class IndexService {
       await this.rescan(folder, false)
     }
     return this.items(folder)
+  }
+
+  /**
+   * Watch the folder shown (with those below it when `deep`), and no other:
+   * a change made outside the app (a file copied in, renamed, deleted, a
+   * sidecar edited) is scanned a moment later, and the library hears of it
+   * as `changed`. Null stops watching.
+   */
+  watchOnly(folder: string | null, deep = false): void {
+    for (const [f, w] of this.watchers) {
+      if (f === folder && w.deep === deep) continue
+      w.watcher.close()
+      this.watchers.delete(f)
+    }
+    if (!folder || this.closed || this.watchers.has(folder)) return
+    try {
+      const watcher = watch(folder, { recursive: deep, persistent: false }, (_type, name) =>
+        this.changedOnDisk(folder, deep, name === null ? '' : String(name))
+      )
+      // Unplugged, or gone: it is listed again from the index, unwatched.
+      watcher.on('error', () => {
+        watcher.close()
+        if (this.watchers.get(folder)?.watcher === watcher) this.watchers.delete(folder)
+      })
+      this.watchers.set(folder, { watcher, since: Date.now(), deep })
+    } catch (err) {
+      console.warn('cannot watch', folder, (err as Error).message)
+    }
+  }
+
+  /** Since when a watcher has covered `folder`, or undefined when none does. */
+  private watchedSince(folder: string): number | undefined {
+    for (const [root, w] of this.watchers) {
+      if (root === folder) return w.since
+      if (w.deep && folder.startsWith(root) && /[\\/]/.test(folder[root.length] ?? ''))
+        return w.since
+    }
+    return undefined
+  }
+
+  /** Something changed under a watched folder: the folder it is in is scanned once it settles. */
+  private changedOnDisk(root: string, deep: boolean, name: string): void {
+    if (this.closed || PASSING_FILE.test(name)) return
+    const dir = deep && name ? dirname(join(root, name)) : root
+    clearTimeout(this.watchTimers.get(dir))
+    const t = setTimeout(() => {
+      this.watchTimers.delete(dir)
+      if (this.closed) return
+      // A folder made in the tree is scanned whole (it was never listed).
+      this.rescan(dir).catch((err) => console.warn('scan failed', dir, err))
+    }, WATCH_SETTLE_MS)
+    t.unref?.()
+    this.watchTimers.set(dir, t)
+  }
+
+  /** A folder's subfolders, one level (by name): what the sidebar's tree opens out. */
+  subfolders(folder: string): { path: string; name: string }[] {
+    let entries: Dirent[]
+    try {
+      entries = readdirSync(folder, { withFileTypes: true })
+    } catch {
+      return []
+    }
+    return entries
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !PACKAGE_DIR.test(e.name))
+      .map((e) => ({ path: join(folder, e.name), name: e.name }))
+      .sort((a, b) => NAME_ORDER.compare(a.name, b.name))
+  }
+
+  /**
+   * A folder's items with its subfolders' (breadth first, within
+   * DEEP_MAX_FOLDERS and DEEP_MAX_DEPTH; links to folders are not followed).
+   * Only the folder itself joins the recent ones.
+   */
+  async listFolderDeep(folder: string): Promise<LibraryItem[]> {
+    const items = [...(await this.listFolder(folder))]
+    const queue: { path: string; depth: number }[] = this.subfolders(folder).map((f) => ({
+      path: f.path,
+      depth: 1
+    }))
+    for (let n = 1; queue.length > 0 && n < DEEP_MAX_FOLDERS; n++) {
+      const { path, depth } = queue.shift()!
+      if (this.closed) break
+      items.push(...(await this.listFolder(path, false)))
+      if (depth < DEEP_MAX_DEPTH)
+        queue.push(...this.subfolders(path).map((f) => ({ path: f.path, depth: depth + 1 })))
+    }
+    return items
   }
 
   /**
@@ -245,7 +469,9 @@ export class IndexService {
       try {
         do {
           scan.again = false
+          const dirMtime = folderMtime(folder)
           changed += await this.scan(folder)
+          this.scannedAt.set(folder, { at: Date.now(), dirMtime })
         } while (scan.again)
       } finally {
         this.scans.delete(folder)
@@ -335,8 +561,16 @@ export class IndexService {
   private originOf(path: string): Origin | null {
     const stamp = fileStamp(path)
     const hit = this.origins.get(path)
-    if (hit && hit.stamp === stamp) return hit.origin
-    const origin = PixlFile.peekOrigin(path)
+    // Changed by the index's own writes (an edit), the origin is as it was:
+    // only `setOrigin` changes it, and that forgets it here.
+    if (hit && (hit.stamp === stamp || this.projects.leftAs(path, stamp))) {
+      hit.stamp = stamp
+      return hit.origin
+    }
+    // One the index has open is read through it (it may hold uncommitted writes).
+    const origin = this.projects.isOpen(path)
+      ? this.projects.use(path, (p) => p.origin())
+      : PixlFile.peekOrigin(path)
     this.origins.set(path, { stamp, origin })
     return origin
   }
@@ -377,6 +611,13 @@ export class IndexService {
       }
       if (this.syncProject(row)) n++
     }
+    /** A photo that loses a project not its own: only what a sidecar says again. */
+    const unlink = (row: PhotoRow): void => {
+      this.store.setProject(row.id, null, null)
+      row.project_path = null
+      row.sidecar_mtime = -1
+      if (this.syncSidecar(row)) n++
+    }
     const orphans: { path: string; origin: Origin }[] = []
     for (const dir of projectDirsFor(folder, this.projectRoots())) {
       for (const path of projectFilesIn(dir)) {
@@ -384,7 +625,9 @@ export class IndexService {
         if (!origin) continue
         this.store.registerProject(path, origin.name, origin.size, origin.path)
         const row = byName.get(origin.name)
-        if (!row) {
+        if (!row || !isOriginOf(origin, row)) {
+          // Not its photo, though of its name: the project stands for its own.
+          if (row?.project_path === path) unlink(row)
           orphans.push({ path, origin })
           continue
         }
@@ -401,17 +644,33 @@ export class IndexService {
         .projectsNamed(row.name, row.size)
         .find((c) => !taken.has(c.path) && existsSync(c.path) && !existsSync(c.origin_path))
       if (!found) continue
-      this.projects.use(found.path, (p) => {
+      this.projects.write(found.path, (p) => {
         const o = p.origin()
         if (o) p.setOrigin({ ...o, path: row.path })
       })
+      // A relink is on disk at once: other readers find the photo by it.
+      this.projects.flush(found.path)
       this.store.registerProject(found.path, row.name, row.size, row.path)
       this.origins.delete(found.path)
       link(row, found.path)
     }
-    // Projects whose photo is nowhere: each is its photo now.
+    // Projects whose photo is nowhere: one renamed in the folder is followed
+    // (its project takes the new name); else each is its photo now.
     for (const { path, origin } of orphans) {
       if (taken.has(path)) continue
+      const renamed = photos.find(
+        (r) => !claimed.has(r.id) && !this.projectOf(r) && isRenamed(origin, r)
+      )
+      if (renamed) {
+        this.projects.write(path, (p) =>
+          p.setOrigin({ ...origin, name: renamed.name, path: renamed.path })
+        )
+        this.projects.flush(path)
+        this.store.registerProject(path, renamed.name, renamed.size, renamed.path)
+        this.origins.delete(path)
+        link(renamed, path)
+        continue
+      }
       const elsewhere = this.store
         .photosWithProject(path)
         .some((r) => r.path !== path && existsSync(r.path))
@@ -446,7 +705,7 @@ export class IndexService {
     if (!path) return false
     const mtime = statSync(path).mtimeMs
     if (mtime === row.project_mtime) return false
-    const truth = this.projects.use(path, (p) => p.read(row.is_raw === 1))
+    const truth = this.projects.use(path, (p) => p.read(row.is_raw === 1, false))
     this.mirror(row, truth, mtime, 'project')
     return true
   }
@@ -482,14 +741,14 @@ export class IndexService {
       mtime: row.mtime,
       path: row.path,
       isRaw: row.is_raw === 1,
-      sha1: row.hash_key === hashKeyOf(row) ? row.content_hash : null
+      sha1: knownHash(row)
     }
     const keys = [null, ...truth.copies.map((c) => c.id)].map((copyId) => ({
       copyId,
       key: keyOf(row.id, copyId)
     }))
     const fill = (p: PixlFile): void => {
-      p.write(truth)
+      p.write(truth, this.planeOf)
       for (const { copyId, key } of keys) {
         const rows = this.store.historyRows(key)
         if (rows.length === 0) continue
@@ -525,6 +784,7 @@ export class IndexService {
     this.mirror(row, truth, mtime, 'project')
     // Main makes the project's copy of the original (it has the engine).
     this.emit({ name: 'project', key: keyOf(row.id, null) })
+    if (this.held.has(row.id)) this.projects.pin(path, true)
     return path
   }
 
@@ -596,31 +856,57 @@ export class IndexService {
   /**
    * Store the original in the photo's project: `file` (made by main, in the
    * cache) holds it as `kind` says. The project keeps it from here; `file` is
-   * main's to remove.
+   * main's to remove. Written in pieces: every other request (an edit being
+   * saved) is answered between them, not after the whole file.
    */
-  putOriginal(
+  async putOriginal(
     key: string,
     file: string,
     kind: EmbeddedOriginal['kind'],
     info: { codec: string; width: number | null; height: number | null; note: string | null }
-  ): void {
-    const row = this.row(key)
-    const project = this.projectOf(row)
+  ): Promise<void> {
+    const project = this.projectOf(this.row(key))
     if (!project) return
-    this.projects.use(project, (p) => {
-      const hash = p.putBlobFile(file, {
-        kind: 'original',
-        codec: info.codec,
-        width: info.width,
-        height: info.height,
-        channels: null,
-        depth: null
-      })
+    const hash = await putBlobFileInPieces((fn) => this.projects.write(project, fn), file, {
+      kind: 'original',
+      codec: info.codec,
+      width: info.width,
+      height: info.height,
+      channels: null,
+      depth: null
+    })
+    if (!existsSync(project)) return
+    const replaced = this.projects.write(project, (p) => {
       const before = p.original()
       p.setOriginal({ kind, blob: hash, state: 'ready', note: info.note })
-      if (before?.blob && before.blob !== hash) p.gc()
+      return before?.blob && before.blob !== hash
     })
+    if (replaced) this.gcLater(project)
     this.noteProjectWrite(key)
+  }
+
+  /** Projects whose unused planes and blobs are due to go (see `gcLater`). */
+  private readonly gcDue = new Map<string, ReturnType<typeof setTimeout>>()
+
+  /**
+   * Clear a project of what nothing names, a moment after the change that
+   * left it (not inside that request), and give the space back to the disk a
+   * step at a time, answering other requests between the steps.
+   */
+  private gcLater(project: string): void {
+    clearTimeout(this.gcDue.get(project))
+    const t = setTimeout(() => {
+      this.gcDue.delete(project)
+      if (this.closed || !existsSync(project)) return
+      this.projects.write(project, (p) => p.gc())
+      const step = (): void => {
+        if (this.closed || !existsSync(project)) return
+        if (this.projects.write(project, (p) => p.vacuumStep())) setImmediate(step)
+      }
+      step()
+    }, GC_DELAY_MS)
+    t.unref?.()
+    this.gcDue.set(project, t)
   }
 
   // ── blobs: pixel steps' images and masks ──
@@ -630,15 +916,17 @@ export class IndexService {
    * content: a pixel step's image or mask. The photo gets its project if it
    * has none yet (a pixel step is an edit). Returns the blob's hash.
    */
-  putBlob(
+  async putBlob(
     key: string,
     file: string,
     info: { kind: string; codec: string; width: number | null; height: number | null }
-  ): string {
+  ): Promise<string> {
     const project = this.ensureProject(this.row(key))
-    const hash = this.projects.use(project, (p) =>
-      p.putBlobFile(file, { ...info, channels: null, depth: null })
-    )
+    const hash = await putBlobFileInPieces((fn) => this.projects.write(project, fn), file, {
+      ...info,
+      channels: null,
+      depth: null
+    })
     this.noteProjectWrite(key)
     return hash
   }
@@ -663,7 +951,7 @@ export class IndexService {
   originalFailed(key: string, note: string): void {
     const project = this.projectOf(this.row(key))
     if (!project) return
-    this.projects.use(project, (p) =>
+    this.projects.write(project, (p) =>
       p.setOriginal({ kind: 'verbatim', blob: null, state: 'failed', note })
     )
     this.noteProjectWrite(key)
@@ -671,10 +959,7 @@ export class IndexService {
 
   /** Make sure the photo has a project (made from its sidecar if not). Returns its path. */
   private ensureProject(row: PhotoRow): string {
-    return (
-      this.projectOf(row) ??
-      this.createProject(row, readSidecar(row.path, row.is_raw === 1).sidecar)
-    )
+    return this.projectOf(row) ?? this.createProject(row, this.readSide(row))
   }
 
   /** Re-read a sidecar into the index when it changed on disk. Returns whether it had. */
@@ -682,8 +967,7 @@ export class IndexService {
     const file = row.path + SIDECAR_SUFFIX
     const mtime = existsSync(file) ? statSync(file).mtimeMs : null
     if (mtime === row.sidecar_mtime) return false
-    const { sidecar } = readSidecar(row.path, row.is_raw === 1)
-    this.mirror(row, sidecar, mtime)
+    this.mirror(row, this.readSide(row), mtime)
     return true
   }
 
@@ -694,13 +978,24 @@ export class IndexService {
     mtime: number | null,
     from: 'sidecar' | 'project' = 'sidecar'
   ): void {
+    // One transaction: the photo's row, its copies and its stack change together.
+    this.store.tx(() => this.mirrorRows(row, sidecar, mtime, from))
+  }
+
+  private mirrorRows(
+    row: PhotoRow,
+    sidecar: Sidecar,
+    mtime: number | null,
+    from: 'sidecar' | 'project'
+  ): void {
     const raw = row.is_raw === 1
     const p = sidecar.photo
     this.store.setPhotoMeta(row.id, {
       rating: p.rating,
       flag: p.flag,
       label: p.label,
-      edited: p.recipe !== null && isEdited(p.recipe, raw)
+      edited: p.recipe !== null && isEdited(p.recipe, raw),
+      recipeKey: thumbRecipeKey(p.recipe, raw)
     })
     this.store.replaceCopies(
       row.id,
@@ -710,7 +1005,8 @@ export class IndexService {
         rating: c.rating,
         flag: c.flag,
         label: c.label,
-        edited: c.recipe !== null && isEdited(c.recipe, raw)
+        edited: c.recipe !== null && isEdited(c.recipe, raw),
+        recipeKey: thumbRecipeKey(c.recipe, raw)
       }))
     )
     this.store.setStack(row.id, sidecar.stack?.id ?? null, sidecar.stack?.position ?? null)
@@ -754,7 +1050,11 @@ export class IndexService {
   private async fillXmp(folder: string): Promise<void> {
     const changed = await this.xmpSerial(async () => {
       let n = 0
+      let i = 0
       for (const row of this.store.photosIn(folder)) {
+        // A stat each: a big folder yields between chunks, as the scan does.
+        if (++i % CHUNK === 0) await nextTurn()
+        if (this.closed) return n
         const file = xmpPathFor(row.path, row.is_raw === 1)
         let mtime: number | null = null
         try {
@@ -956,7 +1256,7 @@ export class IndexService {
         thumbPath && !ctx.bare && existsSync(thumbPath)
           ? cacheUrlIn(this.cacheRoot, thumbPath, thumbKey ?? '')
           : null,
-      unreadable: this.failed.has(versionOf(row)),
+      unreadable: this.isFailed(row),
       ...(row.hdr_key === versionOf(row) ? { hdr: (row.hdr || null) as HdrKind | null } : {}),
       camera: row.camera_json ? (JSON.parse(row.camera_json) as CameraInfo) : emptyCamera(),
       folder: row.folder,
@@ -980,9 +1280,16 @@ export class IndexService {
 
   /** The items of a folder, a collection, a keyword (and every keyword under it) or the duplicates. */
   async listSource(src: LibrarySource): Promise<SourceListing> {
+    // Only a folder shown is watched (a collection's photos are anywhere).
+    if (src.kind !== 'folder') this.watchOnly(null)
     switch (src.kind) {
       case 'folder':
-        return { source: src, items: await this.listFolder(src.path) }
+        // Watched from before it is listed, so nothing between falls through.
+        this.watchOnly(src.path, !!src.deep)
+        return {
+          source: src,
+          items: await (src.deep ? this.listFolderDeep(src.path) : this.listFolder(src.path))
+        }
       case 'keyword': {
         const ids = this.store.photoIdsWithKeyword(normaliseKeyword(src.path))
         // Copies share their photo's keywords.
@@ -1448,7 +1755,7 @@ export class IndexService {
     return this.store
       .photosInScope(folder)
       .filter((r) => !(r.dhash && r.thumb_key && r.dhash_key === r.thumb_key))
-      .filter((r) => !this.failed.has(versionOf(r)) && existsSync(r.path))
+      .filter((r) => !this.isFailed(r) && existsSync(r.path))
       .map((r) => ({
         photoId: r.id,
         thumbPath: r.thumb_path && existsSync(r.thumb_path) ? r.thumb_path : null
@@ -1519,17 +1826,68 @@ export class IndexService {
     return row
   }
 
-  /** What the photo's truth says: its project's, else its sidecar's. */
+  /**
+   * What the photo's truth says: its project's, else its sidecar's. Its
+   * recipes name their planes (kept in the store), as every recipe the index
+   * hands out or takes in does; only a sidecar file carries them.
+   */
   private sidecar(row: PhotoRow): Sidecar {
     const project = this.projectOf(row)
-    if (project) return this.projects.use(project, (p) => p.read(row.is_raw === 1))
-    return readSidecar(row.path, row.is_raw === 1).sidecar
+    if (!project) return this.readSide(row)
+    return this.projects.use(project, (p) => {
+      const truth = p.read(row.is_raw === 1, false)
+      this.storePlanes(p, JSON.stringify(truth))
+      return truth
+    })
+  }
+
+  /**
+   * The planes a recipe handed out names, from its project into the store,
+   * where main asks for them (a photo never opened this session has had
+   * none copied over yet).
+   */
+  private storePlanes(p: PixlFile, json: string): void {
+    for (const ref of refsIn(json)) {
+      if (this.store.hasPlane(ref)) continue
+      const png = p.plane(ref)
+      if (png !== undefined) this.store.putPlane(ref, png)
+    }
+  }
+
+  /** A plane from the store, for a project or sidecar being written. */
+  private readonly planeOf = (ref: string): string | undefined => this.store.plane(ref)
+
+  /** The photo's sidecar file, its planes taken into the store and named. */
+  private readSide(row: PhotoRow): Sidecar {
+    return mapRecipes(readSidecar(row.path, row.is_raw === 1).sidecar, (r) =>
+      slim(r, (ref, png) => this.store.putPlane(ref, png))
+    )
+  }
+
+  /** A sidecar to write to its file: planes carried, not named (other apps read it alone). */
+  private fullSide(s: Sidecar): Sidecar {
+    return mapRecipes(s, (r) => hydrateRecipe(r, this.planeOf))
   }
 
   recipe(key: string): Recipe {
     const row = this.row(key)
     const it = itemOf(this.sidecar(row), parseKey(key).copyId)
     return it?.recipe ?? defaultRecipe(row.is_raw === 1)
+  }
+
+  /** A key's recipe with its planes by reference: its project's one item, or its sidecar's, slimmed. */
+  private slimRecipeOf(key: string): Recipe {
+    const row = this.row(key)
+    const raw = row.is_raw === 1
+    const project = this.projectOf(row)
+    const r = project
+      ? this.projects.use(project, (p) => {
+          const r = p.itemRecipe(itemKeyOf(parseKey(key).copyId), raw)
+          if (r) this.storePlanes(p, JSON.stringify(r))
+          return r
+        })
+      : (itemOf(this.readSide(row), parseKey(key).copyId)?.recipe ?? null)
+    return r ? slim(r) : defaultRecipe(raw)
   }
 
   recipes(keys: string[]): { key: string; row: PhotoRow; recipe: Recipe }[] {
@@ -1544,9 +1902,11 @@ export class IndexService {
     // (its history names them by reference).
     const project = this.projectOf(row)
     if (project)
-      this.projects.use(project, (p) => {
-        for (const { ref, png } of p.planes()) this.store.putPlane(ref, png)
-      })
+      this.projects.use(project, (p) =>
+        this.store.tx(() => {
+          for (const { ref, png } of p.planes()) this.store.putPlane(ref, png)
+        })
+      )
     const it = itemOf(this.sidecar(row), parseKey(key).copyId)
     return {
       row: this.withOriginal(row),
@@ -1577,23 +1937,23 @@ export class IndexService {
     const raw = row.is_raw === 1
     const project = this.projectOf(row)
     if (project) {
-      const truth = this.projects.use(project, (p) => {
+      const truth = this.projects.write(project, (p) => {
         // By reference: what the change leaves alone goes back as it was.
         const s = p.read(raw, false)
         change(s)
-        p.write(s)
+        p.write(s, this.planeOf)
         return s
       })
       this.mirror(row, truth, statSync(project).mtimeMs, 'project')
       return truth
     }
-    const { sidecar } = readSidecar(row.path, raw)
+    const sidecar = this.readSide(row)
     change(sidecar)
     if (needsProject?.(sidecar)) {
       this.createProject(row, sidecar)
       return sidecar
     }
-    const mtime = writeSidecar(row.path, sidecar)
+    const mtime = writeSidecar(row.path, this.fullSide(sidecar))
     this.mirror(row, sidecar, mtime)
     return sidecar
   }
@@ -1702,20 +2062,31 @@ export class IndexService {
   /** The thumbnail to render for an item, or null when the one it has is current (or it cannot be read). */
   thumbJob(photoId: number, copyId: string | null): ThumbWork | null {
     const row = this.store.photo(photoId)
-    if (!row || this.failed.has(versionOf(row))) return null
+    if (!row || this.isFailed(row)) return null
     const existing =
       copyId === null ? row : this.store.copiesOf(row.id).find((c) => c.copy_id === copyId)
     if (!existing) return null
-    const recipe = this.recipe(keyOf(row.id, copyId))
-    const edited = isEdited(recipe, row.is_raw === 1)
-    const stamp = `${versionStamp(row)}-${edited ? hash32(JSON.stringify(recipe)).toString(16) : 'plain'}`
+    // The recipe's key as last mirrored (every change to it mirrors): whether
+    // the thumbnail is current needs no file read. A row from before it was
+    // kept asks the slim recipe, from the one item.
+    const key = keyOf(row.id, copyId)
+    const raw = row.is_raw === 1
+    const recipeKey = existing.recipe_key ?? thumbRecipeKey(this.slimRecipeOf(key), raw)
+    const stamp = `${versionStamp(row)}-${recipeKey}`
     if (existing.thumb_key === stamp && existing.thumb_path && existsSync(existing.thumb_path))
       return null
-    return { row: this.withOriginal(row), recipe, edited, stamp }
+    const edited = recipeKey !== 'plain'
+    return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp }
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, stamp: string): void {
+    // The one it replaces goes from the disk (each version has its own name).
+    const was =
+      copyId === null
+        ? this.store.photo(photoId)?.thumb_path
+        : this.store.copiesOf(photoId).find((c) => c.copy_id === copyId)?.thumb_path
     this.store.setThumb(photoId, copyId, path, stamp)
+    if (was && was !== path) rmSync(was, { force: true })
     // The photo's thumbnail is its project's preview too (what a file browser could show).
     const row = this.store.photo(photoId)
     const project = row && copyId === null ? this.projectOf(row) : null
@@ -1723,7 +2094,7 @@ export class IndexService {
     try {
       const jpeg = readFileSync(path)
       const size = jpegSize(jpeg)
-      this.projects.use(project, (p) => p.setPreview(jpeg, size?.width ?? 0, size?.height ?? 0))
+      this.projects.write(project, (p) => p.setPreview(jpeg, size?.width ?? 0, size?.height ?? 0))
       this.store.setProject(row.id, project, statSync(project).mtimeMs)
     } catch (err) {
       console.warn('project preview not saved', project, (err as Error).message)
@@ -1739,7 +2110,10 @@ export class IndexService {
   /** Once per version of the file: one that cannot be read is not tried again until it changes. */
   markFailed(photoId: number, reason: string): void {
     const row = this.store.photo(photoId)
-    if (row) this.failed.set(versionOf(row), reason)
+    if (!row) return
+    this.failed.set(versionOf(row), reason)
+    // Kept: the next launch does not try this version again.
+    this.store.setFailed(photoId, versionOf(row), reason)
   }
 
   // ── history ──
@@ -1755,7 +2129,7 @@ export class IndexService {
   ): T {
     const path = this.projectOf(this.row(key))
     if (!path) return index()
-    const out = this.projects.use(path, (p) => project(p, itemKeyOf(parseKey(key).copyId)))
+    const out = this.projects.write(path, (p) => project(p, itemKeyOf(parseKey(key).copyId)))
     this.noteProjectWrite(key)
     return out
   }
@@ -1768,11 +2142,10 @@ export class IndexService {
   }
 
   history(key: string): HistoryLog {
-    return this.inHistory(
-      key,
-      (p, k) => p.history.history(k),
-      () => this.store.history(key)
-    )
+    // A read: no write to note (its mtime stays the one the index knows).
+    const path = this.projectOf(this.row(key))
+    if (!path) return this.store.history(key)
+    return this.projects.use(path, (p) => p.history.history(itemKeyOf(parseKey(key).copyId)))
   }
 
   /**
@@ -1782,25 +2155,58 @@ export class IndexService {
   appendHistory(key: string, label: string, recipe: Recipe): HistoryLog {
     const row = this.row(key)
     if (!this.projectOf(row)) {
-      const log = this.store.appendHistory(key, label, recipe)
+      this.store.appendHistory(key, label, recipe)
+      const log = this.store.history(key)
       if (log.steps.length === 0) return log
       this.ensureProject(row)
       return this.history(key)
     }
-    return this.inHistory(
+    this.inHistory(
       key,
-      (p, k) => {
-        const log = p.history.append(k, label, recipe)
-        // The planes it names go into the project with it.
-        for (const ref of refsIn(JSON.stringify(recipe))) {
-          if (p.hasPlane(ref)) continue
-          const png = this.store.plane(ref)
-          if (png !== undefined) p.putPlane(ref, png)
-        }
-        return log
-      },
+      (p, k) => this.appendIn(p, k, label, recipe),
       () => this.store.appendHistory(key, label, recipe)
     )
+    return this.history(key)
+  }
+
+  private appendIn(p: PixlFile, itemKey: string, label: string, recipe: Recipe): HistoryAppend {
+    const log = p.history.append(itemKey, label, recipe)
+    // The planes it names go into the project with it.
+    for (const ref of refsIn(JSON.stringify(recipe))) {
+      if (p.hasPlane(ref)) continue
+      const png = this.store.plane(ref)
+      if (png !== undefined) p.putPlane(ref, png)
+    }
+    return log
+  }
+
+  /**
+   * A settled edit: its history step (`step`, planes by reference) and the
+   * recipe the photo now has (`recipe`, whole) written together, so a crash
+   * never leaves the history ahead of the saved recipe, which the next open
+   * would record as where the photo stands. Returns what changed in the
+   * history, not all of it.
+   */
+  commitEdit(key: string, label: string, step: Recipe, recipe: Recipe): HistoryAppend {
+    const row = this.row(key)
+    const path = this.projectOf(row)
+    if (!path) {
+      const change = this.store.appendHistory(key, label, step)
+      // The "Opened" base only records what is saved already.
+      if (!change.step) return change
+      // A real edit makes the project, which takes the index's history (as it is) with it.
+      this.saveRecipe(key, recipe)
+      this.ensureProject(this.row(key))
+      return change
+    }
+    const log = this.projects.write(path, (p) =>
+      p.tx(() => {
+        this.saveRecipe(key, recipe)
+        return this.appendIn(p, itemKeyOf(parseKey(key).copyId), label, step)
+      })
+    )
+    this.noteProjectWrite(key)
+    return log
   }
 
   setHistoryHidden(key: string, seqs: number[], hidden: boolean): HistoryLog {
@@ -1816,7 +2222,7 @@ export class IndexService {
       key,
       (p, k) => {
         const log = p.history.delete(k, seqs)
-        p.gc()
+        this.gcLater(p.path)
         return log
       },
       () => this.store.deleteHistory(key, seqs)
@@ -1843,8 +2249,39 @@ export class IndexService {
    * by reference (presets and sidecars hold the PNGs), so this is safe
    * before anything else has asked for one: at the first start.
    */
+  /**
+   * Drop the thumbnails in `dir` no photo or copy names any more (made for a
+   * recipe since changed, before a replaced one was deleted with it), an hour
+   * old at least so one being written now is not taken. Returns how many went.
+   */
+  pruneThumbs(dir: string): number {
+    const named = this.store.thumbPaths()
+    const now = Date.now()
+    let n = 0
+    let names: string[]
+    try {
+      names = readdirSync(dir)
+    } catch {
+      return 0
+    }
+    for (const name of names) {
+      const file = join(dir, name)
+      if (named.has(file)) continue
+      try {
+        if (now - statSync(file).mtimeMs < 60 * 60 * 1000) continue
+        unlinkSync(file)
+        n++
+      } catch {
+        // Gone already, or not ours to take.
+      }
+    }
+    return n
+  }
+
   prunePlanes(): number {
-    const keep = new Set<string>()
+    // Those stored since the index opened are in use (a stroke not yet in a
+    // step, an open project's planes): kept, so this can run after start.
+    const keep = new Set<string>(this.store.planesPut)
     for (const json of this.store.historyRecipes()) {
       for (const m of json.matchAll(/"ref":"([^"]+)"/g)) keep.add(m[1])
     }

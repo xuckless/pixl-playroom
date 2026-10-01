@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { Collection, KeywordNode, LibrarySource } from '../../../../shared/ipc'
 import { Icon, type IconName } from '../../components/icons'
 import { Menu, type MenuItem } from '../../components/Popover'
@@ -181,22 +181,84 @@ function AddMenu({
   )
 }
 
-function Folders(): React.JSX.Element {
+/**
+ * A folder and, opened out, its subfolders (read when first opened, one
+ * level at a time), each a source of its own. The open ones are remembered
+ * for the session.
+ */
+function FolderTree({
+  path,
+  depth,
+  actions,
+  menu
+}: {
+  path: string
+  depth: number
+  actions?: ReactNode
+  menu?: MenuItem[]
+}): React.JSX.Element {
   const source = useLibrary((s) => s.source)
+  const openFolder = useLibrary((s) => s.openFolder)
+  const [open, setOpen] = useState(() => openTrees.has(path))
+  const [children, setChildren] = useState<{ path: string; name: string }[] | null>(null)
+  useEffect(() => {
+    if (!open || children) return
+    let live = true
+    void api.library.subfolders(path).then(
+      (list) => live && setChildren(list),
+      () => live && setChildren([])
+    )
+    return () => {
+      live = false
+    }
+  }, [open, children, path])
+  const toggle = (): void => {
+    if (open) openTrees.delete(path)
+    else openTrees.add(path)
+    setOpen(!open)
+  }
+  return (
+    <>
+      <SourceRow
+        icon="folder"
+        label={folderName(path)}
+        title={path}
+        depth={depth}
+        active={source?.kind === 'folder' && source.path === path}
+        expanded={children?.length === 0 ? undefined : open}
+        onToggle={children?.length === 0 ? undefined : toggle}
+        onOpen={() => void openFolder(path)}
+        actions={actions}
+        menu={() => [
+          ...(menu ?? []),
+          {
+            label: 'Show in folder',
+            onSelect: () =>
+              void api.app
+                .reveal(path)
+                .catch((e) => useLibrary.getState().say(errorText(e), 'error'))
+          }
+        ]}
+      />
+      {open && children?.map((c) => <FolderTree key={c.path} path={c.path} depth={depth + 1} />)}
+    </>
+  )
+}
+
+/** The folder trees opened out, kept while the app runs. */
+const openTrees = new Set<string>()
+
+function Folders(): React.JSX.Element {
   const recent = useLibrary((s) => s.recent)
   const pinned = useLibrary((s) => s.pinned)
-  const openFolder = useLibrary((s) => s.openFolder)
   const chooseFolder = useLibrary((s) => s.chooseFolder)
   const togglePin = useLibrary((s) => s.togglePin)
   const rest = recent.filter((r) => !pinned.includes(r)).slice(0, 8)
   const row = (path: string, isPinned: boolean): React.JSX.Element => (
-    <SourceRow
+    <FolderTree
       key={path}
-      icon="folder"
-      label={folderName(path)}
-      title={path}
-      active={sameSource(source, { kind: 'folder', path })}
-      onOpen={() => void openFolder(path)}
+      path={path}
+      depth={0}
       actions={
         <button
           className={`icon src-pin${isPinned ? ' pinned' : ''}`}
@@ -211,14 +273,7 @@ function Folders(): React.JSX.Element {
           <Icon name="pin" />
         </button>
       }
-      menu={() => [
-        { label: isPinned ? 'Unpin' : 'Pin to the top', onSelect: () => togglePin(path) },
-        {
-          label: 'Show in folder',
-          onSelect: () =>
-            void api.app.reveal(path).catch((e) => useLibrary.getState().say(errorText(e), 'error'))
-        }
-      ]}
+      menu={[{ label: isPinned ? 'Unpin' : 'Pin to the top', onSelect: () => togglePin(path) }]}
     />
   )
   return (

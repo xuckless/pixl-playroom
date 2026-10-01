@@ -1,3 +1,4 @@
+import { produce, setAutoFreeze } from 'immer'
 import { create } from 'zustand'
 import type { ImageStats, MaskMode, NoiseEstimate } from '../../../shared/engine-types'
 import type {
@@ -8,8 +9,14 @@ import type {
   Snapshot,
   ViewState
 } from '../../../shared/ipc'
-import { replay } from '../../../shared/history'
-import { newId, normaliseRecipe, type HslBand, type Recipe } from '../../../shared/recipe'
+import { appendToLog, replay } from '../../../shared/history'
+import {
+  newId,
+  normaliseRecipe,
+  sameValue,
+  type HslBand,
+  type Recipe
+} from '../../../shared/recipe'
 import { FIT, type ZoomView } from '../../../shared/view'
 import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
@@ -68,6 +75,11 @@ export type Gesture = 'straighten' | 'crop' | 'rotate' | null
 
 interface DevelopState {
   session: DevelopSession | null
+  /**
+   * The photo on screen, for what only shows its facts: the session, or
+   * while the next photo loads, the last one (edits need `session`).
+   */
+  shown: DevelopSession | null
   loading: boolean
   recipe: Recipe | null
   /** The photo's edit history: the recipe is its base with every visible step replayed. */
@@ -177,6 +189,13 @@ interface DevelopState {
  * Anything that settles an edit sends straight away and drops what waits.
  */
 let queued: { key: string; recipe: Recipe } | null = null
+// Recipes are handed on and changed in place elsewhere (a clone first, but
+// not everywhere): frozen ones would throw there.
+setAutoFreeze(false)
+/** Counts opens: one that finds a newer one started (or a close) shows nothing. */
+let openToken = 0
+/** The photo an open is loading, until it is shown. */
+let openingKey: string | null = null
 let frame = 0
 /** Numbers each recipe sent to the engine; every render says which one it drew. */
 let rev = 0
@@ -191,15 +210,35 @@ function flushQueued(onError: (message: string) => void): void {
   frame = 0
   const q = queued
   queued = null
-  if (q)
-    void api.develop.update(q.key, q.recipe, true, ++rev).catch((err) => onError(errorText(err)))
+  if (!q) return
+  settled = null
+  void api.develop.update(q.key, q.recipe, true, ++rev).catch((err) => onError(errorText(err)))
 }
+
+/** The last recipe sent settled (not mid-drag): sent again it would only render twice. */
+let settled: { key: string; recipe: Recipe } | null = null
 
 function sendNow(key: string, recipe: Recipe, onError: (message: string) => void): void {
   cancelAnimationFrame(frame)
   frame = 0
   queued = null
+  settled = { key, recipe }
   void api.develop.update(key, recipe, false, ++rev).catch((err) => onError(errorText(err)))
+}
+
+/**
+ * The photos either side of `key` in the library's order and filters (the
+ * next first, as the arrow keys most often go): their proxies are made
+ * ahead, so stepping to one opens at once.
+ */
+function warmNeighbours(key: string): void {
+  const list = useLibrary.getState().visible()
+  const at = list.findIndex((i) => i.key === key)
+  if (at < 0) return
+  const near = [list[at + 1], list[at - 1], list[at + 2]]
+    .filter((i): i is (typeof list)[number] => !!i && !i.offline && !i.unreadable)
+    .map((i) => i.key)
+  if (near.length > 0) void api.develop.warm(near).catch(() => undefined)
 }
 
 /**
@@ -210,8 +249,9 @@ function applyLog(key: string, history: HistoryLog): void {
   const { session } = useDevelop.getState()
   if (!session || session.key !== key || !history.base) return
   // A base saved by an older version can lack fields added since (AI denoise's).
-  const recipe = normaliseRecipe(replay(history.base.recipe, history.steps), session.isRaw)
-  useDevelop.setState({ history, recipe, rendering: true })
+  const { head, ...log } = history
+  const recipe = normaliseRecipe(head ?? replay(log.base!.recipe, log.steps), session.isRaw)
+  useDevelop.setState({ history: log, recipe, rendering: true })
   sendNow(session.key, recipe, (m) => useDevelop.getState().onError(m))
 }
 
@@ -230,7 +270,7 @@ export function landingWork(p: Promise<void>): void {
     .catch(() => undefined)
 }
 
-/** Undo and Redo, one at a time: each reads the history the one before left. */
+/** History changes, one at a time: each reads the history the one before left. */
 let historyOps: Promise<void> = Promise.resolve()
 function queueHistoryOp(op: () => Promise<void>): void {
   historyOps = historyOps.then(op).catch((err) => useDevelop.getState().onError(errorText(err)))
@@ -247,6 +287,7 @@ type Pictures = { framed: RenderEvent | null; crop: RenderEvent | null }
 
 export const useDevelop = create<DevelopState>((set, get) => ({
   session: null,
+  shown: null,
   loading: false,
   recipe: null,
   history: { base: null, steps: [] },
@@ -286,8 +327,15 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   async open(key) {
     const prev = get().session
-    if (prev?.key === key) return
+    if (prev?.key === key || openingKey === key) return
+    const token = ++openToken
+    openingKey = key
+    // A slider's last frame is the photo being left's: it goes to that photo first.
+    flushQueued((m) => get().onError(m))
+    // The last photo's recipe stays in view until this one's arrives, but
+    // nothing edits it: every edit needs the session.
     set({
+      session: null,
       loading: true,
       error: null,
       picture: null,
@@ -307,21 +355,31 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       tool: 'none',
       zoom: FIT
     })
+    // A later open (or a close) took over: what this one found is not shown.
+    const stale = (): boolean => token !== openToken
     try {
-      const session = await api.develop.open(key)
-      let history = await api.develop.historyList(key)
+      // Asked together: neither waits on the other.
+      const [session, listed] = await Promise.all([
+        api.develop.open(key),
+        api.develop.historyList(key)
+      ])
+      if (stale()) return
+      const { head, ...rest } = listed
+      let history: HistoryLog = rest
       if (!history.base) {
-        history = await api.develop.historyAppend(key, 'Opened', session.recipe)
-      } else if (
-        JSON.stringify(replay(history.base.recipe, history.steps)) !==
-        JSON.stringify(session.recipe)
-      ) {
+        const opened = await api.develop.historyAppend(key, 'Opened', session.recipe)
+        history = appendToLog(history, opened)
+      } else if (!sameValue(head ?? replay(history.base.recipe, history.steps), session.recipe)) {
         // Changed where no history is written (a paste or sync in the
         // library, an older version's undo): record where it stands now.
-        history = await api.develop.historyAppend(key, 'Opened as saved', session.recipe)
+        const saved = await api.develop.historyAppend(key, 'Opened as saved', session.recipe)
+        history = appendToLog(history, saved)
       }
+      if (stale()) return
+      openingKey = null
       set({
         session,
+        shown: session,
         recipe: session.recipe,
         history,
         redo: [],
@@ -329,17 +387,25 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         loading: false
       })
       get().pushView()
+      warmNeighbours(key)
     } catch (err) {
-      set({ loading: false, error: errorText(err) })
+      if (stale()) return
+      openingKey = null
+      set({ shown: null, loading: false, error: errorText(err) })
     }
   },
 
   async close() {
-    const s = get().session
-    if (s) await api.develop.close(s.key)
+    // An open still on its way is dropped, and its photo closed in main too.
+    ++openToken
+    const key = get().session?.key ?? openingKey
+    openingKey = null
+    if (key) await api.develop.close(key)
     queued = null
     set({
       session: null,
+      shown: null,
+      loading: false,
       recipe: null,
       picture: null,
       pictures: { framed: null, crop: null },
@@ -351,8 +417,12 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   edit(change, interactive = false) {
     const { session, recipe } = get()
     if (!session || !recipe) return
-    const next = structuredClone(recipe)
-    change(next)
+    // What the change leaves alone keeps its identity, so only what reads
+    // the part that moved re-renders (a slider tick, not the whole develop view).
+    const next = produce(recipe, (draft) => {
+      change(draft as Recipe)
+    })
+    if (next === recipe) return
     set({ recipe: next, rendering: true })
     const onError = (m: string): void => get().onError(m)
     if (!interactive) return sendNow(session.key, next, onError)
@@ -364,10 +434,16 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   commit(label) {
     const { session, recipe } = get()
     if (!session || !recipe) return
-    set({ rendering: true })
-    sendNow(session.key, recipe, (m) => get().onError(m))
-    void api.develop.historyAppend(session.key, label, recipe).then((history) => {
-      if (get().session?.key === session.key) set({ history, redo: [] })
+    // An edit sent settled just before (edit, then commit) is not sent again.
+    if (settled?.key !== session.key || settled.recipe !== recipe || queued || frame) {
+      set({ rendering: true })
+      sendNow(session.key, recipe, (m) => get().onError(m))
+    }
+    // In line with Undo and Redo: one pressed straight after waits for this step.
+    queueHistoryOp(async () => {
+      const change = await api.develop.historyAppend(session.key, label, recipe)
+      if (get().session?.key === session.key)
+        set({ history: appendToLog(get().history, change), redo: [] })
     })
     const item = useLibrary.getState().items.find((i) => i.key === session.key)
     if (item && !item.edited) useLibrary.getState().patchItems([{ ...item, edited: true }])

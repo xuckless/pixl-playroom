@@ -14,7 +14,7 @@ import { join } from 'path'
 import { compile, orientedFrame } from '../../shared/compile'
 import { STRIP_ALL } from '../../shared/engine-types'
 import { defaultUpright } from '../../shared/upright'
-import type { Recipe } from '../../shared/recipe'
+import { newId, type Recipe } from '../../shared/recipe'
 import { brushPlanes } from '../brushes'
 import type { ProxyFile } from '../proxy'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
@@ -69,7 +69,8 @@ export async function freezeMask(
   })
   const index = compiled.layerIndex[layerId]
   if (index === undefined || !compiled.grade) return null
-  const stamp = Date.now().toString(36)
+  // Two masks frozen in one millisecond (two jobs) never share a file.
+  const stamp = newId()
   const drawn = join(deps.cacheDir, `freeze-${stamp}.png`)
   await deps.engine.convert({
     ...blankRequest(master.path, drawn, master.input),

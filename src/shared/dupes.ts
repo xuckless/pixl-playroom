@@ -56,13 +56,18 @@ export interface NearGroup {
  * Pictures within `threshold` bits of another, joined transitively
  * (union-find): A~B and B~C put all three together. Groups come in the
  * order of their first member; members keep the entries' order.
+ *
+ * Not every pair is compared. Equal hashes are joined first; then the 64
+ * bits are cut into `threshold + 1` blocks, and two hashes within
+ * `threshold` bits must agree on at least one whole block (pigeonhole), so
+ * only hashes sharing a block's value are compared (multi-index hashing).
+ * The groups are exactly the all-pairs ones.
  */
 export function groupNear(
   entries: { key: string; hash: string }[],
   threshold: number
 ): NearGroup[] {
   const n = entries.length
-  const h = entries.map((e) => halves(e.hash))
   const parent = Array.from({ length: n }, (_, i) => i)
   const find = (i: number): number => {
     while (parent[i] !== i) {
@@ -71,14 +76,50 @@ export function groupNear(
     }
     return i
   }
+  const join = (i: number, j: number): void => {
+    const a = find(i)
+    const b = find(j)
+    if (a !== b) parent[Math.max(a, b)] = Math.min(a, b)
+  }
+  // Equal hashes: one representative each.
+  const firstOf = new Map<string, number>()
+  const reps: number[] = []
   for (let i = 0; i < n; i++) {
-    const [i0, i1] = h[i]
-    for (let j = i + 1; j < n; j++) {
-      const d = popcount32((i0 ^ h[j][0]) >>> 0) + popcount32((i1 ^ h[j][1]) >>> 0)
-      if (d > threshold) continue
-      const a = find(i)
-      const b = find(j)
-      if (a !== b) parent[Math.max(a, b)] = Math.min(a, b)
+    const hash = entries[i].hash.toLowerCase()
+    const seen = firstOf.get(hash)
+    if (seen === undefined) {
+      firstOf.set(hash, i)
+      reps.push(i)
+    } else join(seen, i)
+  }
+  if (threshold > 0) {
+    const h = entries.map((e) => halves(e.hash))
+    const bits = entries.map((e) => BigInt(`0x${e.hash.padEnd(16, '0').slice(0, 16)}`))
+    const blocks = Math.min(64, threshold + 1)
+    for (let b = 0; b < blocks; b++) {
+      const from = Math.round((b * 64) / blocks)
+      const to = Math.round(((b + 1) * 64) / blocks)
+      const mask = (1n << BigInt(to - from)) - 1n
+      const shift = BigInt(64 - to)
+      const buckets = new Map<bigint, number[]>()
+      for (const i of reps) {
+        const v = (bits[i] >> shift) & mask
+        const list = buckets.get(v)
+        if (list) list.push(i)
+        else buckets.set(v, [i])
+      }
+      for (const list of buckets.values()) {
+        for (let x = 0; x < list.length; x++) {
+          const i = list[x]
+          const [i0, i1] = h[i]
+          for (let y = x + 1; y < list.length; y++) {
+            const j = list[y]
+            if (find(i) === find(j)) continue
+            const d = popcount32((i0 ^ h[j][0]) >>> 0) + popcount32((i1 ^ h[j][1]) >>> 0)
+            if (d <= threshold) join(i, j)
+          }
+        }
+      }
     }
   }
   const byRoot = new Map<number, number[]>()
@@ -91,10 +132,12 @@ export function groupNear(
   const out: NearGroup[] = []
   for (const members of byRoot.values()) {
     if (members.length < 2) continue
+    // The largest distance, between the distinct hashes in the group.
+    const distinct = [...new Set(members.map((i) => entries[i].hash.toLowerCase()))]
     let distance = 0
-    for (let a = 0; a < members.length; a++) {
-      for (let b = a + 1; b < members.length; b++) {
-        distance = Math.max(distance, hamming(entries[members[a]].hash, entries[members[b]].hash))
+    for (let a = 0; a < distinct.length; a++) {
+      for (let b = a + 1; b < distinct.length; b++) {
+        distance = Math.max(distance, hamming(distinct[a], distinct[b]))
       }
     }
     out.push({ keys: members.map((i) => entries[i].key), distance })

@@ -27,6 +27,7 @@ import {
   type ZoomView
 } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
+import { touchInteracting } from '../../lib/interacting'
 import { emptyRange, hsvOf } from '../../lib/helpers'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { samplePatch } from '../../lib/image'
@@ -41,6 +42,7 @@ import { useLibrary } from '../../state/library'
 import { BrushLayer } from './BrushTool'
 import { ClippingOverlay } from './ClippingOverlay'
 import { HeadroomOverlay } from './HeadroomOverlay'
+import { SpotsOverlay } from './SpotsOverlay'
 import { CropTool } from './CropTool'
 import { DecodedImage } from './DecodedImage'
 import { Guides } from './Guides'
@@ -128,18 +130,24 @@ export function Loupe(): React.JSX.Element {
   }, [size.w, size.h, setTargetEdge])
 
   const panel = useUi((s) => s.panel)
+  // Visualise Spots, while the Heal tool is the one showing.
+  const spots = useUi((s) => s.panel === 'heal' && !!s.heal.visualise)
+  const spotLevel = useUi((s) => s.heal.spotLevel ?? 50)
+  // On the geometry alone (a slider elsewhere keeps it), so what takes `g`
+  // stays memoised through a drag.
+  const geometry = useDevelop((s) => s.recipe?.geometry)
   const g = useMemo(
     () =>
-      session && recipe
+      session && geometry
         ? viewGeometry(
-            recipe,
+            { geometry },
             session.frameWidth,
             session.frameHeight,
             tool === 'crop',
             tool === 'upright-guide'
           )
         : null,
-    [session, recipe, tool]
+    [session, geometry, tool]
   )
 
   // Where the picture sits in the loupe. In the crop tool the frame comes
@@ -189,6 +197,8 @@ export function Loupe(): React.JSX.Element {
       const from = laidOut.current
       const to = viewport ? zoomedRect(viewport, next) : null
       live.current = next
+      // A pan or zoom in motion: the glass over the loupe holds its last frame.
+      touchInteracting()
       if (el && from && to) {
         const k = to.w / from.w
         el.style.willChange = 'transform'
@@ -521,6 +531,7 @@ export function Loupe(): React.JSX.Element {
             )}
             <MaskOverlay g={g ?? null} w={vrect.w} h={vrect.h} />
             {clipping && picture && <ClippingOverlay url={picture.url} />}
+            {spots && picture && <SpotsOverlay url={picture.url} level={spotLevel} />}
             {headroom && headroomPlane && compare !== 'before' && (
               <HeadroomOverlay url={headroomPlane.url} />
             )}

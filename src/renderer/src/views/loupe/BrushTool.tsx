@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { newId, type BrushComponent } from '../../../../shared/recipe'
 import {
   baseToDisplay,
@@ -10,6 +10,8 @@ import {
   type ViewGeometry
 } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
+import { isFrame, pictureBitmap as framePixels } from '../../lib/frames'
+import { touchInteracting } from '../../lib/interacting'
 import { planePng, rememberPlane } from '../../lib/planes'
 import type { Affine, Dab } from '../../workers/brush.worker'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
@@ -69,7 +71,10 @@ export const BrushLayer = memo(function BrushLayer({
   const brush = useUi((s) => s.brushes[s.brushSlot])
   const worker = brushWorker()
   const stroke = useRef<Stroke | null>(null)
-  const [cursor, setCursor] = useState<P | null>(null)
+  // The cursor follows the pointer through its element, not a render per move.
+  const [hovering, setHovering] = useState(false)
+  const cursorAt = useRef<P | null>(null)
+  const cursorEl = useRef<HTMLDivElement>(null)
   const [altDown, setAltDown] = useState(false)
   const vis = visiblePart(box, rect)
   // The base frame's size in pixels (the file upright, before the user's turns).
@@ -193,16 +198,24 @@ export const BrushLayer = memo(function BrushLayer({
       stroke.current = null
       return useLibrary.getState().say(errorText(err), 'error')
     }
-    worker.post({
-      t: 'begin',
-      w: planeW,
-      h: planeH,
-      png,
-      softness: set.softness,
-      erase,
-      picture: set.autoMask ? (d.picture?.url ?? null) : null,
-      toDisplay: affine((q) => baseToDisplay(g, q))
-    })
+    const picture = set.autoMask ? (d.picture?.url ?? null) : null
+    // A preview frame is no file the worker could fetch: its pixels go along.
+    const pictureBitmap =
+      picture && isFrame(picture) ? await framePixels(picture).catch(() => undefined) : undefined
+    worker.post(
+      {
+        t: 'begin',
+        w: planeW,
+        h: planeH,
+        png,
+        softness: set.softness,
+        erase,
+        picture,
+        ...(pictureBitmap ? { pictureBitmap } : {}),
+        toDisplay: affine((q) => baseToDisplay(g, q))
+      },
+      pictureBitmap ? [pictureBitmap] : []
+    )
     const s = stroke.current
     if (!s) return
     s.started = true
@@ -254,6 +267,16 @@ export const BrushLayer = memo(function BrushLayer({
     }
   }
 
+  const placeCursor = (): void => {
+    const el = cursorEl.current
+    const p = cursorAt.current
+    if (!el || !p) return
+    el.style.left = `${p.x * rect.w - brush.size / 2}px`
+    el.style.top = `${p.y * rect.h - brush.size / 2}px`
+  }
+  // Placed as it appears, and again when the brush or the loupe resizes.
+  useLayoutEffect(placeCursor)
+
   const erasing = slot === 'erase' || altDown
   return (
     <div
@@ -267,8 +290,11 @@ export const BrushLayer = memo(function BrushLayer({
       onPointerMove={(e) => {
         const el = e.currentTarget
         setAltDown(e.altKey)
-        setCursor(toDisplay(e, el))
+        cursorAt.current = toDisplay(e, el)
+        placeCursor()
+        if (!hovering) setHovering(true)
         if (!stroke.current) return
+        touchInteracting()
         // Every sample the pointer made since the last frame, for smooth strokes.
         const samples = e.nativeEvent.getCoalescedEvents?.() ?? [e.nativeEvent]
         for (const ev of samples.length ? samples : [e.nativeEvent])
@@ -277,22 +303,18 @@ export const BrushLayer = memo(function BrushLayer({
       }}
       onPointerUp={() => void end()}
       onPointerCancel={() => void end()}
-      onPointerLeave={() => setCursor(null)}
+      onPointerLeave={() => setHovering(false)}
     >
       <canvas
         ref={worker.attach}
         className="overlay-canvas"
         style={{ left: vis.x, top: vis.y, width: vis.w, height: vis.h }}
       />
-      {cursor && (
+      {hovering && (
         <div
+          ref={cursorEl}
           className={`brush-cursor${erasing ? ' erase' : ''}`}
-          style={{
-            left: cursor.x * rect.w - brush.size / 2,
-            top: cursor.y * rect.h - brush.size / 2,
-            width: brush.size,
-            height: brush.size
-          }}
+          style={{ width: brush.size, height: brush.size }}
         >
           <span
             className="brush-core"

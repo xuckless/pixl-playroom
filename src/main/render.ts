@@ -14,7 +14,7 @@
  */
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import { mkdir } from 'fs/promises'
+import { mkdir, readdir, rm } from 'fs/promises'
 import { join } from 'path'
 import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020 } from '../shared/auto'
 import {
@@ -22,6 +22,7 @@ import {
   fitCrop,
   framingTransparent,
   framingWarps,
+  gradeKey,
   orientedFrame,
   type Compiled
 } from '../shared/compile'
@@ -75,10 +76,12 @@ import {
   rendersDir
 } from './autowb'
 import { brushPlanes } from './brushes'
+import { paths } from './paths'
+import { sweepPhoto } from './sweep'
 import type { PhotoRow } from './db'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import { keyOf, parseKey } from './keys'
-import type { Library } from './library'
+import type { Library, Picture } from './library'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
 import {
@@ -96,7 +99,7 @@ import {
   BACKGROUND_THREADS,
   displayPolicy,
   gainMapOf,
-  INTERACTIVE_THREADS,
+  interactiveThreads,
   orientOnly,
   RAW_DEVELOP,
   sourceOrientation,
@@ -118,6 +121,18 @@ const SETTLE_LARGE_MS = 500
 const EMPTY = 'empty'
 /** How long an edit must rest before the sidecar is written. */
 const SAVE_MS = 600
+/**
+ * The long edge mask thumbnails are rendered at: shown at a few dozen pixels
+ * in the panel, and stretched over the loupe as a soft tint by hover and
+ * "show all", which this still serves.
+ */
+const MASK_THUMB_EDGE = 512
+/** How long editing pauses before an open photo's thumbnail is made again. */
+const THUMB_IDLE_MS = 4000
+/** The middle proxy serves a view up to 1/MID_SHORTFALL its size. */
+const MID_SHORTFALL = 0.8
+/** Picture files of each kind kept on disk besides any a kept event names. */
+const KEEP_RENDERS = 6
 
 /**
  * What the histogram, the hue chart and auto tone read, measured by the
@@ -198,9 +213,20 @@ class Session {
   /** The 1:1 region being rendered: a newer one stops it. */
   private regionAbort: AbortController | null = null
   private pending: Kind | null = null
+  /** The render running now, or the last one. */
+  private current: Promise<void> = Promise.resolve()
   private settle: NodeJS.Timeout | undefined
   private save: NodeJS.Timeout | undefined
-  private slot = 0
+  /**
+   * Picture, mask and headroom files: each render its own name, so an event
+   * kept for re-sending (or the picture pickers measure) still finds what it
+   * was made as. The newest few of each are kept, and any one still named.
+   */
+  private readonly tag = Date.now().toString(36)
+  private fileSeq = 0
+  private files: Record<string, string[]> = {}
+  private lastOut: Record<Kind, string> = { draft: '', full: '' }
+  private lastMaskOut = ''
   private regionSlot = 0
   private beforeKey = ''
   /**
@@ -238,6 +264,15 @@ class Session {
     readonly hdrMaster: ProxyFile | null = null
   ) {
     this.dir = rendersDir(row.id)
+    void this.clearEarlier()
+  }
+
+  /** An earlier session's picture files: nothing names them now. */
+  private async clearEarlier(): Promise<void> {
+    for (const name of await readdir(this.dir).catch(() => [] as string[])) {
+      if (/^(view|mask|headroom)-/.test(name) && !name.includes(`-${this.tag}-`))
+        await rm(join(this.dir, name), { force: true }).catch(() => undefined)
+    }
   }
 
   get isRaw(): boolean {
@@ -273,12 +308,12 @@ class Session {
   /** Whether a source is one of the prepared set's (lens and spots baked in). */
   private isBaked(source: ProxyFile): boolean {
     const px = this.lensed?.px
-    return !!px && (source === px.proxy || source === px.draft)
+    return !!px && (source === px.proxy || source === px.mid || source === px.draft)
   }
 
   /** Whether a source is the plain photo's (no pixel step laid on). */
   private isPlain(source: ProxyFile): boolean {
-    return source === this.px.proxy || source === this.px.draft
+    return source === this.px.proxy || source === this.px.mid || source === this.px.draft
   }
 
   // ── pixel steps (shared/pixels.ts, pixels/working.ts) ──
@@ -287,6 +322,8 @@ class Session {
   private working: WorkingSet | null = null
   /** A pixel step being made: its draft, shown in its place until the step lands. */
   private preview: Proxies | null = null
+  /** The working pixels being made for the recipe's steps (resolved once they are). */
+  workingJob: Promise<void> = Promise.resolve()
 
   private stepsKey(recipe: Recipe): string {
     return workingKey(versionStamp(this.row), recipe.pixels)
@@ -381,6 +418,11 @@ class Session {
     this.schedule('full')
   }
 
+  /** Resolves when the render running now (which may read a preview just cleared) has ended. */
+  whenIdle(): Promise<void> {
+    return this.inflight ? this.current : Promise.resolve()
+  }
+
   /**
    * What the prepared proxies hold for a recipe: its lens correction and
    * its spots, placed on the base frame (the proxy's own).
@@ -404,7 +446,19 @@ class Session {
   }
 
   /** What names the prepared proxies a recipe needs: '' for none (the plain proxies serve). */
+  /** The last `lensKey` asked for, by what it is made from (asked several times per update). */
+  private lensKeyMemo: { lens: unknown; retouch: unknown; base: Proxies; key: string } | null = null
+
   private lensKey(recipe: Recipe): string {
+    const base = this.basePx()
+    const m = this.lensKeyMemo
+    if (m && m.lens === recipe.lens && m.retouch === recipe.retouch && m.base === base) return m.key
+    const key = this.lensKeyOf(recipe)
+    this.lensKeyMemo = { lens: recipe.lens, retouch: recipe.retouch, base, key }
+    return key
+  }
+
+  private lensKeyOf(recipe: Recipe): string {
     const p = this.prepared(recipe)
     return p.lens || p.retouch ? hash32(JSON.stringify(p)).toString(16) : ''
   }
@@ -419,13 +473,15 @@ class Session {
     return key && this.lensed?.key === key ? this.lensed.px : this.basePx()
   }
 
-  /** A correction waiting for its corrected proxies. */
+  /** A correction waiting for its corrected proxies (one whose bake failed is corrected live). */
   private bakePending(): boolean {
     const key = this.lensKey(this.recipe)
-    return key !== '' && this.lensed?.key !== key
+    return key !== '' && this.lensed?.key !== key && key !== this.bakeFailed
   }
 
   private baking: string | null = null
+  /** The correction whose bake failed: not tried again this session. */
+  private bakeFailed: string | null = null
 
   /**
    * Make the recipe's lens-corrected proxies in the background (once the
@@ -434,7 +490,7 @@ class Session {
    */
   private bake(): void {
     const key = this.lensKey(this.recipe)
-    if (!key || this.lensed?.key === key || this.baking === key) return
+    if (!key || this.lensed?.key === key || this.baking === key || this.bakeFailed === key) return
     const { lens, retouch } = this.prepared(this.recipe)
     const base = this.basePx()
     this.baking = key
@@ -451,13 +507,20 @@ class Session {
         if (this.baking === key) this.baking = null
         if (this.closed) return
         if (this.lensKey(this.recipe) === key) {
+          const before = this.lensed?.key
           this.lensed = { key, px }
           this.schedule('full')
+          // The sets before the last go now, not only when the photo closes
+          // (each is two proxies: a session of lens edits made gigabytes).
+          void pruneLensed(this.row, this.key, key, before)
         } else this.bake()
       },
       (err) => {
         if (this.baking === key) this.baking = null
         log.warn('lens proxies failed; correcting live', (err as Error).message)
+        this.bakeFailed = key
+        // The settled render, mask, before and headroom waited for the bake: they run now.
+        if (!this.closed && this.lensKey(this.recipe) === key) this.schedule('full')
       }
     )
   }
@@ -471,7 +534,7 @@ class Session {
     if (rev !== undefined) this.rev = rev
     // A pixel step added, undone, hidden or its strength changed: the working
     // pixels for the steps now (made already, for an undo or a redo).
-    if (stackSignature(recipe.pixels) !== stepsWere) void this.refreshWorking()
+    if (stackSignature(recipe.pixels) !== stepsWere) this.workingJob = this.refreshWorking()
     // A settled render of the old recipe is only in the way; so is anything
     // in flight when the slider is let go (the full render follows at once).
     if (this.inflight && (this.inflightKind === 'full' || !interactive)) this.abort?.abort()
@@ -484,15 +547,60 @@ class Session {
   persist(): Promise<void> {
     clearTimeout(this.save)
     this.save = undefined
-    const { photoId, copyId } = parseKey(this.key)
     return this.owner.library.saveRecipe(this.key, this.recipe).then(
-      () => this.owner.library.queueThumb(photoId, copyId, true),
-      (err) => log.error('saving recipe failed', err)
+      () => this.thumbLater(),
+      (err) => {
+        log.error('saving recipe failed', err)
+        this.owner.send(IPC.develop.renderError, {
+          key: this.key,
+          message: `Edits to ${this.row.name} were not saved: ${(err as Error).message}`,
+          code: 'Save'
+        })
+      }
     )
   }
 
+  /** `recipe` was saved elsewhere (with a history step): a save of it still waiting is not needed. */
+  saved(recipe: Recipe): void {
+    if (recipe !== this.recipe || !this.save) return
+    clearTimeout(this.save)
+    this.save = undefined
+    this.thumbLater()
+  }
+
+  private thumbTimer: NodeJS.Timeout | undefined
+
+  /**
+   * The thumbnail (and the project's preview) once editing pauses for a
+   * while, or the photo closes: a full graded render on the background
+   * engine is not made at every save.
+   */
+  private thumbLater(now = false): void {
+    clearTimeout(this.thumbTimer)
+    this.thumbTimer = undefined
+    const queue = (): void => {
+      this.thumbTimer = undefined
+      const { photoId, copyId } = parseKey(this.key)
+      // The settled picture of what was saved, when there is one: shrunk, not graded again.
+      const shown = this.fullPicture
+      const picture = shown?.recipe === this.recipe ? shown.picture : undefined
+      this.owner.library.queueThumb(photoId, copyId, true, picture)
+    }
+    if (now) return queue()
+    this.thumbTimer = setTimeout(queue, THUMB_IDLE_MS)
+  }
+
+  /** Whether the view has been asked for yet: the first picture comes as a draft, at once. */
+  private viewed = false
+
   setView(view: ViewState): void {
     this.view = view
+    // Opening: the draft first (a fraction of the pixels), the full picture
+    // and what follows it once that is up.
+    if (!this.viewed) {
+      this.viewed = true
+      return this.schedule('draft')
+    }
     this.schedule('full')
   }
 
@@ -506,7 +614,7 @@ class Session {
       this.pending = this.pending === 'full' || kind === 'full' ? 'full' : 'draft'
       return
     }
-    void this.run(kind)
+    this.current = this.run(kind)
   }
 
   private async run(kind: Kind): Promise<void> {
@@ -546,7 +654,7 @@ class Session {
       this.abort = null
       const next = this.pending
       this.pending = null
-      if (next && !this.closed) void this.run(next)
+      if (next && !this.closed) this.current = this.run(next)
     }
   }
 
@@ -556,13 +664,23 @@ class Session {
     // A correction still being baked: the draft, corrected live, stands in
     // (a large proxy warped on every render is what the bake avoids).
     if (this.bakePending()) return px.draft
-    const long = Math.max(px.draft.width, px.draft.height)
-    return this.view.targetEdge <= long ? px.draft : px.proxy
+    const long = (f: ProxyFile): number => Math.max(f.width, f.height)
+    if (this.view.targetEdge <= long(px.draft)) return px.draft
+    // The middle size up to a little short of the view (the screen scales it
+    // the last stretch): a 1200 pt loupe on a Retina screen grades 44% fewer
+    // pixels than from the full proxy.
+    if (px.mid && this.view.targetEdge * MID_SHORTFALL <= long(px.mid)) return px.mid
+    return px.proxy
   }
 
   private nextFile(stem: string, ext: string): string {
-    this.slot = (this.slot + 1) % 6
-    return join(this.dir, `${stem}-${this.slot}.${ext}`)
+    const out = join(this.dir, `${stem}-${this.tag}-${++this.fileSeq}.${ext}`)
+    const list = [...(this.files[stem] ?? []), out]
+    const held = new Set([this.lastOut.draft, this.lastOut.full, this.lastFull, this.lastMaskOut])
+    const drop = new Set(list.slice(0, -KEEP_RENDERS).filter((f) => !held.has(f)))
+    this.files[stem] = list.filter((f) => !drop.has(f))
+    for (const f of drop) void rm(f, { force: true }).catch(() => undefined)
+    return out
   }
 
   private async renderPicture(kind: Kind, signal: AbortSignal): Promise<void> {
@@ -571,11 +689,15 @@ class Session {
     // The view is read once, here: the event says which view it was made for.
     const cropMode = this.view.cropMode
     const rev = this.rev
-    const compiled = await this.compileFor(this.recipe, src, !cropMode)
+    const recipe = this.recipe
+    const compiled = await this.compileFor(recipe, src, !cropMode)
     const seq = ++this.seq
+    // A whole picture of this recipe (framed, no corners left empty): what
+    // the library's thumbnail can be shrunk from.
+    const whole = kind === 'full' && !cropMode && !framingTransparent(compiled.framing)
     const sig = String(
       hash32(
-        JSON.stringify([
+        gradeKey([
           src.path,
           cropMode,
           compiled.grade,
@@ -588,40 +710,70 @@ class Session {
     const last = this.lastEvent[kind]
     if (last && sig === this.lastSig[kind]) {
       if (kind === 'full') this.lastFull = this.lastFullFor[sig] ?? this.lastFull
+      if (whole)
+        this.fullPicture = {
+          recipe,
+          picture: { path: this.lastFull, width: last.width, height: last.height }
+        }
       if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq, rev })
       return
     }
     // A warp shown whole (the crop tool) keeps its empty corners: PNG with alpha.
     const alpha = framingTransparent(compiled.framing)
-    const out = this.nextFile('view', alpha ? 'png' : 'jpg')
+    // A draft (a slider moving) goes to the window as pixels, straight from
+    // the engine: no file written, served and decoded for a picture that is
+    // replaced a moment later. The settled picture stays a file: the mask's
+    // measuring and the thumbnail read it here.
+    const frame = kind === 'draft' ? `${this.tag}-${seq}` : undefined
+    const out = frame ? '' : this.nextFile('view', alpha ? 'png' : 'jpg')
     const hdrStats =
       kind === 'full' ? this.measureHdr(cropMode, signal) : Promise.resolve(undefined)
     const report = await this.owner.engine.convert(
       {
         ...blankRequest(src.path, out, src.input),
-        pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
-        encode: alpha
-          ? { Png: { compression: 'Fast', filter: 'Sub' } }
-          : {
-              Jpeg: { quality: kind === 'draft' ? 92 : 95, subsampling: 'None', optimize: false }
-            },
+        ...(frame ? { sink: 'Bytes' as const } : {}),
+        pixel: { depth: 'Eight', channels: alpha || frame ? 4 : 3 },
+        encode: frame
+          ? { Pixels: { sample: 'U8' } }
+          : alpha
+            ? { Png: { compression: 'Fast', filter: 'Sub' } }
+            : {
+                // A settled picture is a few MB less as 4:2:0, which a screen
+                // shows the same; the draft keeps full chroma at its lower quality.
+                Jpeg: {
+                  quality: kind === 'draft' ? 92 : 95,
+                  subsampling: kind === 'draft' ? 'None' : 'Quarter',
+                  optimize: false
+                }
+              },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: displayPolicy(this.info, 'DisplayP3'),
         grade: compiled.grade,
         framing: compiled.framing,
         lens: compiled.lens,
         retouch: compiled.retouch,
-        threads: INTERACTIVE_THREADS,
+        threads: interactiveThreads(),
         // A warp shown whole counts its empty corners (as black) rather than
         // risk measuring nothing when little of the picture is left.
         measure: measureOf(kind === 'draft' ? 2 : 1)
       },
-      { signal }
+      { signal, frame }
     )
+    // The engine had no way to the window (it was reloading): main passes the frame on.
+    if (frame && report.output)
+      this.owner.send(IPC.develop.previewFrame, {
+        frame,
+        width: report.width,
+        height: report.height,
+        data: report.output
+      })
     const stats = statsOf(report)
     if (kind === 'full') {
       this.lastFull = out
       this.lastFullFor = { [sig]: out }
+      this.fullPicture = whole
+        ? { recipe, picture: { path: out, width: report.width, height: report.height } }
+        : null
     }
     const hdr = await hdrStats
     if (this.closed) return
@@ -631,7 +783,7 @@ class Session {
       rev,
       kind,
       cropMode,
-      url: cacheUrl(out, seq),
+      url: frame ? `frame:${frame}` : cacheUrl(out, seq),
       width: report.width,
       height: report.height,
       stats,
@@ -645,6 +797,7 @@ class Session {
     }
     this.lastSig[kind] = sig
     this.lastEvent[kind] = event
+    this.lastOut[kind] = out
     this.owner.send(IPC.develop.rendered, event)
   }
 
@@ -663,21 +816,24 @@ class Session {
     try {
       const src = this.viewPx().draft
       const compiled = await this.compileFor(this.recipe, src, !cropMode)
-      const out = join(this.dir, 'hdr-stats.png')
+      // Written only to be measured (or not even read, with float work): an
+      // uncompressed TIFF, not a PNG to deflate and inflate again. The signal
+      // is stated to the analysis, so the file needs no cICP to carry it.
+      const out = join(this.dir, 'hdr-stats.tiff')
       // Fine bins: the chart re-bins them onto a stops axis, where the
       // shadows need the resolution.
       const bins = 4096
       const request = {
         ...blankRequest(src.path, out, src.input),
         pixel: { depth: 'Sixteen', channels: framingTransparent(compiled.framing) ? 4 : 3 },
-        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        encode: { Tiff: { compression: 'None' } },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: 'Preserve',
         grade: compiled.grade,
         framing: compiled.framing,
         lens: compiled.lens,
         retouch: compiled.retouch,
-        threads: INTERACTIVE_THREADS
+        threads: interactiveThreads()
       } as const
       // With float work the engine measures its own output in linear light
       // by the working white; without, the signal passes through untouched
@@ -697,7 +853,7 @@ class Session {
       }
       await this.owner.engine.convert(request, { signal })
       return await this.owner.engine.analyze(
-        { ...analyzeRequest(out, 'Png', 1), domain: 'Linear', bins, hdr: hdrSignalOf(hdr) },
+        { ...analyzeRequest(out, 'Tiff', 1), domain: 'Linear', bins, hdr: hdrSignalOf(hdr) },
         { signal }
       )
     } catch (err) {
@@ -734,7 +890,7 @@ class Session {
           lens: compiled.lens,
           retouch: compiled.retouch,
           inspect: { Headroom: { stops } },
-          threads: INTERACTIVE_THREADS
+          threads: interactiveThreads()
         },
         { signal }
       )
@@ -762,6 +918,30 @@ class Session {
    * plane again re-sends its event, stamped with the current recipe, so the
    * loupe's preview knows the engine agrees with it.
    */
+  /** The last picture `measureMask` measured through the plane. */
+  private maskStatsFor: string | null = null
+
+  /**
+   * The picture the renderer shows (the last full render) measured through a
+   * plane. `weights` is an engine feature that may be missing from an older
+   * build: the overlay still shows without it.
+   */
+  private async measureMask(plane: string, signal: AbortSignal): Promise<ImageStats | undefined> {
+    try {
+      return await this.owner.engine.analyze(
+        {
+          ...analyzeRequest(this.lastFull, 'Jpeg', 1),
+          weights: { source: { Png: plane }, resampler: 'Bilinear' }
+        },
+        { signal }
+      )
+    } catch (err) {
+      if (isCancelled(err)) throw err
+      log.info('masked analysis unavailable', (err as Error).message)
+      return undefined
+    }
+  }
+
   private async renderMask(kind: Kind, signal: AbortSignal): Promise<void> {
     const src = kind === 'draft' ? this.viewPx().draft : this.source('full')
     const rev = this.rev
@@ -782,24 +962,37 @@ class Session {
       return
     }
     const measure = kind === 'full'
+    // The plane is the mask's own shapes over the frame; only a colour or
+    // luminance range also depends on the picture the layers before it make.
+    // The mask layer's own sliders, and anything after it, do not move it.
+    const layer = compiled.grade.layers[index]
+    const keyed = layer.mask?.components.some((c) => 'Range' in c.shape) ?? false
     const sig = String(
       hash32(
-        JSON.stringify([
+        gradeKey([
           src.path,
           layerId,
           index,
-          compiled.grade,
+          layer.mask,
+          keyed ? compiled.grade.layers.slice(0, index) : null,
           compiled.framing,
           compiled.lens,
-          compiled.retouch,
-          measure ? this.lastFull : null
+          compiled.retouch
         ])
       )
     )
-    // The same plane over the same picture: say so again, for this recipe.
-    if (sig === this.maskSig && this.lastMask) {
+    const statsFor = measure ? this.lastFull : null
+    // The same plane: said again for this recipe, and measured again only
+    // when the picture under it is a new one.
+    if (sig === this.maskSig && this.lastMask && this.lastMaskOut) {
+      const restamp = { ...this.lastMask, seq: this.seq, rev }
+      if (statsFor !== null && statsFor !== this.maskStatsFor) {
+        const maskStats = await this.measureMask(this.lastMaskOut, signal)
+        this.maskStatsFor = statsFor
+        restamp.maskStats = maskStats
+      }
       if (!this.closed) {
-        this.lastMask = { ...this.lastMask, seq: this.seq, rev }
+        this.lastMask = restamp
         this.owner.send(IPC.develop.rendered, this.lastMask)
       }
       return
@@ -821,25 +1014,10 @@ class Session {
       },
       { signal }
     )
-    // The picture the renderer shows is the last full render; measure it
-    // through the plane. `weights` is an engine feature that may be missing
-    // from an older build — the overlay still shows without it.
-    let maskStats: ImageStats | undefined
-    if (measure) {
-      try {
-        maskStats = await this.owner.engine.analyze(
-          {
-            ...analyzeRequest(this.lastFull, 'Jpeg', 1),
-            weights: { source: { Png: out }, resampler: 'Bilinear' }
-          },
-          { signal }
-        )
-      } catch (err) {
-        if (isCancelled(err)) throw err
-        log.info('masked analysis unavailable', (err as Error).message)
-      }
-    }
+    const maskStats = measure ? await this.measureMask(out, signal) : undefined
+    this.maskStatsFor = statsFor
     this.maskSig = sig
+    this.lastMaskOut = out
     send({
       cropMode: this.view.cropMode,
       url: cacheUrl(out, `${this.seq}-m`),
@@ -885,23 +1063,30 @@ class Session {
       }
       const sig = String(
         hash32(
-          JSON.stringify([
+          gradeKey([
             src.path,
             layer.components,
             layer.invert,
             compiled.framing,
             compiled.lens,
             this.view.cropMode,
-            // A range keys on the graded colours, so the grade under it counts too.
-            layer.components.some((c) => c.kind === 'range') ? compiled.grade : null
+            // A range keys on the colours the layers before it make; its own
+            // sliders and the layers after it do not move its plane.
+            layer.components.some((c) => c.kind === 'range')
+              ? compiled.grade.layers.slice(0, index)
+              : null
           ])
         )
       )
       if (this.thumbSig[layer.id] === sig) continue
       const out = join(this.dir, `mthumb-${layer.id}-${sig}.png`)
+      // Made small, not at the draft's size (see MASK_THUMB_EDGE).
+      const k = Math.min(1, MASK_THUMB_EDGE / Math.max(src.width, src.height))
       const report = await this.owner.engine.convert(
         {
           ...blankRequest(src.path, out, src.input),
+          resize: k < 1 ? { Scale: { factor: k } } : 'None',
+          resampler: 'Bilinear',
           pixel: { depth: 'Eight', channels: 1 },
           encode: { Png: { compression: 'Fast', filter: 'Sub' } },
           metadata: STRIP_ALL,
@@ -949,6 +1134,8 @@ class Session {
   /** The most recent full render's file: what the masked hue chart measures. */
   private lastFull = ''
   private lastFullFor: Record<string, string> = {}
+  /** The last whole settled picture and the recipe it shows (see `thumbLater`). */
+  private fullPicture: { recipe: Recipe; picture: Picture } | null = null
 
   /** The default recipe with the same framing: the "before", and the ghost bars. */
   private async renderBefore(signal: AbortSignal): Promise<void> {
@@ -974,12 +1161,17 @@ class Session {
       this.view.cropMode
     ])
     if (key === this.beforeKey) return
-    const out = join(this.dir, `before-${hash32(key).toString(16)}.png`)
+    // PNG only where it has transparent corners to keep (the crop tool's
+    // warp); else a JPEG, as the picture beside it is.
+    const alpha = framingTransparent(compiled.framing)
+    const out = join(this.dir, `before-${hash32(key).toString(16)}.${alpha ? 'png' : 'jpg'}`)
     const report = await this.owner.engine.convert(
       {
         ...blankRequest(src.path, out, src.input),
-        pixel: { depth: 'Eight', channels: framingTransparent(compiled.framing) ? 4 : 3 },
-        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
+        encode: alpha
+          ? { Png: { compression: 'Fast', filter: 'Sub' } }
+          : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: displayPolicy(this.info, 'DisplayP3'),
         grade: compiled.grade,
@@ -1050,7 +1242,9 @@ class Session {
     const h = Math.max(1, Math.min(height - y, Math.ceil(req.height)))
     const region = await this.correctedRegion(compiled.lens, width, height, { x, y, w, h })
     this.regionSlot = (this.regionSlot + 1) % 4
-    const out = join(this.dir, `region-${this.regionSlot}.png`)
+    // A JPEG at full chroma: as sharp at 1:1 as the PNG it was, a fraction
+    // of the time to write and decode at the screen's size.
+    const out = join(this.dir, `region-${this.regionSlot}.jpg`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
     await this.owner.engine.convert(
@@ -1059,7 +1253,7 @@ class Session {
         raw: null,
         resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
         pixel: { depth: 'Eight', channels: 3 },
-        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        encode: { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: displayPolicy(this.info, 'DisplayP3'),
         grade: compiled.grade,
@@ -1302,7 +1496,7 @@ class Session {
       lens: lensCorrection(this.recipe.lens),
       mode,
       focal,
-      threads: INTERACTIVE_THREADS
+      threads: interactiveThreads()
     })) as unknown as { transform: Transform }
     this.usableUpright(r.transform, src.width, src.height)
     return r.transform
@@ -1440,13 +1634,25 @@ class Session {
     this.abort?.abort()
     this.regionAbort?.abort()
     // Corrected proxies for any other correction are no longer read.
-    void pruneLensed(this.row, this.lensKey(this.recipe))
-    return this.save ? this.persist() : Promise.resolve()
+    void pruneLensed(this.row, this.key, this.lensKey(this.recipe))
+    void sweepPhoto(this.dir, paths.photoCache(this.row.id))
+    const saved = (this.save ? this.persist() : Promise.resolve()).then(() => {
+      // A thumbnail still waiting for a pause is made now.
+      if (this.thumbTimer) this.thumbLater(true)
+    })
+    // Its project may close when idle again, once its last edit is saved.
+    return saved.then(() =>
+      this.owner.library.index.holdOpen(this.key, false).catch(() => undefined)
+    )
   }
 }
 
 export class DevelopSessions {
   private sessions = new Map<string, Session>()
+  /** Counts fresh opens: an open that finds a later one started makes no session. */
+  private opening = 0
+  /** The photo a fresh open is loading, until its session is made. */
+  private openingKey: string | null = null
 
   constructor(
     readonly library: Library,
@@ -1464,19 +1670,32 @@ export class DevelopSessions {
     return s
   }
 
-  async open(key: string): Promise<DevelopSession> {
-    // One photo at a time: closing the others writes their pending edits.
+  /** One photo at a time: closing the others writes their pending edits. */
+  private closeOthers(key: string): void {
     for (const [k, s] of this.sessions) {
       if (k !== key) {
         void s.close()
         this.sessions.delete(k)
       }
     }
+  }
+
+  async open(key: string): Promise<DevelopSession> {
+    // Opening a photo not yet open takes over from any open still on its way;
+    // asking again for the open one (to read its recipe) changes nothing.
+    const fresh = !this.sessions.has(key)
+    const token = fresh ? ++this.opening : this.opening
+    if (fresh) {
+      this.openingKey = key
+      this.closeOthers(key)
+    }
     const data = await this.library.index.openData(key)
-    const { recipe, item, snapshots } = data
+    const { item, snapshots } = data
+    // The index names planes; the session renders them.
+    const recipe = await this.library.planes.hydrate(data.recipe)
     // The original, or the copy its project carries when it is gone.
     const row = await this.library.readable(data.row)
-    const info = await this.library.probe(row)
+    const info = await this.library.probe(row, this.engine)
     // A gain-map photo edited as HDR opens on its applied rendition.
     const hdr = editsHdr(recipe, info) ? await ensureHdrSource(this.engine, row, info) : null
     const graded = hdr?.info ?? info
@@ -1484,10 +1703,17 @@ export class DevelopSessions {
     await mkdir(rendersDir(row.id), { recursive: true })
     let session = this.sessions.get(key)
     if (!session) {
+      // A later open (or a close) came while this one loaded, or the photo
+      // being read again was closed meanwhile: it makes nothing.
+      if (!fresh || token !== this.opening) throw new Error(`opening ${key} was superseded`)
+      this.openingKey = null
+      this.closeOthers(key)
       session = new Session(key, row, graded, px, recipe, this, info, hdr?.master ?? null)
       this.sessions.set(key, session)
+      void this.library.index.holdOpen(key, true).catch(() => undefined)
       // A photo with pixel steps opens on them.
-      await session.refreshWorking()
+      session.workingJob = session.refreshWorking()
+      await session.workingJob
     }
     return {
       key,
@@ -1509,7 +1735,14 @@ export class DevelopSessions {
 
   close(key: string): Promise<void> {
     const s = this.sessions.get(key)
-    if (!s) return Promise.resolve()
+    if (!s) {
+      // Closed while still opening: the open makes nothing.
+      if (key === this.openingKey) {
+        ++this.opening
+        this.openingKey = null
+      }
+      return Promise.resolve()
+    }
     this.sessions.delete(key)
     return s.close()
   }
@@ -1567,6 +1800,19 @@ export class DevelopSessions {
     this.sessions.get(key)?.showPreview(draft)
   }
 
+  /** The preview gone, and no render still reading it: its file can be deleted. */
+  async clearPreview(key: string): Promise<void> {
+    const s = this.sessions.get(key)
+    if (!s) return
+    s.showPreview(null)
+    await s.whenIdle()
+  }
+
+  /** Resolves once an open photo's working pixels are made for its steps. */
+  workingReady(key: string): Promise<void> {
+    return this.sessions.get(key)?.workingJob ?? Promise.resolve()
+  }
+
   bakeSpot(
     key: string,
     spot: RetouchSpot,
@@ -1601,6 +1847,11 @@ export class DevelopSessions {
   /** The recipe an open session holds, which may be newer than the sidecar. */
   liveRecipe(key: string): Recipe | undefined {
     return this.sessions.get(key)?.recipe
+  }
+
+  /** An open session's recipe was saved elsewhere: see `Session.saved`. */
+  saved(key: string, recipe: Recipe): void {
+    this.sessions.get(key)?.saved(recipe)
   }
 
   /** Save an open session's recipe now; resolves once it is saved. */

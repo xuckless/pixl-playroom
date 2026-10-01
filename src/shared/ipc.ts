@@ -32,10 +32,18 @@ export const IPC = {
     openPreferences: 'app:open-preferences',
     /** main → renderer: the menu's Engine Report… was chosen */
     openEngineReport: 'app:open-engine-report',
+    /** main → renderer: Help → Report a Problem (Settings, at that section). */
+    openReport: 'app:open-report',
     /** An uncaught error in the renderer, for the log and (opted in) a crash report. */
     reportError: 'app:report-error',
+    /** A problem report the user wrote (Settings); answers the server's reference. */
+    reportProblem: 'app:report-problem',
     /** The bundled THIRD_PARTY_NOTICES.txt, opened in the system's text viewer. */
-    openNotices: 'app:open-notices'
+    openNotices: 'app:open-notices',
+    /** The beta gate (shared/gate.ts): what stands in front of the window. */
+    gate: 'app:gate',
+    /** main → renderer: the gate changed */
+    gateChanged: 'app:gate-changed'
   },
   updates: {
     getState: 'updates:get-state',
@@ -49,17 +57,29 @@ export const IPC = {
     get: 'prefs:get',
     setCrashReports: 'prefs:set-crash-reports'
   },
+  account: {
+    status: 'account:status',
+    signIn: 'account:sign-in',
+    cancelSignIn: 'account:cancel-sign-in',
+    signOut: 'account:sign-out',
+    /** main → renderer: signed in or out, or a sign-in started or ended */
+    changed: 'account:changed'
+  },
   licence: {
     status: 'licence:status',
-    activate: 'licence:activate',
-    deactivate: 'licence:deactivate',
-    validate: 'licence:validate',
+    /** Check now: ask the account for this device's access. */
+    refresh: 'licence:refresh',
+    startTrial: 'licence:start-trial',
+    /** Free one of the account's devices (the device-limit list), by its id. */
+    freeDevice: 'licence:free-device',
     /** main → renderer: the licence changed */
     changed: 'licence:changed'
   },
   library: {
     chooseFolder: 'library:choose-folder',
     openFolder: 'library:open-folder',
+    /** A folder's subfolders (one level): the sidebar's folder tree. */
+    subfolders: 'library:subfolders',
     recentFolders: 'library:recent-folders',
     setMeta: 'library:set-meta',
     createCopy: 'library:create-copy',
@@ -101,6 +121,8 @@ export const IPC = {
   },
   develop: {
     open: 'develop:open',
+    /** Make these photos' proxies ahead (the open one's neighbours in the filmstrip). */
+    warm: 'develop:warm',
     close: 'develop:close',
     update: 'develop:update',
     view: 'develop:view',
@@ -114,6 +136,10 @@ export const IPC = {
     saveSnapshots: 'develop:save-snapshots',
     historyList: 'develop:history-list',
     historyAppend: 'develop:history-append',
+    /** main → renderer: the port preview frames arrive on, from the interactive engine */
+    previewPort: 'develop:preview-port',
+    /** main → renderer: a preview frame main relays (when the engine had no port) */
+    previewFrame: 'develop:preview-frame',
     historySetHidden: 'develop:history-set-hidden',
     historyDelete: 'develop:history-delete',
     noise: 'develop:noise',
@@ -293,7 +319,8 @@ export interface StackInfo {
 }
 
 export type LibrarySource =
-  | { kind: 'folder'; path: string }
+  /** `deep`: the photos in its subfolders too. */
+  | { kind: 'folder'; path: string; deep?: boolean }
   /** A manual collection, a smart one or a set (the union of its children). */
   | { kind: 'collection'; id: string }
   | { kind: 'keyword'; path: string }
@@ -405,6 +432,22 @@ export interface HistoryBase {
 export interface HistoryLog {
   base: HistoryBase | null
   steps: Step[]
+  /**
+   * The recipe it describes, when the sender worked it out (from a keyframe,
+   * after a hide, show or delete), so the receiver need not replay it.
+   */
+  head?: Recipe
+}
+
+/**
+ * What recording an edit changed (`appendToLog` lays it on the log): the
+ * step (null when the edit changed nothing), a new base (the first edit, or
+ * the oldest steps folding into it), and the steps folded away.
+ */
+export interface HistoryAppend {
+  base: HistoryBase | null
+  step: Step | null
+  folded: number[]
 }
 
 export interface DevelopSession {
@@ -423,6 +466,8 @@ export interface DevelopSession {
   recipe: Recipe
   snapshots: Snapshot[]
   seed: number
+  /** The 35 mm-equivalent focal length (`equivalentFocal`): what Upright's perspective assumes. */
+  focal35?: number | null
 }
 
 export interface ViewState {
@@ -528,6 +573,11 @@ export interface Preset {
   builtin: boolean
   groups: RecipeGroup[]
   recipe: Recipe
+  /**
+   * The fields it sets, when it sets only those (a built-in look): applied,
+   * the photo's other sliders in the same groups stay as they are.
+   */
+  fields?: string[][]
   /**
    * A custom white balance as the engine's white (`opOf`), so the preset can
    * be converted onto a photo of the other kind (RAW ↔ anything else);
@@ -645,6 +695,8 @@ export interface UpdateState {
   progress?: UpdateProgress
   error?: string
   lastCheckedAt?: string
+  /** This version is below the release policy's floor: it must update before it goes on. */
+  required?: { minVersion: string; message?: string }
 }
 
 // ── Preferences ──────────────────────────────────────────────────────────────

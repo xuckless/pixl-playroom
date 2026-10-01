@@ -31,7 +31,7 @@ import {
 import { IPC, type ExportProgress } from '../shared/ipc'
 import { brushPlanes } from './brushes'
 import { embedMetadata } from './exiftool'
-import { exists } from './exists'
+import { exists, sameFile } from './exists'
 import { isCancelled, type EngineClient } from './engine/client'
 import type { Library } from './library'
 import { ensureProxies, type ProxyFile } from './proxy'
@@ -50,7 +50,6 @@ import {
   RAW_DEVELOP,
   sourceOrientation,
   uprightFraming,
-  INTERACTIVE_THREADS,
   seedOf,
   versionStamp
 } from './source'
@@ -132,7 +131,7 @@ export class Exporter {
     recipe: Recipe
   ): Promise<ProxyFile | null> {
     if (recipe.pixels.length === 0) return null
-    const plain = await ensureProxies(this.engine, row, info)
+    const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const set = await ensureWorking(
       pixelDeps(this.engine, this.library.index, row),
       versionStamp(row),
@@ -174,7 +173,7 @@ export class Exporter {
     // proxies (made once, cached); anything else is probe's size, turned by
     // the file's orientation.
     const swap = ['Transpose', 'Rotate90', 'Transverse', 'Rotate270'].includes(srcOrientation)
-    const developed = raw ? await ensureProxies(this.engine, row, info) : null
+    const developed = raw ? await ensureProxies(this.engine, row, info, BACKGROUND_THREADS) : null
     const frameW = master?.width ?? developed?.frameWidth ?? (swap ? info.height : info.width)
     const frameH = master?.height ?? developed?.frameHeight ?? (swap ? info.width : info.height)
     const { user, width, height } = orientedFrame(recipe, frameW, frameH)
@@ -196,7 +195,8 @@ export class Exporter {
     })
     const cw = Math.round((compiled.crop?.width ?? 1) * width)
     const ch = Math.round((compiled.crop?.height ?? 1) * height)
-    const { encode, depth } = buildEncode(s, INTERACTIVE_THREADS, hdrOut)
+    // An export runs behind the editing: the encoder takes the export's share too.
+    const { encode, depth } = buildEncode(s, BACKGROUND_THREADS * 2, hdrOut)
 
     // Beside the photo: where it is listed (its copy may be the project's own).
     const folder = s.folder ?? row.folder
@@ -220,7 +220,8 @@ export class Exporter {
         out = join(target, `${stem}-${n}.${ext}`)
       }
     }
-    if (out === row.path) throw new Error('the export would overwrite the original')
+    // By the file, not the name: IMG_1.jpg is IMG_1.JPG on a case-insensitive disk.
+    if (await sameFile(out, row.path)) throw new Error('the export would overwrite the original')
 
     // An HDR source stays HDR only where the settings ask and the format can
     // say so; otherwise it is tone mapped like any SDR delivery.

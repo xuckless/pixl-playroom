@@ -11,6 +11,9 @@ import type { Library } from '../library'
 import type { PlaneStore } from '../planestore'
 import type { DevelopSessions } from '../render'
 
+/** What a new AI mask's edge starts at: a little in, somewhat harder. */
+const AI_MASK_EDGE = { shift: -15, harden: 35 }
+
 export async function applyMaskResult(
   e: AiJobEvent,
   deps: { library: Library; sessions: DevelopSessions; planes: PlaneStore }
@@ -31,7 +34,10 @@ export async function applyMaskResult(
     feather: 0,
     width: r.width,
     height: r.height,
-    png
+    png,
+    // A model's plane is soft and low resolution, and blooms past the edge:
+    // pulled in a little and firmed up (both changeable on the component).
+    edge: AI_MASK_EDGE
   }
   const into = r.into && recipe.layers.find((l) => l.id === r.into!.layerId)
   if (into) into.components.push({ ...comp, mode: into.components.length ? r.into!.mode : 'Add' })

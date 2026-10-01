@@ -12,6 +12,10 @@ import {
   type OutputSharpenSetting
 } from '../src/shared/export'
 import type { PhotoMeta } from '../src/shared/ipc'
+import { existsSync, linkSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { sameFile } from '../src/main/exists'
 
 const withSharpen = (
   o: Partial<OutputSharpenSetting>,
@@ -229,4 +233,23 @@ test('an SDR photo expanded to HDR clips at the peak, as before', () => {
   const c = buildColor({ ...s, format: 'avif', hdr: { ...s.hdr, mode: 'expand' } }, false)
   assert.ok(typeof c === 'object' && 'Expand' in c)
   assert.equal(c.Expand.limit, 'Clip')
+})
+
+test('an export never takes the original by another name', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'playroom-export-'))
+  try {
+    const original = join(dir, 'IMG_1.JPG')
+    writeFileSync(original, 'x')
+    writeFileSync(join(dir, 'other.jpg'), 'x')
+    linkSync(original, join(dir, 'linked.jpg'))
+    assert.equal(await sameFile(original, original), true)
+    assert.equal(await sameFile(join(dir, 'linked.jpg'), original), true)
+    assert.equal(await sameFile(join(dir, 'other.jpg'), original), false)
+    assert.equal(await sameFile(join(dir, 'missing.jpg'), original), false)
+    // Only a case-insensitive disk (macOS, Windows) has IMG_1.jpg at all, and there it is the original.
+    const folded = join(dir, 'IMG_1.jpg')
+    assert.equal(await sameFile(folded, original), existsSync(folded))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

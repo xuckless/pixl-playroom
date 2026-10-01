@@ -7,9 +7,24 @@
  */
 import { radialGeometry } from '../../../../../shared/gradients'
 import { featherRadius, featherSigmaPx, planeKey } from '../../../../../shared/maskpreview'
+import {
+  EDGE_SHIFT_SPAN,
+  offsetPolygon,
+  shiftPixels,
+  type MaskEdge
+} from '../../../../../shared/maskedge'
 import type { MaskMode } from '../../../../../shared/engine-types'
 import type { MaskComponentSetting } from '../../../../../shared/recipe'
-import { BLUR_FS, JOIN_FS, RANGE_FS, SHADE_FS, SHAPE_FS, VS } from './shaders'
+import {
+  BLUR_FS,
+  COMPONENT_FS,
+  JOIN_FS,
+  MORPH_FS,
+  RANGE_FS,
+  SHADE_FS,
+  SHAPE_FS,
+  VS
+} from './shaders'
 
 /** Planes in the base frame are drawn this many pixels on their long edge. */
 export const BASE_EDGE = 1024
@@ -42,6 +57,8 @@ interface Plane {
 
 export interface Join {
   c: MaskComponentSetting
+  /** How it joins the mask (see `maskJoins`). */
+  mode: MaskMode
   /** For a painted component: its plane, decoded (turned upside down, as GL keeps it). */
   bitmap?: ImageBitmap
 }
@@ -78,6 +95,9 @@ export class MaskGl {
   private polygonCanvas: OffscreenCanvas | null = null
   /** The last mask composed, and whether it is there to show. */
   private accIndex = 0
+  /** Its components' planes and how they join, for showing them one by one. */
+  private composed: { plane: Plane; join: Join }[] = []
+  private composedToBase: Float32Array | null = null
   haveAcc = false
   haveEngine = false
 
@@ -94,7 +114,9 @@ export class MaskGl {
       blur: BLUR_FS,
       range: RANGE_FS,
       join: JOIN_FS,
-      shade: SHADE_FS
+      shade: SHADE_FS,
+      morph: MORPH_FS,
+      component: COMPONENT_FS
     }))
       this.programs[name] = this.program(fs)
     const buf = gl.createBuffer()
@@ -244,10 +266,14 @@ export class MaskGl {
       ctx.clearRect(0, 0, bw, bh)
       ctx.fillStyle = '#000'
       ctx.fillRect(0, 0, bw, bh)
-      // Upside down, as GL keeps textures.
+      // Upside down, as GL keeps textures. Moved by its edge as the
+      // compiler moves it (shared/maskedge.ts), on the base frame's shape.
       ctx.setTransform(bw, 0, 0, -bh, 0, bh)
       ctx.beginPath()
-      c.points.forEach((q, i) => (i === 0 ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y)))
+      const by =
+        ((c.edge?.shift ?? 0) / 100) * EDGE_SHIFT_SPAN - (c.edge?.inside ? featherRadius(c) : 0)
+      const points = offsetPolygon(c.points, by, f.baseW, f.baseH)
+      points.forEach((q, i) => (i === 0 ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y)))
       ctx.closePath()
       ctx.fillStyle = '#fff'
       ctx.fill('nonzero')
@@ -283,21 +309,63 @@ export class MaskGl {
       band('uLuma', c.luma)
       this.run(p, t, bw, bh)
     }
+    // A painted or gradient plane's edge moved and hardened, as the engine's is.
+    if (c.kind === 'brush' || c.kind === 'linear' || c.kind === 'radial')
+      plane.target = this.edged(plane.target, bw, bh, c.edge)
+    const tt = plane.target
     // Feather: a Gaussian across the plane, in its own pixels.
     if (sigma > 0.35) {
       this.scratch = this.target(bw, bh, this.scratch)
       const p = this.programs.blur
       gl.useProgram(p)
       gl.uniform1f(this.u(p, 'uSigma'), sigma)
-      this.bind(p, 0, 'uSrc', t.tex)
+      this.bind(p, 0, 'uSrc', tt.tex)
       gl.uniform2f(this.u(p, 'uStep'), 1 / bw, 0)
       this.run(p, this.scratch, bw, bh)
       this.bind(p, 0, 'uSrc', this.scratch.tex)
       gl.uniform2f(this.u(p, 'uStep'), 0, 1 / bh)
-      this.run(p, t, bw, bh)
+      this.run(p, tt, bw, bh)
     }
     this.planes.set(c.id, plane)
     return plane
+  }
+
+  /**
+   * `t` with the edge applied (shared/maskedge.ts): the octagon's four
+   * min/max passes (a square, then the two diagonals), the last also
+   * hardening. Ping-pongs with the scratch target; returns where it ended.
+   */
+  private edged(t: Target, w: number, h: number, edge: MaskEdge | undefined): Target {
+    if (!edge) return t
+    const r = Math.min(128, shiftPixels(edge.shift, w, h))
+    const tHalf = Math.floor((r - Math.round(r * (Math.SQRT2 - 1))) / 2)
+    const a = r - 2 * tHalf
+    const harden = 1 + (Math.min(100, Math.max(0, edge.harden)) / 100) * 9
+    const passes: [number, number, number][] = [
+      [1 / w, 0, a],
+      [0, 1 / h, a],
+      [1 / w, 1 / h, tHalf],
+      [-1 / w, 1 / h, tHalf]
+    ].filter(([, , rad]) => rad > 0) as [number, number, number][]
+    if (passes.length === 0 && harden === 1) return t
+    if (passes.length === 0) passes.push([0, 0, 0])
+    const gl = this.gl
+    const p = this.programs.morph
+    gl.useProgram(p)
+    gl.uniform1i(this.u(p, 'uGrow'), edge.shift > 0 ? 1 : 0)
+    let src = t
+    let dst = (this.scratch = this.target(w, h, this.scratch))
+    passes.forEach(([sx, sy, rad], i) => {
+      this.bind(p, 0, 'uSrc', src.tex)
+      gl.uniform2f(this.u(p, 'uStep'), sx, sy)
+      gl.uniform1i(this.u(p, 'uR'), rad)
+      gl.uniform1f(this.u(p, 'uHarden'), i === passes.length - 1 ? harden : 1)
+      this.run(p, dst, w, h)
+      ;[src, dst] = [dst, src]
+    })
+    // The scratch is whichever target the result is not in.
+    this.scratch = dst
+    return src
   }
 
   /**
@@ -338,7 +406,7 @@ export class MaskGl {
       this.bind(p, 1, 'uComp', plane.target.tex)
       gl.uniform1i(this.u(p, 'uFirst'), i === 0 ? 1 : 0)
       gl.uniform1i(this.u(p, 'uBase'), plane.base ? 1 : 0)
-      gl.uniform1i(this.u(p, 'uMode'), MODE_INDEX[i === 0 ? 'Add' : j.c.mode])
+      gl.uniform1i(this.u(p, 'uMode'), MODE_INDEX[j.mode])
       gl.uniform1i(this.u(p, 'uInvert'), j.c.invert ? 1 : 0)
       gl.uniform1f(this.u(p, 'uOpacity'), Math.min(1, Math.max(0, j.c.opacity / 100)))
       this.run(p, into, cw, ch)
@@ -346,6 +414,42 @@ export class MaskGl {
     })
     this.accIndex = from
     this.haveAcc = planes.length > 0
+    this.composed = planes.map((plane, i) => ({ plane, join: f.joins[i] }))
+    this.composedToBase = f.toBase
+    return true
+  }
+
+  /**
+   * The last mask composed shown a component at a time, each in its colour
+   * (`colours[i]`, linear 0…1), in order, at `alpha`: what each part covers.
+   * False when there is nothing composed to show.
+   */
+  shadeComponents(colours: [number, number, number][], alpha: number): boolean {
+    if (!this.haveAcc || this.composed.length === 0 || !this.composedToBase) return false
+    const gl = this.gl
+    const cw = this.canvas.width
+    const ch = this.canvas.height
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.viewport(0, 0, cw, ch)
+    gl.clearColor(0, 0, 0, 0)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    const p = this.programs.component
+    gl.useProgram(p)
+    gl.uniformMatrix3fv(this.u(p, 'uToBase'), false, this.composedToBase)
+    gl.uniform1f(this.u(p, 'uAlpha'), alpha)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+    this.composed.forEach(({ plane, join }, i) => {
+      const [r, g, b] = colours[i % colours.length]
+      this.bind(p, 0, 'uComp', plane.target.tex)
+      gl.uniform1i(this.u(p, 'uBase'), plane.base ? 1 : 0)
+      gl.uniform1i(this.u(p, 'uInvert'), join.c.invert ? 1 : 0)
+      gl.uniform1f(this.u(p, 'uOpacity'), Math.min(1, Math.max(0, join.c.opacity / 100)))
+      gl.uniform3f(this.u(p, 'uTint'), r, g, b)
+      gl.uniform1i(this.u(p, 'uHatch'), join.mode === 'Subtract' ? 1 : 0)
+      this.run(p, null, cw, ch)
+    })
+    gl.disable(gl.BLEND)
     return true
   }
 

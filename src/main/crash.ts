@@ -4,16 +4,22 @@
  * processes that die abnormally go as small JSON reports, scrubbed of the home
  * folder (shared/crash.ts). Everything is logged locally either way; nothing
  * leaves the machine until the user says yes (settings.json `crashReports`,
- * asked once at first launch, changeable in Settings).
+ * asked once at first launch, changeable in Settings). Problem reports are
+ * the user's own, sent when they press Send (Settings → Report a problem).
  */
 import { app, crashReporter, dialog } from 'electron'
 import log from 'electron-log/main'
-import { homedir } from 'os'
+import { open } from 'fs/promises'
+import { homedir, release } from 'os'
 import {
   CRASH_ENDPOINT,
   errorPayload,
+  MAX_PROBLEM_LOG,
   MAX_REPORTS_PER_RUN,
-  type ErrorPayload
+  PROBLEM_ENDPOINT,
+  problemPayload,
+  type ErrorPayload,
+  type ProblemInput
 } from '../shared/crash'
 import type { CrashConsent, ErrorReport } from '../shared/ipc'
 import { readSettings, writeSettings } from './settings'
@@ -56,6 +62,68 @@ export function setCrashConsent(next: CrashConsent): CrashConsent {
   crashReporter.setUploadToServer(consent === 'on' && !hidden)
   log.info(`crash reports ${consent}`)
   return consent
+}
+
+/** The end of the main log (electron-log's file), or null when it can't be read. */
+async function logTail(): Promise<string | null> {
+  const path = log.transports.file.getFile()?.path
+  if (!path) return null
+  try {
+    const f = await open(path, 'r')
+    try {
+      const { size } = await f.stat()
+      // Bytes, not characters: a little more than the payload keeps, so it
+      // can still start at a whole line.
+      const length = Math.min(size, Math.round(MAX_PROBLEM_LOG * 1.1))
+      const buf = Buffer.alloc(length)
+      await f.read(buf, 0, length, size - length)
+      return buf.toString('utf8')
+    } finally {
+      await f.close()
+    }
+  } catch (err) {
+    log.warn('problem report: the log could not be read', err)
+    return null
+  }
+}
+
+/** Send a problem report the user wrote; resolves to the reference the server gives it. */
+export async function sendProblemReport(
+  input: ProblemInput,
+  engineVersion?: string
+): Promise<string> {
+  if (!input.message?.trim()) throw new Error('Describe the problem first.')
+  const body = problemPayload(
+    input,
+    {
+      version: app.getVersion(),
+      ...(engineVersion ? { engine: engineVersion } : {}),
+      platform: process.platform,
+      arch: process.arch,
+      os: release()
+    },
+    input.includeLog ? await logTail() : null,
+    homes()
+  )
+  let res: Response
+  try {
+    res = await fetch(PROBLEM_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000)
+    })
+  } catch (err) {
+    log.warn('problem report not sent', err)
+    throw new Error("Couldn't send the report. Check your connection and try again.")
+  }
+  if (res.status === 429) throw new Error('Too many reports just now. Try again in a minute.')
+  const answer = (await res.json().catch(() => null)) as { reference?: string } | null
+  if (!res.ok || !answer?.reference) {
+    throw new Error(`The report server answered ${res.status}. Try again later.`)
+  }
+  log.info(`problem report sent: ${answer.reference}`)
+  return answer.reference
 }
 
 /** An uncaught error in the renderer (it sends them over IPC). */

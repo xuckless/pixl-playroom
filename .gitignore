@@ -13,3 +13,4 @@ out
 # Bundled AI runtime and model, fetched by scripts/fetch-ai.mjs
 resources/ai/
 CLAUDE.md
+ENGINE-REQUESTS.md

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
-import type { NoiseEstimate, Transform } from '../shared/engine-types'
+import type { NoiseEstimate, PreviewFrame, Transform } from '../shared/engine-types'
 import type { GuideLine } from '../shared/upright'
 import type { P as SpotPoint, RetouchSpot } from '../shared/retouch'
 import type { PixelStep } from '../shared/pixels'
@@ -21,6 +21,7 @@ import {
   type ExportPreset,
   type ExportProgress,
   type FolderListing,
+  type HistoryAppend,
   type HistoryLog,
   type KeywordNode,
   type HdrKind,
@@ -48,6 +49,9 @@ import {
   type ProjectInfo
 } from '../shared/ipc'
 import type { LicenceStatus } from '../shared/licence'
+import type { AccountStatus } from '../shared/account'
+import type { GateState } from '../shared/gate'
+import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
 import type { EnhanceRates } from '../shared/enhance'
@@ -83,8 +87,12 @@ const api = {
     pathOf: (file: File) => webUtils.getPathForFile(file),
     onOpenPreferences: (cb: () => void) => on(IPC.app.openPreferences, cb),
     onOpenEngineReport: (cb: () => void) => on(IPC.app.openEngineReport, cb),
+    onOpenReport: (cb: () => void) => on(IPC.app.openReport, cb),
     reportError: (e: ErrorReport) => call<void>(IPC.app.reportError, e),
-    openNotices: () => call<void>(IPC.app.openNotices)
+    reportProblem: (r: ProblemInput) => call<string>(IPC.app.reportProblem, r),
+    openNotices: () => call<void>(IPC.app.openNotices),
+    gate: () => call<GateState>(IPC.app.gate),
+    onGate: (cb: (g: GateState) => void) => on(IPC.app.gateChanged, cb)
   },
   updates: {
     getState: () => call<UpdateState>(IPC.updates.getState),
@@ -93,11 +101,18 @@ const api = {
     setChannel: (channel: UpdateChannel) => call<UpdateState>(IPC.updates.setChannel, channel),
     onState: (cb: (s: UpdateState) => void) => on(IPC.updates.event, cb)
   },
+  account: {
+    status: () => call<AccountStatus>(IPC.account.status),
+    signIn: () => call<AccountStatus>(IPC.account.signIn),
+    cancelSignIn: () => call<AccountStatus>(IPC.account.cancelSignIn),
+    signOut: () => call<AccountStatus>(IPC.account.signOut),
+    onChange: (cb: (s: AccountStatus) => void) => on(IPC.account.changed, cb)
+  },
   licence: {
     status: () => call<LicenceStatus>(IPC.licence.status),
-    activate: (key: string) => call<LicenceStatus>(IPC.licence.activate, key),
-    deactivate: () => call<LicenceStatus>(IPC.licence.deactivate),
-    validate: () => call<LicenceStatus>(IPC.licence.validate),
+    refresh: () => call<LicenceStatus>(IPC.licence.refresh),
+    startTrial: () => call<LicenceStatus>(IPC.licence.startTrial),
+    freeDevice: (id: string) => call<LicenceStatus>(IPC.licence.freeDevice, id),
     onChange: (cb: (s: LicenceStatus) => void) => on(IPC.licence.changed, cb)
   },
   prefs: {
@@ -107,6 +122,8 @@ const api = {
   library: {
     chooseFolder: () => call<string | null>(IPC.library.chooseFolder),
     openFolder: (folder: string) => call<FolderListing>(IPC.library.openFolder, folder),
+    subfolders: (folder: string) =>
+      call<{ path: string; name: string }[]>(IPC.library.subfolders, folder),
     recentFolders: () => call<string[]>(IPC.library.recentFolders),
     setMeta: (keys: string[], patch: MetaPatch) =>
       call<(LibraryItem | undefined)[]>(IPC.library.setMeta, keys, patch),
@@ -184,8 +201,9 @@ const api = {
     saveSnapshots: (key: string, snapshots: Snapshot[]) =>
       call<void>(IPC.develop.saveSnapshots, key, snapshots),
     historyList: (key: string) => call<HistoryLog>(IPC.develop.historyList, key),
+    warm: (keys: string[]) => call<void>(IPC.develop.warm, keys),
     historyAppend: (key: string, label: string, recipe: Recipe) =>
-      call<HistoryLog>(IPC.develop.historyAppend, key, label, recipe),
+      call<HistoryAppend>(IPC.develop.historyAppend, key, label, recipe),
     historySetHidden: (key: string, seqs: number[], hidden: boolean) =>
       call<HistoryLog>(IPC.develop.historySetHidden, key, seqs, hidden),
     historyDelete: (key: string, seqs: number[]) =>
@@ -253,6 +271,30 @@ const api = {
 }
 
 export type PlayroomApi = typeof api
+
+/**
+ * Preview frames (drafts as pixels: `PreviewFrame`), from the interactive
+ * engine on a port of their own, or relayed by main. Handed to the page with
+ * `window.postMessage`, their bytes moved rather than copied
+ * (renderer/lib/frames.ts takes them).
+ */
+function toPage(m: PreviewFrame): void {
+  const whole = m.data.byteOffset === 0 && m.data.byteLength === m.data.buffer.byteLength
+  const bytes = whole ? m.data : m.data.slice()
+  const buffer = bytes.buffer as ArrayBuffer
+  window.postMessage(
+    { pixlFrame: { frame: m.frame, width: m.width, height: m.height, data: buffer } },
+    '*',
+    [buffer]
+  )
+}
+ipcRenderer.on(IPC.develop.previewPort, (e) => {
+  const port = e.ports[0]
+  if (!port) return
+  port.onmessage = (m: MessageEvent<PreviewFrame>) => toPage(m.data)
+  port.start()
+})
+ipcRenderer.on(IPC.develop.previewFrame, (_e, m: PreviewFrame) => toPage(m))
 
 if (process.contextIsolated) {
   try {

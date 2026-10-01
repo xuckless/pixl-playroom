@@ -28,7 +28,8 @@ import { AiDenoise } from './AiDenoise'
 import { applyUpright, startGuides } from '../lib/upright'
 import type { UprightMode } from '../../../shared/upright'
 import { withKey } from '../lib/commands'
-import { scoped, useScope } from '../state/scope'
+import { scoped, scopedView, scopeLayer, useScope } from '../state/scope'
+import { useUi } from '../state/ui'
 
 type Read = (r: Recipe) => number
 type Write = (r: Recipe, v: number) => void
@@ -60,12 +61,17 @@ function RS({
   track?: string
   title?: string
 }): React.JSX.Element | null {
-  const { recipe, edit, commit } = useScope()
-  if (!recipe) return null
+  // Its own number only: a tick of another slider does not re-render this one.
+  const open = useUi((s) => s.masksWin.open)
+  const value = useDevelop((s) =>
+    s.recipe ? read(scopedView(s.recipe, scopeLayer(s.recipe, s.layerId, open))) : null
+  )
+  const { edit, commit } = scoped
+  if (value === null) return null
   return (
     <Slider
       label={label}
-      value={read(recipe)}
+      value={value}
       min={min}
       max={max}
       step={step}

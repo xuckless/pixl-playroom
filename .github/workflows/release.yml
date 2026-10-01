@@ -1,13 +1,21 @@
 name: Release
 
-# Builds, signs and publishes installers for one tag on every platform, and
-# attaches them to the tag's GitHub release, which is also the update feed
-# installed apps poll. Called by release-please.yml after a release is cut,
-# or by hand for a tag.
+# Builds, signs and publishes installers for one tag on every platform to
+# updates.pixlfoundation.com (the pixl-updates R2 bucket), the feed installed
+# apps poll: each version's files in playroom/<version>/, then the feeds in
+# playroom/, last, so no app reads a feed before its files exist. They also
+# go to the tag's GitHub release, the bridge for apps up to 0.1.1-beta, which
+# still read GitHub's feed (electron-builder.yml `publish`). Called by
+# release-please.yml after a release is cut, or by hand for a tag.
 #
 # Channel: electron-builder derives it from the version. 0.3.0 publishes
-# latest.yml / latest-mac.yml; 0.3.0-beta.1 publishes beta.yml / beta-mac.yml.
-# Stable users never see a prerelease.
+# latest.yml / latest-mac.yml and beta.yml / beta-mac.yml (so the beta channel
+# gets it too); 0.3.0-beta.1 publishes beta.yml / beta-mac.yml only. Stable
+# users never see a prerelease.
+#
+# Needs the R2 API token (secrets R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY;
+# variable R2_ENDPOINT, https://<account>.r2.cloudflarestorage.com): without
+# it the release fails before anything reaches the feed.
 #
 # All jobs run on GitHub-hosted runners (free for a public repository).
 
@@ -18,15 +26,41 @@ on:
         description: Git tag to build (e.g. v0.2.0)
         required: true
         type: string
+      rollout:
+        description: Percentage of the channel offered the release (scripts/rollout.mjs raises it)
+        required: false
+        type: number
+        default: 100
   workflow_dispatch:
     inputs:
       tag:
-        description: Git tag to build (e.g. v0.2.0)
+        description: Git tag (or, for staging, any ref) to build
         required: true
+        type: string
+      rollout:
+        description: Percentage of the channel offered the release (scripts/rollout.mjs raises it)
+        required: false
+        type: number
+        default: 100
+      target:
+        description: production, or staging (staging/playroom/, no GitHub release) for the update test
+        required: false
+        type: string
+        default: production
+      version:
+        description: Staging only, the version to build as (e.g. 0.2.0-beta.90)
+        required: false
         type: string
 
 permissions:
   contents: write # upload assets to the release
+
+env:
+  # workflow_call has no target or version input: production, as tagged.
+  TARGET: ${{ inputs.target || 'production' }}
+  VERSION_OVERRIDE: ${{ inputs.version || '' }}
+  # Read as ${ROLLOUT:-100}: a 0 given on purpose must stay 0.
+  ROLLOUT: ${{ inputs.rollout }}
 
 jobs:
   build:
@@ -88,31 +122,97 @@ jobs:
         run: pnpm notices
 
       - name: Signing credentials (only those that exist)
-        # electron-builder treats an empty CSC_LINK as a certificate path and
-        # fails with "not a file", so unset secrets must stay unset. Without a
-        # macOS identity the build is unsigned; Squirrel.Mac will not accept
-        # such an update, but the pipeline itself is exercised end to end.
+        # Unset secrets must stay unset (electron-builder treats an empty
+        # variable as a value). Without a macOS identity the build is
+        # unsigned; Squirrel.Mac will not accept such an update, but the
+        # pipeline itself is exercised end to end.
+        # Notarization logs in with an App Store Connect API key: the .p8's
+        # text is a secret, written to a file here because notarytool wants a
+        # path. Windows signs through Azure Trusted Signing, whose service
+        # principal electron-builder reads from the AZURE_* variables.
         shell: bash
         run: |
           add() { if [ -n "$2" ]; then echo "$1=$2" >> "$GITHUB_ENV"; else echo "::notice::$1 not set"; fi; }
-          add CSC_LINK "$CSC_LINK_IN"
-          add CSC_KEY_PASSWORD "$CSC_KEY_PASSWORD_IN"
-          add APPLE_ID "$APPLE_ID_IN"
-          add APPLE_APP_SPECIFIC_PASSWORD "$APPLE_APP_SPECIFIC_PASSWORD_IN"
-          add APPLE_TEAM_ID "$APPLE_TEAM_ID_IN"
-          add WIN_CSC_LINK "$WIN_CSC_LINK_IN"
-          add WIN_CSC_KEY_PASSWORD "$WIN_CSC_KEY_PASSWORD_IN"
+          if [ "$RUNNER_OS" = macOS ]; then
+            # The Developer ID identity goes into a keychain of our own, which
+            # electron-builder then finds (CSC_IDENTITY_AUTO_DISCOVERY). Its own
+            # CSC_LINK import is broken: it hands `set-key-partition-list` the
+            # .p12's password instead of the keychain's, and the build fails
+            # with "The user name or passphrase you entered is not correct".
+            if [ -n "$CSC_LINK_IN" ] && [ -n "$CSC_KEY_PASSWORD_IN" ]; then
+              kc="$RUNNER_TEMP/signing.keychain-db"
+              kcpw=$(openssl rand -base64 24)
+              echo "::add-mask::$kcpw"
+              printf '%s' "$CSC_LINK_IN" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+              security create-keychain -p "$kcpw" "$kc"
+              security set-keychain-settings -lut 21600 "$kc"
+              security unlock-keychain -p "$kcpw" "$kc"
+              security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$CSC_KEY_PASSWORD_IN" -T /usr/bin/codesign -T /usr/bin/productbuild
+              security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" > /dev/null
+              # shellcheck disable=SC2046 # one path per word, as listed
+              security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+              rm "$RUNNER_TEMP/cert.p12"
+              security find-identity -v -p codesigning "$kc"
+            else
+              echo "::notice::CSC_LINK or CSC_KEY_PASSWORD not set: the app is unsigned"
+            fi
+            if [ -n "$APPLE_API_KEY_IN" ] && [ -n "$APPLE_API_KEY_ID_IN" ] && [ -n "$APPLE_API_ISSUER_IN" ]; then
+              key="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID_IN.p8"
+              printf '%s\n' "$APPLE_API_KEY_IN" > "$key"
+              add APPLE_API_KEY "$key"
+              add APPLE_API_KEY_ID "$APPLE_API_KEY_ID_IN"
+              add APPLE_API_ISSUER "$APPLE_API_ISSUER_IN"
+            else
+              echo "::notice::APPLE_API_KEY, APPLE_API_KEY_ID or APPLE_API_ISSUER not set: no notarization"
+            fi
+          else
+            add AZURE_TENANT_ID "$AZURE_TENANT_ID_IN"
+            add AZURE_CLIENT_ID "$AZURE_CLIENT_ID_IN"
+            add AZURE_CLIENT_SECRET "$AZURE_CLIENT_SECRET_IN"
+          fi
         env:
           CSC_LINK_IN: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD_IN: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID_IN: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD_IN: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID_IN: ${{ secrets.APPLE_TEAM_ID }}
-          WIN_CSC_LINK_IN: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD_IN: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_IN: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID_IN: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_IN: ${{ secrets.APPLE_API_ISSUER }}
+          AZURE_TENANT_ID_IN: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID_IN: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET_IN: ${{ secrets.AZURE_CLIENT_SECRET }}
 
-      - name: Package and publish to the GitHub release
-        run: pnpm exec electron-builder ${{ matrix.args }} --publish always
+      - name: Package (and publish to the GitHub release, the bridge)
+        # bash on every runner, so the Azure options below pass as separate
+        # arguments (the publisher name can hold spaces).
+        shell: bash
+        run: |
+          case "$TARGET" in
+            production) args=(${{ matrix.args }} --publish always) ;;
+            # The update test: no GitHub release, and the version it's told.
+            staging)
+              args=(${{ matrix.args }} --publish never)
+              if [ -n "$VERSION_OVERRIDE" ]; then args+=("-c.extraMetadata.version=$VERSION_OVERRIDE"); fi
+              ;;
+            *) echo "::error::target is production or staging, not $TARGET"; exit 1 ;;
+          esac
+          # Azure Trusted Signing only when its service principal and its
+          # account (repository variables, not secrets) are all set: a
+          # half-configured `azureSignOptions` fails the build, while none
+          # leaves an unsigned installer that SmartScreen warns about.
+          if [ "$RUNNER_OS" = Windows ] && [ -n "$AZURE_CLIENT_SECRET" ] && [ -n "$AZURE_SIGNING_ENDPOINT" ] \
+            && [ -n "$AZURE_SIGNING_ACCOUNT" ] && [ -n "$AZURE_SIGNING_PROFILE" ] && [ -n "$WIN_PUBLISHER_NAME" ]; then
+            args+=(
+              "-c.win.azureSignOptions.endpoint=$AZURE_SIGNING_ENDPOINT"
+              "-c.win.azureSignOptions.codeSigningAccountName=$AZURE_SIGNING_ACCOUNT"
+              "-c.win.azureSignOptions.certificateProfileName=$AZURE_SIGNING_PROFILE"
+              # The certificate's subject CN, exactly. It goes into
+              # app-update.yml, and electron-updater refuses an update signed
+              # by anyone else.
+              "-c.win.azureSignOptions.publisherName=$WIN_PUBLISHER_NAME"
+            )
+          elif [ "$RUNNER_OS" = Windows ]; then
+            echo "::notice::Azure Trusted Signing not configured: the installer is unsigned"
+          fi
+          pnpm exec electron-builder "${args[@]}"
         env:
           # electron-builder's GitHub publisher uploads with this token to the
           # release release-please created for the tag (electron-builder.yml
@@ -121,30 +221,111 @@ jobs:
           # By default the publisher refuses a release published more than
           # two hours ago; a manual run for an older tag must still upload.
           EP_GH_IGNORE_TIME: 'true'
-          # Look for a Developer ID identity in the keychain when no CSC_LINK
-          # is given; finding none yields an unsigned build with a warning.
+          # Find the Developer ID identity the step above imported; finding
+          # none yields an unsigned build with a warning.
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' && 'true' || 'false' }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+          WIN_PUBLISHER_NAME: ${{ vars.WIN_PUBLISHER_NAME }}
 
-      # The feed is named for the channel electron-builder derives from the
-      # version: latest-mac.yml for 0.3.0, beta-mac.yml for 0.3.0-beta.1.
-      - name: Update channel
-        if: runner.os == 'macOS'
+      # Breakpad symbols for the native code Electron doesn't ship (the engine
+      # binding and its libraries), into the pixl-reports R2 bucket, so
+      # minidumps from this release can be read (scripts/upload-symbols.mjs).
+      # Skipped, with a notice, until the Cloudflare secrets exist; a failure
+      # here never fails the release.
+      - name: Crash symbols
+        shell: bash
+        continue-on-error: true
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::CLOUDFLARE_SYMBOLS_TOKEN or CLOUDFLARE_ACCOUNT_ID not set: no crash symbols"
+            exit 0
+          fi
+          cargo install dump_syms --locked
+          node scripts/upload-symbols.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_SYMBOLS_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # The channels this version is published to, as electron-builder named
+      # the feeds: latest and beta for 0.3.0, beta alone for 0.3.0-beta.1.
+      - name: Version and channels
         shell: bash
         run: |
-          tag='${{ inputs.tag }}'
-          channel=latest
-          if [[ "$tag" == *-* ]]; then pre="${tag#*-}"; channel="${pre%%.*}"; fi
-          echo "CHANNEL=$channel" >> "$GITHUB_ENV"
+          version=$(node -p "require('./package.json').version")
+          prefix=playroom
+          if [ "$TARGET" = staging ]; then
+            prefix=staging/playroom
+            version="${VERSION_OVERRIDE:-$version}"
+          elif [ "v$version" != '${{ inputs.tag }}' ]; then
+            echo "::error::package.json says $version, but the tag is ${{ inputs.tag }}"
+            exit 1
+          fi
+          channels='latest beta'
+          if [[ "$version" == *-* ]]; then pre="${version#*-}"; channels="${pre%%.*}"; fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "CHANNELS=$channels" >> "$GITHUB_ENV"
+          echo "PREFIX=$prefix" >> "$GITHUB_ENV"
 
-      # Each macOS job's feed lists only the arch it packaged, and the two
-      # jobs overwrite each other's copy on the release. Keep both so
-      # `mac-channel` below can publish one feed covering both.
-      - name: Save this arch's macOS update manifest
+      # This job's installers, zips and blockmaps into playroom/<version>/.
+      # Windows then puts up its feeds; the macOS feeds wait for both arches
+      # (mac-channel below). Files can be uploaded again while no feed names
+      # the version (a rerun after a failure); once one does, they are live,
+      # cached for a year, and never replaced: release a new version instead.
+      - name: Upload to updates.pixlfoundation.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ENDPOINT:-}" ]; then
+            echo "::error::R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY or R2_ENDPOINT not set: nothing can reach the update feed"
+            exit 1
+          fi
+          s3() { aws s3 "$@" --endpoint-url "$R2_ENDPOINT" --no-progress; }
+          base="s3://$R2_BUCKET/$PREFIX"
+          suffix=$([ "$RUNNER_OS" = macOS ] && echo -mac || true)
+          first="${CHANNELS%% *}"
+          live=$(s3 cp "$base/$first$suffix.yml" - 2>/dev/null | sed -n 's/^version: //p' || true)
+          if [ "$live" = "$VERSION" ]; then
+            echo "::error::$first$suffix.yml already offers $VERSION; its files are live and won't be replaced"
+            exit 1
+          fi
+          files=(dist/pixl-playroom-*.zip dist/pixl-playroom-*.dmg dist/pixl-playroom-*.exe dist/pixl-playroom-*.blockmap)
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::nothing to upload in dist/"; exit 1; fi
+          for f in "${files[@]}"; do
+            s3 cp "$f" "$base/$VERSION/$(basename "$f")" --cache-control 'public, max-age=31536000, immutable'
+          done
+          if [ "$RUNNER_OS" = Windows ]; then
+            mkdir -p feeds
+            for ch in $CHANNELS; do
+              node build/prefix-feed.mjs "dist/$ch.yml" "${ROLLOUT:-100}" > "feeds/$ch.yml"
+              s3 cp "feeds/$ch.yml" "$base/$ch.yml" --cache-control 'no-cache' --content-type 'text/yaml'
+            done
+          fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # R2 refuses the checksum headers newer AWS CLIs send by default.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+          R2_BUCKET: pixl-updates
+
+      # Each macOS job's feeds list only the arch it packaged. Keep both
+      # jobs' (the R2 ones in dist/, GitHub's in dist/github/) so
+      # `mac-channel` below can publish feeds covering both.
+      - name: Save this arch's macOS update manifests
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v7
         with:
           name: mac-channel-${{ matrix.arch }}
-          path: dist/${{ env.CHANNEL }}-mac.yml
+          path: |
+            dist/*-mac.yml
+            dist/github/*-mac.yml
+          # dist/*-mac.yml must exist (checked in the merge); dist/github/
+          # doesn't on staging.
           if-no-files-found: error
           retention-days: 7
 
@@ -162,22 +343,59 @@ jobs:
           pattern: mac-channel-*
           path: mac-channel
 
-      # Both arches in one feed. electron-updater keeps the arm64 file on
-      # Apple Silicon and drops every arm64 file on Intel, so a feed carrying
-      # one arch leaves the other unable to update. The script fails the job
-      # rather than publish such a feed.
+      # Both arches in one feed per channel. electron-updater keeps the arm64
+      # file on Apple Silicon and drops every arm64 file on Intel, so a feed
+      # carrying one arch leaves the other unable to update. The script fails
+      # the job rather than publish such a feed.
       - name: Merge the per-arch manifests
         run: |
-          tag='${{ inputs.tag }}'
-          channel=latest
-          if [[ "$tag" == *-* ]]; then pre="${tag#*-}"; channel="${pre%%.*}"; fi
-          echo "CHANNEL=$channel" >> "$GITHUB_ENV"
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          prefix=playroom
+          if [ "$TARGET" = staging ]; then prefix=staging/playroom; version="${VERSION_OVERRIDE:-$version}"; fi
+          channels='latest beta'
+          if [[ "$version" == *-* ]]; then pre="${version#*-}"; channels="${pre%%.*}"; fi
+          echo "CHANNELS=$channels" >> "$GITHUB_ENV"
+          echo "PREFIX=$prefix" >> "$GITHUB_ENV"
+          mkdir -p r2 github
+          for ch in $channels; do
+            node build/merge-mac-channel.mjs \
+              "mac-channel/mac-channel-x64/$ch-mac.yml" \
+              "mac-channel/mac-channel-arm64/$ch-mac.yml" > "merged-$ch-mac.yml"
+            node build/prefix-feed.mjs "merged-$ch-mac.yml" "${ROLLOUT:-100}" > "r2/$ch-mac.yml"
+            cat "r2/$ch-mac.yml"
+          done
+          # GitHub's feed for the bridge: the release's own channel only
+          # (none for staging, which skips GitHub).
+          if [ "$TARGET" = staging ]; then exit 0; fi
+          ch="${channels%% *}"
           node build/merge-mac-channel.mjs \
-            "mac-channel/mac-channel-x64/$channel-mac.yml" \
-            "mac-channel/mac-channel-arm64/$channel-mac.yml" > "$channel-mac.yml"
-          cat "$channel-mac.yml"
+            "mac-channel/mac-channel-x64/github/$ch-mac.yml" \
+            "mac-channel/mac-channel-arm64/github/$ch-mac.yml" > "github/$ch-mac.yml"
 
-      - name: Replace the manifest on the release
-        run: gh release upload "${{ inputs.tag }}" "$CHANNEL-mac.yml" --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Put the feeds on updates.pixlfoundation.com
+        run: |
+          set -euo pipefail
+          if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] || [ -z "${R2_ENDPOINT:-}" ]; then
+            echo "::error::R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY or R2_ENDPOINT not set"
+            exit 1
+          fi
+          for ch in $CHANNELS; do
+            aws s3 cp "r2/$ch-mac.yml" "s3://pixl-updates/$PREFIX/$ch-mac.yml" \
+              --endpoint-url "$R2_ENDPOINT" --no-progress --cache-control 'no-cache' --content-type 'text/yaml'
+          done
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+
+      - name: Replace the manifest on the GitHub release (the bridge)
+        if: env.TARGET == 'production'
+        run: |
+          ch="${CHANNELS%% *}"
+          gh release upload "${{ inputs.tag }}" "github/$ch-mac.yml" --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

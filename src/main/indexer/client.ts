@@ -11,9 +11,11 @@
 import { app, utilityProcess, type UtilityProcess } from 'electron'
 import log from 'electron-log/main'
 import { join } from 'path'
+import { MAIN_DIR } from '../dirs'
 import { vendoredExiftoolPath } from '../exiftool'
 import type { HostToMain, IndexEvent, IndexRequest } from './protocol'
 import type { IndexService } from './service'
+import { lowerPriority } from '../engine/client'
 
 /** Each method of `T`, returning a promise of what it returned. */
 export type Remote<T> = {
@@ -48,7 +50,13 @@ interface Pending {
 }
 
 const MAX_RESTARTS = 5
-const STOP_WAIT_MS = 2000
+/**
+ * How long a quit waits for the index to close. It answers once the work in
+ * hand ends (its transactions are synchronous, so it is never mid-one when it
+ * reads the close); killed sooner, a long scan or an embed would leave a hot
+ * journal beside a photo's project.
+ */
+const STOP_WAIT_MS = 20_000
 
 class Connection implements IndexControl {
   private child: UtilityProcess | undefined
@@ -122,12 +130,13 @@ class Connection implements IndexControl {
     const exiftool = vendoredExiftoolPath()
     if (exiftool) args.push('--exiftool', exiftool)
     this.firstStart = false
-    const child = utilityProcess.fork(join(__dirname, 'index-host.js'), args, {
+    const child = utilityProcess.fork(join(MAIN_DIR, 'index-host.js'), args, {
       serviceName: 'pixl-index',
       stdio: 'pipe'
     })
     this.child = child
     this.ready = false
+    child.once('spawn', () => lowerPriority(child.pid))
 
     child.stdout?.on('data', (d: Buffer) => log.info('[index]', d.toString().trimEnd()))
     child.stderr?.on('data', (d: Buffer) => log.warn('[index]', d.toString().trimEnd()))

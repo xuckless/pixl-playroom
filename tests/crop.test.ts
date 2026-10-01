@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { dragCrop } from '../src/shared/crop'
+import { cropAtAspect, dragCrop } from '../src/shared/crop'
 import type { ViewGeometry } from '../src/shared/view'
 
 const g: ViewGeometry = {
@@ -41,4 +41,15 @@ test('an aspect lock holds the pixel ratio', () => {
 test('a crop that would leave a straightened picture is refused', () => {
   const tilted = { ...g, straighten: 10 }
   assert.equal(dragCrop('nw', full, { x: 0, y: 0 }, null, tilted), null)
+})
+
+test('a locked crop pasted onto a photo of another shape keeps its aspect, centre and share', () => {
+  // 3:2 drawn on a 6000 × 4000 photo, pasted onto a 4000 × 4000 one.
+  const c = cropAtAspect({ x: 0.2, y: 0.25, width: 0.5, height: 0.5 }, 1.5, 4000, 4000)
+  assert.ok(Math.abs((c.width * 4000) / (c.height * 4000) - 1.5) < 1e-9)
+  assert.ok(Math.abs(c.x + c.width / 2 - 0.45) < 1e-9 && Math.abs(c.y + c.height / 2 - 0.5) < 1e-9)
+  assert.ok(Math.abs(c.width * c.height - 0.25) < 1e-9)
+  // Too wide to fit: as large as fits, still the aspect, inside the frame.
+  const wide = cropAtAspect({ x: 0, y: 0, width: 1, height: 1 }, 3, 4000, 4000)
+  assert.ok(wide.width <= 1 && wide.x >= 0 && Math.abs(wide.width / wide.height - 3) < 1e-9)
 })

@@ -1,12 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  defaultRecipe,
-  newLocalLayer,
-  planeRef,
-  slimRecipe,
-  type BrushComponent
-} from '../src/shared/recipe'
+import { createHash } from 'crypto'
+import { defaultRecipe, newLocalLayer, slimRecipe, type BrushComponent } from '../src/shared/recipe'
+import { isPlaneHash, planeRef, renameRefs } from '../src/main/planeref'
 import { pruneDue } from '../src/main/planes'
 
 const brush = (png: string): BrushComponent => ({
@@ -23,7 +19,7 @@ const brush = (png: string): BrushComponent => ({
 
 test('slimRecipe returns a recipe without planes untouched', () => {
   const r = defaultRecipe(false)
-  assert.equal(slimRecipe(r), r)
+  assert.equal(slimRecipe(r, planeRef), r)
 })
 
 test('slimRecipe sends planes by reference and hands them over', () => {
@@ -32,7 +28,7 @@ test('slimRecipe sends planes by reference and hands them over', () => {
   layer.components.push(brush('iVBORw0KGgo='))
   r.layers.push(layer)
   const seen: [string, string][] = []
-  const slim = slimRecipe(r, (ref, png) => seen.push([ref, png]))
+  const slim = slimRecipe(r, planeRef, (ref, png) => seen.push([ref, png]))
   const c = slim.layers[0].components[0] as BrushComponent
   assert.equal(c.png, '')
   assert.equal(c.ref, planeRef('iVBORw0KGgo='))
@@ -53,4 +49,19 @@ test('gradient planes are pruned after 32 writes or 10 s, not on every write', (
   const first = pruneDue(undefined, 0)
   assert.equal(first.due, false)
   assert.equal(pruneDue(first.next, 10_000).due, true, 'ten seconds on, the next write prunes')
+})
+
+test('a plane is named by the SHA-256 of its bytes; older names are renamed in stored JSON', () => {
+  // The bytes, not the base64 text: 0x89 0x50.
+  const bytes = createHash('sha256')
+    .update(Buffer.from([0x89, 0x50]))
+    .digest('hex')
+  assert.equal(planeRef('iVA='), bytes)
+  assert.ok(isPlaneHash(planeRef('iVA=')))
+  assert.equal(isPlaneHash('1a2b3c-120'), false)
+  const names = new Map([['1a2b3c-120', 'f'.repeat(64)]])
+  assert.equal(
+    renameRefs('{"ref":"1a2b3c-120","x":{"ref":"other-1"}}', names),
+    `{"ref":"${'f'.repeat(64)}","x":{"ref":"other-1"}}`
+  )
 })

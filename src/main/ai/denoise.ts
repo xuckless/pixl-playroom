@@ -192,7 +192,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
 
     // The pixels it runs on: the photo with the steps it already has.
     const deps = pixelDeps(this.engine, this.library.index, row)
-    const plain = await ensureProxies(this.engine, row, info)
+    const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const working = await guard(
       ensureWorking(deps, versionStamp(row), plain, recipe.pixels, () =>
         ensureBase(this.engine, row, info)
@@ -262,15 +262,18 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       )
       const jxl = join(dir, `denoise-${stamp}.jxl`)
       files.push(jxl)
-      await this.engine.convert({
-        ...blankRequest(result, jxl, 'Tiff'),
-        pixel: { depth: 'Sixteen', channels: 3 },
-        encode: lossless
-          ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
-          : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
-        metadata: ICC_ONLY,
-        color: 'Preserve'
-      })
+      await this.engine.convert(
+        {
+          ...blankRequest(result, jxl, 'Tiff'),
+          pixel: { depth: 'Sixteen', channels: 3 },
+          encode: lossless
+            ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
+            : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
+          metadata: ICC_ONLY,
+          color: 'Preserve'
+        },
+        { signal: ctx.signal }
+      )
       const key = keyOf(row.id, null)
       const blob = await this.library.index.putBlob(key, jxl, {
         kind: 'pixels',
@@ -317,12 +320,21 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         rect: null,
         params: { model: req.model, lossless }
       }
-      await addPixelStep(this.library, this.sessions(), req.key, step)
+      // Computed on the steps there were when it began: it goes after them,
+      // under any (a heal) added while it ran.
+      ctx.commit()
+      await addPixelStep(
+        this.library,
+        this.sessions(),
+        req.key,
+        step,
+        recipe.pixels.map((s) => s.id)
+      )
       const { photoId, copyId } = parseKey(req.key)
       this.library.queueThumb(photoId, copyId, true)
       return { kind: 'step', label: step.label }
     } finally {
-      sessions?.pixelPreview(req.key, null)
+      await sessions?.clearPreview(req.key).catch(() => undefined)
       for (const f of files) await rm(f, { force: true }).catch(() => undefined)
     }
   }

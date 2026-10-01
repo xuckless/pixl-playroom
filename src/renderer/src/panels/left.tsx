@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { dependents, patchSummary, prerequisites, type Step } from '../../../shared/history'
 import type { Preset, ProjectInfo } from '../../../shared/ipc'
-import { applyGroups } from '../../../shared/recipe'
+import { applyFields, applyGroups } from '../../../shared/recipe'
 import { wbFromSaved } from '../../../shared/wbconvert'
 import { Icon } from '../components/icons'
 import { api, errorText } from '../lib/api'
-import { usePresets } from '../lib/hooks'
+import { presetsChanged, usePresets } from '../lib/hooks'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { MetadataEditor } from '../views/library/MetadataEditor'
@@ -29,16 +29,37 @@ export function PresetsPane(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
   const session = useDevelop((s) => s.session)
   const replace = useDevelop((s) => s.replace)
-  const [presets, reload] = usePresets(4000)
+  const [presets, reload] = usePresets()
   const [applied, setApplied] = useState<string | null>(null)
   if (!recipe) return <p className="rail-empty">Open a photo to use presets.</p>
-  const apply = (p: Preset): void => {
+  const apply = async (p: Preset): Promise<void> => {
+    if (!session) return
     setApplied(p.id)
     // A saved custom white balance is in the units of the photo it was made
     // on; on a photo of the other kind it goes through the engine's white.
     const from =
       p.wbOp && session ? { ...p.recipe, wb: wbFromSaved(p.recipe.wb, p.wbOp, session) } : p.recipe
-    replace(applyGroups(recipe, from, p.groups), `Preset: ${p.name}`)
+    // A lens profile is this photo's lens's at its focal length and aperture,
+    // not the numbers it had where the preset was saved.
+    const lens = p.groups.includes('lens') && from.lens.profile.enabled
+    const resolved = lens
+      ? await api.lens.resolve(session.key, from.lens.profile.id).then(
+          (m) => m.resolved,
+          () => null
+        )
+      : null
+    const now = useDevelop.getState()
+    if (now.session?.key !== session.key || !now.recipe) return
+    // A built-in sets only its own sliders; a saved preset its whole groups.
+    const next = p.fields
+      ? applyFields(now.recipe, from, p.fields)
+      : applyGroups(now.recipe, from, p.groups)
+    if (p.groups.includes('lens')) {
+      // Chromatic aberration is measured per photo: this one keeps its own.
+      next.lens.ca = now.recipe.lens.ca
+      if (lens) next.lens.profile.resolved = resolved
+    }
+    replace(next, `Preset: ${p.name}`)
   }
   // Presets keep the groups they were saved under.
   const groups = [...new Set(presets.map((p) => p.group))]
@@ -59,9 +80,9 @@ export function PresetsPane(): React.JSX.Element | null {
                   role="button"
                   tabIndex={0}
                   className={`preset rail-item${applied === p.id ? ' on' : ''}`}
-                  onClick={() => apply(p)}
+                  onClick={() => void apply(p)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') apply(p)
+                    if (e.key === 'Enter') void apply(p)
                   }}
                   title={`Carries: ${p.groups.join(', ')}`}
                 >
@@ -77,7 +98,10 @@ export function PresetsPane(): React.JSX.Element | null {
                       title="Delete preset"
                       onClick={(e) => {
                         e.stopPropagation()
-                        void api.presets.remove(p.id).then(reload)
+                        void api.presets.remove(p.id).then(() => {
+                          reload()
+                          presetsChanged()
+                        })
                       }}
                     >
                       <Icon name="trash" />
@@ -309,21 +333,27 @@ const ORIGINAL_KIND: Record<string, string> = {
 /** The photo's project, and the copy of its original it carries. */
 function ProjectRows({ sessionKey }: { sessionKey: string }): React.JSX.Element | null {
   const [info, setInfo] = useState<ProjectInfo | null>(null)
+  // A first edit makes the project: looked at again as the history grows.
+  const steps = useDevelop((s) => s.history.steps.length)
   useEffect(() => {
     let live = true
+    let t: ReturnType<typeof setTimeout> | undefined
     const load = (): void =>
       void api.library
         .projectInfo(sessionKey)
-        .then((i) => live && setInfo(i))
+        .then((i) => {
+          if (!live) return
+          setInfo(i)
+          // The original is embedded in the background: look again only while it is.
+          if (i.project && i.state !== 'ready' && i.state !== 'failed') t = setTimeout(load, 4000)
+        })
         .catch(() => undefined)
     load()
-    // The original is embedded in the background: look again while it is.
-    const t = setInterval(load, 4000)
     return () => {
       live = false
-      clearInterval(t)
+      clearTimeout(t)
     }
-  }, [sessionKey])
+  }, [sessionKey, steps])
   if (!info?.project) return null
   const original =
     info.state === 'ready'
@@ -351,7 +381,7 @@ function ProjectRows({ sessionKey }: { sessionKey: string }): React.JSX.Element 
 }
 
 export function InfoPane(): React.JSX.Element {
-  const session = useDevelop((s) => s.session)
+  const session = useDevelop((s) => s.shown)
   if (!session) return <p className="rail-empty">Open a photo to see its details.</p>
   const { info, item } = session
   const c = item.camera

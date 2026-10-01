@@ -1,5 +1,6 @@
 import { orientedFrame } from '../../../shared/compile'
 import type { Recipe } from '../../../shared/recipe'
+import { flipGeometry, turnGeometry } from '../../../shared/reframe'
 import { useDevelop } from '../state/develop'
 import { ASPECTS } from './aspects'
 
@@ -10,11 +11,10 @@ function change(label: string, f: (g: Recipe['geometry']) => Recipe['geometry'])
   replace({ ...recipe, geometry: f(recipe.geometry) }, label)
 }
 
-export const rotateLeft = (): void =>
-  change('Rotate left', (g) => ({ ...g, quarterTurns: (g.quarterTurns + 3) % 4, crop: null }))
-export const rotateRight = (): void =>
-  change('Rotate right', (g) => ({ ...g, quarterTurns: (g.quarterTurns + 1) % 4, crop: null }))
-export const flip = (): void => change('Flip', (g) => ({ ...g, flipHorizontal: !g.flipHorizontal }))
+// The crop, straighten, aspect and Upright turn and mirror with the picture.
+export const rotateLeft = (): void => change('Rotate left', (g) => turnGeometry(g, -1))
+export const rotateRight = (): void => change('Rotate right', (g) => turnGeometry(g, 1))
+export const flip = (): void => change('Flip', flipGeometry)
 export const resetCrop = (): void =>
   change('Reset crop', (g) => ({ ...g, crop: null, straighten: 0 }))
 

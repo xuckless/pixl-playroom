@@ -6,7 +6,9 @@ import { markClipping } from '../lib/clipping'
 
 interface Job {
   id: number
-  url: string
+  /** A file to fetch, or the picture's pixels already (a preview frame). */
+  url?: string
+  bitmap?: ImageBitmap
 }
 
 const post = (
@@ -14,10 +16,9 @@ const post = (
 ).postMessage.bind(self)
 
 self.onmessage = async (e: MessageEvent<Job>): Promise<void> => {
-  const { id, url } = e.data
+  const { id, url, bitmap } = e.data
   try {
-    const blob = await (await fetch(url)).blob()
-    const bmp = await createImageBitmap(blob)
+    const bmp = bitmap ?? (await createImageBitmap(await (await fetch(url!)).blob()))
     const c = new OffscreenCanvas(bmp.width, bmp.height)
     const ctx = c.getContext('2d', {
       willReadFrequently: true

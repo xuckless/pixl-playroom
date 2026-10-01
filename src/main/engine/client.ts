@@ -6,9 +6,11 @@
  * a batch never queues in front of a slider and a crash in one never takes
  * the other down.
  */
-import { utilityProcess, type UtilityProcess } from 'electron'
+import { MessageChannelMain, utilityProcess, type UtilityProcess, type WebContents } from 'electron'
 import log from 'electron-log/main'
+import { constants, setPriority } from 'os'
 import { join } from 'path'
+import { MAIN_DIR } from '../dirs'
 import type {
   AnalyzeRequest,
   ConvertReport,
@@ -27,7 +29,7 @@ import type {
   Transform,
   WhiteBalance
 } from '../../shared/engine-types'
-import type { EngineStatus } from '../../shared/ipc'
+import { IPC, type EngineStatus } from '../../shared/ipc'
 
 export class EngineError extends Error {
   code: string
@@ -60,6 +62,8 @@ interface Pending {
 /** A call that can be stopped: the engine returns `Cancelled` at its next stage boundary. */
 export interface CallOptions {
   signal?: AbortSignal
+  /** A `Bytes` convert whose output is a preview frame for the window (see `sendPreviewsTo`). */
+  frame?: string
 }
 
 /** True for an error that only says the call was stopped. */
@@ -68,23 +72,60 @@ export function isCancelled(err: unknown): boolean {
 }
 
 const MAX_RESTARTS = 5
+/** The longest a background call is held while interactive renders run (exports still move). */
+const HOLD_MAX_MS = 1500
+/** The longest a new cancellable call waits for cancelled ones to let go of the cores. */
+const DRAIN_MAX_MS = 250
+
+/** A helper process put below normal priority (the OS may refuse: it then runs as it is). */
+export function lowerPriority(pid: number | undefined): void {
+  if (pid === undefined) return
+  try {
+    setPriority(pid, constants.priority.PRIORITY_BELOW_NORMAL)
+  } catch {
+    // Not permitted here: nothing lost but the courtesy.
+  }
+}
 
 export class EngineClient {
   private child: UtilityProcess | undefined
   private nextId = 1
   private inflight = new Map<number, Pending>()
+  /**
+   * Calls the host is working on, whether or not their callers still wait
+   * (a cancelled one runs on to its next stage boundary): what `quiet` and
+   * `drained` watch.
+   */
+  private running = new Set<number>()
+  /** The cancelled ones among them. */
+  private draining = new Set<number>()
+  private settleWaiters: (() => void)[] = []
+  /** An engine whose work this one's new calls wait behind (see `holdFor`). */
+  private yieldTo: EngineClient | undefined
+  /** The window preview frames go to (see `sendPreviewsTo`). */
+  private previewsTo: WebContents | undefined
   private status: EngineStatus = { status: 'starting', restarts: 0 }
   private stopped = false
   private readyWaiters: (() => void)[] = []
 
   constructor(
     private readonly name: string,
-    private readonly libuvThreads: number
+    private readonly libuvThreads: number,
+    /** Below the interactive engine and the window, so background work yields to editing. */
+    private readonly background = false
   ) {}
+
+  private spawned = false
 
   start(): void {
     this.stopped = false
+    this.spawned = true
     this.spawn()
+  }
+
+  /** Start it if it never was (one held back from the launch's path). */
+  ensureStarted(): void {
+    if (!this.spawned && !this.stopped) this.start()
   }
 
   stop(): void {
@@ -107,7 +148,78 @@ export class EngineClient {
       p.reject(new EngineError({ message: `${p.method}: cancelled`, code: 'Cancelled' }))
     }
     child.kill()
+    this.ended()
     if (!this.stopped) this.spawn()
+  }
+
+  /**
+   * Hold this engine's new calls while `other` (the interactive engine) has
+   * work in flight, for at most HOLD_MAX_MS each: thumbnails and exports
+   * start between renders, not on top of them. What is already running here
+   * goes on.
+   */
+  holdFor(other: EngineClient): void {
+    this.yieldTo = other
+  }
+
+  /**
+   * Send preview frames (`convert` with `frame`) straight from the host to
+   * this window, over a channel of their own: the pixels never pass through
+   * main. Called again when the window loads anew (its old port is gone).
+   */
+  sendPreviewsTo(wc: WebContents): void {
+    this.previewsTo = wc
+    this.connectPreviews()
+  }
+
+  private connectPreviews(): void {
+    const child = this.child
+    const wc = this.previewsTo
+    if (!child || !wc || wc.isDestroyed()) return
+    const { port1, port2 } = new MessageChannelMain()
+    child.postMessage({ kind: 'port' }, [port1])
+    wc.postMessage(IPC.develop.previewPort, null, [port2])
+  }
+
+  /** Resolves when no call is running here, or after `maxMs`. */
+  quiet(maxMs: number): Promise<void> {
+    return this.until(() => this.running.size === 0, maxMs)
+  }
+
+  /** Resolves when no cancelled call is still running here, or after `maxMs`. */
+  private drained(maxMs: number): Promise<void> {
+    return this.until(() => this.draining.size === 0, maxMs)
+  }
+
+  private until(done: () => boolean, maxMs: number): Promise<void> {
+    if (done()) return Promise.resolve()
+    return new Promise((resolve) => {
+      let over = false
+      const finish = (): void => {
+        over = true
+        clearTimeout(timer)
+        resolve()
+      }
+      const timer = setTimeout(finish, maxMs)
+      const check = (): void => {
+        if (over) return
+        if (done()) finish()
+        else this.settleWaiters.push(check)
+      }
+      this.settleWaiters.push(check)
+    })
+  }
+
+  /** A call the host was working on has ended (answered, or the host gone). */
+  private ended(id?: number): void {
+    if (id === undefined) {
+      this.running.clear()
+      this.draining.clear()
+    } else {
+      this.running.delete(id)
+      this.draining.delete(id)
+    }
+    for (const w of this.settleWaiters.splice(0)) w()
   }
 
   getStatus(): EngineStatus {
@@ -124,7 +236,7 @@ export class EngineClient {
     return this.call('probe', [path]) as Promise<SourceInfo>
   }
   convert(request: ConvertRequest, opts: CallOptions = {}): Promise<ConvertReport> {
-    return this.call('convert', [request], opts.signal) as Promise<ConvertReport>
+    return this.call('convert', [request], opts.signal, opts.frame) as Promise<ConvertReport>
   }
   analyze(request: AnalyzeRequest, opts: CallOptions = {}): Promise<ImageStats> {
     return this.call('analyze', [request], opts.signal) as Promise<ImageStats>
@@ -172,7 +284,7 @@ export class EngineClient {
   }
 
   private spawn(): void {
-    const entry = join(__dirname, 'engine-host.js')
+    const entry = join(MAIN_DIR, 'engine-host.js')
     const child = utilityProcess.fork(entry, [], {
       serviceName: `pixl-engine-${this.name}`,
       stdio: 'pipe',
@@ -180,6 +292,9 @@ export class EngineClient {
     })
     this.child = child
     this.status = { ...this.status, status: 'starting', reason: undefined }
+    if (this.background) child.once('spawn', () => lowerPriority(child.pid))
+    // A host started again (after a crash) gets a fresh preview channel.
+    child.once('spawn', () => this.connectPreviews())
 
     child.stdout?.on('data', (d: Buffer) =>
       log.info(`[engine:${this.name}]`, d.toString().trimEnd())
@@ -198,6 +313,7 @@ export class EngineClient {
         this.inflight.delete(id)
         p.reject(new EngineError({ message: `${p.method}: ${reason}`, code: 'EngineCrashed' }))
       }
+      this.ended()
       if (this.stopped) return
       const restarts = this.status.restarts + 1
       if (restarts > MAX_RESTARTS) {
@@ -236,6 +352,8 @@ export class EngineClient {
       return
     }
     if (msg.kind === 'response') {
+      // A cancelled call's late answer still says the host has let go of it.
+      this.ended(msg.id)
       const p = this.inflight.get(msg.id)
       if (!p) return
       this.inflight.delete(msg.id)
@@ -247,12 +365,41 @@ export class EngineClient {
   /**
    * One call to the host. With a signal, aborting it tells the host to stop
    * and settles the call at once as `Cancelled`; the engine lets go of the
-   * work at its next stage boundary, and its late answer is dropped.
+   * work at its next stage boundary, and its late answer is dropped. Before
+   * it starts, a call waits (briefly) behind the interactive engine's work
+   * (`holdFor`), and a cancellable one behind cancelled calls still letting
+   * go: two renders never fight over the cores.
    */
-  private call(method: EngineMethod, args: unknown[], signal?: AbortSignal): Promise<unknown> {
+  private call(
+    method: EngineMethod,
+    args: unknown[],
+    signal?: AbortSignal,
+    frame?: string
+  ): Promise<unknown> {
+    const hold = this.yieldTo && this.yieldTo.running.size > 0
+    const drain = signal !== undefined && this.draining.size > 0
+    if (!hold && !drain) return this.post(method, args, signal, frame)
+    return (async () => {
+      if (hold) await this.yieldTo!.quiet(HOLD_MAX_MS)
+      if (drain) await this.drained(DRAIN_MAX_MS)
+      return this.post(method, args, signal, frame)
+    })()
+  }
+
+  private post(
+    method: EngineMethod,
+    args: unknown[],
+    signal?: AbortSignal,
+    frame?: string
+  ): Promise<unknown> {
     const cancelled = (): EngineError =>
       new EngineError({ message: `${method}: cancelled`, code: 'Cancelled' })
     if (signal?.aborted) return Promise.reject(cancelled())
+    // Held back from the launch: started by the first call that wants it.
+    if (!this.spawned && !this.stopped) {
+      this.start()
+      return this.whenStarted().then(() => this.post(method, args, signal, frame))
+    }
     const child = this.child
     if (!child) {
       return Promise.reject(
@@ -267,6 +414,8 @@ export class EngineClient {
       const onAbort = (): void => {
         if (!this.inflight.delete(id)) return
         this.child?.postMessage({ kind: 'cancel', id })
+        // Still running in the host until its answer comes.
+        if (this.running.has(id)) this.draining.add(id)
         reject(cancelled())
       }
       const done =
@@ -277,7 +426,15 @@ export class EngineClient {
         }
       this.inflight.set(id, { resolve: done(resolve), reject: done(reject), method })
       signal?.addEventListener('abort', onAbort, { once: true })
-      child.postMessage({ kind: 'request', id, method, args, cancellable: signal !== undefined })
+      this.running.add(id)
+      child.postMessage({
+        kind: 'request',
+        id,
+        method,
+        args,
+        cancellable: signal !== undefined,
+        ...(frame ? { frame } : {})
+      })
     })
   }
 }

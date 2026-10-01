@@ -14,7 +14,7 @@ import { join } from 'path'
 import type { AiStartRequest } from '../../shared/ai'
 import { estimate, SEGMENT_LABEL } from '../../shared/ai'
 import { lensCorrection } from '../../shared/lens'
-import { planeRef } from '../../shared/recipe'
+import { planeRef } from '../planeref'
 import type { EngineClient } from '../engine/client'
 import type { Library } from '../library'
 import { decodePng, encodeGreyPng } from '../pngio'
@@ -82,7 +82,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       this.engine.start()
       await this.engine.whenStarted()
     }
-    const px = await ensureProxies(this.engine, row, info)
+    const px = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const recipe = this.sessions()?.liveRecipe(req.key) ?? (await this.library.recipe(req.key))
     // One run of a small network: the CPU is done before an accelerator has
     // compiled it (CoreML takes about a second to), so segmenting stays there.

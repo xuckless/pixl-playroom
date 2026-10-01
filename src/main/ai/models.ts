@@ -228,7 +228,10 @@ export class ModelStore {
         done(null, chunk)
       }
     })
-    if (url.startsWith('file:')) {
+    if (from === f.bytes) {
+      // All of it came before (a quit during the check): checked below, not asked for again
+      // (a range past the end is HTTP 416, every time).
+    } else if (url.startsWith('file:')) {
       await pipeline(
         createReadStream(fileURLToPath(url), { start: from }),
         counter,
@@ -240,6 +243,13 @@ export class ModelStore {
         headers: from ? { Range: `bytes=${from}-` } : {},
         signal
       })
+      if (res.status === 416 && from > 0) {
+        // What was kept is not a start of this file (it changed): from the beginning.
+        await res.body?.cancel()
+        await rm(part, { force: true })
+        onBytes(-from)
+        return this.fetchFile(url, dest, f, signal, onBytes)
+      }
       if (!res.ok || !res.body) throw new Error(`${f.name}: HTTP ${res.status}`)
       // A server that ignores the range sends the whole file again.
       const append = from > 0 && res.status === 206

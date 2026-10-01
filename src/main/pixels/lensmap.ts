@@ -15,7 +15,7 @@ import type { LensCorrection } from '../../shared/engine-types'
 import { hash32 } from '../../shared/recipe'
 import { exists } from '../exists'
 import { blankRequest } from '../source'
-import type { PixelDeps } from './working'
+import { makeOnce, type PixelDeps } from './working'
 
 /** The map's long edge: the correction is smooth, and the map is read bilinearly. */
 const MAP_EDGE = 1024
@@ -52,15 +52,18 @@ export async function lensMap(
   const w = Math.max(2, Math.round(width * k))
   const h = Math.max(2, Math.round(height * k))
   const ramp = join(dir, `ramp-${w}x${h}.png`)
-  if (!(await exists(ramp))) await deps.work({ op: 'ramp', file: ramp, w, h })
-  await deps.engine.convert({
-    ...blankRequest(ramp, out, 'Png'),
-    pixel: { depth: 'Sixteen', channels: 3 },
-    encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-    // Numbers, not colours: nothing may touch them.
-    metadata: { exif: false, icc: false, xmp: false, iptc: false },
-    color: 'Preserve',
-    lens: geometry
-  })
+  // Each written whole, once: a map read half made would misplace the mask.
+  await makeOnce(ramp, (tmp) => deps.work({ op: 'ramp', file: tmp, w, h }))
+  await makeOnce(out, (tmp) =>
+    deps.engine.convert({
+      ...blankRequest(ramp, tmp, 'Png'),
+      pixel: { depth: 'Sixteen', channels: 3 },
+      encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+      // Numbers, not colours: nothing may touch them.
+      metadata: { exif: false, icc: false, xmp: false, iptc: false },
+      color: 'Preserve',
+      lens: geometry
+    })
+  )
   return out
 }

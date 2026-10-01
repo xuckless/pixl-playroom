@@ -4,7 +4,7 @@
  * index host runs it, off the main process.
  */
 import exifr from 'exifr'
-import { open } from 'fs/promises'
+import { open, readFile } from 'fs/promises'
 import type { CameraInfo } from '../shared/ipc'
 
 /**
@@ -25,14 +25,44 @@ export function exifrCanRead(head: Uint8Array): boolean {
   )
 }
 
-async function headOf(path: string): Promise<Uint8Array> {
+/** The first `bytes` of a file (fewer when it is shorter), and its size. */
+async function headOf(path: string, bytes: number): Promise<{ head: Buffer; size: number }> {
   const fh = await open(path, 'r')
   try {
-    const buf = new Uint8Array(12)
-    await fh.read(buf, 0, 12, 0)
-    return buf
+    const size = (await fh.stat()).size
+    const head = Buffer.alloc(Math.min(bytes, size))
+    const { bytesRead } = await fh.read(head, 0, head.length, 0)
+    return { head: head.subarray(0, bytesRead), size }
   } finally {
     await fh.close()
+  }
+}
+
+/**
+ * How much of a file the tags are read from: a JPEG's EXIF is in its first
+ * 64 KB, a RAW's or a HEIC's well inside this. exifr is handed the bytes,
+ * never the path: its own file reader leaks a handle where Node refuses its
+ * `stat` call (Node 26), and a truncated file then ends the process.
+ */
+const TAGS_HEAD = 1 << 20
+
+const PARSE = {
+  tiff: true,
+  exif: true,
+  gps: true,
+  xmp: false,
+  icc: false,
+  iptc: false,
+  interop: false,
+  translateValues: true,
+  reviveValues: true
+}
+
+async function tagsOf(data: Buffer): Promise<Record<string, unknown> | undefined> {
+  try {
+    return (await exifr.parse(data, PARSE)) as Record<string, unknown> | undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -52,18 +82,11 @@ export function emptyCamera(): CameraInfo {
 
 export async function readCamera(path: string): Promise<CameraInfo> {
   try {
-    if (!exifrCanRead(await headOf(path))) return emptyCamera()
-    const t = (await exifr.parse(path, {
-      tiff: true,
-      exif: true,
-      gps: true,
-      xmp: false,
-      icc: false,
-      iptc: false,
-      interop: false,
-      translateValues: true,
-      reviveValues: true
-    })) as Record<string, unknown> | undefined
+    const { head, size } = await headOf(path, TAGS_HEAD)
+    if (!exifrCanRead(head)) return emptyCamera()
+    // Tags past the head (a rare layout): the whole file, once.
+    const t =
+      (await tagsOf(head)) ?? (size > head.length ? await tagsOf(await readFile(path)) : undefined)
     if (!t) return emptyCamera()
     const num = (v: unknown): number | null =>
       typeof v === 'number' && Number.isFinite(v) ? v : null

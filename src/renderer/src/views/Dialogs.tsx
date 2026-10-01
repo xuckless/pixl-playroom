@@ -10,6 +10,7 @@ import {
   type ResizeMode
 } from '../../../shared/export'
 import type { ExportPreset, ExportProgress } from '../../../shared/ipc'
+import { BUY_URL } from '../../../shared/licence'
 import {
   changedGroups,
   defaultRecipe,
@@ -22,6 +23,7 @@ import { Modal } from '../components/ui'
 import { Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
 import { autoWbBatch } from '../lib/autowb'
+import { presetsChanged } from '../lib/hooks'
 import { useDevelop } from '../state/develop'
 import { useLibrary, useTargets } from '../state/library'
 import { WatermarkSection } from './WatermarkSection'
@@ -77,12 +79,20 @@ export function ExportDialog(): React.JSX.Element {
   const [presets, setPresets] = useState<ExportPreset[]>([])
   const [progress, setProgress] = useState<ExportProgress | null>(null)
   const [presetName, setPresetName] = useState('')
+  /** Why a lapsed licence refuses exporting (never while licensing isn't enforced). */
+  const [locked, setLocked] = useState<string | null>(null)
   useEffect(() => {
     void api.app
       .getSetting<ExportSettings>('export.last')
       .then((last) => last && setS(normaliseExportSettings(last)))
     void api.export.presets().then(setPresets)
-    return api.export.onProgress(setProgress)
+    void api.licence.status().then((l) => setLocked(l.locked))
+    const offLicence = api.licence.onChange((l) => setLocked(l.locked))
+    const offProgress = api.export.onProgress(setProgress)
+    return () => {
+      offLicence()
+      offProgress()
+    }
   }, [])
   const up = <K extends keyof ExportSettings>(k: K, v: ExportSettings[K]): void =>
     setS((x) => ({ ...x, [k]: v }))
@@ -142,7 +152,7 @@ export function ExportDialog(): React.JSX.Element {
           ) : (
             <button
               className="primary"
-              disabled={targets.length === 0}
+              disabled={targets.length === 0 || locked !== null}
               onClick={() => void start()}
             >
               Export
@@ -151,6 +161,17 @@ export function ExportDialog(): React.JSX.Element {
         </>
       }
     >
+      {locked && (
+        <div className="licence-lock" role="alert">
+          <p>{locked}</p>
+          <div className="prefs-row">
+            <button onClick={() => setDialog('preferences')}>Open Settings…</button>
+            <a href={BUY_URL} target="_blank" rel="noreferrer">
+              Buy a licence
+            </a>
+          </div>
+        </div>
+      )}
       <div className="export-grid">
         <fieldset>
           <legend>Presets</legend>
@@ -715,12 +736,15 @@ export function SyncDialog(): React.JSX.Element {
   const clipboard = useLibrary((s) => s.clipboard)
   const developRecipe = useDevelop((s) => s.recipe)
   const developKey = useDevelop((s) => s.session?.key)
+  const developRaw = useDevelop((s) => s.session?.isRaw ?? false)
   const source = clipboard?.recipe ?? developRecipe
+  // What differs from the photo's own defaults (a RAW's profile, sharpening
+  // and noise reduction are not edits).
   const initial = new Set<RecipeGroup>(
     clipboard?.groups ??
       (source
-        ? changedGroups(source, defaultRecipe(false)).filter(
-            (g) => g !== 'crop' && g !== 'localAdjustments' && g !== 'retouch'
+        ? changedGroups(source, defaultRecipe(developRaw)).filter(
+            (g) => g !== 'crop' && g !== 'upright' && g !== 'localAdjustments' && g !== 'retouch'
           )
         : [])
   )
@@ -751,9 +775,11 @@ export function SyncDialog(): React.JSX.Element {
                     clipboard?.source ?? developKey ?? undefined
                   )
                 )
-                if (developKey && keys.includes(developKey)) {
+                // The open photo's sync is a step of its history, undone on its own.
+                const dev = useDevelop.getState
+                if (developKey && keys.includes(developKey) && dev().session?.key === developKey) {
                   const s = await api.develop.open(developKey)
-                  useDevelop.setState({ recipe: s.recipe })
+                  if (dev().session?.key === developKey) dev().replace(s.recipe, 'Sync settings')
                 }
               }
               setDialog(null)
@@ -850,9 +876,13 @@ export function SavePresetDialog(): React.JSX.Element {
   const [groups, setGroups] = useState<Set<RecipeGroup>>(
     new Set(
       recipe
-        ? changedGroups(recipe, defaultRecipe(false)).filter(
+        ? changedGroups(recipe, defaultRecipe(session?.isRaw ?? false)).filter(
             (g) =>
-              g !== 'crop' && g !== 'localAdjustments' && g !== 'orientation' && g !== 'retouch'
+              g !== 'crop' &&
+              g !== 'upright' &&
+              g !== 'localAdjustments' &&
+              g !== 'orientation' &&
+              g !== 'retouch'
           )
         : []
     )
@@ -882,6 +912,7 @@ export function SavePresetDialog(): React.JSX.Element {
                 recipe,
                 ...(wbOp ? { wbOp } : {})
               })
+              presetsChanged()
               say(`Saved preset ${name.trim()}`)
               setDialog(null)
             } catch (err) {

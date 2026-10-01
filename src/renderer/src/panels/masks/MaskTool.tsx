@@ -1,4 +1,5 @@
 import type { BlendMode, KeyBand, MaskMode } from '../../../../shared/engine-types'
+import { normaliseEdge, type MaskEdge } from '../../../../shared/maskedge'
 import { isNeutral, neutralSettings, type MaskComponentSetting } from '../../../../shared/recipe'
 import { Icon } from '../../components/icons'
 import { Section, Select, Slider, Toggle } from '../../components/ui'
@@ -166,6 +167,16 @@ function ComponentCard({
       const x = l.components[index]
       if (x) x[k] = v
     }, live)
+  // The edge: kept only while it changes something (shared/maskedge.ts).
+  const setEdge = (p: Partial<MaskEdge>, live = false): void =>
+    changeLayer((l) => {
+      const x = l.components[index]
+      if (!x) return
+      const e = normaliseEdge({ shift: 0, harden: 0, ...x.edge, ...p })
+      if (e) x.edge = e
+      else delete x.edge
+    }, live)
+  const raster = c.kind === 'brush' || c.kind === 'linear' || c.kind === 'radial'
   return (
     <div className="component">
       <div className="component-head">
@@ -227,6 +238,46 @@ function ComponentCard({
         onChange={(v, live) => set('feather', v, live)}
         onCommit={() => commit('Feather')}
       />
+      {(raster || c.kind === 'polygon') && (
+        <Slider
+          label="Shift edge"
+          value={c.edge?.shift ?? 0}
+          min={-100}
+          max={100}
+          def={0}
+          title="Move the edge in (−) or out (+), up to 3% of the photo's shorter side"
+          onChange={(v, live) => setEdge({ shift: v }, live)}
+          onCommit={() => commit('Shift edge')}
+        />
+      )}
+      {raster && (
+        <Slider
+          label="Harden"
+          value={c.edge?.harden ?? 0}
+          min={0}
+          max={100}
+          def={0}
+          title="Steepen a soft edge (an AI mask's, a gradient's) about its middle"
+          onChange={(v, live) => setEdge({ harden: v }, live)}
+          onCommit={() => commit('Harden edge')}
+        />
+      )}
+      {c.kind === 'polygon' && (
+        <label
+          className="check"
+          title="The feather falls inside the line drawn, not half outside it"
+        >
+          <input
+            type="checkbox"
+            checked={!!c.edge?.inside}
+            onChange={(e) => {
+              setEdge({ inside: e.target.checked })
+              commit('Feather inside')
+            }}
+          />
+          Feather inside the line
+        </label>
+      )}
       {c.kind === 'radial' && (
         <Slider
           label="Softness"

@@ -92,6 +92,14 @@ test('a zoom’s profile interpolates between focal lengths; vignetting takes th
   assert.deepEqual(r.tca, { Scale: { red: 1.0003, blue: 0.9998 } })
 })
 
+test('a manual lens (f-number and focal length 0) resolves, not throws', () => {
+  const r = resolveProfile(profile(), shot('EF-S 18-55mm f/4-5.6 IS STM', 0, 0))
+  assert.equal(r.aperture, null)
+  assert.equal(r.focal, null)
+  assert.ok(r.vignetting && r.vignetting.every(Number.isFinite))
+  assert.ok(r.distortion)
+})
+
 test('untouched lens settings correct nothing', () => {
   assert.equal(lensCorrection(defaultLens()), null)
   assert.equal(defringeOp(defaultLens()), null)

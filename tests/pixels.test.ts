@@ -1,10 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'module'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
-import { normalisePixelStep, stackSignature, type PixelStep } from '../src/shared/pixels'
+import { dirname, join } from 'path'
+import { normalisePixelStep, placeStep, stackSignature, type PixelStep } from '../src/shared/pixels'
 import { diffRecipe, replay, type Step } from '../src/shared/history'
 import { defaultRecipe, normaliseRecipe, isEdited } from '../src/shared/recipe'
 import { composeMasked, unwarpMask, writeRamp } from '../src/main/pixels/ops'
@@ -121,6 +121,13 @@ test('a mask is put back on the photo through the lens map', () => {
   assert.equal(moved[15 * w + 17], 255)
   assert.equal(moved[15 * w + 12], 0)
   assert.equal(moved[15 * w + 24], 255)
+  // A map smaller than the photo (as lens maps are): read by pixel centres,
+  // no correction still puts the mask back where it was.
+  writeRamp(join(dir, 'small.png'), w / 2, h / 2)
+  unwarpMask(join(dir, 'mask.png'), join(dir, 'small.png'), w, h, join(dir, 'small-out.png'))
+  const small = decodePng(readFileSync(join(dir, 'small-out.png'))).rows
+  for (let y = 2; y < h - 2; y++)
+    for (let x = 2; x < w - 2; x++) assert.equal(small[y * w + x], plane[y * w + x], `${x},${y}`)
   rmSync(dir, { recursive: true })
 })
 
@@ -178,6 +185,22 @@ test(
     // The same steps again: the set made before, not a new one.
     const again = await ensureWorking(deps, 'v1', plain, [full], null)
     assert.equal(again.px.proxy.path, set.px.proxy.path)
+    // Asked for at once with and without the master: one build of the
+    // proxies, the master after them and kept, nothing half written left.
+    const half = [{ ...full, opacity: 50 }]
+    const [proxies, withMaster] = await Promise.all([
+      ensureWorking(deps, 'v1', plain, half, null),
+      ensureWorking(deps, 'v1', plain, half, async () => plain.proxy)
+    ])
+    assert.equal(proxies.px.proxy.path, withMaster.px.proxy.path)
+    assert.ok(withMaster.master)
+    const setDir = dirname(withMaster.px.proxy.path)
+    assert.ok(JSON.parse(readFileSync(join(setDir, 'set.json'), 'utf8')).master)
+    assert.deepEqual(
+      readdirSync(setDir).filter((f) => f.includes('.part')),
+      []
+    )
+    assert.ok((await ensureWorking(deps, 'v1', plain, half, null)).master)
     // At 0% nothing is laid on.
     const none = await ensureWorking(deps, 'v1', plain, [{ ...full, opacity: 0 }], null)
     assert.equal(await px(none.px.proxy.path), 10000)
@@ -587,3 +610,55 @@ test(
     rmSync(dir, { recursive: true })
   }
 )
+
+test('a step made over earlier steps goes after them, under any added while it ran', () => {
+  const a = step({ id: 'a' })
+  const heal = step({ id: 'heal' })
+  const made = step({ id: 'denoise' })
+  const ids = (l: PixelStep[]): string[] => l.map((s) => s.id)
+  // Made over [a]; a heal came meanwhile: the denoise goes under the heal.
+  assert.deepEqual(ids(placeStep([a, heal], made, ['a'])), ['a', 'denoise', 'heal'])
+  // Made over nothing: first.
+  assert.deepEqual(ids(placeStep([heal], made, [])), ['denoise', 'heal'])
+  // The step it followed is gone, or no base given: last.
+  assert.deepEqual(ids(placeStep([heal], made, ['a'])), ['heal', 'denoise'])
+  assert.deepEqual(ids(placeStep([a], made)), ['a', 'denoise'])
+})
+
+test('a heal drawn on the corrected picture keeps its size on the photo', async () => {
+  const { localScale } = await import('../src/main/pixels/heal')
+  // A correction that shrinks the photo 1.2× into the corrected frame: what
+  // was drawn there is 1.2× as large on the photo.
+  const map = (p: { x: number; y: number }): { x: number; y: number } => ({
+    x: 0.5 + (p.x - 0.5) * 1.2,
+    y: 0.5 + (p.y - 0.5) * 1.2
+  })
+  assert.ok(Math.abs(localScale(map, { x: 0.3, y: 0.6 }, 6000, 4000) - 1.2) < 1e-9)
+  assert.ok(Math.abs(localScale((p) => p, { x: 0.5, y: 0.5 }, 6000, 4000) - 1) < 1e-9)
+})
+
+test('a heal patch on a proxy goes at its own size, not stretched over every pixel it touches', async () => {
+  const { overlaysOf } = await import('../src/main/pixels/working')
+  const dir = tmp()
+  const resized: { width: number; height: number }[] = []
+  const deps: PixelDeps = {
+    engine: {
+      convert: async (r: { sink: { Path: string }; resize: unknown }) => {
+        const e = (r.resize as { Exact?: { width: number; height: number } }).Exact
+        if (e) resized.push(e)
+        writeFileSync(r.sink.Path, '')
+        return { width: 0, height: 0 }
+      }
+    } as unknown as PixelDeps['engine'],
+    cacheDir: dir,
+    blobFile: async () => join(dir, 'patch.png'),
+    work: async () => undefined
+  }
+  // 40 px at x = 1000 on 6000 px, drawn on a 2370 px proxy: 15.8 px at 395.
+  const patch = step({ width: 6000, height: 4000, rect: { x: 1000, y: 1000, w: 40, h: 40 } })
+  const [o] = await overlaysOf(deps, [patch], 2370, 1580)
+  assert.deepEqual(resized, [{ width: 16, height: 16 }])
+  assert.ok(Math.abs(o.rect.x * 2370 - 395) < 1e-9)
+  assert.ok(Math.abs(o.rect.width * 2370 - 16) < 1e-9)
+  rmSync(dir, { recursive: true })
+})

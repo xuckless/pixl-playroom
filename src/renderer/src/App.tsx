@@ -1,7 +1,7 @@
 import { AnimatePresence, MotionConfig } from 'motion/react'
-import { memo, useEffect } from 'react'
+import { memo, useEffect, useState } from 'react'
 import type { AiJobEvent } from '../../shared/ai'
-import type { LibrarySource, RenderScale } from '../../shared/ipc'
+import type { LibraryItem, LibrarySource, RenderScale } from '../../shared/ipc'
 import { api, errorText } from './lib/api'
 import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
@@ -19,11 +19,16 @@ import { Splash } from './shell/Splash'
 import { useDevelop } from './state/develop'
 import { useBoot } from './state/boot'
 import { useLibrary } from './state/library'
+import { useConfirm } from './state/confirm'
 import { commandFor, COMMANDS, currentBindings } from './lib/commands'
 import { chordOf } from './lib/keys'
 import { ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
+import { BetaGate, UpdateRequiredGate } from './views/Gate'
+import { useGate } from './lib/gate'
+import { isFrame, whenFrame } from './lib/frames'
+import { openReport } from './lib/report'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
 import { CollectionDialog } from './views/library/CollectionDialog'
@@ -219,14 +224,16 @@ async function openPaths(paths: string[]): Promise<void> {
  * keyword), else the last folder (a profile from before sources, or a
  * collection since deleted).
  */
-async function openLastSource(): Promise<void> {
+async function openLastSource(lists: Promise<void>): Promise<void> {
   const [src, folder] = await Promise.all([
     api.app.getSetting<LibrarySource>('library.lastSource').catch(() => null),
     api.app.getSetting<string>('library.lastFolder').catch(() => null)
   ])
   const lib = useLibrary.getState()
   if (folder) useLibrary.setState({ lastFolder: folder })
-  // A collection deleted since falls through quietly to the folder.
+  // A collection deleted since falls through quietly to the folder (known
+  // once the collections are loaded; a folder needs not wait for them).
+  if (src?.kind === 'collection') await lists.catch(() => undefined)
   const gone =
     src?.kind === 'collection' && !useLibrary.getState().collections.some((c) => c.id === src.id)
   if (src && src.kind !== 'duplicates' && !gone && (await lib.openSource(src))) return
@@ -280,6 +287,24 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
   }
 }
 
+/**
+ * Thumbnails as they come, gathered and patched in once a frame: a folder
+ * filling would otherwise find and patch one item (and re-sort the grid)
+ * per thumbnail.
+ */
+const thumbsWaiting = new Map<string, { url: string | null; unreadable?: boolean }>()
+let thumbFrame = 0
+function flushThumbs(): void {
+  thumbFrame = 0
+  const patch: LibraryItem[] = []
+  for (const it of useLibrary.getState().items) {
+    const t = thumbsWaiting.get(it.key)
+    if (t) patch.push({ ...it, thumbUrl: t.url ?? it.thumbUrl, unreadable: !!t.unreadable })
+  }
+  thumbsWaiting.clear()
+  if (patch.length) useLibrary.getState().patchItems(patch)
+}
+
 /** View ▸ Engine Report…: the open photo's, so only in Develop. */
 function openEngineReport(): void {
   const lib = useLibrary.getState()
@@ -329,8 +354,8 @@ function useShortcuts(): void {
       // A focused slider owns its arrow keys.
       if (t.tagName === 'INPUT' && e.key.startsWith('Arrow')) return
       const lib = useLibrary.getState()
-      // An open dialog has the keyboard (it closes itself on Escape).
-      if (lib.dialog) return
+      // An open dialog, or a confirm, has the keyboard (it closes itself on Escape).
+      if (lib.dialog || useConfirm.getState().open) return
       const cmd = commandFor(e, lib.view === 'develop')
       if (cmd) cmd.run(e)
     }
@@ -355,15 +380,18 @@ function useShortcuts(): void {
 
 export default function App(): React.JSX.Element {
   useShortcuts()
+  const gate = useGate()
+  // The launch (the index, the last folder, the listeners) waits until the
+  // beta gate first opens, then runs once: main refuses those calls while
+  // it's shut, and the splash stays behind the gate meanwhile.
+  const [booted, setBooted] = useState(false)
+  if (!booted && gate?.kind === 'open') setBooted(true)
   useEffect(() => {
+    if (!booted) return
     const offs = [
-      api.library.onThumb(({ key, url, unreadable }) => {
-        const items = useLibrary.getState().items
-        const it = items.find((i) => i.key === key)
-        if (it)
-          useLibrary
-            .getState()
-            .patchItems([{ ...it, thumbUrl: url ?? it.thumbUrl, unreadable: !!unreadable }])
+      api.library.onThumb((e) => {
+        thumbsWaiting.set(e.key, e)
+        thumbFrame ||= requestAnimationFrame(flushThumbs)
       }),
       api.library.onHdr(({ photoId, hdr }) => {
         const mine = useLibrary
@@ -373,7 +401,11 @@ export default function App(): React.JSX.Element {
       }),
       api.library.onChanged(({ folder }) => useLibrary.getState().onChanged(folder)),
       api.library.onSourcesChanged(() => void useLibrary.getState().onSourcesChanged()),
-      api.develop.onRendered((e) => useDevelop.getState().onRendered(e)),
+      api.develop.onRendered((e) => {
+        // A draft sent as pixels is shown once they are here (they come on their own port).
+        if (!isFrame(e.url)) return useDevelop.getState().onRendered(e)
+        void whenFrame(e.url).then((bmp) => bmp && useDevelop.getState().onRendered(e))
+      }),
       startWheelMemory(),
       startDenoiseUpkeep(),
       startHdrUpkeep(),
@@ -382,20 +414,23 @@ export default function App(): React.JSX.Element {
       // An upscale step added or undone: the photo's full-size frame is another size.
       api.develop.onFrame((e) => {
         const s = useDevelop.getState().session
-        if (s && s.key === e.key)
-          useDevelop.setState({
-            session: { ...s, frameWidth: e.frameWidth, frameHeight: e.frameHeight }
-          })
+        if (s && s.key === e.key) {
+          const session = { ...s, frameWidth: e.frameWidth, frameHeight: e.frameHeight }
+          useDevelop.setState({ session, shown: session })
+        }
       }),
-      api.develop.onRenderError((e) =>
+      api.develop.onRenderError((e) => {
+        // A failed save is said whichever photo is open: it may be the one just left.
+        if (e.code === 'Save') return useLibrary.getState().say(e.message, 'error')
         useDevelop.getState().onError(e.field ? `${e.message} (${e.field})` : e.message)
-      ),
+      }),
       api.ai.onEvent((e) => {
         useAiJobs.getState().onEvent(e)
         void aiJobEnded(e)
       }),
       api.app.onOpenPreferences(() => useLibrary.getState().setDialog('preferences')),
       api.app.onOpenEngineReport(openEngineReport),
+      api.app.onOpenReport(openReport),
       reportErrors()
     ]
     void useAiJobs
@@ -407,18 +442,23 @@ export default function App(): React.JSX.Element {
     const boot = useBoot.getState()
     const engineUp = waitForEngine().then(() => boot.finish('engine'))
     const libraryUp = (async () => {
-      const [recent, pinned] = await Promise.all([
-        api.library.recentFolders(),
-        api.app.getSetting<string[]>('library.pinned')
-      ])
-      useLibrary.setState({ recent, pinned: Array.isArray(pinned) ? pinned : [] })
-      await useLibrary.getState().loadSources()
-      boot.finish('index')
+      // The rail's lists and the last source load side by side, not one
+      // after the other: the folder is what the launch is waiting to see.
+      const lists = (async () => {
+        const [recent, pinned] = await Promise.all([
+          api.library.recentFolders(),
+          api.app.getSetting<string[]>('library.pinned')
+        ])
+        useLibrary.setState({ recent, pinned: Array.isArray(pinned) ? pinned : [] })
+        await useLibrary.getState().loadSources()
+        boot.finish('index')
+      })()
       onRenderScale(await api.app.renderScale())
       // Photos opened from outside take the place of the last source.
       const opens = await api.app.takeOpens().catch(() => [])
       if (opens.length) await openPaths(opens)
-      else await openLastSource()
+      else await openLastSource(lists)
+      await lists
       boot.finish('folder')
     })()
     void Promise.allSettled([engineUp, libraryUp]).then(() => {
@@ -430,7 +470,7 @@ export default function App(): React.JSX.Element {
       offs.forEach((off) => off())
       clearInterval(t)
     }
-  }, [])
+  }, [booted])
   return (
     <MotionConfig reducedMotion="user">
       <div className="app">
@@ -440,6 +480,8 @@ export default function App(): React.JSX.Element {
         <Toast />
         <EngineBanner />
         <Splash />
+        <BetaGate gate={gate} />
+        <UpdateRequiredGate />
       </div>
     </MotionConfig>
   )

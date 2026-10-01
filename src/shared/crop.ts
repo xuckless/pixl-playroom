@@ -42,5 +42,28 @@ export function dragCrop(
     }
   }
   const next = { x, y, width, height }
-  return cropFits(next, g.straighten, g.width, g.height) ? next : null
+  // Inside the picture as Upright warps it, too: not in its empty wedges.
+  return cropFits(next, g.straighten, g.width, g.height, g.transform) ? next : null
+}
+
+/**
+ * `crop` made `aspect` (width / height, in pixels) on a `w × h` frame: its
+ * centre and the share of the frame it takes kept, its shape the aspect's.
+ * A crop drawn locked on one photo, pasted onto a photo of another shape.
+ */
+export function cropAtAspect(crop: CropRect, aspect: number, w: number, h: number): CropRect {
+  const area = crop.width * crop.height
+  let cw = Math.sqrt((area * aspect * h) / w)
+  let ch = Math.sqrt((area * w) / (aspect * h))
+  const over = Math.max(cw, ch, 1)
+  cw /= over
+  ch /= over
+  const cx = crop.x + crop.width / 2
+  const cy = crop.y + crop.height / 2
+  return {
+    x: Math.min(1 - cw, Math.max(0, cx - cw / 2)),
+    y: Math.min(1 - ch, Math.max(0, cy - ch / 2)),
+    width: cw,
+    height: ch
+  }
 }

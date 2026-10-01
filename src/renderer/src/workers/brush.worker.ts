@@ -56,6 +56,8 @@ export type BrushIn =
       erase: boolean
       /** The picture, for Auto Mask; null without it. */
       picture: string | null
+      /** Its pixels, when it is a preview frame (no file to fetch). */
+      pictureBitmap?: ImageBitmap
       /** Base (normalised) → display. */
       toDisplay: Affine
     }
@@ -282,7 +284,12 @@ class Gpu {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
   }
 
-  async begin(s: Stroke, png: string | null, picture: string | null): Promise<void> {
+  async begin(
+    s: Stroke,
+    png: string | null,
+    picture: string | null,
+    given?: ImageBitmap
+  ): Promise<void> {
     const gl = this.gl
     this.w = s.w
     this.h = s.h
@@ -309,8 +316,9 @@ class Gpu {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, s.w, s.h, 0, gl.RED, gl.UNSIGNED_BYTE, null)
     }
     // The picture Auto Mask reads, kept while it stays the same.
+    if (given && (!picture || picture === this.pictureUrl)) given.close()
     if (picture && picture !== this.pictureUrl) {
-      const bmp = await bitmapOf(picture)
+      const bmp = given ?? (await bitmapOf(picture))
       if (this.pictureTex) gl.deleteTexture(this.pictureTex)
       this.pictureTex = this.texture()
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bmp)
@@ -411,7 +419,12 @@ interface Cpu {
   lab: { w: number; h: number; data: Float32Array } | null
 }
 
-async function cpuBegin(s: Stroke, png: string | null, picture: string | null): Promise<Cpu> {
+async function cpuBegin(
+  s: Stroke,
+  png: string | null,
+  picture: string | null,
+  given?: ImageBitmap
+): Promise<Cpu> {
   const plane = new Float32Array(s.w * s.h)
   if (png) {
     const bmp = await bitmapOf(pngBlob(png), s.w, s.h)
@@ -424,7 +437,7 @@ async function cpuBegin(s: Stroke, png: string | null, picture: string | null): 
   }
   let lab: Cpu['lab'] = null
   if (picture) {
-    const bmp = await bitmapOf(picture)
+    const bmp = given ?? (await bitmapOf(picture))
     const k = Math.min(1, 1024 / Math.max(bmp.width, bmp.height))
     const w = Math.max(1, Math.round(bmp.width * k))
     const h = Math.max(1, Math.round(bmp.height * k))
@@ -508,8 +521,8 @@ async function handle(m: BrushIn): Promise<void> {
         toDisplay: m.toDisplay,
         auto: m.picture !== null
       }
-      if (gpu) await gpu.begin(stroke, m.png, m.picture)
-      else cpu = await cpuBegin(stroke, m.png, m.picture)
+      if (gpu) await gpu.begin(stroke, m.png, m.picture, m.pictureBitmap)
+      else cpu = await cpuBegin(stroke, m.png, m.picture, m.pictureBitmap)
       return
     }
     case 'dabs':

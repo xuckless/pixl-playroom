@@ -4,6 +4,8 @@ import log from 'electron-log/main'
 import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { cpus } from 'os'
+import { pathToFileURL } from 'url'
+import { is } from '@electron-toolkit/utils'
 import type { ExportSettings } from '../shared/export'
 import {
   IPC,
@@ -27,16 +29,23 @@ import {
 import { convertWb, type WbContext } from '../shared/wbconvert'
 import { LicenceError } from '../shared/licence'
 import { BUILTIN_PRESETS } from '../shared/presets'
-import { applyGroups, newId, planeRef, type Recipe, type RecipeGroup } from '../shared/recipe'
+import { applyGroups, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
+import { planeRef } from './planeref'
+import { equivalentFocal } from '../shared/upright'
+import { orientedFrame } from '../shared/compile'
+import { cropAtAspect } from '../shared/crop'
+import { ensureProxies } from './proxy'
+import { BACKGROUND_THREADS } from './source'
 import type { IndexClient } from './indexer/client'
 import { IndexError } from './indexer/client'
 import type { PlaneStore } from './planestore'
 import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
 import { autoWbBatch, setWbBatch } from './autowb'
-import { crashConsent, reportRendererError, setCrashConsent } from './crash'
-import { activateLicence, deactivateLicence, licence, validateLicence } from './licence'
+import { crashConsent, reportRendererError, sendProblemReport, setCrashConsent } from './crash'
+import { freeDevice, licence, refreshLicence, requireLicence, startTrial } from './licence'
 import type { AiCapabilities, AiStartRequest } from '../shared/ai'
+import type { ProblemInput } from '../shared/crash'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
 import type { GuideLine } from '../shared/upright'
@@ -50,6 +59,12 @@ import type { Exporter } from './exporter'
 import { keyOf, parseKey } from './keys'
 import type { OriginalEmbedder } from './project/embed'
 import type { Library } from './library'
+import { MAIN_DIR } from './dirs'
+import { appPage } from './guard'
+import { gate, gateRefuses } from './gate'
+import { accountStatus, cancelSignIn, signIn, signOut } from './account'
+import { AccountError } from './account/api'
+import { OAuthError } from './account/oauth'
 import { takeOpens } from './open'
 import { paths } from './paths'
 import type { DevelopSessions } from './render'
@@ -60,11 +75,30 @@ function toAppError(err: unknown): AppError {
   if (err instanceof EngineError) return { message: err.message, code: err.code, field: err.field }
   if (err instanceof IndexError) return { message: err.message, code: err.code }
   if (err instanceof LicenceError) return { message: err.message, code: err.code }
+  if (err instanceof OAuthError) return { message: err.message, code: err.code }
+  if (err instanceof AccountError) return { message: err.message, code: err.code }
   return { message: err instanceof Error ? err.message : String(err), code: 'Error' }
 }
 
+/** The window's own page (src/main/app.ts loads it); no other frame may call in. */
+const isAppPage = appPage(
+  pathToFileURL(join(MAIN_DIR, '../renderer/index.html')).href,
+  is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
+)
+
 function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => Promise<R> | R): void {
-  ipcMain.handle(channel, async (_e, ...args: unknown[]) => {
+  ipcMain.handle(channel, async (e, ...args: unknown[]) => {
+    if (!isAppPage(e.senderFrame?.url)) {
+      log.warn(`ipc: refused ${channel} from ${e.senderFrame?.url ?? 'a closed frame'}`)
+      return { ok: false, error: { message: 'Not allowed.', code: 'Forbidden' } }
+    }
+    // The beta gate holds everything but signing in, access, updates and settings.
+    if (gateRefuses(channel)) {
+      return {
+        ok: false,
+        error: { message: 'Pixl Playroom is locked until beta access is confirmed.', code: 'Gated' }
+      }
+    }
     try {
       const value = await fn(...(args as A))
       return { ok: true, value }
@@ -98,6 +132,17 @@ export interface Services {
   lenses: LensProfileStore
 }
 
+/** A photo's base frame (upright, before the user's turns): the open session's, else its proxies'. */
+async function baseFrame(s: Services, key: string): Promise<{ width: number; height: number }> {
+  if (s.sessions.liveRecipe(key)) {
+    const shot = await s.sessions.lensShot(key)
+    return { width: shot.width, height: shot.height }
+  }
+  const row = await s.library.photoRow(key)
+  const px = await ensureProxies(s.bgEngine, row, await s.library.probe(row), BACKGROUND_THREADS)
+  return { width: px.frameWidth, height: px.frameHeight }
+}
+
 /** A photo that is not open, as lens matching needs it: probed, with its camera. */
 async function lensShotOf(s: Services, key: string): Promise<LensShot> {
   const row = await s.library.photoRow(key)
@@ -126,12 +171,20 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.restart, () => restart())
 
   handle(IPC.app.reportError, (e: ErrorReport) => reportRendererError(e))
+  handle(IPC.app.reportProblem, (r: ProblemInput) =>
+    sendProblemReport(r, s.engine.getStatus().version)
+  )
   handle(IPC.app.openNotices, async () => {
     const err = await shell.openPath(paths.notices())
     if (err) throw new Error(`Couldn't open the third-party notices: ${err}`)
   })
 
-  // ── updates and preferences ──
+  // ── the account, updates and preferences ──
+  handle(IPC.app.gate, () => gate())
+  handle(IPC.account.status, () => accountStatus())
+  handle(IPC.account.signIn, () => signIn())
+  handle(IPC.account.cancelSignIn, () => cancelSignIn())
+  handle(IPC.account.signOut, () => signOut())
   handle(IPC.updates.getState, () => updateState())
   handle(IPC.updates.check, () => checkForUpdates())
   handle(IPC.updates.install, () => installUpdate())
@@ -145,11 +198,14 @@ export function registerIpc(s: Services): void {
   }))
   handle(IPC.prefs.setCrashReports, (c: CrashConsent) => setCrashConsent(c))
 
-  // ── licence (not enforced yet: shared/licence.ts) ──
+  // ── access from the PIXL account (not enforced yet: shared/licence.ts; exports check it) ──
   handle(IPC.licence.status, () => licence())
-  handle(IPC.licence.activate, (key: string) => activateLicence(key))
-  handle(IPC.licence.deactivate, () => deactivateLicence())
-  handle(IPC.licence.validate, () => validateLicence())
+  handle(IPC.licence.refresh, () => refreshLicence())
+  handle(IPC.licence.startTrial, () => startTrial())
+  handle(IPC.licence.freeDevice, (id: string) => {
+    if (typeof id !== 'string' || !id) throw new Error('No device to free.')
+    return freeDevice(id)
+  })
 
   // ── opens (Open With, second launch) ── workstream E
   handle(IPC.app.takeOpens, () => takeOpens())
@@ -167,6 +223,7 @@ export function registerIpc(s: Services): void {
     items: await s.library.openFolder(folder)
   }))
   handle(IPC.library.recentFolders, () => s.index.recentFolders())
+  handle(IPC.library.subfolders, (folder: string) => s.index.subfolders(folder))
   handle(IPC.library.setMeta, (keys: string[], patch: MetaPatch) => s.index.setMeta(keys, patch))
   handle(IPC.library.createCopy, async (key: string) => {
     await s.sessions.flush(key)
@@ -201,6 +258,21 @@ export function registerIpc(s: Services): void {
         const base = live ?? saved.get(key)
         if (!base) continue
         const next = applyGroups(base, from, groups)
+        // A crop locked to an aspect keeps it on a photo of another shape:
+        // the same centre and share of the frame, the aspect's shape.
+        const g = next.geometry
+        if (groups.includes('crop') && g.crop && g.aspect && key !== sourceKey) {
+          try {
+            const frame = await baseFrame(s, key)
+            const o = orientedFrame(next, frame.width, frame.height)
+            g.crop = cropAtAspect(g.crop, g.aspect, o.width, o.height)
+          } catch (err) {
+            log.info('pasted crop not refitted for', key, (err as Error).message)
+          }
+        }
+        // Chromatic aberration is measured per photo: a target keeps its own
+        // measurement (or none, the profile's then), never the source's.
+        if (groups.includes('lens') && key !== sourceKey) next.lens.ca = base.lens.ca
         // A lens profile is resolved per photo: each target at its own lens,
         // focal length, aperture and crop factor (an automatic one finds
         // each target's own lens), not the source's numbers.
@@ -209,13 +281,17 @@ export function registerIpc(s: Services): void {
             const shot = live ? await s.sessions.lensShot(key) : await lensShotOf(s, key)
             next.lens.profile.resolved = s.lenses.resolve(shot, next.lens.profile.id).resolved
           } catch (err) {
+            // Not the source's numbers on another lens: none, until it resolves.
+            next.lens.profile.resolved = null
             log.info('lens profile not re-resolved for', key, (err as Error).message)
           }
         }
         pairs.push({ key, recipe: next })
       }
-      // One message, one transaction: a batch commits once.
-      const items = await s.index.saveRecipes(pairs)
+      // One message, one transaction: a batch commits once. Planes by reference.
+      const items = await s.index.saveRecipes(
+        pairs.map((p) => ({ key: p.key, recipe: s.planes.slim(p.recipe) }))
+      )
       for (const { key, recipe: next } of pairs) {
         if (s.sessions.liveRecipe(key)) s.sessions.update(key, next, false)
         const { photoId, copyId } = parseKey(key)
@@ -303,8 +379,19 @@ export function registerIpc(s: Services): void {
     const d = await s.sessions.open(key)
     // A project made before its original could be carried (or interrupted) catches up.
     s.embedder.request(keyOf(parseKey(key).photoId, null))
+    // Upright's perspective: the file's 35 mm figure, else focal length × the camera's crop.
+    const focal35 = d.info.lens?.focal_35mm
+      ? d.info.lens.focal_35mm
+      : equivalentFocal(
+          d.info.lens,
+          await s.sessions
+            .lensShot(key)
+            .then((shot) => s.lenses.crop(shot))
+            .catch(() => null)
+        )
     return {
       ...d,
+      focal35,
       recipe: s.planes.slim(d.recipe),
       snapshots: d.snapshots.map((sn) => ({ ...sn, recipe: s.planes.slim(sn.recipe) }))
     }
@@ -350,21 +437,33 @@ export function registerIpc(s: Services): void {
     if (png === undefined) throw new Error('a painted mask is missing from the plane store')
     return png
   })
-  handle(IPC.develop.saveSnapshots, async (key: string, snapshots: Snapshot[]) => {
-    const full = await Promise.all(
-      snapshots.map(async (sn) => ({ ...sn, recipe: await s.planes.hydrate(sn.recipe) }))
+  // Snapshots come and go by reference: the index keeps the planes they name.
+  handle(IPC.develop.saveSnapshots, (key: string, snapshots: Snapshot[]) =>
+    s.index.saveSnapshots(
+      key,
+      snapshots.map((sn) => ({ ...sn, recipe: s.planes.slim(sn.recipe) }))
     )
-    await s.index.saveSnapshots(key, full)
-  })
+  )
   // Stored recipes and patches hold planes by reference; the base crosses slim.
   const slimLog = (log: HistoryLog): HistoryLog => ({
     ...log,
-    base: log.base && { ...log.base, recipe: s.planes.slim(log.base.recipe) }
+    base: log.base && { ...log.base, recipe: s.planes.slim(log.base.recipe) },
+    ...(log.head ? { head: s.planes.slim(log.head) } : {})
   })
+  handle(IPC.develop.warm, (keys: string[]) => s.library.warm(keys))
   handle(IPC.develop.historyList, async (key: string) => slimLog(await s.index.history(key)))
-  handle(IPC.develop.historyAppend, async (key: string, label: string, recipe: Recipe) =>
-    slimLog(await s.index.appendHistory(key, label, s.planes.slim(recipe)))
-  )
+  handle(IPC.develop.historyAppend, async (key: string, label: string, recipe: Recipe) => {
+    // The step and the recipe the photo has now go into its project together.
+    // An open photo saves its live recipe (as new as the step or newer), and
+    // its own save of that recipe is not needed after.
+    const live = s.sessions.liveRecipe(key)
+    const saved = live ? s.planes.slim(live) : recipe
+    const change = await s.index.commitEdit(key, label, s.planes.slim(recipe), saved)
+    if (live) s.sessions.saved(key, live)
+    return change.base
+      ? { ...change, base: { ...change.base, recipe: s.planes.slim(change.base.recipe) } }
+      : change
+  })
   handle(IPC.develop.historySetHidden, async (key: string, seqs: number[], hidden: boolean) =>
     slimLog(await s.index.setHistoryHidden(key, seqs, hidden))
   )
@@ -457,6 +556,7 @@ export function registerIpc(s: Services): void {
   })
   handle(IPC.export.readWatermark, (path: string) => readWatermark(path))
   handle(IPC.export.start, (keys: string[], settings: ExportSettings) => {
+    requireLicence('export')
     void s.index.setSetting('export.last', settings).catch(() => {})
     return s.exporter.start(keys, settings)
   })

@@ -40,6 +40,8 @@ import { defringeOp, lensCorrection } from './lens'
 import { compileRetouch } from './retouch'
 import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
+import { effectiveMode } from './masks'
+import { EDGE_SHIFT_SPAN, offsetPolygon } from './maskedge'
 import {
   HSL_BANDS,
   type CurvePointSetting,
@@ -148,11 +150,13 @@ function curve(points: CurvePointSetting[]): Curve {
   const sorted = [...points].sort((a, b) => a.x - b.x)
   const out: CurvePointSetting[] = []
   for (const p of sorted) {
-    const x = clamp(p.x, 0, 1)
+    // Rounded first: two points that round to one x would not be strictly
+    // increasing, which the engine refuses.
+    const x = round4(clamp(p.x, 0, 1))
     if (out.length > 0 && x <= out[out.length - 1].x) continue
     // The engine refuses a point above 1 in a display-referred stage, and a
     // sidecar written elsewhere may hold one.
-    out.push({ x: round4(x), y: round4(clamp(p.y, 0, 1)) })
+    out.push({ x, y: round4(clamp(p.y, 0, 1)) })
   }
   return { points: out }
 }
@@ -270,10 +274,28 @@ export function shoulderCube(exposure: number, size = 1024): string {
   let cube = shoulders.get(key)
   if (cube === undefined) {
     cube = buildShoulder(exposure, size)
-    if (shoulders.size >= 64) shoulders.delete(shoulders.keys().next().value as string)
+    if (shoulders.size >= 64) {
+      const old = shoulders.keys().next().value as string
+      cubeNames.delete(shoulders.get(old)!)
+      shoulders.delete(old)
+    }
     shoulders.set(key, cube)
+    cubeNames.set(cube, `shoulder:${key}`)
   }
   return cube
+}
+
+/** Each shoulder table by a short name, for keys (the table itself is ~28 KB). */
+const cubeNames = new Map<string, string>()
+
+/**
+ * `value` as a key: JSON, with every shoulder table by its name rather than
+ * its 28 KB of text (what a render's signature stringifies on every update).
+ */
+export function gradeKey(value: unknown): string {
+  return JSON.stringify(value, (k, v: unknown) =>
+    k === 'Cube' && typeof v === 'string' ? (cubeNames.get(v) ?? v) : v
+  )
 }
 
 function buildShoulder(exposure: number, size: number): string {
@@ -419,7 +441,7 @@ export function framingTransparent(f: Framing | null): boolean {
 
 /** The user-oriented frame's size and orientation for a recipe. */
 export function orientedFrame(
-  r: Recipe,
+  r: Pick<Recipe, 'geometry'>,
   frameWidth: number,
   frameHeight: number
 ): { user: Orientation; width: number; height: number } {
@@ -428,10 +450,16 @@ export function orientedFrame(
   return { user, width: swap ? frameHeight : frameWidth, height: swap ? frameWidth : frameHeight }
 }
 
+/** The least a fitted crop keeps across, as a fraction of the canvas: never nothing, which the engine refuses. */
+const MIN_FIT = 0.05
+
 /**
  * Shrink `crop` about its centre (and pull it inside the canvas) until every
- * corner lies inside the picture rotated by `degrees`. A straighten changed
- * after a crop was drawn must never hand the engine a crop it will refuse.
+ * corner lies inside the picture rotated by `degrees` (and warped by
+ * `transform`). A straighten or Upright changed after a crop was drawn must
+ * never hand the engine a crop it will refuse. A crop whose centre has no
+ * picture under it (an Upright warp's empty wedge) moves in toward the
+ * canvas's centre, as little as will do, rather than shrink to nothing.
  */
 export function fitCrop(
   crop: CropRect,
@@ -440,24 +468,49 @@ export function fitCrop(
   h: number,
   transform: Transform | null = null
 ): CropRect {
-  const cx = Math.min(1, Math.max(0, crop.x + crop.width / 2))
-  const cy = Math.min(1, Math.max(0, crop.y + crop.height / 2))
-  const at = (k: number): CropRect => {
+  const fits = (c: CropRect): boolean => cropFits(c, degrees, w, h, transform)
+  const c0 = {
+    x: Math.min(1, Math.max(0, crop.x + crop.width / 2)),
+    y: Math.min(1, Math.max(0, crop.y + crop.height / 2))
+  }
+  const at = (c: { x: number; y: number }, k: number): CropRect => {
     const cw = Math.min(crop.width * k, 1)
     const ch = Math.min(crop.height * k, 1)
-    const x = Math.min(Math.max(0, cx - cw / 2), 1 - cw)
-    const y = Math.min(Math.max(0, cy - ch / 2), 1 - ch)
+    const x = Math.min(Math.max(0, c.x - cw / 2), 1 - cw)
+    const y = Math.min(Math.max(0, c.y - ch / 2), 1 - ch)
     return { x, y, width: cw, height: ch }
   }
-  if (cropFits(at(1), degrees, w, h, transform)) return at(1)
+  if (fits(at(c0, 1))) return at(c0, 1)
+  const kMin = Math.min(1, Math.max(MIN_FIT / crop.width, MIN_FIT / crop.height))
+  /** The largest `k` from `kMin` that fits about `c` (which `kMin` does). */
+  const largest = (c: { x: number; y: number }): number => {
+    let lo = kMin
+    let hi = 1
+    for (let i = 0; i < 30; i++) {
+      const k = (lo + hi) / 2
+      if (fits(at(c, k))) lo = k
+      else hi = k
+    }
+    return Math.max(kMin, lo * 0.999)
+  }
+  if (fits(at(c0, kMin))) return at(c0, largest(c0))
+  // No picture under its centre: moved toward the canvas's centre, as little
+  // as the largest crop that fits there needs.
+  const mid = { x: 0.5, y: 0.5 }
+  if (!fits(at(mid, kMin))) return at(mid, kMin)
+  const k = fits(at(mid, 1)) ? 1 : largest(mid)
+  const along = (t: number): { x: number; y: number } => ({
+    x: c0.x + (mid.x - c0.x) * t,
+    y: c0.y + (mid.y - c0.y) * t
+  })
   let lo = 0
   let hi = 1
   for (let i = 0; i < 30; i++) {
-    const mid = (lo + hi) / 2
-    if (cropFits(at(mid), degrees, w, h, transform)) lo = mid
-    else hi = mid
+    const t = (lo + hi) / 2
+    if (fits(at(along(t), k))) hi = t
+    else lo = t
   }
-  return at(lo * 0.999)
+  return at(along(hi), k)
 }
 
 /** The largest centred crop of `aspect` (width/height, in pixels) inside the rotated picture. */
@@ -487,14 +540,45 @@ export function aspectCrop(
  * auto-fit for a bare straighten or Upright — always clear of the corners a
  * rotation or a perspective warp leaves without picture.
  */
-export function effectiveCrop(r: Recipe, w: number, h: number): CropRect | null {
+export function effectiveCrop(r: Pick<Recipe, 'geometry'>, w: number, h: number): CropRect | null {
   const { straighten, crop, aspect } = r.geometry
   const t = uprightTransform(r.geometry.upright, w, h)
-  if (crop) return fitCrop(crop, straighten, w, h, t)
-  if (aspect !== null && aspect > 0) return aspectCrop(aspect, straighten, w, h, t)
-  if (t) return fitCrop({ x: 0, y: 0, width: 1, height: 1 }, straighten, w, h, t)
-  if (straighten !== 0) return autoCrop(straighten, w, h)
-  return null
+  const c = crop
+    ? fitCrop(crop, straighten, w, h, t)
+    : aspect !== null && aspect > 0
+      ? aspectCrop(aspect, straighten, w, h, t)
+      : t
+        ? fitCrop({ x: 0, y: 0, width: 1, height: 1 }, straighten, w, h, t)
+        : straighten !== 0
+          ? autoCrop(straighten, w, h)
+          : null
+  // The whole frame (an aspect lock at the photo's own shape, a crop dragged
+  // back out) is no crop: the engine's fast path stays open.
+  return c && isWhole(c) ? null : c
+}
+
+/** Whether a crop is the whole frame, to well under a pixel. */
+function isWhole(c: CropRect): boolean {
+  const e = 1e-5
+  return c.x <= e && c.y <= e && c.width >= 1 - e && c.height >= 1 - e
+}
+
+/**
+ * A rectangle's half sizes (fractions of a `w × h` frame) and turn, said with
+ * the turn inside ±45°: one turned θ is the same rectangle turned θ ∓ 90°
+ * with its sides swapped (a straighten and Upright's rotate together reach
+ * past 45°, where a clamp would turn the vignette the wrong way).
+ */
+export function within45(
+  half: { x: number; y: number },
+  rotation: number,
+  w: number,
+  h: number
+): { half: { x: number; y: number }; rotation: number } {
+  let r = rotation - 180 * Math.round(rotation / 180)
+  if (Math.abs(r) <= 45) return { half, rotation: r }
+  r -= 90 * Math.sign(r)
+  return { half: { x: (half.y * h) / w, y: (half.x * w) / h }, rotation: r }
 }
 
 /**
@@ -667,7 +751,9 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
 function maskComponent(
   c: MaskComponentSetting,
   user: Orientation,
-  brushPaths: Record<string, string>
+  brushPaths: Record<string, string>,
+  /** The frame as the user turned it: what a lasso's offset is measured on. */
+  frame: { width: number; height: number }
 ): MaskComponent | null {
   const smooth = c.kind === 'range' ? smoothnessFeather(c.smoothness ?? 0) : 0
   const base = {
@@ -690,10 +776,16 @@ function maskComponent(
     }
     case 'polygon': {
       if (c.points.length < 3) return null
-      const points = c.points.map((p) => {
-        const q = transformPoint(user, p)
-        return { x: round4(clamp(q.x, 0, 1)), y: round4(clamp(q.y, 0, 1)) }
-      })
+      // Its edge moved by the shift, and in by the feather's radius when the
+      // feather is to stay inside the line (the engine feathers about it).
+      const by =
+        ((c.edge?.shift ?? 0) / 100) * EDGE_SHIFT_SPAN - (c.edge?.inside ? base.feather.radius : 0)
+      const turned = c.points.map((p) => transformPoint(user, p))
+      const moved = offsetPolygon(turned, by, frame.width, frame.height)
+      const points = moved.map((q) => ({
+        x: round4(clamp(q.x, 0, 1)),
+        y: round4(clamp(q.y, 0, 1))
+      }))
       return { ...base, shape: { Polygon: { contours: [{ points }], fill_rule: 'NonZero' } } }
     }
     case 'range': {
@@ -720,14 +812,20 @@ function maskComponent(
 export function layerMask(
   l: LocalLayer,
   user: Orientation,
-  brushPaths: Record<string, string>
+  brushPaths: Record<string, string>,
+  frame: { width: number; height: number } = { width: 1, height: 1 }
 ): Mask | null {
-  const components = l.components
-    .map((c) => maskComponent(c, user, brushPaths))
+  // The first component always adds (as the masks panel shows it).
+  const drawn = l.components
+    .map((c, i) => maskComponent({ ...c, mode: effectiveMode(i, c.mode) }, user, brushPaths, frame))
     .filter((c): c is MaskComponent => c !== null)
-  if (components.length === 0) return null
-  // The engine refuses a first component that is not Add (it would select nothing).
-  if (components[0].mode !== 'Add') components[0] = { ...components[0], mode: 'Add' }
+  // One that could not be drawn (a brush whose plane is missing, a lasso of
+  // one point) leaves a Subtract or Intersect first: taken from nothing it
+  // selects nothing, and the engine refuses one first, so it goes. (Made an
+  // Add it would select what it was meant to take away.)
+  const first = drawn.findIndex((c) => c.mode === 'Add')
+  if (first < 0) return null
+  const components = drawn.slice(first)
   const keys = components.some((c) => 'Range' in c.shape)
   return { components, invert: l.invert, space: keys ? LOOK_SPACE : null }
 }
@@ -924,7 +1022,13 @@ function settingsStages(
   ctx: CompileContext,
   crop: CropRect | null,
   oriented: { width: number; height: number },
-  notes: string[]
+  notes: string[],
+  /**
+   * A black-and-white photo with masks: the conversion and what follows it
+   * (toning, sharpening, effects) go here, to run after the masks, so a
+   * mask's colour changes feed the mix rather than colour the grey.
+   */
+  finish?: GradeOp[]
 ): { space: GradeSpace; ops: GradeOp[] }[] {
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
@@ -1042,26 +1146,27 @@ function settingsStages(
     pc.refine_saturation = round4(clamp(tc.refineSaturation / 100, 0, 1))
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
   const bw = !!base && (base.treatment === 'bw' || base.profile.kind === 'monochrome')
+  const tail = bw && finish ? finish : look
   const hsl = hslOp(r.hsl, bw ? base.bwMix : null)
-  if (hsl) look.push(hsl)
+  if (hsl) tail.push(hsl)
   if (!bw) {
     const keyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }
-    look.push(...pointColorOps(r.pointColors, keyScale))
+    tail.push(...pointColorOps(r.pointColors, keyScale))
   }
   if (!bw && p.vibrance !== 0) {
-    look.push({ Vibrance: { amount: clamp(p.vibrance / 100, -1, 1), skin_protection: 0.6 } })
+    tail.push({ Vibrance: { amount: clamp(p.vibrance / 100, -1, 1), skin_protection: 0.6 } })
   }
-  if (bw) look.push({ Primary: primary({ saturation: 0 }) })
+  if (bw) tail.push({ Primary: primary({ saturation: 0 }) })
   else if (p.saturation !== 0)
-    look.push({ Primary: primary({ saturation: round4(Math.max(0, 1 + p.saturation / 100)) }) })
+    tail.push({ Primary: primary({ saturation: round4(Math.max(0, 1 + p.saturation / 100)) }) })
   // Hue turns every colour (a mask's Hue slider).
   if (!bw && p.hue)
-    look.push({ Primary: primary({ hue_shift: round4(clamp(p.hue, -100, 100) * 0.6) }) })
+    tail.push({ Primary: primary({ hue_shift: round4(clamp(p.hue, -100, 100) * 0.6) }) })
   const cg = colorGradeOp(r.colorGrade)
-  if (cg) look.push(cg)
+  if (cg) tail.push(cg)
   if (r.calibration.shadowsTint !== 0) {
     const a = round4((r.calibration.shadowsTint / 100) * 0.02)
-    look.push({ Primary: primary({ lift: { r: a / 2, g: -a, b: a / 2 } }) })
+    tail.push({ Primary: primary({ lift: { r: a / 2, g: -a, b: a / 2 } }) })
   }
   const sharpen = sharpenOp(
     d.sharpenAmount,
@@ -1071,7 +1176,7 @@ function settingsStages(
     ctx.scale,
     notes
   )
-  if (sharpen) look.push(sharpen)
+  if (sharpen) tail.push(sharpen)
   const e = r.effects
   if (e.vignetteAmount !== 0) {
     const v = vignettePlacement(
@@ -1081,7 +1186,8 @@ function settingsStages(
       oriented.height,
       uprightTransform(geometry.upright, oriented.width, oriented.height)
     )
-    look.push({
+    const turned = within45(v.half, v.rotation, oriented.width, oriented.height)
+    tail.push({
       Vignette: {
         amount: clamp(e.vignetteAmount / 100, -1, 1),
         midpoint: clamp(e.vignetteMidpoint / 100, 0, 1),
@@ -1089,16 +1195,19 @@ function settingsStages(
         feather: clamp(e.vignetteFeather / 100, 0, 1),
         style: vignetteStyle(e, ctx.hdr === true, notes),
         centre: { x: round4(v.centre.x), y: round4(v.centre.y) },
-        half_size: { x: round4(Math.max(v.half.x, 1e-4)), y: round4(Math.max(v.half.y, 1e-4)) },
-        rotation_degrees: clamp(v.rotation, -45, 45)
+        half_size: {
+          x: round4(Math.max(turned.half.x, 1e-4)),
+          y: round4(Math.max(turned.half.y, 1e-4))
+        },
+        rotation_degrees: clamp(turned.rotation, -45, 45)
       }
     })
   }
   // The wash sits on the finished look; only grain goes over it.
   const wash = addColorOp(e.wash, 'wash')
-  if (wash) look.push(wash)
+  if (wash) tail.push(wash)
   if (e.grainAmount > 0) {
-    look.push({
+    tail.push({
       Grain: {
         amount: clamp(e.grainAmount / 100, 0, 1),
         size: round4(0.0004 + (clamp(e.grainSize, 0, 100) / 100) * 0.004),
@@ -1136,7 +1245,12 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
 
   const layers: GradeLayer[] = []
   const layerIndex: Record<string, number> = {}
-  const base = settingsStages(r, r, r.geometry, ctx, crop, oriented, notes)
+  const bw = r.treatment === 'bw' || r.profile.kind === 'monochrome'
+  const masked = r.layers.some(
+    (l) => layerMask(l, oriented.user, ctx.brushPaths, oriented) !== null
+  )
+  const finish: GradeOp[] | undefined = bw && masked ? [] : undefined
+  const base = settingsStages(r, r, r.geometry, ctx, crop, oriented, notes, finish)
   if (base.length > 0) {
     layers.push({
       name: 'base',
@@ -1148,7 +1262,7 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
     })
   }
   for (const l of r.layers) {
-    const mask = layerMask(l, oriented.user, ctx.brushPaths)
+    const mask = layerMask(l, oriented.user, ctx.brushPaths, oriented)
     if (!mask) continue
     let stages = settingsStages(
       scaleSettings(l.settings, l.amount ?? 100),
@@ -1172,6 +1286,16 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
       stages
     })
   }
+  if (finish && finish.length > 0) {
+    layers.push({
+      name: 'black & white',
+      enabled: true,
+      opacity: 1,
+      mask: null,
+      blend: { mode: 'Normal', space: 'LinearWorking' },
+      stages: stage(LOOK_SPACE, finish)
+    })
+  }
   for (const c of r.custom) {
     if (!c.layer || typeof c.layer !== 'object') continue
     layers.push({
@@ -1181,7 +1305,9 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
   }
 
   const orientation = compose(ctx.sourceOrientation, oriented.user)
-  const straighten = ctx.applyCrop ? r.geometry.straighten : 0
+  // As the engine is told it: a straighten that rounds to nothing is none
+  // (an `outside` with no rotation is refused).
+  const straighten = ctx.applyCrop ? round4(r.geometry.straighten) : 0
   const shownCrop = ctx.applyCrop ? crop : null
   // With the crop tool open the warp shows whole, its empty wedges
   // transparent, so the crop is drawn over the canvas it cuts; guides are

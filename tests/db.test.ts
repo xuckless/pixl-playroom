@@ -84,3 +84,41 @@ CREATE TABLE presets (id TEXT PRIMARY KEY, name TEXT NOT NULL, grp TEXT NOT NULL
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('a preset saved by an older version comes back whole', async () => {
+  const { compile } = await import('../src/shared/compile')
+  const { defaultRecipe } = await import('../src/shared/recipe')
+  const dir = tmp()
+  const store = Store.open(join(dir, 'playroom.db'))
+  try {
+    // Saved before colour grading had `add` and effects had `wash`.
+    const old = JSON.parse(JSON.stringify(defaultRecipe(false))) as Record<string, unknown>
+    delete (old.colorGrade as Record<string, unknown>).add
+    delete (old.effects as Record<string, unknown>).wash
+    store.savePreset({
+      id: 'p1',
+      name: 'Old',
+      group: 'User presets',
+      builtin: false,
+      groups: ['colorGrade', 'effects', 'gone' as never],
+      recipe: old as never
+    })
+    const [p] = store.presets()
+    assert.deepEqual(p.groups, ['colorGrade', 'effects'])
+    assert.ok('add' in p.recipe.colorGrade && 'wash' in p.recipe.effects)
+    compile(p.recipe, {
+      isRaw: false,
+      asShot: null,
+      sourceOrientation: 'Normal',
+      frameWidth: 600,
+      frameHeight: 400,
+      scale: 1,
+      seed: 1,
+      brushPaths: {},
+      applyCrop: true
+    })
+  } finally {
+    store.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
