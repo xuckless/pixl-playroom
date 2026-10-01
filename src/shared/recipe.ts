@@ -14,6 +14,7 @@ import { defaultLens, type LensSetting } from './lens'
 import { defaultUpright, type UprightSetting } from './upright'
 import type { RetouchSpot } from './retouch'
 import { normalisePixelStep, type PixelStep } from './pixels'
+import { normaliseEdge, type MaskEdge } from './maskedge'
 
 export const RECIPE_VERSION = 2
 
@@ -227,6 +228,8 @@ interface ComponentBase {
   invert: boolean
   /** 0…100, a fraction of the frame's shorter side (100 = 10%). */
   feather: number
+  /** Its edge moved in or out and hardened (shared/maskedge.ts); absent changes nothing. */
+  edge?: MaskEdge
 }
 
 /**
@@ -716,7 +719,8 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
     opacity: num(c.opacity, 100, 0, 100),
     invert: c.invert === true,
     feather: num(c.feather, 0, 0, 100),
-    ...(typeof c.name === 'string' && c.name.trim() ? { name: c.name.trim() } : {})
+    ...(typeof c.name === 'string' && c.name.trim() ? { name: c.name.trim() } : {}),
+    ...((e) => (e ? { edge: e } : {}))(normaliseEdge(c.edge))
   }
   switch (c.kind) {
     case 'brush':

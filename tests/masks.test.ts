@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   compile,
+  layerMask,
   scaleSettings,
   smoothnessFeather,
   smoothnessRadius,
@@ -14,6 +15,7 @@ import {
   neutralSettings,
   settingsFromAdjust,
   ZERO_LOCAL,
+  type PolygonComponent,
   type RangeComponent
 } from '../src/shared/recipe'
 import type { GradeOp } from '../src/shared/engine-types'
@@ -418,4 +420,35 @@ test('a brush plane held by reference keeps its reference through normalising', 
   r.layers.push(l)
   const c = normaliseRecipe(JSON.parse(JSON.stringify(r)), false).layers[0].components[0]
   assert.equal(c.kind === 'brush' && c.ref, 'abc-12')
+})
+
+test('a lasso moves with its shift, and in by its feather when that stays inside the line', () => {
+  const l = newLocalLayer('m')
+  const square = [
+    { x: 0.25, y: 0.25 },
+    { x: 0.75, y: 0.25 },
+    { x: 0.75, y: 0.75 },
+    { x: 0.25, y: 0.75 }
+  ]
+  const lasso = (edge?: { shift: number; harden: number; inside?: boolean }): PolygonComponent => ({
+    id: 'p',
+    kind: 'polygon' as const,
+    mode: 'Add' as const,
+    opacity: 100,
+    invert: false,
+    feather: 50,
+    points: square,
+    ...(edge ? { edge } : {})
+  })
+  const left = (edge?: { shift: number; harden: number; inside?: boolean }): number => {
+    l.components = [lasso(edge)]
+    const shape = layerMask(l, 'Normal', {}, { width: 100, height: 100 })!.components[0].shape
+    if (!('Polygon' in shape)) throw new Error('not a polygon')
+    return Math.min(...shape.Polygon.contours[0].points.map((p) => p.x))
+  }
+  assert.equal(left(), 0.25)
+  // −100 is 3% of the shorter side, in.
+  assert.equal(left({ shift: -100, harden: 0 }), 0.28)
+  // Feather 50 is a radius of 5%: inside, the line moves in by it.
+  assert.equal(left({ shift: 0, harden: 0, inside: true }), 0.3)
 })

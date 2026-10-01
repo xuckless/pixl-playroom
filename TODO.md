@@ -654,17 +654,23 @@ symmetric about its edge, so half falls outside. The engine has only
 
 ### Pass 36 — Mask edges 1/2 · 4 pts
 
-- [ ] **M** · Add `edge: { shift: −100…100, harden: 0…100 }` to
+- [x] **M** · Add `edge: { shift: −100…100, harden: 0…100 }` to
       `ComponentBase` and apply it where raster planes are written
       (`planes.ts` `writeBrushPlane`, in the pixels worker): a min/max filter
       of `shift` pixels contracts or expands; a levels curve around 50%
       hardens. Covers AI masks, brushes and gradients. Default new AI masks to
       a small contract and some harden (`ai/apply.ts`).
-- [ ] **S** · A lasso "inside" feather: offset the polygon inward by the
+      _Done (`shared/maskedge.ts`): 100 = 3% of the shorter side, through an
+      octagon (round, linear time); harden up to 10× steeper; new AI masks
+      start at −15 / 35. The plane's file name carries the edge._
+- [x] **S** · A lasso "inside" feather: offset the polygon inward by the
       feather radius before it reaches the engine (`compile.ts`
       `maskComponent`).
-- [ ] **S** · Shift and Harden on the component card (`MaskTool.tsx`
+      _Done: `edge.inside` (on for new lassos; older ones keep their look),
+      and a lasso's Shift offsets its polygon._
+- [x] **S** · Shift and Harden on the component card (`MaskTool.tsx`
       `ComponentCard`).
+      _Done, with "Feather inside the line" for a lasso._
 
 ### Pass 37 — Mask edges 2/2; intersect brushes · 4 pts
 

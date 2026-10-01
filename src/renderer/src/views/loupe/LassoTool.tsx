@@ -48,6 +48,8 @@ export const PolygonLayer = memo(function PolygonLayer({
         opacity: 100,
         invert: false,
         feather: 3,
+        // Its feather inside the line drawn, not half outside it.
+        edge: { shift: 0, harden: 0, inside: true },
         points
       })
     })

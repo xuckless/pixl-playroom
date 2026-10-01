@@ -9,6 +9,7 @@
 import { join } from 'path'
 import type { Orientation } from '../shared/engine-types'
 import { gradientKey } from '../shared/gradients'
+import { edgeKey } from '../shared/maskedge'
 import type { Recipe } from '../shared/recipe'
 import { planeRef } from './planeref'
 import { exists } from './exists'
@@ -29,7 +30,7 @@ function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Pr
       if (job.op === 'gradient') {
         writeGradientPlane(file, job.c, job.user)
         pruneGradientsSometimes(job.dir)
-      } else writeBrushPlane(file, job.png, job.user)
+      } else writeBrushPlane(file, job.png, job.user, job.edge)
     })
     .finally(() => writing.delete(file))
   writing.set(file, p)
@@ -48,7 +49,7 @@ export async function brushPlanes(
   for (const layer of recipe.layers) {
     for (const c of layer.components) {
       if (c.kind === 'linear' || c.kind === 'radial') {
-        const file = join(dir, `grad-${gradientKey(c)}-${user}.png`)
+        const file = join(dir, `grad-${gradientKey(c)}${edgeKey(c.edge)}-${user}.png`)
         work.push(ensure(file, { op: 'gradient', file, dir, c, user }))
         out[c.id] = file
         continue
@@ -56,8 +57,10 @@ export async function brushPlanes(
       if (c.kind !== 'brush' || !c.png) continue
       // Named by its plane's reference (its content hash), reused when it has
       // one: hashing megabytes of PNG on every compile is what it saves.
-      const file = join(dir, `brush-${c.ref ?? planeRef(c.png)}-${user}.png`)
-      work.push(ensure(file, { op: 'brush', file, png: c.png, user }))
+      const file = join(dir, `brush-${c.ref ?? planeRef(c.png)}${edgeKey(c.edge)}-${user}.png`)
+      work.push(
+        ensure(file, { op: 'brush', file, png: c.png, user, ...(c.edge ? { edge: c.edge } : {}) })
+      )
       out[c.id] = file
     }
   }

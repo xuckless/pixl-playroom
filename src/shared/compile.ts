@@ -41,6 +41,7 @@ import { compileRetouch } from './retouch'
 import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
 import { effectiveMode } from './masks'
+import { EDGE_SHIFT_SPAN, offsetPolygon } from './maskedge'
 import {
   HSL_BANDS,
   type CurvePointSetting,
@@ -750,7 +751,9 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
 function maskComponent(
   c: MaskComponentSetting,
   user: Orientation,
-  brushPaths: Record<string, string>
+  brushPaths: Record<string, string>,
+  /** The frame as the user turned it: what a lasso's offset is measured on. */
+  frame: { width: number; height: number }
 ): MaskComponent | null {
   const smooth = c.kind === 'range' ? smoothnessFeather(c.smoothness ?? 0) : 0
   const base = {
@@ -773,10 +776,16 @@ function maskComponent(
     }
     case 'polygon': {
       if (c.points.length < 3) return null
-      const points = c.points.map((p) => {
-        const q = transformPoint(user, p)
-        return { x: round4(clamp(q.x, 0, 1)), y: round4(clamp(q.y, 0, 1)) }
-      })
+      // Its edge moved by the shift, and in by the feather's radius when the
+      // feather is to stay inside the line (the engine feathers about it).
+      const by =
+        ((c.edge?.shift ?? 0) / 100) * EDGE_SHIFT_SPAN - (c.edge?.inside ? base.feather.radius : 0)
+      const turned = c.points.map((p) => transformPoint(user, p))
+      const moved = offsetPolygon(turned, by, frame.width, frame.height)
+      const points = moved.map((q) => ({
+        x: round4(clamp(q.x, 0, 1)),
+        y: round4(clamp(q.y, 0, 1))
+      }))
       return { ...base, shape: { Polygon: { contours: [{ points }], fill_rule: 'NonZero' } } }
     }
     case 'range': {
@@ -803,11 +812,12 @@ function maskComponent(
 export function layerMask(
   l: LocalLayer,
   user: Orientation,
-  brushPaths: Record<string, string>
+  brushPaths: Record<string, string>,
+  frame: { width: number; height: number } = { width: 1, height: 1 }
 ): Mask | null {
   // The first component always adds (as the masks panel shows it).
   const drawn = l.components
-    .map((c, i) => maskComponent({ ...c, mode: effectiveMode(i, c.mode) }, user, brushPaths))
+    .map((c, i) => maskComponent({ ...c, mode: effectiveMode(i, c.mode) }, user, brushPaths, frame))
     .filter((c): c is MaskComponent => c !== null)
   // One that could not be drawn (a brush whose plane is missing, a lasso of
   // one point) leaves a Subtract or Intersect first: taken from nothing it
@@ -1236,7 +1246,9 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
   const layers: GradeLayer[] = []
   const layerIndex: Record<string, number> = {}
   const bw = r.treatment === 'bw' || r.profile.kind === 'monochrome'
-  const masked = r.layers.some((l) => layerMask(l, oriented.user, ctx.brushPaths) !== null)
+  const masked = r.layers.some(
+    (l) => layerMask(l, oriented.user, ctx.brushPaths, oriented) !== null
+  )
   const finish: GradeOp[] | undefined = bw && masked ? [] : undefined
   const base = settingsStages(r, r, r.geometry, ctx, crop, oriented, notes, finish)
   if (base.length > 0) {
@@ -1250,7 +1262,7 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
     })
   }
   for (const l of r.layers) {
-    const mask = layerMask(l, oriented.user, ctx.brushPaths)
+    const mask = layerMask(l, oriented.user, ctx.brushPaths, oriented)
     if (!mask) continue
     let stages = settingsStages(
       scaleSettings(l.settings, l.amount ?? 100),
