@@ -4,6 +4,7 @@ import { Icon, type IconName } from '../../components/icons'
 import { Menu, type MenuItem } from '../../components/Popover'
 import { Section } from '../../components/ui'
 import { api, errorText } from '../../lib/api'
+import { askConfirm } from '../../state/confirm'
 import {
   collectionTree,
   folderName,
@@ -358,13 +359,20 @@ function CollectionRows({
           {
             label: isSet ? 'Delete set' : 'Delete',
             danger: true,
-            onSelect: () => {
-              const what = isSet
-                ? `Delete the set “${c.name}”? The collections in it move to the top level.`
-                : `Delete “${c.name}”? The photos stay where they are.`
-              if (!window.confirm(what)) return
-              void api.library.removeCollection(c.id).catch((e) => lib().say(errorText(e), 'error'))
-            }
+            onSelect: () =>
+              void askConfirm({
+                title: isSet ? 'Delete set' : 'Delete collection',
+                body: isSet
+                  ? `Delete the set “${c.name}”? The collections in it move to the top level.`
+                  : `Delete “${c.name}”? The photos stay where they are.`,
+                confirm: 'Delete',
+                danger: true
+              }).then((yes) => {
+                if (yes)
+                  void api.library
+                    .removeCollection(c.id)
+                    .catch((e) => lib().say(errorText(e), 'error'))
+              })
           }
         ]
         return (

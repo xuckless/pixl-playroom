@@ -31,6 +31,7 @@ import { emptyRange, hsvOf } from '../../lib/helpers'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
 import { samplePatch } from '../../lib/image'
 import { pickAdd } from '../../lib/addpick'
+import { scoped } from '../../state/scope'
 import { fringeFrom } from '../../lib/helpers'
 import { useDevelop, wholeFrameTool } from '../../state/develop'
 import { useUi } from '../../state/ui'
@@ -108,8 +109,6 @@ export function Loupe(): React.JSX.Element {
   const setTool = useDevelop((s) => s.setTool)
   const setZoom = useDevelop((s) => s.setZoom)
   const replace = useDevelop((s) => s.replace)
-  const edit = useDevelop((s) => s.edit)
-  const commit = useDevelop((s) => s.commit)
   const setTargetEdge = useDevelop((s) => s.setTargetEdge)
   const gesture = useDevelop((s) => s.gesture)
   const [boxRef, size, boxEl] = useSize()
@@ -268,7 +267,8 @@ export function Loupe(): React.JSX.Element {
     const t: TatDrag = {
       id: e.pointerId,
       startY: e.clientY,
-      base: recipe,
+      // In a mask the drag moves the mask's curve or bands (see scope.ts).
+      base: scoped.recipe() ?? recipe,
       apply: null,
       label: '',
       lastY: e.clientY,
@@ -315,12 +315,12 @@ export function Loupe(): React.JSX.Element {
     const delta = (t.startY - y) * 0.4
     const apply = t.apply
     t.moved = true
-    edit((r) => apply(r, delta), true)
+    scoped.edit((r) => apply(r, delta), true)
   }
   const endTat = (): void => {
     const t = tat.current
     tat.current = null
-    if (t?.moved) commit(t.label)
+    if (t?.moved) scoped.commit(t.label)
   }
 
   const pick = useCallback(
@@ -412,7 +412,7 @@ export function Loupe(): React.JSX.Element {
           saturation: Math.round(s.saturation * 100) / 100,
           luminance: Math.round(s.luma * 100) / 100
         }
-        const next = structuredClone(recipe)
+        const next = structuredClone(scoped.recipe() ?? recipe)
         const dev = useDevelop.getState()
         const points = next.pointColors
         // A new swatch; once they are all used, the selected one is re-sampled.
@@ -420,11 +420,11 @@ export function Loupe(): React.JSX.Element {
           const id = newId()
           points.push({ id, ...sample, shiftHue: 0, shiftSat: 0, shiftLum: 0, range: 50 })
           dev.setPointId(id)
-          replace(next, 'Point colour: add')
+          scoped.replace(next, 'Point colour: add')
         } else {
           const sel = points.find((x) => x.id === dev.pointId) ?? points[points.length - 1]
           Object.assign(sel, sample)
-          replace(next, 'Point colour: re-sample')
+          scoped.replace(next, 'Point colour: re-sample')
         }
         setTool('none')
       }

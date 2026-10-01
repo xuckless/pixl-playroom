@@ -4,7 +4,9 @@ import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { loupeZoom } from '../views/loupe/zoom'
-import { selectPanel } from '../develop/tools'
+import { selectPanel, toggleMasks } from '../develop/tools'
+import { useUi } from '../state/ui'
+import { useKeyHint, withKey } from '../lib/commands'
 
 /** The second tier in Develop: back to the library, history, how to look, and what to do with the photo. */
 export function DevelopToolbar(): React.JSX.Element {
@@ -27,27 +29,30 @@ export function DevelopToolbar(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
   const refresh = useLibrary((s) => s.refresh)
   const say = useLibrary((s) => s.say)
+  const k = useKeyHint()
+  const masksUp = useUi((s) => s.masksWin.open && !s.masksWin.minimized)
+  const maskCount = useDevelop((s) => s.recipe?.layers.length ?? 0)
   const views: { label: string; k: string; on: boolean; toggle: () => void; title: string }[] = [
     {
       label: 'Before',
-      k: '\\',
+      k: k('view.before'),
       on: compare === 'before',
       toggle: () => setCompare(compare === 'before' ? 'off' : 'before'),
-      title: 'Before (\\)'
+      title: withKey('Before', 'view.before')
     },
     {
       label: 'Split',
-      k: 'Y',
+      k: k('view.split'),
       on: compare === 'split',
       toggle: () => setCompare(compare === 'split' ? 'off' : 'split'),
-      title: 'Before/after split (Y)'
+      title: withKey('Before/after split', 'view.split')
     },
     {
       label: 'Clipping',
-      k: 'J',
+      k: k('view.clipping'),
       on: clipping,
       toggle: () => setClipping(!clipping),
-      title: 'Clipping (J)'
+      title: withKey('Clipping', 'view.clipping')
     },
     ...(session?.isHdr
       ? [
@@ -62,27 +67,36 @@ export function DevelopToolbar(): React.JSX.Element {
       : []),
     {
       label: '1:1',
-      k: 'Z',
+      k: k('zoom.toggle'),
       on: zoomed,
       toggle: () => loupeZoom.toggle(),
-      title: 'Fit ↔ 100% (Z) · pinch or scroll to zoom, Space+drag to pan'
+      title: `${withKey('Fit ↔ 100%', 'zoom.toggle')} · pinch or scroll to zoom, ${k('view.pan') || 'Space'}+drag to pan`
     }
   ]
   return (
     <nav className="tool-bar">
-      <button className="ghost lg" onClick={() => setView('library')} title="Library (G)">
+      <button
+        className="ghost lg"
+        onClick={() => setView('library')}
+        title={withKey('Library', 'develop.library')}
+      >
         <Icon name="library" />
-        Library <span className="kbd">G</span>
+        Library {k('develop.library') && <span className="kbd">{k('develop.library')}</span>}
       </button>
       <span className="vsep" />
-      <button className="icon ghost lg" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+      <button
+        className="icon ghost lg"
+        onClick={undo}
+        disabled={!canUndo}
+        title={withKey('Undo', 'undo')}
+      >
         <Icon name="undo" />
       </button>
       <button
         className="icon ghost lg"
         onClick={redo}
         disabled={!canRedo}
-        title="Redo (Ctrl+Shift+Z)"
+        title={withKey('Redo', 'redo')}
       >
         <Icon name="redo" />
       </button>
@@ -127,6 +141,17 @@ export function DevelopToolbar(): React.JSX.Element {
           </div>
         </>
       )}
+      <span className="vsep" />
+      <button
+        className={`ghost lg masks-toggle${masksUp ? ' on' : ''}`}
+        aria-pressed={masksUp}
+        onClick={toggleMasks}
+        title={withKey('Masks window', 'masks.toggle')}
+      >
+        <Icon name="overlay" />
+        Masks
+        {maskCount > 0 && <span className="masks-count">{maskCount}</span>}
+      </button>
       <span className="spacer" />
       <button
         className="icon ghost lg"
@@ -149,7 +174,7 @@ export function DevelopToolbar(): React.JSX.Element {
             say(errorText(err), 'error')
           }
         }}
-        title="Virtual copy (Ctrl+')"
+        title={withKey('Virtual copy', 'virtualCopy')}
       >
         <Icon name="copy" />
         Copy
@@ -167,7 +192,7 @@ export function DevelopToolbar(): React.JSX.Element {
         className="primary lg"
         flat
         onClick={() => setDialog('export')}
-        title="Export (Ctrl+Shift+E)"
+        title={withKey('Export', 'export')}
       >
         <Icon name="export" />
         Export

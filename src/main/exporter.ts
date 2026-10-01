@@ -8,7 +8,7 @@
 import { BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
 import { mkdir } from 'fs/promises'
-import { basename, dirname, extname, join } from 'path'
+import { basename, extname, join } from 'path'
 import { compile, framingWarps, orientedFrame } from '../shared/compile'
 import type { ConvertRequest, Dither } from '../shared/engine-types'
 import {
@@ -29,18 +29,17 @@ import {
   type ExportSettings
 } from '../shared/export'
 import { IPC, type ExportProgress } from '../shared/ipc'
-import { hash32 } from '../shared/recipe'
 import { brushPlanes } from './brushes'
 import { embedMetadata } from './exiftool'
 import { exists } from './exists'
 import { isCancelled, type EngineClient } from './engine/client'
 import type { Library } from './library'
 import { ensureProxies, type ProxyFile } from './proxy'
-import { buildMaster, denoiseKey, denoiseRefusal, findDenoised } from './ai/denoise'
+import { ensureBase, pixelDeps } from './pixels/base'
+import { ensureWorking } from './pixels/working'
 import { editsHdr, ensureHdrSource } from './hdrsource'
 import { watermarkSize } from './watermark'
 import { watermarkOverlay } from '../shared/watermark'
-import type { ModelStore } from './ai/models'
 import type { PhotoRow } from './db'
 import type { SourceInfo } from '../shared/engine-types'
 import type { Recipe } from '../shared/recipe'
@@ -51,7 +50,9 @@ import {
   RAW_DEVELOP,
   sourceOrientation,
   uprightFraming,
-  INTERACTIVE_THREADS
+  INTERACTIVE_THREADS,
+  seedOf,
+  versionStamp
 } from './source'
 
 interface Job {
@@ -65,8 +66,7 @@ export class Exporter {
   constructor(
     private readonly library: Library,
     private readonly sessions: DevelopSessions,
-    private readonly engine: EngineClient,
-    private readonly models: ModelStore
+    private readonly engine: EngineClient
   ) {}
 
   private send(p: ExportProgress): void {
@@ -122,23 +122,25 @@ export class Exporter {
   }
 
   /**
-   * The AI-denoised master a photo's recipe asks for, made now if it is not
-   * yet; null when AI denoise is off, or cannot run on this photo.
+   * The photo at full size with its pixel steps laid on (an AI denoise), made
+   * from what its project keeps (never by running a model); null when it has
+   * none.
    */
-  private async denoisedMaster(
+  private async stepsMaster(
     row: PhotoRow,
     info: SourceInfo,
-    recipe: Recipe,
-    signal: AbortSignal
+    recipe: Recipe
   ): Promise<ProxyFile | null> {
-    const ai = recipe.detail.ai
-    if (!ai.enabled || denoiseRefusal(info)) return null
-    const key = denoiseKey(row, ai)
-    const set = await findDenoised(row, key)
-    if (set?.master) return set.master
+    if (recipe.pixels.length === 0) return null
     const plain = await ensureProxies(this.engine, row, info)
-    const made = await buildMaster(this.engine, this.models, row, info, plain, ai, key, signal)
-    return made.master
+    const set = await ensureWorking(
+      pixelDeps(this.engine, this.library.index, row),
+      versionStamp(row),
+      plain,
+      recipe.pixels,
+      () => ensureBase(this.engine, row, info)
+    )
+    return set.master
   }
 
   /**
@@ -161,10 +163,8 @@ export class Exporter {
     // a PQ master: from here on it is an HDR source like any other.
     const hdrSource = editsHdr(recipe, file) ? await ensureHdrSource(this.engine, row, file) : null
     const info = hdrSource?.info ?? file
-    // AI denoise: the full-resolution denoised master is the source (made
-    // now when the photo has only its preview, or nothing yet).
-    const master = hdrSource?.master ?? (await this.denoisedMaster(row, info, recipe, signal))
-    const denoised = master !== null && hdrSource === null
+    // Pixel steps (an AI denoise): the photo at full size with them laid on is the source.
+    const master = hdrSource?.master ?? (await this.stepsMaster(row, info, recipe))
     const raw = master ? null : info.input === 'Raw' ? RAW_DEVELOP : null
     const srcOrientation = master ? 'Normal' : sourceOrientation(info, raw)
     // The full-resolution frame, upright. A RAW's developed frame is smaller
@@ -189,17 +189,17 @@ export class Exporter {
       frameWidth: frameW,
       frameHeight: frameH,
       scale: 1,
-      seed: hash32(row.path),
+      seed: seedOf(row),
       brushPaths: await brushPlanes(row.id, recipe, user),
       applyCrop: true,
-      aiDenoised: denoised,
       hdr: info.is_hdr || hdrOut
     })
     const cw = Math.round((compiled.crop?.width ?? 1) * width)
     const ch = Math.round((compiled.crop?.height ?? 1) * height)
     const { encode, depth } = buildEncode(s, INTERACTIVE_THREADS, hdrOut)
 
-    const folder = s.folder ?? dirname(row.path)
+    // Beside the photo: where it is listed (its copy may be the project's own).
+    const folder = s.folder ?? row.folder
     const target = s.subfolder ? join(folder, s.subfolder) : folder
     await mkdir(target, { recursive: true })
     const stem = expandTemplate(s.template, {
@@ -281,7 +281,7 @@ export class Exporter {
       (resize !== 'None' && !hdrKeep) ||
       (typeof color === 'object' && ('ToneMap' in color || 'Expand' in color))
     const dither: Dither =
-      s.dither && depth === 'Eight' ? { TriangularNoise: { seed: hash32(row.path) } } : 'None'
+      s.dither && depth === 'Eight' ? { TriangularNoise: { seed: seedOf(row) } } : 'None'
     const plan = metadataPlan(s, item ?? null)
     const request: ConvertRequest = {
       ...(master

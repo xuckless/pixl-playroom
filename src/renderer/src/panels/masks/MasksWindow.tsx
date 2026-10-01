@@ -22,8 +22,11 @@ import {
   startMaskTool,
   type MaskToolKind
 } from './model'
+import { closeMasks, minimizeMasks } from '../../develop/tools'
+import { SelectedMask } from './MaskTool'
 import { ToolPicker } from './ToolPicker'
 import { useReorder } from './useReorder'
+import { keyHint, withKey } from '../../lib/commands'
 
 /** The drawing and range tools, one click from the selected mask's add bar. */
 const ADD_TOOLS: { kind: MaskToolKind; icon: IconName; label: string }[] = [
@@ -229,7 +232,7 @@ function ComponentRow({
                 { label: 'Rename', onSelect: () => setRename(c.name ?? '') },
                 {
                   label: 'Duplicate',
-                  hint: on ? 'Ctrl+D' : undefined,
+                  hint: on ? keyHint('mask.duplicate') : undefined,
                   onSelect: () => duplicateComponent(c.id)
                 },
                 'sep',
@@ -442,7 +445,7 @@ function MaskRow({
           </button>
           <button
             className="icon sm mf-act mf-eye"
-            title={layer.enabled ? 'Hide this mask (H)' : 'Show this mask (H)'}
+            title={withKey(layer.enabled ? 'Hide this mask' : 'Show this mask', 'mask.hide')}
             aria-pressed={!layer.enabled}
             onClick={toggleHidden}
           >
@@ -465,7 +468,7 @@ function MaskRow({
                   { label: 'Rename', onSelect: () => setRenaming(layer.name) },
                   {
                     label: 'Duplicate',
-                    hint: selected && !compId ? 'Ctrl+D' : undefined,
+                    hint: selected && !compId ? keyHint('mask.duplicate') : undefined,
                     onSelect: () => duplicateMask(layer.id)
                   },
                   { label: 'Invert', checked: layer.invert, onSelect: invert },
@@ -536,7 +539,7 @@ function OverlayControls(): React.JSX.Element {
   const [open, setOpen] = useState(false)
   return (
     <div className="mf-foot">
-      <label className="check" title="Show the overlay (O)">
+      <label className="check" title={withKey('Show the overlay', 'mask.overlay')}>
         <input type="checkbox" checked={overlay} onChange={(e) => setOverlay(e.target.checked)} />
         Overlay
       </label>
@@ -552,7 +555,9 @@ function OverlayControls(): React.JSX.Element {
         </button>
         {open && (
           <Popover onClose={() => setOpen(false)} align="right" side="top" className="overlay-pop">
-            <span className="micro">Overlay · Shift+O cycles</span>
+            <span className="micro">
+              Overlay{keyHint('mask.overlayMode') && ` · ${keyHint('mask.overlayMode')} cycles`}
+            </span>
             <select
               value={o.mode}
               onChange={(e) => set({ mode: e.target.value as OverlayMode })}
@@ -597,8 +602,10 @@ function OverlayControls(): React.JSX.Element {
               />
               Show all masks
             </label>
-            <span className="micro">Pins · Shift+H cycles</span>
-            <div className="seg" role="group" aria-label="Pins (Shift+H)">
+            <span className="micro">
+              Pins{keyHint('mask.pins') && ` · ${keyHint('mask.pins')} cycles`}
+            </span>
+            <div className="seg" role="group" aria-label={withKey('Pins', 'mask.pins')}>
               {(['auto', 'always', 'never'] as PinsMode[]).map((p) => (
                 <button
                   key={p}
@@ -616,79 +623,242 @@ function OverlayControls(): React.JSX.Element {
   )
 }
 
+/** The window's width, floating or docked (px). */
+const WIDTH = 300
+/** How close to the stage's left edge a drag docks the window (px). */
+const DOCK_SNAP = 32
+/** How far a docked window's header is pulled before it floats (px). */
+const UNDOCK_PULL = 36
+const MARGIN = 8
+
+/** A folded or headed window keeps this much of itself on the stage (px). */
+const KEEP_H = 56
+
+/** The stage beside a window, whether that window floats on it or is docked next to it. */
+const stageOf = (el: HTMLElement): HTMLElement | null =>
+  el.closest('.develop-body')?.querySelector<HTMLElement>('.stage') ?? null
+
+/** Keep a dragged window's top-left inside a stage of `w`×`h`. */
+function clampTo(x: number, y: number, w: number, h: number): { x: number; y: number } {
+  return {
+    x: Math.min(Math.max(MARGIN, w - WIDTH - MARGIN), Math.max(MARGIN, x)),
+    y: Math.min(Math.max(MARGIN, h - KEEP_H), Math.max(MARGIN, y))
+  }
+}
+
 /**
- * The masks panel floating at the loupe's edge while Masks is the tool, as
- * in Lightroom: each mask with its thumbnail, its components with how they
- * combine, Create new mask, and Add / Subtract / Intersect for the selected
- * one; the overlay's settings at the foot. Rows reorder by their grip (or
- * Alt+↑↓), show their actions under the pointer, and preview their mask on
- * the photo while hovered.
+ * Where a floating window sits, kept on the stage by the stage itself (CSS
+ * against its containing block), so a stage that grows or shrinks never
+ * needs measuring. x < 0 is the default: the top right.
  */
-export function MasksFloat(): React.JSX.Element | null {
+function placeOnStage(x: number, y: number, width: number): React.CSSProperties {
+  const top = `max(${MARGIN}px, min(${y}px, calc(100% - ${KEEP_H}px)))`
+  if (x < 0) return { right: 14, top }
+  return { left: `max(${MARGIN}px, min(${x}px, calc(100% - ${width + MARGIN}px)))`, top }
+}
+
+/**
+ * Drag the window by its header (or its pill): float it anywhere on the
+ * stage, drop it at the stage's left edge to dock it, pull a docked one out to
+ * float it again. Listens on the window, so the drag survives the window
+ * moving between the dock and the stage. A press that never moves is `onTap`.
+ */
+function startDrag(e: React.PointerEvent, onTap?: () => void): void {
+  if (e.button !== 0) return
+  if ((e.target as HTMLElement).closest('button:not(.mf-pill), input, select, .mf-menu-anchor'))
+    return
+  const win = (e.currentTarget as HTMLElement).closest('.masks-win, .mf-pill') as HTMLElement
+  if (!win) return
+  const stage = stageOf(win)
+  if (!stage) return
+  e.preventDefault()
+  const r = win.getBoundingClientRect()
+  let grab = { dx: e.clientX - r.left, dy: e.clientY - r.top }
+  const from = { x: e.clientX, y: e.clientY }
+  let moved = false
+  let near = false
+  const move = (ev: PointerEvent): void => {
+    if (!moved && Math.hypot(ev.clientX - from.x, ev.clientY - from.y) < 4) return
+    moved = true
+    const ui = useUi.getState()
+    // A docked window's pill floats once it is dragged.
+    if (ui.masksWin.docked && ui.masksWin.minimized) ui.setMasksWin({ docked: false })
+    else if (ui.masksWin.docked) {
+      if (Math.hypot(ev.clientX - from.x, ev.clientY - from.y) < UNDOCK_PULL) return
+      // Out of the dock: it floats under the pointer from here.
+      grab = { dx: Math.min(grab.dx, 120), dy: Math.min(grab.dy, 20) }
+      ui.setMasksWin({ docked: false })
+      return
+    }
+    const b = stage.getBoundingClientRect()
+    near = ev.clientX - b.left < DOCK_SNAP
+    stage.classList.toggle('dock-hint', near)
+    ui.setMasksWin(
+      clampTo(ev.clientX - grab.dx - b.left, ev.clientY - grab.dy - b.top, b.width, b.height)
+    )
+  }
+  const up = (): void => {
+    window.removeEventListener('pointermove', move, true)
+    window.removeEventListener('pointerup', up, true)
+    window.removeEventListener('pointercancel', up, true)
+    stage.classList.remove('dock-hint')
+    if (!moved) return onTap?.()
+    if (near) useUi.getState().setMasksWin({ docked: true, minimized: false })
+  }
+  // In the capture phase: the loupe's own tools (pins, the gradient and lasso
+  // editors) stop the pointer's events over the photo, and the drag must
+  // still hear every one of them, wherever the pointer goes.
+  window.addEventListener('pointermove', move, true)
+  window.addEventListener('pointerup', up, true)
+  window.addEventListener('pointercancel', up, true)
+}
+
+/**
+ * The masks window, as in Lightroom's masks panel but free of the wheel: each
+ * mask with its thumbnail, its components with how they combine, Create new
+ * mask, and Add / Subtract / Intersect for the selected one; under the list,
+ * the selected mask's own settings; the overlay's settings at the foot. Rows
+ * reorder by their grip (or Alt+↑↓), show their actions under the pointer,
+ * and preview their mask on the photo while hovered.
+ *
+ * It floats over the photo (drag it by its header), docks as a column beside
+ * the left rail (drop it at the photo's left edge), folds to a pill naming
+ * the selected mask, and stays up whichever tool the right column shows.
+ * `place` is where this instance lives: the dock column, or the stage.
+ */
+export function MasksWindow({ place }: { place: 'dock' | 'stage' }): React.JSX.Element | null {
   const layers = useDevelop((s) => s.recipe?.layers ?? null)
   const layerId = useDevelop((s) => s.layerId)
   const setAddMode = useDevelop((s) => s.setAddMode)
   const addMode = useDevelop((s) => s.addMode)
-  const panel = useUi((s) => s.panel)
+  const win = useUi((s) => s.masksWin)
   const [picker, setPicker] = useState(false)
   const masks = useReorder((from, to) => {
     const l = useDevelop.getState().recipe?.layers[from]
     if (l) moveMask(l.id, to)
   })
-  const shown = panel === 'masks' && layers !== null
-  // A hover preview never outlives the panel.
+  const up = win.open && layers !== null
+  const docked = win.docked && !win.minimized
+  const here = place === 'dock' ? docked : !docked
+  // A hover preview never outlives the window.
   useEffect(() => {
-    if (!shown) useDevelop.getState().setHoverLayer(null)
-  }, [shown])
-  if (!shown) return null
+    if (!up || win.minimized) useDevelop.getState().setHoverLayer(null)
+  }, [up, win.minimized])
+  if (!up || !here) return null
+  const style =
+    place === 'stage'
+      ? win.docked
+        ? { left: MARGIN, top: MARGIN }
+        : placeOnStage(win.x, win.y, win.minimized ? 180 : WIDTH)
+      : undefined
+
+  if (win.minimized) {
+    const sel = layers.find((l) => l.id === layerId)
+    return (
+      <LiquidGlass
+        as="button"
+        className="mf-pill"
+        radius={2}
+        bezel={10}
+        strength={0.8}
+        frost={6}
+        style={style}
+        title="Show the masks window (drag to move)"
+        onPointerDown={(e: React.PointerEvent) => startDrag(e, () => minimizeMasks(false))}
+        // The keyboard's Enter or Space (a pointer's press is the drag's tap).
+        onClick={(e: React.MouseEvent) => e.detail === 0 && minimizeMasks(false)}
+      >
+        <Icon name="overlay" />
+        <span className="mf-pill-name">{sel ? sel.name : 'Masks'}</span>
+        {layers.length > 0 && <span className="mf-pill-count">{layers.length}</span>}
+      </LiquidGlass>
+    )
+  }
+
   const openPicker = (mode: MaskMode | null): void => {
     setAddMode(mode)
     setPicker(true)
   }
   return (
-    <LiquidGlass className="masks-float" radius={2} bezel={12} strength={0.8} frost={6}>
-      <div className="mf-head">
+    <LiquidGlass
+      className={`masks-win ${place === 'dock' ? 'docked' : 'floating'}`}
+      radius={2}
+      bezel={12}
+      strength={0.8}
+      frost={6}
+      style={style}
+    >
+      <div className="mf-head" onPointerDown={(e) => startDrag(e)}>
         <span className="micro">Masks</span>
-        <span className="mf-menu-anchor">
-          <button className="primary sm" onClick={() => openPicker(null)} title="Create new mask">
-            <Icon name="plus" />
-            New mask
+        <span className="mf-head-tools">
+          <span className="mf-menu-anchor">
+            <button className="primary sm" onClick={() => openPicker(null)} title="Create new mask">
+              <Icon name="plus" />
+              New
+            </button>
+            {picker && (
+              <Popover
+                align="right"
+                className="picker-pop"
+                onClose={() => {
+                  setPicker(false)
+                  // A pick consumes the mode; closing without one drops it.
+                  if (addMode) setAddMode(null)
+                }}
+              >
+                <ToolPicker onDone={() => setPicker(false)} />
+              </Popover>
+            )}
+          </span>
+          <button
+            className="icon sm ghost"
+            title={win.docked ? 'Float over the photo' : 'Dock beside the left rail'}
+            aria-label={win.docked ? 'Float the masks window' : 'Dock the masks window'}
+            onClick={() => useUi.getState().setMasksWin({ docked: !win.docked })}
+          >
+            <Icon name="sidebar" />
           </button>
-          {picker && (
-            <Popover
-              align="right"
-              className="picker-pop"
-              onClose={() => {
-                setPicker(false)
-                // A pick consumes the mode; closing without one drops it.
-                if (addMode) setAddMode(null)
-              }}
-            >
-              <ToolPicker onDone={() => setPicker(false)} />
-            </Popover>
-          )}
+          <button
+            className="icon sm ghost"
+            title="Fold to a pill"
+            aria-label="Minimise the masks window"
+            onClick={() => minimizeMasks(true)}
+          >
+            <Icon name="minus" />
+          </button>
+          <button
+            className="icon sm ghost"
+            title={withKey('Close', 'masks.toggle')}
+            aria-label="Close the masks window"
+            onClick={closeMasks}
+          >
+            <Icon name="close" />
+          </button>
         </span>
       </div>
-      <div className={`mf-list${masks.drag ? ' sorting' : ''}`}>
-        {layers.length === 0 && (
-          <p className="mf-hint">
-            No masks yet. A mask limits adjustments to part of the photo: a brush, a gradient, a
-            lasso or a colour range.
-          </p>
-        )}
-        {layers.map((l, i) => (
-          <MaskRow
-            key={l.id}
-            layer={l}
-            index={i}
-            count={layers.length}
-            selected={l.id === layerId}
-            offset={masks.offset(i)}
-            dragging={masks.drag?.from === i}
-            onGrip={(e) => masks.start(e, i)}
-            onPick={openPicker}
-          />
-        ))}
+      <div className="mf-body">
+        <div className={`mf-list${masks.drag ? ' sorting' : ''}`}>
+          {layers.length === 0 && (
+            <p className="mf-hint">
+              No masks yet. A mask limits adjustments to part of the photo: a brush, a gradient, a
+              lasso or a colour range.
+            </p>
+          )}
+          {layers.map((l, i) => (
+            <MaskRow
+              key={l.id}
+              layer={l}
+              index={i}
+              count={layers.length}
+              selected={l.id === layerId}
+              offset={masks.offset(i)}
+              dragging={masks.drag?.from === i}
+              onGrip={(e) => masks.start(e, i)}
+              onPick={openPicker}
+            />
+          ))}
+        </div>
+        <SelectedMask />
       </div>
       <OverlayControls />
     </LiquidGlass>

@@ -1,16 +1,33 @@
 import { useEffect, useState } from 'react'
-import { ZERO_LOCAL, type LocalAdjust, type LocalLayer } from '../../../../shared/recipe'
+import {
+  neutralSettings,
+  settingsFromAdjust,
+  ZERO_LOCAL,
+  type LayerSettings,
+  type LocalAdjust,
+  type LocalLayer
+} from '../../../../shared/recipe'
 import { Select } from '../../components/ui'
 import { api } from '../../lib/api'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { changeLayer } from './model'
 
-/** A mask's sliders and Amount saved under a name ("Sky darken"), for any mask. */
+/**
+ * A mask's settings and Amount saved under a name ("Sky darken"), for any
+ * mask. Presets saved before masks had the panels' settings hold `adjust`.
+ */
 interface MaskPreset {
   name: string
-  adjust: LocalAdjust
+  settings?: LayerSettings
+  adjust?: LocalAdjust
   amount: number
+}
+
+/** A preset's settings, whichever version saved it; filled from neutral either way. */
+function presetSettings(p: MaskPreset): LayerSettings {
+  if (p.settings) return { ...neutralSettings(), ...structuredClone(p.settings) }
+  return settingsFromAdjust({ ...ZERO_LOCAL, ...p.adjust })
 }
 
 /** Kept in the index's settings beside the white-balance presets. */
@@ -34,7 +51,11 @@ export function MaskPresets({ layer }: { layer: LocalLayer }): React.JSX.Element
     await api.app.setSetting(MASK_PRESETS_KEY, next)
   }
   const saveCurrent = async (name: string): Promise<void> => {
-    const entry: MaskPreset = { name, adjust: { ...layer.adjust }, amount: layer.amount }
+    const entry: MaskPreset = {
+      name,
+      settings: structuredClone(layer.settings),
+      amount: layer.amount
+    }
     await store([...saved.filter((p) => p.name !== name), entry])
     useLibrary.getState().say(`Saved mask preset "${name}"`)
   }
@@ -47,9 +68,8 @@ export function MaskPresets({ layer }: { layer: LocalLayer }): React.JSX.Element
       void store(saved.filter((x) => x.name !== name))
       return
     }
-    // Fill from zero, so a preset saved before a slider existed still applies cleanly.
     changeLayer((l) => {
-      l.adjust = { ...ZERO_LOCAL, ...p.adjust }
+      l.settings = presetSettings(p)
       l.amount = p.amount
     })
     commit(`${layer.name}: preset ${p.name}`)
@@ -69,7 +89,7 @@ export function MaskPresets({ layer }: { layer: LocalLayer }): React.JSX.Element
           options={[
             { value: '', label: saved.length ? 'Apply a preset…' : 'No presets yet' },
             ...saved.map((p) => ({ value: `use:${p.name}`, label: `★ ${p.name}` })),
-            { value: 'save', label: 'Save these adjustments as a preset…' },
+            { value: 'save', label: "Save this mask's settings as a preset…" },
             ...saved.map((p) => ({ value: `del:${p.name}`, label: `Delete "${p.name}"` }))
           ]}
         />

@@ -19,6 +19,20 @@ export type PixelsJob =
       user: Orientation
     }
   | { op: 'brush'; file: string; png: string; user: Orientation }
+  /** A masked pixel step's overlay (pixels/ops.ts). */
+  | { op: 'compose'; image: string; mask: string; out: string }
+  /** A coordinate ramp for a lens map (pixels/ops.ts). */
+  | { op: 'ramp'; file: string; w: number; h: number }
+  /** A mask put back on the photo's own pixels through a lens map (pixels/ops.ts). */
+  | { op: 'unwarp'; mask: string; map: string; w: number; h: number; out: string }
+  /** A baked heal's patch from two renders of its region (pixels/ops.ts). */
+  | {
+      op: 'patch'
+      withStroke: string
+      without: string
+      out: string
+      mask?: { path: string; at: { x: number; y: number } }
+    }
 
 type Reply = { id: number; value?: unknown; error?: string }
 

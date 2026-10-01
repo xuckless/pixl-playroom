@@ -63,13 +63,6 @@ export const TOOLS: ToolInfo[] = [
     icon: 'M12 3l2.5 6 6.5.5-5 4.5 1.5 6.5L12 17l-5.5 3.5L8 14 3 9.5l6.5-.5z'
   },
   {
-    id: 'masks',
-    name: 'Masks',
-    short: 'Masks',
-    desc: 'Brush, gradients, lasso and ranges, each with its own adjustments.',
-    icon: 'M4 20c2-6 8-6 10-12M16 6a2 2 0 1 0 4 0 2 2 0 0 0-4 0'
-  },
-  {
     id: 'heal',
     name: 'Heal',
     short: 'Heal',
@@ -102,13 +95,14 @@ export const TOOLS: ToolInfo[] = [
 const CROP_SETTLE_MS = 260
 let cropTimer: ReturnType<typeof setTimeout> | undefined
 
-/** Canvas tools that belong to the Masks panel. */
+/** Canvas tools that belong to the masks window. */
 export const MASK_TOOLS: Tool[] = ['brush', 'polygon', 'linear', 'radial', 'range-picker']
 
 /**
  * Show a tool in the right column, and keep the canvas in step: choosing
- * Crop & Rotate opens the crop tool; leaving it closes the tool; leaving
- * Masks puts down any mask tool.
+ * Crop & Rotate opens the crop tool; leaving it closes the tool. A mask tool
+ * stays in hand (masks live in their own window), unless the new tool takes
+ * the canvas (Crop, Heal) or `opts.tool` picks another.
  */
 export function selectPanel(id: ToolId, opts: { tool?: Tool } = {}): void {
   const ui = useUi.getState()
@@ -118,8 +112,6 @@ export function selectPanel(id: ToolId, opts: { tool?: Tool } = {}): void {
     ui.setPanel(id)
     // A picker belongs to the panel that started it.
     if (dev.tool === 'fringe-pick' || dev.tool === 'add-pick') dev.setTool('none')
-    // Entering or leaving Masks starts or stops the mask thumbnails.
-    if ((from === 'masks') !== (id === 'masks')) dev.pushView()
   }
   if (opts.tool !== undefined) {
     clearTimeout(cropTimer)
@@ -135,7 +127,6 @@ export function selectPanel(id: ToolId, opts: { tool?: Tool } = {}): void {
     }, CROP_SETTLE_MS)
   } else if (id !== 'crop' && (dev.tool === 'crop' || dev.tool === 'upright-guide'))
     dev.setTool('none')
-  if (id !== 'masks' && MASK_TOOLS.includes(dev.tool)) dev.setTool('none')
   // The Heal tool is on while its panel shows, as Lightroom's spot removal is.
   if (id === 'heal' && dev.tool === 'none') dev.setTool('heal')
   else if (id !== 'heal' && dev.tool === 'heal') dev.setTool('none')
@@ -146,4 +137,38 @@ export function stepPanel(dir: 1 | -1): void {
   const i = TOOLS.findIndex((t) => t.id === useUi.getState().panel)
   const next = TOOLS[(i + dir + TOOLS.length) % TOOLS.length]
   selectPanel(next.id)
+}
+
+/** Open the masks window (unfolded), starting the mask thumbnails. */
+export function openMasks(): void {
+  const ui = useUi.getState()
+  if (ui.masksWin.open && !ui.masksWin.minimized) return
+  ui.setMasksWin({ open: true, minimized: false })
+  useDevelop.getState().pushView()
+}
+
+/** Close the masks window: any mask tool is put down and the thumbnails stop. */
+export function closeMasks(): void {
+  useUi.getState().setMasksWin({ open: false })
+  const dev = useDevelop.getState()
+  if (MASK_TOOLS.includes(dev.tool)) dev.setTool('none')
+  dev.setHoverLayer(null)
+  dev.pushView()
+}
+
+export function toggleMasks(): void {
+  const w = useUi.getState().masksWin
+  if (w.open && !w.minimized) closeMasks()
+  else openMasks()
+}
+
+/** Fold the masks window to its pill, or unfold it. */
+export function minimizeMasks(minimized: boolean): void {
+  useUi.getState().setMasksWin({ minimized })
+  useDevelop.getState().pushView()
+}
+
+/** Whether the masks window is up (folded to its pill counts: its masks still edit). */
+export function masksOpen(): boolean {
+  return useUi.getState().masksWin.open
 }

@@ -1,13 +1,15 @@
 /**
- * Settings (⌘, / Ctrl+,): the licence, updates, crash reports, and the legal
- * pages. And the one question the first launch asks: may crash reports be sent?
+ * Settings (⌘, / Ctrl+,): the licence, updates, crash reports, the legal
+ * pages, and the key bindings. And the one question the first launch asks:
+ * may crash reports be sent?
  */
 import { useEffect, useState } from 'react'
 import type { Prefs, UpdateState } from '../../../shared/ipc'
 import { ACCOUNT_URL, BUY_URL, type LicenceStatus } from '../../../shared/licence'
-import { Modal, Select } from '../components/ui'
+import { Modal, Select, Tabs } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
+import { KeyBindingsSection } from './KeyBindings'
 import { ModelsSection } from './ModelsSection'
 
 const LEGAL = 'https://playroom.pixlfoundation.com/legal'
@@ -138,6 +140,85 @@ function LicenceSection(): React.JSX.Element | null {
   )
 }
 
+type ProjectsLocation = 'beside' | 'home' | { folder: string }
+
+/**
+ * Where a photo's `.pixl` project is made, on its first edit: beside the
+ * photo, or in a projects folder (one subfolder per photo folder). Projects
+ * already made stay where they are.
+ */
+function ProjectsSection(): React.JSX.Element {
+  const say = useLibrary((s) => s.say)
+  const [loc, setLoc] = useState<ProjectsLocation>('beside')
+  const [embed, setEmbed] = useState(true)
+  useEffect(() => {
+    void api.app.getSetting<boolean>('projects.embedOriginal').then((v) => setEmbed(v !== false))
+    void api.app.getSetting<ProjectsLocation>('projects.location').then((v) => {
+      if (v === 'home' || (v && typeof v === 'object' && typeof v.folder === 'string')) setLoc(v)
+    })
+  }, [])
+  const save = (v: ProjectsLocation): void => {
+    setLoc(v)
+    void api.app.setSetting('projects.location', v).catch((e) => say(errorText(e), 'error'))
+  }
+  const choose = async (): Promise<void> => {
+    const folder = await api.library.chooseFolder()
+    if (folder) save({ folder })
+  }
+  const mode = typeof loc === 'object' ? 'folder' : loc
+  return (
+    <fieldset>
+      <legend>Projects</legend>
+      <p className="muted small">
+        A photo&apos;s first edit makes its project: one <b>.pixl</b> file with its edits, copies,
+        snapshots and whole history, so they go wherever the file goes.
+      </p>
+      <Select
+        label="Make projects"
+        value={mode}
+        options={[
+          { value: 'beside', label: 'Beside the photo' },
+          { value: 'home', label: 'In ~/Pixl Projects' },
+          { value: 'folder', label: 'In a folder of my choice…' }
+        ]}
+        onChange={(v) => {
+          if (v === 'folder') void choose()
+          else save(v as 'beside' | 'home')
+        }}
+      />
+      {typeof loc === 'object' && (
+        <div className="prefs-row">
+          <span className="muted small">{loc.folder}</span>
+          <button onClick={() => void choose()}>Change…</button>
+        </div>
+      )}
+      <p className="muted small">
+        A folder that cannot be written (a locked card) puts its projects in ~/Pixl Projects.
+        Projects already made stay where they are.
+      </p>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={embed}
+          onChange={(e) => {
+            setEmbed(e.target.checked)
+            void api.app
+              .setSetting('projects.embedOriginal', e.target.checked)
+              .catch((err) => say(errorText(err), 'error'))
+          }}
+        />
+        Carry a copy of the original in each project
+      </label>
+      <p className="muted small">
+        The project then needs nothing else: move or lose the photo and it still opens, develops and
+        exports. Each is kept as small as it can be without losing a bit: a RAW as lossless DNG, a
+        JPEG repacked into JPEG XL (about a fifth smaller, and the same JPEG comes back), large PNGs
+        and TIFFs as lossless JPEG XL. A project then takes about as much space as its photo again.
+      </p>
+    </fieldset>
+  )
+}
+
 function useUpdates(): UpdateState | null {
   const [state, setState] = useState<UpdateState | null>(null)
   useEffect(() => {
@@ -149,6 +230,28 @@ function useUpdates(): UpdateState | null {
 
 export function PreferencesDialog(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
+  const [tab, setTab] = useState<'general' | 'keys'>('general')
+  return (
+    <Modal
+      title="Settings"
+      onClose={() => setDialog(null)}
+      icon="settings"
+      className={`prefs${tab === 'keys' ? ' keys' : ''}`}
+    >
+      <Tabs
+        value={tab}
+        tabs={[
+          { value: 'general', label: 'General' },
+          { value: 'keys', label: 'Key bindings' }
+        ]}
+        onChange={setTab}
+      />
+      {tab === 'keys' ? <KeyBindingsSection /> : <GeneralSettings />}
+    </Modal>
+  )
+}
+
+function GeneralSettings(): React.JSX.Element {
   const say = useLibrary((s) => s.say)
   const update = useUpdates()
   const [prefs, setPrefs] = useState<Prefs | null>(null)
@@ -157,7 +260,7 @@ export function PreferencesDialog(): React.JSX.Element {
   }, [])
   const busy = update?.phase === 'checking' || update?.phase === 'downloading'
   return (
-    <Modal title="Settings" onClose={() => setDialog(null)} icon="settings" className="prefs">
+    <>
       <LicenceSection />
       <fieldset>
         <legend>Updates</legend>
@@ -198,6 +301,8 @@ export function PreferencesDialog(): React.JSX.Element {
         )}
       </fieldset>
 
+      <ProjectsSection />
+
       <ModelsSection />
 
       <fieldset>
@@ -237,7 +342,7 @@ export function PreferencesDialog(): React.JSX.Element {
           </button>
         </div>
       </fieldset>
-    </Modal>
+    </>
   )
 }
 

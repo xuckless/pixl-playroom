@@ -1,85 +1,47 @@
 /**
- * AI denoise's upkeep in the renderer: while the photo in Develop has it on,
- * what it asks for is made. Opening such a photo, switching to AI, picking
- * another model or letting go of Strength starts (or restarts) the photo's
- * denoise job when nothing is made for those settings; a job for settings
- * no longer wanted is cancelled. A model not downloaded yet is left to the
- * Detail panel, which offers it.
+ * AI denoise in the renderer: starting a denoise step for the open photo
+ * (the whole photo, or inside the selected mask), and bringing photos from
+ * before it was a step over: one whose recipe still has the old setting on
+ * gets the step it described (its old full-resolution result reused when it
+ * is still kept), and the setting goes off.
  */
-import type { AiDenoiseSetting } from '../../../shared/recipe'
 import { api } from './api'
-import { useAiJobs } from '../state/jobs'
 import { useDevelop } from '../state/develop'
+import { useLibrary } from '../state/library'
+import { scoped } from '../state/scope'
+import { useUi } from '../state/ui'
+import { errorText } from './api'
 
-/** Settle this long after the last change before asking (a Strength drag). */
-const SETTLE_MS = 700
-
-/** The job running for each photo, and the settings it was started for. */
-const started = new Map<string, { jobId: string; params: string }>()
-
-const paramsOf = (ai: AiDenoiseSetting): string => `${ai.model}:${Math.round(ai.strength)}`
-
-const isLive = (jobId: string): boolean => {
-  const j = useAiJobs.getState().jobs[jobId]
-  return j !== undefined && (j.phase === 'queued' || j.phase === 'running')
+/** Start a denoise step for the open photo: in the selected mask when the panels edit one. */
+export async function applyDenoise(): Promise<void> {
+  const { session } = useDevelop.getState()
+  if (!session) return
+  const { model, strength } = useUi.getState().denoise
+  const layer = scoped.layer()
+  await api.ai.start({
+    task: 'denoise',
+    key: session.key,
+    model,
+    strength,
+    layerId: layer?.id ?? null
+  })
 }
 
-/** Start (or restart) the open photo's denoise job when it needs one. */
-export async function ensureDenoise(): Promise<void> {
-  const { session, recipe } = useDevelop.getState()
-  if (!session || !recipe) return
-  const key = session.key
-  const ai = recipe.detail.ai
-  const mine = started.get(key)
-  if (!ai.enabled || useAiJobs.getState().capabilities?.denoise === false) {
-    if (mine && isLive(mine.jobId)) void api.ai.cancel(mine.jobId)
-    return
-  }
-  const params = paramsOf(ai)
-  if (mine && isLive(mine.jobId)) {
-    if (mine.params === params) return
-    await api.ai.cancel(mine.jobId)
-  }
-  const [state, models] = await Promise.all([api.develop.denoiseState(key), api.models.list()])
-  if (state.refused || state.made === 'full') return
-  if (!models.find((m) => m.id === ai.model)?.installed) return
-  // Still the photo and the settings asked about?
-  const now = useDevelop.getState()
-  if (now.session?.key !== key || !now.recipe || paramsOf(now.recipe.detail.ai) !== params) return
-  const again = started.get(key)
-  if (again && again !== mine && isLive(again.jobId)) return
-  const jobId = await api.ai.start({ task: 'denoise', key })
-  started.set(key, { jobId, params })
-}
-
-let timer: ReturnType<typeof setTimeout> | undefined
-function soon(): void {
-  clearTimeout(timer)
-  timer = setTimeout(() => void ensureDenoise().catch(() => undefined), SETTLE_MS)
-}
-
-/** Keep AI denoise made while the app runs; returns the unsubscribe. */
+/** Old AI denoise settings become steps, as photos open. Returns the unsubscribe. */
 export function startDenoiseUpkeep(): () => void {
-  const offDevelop = useDevelop.subscribe((s, prev) => {
-    if (!s.session || !s.recipe) return
-    const opened = s.session !== prev.session
-    const changed =
-      !prev.recipe || JSON.stringify(s.recipe.detail.ai) !== JSON.stringify(prev.recipe.detail.ai)
-    if (opened || changed) soon()
+  return useDevelop.subscribe((s, prev) => {
+    if (!s.session || !s.recipe || s.session === prev.session) return
+    const ai = s.recipe.detail.ai
+    if (!ai.enabled) return
+    const key = s.session.key
+    void api.ai
+      .start({ task: 'denoise', key, model: ai.model, strength: ai.strength, legacy: true })
+      .then(() => {
+        const d = useDevelop.getState()
+        if (d.session?.key !== key) return
+        d.edit((r) => (r.detail.ai.enabled = false))
+        d.commit('AI Denoise becomes a step')
+      })
+      .catch((err) => useLibrary.getState().say(errorText(err), 'error'))
   })
-  // A model just downloaded may be the one waited for.
-  const offModels = api.models.onEvent(() => soon())
-  // A job that ended while the settings moved on: make what is asked now.
-  const offJobs = api.ai.onEvent((e) => {
-    if (e.task === 'denoise' && (e.phase === 'done' || e.phase === 'error')) {
-      if (started.get(e.key)?.jobId === e.jobId) started.delete(e.key)
-      if (e.phase === 'done') soon()
-    }
-  })
-  return () => {
-    clearTimeout(timer)
-    offDevelop()
-    offModels()
-    offJobs()
-  }
 }

@@ -73,7 +73,7 @@ test('masks are patched by id, and a reorder survives', () => {
   a.layers.push(one, two)
   const b = structuredClone(a)
   b.layers.reverse()
-  b.layers[0].adjust.exposure = 1
+  b.layers[0].settings.basic.exposure = 1
   assert.deepEqual(applyPatch(a, diffRecipe(a, b)), b)
 })
 
@@ -100,7 +100,7 @@ test('steps on a mask depend on the step that made it, transitively', () => {
   const steps = stepsFrom(base, [
     ['New mask', (r) => r.layers.push(structuredClone(layer))],
     ['Exposure', (r) => (r.basic.exposure = 0.3)],
-    ['Sky: exposure', (r) => (r.layers[0].adjust.exposure = -1)],
+    ['Sky: exposure', (r) => (r.layers[0].settings.basic.exposure = -1)],
     ['Add range', (r) => r.layers[0].components.push(range())],
     ['Range feather', (r) => (r.layers[0].components[0].feather = 40)]
   ])

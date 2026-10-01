@@ -59,7 +59,7 @@ export function MaskPins({
   const setHover = useDevelop((s) => s.setHoverLayer)
   const tool = useDevelop((s) => s.tool)
   const pins = useUi((s) => s.maskOverlay.pins)
-  const panel = useUi((s) => s.panel)
+  const masksUp = useUi((s) => s.masksWin.open)
   const [where, setWhere] = useState<Record<string, { x: number; y: number } | null>>({})
   const urls = layers?.map((l) => thumbs[l.id]?.url ?? '').join('|') ?? ''
   useEffect(() => {
@@ -76,7 +76,8 @@ export function MaskPins({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urls])
-  if (!layers || panel !== 'masks' || pins === 'never' || wholeFrameTool(tool)) return null
+  if (!layers || !masksUp || tool === 'heal' || pins === 'never' || wholeFrameTool(tool))
+    return null
   return (
     <div
       className={`mask-pins ${pins}`}

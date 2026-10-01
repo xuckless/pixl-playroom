@@ -271,7 +271,9 @@ export async function autoWbBatch(s: WbServices, keys: string[]): Promise<AutoWb
       try {
         const cur = current.get(key)
         if (!cur) throw new Error('the photo is not in the library')
-        const { row, recipe } = cur
+        const { recipe } = cur
+        // Readable: the original, or its project's copy when it is gone.
+        const row = await s.library.photoRow(key)
         const info = await s.library.probe(row)
         const px = await ensureProxies(s.bgEngine, row, info)
         const dir = rendersDir(row.id)

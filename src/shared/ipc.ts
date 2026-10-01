@@ -77,6 +77,7 @@ export const IPC = {
     openSource: 'library:open-source',
     /** Files → their folder and item keys (indexing the folder if new). */
     resolvePaths: 'library:resolve-paths',
+    projectInfo: 'library:project-info',
     setMetadata: 'library:set-metadata',
     keywordTree: 'library:keyword-tree',
     collections: 'library:collections',
@@ -123,12 +124,14 @@ export const IPC = {
     uprightFromLines: 'develop:upright-from-lines',
     /** Heal / clone: the best place to copy a spot from. */
     suggestHeal: 'develop:suggest-heal',
+    bakeSpot: 'develop:bake-spot',
     /** Where the open photo's AI denoise stands. */
-    denoiseState: 'develop:denoise-state',
     /** main → renderer: a render finished */
     rendered: 'develop:rendered',
     /** main → renderer: a render failed */
-    renderError: 'develop:render-error'
+    renderError: 'develop:render-error',
+    /** The working frame changed size (an upscale step added or undone). */
+    frame: 'develop:frame'
   },
   presets: {
     list: 'presets:list',
@@ -275,6 +278,8 @@ export interface LibraryItem {
   offline?: boolean
   /** HDR, and how; null when it is not; absent until the file has been probed. */
   hdr?: HdrKind | null
+  /** Its `.pixl` project, once it has one (the truth about its edits and history). */
+  project?: string | null
 }
 
 /** A gain map over an SDR base (iPhone, UltraHDR), or a PQ / HLG signal. */
@@ -367,6 +372,14 @@ export interface MetaPatch {
 }
 
 // ── Develop ──────────────────────────────────────────────────────────────────
+
+/** What a photo's `.pixl` project carries of its original (Info pane). */
+export interface ProjectInfo {
+  project: string | null
+  state: 'none' | 'pending' | 'ready' | 'failed'
+  kind: string | null
+  bytes: number | null
+}
 
 export interface Snapshot {
   id: string
@@ -688,8 +701,3 @@ export interface ProviderInfo {
 }
 
 /** Where a photo's AI denoise stands: nothing made yet, the preview, or the full resolution. */
-export interface DenoiseState {
-  made: 'none' | 'preview' | 'full'
-  /** Why this photo cannot be AI-denoised (an HDR photo). */
-  refused?: string
-}

@@ -82,3 +82,16 @@ test('a sidecar keeps only spots that read', () => {
   const r = normaliseRecipe({ retouch: [heal(), { id: 'x' }, 'nonsense'] }, false)
   assert.equal(r.retouch.length, 1)
 })
+
+test('a source pulled inside the frame stays inside the draft too, in whole pixels', () => {
+  // A 6000 × 4000 photo; the develop view's draft is 1280 × 853.
+  const w = 6000
+  const h = 4000
+  const points = [{ x: 0.5, y: 0.25 }]
+  const radius = 0.1
+  const off = fitOffset({ x: -0.02, y: -0.5 }, points, radius, 0, w, h)!
+  // The source's top edge, on the draft, in pixels.
+  const short = Math.min(w, h)
+  const top = (points[0].y - (radius * short) / h + off.y) * 853
+  assert.ok(top >= 1.5, `the source's top is ${top.toFixed(2)} px into the draft`)
+})

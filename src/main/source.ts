@@ -16,6 +16,7 @@ import type {
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
 import { fromExif } from '../shared/orientation'
+import { hash32 } from '../shared/recipe'
 import type { PhotoRow } from './db'
 import { execFileSync } from 'child_process'
 import { cpus } from 'os'
@@ -223,4 +224,12 @@ export function blankRequest(
     output_sharpen: null,
     measure: null
   }
+}
+
+/**
+ * A photo's grain and dither seed: from where it was when its project was
+ * made (`seed_path`), so its grain stays put when it moves, else its path.
+ */
+export function seedOf(row: Pick<PhotoRow, 'path' | 'seed_path'>): number {
+  return hash32(row.seed_path ?? row.path)
 }

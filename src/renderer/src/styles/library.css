@@ -1056,3 +1056,25 @@ select.rule-value {
 .thumb-img:has(.label-dot) .hdr-badge {
   left: 24px;
 }
+/* The photo's edits live in a .pixl project: a click shows it in the file manager. */
+.thumb button.project-badge {
+  position: absolute;
+  right: 22px;
+  bottom: 5px;
+  height: auto;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--acc);
+  border: 1px solid rgba(157, 139, 234, 0.4);
+  border-radius: var(--r);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.thumb:hover button.project-badge,
+.thumb button.project-badge:focus-visible {
+  opacity: 1;
+}

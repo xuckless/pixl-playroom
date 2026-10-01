@@ -14,7 +14,7 @@ import {
   type Recipe
 } from '../../../../shared/recipe'
 import type { IconName } from '../../components/icons'
-import { selectPanel } from '../../develop/tools'
+import { openMasks } from '../../develop/tools'
 import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
 import { useLibrary } from '../../state/library'
@@ -36,7 +36,8 @@ export interface MaskToolInfo {
   kind: MaskToolKind
   label: string
   icon: IconName
-  key?: string
+  /** The shortcut that starts it (a key-binding command id). */
+  command?: string
   /** Why it cannot be used yet, when it cannot (a model: see `ai`). */
   needs?: string
   /** Found by a model: usable when the build has that task. */
@@ -73,10 +74,10 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
   {
     title: 'Draw',
     tools: [
-      { kind: 'brush', label: 'Brush', icon: 'brush', key: 'K' },
-      { kind: 'linear', label: 'Linear gradient', icon: 'linear', key: 'M' },
-      { kind: 'radial', label: 'Radial gradient', icon: 'radial', key: '⇧M' },
-      { kind: 'polygon', label: 'Lasso', icon: 'lasso', key: 'L' }
+      { kind: 'brush', label: 'Brush', icon: 'brush', command: 'mask.brush' },
+      { kind: 'linear', label: 'Linear gradient', icon: 'linear', command: 'mask.linear' },
+      { kind: 'radial', label: 'Radial gradient', icon: 'radial', command: 'mask.radial' },
+      { kind: 'polygon', label: 'Lasso', icon: 'lasso', command: 'mask.lasso' }
     ]
   },
   {
@@ -174,13 +175,13 @@ export function startMaskTool(kind: MaskToolKind): void {
       })
       .catch((err) => useLibrary.getState().say(errorText(err), 'error'))
     d.setAddMode(null)
-    selectPanel('masks')
+    openMasks()
     return
   }
   if (!adding) {
     if (!createMask()) return
   }
-  selectPanel('masks')
+  openMasks()
   const tools: Partial<Record<MaskToolKind, Tool>> = {
     brush: 'brush',
     linear: 'linear',

@@ -8,7 +8,7 @@
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import type { CameraInfo, ColorLabel, ExportPreset, Flag, HistoryLog, Preset } from '../shared/ipc'
 import type { ExportSettings } from '../shared/export'
-import { applyPatch, diffRecipe, replay, type Patch, type Step } from '../shared/history'
+import { HistoryTable, type HistoryRow } from './historytable'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 
 export interface PhotoRow {
@@ -48,6 +48,18 @@ export interface PhotoRow {
   /** What kind of HDR the file is ('' none), as last probed; `hdr_key` names that file version. */
   hdr: string | null
   hdr_key: string | null
+  /** The photo's `.pixl` project (the truth about its edits once it has one), and its mtime as mirrored. */
+  project_path: string | null
+  project_mtime: number | null
+  /**
+   * Not columns: what the index adds for whoever reads the original
+   * (`IndexService.sourceRow`). `seed_path` is the path a grain seed hashes
+   * (the photo's path when its project was made, so grain survives a move);
+   * `embedded` is where the project's own copy of the original was written
+   * out, when the file itself is gone.
+   */
+  seed_path?: string
+  embedded?: { path: string; codec: string } | null
 }
 
 export interface CopyRow {
@@ -218,7 +230,20 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   },
   // 3. Whether a photo is HDR, and how (a gain map, PQ, HLG), for the grid's
   // badge: known once the file has been probed.
-  (db) => addColumns(db, 'photos', { hdr: 'TEXT', hdr_key: 'TEXT' })
+  (db) => addColumns(db, 'photos', { hdr: 'TEXT', hdr_key: 'TEXT' }),
+  // 4. A photo's `.pixl` project, once it has one: where it is, and its
+  // modification time as last mirrored (like a sidecar's).
+  (db) => addColumns(db, 'photos', { project_path: 'TEXT', project_mtime: 'REAL' }),
+  // 5. Every project the index has seen, with the photo it was made from: how
+  // a photo that moved away from its project (in a projects folder) finds it.
+  (db) =>
+    db.exec(`CREATE TABLE IF NOT EXISTS projects (
+      path TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      origin_path TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS projects_name ON projects(name, size);`)
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -262,24 +287,16 @@ export function migrate(db: DatabaseSync): void {
 }
 
 /** History entries kept per item (the base and its steps); older steps fold into the base. */
-const HISTORY_LIMIT = 200
-
-interface HistoryRow {
-  seq: number
-  label: string
-  at: string
-  recipe: string
-  patch: string | null
-  hidden: number
-}
 
 export class Store {
   private readonly db: DatabaseSync
   private readonly statements = new Map<string, StatementSync>()
   private depth = 0
+  private readonly hist: HistoryTable
 
   private constructor(db: DatabaseSync) {
     this.db = db
+    this.hist = new HistoryTable({ prepare: (sql) => this.prepare(sql), tx: (fn) => this.tx(fn) })
   }
 
   /** A statement, prepared once and reused: preparing costs more than most runs. */
@@ -615,6 +632,37 @@ export class Store {
     )
   }
 
+  /** Remember a project and the photo it names (see migration 5). */
+  registerProject(path: string, name: string, size: number, originPath: string): void {
+    this.prepare(
+      `INSERT INTO projects(path, name, size, origin_path) VALUES (?, ?, ?, ?)
+       ON CONFLICT(path) DO UPDATE SET name = excluded.name, size = excluded.size, origin_path = excluded.origin_path`
+    ).run(path, name, size, originPath)
+  }
+
+  /** Projects made from a photo of this name and size. */
+  projectsNamed(name: string, size: number): { path: string; origin_path: string }[] {
+    return this.prepare('SELECT path, origin_path FROM projects WHERE name = ? AND size = ?').all(
+      name,
+      size
+    ) as { path: string; origin_path: string }[]
+  }
+
+  /** The photos a project is tied to. */
+  photosWithProject(path: string): PhotoRow[] {
+    return this.prepare('SELECT * FROM photos WHERE project_path = ?').all(
+      path
+    ) as unknown as PhotoRow[]
+  }
+
+  setProject(id: number, path: string | null, mtime: number | null): void {
+    this.prepare('UPDATE photos SET project_path = ?, project_mtime = ? WHERE id = ?').run(
+      path,
+      mtime,
+      id
+    )
+  }
+
   setSidecarMtime(id: number, mtime: number | null): void {
     this.prepare('UPDATE photos SET sidecar_mtime = ? WHERE id = ?').run(mtime, id)
   }
@@ -689,117 +737,30 @@ export class Store {
     }
   }
 
-  // ── history ──
-  private historyRows(itemKey: string): HistoryRow[] {
-    return this.prepare(
-      'SELECT seq, label, at, recipe, patch, hidden FROM history WHERE item_key = ? ORDER BY seq'
-    ).all(itemKey) as unknown as HistoryRow[]
-  }
-
-  /**
-   * An item's history as its base and steps. Rows written before history
-   * became steps hold whole recipes; they are turned into patches here, once.
-   */
+  // ── history (photos without a project; see historytable.ts) ──
   history(itemKey: string): HistoryLog {
-    return this.tx(() => {
-      const rows = this.historyRows(itemKey)
-      if (rows.length === 0) return { base: null, steps: [] }
-      const [first, ...rest] = rows
-      if (rest.some((r) => r.patch === null)) {
-        const update = this.prepare(
-          "UPDATE history SET patch = ?, recipe = '' WHERE item_key = ? AND seq = ?"
-        )
-        let prev = JSON.parse(first.recipe) as Recipe
-        for (const r of rest) {
-          if (r.patch !== null) continue
-          const cur = JSON.parse(r.recipe) as Recipe
-          r.patch = JSON.stringify(diffRecipe(prev, cur))
-          update.run(r.patch, itemKey, r.seq)
-          prev = cur
-        }
-      }
-      return {
-        base: {
-          seq: first.seq,
-          label: first.label,
-          at: first.at,
-          recipe: JSON.parse(first.recipe) as Recipe
-        },
-        steps: rest.map((r): Step => ({
-          seq: r.seq,
-          label: r.label,
-          at: r.at,
-          patch: JSON.parse(r.patch ?? '[]') as Patch,
-          hidden: r.hidden !== 0
-        }))
-      }
-    })
+    return this.hist.history(itemKey)
   }
 
-  /**
-   * Record a settled edit: the first becomes the base, every later one a
-   * step holding what changed against the history's current recipe. An edit
-   * that changed nothing records nothing.
-   */
   appendHistory(itemKey: string, label: string, recipe: Recipe): HistoryLog {
-    return this.tx(() => {
-      const log = this.history(itemKey)
-      const at = new Date().toISOString()
-      const insert = this.prepare(
-        'INSERT INTO history(item_key, seq, label, at, recipe, patch, hidden) VALUES (?, ?, ?, ?, ?, ?, 0)'
-      )
-      if (!log.base) {
-        insert.run(itemKey, 1, label, at, JSON.stringify(recipe), null)
-        return this.history(itemKey)
-      }
-      const patch = diffRecipe(replay(log.base.recipe, log.steps), recipe)
-      if (patch.length === 0) return log
-      const seq = (log.steps.at(-1)?.seq ?? log.base.seq) + 1
-      insert.run(itemKey, seq, label, at, '', JSON.stringify(patch))
-      this.foldHistory(itemKey)
-      return this.history(itemKey)
-    })
+    return this.hist.append(itemKey, label, recipe)
   }
 
-  /** Past the limit, the oldest steps fold into the base (a hidden one is dropped). */
-  private foldHistory(itemKey: string): void {
-    const log = this.history(itemKey)
-    const excess = log.steps.length + 1 - HISTORY_LIMIT
-    if (!log.base || excess <= 0) return
-    const old = log.steps.slice(0, excess)
-    const base = old.reduce((r, s) => (s.hidden ? r : applyPatch(r, s.patch)), log.base.recipe)
-    this.prepare('UPDATE history SET recipe = ? WHERE item_key = ? AND seq = ?').run(
-      JSON.stringify(base),
-      itemKey,
-      log.base.seq
-    )
-    this.prepare('DELETE FROM history WHERE item_key = ? AND seq > ? AND seq <= ?').run(
-      itemKey,
-      log.base.seq,
-      old[old.length - 1].seq
-    )
-  }
-
-  /** Hide or show steps (never the base). */
   setHistoryHidden(itemKey: string, seqs: number[], hidden: boolean): HistoryLog {
-    return this.tx(() => {
-      const st = this.prepare(
-        'UPDATE history SET hidden = ? WHERE item_key = ? AND seq = ? AND patch IS NOT NULL'
-      )
-      for (const seq of seqs) st.run(hidden ? 1 : 0, itemKey, seq)
-      return this.history(itemKey)
-    })
+    return this.hist.setHidden(itemKey, seqs, hidden)
   }
 
-  /** Delete steps (never the base). */
   deleteHistory(itemKey: string, seqs: number[]): HistoryLog {
-    return this.tx(() => {
-      const st = this.prepare(
-        'DELETE FROM history WHERE item_key = ? AND seq = ? AND patch IS NOT NULL'
-      )
-      for (const seq of seqs) st.run(itemKey, seq)
-      return this.history(itemKey)
-    })
+    return this.hist.delete(itemKey, seqs)
+  }
+
+  /** An item's history rows as stored, to move them into its project. */
+  historyRows(itemKey: string): HistoryRow[] {
+    return this.hist.rows(itemKey)
+  }
+
+  removeHistory(itemKey: string): void {
+    this.hist.remove(itemKey)
   }
 
   // ── painted planes, by reference (see planestore.ts) ──
@@ -815,11 +776,7 @@ export class Store {
 
   /** Every stored recipe or patch that may name a plane by reference: the edit history's. */
   *historyRecipes(): Generator<string> {
-    const rows = this.prepare(
-      `SELECT recipe || ' ' || COALESCE(patch, '') AS json FROM history
-       WHERE recipe LIKE '%"ref":%' OR patch LIKE '%"ref":%'`
-    ).iterate() as Iterable<{ json: string }>
-    for (const r of rows) yield r.json
+    yield* this.hist.json()
   }
 
   /** Drop the planes not in `keep`. Returns how many went. */

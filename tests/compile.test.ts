@@ -98,7 +98,7 @@ test('a local layer maps to a masked layer the inspector can find', () => {
       { x: 0.5, y: 0.6 }
     ]
   })
-  l.adjust.exposure = -0.5
+  l.settings.basic.exposure = -0.5
   r.layers.push(l)
   const c = compile(r, ctx)
   assert.equal(c.layerIndex[l.id], 0)
@@ -288,9 +288,7 @@ test('a mask adds its colour in linear light', () => {
       { x: 0.5, y: 0.8 }
     ]
   })
-  l.adjust.addHue = 120
-  l.adjust.addSaturation = 80
-  l.adjust.addAmount = 30
+  l.settings.colorGrade.add = { hue: 120, saturation: 80, amount: 30 }
   r.layers.push(l)
   const c = compile(r, ctx)
   const stages = c.grade!.layers[c.layerIndex[l.id]].stages

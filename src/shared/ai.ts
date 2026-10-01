@@ -8,6 +8,7 @@
  */
 import type { EnhanceSettings } from './enhance'
 import type { MaskMode } from './engine-types'
+import type { AiDenoiseModel } from './recipe'
 
 export type AiTask = 'enhance' | 'segment' | 'denoise'
 export type SegmentTarget = 'subject' | 'sky' | 'background'
@@ -21,9 +22,10 @@ export interface AiStage {
 }
 
 export type AiResult =
-  | { kind: 'file'; path: string }
-  /** The photo itself changed (AI denoise): its renders pick it up. */
+  /** The photo itself changed: its renders pick it up. */
   | { kind: 'applied'; label: string }
+  /** A pixel step was added to the photo's recipe (an AI denoise): History records it. */
+  | { kind: 'step'; label: string }
   | {
       kind: 'mask'
       /** The plane, grey, in the photo's base frame, held by the plane store. */
@@ -58,14 +60,33 @@ export interface AiJobEvent {
 }
 
 export type AiStartRequest =
-  | { task: 'enhance'; key: string; settings: EnhanceSettings }
+  | {
+      task: 'enhance'
+      key: string
+      settings: EnhanceSettings
+      /** Deblur and JPEG restore inside this mask (frozen as it is now); an upscale is the whole photo. */
+      layerId?: string | null
+    }
   | {
       task: 'segment'
       key: string
       target: SegmentTarget
       into?: { layerId: string; mode: MaskMode }
     }
-  | { task: 'denoise'; key: string }
+  | {
+      task: 'denoise'
+      key: string
+      model: AiDenoiseModel
+      /** 1…100: the step's opacity (it can be changed after, without running the model). */
+      strength: number
+      /** Inside this mask (frozen as it is now); else the whole photo. */
+      layerId?: string | null
+      /**
+       * A photo from before AI denoise was a step: the full-resolution result
+       * the old setting made, if still kept, is taken as is (no model runs).
+       */
+      legacy?: boolean
+    }
 
 export interface AiCapabilities {
   enhance: boolean

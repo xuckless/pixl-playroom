@@ -6,6 +6,8 @@
 import { create } from 'zustand'
 import { DEFAULT_ENHANCE, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind } from '../../../shared/retouch'
+import type { AiDenoiseModel } from '../../../shared/recipe'
+import type { Bindings, Chord } from '../lib/keys'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 export type CropGuide = 'thirds' | 'grid' | 'golden' | 'diagonal' | 'none'
@@ -68,8 +70,6 @@ export interface HealSettings {
   /** 0…100 */
   feather: number
   opacity: number
-  /** Show every spot's outline (H); otherwise only the selected one and the one under the pointer. */
-  showAll: boolean
 }
 
 /** Every tool the wheel can hold (its order is `TOOLS`, in develop/tools.ts). */
@@ -81,7 +81,6 @@ export const TOOL_IDS = [
   'detail',
   'lens',
   'effects',
-  'masks',
   'heal',
   'crop',
   'calibration',
@@ -89,6 +88,28 @@ export const TOOL_IDS = [
 ] as const
 
 export type ToolId = (typeof TOOL_IDS)[number]
+
+/**
+ * The masks window: open or not, floating over the photo (its top-left, in px
+ * from the stage's) or docked as a column beside the left rail, and folded to
+ * a pill or not. Masks are not a wheel tool: the window stays up whatever the
+ * right column shows.
+ */
+export interface MasksWindow {
+  open: boolean
+  docked: boolean
+  minimized: boolean
+  x: number
+  y: number
+}
+
+const DEFAULT_MASKS_WIN: MasksWindow = {
+  open: false,
+  docked: false,
+  minimized: false,
+  x: -1,
+  y: 14
+}
 
 const isToolId = (v: unknown): v is ToolId => TOOL_IDS.includes(v as ToolId)
 
@@ -117,6 +138,11 @@ interface UiState {
   setEnhance(p: Partial<EnhanceSettings>): void
   /** Change the current brush's settings. */
   setBrush(p: Partial<BrushSettings>): void
+  masksWin: MasksWindow
+  setMasksWin(p: Partial<MasksWindow>): void
+  /** AI denoise's model and strength for the next step (Detail → AI). */
+  denoise: { model: AiDenoiseModel; strength: number }
+  setDenoise(p: Partial<{ model: AiDenoiseModel; strength: number }>): void
   /** The one tool the right column shows, chosen on the thumb-wheel. */
   panel: ToolId
   /** The tool before the last change, for a shortcut that toggles back. */
@@ -128,6 +154,14 @@ interface UiState {
   setFilmstrip(open: boolean): void
   setCropGuide(g: CropGuide): void
   cycleCropGuide(): void
+  /**
+   * The user's own key bindings, by command id: only the ones changed from the
+   * defaults, so a default that changes in a later version still arrives.
+   */
+  keyBindings: Bindings
+  /** Bind a command's keys (`[]` unbinds it), or `null` to go back to its default. */
+  setKeyBinding(id: string, keys: Chord[] | null): void
+  resetKeyBindings(): void
 }
 
 /** localStorage may be missing or refuse writes (private profiles, quota); the app works without it. */
@@ -159,7 +193,7 @@ export const useUi = create<UiState>()(
       },
       brushSlot: 'A',
       setBrushSlot: (brushSlot) => set({ brushSlot }),
-      heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100, showAll: false },
+      heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100 },
       setHeal: (p) => set((s) => ({ heal: { ...s.heal, ...p } })),
       enhance: DEFAULT_ENHANCE,
       setEnhance: (p) => set((s) => ({ enhance: { ...s.enhance, ...p } })),
@@ -167,6 +201,10 @@ export const useUi = create<UiState>()(
         set((s) => ({
           brushes: { ...s.brushes, [s.brushSlot]: { ...s.brushes[s.brushSlot], ...p } }
         })),
+      masksWin: DEFAULT_MASKS_WIN,
+      denoise: { model: 'scunet-color-real', strength: 100 },
+      setDenoise: (p) => set((s) => ({ denoise: { ...s.denoise, ...p } })),
+      setMasksWin: (p) => set((s) => ({ masksWin: { ...s.masksWin, ...p } })),
       panel: 'basic',
       previousPanel: 'basic',
       setPanel: (panel) => {
@@ -184,7 +222,16 @@ export const useUi = create<UiState>()(
       cycleCropGuide: () => {
         const i = CROP_GUIDES.findIndex((g) => g.value === get().cropGuide)
         set({ cropGuide: CROP_GUIDES[(i + 1) % CROP_GUIDES.length].value })
-      }
+      },
+      keyBindings: {},
+      setKeyBinding: (id, keys) =>
+        set((s) => {
+          const next = { ...s.keyBindings }
+          if (keys) next[id] = keys
+          else delete next[id]
+          return { keyBindings: next }
+        }),
+      resetKeyBindings: () => set({ keyBindings: {} })
     }),
     {
       name: 'playroom.ui',
@@ -199,6 +246,9 @@ export const useUi = create<UiState>()(
           ...p,
           // Settings saved before a field existed take its default.
           enhance: { ...DEFAULT_ENHANCE, ...p.enhance },
+          masksWin: { ...DEFAULT_MASKS_WIN, ...p.masksWin },
+          denoise: { model: 'scunet-color-real', strength: 100, ...p.denoise },
+          keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
           panel: isToolId(p.panel) ? p.panel : current.panel,
           previousPanel: isToolId(p.previousPanel) ? p.previousPanel : current.previousPanel
         }

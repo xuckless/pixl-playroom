@@ -43,10 +43,11 @@ import { compose, swapsAxes, transformPoint, userOrientation } from './orientati
 import {
   HSL_BANDS,
   type CurvePointSetting,
-  type LocalAdjust,
+  type LayerSettings,
   type LocalLayer,
   type MaskComponentSetting,
   type PointColorSetting,
+  type WheelSetting,
   type Recipe
 } from './recipe'
 import { opFromAbsolute, opFromRelative, type OpWhite } from './wb'
@@ -303,7 +304,7 @@ function buildShoulder(exposure: number, size: number): string {
 
 /** The base white balance as an engine op white, or null for the identity. */
 export function baseWhite(
-  r: Recipe,
+  r: Pick<Recipe, 'wb'>,
   ctx: Pick<CompileContext, 'isRaw' | 'asShot'>
 ): OpWhite | null {
   if (r.wb.mode === 'as-shot') return null
@@ -577,23 +578,90 @@ export function smoothnessFeather(smoothness: number): number {
   return (clamp(smoothness, 0, 100) / 100) * 0.01
 }
 
-/** The sliders that say which colour, not how much: Amount leaves them be. */
-const DIRECTIONS = new Set<keyof LocalAdjust>(['tintHue', 'addHue', 'addSaturation'])
+/**
+ * A mask's white: its temperature and tint are always relative (−100…100),
+ * whatever the photo's own white is in, and `as-shot` (or zeros) is none.
+ */
+function layerWhite(wb: Recipe['wb']): OpWhite | null {
+  if (wb.mode === 'as-shot' || (wb.temperature === 0 && wb.tint === 0)) return null
+  return opFromRelative(wb.temperature, wb.tint)
+}
 
 /**
- * A mask's Amount: every adjustment scaled by amount/100 (the tint's hue and
- * the added colour are directions, not strengths, and stay). The sliders'
- * own clamps bound the 200% end.
+ * A mask's Amount: every strength scaled by amount/100, from nothing (0) to
+ * double (200). What says which colour or where (hues, a curve's inputs, the
+ * add colour's hue and saturation, radii and other shape settings) stays; a
+ * point curve's outputs move toward its inputs. The sliders' own clamps (in
+ * the compiler) bound the 200% end.
  */
-export function scaleLocalAdjust(a: LocalAdjust, amount: number): LocalAdjust {
+export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
   const k = clamp(amount, 0, 200) / 100
-  if (k === 1) return a
-  const out = { ...a }
-  for (const key of Object.keys(out) as (keyof LocalAdjust)[]) {
-    if (DIRECTIONS.has(key)) continue
-    out[key] = a[key] * k
+  if (k === 1) return s
+  const m = (v: number): number => v * k
+  const curve = (c: CurvePointSetting[]): CurvePointSetting[] =>
+    c.map((p) => ({ x: p.x, y: p.x + (p.y - p.x) * k }))
+  const wheel = (w: WheelSetting): WheelSetting => ({
+    hue: w.hue,
+    saturation: m(w.saturation),
+    luminance: m(w.luminance)
+  })
+  const tc = s.toneCurve
+  const cg = s.colorGrade
+  return {
+    wb: { ...s.wb, temperature: m(s.wb.temperature), tint: m(s.wb.tint) },
+    basic: Object.fromEntries(
+      Object.entries(s.basic).map(([key, v]) => [key, m(v)])
+    ) as unknown as LayerSettings['basic'],
+    presence: Object.fromEntries(
+      Object.entries(s.presence).map(([key, v]) => [key, m(v)])
+    ) as unknown as LayerSettings['presence'],
+    toneCurve: {
+      ...tc,
+      highlights: m(tc.highlights),
+      lights: m(tc.lights),
+      darks: m(tc.darks),
+      shadows: m(tc.shadows),
+      master: curve(tc.master),
+      red: curve(tc.red),
+      green: curve(tc.green),
+      blue: curve(tc.blue)
+    },
+    hsl: Object.fromEntries(
+      Object.entries(s.hsl).map(([b, v]) => [
+        b,
+        { hue: m(v.hue), saturation: m(v.saturation), luminance: m(v.luminance) }
+      ])
+    ) as LayerSettings['hsl'],
+    pointColors: s.pointColors.map((p) => ({
+      ...p,
+      shiftHue: m(p.shiftHue),
+      shiftSat: m(p.shiftSat),
+      shiftLum: m(p.shiftLum)
+    })),
+    colorGrade: {
+      ...cg,
+      shadows: wheel(cg.shadows),
+      midtones: wheel(cg.midtones),
+      highlights: wheel(cg.highlights),
+      global: wheel(cg.global),
+      add: { ...cg.add, amount: m(cg.add.amount) }
+    },
+    detail: {
+      ...s.detail,
+      sharpenAmount: m(s.detail.sharpenAmount),
+      noiseLuminance: m(s.detail.noiseLuminance),
+      noiseColor: m(s.detail.noiseColor)
+    },
+    effects: {
+      ...s.effects,
+      vignetteAmount: m(s.effects.vignetteAmount),
+      grainAmount: m(s.effects.grainAmount),
+      wash: { ...s.effects.wash, amount: m(s.effects.wash.amount) }
+    },
+    calibration: Object.fromEntries(
+      Object.entries(s.calibration).map(([key, v]) => [key, m(v)])
+    ) as unknown as LayerSettings['calibration']
   }
-  return out
 }
 
 function maskComponent(
@@ -719,27 +787,24 @@ function sharpenOp(
   }
 }
 
-function hslOp(r: Recipe): GradeOp | null {
-  if (r.treatment === 'bw') {
-    if (HSL_BANDS.every((b) => r.bwMix[b] === 0)) return null
+/** The HSL bands, or with `bwMix` the black-and-white mix's luminance bands. */
+function hslOp(hsl: Recipe['hsl'], bwMix: Recipe['bwMix'] | null): GradeOp | null {
+  if (bwMix) {
+    if (HSL_BANDS.every((b) => bwMix[b] === 0)) return null
     const bands = Object.fromEntries(
-      HSL_BANDS.map((b) => [b, { hue: 0, saturation: 0, luminance: round4(r.bwMix[b] * 0.006) }])
+      HSL_BANDS.map((b) => [b, { hue: 0, saturation: 0, luminance: round4(bwMix[b] * 0.006) }])
     ) as unknown as HslBands
     return { HslBands: bands }
   }
-  if (
-    HSL_BANDS.every(
-      (b) => r.hsl[b].hue === 0 && r.hsl[b].saturation === 0 && r.hsl[b].luminance === 0
-    )
-  )
+  if (HSL_BANDS.every((b) => hsl[b].hue === 0 && hsl[b].saturation === 0 && hsl[b].luminance === 0))
     return null
   const bands = Object.fromEntries(
     HSL_BANDS.map((b) => [
       b,
       {
-        hue: round4(clamp(r.hsl[b].hue * 0.3, -180, 180)),
-        saturation: round4(clamp(r.hsl[b].saturation / 100, -1, 1)),
-        luminance: round4(clamp(r.hsl[b].luminance * 0.006, -1, 1))
+        hue: round4(clamp(hsl[b].hue * 0.3, -180, 180)),
+        saturation: round4(clamp(hsl[b].saturation / 100, -1, 1)),
+        luminance: round4(clamp(hsl[b].luminance * 0.006, -1, 1))
       }
     ])
   ) as unknown as HslBands
@@ -839,9 +904,23 @@ function colorGradeOp(cg: Recipe['colorGrade']): GradeOp | null {
   }
 }
 
-/** The base layer's two stages: physics, then the look. */
-function baseStages(
-  r: Recipe,
+/**
+ * What only the whole photo has: its look (profile, treatment, B&W mix) and
+ * the lens's defringe. A mask's stages are made without it.
+ */
+export type BaseOnly = Pick<Recipe, 'profile' | 'profileAmount' | 'treatment' | 'bwMix' | 'lens'>
+
+/**
+ * A layer's two stages, physics then the look, from its settings. The base
+ * layer (`base` given) is the photo's whole development; a mask's layer is a
+ * change on top of what is under it, so it has no profile, its white is
+ * relative, its exposure has no shoulder and its noise reduction runs in the
+ * look like any other local operation. Neutral settings make no stages.
+ */
+function settingsStages(
+  r: LayerSettings,
+  base: BaseOnly | null,
+  geometry: Recipe['geometry'],
   ctx: CompileContext,
   crop: CropRect | null,
   oriented: { width: number; height: number },
@@ -852,7 +931,7 @@ function baseStages(
   const hdr = ctx.hdr === true
   const d = r.detail
   const denoise =
-    !ctx.aiDenoised && (d.noiseLuminance > 0 || d.noiseColor > 0)
+    !(base && ctx.aiDenoised) && (d.noiseLuminance > 0 || d.noiseColor > 0)
       ? ({
           Denoise: {
             luminance: clamp(d.noiseLuminance / 100, 0, 1),
@@ -866,8 +945,8 @@ function baseStages(
   // ── linear light ──
   // Sensor noise is closest to additive and Gaussian before anything else
   // touches it, so a RAW is denoised first.
-  if (denoise && ctx.isRaw) linear.push(denoise)
-  const wb = baseWhite(r, ctx)
+  if (denoise && base && ctx.isRaw) linear.push(denoise)
+  const wb = base ? baseWhite(r, ctx) : layerWhite(r.wb)
   if (wb)
     linear.push({ WhiteBalance: { temperature_kelvin: round4(wb.kelvin), tint: round4(wb.tint) } })
   const mix = calibrationMatrix(r.calibration)
@@ -876,7 +955,7 @@ function baseStages(
     linear.push({ Primary: primary({ exposure: round4(r.basic.exposure), contrast_pivot: 0.18 }) })
     // An SDR picture's highlights are rolled onto white; an HDR one has
     // room above white for them (and a shoulder there would flatten it).
-    if (r.basic.exposure > 0 && !ctx.hdr) {
+    if (base && r.basic.exposure > 0 && !ctx.hdr) {
       linear.push({ Lut: { lut: { Cube: shoulderCube(r.basic.exposure) }, amount: 1 } })
     }
   }
@@ -885,16 +964,16 @@ function baseStages(
   if (light) linear.push(light)
 
   // ── the look ──
-  if (denoise && !ctx.isRaw) look.push(denoise)
+  if (denoise && !(base && ctx.isRaw)) look.push(denoise)
   // Fringes come off before anything grades their colour.
-  const defringe = defringeOp(r.lens)
+  const defringe = base ? defringeOp(base.lens) : null
   if (defringe) look.push(defringe)
   // The engine's detail and effect constants are set for display-referred
   // values, so dehaze runs at the head of the look stage.
   if (r.presence.dehaze !== 0) {
     look.push({ Dehaze: { amount: clamp(r.presence.dehaze / 100, -1, 1), radius: 0.01 } })
   }
-  switch (r.profile.kind) {
+  switch (base?.profile.kind ?? 'neutral') {
     case 'standard':
       look.push(curvesOp({ master: tonal(STANDARD_CURVE, hdr) }))
       break
@@ -908,11 +987,12 @@ function baseStages(
     case 'lut':
       // A table is defined on 0…1: on an HDR pipeline everything above white
       // gets its value at white.
-      if (hdr && r.profileAmount > 0)
+      if (base?.profile.kind !== 'lut') break
+      if (hdr && base.profileAmount > 0)
         notes.push('The LUT profile flattens the highlights above white on this HDR photo')
-      if (r.profileAmount > 0) {
+      if (base.profileAmount > 0) {
         look.push({
-          Lut: { lut: { Path: r.profile.path }, amount: clamp(r.profileAmount / 100, 0, 1) }
+          Lut: { lut: { Path: base.profile.path }, amount: clamp(base.profileAmount / 100, 0, 1) }
         })
       }
       break
@@ -961,8 +1041,8 @@ function baseStages(
   if (pc.master && tc.refineSaturation < 100)
     pc.refine_saturation = round4(clamp(tc.refineSaturation / 100, 0, 1))
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
-  const bw = r.treatment === 'bw' || r.profile.kind === 'monochrome'
-  const hsl = hslOp(bw ? { ...r, treatment: 'bw' } : r)
+  const bw = !!base && (base.treatment === 'bw' || base.profile.kind === 'monochrome')
+  const hsl = hslOp(r.hsl, bw ? base.bwMix : null)
   if (hsl) look.push(hsl)
   if (!bw) {
     const keyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }
@@ -973,7 +1053,10 @@ function baseStages(
   }
   if (bw) look.push({ Primary: primary({ saturation: 0 }) })
   else if (p.saturation !== 0)
-    look.push({ Primary: primary({ saturation: round4(1 + p.saturation / 100) }) })
+    look.push({ Primary: primary({ saturation: round4(Math.max(0, 1 + p.saturation / 100)) }) })
+  // Hue turns every colour (a mask's Hue slider).
+  if (!bw && p.hue)
+    look.push({ Primary: primary({ hue_shift: round4(clamp(p.hue, -100, 100) * 0.6) }) })
   const cg = colorGradeOp(r.colorGrade)
   if (cg) look.push(cg)
   if (r.calibration.shadowsTint !== 0) {
@@ -993,10 +1076,10 @@ function baseStages(
   if (e.vignetteAmount !== 0) {
     const v = vignettePlacement(
       crop,
-      r.geometry.straighten,
+      geometry.straighten,
       oriented.width,
       oriented.height,
-      uprightTransform(r.geometry.upright, oriented.width, oriented.height)
+      uprightTransform(geometry.upright, oriented.width, oriented.height)
     )
     look.push({
       Vignette: {
@@ -1042,95 +1125,6 @@ function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vig
   return 'PaintOverlay'
 }
 
-/** A local layer's stages from its sliders. */
-function localStages(
-  l: LocalLayer,
-  scale: number,
-  notes: string[]
-): { space: GradeSpace; ops: GradeOp[] }[] {
-  const a = l.adjust
-  const linear: GradeOp[] = []
-  const look: GradeOp[] = []
-  if (a.temperature !== 0 || a.tint !== 0) {
-    const op = opFromRelative(a.temperature, a.tint)
-    linear.push({ WhiteBalance: { temperature_kelvin: round4(op.kelvin), tint: round4(op.tint) } })
-  }
-  if (a.exposure !== 0)
-    linear.push({ Primary: primary({ exposure: a.exposure, contrast_pivot: 0.18 }) })
-  const light = addColorOp(
-    { hue: a.addHue, saturation: a.addSaturation, amount: a.addAmount },
-    'light'
-  )
-  if (light) linear.push(light)
-  if (a.dehaze !== 0) look.push({ Dehaze: { amount: clamp(a.dehaze / 100, -1, 1), radius: 0.01 } })
-  if (a.noise > 0) {
-    look.push({
-      Denoise: {
-        luminance: clamp(a.noise / 100, 0, 1),
-        luminance_detail: 0.5,
-        color: 0,
-        color_detail: 0.5
-      }
-    })
-  }
-  if (a.highlights || a.shadows || a.whites || a.blacks) {
-    look.push({
-      Tone: {
-        highlights: clamp(a.highlights / 100, -1, 1),
-        shadows: clamp(a.shadows / 100, -1, 1),
-        whites: clamp(a.whites / 100, -1, 1),
-        blacks: clamp(a.blacks / 100, -1, 1)
-      }
-    })
-  }
-  if (a.contrast !== 0 || a.saturation !== 0 || a.hue !== 0) {
-    look.push({
-      Primary: primary({
-        contrast: round4(1 + (a.contrast / 100) * 0.6),
-        saturation: round4(Math.max(0, 1 + a.saturation / 100)),
-        hue_shift: round4(a.hue * 0.6)
-      })
-    })
-  }
-  if (a.texture !== 0) {
-    look.push({
-      LocalContrast: {
-        amount: clamp((a.texture / 100) * 0.8, -1, 1),
-        radius: 0.0015,
-        midtones: 0.2
-      }
-    })
-  }
-  if (a.clarity !== 0) {
-    look.push({
-      LocalContrast: { amount: clamp(a.clarity / 100, -1, 1), radius: 0.012, midtones: 0.8 }
-    })
-  }
-  if (a.tintAmount > 0) {
-    const w = {
-      hue: ((a.tintHue % 360) + 360) % 360,
-      saturation: clamp(a.tintAmount / 100, 0, 1),
-      luminance: 0
-    }
-    const zero = { hue: 0, saturation: 0, luminance: 0 }
-    look.push({
-      ColorGrade: {
-        shadows: zero,
-        midtones: zero,
-        highlights: zero,
-        global: w,
-        blending: 0.5,
-        balance: 0
-      }
-    })
-  }
-  if (a.sharpness > 0) {
-    const s = sharpenOp(a.sharpness, 1, 25, 0, scale, notes)
-    if (s) look.push(s)
-  }
-  return [...stage('LinearWorking', linear), ...stage(LOOK_SPACE, look)]
-}
-
 /**
  * Compile a recipe. `grade` is null when nothing moves a pixel, so an
  * untouched photo takes the engine's fast path.
@@ -1142,7 +1136,7 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
 
   const layers: GradeLayer[] = []
   const layerIndex: Record<string, number> = {}
-  const base = baseStages(r, ctx, crop, oriented, notes)
+  const base = settingsStages(r, r, r.geometry, ctx, crop, oriented, notes)
   if (base.length > 0) {
     layers.push({
       name: 'base',
@@ -1156,9 +1150,13 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
   for (const l of r.layers) {
     const mask = layerMask(l, oriented.user, ctx.brushPaths)
     if (!mask) continue
-    let stages = localStages(
-      { ...l, adjust: scaleLocalAdjust(l.adjust, l.amount ?? 100) },
-      ctx.scale,
+    let stages = settingsStages(
+      scaleSettings(l.settings, l.amount ?? 100),
+      null,
+      r.geometry,
+      ctx,
+      crop,
+      oriented,
       notes
     )
     // A layer with nothing to do is still a valid place to look at its mask.

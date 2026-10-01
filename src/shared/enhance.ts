@@ -186,14 +186,27 @@ export function learnRates(
 /** Past this many output megapixels the panel warns: a 16-bit TIFF of it runs to gigabytes. */
 export const LARGE_OUTPUT_MP = 200
 
-/** A rough size of the 16-bit Deflate TIFF written, in bytes. */
-export function tiffBytes(w: number, h: number): number {
-  return w * h * 6 * 0.6
-}
-
 /** A short description of the chain, for the job's title: "JPEG restore + Deblur + ×2". */
 export function chainSubject(steps: PlannedStep[]): string {
   return steps
     .map((p) => (p.kind === 'x2' ? '×2' : p.kind === 'x4' || p.kind === 'x4-wdn' ? '×4' : p.label))
     .join(' + ')
+}
+
+/**
+ * JPEG restore reads the file's own compressed data, so it can only be a
+ * photo's first pixel step: on pixels already changed there is nothing of
+ * the file left to restore from.
+ */
+export function jpegRestoreRefusal(
+  s: EnhanceSettings,
+  isJpeg: boolean,
+  stepsBefore: number
+): string | null {
+  const restores = planSteps(s, isJpeg).some(
+    (p) => p.kind === 'reconstruct' || p.kind === 'fbcnn' || p.kind === 'fbcnn-qf'
+  )
+  return restores && stepsBefore > 0
+    ? 'JPEG restore reads the file itself, so it must come first: undo the other pixel steps, or leave it off'
+    : null
 }

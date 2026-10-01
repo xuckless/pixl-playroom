@@ -13,7 +13,9 @@ import {
 import { EnhancePanel } from '../panels/enhance'
 import { HealPanel } from '../panels/heal'
 import { LensPanel } from '../panels/lens'
-import { MasksPanel } from '../panels/masks/MaskTool'
+import { Icon } from '../components/icons'
+import { useDevelop } from '../state/develop'
+import { useScope } from '../state/scope'
 import { useUi, type ToolId } from '../state/ui'
 
 const PANELS: Record<ToolId, ComponentType> = {
@@ -24,23 +26,74 @@ const PANELS: Record<ToolId, ComponentType> = {
   detail: DetailPanel,
   lens: LensPanel,
   effects: EffectsPanel,
-  masks: MasksPanel,
   heal: HealPanel,
   crop: GeometryPanel,
   calibration: CalibrationPanel,
   enhance: EnhancePanel
 }
 
+/** The tools whose settings a selected mask carries (see `scope.ts`). */
+const SCOPED: ToolId[] = [
+  'basic',
+  'curve',
+  'hsl',
+  'grade',
+  'detail',
+  'effects',
+  'calibration',
+  // Strokes, and deblur and restore, keep inside the mask.
+  'heal',
+  'enhance'
+]
+
+/**
+ * Which part of the photo the panel edits: with a mask selected, a chip in
+ * the mask's own overlay colour (× edits the whole photo again); on a tool a
+ * mask cannot carry, a note that it edits the whole photo.
+ */
+function ScopeChip({ panel }: { panel: ToolId }): React.JSX.Element | null {
+  const { layer } = useScope()
+  const overlayHue = useUi((s) => s.maskOverlay.hue)
+  if (!layer) return null
+  const hue = layer.overlayHue ?? overlayHue
+  if (!SCOPED.includes(panel))
+    return <p className="scope-note muted small">This tool always edits the whole photo.</p>
+  return (
+    <div className="scope-chip" style={{ ['--scope-hue' as string]: hue }}>
+      <span className="scope-dot" />
+      <span className="scope-text">
+        Editing <b>{layer.name}</b>
+      </span>
+      <button
+        className="icon sm ghost"
+        title="Edit the whole photo (Esc)"
+        aria-label="Edit the whole photo"
+        onClick={() => useDevelop.getState().setLayer(null)}
+      >
+        <Icon name="close" />
+      </button>
+    </div>
+  )
+}
+
 /** Exactly one tool, springing in as the wheel lands on it. */
 export function ToolPanelHost(): React.JSX.Element {
   const panel = useUi((s) => s.panel)
   const Panel = PANELS[panel]
+  const layer = useScope().layer
+  const overlayHue = useUi((s) => s.maskOverlay.hue)
+  const scoped = layer !== null && SCOPED.includes(panel)
   const scroller = useRef<HTMLDivElement>(null)
   useEffect(() => {
     scroller.current?.scrollTo({ top: 0 })
   }, [panel])
   return (
-    <div className="panels" ref={scroller}>
+    <div
+      className={`panels${scoped ? ' scoped' : ''}`}
+      ref={scroller}
+      style={layer ? { ['--scope-hue' as string]: layer.overlayHue ?? overlayHue } : undefined}
+    >
+      <ScopeChip panel={panel} />
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={panel}

@@ -20,6 +20,7 @@ import { registerIpc } from './ipc'
 import { LensProfileStore } from './lensprofiles'
 import { startLicence } from './licence'
 import { Library } from './library'
+import { OriginalEmbedder } from './project/embed'
 import { buildMenu } from './menu'
 import {
   handOffOpens,
@@ -192,14 +193,26 @@ app.whenReady().then(() => {
   void engine.whenStarted().then(() => setAbout(engine.getStatus().version))
   const library = new Library(index, bgEngine)
   sessions = new DevelopSessions(library, engine, bgEngine)
+  // A photo's new project gets its original carried inside it.
+  const embedder = new OriginalEmbedder(index, library, bgEngine)
+  index.on((e) => {
+    if (e.name === 'project') embedder.request(e.key)
+  })
   const models = new ModelStore(index, () => bgEngine.getStatus())
   const lenses = new LensProfileStore()
   void lenses.start()
-  const exporter = new Exporter(library, sessions, bgEngine, models)
+  const exporter = new Exporter(library, sessions, bgEngine)
   const planes = new PlaneStore(index)
   const ai = new AiJobs(
     {
-      enhance: new EnhanceRunner(library, aiEngine, () => bgEngine.getStatus(), models, index),
+      enhance: new EnhanceRunner(
+        library,
+        aiEngine,
+        () => bgEngine.getStatus(),
+        models,
+        index,
+        () => sessions
+      ),
       segment: new SegmentRunner(library, planes, aiEngine, models, () => sessions),
       denoise: new DenoiseRunner(library, aiEngine, models, index, () => sessions)
     },
@@ -208,6 +221,7 @@ app.whenReady().then(() => {
   )
   registerIpc({
     index,
+    embedder,
     planes,
     library,
     sessions,

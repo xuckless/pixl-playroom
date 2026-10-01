@@ -92,6 +92,25 @@ first paid release.
 
 ## Masks and local tools
 
+- [ ] **Tone down AI subject and lasso masks blooming past their edge.**
+      An AI subject or background mask spills a soft halo outside the
+      subject, and so does a lasso. The AI plane is soft (model
+      probabilities) and low resolution (1024 px, `ai/segment.ts`), so it is
+      upsampled over the photo; a lasso's feather is symmetric about its
+      edge, so half of it always falls outside the shape. The engine has no
+      choke or contract on a mask component (only `feather { radius, edge }`),
+      so the fix is on the host. Add `edge: { shift: −100…100, harden: 0…100 }`
+      to `ComponentBase` and apply it where raster planes are written
+      (`planes.ts` `writeBrushPlane`, in the pixels worker): a min/max filter
+      of `shift` pixels contracts or expands, a levels curve around 50%
+      hardens the soft probabilities. That covers AI masks, brushes and
+      gradients. For a lasso, add an "inside" feather that offsets the polygon
+      inward by the feather radius before it reaches the engine (`compile.ts`
+      `maskComponent`). Default new AI masks to a small contract and some
+      harden (`ai/apply.ts`). Show the controls on the component card
+      (`MaskTool.tsx` `ComponentCard`), and give the loupe's live preview the
+      same shift and harden (`maskgl` shaders).
+
 - [ ] **Engine-native gradient shapes.** Linear and radial gradients are
       drawn by the host into 512 px raster planes (`src/shared/gradients.ts`,
       cached in the photo's cache) and reach the engine as `Raster` masks.

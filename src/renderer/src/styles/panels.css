@@ -1045,3 +1045,30 @@ fieldset::before {
   justify-content: space-between;
   margin-top: 12px;
 }
+/* AI denoise's steps: each one made, with its own strength. */
+.pixel-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.pixel-step {
+  padding: 6px 8px 2px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  background: rgba(157, 139, 234, 0.04);
+}
+.pixel-step-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pixel-step-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 12px;
+}

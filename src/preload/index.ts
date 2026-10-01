@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { NoiseEstimate, Transform } from '../shared/engine-types'
 import type { GuideLine } from '../shared/upright'
-import type { P as SpotPoint } from '../shared/retouch'
+import type { P as SpotPoint, RetouchSpot } from '../shared/retouch'
+import type { PixelStep } from '../shared/pixels'
 import type { ExportSettings } from '../shared/export'
 import type { LensProfile } from '../shared/lens'
 import {
@@ -10,7 +11,6 @@ import {
   type AutoWbResult,
   type BasicSetting,
   type CaMeasurement,
-  type DenoiseState,
   type ModelInfo,
   type ProviderInfo,
   type Collection,
@@ -44,7 +44,8 @@ import {
   type SourceListing,
   type UpdateChannel,
   type UpdateState,
-  type ViewState
+  type ViewState,
+  type ProjectInfo
 } from '../shared/ipc'
 import type { LicenceStatus } from '../shared/licence'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
@@ -125,6 +126,7 @@ const api = {
     openSource: (source: LibrarySource) => call<SourceListing>(IPC.library.openSource, source),
     resolvePaths: (paths: string[]) =>
       call<{ folder: string | null; keys: string[] }>(IPC.library.resolvePaths, paths),
+    projectInfo: (key: string) => call<ProjectInfo>(IPC.library.projectInfo, key),
     setMetadata: (keys: string[], patch: MetaTextPatch) =>
       call<(LibraryItem | undefined)[]>(IPC.library.setMetadata, keys, patch),
     keywordTree: () => call<KeywordNode[]>(IPC.library.keywordTree),
@@ -164,7 +166,8 @@ const api = {
     autoWb: (key: string) => call<SampleResult['wb']>(IPC.develop.autoWb, key),
     noise: (key: string) => call<NoiseEstimate | null>(IPC.develop.noise, key),
     measureCa: (key: string) => call<CaMeasurement>(IPC.develop.measureCa, key),
-    denoiseState: (key: string) => call<DenoiseState>(IPC.develop.denoiseState, key),
+    bakeSpot: (key: string, spot: RetouchSpot, layerId: string | null, steps: PixelStep[]) =>
+      call<PixelStep | null>(IPC.develop.bakeSpot, key, spot, layerId, steps),
     suggestHeal: (
       key: string,
       points: SpotPoint[],
@@ -190,7 +193,9 @@ const api = {
     onRendered: (cb: (e: RenderEvent) => void) => on(IPC.develop.rendered, cb),
     onRenderError: (
       cb: (e: { key: string; message: string; code: string; field?: string }) => void
-    ) => on(IPC.develop.renderError, cb)
+    ) => on(IPC.develop.renderError, cb),
+    onFrame: (cb: (e: { key: string; frameWidth: number; frameHeight: number }) => void) =>
+      on(IPC.develop.frame, cb)
   },
   models: {
     list: () => call<ModelInfo[]>(IPC.models.list),

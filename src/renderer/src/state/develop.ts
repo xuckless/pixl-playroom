@@ -9,7 +9,7 @@ import type {
   ViewState
 } from '../../../shared/ipc'
 import { replay } from '../../../shared/history'
-import { newId, type HslBand, type Recipe } from '../../../shared/recipe'
+import { newId, normaliseRecipe, type HslBand, type Recipe } from '../../../shared/recipe'
 import { FIT, type ZoomView } from '../../../shared/view'
 import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
@@ -44,7 +44,8 @@ export function wholeFrameTool(t: Tool): boolean {
 }
 
 /** Where an added colour lives: Colour grading, the Effects wash, or a mask. */
-export type AddTarget = 'grade' | 'wash' | { layer: string }
+/** Where an added colour lives: the photo's colour grading or wash, or a mask's. */
+export type AddTarget = 'grade' | 'wash' | { layer: string; part: 'grade' | 'wash' }
 
 /**
  * The additive-colour picker at work (tool `add-pick`): `white` takes one
@@ -116,8 +117,6 @@ interface DevelopState {
   addPick: AddPick | null
   /** Upright's guides while they are drawn (tool `upright-guide`), frame fractions. */
   guides: GuideLine[]
-  /** The selected spot of the Heal tool. */
-  spotId: string | null
   /** The point curve's channel on show (the targeted tool moves that one). */
   curveChannel: CurveChannel
   /** What the targeted adjustment tool moves: the HSL bands or the point curve. */
@@ -158,7 +157,6 @@ interface DevelopState {
   setHslTab(t: DevelopState['hslTab']): void
   setPointId(id: string | null): void
   setGuides(g: GuideLine[]): void
-  setSpotId(id: string | null): void
   /** Start (or, with null, stop) the additive-colour picker. */
   setAddPick(p: AddPick | null): void
   setCurveChannel(c: CurveChannel): void
@@ -211,9 +209,25 @@ function sendNow(key: string, recipe: Recipe, onError: (message: string) => void
 function applyLog(key: string, history: HistoryLog): void {
   const { session } = useDevelop.getState()
   if (!session || session.key !== key || !history.base) return
-  const recipe = replay(history.base.recipe, history.steps)
+  // A base saved by an older version can lack fields added since (AI denoise's).
+  const recipe = normaliseRecipe(replay(history.base.recipe, history.steps), session.isRaw)
   useDevelop.setState({ history, recipe, rendering: true })
   sendNow(session.key, recipe, (m) => useDevelop.getState().onError(m))
+}
+
+/**
+ * Work that lands in the recipe a moment later (a heal stroke being baked):
+ * Undo and Redo wait for it, so they undo what the user did last, not what
+ * was there before it landed.
+ */
+let landing: Promise<void> = Promise.resolve()
+export function landingWork(p: Promise<void>): void {
+  landing = landing
+    .then(
+      () => p,
+      () => p
+    )
+    .catch(() => undefined)
 }
 
 /** Undo and Redo, one at a time: each reads the history the one before left. */
@@ -265,7 +279,6 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   pointId: null,
   addPick: null,
   guides: [],
-  spotId: null,
   curveChannel: 'master',
   tatTarget: 'hsl',
   noise: null,
@@ -367,6 +380,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   undo() {
     queueHistoryOp(async () => {
+      await landing
       const last = get().history.steps.findLast((s) => !s.hidden)
       if (!last) return
       await get().setStepsHidden([last.seq], true)
@@ -376,6 +390,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   redoStep() {
     queueHistoryOp(async () => {
+      await landing
       const { redo, history } = get()
       // Skip what was shown again by hand since.
       const stack = redo.filter((seq) => history.steps.some((s) => s.seq === seq && s.hidden))
@@ -485,10 +500,6 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     set({ guides })
   },
 
-  setSpotId(spotId) {
-    set({ spotId })
-  },
-
   setPointId(pointId) {
     set({ pointId })
   },
@@ -519,8 +530,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       // A selected layer's mask is rendered whether or not the overlay shows:
       // the hue chart measures inside it.
       maskLayer: layerId,
-      // Thumbnails of every mask while the masks panel is open or all show.
-      maskThumbs: useUi.getState().panel === 'masks' || useUi.getState().maskOverlay.showAll,
+      // Thumbnails of every mask while the masks window is unfolded, or all show.
+      maskThumbs:
+        (useUi.getState().masksWin.open && !useUi.getState().masksWin.minimized) ||
+        useUi.getState().maskOverlay.showAll,
       // With a range selected its mask comes with every draft: only the
       // engine knows exactly what the key selects in the graded picture.
       maskLive: rangeSelected(get()),

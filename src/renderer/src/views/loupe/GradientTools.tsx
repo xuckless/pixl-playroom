@@ -67,14 +67,14 @@ export const GradientTools = memo(function GradientTools({
   const recipe = useDevelop((s) => s.recipe)
   const session = useDevelop((s) => s.session)
   const pins = useUi((s) => s.maskOverlay.pins)
-  const panel = useUi((s) => s.panel)
+  const masksUp = useUi((s) => s.masksWin.open)
   const layer = useRef<HTMLDivElement>(null)
   const drag = useRef<Drag | null>(null)
   const drawing = tool === 'linear' || tool === 'radial'
   const selected = recipe?.layers.flatMap((l) => l.components).find((c) => c.id === compId)
   const shown = isGradient(selected) ? selected : null
   if (!recipe || !session) return null
-  if (!drawing && (!shown || panel !== 'masks' || pins === 'never')) return null
+  if (!drawing && (!shown || !masksUp || tool === 'heal' || pins === 'never')) return null
 
   // plane pixels of a component ↔ display pixels of the loupe
   const toScreen = (c: Gradient, p: Pt): Pt => {

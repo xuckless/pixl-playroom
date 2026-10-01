@@ -13,8 +13,9 @@ import type { BlendMode, KeyBand, MaskMode } from './engine-types'
 import { defaultLens, type LensSetting } from './lens'
 import { defaultUpright, type UprightSetting } from './upright'
 import type { RetouchSpot } from './retouch'
+import { normalisePixelStep, type PixelStep } from './pixels'
 
-export const RECIPE_VERSION = 1
+export const RECIPE_VERSION = 2
 
 export const HSL_BANDS = [
   'red',
@@ -103,6 +104,8 @@ export interface PresenceSetting {
   dehaze: number
   vibrance: number
   saturation: number
+  /** −100…100: turns every hue (a mask's Hue slider; the whole photo has HSL for this). */
+  hue: number
 }
 
 export interface CurvePointSetting {
@@ -157,8 +160,9 @@ export interface DetailSetting {
   noiseColor: number
   noiseColorDetail: number
   /**
-   * AI noise reduction: a model's denoise of the photo, made once and kept
-   * (see `main/ai/denoise.ts`), in place of the classic sliders.
+   * AI noise reduction as it was before it became a pixel step (`pixels`):
+   * a photo whose recipe still has it on is given the step it described when
+   * it opens (renderer lib/denoise.ts), and it goes off. Nothing else reads it.
    */
   ai: AiDenoiseSetting
 }
@@ -292,6 +296,10 @@ export type MaskComponentSetting =
 /** Components drawn into a raster plane before they reach the engine. */
 export type RasterComponent = BrushComponent | LinearComponent | RadialComponent
 
+/**
+ * A mask's sliders before version 2, when a mask had its own small set:
+ * kept only to read old sidecars, histories and presets (`settingsFromAdjust`).
+ */
 export interface LocalAdjust {
   temperature: number
   tint: number
@@ -326,7 +334,12 @@ export interface LocalLayer {
   blend: BlendMode
   invert: boolean
   components: MaskComponentSetting[]
-  adjust: LocalAdjust
+  /**
+   * What the mask does where it selects: the same settings the whole photo
+   * has, as a change on top of it (neutral is no change). The panels edit
+   * these while the mask is selected (see `scope.ts` in the renderer).
+   */
+  settings: LayerSettings
   /** 0…200: scales every adjustment of the mask at once (Lightroom's Amount). */
   amount: number
   /** The mask's own overlay colour, a hue in 0…360; unset uses the overlay's colour. */
@@ -343,6 +356,26 @@ export interface CustomLayer {
   enabled: boolean
   layer: unknown
 }
+
+/**
+ * The settings a mask can carry: the photo's colour and tone, without what
+ * only makes sense once (profile, treatment, lens, geometry, retouch).
+ */
+export const SETTINGS_KEYS = [
+  'wb',
+  'basic',
+  'presence',
+  'toneCurve',
+  'hsl',
+  'pointColors',
+  'colorGrade',
+  'detail',
+  'effects',
+  'calibration'
+] as const
+
+export type SettingsKey = (typeof SETTINGS_KEYS)[number]
+export type LayerSettings = Pick<Recipe, SettingsKey>
 
 export interface Recipe {
   version: typeof RECIPE_VERSION
@@ -366,6 +399,12 @@ export interface Recipe {
   geometry: GeometrySetting
   /** Heal, clone and fill spots, red and pet eye, in the order they run (see `retouch.ts`). */
   retouch: RetouchSpot[]
+  /**
+   * Pixel steps (an AI denoise…), in order: images computed once and kept in
+   * the photo's project, laid over the photo before anything else (see
+   * `pixels.ts`). Never copied to another photo: they are this photo's pixels.
+   */
+  pixels: PixelStep[]
   layers: LocalLayer[]
   custom: CustomLayer[]
   /**
@@ -433,7 +472,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     gainMap: 'base',
     wb: { mode: 'as-shot', temperature: 0, tint: 0, preset: null },
     basic: { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 },
-    presence: { texture: 0, clarity: 0, dehaze: 0, vibrance: 0, saturation: 0 },
+    presence: { texture: 0, clarity: 0, dehaze: 0, vibrance: 0, saturation: 0, hue: 0 },
     toneCurve: {
       highlights: 0,
       lights: 0,
@@ -500,6 +539,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       upright: defaultUpright()
     },
     retouch: [],
+    pixels: [],
     layers: [],
     custom: []
   }
@@ -533,17 +573,25 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   if (!isObject(value) || !isObject((value as Record<string, unknown>).profile)) {
     r.profile = base.profile
   }
-  r.layers = (r.layers ?? []).map(({ overlayHue, ...l }) => ({
-    ...l,
-    ...(typeof overlayHue === 'number' && Number.isFinite(overlayHue)
-      ? { overlayHue: ((overlayHue % 360) + 360) % 360 }
-      : {}),
-    amount: num(l.amount, 100, 0, 200),
-    adjust: fill(ZERO_LOCAL, l.adjust),
-    components: (Array.isArray(l.components) ? (l.components as unknown[]) : [])
-      .map(normaliseComponent)
-      .filter((c): c is MaskComponentSetting => c !== null)
-  }))
+  r.layers = (r.layers ?? []).map(({ overlayHue, ...withOld }) => {
+    // Version 1's sliders become settings (`layerSettingsOf`) and go.
+    const l: typeof withOld & { adjust?: unknown } = { ...withOld }
+    delete l.adjust
+    return {
+      ...l,
+      ...(typeof overlayHue === 'number' && Number.isFinite(overlayHue)
+        ? { overlayHue: ((overlayHue % 360) + 360) % 360 }
+        : {}),
+      amount: num(l.amount, 100, 0, 200),
+      settings: layerSettingsOf(withOld as unknown as Record<string, unknown>),
+      components: (Array.isArray(l.components) ? (l.components as unknown[]) : [])
+        .map(normaliseComponent)
+        .filter((c): c is MaskComponentSetting => c !== null)
+    }
+  })
+  r.pixels = (Array.isArray(r.pixels) ? (r.pixels as unknown[]) : [])
+    .map(normalisePixelStep)
+    .filter((p): p is PixelStep => p !== null)
   r.retouch = (Array.isArray(r.retouch) ? (r.retouch as unknown[]) : []).filter(
     (s): s is RetouchSpot =>
       isObject(s) &&
@@ -607,6 +655,8 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         ...base,
         kind: 'brush',
         png: c.png,
+        // A plane held by reference (IPC, history, a project) keeps its reference.
+        ...(typeof c.ref === 'string' && c.ref ? { ref: c.ref } : {}),
         width: num(c.width, 1),
         height: num(c.height, 1)
       }
@@ -793,7 +843,7 @@ export function changedGroups(a: Recipe, b: Recipe): RecipeGroup[] {
 
 /** Whether a recipe differs from the default for its kind of file. */
 export function isEdited(r: Recipe, isRaw: boolean): boolean {
-  return changedGroups(r, defaultRecipe(isRaw)).length > 0
+  return r.pixels.length > 0 || changedGroups(r, defaultRecipe(isRaw)).length > 0
 }
 
 export function newId(): string {
@@ -809,7 +859,7 @@ export function newLocalLayer(name: string): LocalLayer {
     blend: 'Normal',
     invert: false,
     components: [],
-    adjust: { ...ZERO_LOCAL },
+    settings: neutralSettings(),
     amount: 100
   }
 }
@@ -841,6 +891,30 @@ export function slimRecipe(r: Recipe, known?: (ref: string, png: string) => void
   }
 }
 
+/**
+ * The recipe with every referenced plane filled in from `get` (and the
+ * references dropped), or the same recipe when it names none. A plane `get`
+ * does not have stays a reference.
+ */
+export function hydrateRecipe(r: Recipe, get: (ref: string) => string | undefined): Recipe {
+  if (!r.layers.some((l) => l.components.some((c) => c.kind === 'brush' && !c.png && c.ref)))
+    return r
+  return {
+    ...r,
+    layers: r.layers.map((l) => ({
+      ...l,
+      components: l.components.map((c) => {
+        if (c.kind !== 'brush' || c.png || !c.ref) return c
+        const png = get(c.ref)
+        if (png === undefined) return c
+        const out = { ...c, png }
+        delete out.ref
+        return out
+      })
+    }))
+  }
+}
+
 export function hash32(text: string): number {
   let h = 0x811c9dc5
   for (let i = 0; i < text.length; i++) {
@@ -848,4 +922,65 @@ export function hash32(text: string): number {
     h = Math.imul(h, 0x01000193)
   }
   return h >>> 0
+}
+
+/**
+ * A mask's settings that change nothing: zeros, identity curves, the white
+ * left alone, no sharpening or noise reduction, no effects.
+ */
+export function neutralSettings(): LayerSettings {
+  const r = defaultRecipe(false)
+  const out = Object.fromEntries(SETTINGS_KEYS.map((k) => [k, r[k]])) as LayerSettings
+  out.detail.ai = { ...out.detail.ai, enabled: false }
+  return out
+}
+
+/** Whether a mask's settings change nothing. */
+export function isNeutral(s: LayerSettings): boolean {
+  return JSON.stringify(s) === JSON.stringify(neutralSettings())
+}
+
+/**
+ * A mask's old sliders as settings: each where its whole-photo twin lives,
+ * so the engine is given the same operations (see compile.test.ts).
+ */
+export function settingsFromAdjust(a: LocalAdjust): LayerSettings {
+  const s = neutralSettings()
+  if (a.temperature || a.tint)
+    s.wb = { mode: 'custom', temperature: a.temperature, tint: a.tint, preset: null }
+  s.basic = {
+    exposure: a.exposure,
+    contrast: a.contrast,
+    highlights: a.highlights,
+    shadows: a.shadows,
+    whites: a.whites,
+    blacks: a.blacks
+  }
+  s.presence = {
+    ...s.presence,
+    texture: a.texture,
+    clarity: a.clarity,
+    dehaze: a.dehaze,
+    saturation: a.saturation,
+    hue: a.hue
+  }
+  s.detail.sharpenAmount = a.sharpness
+  s.detail.noiseLuminance = a.noise
+  if (a.tintAmount > 0)
+    s.colorGrade.global = { hue: a.tintHue, saturation: a.tintAmount, luminance: 0 }
+  s.colorGrade.add = { hue: a.addHue, saturation: a.addSaturation, amount: a.addAmount }
+  return s
+}
+
+/** A layer's settings as read from anywhere: version 2's, or made from version 1's sliders. */
+function layerSettingsOf(l: Record<string, unknown>): LayerSettings {
+  if (isObject(l.settings)) {
+    const s = fill(neutralSettings(), l.settings)
+    s.pointColors = (Array.isArray(s.pointColors) ? (s.pointColors as unknown[]) : [])
+      .map(normalisePointColor)
+      .filter((p): p is PointColorSetting => p !== null)
+      .slice(0, MAX_POINT_COLORS)
+    return s
+  }
+  return settingsFromAdjust(fill(ZERO_LOCAL, l.adjust))
 }

@@ -27,6 +27,8 @@ import { CurvePresets } from './CurvePresets'
 import { AiDenoise } from './AiDenoise'
 import { applyUpright, startGuides } from '../lib/upright'
 import type { UprightMode } from '../../../shared/upright'
+import { withKey } from '../lib/commands'
+import { scoped, useScope } from '../state/scope'
 
 type Read = (r: Recipe) => number
 type Write = (r: Recipe, v: number) => void
@@ -58,9 +60,7 @@ function RS({
   track?: string
   title?: string
 }): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
-  const edit = useDevelop((s) => s.edit)
-  const commit = useDevelop((s) => s.commit)
+  const { recipe, edit, commit } = useScope()
   if (!recipe) return null
   return (
     <Slider
@@ -170,8 +170,8 @@ function ProfileRow(): React.JSX.Element | null {
 
 function WhiteBalanceRows(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
-  const recipe = useDevelop((s) => s.recipe)
-  const replace = useDevelop((s) => s.replace)
+  // In a mask the white is a relative shift, without presets or the picker.
+  const { recipe, replace, layer } = useScope()
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
   const [saved, setSaved] = useState<SavedWb[]>([])
@@ -181,7 +181,7 @@ function WhiteBalanceRows(): React.JSX.Element | null {
   }, [])
   if (!session || !recipe) return null
   const ctx = { isRaw: session.isRaw, asShot: session.asShot }
-  const abs = absoluteWb(ctx)
+  const abs = !layer && absoluteWb(ctx)
   // Saved presets are in the units they were made in: absolute Kelvin for a
   // RAW with an as-shot white, relative sliders for everything else. One
   // that also kept the engine's white is offered on both kinds, converted.
@@ -268,28 +268,30 @@ function WhiteBalanceRows(): React.JSX.Element | null {
   const presetValue = recipe.wb.mode === 'as-shot' ? 'as-shot' : (recipe.wb.preset ?? 'custom')
   return (
     <>
-      <div className="row">
-        <Select
-          label="WB"
-          value={presetValue}
-          onChange={(v) => void choose(v)}
-          options={[
-            { value: 'as-shot', label: 'As shot' },
-            { value: 'auto', label: 'Auto' },
-            { value: 'custom', label: 'Custom' },
-            ...(abs ? WB_PRESETS.map((p) => ({ value: p.name, label: p.name })) : []),
-            ...mine.map((p) => ({ value: `mine:${p.name}`, label: `★ ${p.name}` })),
-            { value: 'save', label: 'Save current as preset…' }
-          ]}
-        />
-        <Toggle
-          on={tool === 'wb-picker'}
-          onChange={(on) => setTool(on ? 'wb-picker' : 'none')}
-          title="Pick a neutral in the photo (W)"
-        >
-          ⌖ Pick
-        </Toggle>
-      </div>
+      {!layer && (
+        <div className="row">
+          <Select
+            label="WB"
+            value={presetValue}
+            onChange={(v) => void choose(v)}
+            options={[
+              { value: 'as-shot', label: 'As shot' },
+              { value: 'auto', label: 'Auto' },
+              { value: 'custom', label: 'Custom' },
+              ...(abs ? WB_PRESETS.map((p) => ({ value: p.name, label: p.name })) : []),
+              ...mine.map((p) => ({ value: `mine:${p.name}`, label: `★ ${p.name}` })),
+              { value: 'save', label: 'Save current as preset…' }
+            ]}
+          />
+          <Toggle
+            on={tool === 'wb-picker'}
+            onChange={(on) => setTool(on ? 'wb-picker' : 'none')}
+            title={withKey('Pick a neutral in the photo', 'tool.wb')}
+          >
+            ⌖ Pick
+          </Toggle>
+        </div>
+      )}
       {naming !== null && (
         <div className="row">
           <input
@@ -329,8 +331,8 @@ function WhiteBalanceRows(): React.JSX.Element | null {
             def={shot?.temperature_kelvin ?? 5500}
             format={(v) => `${Math.round(v)} K`}
             track="linear-gradient(90deg,#5b8cff,#fff,#ffb44d)"
-            onChange={(v, live) => useDevelop.getState().edit((r) => custom(r, v, shownTint), live)}
-            onCommit={() => useDevelop.getState().commit('Temperature')}
+            onChange={(v, live) => scoped.edit((r) => custom(r, v, shownTint), live)}
+            onCommit={() => scoped.commit('Temperature')}
           />
           <Slider
             label="Tint"
@@ -339,8 +341,8 @@ function WhiteBalanceRows(): React.JSX.Element | null {
             max={150}
             def={(shot?.tint ?? 0) * 3000}
             track="linear-gradient(90deg,#4dff6a,#fff,#ff4de1)"
-            onChange={(v, live) => useDevelop.getState().edit((r) => custom(r, shownTemp, v), live)}
-            onCommit={() => useDevelop.getState().commit('Tint')}
+            onChange={(v, live) => scoped.edit((r) => custom(r, shownTemp, v), live)}
+            onCommit={() => scoped.commit('Tint')}
           />
         </>
       ) : (
@@ -351,8 +353,8 @@ function WhiteBalanceRows(): React.JSX.Element | null {
             min={-100}
             max={100}
             track="linear-gradient(90deg,#5b8cff,#fff,#ffb44d)"
-            onChange={(v, live) => useDevelop.getState().edit((r) => custom(r, v, shownTint), live)}
-            onCommit={() => useDevelop.getState().commit('Temperature')}
+            onChange={(v, live) => scoped.edit((r) => custom(r, v, shownTint), live)}
+            onCommit={() => scoped.commit('Temperature')}
           />
           <Slider
             label="Tint"
@@ -360,8 +362,8 @@ function WhiteBalanceRows(): React.JSX.Element | null {
             min={-100}
             max={100}
             track="linear-gradient(90deg,#4dff6a,#fff,#ff4de1)"
-            onChange={(v, live) => useDevelop.getState().edit((r) => custom(r, shownTemp, v), live)}
-            onCommit={() => useDevelop.getState().commit('Tint')}
+            onChange={(v, live) => scoped.edit((r) => custom(r, shownTemp, v), live)}
+            onCommit={() => scoped.commit('Tint')}
           />
         </>
       )}
@@ -371,8 +373,7 @@ function WhiteBalanceRows(): React.JSX.Element | null {
 
 export function BasicPanel(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
-  const recipe = useDevelop((s) => s.recipe)
-  const replace = useDevelop((s) => s.replace)
+  const { recipe, replace, layer } = useScope()
   if (!session || !recipe) return null
   const auto = async (): Promise<void> => {
     try {
@@ -388,29 +389,37 @@ export function BasicPanel(): React.JSX.Element | null {
   return (
     <ToolPanel
       actions={
-        <Tabs
-          value={recipe.treatment}
-          tabs={[
-            { value: 'color', label: 'Colour' },
-            { value: 'bw', label: 'B&W' }
-          ]}
-          onChange={(t) =>
-            replace({ ...recipe, treatment: t }, t === 'bw' ? 'Black & white' : 'Colour')
-          }
-        />
+        layer ? undefined : (
+          <Tabs
+            value={recipe.treatment}
+            tabs={[
+              { value: 'color', label: 'Colour' },
+              { value: 'bw', label: 'B&W' }
+            ]}
+            onChange={(t) =>
+              replace({ ...recipe, treatment: t }, t === 'bw' ? 'Black & white' : 'Colour')
+            }
+          />
+        )
       }
     >
-      <Section id="basic.wb" title="Profile & white balance">
-        <ProfileRow />
+      <Section id="basic.wb" title={layer ? 'White balance' : 'Profile & white balance'}>
+        {!layer && <ProfileRow />}
         <WhiteBalanceRows />
       </Section>
       <Section
         id="basic.tone"
         title="Tone"
         right={
-          <button className="sm" onClick={() => void auto()} title="Auto tone (Shift+A)">
-            Auto
-          </button>
+          layer ? undefined : (
+            <button
+              className="sm"
+              onClick={() => void auto()}
+              title={withKey('Auto tone', 'autoTone')}
+            >
+              Auto
+            </button>
+          )
         }
       >
         <RS
@@ -462,6 +471,15 @@ export function BasicPanel(): React.JSX.Element | null {
           read={(r) => r.presence.saturation}
           write={(r, v) => (r.presence.saturation = v)}
         />
+        {layer && (
+          <RS
+            label="Hue"
+            read={(r) => r.presence.hue}
+            write={(r, v) => (r.presence.hue = v)}
+            track="linear-gradient(90deg,#2df,#f2d,#fd2,#2f8,#2df)"
+            title="Turns every colour where the mask selects"
+          />
+        )}
       </Section>
     </ToolPanel>
   )
@@ -493,7 +511,7 @@ function TatToggle({ target }: { target: 'hsl' | 'curve' }): React.JSX.Element {
         s.setTatTarget(target)
         s.setTool(v ? 'tat' : 'none')
       }}
-      title="Targeted adjustment: drag up or down on the photo (T)"
+      title={withKey('Targeted adjustment: drag up or down on the photo', 'tool.tat')}
     >
       <PathIcon d={TAT_ICON} />
     </Toggle>
@@ -501,10 +519,8 @@ function TatToggle({ target }: { target: 'hsl' | 'curve' }): React.JSX.Element {
 }
 
 export function ToneCurvePanel(): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
+  const { recipe, edit, commit } = useScope()
   const stats = useDevelop((s) => s.stats)
-  const edit = useDevelop((s) => s.edit)
-  const commit = useDevelop((s) => s.commit)
   const channel = useDevelop((s) => s.curveChannel)
   const setChannel = useDevelop((s) => s.setCurveChannel)
   if (!recipe) return null
@@ -608,7 +624,7 @@ export function ToneCurvePanel(): React.JSX.Element | null {
 const BAND_LABEL = (b: HslBand): string => b[0].toUpperCase() + b.slice(1)
 
 export function HslPanel(): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
+  const { recipe, layer } = useScope()
   const tab = useDevelop((s) => s.hslTab)
   const setTab = useDevelop((s) => s.setHslTab)
   const focus = useDevelop((s) => s.hslFocus)
@@ -626,6 +642,16 @@ export function HslPanel(): React.JSX.Element | null {
   }, [focus, tab])
   if (!recipe) return null
   const bw = recipe.treatment === 'bw' || recipe.profile.kind === 'monochrome'
+  if (bw && layer) {
+    return (
+      <ToolPanel>
+        <p className="muted small">
+          This photo is black and white: its B&amp;W mix is set for the whole photo. Deselect the
+          mask to change it.
+        </p>
+      </ToolPanel>
+    )
+  }
   if (bw) {
     return (
       <ToolPanel>
@@ -703,12 +729,11 @@ function swatchColour(p: PointColorSetting): string {
  * its own. The eyedropper adds a swatch; the selected one shows its shifts.
  */
 function PointColorSection(): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
+  const { recipe, replace } = useScope()
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
   const pointId = useDevelop((s) => s.pointId)
   const setPointId = useDevelop((s) => s.setPointId)
-  const replace = useDevelop((s) => s.replace)
   // Put the eyedropper down when the tab goes.
   useEffect(
     () => () => {
@@ -817,9 +842,7 @@ function PointColorSection(): React.JSX.Element | null {
 // ── Colour grading ───────────────────────────────────────────────────────────
 
 export function ColorGradePanel(): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
-  const edit = useDevelop((s) => s.edit)
-  const commit = useDevelop((s) => s.commit)
+  const { recipe, edit, commit, layer } = useScope()
   if (!recipe) return null
   const wheel = (
     key: 'shadows' | 'midtones' | 'highlights' | 'global',
@@ -857,10 +880,14 @@ export function ColorGradePanel(): React.JSX.Element | null {
       />
       <Section id="grade.add" title="Add colour">
         <AddColourControl
-          target="grade"
+          target={layer ? { layer: layer.id, part: 'grade' } : 'grade'}
           value={recipe.colorGrade.add}
           onChange={(v, live) => edit((r) => (r.colorGrade.add = v), live)}
-          hint="Coloured light on the whole scene, added in linear light after exposure."
+          hint={
+            layer
+              ? 'Coloured light added where the mask selects, in linear light.'
+              : 'Coloured light on the whole scene, added in linear light after exposure.'
+          }
         />
       </Section>
     </ToolPanel>
@@ -870,13 +897,15 @@ export function ColorGradePanel(): React.JSX.Element | null {
 // ── Detail ───────────────────────────────────────────────────────────────────
 
 export function DetailPanel(): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
+  const { recipe } = useScope()
   const noise = useDevelop((s) => s.noise)
   const measure = useDevelop((s) => s.measureNoise)
   const report = useDevelop((s) => s.report)
-  const edit = useDevelop((s) => s.edit)
-  const commit = useDevelop((s) => s.commit)
   const [measuring, setMeasuring] = useState(false)
+  // The AI tab while the photo has denoise steps, until the user turns away.
+  const [noiseTab, setNoiseTab] = useState<'classic' | 'ai'>(() =>
+    (useDevelop.getState().recipe?.pixels.length ?? 0) > 0 ? 'ai' : 'classic'
+  )
   if (!recipe) return null
   const seen = report?.gradeLines.filter((l) => l.includes('denoise')) ?? []
   return (
@@ -916,18 +945,16 @@ export function DetailPanel(): React.JSX.Element | null {
         />
       </Section>
       <Section id="detail.noise" title="Noise reduction">
+        {/* Classic is a setting; AI makes pixel steps (both can apply, inside a mask too). */}
         <Tabs
-          value={recipe.detail.ai.enabled ? 'ai' : 'classic'}
+          value={noiseTab}
           tabs={[
             { value: 'classic', label: 'Classic' },
             { value: 'ai', label: 'AI' }
           ]}
-          onChange={(v) => {
-            edit((r) => (r.detail.ai.enabled = v === 'ai'))
-            commit(v === 'ai' ? 'AI denoise' : 'Classic denoise')
-          }}
+          onChange={setNoiseTab}
         />
-        {recipe.detail.ai.enabled ? (
+        {noiseTab === 'ai' ? (
           <AiDenoise />
         ) : (
           <>
@@ -985,7 +1012,9 @@ export function DetailPanel(): React.JSX.Element | null {
         {seen.length > 0 && (
           <pre className="report-lines">{seen.map((l) => l.trim()).join('\n')}</pre>
         )}
-        <p className="muted small">Sharpening and noise reduction read true at 100% (Z).</p>
+        <p className="muted small">
+          Sharpening and noise reduction read true at {withKey('100%', 'zoom.toggle')}.
+        </p>
       </Section>
     </ToolPanel>
   )
@@ -994,10 +1023,8 @@ export function DetailPanel(): React.JSX.Element | null {
 // ── Effects ──────────────────────────────────────────────────────────────────
 
 export function EffectsPanel(): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
+  const { recipe, edit, commit, layer } = useScope()
   const isHdr = useDevelop((s) => s.session?.isHdr === true)
-  const edit = useDevelop((s) => s.edit)
-  const commit = useDevelop((s) => s.commit)
   if (!recipe) return null
   const paint = recipe.effects.vignetteStyle === 'paint'
   return (
@@ -1063,7 +1090,7 @@ export function EffectsPanel(): React.JSX.Element | null {
       </Section>
       <Section id="effects.wash" title="Colour wash">
         <AddColourControl
-          target="wash"
+          target={layer ? { layer: layer.id, part: 'wash' } : 'wash'}
           value={recipe.effects.wash}
           onChange={(v, live) => edit((r) => (r.effects.wash = v), live)}
           hint="A lift toward the colour on the finished look, blacks as much as whites: a wash or a light leak."
@@ -1175,7 +1202,7 @@ export function GeometryPanel(): React.JSX.Element | null {
         <Toggle
           on={tool === 'crop'}
           onChange={(on) => setTool(on ? 'crop' : 'none')}
-          title="Crop tool (R)"
+          title={withKey('Crop tool', 'tool.crop')}
         >
           <Icon name="crop" />
           Crop

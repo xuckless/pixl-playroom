@@ -2,7 +2,7 @@ import { newLocalLayer } from '../../../shared/recipe'
 import { Histogram, HueChart } from '../components/charts'
 import { emptyRange } from '../lib/helpers'
 import { useDevelop } from '../state/develop'
-import { selectPanel } from './tools'
+import { openMasks, selectPanel } from './tools'
 
 /**
  * The scopes, pinned above the thumb-wheel: the histogram, and the
@@ -40,7 +40,7 @@ export function Scopes(): React.JSX.Element {
               `Colour mask at ${Math.round(hue)}°`
             )
             d.setLayer(layer.id)
-            selectPanel('masks')
+            openMasks()
           } else {
             setHslFocus(band)
             setHslTab('all')

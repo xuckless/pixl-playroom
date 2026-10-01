@@ -50,13 +50,14 @@ function isEntityList(path: Seg[]): boolean {
       path[0] === 'layers' ||
       path[0] === 'custom' ||
       path[0] === 'pointColors' ||
-      path[0] === 'retouch'
+      path[0] === 'retouch' ||
+      path[0] === 'pixels'
     )
+  // A mask's components, and the point colours among its settings.
+  if (path[0] !== 'layers' || typeof path[1] === 'string') return false
   return (
-    path.length === 3 &&
-    path[0] === 'layers' &&
-    typeof path[1] !== 'string' &&
-    path[2] === 'components'
+    (path.length === 3 && path[2] === 'components') ||
+    (path.length === 4 && path[2] === 'settings' && path[3] === 'pointColors')
   )
 }
 

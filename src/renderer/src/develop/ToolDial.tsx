@@ -2,6 +2,7 @@ import { PathIcon } from '../components/icons'
 import { useUi } from '../state/ui'
 import { ToolWheel } from './ToolWheel'
 import { selectPanel, TOOLS } from './tools'
+import { withKey } from '../lib/commands'
 
 /** The chosen tool's name, glyph and purpose beside the thumb-wheel, with a tick for each tool. */
 export function ToolDial(): React.JSX.Element {
@@ -28,7 +29,7 @@ export function ToolDial(): React.JSX.Element {
               role="tab"
               aria-selected={i === index}
               aria-label={x.name}
-              title={`${x.name} (Ctrl+${i + 1 <= 9 ? i + 1 : '↑/↓'})`}
+              title={withKey(x.name, `tool.${x.id}`)}
               className={i === index ? 'on' : ''}
               onClick={() => selectPanel(x.id)}
             />

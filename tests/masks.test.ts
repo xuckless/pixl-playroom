@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   compile,
-  scaleLocalAdjust,
+  scaleSettings,
   smoothnessFeather,
   smoothnessRadius,
   type CompileContext
@@ -11,6 +11,8 @@ import {
   defaultRecipe,
   newLocalLayer,
   normaliseRecipe,
+  neutralSettings,
+  settingsFromAdjust,
   ZERO_LOCAL,
   type RangeComponent
 } from '../src/shared/recipe'
@@ -51,36 +53,115 @@ const range = (smoothness: number): RangeComponent => ({
   smoothness
 })
 
-test('Amount 100% leaves the adjustments as they are', () => {
-  const a = { ...ZERO_LOCAL, exposure: 0.5, contrast: 20, tintHue: 210, tintAmount: 30 }
-  assert.equal(scaleLocalAdjust(a, 100), a)
+test('Amount 100% leaves the settings as they are', () => {
+  const s = neutralSettings()
+  s.basic.exposure = 0.5
+  assert.equal(scaleSettings(s, 100), s)
 })
 
-test('Amount scales every adjustment but the tint hue', () => {
-  const a = { ...ZERO_LOCAL, exposure: 0.5, contrast: 20, tintHue: 210, tintAmount: 30 }
-  const half = scaleLocalAdjust(a, 50)
-  assert.equal(half.exposure, 0.25)
-  assert.equal(half.contrast, 10)
-  assert.equal(half.tintAmount, 15)
-  assert.equal(half.tintHue, 210)
-  const none = scaleLocalAdjust(a, 0)
-  assert.equal(none.exposure, 0)
-  assert.equal(scaleLocalAdjust(a, 200).contrast, 40)
+test('Amount scales every strength, not which colour or where', () => {
+  const s = neutralSettings()
+  s.basic.exposure = 0.5
+  s.basic.contrast = 20
+  s.colorGrade.global = { hue: 210, saturation: 30, luminance: 0 }
+  s.colorGrade.add = { hue: 30, saturation: 60, amount: 20 }
+  s.toneCurve.master = [
+    { x: 0, y: 0 },
+    { x: 0.5, y: 0.7 },
+    { x: 1, y: 1 }
+  ]
+  s.detail.sharpenAmount = 40
+  const half = scaleSettings(s, 50)
+  assert.equal(half.basic.exposure, 0.25)
+  assert.equal(half.basic.contrast, 10)
+  assert.equal(half.colorGrade.global.saturation, 15)
+  assert.equal(half.colorGrade.global.hue, 210)
+  assert.equal(half.colorGrade.add.amount, 10)
+  assert.equal(half.colorGrade.add.hue, 30)
+  assert.equal(half.colorGrade.add.saturation, 60)
+  // A point curve's outputs move halfway back toward its inputs.
+  assert.ok(Math.abs(half.toneCurve.master[1].y - 0.6) < 1e-9)
+  assert.equal(half.toneCurve.master[1].x, 0.5)
+  assert.equal(half.detail.sharpenAmount, 20)
+  assert.equal(half.detail.sharpenRadius, s.detail.sharpenRadius)
+  assert.equal(scaleSettings(s, 0).basic.exposure, 0)
+  assert.equal(scaleSettings(s, 200).basic.contrast, 40)
 })
 
-test('Amount scales how much colour is added, not which colour', () => {
-  const a = { ...ZERO_LOCAL, addHue: 30, addSaturation: 60, addAmount: 20 }
-  const half = scaleLocalAdjust(a, 50)
-  assert.equal(half.addAmount, 10)
-  assert.equal(half.addHue, 30)
-  assert.equal(half.addSaturation, 60)
+test('a neutral mask changes nothing, and its layer only stays inspectable', () => {
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('m')
+  l.components.push(range(0))
+  r.layers.push(l)
+  const c = compile(r, ctx)
+  const ops = c.grade!.layers[c.layerIndex[l.id]].stages.flatMap((s) => s.ops)
+  assert.deepEqual(
+    ops.map((o: GradeOp) => Object.keys(o)[0]),
+    ['Primary']
+  )
+})
+
+test('a version 1 mask becomes settings that give the engine the same operations', () => {
+  const a = {
+    ...ZERO_LOCAL,
+    temperature: 20,
+    exposure: 0.5,
+    contrast: 10,
+    highlights: -30,
+    texture: 15,
+    clarity: 20,
+    dehaze: 10,
+    hue: 5,
+    saturation: -20,
+    sharpness: 30,
+    noise: 40,
+    tintHue: 200,
+    tintAmount: 25,
+    addHue: 30,
+    addSaturation: 50,
+    addAmount: 20
+  }
+  const s = settingsFromAdjust(a)
+  assert.equal(s.wb.temperature, 20)
+  assert.equal(s.basic.exposure, 0.5)
+  assert.equal(s.presence.hue, 5)
+  assert.equal(s.detail.sharpenAmount, 30)
+  assert.equal(s.detail.noiseLuminance, 40)
+  assert.deepEqual(s.colorGrade.global, { hue: 200, saturation: 25, luminance: 0 })
+  assert.deepEqual(s.colorGrade.add, { hue: 30, saturation: 50, amount: 20 })
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('m')
+  l.components.push(range(0))
+  l.settings = s
+  r.layers.push(l)
+  // At 1:1, where sharpening shows.
+  const stages = compile(r, { ...ctx, scale: 1 }).grade!.layers[0].stages
+  const kinds = (i: number): string[] => stages[i].ops.map((o: GradeOp) => Object.keys(o)[0])
+  assert.deepEqual(kinds(0), ['WhiteBalance', 'Primary', 'AddColor'])
+  assert.deepEqual(
+    [...kinds(1)].sort(),
+    [
+      'ColorGrade',
+      'Dehaze',
+      'Denoise',
+      'LocalContrast',
+      'LocalContrast',
+      'Primary',
+      'Primary',
+      'Primary',
+      'Sharpen',
+      'Tone'
+    ].sort()
+  )
+  // No profile, no shoulder: a mask is a change on top of the photo.
+  assert.ok(!kinds(0).includes('Lut') && !kinds(1).includes('Curves'))
 })
 
 test('Amount 0 still leaves the mask inspectable', () => {
   const r = defaultRecipe(false)
   const l = newLocalLayer('m')
   l.components.push(range(0))
-  l.adjust.exposure = 1
+  l.settings.basic.exposure = 1
   l.amount = 0
   r.layers.push(l)
   const c = compile(r, ctx)
@@ -124,7 +205,7 @@ test('gradients reach the engine as raster planes, and are dropped without one',
     width: 512,
     height: 341
   })
-  l.adjust.exposure = -1
+  l.settings.basic.exposure = -1
   r.layers.push(l)
   assert.equal(compile(r, ctx).grade, null)
   const c = compile(r, { ...ctx, brushPaths: { lin: '/tmp/lin.png' } })
@@ -192,7 +273,9 @@ test('an older sidecar gets Amount and Smoothness; unknown kinds are dropped', (
   assert.equal(l.components.length, 1)
   const c = l.components[0] as RangeComponent
   assert.equal(c.smoothness, 0)
-  assert.equal(l.adjust.contrast, 0)
+  assert.equal(l.settings.basic.exposure, 1)
+  assert.equal(l.settings.basic.contrast, 0)
+  assert.equal('adjust' in l, false)
 })
 
 test('component names and mask overlay colours survive normalising', () => {
@@ -277,4 +360,24 @@ test('a mask of shapes is centred between them; a painted one has no centre of i
   assert.ok(Math.abs(both.x - 0.45) < 1e-9 && Math.abs(both.y - 0.3) < 1e-9)
   assert.equal(geometricCentre([radial, range(0)]), null)
   assert.equal(geometricCentre([]), null)
+})
+
+test('a brush plane held by reference keeps its reference through normalising', () => {
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('m')
+  l.components.push({
+    id: 'b',
+    kind: 'brush',
+    mode: 'Add',
+    opacity: 100,
+    invert: false,
+    feather: 0,
+    width: 4,
+    height: 4,
+    png: '',
+    ref: 'abc-12'
+  })
+  r.layers.push(l)
+  const c = normaliseRecipe(JSON.parse(JSON.stringify(r)), false).layers[0].components[0]
+  assert.equal(c.kind === 'brush' && c.ref, 'abc-12')
 })

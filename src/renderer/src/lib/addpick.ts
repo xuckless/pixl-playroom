@@ -16,38 +16,36 @@ import type { Recipe } from '../../../shared/recipe'
 import { useDevelop, type AddTarget } from '../state/develop'
 import { useLibrary } from '../state/library'
 
-/** Colour grading and masks add light; the Effects wash adds to code values. */
+/** Colour grading adds light; the Effects wash adds to code values (a mask's alike). */
 export function addKindOf(t: AddTarget): AddKind {
-  return t === 'wash' ? 'wash' : 'light'
+  return t === 'wash' || (typeof t === 'object' && t.part === 'wash') ? 'wash' : 'light'
+}
+
+/** The settings an added colour lives in: the photo's, or a mask's. */
+function holder(r: Recipe, t: AddTarget): Pick<Recipe, 'colorGrade' | 'effects'> | null {
+  if (typeof t !== 'object') return r
+  return r.layers.find((x) => x.id === t.layer)?.settings ?? null
 }
 
 export function readAdd(r: Recipe, t: AddTarget): AddColourSetting | null {
-  if (t === 'grade') return r.colorGrade.add
-  if (t === 'wash') return r.effects.wash
-  const l = r.layers.find((x) => x.id === t.layer)
-  return l
-    ? { hue: l.adjust.addHue, saturation: l.adjust.addSaturation, amount: l.adjust.addAmount }
-    : null
+  const h = holder(r, t)
+  if (!h) return null
+  return addKindOf(t) === 'wash' ? h.effects.wash : h.colorGrade.add
 }
 
 export function writeAdd(r: Recipe, t: AddTarget, s: AddColourSetting): void {
-  if (t === 'grade') r.colorGrade.add = { ...s }
-  else if (t === 'wash') r.effects.wash = { ...s }
-  else {
-    const l = r.layers.find((x) => x.id === t.layer)
-    if (!l) return
-    l.adjust.addHue = s.hue
-    l.adjust.addSaturation = s.saturation
-    l.adjust.addAmount = s.amount
-  }
+  const h = holder(r, t)
+  if (!h) return
+  if (addKindOf(t) === 'wash') h.effects.wash = { ...s }
+  else h.colorGrade.add = { ...s }
 }
 
 /** The history label a target's edits go under. */
 export function addLabel(r: Recipe | null, t: AddTarget): string {
-  if (t === 'grade') return 'Add colour'
-  if (t === 'wash') return 'Colour wash'
+  const what = addKindOf(t) === 'wash' ? 'Colour wash' : 'Add colour'
+  if (typeof t !== 'object') return what
   const l = r?.layers.find((x) => x.id === t.layer)
-  return `${l?.name ?? 'Mask'}: add colour`
+  return `${l?.name ?? 'Mask'}: ${what.toLowerCase()}`
 }
 
 /** The picker's instruction for where it is. */

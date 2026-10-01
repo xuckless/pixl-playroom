@@ -624,3 +624,53 @@ aside.right .panels {
   background: linear-gradient(90deg, rgba(255, 180, 84, 0.8), rgba(170, 120, 255, 0.8));
   box-shadow: 0 0 10px -3px rgba(255, 190, 120, 0.7);
 }
+
+/* ── edit scope: a selected mask's panels ─────────────────────── */
+.scope-chip {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid hsl(var(--scope-hue) 70% 60% / 0.55);
+  border-radius: var(--r);
+  background:
+    linear-gradient(
+      90deg,
+      hsl(var(--scope-hue) 70% 50% / 0.18),
+      hsl(var(--scope-hue) 70% 50% / 0.04)
+    ),
+    var(--s2);
+  color: var(--text);
+  font-size: 12px;
+  animation: floatIn 0.35s var(--spring) both;
+}
+.scope-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: hsl(var(--scope-hue) 80% 60%);
+  box-shadow: 0 0 10px hsl(var(--scope-hue) 80% 60%);
+  flex: none;
+}
+.scope-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scope-chip .icon.sm {
+  width: 24px;
+  height: 24px;
+}
+.scope-note {
+  margin: 10px 0 0;
+}
+/* In a mask, the panel's edge glows in the mask's colour. */
+aside.right .panels.scoped {
+  box-shadow: inset 2px 0 0 hsl(var(--scope-hue, 260) 70% 60% / 0.5);
+}

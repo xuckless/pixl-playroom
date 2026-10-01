@@ -4,6 +4,7 @@
 // build/doc-icons/<fmt>.ico (PNG entries, Windows Vista and later) and
 // build/doc-icons/png/<fmt>-256.png for the website.
 //   pnpm doc-icons        (macOS, for iconutil)
+//   pnpm doc-icons pixl   (only the named ones)
 import { app, BrowserWindow } from 'electron'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -14,8 +15,9 @@ import { pathToFileURL } from 'node:url'
 const ROOT = resolve(import.meta.dirname, '..')
 const PAGE = pathToFileURL(join(ROOT, 'build/brand/doc-icon.html'))
 const OUT = join(ROOT, 'build/doc-icons')
-/** File name → the label on the page and its tone (TIFF is what Enhance writes). */
+/** File name → the label on the page and its tone (TIFF is what Enhance writes; PIXL is Playroom's project). */
 const FORMATS = {
+  pixl: ['PIXL', 'project'],
   raw: ['RAW', 'source'],
   dng: ['DNG', 'source'],
   jxl: ['JXL', 'source'],
@@ -108,7 +110,9 @@ app.whenReady().then(async () => {
   const tmp = mkdtempSync(join(tmpdir(), 'playroom-doc-icons-'))
   mkdirSync(join(OUT, 'png'), { recursive: true })
   try {
+    const only = process.argv.slice(2).filter((a) => a in FORMATS)
     for (const [name, [fmt, tone]] of Object.entries(FORMATS)) {
+      if (only.length && !only.includes(name)) continue
       const pngs = new Map()
       const at = async (size) => {
         if (!pngs.has(size)) pngs.set(size, await render(win, fmt, tone, size))

@@ -2,6 +2,7 @@ import { Icon } from '../../components/icons'
 import { useTargets } from '../../state/library'
 import { useUi } from '../../state/ui'
 import { MetadataEditor } from './MetadataEditor'
+import { withKey } from '../../lib/commands'
 
 /** The library's right-hand drawer: the selection's details and metadata (I). */
 export function InfoDrawer(): React.JSX.Element {
@@ -15,7 +16,7 @@ export function InfoDrawer(): React.JSX.Element {
           <span className="micro">Info</span>
           <button
             className="icon"
-            title="Close (I)"
+            title={withKey('Close', 'library.info')}
             aria-label="Close info"
             onClick={() => setOpen(false)}
           >
