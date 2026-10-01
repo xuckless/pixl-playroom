@@ -82,6 +82,28 @@ export function HealPanel(): React.JSX.Element | null {
           />
         )}
       </Section>
+      <Section id="heal.spots" title="Visualise spots">
+        <label className="check" title="Show the picture as specks on black, where dust stands out">
+          <input
+            type="checkbox"
+            checked={!!heal.visualise}
+            onChange={(e) => setHeal({ visualise: e.target.checked })}
+          />
+          Show dust and spots
+        </label>
+        {heal.visualise && (
+          <Slider
+            label="Level"
+            value={heal.spotLevel ?? 50}
+            min={0}
+            max={100}
+            def={50}
+            title="Higher shows fainter specks"
+            onChange={(v) => setHeal({ spotLevel: v })}
+            onCommit={() => undefined}
+          />
+        )}
+      </Section>
       {live > 0 && (
         <Section id="heal.live" title="Earlier spots">
           <p className="muted small">

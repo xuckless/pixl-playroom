@@ -80,7 +80,7 @@ uniform sampler2D uPicture;
 in vec2 vUv;
 out vec4 o;
 void main() {
-  vec3 c = texelFetch(uPicture, ivec2(vUv * vec2(textureSize(uPicture, 0))), 0).rgb * 255.0;
+  vec3 c = texelFetch(uPicture, ivec2(vUv.x * float(textureSize(uPicture, 0).x), (1.0 - vUv.y) * float(textureSize(uPicture, 0).y)), 0).rgb * 255.0;
   float hi = max(c.r, max(c.g, c.b));
   float a = 220.0 / 255.0;
   if (hi >= 253.5) o = vec4(vec3(255.0, 60.0, 90.0) / 255.0 * a, a);
@@ -152,8 +152,9 @@ async function drawOnGpu(c: HTMLCanvasElement, url: string, live: () => boolean)
   c.height = bmp.height
   gl.viewport(0, 0, c.width, c.height)
   gl.bindTexture(gl.TEXTURE_2D, tex)
-  // Rows as the file stores them, top first: the quad draws them the right way up.
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
+  // An ImageBitmap is not flipped on upload (Chromium ignores the flag for
+  // one): its rows stay top first, and the shader reads them from the top.
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bmp)
   bmp.close()
   gl.clearColor(0, 0, 0, 0)

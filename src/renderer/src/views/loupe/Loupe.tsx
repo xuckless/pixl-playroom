@@ -42,6 +42,7 @@ import { useLibrary } from '../../state/library'
 import { BrushLayer } from './BrushTool'
 import { ClippingOverlay } from './ClippingOverlay'
 import { HeadroomOverlay } from './HeadroomOverlay'
+import { SpotsOverlay } from './SpotsOverlay'
 import { CropTool } from './CropTool'
 import { DecodedImage } from './DecodedImage'
 import { Guides } from './Guides'
@@ -129,6 +130,9 @@ export function Loupe(): React.JSX.Element {
   }, [size.w, size.h, setTargetEdge])
 
   const panel = useUi((s) => s.panel)
+  // Visualise Spots, while the Heal tool is the one showing.
+  const spots = useUi((s) => s.panel === 'heal' && !!s.heal.visualise)
+  const spotLevel = useUi((s) => s.heal.spotLevel ?? 50)
   // On the geometry alone (a slider elsewhere keeps it), so what takes `g`
   // stays memoised through a drag.
   const geometry = useDevelop((s) => s.recipe?.geometry)
@@ -527,6 +531,7 @@ export function Loupe(): React.JSX.Element {
             )}
             <MaskOverlay g={g ?? null} w={vrect.w} h={vrect.h} />
             {clipping && picture && <ClippingOverlay url={picture.url} />}
+            {spots && picture && <SpotsOverlay url={picture.url} level={spotLevel} />}
             {headroom && headroomPlane && compare !== 'before' && (
               <HeadroomOverlay url={headroomPlane.url} />
             )}

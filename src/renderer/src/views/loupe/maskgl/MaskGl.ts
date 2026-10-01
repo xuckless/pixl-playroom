@@ -15,7 +15,16 @@ import {
 } from '../../../../../shared/maskedge'
 import type { MaskMode } from '../../../../../shared/engine-types'
 import type { MaskComponentSetting } from '../../../../../shared/recipe'
-import { BLUR_FS, JOIN_FS, MORPH_FS, RANGE_FS, SHADE_FS, SHAPE_FS, VS } from './shaders'
+import {
+  BLUR_FS,
+  COMPONENT_FS,
+  JOIN_FS,
+  MORPH_FS,
+  RANGE_FS,
+  SHADE_FS,
+  SHAPE_FS,
+  VS
+} from './shaders'
 
 /** Planes in the base frame are drawn this many pixels on their long edge. */
 export const BASE_EDGE = 1024
@@ -86,6 +95,9 @@ export class MaskGl {
   private polygonCanvas: OffscreenCanvas | null = null
   /** The last mask composed, and whether it is there to show. */
   private accIndex = 0
+  /** Its components' planes and how they join, for showing them one by one. */
+  private composed: { plane: Plane; join: Join }[] = []
+  private composedToBase: Float32Array | null = null
   haveAcc = false
   haveEngine = false
 
@@ -103,7 +115,8 @@ export class MaskGl {
       range: RANGE_FS,
       join: JOIN_FS,
       shade: SHADE_FS,
-      morph: MORPH_FS
+      morph: MORPH_FS,
+      component: COMPONENT_FS
     }))
       this.programs[name] = this.program(fs)
     const buf = gl.createBuffer()
@@ -401,6 +414,42 @@ export class MaskGl {
     })
     this.accIndex = from
     this.haveAcc = planes.length > 0
+    this.composed = planes.map((plane, i) => ({ plane, join: f.joins[i] }))
+    this.composedToBase = f.toBase
+    return true
+  }
+
+  /**
+   * The last mask composed shown a component at a time, each in its colour
+   * (`colours[i]`, linear 0…1), in order, at `alpha`: what each part covers.
+   * False when there is nothing composed to show.
+   */
+  shadeComponents(colours: [number, number, number][], alpha: number): boolean {
+    if (!this.haveAcc || this.composed.length === 0 || !this.composedToBase) return false
+    const gl = this.gl
+    const cw = this.canvas.width
+    const ch = this.canvas.height
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.viewport(0, 0, cw, ch)
+    gl.clearColor(0, 0, 0, 0)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    const p = this.programs.component
+    gl.useProgram(p)
+    gl.uniformMatrix3fv(this.u(p, 'uToBase'), false, this.composedToBase)
+    gl.uniform1f(this.u(p, 'uAlpha'), alpha)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+    this.composed.forEach(({ plane, join }, i) => {
+      const [r, g, b] = colours[i % colours.length]
+      this.bind(p, 0, 'uComp', plane.target.tex)
+      gl.uniform1i(this.u(p, 'uBase'), plane.base ? 1 : 0)
+      gl.uniform1i(this.u(p, 'uInvert'), join.c.invert ? 1 : 0)
+      gl.uniform1f(this.u(p, 'uOpacity'), Math.min(1, Math.max(0, join.c.opacity / 100)))
+      gl.uniform3f(this.u(p, 'uTint'), r, g, b)
+      gl.uniform1i(this.u(p, 'uHatch'), join.mode === 'Subtract' ? 1 : 0)
+      this.run(p, null, cw, ch)
+    })
+    gl.disable(gl.BLEND)
     return true
   }
 

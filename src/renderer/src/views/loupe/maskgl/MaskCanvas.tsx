@@ -333,6 +333,17 @@ export function MaskCanvas({
     const tint = hslToRgb(overlayHue ?? o.hue, 0.9, 0.55)
     const draw = (): void => {
       const ghost = !overlay
+      // Each component in its own colour: golden-angle steps round from the overlay's hue.
+      if (!ghost && o.byComponent && viewOf(o.mode) === 'colour') {
+        const n = components.length
+        const colours = Array.from({ length: Math.max(1, n) }, (_, i) =>
+          hslToRgb(((overlayHue ?? o.hue) + i * 137.508) % 360, 0.9, 0.55)
+        )
+        if (gl.shadeComponents(colours, o.opacity / 100)) {
+          stats.live = 1
+          return
+        }
+      }
       gl.shade({
         layerInvert,
         live: live.current,

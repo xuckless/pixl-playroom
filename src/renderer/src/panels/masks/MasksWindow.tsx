@@ -603,6 +603,18 @@ function OverlayControls(): React.JSX.Element {
               />
               Show all masks
             </label>
+            <label
+              className="check"
+              title="Each component of the selected mask in a colour of its own (a subtracting one hatched)"
+            >
+              <input
+                type="checkbox"
+                checked={!!o.byComponent}
+                disabled={o.mode !== 'color' && o.mode !== 'color-bw'}
+                onChange={(e) => set({ byComponent: e.target.checked })}
+              />
+              Colour each component
+            </label>
             <span className="micro">
               Pins{keyHint('mask.pins') && ` · ${keyHint('mask.pins')} cycles`}
             </span>

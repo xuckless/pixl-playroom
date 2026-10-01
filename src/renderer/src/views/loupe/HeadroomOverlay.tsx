@@ -46,7 +46,7 @@ uniform sampler2D uPlane;
 in vec2 vUv;
 out vec4 o;
 void main() {
-  float v = texelFetch(uPlane, ivec2(vUv * vec2(textureSize(uPlane, 0))), 0).r;
+  float v = texelFetch(uPlane, ivec2(vUv.x * float(textureSize(uPlane, 0).x), (1.0 - vUv.y) * float(textureSize(uPlane, 0).y)), 0).r;
   if (v < 0.5 / 255.0) { o = vec4(0.0); return; }
   vec3 a = vec3(255.0, 200.0, 90.0) / 255.0;
   vec3 b = vec3(255.0, 130.0, 40.0) / 255.0;
@@ -109,7 +109,9 @@ async function drawOnGpu(c: HTMLCanvasElement, url: string, live: () => boolean)
   c.width = bmp.width
   c.height = bmp.height
   gl.viewport(0, 0, c.width, c.height)
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
+  // An ImageBitmap is not flipped on upload (Chromium ignores the flag for
+  // one): its rows stay top first, and the shader reads them from the top.
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bmp)
   bmp.close()
   gl.clearColor(0, 0, 0, 0)

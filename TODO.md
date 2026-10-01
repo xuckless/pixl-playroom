@@ -686,10 +686,16 @@ After: Pass 36.
 
 ### Pass 38 — Mask overlays and spots · 5 pts
 
-- [ ] **L** · A per-component overlay colour: needs a rendered plane per
+- [x] **L** · A per-component overlay colour: needs a rendered plane per
       component (the overlay is one plane per mask today).
-- [ ] **M** · Visualise spots for the Heal tool (show dust and spots on a
+      _Done on the GPU preview, which has a plane per component: "Colour
+      each component" (overlay settings) draws each in its own hue, a
+      subtracting one hatched._
+- [x] **M** · Visualise spots for the Heal tool (show dust and spots on a
       high-contrast view).
+      _Done: Heal → Visualise spots, a local-contrast map on the GPU with a
+      Level. Also fixed: the clipping and headroom overlays were drawn upside
+      down (Chromium does not flip an ImageBitmap on upload)._
 
 ### Pass 39 — Geometry follow-ups · 5 pts
 

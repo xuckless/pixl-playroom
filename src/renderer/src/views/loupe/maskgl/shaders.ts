@@ -145,6 +145,29 @@ void main() {
 }`
 
 /**
+ * One component of the mask in its own colour, drawn over the others
+ * (premultiplied, blended "over"): what each part of a mask covers. One that
+ * subtracts is hatched.
+ */
+export const COMPONENT_FS = `${HEAD}
+uniform sampler2D uComp;
+uniform bool uBase;
+uniform mat3 uToBase;
+uniform bool uInvert;
+uniform float uOpacity;
+uniform vec3 uTint;
+uniform float uAlpha;
+uniform bool uHatch;
+void main() {
+  vec2 d = here();
+  vec2 q = uBase ? (uToBase * vec3(d, 1.0)).xy : d;
+  float shape = (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) ? 0.0 : S(uComp, q);
+  float a = uAlpha * (uInvert ? 1.0 - shape : shape) * uOpacity;
+  if (uHatch) a *= 0.25 + 0.75 * step(0.5, fract((gl_FragCoord.x + gl_FragCoord.y) / 10.0));
+  o = vec4(uTint * a, a);
+}`
+
+/**
  * The overlay: the loupe's mask and the engine's, crossfaded, shown as the
  * chosen view. Premultiplied alpha out.
  */

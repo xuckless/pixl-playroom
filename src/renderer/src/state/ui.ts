@@ -59,6 +59,8 @@ export interface MaskOverlaySettings {
   opacity: number
   /** Every mask at once, each in its own colour. */
   showAll: boolean
+  /** The selected mask's components each in a colour of their own (the colour view). */
+  byComponent?: boolean
   /** When the on-canvas pins and handles show. */
   pins: PinsMode
 }
@@ -70,6 +72,9 @@ export interface HealSettings {
   /** 0…100 */
   feather: number
   opacity: number
+  /** Visualise Spots: the picture as white specks on black, and how faint a speck still shows (0…100). */
+  visualise?: boolean
+  spotLevel?: number
 }
 
 /** Every tool the wheel can hold (its order is `TOOLS`, in develop/tools.ts). */
