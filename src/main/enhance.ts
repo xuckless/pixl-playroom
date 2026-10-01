@@ -204,7 +204,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     // what is restored, so it can only be the first step).
     const deps = pixelDeps(this.engine, this.library.index, row)
     const restoresJpeg = steps.some((p) => p.kind === 'reconstruct' || p.kind.startsWith('fbcnn'))
-    const plain = await ensureProxies(this.engine, row, info)
+    const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const working = await ensureWorking(deps, versionStamp(row), plain, recipe.pixels, () =>
       ensureBase(this.engine, row, info)
     )

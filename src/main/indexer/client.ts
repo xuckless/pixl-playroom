@@ -14,6 +14,7 @@ import { join } from 'path'
 import { vendoredExiftoolPath } from '../exiftool'
 import type { HostToMain, IndexEvent, IndexRequest } from './protocol'
 import type { IndexService } from './service'
+import { lowerPriority } from '../engine/client'
 
 /** Each method of `T`, returning a promise of what it returned. */
 export type Remote<T> = {
@@ -134,6 +135,7 @@ class Connection implements IndexControl {
     })
     this.child = child
     this.ready = false
+    child.once('spawn', () => lowerPriority(child.pid))
 
     child.stdout?.on('data', (d: Buffer) => log.info('[index]', d.toString().trimEnd()))
     child.stderr?.on('data', (d: Buffer) => log.warn('[index]', d.toString().trimEnd()))

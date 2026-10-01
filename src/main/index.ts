@@ -111,9 +111,9 @@ function leaveForRelaunch(): void {
 /** Previews and the develop view's measurements. */
 const engine = new EngineClient('interactive', 8)
 /** Thumbnails, exports, the full-resolution masters. */
-const bgEngine = new EngineClient('background', 4)
+const bgEngine = new EngineClient('background', 4, true)
 /** AI jobs, one at a time: started when first needed, restarted to cancel one. */
-const aiEngine = new EngineClient('ai', 4)
+const aiEngine = new EngineClient('ai', 4, true)
 /** The SQLite index and the sidecars, in their own process. */
 const index = openIndex()
 let sessions: DevelopSessions | undefined

@@ -132,7 +132,7 @@ export class Exporter {
     recipe: Recipe
   ): Promise<ProxyFile | null> {
     if (recipe.pixels.length === 0) return null
-    const plain = await ensureProxies(this.engine, row, info)
+    const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const set = await ensureWorking(
       pixelDeps(this.engine, this.library.index, row),
       versionStamp(row),
@@ -174,7 +174,7 @@ export class Exporter {
     // proxies (made once, cached); anything else is probe's size, turned by
     // the file's orientation.
     const swap = ['Transpose', 'Rotate90', 'Transverse', 'Rotate270'].includes(srcOrientation)
-    const developed = raw ? await ensureProxies(this.engine, row, info) : null
+    const developed = raw ? await ensureProxies(this.engine, row, info, BACKGROUND_THREADS) : null
     const frameW = master?.width ?? developed?.frameWidth ?? (swap ? info.height : info.width)
     const frameH = master?.height ?? developed?.frameHeight ?? (swap ? info.width : info.height)
     const { user, width, height } = orientedFrame(recipe, frameW, frameH)

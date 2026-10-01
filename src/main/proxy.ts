@@ -32,7 +32,14 @@ import type { EngineClient } from './engine/client'
 import { exists } from './exists'
 import type { PhotoRow } from './db'
 import { paths } from './paths'
-import { blankRequest, RAW_DEVELOP, sourceOrientation, versionStamp } from './source'
+import {
+  BACKGROUND_THREADS,
+  blankRequest,
+  INTERACTIVE_THREADS,
+  RAW_DEVELOP,
+  sourceOrientation,
+  versionStamp
+} from './source'
 
 export const PROXY_EDGE = 2560
 export const DRAFT_EDGE = 1280
@@ -60,18 +67,25 @@ const stamp = versionStamp
 export function ensureProxies(
   engine: EngineClient,
   photo: PhotoRow,
-  info: SourceInfo
+  info: SourceInfo,
+  /** A photo being opened takes every core; work in the background takes its share. */
+  threads: number = INTERACTIVE_THREADS
 ): Promise<Proxies> {
   const key = `${photo.id}:${stamp(photo)}`
   let p = building.get(key)
   if (!p) {
-    p = build(engine, photo, info).finally(() => building.delete(key))
+    p = build(engine, photo, info, threads).finally(() => building.delete(key))
     building.set(key, p)
   }
   return p
 }
 
-async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): Promise<Proxies> {
+async function build(
+  engine: EngineClient,
+  photo: PhotoRow,
+  info: SourceInfo,
+  threads: number
+): Promise<Proxies> {
   const dir = paths.photoCache(photo.id)
   const s = stamp(photo)
   const meta = join(dir, `proxies-${s}.json`)
@@ -132,7 +146,8 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
     framing:
       orientation === 'Normal'
         ? null
-        : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
+        : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null },
+    threads
   })
   const proxy: ProxyFile = { path: proxyPath, input, width: report.width, height: report.height }
 
@@ -144,7 +159,8 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
     pixel: { depth: 'Sixteen', channels: null },
     encode,
     metadata: { exif: false, icc: true, xmp: false, iptc: false },
-    color: 'Preserve'
+    color: 'Preserve',
+    threads
   })
   const draft: ProxyFile = {
     path: draftPath,
@@ -227,7 +243,9 @@ async function bakeLens(
     // Placed on the base frame, which is what the proxy is.
     retouch,
     // A PQ/HLG proxy is corrected in the HDR working space it is graded in.
-    hdr
+    hdr,
+    // Baked behind the editing: its share of the cores, not all of them.
+    threads: BACKGROUND_THREADS
   })
   const proxy: ProxyFile = {
     path: proxyPath,
@@ -243,7 +261,8 @@ async function bakeLens(
     pixel: { depth: 'Sixteen', channels: null },
     encode,
     metadata: { exif: false, icc: true, xmp: false, iptc: false },
-    color: 'Preserve'
+    color: 'Preserve',
+    threads: BACKGROUND_THREADS
   })
   const k = report.width / px.proxy.width
   const out: Proxies = {

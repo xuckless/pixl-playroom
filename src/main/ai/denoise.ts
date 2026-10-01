@@ -192,7 +192,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
 
     // The pixels it runs on: the photo with the steps it already has.
     const deps = pixelDeps(this.engine, this.library.index, row)
-    const plain = await ensureProxies(this.engine, row, info)
+    const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const working = await guard(
       ensureWorking(deps, versionStamp(row), plain, recipe.pixels, () =>
         ensureBase(this.engine, row, info)

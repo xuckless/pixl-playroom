@@ -8,6 +8,7 @@
  */
 import { utilityProcess, type UtilityProcess } from 'electron'
 import log from 'electron-log/main'
+import { constants, setPriority } from 'os'
 import { join } from 'path'
 import type {
   AnalyzeRequest,
@@ -69,6 +70,16 @@ export function isCancelled(err: unknown): boolean {
 
 const MAX_RESTARTS = 5
 
+/** A helper process put below normal priority (the OS may refuse: it then runs as it is). */
+export function lowerPriority(pid: number | undefined): void {
+  if (pid === undefined) return
+  try {
+    setPriority(pid, constants.priority.PRIORITY_BELOW_NORMAL)
+  } catch {
+    // Not permitted here: nothing lost but the courtesy.
+  }
+}
+
 export class EngineClient {
   private child: UtilityProcess | undefined
   private nextId = 1
@@ -79,7 +90,9 @@ export class EngineClient {
 
   constructor(
     private readonly name: string,
-    private readonly libuvThreads: number
+    private readonly libuvThreads: number,
+    /** Below the interactive engine and the window, so background work yields to editing. */
+    private readonly background = false
   ) {}
 
   start(): void {
@@ -180,6 +193,7 @@ export class EngineClient {
     })
     this.child = child
     this.status = { ...this.status, status: 'starting', reason: undefined }
+    if (this.background) child.once('spawn', () => lowerPriority(child.pid))
 
     child.stdout?.on('data', (d: Buffer) =>
       log.info(`[engine:${this.name}]`, d.toString().trimEnd())

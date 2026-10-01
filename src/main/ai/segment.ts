@@ -82,7 +82,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       this.engine.start()
       await this.engine.whenStarted()
     }
-    const px = await ensureProxies(this.engine, row, info)
+    const px = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const recipe = this.sessions()?.liveRecipe(req.key) ?? (await this.library.recipe(req.key))
     // One run of a small network: the CPU is done before an accelerator has
     // compiled it (CoreML takes about a second to), so segmenting stays there.

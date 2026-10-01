@@ -78,6 +78,8 @@ export class Library {
   /** Who waits for a key's thumbnail: told when a render of it ends. */
   private waiting = new Map<string, (() => void)[]>()
   private running = 0
+  /** The duplicate search hashing pictures now, if any. */
+  private dupes: AbortController | null = null
 
   constructor(
     readonly index: IndexClient,
@@ -150,6 +152,8 @@ export class Library {
    * folders, so one rendered for a folder serves every collection too.
    */
   async openSource(src: LibrarySource): Promise<SourceListing> {
+    // Another source opened: a duplicate search still hashing is not wanted now.
+    if (src.kind !== 'duplicates') this.dupes?.abort()
     const listing =
       src.kind === 'duplicates'
         ? await this.duplicates(src.folder, src.threshold)
@@ -165,10 +169,14 @@ export class Library {
    * first where there is none) since this side has the engine.
    */
   async duplicates(folder: string | null, threshold = 6): Promise<SourceListing> {
+    // One search at a time: a new one (or another source opened) stops the last.
+    this.dupes?.abort()
+    const abort = new AbortController()
+    this.dupes = abort
     const work = await this.index.dhashWork(folder)
     let next = 0
     const worker = async (): Promise<void> => {
-      while (next < work.length) {
+      while (next < work.length && !abort.signal.aborted) {
         const w = work[next++]
         try {
           await this.hashPicture(w.photoId, w.thumbPath)
@@ -181,6 +189,8 @@ export class Library {
     }
     // Two at a time, as the thumbnail queue runs.
     await Promise.all([worker(), worker()])
+    if (this.dupes === abort) this.dupes = null
+    // Stopped: what was hashed is kept, and the rest waits for the next search.
     return this.index.duplicates(folder, threshold)
   }
 
@@ -396,7 +406,7 @@ export class Library {
     if (hdr) base = { ...base, color: displayPolicy(info, 'Srgb') }
     // Pixel steps (an AI denoise) laid on: made from what the project keeps,
     // never by running a model.
-    const plain = hdr?.px ?? (await ensureProxies(this.engine, row, info))
+    const plain = hdr?.px ?? (await ensureProxies(this.engine, row, info, BACKGROUND_THREADS))
     const px =
       !hdr && recipe.pixels.length > 0
         ? (

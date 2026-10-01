@@ -31,6 +31,7 @@ import { applyGroups, newId, planeRef, type Recipe, type RecipeGroup } from '../
 import { orientedFrame } from '../shared/compile'
 import { cropAtAspect } from '../shared/crop'
 import { ensureProxies } from './proxy'
+import { BACKGROUND_THREADS } from './source'
 import type { IndexClient } from './indexer/client'
 import { IndexError } from './indexer/client'
 import type { PlaneStore } from './planestore'
@@ -108,7 +109,7 @@ async function baseFrame(s: Services, key: string): Promise<{ width: number; hei
     return { width: shot.width, height: shot.height }
   }
   const row = await s.library.photoRow(key)
-  const px = await ensureProxies(s.bgEngine, row, await s.library.probe(row))
+  const px = await ensureProxies(s.bgEngine, row, await s.library.probe(row), BACKGROUND_THREADS)
   return { width: px.frameWidth, height: px.frameHeight }
 }
 

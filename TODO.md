@@ -311,15 +311,15 @@ After: Pass 13.
 
 ### Pass 15 — Background work stops competing with editing · 5 pts
 
-- [ ] **M** · **Background engine work uses every core.** `blankRequest`
+- [x] **M** · **Background engine work uses every core.** `blankRequest`
       defaults to `INTERACTIVE_THREADS` (`source.ts:216`) and `proxy.ts` never
       overrides it: proxy builds, the bake after every lens/heal edit
       (`render.ts:435-462`), `ensureMaster`, export encode (`exporter.ts:199`),
       Auto WB analyze (`autowb.ts:51`). Pass `BACKGROUND_THREADS` from
       background callers.
-- [ ] **S** · **No process is niced.** `os.setPriority(pid, 10)` for the
+- [x] **S** · **No process is niced.** `os.setPriority(pid, 10)` for the
       background and AI engines and the index host.
-- [ ] **M** · **Batches that can't be stopped or bounded.** Auto WB queues
+- [x] **M** · **Batches that can't be stopped or bounded.** Auto WB queues
       every photo at once with `Promise.all` (`autowb.ts:269`); 500 RAWs = 500
       proxy builds, no cancel. Whole-library duplicates (dHash renders) keep
       going after you navigate away (`library.ts:161-179`). Limit Auto WB to 2
