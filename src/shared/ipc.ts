@@ -125,7 +125,6 @@ export const IPC = {
     /** Heal / clone: the best place to copy a spot from. */
     suggestHeal: 'develop:suggest-heal',
     /** Where the open photo's AI denoise stands. */
-    denoiseState: 'develop:denoise-state',
     /** main → renderer: a render finished */
     rendered: 'develop:rendered',
     /** main → renderer: a render failed */
@@ -699,8 +698,3 @@ export interface ProviderInfo {
 }
 
 /** Where a photo's AI denoise stands: nothing made yet, the preview, or the full resolution. */
-export interface DenoiseState {
-  made: 'none' | 'preview' | 'full'
-  /** Why this photo cannot be AI-denoised (an HDR photo). */
-  refused?: string
-}

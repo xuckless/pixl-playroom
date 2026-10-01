@@ -248,6 +248,15 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
     if (useDevelop.getState().session?.key !== e.key) lib.say(`${r.label} made for ${e.name}`)
     return
   }
+  if (r?.kind === 'step') {
+    // Main added the step to the photo's recipe: History records it here.
+    const dev = useDevelop.getState()
+    if (dev.session?.key !== e.key) return lib.say(`${r.label} added to ${e.name}`)
+    const s = await api.develop.open(e.key)
+    if (useDevelop.getState().session?.key !== e.key) return
+    useDevelop.getState().replace(s.recipe, r.label)
+    return
+  }
   if (r?.kind === 'file') {
     lib.say(`${e.title}: wrote ${r.path.split(/[\\/]/).pop()}`)
     return void lib.refresh()

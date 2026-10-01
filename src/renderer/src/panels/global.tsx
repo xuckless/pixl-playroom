@@ -897,11 +897,15 @@ export function ColorGradePanel(): React.JSX.Element | null {
 // ── Detail ───────────────────────────────────────────────────────────────────
 
 export function DetailPanel(): React.JSX.Element | null {
-  const { recipe, edit, commit, layer } = useScope()
+  const { recipe } = useScope()
   const noise = useDevelop((s) => s.noise)
   const measure = useDevelop((s) => s.measureNoise)
   const report = useDevelop((s) => s.report)
   const [measuring, setMeasuring] = useState(false)
+  // The AI tab while the photo has denoise steps, until the user turns away.
+  const [noiseTab, setNoiseTab] = useState<'classic' | 'ai'>(() =>
+    (useDevelop.getState().recipe?.pixels.length ?? 0) > 0 ? 'ai' : 'classic'
+  )
   if (!recipe) return null
   const seen = report?.gradeLines.filter((l) => l.includes('denoise')) ?? []
   return (
@@ -941,20 +945,16 @@ export function DetailPanel(): React.JSX.Element | null {
         />
       </Section>
       <Section id="detail.noise" title="Noise reduction">
-        {!layer && (
-          <Tabs
-            value={recipe.detail.ai.enabled ? 'ai' : 'classic'}
-            tabs={[
-              { value: 'classic', label: 'Classic' },
-              { value: 'ai', label: 'AI' }
-            ]}
-            onChange={(v) => {
-              edit((r) => (r.detail.ai.enabled = v === 'ai'))
-              commit(v === 'ai' ? 'AI denoise' : 'Classic denoise')
-            }}
-          />
-        )}
-        {!layer && recipe.detail.ai.enabled ? (
+        {/* Classic is a setting; AI makes pixel steps (both can apply, inside a mask too). */}
+        <Tabs
+          value={noiseTab}
+          tabs={[
+            { value: 'classic', label: 'Classic' },
+            { value: 'ai', label: 'AI' }
+          ]}
+          onChange={setNoiseTab}
+        />
+        {noiseTab === 'ai' ? (
           <AiDenoise />
         ) : (
           <>

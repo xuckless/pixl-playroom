@@ -6,6 +6,7 @@
 import { create } from 'zustand'
 import { DEFAULT_ENHANCE, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind } from '../../../shared/retouch'
+import type { AiDenoiseModel } from '../../../shared/recipe'
 import type { Bindings, Chord } from '../lib/keys'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
@@ -141,6 +142,9 @@ interface UiState {
   setBrush(p: Partial<BrushSettings>): void
   masksWin: MasksWindow
   setMasksWin(p: Partial<MasksWindow>): void
+  /** AI denoise's model and strength for the next step (Detail → AI). */
+  denoise: { model: AiDenoiseModel; strength: number }
+  setDenoise(p: Partial<{ model: AiDenoiseModel; strength: number }>): void
   /** The one tool the right column shows, chosen on the thumb-wheel. */
   panel: ToolId
   /** The tool before the last change, for a shortcut that toggles back. */
@@ -200,6 +204,8 @@ export const useUi = create<UiState>()(
           brushes: { ...s.brushes, [s.brushSlot]: { ...s.brushes[s.brushSlot], ...p } }
         })),
       masksWin: DEFAULT_MASKS_WIN,
+      denoise: { model: 'scunet-color-real', strength: 100 },
+      setDenoise: (p) => set((s) => ({ denoise: { ...s.denoise, ...p } })),
       setMasksWin: (p) => set((s) => ({ masksWin: { ...s.masksWin, ...p } })),
       panel: 'basic',
       previousPanel: 'basic',
@@ -243,6 +249,7 @@ export const useUi = create<UiState>()(
           // Settings saved before a field existed take its default.
           enhance: { ...DEFAULT_ENHANCE, ...p.enhance },
           masksWin: { ...DEFAULT_MASKS_WIN, ...p.masksWin },
+          denoise: { model: 'scunet-color-real', strength: 100, ...p.denoise },
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
           panel: isToolId(p.panel) ? p.panel : current.panel,
           previousPanel: isToolId(p.previousPanel) ? p.previousPanel : current.previousPanel

@@ -31,7 +31,8 @@ import type { IndexClient } from './indexer/client'
 import { brushPlanes } from './brushes'
 import { keyOf } from './keys'
 import { paths } from './paths'
-import { denoiseKey, denoiseRefusal, findDenoised } from './ai/denoise'
+import { pixelDeps } from './pixels/base'
+import { ensureWorking } from './pixels/working'
 import { editsHdr, ensureHdrSource } from './hdrsource'
 import { ensureProxies } from './proxy'
 import { pngToFloats } from './pngio'
@@ -41,7 +42,8 @@ import {
   blankRequest,
   displayPolicy,
   seedOf,
-  sourceOrientation
+  sourceOrientation,
+  versionStamp
 } from './source'
 
 export { keyOf, parseKey } from './keys'
@@ -361,12 +363,21 @@ export class Library {
     const hdr = editsHdr(recipe, file) ? await ensureHdrSource(this.engine, row, file) : null
     const info = hdr?.info ?? file
     if (hdr) base = { ...base, color: displayPolicy(info, 'Srgb') }
-    // AI denoise: its proxies when it has been made (the develop view or an
-    // export makes it; a thumbnail never waits on a model).
-    const ai = recipe.detail.ai
-    const aiOn = ai.enabled && !denoiseRefusal(info)
-    const denoised = aiOn ? await findDenoised(row, denoiseKey(row, ai)) : null
-    const px = hdr?.px ?? denoised?.px ?? (await ensureProxies(this.engine, row, info))
+    // Pixel steps (an AI denoise) laid on: made from what the project keeps,
+    // never by running a model.
+    const plain = hdr?.px ?? (await ensureProxies(this.engine, row, info))
+    const px =
+      !hdr && recipe.pixels.length > 0
+        ? (
+            await ensureWorking(
+              pixelDeps(this.engine, this.index, row),
+              versionStamp(row),
+              plain,
+              recipe.pixels,
+              null
+            )
+          ).px
+        : plain
     const { user, width, height } = orientedFrame(recipe, px.frameWidth, px.frameHeight)
     const cropOf = compile(recipe, {
       isRaw: row.is_raw === 1,
@@ -391,7 +402,6 @@ export class Library {
       seed: seedOf(row),
       brushPaths: await brushPlanes(row.id, recipe, user),
       applyCrop: true,
-      aiDenoised: aiOn,
       hdr: info.is_hdr
     })
     const cropW = (compiled.crop?.width ?? 1) * width

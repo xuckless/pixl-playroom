@@ -317,7 +317,6 @@ export function registerIpc(s: Services): void {
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))
   handle(IPC.develop.measureCa, (key: string) => s.sessions.measureCa(key))
-  handle(IPC.develop.denoiseState, (key: string) => s.sessions.denoiseState(key))
   handle(
     IPC.develop.suggestHeal,
     (key: string, points: SpotPoint[], radius: number, feather: number, kind: 'heal' | 'clone') =>

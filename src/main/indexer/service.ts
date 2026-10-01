@@ -623,6 +623,42 @@ export class IndexService {
     this.noteProjectWrite(key)
   }
 
+  // ── blobs: pixel steps' images and masks ──
+
+  /**
+   * Keep a file (made by main, in the cache) in the photo's project, by its
+   * content: a pixel step's image or mask. The photo gets its project if it
+   * has none yet (a pixel step is an edit). Returns the blob's hash.
+   */
+  putBlob(
+    key: string,
+    file: string,
+    info: { kind: string; codec: string; width: number | null; height: number | null }
+  ): string {
+    const project = this.ensureProject(this.row(key))
+    const hash = this.projects.use(project, (p) =>
+      p.putBlobFile(file, { ...info, channels: null, depth: null })
+    )
+    this.noteProjectWrite(key)
+    return hash
+  }
+
+  /**
+   * Write a blob of the photo's project out to the photo's cache (once):
+   * `<cache>/photos/<id>/blobs/<hash>.<ext>`. Null when the project has no
+   * such blob.
+   */
+  blobFile(key: string, hash: string, ext: string): string | null {
+    const row = this.row(key)
+    const project = this.projectOf(row)
+    if (!project) return null
+    const dir = join(this.cacheRoot, 'photos', String(row.id), 'blobs')
+    const path = join(dir, `${hash}.${ext}`)
+    if (existsSync(path)) return path
+    mkdirSync(dir, { recursive: true })
+    return this.projects.use(project, (p) => (p.writeBlobTo(hash, path) ? path : null))
+  }
+
   /** The original could not be embedded: say why, so it is not tried on every open. */
   originalFailed(key: string, note: string): void {
     const project = this.projectOf(this.row(key))

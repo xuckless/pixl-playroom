@@ -277,7 +277,11 @@ test('a blob goes in by its hash, in chunks, and comes out whole', () => {
   assert.ok(p.writeBlobTo(hash, out))
   assert.equal(sha256File(out), hash)
   assert.equal(p.blob(hash)?.bytes, BLOB_CHUNK * 2 + 12345)
-  // Named by nothing, it goes at the next collection.
+  // Named by nothing, it stays while it may be on its way into a recipe…
+  p.gc()
+  assert.ok(p.blob(hash))
+  // …and goes at the first collection after that.
+  p.prepare("UPDATE blobs SET created_at = '2000-01-01T00:00:00.000Z'").run()
   p.gc()
   assert.equal(p.blob(hash), null)
   p.close()
@@ -415,4 +419,29 @@ test('opening a .pixl opens its photo', async () => {
   assert.equal(folder, f.folder)
   assert.deepEqual(keys, [f.key])
   await f.done()
+})
+
+test('a blob a snapshot names is kept', () => {
+  const dir = tmp()
+  const p = PixlFile.create(join(dir, 'a.pixl'), origin(dir))
+  const file = join(dir, 'x.bin')
+  writeFileSync(file, 'pixels')
+  const hash = p.putBlobFile(file, {
+    kind: 'pixels',
+    codec: 'jxl',
+    width: 1,
+    height: 1,
+    channels: null,
+    depth: null
+  })
+  const s = emptySidecar()
+  const r = defaultRecipe(false)
+  ;(r as unknown as { pixels: unknown[] }).pixels = [{ id: 'x', kind: 'denoise', blob: hash }]
+  s.photo.snapshots = [{ id: 'sn', name: 'Before', at: 'now', recipe: r }]
+  p.write(s)
+  p.prepare("UPDATE blobs SET created_at = '2000-01-01T00:00:00.000Z'").run()
+  p.gc()
+  assert.ok(p.blob(hash))
+  p.close()
+  rmSync(dir, { recursive: true })
 })

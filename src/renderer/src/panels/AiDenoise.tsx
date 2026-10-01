@@ -1,20 +1,24 @@
 /**
- * Detail → Noise reduction → AI: which model, how strong, and where the
- * photo's denoise stands (made, being made, a model to download first). The
- * making itself is `lib/denoise.ts`'s: it starts when these settings ask for
- * something not made yet.
+ * Detail → Noise reduction → AI: denoise steps. Pick a model and how strong,
+ * then apply: a step is made (a model runs once, a few seconds a megapixel)
+ * and kept in the photo's project; from then on it undoes, redoes and hides
+ * in History, and its Strength changes, without the model running again.
+ * With a mask selected the step is made inside it (the mask frozen as it is).
  */
 import { useEffect, useState } from 'react'
-import type { DenoiseState } from '../../../shared/ipc'
 import type { AiDenoiseModel } from '../../../shared/recipe'
+import type { PixelStep } from '../../../shared/pixels'
 import { ModelGet } from '../components/ModelGet'
 import { useModels } from '../lib/models'
+import { Icon } from '../components/icons'
 import { Select, Slider } from '../components/ui'
 import { api, errorText } from '../lib/api'
-import { ensureDenoise } from '../lib/denoise'
+import { applyDenoise } from '../lib/denoise'
 import { useDevelop } from '../state/develop'
 import { useAiJobs } from '../state/jobs'
 import { useLibrary } from '../state/library'
+import { useScope } from '../state/scope'
+import { useUi } from '../state/ui'
 
 const MODELS: { value: AiDenoiseModel; label: string; hint: string }[] = [
   {
@@ -29,92 +33,158 @@ const MODELS: { value: AiDenoiseModel; label: string; hint: string }[] = [
   }
 ]
 
+const LOSSLESS_KEY = 'pixels.lossless'
+
+/** One step's row: its Strength (changed on release: the step's pixels are laid again, no model) and remove. */
+function StepRow({ step }: { step: PixelStep }): React.JSX.Element {
+  // While a drag is on: what the slider shows until it is let go.
+  const [dragging, setDragging] = useState<number | null>(null)
+  const opacity = dragging ?? step.opacity
+  const change = (fn: (s: PixelStep) => void, label: string): void => {
+    const d = useDevelop.getState()
+    d.edit((r) => {
+      const s = r.pixels.find((x) => x.id === step.id)
+      if (s) fn(s)
+    })
+    d.commit(label)
+  }
+  return (
+    <div className="pixel-step">
+      <div className="pixel-step-head">
+        <span className="pixel-step-label" title={step.label}>
+          {step.label}
+        </span>
+        <button
+          className="icon sm ghost"
+          title="Remove this step (undo brings it back)"
+          aria-label={`Remove ${step.label}`}
+          onClick={() => {
+            const d = useDevelop.getState()
+            d.edit((r) => (r.pixels = r.pixels.filter((x) => x.id !== step.id)))
+            d.commit(`Remove ${step.label}`)
+          }}
+        >
+          <Icon name="trash" />
+        </button>
+      </div>
+      <Slider
+        label="Strength"
+        value={opacity}
+        min={0}
+        max={100}
+        def={100}
+        format={(v) => `${Math.round(v)}%`}
+        onChange={(v) => setDragging(v)}
+        onCommit={() => {
+          const v = Math.round(opacity)
+          setDragging(null)
+          change((s) => (s.opacity = v), `${step.label}: strength`)
+        }}
+      />
+    </div>
+  )
+}
+
 export function AiDenoise(): React.JSX.Element | null {
   const key = useDevelop((s) => s.session?.key ?? null)
-  const recipe = useDevelop((s) => s.recipe)
-  const edit = useDevelop((s) => s.edit)
-  const commit = useDevelop((s) => s.commit)
+  const isHdr = useDevelop((s) => s.session?.isHdr === true)
+  const pixels = useDevelop((s) => s.recipe?.pixels)
+  const frame = useDevelop((s) =>
+    s.session ? (s.session.frameWidth * s.session.frameHeight) / 1e6 : 0
+  )
+  const { layer } = useScope()
+  const prefs = useUi((s) => s.denoise)
+  const setPrefs = useUi((s) => s.setDenoise)
   const say = useLibrary((s) => s.say)
   const job = useAiJobs((s) =>
     Object.values(s.jobs).findLast((j) => j.key === key && j.task === 'denoise')
   )
   const models = useModels()
-  const [state, setState] = useState<DenoiseState | null>(null)
-  const ai = recipe?.detail.ai
-  const params = ai ? `${ai.model}:${Math.round(ai.strength)}` : ''
-
-  // Where it stands: asked again when the settings or the job move on.
+  const [lossless, setLossless] = useState(false)
   useEffect(() => {
-    if (!key) return
-    let live = true
-    void api.develop.denoiseState(key).then(
-      (s) => live && setState(s),
-      () => undefined
-    )
-    return () => {
-      live = false
-    }
-  }, [key, params, job?.phase, job?.stage])
+    void api.app.getSetting<boolean>(LOSSLESS_KEY).then((v) => setLossless(v === true))
+  }, [])
 
-  if (!recipe || !ai || !key) return null
-  const model = models.find((m) => m.id === ai.model)
+  if (!key) return null
+  const steps = (pixels ?? []).filter((p) => p.kind === 'denoise')
+  const model = models.find((m) => m.id === prefs.model)
   const running = job?.phase === 'running' || job?.phase === 'queued'
   const pct = job?.progress == null ? null : Math.round(job.progress * 100)
-  const setModel = (v: AiDenoiseModel): void => {
-    edit((r) => (r.detail.ai.model = v))
-    commit('AI denoise model')
-  }
 
-  let status: string
-  if (state?.refused) status = state.refused
+  let status: string | null = null
+  if (isHdr) status = 'HDR photos cannot take AI pixel steps yet'
   else if (running)
     status =
       job.phase === 'queued'
         ? 'Waiting for another AI job…'
-        : `${job.stage === 'full' ? 'Full resolution' : 'Preview'}${pct !== null ? ` · ${job.estimated ? '~' : ''}${pct}%` : ''}`
+        : `${job.stage === 'full' ? 'Full resolution' : job.stage === 'save' ? 'Keeping it' : job.stage === 'preview' ? 'Preview' : 'Starting'}${pct !== null ? ` · ${job.estimated ? '~' : ''}${pct}%` : ''}`
   else if (model && !model.installed) status = 'The model is not downloaded yet'
-  else if (state?.made === 'full') status = 'Applied at full resolution'
-  else if (state?.made === 'preview') status = 'Preview only: full resolution not made'
   else if (job?.phase === 'error') status = job.message ?? 'Failed'
-  else status = 'Not applied yet'
+
+  const setStorage = (on: boolean): void => {
+    if (on) {
+      const mb = (x: number): string => `${Math.max(1, Math.round(x))} MB`
+      const ok = window.confirm(
+        `Store AI results losslessly?\n\nEach denoise step of this photo would take about ${mb(frame * 2.3)} in its project, instead of about ${mb(frame * 0.4)} near-losslessly (which cannot be told apart).\n\nSteps already made keep how they were stored.`
+      )
+      if (!ok) return
+    }
+    setLossless(on)
+    void api.app.setSetting(LOSSLESS_KEY, on).catch((e) => say(errorText(e), 'error'))
+  }
 
   return (
     <div className="ai-denoise">
       <Select
         label="Model"
-        value={ai.model}
+        value={prefs.model}
         options={MODELS.map((m) => ({ value: m.value, label: m.label }))}
-        onChange={setModel}
-        title={MODELS.find((m) => m.value === ai.model)?.hint}
+        onChange={(v) => setPrefs({ model: v })}
+        title={MODELS.find((m) => m.value === prefs.model)?.hint}
       />
       <Slider
         label="Strength"
-        value={ai.strength}
+        value={prefs.strength}
         min={1}
         max={100}
         def={100}
-        onChange={(v, live) => edit((r) => (r.detail.ai.strength = v), live)}
-        onCommit={() => commit('AI denoise strength')}
+        format={(v) => `${Math.round(v)}%`}
+        onChange={(v) => setPrefs({ strength: v })}
+        onCommit={() => undefined}
       />
       <div className="ai-denoise-status">
-        <span className={job?.phase === 'error' && !running ? 'error' : undefined}>{status}</span>
-        {!state?.refused &&
+        {status && (
+          <span className={job?.phase === 'error' && !running ? 'error' : undefined}>{status}</span>
+        )}
+        {!isHdr &&
           (running ? (
             <button className="sm ghost" onClick={() => void api.ai.cancel(job.jobId)}>
               Cancel
             </button>
-          ) : model && !model.installed ? null : state?.made !== 'full' ? (
+          ) : model && !model.installed ? null : (
             <button
-              className="sm"
-              onClick={() => void ensureDenoise().catch((e) => say(errorText(e), 'error'))}
+              className="sm primary"
+              onClick={() => void applyDenoise().catch((e) => say(errorText(e), 'error'))}
             >
-              {state?.made === 'preview' ? 'Finish' : 'Apply'}
+              {layer ? `Denoise inside ${layer.name}` : 'Denoise the photo'}
             </button>
-          ) : null)}
+          ))}
       </div>
-      {!state?.refused && <ModelGet id={ai.model} models={models} />}
+      {!isHdr && <ModelGet id={prefs.model} models={models} />}
+      {steps.length > 0 && (
+        <div className="pixel-steps">
+          {steps.map((s) => (
+            <StepRow key={s.id} step={s} />
+          ))}
+        </div>
+      )}
+      <label className="check">
+        <input type="checkbox" checked={lossless} onChange={(e) => setStorage(e.target.checked)} />
+        Store results losslessly
+      </label>
       <p className="muted small">
-        Made once per photo, model and strength, and kept: every view and export after uses it.
+        Made once and kept in the photo&apos;s project: undo, redo and Strength never run the model
+        again. Results are stored near-losslessly unless you choose otherwise.
       </p>
     </div>
   )

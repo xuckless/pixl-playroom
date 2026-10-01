@@ -13,6 +13,7 @@ import type { BlendMode, KeyBand, MaskMode } from './engine-types'
 import { defaultLens, type LensSetting } from './lens'
 import { defaultUpright, type UprightSetting } from './upright'
 import type { RetouchSpot } from './retouch'
+import { normalisePixelStep, type PixelStep } from './pixels'
 
 export const RECIPE_VERSION = 2
 
@@ -159,8 +160,9 @@ export interface DetailSetting {
   noiseColor: number
   noiseColorDetail: number
   /**
-   * AI noise reduction: a model's denoise of the photo, made once and kept
-   * (see `main/ai/denoise.ts`), in place of the classic sliders.
+   * AI noise reduction as it was before it became a pixel step (`pixels`):
+   * a photo whose recipe still has it on is given the step it described when
+   * it opens (renderer lib/denoise.ts), and it goes off. Nothing else reads it.
    */
   ai: AiDenoiseSetting
 }
@@ -397,6 +399,12 @@ export interface Recipe {
   geometry: GeometrySetting
   /** Heal, clone and fill spots, red and pet eye, in the order they run (see `retouch.ts`). */
   retouch: RetouchSpot[]
+  /**
+   * Pixel steps (an AI denoise…), in order: images computed once and kept in
+   * the photo's project, laid over the photo before anything else (see
+   * `pixels.ts`). Never copied to another photo: they are this photo's pixels.
+   */
+  pixels: PixelStep[]
   layers: LocalLayer[]
   custom: CustomLayer[]
   /**
@@ -531,6 +539,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       upright: defaultUpright()
     },
     retouch: [],
+    pixels: [],
     layers: [],
     custom: []
   }
@@ -580,6 +589,9 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
         .filter((c): c is MaskComponentSetting => c !== null)
     }
   })
+  r.pixels = (Array.isArray(r.pixels) ? (r.pixels as unknown[]) : [])
+    .map(normalisePixelStep)
+    .filter((p): p is PixelStep => p !== null)
   r.retouch = (Array.isArray(r.retouch) ? (r.retouch as unknown[]) : []).filter(
     (s): s is RetouchSpot =>
       isObject(s) &&
@@ -831,7 +843,7 @@ export function changedGroups(a: Recipe, b: Recipe): RecipeGroup[] {
 
 /** Whether a recipe differs from the default for its kind of file. */
 export function isEdited(r: Recipe, isRaw: boolean): boolean {
-  return changedGroups(r, defaultRecipe(isRaw)).length > 0
+  return r.pixels.length > 0 || changedGroups(r, defaultRecipe(isRaw)).length > 0
 }
 
 export function newId(): string {

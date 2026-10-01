@@ -201,7 +201,7 @@ app.whenReady().then(() => {
   const models = new ModelStore(index, () => bgEngine.getStatus())
   const lenses = new LensProfileStore()
   void lenses.start()
-  const exporter = new Exporter(library, sessions, bgEngine, models)
+  const exporter = new Exporter(library, sessions, bgEngine)
   const planes = new PlaneStore(index)
   const ai = new AiJobs(
     {

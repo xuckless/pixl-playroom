@@ -10,7 +10,6 @@ import {
   type AutoWbResult,
   type BasicSetting,
   type CaMeasurement,
-  type DenoiseState,
   type ModelInfo,
   type ProviderInfo,
   type Collection,
@@ -166,7 +165,6 @@ const api = {
     autoWb: (key: string) => call<SampleResult['wb']>(IPC.develop.autoWb, key),
     noise: (key: string) => call<NoiseEstimate | null>(IPC.develop.noise, key),
     measureCa: (key: string) => call<CaMeasurement>(IPC.develop.measureCa, key),
-    denoiseState: (key: string) => call<DenoiseState>(IPC.develop.denoiseState, key),
     suggestHeal: (
       key: string,
       points: SpotPoint[],

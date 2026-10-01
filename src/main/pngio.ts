@@ -56,6 +56,54 @@ export function encodeGreyPng(data: Uint8Array, w: number, h: number, level = 6)
   ])
 }
 
+/**
+ * A 16-bit PNG of `w × h` pixels, `channels` 3 (RGB) or 4 (RGBA) samples
+ * each, unfiltered: the masked composites and lens maps the engine reads
+ * once (so `level` is low by default).
+ */
+export function encodePng16(
+  samples: Uint16Array,
+  w: number,
+  h: number,
+  channels: 3 | 4,
+  level = 1
+): Buffer {
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(w, 0)
+  ihdr.writeUInt32BE(h, 4)
+  ihdr[8] = 16
+  ihdr[9] = channels === 4 ? 6 : 2
+  const stride = w * channels * 2
+  const raw = Buffer.alloc((stride + 1) * h)
+  for (let y = 0; y < h; y++) {
+    let o = y * (stride + 1) + 1
+    const row = y * w * channels
+    for (let i = 0; i < w * channels; i++, o += 2) raw.writeUInt16BE(samples[row + i], o)
+  }
+  return Buffer.concat([
+    SIGNATURE,
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw, { level })),
+    chunk('IEND', Buffer.alloc(0))
+  ])
+}
+
+/** A decoded PNG's samples as 16-bit values (an 8-bit one scaled up), `channels` per pixel. */
+export function pngSamples16(png: Buffer): {
+  width: number
+  height: number
+  channels: number
+  data: Uint16Array
+} {
+  const d = decodePng(png)
+  const channels = { 0: 1, 2: 3, 4: 2, 6: 4 }[d.colorType as 0 | 2 | 4 | 6] as number
+  const n = d.width * d.height * channels
+  const data = new Uint16Array(n)
+  if (d.bitDepth === 16) for (let i = 0; i < n; i++) data[i] = d.rows.readUInt16BE(i * 2)
+  else for (let i = 0; i < n; i++) data[i] = d.rows[i] * 257
+  return { width: d.width, height: d.height, channels, data }
+}
+
 interface Decoded {
   width: number
   height: number

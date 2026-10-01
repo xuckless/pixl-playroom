@@ -609,9 +609,18 @@ export class PixlFile {
     const o = this.original()
     if (o?.blob) named.add(o.blob)
     for (const json of this.history.json()) for (const h of blobsIn(json)) named.add(h)
-    for (const r of this.prepare('SELECT recipe FROM items').all() as { recipe: string | null }[])
-      for (const h of blobsIn(r.recipe ?? '')) named.add(h)
-    for (const { hash } of this.prepare('SELECT hash FROM blobs').all() as { hash: string }[])
+    // Snapshots keep their steps' pixels as recipes do.
+    for (const r of this.prepare('SELECT recipe, snapshots FROM items').all() as {
+      recipe: string | null
+      snapshots: string
+    }[])
+      for (const h of blobsIn(`${r.recipe ?? ''} ${r.snapshots}`)) named.add(h)
+    // One stored a moment ago may be on its way into a recipe (a step being
+    // committed): only those older than an hour are fair game.
+    const fresh = new Date(Date.now() - 3600_000).toISOString()
+    for (const { hash } of this.prepare('SELECT hash FROM blobs WHERE created_at < ?').all(
+      fresh
+    ) as { hash: string }[])
       if (!named.has(hash)) this.removeBlob(hash)
     let removed = 0
     this.tx(() => {

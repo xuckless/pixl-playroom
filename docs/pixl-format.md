@@ -146,7 +146,7 @@ Large binaries, stored once by content.
 | `blobs` column      | meaning                                                                                                      |
 | ------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `hash`              | SHA-256 of the bytes, lower-case hex (the blob's name)                                                       |
-| `kind`              | what it is: `original` (later also `pixels`, `mask`)                                                         |
+| `kind`              | what it is: `original`, `pixels` (a step's image) or `mask` (a step's frozen mask)                           |
 | `codec`             | how the bytes are encoded: `dng`, `jxl-jpeg`, `jxl`, or the original's own extension (`jpg`, `cr3`, `heic`…) |
 | `width`, `height`   | its pixel size when known (a JPEG XL reports it turned by the orientation)                                   |
 | `channels`, `depth` | when known                                                                                                   |
@@ -217,6 +217,7 @@ Its fields:
 | `calibration`                 | calibration                                                                                                           |
 | `geometry`                    | crop, rotation, upright                                                                                               |
 | `retouch`                     | heal, clone and fill spots                                                                                            |
+| `pixels`                      | pixel steps, in order (below)                                                                                         |
 | `layers`                      | masks, each with `components` (its shape) and `settings` (the same settings as the photo's, as a change on top of it) |
 | `custom`                      | custom layers                                                                                                         |
 | `gainMap`                     | HDR gain-map editing                                                                                                  |
@@ -225,6 +226,33 @@ Its fields:
 - **Reading older or partial recipes:** a reader fills a field it lacks with its
   default, and version-1 masks (an `adjust` block of sliders) are converted to
   `settings`.
+
+## Pixel steps
+
+`recipe.pixels` lists what changed the photo's pixels rather than its
+settings (an AI denoise), in the order they apply. Each is an image computed
+once and kept as a blob, so undoing, redoing or changing its strength never
+computes it again.
+
+| field             | meaning                                                                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`              | the step's id (history patches name it, as they name masks)                                                                                                   |
+| `kind`            | `denoise`                                                                                                                                                     |
+| `label`           | what it is called ("AI Denoise · SCUNet in Mask 1")                                                                                                           |
+| `blob`            | the image it made: a `blobs.hash`, the whole frame (`width × height`), 16-bit RGB in JPEG XL (`codec` `jxl` near-lossless at distance 0.1, or `jxl-lossless`) |
+| `alpha`           | the mask it was made inside, frozen as it was then: a `blobs.hash` of an 8-bit grey PNG of the same size; null for the whole frame                            |
+| `scope`           | that mask's name, for showing                                                                                                                                 |
+| `opacity`         | 0–100: how much of it is laid on                                                                                                                              |
+| `width`, `height` | the frame it was made at                                                                                                                                      |
+| `params`          | how it was made (`model`, `lossless`)                                                                                                                         |
+
+- **The source frame:** steps live on the photo's own pixels at full size,
+  upright (the file's orientation applied), before lens correction. A mask drawn
+  over the corrected picture is put back onto that frame when frozen.
+- **Applying them:** the developed picture is the source frame with each step's
+  image laid over it in order, in linear light, through `alpha` (or
+  everywhere) at `opacity`. Lens correction, retouch, the grade and framing
+  follow.
 
 ## Where projects are
 
