@@ -40,6 +40,7 @@ import { defringeOp, lensCorrection } from './lens'
 import { compileRetouch } from './retouch'
 import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
+import { effectiveMode } from './masks'
 import {
   HSL_BANDS,
   type CurvePointSetting,
@@ -753,12 +754,17 @@ export function layerMask(
   user: Orientation,
   brushPaths: Record<string, string>
 ): Mask | null {
-  const components = l.components
-    .map((c) => maskComponent(c, user, brushPaths))
+  // The first component always adds (as the masks panel shows it).
+  const drawn = l.components
+    .map((c, i) => maskComponent({ ...c, mode: effectiveMode(i, c.mode) }, user, brushPaths))
     .filter((c): c is MaskComponent => c !== null)
-  if (components.length === 0) return null
-  // The engine refuses a first component that is not Add (it would select nothing).
-  if (components[0].mode !== 'Add') components[0] = { ...components[0], mode: 'Add' }
+  // One that could not be drawn (a brush whose plane is missing, a lasso of
+  // one point) leaves a Subtract or Intersect first: taken from nothing it
+  // selects nothing, and the engine refuses one first, so it goes. (Made an
+  // Add it would select what it was meant to take away.)
+  const first = drawn.findIndex((c) => c.mode === 'Add')
+  if (first < 0) return null
+  const components = drawn.slice(first)
   const keys = components.some((c) => 'Range' in c.shape)
   return { components, invert: l.invert, space: keys ? LOOK_SPACE : null }
 }

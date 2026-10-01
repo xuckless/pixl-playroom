@@ -215,6 +215,44 @@ test('gradients reach the engine as raster planes, and are dropped without one',
   assert.equal(shape.Raster.source.Png, '/tmp/lin.png')
 })
 
+test('a Subtract left first by an Add that could not be drawn takes nothing away', () => {
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('g')
+  // A brush whose plane is not there: it cannot be drawn.
+  l.components.push({
+    id: 'gone',
+    kind: 'brush',
+    mode: 'Add',
+    opacity: 100,
+    invert: false,
+    feather: 0,
+    width: 4,
+    height: 4,
+    png: '',
+    ref: 'missing-1'
+  })
+  l.components.push({
+    id: 'rad',
+    kind: 'radial',
+    mode: 'Subtract',
+    opacity: 100,
+    invert: false,
+    feather: 0,
+    centre: { x: 0.5, y: 0.5 },
+    radiusX: 0.2,
+    radiusY: 0.2,
+    angle: 0,
+    softness: 50,
+    width: 512,
+    height: 341
+  })
+  l.settings.exposure = 1
+  r.layers.push(l)
+  const c = compile(r, { ...ctx, brushPaths: { rad: '/tmp/rad.png' } })
+  // Not made an Add (which would light the very part meant to be taken away): no layer.
+  assert.equal(c.grade?.layers.length ?? 0, 0)
+})
+
 test('the first component always adds, whatever it was made as', () => {
   const r = defaultRecipe(false)
   const l = newLocalLayer('g')

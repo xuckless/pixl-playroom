@@ -140,7 +140,7 @@ After: Pass 1.
 
 ### Pass 6 — Mask and heal precision · 5 pts
 
-- [ ] **S** · **A Subtract component becomes Add** when the one before it is
+- [x] **S** · **A Subtract component becomes Add** when the one before it is
       dropped (a brush whose plane didn't hydrate, a one-point lasso):
       `compile.ts:725-730` promotes it. Drop leading non-Add components.
 - [ ] **S** · **Heal lens map read with the wrong pixel convention**:
