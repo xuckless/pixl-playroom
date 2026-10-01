@@ -9,7 +9,7 @@
  */
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import { autoUpdater, type ProgressInfo, type UpdateInfo } from 'electron-updater'
+import type { AppUpdater, ProgressInfo, UpdateInfo } from 'electron-updater'
 import { IPC, type UpdateChannel, type UpdateState } from '../shared/ipc'
 import { readSettings, writeSettings } from './settings'
 
@@ -22,6 +22,8 @@ let state: UpdateState = {
 }
 let enabled = false
 let timer: NodeJS.Timeout | undefined
+/** electron-updater, loaded only where updates run (a packaged build): never on a dev launch's path. */
+let autoUpdater: AppUpdater
 
 function broadcast(): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -75,7 +77,7 @@ export async function setUpdateChannel(channel: UpdateChannel): Promise<UpdateSt
 }
 
 /** Wire electron-updater. Call once, after `app.whenReady()`. */
-export function setupUpdater(): void {
+export async function setupUpdater(): Promise<void> {
   state = { ...state, channel: readSettings().updateChannel }
   // In development there is nothing to update against. PLAYROOM_FORCE_UPDATER=1
   // reads dev-app-update.yml instead, to exercise the flow from `pnpm dev`.
@@ -87,6 +89,7 @@ export function setupUpdater(): void {
     state = { ...state, phase: 'disabled' }
     return
   }
+  autoUpdater = (await import('electron-updater')).autoUpdater
   enabled = true
   autoUpdater.logger = log
   autoUpdater.autoDownload = true

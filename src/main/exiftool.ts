@@ -7,7 +7,7 @@
  * long-lived perl processes. Nothing here needs Electron, so the index host
  * and the tests load it as it is.
  */
-import { ExifTool, type WriteTags } from 'exiftool-vendored'
+import type { ExifTool, WriteTags } from 'exiftool-vendored'
 import { readFile, rename, writeFile } from 'fs/promises'
 import { createRequire } from 'module'
 import { sep } from 'path'
@@ -45,23 +45,32 @@ export function vendoredExiftoolPath(): string | undefined {
   }
 }
 
-export function exiftool(): ExifTool {
-  if (!shared) {
+let starting: Promise<ExifTool> | undefined
+
+/**
+ * The shared ExifTool, its library loaded the first time it is wanted (an
+ * export, a metadata read or write), not on the launch's path.
+ */
+export function exiftool(): Promise<ExifTool> {
+  if (shared) return Promise.resolve(shared)
+  starting ??= import('exiftool-vendored').then(({ ExifTool: Tool }) => {
     const path = explicitPath ?? vendoredExiftoolPath()
-    shared = new ExifTool({
+    shared = new Tool({
       maxProcs: 2,
       // A slow network drive should not look like a hung perl.
       taskTimeoutMillis: 30_000,
       ...(path ? { exiftoolPath: path } : {})
     })
-  }
-  return shared
+    return shared
+  })
+  return starting
 }
 
 /** Stop the perl processes, if any were started. */
 export async function endExiftool(): Promise<void> {
-  const et = shared
+  const et = shared ?? (await starting?.catch(() => undefined))
   shared = undefined
+  starting = undefined
   await et?.end()
 }
 
@@ -144,7 +153,9 @@ export async function embedMetadata(
       await rename(tmp, file)
     }
     if (fixed.dropped && opts.source) {
-      await exiftool().write(
+      await (
+        await exiftool()
+      ).write(
         file,
         {},
         {
@@ -168,5 +179,5 @@ export async function embedMetadata(
   if (opts.removeLocation) args.push('-gps:all=', '-xmp-exif:gps*=')
   if (Object.keys(tags).length === 0 && !opts.removeLocation) return
   // -m: a format without IPTC (PNG, WebP) takes the rest instead of failing.
-  await exiftool().write(file, tags as WriteTags, { writeArgs: ['-m', ...args] })
+  await (await exiftool()).write(file, tags as WriteTags, { writeArgs: ['-m', ...args] })
 }

@@ -11,6 +11,7 @@
 import { app, utilityProcess, type UtilityProcess } from 'electron'
 import log from 'electron-log/main'
 import { join } from 'path'
+import { MAIN_DIR } from '../dirs'
 import { vendoredExiftoolPath } from '../exiftool'
 import type { HostToMain, IndexEvent, IndexRequest } from './protocol'
 import type { IndexService } from './service'
@@ -129,7 +130,7 @@ class Connection implements IndexControl {
     const exiftool = vendoredExiftoolPath()
     if (exiftool) args.push('--exiftool', exiftool)
     this.firstStart = false
-    const child = utilityProcess.fork(join(__dirname, 'index-host.js'), args, {
+    const child = utilityProcess.fork(join(MAIN_DIR, 'index-host.js'), args, {
       serviceName: 'pixl-index',
       stdio: 'pipe'
     })

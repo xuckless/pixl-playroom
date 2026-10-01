@@ -74,7 +74,7 @@ const tagsFor = (
 /** Whether perl and the vendored ExifTool can start here. */
 async function exiftoolWorks(): Promise<boolean> {
   try {
-    await exiftool().version()
+    await (await exiftool()).version()
     return true
   } catch {
     return false
@@ -95,12 +95,17 @@ test('a real .xmp round trip, keeping tags that are not ours', async (t) => {
     assert.deepEqual(await io.read(file), meta)
 
     // Someone else's tag survives our next write.
-    await exiftool().write(file, { 'XMP-xmp:Label': 'Red' } as never, {
+    await (
+      await exiftool()
+    ).write(file, { 'XMP-xmp:Label': 'Red' } as never, {
       writeArgs: ['-overwrite_original']
     })
     await io.write(file, { ...meta, title: null, keywords: ['Water'] })
     assert.deepEqual(await io.read(file), { ...meta, title: null, keywords: ['Water'] })
-    const all = (await exiftool().readRaw(file, { readArgs: ['-G1'] })) as Record<string, unknown>
+    const all = (await (await exiftool()).readRaw(file, { readArgs: ['-G1'] })) as Record<
+      string,
+      unknown
+    >
     assert.equal(all['XMP-xmp:Label'], 'Red')
     assert.match(readFileSync(file, 'utf8'), /hierarchicalSubject/)
 
@@ -108,7 +113,10 @@ test('a real .xmp round trip, keeping tags that are not ours', async (t) => {
     const png = join(dir, 'out.png')
     writeFileSync(png, encodeGreyPng(new Uint8Array(16).fill(128), 4, 4))
     await embedMetadata(png, tagsFor(meta, 'all'), { removeLocation: true })
-    const out = (await exiftool().readRaw(png, { readArgs: ['-G1'] })) as Record<string, unknown>
+    const out = (await (await exiftool()).readRaw(png, { readArgs: ['-G1'] })) as Record<
+      string,
+      unknown
+    >
     assert.equal(out['XMP-dc:Title'], 'Lake at dusk')
     assert.equal(out['XMP-dc:Rights'], '© 2026 Ali')
   } finally {
@@ -181,7 +189,10 @@ test('embedding into the engine’s JPEG keeps its EXIF, or copies it from the s
     const out = join(dir, 'export.jpg')
     writeFileSync(out, jpegWithApp1(2, tiffWithMake('Canon')))
     await embedMetadata(out, tagsFor(meta, 'all'), { removeLocation: false })
-    const tags = (await exiftool().readRaw(out, { readArgs: ['-G1'] })) as Record<string, unknown>
+    const tags = (await (await exiftool()).readRaw(out, { readArgs: ['-G1'] })) as Record<
+      string,
+      unknown
+    >
     assert.equal(tags['ExifTool:Warning'], undefined)
     assert.equal(tags['IFD0:Make'], 'Canon')
     assert.equal(tags['IFD0:Copyright'], '© 2026 Ali')
@@ -194,11 +205,16 @@ test('embedding into the engine’s JPEG keeps its EXIF, or copies it from the s
     assert.ok(readFileSync(plain).equals(jpegWithApp1(1, tiffWithMake('Canon'))))
 
     // Location removed, the rest kept.
-    await exiftool().write(out, { GPSLatitude: 49.9, GPSLatitudeRef: 'N' } as never, {
+    await (
+      await exiftool()
+    ).write(out, { GPSLatitude: 49.9, GPSLatitudeRef: 'N' } as never, {
       writeArgs: ['-overwrite_original']
     })
     await embedMetadata(out, {}, { removeLocation: true })
-    const noGps = (await exiftool().readRaw(out, { readArgs: ['-G1'] })) as Record<string, unknown>
+    const noGps = (await (await exiftool()).readRaw(out, { readArgs: ['-G1'] })) as Record<
+      string,
+      unknown
+    >
     assert.deepEqual(
       Object.keys(noGps).filter((k) => /gps/i.test(k)),
       []
@@ -215,7 +231,10 @@ test('embedding into the engine’s JPEG keeps its EXIF, or copies it from the s
       removeLocation: false,
       source
     })
-    const b = (await exiftool().readRaw(broken, { readArgs: ['-G1'] })) as Record<string, unknown>
+    const b = (await (await exiftool()).readRaw(broken, { readArgs: ['-G1'] })) as Record<
+      string,
+      unknown
+    >
     assert.equal(b['IFD0:Make'], 'Nikon')
     assert.equal(b['IFD0:Copyright'], 'Studio')
     assert.equal(b['XMP-dc:Title'], undefined, 'copyright only')

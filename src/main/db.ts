@@ -53,6 +53,8 @@ export interface PhotoRow {
   project_mtime: number | null
   /** The file version that could not be read (its thumbnail failed), and why. */
   failed_key?: string | null
+  /** Its recipe as its thumbnail knows it: 'plain', or the slim recipe's hash. */
+  recipe_key?: string | null
   failed_reason?: string | null
   /**
    * Not columns: what the index adds for whoever reads the original
@@ -75,6 +77,8 @@ export interface CopyRow {
   edited: number
   thumb_path: string | null
   thumb_key: string | null
+  /** Its recipe as its thumbnail knows it (see `PhotoRow.recipe_key`). */
+  recipe_key?: string | null
 }
 
 export interface CollectionRow {
@@ -251,7 +255,13 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   (db) => db.exec('CREATE INDEX IF NOT EXISTS photos_project ON photos(project_path)'),
   // 7. A file version that could not be read, and why: not tried again at
   // every launch, only once it changes.
-  (db) => addColumns(db, 'photos', { failed_key: 'TEXT', failed_reason: 'TEXT' })
+  (db) => addColumns(db, 'photos', { failed_key: 'TEXT', failed_reason: 'TEXT' }),
+  // 8. Each item's recipe as its thumbnail knows it ('plain' or a hash), so
+  // a folder opened again finds its thumbnails current without reading files.
+  (db) => {
+    addColumns(db, 'photos', { recipe_key: 'TEXT' })
+    addColumns(db, 'copies', { recipe_key: 'TEXT' })
+  }
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -631,15 +641,11 @@ export class Store {
 
   setPhotoMeta(
     id: number,
-    meta: { rating: number; flag: Flag; label: ColorLabel; edited: boolean }
+    meta: { rating: number; flag: Flag; label: ColorLabel; edited: boolean; recipeKey?: string }
   ): void {
-    this.prepare('UPDATE photos SET rating = ?, flag = ?, label = ?, edited = ? WHERE id = ?').run(
-      meta.rating,
-      meta.flag,
-      meta.label,
-      meta.edited ? 1 : 0,
-      id
-    )
+    this.prepare(
+      'UPDATE photos SET rating = ?, flag = ?, label = ?, edited = ?, recipe_key = ? WHERE id = ?'
+    ).run(meta.rating, meta.flag, meta.label, meta.edited ? 1 : 0, meta.recipeKey ?? null, id)
   }
 
   /** Remember a project and the photo it names (see migration 5). */
@@ -733,12 +739,13 @@ export class Store {
       flag: Flag
       label: ColorLabel
       edited: boolean
+      recipeKey?: string
     }[]
   ): void {
     const existing = new Map(this.copiesOf(photoId).map((c) => [c.copy_id, c]))
     this.prepare('DELETE FROM copies WHERE photo_id = ?').run(photoId)
     const ins = this.prepare(
-      'INSERT INTO copies(photo_id, copy_id, name, rating, flag, label, edited, thumb_path, thumb_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO copies(photo_id, copy_id, name, rating, flag, label, edited, thumb_path, thumb_key, recipe_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
     for (const c of copies) {
       const old = existing.get(c.id)
@@ -751,7 +758,8 @@ export class Store {
         c.label,
         c.edited ? 1 : 0,
         old?.thumb_path ?? null,
-        old?.thumb_key ?? null
+        old?.thumb_key ?? null,
+        c.recipeKey ?? null
       )
     }
   }

@@ -10,6 +10,7 @@ import { utilityProcess, type UtilityProcess } from 'electron'
 import log from 'electron-log/main'
 import { constants, setPriority } from 'os'
 import { join } from 'path'
+import { MAIN_DIR } from '../dirs'
 import type {
   AnalyzeRequest,
   ConvertReport,
@@ -193,7 +194,7 @@ export class EngineClient {
   }
 
   private spawn(): void {
-    const entry = join(__dirname, 'engine-host.js')
+    const entry = join(MAIN_DIR, 'engine-host.js')
     const child = utilityProcess.fork(entry, [], {
       serviceName: `pixl-engine-${this.name}`,
       stdio: 'pipe',

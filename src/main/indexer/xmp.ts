@@ -127,7 +127,9 @@ export function exiftoolXmp(): XmpIo {
     async read(xmpPath) {
       if (!existsSync(xmpPath)) return null
       try {
-        const tags = await exiftool().readRaw(xmpPath, {
+        const tags = await (
+          await exiftool()
+        ).readRaw(xmpPath, {
           readArgs: ['-G1', ...XMP_TAGS.map((t) => '-' + t)]
         })
         return tagsToMeta(tags as unknown as Record<string, unknown>)
@@ -138,7 +140,9 @@ export function exiftoolXmp(): XmpIo {
     },
     async write(xmpPath, meta) {
       // Writing to a .xmp path that does not exist makes one from scratch.
-      await exiftool().write(xmpPath, metaToTags(meta) as WriteTags, {
+      await (
+        await exiftool()
+      ).write(xmpPath, metaToTags(meta) as WriteTags, {
         writeArgs: ['-overwrite_original']
       })
     },

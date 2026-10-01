@@ -405,13 +405,13 @@ Each release runs picture → mask → before → headroom → mask thumbnails
 
 ### Pass 20 — Startup relaunch and folder open · 4 pts
 
-- [ ] **M** · **A packaged launch on a Retina Mac starts twice**, after
+- [x] **M** · **A packaged launch on a Retina Mac starts twice**, after
       loading every static import (electron-updater ~65 ms, exiftool-vendored
       ~36 ms): `bootScale` relaunches when the scale switch is missing
       (`display.ts:38, 92-101`; `index.ts:55-59`). A tiny entry that runs
       `bootScale` first, then imports the app; load the updater only when
       packaged and exiftool only for export and metadata.
-- [ ] **M** · **Opening a folder redoes all per-item work.** A full rescan
+- [x] **M** · **Opening a folder redoes all per-item work.** A full rescan
       every time (`service.ts:217-222`), an unchunked `statSync` loop in
       `fillXmp` (`:757-765`), a thumbnail job per item (`library.ts:136, 151`)
       whose `recipe()` opens each sidecar or `.pixl`, and `fillCameras`

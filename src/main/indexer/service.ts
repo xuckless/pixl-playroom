@@ -97,6 +97,8 @@ import {
 
 /** Files looked at per turn of a scan. */
 const CHUNK = 200
+/** A folder scanned this recently is not walked again when listed (its own reload after a fill). */
+const RESCAN_FRESH_MS = 10_000
 
 /** A file's version: its path, size and modification time. */
 const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.size}`
@@ -155,6 +157,21 @@ interface ListingContext {
 /** A file's content version, for its cached SHA-1. */
 const hashKeyOf = (row: PhotoRow): string => `${row.mtime}-${row.size}`
 
+/** A folder's own modification time (null when it cannot be read). */
+function folderMtime(folder: string): number | null {
+  try {
+    return statSync(folder).mtimeMs
+  } catch {
+    return null
+  }
+}
+
+/** A recipe as its thumbnail knows it: 'plain' when unedited, else its slim form's hash. */
+function thumbRecipeKey(recipe: Recipe | null, raw: boolean): string {
+  if (!recipe || !isEdited(recipe, raw)) return 'plain'
+  return hash32(JSON.stringify(slimRecipe(recipe))).toString(16)
+}
+
 /** The row's content hash, when the one recorded is of the file as it is now. */
 const knownHash = (row: PhotoRow): string | null =>
   row.hash_key === hashKeyOf(row) ? row.content_hash : null
@@ -201,6 +218,9 @@ export class IndexService {
   private readonly store: Store
   private readonly cacheRoot: string
   private readonly emit: (event: IndexEvent) => void
+  /** When each folder was last scanned (a listing a moment after needs no walk). */
+  private readonly scannedAt = new Map<string, { at: number; dirMtime: number | null }>()
+
   /** Files whose thumbnail failed, per version, with why (and in the row, for the next launch). */
   private readonly failed = new Map<string, string>()
 
@@ -266,6 +286,12 @@ export class IndexService {
   async listFolder(folder: string): Promise<LibraryItem[]> {
     this.store.touchFolder(folder)
     if (this.store.hasPhotosIn(folder)) {
+      // A folder scanned a moment ago (its own `changed` reloading it, a
+      // quick back and forth) is as it was: not walked again.
+      // (A file added, removed or renamed changes the folder's own time.)
+      const last = this.scannedAt.get(folder)
+      if (last && Date.now() - last.at < RESCAN_FRESH_MS && last.dirMtime === folderMtime(folder))
+        return this.items(folder)
       // After this answer, not before it.
       setImmediate(() => {
         if (this.closed) return
@@ -296,7 +322,9 @@ export class IndexService {
       try {
         do {
           scan.again = false
+          const dirMtime = folderMtime(folder)
           changed += await this.scan(folder)
+          this.scannedAt.set(folder, { at: Date.now(), dirMtime })
         } while (scan.again)
       } finally {
         this.scans.delete(folder)
@@ -789,7 +817,8 @@ export class IndexService {
       rating: p.rating,
       flag: p.flag,
       label: p.label,
-      edited: p.recipe !== null && isEdited(p.recipe, raw)
+      edited: p.recipe !== null && isEdited(p.recipe, raw),
+      recipeKey: thumbRecipeKey(p.recipe, raw)
     })
     this.store.replaceCopies(
       row.id,
@@ -799,7 +828,8 @@ export class IndexService {
         rating: c.rating,
         flag: c.flag,
         label: c.label,
-        edited: c.recipe !== null && isEdited(c.recipe, raw)
+        edited: c.recipe !== null && isEdited(c.recipe, raw),
+        recipeKey: thumbRecipeKey(c.recipe, raw)
       }))
     )
     this.store.setStack(row.id, sidecar.stack?.id ?? null, sidecar.stack?.position ?? null)
@@ -843,7 +873,11 @@ export class IndexService {
   private async fillXmp(folder: string): Promise<void> {
     const changed = await this.xmpSerial(async () => {
       let n = 0
+      let i = 0
       for (const row of this.store.photosIn(folder)) {
+        // A stat each: a big folder yields between chunks, as the scan does.
+        if (++i % CHUNK === 0) await nextTurn()
+        if (this.closed) return n
         const file = xmpPathFor(row.path, row.is_raw === 1)
         let mtime: number | null = null
         try {
@@ -1808,14 +1842,16 @@ export class IndexService {
     const existing =
       copyId === null ? row : this.store.copiesOf(row.id).find((c) => c.copy_id === copyId)
     if (!existing) return null
-    // Whether the thumbnail is current is asked of the slim recipe (planes by
-    // reference), from the one item: only one to render reads it whole.
+    // The recipe's key as last mirrored (every change to it mirrors): whether
+    // the thumbnail is current needs no file read. A row from before it was
+    // kept asks the slim recipe, from the one item.
     const key = keyOf(row.id, copyId)
-    const slim = this.slimRecipeOf(key)
-    const edited = isEdited(slim, row.is_raw === 1)
-    const stamp = `${versionStamp(row)}-${edited ? hash32(JSON.stringify(slim)).toString(16) : 'plain'}`
+    const raw = row.is_raw === 1
+    const recipeKey = existing.recipe_key ?? thumbRecipeKey(this.slimRecipeOf(key), raw)
+    const stamp = `${versionStamp(row)}-${recipeKey}`
     if (existing.thumb_key === stamp && existing.thumb_path && existsSync(existing.thumb_path))
       return null
+    const edited = recipeKey !== 'plain'
     return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp }
   }
 
