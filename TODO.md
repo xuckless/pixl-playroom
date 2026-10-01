@@ -1319,14 +1319,21 @@ Playroom work that starts once the engine request lands
       in beta at Supabase.
 - [x] **S** · **Email sender for sign-in mail**: Resend, on
       pixlfoundation.com (2026-10-01).
-- [ ] **S** · **Updates bucket**: R2 bucket `pixl-updates` on
+- [x] **S** · **Updates bucket**: R2 bucket `pixl-updates` on
       updates.pixlfoundation.com, plus an R2 API token (S3 access key) as
       playroom repository secrets for release.yml (Pass 23).
-      _Bucket and domain created 2026-10-01; the R2 API token is still to do:
-      Cloudflare → R2 → Manage API tokens → Object Read & Write, scoped to
-      `pixl-updates` only. Then add the secrets `R2_ACCESS_KEY_ID` and
-      `R2_SECRET_ACCESS_KEY`, and the variable `R2_ENDPOINT`
-      (`https://<account id>.r2.cloudflarestorage.com`)._
+      _Done 2026-10-01: the bucket and domain, and on the repository the
+      secrets `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` plus the variable
+      `R2_ENDPOINT`, from the account's existing R2 key (the `.env`
+      `CLOUDFLARE_ACCESS_KEY_ID`). Tested: write, read through
+      updates.pixlfoundation.com, delete._
+- [ ] **S** · **A narrower key for CI**: the R2 key in the repository's
+      secrets is account-wide (it can also write `pixl-reports` and
+      `pixl-models`). Make one with Object Read & Write on `pixl-updates`
+      only (R2 → Manage API tokens), and swap it into `R2_ACCESS_KEY_ID` and
+      `R2_SECRET_ACCESS_KEY`. The `r2-pixl-token` made 2026-10-01 can't be
+      used: its permissions are on the pixlfoundation.com zone, so R2
+      refuses it. Delete it.
 - [x] **M** · **Beta and account decisions** (2026-10-01): sign in with an
       email code, Google or Apple; the beta is open to anyone; testers get 3
       devices, like a licence; the tester discount must be redeemed within 90
