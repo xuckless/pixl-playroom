@@ -23,8 +23,9 @@ export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
 
 /** How a mask is shown over the photo (Lightroom's overlay modes). */
 export type OverlayMode =
-  'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
+  'glass' | 'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
 export const OVERLAY_MODES: { value: OverlayMode; label: string }[] = [
+  { value: 'glass', label: 'Molten glass' },
   { value: 'color', label: 'Colour overlay' },
   { value: 'color-bw', label: 'Colour overlay on B&W' },
   { value: 'image-black', label: 'Image on black' },
@@ -63,6 +64,17 @@ export interface MaskOverlaySettings {
   byComponent?: boolean
   /** When the on-canvas pins and handles show. */
   pins: PinsMode
+  /** Hide the overlay while a slider moves, so the edit itself shows (Lightroom's auto toggle). */
+  autoToggle: boolean
+}
+
+export const DEFAULT_MASK_OVERLAY: MaskOverlaySettings = {
+  mode: 'glass',
+  hue: 350,
+  opacity: 45,
+  showAll: false,
+  pins: 'auto',
+  autoToggle: true
 }
 
 export interface HealSettings {
@@ -227,7 +239,7 @@ export const useUi = create<UiState>()(
       setLibrarySidebar: (librarySidebar) => set({ librarySidebar }),
       setLibraryInfo: (libraryInfo) => set({ libraryInfo }),
       cropGuide: 'thirds',
-      maskOverlay: { mode: 'color', hue: 350, opacity: 45, showAll: false, pins: 'auto' },
+      maskOverlay: DEFAULT_MASK_OVERLAY,
       setMaskOverlay: (p) => set((s) => ({ maskOverlay: { ...s.maskOverlay, ...p } })),
       brushes: {
         A: { size: 80, softness: 60, flow: 60, density: 100, autoMask: false, pressure: true },
@@ -279,7 +291,15 @@ export const useUi = create<UiState>()(
     {
       name: 'playroom.ui',
       storage,
-      version: 1,
+      version: 2,
+      // 2: the overlay's default view became Molten glass; whoever kept the
+      // old default (colour) gets the new one once.
+      migrate: (persisted, version) => {
+        const p = (persisted ?? {}) as Partial<UiState>
+        if (version < 2 && p.maskOverlay?.mode === 'color')
+          return { ...p, maskOverlay: { ...p.maskOverlay, mode: 'glass' } }
+        return p
+      },
       // A tool saved by an older build that the wheel no longer has (the
       // Engine tool, now a dialog) comes back as Basic.
       merge: (persisted, current) => {
@@ -290,6 +310,7 @@ export const useUi = create<UiState>()(
           // Settings saved before a field existed take its default.
           enhance: { ...DEFAULT_ENHANCE, ...p.enhance },
           masksWin: { ...DEFAULT_MASKS_WIN, ...p.masksWin },
+          maskOverlay: { ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay },
           denoise: { model: 'scunet-color-real', strength: 100, ...p.denoise },
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
           panel: isToolId(p.panel) ? p.panel : current.panel,

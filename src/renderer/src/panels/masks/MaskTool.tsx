@@ -67,6 +67,7 @@ export function ComponentCard({
       {show.feather && (
         <Slider
           label="Feather"
+          adjusts={false}
           value={c.feather}
           min={0}
           max={100}
@@ -78,6 +79,7 @@ export function ComponentCard({
       {show.shift && (
         <Slider
           label="Shift edge"
+          adjusts={false}
           value={c.edge?.shift ?? 0}
           min={-100}
           max={100}
@@ -90,6 +92,7 @@ export function ComponentCard({
       {show.softness && c.kind === 'radial' && (
         <Slider
           label="Feather"
+          adjusts={false}
           value={c.softness}
           min={0}
           max={100}
@@ -125,6 +128,7 @@ export function ComponentCard({
           ))}
           <Slider
             label="Smoothness"
+            adjusts={false}
             value={c.smoothness}
             min={0}
             max={100}

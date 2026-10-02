@@ -1,6 +1,7 @@
 import { motion } from 'motion/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { DialogBackdrop } from '../fx/DialogBackdrop'
+import { touchAdjusting } from '../lib/interacting'
 import { LiquidGlass } from './glass/LiquidGlass'
 import { Icon, type IconName } from './icons'
 
@@ -90,6 +91,11 @@ export interface SliderProps {
   track?: string
   disabled?: boolean
   title?: string
+  /**
+   * Whether moving it changes the picture (the default), so the mask overlay
+   * steps aside while it moves; false for a slider that shapes a mask.
+   */
+  adjusts?: boolean
 }
 
 /** Where `v` sits along `min…max`, as a percentage. */
@@ -116,7 +122,8 @@ export function Slider({
   onCommit,
   track,
   disabled,
-  title
+  title,
+  adjusts = true
 }: SliderProps): React.JSX.Element {
   const [text, setText] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -215,7 +222,10 @@ export function Slider({
               // keyboard or a click without a drag
               onChange(v, false)
               onCommit()
-            } else onChange(v, true)
+            } else {
+              if (adjusts) touchAdjusting()
+              onChange(v, true)
+            }
           }}
         />
       </div>

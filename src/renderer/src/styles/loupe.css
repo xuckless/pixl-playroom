@@ -531,6 +531,25 @@
 .mask-hover .mask-overlay {
   animation-duration: 0.15s;
 }
+/* Every mask overlay; with auto toggle on it steps aside while a slider
+   that changes the picture moves, so the edit itself shows. */
+.mask-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 0.18s var(--ease);
+}
+:root[data-adjusting] .mask-layer.auto-hide {
+  opacity: 0;
+}
+:root[data-adjusting] .picture.ov-bw:has(.mask-layer.auto-hide) > img {
+  filter: none;
+}
+/* Molten glass without the loupe's drawing: the photo frosted where the mask is. */
+.mask-overlay.glass {
+  backdrop-filter: blur(8px) saturate(1.4) brightness(1.04);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4) brightness(1.04);
+}
 /* The selected mask, drawn by the loupe (views/loupe/maskgl). */
 .mask-canvas {
   position: absolute;

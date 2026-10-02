@@ -640,6 +640,17 @@ function OverlayControls(): React.JSX.Element {
               />
               Colour each component
             </label>
+            <label
+              className="check"
+              title="The overlay steps aside while a slider that changes the photo moves (Lightroom's auto toggle)"
+            >
+              <input
+                type="checkbox"
+                checked={o.autoToggle}
+                onChange={(e) => set({ autoToggle: e.target.checked })}
+              />
+              Hide while adjusting
+            </label>
             <span className="micro">
               Pins{keyHint('mask.pins') && ` · ${keyHint('mask.pins')} cycles`}
             </span>

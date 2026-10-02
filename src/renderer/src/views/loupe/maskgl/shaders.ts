@@ -167,32 +167,98 @@ void main() {
   o = vec4(uTint * a, a);
 }`
 
+/** One direction of a Gaussian over a colour picture (its edge pixels repeated): the frost behind the glass. */
+export const PBLUR_FS = `${HEAD}
+uniform sampler2D uSrc;
+uniform vec2 uStep;
+uniform float uSigma;
+void main() {
+  vec2 p = here();
+  int r = int(ceil(uSigma * 3.0));
+  vec4 sum = vec4(0.0);
+  float wsum = 0.0;
+  for (int i = -32; i <= 32; i++) {
+    if (i < -r || i > r) continue;
+    float w = exp(-0.5 * float(i * i) / (uSigma * uSigma));
+    vec2 q = clamp(p + uStep * float(i), vec2(0.0), vec2(1.0));
+    sum += texture(uSrc, vec2(q.x, 1.0 - q.y)) * w;
+    wsum += w;
+  }
+  o = sum / wsum;
+}`
+
 /**
  * The overlay: the loupe's mask and the engine's, crossfaded, shown as the
  * chosen view. Premultiplied alpha out.
+ *
+ * Molten glass (view 5) treats the mask as a pane of liquid glass laid on
+ * the photo, the mask its thickness: where it rises (its edge) the picture
+ * behind bends inward and the rim catches a light from the top left, with a
+ * soft shadow on the far side; inside, the picture is frosted, a little more
+ * saturated and tinted the mask's colour. For a moment after the mask
+ * changes the light on the rim flows (uFlow), then settles. Without the
+ * picture yet it shows as the colour view.
  */
 export const SHADE_FS = `${HEAD}
 uniform sampler2D uAcc;
 uniform sampler2D uEngine;
+uniform sampler2D uPicture;
+uniform sampler2D uFrost;
 uniform bool uHaveAcc;
 uniform bool uHaveEngine;
+uniform bool uHavePicture;
 uniform bool uLayerInvert;
 uniform float uLive;      // 1: the loupe's mask, 0: the engine's
-uniform int uView;        // 0 colour, 1 image on black, 2 image on white, 3 white on black, 4 outline
+uniform int uView;        // 0 colour, 1 image on black, 2 image on white, 3 white on black, 4 outline, 5 glass
 uniform vec3 uTint;
 uniform float uAlpha;
 uniform float uReveal;    // 0…1: a wipe from the top (a mask arriving from a model)
-void main() {
-  vec2 d = here();
+uniform float uTime;      // seconds
+uniform float uFlow;      // 0…1: how much the glass's rim light moves
+float M(vec2 d) {
   float live = 0.0;
   if (uHaveAcc) { live = S(uAcc, d); if (uLayerInvert) live = 1.0 - live; }
   float engine = uHaveEngine ? S(uEngine, d) : live;
-  float m = uHaveAcc ? mix(engine, live, uLive) : engine;
+  return uHaveAcc ? mix(engine, live, uLive) : engine;
+}
+vec3 P(sampler2D t, vec2 q) {
+  q = clamp(q, vec2(0.0), vec2(1.0));
+  return texture(t, vec2(q.x, 1.0 - q.y)).rgb;
+}
+void main() {
+  vec2 d = here();
+  float m = M(d);
   // A mask arriving from a model is wiped in from the top behind a lit edge.
   float front = uReveal < 1.0 ? 1.0 - smoothstep(0.0, 0.008, abs(d.y - uReveal)) : 0.0;
   if (d.y > uReveal + 0.008) { o = vec4(0.0); return; }
   if (d.y > uReveal) { o = vec4(vec3(0.62, 0.55, 0.92) * front, front); return; }
-  if (uView == 0) {
+  if (uView == 5 && uHavePicture) {
+    // How the glass rises across a few pixels: toward its thick side.
+    vec2 px = 3.0 / uSize;
+    vec2 g = 0.5 * vec2(M(d + vec2(px.x, 0.0)) - M(d - vec2(px.x, 0.0)),
+                        M(d + vec2(0.0, px.y)) - M(d - vec2(0.0, px.y)));
+    float slope = clamp(length(g) * 2.5, 0.0, 1.0);
+    vec2 n = g / max(length(g), 1e-5);
+    // Refraction: the picture behind the rim pulled in toward the thick side.
+    vec2 q = d - g * 0.045;
+    float body = smoothstep(0.0, 0.75, m);
+    vec3 c = mix(P(uPicture, q), P(uFrost, q), body);
+    float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c = mix(vec3(luma), c, 1.0 + 0.3 * body);
+    c = mix(c, uTint, 0.2 * body) * 1.03 + 0.012;
+    // The rim: lit where it faces the light (top left), shaded where it faces away.
+    float facing = dot(-n, normalize(vec2(-0.6, -0.8)));
+    float flow = 1.0 + uFlow * 0.6 * sin(d.x * 38.0 + d.y * 27.0 - uTime * 2.4)
+                                   * sin(d.y * 21.0 - d.x * 13.0 + uTime * 1.7);
+    float hi = clamp(pow(max(facing, 0.0) * slope, 1.4) * 0.65 * flow, 0.0, 1.0);
+    c *= 1.0 - 0.32 * max(-facing, 0.0) * slope;
+    // A hairline where the glass is half thick: the mask's edge.
+    float w = max(fwidth(m), 1e-4);
+    float line = (1.0 - smoothstep(0.0, 1.5 * w, abs(m - 0.5))) * 0.22;
+    float a = clamp(m * uAlpha, 0.0, 1.0);
+    float h = clamp(hi + line, 0.0, 1.0);
+    o = vec4(vec3(h) + (1.0 - h) * c * a, h + (1.0 - h) * a);
+  } else if (uView == 0 || uView == 5) {
     float a = uAlpha * m;
     o = vec4(uTint * a, a);
   } else if (uView == 1 || uView == 2) {

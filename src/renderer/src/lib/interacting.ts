@@ -18,3 +18,19 @@ export function touchInteracting(): void {
 export function isInteracting(): boolean {
   return document.documentElement.hasAttribute('data-interacting')
 }
+
+let adjustTimer: ReturnType<typeof setTimeout> | undefined
+
+/**
+ * A slider that changes the picture (not a mask's shape) is moving:
+ * `data-adjusting` on the root while it does, so the mask overlay can step
+ * aside and show the edit itself (Lightroom's auto toggle). Kept apart from
+ * `data-interacting`, which a gradient's or a brush's drag sets too, and
+ * those want the overlay.
+ */
+export function touchAdjusting(): void {
+  const root = document.documentElement
+  if (!root.hasAttribute('data-adjusting')) root.setAttribute('data-adjusting', '')
+  clearTimeout(adjustTimer)
+  adjustTimer = setTimeout(() => root.removeAttribute('data-adjusting'), IDLE_MS)
+}
