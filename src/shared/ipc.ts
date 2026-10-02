@@ -576,28 +576,29 @@ export interface RenderEvent {
   report?: RenderReport
 }
 
+/**
+ * A part of the picture as the loupe shows it (straightened, cropped,
+ * warped, or the crop tool's whole frame), rendered at full resolution.
+ */
 export interface RegionRequest {
   key: string
-  /** In pixels of the full-resolution user-oriented frame. */
+  /** Fractions (0…1) of the picture as shown. */
   x: number
   y: number
   width: number
   height: number
-  /** Output pixels per frame pixel (1 for 100%). */
+  /** Output pixels per full-resolution pixel (1 for 100%). */
   zoom: number
-  /** Also render this layer's mask over the same region (the overlay at 1:1). */
-  maskLayer?: string | null
 }
 
 export interface RegionResult {
   url: string
+  /** The part rendered, as fractions of the picture as shown. */
   x: number
   y: number
   width: number
   height: number
   ms: number
-  /** The requested layer's mask over the same region, when asked for. */
-  maskUrl?: string
 }
 
 export interface SampleResult {

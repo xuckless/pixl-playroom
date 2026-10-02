@@ -188,18 +188,6 @@ export function gainMapOf(
 }
 
 /**
- * Framing that only orients and flips, no straighten: the engine refuses an
- * `outside` where nothing rotates, so it goes with the rotation.
- */
-export function orientOnly(framing: Framing | null): Framing | null {
-  if (!framing) return null
-  const { transform: _t, outside: _o, ...rest } = framing
-  void _t
-  void _o
-  return { ...rest, rotate_degrees: 0, crop: null }
-}
-
-/**
  * A request with every field stated and nothing done; callers spread over it.
  * `info` is the probe of `source` when it is the original file (a proxy or
  * master carries no gain map); it states the rendition a gain-map file needs.

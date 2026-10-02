@@ -102,7 +102,6 @@ import {
   displayPolicy,
   gainMapOf,
   interactiveThreads,
-  orientOnly,
   RAW_DEVELOP,
   sourceOrientation,
   seedOf,
@@ -1287,28 +1286,34 @@ class Session {
               width: this.px.frameWidth,
               height: this.px.frameHeight
             }
-    const frame = this.frameSize()
-    const { user, width, height } = orientedFrame(this.recipe, frame.width, frame.height)
+    // The source's own size: the frame its full-size render is of.
+    const { user, width, height } = orientedFrame(this.recipe, src.width, src.height)
     const zoom = Math.min(1, req.zoom)
+    // Framed as the picture on screen is (straightened, cropped, warped, the
+    // crop tool's whole frame): since engine 0.16 a region of it is the full
+    // render's own pixels there, so 1:1 is sharp on any photo.
     const compiled = compile(this.recipe, {
       isRaw: raw,
       asShot: this.info.as_shot_white,
       sourceOrientation:
         raw || stepsMaster || this.hdrMaster ? 'Normal' : sourceOrientation(this.info, null),
-      frameWidth: frame.width,
-      frameHeight: frame.height,
+      frameWidth: src.width,
+      frameHeight: src.height,
       scale: zoom,
       seed: seedOf(this.row),
       brushPaths: await brushPlanes(this.row.id, this.recipe, user),
-      applyCrop: false,
+      applyCrop: !this.view.cropMode,
+      showTransform: !this.view.guides,
       // Tone mapped to SDR for the screen, as the picture is (see compileFor).
       hdr: false
     })
-    const x = Math.max(0, Math.min(width - 1, Math.floor(req.x)))
-    const y = Math.max(0, Math.min(height - 1, Math.floor(req.y)))
-    const w = Math.max(1, Math.min(width - x, Math.ceil(req.width)))
-    const h = Math.max(1, Math.min(height - y, Math.ceil(req.height)))
-    const region = await this.correctedRegion(compiled.lens, width, height, { x, y, w, h })
+    const framed = await this.framedSize(compiled, width, height)
+    // The request is a part of the picture as shown (fractions): in the
+    // framed output's full-size pixels here, with context around it.
+    const x = Math.max(0, Math.min(framed.width - 1, Math.floor(req.x * framed.width)))
+    const y = Math.max(0, Math.min(framed.height - 1, Math.floor(req.y * framed.height)))
+    const w = Math.max(1, Math.min(framed.width - x, Math.ceil(req.width * framed.width)))
+    const h = Math.max(1, Math.min(framed.height - y, Math.ceil(req.height * framed.height)))
     this.regionSlot = (this.regionSlot + 1) % 4
     // A JPEG at full chroma: as sharp at 1:1 as the PNG it was, a fraction
     // of the time to write and decode at the screen's size.
@@ -1325,53 +1330,56 @@ class Session {
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: displayPolicy(this.info, 'DisplayP3'),
         grade: compiled.grade,
-        framing: orientOnly(compiled.framing),
+        framing: compiled.framing,
         lens: compiled.lens,
         retouch: compiled.retouch,
-        region
+        region: { x, y, width: w, height: h, margin: 96 }
       },
       { signal }
     )
-    // The overlay at 1:1: the same region through the layer's mask.
-    let maskUrl: string | undefined
-    const index = req.maskLayer ? compiled.layerIndex[req.maskLayer] : undefined
-    if (index !== undefined && compiled.grade) {
-      const maskOut = join(this.dir, `region-mask-${this.regionSlot}.png`)
-      try {
-        await this.owner.engine.convert(
-          {
-            ...blankRequest(src.path, maskOut, src.input, original),
-            raw: null,
-            resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
-            pixel: { depth: 'Eight', channels: 1 },
-            encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-            metadata: STRIP_ALL,
-            color: 'Preserve',
-            grade: compiled.grade,
-            framing: orientOnly(compiled.framing),
-            lens: compiled.lens,
-            retouch: compiled.retouch,
-            region,
-            inspect: { LayerMask: { layer: index } }
-          },
-          { signal }
-        )
-        maskUrl = cacheUrl(maskOut, `${Date.now()}`)
-      } catch (err) {
-        if (isCancelled(err)) throw err
-        log.info('region mask unavailable', (err as Error).message)
-      }
-    }
     if (this.regionAbort === abort) this.regionAbort = null
     return {
-      maskUrl,
       url: cacheUrl(out, `${Date.now()}`),
-      x,
-      y,
-      width: w,
-      height: h,
+      x: x / framed.width,
+      y: y / framed.height,
+      width: w / framed.width,
+      height: h / framed.height,
       ms: Math.round(performance.now() - t0)
     }
+  }
+
+  /** Framed output sizes, by what decides them. */
+  private framedSizes = new Map<string, { width: number; height: number }>()
+
+  /**
+   * The size of a compiled render's output at full resolution, before any
+   * resize: the oriented frame, its lens correction's crop, then the
+   * framing's (straighten, Upright, crop). What a region's pixels are of.
+   */
+  private async framedSize(
+    c: Compiled,
+    width: number,
+    height: number
+  ): Promise<{ width: number; height: number }> {
+    const key = JSON.stringify([c.lens, c.framing, width, height])
+    const had = this.framedSizes.get(key)
+    if (had) return had
+    let w = width
+    let h = height
+    if (c.lens) {
+      const f = await this.owner.engine.lensFrame(c.lens, width, height)
+      w = f.frame.width
+      h = f.frame.height
+    }
+    let size = { width: w, height: h }
+    if (c.framing) {
+      // The frame is already oriented: only what comes after the turn.
+      const r = await this.owner.engine.framingCrop({ ...c.framing, orientation: 'Normal' }, w, h)
+      size = { width: r.width, height: r.height }
+    }
+    if (this.framedSizes.size > 32) this.framedSizes.clear()
+    this.framedSizes.set(key, size)
+    return size
   }
 
   /** Per lens correction and frame size, the shrink its crop makes (1 when none). */
