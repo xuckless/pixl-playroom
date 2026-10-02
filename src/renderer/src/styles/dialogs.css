@@ -401,6 +401,19 @@ button.link:hover {
   background: var(--acc);
   transition: width 0.2s var(--ease);
 }
+/* "This needs a model": the download's progress, in place. */
+.model-prompt-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+}
+.model-prompt-progress .model-bar {
+  flex: 1;
+  width: auto;
+  height: 4px;
+  margin: 0;
+}
 
 /* Export: watermark */
 .watermark .wm-file {

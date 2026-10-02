@@ -32,6 +32,8 @@ export type Tool =
   | 'linear'
   | 'radial'
   | 'bidirectional'
+  /** Select by pointing (SAM 2.1): views/loupe/ObjectsTool.tsx. */
+  | 'objects'
   | 'wb-picker'
   | 'range-picker'
   | 'point-picker'

@@ -16,6 +16,7 @@ export const MASK_TOOLS: Tool[] = [
   'linear',
   'radial',
   'bidirectional',
+  'objects',
   'range-picker'
 ]
 

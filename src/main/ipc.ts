@@ -718,17 +718,23 @@ export function registerIpc(s: Services): void {
       // denoise. They turn on with the binding that has them.
       engine: { sky: false, people: false, sam2, detector: false, nafnet: false }
     })
+    const drunet = await s.models.installed('drunet-color')
     return {
       enhance: enhance.available,
       segment,
       denoise: models,
       prompt: sam2 && samModel,
       smart,
+      // What to download for a task that waits only on its model: the one
+      // Playroom recommends (the detailed subject model, SAM 2.1, DRUNet).
+      get: {
+        ...(models && !subject ? { segment: 'u2net' } : {}),
+        ...(sam2 && !samModel ? { prompt: SAM_MODEL } : {}),
+        ...(models && !drunet ? { denoise: 'drunet-color' } : {})
+      },
       why: {
         ...(enhance.available ? {} : { enhance: enhance.reason }),
-        ...(segment
-          ? {}
-          : { segment: `download ${modelName(s.models.entry('u2netp'))} in Settings → AI models` }),
+        ...(segment ? {} : { segment: `download ${modelName(s.models.entry('u2net'))}` }),
         ...(models ? {} : { denoise: 'this engine build runs no models' }),
         ...(sam2 && samModel
           ? {}

@@ -126,6 +126,11 @@ export interface AiCapabilities {
   prompt: boolean
   /** Why a task cannot run, when it cannot. */
   why: Partial<Record<AiTask, string>>
+  /**
+   * The model to download when only a model is missing for a task (the one
+   * Playroom recommends): the renderer offers it there and then.
+   */
+  get: Partial<Record<AiTask, string>>
   /** What smart looks can ask for on this build (`looks/smart.ts`). */
   smart: SmartReadiness
 }

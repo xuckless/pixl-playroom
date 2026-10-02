@@ -299,6 +299,51 @@
   font-weight: 600;
 }
 
+/* The Objects tool (SAM 2.1): pointing at what to select. */
+.tool-layer.objects-tool {
+  z-index: 7;
+  cursor: crosshair;
+}
+.tool-layer.objects-tool.mode-brush {
+  cursor: cell;
+}
+.tool-layer.objects-tool.loading {
+  cursor: progress;
+}
+.objects-note {
+  padding: 6px 14px;
+  pointer-events: none;
+}
+.objects-spin {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid var(--hair2);
+  border-top-color: var(--acc);
+  animation: objects-spin 0.8s linear infinite;
+}
+@keyframes objects-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.objects-stroke {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.objects-stroke polyline {
+  fill: none;
+  stroke: var(--acc);
+  stroke-width: 10;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.45;
+}
+.objects-stroke polyline.not {
+  stroke: #ff5a5a;
+}
+
 /* smart looks */
 .looks-worksnow {
   align-self: flex-end;

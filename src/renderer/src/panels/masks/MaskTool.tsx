@@ -17,6 +17,7 @@ import { Icon } from '../../components/icons'
 import { Section, Select, Slider, Toggle } from '../../components/ui'
 import { useDevelop } from '../../state/develop'
 import { changeLayer, layerOf, patchComponent } from './model'
+import { findObject } from '../../lib/objects'
 import { BandBar } from './BandBar'
 
 const BLENDS: BlendMode[] = [
@@ -100,6 +101,17 @@ export function ComponentCard({
             >
               Snap to edges
             </Toggle>
+            {c.kind === 'polygon' && (
+              <button
+                className="sm ghost"
+                disabled={c.points.length < 3}
+                title="Find the object inside this outline (SAM 2.1) and use its own edges instead"
+                onClick={() => void findObject(c.id)}
+              >
+                <Icon name="objects" />
+                Find object
+              </button>
+            )}
           </div>
           {snapping && (
             <Slider

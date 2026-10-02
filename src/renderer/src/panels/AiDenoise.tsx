@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react'
 import type { AiDenoiseModel } from '../../../shared/recipe'
 import { staleRawStep, type PixelStep } from '../../../shared/pixels'
-import { ModelGet } from '../components/ModelGet'
+import { ensureModelId } from '../lib/ensureModel'
 import { useModels } from '../lib/models'
 import { Icon } from '../components/icons'
 import { InfoTip } from '../components/InfoTip'
@@ -173,16 +173,22 @@ export function AiDenoise(): React.JSX.Element | null {
             <button className="sm ghost" onClick={() => void api.ai.cancel(job.jobId)}>
               Cancel
             </button>
-          ) : model && !model.installed ? null : (
+          ) : (
             <button
               className="sm primary"
-              onClick={() => void applyDenoise().catch((e) => say(errorText(e), 'error'))}
+              onClick={() =>
+                void (async () => {
+                  // Its model first, offered there and then when it is not here yet.
+                  if (!(await ensureModelId(prefs.model, model?.installed === true, 'AI denoise')))
+                    return
+                  await applyDenoise()
+                })().catch((e) => say(errorText(e), 'error'))
+              }
             >
               {layer ? `Denoise inside ${layer.name}` : 'Denoise the photo'}
             </button>
           ))}
       </div>
-      {!isHdr && <ModelGet id={prefs.model} models={models} />}
       {steps.length > 0 && (
         <div className="pixel-steps">
           {steps.map((s) => (

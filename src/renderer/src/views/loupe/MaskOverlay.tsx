@@ -12,6 +12,7 @@ const MASK_DRAWING: ReadonlySet<string> = new Set([
   'linear',
   'radial',
   'bidirectional',
+  'objects',
   'range-picker'
 ])
 

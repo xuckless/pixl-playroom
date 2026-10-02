@@ -6,6 +6,7 @@ import { api, errorText } from './lib/api'
 import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
 import { ConfirmHost } from './components/ConfirmHost'
+import { ModelPromptHost } from './components/ModelPromptHost'
 import { Scopes } from './develop/Scopes'
 import { AdjustStack } from './develop/AdjustStack'
 import { ToolStrip } from './develop/ToolStrip'
@@ -481,6 +482,7 @@ export default function App(): React.JSX.Element {
         <Screens />
         <DialogHost />
         <ConfirmHost />
+        <ModelPromptHost />
         <Toast />
         <EngineBanner />
         <Splash />

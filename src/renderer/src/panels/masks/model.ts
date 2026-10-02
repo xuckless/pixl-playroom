@@ -17,11 +17,15 @@ import type { IconName } from '../../components/icons'
 import { openMasks } from '../../develop/tools'
 import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
+import { ensureModel } from '../../lib/ensureModel'
+import { useObjects } from '../../state/objects'
+import { SKY_BY_CLICK } from '../../../../shared/ai'
 import { useLibrary } from '../../state/library'
 import { useDevelop, type Tool } from '../../state/develop'
 
 export type MaskToolKind =
   | 'subject'
+  | 'objects'
   | 'sky'
   | 'background'
   | 'brush'
@@ -41,8 +45,10 @@ export interface MaskToolInfo {
   command?: string
   /** Why it cannot be used yet, when it cannot (a model: see `ai`). */
   needs?: string
-  /** Found by a model: usable when the build has that task. */
-  ai?: 'segment'
+  /** Found by a model: usable when the build has that task (its model offered when missing). */
+  ai?: 'segment' | 'prompt'
+  /** A word in the corner of its button ("click": the sky is pointed at, for now). */
+  badge?: string
 }
 
 /** The tools a mask can be made with, in Lightroom's order. */
@@ -54,20 +60,26 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
         kind: 'subject',
         label: 'Subject',
         icon: 'subject',
-        needs: 'download the subject model in Settings → AI models',
+        needs: 'download the subject model',
         ai: 'segment'
       },
       {
-        kind: 'sky',
-        label: 'Sky',
-        icon: 'sky',
-        needs: 'no sky model ships yet'
+        kind: 'objects',
+        label: 'Objects',
+        icon: 'objects',
+        command: 'mask.objects',
+        needs: 'download SAM 2.1',
+        ai: 'prompt'
       },
+      // No sky model yet (E28): the sky is clicked, and SAM 2.1 selects it.
+      SKY_BY_CLICK
+        ? { kind: 'sky', label: 'Sky', icon: 'sky', ai: 'prompt', badge: 'click' }
+        : { kind: 'sky', label: 'Sky', icon: 'sky', needs: 'no sky model ships yet' },
       {
         kind: 'background',
         label: 'Background',
         icon: 'background',
-        needs: 'download the subject model in Settings → AI models',
+        needs: 'download the subject model',
         ai: 'segment'
       }
     ]
@@ -170,20 +182,37 @@ export function startMaskTool(kind: MaskToolKind): void {
   const d = useDevelop.getState()
   if (!d.recipe) return
   const adding = d.addMode !== null && layerOf(d.recipe, d.layerId) !== undefined
+  // Pointed at (SAM 2.1): the Objects tool on the canvas, or the Sky tool,
+  // which is the same tool asking for one click on the sky, until a sky
+  // model ships. Its model offered first when it is not downloaded.
+  if (kind === 'objects' || (kind === 'sky' && SKY_BY_CLICK)) {
+    if (!d.session) return
+    const mode = d.addMode
+    openMasks()
+    void (async () => {
+      if (!(await ensureModel('prompt'))) return
+      const now = useDevelop.getState()
+      if (!now.recipe || !now.session) return
+      if (!(adding && layerOf(now.recipe, now.layerId))) {
+        if (!createMask()) return
+      } else if (mode) now.setAddMode(mode)
+      useObjects.getState().begin(kind === 'sky' ? 'sky' : 'object')
+      useDevelop.getState().setTool('objects')
+    })()
+    return
+  }
   // A model finds these: a job on this photo, whose mask lands when it is done
   // (in this mask with the pending mode, else as a new one).
   if (kind === 'subject' || kind === 'sky' || kind === 'background') {
     if (!d.session) return
-    void api.ai
-      .start({
-        task: 'segment',
-        key: d.session.key,
-        target: kind,
-        into: adding && d.layerId ? { layerId: d.layerId, mode: d.addMode ?? 'Add' } : undefined
-      })
-      .catch((err) => useLibrary.getState().say(errorText(err), 'error'))
+    const key = d.session.key
+    const into = adding && d.layerId ? { layerId: d.layerId, mode: d.addMode ?? 'Add' } : undefined
     d.setAddMode(null)
     openMasks()
+    void (async () => {
+      if (!(await ensureModel('segment'))) return
+      await api.ai.start({ task: 'segment', key, target: kind, into })
+    })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
     return
   }
   if (!adding) {
@@ -239,6 +268,7 @@ const MASK_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
   'linear',
   'radial',
   'bidirectional',
+  'objects',
   'range-picker'
 ])
 

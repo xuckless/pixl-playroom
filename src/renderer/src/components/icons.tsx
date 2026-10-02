@@ -143,6 +143,13 @@ const PATHS = {
       <path d="M3 18h18" />
     </>
   ),
+  objects: (
+    <>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="3" strokeDasharray="3 2.5" />
+      <path d="M8.5 14c0-2.4 1.6-4.5 3.5-4.5s3.5 2.1 3.5 4.5-1.6 3.5-3.5 3.5-3.5-1.1-3.5-3.5z" />
+      <circle cx="12" cy="7" r="1" />
+    </>
+  ),
   bidirectional: (
     <>
       <path d="M3 5h18" strokeDasharray="2 2.5" />

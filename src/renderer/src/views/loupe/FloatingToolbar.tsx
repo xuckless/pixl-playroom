@@ -8,6 +8,8 @@ import { addLabel, addPickHint } from '../../lib/addpick'
 import { applyGuides } from '../../lib/upright'
 import { MAX_GUIDES } from './UprightGuides'
 import { withKey } from '../../lib/commands'
+import { cancelObjects, commitObjects } from '../../lib/objects'
+import { useObjects, type ObjectsMode } from '../../state/objects'
 
 /** A compact range for the floating bar: label, rail and value. */
 export function BarRange({
@@ -185,6 +187,10 @@ const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
     title: 'Linear gradient',
     hint: 'Drag to draw · Shift keeps to 45° · drag the pin to move, the ends to reshape, the knob to turn'
   },
+  bidirectional: {
+    title: 'Bidirectional gradient',
+    hint: 'Drag out from where it is full · Shift keeps to 45° · drag an end to widen that side, the dot to slide the full line, the knob to turn'
+  },
   radial: {
     title: 'Radial gradient',
     hint: "Drag from the centre · Shift: circle · the ring softens · double-click the pin to fill · ' inverts"
@@ -204,6 +210,60 @@ const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
     title: 'Targeted',
     hint: 'Press on the photo and drag up or down to move what controls that colour or tone'
   }
+}
+
+const OBJECT_MODES: { mode: ObjectsMode; label: string; title: string }[] = [
+  { mode: 'auto', label: 'Auto', title: 'Hover to see an object, click to take it' },
+  { mode: 'box', label: 'Box', title: 'Drag a box around the object' },
+  { mode: 'brush', label: 'Brush', title: 'Brush over the object' }
+]
+
+/** The Objects tool: how it points, and Done once something is selected. */
+function ObjectsBar(): React.JSX.Element {
+  const mode = useObjects((s) => s.mode)
+  const setMode = useObjects((s) => s.setMode)
+  const target = useObjects((s) => s.target)
+  const selected = useObjects((s) => s.plane !== null)
+  const busy = useObjects((s) => s.status === 'working' || s.status === 'loading')
+  if (target === 'sky')
+    return (
+      <>
+        <span className="bar-title micro">Sky</span>
+        <span className="bar-hint">Click the sky · SAM 2.1 selects it</span>
+        <button className="sm ghost" onClick={cancelObjects} title="Esc">
+          Cancel
+        </button>
+      </>
+    )
+  return (
+    <>
+      <span className="bar-title micro">Objects</span>
+      <div className="seg">
+        {OBJECT_MODES.map((m) => (
+          <button
+            key={m.mode}
+            className={mode === m.mode ? 'on' : ''}
+            title={m.title}
+            onClick={() => setMode(m.mode)}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+      <span className="bar-hint">Shift-click adds · Alt-click removes</span>
+      <button className="sm ghost" onClick={cancelObjects} title="Esc">
+        Cancel
+      </button>
+      <button
+        className="sm primary"
+        disabled={!selected || busy}
+        onClick={() => void commitObjects()}
+        title="Enter"
+      >
+        Done
+      </button>
+    </>
+  )
 }
 
 /** Guided Upright: how many guides, and Apply once there are two. */
@@ -258,6 +318,7 @@ export function FloatingToolbar(): React.JSX.Element | null {
       {tool === 'crop' && <CropBar />}
       {tool === 'upright-guide' && <GuideBar />}
       {tool === 'brush' && <BrushBar />}
+      {tool === 'objects' && <ObjectsBar />}
       {hint && (
         <>
           <span className="bar-title micro">{hint.title}</span>

@@ -16,8 +16,8 @@ export const PURPOSES: { id: Purpose; title: string; what: string }[] = [
   },
   {
     id: 'segment',
-    title: 'Select the subject',
-    what: 'Lets masks find the person or main object in a photo for you.'
+    title: 'Select subjects and objects',
+    what: 'Lets masks find the main subject for you, or anything you click, box or brush over.'
   },
   {
     id: 'upscale',
@@ -65,6 +65,12 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     name: 'Detailed subject',
     what: 'Finds the main subject for the Subject and Background masks, with clean edges around hair and fine shapes. Playroom uses this one when it is downloaded.',
     where: 'Masks → New → Subject or Background',
+    recommended: true
+  },
+  'sam2-1-hiera-tiny': {
+    name: 'Select anything',
+    what: 'Click, drag a box or brush over anything in a photo (a car, a dog, a window, the sky) and the mask takes exactly that, its edges snapped to the photo’s own.',
+    where: 'Masks → New → Objects or Sky',
     recommended: true
   },
   u2netp: {

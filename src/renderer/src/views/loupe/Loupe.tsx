@@ -47,6 +47,7 @@ import { CropTool } from './CropTool'
 import { DecodedImage } from './DecodedImage'
 import { Guides } from './Guides'
 import { LassoEditor, PolygonLayer } from './LassoTool'
+import { ObjectsTool } from './ObjectsTool'
 import { LoupeHud } from './LoupeHud'
 import { GradientTools } from './GradientTools'
 import { LookPick } from './LookPick'
@@ -584,6 +585,7 @@ export function Loupe(): React.JSX.Element {
         {vrect && <AiScan rect={vrect} />}
         {tool === 'brush' && vrect && g && <BrushLayer rect={vrect} box={size} g={g} />}
         {tool === 'polygon' && vrect && g && <PolygonLayer rect={vrect} g={g} />}
+        {tool === 'objects' && vrect && g && <ObjectsTool rect={vrect} g={g} />}
         {!wholeFrameTool(tool) && vrect && g && <GradientTools rect={vrect} g={g} />}
         {vrect && g && <LookPick rect={vrect} g={g} />}
         {!wholeFrameTool(tool) && vrect && g && <LassoEditor rect={vrect} g={g} />}

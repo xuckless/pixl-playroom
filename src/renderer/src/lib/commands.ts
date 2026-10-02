@@ -622,6 +622,14 @@ export const COMMANDS: KeyCommand[] = [
     run: () => maskTool('radial')
   },
   {
+    id: 'mask.objects',
+    label: 'Objects mask (select by pointing)',
+    group: 'Masks',
+    context: 'develop',
+    keys: [],
+    run: () => (dev().tool === 'objects' ? dev().setTool('none') : startMaskTool('objects'))
+  },
+  {
     id: 'mask.bidirectional',
     label: 'Bidirectional gradient mask',
     group: 'Masks',
