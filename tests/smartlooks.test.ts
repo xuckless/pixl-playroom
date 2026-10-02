@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { compile, type CompileContext } from '../src/shared/compile'
-import { defaultRecipe } from '../src/shared/recipe'
+import { defaultRecipe, type BrushComponent } from '../src/shared/recipe'
+import type { PixelStep } from '../src/shared/pixels'
 import {
   collection,
   deblur,
@@ -303,4 +304,149 @@ test('the smart catalog: every look reads back whole, and today only sky, people
     assert.deepEqual(plan.skipped, [], l.name)
   }
   for (const l of smart) assert.deepEqual(smartBlockers(l.smart!, smartReadiness(NEXT)), [], l.name)
+})
+
+test('a photo’s masks and AI steps become instructions; what is the photo’s alone is said and left out', async () => {
+  const { newLocalLayer, newId } = await import('../src/shared/recipe')
+  const { toInstructions } = await import('../src/shared/looks/smart')
+  const brush = (source?: unknown): BrushComponent => ({
+    id: newId(),
+    kind: 'brush' as const,
+    mode: 'Add' as const,
+    opacity: 100,
+    invert: false,
+    feather: 0,
+    width: 10,
+    height: 10,
+    png: '',
+    ...(source ? { source: source as never } : {})
+  })
+  const sky = newLocalLayer('Sky')
+  sky.components = [
+    brush({ kind: 'segment', target: 'sky' }),
+    { ...brush({ kind: 'segment', target: 'subject' }), mode: 'Subtract' }
+  ]
+  sky.settings.basic.exposure = -0.4
+  sky.settings.presence.dehaze = 15
+  sky.settings.detail.noiseLuminance = 30
+  const water = newLocalLayer('Water')
+  water.amount = 80
+  water.components = [
+    {
+      id: 'r',
+      kind: 'range',
+      mode: 'Add',
+      opacity: 100,
+      invert: false,
+      feather: 8,
+      hue: { centre: 190, width: 40, softness: 20 },
+      saturation: null,
+      luma: null,
+      smoothness: 10
+    },
+    {
+      id: 'g',
+      kind: 'linear',
+      mode: 'Intersect',
+      opacity: 100,
+      invert: false,
+      feather: 0,
+      start: { x: 0.5, y: 1 },
+      end: { x: 0.5, y: 0.5 },
+      width: 512,
+      height: 341
+    }
+  ]
+  water.settings.wb = { mode: 'custom', temperature: -12, tint: 0, preset: null }
+  const painted = newLocalLayer('Dodge')
+  painted.components = [brush(), { ...brush({ kind: 'prompt' }), mode: 'Add' }]
+  const car = newLocalLayer('Car')
+  car.invert = true
+  car.components = [brush({ kind: 'prompt', label: 'car' })]
+  const off = newLocalLayer('Off')
+  off.enabled = false
+  off.components = [brush({ kind: 'segment', target: 'subject' })]
+  const step = (
+    kind: 'denoise' | 'enhance' | 'retouch',
+    scope: string | null,
+    params: Record<string, string>
+  ): PixelStep => ({
+    id: newId(),
+    kind,
+    label: kind,
+    blob: 'a'.repeat(64),
+    alpha: null,
+    scope,
+    opacity: 45,
+    width: 10,
+    height: 10,
+    rect: null,
+    params
+  })
+  const out = toInstructions(
+    [sky, water, painted, car, off],
+    [
+      step('denoise', 'Sky', { model: 'drunet-color' }),
+      step('denoise', null, { model: 'scunet-color-real' }),
+      step('enhance', 'Water', { chain: 'Deblur' }),
+      step('enhance', null, { chain: '×2' }),
+      step('retouch', null, {}),
+      step('denoise', 'Dodge', { model: 'drunet-color' })
+    ]
+  )
+  assert.deepEqual(out.smart!.masks, [
+    {
+      id: 'm1',
+      name: 'Sky',
+      parts: [
+        { target: { kind: 'sky' }, mode: 'Add' },
+        { target: { kind: 'subject' }, mode: 'Subtract' }
+      ],
+      adjust: { 'basic.exposure': -0.4, 'presence.dehaze': 15 }
+    },
+    {
+      id: 'm2',
+      name: 'Water',
+      parts: [
+        {
+          target: { kind: 'range', smoothness: 10, hue: { centre: 190, width: 40, softness: 20 } },
+          mode: 'Add'
+        },
+        {
+          target: { kind: 'linear', start: { x: 0.5, y: 1 }, end: { x: 0.5, y: 0.5 } },
+          mode: 'Intersect'
+        }
+      ],
+      adjust: { 'wb.temperature': -12 },
+      feather: 8,
+      amount: 80
+    },
+    {
+      id: 'm3',
+      name: 'Car',
+      parts: [{ target: { kind: 'object', label: 'car' }, mode: 'Add', invert: true }],
+      adjust: {}
+    }
+  ])
+  assert.deepEqual(out.smart!.steps, [
+    { kind: 'denoise', model: 'drunet', strength: 45, scope: 'm1' },
+    { kind: 'denoise', model: 'auto', strength: 45 },
+    { kind: 'deblur', strength: 45, scope: 'm2' }
+  ])
+  assert.deepEqual(out.kept, [
+    'Sky: the sky minus the subject',
+    'Water: a colour range within a linear gradient',
+    'Car: all but the car',
+    'AI denoise in Sky at 45%',
+    'AI denoise at 45%',
+    'AI deblur in Water'
+  ])
+  assert.equal(out.warnings.length, 7)
+  assert.ok(out.warnings.some((w) => w.startsWith('Sky: 1 setting')))
+  assert.ok(out.warnings.some((w) => w === 'Dodge: painted strokes belong to this photo, left out'))
+  assert.ok(out.warnings.some((w) => w.includes('has no name to look for')))
+  assert.ok(out.warnings.some((w) => w.startsWith('AI denoise in Dodge')))
+  // What it made reads back whole, as a look file would carry it.
+  assert.deepEqual(readSmart(JSON.parse(JSON.stringify(out.smart))).smart, out.smart)
+  assert.deepEqual(toInstructions([], []), { smart: null, kept: [], warnings: [] })
 })

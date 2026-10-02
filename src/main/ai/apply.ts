@@ -35,7 +35,8 @@ export async function applyMaskResult(
     png,
     // A model's plane is soft and low resolution, and blooms past the edge:
     // pulled in a little and firmed up.
-    edge: { ...AI_MASK_EDGE }
+    edge: { ...AI_MASK_EDGE },
+    ...(r.source ? { source: r.source } : {})
   }
   const into = r.into && recipe.layers.find((l) => l.id === r.into!.layerId)
   if (into) into.components.push({ ...comp, mode: into.components.length ? r.into!.mode : 'Add' })

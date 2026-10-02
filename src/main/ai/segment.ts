@@ -11,7 +11,7 @@
  */
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
-import type { AiStartRequest } from '../../shared/ai'
+import type { AiResult, AiStartRequest } from '../../shared/ai'
 import { estimate, SEGMENT_LABEL } from '../../shared/ai'
 import { lensCorrection } from '../../shared/lens'
 import { planeRef } from '../planeref'
@@ -68,10 +68,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     return null
   }
 
-  async run(
-    ctx: AiContext,
-    req: SegmentRequest
-  ): Promise<{ kind: 'mask'; ref: string; width: number; height: number; label: string }> {
+  async run(ctx: AiContext, req: SegmentRequest): Promise<Extract<AiResult, { kind: 'mask' }>> {
     if (req.target === 'sky') throw new Error('No sky model ships yet')
     ctx.stage('model', 0, 'Loading the model')
     const id = await this.model()
@@ -151,6 +148,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       width: d.width,
       height: d.height,
       label: SEGMENT_LABEL[req.target],
+      source: { kind: 'segment', target: req.target },
       // Into the mask it was asked for (Add to the selected mask, a smart look's), else a new one.
       ...(req.into ? { into: { ...req.into } } : {})
     }

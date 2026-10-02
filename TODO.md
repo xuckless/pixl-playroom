@@ -1342,13 +1342,18 @@ After: Pass 73.
 
 After: Pass 74.
 
-- [ ] **M** · `source` on `BrushComponent` (a model's target, or SAM2's
+- [x] **M** · `source` on `BrushComponent` (a model's target, or SAM2's
       prompt and label), set where AI masks land; `toInstructions()` turns a
       photo's masks and denoise steps into instructions (hand-painted brushes
       dropped with a warning).
-- [ ] **M** · The Save Preset dialog lists the converted instructions and
+- [x] **M** · The Save Preset dialog lists the converted instructions and
       warnings; a `smart` column in `presets`; saved presets run through the
       same planner and runner.
+      _Done: `BrushSource` on `BrushComponent` (set where a segment lands),
+      `toInstructions` in `shared/looks/smart.ts`, db migration 11
+      (`presets.smart`, read back through `readSmart`). Painted strokes,
+      drawn outlines, heals, upscales and JPEG restores are listed as left
+      out; a SAM2 object without a name too._
 
 ### Pass 76 — Looks leftovers · 3 pts
 

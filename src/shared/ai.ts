@@ -8,7 +8,7 @@
  */
 import type { EnhanceSettings } from './enhance'
 import type { MaskMode } from './engine-types'
-import type { AiDenoiseModel } from './recipe'
+import type { AiDenoiseModel, BrushSource } from './recipe'
 import type { SmartReadiness } from './looks/smart'
 
 export type AiTask = 'enhance' | 'segment' | 'denoise'
@@ -36,6 +36,8 @@ export type AiResult =
       label: string
       /** Into this mask, joined this way; else a new mask. */
       into?: { layerId: string; mode: MaskMode }
+      /** What made it, kept on the mask (`BrushComponent.source`). */
+      source?: BrushSource
     }
 
 export type AiPhase = 'queued' | 'running' | 'done' | 'error' | 'cancelled'

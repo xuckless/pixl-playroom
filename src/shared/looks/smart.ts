@@ -16,9 +16,11 @@
  */
 import type { KeyBand, MaskMode } from '../engine-types'
 import { gradientPlaneSize } from '../gradients'
+import type { PixelStep } from '../pixels'
 import {
   newId,
   newLocalLayer,
+  neutralSettings,
   type LocalLayer,
   type MaskComponentSetting,
   type LayerSettings
@@ -642,4 +644,195 @@ export function readSmart(raw: unknown): { smart: SmartPart | null; dropped: str
   }
   if (masks.length === 0 && steps.length === 0) return { smart: null, dropped }
   return { smart: { masks, steps }, dropped }
+}
+
+// ── A photo's masks and AI steps as instructions (a preset saved from it) ──
+
+/** What `toInstructions` made of a photo's masks, and what it had to leave out. */
+export interface Converted {
+  smart: SmartPart | null
+  /** One line per mask and step kept ("Sky: sky minus subject"), for the Save dialog. */
+  kept: string[]
+  /** What could not be kept, and why ("Mask 2: painted strokes belong to this photo"). */
+  warnings: string[]
+}
+
+const PART_WORDS: Record<MaskTarget['kind'], (t: MaskTarget) => string> = {
+  range: (t) => (t.kind === 'range' && t.hue ? 'a colour range' : 'a brightness range'),
+  linear: () => 'a linear gradient',
+  radial: () => 'a radial gradient',
+  subject: () => 'the subject',
+  background: () => 'the background',
+  sky: () => 'the sky',
+  person: (t) => (t.kind === 'person' ? t.part : 'a person'),
+  object: (t) => (t.kind === 'object' ? `the ${t.label}` : 'an object')
+}
+
+function partWords(parts: MaskPart[]): string {
+  return parts
+    .map((p, i) => {
+      const w = (p.invert ? 'all but ' : '') + PART_WORDS[p.target.kind](p.target)
+      if (i === 0) return w
+      return p.mode === 'Subtract'
+        ? `minus ${w}`
+        : p.mode === 'Intersect'
+          ? `within ${w}`
+          : `plus ${w}`
+    })
+    .join(' ')
+}
+
+/** A component as a part to ask for again, or why it cannot be. */
+function partOf(c: MaskComponentSetting): MaskPart | string {
+  const join = { mode: c.mode, ...(c.invert ? { invert: true } : {}) }
+  switch (c.kind) {
+    case 'range': {
+      const target: MaskTarget = { kind: 'range', smoothness: c.smoothness }
+      if (c.hue) target.hue = { ...c.hue }
+      if (c.saturation) target.saturation = { ...c.saturation }
+      if (c.luma) target.luma = { ...c.luma }
+      return { target, ...join }
+    }
+    case 'linear':
+      return { target: { kind: 'linear', start: { ...c.start }, end: { ...c.end } }, ...join }
+    case 'radial':
+      return {
+        target: {
+          kind: 'radial',
+          centre: { ...c.centre },
+          radiusX: c.radiusX,
+          radiusY: c.radiusY,
+          angle: c.angle,
+          softness: c.softness
+        },
+        ...join
+      }
+    case 'polygon':
+      return 'a drawn outline belongs to this photo'
+    case 'brush': {
+      const src = c.source
+      if (!src) return 'painted strokes belong to this photo'
+      if (src.kind === 'segment') return { target: { kind: src.target }, ...join }
+      if (src.kind === 'person') {
+        if (!PERSON_PARTS.includes(src.part as PersonPart))
+          return `“${src.part}” is not a part we can find`
+        return { target: { kind: 'person', part: src.part as PersonPart }, ...join }
+      }
+      if (!src.label) return 'an object pointed at by hand has no name to look for'
+      return { target: { kind: 'object', label: src.label }, ...join }
+    }
+  }
+}
+
+/** The settings a mask changed, as a look may carry them (dotted paths), and how many it may not. */
+function adjustOf(settings: LayerSettings): { adjust: Record<string, number>; left: number } {
+  const adjust: Record<string, number> = {}
+  let left = 0
+  const walk = (a: unknown, b: unknown, path: string[]): void => {
+    if (typeof a === 'object' && a !== null && !Array.isArray(a)) {
+      for (const k of Object.keys(a as object))
+        walk((a as Record<string, unknown>)[k], (b as Record<string, unknown> | undefined)?.[k], [
+          ...path,
+          k
+        ])
+      return
+    }
+    if (JSON.stringify(a) === JSON.stringify(b)) return
+    const dotted = path.join('.')
+    // A mask's white counts only once it is custom; its mode and preset name are not sliders.
+    if (dotted === 'wb.mode' || dotted === 'wb.preset') return
+    if (typeof a === 'number' && adjustRange(dotted)) adjust[dotted] = a
+    else left++
+  }
+  walk(settings, neutralSettings(), [])
+  if (settings.wb.mode !== 'custom') {
+    delete adjust['wb.temperature']
+    delete adjust['wb.tint']
+  }
+  return { adjust, left }
+}
+
+/**
+ * A photo's masks and AI steps as instructions, for a preset saved from it
+ * to make again on another photo: ranges and gradients as they are (the
+ * gradients frame-relative), a model's mask as what to ask the model for,
+ * a denoise or a deblur as a step scoped to its mask. What belongs to this
+ * photo alone (painted strokes, drawn outlines, heals) is left out, and
+ * said so.
+ */
+export function toInstructions(layers: LocalLayer[], pixels: PixelStep[]): Converted {
+  const masks: MaskInstruction[] = []
+  const kept: string[] = []
+  const warnings: string[] = []
+  for (const l of layers) {
+    if (!l.enabled) continue
+    const parts: MaskPart[] = []
+    for (const c of l.components) {
+      const p = partOf(c)
+      if (typeof p === 'string') warnings.push(`${l.name}: ${p}, left out`)
+      else parts.push(parts.length === 0 ? { ...p, mode: 'Add' } : p)
+    }
+    if (parts.length === 0) continue
+    if (l.invert) {
+      // A whole mask inverted is one part turned round; several cannot be.
+      if (parts.length > 1) {
+        warnings.push(`${l.name}: an inverted mask of several parts cannot be kept`)
+        continue
+      }
+      parts[0] = { ...parts[0], invert: !parts[0].invert }
+    }
+    const { adjust, left } = adjustOf(l.settings)
+    if (left > 0)
+      warnings.push(
+        `${l.name}: ${left} setting${left === 1 ? '' : 's'} a preset cannot carry in a mask (noise reduction, point colours, curves) left out`
+      )
+    const feather = l.components.find(
+      (c) => c.kind === 'range' || c.kind === 'linear' || c.kind === 'radial'
+    )?.feather
+    const id = `m${masks.length + 1}`
+    masks.push({
+      id,
+      name: l.name,
+      parts,
+      adjust,
+      ...(feather !== undefined ? { feather } : {}),
+      ...(l.amount !== 100 ? { amount: l.amount } : {})
+    })
+    kept.push(`${l.name}: ${partWords(parts)}`)
+  }
+  const steps: StepInstruction[] = []
+  for (const p of pixels) {
+    const name = p.kind === 'denoise' ? 'AI denoise' : p.kind === 'enhance' ? 'Enhance' : 'Heal'
+    let scope: string | undefined
+    if (p.scope !== null) {
+      scope = masks.find((m) => m.name === p.scope)?.id
+      if (!scope) {
+        warnings.push(`${name} in ${p.scope}: its mask is not kept, so neither is it`)
+        continue
+      }
+    }
+    const scoped = scope ? { scope } : {}
+    const where = p.scope ? ` in ${p.scope}` : ''
+    if (p.kind === 'denoise') {
+      const model = p.params.model === 'drunet-color' ? 'drunet' : 'auto'
+      if (p.params.model !== 'drunet-color')
+        warnings.push(`${name}${where}: saved as the quickest denoise model there is`)
+      steps.push({ kind: 'denoise', model, strength: Math.max(1, p.opacity), ...scoped })
+      kept.push(`${name}${where} at ${p.opacity}%`)
+    } else if (p.kind === 'enhance' && p.params.chain === 'Deblur') {
+      steps.push({ kind: 'deblur', strength: Math.max(1, p.opacity), ...scoped })
+      kept.push(`AI deblur${where}`)
+    } else if (p.kind === 'enhance') {
+      warnings.push(
+        `${p.label}: only a deblur can be kept (an upscale or a JPEG restore is the file's)`
+      )
+    } else {
+      warnings.push(`${p.label}: heals belong to this photo, left out`)
+    }
+  }
+  return {
+    smart: masks.length || steps.length ? { masks, steps } : null,
+    kept,
+    warnings
+  }
 }

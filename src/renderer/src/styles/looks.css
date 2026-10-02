@@ -332,3 +332,27 @@
   color: var(--warn);
   font-size: 12px;
 }
+
+/* the Save Preset dialog: masks and AI steps saved as instructions */
+.smart-convert {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--hair2);
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.02);
+}
+.smart-convert p {
+  margin: 0 0 6px;
+}
+.smart-convert ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--text2);
+}
+.smart-convert ul + ul {
+  margin-top: 8px;
+}
+.smart-convert-warn {
+  color: var(--warn);
+}

@@ -122,3 +122,58 @@ test('a preset saved by an older version comes back whole', async () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('a preset keeps its smart instructions; a bad column loses only those', async () => {
+  const { defaultRecipe } = await import('../src/shared/recipe')
+  const dir = tmp()
+  try {
+    const file = join(dir, 'playroom.db')
+    const store = Store.open(file)
+    const smart = {
+      masks: [
+        {
+          id: 'm1',
+          name: 'Sky',
+          parts: [
+            { target: { kind: 'sky' as const }, mode: 'Add' as const },
+            { target: { kind: 'subject' as const }, mode: 'Subtract' as const }
+          ],
+          adjust: { 'basic.exposure': -0.5 }
+        }
+      ],
+      steps: [{ kind: 'denoise' as const, model: 'auto' as const, strength: 40, scope: 'm1' }]
+    }
+    store.savePreset({
+      id: 'p1',
+      name: 'Moody',
+      group: 'User presets',
+      builtin: false,
+      groups: ['basicTone'],
+      recipe: defaultRecipe(false),
+      smart
+    })
+    store.savePreset({
+      id: 'p2',
+      name: 'Plain',
+      group: 'User presets',
+      builtin: false,
+      groups: ['basicTone'],
+      recipe: defaultRecipe(false)
+    })
+    const [moody, plain] = store.presets()
+    assert.deepEqual(moody.smart, smart)
+    assert.equal(plain.smart, undefined)
+    store.close()
+    const db = new DatabaseSync(file)
+    assert.ok(columns(db, 'presets').includes('smart'))
+    db.prepare('UPDATE presets SET smart = \'{"masks":[{"parts":[]}]}\' WHERE id = \'p1\'').run()
+    db.close()
+    const again = Store.open(file)
+    const [broken] = again.presets()
+    assert.equal(broken.name, 'Moody')
+    assert.equal(broken.smart, undefined)
+    again.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

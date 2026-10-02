@@ -244,7 +244,20 @@ export interface BrushComponent extends ComponentBase {
   height: number
   png: string
   ref?: string
+  /**
+   * What made the plane, when a model did: a preset saved from the photo
+   * asks for it again on another (looks/smart.ts `toInstructions`). Unset
+   * for a painted plane, which belongs to its photo alone.
+   */
+  source?: BrushSource
 }
+
+/** A model's mask, as what to ask for again (see `BrushComponent.source`). */
+export type BrushSource =
+  | { kind: 'segment'; target: 'subject' | 'background' | 'sky' }
+  | { kind: 'person'; part: string }
+  /** SAM2 from a click or a box, and the object's name when it has one. */
+  | { kind: 'prompt'; label?: string }
 
 /** A lasso or pen outline, in normalised base-frame coordinates. */
 export interface PolygonComponent extends ComponentBase {
@@ -705,6 +718,21 @@ function point(v: unknown, def: { x: number; y: number }): { x: number; y: numbe
 
 const MASK_MODES = ['Add', 'Subtract', 'Intersect'] as const
 
+function brushSource(v: unknown): BrushSource | null {
+  if (!isObject(v)) return null
+  if (
+    v.kind === 'segment' &&
+    (v.target === 'subject' || v.target === 'background' || v.target === 'sky')
+  )
+    return { kind: 'segment', target: v.target }
+  if (v.kind === 'person' && typeof v.part === 'string') return { kind: 'person', part: v.part }
+  if (v.kind === 'prompt')
+    return typeof v.label === 'string' && v.label
+      ? { kind: 'prompt', label: v.label }
+      : { kind: 'prompt' }
+  return null
+}
+
 /**
  * One mask component from a sidecar: fills what an older version did not
  * write, and drops what this version cannot draw (so an unknown kind never
@@ -731,6 +759,7 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         png: c.png,
         // A plane held by reference (IPC, history, a project) keeps its reference.
         ...(typeof c.ref === 'string' && c.ref ? { ref: c.ref } : {}),
+        ...((src) => (src ? { source: src } : {}))(brushSource(c.source)),
         width: num(c.width, 1),
         height: num(c.height, 1)
       }

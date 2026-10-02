@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { dependents, patchSummary, prerequisites, type Step } from '../../../shared/history'
 import type { Preset, ProjectInfo } from '../../../shared/ipc'
+import { GROUP_LABELS } from '../../../shared/recipe'
 import { LOOK_BY_ID, LOOKS } from '../../../shared/looks/catalog'
 import { searchLooks } from '../../../shared/looks/search'
 import { Icon } from '../components/icons'
@@ -300,7 +301,20 @@ const CATALOG_HITS = 30
 
 /** A row's tooltip: what the look is like and what inspired it, or what a preset carries. */
 function describe(p: Preset): string {
-  if (!p.meta) return `Carries: ${p.groups.join(', ')}`
+  if (!p.meta) {
+    const makes = p.smart
+      ? [
+          ...p.smart.masks.map((m) => `${m.name} mask`),
+          ...p.smart.steps.map((x) => (x.kind === 'denoise' ? 'AI denoise' : 'AI deblur'))
+        ]
+      : []
+    return [
+      p.groups.length ? `Carries: ${p.groups.map((g) => GROUP_LABELS[g]).join(', ')}` : '',
+      makes.length ? `Makes on each photo: ${makes.join(', ')}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n')
+  }
   return [p.meta.description, p.meta.inspiredBy && `Inspired by ${p.meta.inspiredBy}`]
     .filter(Boolean)
     .join('\n')
