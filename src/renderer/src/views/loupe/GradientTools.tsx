@@ -26,7 +26,7 @@ import { useDevelop } from '../../state/develop'
 import { useUi } from '../../state/ui'
 
 type Gradient = LinearComponent | RadialComponent
-type Handle = 'create' | 'move' | 'start' | 'end' | 'rx' | 'ry' | 'rotate'
+type Handle = 'create' | 'move' | 'start' | 'end' | 'rx' | 'ry' | 'rotate' | 'feather'
 
 interface Drag {
   handle: Handle
@@ -34,6 +34,9 @@ interface Drag {
   from: Pt
   orig: Gradient
 }
+
+/** Two presses on a pin this close together (ms) are a double-click. */
+const DOUBLE_MS = 400
 
 const isGradient = (c: MaskComponentSetting | undefined): c is Gradient =>
   c?.kind === 'linear' || c?.kind === 'radial'
@@ -52,8 +55,11 @@ function write(next: Gradient, live: boolean): void {
  * Linear and radial gradients on the picture. With the tool active, a drag
  * draws a new one into the selected mask (Shift: 45° steps for a linear,
  * a circle for a radial). A selected gradient shows Lightroom's handles:
- * the three lines or the ellipse with its softness ring, a glass pin to
- * move it, end points or axis handles to shape it, and a knob to turn it.
+ * the three lines or the ellipse with its feather ring, a glass pin to
+ * move it, end points or axis handles to shape it, a knob to turn it, and
+ * on a radial a handle on the feather ring to soften it (double-click the
+ * pin to fill the frame). The mask's other gradients show a small pin each,
+ * which selects it.
  */
 export const GradientTools = memo(function GradientTools({
   rect,
@@ -70,11 +76,21 @@ export const GradientTools = memo(function GradientTools({
   const masksUp = useUi((s) => s.masksWin.open)
   const layer = useRef<HTMLDivElement>(null)
   const drag = useRef<Drag | null>(null)
+  // The pin's last press: a second soon after is a double-click (the drag's
+  // pointer capture keeps the browser's own dblclick from reaching the pin).
+  const lastPin = useRef<{ id: string; at: number } | null>(null)
   const drawing = tool === 'linear' || tool === 'radial'
+  const layerId = useDevelop((s) => s.layerId)
+  const setComp = useDevelop((s) => s.setComp)
   const selected = recipe?.layers.flatMap((l) => l.components).find((c) => c.id === compId)
   const shown = isGradient(selected) ? selected : null
+  // The selected mask's other gradients: a pin each, to pick one.
+  const others = (recipe?.layers.find((l) => l.id === layerId)?.components ?? []).filter(
+    (c): c is Gradient => isGradient(c) && c.id !== compId
+  )
   if (!recipe || !session) return null
-  if (!drawing && (!shown || !masksUp || tool === 'heal' || pins === 'never')) return null
+  const handlesUp = masksUp && tool !== 'heal' && pins !== 'never'
+  if (!drawing && (!handlesUp || (!shown && others.length === 0))) return null
 
   // plane pixels of a component ↔ display pixels of the loupe
   const toScreen = (c: Gradient, p: Pt): Pt => {
@@ -207,6 +223,11 @@ export const GradientTools = memo(function GradientTools({
       const r = Math.max(0.005, Math.abs(dr.handle === 'rx' ? q.x : q.y) / short)
       if (e.shiftKey) write({ ...o, radiusX: r, radiusY: r }, true)
       else write(dr.handle === 'rx' ? { ...o, radiusX: r } : { ...o, radiusY: r }, true)
+    } else if (dr.handle === 'feather') {
+      // Where the full effect ends, as a fraction of the radius: the ring.
+      const q = local(p)
+      const d = Math.hypot(q.x / Math.max(1e-6, geo.rx), q.y / Math.max(1e-6, geo.ry))
+      write({ ...o, softness: Math.round((1 - Math.min(1, Math.max(0, d))) * 100) }, true)
     } else if (dr.handle === 'rotate') {
       // The knob sits above the ellipse (−90° in its own frame).
       const a = Math.atan2(p.y - geo.cy, p.x - geo.cx) + Math.PI / 2
@@ -238,7 +259,41 @@ export const GradientTools = memo(function GradientTools({
       madeComponent(dr.id)
       return
     }
-    d.commit(dr.orig.kind === 'linear' ? 'Move linear gradient' : 'Move radial gradient')
+    d.commit(
+      dr.handle === 'feather'
+        ? 'Radial feather'
+        : dr.orig.kind === 'linear'
+          ? 'Move linear gradient'
+          : 'Move radial gradient'
+    )
+  }
+
+  /** A radial filling the frame: centred, upright, its ellipse touching every side. */
+  const fill = (c: RadialComponent): void => {
+    const short = Math.min(c.width, c.height)
+    write(
+      {
+        ...c,
+        centre: { x: 0.5, y: 0.5 },
+        angle: 0,
+        radiusX: c.width / 2 / short,
+        radiusY: c.height / 2 / short
+      },
+      false
+    )
+    useDevelop.getState().commit('Radial gradient: fill the frame')
+  }
+
+  /** Where a gradient's pin sits on screen: a radial's centre, a linear's middle. */
+  const pinAt = (c: Gradient): Pt => {
+    if (c.kind === 'radial') {
+      const geo = radialGeometry(c)
+      return toScreen(c, { x: geo.cx, y: geo.cy })
+    }
+    return toScreen(c, {
+      x: ((c.start.x + c.end.x) / 2) * c.width,
+      y: ((c.start.y + c.end.y) / 2) * c.height
+    })
   }
 
   const reach = 4 * Math.max(shown?.width ?? 1, shown?.height ?? 1)
@@ -306,6 +361,15 @@ export const GradientTools = memo(function GradientTools({
     const top = hs[3]
     const up = Math.atan2(top.y - c.y, top.x - c.x)
     const knob = { x: top.x + Math.cos(up) * 22, y: top.y + Math.sin(up) * 22 }
+    // The feather handle: on the ring, up and to the right (−45° in the ellipse's frame).
+    const inner = Math.max(0.01, 1 - shown.softness / 100)
+    const t = -Math.PI / 4
+    const fx = Math.cos(t) * geo.rx * inner
+    const fy = Math.sin(t) * geo.ry * inner
+    const feather = toScreen(shown, {
+      x: geo.cx + fx * Math.cos(geo.angle) - fy * Math.sin(geo.angle),
+      y: geo.cy + fx * Math.sin(geo.angle) + fy * Math.cos(geo.angle)
+    })
     body = (
       <>
         <svg className="grad-lines" width={rect.w} height={rect.h}>
@@ -333,6 +397,12 @@ export const GradientTools = memo(function GradientTools({
           title="Turn (Shift: 15° steps)"
           onPointerDown={(e) => begin(e, 'rotate', shown)}
         />
+        <span
+          className="grad-feather"
+          style={{ left: feather.x, top: feather.y }}
+          title={`Feather ${Math.round(shown.softness)} · drag in to soften, out to harden`}
+          onPointerDown={(e) => begin(e, 'feather', shown)}
+        />
         <LiquidGlass
           className="grad-pin"
           radius={10}
@@ -341,8 +411,19 @@ export const GradientTools = memo(function GradientTools({
           frost={0.5}
           magnify
           style={{ left: c.x, top: c.y }}
-          title="Move"
-          onPointerDown={(e) => begin(e, 'move', shown)}
+          title="Move · double-click to fill the frame"
+          onPointerDown={(e) => {
+            const was = lastPin.current
+            const now = performance.now()
+            lastPin.current = { id: shown.id, at: now }
+            if (e.button === 0 && was?.id === shown.id && now - was.at < DOUBLE_MS) {
+              e.stopPropagation()
+              lastPin.current = null
+              fill(shown)
+              return
+            }
+            begin(e, 'move', shown)
+          }}
         >
           <i />
         </LiquidGlass>
@@ -353,13 +434,30 @@ export const GradientTools = memo(function GradientTools({
   return (
     <div
       ref={layer}
-      className={`tool-layer gradients${drawing ? ' drawing' : ''}${shown ? ` pins-${pins}` : ''}`}
+      className={`tool-layer gradients${drawing ? ' drawing' : ''}${shown || others.length ? ` pins-${pins}` : ''}`}
       style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
       onPointerDown={create}
       onPointerMove={move}
       onPointerUp={end}
       onPointerCancel={end}
     >
+      {handlesUp &&
+        others.map((c) => {
+          const at = pinAt(c)
+          return (
+            <button
+              key={c.id}
+              className="grad-other"
+              style={{ left: at.x, top: at.y }}
+              title={`Select this ${c.kind === 'radial' ? 'radial' : 'linear'} gradient`}
+              aria-label="Select gradient"
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                setComp(c.id)
+              }}
+            />
+          )
+        })}
       {body}
     </div>
   )

@@ -187,7 +187,7 @@ const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
   },
   radial: {
     title: 'Radial gradient',
-    hint: 'Drag out from the centre · Shift draws a circle · the handles reshape, the knob turns'
+    hint: "Drag from the centre · Shift: circle · the ring softens · double-click the pin to fill · ' inverts"
   },
   'wb-picker': { title: 'White balance', hint: 'Click something that should be neutral grey' },
   'range-picker': { title: 'Range', hint: 'Click the colour or tone the mask should select' },

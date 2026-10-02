@@ -868,6 +868,46 @@ button.mode-badge:disabled {
 .grad-handle {
   transform: rotate(45deg);
 }
+/* A radial's feather: a ring handle on the dashed ellipse. */
+.grad-feather {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 10px -2px var(--glow);
+  pointer-events: auto;
+  cursor: nesw-resize;
+  transition: transform 0.3s var(--spring);
+}
+.grad-feather:hover {
+  transform: scale(1.3);
+}
+/* The mask's other gradients: a small pin each, to select it. */
+button.grad-other {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  min-width: 0;
+  margin: -6px 0 0 -6px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+  cursor: pointer;
+  transition: transform 0.25s var(--spring);
+}
+button.grad-other:hover:not(:disabled) {
+  transform: scale(1.35);
+  border-color: var(--acc);
+  background: rgba(0, 0, 0, 0.45);
+}
 .grad-handle:hover {
   transform: rotate(45deg) scale(1.4);
   background: var(--acc);
@@ -913,12 +953,16 @@ button.mode-badge:disabled {
 }
 .tool-layer.gradients.pins-auto:not(.drawing) .grad-lines,
 .tool-layer.gradients.pins-auto:not(.drawing) .grad-handle,
+.tool-layer.gradients.pins-auto:not(.drawing) .grad-feather,
+.tool-layer.gradients.pins-auto:not(.drawing) .grad-other,
 .tool-layer.gradients.pins-auto:not(.drawing) .grad-knob {
   opacity: 0;
   transition: opacity 0.3s var(--ease);
 }
 .stage:hover .tool-layer.gradients.pins-auto .grad-lines,
 .stage:hover .tool-layer.gradients.pins-auto .grad-handle,
+.stage:hover .tool-layer.gradients.pins-auto .grad-feather,
+.stage:hover .tool-layer.gradients.pins-auto .grad-other,
 .stage:hover .tool-layer.gradients.pins-auto .grad-knob {
   opacity: 1;
 }

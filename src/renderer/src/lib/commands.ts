@@ -14,6 +14,7 @@ import {
   deleteMask,
   duplicateComponent,
   duplicateMask,
+  patchComponent,
   patchMask,
   startMaskTool
 } from '../panels/masks/model'
@@ -475,6 +476,20 @@ export const COMMANDS: KeyCommand[] = [
       const d = dev()
       if (d.compId) duplicateComponent(d.compId)
       else if (d.layerId) duplicateMask(d.layerId)
+    }
+  },
+  {
+    id: 'mask.invert',
+    label: 'Invert the selected component, or the mask',
+    group: 'Masks',
+    context: 'develop.masks',
+    keys: ['Quote'],
+    when: (e) => masksOpen() && !!dev().layerId && notInField(e),
+    run: (e) => {
+      stop(e)
+      const d = dev()
+      if (d.compId) patchComponent(d.compId, 'Invert component', (c) => (c.invert = !c.invert))
+      else if (d.layerId) patchMask(d.layerId, 'Invert mask', (l) => (l.invert = !l.invert))
     }
   },
   {
