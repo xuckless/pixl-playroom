@@ -35,6 +35,19 @@ function alphaFor(view: ViewMode, opacity: number): number {
   return view === 'glass' ? Math.min(1, Math.max(0.35, a * 1.6)) : a
 }
 
+/**
+ * A canvas's drawing, kept a moment after the canvas lets go of it. A WebGL
+ * context given up (`dispose`) stays lost for its canvas, so a canvas
+ * mounted again at once (React's StrictMode does, in development) found a
+ * dead one, and the loupe fell back to the CSS overlay, which cannot show a
+ * shape being drawn (an Objects selection, a lasso). Mounted again, it takes
+ * this one back; let go for good, it is given up a tick later.
+ */
+const parked = new WeakMap<
+  HTMLCanvasElement,
+  { gl: MaskGl; timer: ReturnType<typeof setTimeout> }
+>()
+
 /** For automation: what the preview did, and its own mask to compare with the engine's. */
 const stats = { composes: 0, lastComposeMs: 0, agreed: 0, target: 0, engineRev: -1, live: 0 }
 let current: MaskGl | null = null
@@ -205,20 +218,29 @@ export function MaskCanvas({
   useEffect(() => {
     const c = canvas.current
     if (!c) return
-    try {
-      glRef.current = new MaskGl(c)
-      if (!isHover) current = glRef.current
-    } catch {
-      useMaskGlBroken.setState({ broken: true })
-      return
+    // Mounted again at once (StrictMode does, in development): the same one.
+    const kept = parked.get(c)
+    if (kept) {
+      clearTimeout(kept.timer)
+      parked.delete(c)
+      glRef.current = kept.gl
+    } else {
+      try {
+        glRef.current = new MaskGl(c)
+      } catch {
+        useMaskGlBroken.setState({ broken: true })
+        return
+      }
     }
+    if (!isHover) current = glRef.current
     const lost = (): void => useMaskGlBroken.setState({ broken: true })
     c.addEventListener('webglcontextlost', lost)
     return () => {
       c.removeEventListener('webglcontextlost', lost)
-      glRef.current?.dispose()
-      if (current === glRef.current) current = null
+      const gl = glRef.current
+      if (current === gl) current = null
       glRef.current = null
+      if (gl) parked.set(c, { gl, timer: setTimeout(() => (parked.delete(c), gl.dispose()), 0) })
     }
   }, [isHover])
 
