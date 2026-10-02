@@ -39,8 +39,10 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: '@xuckless'
 
-      - name: Bump @xuckless/pixl-engine
-        run: pnpm up "@xuckless/pixl-engine@${ENGINE_VERSION}"
+      # The model roster moves in step with the engine (its `ref`s are the
+      # engine's request types), so the two are bumped together.
+      - name: Bump @xuckless/pixl-engine and @xuckless/pixl-models
+        run: pnpm up "@xuckless/pixl-engine@${ENGINE_VERSION}" "@xuckless/pixl-models@${ENGINE_VERSION}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1

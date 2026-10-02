@@ -119,6 +119,29 @@ test('HEIF working copies made before the fix are made again', () => {
   assert.equal(versionStamp({ ...v, ext: 'HEIC' }), '1000-42-u')
 })
 
+test("a RAW's developments are made again on LibRaw, its embedded preview is not", () => {
+  const v = { mtime: 1000.4, size: 42 }
+  assert.equal(versionStamp({ ...v, ext: 'CR2' }), '1000-42-l')
+  assert.equal(versionStamp({ ...v, ext: 'raf' }), '1000-42-l')
+  // What no develop made keeps its name: thumbnails from the embedded JPEG.
+  assert.equal(versionStamp({ ...v, ext: 'cr2' }, false), '1000-42')
+  assert.equal(versionStamp({ ...v, ext: 'jpg' }, true), '1000-42')
+})
+
+test("a LUT profile keeps an HDR photo's headroom and clamps an SDR one as before", () => {
+  const r = defaultRecipe(false)
+  r.profile = { kind: 'lut', name: 'Film', path: '/luts/film.cube' }
+  r.profileAmount = 80
+  const lut = (c: ReturnType<typeof compile>): Extract<GradeOp, { Lut: unknown }>['Lut'] =>
+    (ops(c).find((o) => 'Lut' in o) as Extract<GradeOp, { Lut: unknown }>).Lut
+  assert.equal(lut(compile(r, ctx)).out_of_domain, 'Clamp')
+  assert.equal(lut(compile(r, { ...ctx, hdr: true })).out_of_domain, 'ScaleHeadroom')
+  // The SDR shoulder is a table on 0…1, clamped as it always was.
+  const e = defaultRecipe(false)
+  e.basic.exposure = 1
+  assert.equal(lut(compile(e, ctx)).out_of_domain, 'Clamp')
+})
+
 test('a recipe edits a gain map on its base unless it says HDR, and sync carries it', () => {
   assert.equal(defaultRecipe(false).gainMap, 'base')
   assert.equal(normaliseRecipe({ gainMap: 'nonsense' }, false).gainMap, 'base')

@@ -665,6 +665,23 @@ export function smoothnessFeather(smoothness: number): number {
 }
 
 /**
+ * A custom layer as written before 0.16, brought up to it: every `Lut`
+ * states what a value past its table gets (0.15 clamped it, so `Clamp`),
+ * wherever it sits (a stage, a `Masked` op). Everything else passes as it is.
+ */
+export function withLutDomains(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(withLutDomains)
+  if (!v || typeof v !== 'object') return v
+  const out: Record<string, unknown> = {}
+  for (const [k, x] of Object.entries(v)) {
+    if (k === 'Lut' && x && typeof x === 'object' && !Array.isArray(x)) {
+      out[k] = { out_of_domain: 'Clamp', ...(x as Record<string, unknown>) }
+    } else out[k] = withLutDomains(x)
+  }
+  return out
+}
+
+/**
  * A mask's white: its temperature and tint are always relative (−100…100),
  * whatever the photo's own white is in, and `as-shot` (or zeros) is none.
  */
@@ -765,7 +782,8 @@ function maskComponent(
     feather: {
       radius: round4(clamp((c.feather / 100) * 0.1 + smooth, 0, 0.5)),
       edge: 'Zero' as const
-    }
+    },
+    refine: null
   }
   switch (c.kind) {
     case 'brush':
@@ -972,7 +990,8 @@ export function pointColorOps(
             mode: 'Add',
             opacity: 1,
             invert: false,
-            feather: { radius: 0, edge: 'Zero' }
+            feather: { radius: 0, edge: 'Zero' },
+            refine: null
           }
         ],
         invert: false,
@@ -1062,7 +1081,9 @@ function settingsStages(
     // An SDR picture's highlights are rolled onto white; an HDR one has
     // room above white for them (and a shoulder there would flatten it).
     if (base && r.basic.exposure > 0 && !ctx.hdr) {
-      linear.push({ Lut: { lut: { Cube: shoulderCube(r.basic.exposure) }, amount: 1 } })
+      linear.push({
+        Lut: { lut: { Cube: shoulderCube(r.basic.exposure) }, amount: 1, out_of_domain: 'Clamp' }
+      })
     }
   }
   // Coloured light on the scene, after the exposure it is lit at.
@@ -1095,14 +1116,17 @@ function settingsStages(
       look.push(curvesOp({ master: tonal(STANDARD_CURVE, hdr) }))
       break
     case 'lut':
-      // A table is defined on 0…1: on an HDR pipeline everything above white
-      // gets its value at white.
+      // A table is defined on 0…1. On an HDR pipeline what lies above white
+      // keeps its headroom, scaled by the table's own colour at white (the
+      // channels' ratios kept); an SDR one clamps, as it always has.
       if (base?.profile.kind !== 'lut') break
-      if (hdr && base.profileAmount > 0)
-        notes.push('The LUT profile flattens the highlights above white on this HDR photo')
       if (base.profileAmount > 0) {
         look.push({
-          Lut: { lut: { Path: base.profile.path }, amount: clamp(base.profileAmount / 100, 0, 1) }
+          Lut: {
+            lut: { Path: base.profile.path },
+            amount: clamp(base.profileAmount / 100, 0, 1),
+            out_of_domain: hdr ? 'ScaleHeadroom' : 'Clamp'
+          }
         })
       }
       break
@@ -1305,7 +1329,7 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
   for (const c of r.custom) {
     if (!c.layer || typeof c.layer !== 'object') continue
     layers.push({
-      ...(c.layer as GradeLayer),
+      ...(withLutDomains(c.layer) as GradeLayer),
       enabled: c.enabled && (c.layer as GradeLayer).enabled !== false
     })
   }

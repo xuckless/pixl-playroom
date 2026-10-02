@@ -131,7 +131,8 @@ export async function measureAutoWb(
                   mode: 'Add',
                   opacity: 1,
                   invert: false,
-                  feather: { radius: 0, edge: 'Zero' }
+                  feather: { radius: 0, edge: 'Zero' },
+                  refine: null
                 }
               ],
               invert: false,

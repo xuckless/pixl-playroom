@@ -20,7 +20,7 @@ import type {
   UpscalerRef
 } from '../shared/engine-types'
 import type { AiStartRequest } from '../shared/ai'
-import type { PixelStep } from '../shared/pixels'
+import { RAW_DEVELOP_REV, type PixelStep } from '../shared/pixels'
 import { newId, type Recipe } from '../shared/recipe'
 import {
   chainSubject,
@@ -322,7 +322,13 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         width: report.width,
         height: report.height,
         rect: null,
-        params: { chain: subject, scale: k, resizes: k > 1, lossless }
+        params: {
+          chain: subject,
+          scale: k,
+          resizes: k > 1,
+          lossless,
+          ...(row.is_raw === 1 ? { develop: RAW_DEVELOP_REV } : {})
+        }
       }
       // Over the steps there were when it began, under any added while it ran.
       ctx.commit()

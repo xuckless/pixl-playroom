@@ -18,6 +18,7 @@ import { STRIP_ALL } from '../shared/engine-types'
 import { fromExif } from '../shared/orientation'
 import { hash32 } from '../shared/recipe'
 import type { PhotoRow } from './db'
+import { RAW_DEVELOP_REV } from '../shared/pixels'
 import { execFileSync } from 'child_process'
 import { cpus } from 'os'
 
@@ -73,14 +74,16 @@ export const RAW_DEVELOP: RawMode = {
     white_balance: true,
     calibrate: true,
     srgb_gamma: false,
-    crop: 'Best'
+    crop: 'Best',
+    resolution: 'Full'
   }
 }
 
 /** The orientation to hand the engine for a source decoded this way. */
 export function sourceOrientation(info: SourceInfo, raw: RawMode | null): Orientation {
-  // A developed RAW (rawler's or the scene-linear one) comes out upright;
-  // every other path carries the tag.
+  // A developed RAW (PIXL's develop or the scene-linear one) comes out
+  // upright, with no Orientation tag in its EXIF; every other path carries
+  // the tag.
   if (info.input === 'Raw' && raw !== null && raw !== 'EmbeddedPreview') return 'Normal'
   // A HEIF or AVIF is decoded (by libheif) with its own transforms — irot,
   // imir — applied, and the spec says the EXIF tag must then be ignored: an
@@ -109,10 +112,20 @@ const HEIF_EXT = /^(heic|heif|hif|avif)$/i
 /**
  * What names a file version in the caches made from it: its time and size,
  * and a mark on HEIF/AVIF copies made since their orientation was fixed, so
- * the older (sideways) ones are made again.
+ * the older (sideways) ones are made again, and on RAW developments made by
+ * LibRaw and PIXL's own develop (engine 0.16), so rawler's are made again.
  */
-export function versionStamp(photo: Pick<PhotoRow, 'mtime' | 'size' | 'ext'>): string {
-  return `${Math.round(photo.mtime)}-${photo.size}${HEIF_EXT.test(photo.ext) ? '-u' : ''}`
+export function versionStamp(
+  photo: Pick<PhotoRow, 'mtime' | 'size' | 'ext'>,
+  /** False for what no develop made (a RAW's embedded preview). */
+  developed = true
+): string {
+  const mark = HEIF_EXT.test(photo.ext)
+    ? '-u'
+    : developed && isRawExt(photo.ext)
+      ? `-${RAW_DEVELOP_REV}`
+      : ''
+  return `${Math.round(photo.mtime)}-${photo.size}${mark}`
 }
 
 /** The peak an HDR source is assumed to reach when it states none. */

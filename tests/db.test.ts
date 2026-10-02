@@ -177,3 +177,32 @@ test('a preset keeps its smart instructions; a bad column loses only those', asy
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('RAWs the old decoder could not read are tried again; other failures stay', () => {
+  const dir = tmp()
+  try {
+    const file = join(dir, 'playroom.db')
+    Store.open(file).close()
+    const db = new DatabaseSync(file)
+    const add = db.prepare(
+      `INSERT INTO photos (path, folder, name, ext, size, mtime, is_raw, failed_key, failed_reason)
+       VALUES (?, '/a', ?, ?, 1, 1, ?, 'k', 'unreadable')`
+    )
+    add.run('/a/x.cr2', 'x.cr2', 'cr2', 1)
+    add.run('/a/y.jpg', 'y.jpg', 'jpg', 0)
+    // As an index from 0.15 would stand: every migration but LibRaw's run.
+    db.exec(`PRAGMA user_version = ${MIGRATIONS.length - 1}`)
+    migrate(db)
+    const failed = (name: string): unknown =>
+      (
+        db.prepare('SELECT failed_key FROM photos WHERE name = ?').get(name) as {
+          failed_key: unknown
+        }
+      ).failed_key
+    assert.equal(failed('x.cr2'), null)
+    assert.equal(failed('y.jpg'), 'k')
+    db.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

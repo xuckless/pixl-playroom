@@ -886,6 +886,12 @@ aside.right .panels.adjust {
   justify-content: space-between;
   gap: 8px;
 }
+.pixel-step-stale {
+  margin: 2px 0 4px;
+  color: var(--warn);
+  font-size: 11px;
+  line-height: 1.35;
+}
 .pixel-step-label {
   min-width: 0;
   overflow: hidden;

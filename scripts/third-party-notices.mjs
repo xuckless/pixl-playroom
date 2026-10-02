@@ -4,8 +4,9 @@
 //   node scripts/third-party-notices.mjs [--web <pixl-web dir>]
 // Three sources:
 //   - the native components npm can't see (build/third-party.json), with
-//     licence texts from build/licenses/ and ONNX Runtime's own notices (from
-//     the engine's platform package, which ships the runtime);
+//     licence texts from build/licenses/ and the engine's own
+//     THIRD-PARTY-NOTICES.txt, embedded whole (from its platform package:
+//     every library beside the addon and compiled into it, ONNX Runtime too);
 //   - the production npm packages (pnpm licenses), which ship in node_modules;
 //   - the packages bundled into the app's JavaScript (out/*/bundled-packages.json,
 //     written by electron.vite.config.ts), so run `electron-vite build` first.
@@ -103,10 +104,12 @@ const { components } = JSON.parse(
 )
 const ids = new Set()
 /**
- * ONNX Runtime's own LICENSE and ThirdPartyNotices.txt, from the engine's
- * platform package installed here (0.15+ ships the runtime beside the addon).
+ * The engine's own THIRD-PARTY-NOTICES.txt, from its platform package
+ * installed here (0.16+): every library beside the addon (pixl_libraw with
+ * LibRaw, libheif, libde265, libaom, ONNX Runtime) and compiled into it, with
+ * the licence texts they ask for. Self-contained, so it is embedded whole.
  */
-function ortNotices() {
+function engineNotices() {
   // pnpm keeps the platform package beside the base one in its store.
   const base = path.join(ROOT, 'node_modules', '@xuckless', 'pixl-engine')
   const roots = [
@@ -116,12 +119,9 @@ function ortNotices() {
   for (const root of roots) {
     for (const pkg of fs.existsSync(root) ? fs.readdirSync(root).sort() : []) {
       if (!pkg.startsWith('pixl-engine-')) continue
-      const dir = fs.realpathSync(path.join(root, pkg))
-      const texts = ['onnxruntime-LICENSE.txt', 'onnxruntime-ThirdPartyNotices.txt']
-        .map((n) => path.join(dir, n))
-        .filter((f) => fs.existsSync(f))
-        .map((f) => fs.readFileSync(f, 'utf8').trim())
-      if (texts.length) return texts.join(`\n\n${RULE}\n\n`)
+      const f = path.join(fs.realpathSync(path.join(root, pkg)), 'THIRD-PARTY-NOTICES.txt')
+      // Some licence texts in it keep their own (Windows) line endings.
+      if (fs.existsSync(f)) return fs.readFileSync(f, 'utf8').replace(/\r\n?/g, '\n').trim()
     }
   }
   return null
@@ -137,10 +137,11 @@ say(
   'Playroom itself is proprietary software; these licences cover only the components',
   'they name.',
   '',
-  'Components under the GNU LGPL are shipped as separate shared libraries inside the',
-  'application, which you may replace with your own builds. Their source code is',
-  'available from the addresses given; we will also provide it on request, for three',
-  'years from when you received this copy, from hello@pixlfoundation.com.',
+  'Components under the GNU LGPL (libheif, libde265) are shipped as separate shared',
+  'libraries inside the application, which you may replace with your own builds, as',
+  'is pixl_libraw (LibRaw, under the CDDL). Their complete source code ships inside the',
+  'application, beside the engine (app.asar.unpacked/node_modules/@xuckless/',
+  'pixl-engine-<platform>/), and is available from the addresses given.',
   '',
   '  1. Native components and the AI models',
   '  2. npm packages',
@@ -157,24 +158,26 @@ for (const c of components) {
     '',
     c.name,
     `  Used for:  ${c.use}`,
-    `  Licence:   ${c.licenseName ?? lic.join(' and ')} (section 3)`,
+    `  Licence:   ${c.licenseName ?? lic.join(' and ')}${lic.length ? ' (section 3)' : ''}`,
     `  Source:    ${c.source}`,
     `  ${c.copyright}`
   )
   if (c.dynamic) say('  Shipped as a separate shared library, loaded at run time.')
   if (c.note) say(`  Note: ${c.note}`)
-  if (c.ortNotices) {
-    const t = ortNotices()
+  if (c.engineNotices) {
+    const t = engineNotices()
     if (t)
       say(
         '',
         t
           .split('\n')
-          .map((l) => `    ${l}`)
+          .map((l) => (l ? `    ${l}` : ''))
           .join('\n')
       )
     else
-      console.warn("third-party-notices: no ONNX Runtime notices in the engine's platform package")
+      console.warn(
+        "third-party-notices: no THIRD-PARTY-NOTICES.txt in the engine's platform package"
+      )
   }
 }
 

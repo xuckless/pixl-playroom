@@ -34,7 +34,7 @@ import {
   type P as SpotPoint,
   type RetouchSpot
 } from '../shared/retouch'
-import { stackSignature, type PixelStep } from '../shared/pixels'
+import { RAW_DEVELOP_REV, stackSignature, type PixelStep } from '../shared/pixels'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
 import { ensureBase, pixelDeps } from './pixels/base'
@@ -1668,6 +1668,8 @@ class Session {
       spot,
       layerId
     )
+    // Made from today's RAW develop (see `staleRawStep`).
+    if (step && this.isRaw) step.params.develop = RAW_DEVELOP_REV
     // The full-size frame with this stroke, started now: a 1:1 view wants it
     // the moment the step lands, and it is the last one plus a small patch.
     if (step)

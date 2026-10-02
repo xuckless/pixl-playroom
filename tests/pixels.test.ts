@@ -4,7 +4,14 @@ import { createRequire } from 'module'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
-import { normalisePixelStep, placeStep, stackSignature, type PixelStep } from '../src/shared/pixels'
+import {
+  normalisePixelStep,
+  placeStep,
+  RAW_DEVELOP_REV,
+  stackSignature,
+  staleRawStep,
+  type PixelStep
+} from '../src/shared/pixels'
 import { diffRecipe, replay, type Step } from '../src/shared/history'
 import { defaultRecipe, normaliseRecipe, isEdited } from '../src/shared/recipe'
 import { composeMasked, unwarpMask, writeRamp } from '../src/main/pixels/ops'
@@ -230,7 +237,8 @@ test(
       distortion: {
         model: { Poly3: { k1: -0.05 } },
         geometry: { centre: { x: 0.5, y: 0.5 }, unit: 'HalfDiagonal' as const },
-        amount: 1
+        amount: 1,
+        scale: 1
       },
       lateral_ca: null,
       vignetting: null,
@@ -661,4 +669,29 @@ test('a heal patch on a proxy goes at its own size, not stretched over every pix
   assert.ok(Math.abs(o.rect.x * 2370 - 395) < 1e-9)
   assert.ok(Math.abs(o.rect.width * 2370 - 16) < 1e-9)
   rmSync(dir, { recursive: true })
+})
+
+test("a RAW's step made on rawler's develop is told apart from one made on today's", () => {
+  const step = (params: PixelStep['params']): PixelStep => ({
+    id: 's',
+    kind: 'denoise',
+    label: 'AI Denoise',
+    blob: 'a'.repeat(64),
+    alpha: null,
+    scope: null,
+    opacity: 100,
+    width: 10,
+    height: 10,
+    rect: null,
+    params
+  })
+  assert.equal(staleRawStep(step({ model: 'drunet-color' }), true), true)
+  assert.equal(staleRawStep(step({ model: 'drunet-color', develop: RAW_DEVELOP_REV }), true), false)
+  // Only a RAW's pixels come from a develop.
+  assert.equal(staleRawStep(step({ model: 'drunet-color' }), false), false)
+  // The mark survives a round trip through the project.
+  assert.equal(
+    normalisePixelStep(step({ develop: RAW_DEVELOP_REV }))?.params.develop,
+    RAW_DEVELOP_REV
+  )
 })

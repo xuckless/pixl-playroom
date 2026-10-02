@@ -105,9 +105,14 @@ links) never points at it. To cut a stable release, remove those three settings 
 `"prerelease": false` and drop `versioning`) in the PR before merging the release PR, or pin
 a version with a `Release-As: X.Y.Z` commit footer.
 
-**Engine updates.** `bump-engine.yml` opens a `fix(engine): bump pixl-engine to X` PR, on a
+**Engine updates.** `bump-engine.yml` opens a `fix(engine): bump pixl-engine to X` PR
+(`@xuckless/pixl-engine` and `@xuckless/pixl-models` together), on a
 `pixl-engine-released` repository dispatch or by hand (_Actions → Bump engine → Run
-workflow_ with the version).
+workflow_ with the version). Read the engine's `docs/playroom/<version>.md` first: it says
+what Playroom must change. The engine's platform package carries, beside the `.node`,
+`pixl_libraw` (LibRaw), the libheif and libde265 libraries with their complete sources,
+the licence texts and `THIRD-PARTY-NOTICES.txt`: all of it ships unmodified
+(`asarUnpack`), and `build/after-pack.mjs` refuses a package without them.
 
 **Manual build.** _Actions → Release → Run workflow_ with a tag; `EP_GH_IGNORE_TIME` lets
 electron-builder upload to an older published release.
@@ -276,11 +281,12 @@ development build at a local copy of that layout.
 `pnpm notices` writes `build/THIRD_PARTY_NOTICES.txt` (shipped via `extraResources`,
 opened from _Settings_ and _Help_). It reads what the bundles contain
 (`out/*/bundled-packages.json`, from `electron.vite.config.ts`), the production npm
-packages, ONNX Runtime's own notices (from the engine's platform package), every AI model the
-app can download (from the engine's model roster), and the hand-kept native
-components in `build/third-party.json`, with licence texts from `build/licenses/`.
-`release.yml` regenerates it after the build. When the engine's dependencies change,
-update `build/third-party.json`. To refresh the copy on the website:
+packages, the engine's own `THIRD-PARTY-NOTICES.txt` (from its platform package, embedded
+whole: every library beside the addon and compiled into it, ONNX Runtime included), every
+AI model the app can download (from the engine's model roster), and Playroom's other
+native components in `build/third-party.json` (ExifTool, Electron, the Lensfun data), with
+licence texts from `build/licenses/`. `release.yml` regenerates it after the build;
+`build/after-pack.mjs` checks it holds the engine's notices. To refresh the copy on the website:
 `node scripts/third-party-notices.mjs --web ../pixl-web`.
 
 ## The PIXL account

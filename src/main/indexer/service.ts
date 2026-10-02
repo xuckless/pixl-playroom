@@ -2081,10 +2081,11 @@ export class IndexService {
     const key = keyOf(row.id, copyId)
     const raw = row.is_raw === 1
     const recipeKey = existing.recipe_key ?? thumbRecipeKey(this.slimRecipeOf(key), raw)
-    const stamp = `${versionStamp(row)}-${recipeKey}`
+    const edited = recipeKey !== 'plain'
+    // An unedited RAW's thumbnail is its embedded preview, which no develop makes.
+    const stamp = `${versionStamp(row, !raw || edited)}-${recipeKey}`
     if (existing.thumb_key === stamp && existing.thumb_path && existsSync(existing.thumb_path))
       return null
-    const edited = recipeKey !== 'plain'
     return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp }
   }
 

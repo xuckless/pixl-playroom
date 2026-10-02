@@ -153,8 +153,56 @@ export default async function afterPack(context) {
       `engine binding check failed for ${target}: ${ort.library} is ${ortArch}, not ${arch}`
     )
   }
+  // 0.16+: RAW decoding is pixl_libraw (LibRaw and PIXL's shim), a shared
+  // library the addon loads from its own directory: without it no RAW opens.
+  const libraw = electronPlatformName === 'win32' ? 'pixl_libraw.dll' : 'libpixl_libraw.dylib'
+  if (!existsSync(path.join(bindingDir, libraw))) {
+    throw new Error(`engine binding check failed for ${target}: ${libraw} is missing`)
+  }
+  const librawArch = binaryArch(path.join(bindingDir, libraw))
+  if (librawArch !== arch && librawArch !== 'universal') {
+    throw new Error(
+      `engine binding check failed for ${target}: ${libraw} is ${librawArch}, not ${arch}`
+    )
+  }
+  // What has to travel, unmodified, in the same download as the libraries it
+  // is for: LibRaw's source (CDDL-1.0) and the shim's, the LGPL-3.0 libheif
+  // and libde265 sources with their vcpkg ports, the licence texts, and the
+  // engine's notices (shown in Playroom's).
+  const files = readdirSync(bindingDir)
+  const required = [
+    [/^LibRaw-.*\.tar\.gz$/, 'LibRaw source'],
+    [/^pixl_libraw-.*-source\.tar\.gz$/, 'pixl_libraw shim source'],
+    [/^libraw-NOTICE\.txt$/, 'LibRaw notice'],
+    [/^libheif-.*-source\.tar\.gz$/, 'libheif source'],
+    [/^libheif-.*-vcpkg-port\.tar\.gz$/, 'libheif vcpkg port'],
+    [/^libde265-.*-source\.tar\.gz$/, 'libde265 source'],
+    [/^libde265-.*-vcpkg-port\.tar\.gz$/, 'libde265 vcpkg port'],
+    [/^LGPL-3\.0\.txt$/, 'LGPL-3.0 text'],
+    [/^GPL-3\.0\.txt$/, 'GPL-3.0 text'],
+    [/^THIRD-PARTY-NOTICES\.txt$/, "the engine's third-party notices"]
+  ]
+  const missing = required.filter(([re]) => !files.some((f) => re.test(f))).map(([, what]) => what)
+  if (missing.length > 0) {
+    throw new Error(
+      `engine binding check failed for ${target}: ${expected} lacks ${missing.join(', ')}; ` +
+        `the licences of the libraries beside the addon need them shipped with it`
+    )
+  }
+  // Playroom's notices must hold the engine's (scripts/third-party-notices.mjs
+  // embeds them): `pnpm build` writes them after the engine is installed.
+  const notices = path.join(packager.getResourcesDir(appOutDir), 'THIRD_PARTY_NOTICES.txt')
+  const engineFirstLine = readFileSync(path.join(bindingDir, 'THIRD-PARTY-NOTICES.txt'), 'utf8')
+    .split('\n')[0]
+    .trim()
+  if (!existsSync(notices) || !readFileSync(notices, 'utf8').includes(engineFirstLine)) {
+    throw new Error(
+      `engine binding check failed for ${target}: THIRD_PARTY_NOTICES.txt does not hold the ` +
+        `engine's notices ("${engineFirstLine}"); run pnpm notices`
+    )
+  }
   console.log(
     `  • engine binding ok  target=${target} package=${expected}@${version} addon=${addons[0]} ` +
-      `onnxruntime=${ort.version} (${ort.providers.join(', ')})`
+      `onnxruntime=${ort.version} (${ort.providers.join(', ')}) ${libraw} and its sources`
   )
 }

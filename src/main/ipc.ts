@@ -78,7 +78,8 @@ import { readSettings } from './settings'
 import { checkForUpdates, installUpdate, setUpdateChannel, updateState } from './updater'
 
 function toAppError(err: unknown): AppError {
-  if (err instanceof EngineError) return { message: err.message, code: err.code, field: err.field }
+  if (err instanceof EngineError)
+    return { message: err.userMessage, code: err.code, field: err.field }
   if (err instanceof IndexError) return { message: err.message, code: err.code }
   if (err instanceof LicenceError) return { message: err.message, code: err.code }
   if (err instanceof OAuthError) return { message: err.message, code: err.code }

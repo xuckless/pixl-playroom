@@ -1,7 +1,7 @@
 /**
- * The engine host. Runs inside an Electron utilityProcess so that a panic in
- * the native addon (rawler is known to panic on odd sensor layouts) kills
- * this process, not the app. The main-process side is `client.ts`.
+ * The engine host. Runs inside an Electron utilityProcess so that a crash in
+ * the native addon (or a library beside it: LibRaw parses untrusted files)
+ * kills this process, not the app. The main-process side is `client.ts`.
  *
  * Playroom has no placeholder engine: every pixel on screen is the engine's.
  */

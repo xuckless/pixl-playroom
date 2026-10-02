@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react'
 import type { AiDenoiseModel } from '../../../shared/recipe'
-import type { PixelStep } from '../../../shared/pixels'
+import { staleRawStep, type PixelStep } from '../../../shared/pixels'
 import { ModelGet } from '../components/ModelGet'
 import { useModels } from '../lib/models'
 import { Icon } from '../components/icons'
@@ -39,7 +39,7 @@ const MODELS: { value: AiDenoiseModel; label: string; hint: string }[] = [
 const LOSSLESS_KEY = 'pixels.lossless'
 
 /** One step's row: its Strength (changed on release: the step's pixels are laid again, no model) and remove. */
-function StepRow({ step }: { step: PixelStep }): React.JSX.Element {
+function StepRow({ step, stale }: { step: PixelStep; stale: boolean }): React.JSX.Element {
   // While a drag is on: what the slider shows until it is let go.
   const [dragging, setDragging] = useState<number | null>(null)
   const opacity = dragging ?? step.opacity
@@ -70,6 +70,11 @@ function StepRow({ step }: { step: PixelStep }): React.JSX.Element {
           <Icon name="trash" />
         </button>
       </div>
+      {stale && (
+        <p className="pixel-step-stale">
+          Made from the previous RAW develop: remove it and denoise again to match this one.
+        </p>
+      )}
       <Slider
         label="Strength"
         value={opacity}
@@ -181,7 +186,7 @@ export function AiDenoise(): React.JSX.Element | null {
       {steps.length > 0 && (
         <div className="pixel-steps">
           {steps.map((s) => (
-            <StepRow key={s.id} step={s} />
+            <StepRow key={s.id} step={s} stale={staleRawStep(s, isRaw)} />
           ))}
         </div>
       )}

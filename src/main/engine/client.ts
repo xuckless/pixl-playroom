@@ -29,6 +29,7 @@ import type {
   Transform,
   WhiteBalance
 } from '../../shared/engine-types'
+import { unsupportedRaw } from '../../shared/engine-types'
 import { IPC, type EngineStatus } from '../../shared/ipc'
 
 export class EngineError extends Error {
@@ -50,6 +51,11 @@ export class EngineError extends Error {
   get field(): string | undefined {
     const d = this.detail?.['InvalidRequest']
     return d && typeof d['field'] === 'string' ? (d['field'] as string) : undefined
+  }
+
+  /** What to tell the user: the engine's words, or plainer ones where it has them. */
+  get userMessage(): string {
+    return unsupportedRaw(this.detail) ?? this.message
   }
 }
 

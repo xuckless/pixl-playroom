@@ -610,13 +610,15 @@ export function lensCorrection(l: LensSetting): LensCorrection | null {
     distortion = {
       model: p.distortion,
       geometry: profileGeometry(p, 'geometry'),
-      amount: round6(clamp(l.profile.distortion / 100, 0, 2))
+      amount: round6(clamp(l.profile.distortion / 100, 0, 2)),
+      scale: 1
     }
   } else if (l.distortion !== 0) {
     distortion = {
       model: { Poly3: { k1: round6((-clamp(l.distortion, -100, 100) / 100) * MANUAL_K1) } },
       geometry: MANUAL_GEOMETRY,
-      amount: 1
+      amount: 1,
+      scale: 1
     }
   }
   let lateral: LateralCa | null = null

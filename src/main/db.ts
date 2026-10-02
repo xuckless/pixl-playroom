@@ -319,7 +319,12 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   (db) => addColumns(db, 'photos', { added: 'REAL' }),
   // 11. A saved preset's masks and AI steps as instructions (looks/smart.ts),
   // run again on each photo it is applied to.
-  (db) => addColumns(db, 'presets', { smart: 'TEXT' })
+  (db) => addColumns(db, 'presets', { smart: 'TEXT' }),
+  // 12. RAWs are read by LibRaw since engine 0.16 (rawler before): one that
+  // could not be read is tried again.
+  (db) => {
+    db.exec('UPDATE photos SET failed_key = NULL, failed_reason = NULL WHERE is_raw = 1')
+  }
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */

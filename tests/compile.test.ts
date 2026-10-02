@@ -349,3 +349,47 @@ test('an aspect lock at the photo’s own shape is no crop: nothing to frame', (
   r.geometry.aspect = 6000 / 4000
   assert.equal(compile(r, ctx).framing, null)
 })
+
+test('a custom layer written before 0.16 gets each LUT its old domain rule', async () => {
+  const { withLutDomains } = await import('../src/shared/compile')
+  const layer = {
+    name: 'mine',
+    stages: [
+      {
+        space: 'LinearWorking',
+        ops: [
+          { Lut: { lut: { Path: '/a.cube' }, amount: 1 } },
+          { Lut: { lut: { Path: '/b.cube' }, amount: 1, out_of_domain: 'ExtendSlope' } },
+          {
+            Masked: {
+              mask: null,
+              opacity: 1,
+              ops: [{ Lut: { lut: { Cube: 'x' }, amount: 0.5 } }]
+            }
+          }
+        ]
+      }
+    ]
+  }
+  const out = withLutDomains(layer) as typeof layer
+  const ops = out.stages[0].ops as Record<string, Record<string, unknown>>[]
+  assert.equal(ops[0].Lut.out_of_domain, 'Clamp')
+  assert.equal(ops[1].Lut.out_of_domain, 'ExtendSlope')
+  const inner = (ops[2].Masked.ops as Record<string, Record<string, unknown>>[])[0]
+  assert.equal(inner.Lut.out_of_domain, 'Clamp')
+  assert.equal(out.name, 'mine')
+})
+
+test('a RAW the engine refuses by name is said plainly', async () => {
+  const { unsupportedRaw } = await import('../src/shared/engine-types')
+  assert.match(
+    unsupportedRaw({ Unsupported: { operation: 'raw frames', detail: '2 frames' } })!,
+    /several frames/
+  )
+  assert.match(
+    unsupportedRaw({ Unsupported: { operation: 'raw decode', detail: 'Foveon' } })!,
+    /isn't supported \(Foveon\)/
+  )
+  assert.equal(unsupportedRaw({ Unsupported: { operation: 'resize', detail: 'x' } }), null)
+  assert.equal(unsupportedRaw(undefined), null)
+})

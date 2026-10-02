@@ -108,15 +108,26 @@ export type Inspect =
 
 export type DngCrop = 'None' | 'ActiveArea' | 'Best'
 
+/**
+ * How many pixels a RAW develop makes: `Full` is one per photosite (the
+ * demosaic); `Cell` one per colour filter array cell (2 × 2 Bayer, 3 × 3
+ * X-Trans), each colour the mean of its photosites, no demosaic. A quarter
+ * (or a ninth) of the pixels, for previews.
+ */
+export type RawResolution = 'Full' | 'Cell'
+
 export type RawMode =
   | {
       Develop: {
         scaling: boolean
         demosaic: boolean
         white_balance: boolean
+        /** Without it the frame is camera RGB: the request must `Assign` a colour space. */
         calibrate: boolean
         srgb_gamma: boolean
         crop: DngCrop
+        /** `Cell` with `demosaic: false` is refused. */
+        resolution: RawResolution
       }
     }
   | 'EmbeddedPreview'
@@ -127,6 +138,7 @@ export type RawMode =
         highlights: 'Clip' | 'Unclipped' | 'Blend' | 'InpaintOpposed'
         crop: DngCrop
         denoise: Denoise | null
+        resolution: RawResolution
       }
     }
 
@@ -233,6 +245,7 @@ export type PngCompression = 'Fast' | 'Balanced' | 'Best'
 export type PngFilter = 'NoFilter' | 'Sub' | 'Up' | 'Average' | 'Paeth' | 'Adaptive'
 export type TiffCompression = 'None' | 'Lzw' | 'Deflate'
 export type DngCompression = 'Uncompressed' | 'Lossless'
+export type LinearDngCompression = 'Uncompressed' | { Lossless: { predictor: number } } | 'Deflate'
 
 export type Encode =
   | { JxlLossy: { distance: number; effort: number; threads: number } }
@@ -286,6 +299,12 @@ export type Encode =
     }
   /** Raw interleaved samples, no container; `Bytes` sink only. */
   | { Pixels: { sample: 'U8' | 'U16' | 'F16' | 'F32' } }
+  /**
+   * The rendered frame, every edit baked in, as a LinearRaw DNG for another
+   * raw editor: three channels, 16-bit or F32, the conversion's output linear
+   * light in primaries 1, 9 or 12.
+   */
+  | { LinearDng: { compression: LinearDngCompression } }
 
 /**
  * How a HEIF-family sink turns RGB into Y/Cb/Cr, stated in its `nclx` box.
@@ -306,6 +325,7 @@ export type EncodeVariant =
   | 'WebP'
   | 'Dng'
   | 'Pixels'
+  | 'LinearDng'
 
 /** The variant name of an `Encode` value. */
 export function encodeVariant(e: Encode): EncodeVariant {
@@ -596,6 +616,14 @@ export interface ChannelMixer {
 
 export type LutRef = { Path: string } | { Cube: string }
 
+/**
+ * What a value past the top of a LUT's table gets (below the domain it is
+ * always clamped). `Clamp` is 0.15's rule, bit for bit; `ScaleHeadroom`
+ * keeps the channels' ratios and the table's own values at and below white,
+ * for an HDR frame; `ExtendSlope` carries the table's edge slope on.
+ */
+export type LutOutOfDomain = 'Clamp' | 'ScaleHeadroom' | 'ExtendSlope'
+
 /** A fringe hue (degrees) and how much of it is neutralised, 0…1. */
 export interface FringeBand {
   hue: KeyBand
@@ -621,7 +649,7 @@ export interface Fill {
 }
 
 export type GradeOp =
-  | { Lut: { lut: LutRef; amount: number } }
+  | { Lut: { lut: LutRef; amount: number; out_of_domain: LutOutOfDomain } }
   | { Primary: Primary }
   | { Qualifier: { key: HslKey; correction: Primary } }
   | { Tone: Tone }
@@ -706,15 +734,84 @@ export interface EdgeKey {
   high: number
 }
 
-export type MaskShape =
-  { Polygon: Polygon } | { Range: HslKey } | { Raster: RasterMask } | { Edges: EdgeKey }
+/** How a gradient's coverage falls across its transition; stated every time. */
+export type Ramp = 'Linear' | 'Smoothstep'
 
+/**
+ * Full coverage on `from`'s side, none past `to`, perpendicular to `from → to`
+ * in pixels. Points are fractions of the frame, −1…2 each; `from ≠ to`.
+ */
+export interface LinearGradient {
+  from: Point
+  to: Point
+  ramp: Ramp
+}
+
+/**
+ * Full on the line through `centre`, none at the lines through `from` and
+ * `to` (each side its own width). `centre` must project strictly between them.
+ */
+export interface BidirectionalGradient {
+  from: Point
+  centre: Point
+  to: Point
+  ramp: Ramp
+}
+
+/**
+ * Full inside the ellipse scaled by `1 − feather`, none outside the drawn
+ * one (Lightroom's radial). Radii are fractions of the shorter side, (0, 4];
+ * `rotation` degrees clockwise on screen.
+ */
+export interface RadialGradient {
+  centre: Point
+  radii: { x: number; y: number }
+  rotation: number
+  feather: number
+  ramp: Ramp
+}
+
+/** A band of a depth map (the map's own 0…1 units), with smoothstep ramps `softness` wide. */
+export interface DepthRange {
+  depth: { Raster: RasterRef }
+  quantity: 'Depth' | 'Disparity'
+  near: number
+  far: number
+  softness: number
+  resampler: Resampler
+}
+
+export type MaskShape =
+  | { Polygon: Polygon }
+  | { Range: HslKey }
+  | { Raster: RasterMask }
+  | { Edges: EdgeKey }
+  | { LinearGradient: LinearGradient }
+  | { RadialGradient: RadialGradient }
+  | { BidirectionalGradient: BidirectionalGradient }
+  | { DepthRange: DepthRange }
+
+/**
+ * Snap a component's edge to the picture's, after its feather: a guided
+ * filter of its plane by the luminance in `Mask.space` (which a refined
+ * component needs), then a contraction. `radius` 0.0005…0.05 and `contract`
+ * −0.05…0.05 (positive shrinks) are fractions of the shorter side; `epsilon`
+ * 1e-6…1 is how strong an edge must be to hold the selection.
+ */
+export interface Refine {
+  radius: number
+  epsilon: number
+  contract: number
+}
+
+/** Built in this order: shape → feather → refine → invert → opacity → mode. */
 export interface MaskComponent {
   shape: MaskShape
   mode: MaskMode
   opacity: number
   invert: boolean
   feather: Feather
+  refine: Refine | null
 }
 
 export interface Mask {
@@ -787,12 +884,42 @@ export type DistortionModel =
   | { PtLens: { a: number; b: number; c: number } }
   | { Rectilinear: WarpRectilinear }
   | { RectilinearPlanes: { red: WarpRectilinear; green: WarpRectilinear; blue: WarpRectilinear } }
+  /** Makes a fisheye rectilinear (a defish). */
+  | { Fisheye: Fisheye }
+
+/** The projection `g(θ)` a fisheye was made with (Lensfun's `fisheye_thoby` is Thoby 1.47, 0.713). */
+export type FisheyeProjection =
+  | 'Equidistant'
+  | 'Equisolid'
+  | 'Orthographic'
+  | 'Stereographic'
+  | { Thoby: { k1: number; k2: number } }
+
+/** Lensfun's radial polynomials, on a fisheye's own radius. */
+export type FisheyePolynomial =
+  | { Poly3: { k1: number } }
+  | { Poly5: { k1: number; k2: number } }
+  | { PtLens: { a: number; b: number; c: number } }
+
+export interface Fisheye {
+  projection: FisheyeProjection
+  /** In the geometry's unit, > 0 (Lensfun's normalised focal length with its normalisation). */
+  focal: number
+  /** The lens's departure from its ideal projection; null is the ideal one. */
+  polynomial: FisheyePolynomial | null
+}
 
 export interface Distortion {
   model: DistortionModel
   geometry: LensGeometry
   /** 0…2; 1 applies the model as stated. */
   amount: number
+  /**
+   * 0.1…10: the corrected frame's magnification about the model's centre.
+   * 1 keeps the picture's scale (0.15's render, byte for byte); below 1
+   * shows more of the field and leaves corners to `outside`.
+   */
+  scale: number
 }
 
 export interface TcaPoly3 {
@@ -821,6 +948,20 @@ export interface Vignetting {
   amount: number
 }
 
+/**
+ * A gain plane applied to the light at the source, before the warp: a flat
+ * shot's falloff (`Divide`) or a gain grid (`Multiply`). The plane is an 8 or
+ * 16-bit grey or RGB PNG at the canvas's aspect; a sample is
+ * `code / max × full_scale` (0…64]; `amount` 0…2.
+ */
+export interface FlatField {
+  plane: RasterRef
+  resampler: Resampler
+  apply: 'Divide' | 'Multiply'
+  full_scale: number
+  amount: number
+}
+
 /** `outside` and `resampler` are required exactly when distortion or lateral CA is set. */
 export interface LensCorrection {
   distortion: Distortion | null
@@ -828,6 +969,7 @@ export interface LensCorrection {
   vignetting: Vignetting | null
   outside: Outside | null
   resampler: Resampler | null
+  flat_field?: FlatField | null
 }
 
 export interface LensReport {
@@ -1192,6 +1334,51 @@ export interface ConvertReport {
     read: Record<string, unknown> | null
     written: Record<string, unknown> | null
   } | null
+  /** Present when a `RawMode::Scene` develop ran. */
+  raw: RawReport | null
+  /** Present when a DNG was written (`Dng`, `LinearDng`): what it holds and left out. */
+  dng: DngWritten | null
+}
+
+/** What a `Scene` develop used (the parts Playroom reads). */
+export interface RawReport {
+  white_temperature_kelvin: number | null
+  white_tint: number | null
+  demosaic: string
+  /** What decoded the file: `"LibRaw 0.22.2"` or `"PIXL DNG reader (DNG 1.7.1)"`. */
+  decoder: string
+}
+
+/** What a DNG PIXL wrote holds, and what it left out. */
+export interface DngWritten {
+  compression: string
+  width: number
+  height: number
+  samples_per_pixel: number
+  floating_point: boolean
+  white_level: number[]
+  black_repeat: number[]
+  baseline_exposure: number
+  matrices: string[]
+  preview: boolean
+  thumbnail: boolean
+  original_embedded: boolean
+  maker_note: boolean
+  opcode_lists: number
+  notes: string[]
+}
+
+/** What a DNG says about itself; its opcode lists are named, never run. */
+export interface DngInfo {
+  version: string
+  compression: string
+  linear: boolean
+  floating_point: boolean
+  baseline_exposure: number
+  has_forward_matrix: boolean
+  opcodes1: number[]
+  opcodes2: number[]
+  opcodes3: number[]
 }
 
 export interface JpegInfo {
@@ -1278,6 +1465,8 @@ export interface SourceInfo {
   gain_map: GainMapInfo | null
   /** What the file says about the lens. The engine never looks up a correction. */
   lens: ShotLens | null
+  /** A DNG's own description (PIXL reads DNG itself since 0.16). */
+  dng: DngInfo | null
 }
 
 export interface ShotLens {
@@ -1360,6 +1549,148 @@ export interface EngineErrorShape {
   detail?: PixlErrorDetail
 }
 
+/**
+ * A RAW the engine refuses by name (0.16, LibRaw): several frames in one
+ * file (dual pixel, pixel shift, a burst), or a format or compression it
+ * has no decoder for (Foveon, SuperCCD, IIQ, sRAW/mRAW, floating-point
+ * camera RAW). Null for anything else.
+ */
+export function unsupportedRaw(detail: EngineErrorShape['detail']): string | null {
+  const d = detail?.['Unsupported']
+  const op = d && typeof d['operation'] === 'string' ? d['operation'] : null
+  if (op === 'raw frames')
+    return 'This RAW holds several frames (dual pixel, pixel shift or a burst), which Playroom cannot develop yet.'
+  if (op === 'raw decode')
+    return `This RAW format isn't supported${typeof d?.['detail'] === 'string' && d['detail'] ? ` (${d['detail']})` : ''}.`
+  return null
+}
+
+// ── Segmentation and prompts ─────────────────────────────────────────────────
+
+/** How a model's coarse plane reaches the frame's (or `plane_longest`'s) size. */
+export type PlaneUpsample =
+  { Guided: { radius: number; epsilon: number } } | { Resample: { kernel: Resampler } }
+
+export interface PlanePng {
+  compression: PngCompression
+  filter: PngFilter
+}
+
+export interface SegmentPlane {
+  name: string
+  tensor: string
+  index: number
+  /** 16-bit grey PNG, plane_width × plane_height: a Buffer from the binding. */
+  png: Uint8Array
+  coverage: number
+  raw_min: number
+  raw_max: number
+  clamped: number
+  /** With `bounds_at`: the box around every sample at or above it, frame pixels. */
+  bounds: MaskBounds | null
+}
+
+export interface SegmentReport {
+  planes: SegmentPlane[]
+  frame_width: number
+  frame_height: number
+  /** Every plane's size: the frame's, or `plane_longest`'s. */
+  plane_width: number
+  plane_height: number
+  model_load_ms: number
+  session_wait_ms: number | null
+}
+
+/** A box and clicks, fractions of the embedding's frame. */
+export interface Prompt {
+  rect: CropRect | null
+  points: { at: Point; label: 'Foreground' | 'Background' }[]
+}
+
+export interface PromptEmbeddingRequest {
+  source: Source
+  input: InputFormat
+  raw: RawMode | null
+  gain_map: GainMapMode | null
+  /** Applied straight after decode: the prompts and planes are fractions of the oriented frame. */
+  orientation: Orientation
+  /** The lens the `convert` that uses the planes names. */
+  lens: LensCorrection | null
+  encoder: Record<string, unknown>
+  /** Keep the frame's luminance, which a `Guided` decode needs. */
+  guide: boolean
+  threads: number
+}
+
+export interface PromptSegmentRequest {
+  decoder: Record<string, unknown>
+  prompt: Prompt
+  candidates: 'All' | 'HighestPredictedIou' | { Index: number }
+  activation: 'Sigmoid' | 'None'
+  upsample: PlaneUpsample
+  bounds_at: number | null
+  png: PlanePng
+  threads: number
+  /** The planes at this longer side (the frame's aspect), for a live preview; null is the frame's. */
+  plane_longest?: number | null
+}
+
+export interface PromptPlane {
+  candidate: number
+  predicted_iou: number
+  /** 16-bit grey PNG, plane_width × plane_height. */
+  png: Uint8Array
+  coverage: number
+  bounds: MaskBounds | null
+  logits_width: number
+  logits_height: number
+  /** The decoder's raw answer: given back as `maskInput` to refine it. */
+  logits: Float32Array
+}
+
+export interface PromptSegmentReport {
+  planes: PromptPlane[]
+  frame_width: number
+  frame_height: number
+  mask_input: boolean
+  model_load_ms: number
+  session_wait_ms: number | null
+  model_ms: number
+  plane_width: number
+  plane_height: number
+}
+
+export interface EmbeddingProvenance {
+  encoder_sha256: string
+  frame_width: number
+  frame_height: number
+  orientation: string
+  lens_applied: boolean
+  guide: boolean
+}
+
+/** A model loaded once (native memory, invisible to V8: `close()` it). */
+export interface ModelSession {
+  readonly model: ModelRef
+  readonly loadMs: number
+  readonly closed: boolean
+  close(): void
+}
+
+/** What SAM's encoder made of one frame (16 MB and up, native: `close()` it). */
+export interface PromptEmbedding {
+  readonly provenance: EmbeddingProvenance
+  readonly closed: boolean
+  toBytes(): Uint8Array
+  close(): void
+}
+
+/** What the model calls take beside the request. */
+export interface ModelCallOptions {
+  signal?: AbortSignal
+  sessions?: ModelSession[]
+}
+
 // ── The binding ──────────────────────────────────────────────────────────────
 
 /** The contract the Node binding fulfils. */
@@ -1385,8 +1716,24 @@ export interface PixlEngineModule {
   suggestUpright(request: Record<string, unknown>): Promise<Record<string, unknown>>
   suggestLateralCa(request: Record<string, unknown>): Promise<Record<string, unknown>>
   suggestHealSource(request: Record<string, unknown>): Promise<Record<string, unknown>>
-  segment(request: Record<string, unknown>): Promise<Record<string, unknown>>
-  benchmark(request: Record<string, unknown>): Promise<Record<string, unknown>>
+  segment(request: Record<string, unknown>, options?: ModelCallOptions): Promise<SegmentReport>
+  benchmark(
+    request: Record<string, unknown>,
+    options?: { signal?: AbortSignal }
+  ): Promise<Record<string, unknown>>
+  /** Load a model once, for the calls that name it in `sessions`. */
+  loadModelSession(model: ModelRef): Promise<ModelSession>
+  /** SAM's encoder over one frame: the embedding every `segmentPrompt` on it takes. */
+  promptEmbedding(
+    request: PromptEmbeddingRequest,
+    options?: ModelCallOptions
+  ): Promise<PromptEmbedding>
+  promptEmbeddingFromBytes(bytes: Uint8Array): PromptEmbedding
+  /** A box and clicks on an embedding's frame: the decoder's candidate masks. */
+  segmentPrompt(
+    request: PromptSegmentRequest,
+    options: ModelCallOptions & { embedding: PromptEmbedding; maskInput?: Float32Array }
+  ): Promise<PromptSegmentReport>
   /** The ONNX Runtime shipped in the platform package. */
   bundledRuntime(): { library: string; version: string; providers: string[] }
 }

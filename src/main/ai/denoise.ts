@@ -25,7 +25,7 @@ import { join } from 'path'
 import type { AiStartRequest } from '../../shared/ai'
 import { estimate } from '../../shared/ai'
 import type { EnhancerRef } from '../../shared/engine-types'
-import { pixelStepRefusal, type PixelStep } from '../../shared/pixels'
+import { pixelStepRefusal, RAW_DEVELOP_REV, type PixelStep } from '../../shared/pixels'
 import { hash32, newId, type AiDenoiseModel, type Recipe } from '../../shared/recipe'
 import { exists } from '../exists'
 import type { EngineClient } from '../engine/client'
@@ -319,7 +319,11 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         width: master.width,
         height: master.height,
         rect: null,
-        params: { model: req.model, lossless }
+        params: {
+          model: req.model,
+          lossless,
+          ...(row.is_raw === 1 ? { develop: RAW_DEVELOP_REV } : {})
+        }
       }
       // Computed on the steps there were when it began: it goes after them,
       // under any (a heal) added while it ran.
