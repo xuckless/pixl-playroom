@@ -1770,6 +1770,58 @@ export interface PreviewFrame {
   data: Uint8Array
 }
 
+/**
+ * SAM 2.1's calls, whose objects (a loaded model, an embedding, a decode's
+ * logits) are native and stay in the host: main names them by id.
+ *
+ * - `load`: the model `ref` loaded once as session `session` (kept while
+ *   its ref is the same).
+ * - `embed`: the encoder (session `session`) over a frame, kept as
+ *   embedding `id` (the host keeps the few most recent).
+ * - `decode`: the decoder (session `session`) on embedding `embedding`. On
+ *   `lane` (a selection) the answer's logits are kept (`keep`) and fed to
+ *   the next decode that asks (`maskInput`), so clicks refine the mask.
+ * - `release`: let go of embeddings, lanes and sessions.
+ */
+export type SamOp =
+  | { op: 'load'; session: string; ref: ModelRef }
+  | { op: 'embed'; id: string; session: string; request: PromptEmbeddingRequest }
+  | {
+      op: 'decode'
+      embedding: string
+      session: string
+      lane: string
+      request: PromptSegmentRequest
+      maskInput: boolean
+      keep: boolean
+    }
+  | { op: 'release'; embeddings?: string[]; lanes?: string[]; sessions?: string[] }
+
+/** What a `sam` call answers. */
+export type SamResult =
+  | { op: 'load'; loadMs: number }
+  | { op: 'embed'; provenance: EmbeddingProvenance; modelMs: number | null }
+  | {
+      op: 'decode'
+      planes: {
+        png: Uint8Array
+        predicted_iou: number
+        coverage: number
+        bounds: MaskBounds | null
+      }[]
+      plane_width: number
+      plane_height: number
+      model_ms: number
+    }
+  | { op: 'release' }
+
+export interface EngineSamMessage {
+  kind: 'sam'
+  id: number
+  call: SamOp
+  cancellable?: boolean
+}
+
 /** Stop request `id`: the engine returns `Cancelled` at its next stage boundary. */
 export interface EngineCancelMessage {
   kind: 'cancel'
@@ -1783,6 +1835,8 @@ export interface EngineHelloMessage {
   enhance?: boolean
   /** The ONNX Runtime bundled with the addon (0.15+): what model steps run on. */
   runtime?: { library: string; version: string; providers: string[] }
+  /** The binding has SAM 2.1's prompt calls (0.16+). */
+  prompt?: boolean
   reason?: string
   /** The load error's code when the engine is unavailable, e.g. `VersionMismatch`. */
   code?: string
@@ -1797,4 +1851,5 @@ export interface EngineResponseMessage {
 }
 
 export type HostToMain = EngineHelloMessage | EngineResponseMessage
-export type MainToHost = EngineRequestMessage | EngineCancelMessage | EnginePortMessage
+export type MainToHost =
+  EngineRequestMessage | EngineSamMessage | EngineCancelMessage | EnginePortMessage

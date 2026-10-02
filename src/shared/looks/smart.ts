@@ -15,6 +15,7 @@
  * Pure: shared by the catalog, the look file reader and the runner.
  */
 import type { KeyBand, MaskMode } from '../engine-types'
+import { SKY_BY_CLICK } from '../ai'
 import { gradientPlaneSize } from '../gradients'
 import type { PixelStep } from '../pixels'
 import {
@@ -150,9 +151,14 @@ export interface SmartBuild {
   subjectModel: boolean
   /** The DRUNet denoise model is installed. */
   drunetModel: boolean
+  /** SAM 2.1's model is installed (select by clicks or a box). */
+  samModel?: boolean
   /** Enhance (NAFNet deblur) is available. */
   enhance: boolean
-  /** In the engine release after 0.15: E28 sky, E30 people and SAM2, E45 detector, NAFNet denoise. */
+  /**
+   * What the engine has: SAM 2.1 came with 0.16; a sky model (E28), people's
+   * parts (E30), the detector (E45) and NAFNet denoise are still to come.
+   */
   engine: { sky: boolean; people: boolean; sam2: boolean; detector: boolean; nafnet: boolean }
 }
 
@@ -160,6 +166,12 @@ export function smartReadiness(b: SmartBuild): SmartReadiness {
   const model = (installed: boolean): Readiness =>
     !b.models ? 'needs-engine' : installed ? 'ready' : 'needs-model'
   const engine = (has: boolean): Readiness => (b.models && has ? 'ready' : 'needs-engine')
+  // SAM 2.1: the engine has it, then its model has to be here.
+  const sam: Readiness = !(b.models && b.engine.sam2)
+    ? 'needs-engine'
+    : b.samModel
+      ? 'ready'
+      : 'needs-model'
   return {
     range: 'ready',
     linear: 'ready',
@@ -167,10 +179,11 @@ export function smartReadiness(b: SmartBuild): SmartReadiness {
     radial: 'ready',
     subject: model(b.subjectModel),
     background: model(b.subjectModel),
-    sky: engine(b.engine.sky),
+    // Without a sky model the user clicks the sky, and SAM 2.1 selects it.
+    sky: b.engine.sky ? engine(true) : SKY_BY_CLICK ? sam : 'needs-engine',
     person: engine(b.engine.people),
-    object: engine(b.engine.detector && b.engine.sam2),
-    pick: engine(b.engine.sam2),
+    object: b.engine.detector ? sam : 'needs-engine',
+    pick: sam,
     drunet: model(b.drunetModel),
     nafnet: engine(b.engine.nafnet),
     deblur: b.enhance ? 'ready' : 'needs-engine'
@@ -425,6 +438,11 @@ export function planSmart(smart: SmartPart, ready: SmartReadiness, photo: SmartP
           mask: m.id,
           component: componentOf(p, feather, plane)
         })
+      } else if (t.kind === 'sky' && SKY_BY_CLICK) {
+        // No sky model yet: the user is asked to click it, and SAM 2.1 selects it.
+        plan.ops.push({ kind: 'segment', ...at, target: t.kind })
+        plan.etaMs += rates.sam2Ms
+        plan.picks++
       } else if (t.kind === 'subject' || t.kind === 'background' || t.kind === 'sky') {
         plan.ops.push({ kind: 'segment', ...at, target: t.kind })
         plan.etaMs += rates.segmentMs
@@ -753,6 +771,8 @@ function partOf(c: MaskComponentSetting): MaskPart | string {
           return `“${src.part}” is not a part we can find`
         return { target: { kind: 'person', part: src.part as PersonPart }, ...join }
       }
+      // The sky clicked by hand (SKY_BY_CLICK) is still the sky to ask for.
+      if (src.via === 'sky') return { target: { kind: 'sky' }, ...join }
       if (!src.label) return 'an object pointed at by hand has no name to look for'
       return { target: { kind: 'object', label: src.label }, ...join }
     }

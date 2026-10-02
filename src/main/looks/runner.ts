@@ -9,7 +9,7 @@
  * What it needs from the app comes in as `RunnerDeps`, so it can be tested
  * without the engine or a window.
  */
-import type { AiJobEvent, AiStartRequest } from '../../shared/ai'
+import { SKY_BY_CLICK, type AiJobEvent, type AiStartRequest } from '../../shared/ai'
 import { DEFAULT_ENHANCE } from '../../shared/enhance'
 import type { MaskMode } from '../../shared/engine-types'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../../shared/looks/run'
@@ -164,6 +164,25 @@ export class LookRuns {
           l.enabled = true
         })
       case 'segment': {
+        // No sky model yet (E28): the user clicks the sky, and SAM 2.1 selects it.
+        if (op.target === 'sky' && SKY_BY_CLICK) {
+          if (!this.deps.promptJob) throw new Error(NOT_YET)
+          const a = await this.ask(run, index, 'sky', look)
+          if (a.kind === 'skip') throw new Error('skipped')
+          await this.job(
+            run,
+            this.deps.promptJob({
+              key,
+              group,
+              layerId: op.layerId,
+              mode: op.mode,
+              label: 'Sky',
+              prompt: a.kind === 'point' ? { kind: 'point', point: a.point } : a
+            })
+          )
+          if (op.invert) await this.invertLast(key, op.layerId)
+          return
+        }
         await this.job(
           run,
           this.deps.startJob({

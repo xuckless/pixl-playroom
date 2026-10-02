@@ -233,6 +233,13 @@ export const IPC = {
     capabilities: 'ai:capabilities',
     /** main → renderer: a job's progress, its end and its result */
     event: 'ai:event'
+  },
+  /** Select by clicks, a box or strokes (SAM 2.1): main/select/service.ts. */
+  select: {
+    open: 'select:open',
+    decode: 'select:decode',
+    commit: 'select:commit',
+    close: 'select:close'
   }
 } as const
 
@@ -251,6 +258,8 @@ export interface EngineStatus {
   enhance?: boolean
   /** The ONNX Runtime bundled with the engine: what model steps run on. */
   runtime?: { library: string; version: string; providers: string[] }
+  /** The engine has SAM 2.1's prompt calls (0.16+). */
+  prompt?: boolean
   reason?: string
   /** Why the engine is unavailable, when the load named it (e.g. `VersionMismatch`). */
   code?: string

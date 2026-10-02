@@ -8,6 +8,8 @@ import dockIcon from '../../resources/icon-dock.png?asset'
 import { startCrashReporting } from './crash'
 import { onRenderScale, settleScale, watchDisplay } from './display'
 import { EngineClient } from './engine/client'
+import { SelectService } from './select/service'
+import { PromptRunner } from './ai/prompt'
 import { endExiftool } from './exiftool'
 import { externalAllowed } from './guard'
 import { AiJobs } from './ai/jobs'
@@ -108,6 +110,12 @@ const engine = new EngineClient('interactive', 8)
 const bgEngine = new EngineClient('background', 4, true)
 /** AI jobs, one at a time: started when first needed, restarted to cancel one. */
 const aiEngine = new EngineClient('ai', 4, true)
+/**
+ * Select by clicks, a box or strokes (SAM 2.1): started when first needed,
+ * at normal priority and never held behind a preview (a hover follows the
+ * pointer), put to sleep when idle (main/select/service.ts).
+ */
+const selectEngine = new EngineClient('select', 4)
 // One scheduler across them: new background and AI work waits (briefly)
 // while a preview is being rendered, rather than splitting the cores with it.
 bgEngine.holdFor(engine)
@@ -230,8 +238,10 @@ app.whenReady().then(() => {
   const lenses = new LensProfileStore()
   void lenses.start()
   const exporter = new Exporter(library, sessions, bgEngine)
+  const select = new SelectService(selectEngine, bgEngine, library, planes, models, () => sessions)
   const ai = new AiJobs(
     {
+      prompt: new PromptRunner(select, models),
       enhance: new EnhanceRunner(
         library,
         aiEngine,
@@ -258,7 +268,8 @@ app.whenReady().then(() => {
     bgEngine,
     aiEngine,
     models,
-    lenses
+    lenses,
+    select
   })
   onOpenPaths((paths) => mainWindow?.webContents.send(IPC.app.openPaths, paths))
 
@@ -307,6 +318,7 @@ app.on('before-quit', (e) => {
       engine.stop()
       bgEngine.stop()
       aiEngine.stop()
+      selectEngine.stop()
       pixels.close()
       app.quit()
     }

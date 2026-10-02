@@ -160,18 +160,18 @@ test('a mask part that fails takes the mask off and skips its scoped step; the r
       {
         kind: 'segment',
         layerId: h.shell.id,
-        mask: 'sky',
-        target: 'sky',
+        mask: 'subject',
+        target: 'subject',
         mode: 'Add',
         invert: false
       },
-      { kind: 'enable', layerId: h.shell.id, mask: 'sky' },
+      { kind: 'enable', layerId: h.shell.id, mask: 'subject' },
       { kind: 'denoise', model: 'drunet', strength: 40, layerId: h.shell.id },
       { kind: 'denoise', model: 'drunet', strength: 20, layerId: null }
     ]
   })
   await h.tick()
-  h.end('j1', 'error', 'No sky model ships yet')
+  h.end('j1', 'error', 'No clear subject in this photo')
   await h.tick()
   await h.tick()
   assert.equal(
@@ -186,7 +186,9 @@ test('a mask part that fails takes the mask off and skips its scoped step; the r
   const end = h.events.at(-1)!
   assert.ok(end.kind === 'end')
   assert.equal(end.phase, 'done')
-  assert.deepEqual(end.failed, [{ label: 'Finding the sky', why: 'No sky model ships yet' }])
+  assert.deepEqual(end.failed, [
+    { label: 'Finding the subject', why: 'No clear subject in this photo' }
+  ])
 })
 
 test('cancelling stops the job under way and runs nothing after', async () => {

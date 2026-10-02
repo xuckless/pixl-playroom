@@ -72,6 +72,8 @@ import { accountStatus, cancelSignIn, signIn, signOut } from './account'
 import { AccountError } from './account/api'
 import { OAuthError } from './account/oauth'
 import { takeOpens } from './open'
+import { SAM_MODEL, type SelectService } from './select/service'
+import { boxAround, type PromptVia, type SelectDecode } from '../shared/prompt'
 import { paths } from './paths'
 import type { DevelopSessions } from './render'
 import { readSettings } from './settings'
@@ -137,6 +139,8 @@ export interface Services {
   aiEngine: EngineClient
   models: ModelStore
   lenses: LensProfileStore
+  /** Select by clicks, a box or strokes (SAM 2.1), on its own engine host. */
+  select: SelectService
 }
 
 /** A photo's base frame (upright, before the user's turns): the open session's, else its proxies'. */
@@ -571,9 +575,29 @@ export function registerIpc(s: Services): void {
     megapixels: async (key) => {
       const f = await baseFrame(s, key)
       return (f.width * f.height) / 1e6
+    },
+    // SAM 2.1 (engine 0.16) selects what the user points at. Finding an
+    // object by its name needs the detector (E45), and people's parts their
+    // model (E30): neither has shipped, so `label` waits and `personJob` is
+    // not given.
+    promptJob: (r) => {
+      if (r.prompt.kind === 'label')
+        throw new Error('finding an object by name needs the next engine update')
+      const prompt =
+        r.prompt.kind === 'point'
+          ? { rect: null, points: [{ ...r.prompt.point, fg: true }] }
+          : { rect: boxAround([r.prompt.from, r.prompt.to]), points: [] }
+      if (!prompt.rect && prompt.points.length === 0) throw new Error('nothing was pointed at')
+      return s.ai.start({
+        task: 'prompt',
+        key: r.key,
+        group: r.group,
+        label: r.label,
+        prompt,
+        via: r.label.toLowerCase() === 'sky' ? 'sky' : 'look',
+        into: { layerId: r.layerId, mode: r.mode }
+      })
     }
-    // SAM2 prompts, the detector and the people model come with the next
-    // engine (E30, E45): `promptJob` and `personJob` are given then.
   })
   handle(IPC.looks.run, (req: LookRunRequest) => runs.start(req))
   handle(IPC.looks.cancelRun, (by: { runId?: string; key?: string }) => {
@@ -677,30 +701,51 @@ export function registerIpc(s: Services): void {
     const subject = (await s.models.installed('u2net')) || (await s.models.installed('u2netp'))
     // Models run on the engine's bundled runtime; each denoise model is
     // offered for download where it is picked (Detail → Noise reduction).
-    const models = s.bgEngine.getStatus().enhance === true
+    const status = s.bgEngine.getStatus()
+    const models = status.enhance === true
     const segment = models && subject
+    // SAM 2.1 came with engine 0.16: the binding has its calls.
+    const sam2 = models && status.prompt === true
+    const samModel = await s.select.installed()
     const smart = smartReadiness({
       models,
       subjectModel: subject,
       drunetModel: await s.models.installed('drunet-color'),
+      samModel,
       enhance: enhance.available,
-      // The engine release after 0.15 brings these (E28 sky, E30 people and
-      // SAM2, E45 the detector, NAFNet denoise); they turn on with the
-      // binding that has them. Until then smart looks skip what needs them.
-      engine: { sky: false, people: false, sam2: false, detector: false, nafnet: false }
+      // Still to come: a sky model (E28; meanwhile the sky is clicked,
+      // SKY_BY_CLICK), people's parts (E30), the detector (E45) and NAFNet
+      // denoise. They turn on with the binding that has them.
+      engine: { sky: false, people: false, sam2, detector: false, nafnet: false }
     })
     return {
       enhance: enhance.available,
       segment,
       denoise: models,
+      prompt: sam2 && samModel,
       smart,
       why: {
         ...(enhance.available ? {} : { enhance: enhance.reason }),
         ...(segment
           ? {}
           : { segment: `download ${modelName(s.models.entry('u2netp'))} in Settings → AI models` }),
-        ...(models ? {} : { denoise: 'this engine build runs no models' })
+        ...(models ? {} : { denoise: 'this engine build runs no models' }),
+        ...(sam2 && samModel
+          ? {}
+          : {
+              prompt: sam2
+                ? `download ${modelName(s.models.entry(SAM_MODEL))}`
+                : 'this engine build has no prompted segmentation'
+            })
       }
     }
   })
+
+  // ── select by clicks, a box or strokes (SAM 2.1) ──
+  handle(IPC.select.open, (key: string) => s.select.open(key))
+  handle(IPC.select.decode, (selId: string, req: SelectDecode) => s.select.decode(selId, req))
+  handle(IPC.select.commit, (selId: string, source: { label?: string; via: PromptVia }) =>
+    s.select.commit(selId, source)
+  )
+  handle(IPC.select.close, (selId: string) => s.select.close(selId))
 }

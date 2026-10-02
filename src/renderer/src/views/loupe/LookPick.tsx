@@ -7,6 +7,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import type { FramePoint } from '../../../../shared/looks/smart'
 import { displayToBase, normalisedIn, type Rect, type ViewGeometry } from '../../../../shared/view'
+import { boxAround } from '../../../../shared/prompt'
 import { answerPick } from '../../lib/applyLook'
 import { useDevelop } from '../../state/develop'
 import { useLooks } from '../../state/looks'
@@ -72,7 +73,20 @@ export const LookPick = memo(function LookPick({
     if (!d) return
     if (Math.hypot(d.x1 - d.x0, d.y1 - d.y0) < CLICK_PX)
       return answerPick({ kind: 'point', point: toBase(d.x0, d.y0) })
-    answerPick({ kind: 'box', from: toBase(d.x0, d.y0), to: toBase(d.x1, d.y1) })
+    // The box on screen, as the base frame's box around its four corners: on
+    // a straightened or turned view two corners alone would cut it short.
+    const r = boxAround([
+      toBase(d.x0, d.y0),
+      toBase(d.x1, d.y0),
+      toBase(d.x0, d.y1),
+      toBase(d.x1, d.y1)
+    ])
+    if (!r) return answerPick({ kind: 'point', point: toBase(d.x0, d.y0) })
+    answerPick({
+      kind: 'box',
+      from: { x: r.x, y: r.y },
+      to: { x: r.x + r.width, y: r.y + r.height }
+    })
   }
 
   const box = drag && {

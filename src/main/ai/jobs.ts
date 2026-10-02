@@ -1,6 +1,8 @@
 /**
  * The AI job queue: segmenting, denoising and enhancing each take seconds
- * and all the machine's threads, so jobs run one at a time, oldest first.
+ * and all the machine's threads, so jobs run one at a time, oldest first,
+ * in their lane: a prompt (SAM 2.1, on its own engine host) has a lane of
+ * its own, so a click never waits behind a minutes-long denoise.
  * Each belongs to a photo and says how it is getting on (its stage, its
  * progress, real or estimated) to every window; cancelling one aborts its
  * signal, which the runner answers by stopping its model (killing the
@@ -10,7 +12,7 @@ import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import {
   overallProgress,
-  runOrder,
+  toStart,
   type AiJobEvent,
   type AiResult,
   type AiStage,
@@ -37,6 +39,8 @@ export interface AiContext {
 
 export interface AiRunner<R extends AiStartRequest = AiStartRequest> {
   task: R['task']
+  /** The queue it waits in (one job at a time each): 'model' unless it says. */
+  lane?: 'model' | 'select'
   stages(req: R): AiStage[]
   /** The words over the scan: "Segmenting" · "Subject". */
   title(req: R): { title: string; subject?: string }
@@ -67,7 +71,8 @@ let nextId = 1
 
 export class AiJobs {
   private readonly jobs = new Map<string, Job>()
-  private running: string | null = null
+  /** The job running in each lane. */
+  private readonly running = new Map<string, string>()
   private readonly ended = new Set<(e: AiJobEvent) => void>()
 
   constructor(
@@ -133,18 +138,25 @@ export class AiJobs {
     setTimeout(() => this.jobs.delete(job.event.jobId), KEEP_FINISHED_MS)
   }
 
+  private laneOf(req: AiStartRequest): string {
+    return this.runners[req.task]?.lane ?? 'model'
+  }
+
   private pump(): void {
-    if (this.running) return
-    const next = runOrder(
-      [...this.jobs.values()].map((j) => ({ ...j, phase: j.event.phase }))
-    ).find((j) => j.phase === 'queued')
-    if (!next) return
-    const job = this.jobs.get(next.event.jobId)!
-    this.running = job.event.jobId
-    void this.run(job).finally(() => {
-      this.running = null
-      this.pump()
-    })
+    const ready = toStart(
+      [...this.jobs.values()].map((j) => ({ ...j, phase: j.event.phase })),
+      new Set(this.running.keys()),
+      (j) => this.laneOf(j.req)
+    )
+    for (const next of ready) {
+      const lane = this.laneOf(next.req)
+      const job = this.jobs.get(next.event.jobId)!
+      this.running.set(lane, job.event.jobId)
+      void this.run(job).finally(() => {
+        this.running.delete(lane)
+        this.pump()
+      })
+    }
   }
 
   private async run(job: Job): Promise<void> {

@@ -9,6 +9,7 @@
  */
 import type { FramePoint, PlanOp, SmartRates } from './smart'
 import { SMART_RATES } from './smart'
+import { SKY_BY_CLICK } from '../ai'
 
 export interface LookRunRequest {
   key: string
@@ -56,7 +57,8 @@ export function opLabel(op: PlanOp): string {
     case 'enable':
       return 'Mask ready'
     case 'segment':
-      return op.target === 'sky' ? 'Finding the sky' : 'Finding the subject'
+      if (op.target !== 'sky') return 'Finding the subject'
+      return SKY_BY_CLICK ? 'Pointing at the sky' : 'Finding the sky'
     case 'person':
       return `Finding ${op.part}`
     case 'object':

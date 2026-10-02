@@ -15,6 +15,7 @@ import { defaultUpright, type UprightSetting } from './upright'
 import type { RetouchSpot } from './retouch'
 import { normalisePixelStep, type PixelStep } from './pixels'
 import { normaliseEdge, type MaskEdge } from './maskedge'
+import { normalisePrompt, PROMPT_VIAS, type PromptGeometry, type PromptVia } from './prompt'
 
 export const RECIPE_VERSION = 2
 
@@ -268,8 +269,12 @@ export interface BrushComponent extends ComponentBase {
 export type BrushSource =
   | { kind: 'segment'; target: 'subject' | 'background' | 'sky' }
   | { kind: 'person'; part: string }
-  /** SAM2 from a click or a box, and the object's name when it has one. */
-  | { kind: 'prompt'; label?: string }
+  /**
+   * SAM 2.1 from clicks, a box, strokes or a lasso, and the object's name
+   * when it has one. `prompt` is what it was asked (base-frame fractions),
+   * so the mask can be made again; `via` how.
+   */
+  | { kind: 'prompt'; label?: string; prompt?: PromptGeometry; via?: PromptVia }
 
 /** A lasso or pen outline, in normalised base-frame coordinates. */
 export interface PolygonComponent extends ComponentBase {
@@ -760,10 +765,15 @@ function brushSource(v: unknown): BrushSource | null {
   )
     return { kind: 'segment', target: v.target }
   if (v.kind === 'person' && typeof v.part === 'string') return { kind: 'person', part: v.part }
-  if (v.kind === 'prompt')
-    return typeof v.label === 'string' && v.label
-      ? { kind: 'prompt', label: v.label }
-      : { kind: 'prompt' }
+  if (v.kind === 'prompt') {
+    const prompt = normalisePrompt(v.prompt)
+    return {
+      kind: 'prompt',
+      ...(typeof v.label === 'string' && v.label ? { label: v.label } : {}),
+      ...(prompt ? { prompt } : {}),
+      ...(PROMPT_VIAS.includes(v.via as PromptVia) ? { via: v.via as PromptVia } : {})
+    }
+  }
   return null
 }
 
