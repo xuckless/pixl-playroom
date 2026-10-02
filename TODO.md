@@ -1368,6 +1368,27 @@ After: Pass 74.
 
 ---
 
+## After engine 0.16 (2026-10-02)
+
+What the 0.16 integration (branch `feat/engine-0.16`) left open.
+
+- [ ] **S** · Owner: mirror SAM 2.1 to the model server
+      (`node scripts/publish-models.mjs --only sam2-1-hiera-tiny --bucket pixl-models`):
+      the roster gives it no public upstream, so until then its download fails.
+- [ ] **S** · Owner: publish the regenerated lens catalogue (the fisheyes'
+      `fisheye` data): `pnpm lens-profiles --publish-only --bucket pixl-models`.
+- [ ] **M** · A Linear DNG export (`Encode::LinearDng`): the rendered frame,
+      edits baked in, for another raw editor.
+- [ ] **M** · Flat-field correction (`LensCorrection.flat_field`) from a
+      flat shot the user picks.
+- [ ] **M** · Make a model's or an object's mask again when the photo's
+      lens correction changes (its prompt is kept now, `BrushSource.prompt`).
+- [ ] **S** · Keep SAM embeddings on disk (16–30 MB each) if the encoder
+      is slow on 4-core machines (about a second on 8 performance cores).
+- [ ] **S** · Redo a RAW's pixel steps made on rawler's develop from their
+      panel (today a note says to; `staleRawStep`).
+- [ ] **S** · Snap to edges on a colour or luminance range (E13's other half).
+
 ## Waiting on the engine
 
 Playroom work that starts once the engine request lands
@@ -1375,19 +1396,34 @@ Playroom work that starts once the engine request lands
 
 - [ ] **S** · Drop `repairJpegExif` once JPEG EXIF is written correctly (E1).
 - [ ] **S** · HEIC export and HEIC gain-map export (E2).
-- [ ] **M** · Sharp 1:1 zoom and 1:1 tiles on straightened, Upright and
+- [x] **M** · Sharp 1:1 zoom and 1:1 tiles on straightened, Upright and
       lens-warped photos (E3).
+      _Done 2026-10-02 (engine 0.16): the tile is asked for in fractions of the picture as shown
+      and rendered framed (`render.ts` `region`, `framedSize`)._
 - [ ] **S** · Enhance crop preview by `region` instead of a temp file (E4).
+      _The engine side landed in 0.16 (a region through the enhance chain):
+      Pass 42 can do it now._
 - [ ] **S** · Drop the host's temp-and-rename around engine writes (E5).
 - [ ] **S** · The scheduler waits for a cancel to finish (E6).
 - [ ] **M** · Fast 1:1 pans from a cached or tiled source (E7).
-- [ ] **M** · Retire the 512 px gradient planes and their cache for native
+- [x] **M** · Retire the 512 px gradient planes and their cache for native
       linear and radial shapes (E11).
+      _Done 2026-10-02 (engine 0.16): native Linear/Radial gradients (`gradients.ts`
+      `gradientShape`), and a bidirectional gradient tool; only a gradient
+      an older version gave an edge still goes as a plane._
 - [ ] **M** · Depth range mask (its picker entry is disabled) (E12).
+      _0.16 has the `DepthRange` shape; it waits on a depth map: a depth
+      model in the roster, or iPhone/ProRAW auxiliary depth images._
 - [ ] **M** · Smoothed range masks and an edge-aware brush in the tools (E13).
-- [ ] **S** · Move mask shift/harden to the engine, if E14 lands.
+      _Half done in 0.16: Snap to edges (the engine's refine) on brushes,
+      lassos and AI masks. Left: offer it on a colour/luminance range._
+- [x] **S** · Move mask shift/harden to the engine, if E14 lands.
+      _Done 2026-10-02 (engine 0.16): a snapped AI mask's Shift edge is the refine's `contract`,
+      resolution-free; the snap replaces the harden for new AI masks._
 - [ ] **M** · Brush and AI mask planes (and gradients until E11) at the
       photo's resolution, or brush strokes sent as vectors (E36).
+      _Eased in 0.16: gradients are shapes, and Snap to edges pulls a 1024 px
+      plane onto the photo's edges at full size. Planes are still 1024 px._
 - [ ] **M** · A live brush effect while painting, the adjustment itself under
       the brush and not only a tint (E37).
 - [ ] **S** · The mask overlay from the render instead of a second
@@ -1404,21 +1440,30 @@ Playroom work that starts once the engine request lands
 - [ ] **S** · Engine frames in crash reports: feed the binding's published
       debug symbols to `scripts/upload-symbols.mjs` (E35).
 - [ ] **S** · ProRAW and DNG gain maps (E17).
-- [ ] **S** · Fisheye distortion from Lensfun profiles (E18).
+- [x] **S** · Fisheye distortion from Lensfun profiles (E18).
+      _Done 2026-10-02 (engine 0.16): Defish and Field in the Lens panel; the catalogue keeps a
+      fisheye's polynomial under `fisheye` (publish it: owner task)._
 - [ ] **M** · Native `ParametricCurve`, with a recipe migration that
       rescales the region sliders (E19).
-- [ ] **S** · HDR-aware LUT profiles replace the SDR-range fallback (E20).
+- [x] **S** · HDR-aware LUT profiles replace the SDR-range fallback (E20).
+      _Done 2026-10-02 (engine 0.16): a LUT profile on an HDR pipeline is `ScaleHeadroom`._
 - [ ] **M** · Camera-matching DCP and Adobe `.xmp` profiles (E21).
 - [ ] **M** · Gamut warning in soft proofing (E22).
 - [ ] **XL** · Merge to HDR, panorama, HDR panorama, focus stacking (E23).
 - [ ] **S** · AI denoise (SCUNet) and Enhance (FBCNN) on the accelerator
       (E26, E27).
-- [ ] **M** · Select Sky (its picker entry is disabled) (E28).
+- [ ] **M** · Select Sky in one click (E28). _Since 0.16 the Sky tool asks
+      for a click on the sky and SAM 2.1 selects it (`SKY_BY_CLICK` in
+      `shared/ai.ts`); turn the flag off when a sky model ships._
 - [ ] **L** · AI Remove (generative remove) in the Heal tool (E29).
 - [ ] **L** · Select People: face, skin, hair, eyes, lips, teeth, clothes
       (E30).
-- [ ] **L** · Objects by brush or box, on SAM2 (E30).
-- [ ] **M** · "Snap to edges" on a lasso: its polygon as SAM2's prompt (E30).
+- [x] **L** · Objects by brush or box, on SAM2 (E30).
+      _Done 2026-10-02 (engine 0.16): the Objects tool (Auto hover-and-click, Box, Brush; Shift/Alt
+      parts), on its own engine host (`main/select/service.ts`)._
+- [x] **M** · "Snap to edges" on a lasso: its polygon as SAM2's prompt (E30).
+      _Done 2026-10-02 (engine 0.16): the lasso card's Snap to edges (refine) and Find object
+      (the lasso as SAM's prompt)._
 - [ ] **L** · Catalog: people (E30).
 - [ ] **M** · Learned auto white balance beside the grey-pixel estimate (E31).
 - [ ] **M** · An adaptive/learned auto tone (E31).
@@ -1427,7 +1472,10 @@ Playroom work that starts once the engine request lands
       looks marked ≈ (E41–E44; Pass 76).
 - [ ] **M** · Smart looks' sky, people-part and object masks, NAFNet denoise:
       turn their gates on when the binding with E28, E30 and E45 lands
-      (Passes 72–75 build against them now).
+      (Passes 72–75 build against them now). _0.16 brought SAM 2.1 only: a
+      look's objects are pointed at (no detector yet, E45) and its sky is
+      clicked (`SKY_BY_CLICK`); people's parts (E30) and NAFNet denoise
+      still wait._
 
 ## Owner tasks (not model passes)
 
@@ -1442,8 +1490,12 @@ Playroom work that starts once the engine request lands
       agreement and privacy policy on pixlfoundation.com/legal/ (pixl-web
       `src/legal/`: legal entity, jurisdiction, address, refunds, what a
       finished trial does, crash-report retention); have a lawyer review both.
-- [ ] **S** · **Licensing view**: a lawyer's view on jpegxl-sys (GPL) and
-      rawler (LGPL, static) before the first paid release (engine side: E8–E10).
+- [ ] **S** · **Licensing view**: before the first paid release. _Since
+      engine 0.16 jpegxl-sys (GPL) and rawler (LGPL, static) are gone (E8,
+      E9): RAW is LibRaw under the CDDL in a replaceable shared library, its
+      source shipped beside it. Left: the EULA must allow modification and
+      reverse engineering for debugging the LGPL-3.0 libraries (libheif,
+      libde265; LGPL-3.0 §4), whose complete sources ship in the app._
 - [ ] **S** · **Back up the entitlement roots**: `~/.pixl-secrets/entitlement-root-1.pem`
       and `entitlement-root-2.pem` (made 2026-10-01; their public halves are
       `ROOT_KEYS` in `src/shared/account.ts`). Keep a copy offline (a password
@@ -1674,6 +1726,26 @@ masters are in `build/brand/`.
       `scripts/site-media.sh`, tool screenshots by `scripts/site-tools.mjs`.
       `site/` is only a redirect from the old GitHub Pages address. Downloads
       say "Soon" until the first release.
+
+### Upgrade to pixl-engine 0.16.0 (branch `feat/engine-0.16`, 2026-10-02)
+
+- [x] Phase 1 — at parity: engine and models 0.16.0; every `Lut` states
+      `out_of_domain` (Clamp, ScaleHeadroom on HDR), `Distortion.scale`,
+      `MaskComponent.refine`, `RawMode.resolution`; RAW caches named by the
+      develop (`-l`), RAWs 0.15 could not read retried (migration 12), RAWs
+      refused by name said plainly, pixel steps on rawler's develop marked;
+      rawler and jpegxl-sys gone; the engine's THIRD-PARTY-NOTICES.txt
+      embedded, after-pack checks the LGPL and LibRaw sources ship.
+- [x] Phase 2 — native linear, radial and bidirectional gradients; Snap to
+      edges (refine) on brushes, lassos and AI masks, on by default for new
+      AI masks; Select Subject cancels through the engine's signal.
+- [x] Phase 3 — SAM 2.1 on its own engine host (sessions, embeddings,
+      decodes named by id in the host), a 'prompt' AI job on its own lane,
+      smart looks pointing at objects, the sky by click (`SKY_BY_CLICK`).
+- [x] Phase 4 — the Objects tool (Auto, Box, Brush; Shift/Alt parts), Sky
+      by click, a lasso's Find object, and the Model needed popup.
+- [x] Phase 5 — sharp 1:1 on framed photos (E3); half-size RAW proxies
+      (`Cell`); fisheye defish (E18).
 
 ### Upgrade to pixl-engine 0.15.0
 
