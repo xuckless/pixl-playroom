@@ -20,10 +20,13 @@
 // range and the calibration camera's crop factor and aspect ratio (what the
 // coefficients' r = 1 is measured on); distortion (ptlens, poly3, poly5) and
 // TCA (linear, poly3) per focal length; vignetting (pa) per focal length,
-// aperture and distance, with Lensfun's duplicated distances folded. Fisheye
-// and other non-rectilinear lenses keep their TCA and vignetting only (their
-// distortion assumes a projection change the engine does not make). Every
-// camera with its crop factor, for photos whose EXIF gives no 35 mm focal.
+// aperture and distance, with Lensfun's duplicated distances folded. A
+// fisheye (fisheye, equisolid, orthographic, stereographic, Thoby) keeps its
+// polynomials and real focal lengths under `fisheye`, for a defish (engine
+// 0.16), never under `distortion`, which apps before it would apply as a
+// rectilinear lens's; other non-rectilinear lenses keep TCA and vignetting
+// only. Every camera with its crop factor, for photos whose EXIF gives no
+// 35 mm focal.
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import {
@@ -167,6 +170,9 @@ const slug = (s) =>
 
 // ── Convert ──────────────────────────────────────────────────────────────────
 
+/** Lensfun's projections a defish makes rectilinear (src/shared/lens.ts FISHEYE_TYPES). */
+const FISHEYE_TYPES = ['fisheye', 'equisolid', 'orthographic', 'stereographic', 'fisheye_thoby']
+
 const ids = new Set()
 const uniqueId = (base) => {
   let id = base
@@ -185,20 +191,32 @@ function lensOf(body, file) {
   if (!cal) return null
   const type = texts(body, 'type')[0]?.text ?? 'rectilinear'
   const rectilinear = type === 'rectilinear'
+  const fisheyeLens = FISHEYE_TYPES.includes(type)
+  const samples = empties(cal, 'distortion')
+    .map((a) => {
+      const focal = num(a.focal)
+      if (!(focal > 0)) return null
+      const realFocal = num(a['real-focal'])
+      const real = realFocal > 0 ? { realFocal } : {}
+      if (a.model === 'poly3') return { focal, ...real, model: 'poly3', k: [num(a.k1) ?? 0] }
+      if (a.model === 'poly5')
+        return { focal, ...real, model: 'poly5', k: [num(a.k1) ?? 0, num(a.k2) ?? 0] }
+      if (a.model === 'ptlens')
+        return {
+          focal,
+          ...real,
+          model: 'ptlens',
+          k: [num(a.a) ?? 0, num(a.b) ?? 0, num(a.c) ?? 0]
+        }
+      if (a.model === 'none') return { focal, ...real, model: 'none', k: [] }
+      return null
+    })
+    .filter(Boolean)
+  // A rectilinear lens's own: its real focal length is a fisheye's concern.
   const distortion = rectilinear
-    ? empties(cal, 'distortion')
-        .map((a) => {
-          const focal = num(a.focal)
-          if (!(focal > 0)) return null
-          if (a.model === 'poly3') return { focal, model: 'poly3', k: [num(a.k1) ?? 0] }
-          if (a.model === 'poly5')
-            return { focal, model: 'poly5', k: [num(a.k1) ?? 0, num(a.k2) ?? 0] }
-          if (a.model === 'ptlens')
-            return { focal, model: 'ptlens', k: [num(a.a) ?? 0, num(a.b) ?? 0, num(a.c) ?? 0] }
-          return null
-        })
-        .filter(Boolean)
+    ? samples.filter((x) => x.model !== 'none').map(({ realFocal: _real, ...x }) => (void _real, x))
     : []
+  const fisheye = fisheyeLens ? samples : []
   const tca = empties(cal, 'tca')
     .map((a) => {
       const focal = num(a.focal)
@@ -242,7 +260,7 @@ function lensOf(body, file) {
       ? s
       : { focal: s.focal, aperture: s.aperture, k: s.k }
   )
-  if (!distortion.length && !tca.length && !vignetting.length) return null
+  if (!distortion.length && !tca.length && !vignetting.length && !fisheye.length) return null
   const focalRange = empties(body, 'focal')[0]
   const apertureRange = empties(body, 'aperture')[0]
   const aliases = [...new Set(models.map((m) => m.text).filter((m) => m !== model))]
@@ -270,7 +288,8 @@ function lensOf(body, file) {
     },
     ...(distortion.length ? { distortion } : {}),
     ...(tca.length ? { tca } : {}),
-    ...(vignetting.length ? { vignetting } : {})
+    ...(vignetting.length ? { vignetting } : {}),
+    ...(fisheye.length ? { fisheye } : {})
   }
 }
 

@@ -1,7 +1,7 @@
 {
  "format": 1,
- "version": "9f8904d4cb99d81b",
- "generated": "2026-09-30T21:49:47.583Z",
+ "version": "0ffe62c456b134b2",
+ "generated": "2026-10-02T14:40:17.861Z",
  "source": {
   "name": "Lensfun",
   "url": "https://lensfun.github.io",
@@ -9,7 +9,7 @@
   "commit": "bbd4332a9ec566fd9aa548c9e0d8ced238c56261",
   "committed": "2026-09-24T16:00:17+02:00"
  },
- "lenses": 1557,
+ "lenses": 1566,
  "cameras": 1057,
  "shards": [
   {
@@ -23,9 +23,9 @@
   {
    "name": "actioncams",
    "file": "actioncams.json",
-   "sha256": "e79ff3a917560a53e62aa85e9669a4bf4d6cb5f75228ac2fea34766f8b906c26",
-   "bytes": 7721,
-   "lenses": 14,
+   "sha256": "465b5debf0d5c64add4e93f23d3e01d6809bf7c59adfda37d9df3afb7e5be25e",
+   "bytes": 9579,
+   "lenses": 19,
    "cameras": 19
   },
   {
@@ -199,9 +199,9 @@
   {
    "name": "mil-olympus",
    "file": "mil-olympus.json",
-   "sha256": "21bffb587bf95470305ff3aae7f63cbafd2587bae09740ac24440295dde7ea75",
-   "bytes": 46188,
-   "lenses": 31,
+   "sha256": "79ccf94d4d7cb1489d2d49e0d2c926807bbc2bd3fb6567356628b0d31550f495",
+   "bytes": 46564,
+   "lenses": 32,
    "cameras": 28
   },
   {
@@ -223,16 +223,16 @@
   {
    "name": "mil-samsung",
    "file": "mil-samsung.json",
-   "sha256": "00547bcb14f8a4a808d579281a1003a879339dcf2c7ed810e78fd09bac0fbb8d",
-   "bytes": 9237,
+   "sha256": "6ea7d7804580a1cc49ef91042108b687e484890054612f375aeb750e2fdf686a",
+   "bytes": 9310,
    "lenses": 13,
    "cameras": 18
   },
   {
    "name": "mil-samyang",
    "file": "mil-samyang.json",
-   "sha256": "61a65666772ff0706b965d02ec05df818f4d3417c5b55f3fd79bc3f9d5116952",
-   "bytes": 9860,
+   "sha256": "9e5642568d837a4b76bd5adef4a645be141afd4029185ee197d70ae3456173e6",
+   "bytes": 10032,
    "lenses": 16,
    "cameras": 0
   },
@@ -247,8 +247,8 @@
   {
    "name": "mil-sony",
    "file": "mil-sony.json",
-   "sha256": "e814dcdca4e87f93b6f8dd5638294b410f793647b0fc721625ae9f423686899c",
-   "bytes": 83280,
+   "sha256": "69fb3af07119318ff29a4bb85ad12f833c25b598c101c62033965e95093580ef",
+   "bytes": 83372,
    "lenses": 61,
    "cameras": 52
   },
@@ -279,8 +279,8 @@
   {
    "name": "misc",
    "file": "misc.json",
-   "sha256": "f930b230f0ea30b164602a72e594020d0d16056bb3124e1bdd7478736d83ba2c",
-   "bytes": 72505,
+   "sha256": "d7d0d421a6ac29ad061ce2e8019bb2bf29d39c88ab75c4f8139646997d70f370",
+   "bytes": 72629,
    "lenses": 138,
    "cameras": 13
   },
@@ -303,8 +303,8 @@
   {
    "name": "slr-canon",
    "file": "slr-canon.json",
-   "sha256": "03296380c2fa93c2f4b96040d69acf21409847319cb9346153c9c51e18e2bee7",
-   "bytes": 220474,
+   "sha256": "78a600fb478eb881f82b7146321789edcd59b7007924dd96c3cf389cd80333ba",
+   "bytes": 220790,
    "lenses": 169,
    "cameras": 102
   },
@@ -335,9 +335,9 @@
   {
    "name": "slr-nikon",
    "file": "slr-nikon.json",
-   "sha256": "2a20e3ff17c81d5f3f49efb517544b3ca834ac43793cb48f7d19195f078b9072",
-   "bytes": 176072,
-   "lenses": 168,
+   "sha256": "dab5cf1c3ff6ec196b513e82e5906f402c3910a3b60ffd95aef0ea6b8dceaf21",
+   "bytes": 176637,
+   "lenses": 169,
    "cameras": 62
   },
   {
@@ -359,8 +359,8 @@
   {
    "name": "slr-pentax",
    "file": "slr-pentax.json",
-   "sha256": "a831904ab160035a82a0b2a2b64ae65f6aac46687b5101bf64a229546988b9cb",
-   "bytes": 86966,
+   "sha256": "3a9f0d801e80f7ea7c7a57e91d741c2b621a82e81463c2f94dc663677d85d41a",
+   "bytes": 87288,
    "lenses": 87,
    "cameras": 37
   },
@@ -383,8 +383,8 @@
   {
    "name": "slr-samyang",
    "file": "slr-samyang.json",
-   "sha256": "dc6deef6504ea79e29e0f84ee3d35717f0394bf13558eea8f1158f14be9e7cbd",
-   "bytes": 8044,
+   "sha256": "57221f7422b7310be4af54908774bc06ce6ca40a87a8bee37c998427ba8695d7",
+   "bytes": 8199,
    "lenses": 16,
    "cameras": 0
   },
@@ -399,9 +399,9 @@
   {
    "name": "slr-sigma",
    "file": "slr-sigma.json",
-   "sha256": "2e6c5875bed7fc73f10bb0bc498a8be2b1fad8c1424761d1627f7b7d422f073d",
-   "bytes": 133267,
-   "lenses": 103,
+   "sha256": "ec46e60491c468f0793aaf714fe1c8a99b97774ecc6c9ae0691c7eecf07169bc",
+   "bytes": 134435,
+   "lenses": 105,
    "cameras": 6
   },
   {

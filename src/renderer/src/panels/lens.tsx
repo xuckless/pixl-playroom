@@ -306,7 +306,7 @@ function LensProfileSection(): React.JSX.Element | null {
             min={0}
             max={200}
             def={100}
-            disabled={!resolved.distortion}
+            disabled={!resolved.distortion && !(resolved.fisheye && l.profile.defish)}
             format={(v) => `${Math.round(v)}%`}
           />
           <LS
@@ -319,6 +319,43 @@ function LensProfileSection(): React.JSX.Element | null {
             disabled={!resolved.vignetting}
             format={(v) => `${Math.round(v)}%`}
           />
+          {resolved.fisheye && (
+            <>
+              <div className="row">
+                <Toggle
+                  on={l.profile.defish}
+                  onChange={(on) => {
+                    edit((r) => (r.lens.profile.defish = on))
+                    commit(on ? 'Lens: defish' : 'Lens: keep the fisheye')
+                  }}
+                  title="Make this fisheye's picture rectilinear: straight lines straight (its projection, from the profile)"
+                >
+                  Defish
+                </Toggle>
+              </div>
+              {l.profile.defish && (
+                <LS
+                  label="Field"
+                  read={(x) => x.profile.field}
+                  write={(x, v) => (x.profile.field = v)}
+                  min={50}
+                  max={100}
+                  def={100}
+                  title="How much of the defished picture shows: lower brings more of the fisheye's edge into view"
+                  format={(v) => `${Math.round(v)}%`}
+                />
+              )}
+              {l.profile.defish &&
+                (recipe.layers.length > 0 ||
+                  recipe.retouch.length > 0 ||
+                  recipe.geometry.crop !== null) && (
+                  <p className="note small">
+                    Defishing moves everything in the picture: masks, spots and the crop stay where
+                    they were drawn on the fisheye.
+                  </p>
+                )}
+            </>
+          )}
         </>
       )}
     </Section>

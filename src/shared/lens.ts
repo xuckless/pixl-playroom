@@ -29,6 +29,9 @@ import type {
   RadiusUnit,
   Distortion,
   DistortionModel,
+  Fisheye,
+  FisheyePolynomial,
+  FisheyeProjection,
   LateralCa,
   LateralCaModel,
   LensCorrection,
@@ -60,6 +63,40 @@ export interface TcaSample {
   blue: number[]
 }
 
+/**
+ * A fisheye's calibration at one focal length: Lensfun's polynomial on the
+ * fisheye's own radius (its departure from its ideal projection), and its
+ * real focal length where that differs from the one it is sold as.
+ */
+export interface FisheyeSample {
+  focal: number
+  realFocal?: number
+  /** none: the ideal projection. */
+  model: 'none' | 'poly3' | 'poly5' | 'ptlens'
+  k: number[]
+}
+
+/** Lensfun's non-rectilinear projections that a defish makes rectilinear (engine 0.16). */
+export const FISHEYE_TYPES = [
+  'fisheye',
+  'equisolid',
+  'orthographic',
+  'stereographic',
+  'fisheye_thoby'
+] as const
+
+/** Lensfun's projection names as the engine states them. */
+const PROJECTION: Record<(typeof FISHEYE_TYPES)[number], FisheyeProjection> = {
+  fisheye: 'Equidistant',
+  equisolid: 'Equisolid',
+  orthographic: 'Orthographic',
+  stereographic: 'Stereographic',
+  fisheye_thoby: { Thoby: { k1: 1.47, k2: 0.713 } }
+}
+
+const isFisheye = (type: string | undefined): type is (typeof FISHEYE_TYPES)[number] =>
+  (FISHEYE_TYPES as readonly string[]).includes(type ?? '')
+
 export interface VignettingSample {
   focal: number
   aperture: number
@@ -80,7 +117,10 @@ export interface LensProfile {
   mount?: string
   /** Every mount it fits (a Lensfun lens often lists several). */
   mounts?: string[]
-  /** Its projection when not rectilinear (fisheye, equisolid…): only TCA and vignetting are kept. */
+  /**
+   * Its projection when not rectilinear (fisheye, equisolid…): its
+   * distortion is then `fisheye`, applied only when the user defishes.
+   */
   type?: string
   /** Its focal range, mm: a shot outside it is not this lens. */
   focal?: number[]
@@ -93,6 +133,12 @@ export interface LensProfile {
   distortion?: DistortionSample[]
   tca?: TcaSample[]
   vignetting?: VignettingSample[]
+  /**
+   * A fisheye's (a `type` of FISHEYE_TYPES): its own polynomials per focal
+   * length, kept apart from `distortion` (which is a rectilinear lens's, and
+   * which an older app would apply as one).
+   */
+  fisheye?: FisheyeSample[]
 }
 
 /** A profile evaluated for one shot: what the recipe keeps. */
@@ -111,6 +157,8 @@ export interface ResolvedProfile {
   tca: LateralCaModel | null
   /** The falloff polynomial's coefficients (r², r⁴, …), divided out. */
   vignetting: number[] | null
+  /** A fisheye: its projection, focal length (in the geometry's unit) and polynomial, for a defish. */
+  fisheye?: Fisheye | null
 }
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
@@ -144,7 +192,15 @@ export function validateProfile(v: unknown, id: string): LensProfile | string {
   const dist = list('distortion')
   const tca = list('tca')
   const vig = list('vignetting')
-  for (const l of [dist, tca, vig]) if (typeof l === 'string') return l
+  const fish = list('fisheye')
+  for (const l of [dist, tca, vig, fish]) if (typeof l === 'string') return l
+  for (const s of fish as Record<string, unknown>[]) {
+    const n = s.model === 'none' ? 0 : DIST_ARITY[s.model as keyof typeof DIST_ARITY]
+    if (!isNum(s.focal) || n === undefined || !nums(s.k, n))
+      return 'each fisheye sample needs `focal`, `model` (none, poly3, poly5, ptlens) and its `k`'
+    if (s.realFocal !== undefined && !(isNum(s.realFocal) && s.realFocal > 0))
+      return 'a fisheye sample’s `realFocal` must be a positive number'
+  }
   for (const s of dist as Record<string, unknown>[]) {
     const n = DIST_ARITY[s.model as keyof typeof DIST_ARITY]
     if (!isNum(s.focal) || !n || !nums(s.k, n))
@@ -160,7 +216,13 @@ export function validateProfile(v: unknown, id: string): LensProfile | string {
       return 'each vignetting sample needs `focal`, `aperture` and `k`'
     if ((s.k as number[]).length > 3) return 'vignetting takes at most three coefficients'
   }
-  if (!(dist as unknown[]).length && !(tca as unknown[]).length && !(vig as unknown[]).length)
+  const fisheyeLens = isFisheye(typeof p.type === 'string' ? p.type : undefined)
+  if (
+    !(dist as unknown[]).length &&
+    !(tca as unknown[]).length &&
+    !(vig as unknown[]).length &&
+    !fisheyeLens
+  )
     return 'the profile corrects nothing'
   return {
     id,
@@ -179,7 +241,8 @@ export function validateProfile(v: unknown, id: string): LensProfile | string {
         : undefined,
     distortion: dist as unknown as DistortionSample[],
     tca: tca as unknown as TcaSample[],
-    vignetting: vig as unknown as VignettingSample[]
+    vignetting: vig as unknown as VignettingSample[],
+    ...(fisheyeLens ? { fisheye: fish as unknown as FisheyeSample[] } : {})
   }
 }
 
@@ -478,7 +541,8 @@ export function resolveProfile(
     unit: p.unit,
     distortion,
     tca,
-    vignetting
+    vignetting,
+    ...(isFisheye(p.type) ? { fisheye: resolveFisheye(p, p.type, focal) } : {})
   }
   if (p.unit === 'Lensfun' && p.calibration && photo) {
     // Without a crop factor for the photo, it is taken to be the calibration
@@ -496,6 +560,59 @@ export function resolveProfile(
   return out
 }
 
+/**
+ * A fisheye at this shot's focal length: its projection, its focal length
+ * in the geometry's unit, and its polynomial. Lensfun states both on its
+ * calibration frame with r = 1 at half its shorter side, so the focal length
+ * is the real one over that half side in millimetres (43.27 / crop over the
+ * frame's diagonal); a profile in another unit states its focal lengths in
+ * it already. Null when nothing says the focal length.
+ */
+export function resolveFisheye(
+  p: LensProfile,
+  type: (typeof FISHEYE_TYPES)[number],
+  focal: number | null
+): Fisheye | null {
+  const samples = p.fisheye ?? []
+  const model = samples.find((s) => s.model !== 'none')?.model ?? 'none'
+  const same = samples.filter((s) => s.model === model)
+  const real =
+    same.length > 0
+      ? interpolate(
+          same,
+          focal,
+          (s) => s.focal,
+          (s) => [s.realFocal ?? s.focal]
+        )[0]
+      : (focal ?? (p.focal?.length ? p.focal[0] : null))
+  if (!real || !(real > 0)) return null
+  const k =
+    model === 'none'
+      ? []
+      : interpolate(
+          same,
+          focal,
+          (s) => s.focal,
+          (s) => s.k
+        )
+  const polynomial: FisheyePolynomial | null =
+    model === 'poly3'
+      ? { Poly3: { k1: round6(k[0]) } }
+      : model === 'poly5'
+        ? { Poly5: { k1: round6(k[0]), k2: round6(k[1]) } }
+        : model === 'ptlens'
+          ? { PtLens: { a: round6(k[0]), b: round6(k[1]), c: round6(k[2]) } }
+          : null
+  const inUnit =
+    p.unit === 'Lensfun' && p.calibration
+      ? (real * p.calibration.crop * Math.hypot(p.calibration.aspect, 1)) / FULL_FRAME_HALF_DIAGONAL
+      : real
+  return { projection: PROJECTION[type], focal: round6(inUnit), polynomial }
+}
+
+/** Half a 36 × 24 mm frame's diagonal, mm. */
+const FULL_FRAME_HALF_DIAGONAL = Math.hypot(36, 24) / 2
+
 // ── The recipe's lens settings → the engine's correction ─────────────────────
 
 /** The lens panel's settings (in `Recipe.lens`). */
@@ -509,6 +626,10 @@ export interface LensSetting {
     /** 0…200 %: how much of the profile's distortion and vignetting to correct. */
     distortion: number
     vignetting: number
+    /** A fisheye's profile: make it rectilinear (off: only its TCA and vignetting). */
+    defish: boolean
+    /** 50…100 %: how much of a defished frame shows (below 100 its periphery comes into view). */
+    field: number
   }
   /** −100…100: positive pulls barrel distortion in, negative pushes pincushion out. */
   distortion: number
@@ -531,7 +652,15 @@ export interface LensSetting {
 
 export function defaultLens(): LensSetting {
   return {
-    profile: { enabled: false, id: null, resolved: null, distortion: 100, vignetting: 100 },
+    profile: {
+      enabled: false,
+      id: null,
+      resolved: null,
+      distortion: 100,
+      vignetting: 100,
+      defish: false,
+      field: 100
+    },
     distortion: 0,
     vignetting: 0,
     vignettingMidpoint: 50,
@@ -570,9 +699,17 @@ function profileGeometry(p: ResolvedProfile, what: 'geometry' | 'vignetting'): L
   return geometryOf(p.unit)
 }
 
+/** Whether a fisheye's profile is defishing this photo. */
+export function defishing(l: LensSetting): boolean {
+  return l.profile.enabled && l.profile.defish && !!l.profile.resolved?.fisheye
+}
+
 /** Whether the profile's distortion is what corrects this photo (the manual slider steps aside). */
 export function profileDistorts(l: LensSetting): boolean {
-  return l.profile.enabled && !!l.profile.resolved?.distortion && l.profile.distortion > 0
+  return (
+    (l.profile.enabled && !!l.profile.resolved?.distortion && l.profile.distortion > 0) ||
+    defishing(l)
+  )
 }
 
 /** `(1 + Σ a_i r^(2i+2)) × (1 + Σ b_j r^(2j+2))` as coefficients of r², r⁴, … */
@@ -606,7 +743,15 @@ function manualFalloff(amount: number, midpoint: number): number[] {
 export function lensCorrection(l: LensSetting): LensCorrection | null {
   const p = l.profile.enabled ? l.profile.resolved : null
   let distortion: Distortion | null = null
-  if (p?.distortion && l.profile.distortion > 0) {
+  if (p?.fisheye && defishing(l)) {
+    // A fisheye made rectilinear; below 100% Field more of its periphery shows.
+    distortion = {
+      model: { Fisheye: p.fisheye },
+      geometry: profileGeometry(p, 'geometry'),
+      amount: round6(clamp(l.profile.distortion / 100, 0, 2)),
+      scale: round6(clamp((l.profile.field ?? 100) / 100, 0.5, 1))
+    }
+  } else if (p?.distortion && l.profile.distortion > 0) {
     distortion = {
       model: p.distortion,
       geometry: profileGeometry(p, 'geometry'),
