@@ -14,7 +14,13 @@ import {
   withGainMap
 } from '../src/shared/export'
 import { applyGroups, defaultRecipe, normaliseRecipe } from '../src/shared/recipe'
-import { sourceOrientation, uprightFraming, versionStamp } from '../src/main/source'
+import {
+  cellFactor,
+  proxyByCell,
+  sourceOrientation,
+  uprightFraming,
+  versionStamp
+} from '../src/main/source'
 
 const ctx: CompileContext = {
   isRaw: false,
@@ -151,4 +157,20 @@ test('a recipe edits a gain map on its base unless it says HDR, and sync carries
   // Noise reduction now carries the AI denoise with it.
   from.detail.ai.enabled = true
   assert.equal(applyGroups(defaultRecipe(false), from, ['detailNoise']).detail.ai.enabled, true)
+})
+
+test('a RAW proxy develops at half size when its cells are more than the proxy needs', () => {
+  // Fujifilm's X-Trans cells are 3 photosites across; its GFX and everyone else's Bayer, 2.
+  assert.equal(cellFactor({ ext: 'RAF', camera: 'FUJIFILM X-T4' }), 3)
+  assert.equal(cellFactor({ ext: 'raf', camera: 'FUJIFILM GFX100S' }), 2)
+  assert.equal(cellFactor({ ext: 'cr2', camera: 'Canon EOS 80D' }), 2)
+  assert.equal(cellFactor({ ext: 'nef', camera: null }), 2)
+  // A 24 MP Bayer (6000 across) has 3000 cells: more than a 2560 proxy needs.
+  assert.equal(proxyByCell(6288, 2, 2560), true)
+  // A 26 MP X-Trans has 2080: fewer, so it develops whole.
+  assert.equal(proxyByCell(6240, 3, 2560), false)
+  // A 102 MP GFX: half size, by far.
+  assert.equal(proxyByCell(11664, 2, 2560), true)
+  // A 16 MP Bayer: 2464 cells across, not enough.
+  assert.equal(proxyByCell(4928, 2, 2560), false)
 })

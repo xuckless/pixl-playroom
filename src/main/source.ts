@@ -79,6 +79,43 @@ export const RAW_DEVELOP: RawMode = {
   }
 }
 
+/**
+ * A RAW developed at half size (engine 0.16, `resolution: 'Cell'`): one
+ * pixel per cell of the colour filter array, each colour the mean of its
+ * photosites, no demosaic. A quarter of a Bayer sensor's pixels (a ninth of
+ * an X-Trans one's): for a proxy, which is smaller still, the same picture
+ * for much less time and memory (a 102 MP file: 3.4 s and 0.5 GB where the
+ * full develop takes 4.9 s and 1.5 GB). Never for what is seen at 1:1 or
+ * exported.
+ */
+export const RAW_PROXY_DEVELOP: RawMode = {
+  Develop: {
+    scaling: true,
+    demosaic: true,
+    white_balance: true,
+    calibrate: true,
+    srgb_gamma: false,
+    crop: 'Best',
+    resolution: 'Cell'
+  }
+}
+
+/**
+ * How many photosites across a RAW's colour filter array cell is: 3 for
+ * Fujifilm's X-Trans, 2 for a Bayer sensor (Fujifilm's GFX are Bayer).
+ */
+export function cellFactor(photo: Pick<PhotoRow, 'ext' | 'camera'>): 2 | 3 {
+  return photo.ext.toLowerCase() === 'raf' && !/gfx/i.test(photo.camera ?? '') ? 3 : 2
+}
+
+/**
+ * Whether a RAW's proxy can come from a half-size develop: when even its
+ * cells are more than the proxy needs (a little margin for the crop).
+ */
+export function proxyByCell(probeLong: number, cell: number, proxyEdge: number): boolean {
+  return proxyEdge * cell * 1.02 <= probeLong
+}
+
 /** The orientation to hand the engine for a source decoded this way. */
 export function sourceOrientation(info: SourceInfo, raw: RawMode | null): Orientation {
   // A developed RAW (PIXL's develop or the scene-linear one) comes out

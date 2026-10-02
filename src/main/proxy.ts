@@ -27,6 +27,7 @@ import type {
   HdrWorking,
   InputFormat,
   LensCorrection,
+  RawMode,
   Retouch,
   SourceInfo
 } from '../shared/engine-types'
@@ -37,8 +38,11 @@ import { paths } from './paths'
 import {
   BACKGROUND_THREADS,
   blankRequest,
+  cellFactor,
   interactiveThreads,
+  proxyByCell,
   RAW_DEVELOP,
+  RAW_PROXY_DEVELOP,
   sourceOrientation,
   versionStamp
 } from './source'
@@ -142,26 +146,48 @@ async function build(
   // whose developed frame is a little smaller than its mosaic; either way the
   // report's frame size is the truth, and the scale here only has to be close.
   const long = Math.max(info.width, info.height)
-  const factor = Math.min(1, PROXY_EDGE / long)
-  const report = await engine.convert({
-    ...blankRequest(photo.path, proxyPath, info.input, info),
-    raw,
-    resize: factor < 1 ? { Scale: { factor } } : 'None',
-    resampler: 'Lanczos3',
-    // Averaging in linear light keeps a downscale's tones honest; an HDR
-    // signal is resized as it is (its float path would need HDR numbers).
-    linear_resample: !hdr && factor < 1,
-    pixel: { depth: 'Sixteen', channels: 3 },
-    encode,
-    metadata: { exif: false, icc: true, xmp: false, iptc: false },
-    color: 'Preserve',
-    framing:
-      orientation === 'Normal'
-        ? null
-        : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null },
-    threads
-  })
+  const develop = (mode: RawMode | null, across: number): ReturnType<EngineClient['convert']> => {
+    const factor = Math.min(1, PROXY_EDGE / across)
+    return engine.convert({
+      ...blankRequest(photo.path, proxyPath, info.input, info),
+      raw: mode,
+      resize: factor < 1 ? { Scale: { factor } } : 'None',
+      resampler: 'Lanczos3',
+      // Averaging in linear light keeps a downscale's tones honest; an HDR
+      // signal is resized as it is (its float path would need HDR numbers).
+      linear_resample: !hdr && factor < 1,
+      pixel: { depth: 'Sixteen', channels: 3 },
+      encode,
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      color: 'Preserve',
+      framing:
+        orientation === 'Normal'
+          ? null
+          : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null },
+      threads
+    })
+  }
+  // A RAW whose cells are more than the proxy needs develops at half size
+  // (RAW_PROXY_DEVELOP): the full frame's size is the cells' times their
+  // width, to within a pixel or two of the full develop's crop, which only
+  // the full-size master is cut by (its own size is used there).
+  const cell = raw ? cellFactor(photo) : 1
+  let byCell = raw !== null && proxyByCell(long, cell, PROXY_EDGE)
+  let report = byCell
+    ? await develop(RAW_PROXY_DEVELOP, long / cell).catch(() => null)
+    : await develop(raw, long)
+  // A sensor the cells were not as expected on (or a develop that refused
+  // them): the full develop, as before.
+  if (
+    byCell &&
+    (!report || Math.round(long / Math.max(report.frame_width, report.frame_height)) !== cell)
+  ) {
+    byCell = false
+    report = await develop(raw, long)
+  }
+  if (!report) throw new Error('the proxy was not made')
   const proxy: ProxyFile = { path: proxyPath, input, width: report.width, height: report.height }
+  const scaleUp = byCell ? cell : 1
 
   const draftPath = join(dir, `draft-${s}.${ext}`)
   const dFactor = Math.min(1, DRAFT_EDGE / Math.max(proxy.width, proxy.height))
@@ -188,14 +214,10 @@ async function build(
     proxy,
     ...(mid ? { mid } : {}),
     draft,
-    // An engine build that does not report the frame gets it from the proxy,
-    // scaled back up: close enough for geometry, and never NaN.
-    frameWidth: Number.isFinite(report.frame_width)
-      ? report.frame_width
-      : Math.round(report.width / factor),
-    frameHeight: Number.isFinite(report.frame_height)
-      ? report.frame_height
-      : Math.round(report.height / factor)
+    // The develop's frame (its cells' times their width when it was a half
+    // size one): what masks and every normalised size are fractions of.
+    frameWidth: report.frame_width * scaleUp,
+    frameHeight: report.frame_height * scaleUp
   }
   await writeFile(meta, JSON.stringify(out))
   return out

@@ -336,7 +336,7 @@ export function ensureWorking(
   const proxies = once(buildingProxies, flight, () => makeProxies(deps, version, key, plain, steps))
   if (!base) return proxies
   return once(buildingMaster, flight, () =>
-    proxies.then((set) => makeMaster(deps, version, key, plain, steps, base, set))
+    proxies.then((set) => makeMaster(deps, version, key, steps, base, set))
   )
 }
 
@@ -398,7 +398,6 @@ async function makeMaster(
   deps: PixelDeps,
   version: string,
   key: string,
-  plain: Proxies,
   steps: PixelStep[],
   base: () => Promise<ProxyFile>,
   set: WorkingSet
@@ -413,9 +412,11 @@ async function makeMaster(
   if (prev?.master) {
     master = await layOn(deps, prev.master, join(dir, 'master.tiff'), [last])
   } else {
-    // At full size the frame is the steps' own: an upscale's, when one made it larger.
-    const frame = frameOf(steps, plain.frameWidth, plain.frameHeight)
+    // At full size the frame is the steps' own: an upscale's, when one made
+    // it larger; else the full-size base's own (a proxy's frame can be a
+    // half-size develop's, to a pixel or two: never resampled to that).
     const from = await base()
+    const frame = frameOf(steps, from.width, from.height)
     const start =
       from.width === frame.width && from.height === frame.height
         ? from
