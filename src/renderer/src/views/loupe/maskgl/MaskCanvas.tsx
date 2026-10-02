@@ -442,7 +442,8 @@ export function MaskCanvas({
             : alphaFor(view, opacity),
         reveal: revealAt.current,
         time: t / 1000,
-        flow: flow * flow
+        flow: flow * flow,
+        px: w > 0 ? cw / w : 1
       })
       stats.live = live.current
     }
@@ -478,6 +479,7 @@ export function MaskCanvas({
     overlay,
     o,
     g,
+    w,
     cw,
     ch,
     bitmapTick

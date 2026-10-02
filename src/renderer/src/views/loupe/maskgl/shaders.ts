@@ -205,6 +205,9 @@ void main() {
  * mask's colour, so the edit can be judged through it. For a moment after the mask
  * changes the light on the rim flows (uFlow), then settles. Without the
  * picture yet it shows as the colour view.
+ *
+ * Inside, away from the rim, the glass is lighter. A sharp edge is drawn
+ * as a solid line; a feathered one keeps a hairline.
  */
 export const SHADE_FS = `${HEAD}
 uniform sampler2D uAcc;
@@ -222,6 +225,7 @@ uniform float uAlpha;
 uniform float uReveal;    // 0…1: a wipe from the top (a mask arriving from a model)
 uniform float uTime;      // seconds
 uniform float uFlow;      // 0…1: how much the glass's rim light moves
+uniform float uPx;        // canvas pixels per CSS pixel: the edge line keeps its width on screen
 float M(vec2 d) {
   float live = 0.0;
   if (uHaveAcc) { live = S(uAcc, d); if (uLayerInvert) live = 1.0 - live; }
@@ -261,12 +265,25 @@ void main() {
                                    * sin(d.y * 21.0 - d.x * 13.0 + uTime * 1.7);
     float hi = clamp(pow(max(facing, 0.0) * slope, 1.4) * 0.65 * flow, 0.0, 1.0);
     c *= 1.0 - 0.32 * max(-facing, 0.0) * slope;
-    // A hairline where the glass is half thick: the mask's edge.
+    // Inside, away from the rim, the glass is lighter.
+    float inner = body * (1.0 - slope);
+    float a = clamp(m * uAlpha, 0.0, 1.0) * (1.0 - 0.45 * inner);
+    o = vec4(c * a, a);
     float w = max(fwidth(m), 1e-4);
-    float line = (1.0 - smoothstep(0.0, 1.5 * w, abs(m - 0.5))) * 0.22;
-    float a = clamp(m * uAlpha, 0.0, 1.0);
-    float h = clamp(hi + line, 0.0, 1.0);
-    o = vec4(vec3(h) + (1.0 - h) * c * a, h + (1.0 - h) * a);
+    // The mask's edge where the glass is half thick. Sharp, it is a solid
+    // line about two CSS pixels wide: wherever the mask crosses half within
+    // a pixel each way, from well below to well above (a feathered edge
+    // never does, so it keeps a hairline).
+    vec2 e = vec2(clamp(uPx, 1.0, 2.5), 0.0) / uSize;
+    float m1 = M(d + e.xy), m2 = M(d - e.xy), m3 = M(d + e.yx), m4 = M(d - e.yx);
+    float lo = min(m, min(min(m1, m2), min(m3, m4)));
+    float up = max(m, max(max(m1, m2), max(m3, m4)));
+    float solid = smoothstep(0.1, 0.3, min(up - 0.5, 0.5 - lo));
+    float hair = (1.0 - smoothstep(0.0, 1.5 * w, abs(m - 0.5))) * 0.22 * (1.0 - solid);
+    float h = clamp(hi + hair, 0.0, 1.0);
+    o = vec4(vec3(h) + (1.0 - h) * o.rgb, h + (1.0 - h) * o.a);
+    float la = solid * mix(0.55, 0.85, uAlpha);
+    o = vec4(mix(uTint, vec3(1.0), 0.45) * la + (1.0 - la) * o.rgb, la + (1.0 - la) * o.a);
   } else if (uView == 0 || uView == 5) {
     float a = uAlpha * m;
     o = vec4(uTint * a, a);

@@ -89,6 +89,8 @@ export interface Frame {
   /** Molten glass: seconds, and how much its rim light moves (0 still). */
   time?: number
   flow?: number
+  /** Canvas pixels per CSS pixel: the glass's edge line keeps its width on screen. */
+  px?: number
 }
 
 export class MaskGl {
@@ -514,9 +516,7 @@ export class MaskGl {
   }
 
   /** Show the mask over the photo (the loupe's, the engine's, or between them). */
-  shade(
-    f: Pick<Frame, 'layerInvert' | 'live' | 'view' | 'tint' | 'alpha' | 'reveal' | 'time' | 'flow'>
-  ): void {
+  shade(f: Omit<Frame, 'joins' | 'toBase' | 'baseW' | 'baseH' | 'picture' | 'pictureKey'>): void {
     const gl = this.gl
     const cw = this.canvas.width
     const ch = this.canvas.height
@@ -535,6 +535,7 @@ export class MaskGl {
     gl.uniform1i(this.u(p, 'uHavePicture'), frost ? 1 : 0)
     gl.uniform1f(this.u(p, 'uTime'), f.time ?? 0)
     gl.uniform1f(this.u(p, 'uFlow'), f.flow ?? 0)
+    gl.uniform1f(this.u(p, 'uPx'), f.px ?? 1)
     const acc = this.acc[this.accIndex]
     if (acc) this.bind(p, 0, 'uAcc', acc.tex)
     if (this.engine) this.bind(p, 1, 'uEngine', this.engine)
