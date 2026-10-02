@@ -14,7 +14,7 @@
  */
 import type { Refine } from './engine-types'
 import { EDGE_SHIFT_SPAN, isPlainEdge, type MaskEdge } from './maskedge'
-import type { MaskComponentSetting, MaskRefine } from './recipe'
+import type { BrushSource, MaskComponentSetting, MaskRefine } from './recipe'
 
 /** The Edge radius slider's ends, % of the frame's shorter side (the engine's 0.0005…0.05). */
 export const EDGE_RADIUS_MIN = 0.05
@@ -24,6 +24,13 @@ export const EDGE_RADIUS_MAX = 5
  * about 0.15% of the shorter side, and the plane is a texel or so off.
  */
 export const AI_EDGE_RADIUS = 0.4
+/**
+ * SAM's plane is already crisp and on the photo's edges at the proxy's size
+ * (main/select): only its last pixel or two is snapped. Where the ground
+ * beside an edge is flat the refine blurs it over its radius, so a wider
+ * one would put a halo back around the object.
+ */
+export const PROMPT_EDGE_RADIUS = 0.1
 /** A hand-drawn edge is further off than a model's. */
 export const DRAWN_EDGE_RADIUS = 0.6
 /** How strong a luminance step must be to hold the selection (steps from about 0.1 do). */
@@ -31,6 +38,20 @@ export const REFINE_EPSILON = 1e-3
 
 /** A new AI mask's: snapped, a little more than its plane is off. */
 export const AI_REFINE: MaskRefine = { on: true, radius: AI_EDGE_RADIUS }
+/** A new SAM mask's (Objects, Sky, Find object, a look's pick). */
+export const PROMPT_REFINE: MaskRefine = { on: true, radius: PROMPT_EDGE_RADIUS }
+
+/** The snap a model's new mask starts with: SAM's lighter than a saliency map's. */
+export function modelRefine(source: BrushSource | undefined): MaskRefine {
+  return { ...(source?.kind === 'prompt' ? PROMPT_REFINE : AI_REFINE) }
+}
+
+/** The Edge radius a component's snap starts at, and resets to. */
+export function defaultEdgeRadius(c: MaskComponentSetting): number {
+  if (c.kind !== 'brush') return DRAWN_EDGE_RADIUS
+  if (c.source?.kind === 'prompt') return PROMPT_EDGE_RADIUS
+  return c.source || (c.edge?.harden ?? 0) > 0 ? AI_EDGE_RADIUS : DRAWN_EDGE_RADIUS
+}
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
 const round6 = (v: number): number => Math.round(v * 1e6) / 1e6

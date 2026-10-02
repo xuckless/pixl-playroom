@@ -53,18 +53,39 @@ import type { ModelStore } from '../ai/models'
 export const SAM_MODEL = 'sam2-1-hiera-tiny'
 const ENCODER = 'sam-encoder'
 const DECODER = 'sam-decoder'
-/** A committed mask's long side: a painted plane's (snapped to the photo's edges at render). */
-const PLANE_EDGE = 1024
+/** A committed mask is made at the frame's own size (the proxy's, up to 2560 px), not smaller. */
+const FRAME_SIZE = Infinity
 /** The longest a live preview plane is asked for. */
 const PREVIEW_MAX = 1024
 /** Embeddings kept, as the host keeps them. */
 const KEEP_EMBEDDINGS = 3
 /** The host goes to sleep after this long with nothing selecting. */
 const IDLE_MS = 3 * 60_000
-/** A committed plane follows the photo's own luminance at its size. */
-const GUIDED: PlaneUpsample = { Guided: { radius: 0.01, epsilon: 0.001 } }
+/** SAM 2.1's encoder sees the frame fitted into a square this many pixels on a side. */
+const SAM_GRID = 1024
+/**
+ * The decoder's logits are upsampled as they are and only then clamped into
+ * 0…1: SAM's own cut (at a logit of 0) with about a pixel of anti-aliasing.
+ * A sigmoid comes first otherwise, on SAM's 256 px grid, and the soft values
+ * it gives are then stretched to the frame: measured on a 24 MP CR2, an edge
+ * that faded over about 125 px at full size, and a subject that was barely
+ * selected anywhere.
+ */
+const ACTIVATION = 'None'
+/**
+ * A committed plane's edge is pulled onto the photo's at the frame's size:
+ * the guided filter's box is a few of SAM's grid pixels (about how far its
+ * 256 px answer is off), no wider, or flat ground beside the subject would
+ * blur the edge again. At least a grid pixel, or a long panorama's is refused.
+ */
+function guided(frameWidth: number, frameHeight: number): PlaneUpsample {
+  const shorter = (SAM_GRID * Math.min(frameWidth, frameHeight)) / Math.max(frameWidth, frameHeight)
+  return { Guided: { radius: Math.max(0.004, 0.6 / shorter), epsilon: 0.001 } }
+}
 /** A live preview is the decoder's answer, resampled: the quickest. */
 const RESAMPLED: PlaneUpsample = { Resample: { kernel: 'Bilinear' } }
+/** How a plane reaches its size: guided for a mask kept, resampled for a preview. */
+type Upsample = 'guided' | 'resampled'
 
 interface Embedding {
   id: string
@@ -221,7 +242,7 @@ export class SelectService {
       count?: number
       maskInput: boolean
       keep: boolean
-      upsample: PlaneUpsample
+      upsample: Upsample
       longest: number
       signal?: AbortSignal
     }
@@ -234,8 +255,8 @@ export class SelectService {
       decoder: this.refs!.decoder,
       prompt: enginePrompt(prompt, opts.count),
       candidates: 'HighestPredictedIou',
-      activation: 'Sigmoid',
-      upsample: opts.upsample,
+      activation: ACTIVATION,
+      upsample: opts.upsample === 'guided' ? guided(frameWidth, frameHeight) : RESAMPLED,
       bounds_at: 0.5,
       png: { compression: 'Fast', filter: 'NoFilter' },
       threads: 2,
@@ -263,7 +284,7 @@ export class SelectService {
     lane: string,
     embKey: string,
     prompt: PromptGeometry,
-    upsample: PlaneUpsample,
+    upsample: Upsample,
     longest: number,
     signal?: AbortSignal
   ): Promise<Extract<SamResult, { op: 'decode' }>> {
@@ -276,7 +297,7 @@ export class SelectService {
         maskInput: i > 0,
         keep: true,
         // The steps before the last are only the next one's input.
-        upsample: last ? upsample : RESAMPLED,
+        upsample: last ? upsample : 'resampled',
         longest: last ? longest : 256,
         signal
       })
@@ -315,7 +336,7 @@ export class SelectService {
           this.decodeOn(`${sel.id}-probe`, sel.embKey, req.prompt, {
             maskInput: false,
             keep: false,
-            upsample: RESAMPLED,
+            upsample: 'resampled',
             longest: Math.min(PREVIEW_MAX, Math.max(64, Math.round(req.longest ?? PREVIEW_MAX))),
             signal: abort.signal
           })
@@ -340,15 +361,15 @@ export class SelectService {
         return this.decodeOn(sel.id, sel.embKey, next, {
           maskInput: true,
           keep: true,
-          upsample: GUIDED,
-          longest: PLANE_EDGE
+          upsample: 'guided',
+          longest: FRAME_SIZE
         })
       }
       return this.decodeOn(sel.id, sel.embKey, next, {
         maskInput: false,
         keep: true,
-        upsample: GUIDED,
-        longest: PLANE_EDGE
+        upsample: 'guided',
+        longest: FRAME_SIZE
       })
     })
     sel.prompt = next
@@ -371,12 +392,12 @@ export class SelectService {
       this.embeddings.clear()
       const { embKey } = await this.embedding(sel.key)
       sel.embKey = embKey
-      if (sel.prompt) await this.replay(sel.id, embKey, sel.prompt, RESAMPLED, 256)
+      if (sel.prompt) await this.replay(sel.id, embKey, sel.prompt, 'resampled', 256)
       return run()
     }
   }
 
-  /** The selection as a mask: its last answer, at a painted plane's size, in the plane store. */
+  /** The selection as a mask: its last answer, at the frame's size, in the plane store. */
   async commit(selId: string, source: { label?: string; via: PromptVia }): Promise<SelectCommit> {
     const sel = this.selections.get(selId)
     if (!sel?.last || !sel.prompt) throw new Error('nothing is selected yet')
@@ -432,7 +453,7 @@ export class SelectService {
       onStage?.('embed')
       const { embKey } = await this.embedding(key, signal)
       onStage?.('decode')
-      const r = await this.replay(lane, embKey, prompt, GUIDED, PLANE_EDGE, signal)
+      const r = await this.replay(lane, embKey, prompt, 'guided', FRAME_SIZE, signal)
       const plane = r.planes[0]
       if (!plane) throw new Error('the model found nothing there')
       return this.keep(plane.png, prompt, source)

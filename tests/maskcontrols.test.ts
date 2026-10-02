@@ -8,6 +8,13 @@ import {
   resetHidden
 } from '../src/shared/maskcontrols'
 import type { MaskComponentSetting } from '../src/shared/recipe'
+import {
+  AI_EDGE_RADIUS,
+  defaultEdgeRadius,
+  DRAWN_EDGE_RADIUS,
+  modelRefine,
+  PROMPT_EDGE_RADIUS
+} from '../src/shared/refine'
 
 const base = { id: 'c', mode: 'Add' as const, opacity: 100, invert: false, feather: 0 }
 const brush: MaskComponentSetting = { ...base, kind: 'brush', width: 4, height: 4, png: '' }
@@ -112,4 +119,26 @@ test('reset puts hidden settings back and keeps what shows', () => {
   assert.deepEqual(snapped.edge, { shift: 10, harden: 0 })
   assert.equal(resetHidden({ ...range, feather: 12 }).feather, 5)
   for (const c of [r, l, old, snapped]) assert.equal(hiddenAdjusted(c), false)
+})
+
+test("SAM's masks snap lighter than a saliency map's, and the radius slider starts there", () => {
+  const sam: MaskComponentSetting = {
+    ...ai,
+    source: { kind: 'prompt', via: 'click' },
+    refine: modelRefine({ kind: 'prompt', via: 'click' })
+  }
+  assert.deepEqual(modelRefine({ kind: 'prompt' }), { on: true, radius: PROMPT_EDGE_RADIUS })
+  assert.deepEqual(modelRefine({ kind: 'segment', target: 'subject' }), {
+    on: true,
+    radius: AI_EDGE_RADIUS
+  })
+  assert.ok(PROMPT_EDGE_RADIUS < AI_EDGE_RADIUS)
+  assert.equal(defaultEdgeRadius(sam), PROMPT_EDGE_RADIUS)
+  assert.equal(defaultEdgeRadius(ai), AI_EDGE_RADIUS)
+  // An older recipe's model mask (no source, a harden) is a model's too.
+  assert.equal(defaultEdgeRadius({ ...brush, edge: { shift: 0, harden: 40 } }), AI_EDGE_RADIUS)
+  assert.equal(defaultEdgeRadius(brush), DRAWN_EDGE_RADIUS)
+  assert.equal(defaultEdgeRadius(lasso), DRAWN_EDGE_RADIUS)
+  // Each call its own object: a component's refine is edited in place.
+  assert.notEqual(modelRefine({ kind: 'prompt' }), modelRefine({ kind: 'prompt' }))
 })

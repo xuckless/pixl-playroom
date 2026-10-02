@@ -6,12 +6,7 @@ import {
   hiddenAdjusted,
   resetHidden
 } from '../../../../shared/maskcontrols'
-import {
-  AI_EDGE_RADIUS,
-  DRAWN_EDGE_RADIUS,
-  EDGE_RADIUS_MAX,
-  EDGE_RADIUS_MIN
-} from '../../../../shared/refine'
+import { defaultEdgeRadius, EDGE_RADIUS_MAX, EDGE_RADIUS_MIN } from '../../../../shared/refine'
 import type { MaskComponentSetting } from '../../../../shared/recipe'
 import { Icon } from '../../components/icons'
 import { Section, Select, Slider, Toggle } from '../../components/ui'
@@ -75,7 +70,7 @@ export function ComponentCard({
       else delete x.edge
     }, live)
   const snapping = c.refine?.on === true
-  const radiusDef = fromModel(c) ? AI_EDGE_RADIUS : DRAWN_EDGE_RADIUS
+  const radiusDef = defaultEdgeRadius(c)
   // Snap to edges on: a model's mask lets the snap firm its edge, in place of
   // an older recipe's harden.
   const setSnap = (on: boolean): void => {
