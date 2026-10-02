@@ -67,7 +67,15 @@ interface LibraryState {
   engine: EngineStatus | null
   toast: { text: string; tone: 'info' | 'error'; action?: ToastAction } | null
   dialog:
-    null | 'export' | 'sync' | 'preset' | 'collection' | 'preferences' | 'crash-consent' | 'engine'
+    | null
+    | 'export'
+    | 'sync'
+    | 'preset'
+    | 'looks'
+    | 'collection'
+    | 'preferences'
+    | 'crash-consent'
+    | 'engine'
   /** The collection the 'collection' dialog edits. */
   editing: CollectionDraft | null
   clipboard: { recipe: Recipe; groups: RecipeGroup[]; source: string | null } | null

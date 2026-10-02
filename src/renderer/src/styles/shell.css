@@ -252,6 +252,10 @@ aside.right .panels {
   border-bottom: 1px solid transparent;
   border-image: var(--hl-x) 1;
 }
+.rail-actions {
+  display: flex;
+  gap: 2px;
+}
 .rail-head .micro {
   color: var(--text);
 }

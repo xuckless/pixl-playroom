@@ -21,6 +21,8 @@ interface LooksState {
   mine: string[] | null
   /** The user's saved presets. */
   user: Preset[]
+  /** What the Looks browser opens searching for (the rail's search, Enter). */
+  browseQuery: string
   load(): Promise<void>
   reloadUser(): Promise<void>
   add(id: string): void
@@ -36,6 +38,7 @@ export const useLooks = create<LooksState>((set, get) => {
   return {
     mine: null,
     user: [],
+    browseQuery: '',
     async load() {
       const [raw] = await Promise.all([api.app.getSetting<unknown>(MINE_KEY), get().reloadUser()])
       set({ mine: readMine(raw) })

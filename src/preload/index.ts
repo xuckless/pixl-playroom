@@ -31,6 +31,8 @@ import {
   type WatermarkFile,
   type LibraryItem,
   type LibrarySource,
+  type LookThumbEvent,
+  type LookThumbRequest,
   type LutProfile,
   type MetaPatch,
   type MetaTextPatch,
@@ -242,6 +244,11 @@ const api = {
     remove: (id: string) => call<void>(IPC.presets.remove, id),
     luts: () => call<LutProfile[]>(IPC.presets.luts),
     importLut: () => call<LutProfile[]>(IPC.presets.importLut)
+  },
+  looks: {
+    thumbs: (req: LookThumbRequest) => call<void>(IPC.looks.thumbs, req),
+    cancel: (key: string) => call<void>(IPC.looks.cancel, key),
+    onThumb: (cb: (e: LookThumbEvent) => void) => on(IPC.looks.thumb, cb)
   },
   export: {
     chooseFolder: () => call<string | null>(IPC.export.chooseFolder),

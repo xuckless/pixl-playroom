@@ -169,6 +169,14 @@ export const IPC = {
     importLut: 'presets:import-lut',
     luts: 'presets:luts'
   },
+  looks: {
+    /** The Looks browser's cards wanted now (`LookThumbRequest`). */
+    thumbs: 'looks:thumbs',
+    /** The browser closed: stop making cards. */
+    cancel: 'looks:cancel',
+    /** main → renderer: a card made (`LookThumbEvent`). */
+    thumb: 'looks:thumb'
+  },
   models: {
     list: 'models:list',
     download: 'models:download',
@@ -590,6 +598,28 @@ export interface Preset {
   wbOp?: { kelvin: number; tint: number; absolute: boolean }
   /** A look's collection, tags and source (`looks/types.ts`); absent on a saved preset. */
   meta?: LookMeta
+}
+
+/** The cards the Looks browser can see, in its order, on the open photo. */
+export interface LookThumbRequest {
+  key: string
+  /** Counts the browser's asks: an older one arriving late changes nothing. */
+  token: number
+  /** The recipe the looks go on (the photo's own, or what it was before a look on trial). */
+  base: Recipe
+  /** Catalog ids, saved presets' ids, or `current` for the photo as it is. */
+  ids: string[]
+  /** The cards' long edge, in pixels. */
+  edge: number
+}
+
+export interface LookThumbEvent {
+  key: string
+  token: number
+  id: string
+  url: string
+  width: number
+  height: number
 }
 
 export interface LutProfile {

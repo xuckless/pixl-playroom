@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { dependents, patchSummary, prerequisites, type Step } from '../../../shared/history'
 import type { Preset, ProjectInfo } from '../../../shared/ipc'
-import { applyLook, needsLens } from '../../../shared/looks/apply'
 import { LOOK_BY_ID, LOOKS } from '../../../shared/looks/catalog'
 import { searchLooks } from '../../../shared/looks/search'
 import { Icon } from '../components/icons'
 import { api, errorText } from '../lib/api'
+import { applyToPhoto } from '../lib/applyLook'
 import { presetsChanged } from '../lib/hooks'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
@@ -20,18 +20,34 @@ import { useMaskPresets, useSelectedMask } from './masks/presets'
 
 export function PresetsActions(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
+  const hasPhoto = useDevelop((s) => s.session !== null)
   return (
-    <button className="sm ghost" onClick={() => setDialog('preset')} title="Save a preset">
-      <Icon name="plus" />
-      Save
-    </button>
+    <span className="rail-actions">
+      <button
+        className="sm ghost"
+        disabled={!hasPhoto}
+        onClick={() => openLooks()}
+        title="Browse every look, on this photo"
+      >
+        <Icon name="search" />
+        Browse
+      </button>
+      <button className="sm ghost" onClick={() => setDialog('preset')} title="Save a preset">
+        <Icon name="plus" />
+        Save
+      </button>
+    </span>
   )
+}
+
+/** The Looks browser, searching for `query` when one is given. */
+function openLooks(query = ''): void {
+  useLooks.setState({ browseQuery: query })
+  useLibrary.getState().setDialog('looks')
 }
 
 export function PresetsPane(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
-  const session = useDevelop((s) => s.session)
-  const replace = useDevelop((s) => s.replace)
   const mine = useLooks((s) => s.mine)
   const user = useLooks((s) => s.user)
   const [applied, setApplied] = useState<string | null>(null)
@@ -40,21 +56,9 @@ export function PresetsPane(): React.JSX.Element | null {
     if (useLooks.getState().mine === null) void useLooks.getState().load()
   }, [])
   if (!recipe) return <p className="rail-empty">Open a photo to use presets.</p>
-  const apply = async (p: Preset): Promise<void> => {
-    if (!session) return
+  const apply = (p: Preset): void => {
     setApplied(p.id)
-    // A lens profile is this photo's lens's at its focal length and aperture,
-    // not the numbers it had where the preset was saved.
-    const resolved = needsLens(p)
-      ? await api.lens.resolve(session.key, p.recipe.lens.profile.id).then(
-          (m) => m.resolved,
-          () => null
-        )
-      : null
-    const now = useDevelop.getState()
-    if (now.session?.key !== session.key || !now.recipe) return
-    const next = applyLook(now.recipe, p, { wb: session, lensResolved: resolved })
-    replace(next, `${p.meta ? 'Look' : 'Preset'}: ${p.name}`)
+    void applyToPhoto(p)
   }
   const myLooks = (mine ?? []).flatMap((id) => LOOK_BY_ID.get(id) ?? [])
   const q = query.trim()
@@ -74,9 +78,9 @@ export function PresetsPane(): React.JSX.Element | null {
       role="button"
       tabIndex={0}
       className={`preset rail-item${applied === p.id ? ' on' : ''}`}
-      onClick={() => void apply(p)}
+      onClick={() => apply(p)}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') void apply(p)
+        if (e.key === 'Enter') apply(p)
       }}
       title={describe(p)}
     >
@@ -94,12 +98,13 @@ export function PresetsPane(): React.JSX.Element | null {
         <Icon name="search" />
         <input
           className="search"
-          placeholder="Search looks"
+          placeholder="Search looks · Enter to browse"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
             e.stopPropagation()
             if (e.key === 'Escape') setQuery('')
+            if (e.key === 'Enter') openLooks(query.trim())
           }}
         />
       </label>

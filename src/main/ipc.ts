@@ -16,6 +16,7 @@ import {
   type ExportPreset,
   type HistoryLog,
   type LibrarySource,
+  type LookThumbRequest,
   type LutProfile,
   type MetaPatch,
   type MetaTextPatch,
@@ -29,6 +30,8 @@ import {
 import { convertWb, type WbContext } from '../shared/wbconvert'
 import { LicenceError } from '../shared/licence'
 import { applyGroups, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
+import { applyLook } from '../shared/looks/apply'
+import { resolveLook } from '../shared/looks/catalog'
 import { planeRef } from './planeref'
 import { equivalentFocal } from '../shared/upright'
 import { orientedFrame } from '../shared/compile'
@@ -475,6 +478,8 @@ export function registerIpc(s: Services): void {
   )
 
   // ── presets and profiles ──
+  // The user's presets as the Looks browser's cards need them, read once until one changes.
+  let userPresets: Promise<Preset[]> | null = null
   // The user's own presets: the catalog's looks are code both sides import.
   handle(IPC.presets.list, async (): Promise<Preset[]> =>
     (await s.index.presets()).map((p) => ({
@@ -495,9 +500,30 @@ export function registerIpc(s: Services): void {
       builtin: false
     }
     await s.index.savePreset(preset)
+    userPresets = null
     return preset
   })
-  handle(IPC.presets.remove, (id: string) => s.index.removePreset(id))
+  handle(IPC.presets.remove, async (id: string) => {
+    userPresets = null
+    await s.index.removePreset(id)
+  })
+
+  // ── the Looks browser's cards ──
+  handle(IPC.looks.thumbs, async (req: LookThumbRequest) => {
+    const wb = s.sessions.wbContext(req.key)
+    if (!wb) return
+    const base = await s.planes.hydrate(req.base)
+    userPresets ??= s.index.presets()
+    const user = await userPresets
+    const jobs = req.ids.flatMap((id) => {
+      if (id === 'current') return [{ id, recipe: base }]
+      const p = resolveLook(id) ?? user.find((u) => u.id === id)
+      // A card never looks a lens up: the preset's resolution stands in.
+      return p ? [{ id, recipe: applyLook(base, p, { wb, lensResolved: 'keep' }) }] : []
+    })
+    s.sessions.lookThumbs(req.key, req.token, jobs, req.edge)
+  })
+  handle(IPC.looks.cancel, (key: string) => s.sessions.cancelLookThumbs(key))
   handle(IPC.presets.luts, async (): Promise<LutProfile[]> =>
     (await readdir(paths.luts()))
       .filter((f) => f.toLowerCase().endsWith('.cube'))

@@ -58,6 +58,7 @@ import {
   type BasicSetting,
   type CaMeasurement,
   type DevelopSession,
+  type LookThumbEvent,
   type RegionRequest,
   type RegionResult,
   type RenderEvent,
@@ -65,7 +66,8 @@ import {
   type SampleResult,
   type ViewState
 } from '../shared/ipc'
-import { defaultRecipe, hash32, normaliseRecipe, type Recipe } from '../shared/recipe'
+import { defaultRecipe, hash32, normaliseRecipe, sameValue, type Recipe } from '../shared/recipe'
+import { LookThumbQueue, type LookThumb, type ThumbJob } from './lookthumbs'
 import type { Vec3 } from '../shared/wb'
 import {
   analyzeRequest,
@@ -133,6 +135,11 @@ const THUMB_IDLE_MS = 4000
 const MID_SHORTFALL = 0.8
 /** Picture files of each kind kept on disk besides any a kept event names. */
 const KEEP_RENDERS = 6
+/** The Looks browser's cards: the long edge asked for, within reason, and how many are kept. */
+const LOOK_EDGE_DEFAULT = 320
+const LOOK_EDGE_MIN = 96
+const LOOK_EDGE_MAX = 640
+const LOOK_KEEP = 600
 
 /**
  * What the histogram, the hue chart and auto tone read, measured by the
@@ -270,7 +277,7 @@ class Session {
   /** An earlier session's picture files: nothing names them now. */
   private async clearEarlier(): Promise<void> {
     for (const name of await readdir(this.dir).catch(() => [] as string[])) {
-      if (/^(view|mask|headroom)-/.test(name) && !name.includes(`-${this.tag}-`))
+      if (/^(view|mask|headroom|look)-/.test(name) && !name.includes(`-${this.tag}-`))
         await rm(join(this.dir, name), { force: true }).catch(() => undefined)
     }
   }
@@ -1638,9 +1645,84 @@ class Session {
     return s.noise
   }
 
+  // ── the Looks browser's cards (lookthumbs.ts) ──
+
+  private lookQueue: LookThumbQueue<Recipe> | null = null
+  /** Cards made, by what they were made from: a look scrolled past and back costs nothing. */
+  private lookMade = new Map<string, LookThumb>()
+  private lookFiles = new Map<string, string>()
+  private lookEdge = LOOK_EDGE_DEFAULT
+
+  /** The cards wanted now, in order (see `LookThumbQueue.request`). */
+  lookThumbs(token: number, jobs: ThumbJob<Recipe>[], edge: number): void {
+    if (this.closed) return
+    this.lookEdge = Math.round(Math.max(LOOK_EDGE_MIN, Math.min(LOOK_EDGE_MAX, edge)))
+    this.lookQueue ??= new LookThumbQueue<Recipe>(
+      (job, signal) => this.makeLookThumb(job.recipe, signal),
+      (t, id, thumb) =>
+        this.owner.send(IPC.looks.thumb, {
+          key: this.key,
+          token: t,
+          id,
+          ...thumb
+        } satisfies LookThumbEvent),
+      sameValue
+    )
+    this.lookQueue.request(token, jobs)
+  }
+
+  cancelLookThumbs(): void {
+    this.lookQueue?.cancel()
+  }
+
+  /** One card: the draft proxy, graded with `recipe`, cropped, small, on the background engine. */
+  private async makeLookThumb(recipe: Recipe, signal: AbortSignal): Promise<LookThumb> {
+    const src = this.viewPx().draft
+    const compiled = await this.compileFor(recipe, src, true)
+    const edge = this.lookEdge
+    const sig = hash32(
+      gradeKey([src.path, edge, compiled.grade, compiled.framing, compiled.lens, compiled.retouch])
+    ).toString(16)
+    const known = this.lookMade.get(sig)
+    if (known) return known
+    const out = join(this.dir, `look-${this.tag}-${sig}.jpg`)
+    const k = Math.min(1, edge / Math.max(src.width, src.height))
+    const report = await this.owner.bgEngine.convert(
+      {
+        ...blankRequest(src.path, out, src.input),
+        resize: k < 1 ? { Scale: { factor: k } } : 'None',
+        resampler: 'Bilinear',
+        pixel: { depth: 'Eight', channels: 3 },
+        encode: { Jpeg: { quality: 85, subsampling: 'Quarter', optimize: false } },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        color: displayPolicy(this.info, 'DisplayP3'),
+        grade: compiled.grade,
+        framing: compiled.framing,
+        lens: compiled.lens,
+        retouch: compiled.retouch,
+        threads: BACKGROUND_THREADS
+      },
+      { signal }
+    )
+    const thumb: LookThumb = { url: cacheUrl(out, sig), width: report.width, height: report.height }
+    this.lookMade.set(sig, thumb)
+    this.lookFiles.set(sig, out)
+    // The oldest cards go once there are many (a long browse over several photos' worth).
+    while (this.lookMade.size > LOOK_KEEP) {
+      const oldest = this.lookMade.keys().next().value as string
+      this.lookMade.delete(oldest)
+      const f = this.lookFiles.get(oldest)
+      this.lookFiles.delete(oldest)
+      if (f) void rm(f, { force: true }).catch(() => undefined)
+    }
+    return thumb
+  }
+
   /** Stop, writing a pending edit; resolves once it is saved. */
   close(): Promise<void> {
     this.closed = true
+    this.lookQueue?.close()
+    for (const f of this.lookFiles.values()) void rm(f, { force: true }).catch(() => undefined)
     clearTimeout(this.settle)
     this.abort?.abort()
     this.regionAbort?.abort()
@@ -1764,6 +1846,21 @@ export class DevelopSessions {
 
   update(key: string, recipe: Recipe, interactive: boolean, rev?: number): void {
     this.get(key).update(recipe, interactive, rev)
+  }
+
+  /** What a white balance saved elsewhere converts into on this photo; null when it is not open. */
+  wbContext(key: string): { isRaw: boolean; asShot: SourceInfo['as_shot_white'] } | null {
+    const s = this.sessions.get(key)
+    return s ? { isRaw: s.isRaw, asShot: s.info.as_shot_white } : null
+  }
+
+  /** The Looks browser's cards for an open photo; a photo since closed is not asked. */
+  lookThumbs(key: string, token: number, jobs: ThumbJob<Recipe>[], edge: number): void {
+    this.sessions.get(key)?.lookThumbs(token, jobs, edge)
+  }
+
+  cancelLookThumbs(key: string): void {
+    this.sessions.get(key)?.cancelLookThumbs()
   }
 
   view(key: string, view: ViewState): void {
