@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.2.0-beta](https://github.com/xuckless/pixl-playroom/compare/v0.1.1-beta.1...v0.2.0-beta) (2026-10-02)
+
+
+### Features
+
+* added more presets from different areas of the industry ([cd73b64](https://github.com/xuckless/pixl-playroom/commit/cd73b6485c99d4cd8232e344471241968045a6aa))
+* **engine:** pixl-engine 0.16.0 at parity: LibRaw replaces rawler ([e30e736](https://github.com/xuckless/pixl-playroom/commit/e30e7369c0e72c0d72e473375962f841cba25ed4))
+* glass bar sliders, (i) tips, cards and a glass dropdown ([d9a24fe](https://github.com/xuckless/pixl-playroom/commit/d9a24fe351c07732444e88f196d130ac6e91770c))
+* hover preview, Amount and swapping for looks ([3d40ad1](https://github.com/xuckless/pixl-playroom/commit/3d40ad1913261fef0504d6d8e252dade057c818a))
+* **lens:** defish fisheye lenses with their Lensfun profiles ([c0ffe40](https://github.com/xuckless/pixl-playroom/commit/c0ffe406f6a9a38781161b67441b6faec5de42d8))
+* look file format, looks docs and the smart-looks plan ([ef1d2ac](https://github.com/xuckless/pixl-playroom/commit/ef1d2acc23b23e1f4e0859668d8c56933584c93d))
+* looks browser with live thumbnails ([0e3a4f6](https://github.com/xuckless/pixl-playroom/commit/0e3a4f6c9da940ff1850500056c3823fd69588a4))
+* looks, a new way to make masks, engine 0.16.1, and What's new ([4f5a782](https://github.com/xuckless/pixl-playroom/commit/4f5a782b40bdcae46139a379a72dd3cbe0201ffd))
+* **loupe:** sharp 1:1 on straightened, Upright, lens-corrected and cropped photos ([a37e472](https://github.com/xuckless/pixl-playroom/commit/a37e472e5c7c1ec7869a9d24d5c69568e6d5d484))
+* **masks:** classes (sky, hair, eyes, skin…) found by a click today, by name later ([2025517](https://github.com/xuckless/pixl-playroom/commit/2025517bedb800244af3ac1dd8a4b16fab68f483))
+* **masks:** Molten glass draws a sharp edge as a solid line, its middle lighter ([76faa86](https://github.com/xuckless/pixl-playroom/commit/76faa8673d9034f88c5c9e9853d43ce8d0dd61eb))
+* **masks:** native gradient shapes, a bidirectional gradient, Snap to edges ([8833b22](https://github.com/xuckless/pixl-playroom/commit/8833b22ac31a04917c6c1307b76f62524ef1ac11))
+* **masks:** Snap to edges on a brush keeps the stroke to its object (SAM) ([56cdfd9](https://github.com/xuckless/pixl-playroom/commit/56cdfd9261ec717f54f726e9191701c4dbae204f))
+* **masks:** the Objects and Sky tools, Find object, and a Model needed popup ([3b2f8c3](https://github.com/xuckless/pixl-playroom/commit/3b2f8c39b9efb7e7469bcf0d33d2775a8e44b0f3))
+* potentail mask fix. ([abc8862](https://github.com/xuckless/pixl-playroom/commit/abc88625f8e958ebe6627c09b2937f76ae6330d2))
+* preset applying works ([a0b8db9](https://github.com/xuckless/pixl-playroom/commit/a0b8db9647b7f94edd2d3e53f8ac13f0c1591c5b))
+* save your own presets with their masks and AI steps as instructions ([7a72d5a](https://github.com/xuckless/pixl-playroom/commit/7a72d5adc3b57b22de33a00b220cf84f372add76))
+* **select:** SAM 2.1 select by clicks, a box and strokes, on its own engine ([27b469e](https://github.com/xuckless/pixl-playroom/commit/27b469e2b0f72d70e57692604c1238e9ff8e63db))
+* smart looks run: model masks, AI steps, picking and the smart catalog ([235a75f](https://github.com/xuckless/pixl-playroom/commit/235a75fc08312da069ecc19083b3d341ec70149c))
+* smart looks: instructions and the planner ([cc398b2](https://github.com/xuckless/pixl-playroom/commit/cc398b22a3891750f4741b3d11e5aa03837a5d4f))
+* tune the looks catalog so each look reads at a glance ([5d7926d](https://github.com/xuckless/pixl-playroom/commit/5d7926d30b458ff8285a633efe338c40e2637756))
+* What's new, once, after an update ([c79ae35](https://github.com/xuckless/pixl-playroom/commit/c79ae35e3888d41d79bc96b17182250c4c73d362))
+* working on our preset library ([335ec79](https://github.com/xuckless/pixl-playroom/commit/335ec79e0e2c1a85fde9c7e2f470f58b8a3b0e21))
+
+
+### Bug Fixes
+
+* **engine:** pixl-engine 0.16.1 ([aa6dba3](https://github.com/xuckless/pixl-playroom/commit/aa6dba31b46a1de29ecd269454bc546a672ca4b2))
+* library ui and behavioral fixes ([a2d5480](https://github.com/xuckless/pixl-playroom/commit/a2d54806fb82462dd6fb7ac98d5322e7accdc083))
+* **library:** a portrait RAW's first thumbnail is upright ([c99f351](https://github.com/xuckless/pixl-playroom/commit/c99f351c47e1addd5f65cf1aba728def9345d4e2))
+* **loupe:** the mask preview survives StrictMode's remount in development ([3cf3bf9](https://github.com/xuckless/pixl-playroom/commit/3cf3bf93102b95bd86685b9934b0414dc999c853))
+* **masks:** crisp SAM edges, no halo around the object ([1626745](https://github.com/xuckless/pixl-playroom/commit/1626745031fdf398a7bcede4c7b22112e2181dbf))
+* **masks:** crisp Select Subject and Background edges, no glow ([04af4e1](https://github.com/xuckless/pixl-playroom/commit/04af4e14d515d0f126d1d3746b207dc7b7ee2dea))
+* **masks:** show what Objects will take, as a tint, live while a box is drawn ([dd54dd5](https://github.com/xuckless/pixl-playroom/commit/dd54dd54ca49fc1d4a91a8d885f3d25d7c1eba4a))
+* **masks:** the People tools say "soon" until they are ready ([23325ce](https://github.com/xuckless/pixl-playroom/commit/23325cedf689cbba212fd7700ef4f299d7955768))
+* Molten glass style masks ([255c2e6](https://github.com/xuckless/pixl-playroom/commit/255c2e61e0833d63317c7a37f051eb96d50cac95))
+* release: macOS feed job's GitHub bridge ([a782ddc](https://github.com/xuckless/pixl-playroom/commit/a782ddc4e49f0572f904d1558eb96a2ad0426a65))
+* release: the GitHub bridge merges latest-mac.yml (the GitHub publisher ignores channels), attaches it as beta-mac.yml too, and never holds up the R2 feeds ([39c2067](https://github.com/xuckless/pixl-playroom/commit/39c20677c86fd3b06f7b9e2927603692267b3cb8))
+
+
+### Performance
+
+* **raw:** half-size RAW develops for proxies ([2657929](https://github.com/xuckless/pixl-playroom/commit/265792927d4359396b83b64dddc8df52a0cc8740))
+
 ## [0.1.1-beta.1](https://github.com/xuckless/pixl-playroom/compare/v0.1.1-beta...v0.1.1-beta.1) (2026-10-01)
 
 
