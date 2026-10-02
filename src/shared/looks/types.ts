@@ -1,7 +1,7 @@
 /**
  * Looks: the presets PIXL ships, gathered into collections, searchable, and
- * written so they can one day travel (the marketplace's payload, see
- * `LookFile` later). A look is a preset whose `fields` say which sliders it
+ * written so they can travel (the marketplace's payload: `LookFile`, in
+ * `schema.ts`). A look is a preset whose `fields` say which sliders it
  * sets; `meta` says where it sits, what it is like and what inspired it.
  *
  * Names are our own. A camera maker, a film stock or a film appears only as

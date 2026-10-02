@@ -1269,6 +1269,91 @@ and run ID. After: Pass 27; Owner task "Tiers and credits".
 
 ---
 
+## Phase L — Looks catalog and smart looks (passes 72–76)
+
+The Presets rail became a catalog: 284 looks made with Playroom's own
+sliders (no bundled LUTs), camera colour first, then cinema, film stocks,
+movies and TV, black and white, creative and essentials. Names are our own;
+a camera, stock or film appears only as "Inspired by …" (`inspiredBy`), with
+a no-affiliation line in the browser. Code: `src/shared/looks/`; the browser
+in `src/renderer/src/views/looks/`. Done so far (the catalog, My Looks, the
+browser, tuning, hover and Amount) is under "Done" → "Looks catalog".
+
+**Smart looks** are looks that carry instructions as well as sliders: "mask
+the sky and apply this", "mask skin", "mask this colour range", "mask this
+object (by label)", "AI denoise". What works today runs now (range and
+gradient masks, Subject/Background, DRUNet); sky, people parts, SAM2
+objects, the open-vocabulary detector and NAFNet ship in the next engine
+release and are gated at runtime on its capabilities (E28, E30, E45), never
+faked. The result is ordinary masks and pixel steps.
+
+### Pass 72 — Smart looks 1/4: instructions and the planner · 5 pts
+
+- [ ] **L** · `src/shared/looks/smart.ts`: `MaskTarget` (range, linear,
+      radial, subject, background, sky, person part, object by label),
+      `MaskInstruction` (parts with Add/Subtract/Intersect, feather, settings,
+      amount, required), `StepInstruction` (denoise, deblur, scoped to a
+      mask); `smart?` on `Preset`; `mask()`/`step()` in the DSL; `smart` in
+      `LookFile` (`schema.ts`).
+- [ ] **M** · `AiCapabilities.targets` (ready / needs model / needs engine)
+      and `pick`; `planSmart(look, caps, photo)` → immediate layers, ordered
+      jobs (segments before the steps scoped to them), picks, skipped, ETA
+      from the learned per-model rates. Tests: `tests/smartlooks.test.ts`.
+
+### Pass 73 — Smart looks 2/4: the runner · 5 pts
+
+After: Pass 72.
+
+- [ ] **L** · `src/main/looks/runner.ts`: one run per photo, its jobs grouped
+      (`group` on the job queue) under one progress bar; each starts when the
+      one before lands; cancel stops the run. Lands on its photo when the
+      user has moved on.
+- [ ] **M** · Each mask or step that lands amends the look's history step
+      while it is the newest (Phase 5's amend), else adds "Look: X · Sky".
+      Amount also scales the look's layers (`LocalLayer.amount`) and the
+      denoise step's strength; swapping removes them and cancels the run.
+
+### Pass 74 — Smart looks 3/4: picking, progress and the smart catalog · 5 pts
+
+After: Pass 73.
+
+- [ ] **M** · Pick flow: an object with no detector, or no or several
+      equally likely boxes, puts the loupe in a pick tool ("Click the car for
+      Rain City Noir · drag for a box · Esc to skip"); the click or box is
+      SAM2's prompt. Shared with "Objects by brush or box" (E30).
+- [ ] **M** · Progress in the Applied bar and the browser's detail: what the
+      look includes, the time estimate, stage labels, Cancel. Cards get a
+      Smart badge; the browser a "Smart" shelf and a "Works now" toggle.
+- [ ] **M** · `smart-catalog.ts`: 15–25 smart looks (Moody Sky, Portrait
+      Polish, Night City Clean, Golden Subject, Product Pop, Foliage Autumn,
+      Teal Water…) and smart variants of movie looks; catalog tests cover
+      targets, scopes and ranges.
+
+### Pass 75 — Smart looks 4/4: user presets as instructions · 4 pts
+
+After: Pass 74.
+
+- [ ] **M** · `source` on `BrushComponent` (a model's target, or SAM2's
+      prompt and label), set where AI masks land; `toInstructions()` turns a
+      photo's masks and denoise steps into instructions (hand-painted brushes
+      dropped with a warning).
+- [ ] **M** · The Save Preset dialog lists the converted instructions and
+      warnings; a `smart` column in `presets`; saved presets run through the
+      same planner and runner.
+
+### Pass 76 — Looks leftovers · 3 pts
+
+- [ ] **S** · A "Previewing: X" note on the loupe while a rail look is
+      hovered.
+- [ ] **M** · Retune the looks marked ≈ when E41–E44 land: replace
+      `halationApprox`/`bloomApprox` with the engine's, add chroma grain and
+      density, bump each changed look's `version`.
+- [ ] **S** · Import and export a look as a file (`lookToFile`,
+      `lookFromFile` exist; no UI yet). The marketplace itself (sharing,
+      browsing others' looks) is a later epic.
+
+---
+
 ## Waiting on the engine
 
 Playroom work that starts once the engine request lands
@@ -1324,6 +1409,11 @@ Playroom work that starts once the engine request lands
 - [ ] **M** · Learned auto white balance beside the grey-pixel estimate (E31).
 - [ ] **M** · An adaptive/learned auto tone (E31).
 - [ ] **S** · DirectML on Windows (E32).
+- [ ] **M** · Real halation, bloom, chroma grain and slide density in the
+      looks marked ≈ (E41–E44; Pass 76).
+- [ ] **M** · Smart looks' sky, people-part and object masks, NAFNet denoise:
+      turn their gates on when the binding with E28, E30 and E45 lands
+      (Passes 72–75 build against them now).
 
 ## Owner tasks (not model passes)
 
@@ -1425,6 +1515,27 @@ Playroom work that starts once the engine request lands
 ## Done
 
 Kept for reference: what was built, and where.
+
+### Looks catalog (Phase L, 2026-10-02)
+
+- [x] The catalog (`src/shared/looks/`): a builder language for looks
+      (`dsl.ts`), 284 looks in 17 collections, the original nine starters
+      kept, search with typo tolerance (`search.ts`), slider ranges and
+      brand-word checks (`ranges.ts`). Tests: `tests/looks.test.ts`.
+- [x] My Looks in the rail (app setting `looks.mine`), the user's presets
+      beside them; drag to reorder. Tests: `tests/looks-mine.test.ts`.
+- [x] The Looks browser: shelves by family and camera brand, cards that
+      render the open photo with each look on the background engine
+      (`src/main/lookthumbs.ts`), detail and Add to My Looks.
+- [x] Tuning: every look measured on reference photos; the S-curve step
+      strengthened, `foliage()` (green with yellow, where leaves are), the
+      faint and duplicate looks retuned.
+- [x] Hover a look in the rail to see it (never saved); the Applied bar's
+      Amount scales only what the look moved (`amount.ts`); another look
+      swaps in the same history step (Alt stacks), through the history's
+      amend (`HistoryTable.amendLast`).
+- [x] The look file format (`schema.ts`, `LookFile`) and its tests
+      (`tests/looks-schema.test.ts`); engine requests E41–E45.
 
 ### Closed in the 2026-10-01 re-plan
 
