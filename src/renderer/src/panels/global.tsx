@@ -30,6 +30,8 @@ import type { UprightMode } from '../../../shared/upright'
 import { withKey } from '../lib/commands'
 import { scoped, scopedView, scopeLayer, useScope } from '../state/scope'
 import { useUi } from '../state/ui'
+import type { Tip } from '../components/InfoTip'
+import { TIPS } from './tips'
 
 type Read = (r: Recipe) => number
 type Write = (r: Recipe, v: number) => void
@@ -46,6 +48,7 @@ function RS({
   format,
   track,
   title,
+  tip,
   onGesture
 }: {
   label: string
@@ -60,6 +63,7 @@ function RS({
   format?: (v: number) => string
   track?: string
   title?: string
+  tip?: Tip
 }): React.JSX.Element | null {
   // Its own number only: a tick of another slider does not re-render this one.
   const open = useUi((s) => s.masksWin.open)
@@ -79,6 +83,7 @@ function RS({
       format={format}
       track={track}
       title={title}
+      tip={tip}
       onChange={(v, live) => {
         if (live) onGesture?.(true)
         edit((r) => write(r, v), live)
@@ -430,6 +435,7 @@ export function BasicPanel(): React.JSX.Element | null {
       >
         <RS
           label="Exposure"
+          tip={TIPS['light.exposure']}
           read={(r) => r.basic.exposure}
           write={(r, v) => (r.basic.exposure = v)}
           min={-5}
@@ -439,41 +445,58 @@ export function BasicPanel(): React.JSX.Element | null {
         />
         <RS
           label="Contrast"
+          tip={TIPS['light.contrast']}
           read={(r) => r.basic.contrast}
           write={(r, v) => (r.basic.contrast = v)}
         />
         <RS
           label="Highlights"
+          tip={TIPS['light.highlights']}
           read={(r) => r.basic.highlights}
           write={(r, v) => (r.basic.highlights = v)}
         />
         <RS label="Shadows" read={(r) => r.basic.shadows} write={(r, v) => (r.basic.shadows = v)} />
-        <RS label="Whites" read={(r) => r.basic.whites} write={(r, v) => (r.basic.whites = v)} />
-        <RS label="Blacks" read={(r) => r.basic.blacks} write={(r, v) => (r.basic.blacks = v)} />
+        <RS
+          label="Whites"
+          tip={TIPS['light.whites']}
+          read={(r) => r.basic.whites}
+          write={(r, v) => (r.basic.whites = v)}
+        />
+        <RS
+          label="Blacks"
+          tip={TIPS['light.blacks']}
+          read={(r) => r.basic.blacks}
+          write={(r, v) => (r.basic.blacks = v)}
+        />
       </Section>
       <Section id="basic.presence" title="Presence">
         <RS
           label="Texture"
+          tip={TIPS['presence.texture']}
           read={(r) => r.presence.texture}
           write={(r, v) => (r.presence.texture = v)}
         />
         <RS
           label="Clarity"
+          tip={TIPS['presence.clarity']}
           read={(r) => r.presence.clarity}
           write={(r, v) => (r.presence.clarity = v)}
         />
         <RS
           label="Dehaze"
+          tip={TIPS['presence.dehaze']}
           read={(r) => r.presence.dehaze}
           write={(r, v) => (r.presence.dehaze = v)}
         />
         <RS
           label="Vibrance"
+          tip={TIPS['colour.vibrance']}
           read={(r) => r.presence.vibrance}
           write={(r, v) => (r.presence.vibrance = v)}
         />
         <RS
           label="Saturation"
+          tip={TIPS['colour.saturation']}
           read={(r) => r.presence.saturation}
           write={(r, v) => (r.presence.saturation = v)}
         />
@@ -563,6 +586,7 @@ export function ToneCurvePanel(): React.JSX.Element | null {
         />
         <RS
           label="Shadows"
+          tip={TIPS['light.shadows']}
           read={(r) => r.toneCurve.shadows}
           write={(r, v) => (r.toneCurve.shadows = v)}
         />

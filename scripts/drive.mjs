@@ -249,6 +249,50 @@ const COMMANDS = {
       Math.round(by)
     )
   },
+  /** mdrag <selector> <dx> [--alt] — a real drag across an element, from its centre, dx pixels. */
+  async mdrag(arg) {
+    const alt = arg.includes('--alt')
+    const [sel, dxs] = arg
+      .replace('--alt', '')
+      .trim()
+      .split(/\s+(?=-?\d+$)/)
+    const r = await page.evaluate((s) => {
+      const b = document.querySelector(s)?.getBoundingClientRect()
+      return b ? { x: b.x + b.width / 2, y: b.y + b.height / 2 } : null
+    }, sel)
+    if (!r) return console.log('NOT_FOUND')
+    const dx = Number(dxs)
+    if (alt) await page.keyboard.down('Alt')
+    await page.mouse.move(r.x, r.y)
+    await page.mouse.down()
+    for (let k = 1; k <= 12; k++) await page.mouse.move(r.x + (dx * k) / 12, r.y)
+    await page.mouse.up()
+    if (alt) await page.keyboard.up('Alt')
+    console.log('dragged', sel, dx)
+  },
+  /** mclick <selector> [--dbl] — a real click at an element's centre. */
+  async mclick(arg) {
+    const dbl = arg.includes('--dbl')
+    const sel = arg.replace('--dbl', '').trim()
+    const r = await page.evaluate((s) => {
+      const b = document.querySelector(s)?.getBoundingClientRect()
+      return b ? { x: b.x + b.width / 2, y: b.y + b.height / 2 } : null
+    }, sel)
+    if (!r) return console.log('NOT_FOUND')
+    if (dbl) await page.mouse.dblclick(r.x, r.y)
+    else await page.mouse.click(r.x, r.y)
+    console.log('clicked', sel)
+  },
+  /** mhover <selector> — move the mouse over an element's centre. */
+  async mhover(sel) {
+    const r = await page.evaluate((s) => {
+      const b = document.querySelector(s)?.getBoundingClientRect()
+      return b ? { x: b.x + b.width / 2, y: b.y + b.height / 2 } : null
+    }, sel)
+    if (!r) return console.log('NOT_FOUND')
+    await page.mouse.move(r.x, r.y)
+    console.log('hovering', sel)
+  },
   /** tap x,y [x,y …] [--dbl] — real mouse clicks at fractions of the picture (--dbl double-clicks the last). */
   async tap(arg) {
     const dbl = arg.includes('--dbl')
