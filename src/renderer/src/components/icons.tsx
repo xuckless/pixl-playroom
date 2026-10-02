@@ -143,6 +143,13 @@ const PATHS = {
       <path d="M3 18h18" />
     </>
   ),
+  bidirectional: (
+    <>
+      <path d="M3 5h18" strokeDasharray="2 2.5" />
+      <path d="M3 12h18" />
+      <path d="M3 19h18" strokeDasharray="2 2.5" />
+    </>
+  ),
   radial: (
     <>
       <ellipse cx="12" cy="12" rx="9" ry="7" />

@@ -230,6 +230,18 @@ interface ComponentBase {
   feather: number
   /** Its edge moved in or out and hardened (shared/maskedge.ts); absent changes nothing. */
   edge?: MaskEdge
+  /**
+   * Its edge snapped to the picture's (the engine's refine, shared/refine.ts):
+   * a brush, a lasso or a model's mask. Absent is off.
+   */
+  refine?: MaskRefine
+}
+
+/** Snap to edges: on or off, and how far an edge may pull it (% of the shorter side). */
+export interface MaskRefine {
+  on: boolean
+  /** 0.05…5: how far the picture's edges may pull the selection's, % of the shorter side. */
+  radius: number
 }
 
 /**
@@ -278,8 +290,9 @@ export interface RangeComponent extends ComponentBase {
 /**
  * A linear gradient (Lightroom's), in normalised base-frame coordinates: the
  * full effect at `start`, fading to nothing at `end`, across lines at right
- * angles to start→end. It reaches the engine as a raster plane of
- * `width × height` (the base frame's aspect), drawn from these numbers.
+ * angles to start→end. It reaches the engine as its own shape
+ * (`LinearGradient`, shared/gradients.ts); `width × height` is the base
+ * frame's aspect at a small size, which its handles measure in.
  */
 export interface LinearComponent extends ComponentBase {
   kind: 'linear'
@@ -306,11 +319,32 @@ export interface RadialComponent extends ComponentBase {
   height: number
 }
 
-export type MaskComponentSetting =
-  BrushComponent | PolygonComponent | RangeComponent | LinearComponent | RadialComponent
+/**
+ * A bidirectional linear gradient (Camera Raw's): the full effect on the line
+ * through the point `centre` of the way from `start` to `end` (0…1), fading
+ * to nothing at the lines through `start` and through `end`, each side its
+ * own width; every line at right angles to start→end. In normalised
+ * base-frame coordinates, as a linear gradient's are.
+ */
+export interface BidirectionalComponent extends ComponentBase {
+  kind: 'bidirectional'
+  start: { x: number; y: number }
+  end: { x: number; y: number }
+  /** Where the full effect is, as a share of the way from `start` to `end`. */
+  centre: number
+  width: number
+  height: number
+}
 
-/** Components drawn into a raster plane before they reach the engine. */
-export type RasterComponent = BrushComponent | LinearComponent | RadialComponent
+export type GradientComponent = LinearComponent | RadialComponent | BidirectionalComponent
+
+export type MaskComponentSetting =
+  | BrushComponent
+  | PolygonComponent
+  | RangeComponent
+  | LinearComponent
+  | RadialComponent
+  | BidirectionalComponent
 
 /**
  * A mask's sliders before version 2, when a mask had its own small set:
@@ -748,7 +782,8 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
     invert: c.invert === true,
     feather: num(c.feather, 0, 0, 100),
     ...(typeof c.name === 'string' && c.name.trim() ? { name: c.name.trim() } : {}),
-    ...((e) => (e ? { edge: e } : {}))(normaliseEdge(c.edge))
+    ...((e) => (e ? { edge: e } : {}))(normaliseEdge(c.edge)),
+    ...((r) => (r ? { refine: r } : {}))(normaliseRefine(c.refine))
   }
   switch (c.kind) {
     case 'brush':
@@ -800,9 +835,24 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         width: num(c.width, 512, 1),
         height: num(c.height, 512, 1)
       }
+    case 'bidirectional':
+      return {
+        ...base,
+        kind: 'bidirectional',
+        start: point(c.start, { x: 0.5, y: 0.25 }),
+        end: point(c.end, { x: 0.5, y: 0.75 }),
+        centre: num(c.centre, 0.5, 0.02, 0.98),
+        width: num(c.width, 512, 1),
+        height: num(c.height, 512, 1)
+      }
     default:
       return null
   }
+}
+
+function normaliseRefine(v: unknown): MaskRefine | null {
+  if (!isObject(v)) return null
+  return { on: v.on === true, radius: num(v.radius, 0.5, 0.05, 5) }
 }
 
 // ── Groups: what copy, paste, sync and presets move ─────────────────────────

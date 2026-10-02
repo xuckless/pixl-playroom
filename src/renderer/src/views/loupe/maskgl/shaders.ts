@@ -24,11 +24,12 @@ float smooth01(float e0, float e1, float x) {
 }
 `
 
-/** A linear or radial gradient's plane, in the base frame (see gradients.ts). */
+/** A linear, radial or bidirectional gradient's plane, in the base frame (see gradients.ts). */
 export const SHAPE_FS = `${HEAD}
-uniform int uKind;        // 0 linear, 1 radial
+uniform int uKind;        // 0 linear, 1 radial, 2 bidirectional
 uniform vec2 uPlane;      // the component's plane size, its own pixels
-uniform vec4 uLine;       // linear: sx, sy, dx, dy (plane pixels)
+uniform vec4 uLine;       // linear, bidirectional: sx, sy, dx, dy (plane pixels)
+uniform float uCentre;    // bidirectional: where the full line is, 0…1 of the way
 uniform vec4 uEllipse;    // radial: cx, cy, rx, ry (plane pixels)
 uniform vec3 uTurn;       // radial: cos, sin of −angle, inner
 void main() {
@@ -38,6 +39,11 @@ void main() {
     float len2 = dot(uLine.zw, uLine.zw);
     float t = dot(p - uLine.xy, uLine.zw);
     v = len2 < 1e-9 ? (t <= 0.0 ? 1.0 : 0.0) : 1.0 - smooth01(0.0, 1.0, t / len2);
+  } else if (uKind == 2) {
+    float len2 = dot(uLine.zw, uLine.zw);
+    float t = len2 < 1e-9 ? -1.0 : dot(p - uLine.xy, uLine.zw) / len2;
+    float u = t <= uCentre ? t / uCentre : (1.0 - t) / (1.0 - uCentre);
+    v = smooth01(0.0, 1.0, u);
   } else {
     vec2 q = p - uEllipse.xy;
     float u = (q.x * uTurn.x - q.y * uTurn.y) / uEllipse.z;

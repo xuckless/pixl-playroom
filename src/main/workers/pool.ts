@@ -8,7 +8,7 @@ import { availableParallelism } from 'os'
 import type { Worker } from 'worker_threads'
 import type { Orientation } from '../../shared/engine-types'
 import type { MaskEdge } from '../../shared/maskedge'
-import type { LinearComponent, RadialComponent } from '../../shared/recipe'
+import type { GradientComponent } from '../../shared/recipe'
 import createPixels from './pixels.worker?nodeWorker'
 
 export type PixelsJob =
@@ -16,7 +16,7 @@ export type PixelsJob =
       op: 'gradient'
       file: string
       dir: string
-      c: LinearComponent | RadialComponent
+      c: GradientComponent
       user: Orientation
     }
   | { op: 'brush'; file: string; png: string; user: Orientation; edge?: MaskEdge }

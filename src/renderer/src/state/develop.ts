@@ -31,6 +31,7 @@ export type Tool =
   | 'polygon'
   | 'linear'
   | 'radial'
+  | 'bidirectional'
   | 'wb-picker'
   | 'range-picker'
   | 'point-picker'

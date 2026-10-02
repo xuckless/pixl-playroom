@@ -57,6 +57,8 @@ export type MaskTarget =
       smoothness?: number
     }
   | { kind: 'linear'; start: FramePoint; end: FramePoint }
+  /** Full on the line `centre` (0…1) of the way from `start` to `end`, none at either. */
+  | { kind: 'bidirectional'; start: FramePoint; end: FramePoint; centre?: number }
   | {
       kind: 'radial'
       centre: FramePoint
@@ -124,6 +126,7 @@ export type Readiness = 'ready' | 'needs-model' | 'needs-engine'
 export type SmartKey =
   | 'range'
   | 'linear'
+  | 'bidirectional'
   | 'radial'
   | 'subject'
   | 'background'
@@ -160,6 +163,7 @@ export function smartReadiness(b: SmartBuild): SmartReadiness {
   return {
     range: 'ready',
     linear: 'ready',
+    bidirectional: 'ready',
     radial: 'ready',
     subject: model(b.subjectModel),
     background: model(b.subjectModel),
@@ -180,7 +184,7 @@ export function whyNot(r: Readiness): string {
     : 'needs the next engine update'
 }
 
-const IMMEDIATE = new Set<MaskTarget['kind']>(['range', 'linear', 'radial'])
+const IMMEDIATE = new Set<MaskTarget['kind']>(['range', 'linear', 'bidirectional', 'radial'])
 
 /** A part's own need; an object falls back to the user pointing at it. */
 function partNeed(t: MaskTarget, r: SmartReadiness): { key: SmartKey; ready: boolean } {
@@ -345,6 +349,15 @@ function componentOf(
     }
   if (t.kind === 'linear')
     return { ...base, kind: 'linear', start: { ...t.start }, end: { ...t.end }, ...plane }
+  if (t.kind === 'bidirectional')
+    return {
+      ...base,
+      kind: 'bidirectional',
+      start: { ...t.start },
+      end: { ...t.end },
+      centre: t.centre ?? 0.5,
+      ...plane
+    }
   if (t.kind === 'radial')
     return {
       ...base,
@@ -539,6 +552,17 @@ function targetOf(v: unknown): MaskTarget | null {
       const end = point(v.end)
       return start && end ? { kind: 'linear', start, end } : null
     }
+    case 'bidirectional': {
+      const start = point(v.start)
+      const end = point(v.end)
+      if (!start || !end) return null
+      return {
+        kind: 'bidirectional',
+        start,
+        end,
+        ...(num(v.centre) ? { centre: clamp(v.centre, 0.02, 0.98) } : {})
+      }
+    }
     case 'radial': {
       const centre = point(v.centre)
       if (!centre || !num(v.radiusX) || !num(v.radiusY)) return null
@@ -660,6 +684,7 @@ export interface Converted {
 const PART_WORDS: Record<MaskTarget['kind'], (t: MaskTarget) => string> = {
   range: (t) => (t.kind === 'range' && t.hue ? 'a colour range' : 'a brightness range'),
   linear: () => 'a linear gradient',
+  bidirectional: () => 'a bidirectional gradient',
   radial: () => 'a radial gradient',
   subject: () => 'the subject',
   background: () => 'the background',
@@ -695,6 +720,16 @@ function partOf(c: MaskComponentSetting): MaskPart | string {
     }
     case 'linear':
       return { target: { kind: 'linear', start: { ...c.start }, end: { ...c.end } }, ...join }
+    case 'bidirectional':
+      return {
+        target: {
+          kind: 'bidirectional',
+          start: { ...c.start },
+          end: { ...c.end },
+          centre: c.centre
+        },
+        ...join
+      }
     case 'radial':
       return {
         target: {
@@ -787,7 +822,11 @@ export function toInstructions(layers: LocalLayer[], pixels: PixelStep[]): Conve
         `${l.name}: ${left} setting${left === 1 ? '' : 's'} a preset cannot carry in a mask (noise reduction, point colours, curves) left out`
       )
     const feather = l.components.find(
-      (c) => c.kind === 'range' || c.kind === 'linear' || c.kind === 'radial'
+      (c) =>
+        c.kind === 'range' ||
+        c.kind === 'linear' ||
+        c.kind === 'bidirectional' ||
+        c.kind === 'radial'
     )?.feather
     const id = `m${masks.length + 1}`
     masks.push({

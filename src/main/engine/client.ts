@@ -25,6 +25,7 @@ import type {
   Framing,
   MaskBounds,
   Rgb,
+  SegmentReport,
   SourceInfo,
   Transform,
   WhiteBalance
@@ -268,13 +269,19 @@ export class EngineClient {
   ): Promise<Transform> {
     return this.call('uprightFromLines', [lines, width, height, focal]) as Promise<Transform>
   }
-  /** Run a segmentation model on a photo (`segment`); each plane's PNG is a Buffer. */
-  segment(request: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return this.call('segment', [request]) as Promise<Record<string, unknown>>
+  /**
+   * Run a segmentation model on a photo (`segment`); each plane's PNG is a
+   * Buffer. A signal stops the model mid-run (0.16).
+   */
+  segment(request: Record<string, unknown>, opts: CallOptions = {}): Promise<SegmentReport> {
+    return this.call('segment', [request], opts.signal) as Promise<SegmentReport>
   }
   /** Time models on providers (`benchmark`). */
-  benchmark(request: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return this.call('benchmark', [request]) as Promise<Record<string, unknown>>
+  benchmark(
+    request: Record<string, unknown>,
+    opts: CallOptions = {}
+  ): Promise<Record<string, unknown>> {
+    return this.call('benchmark', [request], opts.signal) as Promise<Record<string, unknown>>
   }
   /** Where a heal or clone should copy from (see `retouch/suggest.rs`). */
   suggestHealSource(request: Record<string, unknown>): Promise<Record<string, unknown>> {

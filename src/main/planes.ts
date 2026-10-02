@@ -11,7 +11,7 @@ import type { Orientation } from '../shared/engine-types'
 import { rasteriseGradient } from '../shared/gradients'
 import { orientPlane } from '../shared/orientation'
 import { applyEdge, type MaskEdge } from '../shared/maskedge'
-import type { LinearComponent, RadialComponent } from '../shared/recipe'
+import type { GradientComponent } from '../shared/recipe'
 import { decodePng, encodeGreyPng } from './pngio'
 
 /** Gradient planes kept per photo: dragging a gradient writes a new one per settled position. */
@@ -32,11 +32,7 @@ function writeAtomic(file: string, data: Buffer): void {
   renameSync(tmp, file)
 }
 
-export function writeGradientPlane(
-  file: string,
-  c: LinearComponent | RadialComponent,
-  user: Orientation
-): void {
+export function writeGradientPlane(file: string, c: GradientComponent, user: Orientation): void {
   const w = Math.max(1, Math.round(c.width))
   const h = Math.max(1, Math.round(c.height))
   const turned = orientPlane(user, applyEdge(rasteriseGradient(c), w, h, c.edge), w, h)

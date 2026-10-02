@@ -1,6 +1,17 @@
 import type { BlendMode, KeyBand } from '../../../../shared/engine-types'
 import { normaliseEdge, type MaskEdge } from '../../../../shared/maskedge'
-import { componentControls, hiddenAdjusted, resetHidden } from '../../../../shared/maskcontrols'
+import {
+  componentControls,
+  fromModel,
+  hiddenAdjusted,
+  resetHidden
+} from '../../../../shared/maskcontrols'
+import {
+  AI_EDGE_RADIUS,
+  DRAWN_EDGE_RADIUS,
+  EDGE_RADIUS_MAX,
+  EDGE_RADIUS_MIN
+} from '../../../../shared/refine'
 import type { MaskComponentSetting } from '../../../../shared/recipe'
 import { Icon } from '../../components/icons'
 import { Section, Select, Slider, Toggle } from '../../components/ui'
@@ -62,8 +73,54 @@ export function ComponentCard({
       if (e) x.edge = e
       else delete x.edge
     }, live)
+  const snapping = c.refine?.on === true
+  const radiusDef = fromModel(c) ? AI_EDGE_RADIUS : DRAWN_EDGE_RADIUS
+  // Snap to edges on: a model's mask lets the snap firm its edge, in place of
+  // an older recipe's harden.
+  const setSnap = (on: boolean): void => {
+    edit((x) => {
+      x.refine = { on, radius: x.refine?.radius ?? radiusDef }
+      if (on && fromModel(x) && x.edge) {
+        const e = normaliseEdge({ ...x.edge, harden: 0 })
+        if (e) x.edge = e
+        else delete x.edge
+      }
+    })
+    commit(on ? 'Snap to edges' : 'Snap to edges off')
+  }
   return (
     <div className="mf-card">
+      {show.snap && (
+        <>
+          <div className="mf-card-row">
+            <Toggle
+              on={snapping}
+              onChange={setSnap}
+              title="Pull this edge onto the photo's own edges, at full resolution (the engine's refine)"
+            >
+              Snap to edges
+            </Toggle>
+          </div>
+          {snapping && (
+            <Slider
+              label="Edge radius"
+              adjusts={false}
+              value={c.refine?.radius ?? radiusDef}
+              min={EDGE_RADIUS_MIN}
+              max={EDGE_RADIUS_MAX}
+              step={0.05}
+              scale="log"
+              def={radiusDef}
+              format={(v) => `${v.toFixed(2)}%`}
+              title="How far the photo's edges may pull this one, as a share of its shorter side: about three times how far off the edge is"
+              onChange={(v, live) =>
+                edit((x) => (x.refine = { on: true, radius: Math.round(v * 100) / 100 }), live)
+              }
+              onCommit={() => commit('Edge radius')}
+            />
+          )}
+        </>
+      )}
       {show.feather && (
         <Slider
           label="Feather"

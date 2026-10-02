@@ -112,6 +112,15 @@ export function encodePng16(
   ])
 }
 
+/** A grey PNG (8 or 16-bit) as 8-bit samples, rounded: a model's plane as a painted one. */
+export function grey8(png: Buffer): { width: number; height: number; data: Uint8Array } {
+  const s = pngSamples16(png)
+  if (s.channels !== 1) throw new Error(`a grey plane was expected, got ${s.channels} channels`)
+  const data = new Uint8Array(s.data.length)
+  for (let i = 0; i < data.length; i++) data[i] = Math.round(s.data[i] / 257)
+  return { width: s.width, height: s.height, data }
+}
+
 /** A decoded PNG's samples as 16-bit values (an 8-bit one scaled up), `channels` per pixel. */
 export function pngSamples16(png: Buffer): {
   width: number

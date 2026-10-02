@@ -27,6 +27,7 @@ export type MaskToolKind =
   | 'brush'
   | 'linear'
   | 'radial'
+  | 'bidirectional'
   | 'polygon'
   | 'color'
   | 'luminance'
@@ -77,6 +78,12 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
       { kind: 'brush', label: 'Brush', icon: 'brush', command: 'mask.brush' },
       { kind: 'linear', label: 'Linear gradient', icon: 'linear', command: 'mask.linear' },
       { kind: 'radial', label: 'Radial gradient', icon: 'radial', command: 'mask.radial' },
+      {
+        kind: 'bidirectional',
+        label: 'Bidirectional gradient',
+        icon: 'bidirectional',
+        command: 'mask.bidirectional'
+      },
       { kind: 'polygon', label: 'Lasso', icon: 'lasso', command: 'mask.lasso' }
     ]
   },
@@ -95,7 +102,8 @@ export const COMPONENT_LABEL: Record<MaskComponentSetting['kind'], string> = {
   polygon: 'Lasso',
   range: 'Range',
   linear: 'Linear gradient',
-  radial: 'Radial gradient'
+  radial: 'Radial gradient',
+  bidirectional: 'Bidirectional gradient'
 }
 
 export function componentIcon(c: MaskComponentSetting): IconName {
@@ -186,6 +194,7 @@ export function startMaskTool(kind: MaskToolKind): void {
     brush: 'brush',
     linear: 'linear',
     radial: 'radial',
+    bidirectional: 'bidirectional',
     polygon: 'polygon'
   }
   const t = tools[kind]
@@ -229,6 +238,7 @@ const MASK_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
   'polygon',
   'linear',
   'radial',
+  'bidirectional',
   'range-picker'
 ])
 

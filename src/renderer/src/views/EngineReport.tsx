@@ -7,6 +7,7 @@
  */
 import { useMemo, useState } from 'react'
 import { compile } from '../../../shared/compile'
+import { rasterGradient } from '../../../shared/gradients'
 import type { GradeLayer } from '../../../shared/engine-types'
 import { fromExif } from '../../../shared/orientation'
 import { newId } from '../../../shared/recipe'
@@ -158,7 +159,12 @@ export function EngineReportDialog(): React.JSX.Element | null {
       brushPaths: Object.fromEntries(
         recipe.layers.flatMap((l) =>
           l.components
-            .filter((c) => c.kind === 'brush' || c.kind === 'linear' || c.kind === 'radial')
+            .filter(
+              (c) =>
+                c.kind === 'brush' ||
+                ((c.kind === 'linear' || c.kind === 'radial' || c.kind === 'bidirectional') &&
+                  rasterGradient(c))
+            )
             .map((c) => [c.id, `<${c.kind} plane ${c.id}>`])
         )
       ),

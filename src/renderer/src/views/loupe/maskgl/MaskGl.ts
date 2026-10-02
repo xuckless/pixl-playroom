@@ -5,7 +5,7 @@
  * shown over the photo crossfaded with the engine's plane. Planes are kept
  * by what shapes them, so dragging one gradient redraws that one only.
  */
-import { radialGeometry } from '../../../../../shared/gradients'
+import { CENTRE_MAX, CENTRE_MIN, radialGeometry } from '../../../../../shared/gradients'
 import { featherRadius, featherSigmaPx, planeKey } from '../../../../../shared/maskpreview'
 import {
   EDGE_SHIFT_SPAN,
@@ -299,15 +299,17 @@ export class MaskGl {
     if (had && had.key === key) return had
     const t = this.target(bw, bh, had?.target)
     const plane: Plane = { key, target: t, base }
-    if (c.kind === 'linear' || c.kind === 'radial') {
+    if (c.kind === 'linear' || c.kind === 'radial' || c.kind === 'bidirectional') {
       const p = this.programs.shape
       gl.useProgram(p)
       gl.uniform2f(this.u(p, 'uPlane'), c.width, c.height)
-      if (c.kind === 'linear') {
+      if (c.kind === 'linear' || c.kind === 'bidirectional') {
         const sx = c.start.x * c.width
         const sy = c.start.y * c.height
-        gl.uniform1i(this.u(p, 'uKind'), 0)
+        gl.uniform1i(this.u(p, 'uKind'), c.kind === 'linear' ? 0 : 2)
         gl.uniform4f(this.u(p, 'uLine'), sx, sy, c.end.x * c.width - sx, c.end.y * c.height - sy)
+        if (c.kind === 'bidirectional')
+          gl.uniform1f(this.u(p, 'uCentre'), Math.min(CENTRE_MAX, Math.max(CENTRE_MIN, c.centre)))
       } else {
         const g = radialGeometry(c)
         gl.uniform1i(this.u(p, 'uKind'), 1)
@@ -372,7 +374,7 @@ export class MaskGl {
       this.run(p, t, bw, bh)
     }
     // A painted or gradient plane's edge moved and hardened, as the engine's is.
-    if (c.kind === 'brush' || c.kind === 'linear' || c.kind === 'radial')
+    if (c.kind !== 'polygon' && c.kind !== 'range')
       plane.target = this.edged(plane.target, bw, bh, c.edge)
     const tt = plane.target
     // Feather: a Gaussian across the plane, in its own pixels.

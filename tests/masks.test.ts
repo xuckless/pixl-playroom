@@ -192,7 +192,7 @@ test('Range smoothness softens by feather: the engine refuses a blur on a Range 
   assert.equal(c.feather.radius, 0.005)
 })
 
-test('gradients reach the engine as raster planes, and are dropped without one', () => {
+test('gradients reach the engine as its own shapes; only an older edge needs a plane', () => {
   const r = defaultRecipe(false)
   const l = newLocalLayer('g')
   l.components.push({
@@ -209,12 +209,48 @@ test('gradients reach the engine as raster planes, and are dropped without one',
   })
   l.settings.basic.exposure = -1
   r.layers.push(l)
+  // No plane needed: the engine draws it.
+  const c = compile(r, ctx)
+  const mask = c.grade!.layers[0].mask!
+  assert.deepEqual(mask.components[0].shape, {
+    LinearGradient: { from: { x: 0.5, y: 0 }, to: { x: 0.5, y: 0.5 }, ramp: 'Smoothstep' }
+  })
+  assert.equal(mask.components[0].refine, null)
+  assert.equal(mask.space, null)
+  // An edge from an older version: a plane, drawn by the main process.
+  l.components[0].edge = { shift: 20, harden: 0 }
   assert.equal(compile(r, ctx).grade, null)
-  const c = compile(r, { ...ctx, brushPaths: { lin: '/tmp/lin.png' } })
-  const shape = c.grade!.layers[0].mask!.components[0].shape as {
+  const edged = compile(r, { ...ctx, brushPaths: { lin: '/tmp/lin.png' } })
+  const shape = edged.grade!.layers[0].mask!.components[0].shape as {
     Raster: { source: { Png: string } }
   }
   assert.equal(shape.Raster.source.Png, '/tmp/lin.png')
+})
+
+test('a snapped component reads the luminance, so its mask states a space', () => {
+  const l = newLocalLayer('m')
+  l.components.push({
+    id: 'b',
+    kind: 'brush',
+    mode: 'Add',
+    opacity: 100,
+    invert: false,
+    feather: 0,
+    width: 4,
+    height: 4,
+    png: 'x',
+    source: { kind: 'segment', target: 'subject' },
+    refine: { on: true, radius: 0.4 },
+    edge: { shift: 50, harden: 0 }
+  })
+  const m = layerMask(l, 'Normal', { b: '/tmp/b.png' })!
+  // Shift edge +50 grows it by 1.5% of the shorter side: the refine's contract, negative.
+  assert.deepEqual(m.components[0].refine, { radius: 0.004, epsilon: 0.001, contract: -0.015 })
+  assert.notEqual(m.space, null)
+  l.components[0].refine = { on: false, radius: 0.4 }
+  const off = layerMask(l, 'Normal', { b: '/tmp/b.png' })!
+  assert.equal(off.components[0].refine, null)
+  assert.equal(off.space, null)
 })
 
 test('a Subtract left first by an Add that could not be drawn takes nothing away', () => {

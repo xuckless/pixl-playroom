@@ -11,6 +11,16 @@ import type { MaskComponentSetting } from '../src/shared/recipe'
 
 const base = { id: 'c', mode: 'Add' as const, opacity: 100, invert: false, feather: 0 }
 const brush: MaskComponentSetting = { ...base, kind: 'brush', width: 4, height: 4, png: '' }
+/** A model's mask as made since engine 0.16: it says where it came from, and snaps. */
+const ai: MaskComponentSetting = {
+  ...base,
+  kind: 'brush',
+  width: 4,
+  height: 4,
+  png: '',
+  source: { kind: 'segment', target: 'subject' },
+  refine: { on: true, radius: 0.4 }
+}
 const lasso: MaskComponentSetting = {
   ...base,
   kind: 'polygon',
@@ -44,17 +54,34 @@ test('each kind shows only what it needs', () => {
     feather: true,
     shift: true,
     softness: false,
-    range: false
+    range: false,
+    snap: true
   })
   assert.equal(componentControls(radial).softness, true)
+  assert.equal(componentControls(radial).snap, false)
   assert.equal(componentControls(range).range, true)
-  assert.equal(hasControls(brush), false)
-  assert.equal(hasControls({ ...brush, edge: { ...AI_MASK_EDGE } }), false)
+  assert.equal(componentControls(range).snap, false)
+  // A painted brush: Snap to edges, and its Shift edge only while it snaps.
+  assert.deepEqual(componentControls(brush), {
+    feather: false,
+    shift: false,
+    softness: false,
+    range: false,
+    snap: true
+  })
+  assert.equal(componentControls({ ...brush, refine: { on: true, radius: 0.6 } }).shift, true)
+  // A model's mask, old or new: Snap and Shift edge.
+  assert.equal(componentControls({ ...brush, edge: { ...AI_MASK_EDGE } }).shift, true)
+  assert.equal(componentControls(ai).shift, true)
+  assert.equal(hasControls(brush), true)
 })
 
 test("new components and an AI mask's default edge are not flagged", () => {
-  for (const c of [brush, lasso, radial, range]) assert.equal(hiddenAdjusted(c), false, c.kind)
+  for (const c of [brush, lasso, radial, range, ai]) assert.equal(hiddenAdjusted(c), false, c.kind)
+  // One made before Snap to edges keeps its harden; its Shift edge shows.
   assert.equal(hiddenAdjusted({ ...brush, edge: { ...AI_MASK_EDGE } }), false)
+  assert.equal(hiddenAdjusted({ ...brush, edge: { shift: -30, harden: 35 } }), false)
+  assert.equal(hiddenAdjusted({ ...ai, edge: { shift: 20, harden: 0 } }), false)
   assert.equal(hiddenAdjusted({ ...lasso, edge: { shift: 40, harden: 0, inside: true } }), false)
 })
 
@@ -64,7 +91,9 @@ test("an older recipe's hidden settings are flagged", () => {
   assert.equal(hiddenAdjusted({ ...radial, edge: { shift: 0, harden: 20 } }), true)
   assert.equal(hiddenAdjusted({ ...range, feather: 12 }), true)
   assert.equal(hiddenAdjusted({ ...lasso, edge: undefined }), true)
-  assert.equal(hiddenAdjusted({ ...brush, edge: { shift: -30, harden: 35 } }), true)
+  assert.equal(hiddenAdjusted({ ...brush, edge: { shift: -30, harden: 60 } }), true)
+  // Snapped, a harden is the old way of firming the edge up: flagged.
+  assert.equal(hiddenAdjusted({ ...ai, edge: { shift: 0, harden: 35 } }), true)
 })
 
 test('reset puts hidden settings back and keeps what shows', () => {
@@ -76,8 +105,11 @@ test('reset puts hidden settings back and keeps what shows', () => {
   const l = resetHidden({ ...lasso, feather: 9, edge: { shift: 30, harden: 0 } })
   assert.equal(l.feather, 9)
   assert.deepEqual(l.edge, { shift: 30, harden: 0, inside: true })
-  const ai = resetHidden({ ...brush, feather: 4, edge: { shift: -40, harden: 60 } })
-  assert.deepEqual(ai.edge, AI_MASK_EDGE)
+  // An older AI mask: its harden back to the default, its Shift edge as it is.
+  const old = resetHidden({ ...brush, feather: 4, edge: { shift: -40, harden: 60 } })
+  assert.deepEqual(old.edge, { shift: -40, harden: AI_MASK_EDGE.harden })
+  const snapped = resetHidden({ ...ai, edge: { shift: 10, harden: 35 } })
+  assert.deepEqual(snapped.edge, { shift: 10, harden: 0 })
   assert.equal(resetHidden({ ...range, feather: 12 }).feather, 5)
-  for (const c of [r, l, ai]) assert.equal(hiddenAdjusted(c), false)
+  for (const c of [r, l, old, snapped]) assert.equal(hiddenAdjusted(c), false)
 })

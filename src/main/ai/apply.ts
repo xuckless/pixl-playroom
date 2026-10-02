@@ -4,9 +4,9 @@
  * (the loupe re-reads it), else into its saved recipe.
  */
 import type { AiJobEvent } from '../../shared/ai'
-import { AI_MASK_EDGE } from '../../shared/maskcontrols'
 import { nextMaskName } from '../../shared/masks'
 import { newId, newLocalLayer, type BrushComponent, type Recipe } from '../../shared/recipe'
+import { AI_REFINE } from '../../shared/refine'
 import { parseKey } from '../keys'
 import type { Library } from '../library'
 import type { PlaneStore } from '../planestore'
@@ -33,9 +33,9 @@ export async function applyMaskResult(
     width: r.width,
     height: r.height,
     png,
-    // A model's plane is soft and low resolution, and blooms past the edge:
-    // pulled in a little and firmed up.
-    edge: { ...AI_MASK_EDGE },
+    // A model's plane is soft and low resolution: its edge is snapped to the
+    // picture's, at whatever resolution the engine renders (shared/refine.ts).
+    refine: { ...AI_REFINE },
     ...(r.source ? { source: r.source } : {})
   }
   const into = r.into && recipe.layers.find((l) => l.id === r.into!.layerId)

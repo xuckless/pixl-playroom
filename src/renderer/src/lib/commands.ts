@@ -91,7 +91,7 @@ function stop(e: KeyboardEvent): void {
 }
 
 /** Into the selected mask, or (as in Lightroom) a new one. */
-function maskTool(t: 'brush' | 'polygon' | 'linear' | 'radial'): void {
+function maskTool(t: 'brush' | 'polygon' | 'linear' | 'radial' | 'bidirectional'): void {
   const d = dev()
   if (d.tool === t) return d.setTool('none')
   if (!d.layerId) return void startMaskTool(t)
@@ -620,6 +620,14 @@ export const COMMANDS: KeyCommand[] = [
     context: 'develop',
     keys: ['Alt+M'],
     run: () => maskTool('radial')
+  },
+  {
+    id: 'mask.bidirectional',
+    label: 'Bidirectional gradient mask',
+    group: 'Masks',
+    context: 'develop',
+    keys: [],
+    run: () => maskTool('bidirectional')
   },
   {
     id: 'mask.hide',

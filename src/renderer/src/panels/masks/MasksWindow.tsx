@@ -40,6 +40,7 @@ const ADD_TOOLS: { kind: MaskToolKind; icon: IconName; label: string }[] = [
   { kind: 'brush', icon: 'brush', label: 'Brush' },
   { kind: 'linear', icon: 'linear', label: 'Linear gradient' },
   { kind: 'radial', icon: 'radial', label: 'Radial gradient' },
+  { kind: 'bidirectional', icon: 'bidirectional', label: 'Bidirectional gradient' },
   { kind: 'polygon', icon: 'lasso', label: 'Lasso' },
   { kind: 'color', icon: 'colourRange', label: 'Colour range' },
   { kind: 'luminance', icon: 'lumRange', label: 'Luminance range' }

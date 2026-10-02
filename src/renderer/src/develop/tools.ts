@@ -10,7 +10,14 @@ export const STRIP_ICONS = {
 } as const
 
 /** Canvas tools that belong to the masks window. */
-export const MASK_TOOLS: Tool[] = ['brush', 'polygon', 'linear', 'radial', 'range-picker']
+export const MASK_TOOLS: Tool[] = [
+  'brush',
+  'polygon',
+  'linear',
+  'radial',
+  'bidirectional',
+  'range-picker'
+]
 
 /** Pickers that belong to a card: put down when the column changes. */
 const CARD_PICKERS: Tool[] = ['fringe-pick', 'add-pick', 'point-picker', 'wb-picker']

@@ -2,21 +2,31 @@
  * Which of a mask component's settings the panel shows, and what the hidden
  * ones should be. Each kind shows only what it needs (Lightroom's set):
  *
- * - a lasso: Feather and Shift edge (its feather kept inside the line);
+ * - a lasso: Feather, Shift edge (its feather kept inside the line) and
+ *   Snap to edges;
+ * - a model's mask (Subject, an object, the sky…): Snap to edges and Shift
+ *   edge;
+ * - a painted brush: Snap to edges, and Shift edge while it snaps; its own
+ *   size and feather shape it;
  * - a radial: one Feather, which is its `softness`;
  * - a range: Smoothness and its bands;
- * - a brush (an AI mask is one), a linear gradient: nothing; the brush's own
- *   size and feather, a gradient's handles shape them.
+ * - a linear or bidirectional gradient: nothing; their handles shape them.
  *
- * Older recipes may hold other values (a feather on a brush, a component's
- * opacity, a hardened edge). They still compile as they are; the panel only
- * offers to put them back to these defaults, so nothing it can't show
- * changes the picture unnoticed.
+ * Snap to edges is the engine's refine with its Edge radius
+ * (shared/refine.ts). Older recipes may hold other values (a feather on a
+ * brush, a component's opacity, a hardened edge). They still compile as
+ * they are; the panel only offers to put them back to these defaults, so
+ * nothing it can't show changes the picture unnoticed.
  */
 import { isPlainEdge, type MaskEdge } from './maskedge'
+import { refinable, refining } from './refine'
 import type { MaskComponentSetting } from './recipe'
 
-/** A new AI mask's edge: a little in, somewhat harder (its plane is soft and blooms). */
+/**
+ * An AI mask's edge before Snap to edges (engine 0.16): a little in,
+ * somewhat harder (its plane is soft and blooms). Masks made since snap to
+ * the picture instead (`AI_REFINE`); this stays an older recipe's.
+ */
 export const AI_MASK_EDGE: MaskEdge = { shift: -15, harden: 35 }
 
 /** A range's feather, under its Smoothness (`emptyRange`). */
@@ -28,43 +38,57 @@ export interface ComponentControls {
   /** Radial: Feather drives `softness`. */
   softness: boolean
   range: boolean
+  /** Snap to edges and its Edge radius. */
+  snap: boolean
 }
 
 export function componentControls(c: MaskComponentSetting): ComponentControls {
   return {
     feather: c.kind === 'polygon',
-    shift: c.kind === 'polygon',
+    shift: c.kind === 'polygon' || fromModel(c) || (c.kind === 'brush' && refining(c)),
     softness: c.kind === 'radial',
-    range: c.kind === 'range'
+    range: c.kind === 'range',
+    snap: refinable(c)
   }
 }
 
 /** Whether the card has anything to show (else only its row does). */
 export function hasControls(c: MaskComponentSetting): boolean {
   const k = componentControls(c)
-  return k.feather || k.shift || k.softness || k.range
+  return k.feather || k.shift || k.softness || k.range || k.snap
 }
 
 const sameEdge = (a: MaskEdge | undefined, b: MaskEdge): boolean =>
   !!a && Math.round(a.shift) === b.shift && Math.round(a.harden) === b.harden && !a.inside
 
-/** An AI mask's plane: a brush whose edge was hardened (only the model's default does). */
-function fromModel(c: MaskComponentSetting): boolean {
-  return c.kind === 'brush' && (c.edge?.harden ?? 0) > 0
+/**
+ * A model's mask: a brush plane a model says it made, or (an older recipe's,
+ * from before it said) one whose edge was hardened, as only a model's was.
+ */
+export function fromModel(c: MaskComponentSetting): boolean {
+  return c.kind === 'brush' && (c.source !== undefined || (c.edge?.harden ?? 0) > 0)
 }
 
-/** The edge this kind keeps where the panel can't show it. */
+/** The edge this kind keeps where the panel can't show it (what it shows, as it is). */
 function hiddenEdge(c: MaskComponentSetting): MaskEdge | undefined {
   if (c.kind === 'polygon')
     return { shift: Math.round(c.edge?.shift ?? 0), harden: 0, inside: true }
-  if (fromModel(c)) return AI_MASK_EDGE
+  const shift = Math.round(c.edge?.shift ?? 0)
+  // Snapped: the snap firms the edge up, so no harden.
+  if (c.kind === 'brush' && refining(c)) return { shift, harden: 0 }
+  if (c.kind === 'brush' && fromModel(c)) {
+    // One made before Snap to edges: firmed up by its harden. One that says a
+    // model made it may also have none (snapped, then not).
+    const none = c.source !== undefined && Math.round(c.edge?.harden ?? 0) !== AI_MASK_EDGE.harden
+    return { shift, harden: none ? 0 : AI_MASK_EDGE.harden }
+  }
   return undefined
 }
 
 function edgeMatches(c: MaskComponentSetting): boolean {
-  const want = hiddenEdge(c)
   if (c.kind === 'polygon') return Math.round(c.edge?.harden ?? 0) === 0 && !!c.edge?.inside
-  if (!want) return isPlainEdge(c.edge)
+  const want = hiddenEdge(c)
+  if (!want || isPlainEdge(want)) return isPlainEdge(c.edge)
   return sameEdge(c.edge, want)
 }
 

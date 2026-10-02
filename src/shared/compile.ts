@@ -42,6 +42,8 @@ import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
 import { effectiveMode } from './masks'
 import { EDGE_SHIFT_SPAN, offsetPolygon } from './maskedge'
+import { gradientShape, rasterGradient } from './gradients'
+import { engineRefine } from './refine'
 import {
   HSL_BANDS,
   type CurvePointSetting,
@@ -783,13 +785,24 @@ function maskComponent(
       radius: round4(clamp((c.feather / 100) * 0.1 + smooth, 0, 0.5)),
       edge: 'Zero' as const
     },
-    refine: null
+    refine: engineRefine(c)
   }
   switch (c.kind) {
-    case 'brush':
     case 'linear':
-    case 'radial': {
-      // Painted and gradient planes alike: written to disk by the main process.
+    case 'radial':
+    case 'bidirectional': {
+      // The engine's own shape, exact at any size; a plane only for an edge
+      // an older version gave it (written by the main process, as a brush's).
+      if (rasterGradient(c)) {
+        const path = brushPaths[c.id]
+        if (!path) return null
+        return { ...base, shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } } }
+      }
+      const shape = gradientShape(c, user)
+      return shape ? { ...base, shape } : null
+    }
+    case 'brush': {
+      // A painted plane: written to disk by the main process.
       const path = brushPaths[c.id]
       if (!path) return null
       return { ...base, shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } } }
@@ -846,8 +859,9 @@ export function layerMask(
   const first = drawn.findIndex((c) => c.mode === 'Add')
   if (first < 0) return null
   const components = drawn.slice(first)
-  const keys = components.some((c) => 'Range' in c.shape)
-  return { components, invert: l.invert, space: keys ? LOOK_SPACE : null }
+  // A key reads the picture's colours, a snapped edge its luminance: both in one stated space.
+  const reads = components.some((c) => 'Range' in c.shape || c.refine !== null)
+  return { components, invert: l.invert, space: reads ? LOOK_SPACE : null }
 }
 
 /** Modes whose formula only holds on values in 0…1. */

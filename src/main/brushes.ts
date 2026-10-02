@@ -1,15 +1,17 @@
 /**
  * Raster masks on disk. A brush component lives in the recipe as a base64
- * grey PNG in the base frame (the photo upright, before the user's turns); a
- * linear or radial gradient lives there as its geometry and is drawn into a
- * plane here. The engine reads raster masks from a PNG path in the frame it
- * grades, so each plane is written once per (content, turn) into the
- * photo's cache, by the pixels worker.
+ * grey PNG in the base frame (the photo upright, before the user's turns).
+ * The engine reads raster masks from a PNG path in the frame it grades, so
+ * each plane is written once per (content, turn) into the photo's cache, by
+ * the pixels worker. Gradients reach the engine as its own shapes; only one
+ * an older version gave an edge is drawn into a plane here
+ * (`rasterGradient`).
  */
 import { join } from 'path'
 import type { Orientation } from '../shared/engine-types'
-import { gradientKey } from '../shared/gradients'
+import { gradientKey, rasterGradient } from '../shared/gradients'
 import { edgeKey } from '../shared/maskedge'
+import { planeEdge } from '../shared/refine'
 import type { Recipe } from '../shared/recipe'
 import { planeRef } from './planeref'
 import { exists } from './exists'
@@ -37,7 +39,7 @@ function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Pr
   return p
 }
 
-/** Each brush or gradient component's plane file, by component id. */
+/** Each brush (or edged gradient) component's plane file, by component id. */
 export async function brushPlanes(
   photoId: number,
   recipe: Recipe,
@@ -48,7 +50,8 @@ export async function brushPlanes(
   const work: Promise<void>[] = []
   for (const layer of recipe.layers) {
     for (const c of layer.components) {
-      if (c.kind === 'linear' || c.kind === 'radial') {
+      if (c.kind === 'linear' || c.kind === 'radial' || c.kind === 'bidirectional') {
+        if (!rasterGradient(c)) continue
         const file = join(dir, `grad-${gradientKey(c)}${edgeKey(c.edge)}-${user}.png`)
         work.push(ensure(file, { op: 'gradient', file, dir, c, user }))
         out[c.id] = file
@@ -56,11 +59,11 @@ export async function brushPlanes(
       }
       if (c.kind !== 'brush' || !c.png) continue
       // Named by its plane's reference (its content hash), reused when it has
-      // one: hashing megabytes of PNG on every compile is what it saves.
-      const file = join(dir, `brush-${c.ref ?? planeRef(c.png)}${edgeKey(c.edge)}-${user}.png`)
-      work.push(
-        ensure(file, { op: 'brush', file, png: c.png, user, ...(c.edge ? { edge: c.edge } : {}) })
-      )
+      // one: hashing megabytes of PNG on every compile is what it saves. A
+      // snapped plane's shift is the engine's (refine), not the plane's.
+      const edge = planeEdge(c)
+      const file = join(dir, `brush-${c.ref ?? planeRef(c.png)}${edgeKey(edge)}-${user}.png`)
+      work.push(ensure(file, { op: 'brush', file, png: c.png, user, ...(edge ? { edge } : {}) }))
       out[c.id] = file
     }
   }
