@@ -1,18 +1,20 @@
-import type { BlendMode, KeyBand, MaskMode } from '../../../../shared/engine-types'
+import type { BlendMode, KeyBand } from '../../../../shared/engine-types'
 import { normaliseEdge, type MaskEdge } from '../../../../shared/maskedge'
-import { isNeutral, neutralSettings, type MaskComponentSetting } from '../../../../shared/recipe'
+import {
+  componentControls,
+  fromModel,
+  hiddenAdjusted,
+  resetHidden
+} from '../../../../shared/maskcontrols'
+import { defaultEdgeRadius, EDGE_RADIUS_MAX, EDGE_RADIUS_MIN } from '../../../../shared/refine'
+import type { MaskComponentSetting } from '../../../../shared/recipe'
 import { Icon } from '../../components/icons'
 import { Section, Select, Slider, Toggle } from '../../components/ui'
 import { useDevelop } from '../../state/develop'
-import {
-  changeLayer,
-  componentIcon,
-  componentLabel,
-  deleteComponent,
-  layerOf,
-  MODE_MARK
-} from './model'
-import { MaskPresets } from './MaskPresets'
+import { changeLayer, layerOf, patchComponent } from './model'
+import { findObject } from '../../lib/objects'
+import { ensureModel } from '../../lib/ensureModel'
+import { BandBar } from './BandBar'
 
 const BLENDS: BlendMode[] = [
   'Normal',
@@ -27,128 +29,25 @@ const BLENDS: BlendMode[] = [
   'Add'
 ]
 
-function RangeEditor({
-  c,
-  index
-}: {
-  c: Extract<MaskComponentSetting, { kind: 'range' }>
-  index: number
-}): React.JSX.Element {
-  const commit = useDevelop((s) => s.commit)
-  const setBand = (axis: 'hue' | 'saturation' | 'luma', band: KeyBand | null): void =>
-    changeLayer((l) => {
-      const comp = l.components[index]
-      if (comp.kind === 'range') comp[axis] = band
-    }, true)
-  const band = (
-    axis: 'hue' | 'saturation' | 'luma',
-    label: string,
-    max: number,
-    def: KeyBand
-  ): React.JSX.Element => {
-    const b = c[axis]
-    return (
-      <div className="range-axis">
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={b !== null}
-            onChange={(e) => {
-              setBand(axis, e.target.checked ? def : null)
-              commit(`Range ${label}`)
-            }}
-          />
-          {label}
-        </label>
-        {b && (
-          <>
-            <Slider
-              label="Centre"
-              value={b.centre}
-              min={0}
-              max={max}
-              step={max > 1 ? 1 : 0.01}
-              def={def.centre}
-              onChange={(v, live) => {
-                setBand(axis, { ...b, centre: v })
-                void live
-              }}
-              onCommit={() => commit(`Range ${label}`)}
-            />
-            <Slider
-              label="Width"
-              value={b.width}
-              min={0}
-              max={max}
-              step={max > 1 ? 1 : 0.01}
-              def={def.width}
-              onChange={(v) => setBand(axis, { ...b, width: v })}
-              onCommit={() => commit(`Range ${label}`)}
-            />
-            <Slider
-              label="Softness"
-              value={b.softness}
-              min={0}
-              max={max}
-              step={max > 1 ? 1 : 0.01}
-              def={def.softness}
-              onChange={(v) => setBand(axis, { ...b, softness: v })}
-              onCommit={() => commit(`Range ${label}`)}
-            />
-          </>
-        )}
-      </div>
-    )
-  }
-  return (
-    <div className="range-editor">
-      {band('hue', 'Hue', 360, { centre: 210, width: 40, softness: 25 })}
-      {band('saturation', 'Saturation', 1, { centre: 0.6, width: 0.8, softness: 0.2 })}
-      {band('luma', 'Luminance', 1, { centre: 0.5, width: 0.4, softness: 0.15 })}
-    </div>
-  )
-}
+type Axis = 'hue' | 'saturation' | 'luma'
+
+const AXES: { axis: Axis; label: string; max: number; def: KeyBand }[] = [
+  { axis: 'hue', label: 'Hue', max: 360, def: { centre: 210, width: 40, softness: 25 } },
+  {
+    axis: 'saturation',
+    label: 'Saturation',
+    max: 1,
+    def: { centre: 0.6, width: 0.8, softness: 0.2 }
+  },
+  { axis: 'luma', label: 'Luminance', max: 1, def: { centre: 0.5, width: 0.4, softness: 0.15 } }
+]
 
 /**
- * The mask's settings: what it does is edited in the panels on the right
- * while it is selected; here are its presets and a way back to neutral.
+ * The selected component's own settings, under its row: only what its kind
+ * needs (`shared/maskcontrols.ts`). How it joins the mask and whether it is
+ * inverted are on the row itself.
  */
-function Adjustments(): React.JSX.Element | null {
-  const recipe = useDevelop((s) => s.recipe)
-  const layerId = useDevelop((s) => s.layerId)
-  const commit = useDevelop((s) => s.commit)
-  const layer = layerOf(recipe, layerId)
-  if (!layer) return null
-  return (
-    <Section
-      id="masks.presets"
-      title="Settings"
-      right={
-        isNeutral(layer.settings) ? undefined : (
-          <button
-            className="sm ghost"
-            title="Every setting of this mask back to no change"
-            onClick={() => {
-              changeLayer((l) => (l.settings = neutralSettings()))
-              commit(`${layer.name}: reset`)
-            }}
-          >
-            Reset all
-          </button>
-        )
-      }
-    >
-      <p className="muted small">
-        The panels on the right (Basic, Tone Curve, HSL, Colour Grading, Detail, Effects,
-        Calibration) edit this mask while it is selected.
-      </p>
-      <MaskPresets layer={layer} />
-    </Section>
-  )
-}
-
-/** The selected component: how it joins the mask, and its own shape settings. */
-function ComponentCard({
+export function ComponentCard({
   c,
   index
 }: {
@@ -158,89 +57,103 @@ function ComponentCard({
   const commit = useDevelop((s) => s.commit)
   const tool = useDevelop((s) => s.tool)
   const setTool = useDevelop((s) => s.setTool)
-  const set = <K extends keyof MaskComponentSetting>(
-    k: K,
-    v: MaskComponentSetting[K],
-    live = false
-  ): void =>
+  const show = componentControls(c)
+  const edit = (fn: (x: MaskComponentSetting) => void, live = false): void =>
     changeLayer((l) => {
       const x = l.components[index]
-      if (x) x[k] = v
+      if (x) fn(x)
     }, live)
   // The edge: kept only while it changes something (shared/maskedge.ts).
   const setEdge = (p: Partial<MaskEdge>, live = false): void =>
-    changeLayer((l) => {
-      const x = l.components[index]
-      if (!x) return
+    edit((x) => {
       const e = normaliseEdge({ shift: 0, harden: 0, ...x.edge, ...p })
       if (e) x.edge = e
       else delete x.edge
     }, live)
-  const raster = c.kind === 'brush' || c.kind === 'linear' || c.kind === 'radial'
+  const snapping = c.refine?.on === true
+  const radiusDef = defaultEdgeRadius(c)
+  // A painted stroke snaps to the object SAM finds under it (main/brushes.ts).
+  const stroke = c.kind === 'brush' && !c.source
+  // Snap to edges on: a model's mask lets the snap firm its edge, in place of
+  // an older recipe's harden.
+  const setSnap = async (on: boolean): Promise<void> => {
+    // SAM offered first when it is not here; without it nothing changes.
+    if (on && stroke && !(await ensureModel('prompt', 'Snap to edges'))) return
+    edit((x) => {
+      // A stroke's snap is the object's edge: a light refine on it, whatever it was.
+      x.refine = { on, radius: on && stroke ? radiusDef : (x.refine?.radius ?? radiusDef) }
+      if (on && fromModel(x) && x.edge) {
+        const e = normaliseEdge({ ...x.edge, harden: 0 })
+        if (e) x.edge = e
+        else delete x.edge
+      }
+    })
+    commit(on ? 'Snap to edges' : 'Snap to edges off')
+  }
   return (
-    <div className="component">
-      <div className="component-head">
-        <Icon name={componentIcon(c)} />
-        <span className="component-kind">{componentLabel(c)}</span>
-        <span className="spacer" />
-        <button
-          className="icon sm"
-          title="Delete component (⌫)"
-          onClick={() => deleteComponent(c.id)}
-        >
-          <Icon name="trash" />
-        </button>
-      </div>
-      <div className="row">
-        <div className="seg" role="group" aria-label="How it joins the mask">
-          {(['Add', 'Subtract', 'Intersect'] as MaskMode[]).map((m) => (
-            <button
-              key={m}
-              className={(index === 0 ? 'Add' : c.mode) === m ? 'on' : ''}
-              disabled={index === 0 && m !== 'Add'}
-              title={index === 0 ? 'The first component always adds' : m}
-              onClick={() => {
-                set('mode', m)
-                commit(`Mask mode: ${m}`)
-              }}
+    <div className="mf-card">
+      {show.snap && (
+        <>
+          <div className="mf-card-row">
+            <Toggle
+              on={snapping}
+              onChange={(on) => void setSnap(on)}
+              title={
+                stroke
+                  ? "Keep this stroke to the object it was painted on, cut at the object's edges (SAM 2.1)"
+                  : "Pull this edge onto the photo's own edges, at full resolution (the engine's refine)"
+              }
             >
-              {MODE_MARK[m]} {m}
-            </button>
-          ))}
-        </div>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={c.invert}
-            onChange={(e) => {
-              set('invert', e.target.checked)
-              commit('Invert component')
-            }}
-          />
-          Invert
-        </label>
-      </div>
-      <Slider
-        label="Opacity"
-        value={c.opacity}
-        min={0}
-        max={100}
-        def={100}
-        onChange={(v, live) => set('opacity', v, live)}
-        onCommit={() => commit('Component opacity')}
-      />
-      <Slider
-        label="Feather"
-        value={c.feather}
-        min={0}
-        max={100}
-        def={0}
-        onChange={(v, live) => set('feather', v, live)}
-        onCommit={() => commit('Feather')}
-      />
-      {(raster || c.kind === 'polygon') && (
+              Snap to edges
+            </Toggle>
+            {c.kind === 'polygon' && (
+              <button
+                className="sm ghost"
+                disabled={c.points.length < 3}
+                title="Find the object inside this outline (SAM 2.1) and use its own edges instead"
+                onClick={() => void findObject(c.id)}
+              >
+                <Icon name="objects" />
+                Find object
+              </button>
+            )}
+          </div>
+          {snapping && (
+            <Slider
+              label="Edge radius"
+              adjusts={false}
+              value={c.refine?.radius ?? radiusDef}
+              min={EDGE_RADIUS_MIN}
+              max={EDGE_RADIUS_MAX}
+              step={0.05}
+              scale="log"
+              def={radiusDef}
+              format={(v) => `${v.toFixed(2)}%`}
+              title="How far the photo's edges may pull this one, as a share of its shorter side: about three times how far off the edge is"
+              onChange={(v, live) =>
+                edit((x) => (x.refine = { on: true, radius: Math.round(v * 100) / 100 }), live)
+              }
+              onCommit={() => commit('Edge radius')}
+            />
+          )}
+        </>
+      )}
+      {show.feather && (
+        <Slider
+          label="Feather"
+          adjusts={false}
+          value={c.feather}
+          min={0}
+          max={100}
+          def={3}
+          onChange={(v, live) => edit((x) => (x.feather = v), live)}
+          onCommit={() => commit('Feather')}
+        />
+      )}
+      {show.shift && (
         <Slider
           label="Shift edge"
+          adjusts={false}
           value={c.edge?.shift ?? 0}
           min={-100}
           max={100}
@@ -250,53 +163,22 @@ function ComponentCard({
           onCommit={() => commit('Shift edge')}
         />
       )}
-      {raster && (
+      {show.softness && c.kind === 'radial' && (
         <Slider
-          label="Harden"
-          value={c.edge?.harden ?? 0}
-          min={0}
-          max={100}
-          def={0}
-          title="Steepen a soft edge (an AI mask's, a gradient's) about its middle"
-          onChange={(v, live) => setEdge({ harden: v }, live)}
-          onCommit={() => commit('Harden edge')}
-        />
-      )}
-      {c.kind === 'polygon' && (
-        <label
-          className="check"
-          title="The feather falls inside the line drawn, not half outside it"
-        >
-          <input
-            type="checkbox"
-            checked={!!c.edge?.inside}
-            onChange={(e) => {
-              setEdge({ inside: e.target.checked })
-              commit('Feather inside')
-            }}
-          />
-          Feather inside the line
-        </label>
-      )}
-      {c.kind === 'radial' && (
-        <Slider
-          label="Softness"
+          label="Feather"
+          adjusts={false}
           value={c.softness}
           min={0}
           max={100}
           def={50}
-          onChange={(v, live) =>
-            changeLayer((l) => {
-              const x = l.components[index]
-              if (x?.kind === 'radial') x.softness = v
-            }, live)
-          }
-          onCommit={() => commit('Radial softness')}
+          title="How much of the radius fades out"
+          onChange={(v, live) => edit((x) => x.kind === 'radial' && (x.softness = v), live)}
+          onCommit={() => commit('Radial feather')}
         />
       )}
-      {c.kind === 'range' && (
+      {show.range && c.kind === 'range' && (
         <>
-          <div className="row">
+          <div className="mf-card-row">
             <Toggle
               on={tool === 'range-picker'}
               onChange={(on) => setTool(on ? 'range-picker' : 'none')}
@@ -306,54 +188,72 @@ function ComponentCard({
               Pick
             </Toggle>
           </div>
+          {AXES.map((a) => (
+            <BandBar
+              key={a.axis}
+              axis={a.axis}
+              label={a.label}
+              band={c[a.axis]}
+              max={a.max}
+              def={a.def}
+              onChange={(band) => edit((x) => x.kind === 'range' && (x[a.axis] = band), true)}
+              onCommit={() => commit(`Range ${a.label}`)}
+            />
+          ))}
           <Slider
             label="Smoothness"
+            adjusts={false}
             value={c.smoothness}
             min={0}
             max={100}
             def={0}
-            onChange={(v, live) =>
-              changeLayer((l) => {
-                const x = l.components[index]
-                if (x?.kind === 'range') x.smoothness = v
-              }, live)
-            }
+            onChange={(v, live) => edit((x) => x.kind === 'range' && (x.smoothness = v), live)}
             onCommit={() => commit('Range smoothness')}
           />
-          <RangeEditor c={c} index={index} />
         </>
       )}
+      {hiddenAdjusted(c) && <HiddenChip c={c} />}
+    </div>
+  )
+}
+
+/**
+ * An older recipe's setting the panel no longer shows (a feather on a brush,
+ * a component opacity, a hardened edge) is still applied: say so, and offer
+ * to put it back.
+ */
+export function HiddenChip({ c }: { c: MaskComponentSetting }): React.JSX.Element {
+  return (
+    <div className="mf-chip" title="An older edit of this component's edge or opacity is applied">
+      <span>Edge adjusted</span>
+      <button
+        className="sm ghost"
+        onClick={() =>
+          patchComponent(c.id, 'Reset component edge', (x, l) => {
+            const i = l.components.indexOf(x)
+            l.components[i] = resetHidden(x)
+          })
+        }
+      >
+        Reset
+      </button>
     </div>
   )
 }
 
 /**
  * The selected mask's own settings, under the list in the masks window: its
- * Amount, the selected component, its sliders and its blend. Nothing when no
- * mask is selected.
+ * Amount, and folded away, its blend and opacity. Nothing when no mask is
+ * selected. What it does is edited in the panels on the right.
  */
 export function SelectedMask(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
   const layerId = useDevelop((s) => s.layerId)
-  const compId = useDevelop((s) => s.compId)
   const commit = useDevelop((s) => s.commit)
-  const report = useDevelop((s) => s.report)
-  if (!recipe) return null
   const layer = layerOf(recipe, layerId)
   if (!layer) return null
-  const index = layer.components.findIndex((c) => c.id === compId)
-  const comp = index >= 0 ? layer.components[index] : undefined
-  const measured = report?.layers?.[layer.id]
-  const coverage = !measured
-    ? null
-    : !measured.applied
-      ? 'Not applied'
-      : measured.coverage === null
-        ? null
-        : `Covers ${(measured.coverage * 100).toFixed(1)}% of the photo`
   return (
     <div className="mf-selected">
-      <div className="mf-selected-title micro">{layer.name}</div>
       <Slider
         label="Amount"
         value={layer.amount ?? 100}
@@ -364,13 +264,7 @@ export function SelectedMask(): React.JSX.Element | null {
         onChange={(v, live) => changeLayer((l) => (l.amount = v), live)}
         onCommit={() => commit(`${layer.name}: amount`)}
       />
-      {comp && (
-        <Section id="masks.component" title="Component">
-          <ComponentCard c={comp} index={index} />
-        </Section>
-      )}
-      <Adjustments />
-      <Section id="masks.blend" title="Mask">
+      <Section id="masks.advanced" title="Advanced" defaultOpen={false}>
         <Select
           label="Blend"
           value={layer.blend}
@@ -386,23 +280,10 @@ export function SelectedMask(): React.JSX.Element | null {
           min={0}
           max={100}
           def={100}
+          title="How much of the blended result shows; with Normal, Amount does the same"
           onChange={(v, live) => changeLayer((l) => (l.opacity = v), live)}
           onCommit={() => commit('Mask opacity')}
         />
-        <div className="row">
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={layer.invert}
-              onChange={(e) => {
-                changeLayer((l) => (l.invert = e.target.checked))
-                commit('Invert mask')
-              }}
-            />
-            Invert the whole mask
-          </label>
-        </div>
-        {coverage && <p className="muted small">{coverage}</p>}
       </Section>
     </div>
   )

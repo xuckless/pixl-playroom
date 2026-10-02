@@ -2,8 +2,23 @@ import { useMemo, useState } from 'react'
 import type { HueBin, ImageStats } from '../../../shared/engine-types'
 import type { HslBand } from '../../../shared/recipe'
 import { stopsBins, stopsX } from '../../../shared/scopes'
-import { bandOfHue } from '../lib/helpers'
 import { withKey } from '../lib/commands'
+import { bandOfHue } from '../lib/helpers'
+import { InfoTip, type Tip } from './InfoTip'
+import { TechInfo } from './TechInfo'
+
+const HISTOGRAM_TIP = (log: boolean): Tip => ({
+  what: 'How much of the photo sits at each brightness, shadows on the left, highlights on the right.',
+  expect:
+    'The corner triangles light up when shadows or highlights clip; click one to see where on the photo.',
+  tip: `Double-click to switch to a ${log ? 'linear' : 'log'} scale (now ${log ? 'log' : 'linear'}).`
+})
+
+const HUE_TIP: Tip = {
+  what: 'How much of each colour the photo holds; the faint bars are the photo before your edits.',
+  expect: 'Click a bar to open that colour in the Colour mixer.',
+  tip: 'Shift-click a bar to make a mask of that colour.'
+}
 
 function areaPath(counts: number[], w: number, h: number, max: number, log: boolean): string {
   const n = counts.length
@@ -123,11 +138,13 @@ export function Histogram({
               +{Math.log2(peak).toFixed(1)} EV headroom
             </span>
           ) : (
-            <>
-              <span>μ {shown.luma_mean.toFixed(3)}</span>
-              <span>σ {shown.luma_stddev.toFixed(3)}</span>
-              <span>sat {shown.mean_saturation.toFixed(2)}</span>
-            </>
+            <TechInfo title="Histogram numbers" align="left">
+              <p>
+                Mean brightness {shown.luma_mean.toFixed(3)} · spread {shown.luma_stddev.toFixed(3)}{' '}
+                · mean saturation {shown.mean_saturation.toFixed(2)}
+              </p>
+              <p className="muted">On encoded values, 0 to 1.</p>
+            </TechInfo>
           )}
           {hdr && (
             <button
@@ -143,7 +160,8 @@ export function Histogram({
               HDR
             </button>
           )}
-          <span className="muted">{log ? 'log' : 'linear'} · double-click</span>
+          <span className="spacer" />
+          <InfoTip tip={HISTOGRAM_TIP(log)} label="Histogram" />
         </div>
       )}
     </div>
@@ -242,7 +260,7 @@ export function HueChart({
             {` · ${bandOfHue((h.bin.hue_start + h.bin.hue_end) / 2)}`}
           </span>
         ) : (
-          <span className="muted">Click a bar: HSL band · Shift-click: colour mask</span>
+          <InfoTip tip={HUE_TIP} label="Colours in the photo" />
         )}
         <span className="hue-toggles">
           <label>

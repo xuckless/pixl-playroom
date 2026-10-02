@@ -31,6 +31,7 @@ import type {
   DuplicateGroup,
   ExportPreset,
   Flag,
+  HistoryAmend,
   HistoryAppend,
   HistoryLog,
   KeywordNode,
@@ -519,7 +520,7 @@ export class IndexService {
           if (!st.isFile()) continue
           present.add(path)
           let row = known.get(path)
-          if (!row || row.size !== st.size || row.mtime !== st.mtimeMs) {
+          if (!row || row.size !== st.size || row.mtime !== st.mtimeMs || row.added == null) {
             row = this.store.upsertPhoto({
               path,
               folder,
@@ -527,7 +528,9 @@ export class IndexService {
               ext,
               size: st.size,
               mtime: st.mtimeMs,
-              isRaw: isRawExt(ext)
+              isRaw: isRawExt(ext),
+              // A filesystem that keeps no birth time reports 0.
+              added: st.birthtimeMs > 0 ? st.birthtimeMs : st.mtimeMs
             })
             n++
           }
@@ -1083,6 +1086,11 @@ export class IndexService {
     return this.store.recentFolders().filter((f) => existsSync(f))
   }
 
+  /** Take a folder off the sidebar's list; it comes back when it is opened again. */
+  forgetFolder(folder: string): void {
+    this.store.forgetFolder(folder)
+  }
+
   /**
    * Files (dropped, or handed over by the OS) as the folder of the first and
    * their items' keys, indexing any folder the index has not seen. A folder
@@ -1247,6 +1255,7 @@ export class IndexService {
       ext: row.ext,
       size: row.size,
       mtime: row.mtime,
+      added: row.added ?? row.mtime,
       isRaw: row.is_raw === 1,
       rating: copy ? copy.rating : row.rating,
       flag: ((copy ? copy.flag : row.flag) as Flag) ?? null,
@@ -2072,10 +2081,11 @@ export class IndexService {
     const key = keyOf(row.id, copyId)
     const raw = row.is_raw === 1
     const recipeKey = existing.recipe_key ?? thumbRecipeKey(this.slimRecipeOf(key), raw)
-    const stamp = `${versionStamp(row)}-${recipeKey}`
+    const edited = recipeKey !== 'plain'
+    // An unedited RAW's thumbnail is its embedded preview, which no develop makes.
+    const stamp = `${versionStamp(row, !raw || edited)}-${recipeKey}`
     if (existing.thumb_key === stamp && existing.thumb_path && existsSync(existing.thumb_path))
       return null
-    const edited = recipeKey !== 'plain'
     return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp }
   }
 
@@ -2207,6 +2217,40 @@ export class IndexService {
     )
     this.noteProjectWrite(key)
     return log
+  }
+
+  /**
+   * A settled change to the newest step (a look's Amount, a look swapped):
+   * the step rewritten and the recipe saved together, as `commitEdit` does.
+   * Null when the step is no longer the newest shown one; nothing is written.
+   */
+  amendEdit(
+    key: string,
+    seq: number,
+    label: string,
+    step: Recipe,
+    recipe: Recipe
+  ): HistoryAmend | null {
+    const amendIn = (p: PixlFile, itemKey: string): HistoryAmend | null => {
+      const change = p.history.amendLast(itemKey, seq, label, step)
+      if (!change) return null
+      this.saveRecipe(key, recipe)
+      for (const ref of refsIn(JSON.stringify(step))) {
+        if (p.hasPlane(ref)) continue
+        const png = this.store.plane(ref)
+        if (png !== undefined) p.putPlane(ref, png)
+      }
+      return change
+    }
+    return this.inHistory(
+      key,
+      (p, k) => p.tx(() => amendIn(p, k)),
+      () => {
+        const change = this.store.amendHistory(key, seq, label, step)
+        if (change) this.saveRecipe(key, recipe)
+        return change
+      }
+    )
   }
 
   setHistoryHidden(key: string, seqs: number[], hidden: boolean): HistoryLog {

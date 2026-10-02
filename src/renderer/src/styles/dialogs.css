@@ -285,25 +285,107 @@ button.link:hover {
   max-height: 46vh;
 }
 
-/* Settings → AI models */
-.models-table {
-  width: 100%;
-  border-collapse: collapse;
+/* Settings → AI models: by purpose, in plain words, with this computer's times */
+.models-filter {
+  display: flex;
+  margin: 10px 0 4px;
 }
-.models-table td {
-  padding: 7px 0;
-  border-bottom: 1px solid var(--hair);
-  vertical-align: middle;
+.models-filter .glass-select {
+  min-width: 240px;
 }
-.models-table .model-title {
+.model-group {
+  margin-top: 14px;
+}
+.model-group h4 {
+  margin: 0 0 2px;
   color: var(--text);
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.model-group > p {
+  margin: 0 0 6px;
+}
+.model-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.model-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012));
+}
+.model-main {
+  flex: 1;
+  min-width: 0;
+}
+.model-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 600;
+}
+.model-rec {
+  padding: 1px 6px;
+  border: 1px solid var(--acc-a35);
+  border-radius: var(--r);
+  color: var(--acc);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.model-what {
+  margin: 3px 0 5px;
+  color: var(--text2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.model-speed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  font-size: 12px;
+  color: var(--text2);
+}
+.model-pace {
+  font-weight: 600;
+}
+.model-speed.quick .model-pace {
+  color: var(--ok);
+}
+.model-speed.moment .model-pace {
+  color: var(--warn);
+}
+.model-speed.slow .model-pace {
+  color: var(--danger);
+}
+.model-where {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.model-tech {
+  margin-top: 2px;
+  font-size: 11px;
   cursor: help;
 }
-.models-table .model-act {
-  text-align: right;
-  white-space: nowrap;
-  width: 1%;
-  padding-left: 12px;
+.model-act {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.model-device .prefs-row {
+  align-items: center;
+  gap: 10px;
 }
 .model-bar {
   display: inline-block;
@@ -318,6 +400,19 @@ button.link:hover {
   height: 100%;
   background: var(--acc);
   transition: width 0.2s var(--ease);
+}
+/* "This needs a model": the download's progress, in place. */
+.model-prompt-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+}
+.model-prompt-progress .model-bar {
+  flex: 1;
+  width: auto;
+  height: 4px;
+  margin: 0;
 }
 
 /* Export: watermark */
@@ -588,4 +683,88 @@ button.keybind-key.waiting {
 }
 .gate-card .gate-fine .link {
   font-size: inherit;
+}
+
+/* What's new: after an update, what it brought and what is on its way. */
+.modal.whats-new {
+  width: 600px;
+}
+.whats-new .wn-release + .wn-release {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hair);
+}
+.whats-new .wn-version {
+  margin: 0 0 6px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.whats-new .wn-headline {
+  margin: 0 0 16px;
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.whats-new .wn-section + .wn-section {
+  margin-top: 14px;
+}
+.whats-new .wn-section .micro,
+.whats-new .wn-next > .micro {
+  color: var(--acc);
+}
+.whats-new ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.whats-new li {
+  position: relative;
+  padding-left: 16px;
+  line-height: 1.5;
+}
+.whats-new li + li {
+  margin-top: 5px;
+}
+.whats-new li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.62em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--acc);
+  box-shadow: 0 0 8px var(--glow);
+}
+.whats-new .wn-next {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid transparent;
+  border-image: var(--hl-x) 1;
+}
+.whats-new .wn-next-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.whats-new .wn-next-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--acc-a20);
+  border-radius: var(--r);
+  background: linear-gradient(160deg, var(--acc-a10), rgba(157, 139, 234, 0.02));
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.whats-new .wn-next-card strong {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
 }

@@ -25,6 +25,12 @@ const BRUSH_EDGE = 1024
 /** What one dab lays down at full flow (dabs overlap every eighth of a diameter). */
 const FLOW_PER_DAB = 0.35
 
+/** How strongly a stroke shows while painted: as the overlay will show it, kept visible. */
+function strokeAlpha(): number {
+  const o = useUi.getState().maskOverlay
+  return Math.min(0.6, Math.max(0.2, o.opacity / 100))
+}
+
 /** An affine map of normalised points, from where it takes three of them. */
 function affine(f: (p: P) => P): Affine {
   const o = f({ x: 0, y: 0 })
@@ -212,7 +218,8 @@ export const BrushLayer = memo(function BrushLayer({
         erase,
         picture,
         ...(pictureBitmap ? { pictureBitmap } : {}),
-        toDisplay: affine((q) => baseToDisplay(g, q))
+        toDisplay: affine((q) => baseToDisplay(g, q)),
+        alpha: strokeAlpha()
       },
       pictureBitmap ? [pictureBitmap] : []
     )

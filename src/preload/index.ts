@@ -21,6 +21,7 @@ import {
   type ExportPreset,
   type ExportProgress,
   type FolderListing,
+  type HistoryAmend,
   type HistoryAppend,
   type HistoryLog,
   type KeywordNode,
@@ -31,6 +32,8 @@ import {
   type WatermarkFile,
   type LibraryItem,
   type LibrarySource,
+  type LookThumbEvent,
+  type LookThumbRequest,
   type LutProfile,
   type MetaPatch,
   type MetaTextPatch,
@@ -51,9 +54,12 @@ import {
 import type { LicenceStatus } from '../shared/licence'
 import type { AccountStatus } from '../shared/account'
 import type { GateState } from '../shared/gate'
+import type { ReleaseNotes } from '../shared/releasenotes'
 import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
+import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
+import type { LookRunEvent, LookRunRequest, PickAnswer } from '../shared/looks/run'
 import type { EnhanceRates } from '../shared/enhance'
 
 async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -92,6 +98,8 @@ const api = {
     reportProblem: (r: ProblemInput) => call<string>(IPC.app.reportProblem, r),
     openNotices: () => call<void>(IPC.app.openNotices),
     openBetaTerms: () => call<void>(IPC.app.openBetaTerms),
+    whatsNew: () => call<ReleaseNotes[]>(IPC.app.whatsNew),
+    notesSeen: () => call<void>(IPC.app.notesSeen),
     gate: () => call<GateState>(IPC.app.gate),
     onGate: (cb: (g: GateState) => void) => on(IPC.app.gateChanged, cb)
   },
@@ -126,6 +134,7 @@ const api = {
     subfolders: (folder: string) =>
       call<{ path: string; name: string }[]>(IPC.library.subfolders, folder),
     recentFolders: () => call<string[]>(IPC.library.recentFolders),
+    forgetFolder: (folder: string) => call<void>(IPC.library.forgetFolder, folder),
     setMeta: (keys: string[], patch: MetaPatch) =>
       call<(LibraryItem | undefined)[]>(IPC.library.setMeta, keys, patch),
     createCopy: (key: string) => call<LibraryItem>(IPC.library.createCopy, key),
@@ -205,6 +214,10 @@ const api = {
     warm: (keys: string[]) => call<void>(IPC.develop.warm, keys),
     historyAppend: (key: string, label: string, recipe: Recipe) =>
       call<HistoryAppend>(IPC.develop.historyAppend, key, label, recipe),
+    historyAmend: (key: string, seq: number, label: string, recipe: Recipe) =>
+      call<HistoryAmend | null>(IPC.develop.historyAmend, key, seq, label, recipe),
+    /** Show `recipe` on the loupe without making it the photo's (null: the photo's again). */
+    preview: (key: string, recipe: Recipe | null) => call<void>(IPC.develop.preview, key, recipe),
     historySetHidden: (key: string, seqs: number[], hidden: boolean) =>
       call<HistoryLog>(IPC.develop.historySetHidden, key, seqs, hidden),
     historyDelete: (key: string, seqs: number[]) =>
@@ -243,6 +256,15 @@ const api = {
     luts: () => call<LutProfile[]>(IPC.presets.luts),
     importLut: () => call<LutProfile[]>(IPC.presets.importLut)
   },
+  looks: {
+    thumbs: (req: LookThumbRequest) => call<void>(IPC.looks.thumbs, req),
+    cancel: (key: string) => call<void>(IPC.looks.cancel, key),
+    onThumb: (cb: (e: LookThumbEvent) => void) => on(IPC.looks.thumb, cb),
+    run: (req: LookRunRequest) => call<void>(IPC.looks.run, req),
+    cancelRun: (by: { runId?: string; key?: string }) => call<void>(IPC.looks.cancelRun, by),
+    answer: (runId: string, a: PickAnswer) => call<void>(IPC.looks.answer, runId, a),
+    onRun: (cb: (e: LookRunEvent) => void) => on(IPC.looks.runEvent, cb)
+  },
   export: {
     chooseFolder: () => call<string | null>(IPC.export.chooseFolder),
     /** Pick a watermark PNG; null when the dialog is cancelled. */
@@ -268,6 +290,16 @@ const api = {
     list: () => call<AiJobEvent[]>(IPC.ai.list),
     capabilities: () => call<AiCapabilities>(IPC.ai.capabilities),
     onEvent: (cb: (e: AiJobEvent) => void) => on(IPC.ai.event, cb)
+  },
+  /** Select by clicks, a box or strokes (SAM 2.1) on the open photo. */
+  select: {
+    open: (key: string) => call<{ selId: string }>(IPC.select.open, key),
+    /** Null for a probe a later one replaced. */
+    decode: (selId: string, req: SelectDecode) =>
+      call<SelectPlane | null>(IPC.select.decode, selId, req),
+    commit: (selId: string, source: PromptSourceAsk) =>
+      call<SelectCommit>(IPC.select.commit, selId, source),
+    close: (selId: string) => call<void>(IPC.select.close, selId)
   }
 }
 

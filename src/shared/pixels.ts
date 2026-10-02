@@ -52,6 +52,24 @@ export const PIXEL_LABEL: Record<PixelStepKind, string> = {
   retouch: 'Heal'
 }
 
+/**
+ * Which RAW develop made a RAW's pixels: names its caches (`versionStamp`)
+ * and, as `params.develop`, the steps laid on them. `l` is LibRaw's decode
+ * under PIXL's own develop (engine 0.16); before it, rawler's (no mark).
+ */
+export const RAW_DEVELOP_REV = 'l'
+
+/**
+ * A step on a RAW made from another develop than today's (rawler's, before
+ * engine 0.16): its pixels are that develop's, so where it is laid partly
+ * (a mask's edge, a Strength under 100, a heal's patch) the two can show,
+ * and a camera whose frame the new develop crops differently puts it out of
+ * place. Running it again makes it from today's.
+ */
+export function staleRawStep(step: PixelStep, isRaw: boolean): boolean {
+  return isRaw && step.params.develop !== RAW_DEVELOP_REV
+}
+
 const HEX64 = /^[0-9a-f]{64}$/
 
 /** A step read from anywhere (a project, a sidecar, history), or null when it is not one. */

@@ -181,6 +181,11 @@ export class Exporter {
     const hdrOut =
       supportsHdr(s.format) &&
       ((info.is_hdr && s.hdr.mode === 'keep') || (!info.is_hdr && s.hdr.mode === 'expand'))
+    // An HDR source as an SDR picture with a gain map, where the format
+    // carries one: the grade states the HDR master, the engine renders its
+    // SDR picture and writes the map between them. An SDR source has nothing
+    // above white to map, and is written as plain SDR.
+    const gainMapOut = info.is_hdr && s.hdr.mode === 'gainmap' && supportsGainMap(s.format)
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
@@ -191,7 +196,10 @@ export class Exporter {
       seed: seedOf(row),
       brushPaths: await brushPlanes(row.id, recipe, user),
       applyCrop: true,
-      hdr: info.is_hdr || hdrOut
+      // HDR only where the pipeline keeps room above white: PQ/HLG out, or
+      // the gain map's HDR master. Tone mapped to SDR, the grade runs after
+      // the tone map on values that stop at 1.
+      hdr: hdrOut || gainMapOut
     })
     const cw = Math.round((compiled.crop?.width ?? 1) * width)
     const ch = Math.round((compiled.crop?.height ?? 1) * height)
@@ -226,11 +234,6 @@ export class Exporter {
     // An HDR source stays HDR only where the settings ask and the format can
     // say so; otherwise it is tone mapped like any SDR delivery.
     const hdrKeep = info.is_hdr && s.hdr.mode === 'keep' && supportsHdr(s.format)
-    // An HDR source as an SDR picture with a gain map, where the format
-    // carries one: the grade states the HDR master, the engine renders its
-    // SDR picture and writes the map between them. An SDR source has nothing
-    // above white to map, and is written as plain SDR.
-    const gainMapOut = info.is_hdr && s.hdr.mode === 'gainmap' && supportsGainMap(s.format)
     const effective: ExportSettings =
       (info.is_hdr && s.hdr.mode === 'keep' && !hdrKeep) ||
       (s.hdr.mode === 'gainmap' && !gainMapOut)
@@ -302,8 +305,8 @@ export class Exporter {
       color,
       sdr: gainMapOut ? sdrRendition(s, peak) : null,
       grade: compiled.grade,
-      // A HEIF's EXIF says to turn what libheif has already turned: a stated
-      // framing resets the tag in what is written.
+      // A HEIF's EXIF tag is never applied: a stated framing resets it in
+      // what is written.
       framing: compiled.framing ?? (master ? null : uprightFraming('Normal', info)),
       lens: compiled.lens,
       retouch: compiled.retouch,

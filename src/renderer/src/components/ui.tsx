@@ -1,8 +1,11 @@
 import { motion } from 'motion/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { DialogBackdrop } from '../fx/DialogBackdrop'
+import { touchAdjusting } from '../lib/interacting'
+import { dragValue, dragValueLog, keyValue, keyValueLog, logFraction } from '../lib/sliderDrag'
 import { LiquidGlass } from './glass/LiquidGlass'
 import { Icon, type IconName } from './icons'
+import { InfoTip, type Tip } from './InfoTip'
 
 /** A panel section that remembers whether it was open. */
 export function Section({
@@ -10,12 +13,15 @@ export function Section({
   title,
   children,
   right,
+  tip,
   defaultOpen = true
 }: {
   id: string
   title: string
   children: ReactNode
   right?: ReactNode
+  /** What the section is for, behind an (i) in its header. */
+  tip?: Tip
   defaultOpen?: boolean
 }): React.JSX.Element {
   const storageKey = `section:${id}`
@@ -44,12 +50,121 @@ export function Section({
         <span className="line" />
         <span className="right" onClick={(e) => e.stopPropagation()}>
           {right}
+          {tip && <InfoTip tip={tip} label={title} />}
         </span>
         <svg className="caret" viewBox="0 0 10 10" aria-hidden>
           <path d="M2 3.5 5 6.5 8 3.5" />
         </svg>
       </header>
       {open && <div className="body">{children}</div>}
+    </section>
+  )
+}
+
+/** Whether a card is unfolded, remembered per card (as sections are). */
+function storedOpen(id: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(`card:${id}`)
+    return v === null ? fallback : v === '1'
+  } catch {
+    return fallback
+  }
+}
+
+function rememberCardOpen(id: string, open: boolean): void {
+  try {
+    localStorage.setItem(`card:${id}`, open ? '1' : '0')
+  } catch {
+    // storage unavailable: the state just isn't remembered
+  }
+}
+
+/**
+ * One group of the adjustments, as a folding card: its title (a dot once
+ * anything in it moved), an (i) saying what the group is for, and on hover
+ * an eye that turns the whole group off and a reset. A card that is off
+ * dims, and can still be edited. Folding is remembered per card; `open` and
+ * `onOpenChange` take it over (the stack's solo mode and Jump to).
+ */
+export function Card({
+  id,
+  title,
+  tip,
+  changed = false,
+  off = false,
+  onToggle,
+  onReset,
+  right,
+  open: openProp,
+  onOpenChange,
+  defaultOpen = true,
+  children
+}: {
+  id: string
+  title: string
+  tip?: Tip
+  changed?: boolean
+  off?: boolean
+  /** Turns the card's group off (or back on); no eye without it. */
+  onToggle?: () => void
+  /** Puts the card's group back to its defaults; no reset without it. */
+  onReset?: () => void
+  right?: ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  defaultOpen?: boolean
+  children: ReactNode
+}): React.JSX.Element {
+  const [own, setOwn] = useState(() => storedOpen(id, defaultOpen))
+  const open = openProp ?? own
+  const toggle = (): void => {
+    if (openProp === undefined) {
+      rememberCardOpen(id, !open)
+      setOwn(!open)
+    }
+    onOpenChange?.(!open)
+  }
+  return (
+    <section
+      className={`card${open ? ' open' : ''}${off ? ' off' : ''}${changed ? ' changed' : ''}`}
+      data-card={id}
+    >
+      <header onClick={toggle}>
+        <svg className="caret" viewBox="0 0 10 10" aria-hidden>
+          <path d="M2 3.5 5 6.5 8 3.5" />
+        </svg>
+        <span className="title">{title}</span>
+        {changed && <span className="card-dot" aria-label="Changed" />}
+        <span className="card-acts" onClick={(e) => e.stopPropagation()}>
+          {right}
+          {tip && <InfoTip tip={tip} label={title} />}
+          {onToggle && (
+            <button
+              type="button"
+              className={`icon card-eye${off ? ' on' : ''}`}
+              aria-pressed={off}
+              aria-label={off ? `Turn ${title} on` : `Turn ${title} off`}
+              title={off ? 'Turn on' : 'Turn off'}
+              onClick={onToggle}
+            >
+              <Icon name={off ? 'eyeOff' : 'eye'} />
+            </button>
+          )}
+          {onReset && (
+            <button
+              type="button"
+              className="icon card-reset"
+              aria-label={`Reset ${title}`}
+              title="Reset"
+              disabled={!changed}
+              onClick={onReset}
+            >
+              <Icon name="reset" />
+            </button>
+          )}
+        </span>
+      </header>
+      {open && <div className="card-body">{children}</div>}
     </section>
   )
 }
@@ -79,10 +194,10 @@ export interface SliderProps {
   min: number
   max: number
   step?: number
-  /** Double-click the label to return here. */
+  /** Double-click the slider to return here. */
   def?: number
   format?: (v: number) => string
-  /** Called on every movement (`live` true) and on a typed value (`live` false). */
+  /** Called on every movement (`live` true) and on a typed value or a key (`live` false). */
   onChange: (v: number, live: boolean) => void
   /** Called once when a movement ends. */
   onCommit: () => void
@@ -90,19 +205,44 @@ export interface SliderProps {
   track?: string
   disabled?: boolean
   title?: string
+  /** What the slider does, behind an (i) that shows on hover. */
+  tip?: Tip
+  /** 'log': the bar runs on a log scale (finer at the small end); values stay as they are. */
+  scale?: 'linear' | 'log'
+  /**
+   * Whether moving it changes the picture (the default), so the mask overlay
+   * steps aside while it moves; false for a slider that shapes a mask.
+   */
+  adjusts?: boolean
 }
 
-/** Where `v` sits along `min…max`, as a percentage. */
-const pct = (v: number, min: number, max: number): number =>
-  max > min ? ((Math.min(max, Math.max(min, v)) - min) / (max - min)) * 100 : 0
+/** Where `v` sits along `min…max`, as a fraction. */
+const frac = (v: number, min: number, max: number): number =>
+  max > min ? (Math.min(max, Math.max(min, v)) - min) / (max - min) : 0
+
+/** How far the pointer moves before a press becomes a drag, in pixels. */
+const DRAG_SLOP = 3
+
+interface Grab {
+  id: number
+  x: number
+  from: number
+  last: number
+  width: number
+  fine: boolean
+  moved: boolean
+  onValue: boolean
+}
 
 /**
- * A slider that renders live while dragging and records history when
- * released. The label and the value sit above a hairline rail; the purple
- * fill runs from the slider's resting value to the current one, so a
- * bipolar slider fills out from its centre. The value is an input: type a
- * number and press Enter (Escape cancels). Double-click the label or the
- * rail to reset.
+ * A slider as one glass bar: the label and the value inside it, a frosted
+ * knob riding over a fill that runs from the resting value to the current
+ * one (so a bipolar slider fills out from its centre). A drag moves the
+ * value by how far the pointer goes, never to where it was pressed (Alt
+ * moves it a tenth as fast); it renders live and records history on
+ * release. A click on the value types one (Enter sets it, Escape cancels).
+ * Arrow keys step it (Shift ten steps, Alt a tenth); a double-click or Home
+ * resets it.
  */
 export function Slider({
   label,
@@ -116,38 +256,28 @@ export function Slider({
   onCommit,
   track,
   disabled,
-  title
+  title,
+  tip,
+  scale = 'linear',
+  adjusts = true
 }: SliderProps): React.JSX.Element {
+  const log = scale === 'log'
   const [text, setText] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
-  const drag = useRef(false)
-  const commitRef = useRef(onCommit)
-  useEffect(() => {
-    commitRef.current = onCommit
-  })
-  // Listening for the release only while a drag is on (not added again on
-  // every render of every slider).
-  useEffect(() => {
-    if (!dragging) return
-    const up = (): void => {
-      if (!drag.current) return
-      drag.current = false
-      setDragging(false)
-      commitRef.current()
-    }
-    window.addEventListener('pointerup', up)
-    window.addEventListener('pointercancel', up)
-    return () => {
-      window.removeEventListener('pointerup', up)
-      window.removeEventListener('pointercancel', up)
-    }
-  }, [dragging])
+  const grab = useRef<Grab | null>(null)
+  // Escape leaves the field: the blur that follows must not set what was typed.
+  const cancelled = useRef(false)
   const reset = (): void => {
     onChange(def, false)
     onCommit()
   }
   const commitText = (): void => {
     if (text === null) return
+    if (cancelled.current) {
+      cancelled.current = false
+      setText(null)
+      return
+    }
     // Units shown with the value ("5500 K", "3.00°") may be typed along with it.
     const cleaned = text.replace(/[^0-9eE+\-.]/g, '')
     const n = Number(cleaned)
@@ -157,67 +287,142 @@ export function Slider({
       onCommit()
     }
   }
-  const at = pct(value, min, max)
-  const rest = pct(def, min, max)
-  const lo = Math.min(at, rest)
+  const release = (el: HTMLElement): void => {
+    const g = grab.current
+    if (!g) return
+    grab.current = null
+    setDragging(false)
+    if (el.hasPointerCapture(g.id)) el.releasePointerCapture(g.id)
+    if (g.moved) onCommit()
+    else if (g.onValue) setText(format(value))
+  }
+  const place = (v: number): number => (log ? logFraction(v, min, max) : frac(v, min, max))
+  const at = place(value)
+  const rest = place(def)
   const showZero = !track && def > min && def < max
   return (
     <div
-      className={`slider${disabled ? ' disabled' : ''}${value !== def ? ' changed' : ''}${dragging ? ' dragging' : ''}`}
+      className={`slider${disabled ? ' disabled' : ''}${value !== def ? ' changed' : ''}${dragging ? ' dragging' : ''}${track ? ' graded' : ''}`}
       title={title}
+      role="slider"
+      tabIndex={disabled ? -1 : 0}
+      aria-label={label}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={value}
+      aria-valuetext={format(value)}
+      aria-disabled={disabled || undefined}
+      style={
+        {
+          '--at': at,
+          '--rest': rest,
+          '--lo': Math.min(at, rest),
+          '--span': Math.abs(at - rest)
+        } as React.CSSProperties
+      }
+      onPointerDown={(e) => {
+        if (disabled || e.button !== 0 || text !== null) return
+        // The pointer is captured once a drag starts, not on the press: a
+        // captured press loses its click, and so the double-click that resets.
+        grab.current = {
+          id: e.pointerId,
+          x: e.clientX,
+          from: value,
+          last: value,
+          width: e.currentTarget.getBoundingClientRect().width,
+          fine: e.altKey,
+          moved: false,
+          onValue: !!(e.target as Element).closest('.num')
+        }
+      }}
+      onPointerMove={(e) => {
+        const g = grab.current
+        if (!g || g.id !== e.pointerId) return
+        if (!g.moved) {
+          if (Math.abs(e.clientX - g.x) < DRAG_SLOP) return
+          g.moved = true
+          g.x = e.clientX
+          e.currentTarget.setPointerCapture(e.pointerId)
+          setDragging(true)
+        }
+        // Alt pressed or let go mid-drag: carry on from here, at the new speed.
+        if (e.altKey !== g.fine) {
+          g.fine = e.altKey
+          g.x = e.clientX
+          g.from = g.last
+        }
+        const v = (log ? dragValueLog : dragValue)(
+          g.from,
+          e.clientX - g.x,
+          g.width,
+          min,
+          max,
+          step,
+          g.fine
+        )
+        if (v === g.last) return
+        g.last = v
+        if (adjusts) touchAdjusting()
+        onChange(v, true)
+      }}
+      onPointerUp={(e) => release(e.currentTarget)}
+      onPointerCancel={(e) => release(e.currentTarget)}
+      onDoubleClick={(e) => {
+        if (disabled || (e.target as Element).closest('.num, .info-tip')) return
+        reset()
+      }}
+      onKeyDown={(e) => {
+        if (disabled || e.target !== e.currentTarget || e.metaKey || e.ctrlKey) return
+        const mod = e.shiftKey ? 'coarse' : e.altKey ? 'fine' : 'none'
+        const dir =
+          e.key === 'ArrowRight' || e.key === 'ArrowUp'
+            ? 1
+            : e.key === 'ArrowLeft' || e.key === 'ArrowDown'
+              ? -1
+              : 0
+        if (dir !== 0) {
+          onChange((log ? keyValueLog : keyValue)(value, dir, min, max, step, mod), false)
+          onCommit()
+        } else if (e.key === 'Home') reset()
+        else if (e.key === 'Enter') setText(format(value))
+        else if (e.key !== 'Backspace' && e.key !== 'Delete') return
+        // A focused slider owns these keys (Backspace must not delete a mask).
+        e.preventDefault()
+        e.stopPropagation()
+      }}
     >
-      <div className="sl-head">
-        <label onDoubleClick={reset} title="Double-click to reset">
-          {label}
-        </label>
-        <input
-          className="num"
-          aria-label={`${label} value`}
-          value={text ?? format(value)}
-          disabled={disabled}
-          onChange={(e) => setText(e.target.value)}
-          onFocus={(e) => e.target.select()}
-          onBlur={commitText}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-            if (e.key === 'Escape') {
-              setText(null)
-              ;(e.target as HTMLInputElement).blur()
-            }
-            e.stopPropagation()
-          }}
-        />
-      </div>
-      <div className="sl-track" onDoubleClick={reset}>
-        <div
-          className={`sl-rail${track ? ' grad' : ''}`}
-          style={track ? { background: track } : undefined}
-        />
-        {showZero && <div className="sl-zero" style={{ left: `${rest}%` }} />}
-        {!track && (
-          <div className="sl-fill" style={{ left: `${lo}%`, width: `${Math.abs(at - rest)}%` }} />
+      <div
+        className={`sl-rail${track ? ' grad' : ''}`}
+        style={track ? { background: track } : undefined}
+      />
+      {showZero && <div className="sl-zero" />}
+      {!track && <div className="sl-fill" />}
+      <div className="sl-knob" />
+      <div className="sl-text">
+        <span className="sl-label">{label}</span>
+        {tip && <InfoTip tip={tip} label={label} />}
+        {text === null ? (
+          <span className="num">{format(value)}</span>
+        ) : (
+          <input
+            className="num"
+            aria-label={`${label} value`}
+            value={text}
+            autoFocus
+            onChange={(e) => setText(e.target.value)}
+            onFocus={(e) => e.target.select()}
+            onBlur={commitText}
+            onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+              if (e.key === 'Escape') {
+                cancelled.current = true
+                ;(e.target as HTMLInputElement).closest<HTMLElement>('.slider')?.focus()
+              }
+              e.stopPropagation()
+            }}
+          />
         )}
-        <input
-          type="range"
-          aria-label={label}
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          disabled={disabled}
-          onPointerDown={() => {
-            drag.current = true
-            setDragging(true)
-          }}
-          onChange={(e) => {
-            const v = Number(e.target.value)
-            if (!drag.current) {
-              // keyboard or a click without a drag
-              onChange(v, false)
-              onCommit()
-            } else onChange(v, true)
-          }}
-        />
       </div>
     </div>
   )

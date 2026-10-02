@@ -17,20 +17,29 @@ import type { IconName } from '../../components/icons'
 import { openMasks } from '../../develop/tools'
 import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
+import { ensureModel } from '../../lib/ensureModel'
+import { useObjects } from '../../state/objects'
+import { PEOPLE_BY_CLICK, SKY_BY_CLICK } from '../../../../shared/ai'
+import { CONCEPTS, conceptOf, type ConceptId } from '../../../../shared/concepts'
+import type { PersonPart } from '../../../../shared/looks/smart'
 import { useLibrary } from '../../state/library'
 import { useDevelop, type Tool } from '../../state/develop'
 
 export type MaskToolKind =
   | 'subject'
+  | 'objects'
   | 'sky'
   | 'background'
   | 'brush'
   | 'linear'
   | 'radial'
+  | 'bidirectional'
   | 'polygon'
   | 'color'
   | 'luminance'
   | 'depth'
+  /** A person's part, asked for by a click (shared/concepts.ts). */
+  | `part:${PersonPart}`
 
 export interface MaskToolInfo {
   kind: MaskToolKind
@@ -40,8 +49,10 @@ export interface MaskToolInfo {
   command?: string
   /** Why it cannot be used yet, when it cannot (a model: see `ai`). */
   needs?: string
-  /** Found by a model: usable when the build has that task. */
-  ai?: 'segment'
+  /** Found by a model: usable when the build has that task (its model offered when missing). */
+  ai?: 'segment' | 'prompt'
+  /** A word in the corner of its button ("click": the sky is pointed at, for now). */
+  badge?: string
 }
 
 /** The tools a mask can be made with, in Lightroom's order. */
@@ -53,23 +64,43 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
         kind: 'subject',
         label: 'Subject',
         icon: 'subject',
-        needs: 'download the subject model in Settings → AI models',
+        needs: 'download the subject model',
         ai: 'segment'
       },
       {
-        kind: 'sky',
-        label: 'Sky',
-        icon: 'sky',
-        needs: 'no sky model ships yet'
+        kind: 'objects',
+        label: 'Objects',
+        icon: 'objects',
+        command: 'mask.objects',
+        needs: 'download SAM 2.1',
+        ai: 'prompt'
       },
+      // No sky model yet (E28): the sky is clicked, and SAM 2.1 selects it.
+      SKY_BY_CLICK
+        ? { kind: 'sky', label: 'Sky', icon: 'sky', ai: 'prompt', badge: 'click' }
+        : { kind: 'sky', label: 'Sky', icon: 'sky', needs: 'no sky model ships yet' },
       {
         kind: 'background',
         label: 'Background',
         icon: 'background',
-        needs: 'download the subject model in Settings → AI models',
+        needs: 'download the subject model',
         ai: 'segment'
       }
     ]
+  },
+  {
+    // Found by a click for now (SAM 2.1); by name once a parts model or
+    // SAM 3 ships (shared/concepts.ts finders). Coming soon until
+    // `PEOPLE_BY_CLICK` is on.
+    title: 'People',
+    tools: CONCEPTS.filter((c) => c.group === 'people').map((c): MaskToolInfo => ({
+      kind: `part:${c.id as PersonPart}`,
+      label: c.label,
+      icon: c.id === 'body' ? 'subject' : 'objects',
+      ...(PEOPLE_BY_CLICK
+        ? { needs: 'download SAM 2.1', ai: 'prompt' as const, badge: 'click' }
+        : { needs: 'coming soon' })
+    }))
   },
   {
     title: 'Draw',
@@ -77,6 +108,12 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
       { kind: 'brush', label: 'Brush', icon: 'brush', command: 'mask.brush' },
       { kind: 'linear', label: 'Linear gradient', icon: 'linear', command: 'mask.linear' },
       { kind: 'radial', label: 'Radial gradient', icon: 'radial', command: 'mask.radial' },
+      {
+        kind: 'bidirectional',
+        label: 'Bidirectional gradient',
+        icon: 'bidirectional',
+        command: 'mask.bidirectional'
+      },
       { kind: 'polygon', label: 'Lasso', icon: 'lasso', command: 'mask.lasso' }
     ]
   },
@@ -95,7 +132,8 @@ export const COMPONENT_LABEL: Record<MaskComponentSetting['kind'], string> = {
   polygon: 'Lasso',
   range: 'Range',
   linear: 'Linear gradient',
-  radial: 'Radial gradient'
+  radial: 'Radial gradient',
+  bidirectional: 'Bidirectional gradient'
 }
 
 export function componentIcon(c: MaskComponentSetting): IconName {
@@ -158,24 +196,49 @@ export function madeComponent(id: string): void {
  * then wait on the canvas; a range is added at once and the picker asks for
  * the colour or tone to key on.
  */
+/** The class a tool asks a click for: the sky (until a sky model), or a person's part. */
+function askedConcept(kind: MaskToolKind): ConceptId | null {
+  if (kind === 'sky') return SKY_BY_CLICK ? 'sky' : null
+  return kind.startsWith('part:') ? (kind.slice(5) as PersonPart) : null
+}
+
 export function startMaskTool(kind: MaskToolKind): void {
   const d = useDevelop.getState()
   if (!d.recipe) return
   const adding = d.addMode !== null && layerOf(d.recipe, d.layerId) !== undefined
+  // Pointed at (SAM 2.1): the Objects tool on the canvas, or a class tool
+  // (Sky, Hair, Eyes…), which is the same tool asking for a click on that
+  // class until a finder that knows its name ships. Its model offered first
+  // when it is not downloaded.
+  const asked = askedConcept(kind)
+  if (kind === 'objects' || asked) {
+    if (!d.session) return
+    const mode = d.addMode
+    openMasks()
+    void (async () => {
+      if (!(await ensureModel('prompt', asked ? conceptOf(asked)?.label : undefined))) return
+      const now = useDevelop.getState()
+      if (!now.recipe || !now.session) return
+      if (!(adding && layerOf(now.recipe, now.layerId))) {
+        if (!createMask()) return
+      } else if (mode) now.setAddMode(mode)
+      useObjects.getState().begin(asked ?? 'object')
+      useDevelop.getState().setTool('objects')
+    })()
+    return
+  }
   // A model finds these: a job on this photo, whose mask lands when it is done
   // (in this mask with the pending mode, else as a new one).
   if (kind === 'subject' || kind === 'sky' || kind === 'background') {
     if (!d.session) return
-    void api.ai
-      .start({
-        task: 'segment',
-        key: d.session.key,
-        target: kind,
-        into: adding && d.layerId ? { layerId: d.layerId, mode: d.addMode ?? 'Add' } : undefined
-      })
-      .catch((err) => useLibrary.getState().say(errorText(err), 'error'))
+    const key = d.session.key
+    const into = adding && d.layerId ? { layerId: d.layerId, mode: d.addMode ?? 'Add' } : undefined
     d.setAddMode(null)
     openMasks()
+    void (async () => {
+      if (!(await ensureModel('segment'))) return
+      await api.ai.start({ task: 'segment', key, target: kind, into })
+    })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
     return
   }
   if (!adding) {
@@ -186,6 +249,7 @@ export function startMaskTool(kind: MaskToolKind): void {
     brush: 'brush',
     linear: 'linear',
     radial: 'radial',
+    bidirectional: 'bidirectional',
     polygon: 'polygon'
   }
   const t = tools[kind]
@@ -229,6 +293,8 @@ const MASK_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
   'polygon',
   'linear',
   'radial',
+  'bidirectional',
+  'objects',
   'range-picker'
 ])
 

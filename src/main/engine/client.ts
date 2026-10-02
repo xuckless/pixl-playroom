@@ -25,11 +25,16 @@ import type {
   Framing,
   MaskBounds,
   Rgb,
+  SamOp,
+  SamResult,
+  SegmentReport,
   SourceInfo,
   Transform,
   WhiteBalance
 } from '../../shared/engine-types'
+import { unsupportedRaw } from '../../shared/engine-types'
 import { IPC, type EngineStatus } from '../../shared/ipc'
+import type { MainToHost } from '../../shared/engine-types'
 
 export class EngineError extends Error {
   code: string
@@ -51,12 +56,17 @@ export class EngineError extends Error {
     const d = this.detail?.['InvalidRequest']
     return d && typeof d['field'] === 'string' ? (d['field'] as string) : undefined
   }
+
+  /** What to tell the user: the engine's words, or plainer ones where it has them. */
+  get userMessage(): string {
+    return unsupportedRaw(this.detail) ?? this.message
+  }
 }
 
 interface Pending {
   resolve: (v: unknown) => void
   reject: (e: Error) => void
-  method: EngineMethod
+  method: EngineMethod | 'sam'
 }
 
 /** A call that can be stopped: the engine returns `Cancelled` at its next stage boundary. */
@@ -116,6 +126,37 @@ export class EngineClient {
   ) {}
 
   private spawned = false
+  /**
+   * How many hosts this client has started: what a host holds (SAM's
+   * sessions and embeddings) is gone when this moves on.
+   */
+  private generationCount = 0
+  private spawnListeners = new Set<(generation: number) => void>()
+
+  get generation(): number {
+    return this.generationCount
+  }
+
+  /** Hear each new host (after a crash, a restart or a sleep). */
+  onSpawn(listener: (generation: number) => void): () => void {
+    this.spawnListeners.add(listener)
+    return () => this.spawnListeners.delete(listener)
+  }
+
+  /**
+   * Let the host go while nothing runs, to give back what it holds (SAM's
+   * models are hundreds of megabytes); the next call starts a new one.
+   * Not a crash: nothing is counted, and no call fails.
+   */
+  sleep(): boolean {
+    const child = this.child
+    if (!child || this.running.size > 0 || this.inflight.size > 0) return false
+    this.child = undefined
+    this.spawned = false
+    this.status = { ...this.status, status: 'starting' }
+    child.kill()
+    return true
+  }
 
   start(): void {
     this.stopped = false
@@ -262,14 +303,30 @@ export class EngineClient {
   ): Promise<Transform> {
     return this.call('uprightFromLines', [lines, width, height, focal]) as Promise<Transform>
   }
-  /** Run a segmentation model on a photo (`segment`); each plane's PNG is a Buffer. */
-  segment(request: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return this.call('segment', [request]) as Promise<Record<string, unknown>>
+  /**
+   * Run a segmentation model on a photo (`segment`); each plane's PNG is a
+   * Buffer. A signal stops the model mid-run (0.16).
+   */
+  segment(request: Record<string, unknown>, opts: CallOptions = {}): Promise<SegmentReport> {
+    return this.call('segment', [request], opts.signal) as Promise<SegmentReport>
   }
   /** Time models on providers (`benchmark`). */
-  benchmark(request: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return this.call('benchmark', [request]) as Promise<Record<string, unknown>>
+  benchmark(
+    request: Record<string, unknown>,
+    opts: CallOptions = {}
+  ): Promise<Record<string, unknown>> {
+    return this.call('benchmark', [request], opts.signal) as Promise<Record<string, unknown>>
   }
+  /**
+   * One of SAM 2.1's calls (`SamOp`): its sessions, embeddings and logits
+   * stay in the host, named by id. A signal stops the model mid-run.
+   */
+  sam(call: SamOp, opts: CallOptions = {}): Promise<SamResult> {
+    const run = (): Promise<unknown> =>
+      this.post('sam', (id, cancellable) => ({ kind: 'sam', id, call, cancellable }), opts.signal)
+    return run() as Promise<SamResult>
+  }
+
   /** Where a heal or clone should copy from (see `retouch/suggest.rs`). */
   suggestHealSource(request: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.call('suggestHealSource', [request]) as Promise<Record<string, unknown>>
@@ -284,6 +341,8 @@ export class EngineClient {
   }
 
   private spawn(): void {
+    this.generationCount++
+    for (const l of this.spawnListeners) l(this.generationCount)
     const entry = join(MAIN_DIR, 'engine-host.js')
     const child = utilityProcess.fork(entry, [], {
       serviceName: `pixl-engine-${this.name}`,
@@ -339,6 +398,7 @@ export class EngineClient {
               version: msg.version,
               enhance: msg.enhance,
               runtime: msg.runtime,
+              prompt: msg.prompt,
               restarts: this.status.restarts
             }
           : {
@@ -378,27 +438,34 @@ export class EngineClient {
   ): Promise<unknown> {
     const hold = this.yieldTo && this.yieldTo.running.size > 0
     const drain = signal !== undefined && this.draining.size > 0
-    if (!hold && !drain) return this.post(method, args, signal, frame)
+    const message = (id: number, cancellable: boolean): MainToHost => ({
+      kind: 'request',
+      id,
+      method,
+      args,
+      cancellable,
+      ...(frame ? { frame } : {})
+    })
+    if (!hold && !drain) return this.post(method, message, signal)
     return (async () => {
       if (hold) await this.yieldTo!.quiet(HOLD_MAX_MS)
       if (drain) await this.drained(DRAIN_MAX_MS)
-      return this.post(method, args, signal, frame)
+      return this.post(method, message, signal)
     })()
   }
 
   private post(
-    method: EngineMethod,
-    args: unknown[],
-    signal?: AbortSignal,
-    frame?: string
+    method: EngineMethod | 'sam',
+    message: (id: number, cancellable: boolean) => MainToHost,
+    signal?: AbortSignal
   ): Promise<unknown> {
     const cancelled = (): EngineError =>
       new EngineError({ message: `${method}: cancelled`, code: 'Cancelled' })
     if (signal?.aborted) return Promise.reject(cancelled())
-    // Held back from the launch: started by the first call that wants it.
+    // Held back from the launch (or put to sleep): started by the first call that wants it.
     if (!this.spawned && !this.stopped) {
       this.start()
-      return this.whenStarted().then(() => this.post(method, args, signal, frame))
+      return this.whenStarted().then(() => this.post(method, message, signal))
     }
     const child = this.child
     if (!child) {
@@ -427,14 +494,7 @@ export class EngineClient {
       this.inflight.set(id, { resolve: done(resolve), reject: done(reject), method })
       signal?.addEventListener('abort', onAbort, { once: true })
       this.running.add(id)
-      child.postMessage({
-        kind: 'request',
-        id,
-        method,
-        args,
-        cancellable: signal !== undefined,
-        ...(frame ? { frame } : {})
-      })
+      child.postMessage(message(id, signal !== undefined))
     })
   }
 }

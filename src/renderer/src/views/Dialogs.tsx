@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   defaultExportSettings,
   normaliseExportSettings,
@@ -18,8 +18,10 @@ import {
   RECIPE_GROUPS,
   type RecipeGroup
 } from '../../../shared/recipe'
+import { toInstructions } from '../../../shared/looks/smart'
 import { savedWhite } from '../../../shared/wbconvert'
 import { Modal } from '../components/ui'
+import { InfoTip } from '../components/InfoTip'
 import { Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
 import { autoWbBatch } from '../lib/autowb'
@@ -275,7 +277,7 @@ export function ExportDialog(): React.JSX.Element {
               <option value="webp">WebP</option>
               <option value="avif">AVIF</option>
               <option value="jxl">JPEG XL</option>
-              <option value="heic">HEIC (needs x265 in the engine build)</option>
+              <option value="heic">HEIC</option>
             </select>
           </Field>
           {['jpeg', 'webp', 'avif', 'heic'].includes(s.format) && (
@@ -544,7 +546,17 @@ export function ExportDialog(): React.JSX.Element {
           thumbUrl={items.find((i) => i.key === targets[0])?.thumbUrl ?? null}
         />
         <fieldset>
-          <legend>Metadata</legend>
+          <legend>
+            Metadata
+            <InfoTip
+              label="Metadata"
+              tip={{
+                what: 'Which blocks of the original’s metadata the export keeps.',
+                expect:
+                  'Each block is copied whole or left out; the title, caption, keywords and copyright are then written into the ones kept.'
+              }}
+            />
+          </legend>
           <Field label="Include">
             <select
               value={s.metaMode}
@@ -582,10 +594,6 @@ export function ExportDialog(): React.JSX.Element {
               onKeyDown={(e) => e.stopPropagation()}
             />
           </Field>
-          <p className="muted small">
-            Blocks are copied verbatim or not at all; the title, caption, keywords and copyright are
-            then written into the ones kept.
-          </p>
         </fieldset>
         <fieldset>
           <legend>HDR</legend>
@@ -873,6 +881,7 @@ export function SavePresetDialog(): React.JSX.Element {
   const session = useDevelop((s) => s.session)
   const [name, setName] = useState('')
   const [group, setGroup] = useState('User presets')
+  const [withSteps, setWithSteps] = useState(true)
   const [groups, setGroups] = useState<Set<RecipeGroup>>(
     new Set(
       recipe
@@ -887,6 +896,17 @@ export function SavePresetDialog(): React.JSX.Element {
         : []
     )
   )
+  // The masks and AI steps as a preset can carry them (smart.ts `toInstructions`).
+  const converted = useMemo(
+    () =>
+      recipe
+        ? toInstructions(
+            groups.has('localAdjustments') ? recipe.layers : [],
+            withSteps ? recipe.pixels : []
+          )
+        : { smart: null, kept: [], warnings: [] },
+    [recipe, groups, withSteps]
+  )
   return (
     <Modal
       title="Save preset"
@@ -895,7 +915,7 @@ export function SavePresetDialog(): React.JSX.Element {
       footer={
         <button
           className="primary"
-          disabled={!recipe || !name.trim() || groups.size === 0}
+          disabled={!recipe || !name.trim() || (groups.size === 0 && !converted.smart)}
           onClick={async () => {
             if (!recipe) return
             try {
@@ -905,12 +925,16 @@ export function SavePresetDialog(): React.JSX.Element {
                 session && groups.has('whiteBalance') && recipe.wb.mode === 'custom'
                   ? savedWhite(recipe.wb, session)
                   : undefined
+              // Masks and AI steps go as instructions, made again on each photo;
+              // the photo's own masks and steps are not the preset's to carry.
+              const kept = [...groups].filter((g) => g !== 'localAdjustments')
               await api.presets.save({
                 name: name.trim(),
                 group: group.trim() || 'User presets',
-                groups: [...groups],
-                recipe,
-                ...(wbOp ? { wbOp } : {})
+                groups: kept,
+                recipe: { ...recipe, layers: [], pixels: [] },
+                ...(wbOp ? { wbOp } : {}),
+                ...(converted.smart ? { smart: converted.smart } : {})
               })
               presetsChanged()
               say(`Saved preset ${name.trim()}`)
@@ -956,7 +980,39 @@ export function SavePresetDialog(): React.JSX.Element {
             {GROUP_LABELS[g]}
           </label>
         ))}
+        {(recipe?.pixels.length ?? 0) > 0 && (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={withSteps}
+              onChange={(e) => setWithSteps(e.target.checked)}
+            />
+            AI denoise &amp; deblur
+          </label>
+        )}
       </div>
+      {(groups.has('localAdjustments') || withSteps) &&
+        (converted.kept.length > 0 || converted.warnings.length > 0) && (
+          <div className="smart-convert">
+            {converted.kept.length > 0 && (
+              <>
+                <p className="muted small">Saved as instructions, made again on each photo:</p>
+                <ul>
+                  {converted.kept.map((k) => (
+                    <li key={k}>{k}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {converted.warnings.length > 0 && (
+              <ul className="smart-convert-warn">
+                {converted.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
     </Modal>
   )
 }

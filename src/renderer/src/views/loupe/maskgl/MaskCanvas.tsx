@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { maskJoins } from '../../../../../shared/maskpreview'
 import type { LocalLayer } from '../../../../../shared/recipe'
 import { displayToBase, type P, type ViewGeometry } from '../../../../../shared/view'
@@ -6,7 +6,7 @@ import { planePng } from '../../../lib/planes'
 import { lastSentRev, useDevelop } from '../../../state/develop'
 import { useUi, type OverlayMode } from '../../../state/ui'
 import { BASE_EDGE, MaskGl, type Join, type ViewMode } from './MaskGl'
-import { useMaskGlBroken } from './state'
+import { useMaskDraft, useMaskGlBroken } from './state'
 import { useAiJobs } from '../../../state/jobs'
 
 /** The canvas is at most this many device pixels on its long edge (the tint is soft). */
@@ -17,6 +17,36 @@ const AGREE_MS = 180
 const REVEAL_MS = 1100
 /** How strongly the outline shows while a mask changes with the overlay off. */
 const GHOST_ALPHA = 0.85
+/** With the overlay off, how long the changing mask's outline stays, then fades (ms). */
+const GHOST_HOLD_MS = 900
+const GHOST_FADE_MS = 400
+/** How long the glass's rim light flows after the mask changes. */
+const FLOW_MS = 1400
+/** A hovered mask shows at least this strongly, overlay on or off. */
+const HOVER_OPACITY = 55
+/** So does the Objects tool's selection while it is made. */
+const SELECT_OPACITY = 55
+
+const reducedMotion = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** The shade's strength for a view at the overlay's opacity (0…100): glass reads stronger. */
+function alphaFor(view: ViewMode, opacity: number): number {
+  const a = opacity / 100
+  return view === 'glass' ? Math.min(1, Math.max(0.35, a * 1.6)) : a
+}
+
+/**
+ * A canvas's drawing, kept a moment after the canvas lets go of it. A WebGL
+ * context given up (`dispose`) stays lost for its canvas, so a canvas
+ * mounted again at once (React's StrictMode does, in development) found a
+ * dead one, and the loupe fell back to the CSS overlay, which cannot show a
+ * shape being drawn (an Objects selection, a lasso). Mounted again, it takes
+ * this one back; let go for good, it is given up a tick later.
+ */
+const parked = new WeakMap<
+  HTMLCanvasElement,
+  { gl: MaskGl; timer: ReturnType<typeof setTimeout> }
+>()
 
 /** For automation: what the preview did, and its own mask to compare with the engine's. */
 const stats = { composes: 0, lastComposeMs: 0, agreed: 0, target: 0, engineRev: -1, live: 0 }
@@ -93,34 +123,52 @@ const shapeOf = (
  * then handed over to the engine's plane when a render of the same recipe
  * arrives. With the overlay off, a mask that is changing shows as a faint
  * outline until the engine catches up.
+ *
+ * With `hover`, the mask under the pointer in the masks panel instead (or
+ * none): drawn from its components alone, overlay on or off, at least
+ * HOVER_OPACITY strong, the same way the selected one is.
  */
 export function MaskCanvas({
   g,
   w,
-  h
+  h,
+  hover
 }: {
   g: ViewGeometry
   w: number
   h: number
+  hover?: string | null
 }): React.JSX.Element | null {
   const canvas = useRef<HTMLCanvasElement>(null)
   const glRef = useRef<MaskGl | null>(null)
-  const layerId = useDevelop((s) => s.layerId)
-  // The selected mask's shape, by identity: its sliders moving leave these
-  // as they are, so nothing here redraws on a slider's tick.
-  const components = useDevelop((s) => s.recipe?.layers.find((l) => l.id === s.layerId)?.components)
+  const isHover = hover !== undefined
+  const selectedId = useDevelop((s) => s.layerId)
+  const layerId = isHover ? hover : selectedId
+  // The mask's shape, by identity: its sliders moving leave these as they
+  // are, so nothing here redraws on a slider's tick.
+  const saved = useDevelop((s) => s.recipe?.layers.find((l) => l.id === layerId)?.components)
+  // A shape still being drawn (a lasso before it closes) shows as part of the mask.
+  const draftNow = useMaskDraft((s) => s.draft)
+  const draft = isHover ? null : draftNow
+  const components = useMemo(() => (draft && saved ? [...saved, draft] : saved), [draft, saved])
   const layerInvert = useDevelop(
-    (s) => s.recipe?.layers.find((l) => l.id === s.layerId)?.invert ?? false
+    (s) => s.recipe?.layers.find((l) => l.id === layerId)?.invert ?? false
   )
-  const overlayHue = useDevelop((s) => s.recipe?.layers.find((l) => l.id === s.layerId)?.overlayHue)
-  const mask = useDevelop((s) => (s.mask && s.mask.layerId === s.layerId ? s.mask : null))
+  const overlayHue = useDevelop((s) => s.recipe?.layers.find((l) => l.id === layerId)?.overlayHue)
+  const mask = useDevelop((s) => (!isHover && s.mask && s.mask.layerId === layerId ? s.mask : null))
   // The picture a range keys on: the settled one (a draft per tick would be
   // decoded per tick), its last one kept while drafts come and go.
   const pictureUrl = useDevelop((s) =>
     s.picture && s.picture.kind !== 'draft' ? s.picture.url : null
   )
-  const overlay = useDevelop((s) => s.overlay)
+  const overlayOn = useDevelop((s) => s.overlay)
+  // The Objects tool's selection being made (what a hover, a box or a click
+  // would take) shows plainly, overlay on or off: as a tint, since the glass's
+  // rim alone hardly shows what is taken.
+  const selecting = useDevelop((s) => !isHover && s.tool === 'objects')
+  const overlay = isHover || overlayOn || selecting
   const o = useUi((s) => s.maskOverlay)
+  const glass = o.mode === 'glass'
   const [bitmapTick, setBitmapTick] = useState(0)
   const [engineBmp, setEngineBmp] = useState<{ url: string; bmp: ImageBitmap } | null>(null)
   const [picture, setPicture] = useState<{ url: string; bmp: ImageBitmap } | null>(null)
@@ -140,10 +188,17 @@ export function MaskCanvas({
   const reveal = useAiJobs((s) => s.reveal)
   const revealAt = useRef(1)
   const redraw = useRef<(() => void) | null>(null)
+  // When the mask's shape last changed: the overlay-off outline fades after it.
+  const ghostFrom = useRef(0)
+  const ghostFrame = useRef(0)
+  // The glass's rim light: flowing for a moment after the mask changes.
+  const flowFrom = useRef(0)
+  const flowFrame = useRef(0)
 
   // Set before the edit reaches the engine: the store calls this inside the
   // edit, and the edit is sent as the next number.
   useEffect(() => {
+    if (isHover) return
     const s0 = useDevelop.getState()
     let id = s0.layerId
     let shape = shapeOf(s0.recipe?.layers.find((l) => l.id === id))
@@ -158,27 +213,36 @@ export function MaskCanvas({
       shape = next
       stats.target = target.current
     })
-  }, [])
+  }, [isHover])
 
   useEffect(() => {
     const c = canvas.current
     if (!c) return
-    try {
-      glRef.current = new MaskGl(c)
-      current = glRef.current
-    } catch {
-      useMaskGlBroken.setState({ broken: true })
-      return
+    // Mounted again at once (StrictMode does, in development): the same one.
+    const kept = parked.get(c)
+    if (kept) {
+      clearTimeout(kept.timer)
+      parked.delete(c)
+      glRef.current = kept.gl
+    } else {
+      try {
+        glRef.current = new MaskGl(c)
+      } catch {
+        useMaskGlBroken.setState({ broken: true })
+        return
+      }
     }
+    if (!isHover) current = glRef.current
     const lost = (): void => useMaskGlBroken.setState({ broken: true })
     c.addEventListener('webglcontextlost', lost)
     return () => {
       c.removeEventListener('webglcontextlost', lost)
-      glRef.current?.dispose()
-      if (current === glRef.current) current = null
+      const gl = glRef.current
+      if (current === gl) current = null
       glRef.current = null
+      if (gl) parked.set(c, { gl, timer: setTimeout(() => (parked.delete(c), gl.dispose()), 0) })
     }
-  }, [])
+  }, [isHover])
 
   // The engine's plane for this mask, decoded. A bitmap holds its pixels
   // until closed (tens of MB, a draft a frame): each goes when replaced.
@@ -199,10 +263,13 @@ export function MaskCanvas({
     }
   }, [mask?.url])
 
-  // The picture, for ranges.
+  // The picture, for ranges and for the glass to show through.
   const hasRange = components?.some((c) => c.kind === 'range') ?? false
+  const needPicture = hasRange || glass
+  const isHdr = useDevelop((s) => s.session?.isHdr ?? false)
+  const hdrRange = isHdr && hasRange
   useEffect(() => {
-    if (!hasRange || !pictureUrl) return
+    if (!needPicture || !pictureUrl) return
     let on = true
     // Decoded straight to the size the mask is keyed at, not the render's.
     const p = useDevelop.getState().picture
@@ -220,7 +287,7 @@ export function MaskCanvas({
     return () => {
       on = false
     }
-  }, [hasRange, pictureUrl])
+  }, [needPicture, pictureUrl])
 
   const dpr = window.devicePixelRatio || 1
   const k = Math.min(1, MAX_EDGE / (Math.max(w, h) * dpr))
@@ -320,10 +387,17 @@ export function MaskCanvas({
       return
     }
     gl.setEngine(engineBmp?.url === mask?.url ? (engineBmp?.bmp ?? null) : null, mask?.url ?? '')
+    gl.setPicture(picture?.bmp ?? null, picture?.url ?? '')
 
     // Hand over to the engine once it has drawn this recipe (or at once, when
     // the loupe has nothing to show).
     const agreed =
+      !draft &&
+      // An HDR photo's ranges: the engine keys its plane on the HDR working
+      // values (a coverage plane needs Preserve), the picture on the tone
+      // mapped ones; the loupe keys on the picture as shown, as the picture
+      // does, so its own mask stays (ENGINE-REQUESTS E39).
+      !hdrRange &&
       gl.haveEngine &&
       mask !== null &&
       (mask.rev ?? 0) >= target.current &&
@@ -334,7 +408,7 @@ export function MaskCanvas({
     const draw = (): void => {
       const ghost = !overlay
       // Each component in its own colour: golden-angle steps round from the overlay's hue.
-      if (!ghost && o.byComponent && viewOf(o.mode) === 'colour') {
+      if (!ghost && !isHover && o.byComponent && viewOf(o.mode) === 'colour') {
         const n = components.length
         const colours = Array.from({ length: Math.max(1, n) }, (_, i) =>
           hslToRgb(((overlayHue ?? o.hue) + i * 137.508) % 360, 0.9, 0.55)
@@ -344,17 +418,32 @@ export function MaskCanvas({
           return
         }
       }
+      const chosen = viewOf(o.mode)
+      const view = ghost ? 'ghost' : selecting && chosen === 'glass' ? 'colour' : chosen
+      const opacity = isHover
+        ? Math.max(o.opacity, HOVER_OPACITY)
+        : selecting
+          ? Math.max(o.opacity, SELECT_OPACITY)
+          : o.opacity
+      const t = performance.now()
+      const flow =
+        view === 'glass' && !reducedMotion() ? Math.max(0, 1 - (t - flowFrom.current) / FLOW_MS) : 0
       gl.shade({
         layerInvert,
         live: live.current,
-        view: ghost ? 'outline' : viewOf(o.mode),
+        view,
         tint,
         alpha: ghost
-          ? GHOST_ALPHA * live.current
-          : o.mode === 'outline'
-            ? Math.max(0.9, o.opacity / 100)
-            : o.opacity / 100,
-        reveal: revealAt.current
+          ? GHOST_ALPHA *
+            live.current *
+            Math.min(1, Math.max(0, 1 - (t - ghostFrom.current - GHOST_HOLD_MS) / GHOST_FADE_MS))
+          : view === 'outline'
+            ? Math.max(0.9, opacity / 100)
+            : alphaFor(view, opacity),
+        reveal: revealAt.current,
+        time: t / 1000,
+        flow: flow * flow,
+        px: w > 0 ? cw / w : 1
       })
       stats.live = live.current
     }
@@ -377,6 +466,10 @@ export function MaskCanvas({
     frame.current = requestAnimationFrame(step)
   }, [
     components,
+    draft,
+    hdrRange,
+    isHover,
+    selecting,
     layerInvert,
     overlayHue,
     layerId,
@@ -386,6 +479,7 @@ export function MaskCanvas({
     overlay,
     o,
     g,
+    w,
     cw,
     ch,
     bitmapTick
@@ -393,8 +487,37 @@ export function MaskCanvas({
 
   useEffect(() => () => cancelAnimationFrame(frame.current), [])
 
+  // A change to the mask's shape shows its outline with the overlay off, for
+  // a moment: whether or not the engine ever answers (an edit it refuses).
   useEffect(() => {
-    if (!reveal || reveal.layerId !== layerId) return
+    if (overlay || !components) return
+    ghostFrom.current = performance.now()
+    cancelAnimationFrame(ghostFrame.current)
+    const step = (): void => {
+      redraw.current?.()
+      if (performance.now() - ghostFrom.current < GHOST_HOLD_MS + GHOST_FADE_MS)
+        ghostFrame.current = requestAnimationFrame(step)
+    }
+    ghostFrame.current = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(ghostFrame.current)
+  }, [overlay, components])
+
+  // A change to the mask's shape sets the glass's rim light flowing, then still.
+  useEffect(() => {
+    if (!glass || !components || reducedMotion()) return
+    flowFrom.current = performance.now()
+    cancelAnimationFrame(flowFrame.current)
+    const step = (): void => {
+      redraw.current?.()
+      if (performance.now() - flowFrom.current < FLOW_MS)
+        flowFrame.current = requestAnimationFrame(step)
+    }
+    flowFrame.current = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(flowFrame.current)
+  }, [glass, components])
+
+  useEffect(() => {
+    if (isHover || !reveal || reveal.layerId !== layerId) return
     let raf = 0
     const step = (): void => {
       const t = Math.min(1, (performance.now() - reveal.at) / REVEAL_MS)
@@ -407,7 +530,7 @@ export function MaskCanvas({
       cancelAnimationFrame(raf)
       revealAt.current = 1
     }
-  }, [reveal, layerId])
+  }, [reveal, layerId, isHover])
 
-  return <canvas ref={canvas} className="mask-canvas" />
+  return <canvas ref={canvas} className={`mask-canvas${isHover ? ' hover' : ''}`} />
 }

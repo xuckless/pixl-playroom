@@ -187,31 +187,40 @@
 }
 .tool-layer.polygon {
   cursor: crosshair;
+  touch-action: none;
+}
+.tool-layer.polygon.closing {
+  cursor: pointer;
 }
 .tool-layer svg {
   position: absolute;
   inset: 0;
   overflow: visible;
 }
-.poly {
-  fill: rgba(157, 139, 234, 0.16);
-  stroke: var(--acc);
-  stroke-width: 1.5;
-}
-.poly.subtract {
-  fill: rgba(255, 107, 122, 0.12);
-  stroke: var(--danger);
-  stroke-dasharray: 4 3;
-}
+/* The lasso being drawn: only its line and points; the loupe's mask shows
+   what it selects. */
 .poly.drawing {
   fill: none;
   stroke: #fff;
+  stroke-width: 1.25;
   stroke-dasharray: 4 3;
   animation: dash 0.8s linear infinite;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.8));
+}
+.poly.drawing.subtract {
+  stroke: var(--danger);
 }
 .poly-point {
   fill: #fff;
   stroke: #000;
+  transition: r 0.15s var(--ease);
+}
+.poly-point.close {
+  fill: var(--acc);
+  stroke: #fff;
+}
+.poly-fallback {
+  fill: rgba(0, 0, 0, 0.35);
 }
 .brush-cursor {
   position: absolute;
@@ -522,6 +531,25 @@
 .mask-hover .mask-overlay {
   animation-duration: 0.15s;
 }
+/* Every mask overlay; with auto toggle on it steps aside while a slider
+   that changes the picture moves, so the edit itself shows. */
+.mask-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 0.18s var(--ease);
+}
+:root[data-adjusting] .mask-layer.auto-hide {
+  opacity: 0;
+}
+:root[data-adjusting] .picture.ov-bw:has(.mask-layer.auto-hide) > img {
+  filter: none;
+}
+/* Molten glass without the loupe's drawing: clear glass, the photo kept sharp where the mask is. */
+.mask-overlay.glass {
+  backdrop-filter: saturate(1.35) brightness(1.06);
+  -webkit-backdrop-filter: saturate(1.35) brightness(1.06);
+}
 /* The selected mask, drawn by the loupe (views/loupe/maskgl). */
 .mask-canvas {
   position: absolute;
@@ -529,15 +557,6 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
-}
-.poly.live {
-  stroke: none;
-  transition: fill 0.2s var(--ease);
-}
-.poly.live.subtract {
-  fill: rgba(0, 0, 0, 0.35);
-  stroke: none;
-  stroke-dasharray: none;
 }
 
 /* ── Upright guides ──────────────────────────────────────────────── */

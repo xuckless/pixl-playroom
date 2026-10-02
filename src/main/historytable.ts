@@ -16,7 +16,7 @@
  * a step clears the keyframes from it on; the next head rebuilds them.
  */
 import type { StatementSync } from 'node:sqlite'
-import type { HistoryAppend, HistoryBase, HistoryLog } from '../shared/ipc'
+import type { HistoryAmend, HistoryAppend, HistoryBase, HistoryLog } from '../shared/ipc'
 import { diffRecipe, replay, type Patch, type Step } from '../shared/history'
 import type { Recipe } from '../shared/recipe'
 
@@ -257,6 +257,43 @@ export class HistoryTable {
       const keyframe = keyed.n + 1 >= KEYFRAME_EVERY ? JSON.stringify(replay(head, [step])) : ''
       insert.run(itemKey, seq, label, at, keyframe, json)
       return { ...this.fold(itemKey), step }
+    })
+  }
+
+  /**
+   * Rewrite the newest step, `seq`, so the history ends at `recipe`: a
+   * look's Amount and a look swapped for another stay the one step they
+   * were. Refused (null) unless `seq` is still the newest step and shown;
+   * the caller records a new step instead. A step left changing nothing is
+   * deleted (`step` null).
+   */
+  amendLast(itemKey: string, seq: number, label: string, recipe: Recipe): HistoryAmend | null {
+    return this.db.tx(() => {
+      this.ensureSteps(itemKey)
+      const last = this.db
+        .prepare(
+          'SELECT seq, recipe, patch, hidden FROM history WHERE item_key = ? ORDER BY seq DESC LIMIT 1'
+        )
+        .get(itemKey) as
+        { seq: number; recipe: string; patch: string | null; hidden: number } | undefined
+      if (!last || last.seq !== seq || last.patch === null || last.hidden !== 0) return null
+      // What the history describes without it: the step is made again from there.
+      this.db.prepare('DELETE FROM history WHERE item_key = ? AND seq = ?').run(itemKey, seq)
+      const head = this.head(itemKey)
+      if (!head) return null
+      const patch = diffRecipe(head, recipe)
+      if (patch.length === 0) return { seq, step: null }
+      const at = new Date().toISOString()
+      const json = JSON.stringify(patch)
+      const step: Step = { seq, label, at, patch: JSON.parse(json) as Patch, hidden: false }
+      // A keyframe stays one, of the step as it is now.
+      const keyframe = last.recipe !== '' ? JSON.stringify(replay(head, [step])) : ''
+      this.db
+        .prepare(
+          'INSERT INTO history(item_key, seq, label, at, recipe, patch, hidden) VALUES (?, ?, ?, ?, ?, ?, 0)'
+        )
+        .run(itemKey, seq, label, at, keyframe, json)
+      return { seq, step }
     })
   }
 

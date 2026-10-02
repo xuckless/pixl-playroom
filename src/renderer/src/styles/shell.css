@@ -252,6 +252,10 @@ aside.right .panels {
   border-bottom: 1px solid transparent;
   border-image: var(--hl-x) 1;
 }
+.rail-actions {
+  display: flex;
+  gap: 2px;
+}
 .rail-head .micro {
   color: var(--text);
 }
@@ -332,6 +336,57 @@ aside.right .panels {
 .rail-item:hover .dot,
 .rail-item.on .dot {
   opacity: 1;
+}
+.rail-grip {
+  width: 5px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+}
+.rail-grip svg {
+  width: 11px;
+  height: 11px;
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+.rail-item:hover .rail-grip svg,
+.rail-item.dragging .rail-grip svg {
+  opacity: 1;
+}
+.rail-item.dragging {
+  position: relative;
+  z-index: 1;
+  background: var(--s2);
+  transition: none;
+}
+.applied-look {
+  margin: 8px 2px 4px;
+  padding: 8px 10px 4px;
+  border: 1px solid rgba(157, 139, 234, 0.35);
+  border-radius: var(--r);
+  background: linear-gradient(90deg, rgba(157, 139, 234, 0.12), transparent);
+}
+.applied-look-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+.applied-look-head strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text);
+}
+.applied-look-head button.icon svg {
+  width: 13px;
+  height: 13px;
 }
 .rail-item .t {
   font-size: 11px;
@@ -674,4 +729,39 @@ aside.right .panels {
 /* In a mask, the panel's edge glows in the mask's colour. */
 aside.right .panels.scoped {
   box-shadow: inset 2px 0 0 hsl(var(--scope-hue, 260) 70% 60% / 0.5);
+}
+.look-run {
+  margin: 2px 0 6px;
+}
+.look-run-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--hair2);
+  overflow: hidden;
+}
+.look-run-bar i {
+  display: block;
+  height: 100%;
+  background: var(--acc);
+  box-shadow: 0 0 8px var(--acc);
+  transition: width 0.3s var(--ease);
+}
+.look-run-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--text2);
+}
+.look-run-text > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.look-run-text .t {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }

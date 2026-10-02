@@ -15,6 +15,8 @@ import { defaultUpright, type UprightSetting } from './upright'
 import type { RetouchSpot } from './retouch'
 import { normalisePixelStep, type PixelStep } from './pixels'
 import { normaliseEdge, type MaskEdge } from './maskedge'
+import { normalisePrompt, PROMPT_VIAS, type PromptGeometry, type PromptVia } from './prompt'
+import { conceptOf, type ConceptId } from './concepts'
 
 export const RECIPE_VERSION = 2
 
@@ -230,6 +232,18 @@ interface ComponentBase {
   feather: number
   /** Its edge moved in or out and hardened (shared/maskedge.ts); absent changes nothing. */
   edge?: MaskEdge
+  /**
+   * Its edge snapped to the picture's (the engine's refine, shared/refine.ts):
+   * a brush, a lasso or a model's mask. Absent is off.
+   */
+  refine?: MaskRefine
+}
+
+/** Snap to edges: on or off, and how far an edge may pull it (% of the shorter side). */
+export interface MaskRefine {
+  on: boolean
+  /** 0.05…5: how far the picture's edges may pull the selection's, % of the shorter side. */
+  radius: number
 }
 
 /**
@@ -244,7 +258,31 @@ export interface BrushComponent extends ComponentBase {
   height: number
   png: string
   ref?: string
+  /**
+   * What made the plane, when a model did: a preset saved from the photo
+   * asks for it again on another (looks/smart.ts `toInstructions`). Unset
+   * for a painted plane, which belongs to its photo alone.
+   */
+  source?: BrushSource
 }
+
+/** A model's mask, as what to ask for again (see `BrushComponent.source`). */
+export type BrushSource =
+  | { kind: 'segment'; target: 'subject' | 'background' | 'sky' }
+  | { kind: 'person'; part: string }
+  /**
+   * SAM 2.1 from clicks, a box, strokes or a lasso, and the object's name
+   * when it has one. `prompt` is what it was asked (base-frame fractions),
+   * so the mask can be made again; `via` how.
+   */
+  | {
+      kind: 'prompt'
+      label?: string
+      prompt?: PromptGeometry
+      via?: PromptVia
+      /** The class it was asked for (shared/concepts.ts): found again by name when a finder can. */
+      concept?: ConceptId
+    }
 
 /** A lasso or pen outline, in normalised base-frame coordinates. */
 export interface PolygonComponent extends ComponentBase {
@@ -265,8 +303,9 @@ export interface RangeComponent extends ComponentBase {
 /**
  * A linear gradient (Lightroom's), in normalised base-frame coordinates: the
  * full effect at `start`, fading to nothing at `end`, across lines at right
- * angles to start→end. It reaches the engine as a raster plane of
- * `width × height` (the base frame's aspect), drawn from these numbers.
+ * angles to start→end. It reaches the engine as its own shape
+ * (`LinearGradient`, shared/gradients.ts); `width × height` is the base
+ * frame's aspect at a small size, which its handles measure in.
  */
 export interface LinearComponent extends ComponentBase {
   kind: 'linear'
@@ -293,11 +332,32 @@ export interface RadialComponent extends ComponentBase {
   height: number
 }
 
-export type MaskComponentSetting =
-  BrushComponent | PolygonComponent | RangeComponent | LinearComponent | RadialComponent
+/**
+ * A bidirectional linear gradient (Camera Raw's): the full effect on the line
+ * through the point `centre` of the way from `start` to `end` (0…1), fading
+ * to nothing at the lines through `start` and through `end`, each side its
+ * own width; every line at right angles to start→end. In normalised
+ * base-frame coordinates, as a linear gradient's are.
+ */
+export interface BidirectionalComponent extends ComponentBase {
+  kind: 'bidirectional'
+  start: { x: number; y: number }
+  end: { x: number; y: number }
+  /** Where the full effect is, as a share of the way from `start` to `end`. */
+  centre: number
+  width: number
+  height: number
+}
 
-/** Components drawn into a raster plane before they reach the engine. */
-export type RasterComponent = BrushComponent | LinearComponent | RadialComponent
+export type GradientComponent = LinearComponent | RadialComponent | BidirectionalComponent
+
+export type MaskComponentSetting =
+  | BrushComponent
+  | PolygonComponent
+  | RangeComponent
+  | LinearComponent
+  | RadialComponent
+  | BidirectionalComponent
 
 /**
  * A mask's sliders before version 2, when a mask had its own small set:
@@ -705,6 +765,27 @@ function point(v: unknown, def: { x: number; y: number }): { x: number; y: numbe
 
 const MASK_MODES = ['Add', 'Subtract', 'Intersect'] as const
 
+function brushSource(v: unknown): BrushSource | null {
+  if (!isObject(v)) return null
+  if (
+    v.kind === 'segment' &&
+    (v.target === 'subject' || v.target === 'background' || v.target === 'sky')
+  )
+    return { kind: 'segment', target: v.target }
+  if (v.kind === 'person' && typeof v.part === 'string') return { kind: 'person', part: v.part }
+  if (v.kind === 'prompt') {
+    const prompt = normalisePrompt(v.prompt)
+    return {
+      kind: 'prompt',
+      ...(typeof v.label === 'string' && v.label ? { label: v.label } : {}),
+      ...(prompt ? { prompt } : {}),
+      ...(PROMPT_VIAS.includes(v.via as PromptVia) ? { via: v.via as PromptVia } : {}),
+      ...(conceptOf(v.concept) ? { concept: v.concept as ConceptId } : {})
+    }
+  }
+  return null
+}
+
 /**
  * One mask component from a sidecar: fills what an older version did not
  * write, and drops what this version cannot draw (so an unknown kind never
@@ -720,7 +801,8 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
     invert: c.invert === true,
     feather: num(c.feather, 0, 0, 100),
     ...(typeof c.name === 'string' && c.name.trim() ? { name: c.name.trim() } : {}),
-    ...((e) => (e ? { edge: e } : {}))(normaliseEdge(c.edge))
+    ...((e) => (e ? { edge: e } : {}))(normaliseEdge(c.edge)),
+    ...((r) => (r ? { refine: r } : {}))(normaliseRefine(c.refine))
   }
   switch (c.kind) {
     case 'brush':
@@ -731,6 +813,7 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         png: c.png,
         // A plane held by reference (IPC, history, a project) keeps its reference.
         ...(typeof c.ref === 'string' && c.ref ? { ref: c.ref } : {}),
+        ...((src) => (src ? { source: src } : {}))(brushSource(c.source)),
         width: num(c.width, 1),
         height: num(c.height, 1)
       }
@@ -771,9 +854,24 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         width: num(c.width, 512, 1),
         height: num(c.height, 512, 1)
       }
+    case 'bidirectional':
+      return {
+        ...base,
+        kind: 'bidirectional',
+        start: point(c.start, { x: 0.5, y: 0.25 }),
+        end: point(c.end, { x: 0.5, y: 0.75 }),
+        centre: num(c.centre, 0.5, 0.02, 0.98),
+        width: num(c.width, 512, 1),
+        height: num(c.height, 512, 1)
+      }
     default:
       return null
   }
+}
+
+function normaliseRefine(v: unknown): MaskRefine | null {
+  if (!isObject(v)) return null
+  return { on: v.on === true, radius: num(v.radius, 0.5, 0.05, 5) }
 }
 
 // ── Groups: what copy, paste, sync and presets move ─────────────────────────
@@ -959,6 +1057,33 @@ export function applyFields(to: Recipe, from: Recipe, fields: string[][]): Recip
     if (src !== undefined && last in dst) dst[last] = structuredClone(src)
   }
   return r
+}
+
+/**
+ * `applyFields` in place: each of `fields` in `to` set from `from`. For a
+ * draft (an immer edit), where only what moved should change identity.
+ */
+export function assignFields(to: Recipe, from: Recipe, fields: string[][]): void {
+  for (const path of fields) {
+    if (path.length === 0) continue
+    let src: unknown = from
+    let dst: Record<string, unknown> = to as unknown as Record<string, unknown>
+    let ok = true
+    for (let i = 0; i < path.length - 1; i++) {
+      src = isObject(src) ? src[path[i]] : undefined
+      const next = dst[path[i]]
+      if (!isObject(next)) {
+        ok = false
+        break
+      }
+      dst = next
+    }
+    if (!ok) continue
+    const last = path[path.length - 1]
+    src = isObject(src) ? src[last] : undefined
+    if (src !== undefined && last in dst && !sameValue(dst[last], src))
+      dst[last] = structuredClone(src)
+  }
 }
 
 /** What a group carries of a recipe (the fields `applyGroups` copies), read in place. */

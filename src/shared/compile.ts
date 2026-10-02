@@ -42,6 +42,8 @@ import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
 import { compose, swapsAxes, transformPoint, userOrientation } from './orientation'
 import { effectiveMode } from './masks'
 import { EDGE_SHIFT_SPAN, offsetPolygon } from './maskedge'
+import { gradientShape, rasterGradient } from './gradients'
+import { engineRefine } from './refine'
 import {
   HSL_BANDS,
   type CurvePointSetting,
@@ -238,7 +240,7 @@ export function parametricCurve(tc: Recipe['toneCurve']): CurvePointSetting[] | 
   return pts
 }
 
-/** The profile looks, as control points on encoded values. */
+/** The profile looks, as control points on encoded values (Standard's is Monochrome's now). */
 const STANDARD_CURVE: CurvePointSetting[] = [
   { x: 0, y: 0 },
   { x: 0.1, y: 0.075 },
@@ -248,6 +250,8 @@ const STANDARD_CURVE: CurvePointSetting[] = [
   { x: 0.92, y: 0.945 },
   { x: 1, y: 1 }
 ]
+/** Playroom Standard's saturation over Vivid's look. */
+const STANDARD_SATURATION = 1.12
 const VIVID_CURVE: CurvePointSetting[] = [
   { x: 0, y: 0 },
   { x: 0.1, y: 0.06 },
@@ -663,6 +667,23 @@ export function smoothnessFeather(smoothness: number): number {
 }
 
 /**
+ * A custom layer as written before 0.16, brought up to it: every `Lut`
+ * states what a value past its table gets (0.15 clamped it, so `Clamp`),
+ * wherever it sits (a stage, a `Masked` op). Everything else passes as it is.
+ */
+export function withLutDomains(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(withLutDomains)
+  if (!v || typeof v !== 'object') return v
+  const out: Record<string, unknown> = {}
+  for (const [k, x] of Object.entries(v)) {
+    if (k === 'Lut' && x && typeof x === 'object' && !Array.isArray(x)) {
+      out[k] = { out_of_domain: 'Clamp', ...(x as Record<string, unknown>) }
+    } else out[k] = withLutDomains(x)
+  }
+  return out
+}
+
+/**
  * A mask's white: its temperature and tint are always relative (−100…100),
  * whatever the photo's own white is in, and `as-shot` (or zeros) is none.
  */
@@ -763,13 +784,25 @@ function maskComponent(
     feather: {
       radius: round4(clamp((c.feather / 100) * 0.1 + smooth, 0, 0.5)),
       edge: 'Zero' as const
-    }
+    },
+    refine: engineRefine(c)
   }
   switch (c.kind) {
-    case 'brush':
     case 'linear':
-    case 'radial': {
-      // Painted and gradient planes alike: written to disk by the main process.
+    case 'radial':
+    case 'bidirectional': {
+      // The engine's own shape, exact at any size; a plane only for an edge
+      // an older version gave it (written by the main process, as a brush's).
+      if (rasterGradient(c)) {
+        const path = brushPaths[c.id]
+        if (!path) return null
+        return { ...base, shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } } }
+      }
+      const shape = gradientShape(c, user)
+      return shape ? { ...base, shape } : null
+    }
+    case 'brush': {
+      // A painted plane: written to disk by the main process.
       const path = brushPaths[c.id]
       if (!path) return null
       return { ...base, shape: { Raster: { source: { Png: path }, resampler: 'Bilinear' } } }
@@ -826,8 +859,9 @@ export function layerMask(
   const first = drawn.findIndex((c) => c.mode === 'Add')
   if (first < 0) return null
   const components = drawn.slice(first)
-  const keys = components.some((c) => 'Range' in c.shape)
-  return { components, invert: l.invert, space: keys ? LOOK_SPACE : null }
+  // A key reads the picture's colours, a snapped edge its luminance: both in one stated space.
+  const reads = components.some((c) => 'Range' in c.shape || c.refine !== null)
+  return { components, invert: l.invert, space: reads ? LOOK_SPACE : null }
 }
 
 /** Modes whose formula only holds on values in 0…1. */
@@ -970,7 +1004,8 @@ export function pointColorOps(
             mode: 'Add',
             opacity: 1,
             invert: false,
-            feather: { radius: 0, edge: 'Zero' }
+            feather: { radius: 0, edge: 'Zero' },
+            refine: null
           }
         ],
         invert: false,
@@ -1060,7 +1095,9 @@ function settingsStages(
     // An SDR picture's highlights are rolled onto white; an HDR one has
     // room above white for them (and a shoulder there would flatten it).
     if (base && r.basic.exposure > 0 && !ctx.hdr) {
-      linear.push({ Lut: { lut: { Cube: shoulderCube(r.basic.exposure) }, amount: 1 } })
+      linear.push({
+        Lut: { lut: { Cube: shoulderCube(r.basic.exposure) }, amount: 1, out_of_domain: 'Clamp' }
+      })
     }
   }
   // Coloured light on the scene, after the exposure it is lit at.
@@ -1079,7 +1116,11 @@ function settingsStages(
   }
   switch (base?.profile.kind ?? 'neutral') {
     case 'standard':
-      look.push(curvesOp({ master: tonal(STANDARD_CURVE, hdr) }))
+      // Vivid's curve and vibrance, and a little more saturation on top: a
+      // RAW opens with colour that already pops.
+      look.push(curvesOp({ master: tonal(VIVID_CURVE, hdr) }))
+      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7 } })
+      look.push({ Primary: primary({ saturation: STANDARD_SATURATION }) })
       break
     case 'vivid':
       look.push(curvesOp({ master: tonal(VIVID_CURVE, hdr) }))
@@ -1089,14 +1130,17 @@ function settingsStages(
       look.push(curvesOp({ master: tonal(STANDARD_CURVE, hdr) }))
       break
     case 'lut':
-      // A table is defined on 0…1: on an HDR pipeline everything above white
-      // gets its value at white.
+      // A table is defined on 0…1. On an HDR pipeline what lies above white
+      // keeps its headroom, scaled by the table's own colour at white (the
+      // channels' ratios kept); an SDR one clamps, as it always has.
       if (base?.profile.kind !== 'lut') break
-      if (hdr && base.profileAmount > 0)
-        notes.push('The LUT profile flattens the highlights above white on this HDR photo')
       if (base.profileAmount > 0) {
         look.push({
-          Lut: { lut: { Path: base.profile.path }, amount: clamp(base.profileAmount / 100, 0, 1) }
+          Lut: {
+            lut: { Path: base.profile.path },
+            amount: clamp(base.profileAmount / 100, 0, 1),
+            out_of_domain: hdr ? 'ScaleHeadroom' : 'Clamp'
+          }
         })
       }
       break
@@ -1299,7 +1343,7 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
   for (const c of r.custom) {
     if (!c.layer || typeof c.layer !== 'object') continue
     layers.push({
-      ...(c.layer as GradeLayer),
+      ...(withLutDomains(c.layer) as GradeLayer),
       enabled: c.enabled && (c.layer as GradeLayer).enabled !== false
     })
   }

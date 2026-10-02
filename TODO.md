@@ -1269,24 +1269,171 @@ and run ID. After: Pass 27; Owner task "Tiers and credits".
 
 ---
 
+## Phase L — Looks catalog and smart looks (passes 72–76)
+
+The Presets rail became a catalog: 284 looks made with Playroom's own
+sliders (no bundled LUTs), camera colour first, then cinema, film stocks,
+movies and TV, black and white, creative and essentials. Names are our own;
+a camera, stock or film appears only as "Inspired by …" (`inspiredBy`), with
+a no-affiliation line in the browser. Code: `src/shared/looks/`; the browser
+in `src/renderer/src/views/looks/`. Done so far (the catalog, My Looks, the
+browser, tuning, hover and Amount) is under "Done" → "Looks catalog".
+
+**Smart looks** are looks that carry instructions as well as sliders: "mask
+the sky and apply this", "mask skin", "mask this colour range", "mask this
+object (by label)", "AI denoise". What works today runs now (range and
+gradient masks, Subject/Background, DRUNet); sky, people parts, SAM2
+objects, the open-vocabulary detector and NAFNet ship in the next engine
+release and are gated at runtime on its capabilities (E28, E30, E45), never
+faked. The result is ordinary masks and pixel steps.
+
+### Pass 72 — Smart looks 1/4: instructions and the planner · 5 pts
+
+- [x] **L** · `src/shared/looks/smart.ts`: `MaskTarget` (range, linear,
+      radial, subject, background, sky, person part, object by label),
+      `MaskInstruction` (parts with Add/Subtract/Intersect, feather, settings,
+      amount, required), `StepInstruction` (denoise, deblur, scoped to a
+      mask); `smart?` on `Preset`; `mask()`/`step()` in the DSL; `smart` in
+      `LookFile` (`schema.ts`).
+- [x] **M** · `AiCapabilities.targets` (ready / needs model / needs engine)
+      and `pick`; `planSmart(look, caps, photo)` → immediate layers, ordered
+      jobs (segments before the steps scoped to them), picks, skipped, ETA
+      from the learned per-model rates. Tests: `tests/smartlooks.test.ts`.
+      _Done: readiness is `AiCapabilities.smart` (`smartReadiness`); the next
+      engine's flags are off in `main/ipc.ts` until its binding lands._
+
+### Pass 73 — Smart looks 2/4: the runner · 5 pts
+
+After: Pass 72.
+
+- [x] **L** · `src/main/looks/runner.ts`: one run per photo, its jobs grouped
+      (`group` on the job queue) under one progress bar; each starts when the
+      one before lands; cancel stops the run. Lands on its photo when the
+      user has moved on.
+- [x] **M** · Each mask or step that lands amends the look's history step
+      while it is the newest (Phase 5's amend), else adds "Look: X · Sky".
+      Amount also scales the look's layers (`LocalLayer.amount`) and the
+      denoise step's strength; swapping removes them and cancels the run.
+      _Done: `LookRuns` in `main/looks/runner.ts` (tests:
+      `tests/lookrunner.test.ts`), the protocol in `shared/looks/run.ts`, the
+      renderer's side in `lib/applyLook.ts`. A mask that cannot be made is
+      taken off and its scoped steps skipped. `promptJob` and `personJob`
+      are wired when the engine has SAM2, the detector and people (E30, E45)._
+
+### Pass 74 — Smart looks 3/4: picking, progress and the smart catalog · 5 pts
+
+After: Pass 73.
+
+- [x] **M** · Pick flow: an object with no detector, or no or several
+      equally likely boxes, puts the loupe in a pick tool ("Click the car for
+      Rain City Noir · drag for a box · Esc to skip"); the click or box is
+      SAM2's prompt. Shared with "Objects by brush or box" (E30).
+- [x] **M** · Progress in the Applied bar and the browser's detail: what the
+      look includes, the time estimate, stage labels, Cancel. Cards get a
+      Smart badge; the browser a "Smart" shelf and a "Works now" toggle.
+- [x] **M** · `smart-catalog.ts`: 15–25 smart looks (Moody Sky, Portrait
+      Polish, Night City Clean, Golden Subject, Product Pop, Foliage Autumn,
+      Teal Water…) and smart variants of movie looks; catalog tests cover
+      targets, scopes and ranges.
+      _Done: 22 looks, 15 working today (ranges, gradients, subject and
+      background, DRUNet, deblur); the pick tool is `views/loupe/LookPick.tsx`._
+
+### Pass 75 — Smart looks 4/4: user presets as instructions · 4 pts
+
+After: Pass 74.
+
+- [x] **M** · `source` on `BrushComponent` (a model's target, or SAM2's
+      prompt and label), set where AI masks land; `toInstructions()` turns a
+      photo's masks and denoise steps into instructions (hand-painted brushes
+      dropped with a warning).
+- [x] **M** · The Save Preset dialog lists the converted instructions and
+      warnings; a `smart` column in `presets`; saved presets run through the
+      same planner and runner.
+      _Done: `BrushSource` on `BrushComponent` (set where a segment lands),
+      `toInstructions` in `shared/looks/smart.ts`, db migration 11
+      (`presets.smart`, read back through `readSmart`). Painted strokes,
+      drawn outlines, heals, upscales and JPEG restores are listed as left
+      out; a SAM2 object without a name too._
+
+### Pass 76 — Looks leftovers · 3 pts
+
+- [ ] **S** · A "Previewing: X" note on the loupe while a rail look is
+      hovered.
+- [ ] **M** · Retune the looks marked ≈ when E41–E44 land: replace
+      `halationApprox`/`bloomApprox` with the engine's, add chroma grain and
+      density, bump each changed look's `version`.
+- [ ] **S** · Import and export a look as a file (`lookToFile`,
+      `lookFromFile` exist; no UI yet). The marketplace itself (sharing,
+      browsing others' looks) is a later epic.
+
+---
+
+## After engine 0.16 (2026-10-02)
+
+What the 0.16 integration (branch `feat/engine-0.16`) left open.
+
+- [ ] **S** · Owner: mirror SAM 2.1 to the model server
+      (`node scripts/publish-models.mjs --only sam2-1-hiera-tiny --bucket pixl-models`):
+      the roster gives it no public upstream, so until then its download fails.
+- [ ] **S** · Owner: publish the regenerated lens catalogue (the fisheyes'
+      `fisheye` data): `pnpm lens-profiles --publish-only --bucket pixl-models`.
+- [ ] **M** · A Linear DNG export (`Encode::LinearDng`): the rendered frame,
+      edits baked in, for another raw editor.
+- [ ] **M** · Flat-field correction (`LensCorrection.flat_field`) from a
+      flat shot the user picks.
+- [ ] **M** · Make a model's or an object's mask again when the photo's
+      lens correction changes (its prompt is kept now, `BrushSource.prompt`).
+- [ ] **S** · Keep SAM embeddings on disk (16–30 MB each) if the encoder
+      is slow on 4-core machines (about a second on 8 performance cores).
+- [ ] **S** · Redo a RAW's pixel steps made on rawler's develop from their
+      panel (today a note says to; `staleRawStep`).
+- [ ] **S** · Snap to edges on a colour or luminance range (E13's other half).
+
 ## Waiting on the engine
 
 Playroom work that starts once the engine request lands
 ([ENGINE-REQUESTS.md](ENGINE-REQUESTS.md)). Becomes a pass then.
 
 - [ ] **S** · Drop `repairJpegExif` once JPEG EXIF is written correctly (E1).
+      _Unblocked: 0.16.1 writes it once._
 - [ ] **S** · HEIC export and HEIC gain-map export (E2).
-- [ ] **M** · Sharp 1:1 zoom and 1:1 tiles on straightened, Upright and
+- [x] **M** · Sharp 1:1 zoom and 1:1 tiles on straightened, Upright and
       lens-warped photos (E3).
+      _Done 2026-10-02 (engine 0.16): the tile is asked for in fractions of the picture as shown
+      and rendered framed (`render.ts` `region`, `framedSize`)._
 - [ ] **S** · Enhance crop preview by `region` instead of a temp file (E4).
+      _The engine side landed in 0.16 (a region through the enhance chain):
+      Pass 42 can do it now._
 - [ ] **S** · Drop the host's temp-and-rename around engine writes (E5).
 - [ ] **S** · The scheduler waits for a cancel to finish (E6).
 - [ ] **M** · Fast 1:1 pans from a cached or tiled source (E7).
-- [ ] **M** · Retire the 512 px gradient planes and their cache for native
+- [x] **M** · Retire the 512 px gradient planes and their cache for native
       linear and radial shapes (E11).
+      _Done 2026-10-02 (engine 0.16): native Linear/Radial gradients (`gradients.ts`
+      `gradientShape`), and a bidirectional gradient tool; only a gradient
+      an older version gave an edge still goes as a plane._
 - [ ] **M** · Depth range mask (its picker entry is disabled) (E12).
+      _0.16 has the `DepthRange` shape; it waits on a depth map: a depth
+      model in the roster, or iPhone/ProRAW auxiliary depth images._
 - [ ] **M** · Smoothed range masks and an edge-aware brush in the tools (E13).
-- [ ] **S** · Move mask shift/harden to the engine, if E14 lands.
+      _Half done in 0.16: Snap to edges (the engine's refine) on brushes,
+      lassos and AI masks. Left: offer it on a colour/luminance range._
+- [x] **S** · Move mask shift/harden to the engine, if E14 lands.
+      _Done 2026-10-02 (engine 0.16): a snapped AI mask's Shift edge is the refine's `contract`,
+      resolution-free; the snap replaces the harden for new AI masks._
+- [ ] **M** · Brush and AI mask planes (and gradients until E11) at the
+      photo's resolution, or brush strokes sent as vectors (E36).
+      _Eased in 0.16: gradients are shapes, and Snap to edges pulls a 1024 px
+      plane onto the photo's edges at full size. Planes are still 1024 px._
+- [ ] **M** · A live brush effect while painting, the adjustment itself under
+      the brush and not only a tint (E37).
+- [ ] **S** · The mask overlay from the render instead of a second
+      `convert` (E38).
+- [ ] **S** · An HDR photo's range masks overlaid from the engine's plane
+      again, not the loupe's preview, once the plane can be had under a tone
+      map (E39).
+- [ ] **M** · The develop view of an HDR edit graded as its HDR export is,
+      tone mapped after the grade (E40); compile it with `hdr` then.
 - [ ] **S** · Highlight recovery on RAW, in the develop (E15).
 - [ ] **S** · Raw-domain noise reduction controls (E16).
 - [ ] **S** · Pixel steps' image caches as uncompressed TIFF overlays (E33).
@@ -1294,24 +1441,49 @@ Playroom work that starts once the engine request lands
 - [ ] **S** · Engine frames in crash reports: feed the binding's published
       debug symbols to `scripts/upload-symbols.mjs` (E35).
 - [ ] **S** · ProRAW and DNG gain maps (E17).
-- [ ] **S** · Fisheye distortion from Lensfun profiles (E18).
+- [x] **S** · Fisheye distortion from Lensfun profiles (E18).
+      _Done 2026-10-02 (engine 0.16): Defish and Field in the Lens panel; the catalogue keeps a
+      fisheye's polynomial under `fisheye` (publish it: owner task)._
 - [ ] **M** · Native `ParametricCurve`, with a recipe migration that
       rescales the region sliders (E19).
-- [ ] **S** · HDR-aware LUT profiles replace the SDR-range fallback (E20).
+- [x] **S** · HDR-aware LUT profiles replace the SDR-range fallback (E20).
+      _Done 2026-10-02 (engine 0.16): a LUT profile on an HDR pipeline is `ScaleHeadroom`._
 - [ ] **M** · Camera-matching DCP and Adobe `.xmp` profiles (E21).
 - [ ] **M** · Gamut warning in soft proofing (E22).
 - [ ] **XL** · Merge to HDR, panorama, HDR panorama, focus stacking (E23).
 - [ ] **S** · AI denoise (SCUNet) and Enhance (FBCNN) on the accelerator
       (E26, E27).
-- [ ] **M** · Select Sky (its picker entry is disabled) (E28).
+- [ ] **M** · Select Sky in one click (E28). _Since 0.16 the Sky tool asks
+      for a click on the sky and SAM 2.1 selects it (`SKY_BY_CLICK` in
+      `shared/ai.ts`); turn the flag off when a sky model ships._
 - [ ] **L** · AI Remove (generative remove) in the Heal tool (E29).
 - [ ] **L** · Select People: face, skin, hair, eyes, lips, teeth, clothes
-      (E30).
-- [ ] **L** · Objects by brush or box (E30).
+      (E30). _Since 2026-10-02 they are classes (`shared/concepts.ts`): the
+      masks menu's People group asks for a click on each and SAM 2.1 keeps
+      the answer of the class's size, the mask remembering its class. A
+      finder that knows names (a parts model, SAM 3, a detector boxing for
+      SAM) goes first in each class's `finders` and turns on in
+      `AiCapabilities.finders`; then masks with a class can be made again by
+      name, and smart looks' people parts stop waiting. Eyes, lips and teeth
+      answer on close-ups only with SAM 2.1._
+- [x] **L** · Objects by brush or box, on SAM2 (E30).
+      _Done 2026-10-02 (engine 0.16): the Objects tool (Auto hover-and-click, Box, Brush; Shift/Alt
+      parts), on its own engine host (`main/select/service.ts`)._
+- [x] **M** · "Snap to edges" on a lasso: its polygon as SAM2's prompt (E30).
+      _Done 2026-10-02 (engine 0.16): the lasso card's Snap to edges (refine) and Find object
+      (the lasso as SAM's prompt)._
 - [ ] **L** · Catalog: people (E30).
 - [ ] **M** · Learned auto white balance beside the grey-pixel estimate (E31).
 - [ ] **M** · An adaptive/learned auto tone (E31).
 - [ ] **S** · DirectML on Windows (E32).
+- [ ] **M** · Real halation, bloom, chroma grain and slide density in the
+      looks marked ≈ (E41–E44; Pass 76).
+- [ ] **M** · Smart looks' sky, people-part and object masks, NAFNet denoise:
+      turn their gates on when the binding with E28, E30 and E45 lands
+      (Passes 72–75 build against them now). _0.16 brought SAM 2.1 only: a
+      look's objects are pointed at (no detector yet, E45) and its sky is
+      clicked (`SKY_BY_CLICK`); people's parts (E30) and NAFNet denoise
+      still wait._
 
 ## Owner tasks (not model passes)
 
@@ -1326,8 +1498,12 @@ Playroom work that starts once the engine request lands
       agreement and privacy policy on pixlfoundation.com/legal/ (pixl-web
       `src/legal/`: legal entity, jurisdiction, address, refunds, what a
       finished trial does, crash-report retention); have a lawyer review both.
-- [ ] **S** · **Licensing view**: a lawyer's view on jpegxl-sys (GPL) and
-      rawler (LGPL, static) before the first paid release (engine side: E8–E10).
+- [ ] **S** · **Licensing view**: before the first paid release. _Since
+      engine 0.16 jpegxl-sys (GPL) and rawler (LGPL, static) are gone (E8,
+      E9): RAW is LibRaw under the CDDL in a replaceable shared library, its
+      source shipped beside it. Left: the EULA must allow modification and
+      reverse engineering for debugging the LGPL-3.0 libraries (libheif,
+      libde265; LGPL-3.0 §4), whose complete sources ship in the app._
 - [ ] **S** · **Back up the entitlement roots**: `~/.pixl-secrets/entitlement-root-1.pem`
       and `entitlement-root-2.pem` (made 2026-10-01; their public halves are
       `ROOT_KEYS` in `src/shared/account.ts`). Keep a copy offline (a password
@@ -1413,6 +1589,27 @@ Playroom work that starts once the engine request lands
 ## Done
 
 Kept for reference: what was built, and where.
+
+### Looks catalog (Phase L, 2026-10-02)
+
+- [x] The catalog (`src/shared/looks/`): a builder language for looks
+      (`dsl.ts`), 284 looks in 17 collections, the original nine starters
+      kept, search with typo tolerance (`search.ts`), slider ranges and
+      brand-word checks (`ranges.ts`). Tests: `tests/looks.test.ts`.
+- [x] My Looks in the rail (app setting `looks.mine`), the user's presets
+      beside them; drag to reorder. Tests: `tests/looks-mine.test.ts`.
+- [x] The Looks browser: shelves by family and camera brand, cards that
+      render the open photo with each look on the background engine
+      (`src/main/lookthumbs.ts`), detail and Add to My Looks.
+- [x] Tuning: every look measured on reference photos; the S-curve step
+      strengthened, `foliage()` (green with yellow, where leaves are), the
+      faint and duplicate looks retuned.
+- [x] Hover a look in the rail to see it (never saved); the Applied bar's
+      Amount scales only what the look moved (`amount.ts`); another look
+      swaps in the same history step (Alt stacks), through the history's
+      amend (`HistoryTable.amendLast`).
+- [x] The look file format (`schema.ts`, `LookFile`) and its tests
+      (`tests/looks-schema.test.ts`); engine requests E41–E45.
 
 ### Closed in the 2026-10-01 re-plan
 
@@ -1537,6 +1734,32 @@ masters are in `build/brand/`.
       `scripts/site-media.sh`, tool screenshots by `scripts/site-tools.mjs`.
       `site/` is only a redirect from the old GitHub Pages address. Downloads
       say "Soon" until the first release.
+
+### Upgrade to pixl-engine 0.16.0 (branch `feat/engine-0.16`, 2026-10-02)
+
+- [x] Phase 1 — at parity: engine and models 0.16.0; every `Lut` states
+      `out_of_domain` (Clamp, ScaleHeadroom on HDR), `Distortion.scale`,
+      `MaskComponent.refine`, `RawMode.resolution`; RAW caches named by the
+      develop (`-l`), RAWs 0.15 could not read retried (migration 12), RAWs
+      refused by name said plainly, pixel steps on rawler's develop marked;
+      rawler and jpegxl-sys gone; the engine's THIRD-PARTY-NOTICES.txt
+      embedded, after-pack checks the LGPL and LibRaw sources ship.
+- [x] Phase 2 — native linear, radial and bidirectional gradients; Snap to
+      edges (refine) on brushes, lassos and AI masks, on by default for new
+      AI masks; Select Subject cancels through the engine's signal.
+- [x] Phase 3 — SAM 2.1 on its own engine host (sessions, embeddings,
+      decodes named by id in the host), a 'prompt' AI job on its own lane,
+      smart looks pointing at objects, the sky by click (`SKY_BY_CLICK`).
+- [x] Phase 4 — the Objects tool (Auto, Box, Brush; Shift/Alt parts), Sky
+      by click, a lasso's Find object, and the Model needed popup.
+- [x] Phase 5 — sharp 1:1 on framed photos (E3); half-size RAW proxies
+      (`Cell`); fisheye defish (E18).
+- [x] 0.16.1, a patch: a HEIF that libheif turns by `irot`/`imir` probes as
+      orientation 1 (its tag is `exif_orientation`) and is written with the
+      tag reset (`ConvertReport.exif_orientation_reset`); JPEG EXIF written
+      once (E1). Found on the way: LibRaw turns a RAW's embedded preview
+      upright (since 0.16.0), so an unedited RAW's thumbnail no longer turns
+      it a second time.
 
 ### Upgrade to pixl-engine 0.15.0
 

@@ -122,3 +122,87 @@ test('a preset saved by an older version comes back whole', async () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('a preset keeps its smart instructions; a bad column loses only those', async () => {
+  const { defaultRecipe } = await import('../src/shared/recipe')
+  const dir = tmp()
+  try {
+    const file = join(dir, 'playroom.db')
+    const store = Store.open(file)
+    const smart = {
+      masks: [
+        {
+          id: 'm1',
+          name: 'Sky',
+          parts: [
+            { target: { kind: 'sky' as const }, mode: 'Add' as const },
+            { target: { kind: 'subject' as const }, mode: 'Subtract' as const }
+          ],
+          adjust: { 'basic.exposure': -0.5 }
+        }
+      ],
+      steps: [{ kind: 'denoise' as const, model: 'auto' as const, strength: 40, scope: 'm1' }]
+    }
+    store.savePreset({
+      id: 'p1',
+      name: 'Moody',
+      group: 'User presets',
+      builtin: false,
+      groups: ['basicTone'],
+      recipe: defaultRecipe(false),
+      smart
+    })
+    store.savePreset({
+      id: 'p2',
+      name: 'Plain',
+      group: 'User presets',
+      builtin: false,
+      groups: ['basicTone'],
+      recipe: defaultRecipe(false)
+    })
+    const [moody, plain] = store.presets()
+    assert.deepEqual(moody.smart, smart)
+    assert.equal(plain.smart, undefined)
+    store.close()
+    const db = new DatabaseSync(file)
+    assert.ok(columns(db, 'presets').includes('smart'))
+    db.prepare('UPDATE presets SET smart = \'{"masks":[{"parts":[]}]}\' WHERE id = \'p1\'').run()
+    db.close()
+    const again = Store.open(file)
+    const [broken] = again.presets()
+    assert.equal(broken.name, 'Moody')
+    assert.equal(broken.smart, undefined)
+    again.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('RAWs the old decoder could not read are tried again; other failures stay', () => {
+  const dir = tmp()
+  try {
+    const file = join(dir, 'playroom.db')
+    Store.open(file).close()
+    const db = new DatabaseSync(file)
+    const add = db.prepare(
+      `INSERT INTO photos (path, folder, name, ext, size, mtime, is_raw, failed_key, failed_reason)
+       VALUES (?, '/a', ?, ?, 1, 1, ?, 'k', 'unreadable')`
+    )
+    add.run('/a/x.cr2', 'x.cr2', 'cr2', 1)
+    add.run('/a/y.jpg', 'y.jpg', 'jpg', 0)
+    // As an index from 0.15 would stand: every migration but LibRaw's run.
+    db.exec(`PRAGMA user_version = ${MIGRATIONS.length - 1}`)
+    migrate(db)
+    const failed = (name: string): unknown =>
+      (
+        db.prepare('SELECT failed_key FROM photos WHERE name = ?').get(name) as {
+          failed_key: unknown
+        }
+      ).failed_key
+    assert.equal(failed('x.cr2'), null)
+    assert.equal(failed('y.jpg'), 'k')
+    db.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

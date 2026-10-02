@@ -11,6 +11,7 @@ import type {
   ColorLabel,
   ExportPreset,
   Flag,
+  HistoryAmend,
   HistoryAppend,
   HistoryLog,
   Preset
@@ -19,6 +20,7 @@ import type { ExportSettings } from '../shared/export'
 import { HistoryTable, type HistoryRow } from './historytable'
 import { planeRef, renameRefs } from './planeref'
 import { normaliseRecipe, RECIPE_GROUPS, type Recipe, type RecipeGroup } from '../shared/recipe'
+import { readSmart } from '../shared/looks/smart'
 
 export interface PhotoRow {
   id: number
@@ -57,6 +59,8 @@ export interface PhotoRow {
   /** What kind of HDR the file is ('' none), as last probed; `hdr_key` names that file version. */
   hdr: string | null
   hdr_key: string | null
+  /** When the file arrived on this disk (ms): its birth time, else its modification time. */
+  added?: number | null
   /** The photo's `.pixl` project (the truth about its edits once it has one), and its mtime as mirrored. */
   project_path: string | null
   project_mtime: number | null
@@ -308,6 +312,18 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
       }
     }
     db.exec('DROP TABLE planes')
+  },
+  // 10. When each file arrived on this disk (its birth time, else its
+  // modification time), for the library's Date added order. Filled as each
+  // folder is scanned again.
+  (db) => addColumns(db, 'photos', { added: 'REAL' }),
+  // 11. A saved preset's masks and AI steps as instructions (looks/smart.ts),
+  // run again on each photo it is applied to.
+  (db) => addColumns(db, 'presets', { smart: 'TEXT' }),
+  // 12. RAWs are read by LibRaw since engine 0.16 (rawler before): one that
+  // could not be read is tried again.
+  (db) => {
+    db.exec('UPDATE photos SET failed_key = NULL, failed_reason = NULL WHERE is_raw = 1')
   }
 ]
 
@@ -422,6 +438,11 @@ export class Store {
     ).run(path, new Date().toISOString())
   }
 
+  /** Take a folder off the list of folders opened (its photos stay indexed). */
+  forgetFolder(path: string): void {
+    this.prepare('DELETE FROM folders WHERE path = ?').run(path)
+  }
+
   recentFolders(limit = 12): string[] {
     return (
       this.prepare('SELECT path FROM folders ORDER BY opened_at DESC LIMIT ?').all(limit) as {
@@ -455,11 +476,14 @@ export class Store {
     size: number
     mtime: number
     isRaw: boolean
+    /** When the file arrived on this disk (ms); kept once known. */
+    added?: number | null
   }): PhotoRow {
     this.prepare(
-      `INSERT INTO photos(path, folder, name, ext, size, mtime, is_raw) VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(path) DO UPDATE SET size = excluded.size, mtime = excluded.mtime`
-    ).run(p.path, p.folder, p.name, p.ext, p.size, p.mtime, p.isRaw ? 1 : 0)
+      `INSERT INTO photos(path, folder, name, ext, size, mtime, is_raw, added) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(path) DO UPDATE SET size = excluded.size, mtime = excluded.mtime,
+           added = COALESCE(photos.added, excluded.added)`
+    ).run(p.path, p.folder, p.name, p.ext, p.size, p.mtime, p.isRaw ? 1 : 0, p.added ?? null)
     return this.photoByPath(p.path) as PhotoRow
   }
 
@@ -833,6 +857,10 @@ export class Store {
     return this.hist.append(itemKey, label, recipe)
   }
 
+  amendHistory(itemKey: string, seq: number, label: string, recipe: Recipe): HistoryAmend | null {
+    return this.hist.amendLast(itemKey, seq, label, recipe)
+  }
+
   setHistoryHidden(itemKey: string, seqs: number[], hidden: boolean): HistoryLog {
     return this.hist.setHidden(itemKey, seqs, hidden)
   }
@@ -906,30 +934,37 @@ export class Store {
         groups: string
         recipe: string
         wb_op: string | null
+        smart: string | null
       }[]
-    ).map((r) => ({
-      id: r.id,
-      name: r.name,
-      group: r.grp,
-      builtin: false,
-      // Saved by an older version: groups it named that are gone go, and the
-      // recipe gains what was added since (as a photo's does when read).
-      groups: (JSON.parse(r.groups) as RecipeGroup[]).filter((g) => RECIPE_GROUPS.includes(g)),
-      recipe: normaliseRecipe(JSON.parse(r.recipe), false),
-      ...(r.wb_op ? { wbOp: JSON.parse(r.wb_op) as NonNullable<Preset['wbOp']> } : {})
-    }))
+    ).map((r) => {
+      // Read as from outside: only what a look may do, so a bad row loses its masks, not the preset.
+      const smart = r.smart ? readSmart(JSON.parse(r.smart)).smart : null
+      return {
+        id: r.id,
+        name: r.name,
+        group: r.grp,
+        builtin: false,
+        // Saved by an older version: groups it named that are gone go, and the
+        // recipe gains what was added since (as a photo's does when read).
+        groups: (JSON.parse(r.groups) as RecipeGroup[]).filter((g) => RECIPE_GROUPS.includes(g)),
+        recipe: normaliseRecipe(JSON.parse(r.recipe), false),
+        ...(r.wb_op ? { wbOp: JSON.parse(r.wb_op) as NonNullable<Preset['wbOp']> } : {}),
+        ...(smart ? { smart } : {})
+      }
+    })
   }
 
   savePreset(p: Preset): void {
     this.prepare(
-      'INSERT INTO presets(id, name, grp, groups, recipe, wb_op) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, grp = excluded.grp, groups = excluded.groups, recipe = excluded.recipe, wb_op = excluded.wb_op'
+      'INSERT INTO presets(id, name, grp, groups, recipe, wb_op, smart) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, grp = excluded.grp, groups = excluded.groups, recipe = excluded.recipe, wb_op = excluded.wb_op, smart = excluded.smart'
     ).run(
       p.id,
       p.name,
       p.group,
       JSON.stringify(p.groups),
       JSON.stringify(p.recipe),
-      p.wbOp ? JSON.stringify(p.wbOp) : null
+      p.wbOp ? JSON.stringify(p.wbOp) : null,
+      p.smart ? JSON.stringify(p.smart) : null
     )
   }
 

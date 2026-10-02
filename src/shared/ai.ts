@@ -8,9 +8,26 @@
  */
 import type { EnhanceSettings } from './enhance'
 import type { MaskMode } from './engine-types'
-import type { AiDenoiseModel } from './recipe'
+import type { AiDenoiseModel, BrushSource } from './recipe'
+import type { SmartReadiness } from './looks/smart'
+import type { Finders } from './concepts'
+import type { PromptGeometry, PromptVia } from './prompt'
 
-export type AiTask = 'enhance' | 'segment' | 'denoise'
+export type AiTask = 'enhance' | 'segment' | 'denoise' | 'prompt'
+
+/**
+ * Until a sky model ships (E28), the Sky tool and smart looks' sky masks
+ * ask the user to click the sky, and SAM 2.1 selects it. Turn this off when
+ * the roster has a sky model: Sky becomes one click again, found by the
+ * model (ai/segment.ts).
+ */
+export const SKY_BY_CLICK = true
+/**
+ * The masks' People tools (body, face, hair, skin…), each found by a click
+ * on the part (SAM 2.1). Off until they are ready to release: the tools say
+ * "soon" in the picker.
+ */
+export const PEOPLE_BY_CLICK = false
 export type SegmentTarget = 'subject' | 'sky' | 'background'
 
 /** One step a job goes through, in order (Model → Analyse → Refine). */
@@ -35,6 +52,8 @@ export type AiResult =
       label: string
       /** Into this mask, joined this way; else a new mask. */
       into?: { layerId: string; mode: MaskMode }
+      /** What made it, kept on the mask (`BrushComponent.source`). */
+      source?: BrushSource
     }
 
 export type AiPhase = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
@@ -57,9 +76,11 @@ export interface AiJobEvent {
   phase: AiPhase
   message?: string
   result?: AiResult
+  /** The look run it belongs to (a smart look's masks and steps): that run records its history. */
+  group?: string
 }
 
-export type AiStartRequest =
+export type AiStartRequest = (
   | {
       task: 'enhance'
       key: string
@@ -71,6 +92,18 @@ export type AiStartRequest =
       task: 'segment'
       key: string
       target: SegmentTarget
+      into?: { layerId: string; mode: MaskMode }
+    }
+  | {
+      /**
+       * SAM 2.1 from a prompt (a smart look's object or sky, a photo not
+       * open): its mask lands like a segment's.
+       */
+      task: 'prompt'
+      key: string
+      label?: string
+      prompt: PromptGeometry
+      via: PromptVia
       into?: { layerId: string; mode: MaskMode }
     }
   | {
@@ -87,13 +120,32 @@ export type AiStartRequest =
        */
       legacy?: boolean
     }
+) & {
+  /** A look run's id (`AiJobEvent.group`). */
+  group?: string
+}
 
 export interface AiCapabilities {
   enhance: boolean
   segment: boolean
   denoise: boolean
+  /** Select by clicks, a box or strokes (SAM 2.1): the Objects and Sky tools. */
+  prompt: boolean
   /** Why a task cannot run, when it cannot. */
   why: Partial<Record<AiTask, string>>
+  /**
+   * The model to download when only a model is missing for a task (the one
+   * Playroom recommends): the renderer offers it there and then.
+   */
+  get: Partial<Record<AiTask, string>>
+  /** What smart looks can ask for on this build (`looks/smart.ts`). */
+  smart: SmartReadiness
+  /**
+   * How a class (shared/concepts.ts) can be found on this build: by a click
+   * where SAM 2.1 runs (its model here or offered); by name once a finder
+   * that knows names ships.
+   */
+  finders: Finders
 }
 
 export const SEGMENT_LABEL: Record<SegmentTarget, string> = {
@@ -135,6 +187,27 @@ export function stageStates(
   return stages.map((_, i) =>
     phase === 'done' || i < at ? 'done' : i === at && phase === 'running' ? 'now' : 'todo'
   )
+}
+
+/**
+ * Which queued jobs start now: in run order, the first of each lane that
+ * has none running (a lane runs one job at a time).
+ */
+export function toStart<T extends { phase: AiPhase; at: number }>(
+  jobs: T[],
+  busy: ReadonlySet<string>,
+  laneOf: (job: T) => string
+): T[] {
+  const taken = new Set(busy)
+  const out: T[] = []
+  for (const j of runOrder(jobs)) {
+    if (j.phase !== 'queued') continue
+    const lane = laneOf(j)
+    if (taken.has(lane)) continue
+    taken.add(lane)
+    out.push(j)
+  }
+  return out
 }
 
 /** Jobs in the order they run: the one running, then the queued, oldest first. */

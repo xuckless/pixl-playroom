@@ -7,6 +7,8 @@ import { create } from 'zustand'
 import { DEFAULT_ENHANCE, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind } from '../../../shared/retouch'
 import type { AiDenoiseModel } from '../../../shared/recipe'
+import { isCardId, type CardId } from '../../../shared/cards'
+import { migrateUi } from './uiMigrate'
 import type { Bindings, Chord } from '../lib/keys'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
@@ -23,8 +25,9 @@ export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
 
 /** How a mask is shown over the photo (Lightroom's overlay modes). */
 export type OverlayMode =
-  'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
+  'glass' | 'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
 export const OVERLAY_MODES: { value: OverlayMode; label: string }[] = [
+  { value: 'glass', label: 'Molten glass' },
   { value: 'color', label: 'Colour overlay' },
   { value: 'color-bw', label: 'Colour overlay on B&W' },
   { value: 'image-black', label: 'Image on black' },
@@ -63,6 +66,17 @@ export interface MaskOverlaySettings {
   byComponent?: boolean
   /** When the on-canvas pins and handles show. */
   pins: PinsMode
+  /** Hide the overlay while a slider moves, so the edit itself shows (Lightroom's auto toggle). */
+  autoToggle: boolean
+}
+
+export const DEFAULT_MASK_OVERLAY: MaskOverlaySettings = {
+  mode: 'glass',
+  hue: 350,
+  opacity: 45,
+  showAll: false,
+  pins: 'auto',
+  autoToggle: true
 }
 
 export interface HealSettings {
@@ -77,22 +91,19 @@ export interface HealSettings {
   spotLevel?: number
 }
 
-/** Every tool the wheel can hold (its order is `TOOLS`, in develop/tools.ts). */
-export const TOOL_IDS = [
-  'basic',
-  'curve',
-  'hsl',
-  'grade',
-  'detail',
-  'lens',
-  'effects',
-  'heal',
-  'crop',
-  'calibration',
-  'enhance'
-] as const
+/**
+ * What the right column shows: the adjustment cards, or a canvas tool's own
+ * panel in their place while that tool is in hand (Crop, Heal).
+ */
+export type Drawer = 'adjust' | 'crop' | 'heal'
 
-export type ToolId = (typeof TOOL_IDS)[number]
+/** The cards that start unfolded: the ones nearly every edit touches. */
+const DEFAULT_CARDS_OPEN: Partial<Record<CardId, boolean>> = {
+  wb: true,
+  light: true,
+  presence: true,
+  colour: true
+}
 
 /**
  * The masks window: open or not, floating over the photo (its top-left, in px
@@ -115,8 +126,6 @@ const DEFAULT_MASKS_WIN: MasksWindow = {
   x: -1,
   y: 14
 }
-
-const isToolId = (v: unknown): v is ToolId => TOOL_IDS.includes(v as ToolId)
 
 interface UiState {
   /** Which pane the left rail shows, and whether it is open or folded to its spine. */
@@ -151,11 +160,17 @@ interface UiState {
   /** AI denoise's model and strength for the next step (Detail → AI). */
   denoise: { model: AiDenoiseModel; strength: number }
   setDenoise(p: Partial<{ model: AiDenoiseModel; strength: number }>): void
-  /** The one tool the right column shows, chosen on the thumb-wheel. */
-  panel: ToolId
-  /** The tool before the last change, for a shortcut that toggles back. */
-  previousPanel: ToolId
-  setPanel(p: ToolId): void
+  /** The adjustment cards, or Crop's or Heal's panel in their place (not remembered). */
+  drawer: Drawer
+  setDrawer(d: Drawer): void
+  /** Which cards are unfolded, and solo mode (opening one folds the rest). */
+  cardsOpen: Partial<Record<CardId, boolean>>
+  setCardOpen(id: CardId, open: boolean): void
+  cardSolo: boolean
+  setCardSolo(on: boolean): void
+  /** The card last opened or jumped to: Jump to shows it, the previous / next keys step from it. */
+  focusCard: CardId
+  setFocusCard(id: CardId): void
   /** A spine glyph: open its pane, or fold the rail when it is already showing. */
   pickRail(r: Rail): void
   setRailOpen(open: boolean): void
@@ -227,7 +242,7 @@ export const useUi = create<UiState>()(
       setLibrarySidebar: (librarySidebar) => set({ librarySidebar }),
       setLibraryInfo: (libraryInfo) => set({ libraryInfo }),
       cropGuide: 'thirds',
-      maskOverlay: { mode: 'color', hue: 350, opacity: 45, showAll: false, pins: 'auto' },
+      maskOverlay: DEFAULT_MASK_OVERLAY,
       setMaskOverlay: (p) => set((s) => ({ maskOverlay: { ...s.maskOverlay, ...p } })),
       brushes: {
         A: { size: 80, softness: 60, flow: 60, density: 100, autoMask: false, pressure: true },
@@ -245,15 +260,22 @@ export const useUi = create<UiState>()(
           brushes: { ...s.brushes, [s.brushSlot]: { ...s.brushes[s.brushSlot], ...p } }
         })),
       masksWin: DEFAULT_MASKS_WIN,
-      denoise: { model: 'scunet-color-real', strength: 100 },
+      denoise: { model: 'drunet-color', strength: 100 },
       setDenoise: (p) => set((s) => ({ denoise: { ...s.denoise, ...p } })),
       setMasksWin: (p) => set((s) => ({ masksWin: { ...s.masksWin, ...p } })),
-      panel: 'basic',
-      previousPanel: 'basic',
-      setPanel: (panel) => {
-        const cur = get().panel
-        if (cur !== panel) set({ panel, previousPanel: cur })
-      },
+      drawer: 'adjust',
+      setDrawer: (drawer) => set({ drawer }),
+      cardsOpen: DEFAULT_CARDS_OPEN,
+      setCardOpen: (id, open) =>
+        set((s) => ({
+          cardsOpen: s.cardSolo && open ? { [id]: true } : { ...s.cardsOpen, [id]: open },
+          ...(open ? { focusCard: id } : {})
+        })),
+      cardSolo: false,
+      setCardSolo: (cardSolo) =>
+        set((s) => ({ cardSolo, ...(cardSolo ? { cardsOpen: { [s.focusCard]: true } } : {}) })),
+      focusCard: 'light',
+      setFocusCard: (focusCard) => set({ focusCard }),
       pickRail: (rail) => {
         const s = get()
         if (s.rail === rail && s.railOpen) set({ railOpen: false })
@@ -279,9 +301,14 @@ export const useUi = create<UiState>()(
     {
       name: 'playroom.ui',
       storage,
-      version: 1,
-      // A tool saved by an older build that the wheel no longer has (the
-      // Engine tool, now a dialog) comes back as Basic.
+      version: 4,
+      migrate: (persisted, version) => migrateUi(persisted, version),
+      // Crop or Heal is never in hand when the app opens.
+      partialize: (s) => {
+        const { drawer: _drawer, ...kept } = s
+        void _drawer
+        return kept
+      },
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<UiState>
         return {
@@ -290,10 +317,13 @@ export const useUi = create<UiState>()(
           // Settings saved before a field existed take its default.
           enhance: { ...DEFAULT_ENHANCE, ...p.enhance },
           masksWin: { ...DEFAULT_MASKS_WIN, ...p.masksWin },
-          denoise: { model: 'scunet-color-real', strength: 100, ...p.denoise },
+          maskOverlay: { ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay },
+          denoise: { model: 'drunet-color', strength: 100, ...p.denoise },
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
-          panel: isToolId(p.panel) ? p.panel : current.panel,
-          previousPanel: isToolId(p.previousPanel) ? p.previousPanel : current.previousPanel
+          cardsOpen:
+            p.cardsOpen && typeof p.cardsOpen === 'object' ? p.cardsOpen : current.cardsOpen,
+          focusCard: isCardId(p.focusCard) ? p.focusCard : current.focusCard,
+          drawer: 'adjust'
         }
       }
     }

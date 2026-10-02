@@ -16,6 +16,7 @@ import {
   type ExportPreset,
   type HistoryLog,
   type LibrarySource,
+  type LookThumbRequest,
   type LutProfile,
   type MetaPatch,
   type MetaTextPatch,
@@ -28,8 +29,9 @@ import {
 } from '../shared/ipc'
 import { convertWb, type WbContext } from '../shared/wbconvert'
 import { LicenceError } from '../shared/licence'
-import { BUILTIN_PRESETS } from '../shared/presets'
 import { applyGroups, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
+import { applyLook } from '../shared/looks/apply'
+import { resolveLook } from '../shared/looks/catalog'
 import { planeRef } from './planeref'
 import { equivalentFocal } from '../shared/upright'
 import { orientedFrame } from '../shared/compile'
@@ -45,6 +47,10 @@ import { autoWbBatch, setWbBatch } from './autowb'
 import { crashConsent, reportRendererError, sendProblemReport, setCrashConsent } from './crash'
 import { freeDevice, licence, refreshLicence, requireLicence, startTrial } from './licence'
 import type { AiCapabilities, AiStartRequest } from '../shared/ai'
+import { immediateLayers, previewLayers, smartReadiness } from '../shared/looks/smart'
+import type { LookRunRequest, PickAnswer } from '../shared/looks/run'
+import { LookRuns } from './looks/runner'
+import { editPhotoRecipe } from './ai/apply'
 import type { ProblemInput } from '../shared/crash'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
@@ -66,13 +72,17 @@ import { accountStatus, cancelSignIn, signIn, signOut } from './account'
 import { AccountError } from './account/api'
 import { OAuthError } from './account/oauth'
 import { takeOpens } from './open'
+import { SAM_MODEL, type SelectService } from './select/service'
+import { boxAround, type PromptSourceAsk, type SelectDecode } from '../shared/prompt'
 import { paths } from './paths'
 import type { DevelopSessions } from './render'
 import { readSettings } from './settings'
 import { checkForUpdates, installUpdate, setUpdateChannel, updateState } from './updater'
+import { notesSeen, whatsNew } from './whatsnew'
 
 function toAppError(err: unknown): AppError {
-  if (err instanceof EngineError) return { message: err.message, code: err.code, field: err.field }
+  if (err instanceof EngineError)
+    return { message: err.userMessage, code: err.code, field: err.field }
   if (err instanceof IndexError) return { message: err.message, code: err.code }
   if (err instanceof LicenceError) return { message: err.message, code: err.code }
   if (err instanceof OAuthError) return { message: err.message, code: err.code }
@@ -130,6 +140,8 @@ export interface Services {
   aiEngine: EngineClient
   models: ModelStore
   lenses: LensProfileStore
+  /** Select by clicks, a box or strokes (SAM 2.1), on its own engine host. */
+  select: SelectService
 }
 
 /** A photo's base frame (upright, before the user's turns): the open session's, else its proxies'. */
@@ -184,6 +196,8 @@ export function registerIpc(s: Services): void {
   })
 
   // ── the account, updates and preferences ──
+  handle(IPC.app.whatsNew, () => whatsNew())
+  handle(IPC.app.notesSeen, () => notesSeen())
   handle(IPC.app.gate, () => gate())
   handle(IPC.account.status, () => accountStatus())
   handle(IPC.account.signIn, () => signIn())
@@ -227,6 +241,7 @@ export function registerIpc(s: Services): void {
     items: await s.library.openFolder(folder)
   }))
   handle(IPC.library.recentFolders, () => s.index.recentFolders())
+  handle(IPC.library.forgetFolder, (folder: string) => s.index.forgetFolder(folder))
   handle(IPC.library.subfolders, (folder: string) => s.index.subfolders(folder))
   handle(IPC.library.setMeta, (keys: string[], patch: MetaPatch) => s.index.setMeta(keys, patch))
   handle(IPC.library.createCopy, async (key: string) => {
@@ -406,6 +421,9 @@ export function registerIpc(s: Services): void {
     async (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
       s.sessions.update(key, await s.planes.hydrate(recipe), interactive, rev)
   )
+  handle(IPC.develop.preview, async (key: string, recipe: Recipe | null) =>
+    s.sessions.preview(key, recipe ? await s.planes.hydrate(recipe) : null)
+  )
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))
   handle(IPC.develop.measureCa, (key: string) => s.sessions.measureCa(key))
@@ -468,6 +486,17 @@ export function registerIpc(s: Services): void {
       ? { ...change, base: { ...change.base, recipe: s.planes.slim(change.base.recipe) } }
       : change
   })
+  handle(
+    IPC.develop.historyAmend,
+    async (key: string, seq: number, label: string, recipe: Recipe) => {
+      // As an append: the step and the photo's live recipe saved together.
+      const live = s.sessions.liveRecipe(key)
+      const saved = live ? s.planes.slim(live) : recipe
+      const change = await s.index.amendEdit(key, seq, label, s.planes.slim(recipe), saved)
+      if (change && live) s.sessions.saved(key, live)
+      return change
+    }
+  )
   handle(IPC.develop.historySetHidden, async (key: string, seqs: number[], hidden: boolean) =>
     slimLog(await s.index.setHistoryHidden(key, seqs, hidden))
   )
@@ -476,8 +505,11 @@ export function registerIpc(s: Services): void {
   )
 
   // ── presets and profiles ──
+  // The user's presets as the Looks browser's cards need them, read once until one changes.
+  let userPresets: Promise<Preset[]> | null = null
+  // The user's own presets: the catalog's looks are code both sides import.
   handle(IPC.presets.list, async (): Promise<Preset[]> =>
-    [...BUILTIN_PRESETS, ...(await s.index.presets())].map((p) => ({
+    (await s.index.presets()).map((p) => ({
       ...p,
       recipe: s.planes.slim(p.recipe)
     }))
@@ -495,9 +527,87 @@ export function registerIpc(s: Services): void {
       builtin: false
     }
     await s.index.savePreset(preset)
+    userPresets = null
     return preset
   })
-  handle(IPC.presets.remove, (id: string) => s.index.removePreset(id))
+  handle(IPC.presets.remove, async (id: string) => {
+    userPresets = null
+    await s.index.removePreset(id)
+  })
+
+  // ── the Looks browser's cards ──
+  handle(IPC.looks.thumbs, async (req: LookThumbRequest) => {
+    const wb = s.sessions.wbContext(req.key)
+    if (!wb) return
+    const base = await s.planes.hydrate(req.base)
+    userPresets ??= s.index.presets()
+    const user = await userPresets
+    // A smart look's card shows the masks it makes without a model (ranges, gradients).
+    const frame = req.ids.some((id) => resolveLook(id)?.smart) ? await baseFrame(s, req.key) : null
+    const jobs = req.ids.flatMap((id) => {
+      if (id === 'current') return [{ id, recipe: base }]
+      const p = resolveLook(id) ?? user.find((u) => u.id === id)
+      if (!p) return []
+      // A card never looks a lens up: the preset's resolution stands in.
+      const recipe = applyLook(base, p, { wb, lensResolved: 'keep' })
+      if (p.smart && frame)
+        recipe.layers.push(
+          ...previewLayers(
+            p.id,
+            immediateLayers(p.smart, {
+              frameWidth: frame.width,
+              frameHeight: frame.height
+            })
+          )
+        )
+      return [{ id, recipe }]
+    })
+    s.sessions.lookThumbs(req.key, req.token, jobs, req.edge)
+  })
+  handle(IPC.looks.cancel, (key: string) => s.sessions.cancelLookThumbs(key))
+  // Smart looks' model work: one job at a time on the AI queue, landing on its photo.
+  const runs = new LookRuns({
+    startJob: (req) => s.ai.start(req),
+    cancelJob: (id) => s.ai.cancel(id),
+    onJobEnded: (l) => s.ai.onEnded(l),
+    edit: (key, change) =>
+      editPhotoRecipe(key, change, { library: s.library, sessions: s.sessions }),
+    send: (e) => {
+      for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.looks.runEvent, e)
+    },
+    megapixels: async (key) => {
+      const f = await baseFrame(s, key)
+      return (f.width * f.height) / 1e6
+    },
+    // SAM 2.1 (engine 0.16) selects what the user points at. Finding an
+    // object by its name needs the detector (E45), and people's parts their
+    // model (E30): neither has shipped, so `label` waits and `personJob` is
+    // not given.
+    promptJob: (r) => {
+      if (r.prompt.kind === 'label')
+        throw new Error('finding an object by name needs the next engine update')
+      const prompt =
+        r.prompt.kind === 'point'
+          ? { rect: null, points: [{ ...r.prompt.point, fg: true }] }
+          : { rect: boxAround([r.prompt.from, r.prompt.to]), points: [] }
+      if (!prompt.rect && prompt.points.length === 0) throw new Error('nothing was pointed at')
+      return s.ai.start({
+        task: 'prompt',
+        key: r.key,
+        group: r.group,
+        label: r.label,
+        prompt,
+        via: r.label.toLowerCase() === 'sky' ? 'sky' : 'look',
+        into: { layerId: r.layerId, mode: r.mode }
+      })
+    }
+  })
+  handle(IPC.looks.run, (req: LookRunRequest) => runs.start(req))
+  handle(IPC.looks.cancelRun, (by: { runId?: string; key?: string }) => {
+    if (by.runId) runs.cancel(by.runId)
+    if (by.key) runs.cancelFor(by.key)
+  })
+  handle(IPC.looks.answer, (runId: string, a: PickAnswer) => runs.answer(runId, a))
   handle(IPC.presets.luts, async (): Promise<LutProfile[]> =>
     (await readdir(paths.luts()))
       .filter((f) => f.toLowerCase().endsWith('.cube'))
@@ -594,19 +704,60 @@ export function registerIpc(s: Services): void {
     const subject = (await s.models.installed('u2net')) || (await s.models.installed('u2netp'))
     // Models run on the engine's bundled runtime; each denoise model is
     // offered for download where it is picked (Detail → Noise reduction).
-    const models = s.bgEngine.getStatus().enhance === true
+    const status = s.bgEngine.getStatus()
+    const models = status.enhance === true
     const segment = models && subject
+    // SAM 2.1 came with engine 0.16: the binding has its calls.
+    const sam2 = models && status.prompt === true
+    const samModel = await s.select.installed()
+    const smart = smartReadiness({
+      models,
+      subjectModel: subject,
+      drunetModel: await s.models.installed('drunet-color'),
+      samModel,
+      enhance: enhance.available,
+      // Still to come: a sky model (E28; meanwhile the sky is clicked,
+      // SKY_BY_CLICK), people's parts (E30), the detector (E45) and NAFNet
+      // denoise. They turn on with the binding that has them.
+      engine: { sky: false, people: false, sam2, detector: false, nafnet: false }
+    })
+    const drunet = await s.models.installed('drunet-color')
     return {
       enhance: enhance.available,
       segment,
       denoise: models,
+      prompt: sam2 && samModel,
+      smart,
+      // By name: a text-prompted segmenter (SAM 3, or the detector, E45),
+      // people's parts (E30) and a sky model (E28) are still to come.
+      finders: { click: sam2, text: false, parts: false, 'sky-model': false },
+      // What to download for a task that waits only on its model: the one
+      // Playroom recommends (the detailed subject model, SAM 2.1, DRUNet).
+      get: {
+        ...(models && !subject ? { segment: 'u2net' } : {}),
+        ...(sam2 && !samModel ? { prompt: SAM_MODEL } : {}),
+        ...(models && !drunet ? { denoise: 'drunet-color' } : {})
+      },
       why: {
         ...(enhance.available ? {} : { enhance: enhance.reason }),
-        ...(segment
+        ...(segment ? {} : { segment: `download ${modelName(s.models.entry('u2net'))}` }),
+        ...(models ? {} : { denoise: 'this engine build runs no models' }),
+        ...(sam2 && samModel
           ? {}
-          : { segment: `download ${modelName(s.models.entry('u2netp'))} in Settings → AI models` }),
-        ...(models ? {} : { denoise: 'this engine build runs no models' })
+          : {
+              prompt: sam2
+                ? `download ${modelName(s.models.entry(SAM_MODEL))}`
+                : 'this engine build has no prompted segmentation'
+            })
       }
     }
   })
+
+  // ── select by clicks, a box or strokes (SAM 2.1) ──
+  handle(IPC.select.open, (key: string) => s.select.open(key))
+  handle(IPC.select.decode, (selId: string, req: SelectDecode) => s.select.decode(selId, req))
+  handle(IPC.select.commit, (selId: string, source: PromptSourceAsk) =>
+    s.select.commit(selId, source)
+  )
+  handle(IPC.select.close, (selId: string) => s.select.close(selId))
 }

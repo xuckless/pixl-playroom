@@ -76,6 +76,10 @@ export function geometricCentre(
     } else if (c.kind === 'linear') {
       x += (c.start.x + c.end.x) / 2
       y += (c.start.y + c.end.y) / 2
+    } else if (c.kind === 'bidirectional') {
+      const k = Math.min(0.98, Math.max(0.02, c.centre))
+      x += c.start.x + (c.end.x - c.start.x) * k
+      y += c.start.y + (c.end.y - c.start.y) * k
     } else if (c.kind === 'polygon' && c.points.length > 0) {
       x += c.points.reduce((s, p) => s + p.x, 0) / c.points.length
       y += c.points.reduce((s, p) => s + p.y, 0) / c.points.length

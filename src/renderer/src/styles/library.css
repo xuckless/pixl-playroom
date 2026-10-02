@@ -4,11 +4,9 @@
 }
 /* The quick filters live in the Filters popover; the bar keeps the search
    and the sort, which is only as wide as the order it names. */
-.library-bar select.sort-select {
+.library-bar .glass-select.sort-select {
   flex: none;
-  field-sizing: content;
-  min-width: 0;
-  max-width: none;
+  height: 32px;
 }
 .library-bar .size-range,
 .library-bar .count,
@@ -54,6 +52,11 @@
   background: transparent;
   padding: 0;
   box-shadow: none;
+}
+/* The same field heading the left rail's looks. */
+.search-field.rail-search {
+  display: flex;
+  margin: 4px 2px 10px;
 }
 .size-range .icon-svg {
   width: 14px;
@@ -494,6 +497,9 @@
 .src-row.menu-open button.icon,
 .src-row button.icon:focus-visible {
   opacity: 1;
+}
+.src-row button.src-forget:hover:not(:disabled) {
+  color: var(--danger);
 }
 .src-row button.src-pin.pinned {
   opacity: 1;

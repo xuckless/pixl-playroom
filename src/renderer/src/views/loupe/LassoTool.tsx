@@ -1,5 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import { newId } from '../../../../shared/recipe'
+import type { MaskMode } from '../../../../shared/engine-types'
+import { newId, type PolygonComponent } from '../../../../shared/recipe'
+import { simplifyPath } from '../../../../shared/simplify'
 import {
   baseToDisplay,
   displayToBase,
@@ -10,10 +12,32 @@ import {
 } from '../../../../shared/view'
 import { useDevelop } from '../../state/develop'
 import { useUi } from '../../state/ui'
-import { madeComponent, modeForNew } from '../../panels/masks/model'
+import { createMask, madeComponent, modeForNew } from '../../panels/masks/model'
+import { useMaskDraft, useMaskGlBroken } from './maskgl/state'
 
 // ── Lasso ────────────────────────────────────────────────────────────────────
 
+/** A click this near the first point (px) closes the lasso. */
+const CLOSE_PX = 10
+/** A click this near the last point (px) adds nothing (a double-click's second click). */
+const SAME_PX = 4
+/** A drag lays a point each time it has gone this far (px). */
+const FREEHAND_STEP_PX = 3
+/** How far a freehand path may stray from its simplified outline (px). */
+const SIMPLIFY_PX = 0.75
+
+/** A new lasso's edge: its feather inside the line drawn, not half outside it. */
+const LASSO_FEATHER = 3
+
+/**
+ * The lasso: click to lay straight edges, drag to draw freehand, both in the
+ * same outline. A shape drawn in one drag closes when let go (Photoshop's
+ * lasso); otherwise click the first point, double-click or press Enter.
+ * Backspace takes back the last point and Esc drops the outline (a second
+ * Esc puts the tool down). Alt, held, subtracts, and the preview shows it.
+ * While it is drawn the loupe's own mask shows it as it will be (feather
+ * and all) through a draft component; the outline here is only its line.
+ */
 export const PolygonLayer = memo(function PolygonLayer({
   rect,
   g
@@ -21,114 +45,221 @@ export const PolygonLayer = memo(function PolygonLayer({
   rect: Rect
   g: ViewGeometry
 }): React.JSX.Element {
-  const layerId = useDevelop((s) => s.layerId)
-  const recipe = useDevelop((s) => s.recipe)
-  const edit = useDevelop((s) => s.edit)
-  const commit = useDevelop((s) => s.commit)
   const addMode = useDevelop((s) => s.addMode)
   const overlayHue = useUi((s) => s.maskOverlay.hue)
-  const [pts, setPts] = useState<P[]>([])
+  const layerHue = useDevelop((s) => s.recipe?.layers.find((l) => l.id === s.layerId)?.overlayHue)
+  const showAll = useUi((s) => s.maskOverlay.showAll)
+  const glOff = useMaskGlBroken((s) => s.broken) || showAll
+  const [pts, setPtsState] = useState<P[]>([])
+  // The outline as of the last event, ahead of the next render (a fast
+  // freehand drag lands several moves between renders).
+  const list = useRef<P[]>([])
+  const setPts = (next: P[] | ((was: P[]) => P[])): void => {
+    list.current = typeof next === 'function' ? next(list.current) : next
+    setPtsState(list.current)
+  }
   const [hover, setHover] = useState<P | null>(null)
-  const toDisplay = (e: React.MouseEvent): P =>
+  const [alt, setAlt] = useState(false)
+  // The press in progress: where it began, and whether it has drawn freehand.
+  const press = useRef<{
+    x: number
+    y: number
+    moved: boolean
+    closing: boolean
+    fresh: boolean
+  } | null>(null)
+  const px = (a: P, b: P): number => Math.hypot((a.x - b.x) * rect.w, (a.y - b.y) * rect.h)
+  const at = (e: React.PointerEvent | React.MouseEvent): P =>
     normalisedIn(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect())
-  const close = (subtract: boolean): void => {
-    if (pts.length < 3 || !layerId) return setPts([])
-    const points = pts.map((p) => {
-      const b = displayToBase(g, p)
-      return { x: Math.min(1, Math.max(0, b.x)), y: Math.min(1, Math.max(0, b.y)) }
-    })
-    const id = newId()
-    edit((r) => {
-      const l = r.layers.find((x) => x.id === layerId)
-      if (!l) return
-      l.components.push({
-        id,
-        kind: 'polygon',
-        mode: subtract && l.components.length > 0 ? 'Subtract' : modeForNew(l),
-        opacity: 100,
-        invert: false,
-        feather: 3,
-        // Its feather inside the line drawn, not half outside it.
-        edge: { shift: 0, harden: 0, inside: true },
-        points
+  const subtract = alt || addMode === 'Subtract'
+
+  /** The mode the shape will join with, given what the mask holds now. */
+  const modeNow = (sub: boolean): MaskMode => {
+    const d = useDevelop.getState()
+    const l = d.recipe?.layers.find((x) => x.id === d.layerId)
+    if (!l || l.components.length === 0) return 'Add'
+    return sub ? 'Subtract' : modeForNew(l)
+  }
+
+  /** The outline as a component, in the base frame (simplified when it closes). */
+  const component = (list: P[], sub: boolean, simplify: boolean): PolygonComponent => {
+    const shown = simplify
+      ? simplifyPath(
+          list.map((p) => ({ x: p.x * rect.w, y: p.y * rect.h })),
+          SIMPLIFY_PX
+        ).map((p) => ({ x: p.x / rect.w, y: p.y / rect.h }))
+      : list
+    return {
+      id: 'draft',
+      kind: 'polygon',
+      mode: modeNow(sub),
+      opacity: 100,
+      invert: false,
+      feather: LASSO_FEATHER,
+      edge: { shift: 0, harden: 0, inside: true },
+      points: shown.map((p) => {
+        const b = displayToBase(g, p)
+        return { x: Math.min(1, Math.max(0, b.x)), y: Math.min(1, Math.max(0, b.y)) }
       })
-    })
-    commit(subtract ? 'Lasso subtract' : 'Lasso')
-    madeComponent(id)
+    }
+  }
+
+  const cancel = (): void => {
+    press.current = null
     setPts([])
   }
+
+  const close = (list: P[], sub: boolean): void => {
+    press.current = null
+    setPts([])
+    const d = useDevelop.getState()
+    if (list.length < 3 || !d.layerId) return
+    const c = { ...component(list, sub, true), id: newId() }
+    if (c.points.length < 3) return
+    d.edit((r) => {
+      r.layers.find((x) => x.id === d.layerId)?.components.push(c)
+    })
+    d.commit(c.mode === 'Subtract' ? 'Lasso subtract' : 'Lasso')
+    madeComponent(c.id)
+  }
+
+  const add = (p: P): void => {
+    // Drawing needs a mask to draw into: a new one, as the gradients make.
+    if (!useDevelop.getState().layerId) createMask()
+    setPts((list) => {
+      const last = list[list.length - 1]
+      return last && px(p, last) < SAME_PX ? list : [...list, p]
+    })
+  }
+
+  // The draft the loupe's mask shows: the outline so far, to the pointer.
   useEffect(() => {
-    const k = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setPts([])
-      if (e.key === 'Enter') close(e.altKey)
+    const list = hover && pts.length > 0 ? [...pts, hover] : pts
+    const raf = requestAnimationFrame(() =>
+      useMaskDraft.setState({ draft: list.length >= 3 ? component(list, subtract, false) : null })
+    )
+    return () => cancelAnimationFrame(raf)
+    // `component` reads the geometry it is given; the outline is what changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pts, hover, subtract, g, rect.w, rect.h])
+  useEffect(() => () => useMaskDraft.setState({ draft: null }), [])
+
+  // Keys while an outline is being drawn, ahead of the app's shortcuts:
+  // Backspace is the last point here, not the selected component.
+  useEffect(() => {
+    const typing = (e: KeyboardEvent): boolean => {
+      const t = e.target as HTMLElement | null
+      return (
+        !!t &&
+        (t.tagName === 'TEXTAREA' ||
+          (t.tagName === 'INPUT' && (t as HTMLInputElement).type === 'text'))
+      )
     }
-    window.addEventListener('keydown', k)
-    return () => window.removeEventListener('keydown', k)
+    const down = (e: KeyboardEvent): void => {
+      if (e.key === 'Alt') setAlt(true)
+      if (typing(e) || pts.length === 0) return
+      const take = (): void => {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+      }
+      if (e.key === 'Escape') {
+        take()
+        cancel()
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        take()
+        setPts((list) => list.slice(0, -1))
+      } else if (e.key === 'Enter') {
+        take()
+        close(list.current, e.altKey || addMode === 'Subtract')
+      }
+    }
+    const up = (e: KeyboardEvent): void => {
+      if (e.key === 'Alt') setAlt(false)
+    }
+    const blur = (): void => setAlt(false)
+    window.addEventListener('keydown', down, true)
+    window.addEventListener('keyup', up, true)
+    window.addEventListener('blur', blur)
+    return () => {
+      window.removeEventListener('keydown', down, true)
+      window.removeEventListener('keyup', up, true)
+      window.removeEventListener('blur', blur)
+    }
   })
-  // Existing polygons of the selected layer, drawn in display coordinates.
-  const layer = recipe?.layers.find((l) => l.id === layerId)
-  const hue = layer?.overlayHue ?? overlayHue
-  const existing = (layer?.components ?? []).filter((c) => c.kind === 'polygon')
+
+  const nearFirst = pts.length >= 3 && hover !== null && px(hover, pts[0]) < CLOSE_PX
   const path = (list: P[]): string => list.map((p) => `${p.x * rect.w},${p.y * rect.h}`).join(' ')
+  const line = hover && pts.length > 0 ? [...pts, nearFirst ? pts[0] : hover] : pts
+  const hue = layerHue ?? overlayHue
   return (
     <div
-      className="tool-layer polygon"
+      className={`tool-layer polygon${nearFirst ? ' closing' : ''}`}
       style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
-      onClick={(e) => {
-        const p = toDisplay(e)
-        if (
-          pts.length >= 3 &&
-          Math.hypot((p.x - pts[0].x) * rect.w, (p.y - pts[0].y) * rect.h) < 10
-        )
-          close(e.altKey)
-        else {
-          // The clicks of a closing double-click land on the last point: once is enough.
-          const last = pts[pts.length - 1]
-          if (last && Math.hypot((p.x - last.x) * rect.w, (p.y - last.y) * rect.h) < 4) return
-          setPts([...pts, p])
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        e.currentTarget.setPointerCapture(e.pointerId)
+        setAlt(e.altKey)
+        const p = at(e)
+        const closing = pts.length >= 3 && px(p, pts[0]) < CLOSE_PX
+        press.current = {
+          x: e.clientX,
+          y: e.clientY,
+          moved: false,
+          closing,
+          fresh: pts.length === 0
         }
+        if (!closing) add(p)
       }}
-      onDoubleClick={(e) => close(e.altKey)}
-      onMouseMove={(e) => setHover(toDisplay(e))}
+      onPointerMove={(e) => {
+        const p = at(e)
+        setHover(p)
+        if (alt !== e.altKey) setAlt(e.altKey)
+        const pr = press.current
+        if (!pr) return
+        if (!pr.moved && Math.hypot(e.clientX - pr.x, e.clientY - pr.y) < SAME_PX) return
+        pr.moved = true
+        pr.closing = false
+        setPts((list) => {
+          const last = list[list.length - 1]
+          return last && px(p, last) < FREEHAND_STEP_PX ? list : [...list, p]
+        })
+      }}
+      onPointerUp={(e) => {
+        const pr = press.current
+        press.current = null
+        if (!pr) return
+        const sub = e.altKey || addMode === 'Subtract'
+        // A click on the first point closes; so does letting go of a shape
+        // drawn in one drag.
+        if (pr.closing && !pr.moved) close(list.current, sub)
+        else if (pr.fresh && pr.moved) close(list.current, sub)
+      }}
+      onPointerCancel={cancel}
+      onPointerLeave={() => setHover(null)}
+      onDoubleClick={(e) => close(list.current, e.altKey || addMode === 'Subtract')}
     >
       <svg width={rect.w} height={rect.h}>
-        {existing.map((c) =>
-          c.kind === 'polygon' ? (
-            <polygon
-              key={c.id}
-              points={path(c.points.map((p) => baseToDisplay(g, p)))}
-              className={c.mode === 'Subtract' ? 'poly subtract' : 'poly'}
-            />
-          ) : null
-        )}
-        {pts.length >= 2 && (
-          // What the lasso will select, filled as it is drawn, in the mask's colour
-          // (a shadow when it will be taken away).
+        {glOff && line.length >= 3 && (
+          // Without the loupe's own mask (show all, no WebGL): a plain fill.
           <polygon
-            points={path(hover ? [...pts, hover] : pts)}
-            className={`poly live${addMode === 'Subtract' ? ' subtract' : ''}`}
-            style={addMode === 'Subtract' ? undefined : { fill: `hsl(${hue} 90% 55% / 0.3)` }}
+            points={path(line)}
+            className="poly-fallback"
+            style={subtract ? undefined : { fill: `hsl(${hue} 90% 55% / 0.3)` }}
           />
         )}
-        {pts.length > 0 && (
-          <polyline points={path(hover ? [...pts, hover] : pts)} className="poly drawing" />
+        {line.length > 1 && (
+          <polyline points={path(line)} className={`poly drawing${subtract ? ' subtract' : ''}`} />
         )}
         {pts.map((p, i) => (
           <circle
             key={i}
             cx={p.x * rect.w}
             cy={p.y * rect.h}
-            r={i === 0 ? 5 : 3}
-            className="poly-point"
+            r={i === 0 ? (nearFirst ? 7 : 5) : 2.5}
+            className={`poly-point${i === 0 && nearFirst ? ' close' : ''}`}
           />
         ))}
       </svg>
-      {!layerId && <div className="tool-hint">Select or create a mask to draw into.</div>}
-      {layerId && (
-        <div className="tool-hint">
-          Click points · click the first or double-click to close · Alt subtracts · Esc cancels
-        </div>
-      )}
     </div>
   )
 })

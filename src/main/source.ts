@@ -18,6 +18,7 @@ import { STRIP_ALL } from '../shared/engine-types'
 import { fromExif } from '../shared/orientation'
 import { hash32 } from '../shared/recipe'
 import type { PhotoRow } from './db'
+import { RAW_DEVELOP_REV } from '../shared/pixels'
 import { execFileSync } from 'child_process'
 import { cpus } from 'os'
 
@@ -73,18 +74,59 @@ export const RAW_DEVELOP: RawMode = {
     white_balance: true,
     calibrate: true,
     srgb_gamma: false,
-    crop: 'Best'
+    crop: 'Best',
+    resolution: 'Full'
   }
+}
+
+/**
+ * A RAW developed at half size (engine 0.16, `resolution: 'Cell'`): one
+ * pixel per cell of the colour filter array, each colour the mean of its
+ * photosites, no demosaic. A quarter of a Bayer sensor's pixels (a ninth of
+ * an X-Trans one's): for a proxy, which is smaller still, the same picture
+ * for much less time and memory (a 102 MP file: 3.4 s and 0.5 GB where the
+ * full develop takes 4.9 s and 1.5 GB). Never for what is seen at 1:1 or
+ * exported.
+ */
+export const RAW_PROXY_DEVELOP: RawMode = {
+  Develop: {
+    scaling: true,
+    demosaic: true,
+    white_balance: true,
+    calibrate: true,
+    srgb_gamma: false,
+    crop: 'Best',
+    resolution: 'Cell'
+  }
+}
+
+/**
+ * How many photosites across a RAW's colour filter array cell is: 3 for
+ * Fujifilm's X-Trans, 2 for a Bayer sensor (Fujifilm's GFX are Bayer).
+ */
+export function cellFactor(photo: Pick<PhotoRow, 'ext' | 'camera'>): 2 | 3 {
+  return photo.ext.toLowerCase() === 'raf' && !/gfx/i.test(photo.camera ?? '') ? 3 : 2
+}
+
+/**
+ * Whether a RAW's proxy can come from a half-size develop: when even its
+ * cells are more than the proxy needs (a little margin for the crop).
+ */
+export function proxyByCell(probeLong: number, cell: number, proxyEdge: number): boolean {
+  return proxyEdge * cell * 1.02 <= probeLong
 }
 
 /** The orientation to hand the engine for a source decoded this way. */
 export function sourceOrientation(info: SourceInfo, raw: RawMode | null): Orientation {
-  // A developed RAW (rawler's or the scene-linear one) comes out upright;
-  // every other path carries the tag.
-  if (info.input === 'Raw' && raw !== null && raw !== 'EmbeddedPreview') return 'Normal'
+  // A RAW comes out upright, whatever the mode: a develop (PIXL's or the
+  // scene-linear one) with no Orientation tag in its EXIF, and since 0.16 the
+  // embedded preview too (LibRaw turns it). Its `orientation` is the camera's,
+  // for information; stated as framing it would turn the frame again.
+  if (info.input === 'Raw' && raw !== null) return 'Normal'
   // A HEIF or AVIF is decoded (by libheif) with its own transforms — irot,
   // imir — applied, and the spec says the EXIF tag must then be ignored: an
   // iPhone writes both, so turning by the tag too lays a portrait on its side.
+  // 0.16.1 reports 1 for such a file; a tag no irot backs is ignored as well.
   if (info.input === 'Heif') return 'Normal'
   return fromExif(info.orientation)
 }
@@ -92,8 +134,9 @@ export function sourceOrientation(info: SourceInfo, raw: RawMode | null): Orient
 /**
  * Framing that only turns a source upright, for a new file that keeps the
  * source's EXIF: null when nothing turns, except for a HEIF, whose EXIF tag
- * still says to turn pixels libheif has already turned — a stated framing
- * makes the engine reset that tag to 1.
+ * is never applied — a stated framing makes the engine reset that tag to 1.
+ * (0.16.1 resets it by itself when libheif applied irot/imir; the framing
+ * still covers a tag no irot backs.)
  */
 export function uprightFraming(
   orientation: Orientation,
@@ -109,10 +152,20 @@ const HEIF_EXT = /^(heic|heif|hif|avif)$/i
 /**
  * What names a file version in the caches made from it: its time and size,
  * and a mark on HEIF/AVIF copies made since their orientation was fixed, so
- * the older (sideways) ones are made again.
+ * the older (sideways) ones are made again, and on RAW developments made by
+ * LibRaw and PIXL's own develop (engine 0.16), so rawler's are made again.
  */
-export function versionStamp(photo: Pick<PhotoRow, 'mtime' | 'size' | 'ext'>): string {
-  return `${Math.round(photo.mtime)}-${photo.size}${HEIF_EXT.test(photo.ext) ? '-u' : ''}`
+export function versionStamp(
+  photo: Pick<PhotoRow, 'mtime' | 'size' | 'ext'>,
+  /** False for what no develop made (a RAW's embedded preview). */
+  developed = true
+): string {
+  const mark = HEIF_EXT.test(photo.ext)
+    ? '-u'
+    : developed && isRawExt(photo.ext)
+      ? `-${RAW_DEVELOP_REV}`
+      : ''
+  return `${Math.round(photo.mtime)}-${photo.size}${mark}`
 }
 
 /** The peak an HDR source is assumed to reach when it states none. */
@@ -172,18 +225,6 @@ export function gainMapOf(
   info: Pick<SourceInfo, 'gain_map'> | null | undefined
 ): GainMapMode | null {
   return info?.gain_map ? 'Base' : null
-}
-
-/**
- * Framing that only orients and flips, no straighten: the engine refuses an
- * `outside` where nothing rotates, so it goes with the rotation.
- */
-export function orientOnly(framing: Framing | null): Framing | null {
-  if (!framing) return null
-  const { transform: _t, outside: _o, ...rest } = framing
-  void _t
-  void _o
-  return { ...rest, rotate_degrees: 0, crop: null }
 }
 
 /**

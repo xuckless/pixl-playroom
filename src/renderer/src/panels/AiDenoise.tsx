@@ -7,10 +7,12 @@
  */
 import { useEffect, useState } from 'react'
 import type { AiDenoiseModel } from '../../../shared/recipe'
-import type { PixelStep } from '../../../shared/pixels'
-import { ModelGet } from '../components/ModelGet'
+import { staleRawStep, type PixelStep } from '../../../shared/pixels'
+import { ensureModelId } from '../lib/ensureModel'
 import { useModels } from '../lib/models'
 import { Icon } from '../components/icons'
+import { InfoTip } from '../components/InfoTip'
+import { TIPS } from './tips'
 import { Select, Slider } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { applyDenoise } from '../lib/denoise'
@@ -23,21 +25,21 @@ import { useUi } from '../state/ui'
 
 const MODELS: { value: AiDenoiseModel; label: string; hint: string }[] = [
   {
-    value: 'scunet-color-real',
-    label: 'SCUNet · real noise',
-    hint: 'Trained on real camera noise; judges it by itself. Best on high-ISO shots.'
-  },
-  {
     value: 'drunet-color',
     label: 'DRUNet · measured',
     hint: 'Told the noise it measures on the photo; gentler, keeps fine texture.'
+  },
+  {
+    value: 'scunet-color-real',
+    label: 'SCUNet · real noise',
+    hint: 'Trained on real camera noise; judges it by itself. Best on high-ISO shots.'
   }
 ]
 
 const LOSSLESS_KEY = 'pixels.lossless'
 
 /** One step's row: its Strength (changed on release: the step's pixels are laid again, no model) and remove. */
-function StepRow({ step }: { step: PixelStep }): React.JSX.Element {
+function StepRow({ step, stale }: { step: PixelStep; stale: boolean }): React.JSX.Element {
   // While a drag is on: what the slider shows until it is let go.
   const [dragging, setDragging] = useState<number | null>(null)
   const opacity = dragging ?? step.opacity
@@ -68,6 +70,11 @@ function StepRow({ step }: { step: PixelStep }): React.JSX.Element {
           <Icon name="trash" />
         </button>
       </div>
+      {stale && (
+        <p className="pixel-step-stale">
+          Made from the previous RAW develop: remove it and denoise again to match this one.
+        </p>
+      )}
       <Slider
         label="Strength"
         value={opacity}
@@ -153,6 +160,7 @@ export function AiDenoise(): React.JSX.Element | null {
         max={100}
         def={100}
         format={(v) => `${Math.round(v)}%`}
+        tip={isRaw ? TIPS['detail.ai.raw'] : TIPS['detail.ai']}
         onChange={(v) => setPrefs({ strength: v })}
         onCommit={() => undefined}
       />
@@ -165,31 +173,32 @@ export function AiDenoise(): React.JSX.Element | null {
             <button className="sm ghost" onClick={() => void api.ai.cancel(job.jobId)}>
               Cancel
             </button>
-          ) : model && !model.installed ? null : (
+          ) : (
             <button
               className="sm primary"
-              onClick={() => void applyDenoise().catch((e) => say(errorText(e), 'error'))}
+              onClick={() =>
+                void (async () => {
+                  // Its model first, offered there and then when it is not here yet.
+                  if (!(await ensureModelId(prefs.model, model?.installed === true, 'AI denoise')))
+                    return
+                  await applyDenoise()
+                })().catch((e) => say(errorText(e), 'error'))
+              }
             >
               {layer ? `Denoise inside ${layer.name}` : 'Denoise the photo'}
             </button>
           ))}
       </div>
-      {!isHdr && <ModelGet id={prefs.model} models={models} />}
       {steps.length > 0 && (
         <div className="pixel-steps">
           {steps.map((s) => (
-            <StepRow key={s.id} step={s} />
+            <StepRow key={s.id} step={s} stale={staleRawStep(s, isRaw)} />
           ))}
         </div>
       )}
-      {isRaw ? (
-        <p className="muted small">
-          On a RAW, denoise works on its developed, linear pixels: white balance, profile and tone
-          stay as editable as before, and the result is kept losslessly so pushing it later shows no
-          compression. Best done once the exposure is roughly right, before fine colour work.
-        </p>
-      ) : (
-        <>
+      {/* A RAW's results are always lossless: nothing to choose. */}
+      {!isRaw && (
+        <div className="row ai-lossless">
           <label className="check">
             <input
               type="checkbox"
@@ -198,16 +207,9 @@ export function AiDenoise(): React.JSX.Element | null {
             />
             Store results losslessly
           </label>
-          <p className="muted small">
-            Near-lossless (the default) is about a sixth of the size and cannot be told apart, but
-            leaves a little less room for heavy edits afterwards (strong exposure or shadow pushes).
-          </p>
-        </>
+          <InfoTip tip={TIPS['detail.ai.lossless']} label="Store results losslessly" />
+        </div>
       )}
-      <p className="muted small">
-        Made once and kept in the photo&apos;s project: undo, redo and Strength never run the model
-        again.
-      </p>
     </div>
   )
 }

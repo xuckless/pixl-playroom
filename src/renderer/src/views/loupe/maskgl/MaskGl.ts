@@ -5,7 +5,7 @@
  * shown over the photo crossfaded with the engine's plane. Planes are kept
  * by what shapes them, so dragging one gradient redraws that one only.
  */
-import { radialGeometry } from '../../../../../shared/gradients'
+import { CENTRE_MAX, CENTRE_MIN, radialGeometry } from '../../../../../shared/gradients'
 import { featherRadius, featherSigmaPx, planeKey } from '../../../../../shared/maskpreview'
 import {
   EDGE_SHIFT_SPAN,
@@ -20,6 +20,7 @@ import {
   COMPONENT_FS,
   JOIN_FS,
   MORPH_FS,
+  PBLUR_FS,
   RANGE_FS,
   SHADE_FS,
   SHAPE_FS,
@@ -30,14 +31,20 @@ import {
 export const BASE_EDGE = 1024
 /** The widest Gaussian the blur shader takes, in texels (its loop reaches 3σ ≤ 64). */
 const MAX_SIGMA = 16
+/** The frosted copy of the picture behind the glass: this wide at most, blurred this much (texels). */
+const FROST_EDGE = 512
+const FROST_SIGMA = 5
 
-export type ViewMode = 'colour' | 'image-black' | 'image-white' | 'white-black' | 'outline'
+export type ViewMode =
+  'colour' | 'image-black' | 'image-white' | 'white-black' | 'outline' | 'glass' | 'ghost'
 const VIEW_INDEX: Record<ViewMode, number> = {
   colour: 0,
   'image-black': 1,
   'image-white': 2,
   'white-black': 3,
-  outline: 4
+  outline: 4,
+  glass: 5,
+  ghost: 6
 }
 const MODE_INDEX: Record<MaskMode, number> = { Add: 0, Subtract: 1, Intersect: 2 }
 
@@ -79,6 +86,11 @@ export interface Frame {
   tint: [number, number, number]
   alpha: number
   reveal: number
+  /** Molten glass: seconds, and how much its rim light moves (0 still). */
+  time?: number
+  flow?: number
+  /** Canvas pixels per CSS pixel: the glass's edge line keeps its width on screen. */
+  px?: number
 }
 
 export class MaskGl {
@@ -92,6 +104,10 @@ export class MaskGl {
   private engineKey = ''
   private picture: WebGLTexture | null = null
   private pictureKey = ''
+  private pictureSize = { w: 0, h: 0 }
+  /** The picture blurred, behind the glass: made once per picture. */
+  private frost: [Target | null, Target | null] = [null, null]
+  private frostKey = ''
   private polygonCanvas: OffscreenCanvas | null = null
   /** The last mask composed, and whether it is there to show. */
   private accIndex = 0
@@ -116,7 +132,8 @@ export class MaskGl {
       join: JOIN_FS,
       shade: SHADE_FS,
       morph: MORPH_FS,
-      component: COMPONENT_FS
+      component: COMPONENT_FS,
+      pblur: PBLUR_FS
     }))
       this.programs[name] = this.program(fs)
     const buf = gl.createBuffer()
@@ -181,6 +198,53 @@ export class MaskGl {
     return { tex, fb, w, h }
   }
 
+  /** A colour render target (the frost). */
+  private targetRgba(w: number, h: number, old: Target | null): Target {
+    const gl = this.gl
+    if (old && old.w === w && old.h === h) return old
+    if (old) {
+      gl.deleteTexture(old.tex)
+      gl.deleteFramebuffer(old.fb)
+    }
+    const tex = this.texture()
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+    const fb = gl.createFramebuffer() as WebGLFramebuffer
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb)
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0)
+    return { tex, fb, w, h }
+  }
+
+  /** The picture as shown (decoded upside down), for ranges and the glass. */
+  setPicture(bitmap: ImageBitmap | null, key: string): void {
+    if (!bitmap || key === this.pictureKey) return
+    this.picture ??= this.texture()
+    this.upload(bitmap, this.picture)
+    this.pictureKey = key
+    this.pictureSize = { w: bitmap.width, h: bitmap.height }
+  }
+
+  /** The frosted picture, blurred once per picture (two passes of the Gaussian). */
+  private frosted(): WebGLTexture | null {
+    if (!this.picture || !this.pictureSize.w) return null
+    if (this.frostKey === this.pictureKey && this.frost[1]) return this.frost[1].tex
+    const gl = this.gl
+    const k = Math.min(1, FROST_EDGE / Math.max(this.pictureSize.w, this.pictureSize.h))
+    const w = Math.max(8, Math.round(this.pictureSize.w * k))
+    const h = Math.max(8, Math.round(this.pictureSize.h * k))
+    this.frost = [this.targetRgba(w, h, this.frost[0]), this.targetRgba(w, h, this.frost[1])]
+    const p = this.programs.pblur
+    gl.useProgram(p)
+    gl.uniform1f(this.u(p, 'uSigma'), FROST_SIGMA)
+    this.bind(p, 0, 'uSrc', this.picture)
+    gl.uniform2f(this.u(p, 'uStep'), 1 / w, 0)
+    this.run(p, this.frost[0], w, h)
+    this.bind(p, 0, 'uSrc', this.frost[0]!.tex)
+    gl.uniform2f(this.u(p, 'uStep'), 0, 1 / h)
+    this.run(p, this.frost[1], w, h)
+    this.frostKey = this.pictureKey
+    return this.frost[1]!.tex
+  }
+
   private run(p: WebGLProgram, into: Target | null, w: number, h: number): void {
     const gl = this.gl
     gl.bindFramebuffer(gl.FRAMEBUFFER, into ? into.fb : null)
@@ -237,15 +301,17 @@ export class MaskGl {
     if (had && had.key === key) return had
     const t = this.target(bw, bh, had?.target)
     const plane: Plane = { key, target: t, base }
-    if (c.kind === 'linear' || c.kind === 'radial') {
+    if (c.kind === 'linear' || c.kind === 'radial' || c.kind === 'bidirectional') {
       const p = this.programs.shape
       gl.useProgram(p)
       gl.uniform2f(this.u(p, 'uPlane'), c.width, c.height)
-      if (c.kind === 'linear') {
+      if (c.kind === 'linear' || c.kind === 'bidirectional') {
         const sx = c.start.x * c.width
         const sy = c.start.y * c.height
-        gl.uniform1i(this.u(p, 'uKind'), 0)
+        gl.uniform1i(this.u(p, 'uKind'), c.kind === 'linear' ? 0 : 2)
         gl.uniform4f(this.u(p, 'uLine'), sx, sy, c.end.x * c.width - sx, c.end.y * c.height - sy)
+        if (c.kind === 'bidirectional')
+          gl.uniform1f(this.u(p, 'uCentre'), Math.min(CENTRE_MAX, Math.max(CENTRE_MIN, c.centre)))
       } else {
         const g = radialGeometry(c)
         gl.uniform1i(this.u(p, 'uKind'), 1)
@@ -310,7 +376,7 @@ export class MaskGl {
       this.run(p, t, bw, bh)
     }
     // A painted or gradient plane's edge moved and hardened, as the engine's is.
-    if (c.kind === 'brush' || c.kind === 'linear' || c.kind === 'radial')
+    if (c.kind !== 'polygon' && c.kind !== 'range')
       plane.target = this.edged(plane.target, bw, bh, c.edge)
     const tt = plane.target
     // Feather: a Gaussian across the plane, in its own pixels.
@@ -376,11 +442,7 @@ export class MaskGl {
     const gl = this.gl
     const cw = this.canvas.width
     const ch = this.canvas.height
-    if (f.picture && f.pictureKey !== this.pictureKey) {
-      this.picture ??= this.texture()
-      this.upload(f.picture, this.picture)
-      this.pictureKey = f.pictureKey
-    }
+    this.setPicture(f.picture, f.pictureKey)
     const planes: Plane[] = []
     for (const j of f.joins) {
       const p = this.plane(j, f, cw, ch)
@@ -454,7 +516,7 @@ export class MaskGl {
   }
 
   /** Show the mask over the photo (the loupe's, the engine's, or between them). */
-  shade(f: Pick<Frame, 'layerInvert' | 'live' | 'view' | 'tint' | 'alpha' | 'reveal'>): void {
+  shade(f: Omit<Frame, 'joins' | 'toBase' | 'baseW' | 'baseH' | 'picture' | 'pictureKey'>): void {
     const gl = this.gl
     const cw = this.canvas.width
     const ch = this.canvas.height
@@ -463,8 +525,17 @@ export class MaskGl {
     gl.clearColor(0, 0, 0, 0)
     gl.clear(gl.COLOR_BUFFER_BIT)
     if (!this.haveAcc && !this.haveEngine) return
+    const frost = f.view === 'glass' ? this.frosted() : null
     const p = this.programs.shade
     gl.useProgram(p)
+    if (frost && this.picture) {
+      this.bind(p, 2, 'uPicture', this.picture)
+      this.bind(p, 3, 'uFrost', frost)
+    }
+    gl.uniform1i(this.u(p, 'uHavePicture'), frost ? 1 : 0)
+    gl.uniform1f(this.u(p, 'uTime'), f.time ?? 0)
+    gl.uniform1f(this.u(p, 'uFlow'), f.flow ?? 0)
+    gl.uniform1f(this.u(p, 'uPx'), f.px ?? 1)
     const acc = this.acc[this.accIndex]
     if (acc) this.bind(p, 0, 'uAcc', acc.tex)
     if (this.engine) this.bind(p, 1, 'uEngine', this.engine)

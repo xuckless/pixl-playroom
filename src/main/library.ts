@@ -402,7 +402,7 @@ export class Library {
           // changes). Anything else (the index stopping at quit, a plane not
           // found) leaves it to be tried another time.
           if (!(err instanceof EngineError) || err.cancelled) return
-          void this.index.markFailed(job.photoId, String(err?.message ?? err)).catch(() => {})
+          void this.index.markFailed(job.photoId, err.userMessage).catch(() => {})
           this.broadcast(IPC.library.thumb, {
             key: keyOf(job.photoId, job.copyId),
             url: null,

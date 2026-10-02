@@ -22,7 +22,7 @@ import { useBusy } from './busy'
 import { useUi } from './ui'
 
 export type { Filter, FlagFilter } from '../../../shared/filter'
-export type SortKey = 'name' | 'captured' | 'rating' | 'size' | 'edited'
+export type SortKey = 'name' | 'captured' | 'added' | 'rating' | 'size' | 'edited'
 
 export interface ToastAction {
   label: string
@@ -67,7 +67,16 @@ interface LibraryState {
   engine: EngineStatus | null
   toast: { text: string; tone: 'info' | 'error'; action?: ToastAction } | null
   dialog:
-    null | 'export' | 'sync' | 'preset' | 'collection' | 'preferences' | 'crash-consent' | 'engine'
+    | null
+    | 'export'
+    | 'sync'
+    | 'preset'
+    | 'looks'
+    | 'collection'
+    | 'preferences'
+    | 'crash-consent'
+    | 'engine'
+    | 'whats-new'
   /** The collection the 'collection' dialog edits. */
   editing: CollectionDraft | null
   clipboard: { recipe: Recipe; groups: RecipeGroup[]; source: string | null } | null
@@ -83,6 +92,8 @@ interface LibraryState {
   onSourcesChanged(): Promise<void>
   loadSources(): Promise<void>
   togglePin(folder: string): void
+  /** Take a folder off the sidebar's list (unpinned too); nothing on disk changes. */
+  forgetFolder(folder: string): Promise<void>
   patchItems(items: (LibraryItem | undefined)[]): void
   select(key: string, mode: 'only' | 'toggle' | 'range'): void
   selectAll(): void
@@ -252,6 +263,17 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         api.library.keywordTree()
       ])
       set({ collections, keywords })
+    } catch (err) {
+      get().say(errorText(err), 'error')
+    }
+  },
+
+  async forgetFolder(folder) {
+    try {
+      await api.library.forgetFolder(folder)
+      if (get().pinned.includes(folder)) get().togglePin(folder)
+      set({ recent: await api.library.recentFolders() })
+      get().say(`Removed ${folderName(folder)} from the list`)
     } catch (err) {
       get().say(errorText(err), 'error')
     }
@@ -543,9 +565,12 @@ function computeVisible(
     name: (a, b) =>
       collator.compare(a.name, b.name) || collator.compare(a.copyId ?? '', b.copyId ?? ''),
     captured: (a, b) => (a.camera.capturedAt ?? '').localeCompare(b.camera.capturedAt ?? ''),
+    // Newest first, as Finder's Date Added.
+    added: (a, b) =>
+      (b.added ?? b.mtime) - (a.added ?? a.mtime) || collator.compare(a.name, b.name),
     rating: (a, b) => b.rating - a.rating,
     size: (a, b) => b.size - a.size,
-    edited: (a, b) => Number(b.edited) - Number(a.edited)
+    edited: (a, b) => Number(b.edited) - Number(a.edited) || collator.compare(a.name, b.name)
   }
   return collapseStacks(shown.sort(by[sort]), expandedStacks)
 }

@@ -16,7 +16,7 @@
  * Pure: shared by the index (which stores and folds steps) and the renderer
  * (which replays them).
  */
-import type { HistoryAppend, HistoryLog } from './ipc'
+import type { HistoryAmend, HistoryAppend, HistoryLog } from './ipc'
 import { GROUP_LABELS, type Recipe, type RecipeGroup } from './recipe'
 
 /** A key into an object, or an entity (mask, component, advanced layer) by id. */
@@ -167,6 +167,12 @@ export function appendToLog(log: HistoryLog, a: HistoryAppend): HistoryLog {
     base: a.base ?? log.base,
     steps: a.step ? [...steps, a.step] : steps
   }
+}
+
+/** `log` with its newest step rewritten (or dropped) as `HistoryTable.amendLast` did. */
+export function amendLog(log: HistoryLog, a: HistoryAmend): HistoryLog {
+  const steps = log.steps.filter((s) => s.seq !== a.seq)
+  return { ...log, steps: a.step ? [...steps, a.step] : steps }
 }
 
 /** The entity ids a patch adds. */

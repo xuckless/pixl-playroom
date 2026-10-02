@@ -1,13 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import type { RegionResult } from '../../../../shared/ipc'
 import type { Recipe } from '../../../../shared/recipe'
-import {
-  displayToOriented,
-  orientedToDisplay,
-  visiblePart,
-  type Rect,
-  type ViewGeometry
-} from '../../../../shared/view'
+import { visiblePart, type Rect, type ViewGeometry } from '../../../../shared/view'
 import { api } from '../../lib/api'
 import { isInteracting } from '../../lib/interacting'
 import { useDevelop } from '../../state/develop'
@@ -19,15 +13,19 @@ const MARGIN = 0.15
 
 interface Tile extends RegionResult {
   recipe: Recipe
+  /** Made for the crop tool's whole frame (its fractions are of that picture). */
+  whole: boolean
 }
 
 /**
  * Past the preview's own resolution, the part of the photo in view rendered
  * by the engine from the full-resolution source, laid over the picture: the
  * zoomed loupe stays sharp. It follows the recipe once an edit rests, and
- * hides while one runs (the preview under it is the live picture). A
- * straightened frame has no tile; the engine renders regions of the
- * unrotated frame only.
+ * hides while one runs (the preview under it is the live picture). Asked
+ * for and placed as fractions of the picture as shown: since engine 0.16 a
+ * region of a straightened, warped, lens-corrected or cropped photo is the
+ * full render's own pixels there. Only the crop tool's view of an Upright
+ * (its empty wedges transparent, which a JPEG tile cannot show) has none.
  */
 export const SharpTile = memo(function SharpTile({
   rect,
@@ -50,8 +48,7 @@ export const SharpTile = memo(function SharpTile({
   const request = useRef(0)
   const shownWidth = g.crop && !g.whole ? g.crop.width * g.width : g.width
   // The preview is enough while it has a pixel for every device pixel.
-  // A straighten or a warp: the engine renders a region only of the plain frame.
-  const wanted = g.straighten === 0 && !g.transform && scale > (previewWidth / shownWidth) * 1.1
+  const wanted = scale > (previewWidth / shownWidth) * 1.1 && !(g.whole && g.transform)
 
   useEffect(() => {
     if (!wanted || !session || !recipe) return
@@ -64,28 +61,21 @@ export const SharpTile = memo(function SharpTile({
       if (vis.w <= 0 || vis.h <= 0) return
       const mx = (vis.w / rect.w) * MARGIN
       const my = (vis.h / rect.h) * MARGIN
-      const a = displayToOriented(g, {
-        x: Math.max(0, vis.x / rect.w - mx),
-        y: Math.max(0, vis.y / rect.h - my)
-      })
-      const b = displayToOriented(g, {
-        x: Math.min(1, (vis.x + vis.w) / rect.w + mx),
-        y: Math.min(1, (vis.y + vis.h) / rect.h + my)
-      })
-      const x = Math.floor(Math.min(a.x, b.x) * g.width)
-      const y = Math.floor(Math.min(a.y, b.y) * g.height)
+      const x0 = Math.max(0, vis.x / rect.w - mx)
+      const y0 = Math.max(0, vis.y / rect.h - my)
+      const x1 = Math.min(1, (vis.x + vis.w) / rect.w + mx)
+      const y1 = Math.min(1, (vis.y + vis.h) / rect.h + my)
       void api.develop
         .region({
           key: session.key,
-          x,
-          y,
-          width: Math.ceil(Math.abs(b.x - a.x) * g.width),
-          height: Math.ceil(Math.abs(b.y - a.y) * g.height),
-          zoom: Math.min(1, scale),
-          maskLayer: null
+          x: x0,
+          y: y0,
+          width: x1 - x0,
+          height: y1 - y0,
+          zoom: Math.min(1, scale)
         })
         .then((r) => {
-          if (id === request.current) setTile({ ...r, recipe })
+          if (id === request.current) setTile({ ...r, recipe, whole: g.whole === true })
         })
         .catch(() => undefined)
     }
@@ -93,14 +83,11 @@ export const SharpTile = memo(function SharpTile({
     return () => clearTimeout(timer)
     // The rect follows the box and the view; the geometry follows the recipe.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wanted, session, recipe, rect.x, rect.y, rect.w, rect.h, box.w, box.h, scale])
+  }, [wanted, session, recipe, rect.x, rect.y, rect.w, rect.h, box.w, box.h, scale, g.whole])
 
-  if (!wanted || !tile || tile.recipe !== recipe) return null
-  const a = orientedToDisplay(g, { x: tile.x / g.width, y: tile.y / g.height })
-  const b = orientedToDisplay(g, {
-    x: (tile.x + tile.width) / g.width,
-    y: (tile.y + tile.height) / g.height
-  })
+  if (!wanted || !tile || tile.recipe !== recipe || tile.whole !== (g.whole === true)) return null
+  const a = { x: tile.x, y: tile.y }
+  const b = { x: tile.x + tile.width, y: tile.y + tile.height }
   return (
     <img
       className="sharp-tile"

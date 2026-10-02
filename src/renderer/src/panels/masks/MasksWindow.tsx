@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MaskMode } from '../../../../shared/engine-types'
 import { effectiveMode, nextMaskMode } from '../../../../shared/masks'
-import type { LocalLayer, MaskComponentSetting } from '../../../../shared/recipe'
+import { hasControls, hiddenAdjusted } from '../../../../shared/maskcontrols'
+import {
+  isNeutral,
+  neutralSettings,
+  type LocalLayer,
+  type MaskComponentSetting
+} from '../../../../shared/recipe'
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { Icon, type IconName } from '../../components/icons'
 import { Menu, Popover } from '../../components/Popover'
@@ -23,7 +29,7 @@ import {
   type MaskToolKind
 } from './model'
 import { closeMasks, minimizeMasks } from '../../develop/tools'
-import { SelectedMask } from './MaskTool'
+import { ComponentCard, SelectedMask } from './MaskTool'
 import { ToolPicker } from './ToolPicker'
 import { useReorder } from './useReorder'
 import { keyHint, withKey } from '../../lib/commands'
@@ -34,6 +40,7 @@ const ADD_TOOLS: { kind: MaskToolKind; icon: IconName; label: string }[] = [
   { kind: 'brush', icon: 'brush', label: 'Brush' },
   { kind: 'linear', icon: 'linear', label: 'Linear gradient' },
   { kind: 'radial', icon: 'radial', label: 'Radial gradient' },
+  { kind: 'bidirectional', icon: 'bidirectional', label: 'Bidirectional gradient' },
   { kind: 'polygon', icon: 'lasso', label: 'Lasso' },
   { kind: 'color', icon: 'colourRange', label: 'Colour range' },
   { kind: 'luminance', icon: 'lumRange', label: 'Luminance range' }
@@ -142,112 +149,114 @@ function ComponentRow({
     <div
       data-reorder
       data-id={c.id}
-      className={`mf-comp${on ? ' on' : ''}${dragging ? ' dragging' : ''}`}
+      className={`mf-comp-item${dragging ? ' dragging' : ''}`}
       style={offset ? { transform: `translateY(${offset}px)` } : undefined}
     >
-      {count > 1 && (
-        <span className="mf-grip" title="Drag to reorder" onPointerDown={onGrip}>
-          <Icon name="grip" />
-        </span>
-      )}
-      <button
-        className={`mode-badge m-${mode.toLowerCase()}`}
-        disabled={index === 0}
-        title={
-          index === 0
-            ? 'The first component always adds'
-            : `${mode} — click for ${nextMaskMode(mode)}`
-        }
-        onClick={() => {
-          const m = nextMaskMode(c.mode)
-          patchComponent(c.id, `Mask mode: ${m}`, (x) => (x.mode = m))
-        }}
-      >
-        {MODE_MARK[mode]}
-      </button>
-      {rename !== null ? (
-        <input
-          className="mf-rename"
-          autoFocus
-          aria-label="Component name"
-          placeholder={componentLabel({ ...c, name: undefined })}
-          value={rename}
-          onChange={(e) => setRename(e.target.value)}
-          onBlur={commitRename}
-          onKeyDown={(e) => {
-            e.stopPropagation()
-            if (e.key === 'Enter') commitRename()
-            if (e.key === 'Escape') setRename(null)
+      <div className={`mf-comp${on ? ' on' : ''}${dragging ? ' dragging' : ''}`}>
+        {count > 1 && (
+          <span className="mf-grip" title="Drag to reorder" onPointerDown={onGrip}>
+            <Icon name="grip" />
+          </span>
+        )}
+        <button
+          className={`mode-badge m-${mode.toLowerCase()}`}
+          disabled={index === 0}
+          title={
+            index === 0
+              ? 'The first component always adds'
+              : `${mode} — click for ${nextMaskMode(mode)}`
+          }
+          onClick={() => {
+            const m = nextMaskMode(c.mode)
+            patchComponent(c.id, `Mask mode: ${m}`, (x) => (x.mode = m))
           }}
-        />
-      ) : (
-        <button
-          className="mf-select"
-          aria-pressed={on}
-          title="Double-click to rename · Alt+↑↓ to move"
-          onClick={() => setComp(on ? null : c.id)}
-          onDoubleClick={() => setRename(c.name ?? '')}
-          onKeyDown={(e) => moveByKey(e, index, count, (to) => moveComponent(c.id, to))}
         >
-          <Icon name={componentIcon(c)} />
-          <span className="mf-comp-name">{componentLabel(c)}</span>
-          {c.invert && <span className="mf-inv-tag">inv</span>}
+          {MODE_MARK[mode]}
         </button>
-      )}
-      <span className="mf-acts">
-        <button
-          className={`icon sm${c.invert ? ' on' : ''}`}
-          title={c.invert ? 'Inverted — click to un-invert' : 'Invert this component'}
-          aria-pressed={c.invert}
-          onClick={() => patchComponent(c.id, 'Invert component', (x) => (x.invert = !x.invert))}
-        >
-          <Icon name="invert" />
-        </button>
-        <span className="mf-menu-anchor">
+        {rename !== null ? (
+          <input
+            className="mf-rename"
+            autoFocus
+            aria-label="Component name"
+            placeholder={componentLabel({ ...c, name: undefined })}
+            value={rename}
+            onChange={(e) => setRename(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.key === 'Enter') commitRename()
+              if (e.key === 'Escape') setRename(null)
+            }}
+          />
+        ) : (
           <button
-            className="icon sm"
-            title="Component options"
-            aria-expanded={menu}
-            onClick={() => setMenu(!menu)}
+            className="mf-select"
+            aria-pressed={on}
+            title="Double-click to rename · Alt+↑↓ to move"
+            onClick={() => setComp(on ? null : c.id)}
+            onDoubleClick={() => setRename(c.name ?? '')}
+            onKeyDown={(e) => moveByKey(e, index, count, (to) => moveComponent(c.id, to))}
           >
-            <Icon name="more" />
+            <Icon name={componentIcon(c)} />
+            <span className="mf-comp-name">{componentLabel(c)}</span>
           </button>
-          {menu && (
-            <Menu
-              align="right"
-              onClose={() => setMenu(false)}
-              items={[
-                ...(index === 0
-                  ? []
-                  : (['Add', 'Subtract', 'Intersect'] as MaskMode[]).map((m) => ({
-                      label: m,
-                      checked: c.mode === m,
-                      onSelect: () => patchComponent(c.id, `Mask mode: ${m}`, (x) => (x.mode = m))
-                    }))),
-                {
-                  label: 'Invert',
-                  checked: c.invert,
-                  onSelect: () =>
-                    patchComponent(c.id, 'Invert component', (x) => (x.invert = !x.invert))
-                },
-                { label: 'Rename', onSelect: () => setRename(c.name ?? '') },
-                {
-                  label: 'Duplicate',
-                  hint: on ? keyHint('mask.duplicate') : undefined,
-                  onSelect: () => duplicateComponent(c.id)
-                },
-                'sep',
-                {
-                  label: 'Delete component',
-                  hint: on ? '⌫' : undefined,
-                  danger: true,
-                  onSelect: () => deleteComponent(c.id)
-                }
-              ]}
-            />
-          )}
+        )}
+        <span className="mf-acts">
+          <button
+            className={`icon sm${c.invert ? ' on' : ''}`}
+            title={c.invert ? 'Inverted — click to un-invert' : 'Invert this component'}
+            aria-pressed={c.invert}
+            onClick={() => patchComponent(c.id, 'Invert component', (x) => (x.invert = !x.invert))}
+          >
+            <Icon name="invert" />
+          </button>
+          <span className="mf-menu-anchor">
+            <button
+              className="icon sm"
+              title="Component options"
+              aria-expanded={menu}
+              onClick={() => setMenu(!menu)}
+            >
+              <Icon name="more" />
+            </button>
+            {menu && (
+              <Menu
+                align="right"
+                onClose={() => setMenu(false)}
+                items={[
+                  ...(index === 0
+                    ? []
+                    : (['Add', 'Subtract', 'Intersect'] as MaskMode[]).map((m) => ({
+                        label: m,
+                        checked: c.mode === m,
+                        onSelect: () => patchComponent(c.id, `Mask mode: ${m}`, (x) => (x.mode = m))
+                      }))),
+                  {
+                    label: 'Invert',
+                    checked: c.invert,
+                    onSelect: () =>
+                      patchComponent(c.id, 'Invert component', (x) => (x.invert = !x.invert))
+                  },
+                  { label: 'Rename', onSelect: () => setRename(c.name ?? '') },
+                  {
+                    label: 'Duplicate',
+                    hint: on ? keyHint('mask.duplicate') : undefined,
+                    onSelect: () => duplicateComponent(c.id)
+                  },
+                  'sep',
+                  {
+                    label: 'Delete component',
+                    hint: on ? '⌫' : undefined,
+                    danger: true,
+                    onSelect: () => deleteComponent(c.id)
+                  }
+                ]}
+              />
+            )}
+          </span>
         </span>
-      </span>
+      </div>
+      {on && (hasControls(c) || hiddenAdjusted(c)) && <ComponentCard c={c} index={index} />}
     </div>
   )
 }
@@ -267,11 +276,11 @@ function AddBar({ onMore }: { onMore: (mode: MaskMode) => void }): React.JSX.Ele
             key={m}
             className={join === m ? 'on' : ''}
             aria-pressed={join === m}
+            aria-label={m}
             title={`${JOIN_VERB[m]} this mask`}
             onClick={() => setJoin(m)}
           >
             <span className={`mf-join m-${m.toLowerCase()}`}>{MODE_MARK[m]}</span>
-            {m}
           </button>
         ))}
       </div>
@@ -322,6 +331,14 @@ function MaskRow({
   const compId = useDevelop((s) => s.compId)
   const thumb = useDevelop((s) => s.maskThumbs[layer.id]?.url ?? null)
   const hue = useUi((s) => layer.overlayHue ?? s.maskOverlay.hue)
+  const measured = useDevelop((s) => s.report?.layers?.[layer.id])
+  const coverage = !measured
+    ? undefined
+    : !measured.applied
+      ? 'Not applied'
+      : measured.coverage === null
+        ? undefined
+        : `Covers ${(measured.coverage * 100).toFixed(1)}% of the photo`
   const [renaming, setRenaming] = useState<string | null>(null)
   const [menu, setMenu] = useState(false)
   const [colour, setColour] = useState(false)
@@ -384,7 +401,7 @@ function MaskRow({
             onBlur={() => setHover(null)}
             onKeyDown={(e) => moveByKey(e, index, count, (to) => moveMask(layer.id, to))}
           >
-            <span className="mf-thumb">
+            <span className="mf-thumb" title={coverage}>
               {thumb ? <img src={thumb} alt="" draggable={false} /> : <i />}
               {layer.invert && <span className="mf-inv" title="Inverted" />}
             </span>
@@ -474,6 +491,14 @@ function MaskRow({
                   },
                   { label: 'Invert', checked: layer.invert, onSelect: invert },
                   {
+                    label: 'Reset adjustments',
+                    disabled: isNeutral(layer.settings),
+                    onSelect: () =>
+                      patchMask(layer.id, `${layer.name}: reset`, (l) => {
+                        l.settings = neutralSettings()
+                      })
+                  },
+                  {
                     label: layer.enabled ? 'Hide' : 'Show',
                     hint: selected ? 'H' : undefined,
                     onSelect: toggleHidden
@@ -511,7 +536,7 @@ function MaskRow({
       {selected && (
         <div className={`mf-comps${comps.drag ? ' sorting' : ''}`}>
           {layer.components.length === 0 && (
-            <p className="mf-hint">Paint, draw or pick a range to shape this mask.</p>
+            <p className="mf-hint">Pick a tool below to shape this mask.</p>
           )}
           {layer.components.map((c, i) => (
             <ComponentRow
@@ -538,24 +563,22 @@ function OverlayControls(): React.JSX.Element {
   const o = useUi((s) => s.maskOverlay)
   const set = useUi((s) => s.setMaskOverlay)
   const [open, setOpen] = useState(false)
+  const modeLabel = OVERLAY_MODES.find((m) => m.value === o.mode)?.label ?? o.mode
   return (
     <div className="mf-foot">
-      <label className="check" title={withKey('Show the overlay', 'mask.overlay')}>
-        <input type="checkbox" checked={overlay} onChange={(e) => setOverlay(e.target.checked)} />
-        Overlay
-      </label>
-      <span
-        className="mf-swatch"
-        style={{ background: `hsl(${o.hue} 90% 58%)` }}
-        title="Overlay colour"
-      />
-      <span className="spacer" />
       <span className="mf-menu-anchor">
-        <button className="icon sm" title="Overlay options" onClick={() => setOpen(!open)}>
-          <Icon name="settings" />
+        <button
+          className={`mf-overlay-btn${overlay ? '' : ' off'}`}
+          title="Overlay options"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          <span className="mf-swatch" style={{ background: `hsl(${o.hue} 90% 58%)` }} />
+          <span>Overlay</span>
+          <span className="mf-overlay-mode">{overlay ? modeLabel : 'Off'}</span>
         </button>
         {open && (
-          <Popover onClose={() => setOpen(false)} align="right" side="top" className="overlay-pop">
+          <Popover onClose={() => setOpen(false)} align="left" side="top" className="overlay-pop">
             <span className="micro">
               Overlay{keyHint('mask.overlayMode') && ` · ${keyHint('mask.overlayMode')} cycles`}
             </span>
@@ -580,6 +603,14 @@ function OverlayControls(): React.JSX.Element {
                 value={o.hue}
                 onChange={(e) => set({ hue: Number(e.target.value) })}
               />
+            </label>
+            <label className="check" title={withKey('Show the overlay', 'mask.overlay')}>
+              <input
+                type="checkbox"
+                checked={overlay}
+                onChange={(e) => setOverlay(e.target.checked)}
+              />
+              Show the overlay{keyHint('mask.overlay') && ` (${keyHint('mask.overlay')})`}
             </label>
             <label className="op-row">
               <span>Opacity</span>
@@ -614,6 +645,17 @@ function OverlayControls(): React.JSX.Element {
                 onChange={(e) => set({ byComponent: e.target.checked })}
               />
               Colour each component
+            </label>
+            <label
+              className="check"
+              title="The overlay steps aside while a slider that changes the photo moves (Lightroom's auto toggle)"
+            >
+              <input
+                type="checkbox"
+                checked={o.autoToggle}
+                onChange={(e) => set({ autoToggle: e.target.checked })}
+              />
+              Hide while adjusting
             </label>
             <span className="micro">
               Pins{keyHint('mask.pins') && ` · ${keyHint('mask.pins')} cycles`}
@@ -860,10 +902,7 @@ export function MasksWindow({ place }: { place: 'dock' | 'stage' }): React.JSX.E
       <div className="mf-body">
         <div className={`mf-list${masks.drag ? ' sorting' : ''}`}>
           {layers.length === 0 && (
-            <p className="mf-hint">
-              No masks yet. A mask limits adjustments to part of the photo: a brush, a gradient, a
-              lasso or a colour range.
-            </p>
+            <p className="mf-hint">No masks yet. New limits edits to part of the photo.</p>
           )}
           {layers.map((l, i) => (
             <MaskRow

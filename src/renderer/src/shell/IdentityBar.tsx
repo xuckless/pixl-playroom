@@ -9,7 +9,7 @@ import { liveJobs, useAiJobs } from '../state/jobs'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 
-/** The engine's state as a breathing dot, with the last render's time when there is one. */
+/** The engine's state as a breathing dot; the last render's time on hover. */
 export function EngineStatus(): React.JSX.Element {
   const engine = useLibrary((s) => s.engine)
   const ms = useDevelop((s) => (s.session ? (s.report?.totalMs ?? null) : null))
@@ -17,10 +17,12 @@ export function EngineStatus(): React.JSX.Element {
   const status = engine?.status ?? 'starting'
   const ok = status === 'ready'
   return (
-    <span className={`engine-status micro ${ok ? 'ok' : 'bad'}`} title={engine?.reason ?? ''}>
+    <span
+      className={`engine-status micro ${ok ? 'ok' : 'bad'}`}
+      title={engine?.reason ?? (ok && ms !== null ? `Last render ${ms} ms` : '')}
+    >
       <i className={`status-dot${rendering ? ' busy' : ''}${ok ? '' : ' bad'}`} />
       Engine {status}
-      {ok && ms !== null && <span className="t-num"> · {ms} ms</span>}
     </span>
   )
 }

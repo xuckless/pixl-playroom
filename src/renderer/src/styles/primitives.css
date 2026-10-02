@@ -438,185 +438,181 @@ input[type='checkbox']:disabled {
   cursor: default;
 }
 
-/* ── slider: hairline rail, purple fill from its resting point, a glass
-   knob, and a large typed value that can be edited in place ──────── */
+/* ── slider: one glass bar. The label and value sit inside it; a frosted
+   knob rides over a fill from the resting value to the current one. The
+   knob's centre travels between half its width from either end, and the
+   fill follows the same scale (--at, --lo, --span are fractions). ───── */
 .slider {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 0 9px;
-}
-.sl-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 10px;
-}
-.sl-head label {
-  color: var(--text2);
-  font-weight: 500;
-  font-size: 13.5px;
-  letter-spacing: 0.01em;
-  transition:
-    color 0.25s var(--ease),
-    text-shadow 0.25s;
-  cursor: default;
-  user-select: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.slider.changed .sl-head label {
-  color: var(--text);
-}
-.slider input.num {
-  width: 76px;
-  height: 22px;
-  padding: 0 2px;
-  border-color: transparent;
-  background: transparent;
-  text-align: right;
-  font-family: var(--font);
-  font-size: 15px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text2);
-  transition:
-    color 0.25s,
-    transform 0.4s var(--spring),
-    text-shadow 0.4s,
-    border-color 0.25s,
-    background 0.25s;
-  transform-origin: right center;
-}
-.slider.changed input.num {
-  color: var(--acc);
-  text-shadow: 0 0 14px var(--glow-soft);
-}
-.slider:hover input.num {
-  transform: scale(1.06);
-  color: var(--text);
-}
-.slider input.num:hover {
-  border-color: var(--hair);
-}
-.slider input.num:focus {
-  transform: none;
-  color: var(--text);
-  background: var(--s1);
-  border-color: rgba(157, 139, 234, 0.7);
-  text-shadow: none;
-}
-.sl-track {
+  --knob: 26px;
+  --travel: calc(100% - var(--knob));
   position: relative;
-  height: 18px;
-  display: flex;
-  align-items: center;
+  height: 26px;
+  margin: 3px 0;
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+  transition:
+    background 0.25s var(--ease),
+    box-shadow 0.25s var(--ease);
+}
+.slider:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.slider:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px var(--acc-a55),
+    0 0 14px -6px var(--glow);
 }
 .sl-rail {
   position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--hair2);
+  inset: 0;
+  border-radius: inherit;
   pointer-events: none;
 }
 .sl-rail.grad {
-  height: 4px;
-  opacity: 0.8;
-  transition: opacity 0.25s;
+  opacity: 0.3;
+  transition: opacity 0.25s var(--ease);
 }
-.slider:hover .sl-rail.grad {
-  opacity: 1;
+.slider:hover .sl-rail.grad,
+.slider.dragging .sl-rail.grad {
+  opacity: 0.42;
 }
 .sl-zero {
   position: absolute;
-  top: 3px;
+  top: 6px;
+  bottom: 6px;
+  left: calc(var(--knob) / 2 + var(--travel) * var(--rest));
   width: 1px;
-  height: 12px;
-  background: var(--hair3);
-  transform: translateX(-0.5px);
+  background: var(--hair2);
   pointer-events: none;
 }
 .sl-fill {
   position: absolute;
-  height: 2px;
-  background: linear-gradient(90deg, var(--acc2), var(--acc));
-  box-shadow: 0 0 10px -2px var(--glow);
+  top: 1px;
+  bottom: 1px;
+  left: calc(var(--knob) / 2 + var(--travel) * var(--lo));
+  width: calc(var(--travel) * var(--span));
+  background: linear-gradient(180deg, var(--acc-a35), var(--acc-a20));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   pointer-events: none;
-  /* a typed value or a reset springs into place; a drag follows at once */
   transition:
     left 0.45s var(--spring),
-    width 0.45s var(--spring),
-    opacity 0.3s;
+    width 0.45s var(--spring);
 }
+.sl-knob {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: calc(var(--travel) * var(--at));
+  width: var(--knob);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(157, 139, 234, 0.35),
+    0 2px 8px -2px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px) saturate(1.6) brightness(1.15);
+  -webkit-backdrop-filter: blur(6px) saturate(1.6) brightness(1.15);
+  pointer-events: none;
+  transition:
+    left 0.45s var(--spring),
+    background 0.25s var(--ease),
+    border-color 0.25s var(--ease),
+    box-shadow var(--dur-toggle) var(--ease);
+}
+.slider:hover .sl-knob {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.07));
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.slider.dragging .sl-knob {
+  border-color: rgba(190, 178, 245, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(157, 139, 234, 0.6),
+    0 0 14px -2px var(--glow);
+}
+.slider.dragging .sl-knob,
 .slider.dragging .sl-fill {
   transition: none;
 }
-.slider input[type='range'] {
+.sl-text {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 18px;
-  margin: 0;
-  background: transparent;
-  appearance: none;
-  -webkit-appearance: none;
-  cursor: ew-resize;
-  outline: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px 0 9px;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
 }
-.slider input[type='range']::-webkit-slider-runnable-track {
-  height: 18px;
-  background: transparent;
+.sl-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text2);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: color 0.25s var(--ease);
 }
-.slider input[type='range']::-webkit-slider-thumb {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  margin-top: 2px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle at 35% 30%,
-    rgba(255, 255, 255, 0.95),
-    rgba(255, 255, 255, 0.35) 40%,
-    rgba(180, 170, 230, 0.25) 70%,
-    rgba(120, 100, 200, 0.2)
-  );
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  box-shadow:
-    inset 0 0 0 1px rgba(157, 139, 234, 0.35),
-    0 0 0 3px rgba(0, 0, 0, 0.6),
-    0 0 14px -2px var(--glow);
-  backdrop-filter: blur(4px);
-  transition:
-    transform var(--dur-toggle) var(--spring),
-    box-shadow var(--dur-toggle) var(--ease);
+.slider.changed .sl-label {
+  color: var(--text);
 }
-.slider input[type='range']:hover::-webkit-slider-thumb,
-.slider input[type='range']:focus-visible::-webkit-slider-thumb {
-  transform: scale(1.25);
-  box-shadow:
-    inset 0 0 0 1px rgba(157, 139, 234, 0.5),
-    0 0 0 3px rgba(0, 0, 0, 0.6),
-    0 0 22px 0 var(--glow);
+.slider .num {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text2);
+  pointer-events: auto;
+  cursor: text;
+  transition: color 0.25s var(--ease);
 }
-.slider input[type='range']:active::-webkit-slider-thumb {
-  transform: scale(1.1);
+.slider.changed .num {
+  color: var(--acc);
+}
+.slider input.num {
+  width: 72px;
+  height: 20px;
+  padding: 0 4px;
+  text-align: right;
+  background: var(--s1);
+  border-color: rgba(157, 139, 234, 0.7);
+  color: var(--text);
+  text-shadow: none;
+}
+.slider .info-tip {
+  pointer-events: auto;
+  opacity: 0;
+}
+.slider:hover .info-tip,
+.slider:focus-visible .info-tip,
+.slider .info-tip.on {
+  opacity: 1;
 }
 .slider.disabled {
   opacity: 0.4;
   pointer-events: none;
 }
 /* an HSL band chosen from the colour-concentration chart */
-.focused .slider .sl-head label {
-  color: var(--acc);
-  text-shadow: 0 0 12px var(--glow-soft);
+.focused .slider {
+  box-shadow: inset 0 0 0 1px var(--acc-a35);
 }
-.focused .slider .sl-track::after {
+.focused .slider .sl-label {
+  color: var(--acc);
+}
+.focused .slider::after {
   content: '';
   position: absolute;
-  left: -10px;
+  left: -9px;
   top: 50%;
   width: 4px;
   height: 4px;
@@ -683,6 +679,233 @@ input[type='checkbox']:disabled {
 .section .body {
   animation: bodyIn 0.45s var(--spring) both;
   transform-origin: top;
+}
+
+/* ── cards: the adjustment groups of the right column ─────────────── */
+.card {
+  position: relative;
+  margin: 0 0 6px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition:
+    border-color 0.25s var(--ease),
+    background 0.25s var(--ease);
+}
+.card.open {
+  border-color: var(--hair2);
+}
+.card > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 4px 0 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.card > header .caret {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  stroke: var(--muted);
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transition:
+    transform var(--dur-toggle) var(--spring),
+    stroke 0.2s;
+}
+.card.open > header .caret {
+  transform: none;
+}
+.card > header:hover .caret {
+  stroke: var(--acc);
+}
+.card > header .title {
+  color: var(--text2);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition: color 0.25s var(--ease);
+}
+.card.open > header .title,
+.card > header:hover .title {
+  color: var(--text);
+}
+.card-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--acc);
+  box-shadow: 0 0 8px var(--glow);
+}
+.card-acts {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.card-acts button.icon {
+  width: 24px;
+  height: 24px;
+}
+.card-acts button.icon svg {
+  width: 13px;
+  height: 13px;
+}
+.card-eye,
+.card-reset {
+  opacity: 0;
+  transition: opacity 0.2s var(--ease);
+}
+.card > header:hover .card-eye,
+.card > header:hover .card-reset,
+.card > header:focus-within .card-eye,
+.card > header:focus-within .card-reset,
+.card.off .card-eye {
+  opacity: 1;
+}
+.card.off .card-eye {
+  color: var(--warn);
+}
+.card > header:hover .card-reset:disabled {
+  opacity: 0.3;
+}
+.card.off > header .title {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--hair3);
+}
+.card-body {
+  padding: 0 10px 10px;
+  animation: bodyIn 0.4s var(--spring) both;
+  transform-origin: top;
+}
+.card.off .card-body {
+  opacity: 0.45;
+}
+.card-body > .section > header {
+  margin-top: 4px;
+  min-height: 28px;
+}
+
+/* ── (i): a short note on what a control does ──────────────────────── */
+.info-tip {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--muted);
+  transition:
+    color 0.2s var(--ease),
+    opacity 0.2s var(--ease);
+}
+.info-tip:hover:not(:disabled),
+.info-tip.on {
+  color: var(--acc);
+  background: none;
+  transform: none;
+}
+.info-tip svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 1.3;
+}
+.popover.tip-pop {
+  min-width: 0;
+  width: 248px;
+  padding: 10px 12px 11px;
+  pointer-events: auto;
+}
+.tip-pop .tip-title {
+  margin-bottom: 4px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.tip-pop p {
+  margin: 0;
+  color: var(--text2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.tip-pop p + p {
+  margin-top: 6px;
+}
+.tip-pop .tip-k {
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--acc);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* ── </>: the numbers behind an option ───────────────────────────── */
+.tech-info {
+  width: 24px;
+  height: 24px;
+  color: var(--muted);
+}
+.tech-info svg {
+  width: 13px;
+  height: 13px;
+}
+.popover.tech-pop {
+  width: 300px;
+}
+.tech-body {
+  margin-top: 6px;
+  color: var(--text2);
+  font-size: 11.5px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.tech-body p {
+  margin: 0 0 6px;
+}
+
+/* ── glass dropdown ─────────────────────────────────────────────────── */
+.glass-select {
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px 0 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.glass-select .gs-prefix {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.glass-select .gs-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.glass-select svg {
+  margin-left: auto;
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+  transition: transform var(--dur-toggle) var(--spring);
+}
+.popover.gs-menu {
+  width: 260px;
+}
+.glass-select.on svg {
+  transform: rotate(180deg);
+  color: var(--acc);
 }
 
 /* ── glass: the frosted fallback every liquid-glass surface sits on ── */

@@ -19,6 +19,7 @@ import {
 import { addLabel } from '../lib/addpick'
 import { useDevelop, type AddTarget } from '../state/develop'
 import { ColorWheel } from './editors'
+import { InfoTip, type Tip } from './InfoTip'
 import { Popover } from './Popover'
 import { Slider, Toggle } from './ui'
 
@@ -126,7 +127,8 @@ export function AddColourControl({
   /** Change the setting; `live` while a slider moves. */
   onChange: (next: AddColourSetting, live: boolean) => void
   /** A line under the controls saying what adding means here. */
-  hint?: string
+  /** What it does here, behind an (i) at the end of its buttons. */
+  hint?: Tip
 }): React.JSX.Element {
   const recipe = useDevelop((s) => s.recipe)
   const commit = useDevelop((s) => s.commit)
@@ -199,6 +201,12 @@ export function AddColourControl({
             }}
           />
         )}
+        {hint && (
+          <>
+            <span className="spacer" />
+            <InfoTip tip={hint} label="Add colour" />
+          </>
+        )}
       </div>
       {slider('hue', 'Hue', 360, HUE_TRACK)}
       {slider(
@@ -208,7 +216,6 @@ export function AddColourControl({
         `linear-gradient(90deg,#fff,${swatchCss({ hue: value.hue, saturation: 100 })})`
       )}
       {slider('amount', 'Amount', 100, undefined, 0.1)}
-      {hint && <p className="muted small">{hint}</p>}
     </div>
   )
 }

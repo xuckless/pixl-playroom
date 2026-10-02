@@ -5,6 +5,22 @@ import { useUi, type OverlayMode } from '../../state/ui'
 import { MaskCanvas } from './maskgl/MaskCanvas'
 import { useMaskGlBroken } from './maskgl/state'
 
+/** Tools that draw a mask: their overlay stays while they are in hand. */
+const MASK_DRAWING: ReadonlySet<string> = new Set([
+  'brush',
+  'polygon',
+  'linear',
+  'radial',
+  'bidirectional',
+  'objects',
+  'range-picker'
+])
+
+/** Whether the masks window is up and unfolded (its overlay shows only then). */
+function useMasksShown(): boolean {
+  return useUi((s) => s.masksWin.open && !s.masksWin.minimized)
+}
+
 /** Golden-angle hues, so every mask in "show all" gets its own colour. */
 const hueFor = (i: number, base: number): number => (base + i * 137.5) % 360
 
@@ -38,6 +54,19 @@ export const MaskPlane = memo(function MaskPlane({
 }): React.JSX.Element {
   const a = opacity / 100
   switch (mode) {
+    // Frosted glass without the loupe's own drawing: the photo blurred and
+    // lifted where the mask is, faintly tinted.
+    case 'glass':
+      return (
+        <div
+          className="mask-overlay glass"
+          style={{
+            ...maskStyle(url),
+            background: `hsl(${hue} 90% 55% / ${Math.min(0.3, a * 0.5)})`,
+            opacity: 1
+          }}
+        />
+      )
     // The outline needs the loupe's own drawing; CSS shows the colour instead.
     case 'color':
     case 'color-bw':
@@ -90,19 +119,41 @@ export function MaskOverlay({
 }): React.JSX.Element | null {
   const tool = useDevelop((s) => s.tool)
   const showAll = useUi((s) => s.maskOverlay.showAll)
+  const autoToggle = useUi((s) => s.maskOverlay.autoToggle)
   const broken = useMaskGlBroken((s) => s.broken)
+  const masksUp = useMasksShown()
   if (wholeFrameTool(tool)) return null
+  // Put away (closed, or folded to its pill), the masks take their overlay
+  // with them, unless a mask tool is still drawing.
+  if (!masksUp && !MASK_DRAWING.has(tool)) return null
   // The loupe draws the selected mask itself where it can (in step with the
   // edit, then the engine's); every mask at once, and the fallback, are CSS.
-  const gl = g !== null && !showAll && !broken
+  // The Objects tool's selection being made is the loupe's own to draw.
+  const gl = g !== null && (!showAll || tool === 'objects') && !broken
   return (
-    <>
+    // While a slider moves the overlay steps aside (auto toggle), so the edit shows.
+    <div className={`mask-layer${autoToggle ? ' auto-hide' : ''}`}>
       {gl ? <MaskCanvas g={g} w={w} h={h} /> : <SelectedOverlay />}
-      <HoverOverlay />
-    </>
+      {gl ? <HoverCanvas g={g} w={w} h={h} /> : <HoverOverlay />}
+    </div>
   )
 }
 
+/**
+ * The mask under the pointer in the masks panel (or on its pin), drawn by
+ * the loupe like the selected one: sharp, feathered, in its own colour,
+ * overlay on or off. Kept mounted, so hovering down the list only redraws.
+ */
+function HoverCanvas({ g, w, h }: { g: ViewGeometry; w: number; h: number }): React.JSX.Element {
+  const hoverLayer = useDevelop((s) => s.hoverLayer)
+  const layerId = useDevelop((s) => s.layerId)
+  const overlay = useDevelop((s) => s.overlay)
+  // The selected mask already shows while the overlay is on.
+  const shown = hoverLayer && !(hoverLayer === layerId && overlay) ? hoverLayer : null
+  return <MaskCanvas g={g} w={w} h={h} hover={shown} />
+}
+
+/** The hovered mask without the loupe's drawing (no WebGL, or every mask shown): its thumbnail. */
 function HoverOverlay(): React.JSX.Element | null {
   const hoverLayer = useDevelop((s) => s.hoverLayer)
   const layerId = useDevelop((s) => s.layerId)
@@ -122,7 +173,7 @@ function HoverOverlay(): React.JSX.Element | null {
     <div className="mask-hover">
       <MaskPlane
         url={url}
-        mode="color"
+        mode={o.mode === 'glass' ? 'glass' : 'color'}
         hue={l.overlayHue ?? (hoverLayer === layerId ? o.hue : hueFor(i + 1, o.hue))}
         opacity={Math.max(o.opacity, 55)}
       />

@@ -36,13 +36,12 @@
   overflow-y: auto;
 }
 .mf-selected {
-  padding: 4px 14px 14px;
+  padding: 4px 10px 6px;
   border-top: 1px solid transparent;
   border-image: var(--hl-x) 1;
 }
-.mf-selected-title {
-  margin: 10px 0 6px;
-  color: var(--acc);
+.mf-selected .section header {
+  padding-top: 6px;
 }
 .mf-head-tools {
   display: flex;
@@ -102,8 +101,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  height: 46px;
-  padding: 0 8px 0 14px;
+  height: 38px;
+  padding: 0 6px 0 12px;
   border-bottom: 1px solid transparent;
   border-image: var(--hl-x) 1;
   flex: none;
@@ -117,10 +116,10 @@
   color: var(--text);
 }
 .mf-list {
-  padding: 8px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .mf-hint {
   margin: 6px 4px;
@@ -140,8 +139,13 @@
 /* While a row is dragged, the others step aside smoothly; the dragged one
    follows the pointer exactly, lifted over them. */
 .mf-list.sorting .mf-mask,
-.mf-comps.sorting .mf-comp {
+.mf-comps.sorting .mf-comp-item {
   transition: transform 0.22s var(--spring);
+}
+.mf-comp-item.dragging {
+  position: relative;
+  z-index: 2;
+  transition: none !important;
 }
 .mf-mask.dragging,
 .mf-comp.dragging {
@@ -167,15 +171,15 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 46px;
-  padding: 0 4px 0 2px;
+  height: 36px;
+  padding: 0 2px 0 2px;
 }
 /* The row's body: one button that selects (Enter, Space, a click) and
    renames on a double-click; the actions beside it are its siblings. */
 button.mf-select {
   flex: 1;
   min-width: 0;
-  height: 40px;
+  height: 32px;
   justify-content: flex-start;
   gap: 8px;
   padding: 0 4px;
@@ -248,8 +252,8 @@ button.mf-select:focus-visible {
 }
 .mf-thumb {
   position: relative;
-  width: 44px;
-  height: 32px;
+  width: 34px;
+  height: 24px;
   flex: none;
   background: #000;
   border: 1px solid var(--hair2);
@@ -279,6 +283,7 @@ button.mf-select:focus-visible {
 .mf-name {
   flex: 1;
   min-width: 0;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -314,7 +319,7 @@ input.mf-rename {
   display: inline-flex;
 }
 .mf-comps {
-  padding: 2px 6px 8px 10px;
+  padding: 0 4px 6px 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -324,7 +329,7 @@ input.mf-rename {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 32px;
+  height: 28px;
   padding: 0 2px 0 0;
   border: 1px solid transparent;
   border-radius: var(--r);
@@ -339,7 +344,7 @@ input.mf-rename {
   background: rgba(255, 255, 255, 0.04);
 }
 .mf-comp button.mf-select {
-  height: 28px;
+  height: 24px;
   gap: 7px;
   font-size: 12px;
 }
@@ -358,6 +363,7 @@ input.mf-rename {
 .mf-comp-name {
   flex: 1;
   min-width: 0;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -394,29 +400,22 @@ button.mode-badge:disabled {
 .mode-badge.m-intersect {
   color: var(--acc);
 }
-.mf-inv-tag {
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-  color: var(--acc);
-  text-transform: uppercase;
-}
 .mf-add {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 6px;
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 4px;
+  padding-top: 6px;
   border-top: 1px solid var(--hair);
 }
 .mf-add .seg {
-  width: 100%;
-  height: 26px;
+  flex: none;
+  height: 24px;
 }
 .mf-add .seg button {
-  flex: 1;
-  gap: 5px;
-  padding: 0 6px;
-  font-size: 11.5px;
+  width: 24px;
+  padding: 0;
+  font-size: 12px;
 }
 .mf-join {
   font-weight: 700;
@@ -434,12 +433,13 @@ button.mode-badge:disabled {
   color: inherit;
 }
 .mf-add-tools {
+  flex: 1;
   display: flex;
   justify-content: space-between;
 }
 .mf-add-tools button.icon {
-  width: 28px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   color: var(--text2);
 }
 .mf-add-tools .icon-svg {
@@ -450,14 +450,35 @@ button.mode-badge:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 44px;
-  padding: 0 8px 0 12px;
+  height: 36px;
+  padding: 0 6px 0 12px;
   border-top: 1px solid transparent;
   border-image: var(--hl-x) 1;
   flex: none;
 }
 .mf-foot .check {
   margin: 0;
+}
+.mf-foot .mf-menu-anchor {
+  flex: 1;
+  min-width: 0;
+}
+.mf-overlay-btn {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  border-color: transparent;
+}
+.mf-overlay-btn .mf-overlay-mode {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.mf-overlay-btn.off .mf-swatch {
+  opacity: 0.35;
+  box-shadow: none;
 }
 .mf-swatch-btn {
   width: 22px;
@@ -681,19 +702,77 @@ button.mode-badge:disabled {
 .tool-actions .spacer {
   flex: 1;
 }
-.component-head {
+/* The selected component's own settings, under its row. */
+.mf-card {
+  margin: 2px 0 6px 22px;
+  padding: 4px 8px 6px;
+  border-left: 1px solid var(--acc-a55);
+  animation: bodyIn 0.3s var(--spring) backwards;
+}
+.mf-card-row {
   display: flex;
   align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+.mf-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  color: var(--acc);
+  margin-top: 6px;
+  padding: 2px 2px 2px 8px;
+  border: 1px dashed var(--hair2);
+  border-radius: var(--r);
+  font-size: 11px;
+  color: var(--muted);
 }
-.component-head .icon-svg {
-  width: 15px;
-  height: 15px;
+
+/* A range's band: the axis's colours, dimmed outside a plateau with soft shoulders. */
+.band {
+  margin: 6px 0;
 }
-.component .seg button {
+.band-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11.5px;
-  padding: 0 8px;
+  color: var(--text2);
+  cursor: pointer;
+}
+.band-label {
+  flex: 1;
+}
+.band-read {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.band-strip {
+  position: relative;
+  height: 18px;
+  margin-top: 4px;
+  border: 1px solid var(--hair2);
+  border-radius: var(--r);
+  overflow: hidden;
+  touch-action: none;
+}
+.band.off .band-strip {
+  opacity: 0.25;
+  pointer-events: none;
+}
+.band-strip svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.band-dim {
+  fill: rgba(0, 0, 0, 0.62);
+}
+.band-shape {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.25;
+  stroke-linejoin: round;
 }
 
 /* ── pins on the photo ─────────────────────────────────────────── */
@@ -804,6 +883,46 @@ button.mode-badge:disabled {
 .grad-handle {
   transform: rotate(45deg);
 }
+/* A radial's feather: a ring handle on the dashed ellipse. */
+.grad-feather {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 10px -2px var(--glow);
+  pointer-events: auto;
+  cursor: nesw-resize;
+  transition: transform 0.3s var(--spring);
+}
+.grad-feather:hover {
+  transform: scale(1.3);
+}
+/* The mask's other gradients: a small pin each, to select it. */
+button.grad-other {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  min-width: 0;
+  margin: -6px 0 0 -6px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+  cursor: pointer;
+  transition: transform 0.25s var(--spring);
+}
+button.grad-other:hover:not(:disabled) {
+  transform: scale(1.35);
+  border-color: var(--acc);
+  background: rgba(0, 0, 0, 0.45);
+}
 .grad-handle:hover {
   transform: rotate(45deg) scale(1.4);
   background: var(--acc);
@@ -849,12 +968,16 @@ button.mode-badge:disabled {
 }
 .tool-layer.gradients.pins-auto:not(.drawing) .grad-lines,
 .tool-layer.gradients.pins-auto:not(.drawing) .grad-handle,
+.tool-layer.gradients.pins-auto:not(.drawing) .grad-feather,
+.tool-layer.gradients.pins-auto:not(.drawing) .grad-other,
 .tool-layer.gradients.pins-auto:not(.drawing) .grad-knob {
   opacity: 0;
   transition: opacity 0.3s var(--ease);
 }
 .stage:hover .tool-layer.gradients.pins-auto .grad-lines,
 .stage:hover .tool-layer.gradients.pins-auto .grad-handle,
+.stage:hover .tool-layer.gradients.pins-auto .grad-feather,
+.stage:hover .tool-layer.gradients.pins-auto .grad-other,
 .stage:hover .tool-layer.gradients.pins-auto .grad-knob {
   opacity: 1;
 }

@@ -25,7 +25,7 @@ import { join } from 'path'
 import type { AiStartRequest } from '../../shared/ai'
 import { estimate } from '../../shared/ai'
 import type { EnhancerRef } from '../../shared/engine-types'
-import { pixelStepRefusal, type PixelStep } from '../../shared/pixels'
+import { pixelStepRefusal, RAW_DEVELOP_REV, type PixelStep } from '../../shared/pixels'
 import { hash32, newId, type AiDenoiseModel, type Recipe } from '../../shared/recipe'
 import { exists } from '../exists'
 import type { EngineClient } from '../engine/client'
@@ -42,6 +42,7 @@ import { addPixelStep, storesLossless } from '../pixels/steps'
 import { ensureWorking } from '../pixels/working'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
 import { ModelMissing, modelName, type ModelStore } from './models'
+import { DENOISE_RATE_KEY } from './rates'
 
 export const DENOISE_SHORT: Record<AiDenoiseModel, string> = {
   'scunet-color-real': 'SCUNet',
@@ -126,7 +127,7 @@ async function legacyMaster(
 type DenoiseRequest = Extract<AiStartRequest, { task: 'denoise' }>
 
 /** How long a megapixel of the full-resolution step takes, per model, remembered between runs. */
-const RATE_KEY = 'ai.denoise.msPerMp'
+const RATE_KEY = DENOISE_RATE_KEY
 const FIRST_GUESS_MS_PER_MP: Record<string, number> = {
   'scunet-color-real': 27000,
   'drunet-color': 9000
@@ -318,7 +319,11 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         width: master.width,
         height: master.height,
         rect: null,
-        params: { model: req.model, lossless }
+        params: {
+          model: req.model,
+          lossless,
+          ...(row.is_raw === 1 ? { develop: RAW_DEVELOP_REV } : {})
+        }
       }
       // Computed on the steps there were when it began: it goes after them,
       // under any (a heal) added while it ran.

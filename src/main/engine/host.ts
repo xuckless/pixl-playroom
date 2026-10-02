@@ -1,7 +1,7 @@
 /**
- * The engine host. Runs inside an Electron utilityProcess so that a panic in
- * the native addon (rawler is known to panic on odd sensor layouts) kills
- * this process, not the app. The main-process side is `client.ts`.
+ * The engine host. Runs inside an Electron utilityProcess so that a crash in
+ * the native addon (or a library beside it: LibRaw parses untrusted files)
+ * kills this process, not the app. The main-process side is `client.ts`.
  *
  * Playroom has no placeholder engine: every pixel on screen is the engine's.
  */
@@ -13,9 +13,14 @@ import type {
   EngineMethod,
   HostToMain,
   MainToHost,
+  ModelSession,
   PixlEngineModule,
-  PreviewFrame
+  PreviewFrame,
+  PromptEmbedding,
+  SamOp,
+  SamResult
 } from '../../shared/engine-types'
+import { pickBySize } from '../../shared/concepts'
 
 const ENGINE_PACKAGE = '@xuckless/pixl-engine'
 /** What Playroom cannot run without. The rest (lens, upright, AI…) are looked up per call. */
@@ -100,7 +105,8 @@ if (engine) {
     status: 'ready',
     version: engine.engineVersion(),
     enhance: engine.hasEnhance(),
-    runtime: bundledRuntime(engine)
+    runtime: bundledRuntime(engine),
+    prompt: typeof engine.segmentPrompt === 'function'
   })
 } else {
   send({
@@ -113,6 +119,110 @@ if (engine) {
 
 /** The calls that may still be stopped, by request id. */
 const aborts = new Map<number, AbortController>()
+
+// ── SAM 2.1: native objects kept here, named by main ─────────────────────────
+// A loaded model, an embedding and a decode's logits live in this process's
+// memory (V8 does not see them: closed as soon as they are let go).
+
+/** Loaded models, by main's name for them, with the ref each was loaded from. */
+const samSessions = new Map<string, { ref: string; obj: ModelSession }>()
+/** Embeddings, oldest first (a decode moves its own to the end). */
+const embeddings = new Map<string, PromptEmbedding>()
+/** How many embeddings are kept (each tens of megabytes). */
+const KEEP_EMBEDDINGS = 3
+/** Each selection's last answer, fed to its next decode. */
+const lanes = new Map<string, Float32Array>()
+
+/** An object main named that is not here (this host started after it was made). */
+function stale(what: string): Error & { code: string } {
+  return Object.assign(new Error(`${what} is not loaded in this engine`), { code: 'Stale' })
+}
+
+function session(name: string): ModelSession {
+  const s = samSessions.get(name)
+  if (!s || s.obj.closed) throw stale(`model ${name}`)
+  return s.obj
+}
+
+async function sam(e: PixlEngineModule, call: SamOp, signal?: AbortSignal): Promise<SamResult> {
+  switch (call.op) {
+    case 'load': {
+      const ref = JSON.stringify(call.ref)
+      const had = samSessions.get(call.session)
+      if (had && had.ref === ref && !had.obj.closed) return { op: 'load', loadMs: 0 }
+      had?.obj.close()
+      samSessions.delete(call.session)
+      const obj = await e.loadModelSession(call.ref)
+      samSessions.set(call.session, { ref, obj })
+      return { op: 'load', loadMs: obj.loadMs }
+    }
+    case 'embed': {
+      const s = session(call.session)
+      // The session's own ref, so the engine's exact match holds.
+      const request = { ...call.request, encoder: { ...call.request.encoder, model: s.model } }
+      const made = await e.promptEmbedding(request, { sessions: [s], signal })
+      embeddings.get(call.id)?.close()
+      embeddings.delete(call.id)
+      embeddings.set(call.id, made)
+      while (embeddings.size > KEEP_EMBEDDINGS) {
+        const [id, old] = embeddings.entries().next().value as [string, PromptEmbedding]
+        old.close()
+        embeddings.delete(id)
+      }
+      const report = (made as PromptEmbedding & { report?: { model_ms?: number } | null }).report
+      return { op: 'embed', provenance: made.provenance, modelMs: report?.model_ms ?? null }
+    }
+    case 'decode': {
+      const emb = embeddings.get(call.embedding)
+      if (!emb || emb.closed) throw stale(`embedding ${call.embedding}`)
+      embeddings.delete(call.embedding)
+      embeddings.set(call.embedding, emb)
+      const s = session(call.session)
+      const maskInput = call.maskInput ? lanes.get(call.lane) : undefined
+      const request = { ...call.request, decoder: { ...call.request.decoder, model: s.model } }
+      const r = await e.segmentPrompt(request, {
+        embedding: emb,
+        sessions: [s],
+        signal,
+        ...(maskInput ? { maskInput } : {})
+      })
+      // A class's answer chosen by size; else the decoder's own choice.
+      const i = call.pick
+        ? pickBySize(
+            call.pick,
+            r.planes.map((p) => p.coverage),
+            r.planes.map((p) => p.predicted_iou)
+          )
+        : 0
+      const kept = i >= 0 && r.planes[i] ? [r.planes[i]] : []
+      if (call.keep && kept[0]) lanes.set(call.lane, kept[0].logits)
+      return {
+        op: 'decode',
+        planes: (call.pick ? kept : r.planes).map((p) => ({
+          png: p.png,
+          predicted_iou: p.predicted_iou,
+          coverage: p.coverage,
+          bounds: p.bounds
+        })),
+        plane_width: r.plane_width,
+        plane_height: r.plane_height,
+        model_ms: r.model_ms
+      }
+    }
+    case 'release': {
+      for (const id of call.embeddings ?? []) {
+        embeddings.get(id)?.close()
+        embeddings.delete(id)
+      }
+      for (const id of call.lanes ?? []) lanes.delete(id)
+      for (const name of call.sessions ?? []) {
+        samSessions.get(name)?.obj.close()
+        samSessions.delete(name)
+      }
+      return { op: 'release' }
+    }
+  }
+}
 
 /** The window's end of the preview channel: frames go to it, not through main. */
 let previews: MessagePortMain | undefined
@@ -140,6 +250,31 @@ process.parentPort.on('message', (e) => {
   }
   if (msg?.kind === 'cancel') {
     aborts.get(msg.id)?.abort()
+    return
+  }
+  if (msg?.kind === 'sam') {
+    const { id } = msg
+    if (!engine || typeof engine.segmentPrompt !== 'function') {
+      send({
+        kind: 'response',
+        id,
+        ok: false,
+        error: { message: 'this engine has no prompted segmentation', code: 'EngineUnavailable' }
+      })
+      return
+    }
+    let signal: AbortSignal | undefined
+    if (msg.cancellable) {
+      const abort = new AbortController()
+      aborts.set(id, abort)
+      signal = abort.signal
+    }
+    sam(engine, msg.call, signal)
+      .then(
+        (result) => send({ kind: 'response', id, ok: true, result }),
+        (err) => send({ kind: 'response', id, ok: false, error: toErrorShape(err) })
+      )
+      .finally(() => aborts.delete(id))
     return
   }
   if (!msg || msg.kind !== 'request') return

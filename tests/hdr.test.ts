@@ -14,7 +14,14 @@ import {
   withGainMap
 } from '../src/shared/export'
 import { applyGroups, defaultRecipe, normaliseRecipe } from '../src/shared/recipe'
-import { sourceOrientation, uprightFraming, versionStamp } from '../src/main/source'
+import {
+  cellFactor,
+  proxyByCell,
+  RAW_DEVELOP,
+  sourceOrientation,
+  uprightFraming,
+  versionStamp
+} from '../src/main/source'
 
 const ctx: CompileContext = {
   isRaw: false,
@@ -113,10 +120,39 @@ test('a HEIF is upright as decoded: its EXIF tag is not applied again', () => {
   assert.equal(uprightFraming('Rotate90', jpeg)?.orientation, 'Rotate90')
 })
 
+test("a RAW is upright in every mode, its embedded preview too: the camera's orientation is not applied again", () => {
+  const cr2 = { input: 'Raw', orientation: 8 } as unknown as SourceInfo
+  assert.equal(sourceOrientation(cr2, 'EmbeddedPreview'), 'Normal')
+  assert.equal(sourceOrientation(cr2, RAW_DEVELOP), 'Normal')
+})
+
 test('HEIF working copies made before the fix are made again', () => {
   const v = { mtime: 1000.4, size: 42 }
   assert.equal(versionStamp({ ...v, ext: 'jpg' }), '1000-42')
   assert.equal(versionStamp({ ...v, ext: 'HEIC' }), '1000-42-u')
+})
+
+test("a RAW's developments are made again on LibRaw, its embedded preview is not", () => {
+  const v = { mtime: 1000.4, size: 42 }
+  assert.equal(versionStamp({ ...v, ext: 'CR2' }), '1000-42-l')
+  assert.equal(versionStamp({ ...v, ext: 'raf' }), '1000-42-l')
+  // What no develop made keeps its name: thumbnails from the embedded JPEG.
+  assert.equal(versionStamp({ ...v, ext: 'cr2' }, false), '1000-42')
+  assert.equal(versionStamp({ ...v, ext: 'jpg' }, true), '1000-42')
+})
+
+test("a LUT profile keeps an HDR photo's headroom and clamps an SDR one as before", () => {
+  const r = defaultRecipe(false)
+  r.profile = { kind: 'lut', name: 'Film', path: '/luts/film.cube' }
+  r.profileAmount = 80
+  const lut = (c: ReturnType<typeof compile>): Extract<GradeOp, { Lut: unknown }>['Lut'] =>
+    (ops(c).find((o) => 'Lut' in o) as Extract<GradeOp, { Lut: unknown }>).Lut
+  assert.equal(lut(compile(r, ctx)).out_of_domain, 'Clamp')
+  assert.equal(lut(compile(r, { ...ctx, hdr: true })).out_of_domain, 'ScaleHeadroom')
+  // The SDR shoulder is a table on 0…1, clamped as it always was.
+  const e = defaultRecipe(false)
+  e.basic.exposure = 1
+  assert.equal(lut(compile(e, ctx)).out_of_domain, 'Clamp')
 })
 
 test('a recipe edits a gain map on its base unless it says HDR, and sync carries it', () => {
@@ -128,4 +164,20 @@ test('a recipe edits a gain map on its base unless it says HDR, and sync carries
   // Noise reduction now carries the AI denoise with it.
   from.detail.ai.enabled = true
   assert.equal(applyGroups(defaultRecipe(false), from, ['detailNoise']).detail.ai.enabled, true)
+})
+
+test('a RAW proxy develops at half size when its cells are more than the proxy needs', () => {
+  // Fujifilm's X-Trans cells are 3 photosites across; its GFX and everyone else's Bayer, 2.
+  assert.equal(cellFactor({ ext: 'RAF', camera: 'FUJIFILM X-T4' }), 3)
+  assert.equal(cellFactor({ ext: 'raf', camera: 'FUJIFILM GFX100S' }), 2)
+  assert.equal(cellFactor({ ext: 'cr2', camera: 'Canon EOS 80D' }), 2)
+  assert.equal(cellFactor({ ext: 'nef', camera: null }), 2)
+  // A 24 MP Bayer (6000 across) has 3000 cells: more than a 2560 proxy needs.
+  assert.equal(proxyByCell(6288, 2, 2560), true)
+  // A 26 MP X-Trans has 2080: fewer, so it develops whole.
+  assert.equal(proxyByCell(6240, 3, 2560), false)
+  // A 102 MP GFX: half size, by far.
+  assert.equal(proxyByCell(11664, 2, 2560), true)
+  // A 16 MP Bayer: 2464 cells across, not enough.
+  assert.equal(proxyByCell(4928, 2, 2560), false)
 })

@@ -1,0 +1,405 @@
+/* ── the Looks browser ─────────────────────────────────────────── */
+.modal.looks-browser {
+  width: min(1480px, calc(100vw - 48px));
+  height: calc(100vh - 64px);
+}
+.looks-browser .modal-body {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+}
+.looks-layout {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* shelves: families, then a family's collections */
+.looks-shelves {
+  width: 220px;
+  flex: none;
+  overflow-y: auto;
+  padding: 14px 10px;
+  border-right: 1px solid var(--hair);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.looks-family {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 8px;
+}
+.looks-shelf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  background: none;
+  color: var(--text2);
+  font-family: var(--font-body);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s;
+}
+.looks-shelf.sub {
+  min-height: 26px;
+  padding-left: 22px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.looks-shelf:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+.looks-shelf.on {
+  color: var(--text);
+  border-color: var(--acc-a35);
+  background: linear-gradient(90deg, var(--acc-a20), transparent);
+}
+.looks-shelf .t {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+
+/* search and grid */
+.looks-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.search-field.looks-search {
+  display: flex;
+  flex: none;
+  margin: 14px 18px 4px;
+  height: 38px;
+}
+.looks-search .t {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.looks-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 18px 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-auto-rows: min-content;
+  gap: 14px;
+  align-content: start;
+  outline: none;
+}
+.looks-section {
+  grid-column: 1 / -1;
+  margin: 10px 2px 0;
+}
+.looks-none {
+  grid-column: 1 / -1;
+}
+
+/* a card */
+.look-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--r) + 2px);
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    transform var(--dur-toggle) var(--spring);
+}
+.look-card:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+.look-card.on {
+  border-color: var(--acc-a35);
+  background: var(--acc-a10);
+}
+.look-thumb {
+  position: relative;
+  width: 100%;
+  max-height: 260px;
+  overflow: hidden;
+  border-radius: var(--r);
+  background: var(--s2);
+}
+.look-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  animation: lookIn 0.35s var(--ease) both;
+}
+.look-skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.05) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: lookShimmer 1.4s linear infinite;
+}
+.look-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 2px 2px;
+}
+.look-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 12.5px;
+}
+.look-card.current .look-name {
+  color: var(--muted);
+}
+.look-badge {
+  color: var(--muted);
+  font-size: 12px;
+}
+.look-badge.applied {
+  display: grid;
+  place-items: center;
+  color: var(--acc);
+}
+.look-badge.applied svg {
+  width: 13px;
+  height: 13px;
+}
+.look-card.applied .look-thumb {
+  box-shadow: 0 0 0 1px var(--acc-a55);
+}
+.look-keep {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(10, 10, 14, 0.7);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.look-card:hover .look-keep,
+.look-card.on .look-keep,
+.look-keep.kept {
+  opacity: 1;
+}
+.look-keep.kept {
+  color: var(--acc);
+}
+
+/* footer: the focused look, or the note on names */
+.looks-detail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.looks-detail-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text2);
+}
+.looks-detail-text strong {
+  color: var(--text);
+  font-size: 14px;
+}
+.looks-disclaimer {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+@keyframes lookIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes lookShimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* the loupe's pick tool: a smart look asks for an object */
+.tool-layer.look-pick {
+  z-index: 7;
+  cursor: crosshair;
+}
+.look-pick-box {
+  position: absolute;
+  border: 1.5px solid var(--acc);
+  border-radius: 3px;
+  background: var(--acc-a10);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.look-pick-note {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 6px 6px 6px 14px;
+  border-radius: 999px;
+  background: rgba(10, 10, 14, 0.78);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--hair2);
+  color: var(--text2);
+  font-size: 12.5px;
+  cursor: default;
+  white-space: nowrap;
+}
+.look-pick-note strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* The Objects tool (SAM 2.1): pointing at what to select. */
+.tool-layer.objects-tool {
+  z-index: 7;
+  cursor: crosshair;
+  /* a drag draws a box, never selects the note's text */
+  user-select: none;
+}
+.tool-layer.objects-tool.mode-brush {
+  cursor: cell;
+}
+.tool-layer.objects-tool.loading {
+  cursor: progress;
+}
+.objects-note {
+  padding: 6px 14px;
+  pointer-events: none;
+}
+.objects-spin {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid var(--hair2);
+  border-top-color: var(--acc);
+  animation: objects-spin 0.8s linear infinite;
+}
+@keyframes objects-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.objects-stroke {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.objects-stroke polyline {
+  fill: none;
+  stroke: var(--acc);
+  stroke-width: 10;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.45;
+}
+.objects-stroke polyline.not {
+  stroke: #ff5a5a;
+}
+
+/* smart looks */
+.looks-worksnow {
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 22px 0;
+  font-size: 12px;
+  color: var(--text2);
+  cursor: pointer;
+  user-select: none;
+}
+.looks-worksnow input {
+  accent-color: var(--acc);
+}
+.look-badge.smart {
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--acc-a35);
+  color: var(--acc);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.look-badge.smart.blocked {
+  border-color: var(--hair2);
+  color: var(--muted);
+}
+.looks-needs {
+  color: var(--warn);
+  font-size: 12px;
+}
+
+/* the Save Preset dialog: masks and AI steps saved as instructions */
+.smart-convert {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--hair2);
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.02);
+}
+.smart-convert p {
+  margin: 0 0 6px;
+}
+.smart-convert ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--text2);
+}
+.smart-convert ul + ul {
+  margin-top: 8px;
+}
+.smart-convert-warn {
+  color: var(--warn);
+}

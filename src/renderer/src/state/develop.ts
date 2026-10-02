@@ -9,7 +9,7 @@ import type {
   Snapshot,
   ViewState
 } from '../../../shared/ipc'
-import { appendToLog, replay } from '../../../shared/history'
+import { amendLog, appendToLog, replay } from '../../../shared/history'
 import {
   newId,
   normaliseRecipe,
@@ -31,6 +31,9 @@ export type Tool =
   | 'polygon'
   | 'linear'
   | 'radial'
+  | 'bidirectional'
+  /** Select by pointing (SAM 2.1): views/loupe/ObjectsTool.tsx. */
+  | 'objects'
   | 'wb-picker'
   | 'range-picker'
   | 'point-picker'
@@ -39,6 +42,8 @@ export type Tool =
   | 'upright-guide'
   | 'heal'
   | 'tat'
+  /** A smart look's run asks the user to point at an object (views/loupe/LookPick.tsx). */
+  | 'look-pick'
 export type Compare = 'off' | 'before' | 'split'
 
 /**
@@ -144,9 +149,20 @@ interface DevelopState {
   /** Change the recipe. Interactive edits render the draft and write no history. */
   edit(change: (r: Recipe) => void, interactive?: boolean): void
   /** Settle an edit: render in full and record it in the history under `label`. */
-  commit(label: string): void
+  commit(label: string): Promise<number | null>
   /** Replace the recipe wholesale (paste, preset, snapshot) and record it. */
-  replace(recipe: Recipe, label: string): void
+  replace(recipe: Recipe, label: string): Promise<number | null>
+  /**
+   * The newest step, `seq`, rewritten to hold the recipe as it is now (a
+   * look's Amount, a look swapped for another), under `label`. Recorded as
+   * a new step instead when `seq` is no longer the newest shown one. The
+   * step's seq, or null when nothing is left of it.
+   */
+  amend(seq: number, label: string): Promise<number | null>
+  /** What the loupe shows instead of the recipe, by name; null when it shows the recipe. */
+  previewing: string | null
+  /** Show `recipe` on the loupe as `name`, never saved; null shows the photo's recipe again. */
+  preview(name: string | null, recipe: Recipe | null): void
   /** Hide the newest visible step. */
   undo(): void
   /** Show the step Undo last hid. */
@@ -251,7 +267,7 @@ function applyLog(key: string, history: HistoryLog): void {
   // A base saved by an older version can lack fields added since (AI denoise's).
   const { head, ...log } = history
   const recipe = normaliseRecipe(head ?? replay(log.base!.recipe, log.steps), session.isRaw)
-  useDevelop.setState({ history: log, recipe, rendering: true })
+  useDevelop.setState({ history: log, recipe, rendering: true, previewing: null })
   sendNow(session.key, recipe, (m) => useDevelop.getState().onError(m))
 }
 
@@ -290,6 +306,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   shown: null,
   loading: false,
   recipe: null,
+  previewing: null,
   history: { base: null, steps: [] },
   redo: [],
   snapshots: [],
@@ -338,6 +355,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       session: null,
       loading: true,
       error: null,
+      previewing: null,
       picture: null,
       pictures: { framed: null, crop: null },
       maskThumbs: {},
@@ -407,6 +425,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       shown: null,
       loading: false,
       recipe: null,
+      previewing: null,
       picture: null,
       pictures: { framed: null, crop: null },
       before: null,
@@ -423,7 +442,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       change(draft as Recipe)
     })
     if (next === recipe) return
-    set({ recipe: next, rendering: true })
+    // An edit ends a preview (main shows the recipe again on any update).
+    set({ recipe: next, rendering: true, previewing: null })
     const onError = (m: string): void => get().onError(m)
     if (!interactive) return sendNow(session.key, next, onError)
     touchInteracting()
@@ -433,25 +453,69 @@ export const useDevelop = create<DevelopState>((set, get) => ({
 
   commit(label) {
     const { session, recipe } = get()
-    if (!session || !recipe) return
+    if (!session || !recipe) return Promise.resolve(null)
     // An edit sent settled just before (edit, then commit) is not sent again.
     if (settled?.key !== session.key || settled.recipe !== recipe || queued || frame) {
       set({ rendering: true })
       sendNow(session.key, recipe, (m) => get().onError(m))
     }
-    // In line with Undo and Redo: one pressed straight after waits for this step.
-    queueHistoryOp(async () => {
-      const change = await api.develop.historyAppend(session.key, label, recipe)
-      if (get().session?.key === session.key)
-        set({ history: appendToLog(get().history, change), redo: [] })
-    })
     const item = useLibrary.getState().items.find((i) => i.key === session.key)
     if (item && !item.edited) useLibrary.getState().patchItems([{ ...item, edited: true }])
+    // In line with Undo and Redo: one pressed straight after waits for this step.
+    return new Promise<number | null>((resolve) => {
+      queueHistoryOp(async () => {
+        try {
+          const change = await api.develop.historyAppend(session.key, label, recipe)
+          if (get().session?.key === session.key)
+            set({ history: appendToLog(get().history, change), redo: [] })
+          resolve(change.step?.seq ?? null)
+        } catch (err) {
+          resolve(null)
+          throw err
+        }
+      })
+    })
   },
 
   replace(recipe, label) {
-    set({ recipe })
-    get().commit(label)
+    set({ recipe, previewing: null })
+    return get().commit(label)
+  },
+
+  amend(seq, label) {
+    const { session, recipe } = get()
+    if (!session || !recipe) return Promise.resolve(null)
+    if (settled?.key !== session.key || settled.recipe !== recipe || queued || frame) {
+      set({ rendering: true })
+      sendNow(session.key, recipe, (m) => get().onError(m))
+    }
+    return new Promise<number | null>((resolve) => {
+      queueHistoryOp(async () => {
+        try {
+          const change = await api.develop.historyAmend(session.key, seq, label, recipe)
+          if (!change) {
+            // No longer the newest step (an edit since, an undo): a step of
+            // its own, recorded once this history change is done.
+            resolve(get().commit(label))
+            return
+          }
+          if (get().session?.key === session.key)
+            set({ history: amendLog(get().history, change), redo: [] })
+          resolve(change.step ? change.seq : null)
+        } catch (err) {
+          resolve(null)
+          throw err
+        }
+      })
+    })
+  },
+
+  preview(name, recipe) {
+    const { session } = get()
+    if (!session) return
+    if (!recipe && get().previewing === null) return
+    set({ previewing: recipe ? name : null, rendering: true })
+    void api.develop.preview(session.key, recipe).catch((err) => get().onError(errorText(err)))
   },
 
   undo() {

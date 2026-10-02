@@ -60,6 +60,8 @@ export type BrushIn =
       pictureBitmap?: ImageBitmap
       /** Base (normalised) → display. */
       toDisplay: Affine
+      /** How strongly the stroke shows while painted (the mask overlay's own strength). */
+      alpha?: number
     }
   | { t: 'dabs'; dabs: Dab[] }
   | { t: 'end'; id: number; density: number }
@@ -172,6 +174,7 @@ interface Stroke {
   erase: boolean
   toDisplay: Affine
   auto: boolean
+  alpha: number
 }
 let stroke: Stroke | null = null
 
@@ -374,8 +377,9 @@ class Gpu {
     gl.uniform1f(this.u(p, 'uDpr'), screen.dpr)
     gl.uniform4f(this.u(p, 'uMap'), screen.ox, screen.oy, screen.rw, screen.rh)
     gl.uniformMatrix3fv(this.u(p, 'uToBase'), false, mat3(screen.toBase))
-    // Premultiplied: the accent while painting, a shadow while erasing.
-    const t = s.erase ? [0.04, 0.04, 0.055, 0.4] : [0.62, 0.55, 0.92, 0.3]
+    // Premultiplied: the accent while painting (as strong as the overlay it
+    // becomes), a shadow while erasing.
+    const t = s.erase ? [0.04, 0.04, 0.055, 0.4] : [0.62, 0.55, 0.92, s.alpha]
     gl.uniform4f(this.u(p, 'uTint'), t[0] * t[3], t[1] * t[3], t[2] * t[3], t[3])
     this.draw(p, 0, 0, c.width, c.height, c.width, c.height)
   }
@@ -519,7 +523,8 @@ async function handle(m: BrushIn): Promise<void> {
         softness: m.softness,
         erase: m.erase,
         toDisplay: m.toDisplay,
-        auto: m.picture !== null
+        auto: m.picture !== null,
+        alpha: m.alpha ?? 0.3
       }
       if (gpu) await gpu.begin(stroke, m.png, m.picture, m.pictureBitmap)
       else cpu = await cpuBegin(stroke, m.png, m.picture, m.pictureBitmap)

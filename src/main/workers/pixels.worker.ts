@@ -14,7 +14,8 @@ parentPort?.on('message', (job: PixelsJob & { id: number }) => {
     if (job.op === 'gradient') {
       writeGradientPlane(job.file, job.c, job.user)
       pruneGradientsSometimes(job.dir)
-    } else if (job.op === 'brush') writeBrushPlane(job.file, job.png, job.user, job.edge)
+    } else if (job.op === 'brush')
+      writeBrushPlane(job.file, job.png, job.user, job.edge, job.object)
     else if (job.op === 'compose') composeMasked(job.image, job.mask, job.out)
     else if (job.op === 'ramp') writeRamp(job.file, job.w, job.h)
     else if (job.op === 'unwarp') unwarpMask(job.mask, job.map, job.w, job.h, job.out)

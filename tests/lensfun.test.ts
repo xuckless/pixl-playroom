@@ -174,3 +174,61 @@ test('a Lensfun profile without its calibration camera is refused', () => {
   )
   assert.match(bad as string, /calibration/)
 })
+
+test('a fisheye keeps its own polynomial apart from a rectilinear distortion', () => {
+  const fish = lenses.filter((l) => (l as { fisheye?: unknown }).fisheye !== undefined)
+  assert.ok(fish.length > 10, `${fish.length} fisheyes`)
+  for (const l of fish) {
+    // An app before 0.16 would apply `distortion` as a rectilinear lens's.
+    assert.equal(l.distortion?.length ?? 0, 0, l.model)
+    assert.ok(
+      ['fisheye', 'equisolid', 'orthographic', 'stereographic', 'fisheye_thoby'].includes(l.type!),
+      l.model
+    )
+  }
+  // A rectilinear lens's samples carry nothing of a fisheye's.
+  for (const l of lenses)
+    for (const s of l.distortion ?? []) assert.equal('realFocal' in s, false, l.model)
+})
+
+test('the Samyang 8 mm defishes stereographically at its real focal length, in Lensfun units', () => {
+  const raw = lenses.find((l) => l.model === 'Samyang 8mm f/2.8 UMC Fish-eye')!
+  const p = validateProfile(raw, raw.id)
+  assert.ok(typeof p !== 'string')
+  if (typeof p === 'string') return
+  const r = resolveProfile(
+    p,
+    {
+      make: 'Samyang',
+      model: p.model,
+      focal_mm: 8,
+      focal_35mm: 12,
+      f_number: 4,
+      focus_distance_m: null
+    },
+    { crop: { value: 1.534, from: 'camera' }, width: 6000, height: 4000 }
+  )
+  assert.equal(r.fisheye?.projection, 'Stereographic')
+  // 8.405 mm × 1.534 × √(1.5² + 1) / 21.633 (half a full frame's diagonal).
+  assert.ok(Math.abs(r.fisheye!.focal - 1.0744) < 1e-3, `${r.fisheye!.focal}`)
+  assert.deepEqual(r.fisheye?.polynomial, { PtLens: { a: 0.02036, b: -0.08028, c: 0.01446 } })
+  // Off, only its TCA and vignetting; on, the engine's Fisheye, Field as its scale.
+  const l = defaultLens()
+  l.profile = { ...l.profile, enabled: true, resolved: r }
+  assert.equal(lensCorrection(l)?.distortion, null)
+  l.profile.defish = true
+  l.profile.field = 80
+  const d = lensCorrection(l)!.distortion!
+  assert.ok('Fisheye' in d.model)
+  assert.equal(d.scale, 0.8)
+  assert.equal(lensCorrection(l)!.outside, 'Crop')
+})
+
+test('a rectilinear correction keeps the scale it always had', () => {
+  const l = defaultLens()
+  l.distortion = 40
+  assert.equal(lensCorrection(l)!.distortion!.scale, 1)
+  // An old recipe without the new settings: off, the whole field.
+  assert.equal(defaultLens().profile.defish, false)
+  assert.equal(defaultLens().profile.field, 100)
+})

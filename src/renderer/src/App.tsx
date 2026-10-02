@@ -6,16 +6,18 @@ import { api, errorText } from './lib/api'
 import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
 import { ConfirmHost } from './components/ConfirmHost'
+import { ModelPromptHost } from './components/ModelPromptHost'
 import { Scopes } from './develop/Scopes'
-import { ToolDial } from './develop/ToolDial'
-import { ToolPanelHost } from './develop/ToolPanelHost'
-import { startWheelMemory } from './develop/wheelMemory'
+import { AdjustStack } from './develop/AdjustStack'
+import { ToolStrip } from './develop/ToolStrip'
+import { startDrawerSync } from './develop/tools'
 import { startDenoiseUpkeep } from './lib/denoise'
 import { startHdrUpkeep } from './lib/hdr'
 import { DevelopToolbar } from './shell/DevelopToolbar'
 import { DevelopIdentity } from './shell/IdentityBar'
 import { LeftRail } from './shell/LeftRail'
 import { Splash } from './shell/Splash'
+import { LooksBrowser } from './views/looks/LooksBrowser'
 import { useDevelop } from './state/develop'
 import { useBoot } from './state/boot'
 import { useLibrary } from './state/library'
@@ -25,6 +27,8 @@ import { chordOf } from './lib/keys'
 import { ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
+import { WhatsNewDialog } from './views/WhatsNew'
+import { showWhatsNew } from './state/whatsNew'
 import { BetaGate, UpdateRequiredGate } from './views/Gate'
 import { useGate } from './lib/gate'
 import { isFrame, whenFrame } from './lib/frames'
@@ -64,8 +68,8 @@ const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
         </main>
         <aside className="right">
           <Scopes />
-          <ToolDial />
-          <ToolPanelHost />
+          <ToolStrip />
+          <AdjustStack />
         </aside>
       </div>
     </div>
@@ -105,9 +109,11 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'export' && <ExportDialog key="export" />}
       {dialog === 'sync' && <SyncDialog key="sync" />}
       {dialog === 'preset' && <SavePresetDialog key="preset" />}
+      {dialog === 'looks' && <LooksBrowser key="looks" />}
       {dialog === 'preferences' && <PreferencesDialog key="preferences" />}
       {dialog === 'crash-consent' && <CrashConsentDialog key="crash-consent" />}
       {dialog === 'engine' && <EngineReportDialog key="engine" />}
+      {dialog === 'whats-new' && <WhatsNewDialog key="whats-new" />}
     </AnimatePresence>
   )
 }
@@ -139,7 +145,7 @@ function EngineBanner(): React.JSX.Element | null {
   return (
     <div className="engine-banner" role="alert">
       {engine.code === 'VersionMismatch'
-        ? 'Engine version mismatch — reinstall the app (or run pnpm install in a checkout)'
+        ? 'Engine version mismatch: reinstall the app'
         : `Engine ${engine.status}`}
       {engine.reason ? `: ${engine.reason}` : ''}
     </div>
@@ -248,6 +254,8 @@ async function openLastSource(lists: Promise<void>): Promise<void> {
  */
 async function aiJobEnded(e: AiJobEvent): Promise<void> {
   const lib = useLibrary.getState()
+  // A smart look's own jobs: its run records them in the look's history step (lib/applyLook.ts).
+  if (e.group) return
   if (e.phase === 'error') return lib.say(`${e.title}: ${e.message ?? 'failed'}`, 'error')
   if (e.phase !== 'done') return
   const r = e.result
@@ -406,7 +414,7 @@ export default function App(): React.JSX.Element {
         if (!isFrame(e.url)) return useDevelop.getState().onRendered(e)
         void whenFrame(e.url).then((bmp) => bmp && useDevelop.getState().onRendered(e))
       }),
-      startWheelMemory(),
+      startDrawerSync(),
       startDenoiseUpkeep(),
       startHdrUpkeep(),
       api.app.onRenderScale(onRenderScale),
@@ -463,7 +471,8 @@ export default function App(): React.JSX.Element {
     })()
     void Promise.allSettled([engineUp, libraryUp]).then(() => {
       boot.end()
-      void askCrashConsent()
+      // After an update, what it brought; the crash-report question waits for a launch without it.
+      void showWhatsNew().then(askCrashConsent)
     })
     const t = setInterval(() => void refreshEngine(), 5000)
     return () => {
@@ -477,6 +486,7 @@ export default function App(): React.JSX.Element {
         <Screens />
         <DialogHost />
         <ConfirmHost />
+        <ModelPromptHost />
         <Toast />
         <EngineBanner />
         <Splash />

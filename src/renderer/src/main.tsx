@@ -10,6 +10,7 @@ import { useLibrary } from './state/library'
 import { useUi } from './state/ui'
 import { useBusy } from './state/busy'
 import { useAiJobs } from './state/jobs'
+import { useLooks } from './state/looks'
 
 // The stores, for automation and the devtools console.
 ;(window as unknown as { __playroom: unknown }).__playroom = {
@@ -17,7 +18,8 @@ import { useAiJobs } from './state/jobs'
   useDevelop,
   useUi,
   useBusy,
-  useAiJobs
+  useAiJobs,
+  useLooks
 }
 
 createRoot(document.getElementById('root')!).render(

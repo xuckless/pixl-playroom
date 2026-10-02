@@ -97,9 +97,24 @@ three.js processing sphere over long operations and a shader gradient behind
 empty views, with CSS fallbacks and reduced-motion stills.
 
 **Workflow** — undo/redo and a history list (per photo, kept in the index),
-snapshots (in the sidecar), presets (built-in and saved, each carrying chosen
-groups), copy/paste/sync (Ctrl+C / Ctrl+V / Ctrl+Shift+S) — e.g. white balance
-only, to a batch, copied or measured per photo.
+snapshots (in the sidecar), saved presets (each carrying chosen groups),
+copy/paste/sync (Ctrl+C / Ctrl+V / Ctrl+Shift+S) — e.g. white balance only, to
+a batch, copied or measured per photo.
+
+**Looks** — 284 looks made with Playroom's own sliders (no bundled LUTs):
+camera colour first (Fujifilm-, Leica-, Hasselblad-, Canon-, Nikon-, Sony-,
+Ricoh-, Panasonic-inspired and more), then cinema cameras and print film,
+colour and black-and-white film stocks, movies and TV, black and white,
+creative and essentials. Names are PIXL's own; a camera, stock or film shows
+only as "Inspired by …", and PIXL is not affiliated with their owners. Looks
+the sliders can only approximate (halation, bloom) are marked ≈. The Presets
+rail keeps My Looks (reorder by dragging) and the user's saved presets, with
+search; hovering a look shows it on the loupe without saving. Browse opens
+the full catalog as cards of the open photo with each look on it. Applying is
+one history step; the Applied bar's Amount scales only what the look moved,
+and another look takes its place in the same step (Alt puts it on top). A
+look can travel as a `pixl-look` file (`src/shared/looks/schema.ts`), the
+format a marketplace will use.
 
 **Export** — chosen folder (or beside each original), subfolder, filename
 template (`{name} {seq} {date} {rating} {copy} {ext}`), JPEG/PNG/TIFF/WebP/

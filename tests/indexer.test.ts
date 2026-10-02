@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   unlinkSync,
   utimesSync,
   writeFileSync
@@ -818,6 +819,35 @@ test('a folder listed with its subfolders takes theirs in; the tree reads one le
     assert.deepEqual(deep.items.map((i) => i.name).sort(), ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg'])
     // Only the folder opened becomes a recent one.
     assert.deepEqual(f.index.recentFolders(), [f.folder])
+  } finally {
+    f.done()
+  }
+})
+
+test('a folder taken off the list leaves its photos, and comes back when opened', async () => {
+  const f = fixture(['a.jpg'])
+  try {
+    await f.index.listSource({ kind: 'folder', path: f.folder })
+    assert.deepEqual(f.index.recentFolders(), [f.folder])
+    f.index.forgetFolder(f.folder)
+    assert.deepEqual(f.index.recentFolders(), [])
+    const again = await f.index.listSource({ kind: 'folder', path: f.folder })
+    assert.deepEqual(
+      again.items.map((i) => i.name),
+      ['a.jpg']
+    )
+    assert.deepEqual(f.index.recentFolders(), [f.folder])
+  } finally {
+    f.done()
+  }
+})
+
+test('each photo knows when it arrived on the disk, for Date added', async () => {
+  const f = fixture(['a.jpg'])
+  try {
+    const { items } = await f.index.listSource({ kind: 'folder', path: f.folder })
+    const st = statSync(join(f.folder, 'a.jpg'))
+    assert.equal(items[0].added, st.birthtimeMs > 0 ? st.birthtimeMs : st.mtimeMs)
   } finally {
     f.done()
   }

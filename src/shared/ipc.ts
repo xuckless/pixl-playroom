@@ -1,4 +1,5 @@
 import type { ResolvedProfile } from './lens'
+import type { ModelSpeed } from './modelSpeed'
 /** IPC channel names and the app-level types both sides of the bridge share. */
 import type {
   ConvertReport,
@@ -12,6 +13,8 @@ import type { ExportSettings } from './export'
 import type { Step } from './history'
 import type { BasicSetting, Recipe, RecipeGroup } from './recipe'
 import type { SmartGroup } from './smart'
+import type { LookMeta } from './looks/types'
+import type { SmartPart } from './looks/smart'
 
 export const IPC = {
   app: {
@@ -42,6 +45,9 @@ export const IPC = {
     openNotices: 'app:open-notices',
     /** The bundled beta terms, opened in the system's text viewer. */
     openBetaTerms: 'app:open-beta-terms',
+    /** The release notes to show at launch (shared/releasenotes.ts), and that they were shown. */
+    whatsNew: 'app:whats-new',
+    notesSeen: 'app:notes-seen',
     /** The beta gate (shared/gate.ts): what stands in front of the window. */
     gate: 'app:gate',
     /** main → renderer: the gate changed */
@@ -83,6 +89,8 @@ export const IPC = {
     /** A folder's subfolders (one level): the sidebar's folder tree. */
     subfolders: 'library:subfolders',
     recentFolders: 'library:recent-folders',
+    /** Take a folder off the sidebar's list (nothing on disk changes). */
+    forgetFolder: 'library:forget-folder',
     setMeta: 'library:set-meta',
     createCopy: 'library:create-copy',
     deleteCopy: 'library:delete-copy',
@@ -138,6 +146,8 @@ export const IPC = {
     saveSnapshots: 'develop:save-snapshots',
     historyList: 'develop:history-list',
     historyAppend: 'develop:history-append',
+    historyAmend: 'develop:history-amend',
+    preview: 'develop:preview',
     /** main → renderer: the port preview frames arrive on, from the interactive engine */
     previewPort: 'develop:preview-port',
     /** main → renderer: a preview frame main relays (when the engine had no port) */
@@ -167,6 +177,22 @@ export const IPC = {
     remove: 'presets:remove',
     importLut: 'presets:import-lut',
     luts: 'presets:luts'
+  },
+  looks: {
+    /** The Looks browser's cards wanted now (`LookThumbRequest`). */
+    thumbs: 'looks:thumbs',
+    /** The browser closed: stop making cards. */
+    cancel: 'looks:cancel',
+    /** main → renderer: a card made (`LookThumbEvent`). */
+    thumb: 'looks:thumb',
+    /** A smart look's model work, started (`LookRunRequest`). */
+    run: 'looks:run',
+    /** Stop a run (by id), or every run on a photo (by key). */
+    cancelRun: 'looks:cancel-run',
+    /** The user pointed at what a run asked for (`PickAnswer`). */
+    answer: 'looks:answer',
+    /** main → renderer: how a run is going (`LookRunEvent`). */
+    runEvent: 'looks:run-event'
   },
   models: {
     list: 'models:list',
@@ -210,6 +236,13 @@ export const IPC = {
     capabilities: 'ai:capabilities',
     /** main → renderer: a job's progress, its end and its result */
     event: 'ai:event'
+  },
+  /** Select by clicks, a box or strokes (SAM 2.1): main/select/service.ts. */
+  select: {
+    open: 'select:open',
+    decode: 'select:decode',
+    commit: 'select:commit',
+    close: 'select:close'
   }
 } as const
 
@@ -228,6 +261,8 @@ export interface EngineStatus {
   enhance?: boolean
   /** The ONNX Runtime bundled with the engine: what model steps run on. */
   runtime?: { library: string; version: string; providers: string[] }
+  /** The engine has SAM 2.1's prompt calls (0.16+). */
+  prompt?: boolean
   reason?: string
   /** Why the engine is unavailable, when the load named it (e.g. `VersionMismatch`). */
   code?: string
@@ -285,6 +320,8 @@ export interface LibraryItem {
   ext: string
   size: number
   mtime: number
+  /** When the file arrived on this disk (ms), for Date added; its mtime until known. */
+  added?: number
   isRaw: boolean
   rating: number
   flag: Flag
@@ -452,6 +489,12 @@ export interface HistoryAppend {
   folded: number[]
 }
 
+/** The newest step rewritten in place (`HistoryTable.amendLast`): `step` null when it was dropped. */
+export interface HistoryAmend {
+  seq: number
+  step: Step | null
+}
+
 export interface DevelopSession {
   key: string
   item: LibraryItem
@@ -536,28 +579,29 @@ export interface RenderEvent {
   report?: RenderReport
 }
 
+/**
+ * A part of the picture as the loupe shows it (straightened, cropped,
+ * warped, or the crop tool's whole frame), rendered at full resolution.
+ */
 export interface RegionRequest {
   key: string
-  /** In pixels of the full-resolution user-oriented frame. */
+  /** Fractions (0…1) of the picture as shown. */
   x: number
   y: number
   width: number
   height: number
-  /** Output pixels per frame pixel (1 for 100%). */
+  /** Output pixels per full-resolution pixel (1 for 100%). */
   zoom: number
-  /** Also render this layer's mask over the same region (the overlay at 1:1). */
-  maskLayer?: string | null
 }
 
 export interface RegionResult {
   url: string
+  /** The part rendered, as fractions of the picture as shown. */
   x: number
   y: number
   width: number
   height: number
   ms: number
-  /** The requested layer's mask over the same region, when asked for. */
-  maskUrl?: string
 }
 
 export interface SampleResult {
@@ -587,6 +631,32 @@ export interface Preset {
    * and a photo of that kind takes the numbers as they are.
    */
   wbOp?: { kelvin: number; tint: number; absolute: boolean }
+  /** A look's collection, tags and source (`looks/types.ts`); absent on a saved preset. */
+  meta?: LookMeta
+  /** Masks and AI steps it makes on the photo it is applied to (`looks/smart.ts`). */
+  smart?: SmartPart
+}
+
+/** The cards the Looks browser can see, in its order, on the open photo. */
+export interface LookThumbRequest {
+  key: string
+  /** Counts the browser's asks: an older one arriving late changes nothing. */
+  token: number
+  /** The recipe the looks go on (the photo's own, or what it was before a look on trial). */
+  base: Recipe
+  /** Catalog ids, saved presets' ids, or `current` for the photo as it is. */
+  ids: string[]
+  /** The cards' long edge, in pixels. */
+  edge: number
+}
+
+export interface LookThumbEvent {
+  key: string
+  token: number
+  id: string
+  url: string
+  width: number
+  height: number
 }
 
 export interface LutProfile {
@@ -744,6 +814,8 @@ export interface ModelInfo {
   /** 0…1 while downloading, else null. */
   progress: number | null
   error?: string
+  /** How long it takes on this computer, for one photo (see `modelSpeed.ts`). */
+  speed: ModelSpeed | null
 }
 
 /** Which provider AI models run on, and what the performance test measured. */
@@ -751,7 +823,8 @@ export interface ProviderInfo {
   choice: 'cpu' | 'accelerated'
   /** The accelerator the bundled runtime offers ('coreml', 'directml'), if any. */
   accelerator: string | null
-  measured?: { cpuMs: number | null; acceleratedMs: number | null }
+  /** The last test's times, and which model it timed (absent in a test saved before it was kept). */
+  measured?: { cpuMs: number | null; acceleratedMs: number | null; model?: string }
 }
 
 /** Where a photo's AI denoise stands: nothing made yet, the preview, or the full resolution. */

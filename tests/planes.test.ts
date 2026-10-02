@@ -65,3 +65,17 @@ test('a plane is named by the SHA-256 of its bytes; older names are renamed in s
     `{"ref":"${'f'.repeat(64)}","x":{"ref":"other-1"}}`
   )
 })
+
+test('a snapped stroke is cut to its object, at the object’s size', async () => {
+  const { cutToObject } = await import('../src/main/planes')
+  // A 2×1 stroke, full on the left; a 4×2 object, only its left half.
+  const stroke = { data: Uint8Array.from([255, 255]), width: 2, height: 1 }
+  const object = { data: Uint8Array.from([255, 255, 0, 0, 255, 128, 0, 0]), width: 4, height: 2 }
+  const out = cutToObject(stroke, object)
+  assert.equal(out.width, 4)
+  assert.equal(out.height, 2)
+  assert.deepEqual([...out.data], [255, 255, 0, 0, 255, 128, 0, 0])
+  // Where the stroke is not, nothing, whatever the object.
+  const none = cutToObject({ data: new Uint8Array(2), width: 2, height: 1 }, object)
+  assert.ok(none.data.every((v) => v === 0))
+})

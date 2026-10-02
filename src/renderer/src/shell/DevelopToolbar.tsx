@@ -4,7 +4,7 @@ import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { loupeZoom } from '../views/loupe/zoom'
-import { selectPanel, toggleMasks } from '../develop/tools'
+import { toggleMasks } from '../develop/tools'
 import { useUi } from '../state/ui'
 import { useKeyHint, withKey } from '../lib/commands'
 
@@ -178,14 +178,6 @@ export function DevelopToolbar(): React.JSX.Element {
       >
         <Icon name="copy" />
         Copy
-      </button>
-      <button
-        className="lg"
-        onClick={() => selectPanel('enhance')}
-        title="Enhance: JPEG restore, deblur, super-resolution"
-      >
-        <Icon name="enhance" />
-        Enhance
       </button>
       <LiquidGlass
         as="button"
