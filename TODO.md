@@ -1293,6 +1293,11 @@ Playroom work that starts once the engine request lands
       the brush and not only a tint (E37).
 - [ ] **S** · The mask overlay from the render instead of a second
       `convert` (E38).
+- [ ] **S** · An HDR photo's range masks overlaid from the engine's plane
+      again, not the loupe's preview, once the plane can be had under a tone
+      map (E39).
+- [ ] **M** · The develop view of an HDR edit graded as its HDR export is,
+      tone mapped after the grade (E40); compile it with `hdr` then.
 - [ ] **S** · Highlight recovery on RAW, in the develop (E15).
 - [ ] **S** · Raw-domain noise reduction controls (E16).
 - [ ] **S** · Pixel steps' image caches as uncompressed TIFF overlays (E33).

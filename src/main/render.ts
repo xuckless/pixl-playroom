@@ -284,7 +284,12 @@ class Session {
    * carries the lens correction and the spots: the engine is not asked to do
    * those again.
    */
-  async compileFor(recipe: Recipe, source: ProxyFile, applyCrop: boolean): Promise<Compiled> {
+  async compileFor(
+    recipe: Recipe,
+    source: ProxyFile,
+    applyCrop: boolean,
+    headroom = false
+  ): Promise<Compiled> {
     const baked = this.isBaked(source)
     // The working pixels' frame: the photo's, or an upscale step's.
     const px = baked ? this.lensed!.px : this.basePx()
@@ -299,7 +304,12 @@ class Session {
       seed: seedOf(this.row),
       brushPaths: await brushPlanes(this.row.id, recipe, user),
       applyCrop,
-      hdr: this.info.is_hdr,
+      // HDR only where the request's pipeline has room above white (Preserve
+      // with the HDR working space: masks, the headroom plane, HDR stats). A
+      // picture for the screen is tone mapped to SDR first and graded after,
+      // its values stopping at 1, so it compiles as SDR (a curve carried past
+      // 1 there is refused).
+      hdr: headroom && this.info.is_hdr,
       showTransform: !this.view.guides
     })
     return baked ? { ...compiled, lens: null, retouch: null } : compiled
@@ -815,7 +825,7 @@ class Session {
     if (!hdr) return undefined
     try {
       const src = this.viewPx().draft
-      const compiled = await this.compileFor(this.recipe, src, !cropMode)
+      const compiled = await this.compileFor(this.recipe, src, !cropMode, true)
       // Written only to be measured (or not even read, with float work): an
       // uncompressed TIFF, not a PNG to deflate and inflate again. The signal
       // is stated to the analysis, so the file needs no cICP to carry it.
@@ -871,7 +881,7 @@ class Session {
     const hdr = this.hdrWorking
     if (!hdr) return
     const src = this.source('full')
-    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
+    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true)
     // A plane has one channel, so a warp's transparent corners cannot be said.
     if (framingTransparent(compiled.framing)) return
     const stops = Math.max(0.5, Math.log2(hdr.peak_nits / hdr.reference_white_nits))
@@ -945,7 +955,7 @@ class Session {
   private async renderMask(kind: Kind, signal: AbortSignal): Promise<void> {
     const src = kind === 'draft' ? this.viewPx().draft : this.source('full')
     const rev = this.rev
-    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
+    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true)
     const layerId = this.view.maskLayer ?? undefined
     const index = layerId ? compiled.layerIndex[layerId] : undefined
     const send = (e: Omit<RenderEvent, 'key' | 'seq' | 'rev' | 'kind' | 'layerId'>): void => {
@@ -1035,7 +1045,7 @@ class Session {
    */
   private async renderMaskThumbs(signal: AbortSignal): Promise<void> {
     const src = this.viewPx().draft
-    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode)
+    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true)
     // A warp shown whole has transparent corners a plane cannot carry; the
     // thumbnails wait for the crop tool to close.
     if (framingTransparent(compiled.framing)) return
@@ -1234,7 +1244,8 @@ class Session {
       seed: seedOf(this.row),
       brushPaths: await brushPlanes(this.row.id, this.recipe, user),
       applyCrop: false,
-      hdr: this.info.is_hdr
+      // Tone mapped to SDR for the screen, as the picture is (see compileFor).
+      hdr: false
     })
     const x = Math.max(0, Math.min(width - 1, Math.floor(req.x)))
     const y = Math.max(0, Math.min(height - 1, Math.floor(req.y)))

@@ -12,6 +12,7 @@ import type { ExportSettings } from './export'
 import type { Step } from './history'
 import type { BasicSetting, Recipe, RecipeGroup } from './recipe'
 import type { SmartGroup } from './smart'
+import type { LookMeta } from './looks/types'
 
 export const IPC = {
   app: {
@@ -587,6 +588,8 @@ export interface Preset {
    * and a photo of that kind takes the numbers as they are.
    */
   wbOp?: { kelvin: number; tint: number; absolute: boolean }
+  /** A look's collection, tags and source (`looks/types.ts`); absent on a saved preset. */
+  meta?: LookMeta
 }
 
 export interface LutProfile {

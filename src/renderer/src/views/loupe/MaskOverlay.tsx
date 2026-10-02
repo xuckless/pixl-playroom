@@ -5,6 +5,20 @@ import { useUi, type OverlayMode } from '../../state/ui'
 import { MaskCanvas } from './maskgl/MaskCanvas'
 import { useMaskGlBroken } from './maskgl/state'
 
+/** Tools that draw a mask: their overlay stays while they are in hand. */
+const MASK_DRAWING: ReadonlySet<string> = new Set([
+  'brush',
+  'polygon',
+  'linear',
+  'radial',
+  'range-picker'
+])
+
+/** Whether the masks window is up and unfolded (its overlay shows only then). */
+function useMasksShown(): boolean {
+  return useUi((s) => s.masksWin.open && !s.masksWin.minimized)
+}
+
 /** Golden-angle hues, so every mask in "show all" gets its own colour. */
 const hueFor = (i: number, base: number): number => (base + i * 137.5) % 360
 
@@ -105,7 +119,11 @@ export function MaskOverlay({
   const showAll = useUi((s) => s.maskOverlay.showAll)
   const autoToggle = useUi((s) => s.maskOverlay.autoToggle)
   const broken = useMaskGlBroken((s) => s.broken)
+  const masksUp = useMasksShown()
   if (wholeFrameTool(tool)) return null
+  // Put away (closed, or folded to its pill), the masks take their overlay
+  // with them, unless a mask tool is still drawing.
+  if (!masksUp && !MASK_DRAWING.has(tool)) return null
   // The loupe draws the selected mask itself where it can (in step with the
   // edit, then the engine's); every mask at once, and the fallback, are CSS.
   const gl = g !== null && !showAll && !broken

@@ -209,7 +209,7 @@ uniform bool uHaveEngine;
 uniform bool uHavePicture;
 uniform bool uLayerInvert;
 uniform float uLive;      // 1: the loupe's mask, 0: the engine's
-uniform int uView;        // 0 colour, 1 image on black, 2 image on white, 3 white on black, 4 outline, 5 glass
+uniform int uView;        // 0 colour, 1 image on black, 2 image on white, 3 white on black, 4 outline, 5 glass, 6 ghost
 uniform vec3 uTint;
 uniform float uAlpha;
 uniform float uReveal;    // 0…1: a wipe from the top (a mask arriving from a model)
@@ -267,6 +267,11 @@ void main() {
     o = vec4(c * a, a);
   } else if (uView == 3) {
     o = vec4(vec3(m), 1.0);
+  } else if (uView == 6) {
+    // The overlay off and the mask changing: its edge alone, faintly.
+    float w = max(fwidth(m), 1e-4);
+    float a = (1.0 - smoothstep(0.0, 1.6 * w, abs(m - 0.5))) * uAlpha;
+    o = vec4(mix(uTint, vec3(1.0), 0.6) * a, a);
   } else {
     float w = max(fwidth(m), 1e-4);
     float line = 1.0 - smoothstep(0.0, 1.6 * w, abs(m - 0.5));

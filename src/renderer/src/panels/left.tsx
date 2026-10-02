@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { dependents, patchSummary, prerequisites, type Step } from '../../../shared/history'
 import type { Preset, ProjectInfo } from '../../../shared/ipc'
-import { applyFields, applyGroups } from '../../../shared/recipe'
-import { wbFromSaved } from '../../../shared/wbconvert'
+import { applyLook, needsLens } from '../../../shared/looks/apply'
 import { Icon } from '../components/icons'
 import { api, errorText } from '../lib/api'
 import { presetsChanged, usePresets } from '../lib/hooks'
@@ -36,30 +35,17 @@ export function PresetsPane(): React.JSX.Element | null {
   const apply = async (p: Preset): Promise<void> => {
     if (!session) return
     setApplied(p.id)
-    // A saved custom white balance is in the units of the photo it was made
-    // on; on a photo of the other kind it goes through the engine's white.
-    const from =
-      p.wbOp && session ? { ...p.recipe, wb: wbFromSaved(p.recipe.wb, p.wbOp, session) } : p.recipe
     // A lens profile is this photo's lens's at its focal length and aperture,
     // not the numbers it had where the preset was saved.
-    const lens = p.groups.includes('lens') && from.lens.profile.enabled
-    const resolved = lens
-      ? await api.lens.resolve(session.key, from.lens.profile.id).then(
+    const resolved = needsLens(p)
+      ? await api.lens.resolve(session.key, p.recipe.lens.profile.id).then(
           (m) => m.resolved,
           () => null
         )
       : null
     const now = useDevelop.getState()
     if (now.session?.key !== session.key || !now.recipe) return
-    // A built-in sets only its own sliders; a saved preset its whole groups.
-    const next = p.fields
-      ? applyFields(now.recipe, from, p.fields)
-      : applyGroups(now.recipe, from, p.groups)
-    if (p.groups.includes('lens')) {
-      // Chromatic aberration is measured per photo: this one keeps its own.
-      next.lens.ca = now.recipe.lens.ca
-      if (lens) next.lens.profile.resolved = resolved
-    }
+    const next = applyLook(now.recipe, p, { wb: session, lensResolved: resolved })
     replace(next, `Preset: ${p.name}`)
   }
   // Presets keep the groups they were saved under.

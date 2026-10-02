@@ -17,6 +17,9 @@ const AGREE_MS = 180
 const REVEAL_MS = 1100
 /** How strongly the outline shows while a mask changes with the overlay off. */
 const GHOST_ALPHA = 0.85
+/** With the overlay off, how long the changing mask's outline stays, then fades (ms). */
+const GHOST_HOLD_MS = 900
+const GHOST_FADE_MS = 400
 /** How long the glass's rim light flows after the mask changes. */
 const FLOW_MS = 1400
 /** A hovered mask shows at least this strongly, overlay on or off. */
@@ -166,6 +169,9 @@ export function MaskCanvas({
   const reveal = useAiJobs((s) => s.reveal)
   const revealAt = useRef(1)
   const redraw = useRef<(() => void) | null>(null)
+  // When the mask's shape last changed: the overlay-off outline fades after it.
+  const ghostFrom = useRef(0)
+  const ghostFrame = useRef(0)
   // The glass's rim light: flowing for a moment after the mask changes.
   const flowFrom = useRef(0)
   const flowFrame = useRef(0)
@@ -232,6 +238,8 @@ export function MaskCanvas({
   // The picture, for ranges and for the glass to show through.
   const hasRange = components?.some((c) => c.kind === 'range') ?? false
   const needPicture = hasRange || glass
+  const isHdr = useDevelop((s) => s.session?.isHdr ?? false)
+  const hdrRange = isHdr && hasRange
   useEffect(() => {
     if (!needPicture || !pictureUrl) return
     let on = true
@@ -357,6 +365,11 @@ export function MaskCanvas({
     // the loupe has nothing to show).
     const agreed =
       !draft &&
+      // An HDR photo's ranges: the engine keys its plane on the HDR working
+      // values (a coverage plane needs Preserve), the picture on the tone
+      // mapped ones; the loupe keys on the picture as shown, as the picture
+      // does, so its own mask stays (ENGINE-REQUESTS E39).
+      !hdrRange &&
       gl.haveEngine &&
       mask !== null &&
       (mask.rev ?? 0) >= target.current &&
@@ -377,7 +390,7 @@ export function MaskCanvas({
           return
         }
       }
-      const view = ghost ? 'outline' : viewOf(o.mode)
+      const view = ghost ? 'ghost' : viewOf(o.mode)
       const opacity = isHover ? Math.max(o.opacity, HOVER_OPACITY) : o.opacity
       const t = performance.now()
       const flow =
@@ -388,7 +401,9 @@ export function MaskCanvas({
         view,
         tint,
         alpha: ghost
-          ? GHOST_ALPHA * live.current
+          ? GHOST_ALPHA *
+            live.current *
+            Math.min(1, Math.max(0, 1 - (t - ghostFrom.current - GHOST_HOLD_MS) / GHOST_FADE_MS))
           : view === 'outline'
             ? Math.max(0.9, opacity / 100)
             : alphaFor(view, opacity),
@@ -418,6 +433,7 @@ export function MaskCanvas({
   }, [
     components,
     draft,
+    hdrRange,
     isHover,
     layerInvert,
     overlayHue,
@@ -434,6 +450,21 @@ export function MaskCanvas({
   ])
 
   useEffect(() => () => cancelAnimationFrame(frame.current), [])
+
+  // A change to the mask's shape shows its outline with the overlay off, for
+  // a moment: whether or not the engine ever answers (an edit it refuses).
+  useEffect(() => {
+    if (overlay || !components) return
+    ghostFrom.current = performance.now()
+    cancelAnimationFrame(ghostFrame.current)
+    const step = (): void => {
+      redraw.current?.()
+      if (performance.now() - ghostFrom.current < GHOST_HOLD_MS + GHOST_FADE_MS)
+        ghostFrame.current = requestAnimationFrame(step)
+    }
+    ghostFrame.current = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(ghostFrame.current)
+  }, [overlay, components])
 
   // A change to the mask's shape sets the glass's rim light flowing, then still.
   useEffect(() => {

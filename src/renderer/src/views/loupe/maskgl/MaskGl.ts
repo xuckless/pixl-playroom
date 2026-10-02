@@ -36,14 +36,15 @@ const FROST_EDGE = 512
 const FROST_SIGMA = 5
 
 export type ViewMode =
-  'colour' | 'image-black' | 'image-white' | 'white-black' | 'outline' | 'glass'
+  'colour' | 'image-black' | 'image-white' | 'white-black' | 'outline' | 'glass' | 'ghost'
 const VIEW_INDEX: Record<ViewMode, number> = {
   colour: 0,
   'image-black': 1,
   'image-white': 2,
   'white-black': 3,
   outline: 4,
-  glass: 5
+  glass: 5,
+  ghost: 6
 }
 const MODE_INDEX: Record<MaskMode, number> = { Add: 0, Subtract: 1, Intersect: 2 }
 
