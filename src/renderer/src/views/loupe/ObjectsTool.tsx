@@ -59,9 +59,13 @@ export const ObjectsTool = memo(function ObjectsTool({
   const [press, setPress] = useState<Press | null>(null)
   /** Every answer asked for gets the next number; an older one arriving late is dropped. */
   const seq = useRef(0)
-  /** The probe running, and the latest one waiting behind it. */
+  /**
+   * The probe running, and the latest one waiting behind it; `over` shows
+   * its answer over what is selected (a new box being dragged, which will
+   * replace it), else only while nothing is.
+   */
   const probing = useRef(false)
-  const nextProbe = useRef<PromptGeometry | null>(null)
+  const nextProbe = useRef<{ prompt: PromptGeometry; over: boolean } | null>(null)
   const sky = target === 'sky'
 
   // The photo analysed once, for every prompt on it; let go when the tool is put down.
@@ -69,6 +73,7 @@ export const ObjectsTool = memo(function ObjectsTool({
     if (!key) return
     let live = true
     let selId: string | null = null
+    const answers = seq
     useObjects.setState({ selId: null, key, status: 'loading', plane: null })
     api.select
       .open(key)
@@ -85,6 +90,9 @@ export const ObjectsTool = memo(function ObjectsTool({
       })
     return () => {
       live = false
+      // An answer still on its way is dropped, not shown on a put-down tool.
+      answers.current++
+      nextProbe.current = null
       if (selId) void api.select.close(selId)
       showDraft(null)
       useObjects.setState({ selId: null, key: null, status: 'idle', plane: null })
@@ -121,8 +129,8 @@ export const ObjectsTool = memo(function ObjectsTool({
   const longest = Math.round(Math.max(rect.w, rect.h) * (window.devicePixelRatio || 1))
 
   /** A live answer while the pointer moves: one at a time, the latest waiting. */
-  const probe = (prompt: PromptGeometry): void => {
-    nextProbe.current = prompt
+  const probe = (prompt: PromptGeometry, over = false): void => {
+    nextProbe.current = { prompt, over }
     if (probing.current) return
     const run = async (): Promise<void> => {
       const o = useObjects.getState()
@@ -135,11 +143,11 @@ export const ObjectsTool = memo(function ObjectsTool({
         const plane = await api.select.decode(o.selId, {
           seq: n,
           mode: 'probe',
-          prompt: p,
+          prompt: p.prompt,
           longest
         })
-        // Still the latest, and nothing chosen since: shown.
-        if (plane && n === seq.current && !useObjects.getState().plane) showDraft(plane)
+        // Still the latest, and nothing chosen since (or to be replaced): shown.
+        if (plane && n === seq.current && (p.over || !useObjects.getState().plane)) showDraft(plane)
       } catch {
         // A probe that failed shows nothing; the next one tries again.
       } finally {
@@ -194,11 +202,20 @@ export const ObjectsTool = memo(function ObjectsTool({
     const next = { ...press, x1: p.x, y1: p.y }
     if (mode === 'brush' && !sky) next.stroke = [...press.stroke, p]
     setPress(next)
-    // A box being dragged: the mask follows it.
+    // A box being dragged: the mask follows it, over what is selected (which
+    // the box will replace).
     if ((mode === 'box' || mode === 'auto') && !sky && dragged(next)) {
       const r = boxOf(next)
-      if (r && !useObjects.getState().plane) probe({ rect: r, points: [] })
+      if (r) probe({ rect: r, points: [] }, true)
     }
+  }
+
+  /** A press taken away (the pointer lost): what is selected shows again. */
+  const cancel = (): void => {
+    setPress(null)
+    nextProbe.current = null
+    seq.current++
+    showDraft(useObjects.getState().plane)
   }
 
   const up = (): void => {
@@ -267,7 +284,7 @@ export const ObjectsTool = memo(function ObjectsTool({
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
-      onPointerCancel={() => setPress(null)}
+      onPointerCancel={cancel}
       onPointerLeave={leave}
     >
       {box && <div className="look-pick-box" style={box} />}

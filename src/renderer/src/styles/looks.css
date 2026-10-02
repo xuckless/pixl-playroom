@@ -303,6 +303,8 @@
 .tool-layer.objects-tool {
   z-index: 7;
   cursor: crosshair;
+  /* a drag draws a box, never selects the note's text */
+  user-select: none;
 }
 .tool-layer.objects-tool.mode-brush {
   cursor: cell;

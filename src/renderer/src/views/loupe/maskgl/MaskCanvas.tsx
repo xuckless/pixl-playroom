@@ -24,6 +24,8 @@ const GHOST_FADE_MS = 400
 const FLOW_MS = 1400
 /** A hovered mask shows at least this strongly, overlay on or off. */
 const HOVER_OPACITY = 55
+/** So does the Objects tool's selection while it is made. */
+const SELECT_OPACITY = 55
 
 const reducedMotion = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -147,7 +149,11 @@ export function MaskCanvas({
     s.picture && s.picture.kind !== 'draft' ? s.picture.url : null
   )
   const overlayOn = useDevelop((s) => s.overlay)
-  const overlay = isHover || overlayOn
+  // The Objects tool's selection being made (what a hover, a box or a click
+  // would take) shows plainly, overlay on or off: as a tint, since the glass's
+  // rim alone hardly shows what is taken.
+  const selecting = useDevelop((s) => !isHover && s.tool === 'objects')
+  const overlay = isHover || overlayOn || selecting
   const o = useUi((s) => s.maskOverlay)
   const glass = o.mode === 'glass'
   const [bitmapTick, setBitmapTick] = useState(0)
@@ -390,8 +396,13 @@ export function MaskCanvas({
           return
         }
       }
-      const view = ghost ? 'ghost' : viewOf(o.mode)
-      const opacity = isHover ? Math.max(o.opacity, HOVER_OPACITY) : o.opacity
+      const chosen = viewOf(o.mode)
+      const view = ghost ? 'ghost' : selecting && chosen === 'glass' ? 'colour' : chosen
+      const opacity = isHover
+        ? Math.max(o.opacity, HOVER_OPACITY)
+        : selecting
+          ? Math.max(o.opacity, SELECT_OPACITY)
+          : o.opacity
       const t = performance.now()
       const flow =
         view === 'glass' && !reducedMotion() ? Math.max(0, 1 - (t - flowFrom.current) / FLOW_MS) : 0
@@ -435,6 +446,7 @@ export function MaskCanvas({
     draft,
     hdrRange,
     isHover,
+    selecting,
     layerInvert,
     overlayHue,
     layerId,

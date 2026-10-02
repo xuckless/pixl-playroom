@@ -128,7 +128,8 @@ export function MaskOverlay({
   if (!masksUp && !MASK_DRAWING.has(tool)) return null
   // The loupe draws the selected mask itself where it can (in step with the
   // edit, then the engine's); every mask at once, and the fallback, are CSS.
-  const gl = g !== null && !showAll && !broken
+  // The Objects tool's selection being made is the loupe's own to draw.
+  const gl = g !== null && (!showAll || tool === 'objects') && !broken
   return (
     // While a slider moves the overlay steps aside (auto toggle), so the edit shows.
     <div className={`mask-layer${autoToggle ? ' auto-hide' : ''}`}>
