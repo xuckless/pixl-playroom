@@ -108,10 +108,11 @@ export const RICOH = collection('camera/ricoh', [
       inspiredBy: gr('Cinema (Yellow)'),
       description: 'Muted cinema colour with yellow mids.'
     },
-    tone({ contrast: 10 }),
-    presence({ saturation: -15 }),
-    wheel('midtones', 50, 15),
-    wheel('highlights', 45, 10)
+    tone({ contrast: 12 }),
+    presence({ saturation: -18 }),
+    wheel('midtones', 50, 22),
+    wheel('highlights', 45, 16),
+    wheel('shadows', 190, 8)
   ),
   look(
     'cinema-green',
@@ -134,9 +135,10 @@ export const RICOH = collection('camera/ricoh', [
       inspiredBy: gr('Soft Monotone'),
       description: 'A soft, faded mono.'
     },
-    mono(),
-    tone({ contrast: -25 }),
-    fade(0.04)
+    mono({ red: 6, orange: 6 }),
+    tone({ contrast: -25, shadows: 10 }),
+    fade(0.04),
+    wheel('global', 30, 5)
   ),
   look(
     'hard-monotone',
@@ -146,8 +148,8 @@ export const RICOH = collection('camera/ricoh', [
       inspiredBy: gr('Hard Monotone'),
       description: 'A punchy, crisp mono.'
     },
-    mono(),
-    tone({ contrast: 40 }),
-    presence({ clarity: 15 })
+    mono({ blue: -12, aqua: -6 }),
+    tone({ contrast: 35, highlights: -15, blacks: -12 }),
+    presence({ clarity: 25, texture: 10 })
   )
 ])

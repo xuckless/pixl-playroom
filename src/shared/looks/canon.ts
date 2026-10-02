@@ -1,5 +1,5 @@
 /** Warm, friendly colour and flattering skin, in the spirit of Canon's Picture Styles. */
-import { collection, hsl, look, mono, presence, tone, wheel } from './dsl'
+import { collection, foliage, hsl, look, mono, presence, tone, wheel } from './dsl'
 
 const insp = (style: string): string => `Canon Picture Style ${style}`
 
@@ -25,9 +25,11 @@ export const CANON = collection('camera/canon', [
       inspiredBy: insp('Portrait'),
       description: 'Rosy, smooth skin and a soft touch.'
     },
-    presence({ texture: -10 }),
-    wheel('global', 20, 3),
-    hsl({ orange: [-4, -5, 6] })
+    tone({ contrast: -8, highlights: -12, shadows: 8 }),
+    presence({ texture: -18, clarity: -6 }),
+    wheel('global', 15, 7),
+    wheel('highlights', 25, 10),
+    hsl({ orange: [-6, -8, 12], red: [0, -6, 6] })
   ),
   look(
     'lush-landscape',
@@ -39,7 +41,8 @@ export const CANON = collection('camera/canon', [
     },
     tone({ contrast: 15 }),
     presence({ saturation: 15, clarity: 10 }),
-    hsl({ green: [-5, 25, 0], blue: [0, 25, -10] })
+    hsl({ blue: [0, 25, -10] }),
+    foliage(-5, 25, 0)
   ),
   look(
     'faithful-colour',
@@ -49,8 +52,9 @@ export const CANON = collection('camera/canon', [
       inspiredBy: insp('Faithful'),
       description: 'Colour as measured, contrast held low.'
     },
-    tone({ contrast: -10 }),
-    presence({ saturation: -5 })
+    tone({ contrast: -15, highlights: -12, shadows: 10 }),
+    presence({ saturation: -6 }),
+    hsl({ red: [0, -6, 0], yellow: [0, -6, 0] })
   ),
   look(
     'neutral-base',
@@ -60,8 +64,9 @@ export const CANON = collection('camera/canon', [
       inspiredBy: insp('Neutral'),
       description: 'A low-contrast, low-saturation base to grade from.'
     },
-    tone({ contrast: -20 }),
-    presence({ saturation: -15 })
+    tone({ contrast: -25, shadows: 10 }),
+    presence({ saturation: -15 }),
+    wheel('global', 35, 4)
   ),
   look(
     'fine-detail',
@@ -71,8 +76,10 @@ export const CANON = collection('camera/canon', [
       inspiredBy: insp('Fine Detail'),
       description: 'Fine texture brought forward, colour as standard.'
     },
-    tone({ contrast: 5 }),
-    presence({ saturation: 5, texture: 30 })
+    tone({ contrast: 12, whites: 8, blacks: -8 }),
+    presence({ saturation: 6, texture: 45, clarity: 15 }),
+    wheel('global', 40, 3),
+    hsl({ blue: [0, 8, -5] })
   ),
   look(
     'plain-mono',
@@ -82,7 +89,8 @@ export const CANON = collection('camera/canon', [
       inspiredBy: insp('Monochrome'),
       description: 'A straightforward black and white.'
     },
-    mono(),
-    tone({ contrast: 10 })
+    // Canon renders skin bright in mono: warm bands lifted, blue held down.
+    mono({ red: 12, orange: 18, yellow: 8, blue: -12 }),
+    tone({ contrast: 15, blacks: -6 })
   )
 ])

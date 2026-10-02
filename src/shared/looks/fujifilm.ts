@@ -5,6 +5,7 @@
 import {
   collection,
   fade,
+  foliage,
   grain,
   hsl,
   look,
@@ -29,9 +30,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
       inspiredBy: insp('PROVIA/Standard'),
       description: 'Balanced slide-film colour with a firm, clean curve.'
     },
-    tone({ contrast: 10 }),
-    presence({ saturation: 5 }),
-    hsl({ blue: [0, 5, -5] })
+    sCurve(22),
+    tone({ contrast: 6, blacks: -6 }),
+    presence({ saturation: 8 }),
+    wheel('shadows', 220, 5),
+    hsl({ red: [0, 8, 0], green: [5, 6, 0], blue: [-4, 14, -10] })
   ),
   look(
     'vivid-slide',
@@ -48,11 +51,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
     hsl({
       red: [-5, 15, 0],
       orange: [0, -5, 0],
-      green: [0, 25, -5],
       blue: [0, 20, -15],
       purple: [0, 15, 0],
       magenta: [0, 15, 0]
-    })
+    }),
+    foliage(0, 25, -5)
   ),
   look(
     'soft-slide',
@@ -62,9 +65,12 @@ export const FUJIFILM = collection('camera/fujifilm', [
       inspiredBy: insp('ASTIA/Soft'),
       description: 'Slide colour with gentle highlights and kind skin.'
     },
-    tone({ contrast: 5, highlights: -15 }),
-    presence({ saturation: 8 }),
-    hsl({ orange: [0, -5, 5], green: [0, 10, 0], blue: [0, 10, 0] })
+    sCurve(15),
+    tone({ highlights: -22, shadows: 8 }),
+    rolloff(0.02),
+    presence({ saturation: 10 }),
+    wheel('highlights', 30, 6),
+    hsl({ orange: [-3, -8, 8], green: [5, 14, 0], blue: [0, 16, -6], aqua: [0, 10, 0] })
   ),
   look(
     'documentary-chrome',
@@ -134,7 +140,8 @@ export const FUJIFILM = collection('camera/fujifilm', [
     presence({ saturation: 5 }),
     split(35, 8, 42, 20),
     wheel('global', 40, 4),
-    hsl({ orange: [-3, 5, 0], green: [-15, 0, 0], blue: [10, 0, 0] }),
+    hsl({ orange: [-3, 5, 0], blue: [10, 0, 0] }),
+    foliage(-15, 0, 0),
     grain(10, 20, 40)
   ),
   look(
@@ -145,10 +152,12 @@ export const FUJIFILM = collection('camera/fujifilm', [
       inspiredBy: insp('REALA ACE'),
       description: 'Faithful colour with a crisp top and soft shadows.'
     },
-    tone({ contrast: 5, highlights: 5, shadows: 10 }),
-    fade(0.01),
-    presence({ saturation: -5 }),
-    hsl({ red: [0, -10, 0], yellow: [-3, 0, 0] })
+    sCurve(15),
+    tone({ highlights: 6, shadows: 14 }),
+    fade(0.02),
+    presence({ saturation: -6 }),
+    split(195, 8, 50, 5),
+    hsl({ red: [0, -12, 0], yellow: [-5, -6, 0], green: [6, -8, 0] })
   ),
   look(
     'studio-portrait-hi',
@@ -158,10 +167,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
       inspiredBy: insp('PRO Neg. Hi'),
       description: 'Portrait negative with a little more bite for flat light.'
     },
-    tone({ contrast: 10, highlights: -10 }),
-    presence({ saturation: -10 }),
-    wheel('shadows', 200, 4),
-    hsl({ orange: [0, -5, 3] })
+    sCurve(25),
+    tone({ highlights: -14 }),
+    presence({ saturation: -12 }),
+    split(200, 10, 40, 6),
+    hsl({ orange: [0, -6, 6], green: [6, -12, 0], blue: [0, -8, 0] })
   ),
   look(
     'studio-portrait-soft',
@@ -173,7 +183,8 @@ export const FUJIFILM = collection('camera/fujifilm', [
     },
     tone({ contrast: -20, shadows: 10 }),
     presence({ saturation: -15 }),
-    hsl({ green: [5, -10, 0], blue: [0, -10, 0] })
+    split(185, 8, 35, 6),
+    hsl({ orange: [0, -4, 6], green: [5, -10, 0], blue: [0, -10, 0] })
   ),
   look(
     'cinema-flat',
@@ -188,12 +199,8 @@ export const FUJIFILM = collection('camera/fujifilm', [
     rolloff(0.02),
     presence({ saturation: -35 }),
     split(185, 15, 55, 6),
-    hsl({
-      red: [0, -20, 0],
-      orange: [0, -10, 0],
-      green: [12, -20, 0],
-      blue: [0, -10, 0]
-    })
+    hsl({ red: [0, -20, 0], orange: [0, -10, 0], blue: [0, -10, 0] }),
+    foliage(12, -20, 0)
   ),
   look(
     'cinema-bleach',
@@ -216,9 +223,10 @@ export const FUJIFILM = collection('camera/fujifilm', [
       inspiredBy: insp('ACROS'),
       description: 'Rich blacks, smooth highlights and a fine, tight grain.'
     },
-    mono(),
-    tone({ contrast: 15, highlights: -5 }),
-    presence({ clarity: 5 }),
+    mono({ red: 4, blue: -4 }),
+    sCurve(32),
+    tone({ highlights: -14, blacks: -12 }),
+    presence({ clarity: 6 }),
     grain(20, 15, 30)
   ),
   look(
@@ -230,8 +238,9 @@ export const FUJIFILM = collection('camera/fujifilm', [
       description: 'A yellow filter: skies a touch deeper, skin a touch lighter.'
     },
     mono({ yellow: 20, orange: 15, blue: -20 }),
-    tone({ contrast: 15 }),
-    presence({ clarity: 5 }),
+    sCurve(32),
+    tone({ highlights: -14, blacks: -12 }),
+    presence({ clarity: 6 }),
     grain(20, 15, 30)
   ),
   look(
@@ -243,8 +252,9 @@ export const FUJIFILM = collection('camera/fujifilm', [
       description: 'A red filter: dark, dramatic skies and glowing skin.'
     },
     mono({ red: 40, orange: 30, blue: -45, aqua: -20 }),
-    tone({ contrast: 18 }),
-    presence({ clarity: 5 }),
+    sCurve(32),
+    tone({ highlights: -14, blacks: -12 }),
+    presence({ clarity: 6 }),
     grain(20, 15, 30)
   ),
   look(
@@ -256,8 +266,9 @@ export const FUJIFILM = collection('camera/fujifilm', [
       description: 'A green filter: bright foliage, deeper lips and skin.'
     },
     mono({ green: 30, yellow: 10, red: -15 }),
-    tone({ contrast: 15 }),
-    presence({ clarity: 5 }),
+    sCurve(32),
+    tone({ highlights: -14, blacks: -12 }),
+    presence({ clarity: 6 }),
     grain(20, 15, 30)
   ),
   look(
@@ -268,8 +279,8 @@ export const FUJIFILM = collection('camera/fujifilm', [
       inspiredBy: insp('Monochrome'),
       description: 'A plain, grainless black and white.'
     },
-    mono(),
-    tone({ contrast: 5 })
+    mono({ green: 8, yellow: 6, red: -4 }),
+    tone({ contrast: -6, highlights: -8, shadows: 10 })
   ),
   look(
     'sepia-print',

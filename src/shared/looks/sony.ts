@@ -1,5 +1,17 @@
 /** Creative-look styles and cine skin tones, in the spirit of Sony's cameras. */
-import { collection, fade, hsl, look, mono, presence, split, tone, wheel } from './dsl'
+import {
+  collection,
+  fade,
+  foliage,
+  hsl,
+  look,
+  mono,
+  presence,
+  rolloff,
+  split,
+  tone,
+  wheel
+} from './dsl'
 
 const cl = (name: string): string => `Sony Creative Look ${name}`
 
@@ -12,8 +24,10 @@ export const SONY = collection('camera/sony', [
       inspiredBy: cl('ST'),
       description: 'A clean, lightly lifted standard.'
     },
-    tone({ contrast: 5 }),
-    presence({ saturation: 5 })
+    tone({ contrast: 10, whites: 10, blacks: -5 }),
+    presence({ saturation: 8, vibrance: 6, clarity: 6 }),
+    wheel('global', 210, 4),
+    hsl({ blue: [0, 12, -5], aqua: [0, 8, 0] })
   ),
   look(
     'soft-skin',
@@ -23,9 +37,10 @@ export const SONY = collection('camera/sony', [
       inspiredBy: cl('PT'),
       description: 'Soft contrast and bright, smooth skin.'
     },
-    tone({ contrast: -5 }),
-    presence({ texture: -10 }),
-    hsl({ orange: [0, -5, 5] })
+    tone({ contrast: -12, highlights: -10, shadows: 12 }),
+    presence({ texture: -18, clarity: -5 }),
+    wheel('highlights', 345, 8),
+    hsl({ orange: [-5, -8, 12], red: [0, -5, 5] })
   ),
   look(
     'muted-neutral',
@@ -35,8 +50,9 @@ export const SONY = collection('camera/sony', [
       inspiredBy: cl('NT'),
       description: 'Quiet colour and softened detail.'
     },
-    tone({ contrast: -10 }),
-    presence({ saturation: -20, texture: -10 })
+    tone({ contrast: -15, highlights: -10 }),
+    presence({ saturation: -25, texture: -15 }),
+    wheel('global', 215, 4)
   ),
   look(
     'saturated-vivid',
@@ -47,7 +63,9 @@ export const SONY = collection('camera/sony', [
       description: 'Saturated colour and firm contrast.'
     },
     tone({ contrast: 15 }),
-    presence({ saturation: 25 })
+    presence({ saturation: 22 }),
+    wheel('global', 20, 3),
+    hsl({ red: [0, 15, 0], orange: [0, 10, 0] })
   ),
   look(
     'vivid-clear',
@@ -72,7 +90,8 @@ export const SONY = collection('camera/sony', [
     fade(0.03),
     presence({ saturation: -15 }),
     split(190, 10, 50, 8),
-    hsl({ green: [10, -15, 0], blue: [-10, 0, 0] })
+    hsl({ blue: [-10, 0, 0] }),
+    foliage(10, -15, 0)
   ),
   look(
     'instant-matte',
@@ -102,9 +121,14 @@ export const SONY = collection('camera/sony', [
   look(
     'studio-mono',
     'Studio Mono',
-    { tags: ['bw', 'mono', 'sony'], inspiredBy: cl('BW'), description: 'A neat black and white.' },
-    mono(),
-    tone({ contrast: 10 })
+    {
+      tags: ['bw', 'mono', 'sony'],
+      inspiredBy: cl('BW'),
+      description: 'A crisp, punchy black and white.'
+    },
+    mono({ blue: -10, aqua: -5 }),
+    tone({ contrast: 22, whites: 12, blacks: -12 }),
+    presence({ clarity: 10 })
   ),
   look(
     'warm-sepia',
@@ -125,9 +149,11 @@ export const SONY = collection('camera/sony', [
       inspiredBy: 'Sony S-Cinetone',
       description: 'Soft highlights and warm, cinematic skin.'
     },
-    tone({ contrast: 5, whites: -15, highlights: -10 }),
-    presence({ saturation: -5 }),
-    wheel('global', 30, 4),
-    hsl({ orange: [-2, 5, 0], green: [0, -10, 0] })
+    tone({ contrast: 5, whites: -20, highlights: -18, shadows: 6 }),
+    rolloff(0.03),
+    presence({ saturation: -6 }),
+    split(190, 8, 35, 12),
+    wheel('global', 30, 6),
+    hsl({ orange: [-3, 10, 4], yellow: [0, -12, 0], green: [10, -22, 0] })
   )
 ])

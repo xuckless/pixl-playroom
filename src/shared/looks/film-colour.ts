@@ -4,6 +4,7 @@ import {
   calib,
   collection,
   fade,
+  foliage,
   grain,
   halationApprox,
   hsl,
@@ -32,7 +33,8 @@ export const FILM_COLOUR = collection('film/colour', [
     rolloff(0.02),
     presence({ saturation: -12 }),
     split(180, 5, 45, 6),
-    hsl({ orange: [0, -5, 5], green: [5, -15, 0], blue: [0, -15, 0] }),
+    hsl({ orange: [0, -5, 5], blue: [0, -15, 0] }),
+    foliage(5, -15, 0),
     grain(8, 18, 35)
   ),
   look(
@@ -48,7 +50,8 @@ export const FILM_COLOUR = collection('film/colour', [
     rolloff(0.02),
     presence({ saturation: -5 }),
     split(170, 6, 42, 10),
-    hsl({ orange: [-2, 0, 6], green: [10, -15, 0], blue: [-10, -10, 0] }),
+    hsl({ orange: [-2, 0, 6], blue: [-10, -10, 0] }),
+    foliage(10, -15, 0),
     grain(15, 22, 40)
   ),
   look(
@@ -59,11 +62,11 @@ export const FILM_COLOUR = collection('film/colour', [
       inspiredBy: 'Kodak Portra 800',
       description: 'Richer, warmer and grainier, with a green lean in the shadows.'
     },
-    tone({ contrast: 5, highlights: -10 }),
+    tone({ contrast: 8, highlights: -12 }),
     fade(0.03),
-    presence({ saturation: 5 }),
-    split(150, 8, 40, 12),
-    hsl({ red: [0, 5, 0], orange: [0, 5, 0] }),
+    presence({ saturation: 8 }),
+    split(150, 12, 40, 16),
+    hsl({ red: [0, 8, 0], orange: [-2, 10, 4], green: [8, -10, 0] }),
     grain(28, 30, 55)
   ),
   look(
@@ -91,7 +94,8 @@ export const FILM_COLOUR = collection('film/colour', [
     presence({ saturation: 10 }),
     wheel('midtones', 45, 10),
     wheel('highlights', 50, 18),
-    hsl({ green: [-10, 0, 0], blue: [0, -10, 0] }),
+    hsl({ blue: [0, -10, 0] }),
+    foliage(-10, 0, 0),
     grain(22, 28, 50)
   ),
   look(
@@ -168,7 +172,8 @@ export const FILM_COLOUR = collection('film/colour', [
     tone({ contrast: 10 }),
     presence({ saturation: 40 }),
     wheel('shadows', 300, 10),
-    hsl({ red: [-8, 20, 0], green: [0, 30, 0], blue: [0, 0, -20] }),
+    hsl({ red: [-8, 20, 0], blue: [0, 0, -20] }),
+    foliage(0, 30, 0),
     grain(4, 12, 25)
   ),
   look(
@@ -179,9 +184,11 @@ export const FILM_COLOUR = collection('film/colour', [
       inspiredBy: 'Fujifilm Provia 100F (film)',
       description: 'An honest, neutral slide film.'
     },
-    tone({ contrast: 15 }),
-    presence({ saturation: 5 }),
-    wheel('global', 210, 4),
+    sCurve(30),
+    tone({ blacks: -10 }),
+    presence({ saturation: 6 }),
+    wheel('global', 210, 7),
+    hsl({ blue: [0, 10, -10] }),
     grain(5, 15, 30)
   ),
   look(
@@ -195,7 +202,8 @@ export const FILM_COLOUR = collection('film/colour', [
     tone({ contrast: 10 }),
     presence({ saturation: 10 }),
     wheel('shadows', 155, 12),
-    hsl({ green: [10, 10, 0], orange: [-3, 0, 0] }),
+    hsl({ orange: [-3, 0, 0] }),
+    foliage(10, 10, 0),
     grain(25, 30, 55)
   ),
   look(
@@ -210,7 +218,8 @@ export const FILM_COLOUR = collection('film/colour', [
     fade(0.04),
     presence({ saturation: -10 }),
     split(180, 10, 60, 5),
-    hsl({ green: [20, -10, 0], orange: [0, 0, 5] }),
+    hsl({ orange: [0, 0, 5] }),
+    foliage(20, -10, 0),
     grain(15, 22, 40)
   ),
   look(
@@ -221,10 +230,12 @@ export const FILM_COLOUR = collection('film/colour', [
       inspiredBy: 'Fujifilm Pro 160NS',
       description: 'Cool, low-contrast portrait negative.'
     },
-    tone({ contrast: -15 }),
-    presence({ saturation: -15 }),
-    wheel('shadows', 170, 6),
-    hsl({ green: [10, 0, 0] }),
+    tone({ contrast: -15, highlights: -10 }),
+    fade(0.02),
+    presence({ saturation: -12 }),
+    split(170, 12, 60, 5),
+    hsl({ orange: [0, -5, 6] }),
+    foliage(12, -5, 0),
     grain(8, 18, 35)
   ),
   look(
@@ -235,9 +246,11 @@ export const FILM_COLOUR = collection('film/colour', [
       inspiredBy: 'Fujicolor C200',
       description: 'Cool, green-leaning budget film.'
     },
-    tone({ contrast: 5 }),
-    wheel('global', 150, 8),
-    hsl({ green: [8, 5, 0] }),
+    sCurve(15),
+    presence({ saturation: 5 }),
+    wheel('global', 150, 10),
+    wheel('shadows', 170, 12),
+    hsl({ yellow: [8, 5, 0], green: [10, 10, 0], blue: [0, -10, 0] }),
     grain(25, 30, 55)
   ),
   look(
@@ -248,9 +261,10 @@ export const FILM_COLOUR = collection('film/colour', [
       inspiredBy: 'Fujifilm Natura 1600',
       description: 'Soft, natural low-light colour with generous grain.'
     },
-    tone({ contrast: -5 }),
-    fade(0.03),
-    split(150, 6, 40, 6),
+    tone({ contrast: -10, shadows: 12 }),
+    fade(0.04),
+    presence({ saturation: -8 }),
+    split(150, 12, 40, 10),
     grain(35, 35, 60)
   ),
   look(
@@ -275,10 +289,11 @@ export const FILM_COLOUR = collection('film/colour', [
       inspiredBy: 'CineStill 800T',
       description: 'Tungsten night film: cool light, teal shadows and red-glowing highlights.'
     },
-    tone({ contrast: 10 }),
-    split(190, 15, 30, 10),
-    wheel('global', 215, 8),
-    hsl({ red: [0, 10, 0] }),
+    tone({ contrast: 12 }),
+    presence({ saturation: -5 }),
+    split(190, 22, 30, 10),
+    wheel('global', 215, 14),
+    hsl({ red: [0, 12, 0] }),
     halationApprox(60),
     grain(30, 30, 55)
   ),
@@ -290,10 +305,11 @@ export const FILM_COLOUR = collection('film/colour', [
       inspiredBy: 'CineStill 50D',
       description: 'Clean, saturated, very fine-grained daylight film.'
     },
-    tone({ contrast: 15 }),
-    presence({ saturation: 10 }),
-    wheel('global', 210, 4),
-    halationApprox(20),
+    sCurve(28),
+    presence({ saturation: 15 }),
+    wheel('global', 205, 6),
+    hsl({ blue: [-5, 15, -8], aqua: [0, 10, 0] }),
+    halationApprox(25),
     grain(6, 15, 30)
   ),
   look(
@@ -304,9 +320,11 @@ export const FILM_COLOUR = collection('film/colour', [
       inspiredBy: 'CineStill 400D',
       description: 'Warm daylight film with a soft glow.'
     },
-    tone({ contrast: 10 }),
-    wheel('highlights', 40, 12),
-    halationApprox(30),
+    sCurve(20),
+    presence({ saturation: 6 }),
+    split(195, 8, 40, 18),
+    hsl({ orange: [0, 8, 0] }),
+    halationApprox(35),
     grain(22, 28, 50)
   ),
   look(

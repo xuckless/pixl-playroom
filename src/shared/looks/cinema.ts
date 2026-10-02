@@ -16,6 +16,7 @@ import {
   sCurve,
   split,
   tone,
+  vignette,
   wheel
 } from './dsl'
 
@@ -28,11 +29,12 @@ export const CINEMA = collection('cinema', [
       inspiredBy: 'ARRI ALEXA LogC to Rec.709 (K1S1)',
       description: 'A moderate S with a very long, desaturating highlight shoulder and kind skin.'
     },
-    sCurve(20),
-    rolloff(0.02),
-    tone({ whites: -15, highlights: -10 }),
-    presence({ saturation: -5 }),
-    hsl({ orange: [-2, 3, 0], green: [-5, -10, 0] })
+    sCurve(25),
+    rolloff(0.03),
+    tone({ whites: -18, highlights: -15 }),
+    presence({ saturation: -6 }),
+    wheel('global', 35, 4),
+    hsl({ orange: [-3, 6, 2], yellow: [0, -10, 0], green: [-8, -18, 0] })
   ),
   look(
     'modern-cine-camera',
@@ -42,11 +44,12 @@ export const CINEMA = collection('cinema', [
       inspiredBy: 'ARRI REVEAL colour science',
       description: 'The classic cine curve with cleaner, truer hues.'
     },
-    sCurve(20),
+    sCurve(25),
     rolloff(0.02),
-    tone({ whites: -12, highlights: -10 }),
-    presence({ vibrance: 5 }),
-    hsl({ red: [0, 0, -3] })
+    tone({ whites: -12, highlights: -12 }),
+    presence({ vibrance: 10 }),
+    wheel('global', 200, 3),
+    hsl({ red: [0, 5, -4], blue: [-5, 10, -5], aqua: [0, 10, 0] })
   ),
   look(
     'cine-print-look',
@@ -57,8 +60,10 @@ export const CINEMA = collection('cinema', [
       description: 'A cine camera printed to film: teal shadows, warm highlights, a little grain.'
     },
     sCurve(30),
-    presence({ saturation: -10 }),
-    split(185, 10, 40, 10),
+    fade(0.01),
+    presence({ saturation: -12 }),
+    split(185, 16, 40, 14),
+    hsl({ green: [5, -12, 0] }),
     grain(8, 20, 40)
   ),
   look(
@@ -69,11 +74,11 @@ export const CINEMA = collection('cinema', [
       inspiredBy: 'RED IPP2 (medium contrast, soft roll-off)',
       description: 'Neutral, slightly cool, with a very soft highlight roll-off.'
     },
-    sCurve(10),
-    rolloff(0.03),
-    tone({ highlights: -15 }),
-    presence({ saturation: -5 }),
-    wheel('global', 210, 3)
+    sCurve(12),
+    rolloff(0.04),
+    tone({ highlights: -22, shadows: 8 }),
+    presence({ saturation: -10 }),
+    wheel('global', 210, 6)
   ),
   look(
     'full-frame-cine',
@@ -109,9 +114,11 @@ export const CINEMA = collection('cinema', [
       inspiredBy: 'Panavision / Light Iron colour',
       description: 'Creamy skin and soft highlights over a gentle split.'
     },
-    tone({ contrast: 5, highlights: -12 }),
-    split(190, 6, 45, 8),
-    hsl({ orange: [0, -3, 4] }),
+    tone({ contrast: 5, highlights: -18 }),
+    rolloff(0.03),
+    presence({ texture: -10 }),
+    split(190, 10, 45, 14),
+    hsl({ orange: [-2, -5, 8], red: [0, -5, 0] }),
     grain(5, 15, 30)
   ),
   look(
@@ -206,13 +213,13 @@ export const CINEMA = collection('cinema', [
       inspiredBy: 'Kodak Vision3 500T 5219, printed',
       description: 'Fast tungsten negative: soft blacks, teal shadows, visible grain.'
     },
-    sCurve(20),
-    fade(0.02),
-    tone({ highlights: -10 }),
-    presence({ saturation: -5 }),
-    split(175, 12, 40, 10),
-    halationApprox(30),
-    grain(30, 30, 55)
+    sCurve(18),
+    fade(0.03),
+    tone({ highlights: -12 }),
+    presence({ saturation: -8 }),
+    split(175, 18, 35, 12),
+    halationApprox(40),
+    grain(32, 30, 55)
   ),
   look(
     'tungsten-cine-neg-200',
@@ -222,11 +229,12 @@ export const CINEMA = collection('cinema', [
       inspiredBy: 'Kodak Vision3 200T 5213, printed',
       description: 'Tungsten negative with finer grain and the same teal-warm split.'
     },
-    sCurve(20),
-    fade(0.02),
+    sCurve(28),
+    fade(0.015),
     tone({ highlights: -10 }),
-    presence({ saturation: -5 }),
-    split(175, 12, 40, 10),
+    presence({ saturation: -4 }),
+    split(180, 18, 40, 12),
+    hsl({ green: [8, -10, 0] }),
     grain(18, 25, 45)
   ),
   look(
@@ -238,9 +246,11 @@ export const CINEMA = collection('cinema', [
       description: 'Daylight negative with a very long highlight range.'
     },
     sCurve(20),
-    rolloff(0.02),
-    tone({ highlights: -15 }),
-    split(190, 8, 45, 8),
+    rolloff(0.03),
+    tone({ highlights: -18, shadows: 8 }),
+    presence({ saturation: -4 }),
+    split(190, 12, 45, 12),
+    hsl({ green: [5, -10, 0] }),
     grain(18, 25, 45)
   ),
   look(
@@ -266,7 +276,8 @@ export const CINEMA = collection('cinema', [
     },
     mono({ red: 10, orange: 10, blue: -10 }),
     sCurve(40),
-    tone({ blacks: -5 }),
+    tone({ blacks: -15, shadows: -10, highlights: -10 }),
+    vignette(-15, { feather: 70 }),
     grain(40, 35, 65)
   )
 ])

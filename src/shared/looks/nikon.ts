@@ -29,9 +29,10 @@ export const NIKON = collection('camera/nikon', [
       inspiredBy: pc('Standard'),
       description: 'Balanced contrast with slightly yellow greens.'
     },
-    tone({ contrast: 10 }),
-    presence({ saturation: 8 }),
-    hsl({ green: [-5, 0, 0] })
+    tone({ contrast: 14, blacks: -5 }),
+    presence({ saturation: 10 }),
+    wheel('global', 55, 4),
+    hsl({ yellow: [-8, 12, 0], green: [-12, 8, 0], blue: [0, 0, -6] })
   ),
   look(
     'even-neutral',
@@ -52,9 +53,9 @@ export const NIKON = collection('camera/nikon', [
       inspiredBy: pc('Vivid'),
       description: 'Strong contrast and saturated blues and greens.'
     },
-    tone({ contrast: 20 }),
-    presence({ saturation: 25 }),
-    hsl({ green: [0, 15, 0], blue: [0, 15, 0] })
+    tone({ contrast: 22 }),
+    presence({ saturation: 20 }),
+    hsl({ yellow: [-8, 15, 0], green: [0, 25, 0], blue: [0, 25, -8] })
   ),
   look(
     'smooth-portrait',
@@ -64,9 +65,10 @@ export const NIKON = collection('camera/nikon', [
       inspiredBy: pc('Portrait'),
       description: 'Soft contrast and smooth, bright skin.'
     },
-    tone({ contrast: -5 }),
-    presence({ texture: -10 }),
-    hsl({ orange: [0, -5, 5] })
+    tone({ contrast: -8, shadows: 10 }),
+    presence({ texture: -14, clarity: -6 }),
+    wheel('global', 45, 7),
+    hsl({ orange: [4, -6, 9], red: [0, -8, 0], yellow: [0, -6, 0] })
   ),
   look(
     'open-landscape',
@@ -76,8 +78,9 @@ export const NIKON = collection('camera/nikon', [
       inspiredBy: pc('Landscape'),
       description: 'Rich greens and blues with extra punch.'
     },
-    tone({ contrast: 15 }),
-    hsl({ green: [0, 25, 0], blue: [0, 25, 0] })
+    tone({ contrast: 18, highlights: -10 }),
+    presence({ vibrance: 15, clarity: 10 }),
+    hsl({ yellow: [-10, 20, 0], green: [0, 30, -5], blue: [0, 30, -12], aqua: [0, 20, 0] })
   ),
   look(
     'log-flat',
@@ -98,9 +101,10 @@ export const NIKON = collection('camera/nikon', [
       inspiredBy: pc('Rich Tone Portrait'),
       description: 'Deep, saturated skin with soft highlights.'
     },
-    tone({ contrast: 5, highlights: -15 }),
-    presence({ vibrance: 10 }),
-    hsl({ orange: [0, 8, -3], red: [0, 5, 0] })
+    tone({ contrast: 8, highlights: -20, shadows: 6 }),
+    presence({ vibrance: 14, texture: -8 }),
+    wheel('midtones', 25, 8),
+    hsl({ orange: [-3, 14, -6], red: [0, 10, -4], yellow: [0, -6, 0] })
   ),
   look(
     'soft-gradation-mono',
@@ -135,8 +139,9 @@ export const NIKON = collection('camera/nikon', [
       inspiredBy: pc('Monochrome'),
       description: 'A plain black and white with a little bite.'
     },
-    mono(),
-    tone({ contrast: 10 })
+    // Open mids and a yellow lean, the plain Monochrome control.
+    mono({ yellow: 12, orange: 6, blue: -6 }),
+    tone({ highlights: -18, shadows: 14 })
   ),
   look(
     'dream',
@@ -339,9 +344,9 @@ export const NIKON = collection('camera/nikon', [
       description: 'A smudged, textured mono like a charcoal drawing.'
     },
     mono(),
-    tone({ contrast: -10 }),
-    fade(0.06),
-    presence({ texture: 20 }),
+    tone({ contrast: 10, whites: -20, highlights: -15, shadows: -15 }),
+    fade(0.07),
+    presence({ texture: 25, clarity: -10 }),
     grain(20, 35, 70)
   ),
   look(

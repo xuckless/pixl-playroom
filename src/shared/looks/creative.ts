@@ -4,6 +4,7 @@ import {
   calib,
   collection,
   fade,
+  foliage,
   grain,
   hsl,
   look,
@@ -109,7 +110,8 @@ export const CREATIVE = collection('creative', [
     tone({ contrast: -10, whites: 10 }),
     presence({ saturation: -5 }),
     wheel('shadows', 160, 12),
-    hsl({ green: [25, -10, 10], aqua: [0, 10, 10] })
+    hsl({ aqua: [0, 10, 10] }),
+    foliage(25, -10, 10)
   ),
   look(
     'sunset-glow',
@@ -141,8 +143,9 @@ export const CREATIVE = collection('creative', [
       description: 'Rich teal and deep sea blue.'
     },
     tone({ contrast: 15 }),
-    hsl({ aqua: [-10, 25, -10], blue: [-10, 20, -15] }),
-    wheel('shadows', 200, 12)
+    hsl({ aqua: [-10, 35, -15], blue: [-10, 30, -20] }),
+    wheel('shadows', 200, 22),
+    wheel('midtones', 190, 8)
   ),
   look(
     'urban-grit',
@@ -163,10 +166,11 @@ export const CREATIVE = collection('creative', [
       tags: ['portrait', 'peach', 'warm', 'soft', 'skin'],
       description: 'Soft peachy skin, gentle everything else.'
     },
-    tone({ contrast: -5, shadows: 10 }),
-    presence({ texture: -10 }),
-    hsl({ orange: [3, -5, 8], red: [5, -5, 5] }),
-    wheel('highlights', 30, 10)
+    tone({ contrast: -8, shadows: 12 }),
+    presence({ texture: -12 }),
+    hsl({ orange: [4, -4, 10], red: [6, -4, 6] }),
+    wheel('highlights', 25, 18),
+    wheel('midtones', 20, 8)
   ),
   look(
     'cotton-candy',

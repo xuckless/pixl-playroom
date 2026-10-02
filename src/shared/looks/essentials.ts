@@ -181,7 +181,8 @@ export const ESSENTIALS = collection('essentials', [
     },
     sCurve(30),
     tone({ highlights: -15, shadows: 10 }),
-    presence({ vibrance: 15, clarity: 5 })
+    presence({ vibrance: 25, clarity: 8 }),
+    hsl({ blue: [0, 10, -6] })
   ),
   look(
     'matte-fade',
@@ -224,8 +225,8 @@ export const ESSENTIALS = collection('essentials', [
       tags: ['detail', 'sharp', 'texture', 'architecture'],
       description: 'Texture and clarity without crunch.'
     },
-    tone({ contrast: 10 }),
-    presence({ texture: 20, clarity: 12, dehaze: 5 })
+    tone({ contrast: 10, whites: 6, blacks: -6 }),
+    presence({ texture: 30, clarity: 20, dehaze: 8 })
   ),
   look(
     'soft-pastel',

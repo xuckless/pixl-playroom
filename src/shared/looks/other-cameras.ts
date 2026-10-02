@@ -1,5 +1,17 @@
 /** OM, Pentax and phone photographic styles. */
-import { collection, fade, grain, hsl, look, mono, presence, split, tone, wheel } from './dsl'
+import {
+  collection,
+  fade,
+  grain,
+  hsl,
+  look,
+  mono,
+  presence,
+  rolloff,
+  split,
+  tone,
+  wheel
+} from './dsl'
 
 const om = (name: string): string => `OM System / Olympus ${name}`
 const px = (name: string): string => `Pentax Custom Image ${name}`
@@ -76,8 +88,9 @@ export const OTHER_CAMERAS = collection('camera/other', [
       inspiredBy: om('Art Filter Grainy Film'),
       description: 'Hard mono with coarse grain.'
     },
-    mono(),
-    tone({ contrast: 60 }),
+    mono({ blue: 10, red: -10 }),
+    tone({ contrast: 60, highlights: 10, shadows: 10 }),
+    fade(0.02),
     grain(70, 50, 80)
   ),
   look(
@@ -88,9 +101,10 @@ export const OTHER_CAMERAS = collection('camera/other', [
       inspiredBy: px('Reversal Film'),
       description: 'Saturated slide colour with deep blues.'
     },
-    tone({ contrast: 25, blacks: -5 }),
-    presence({ saturation: 20 }),
-    hsl({ blue: [0, 20, -15] })
+    tone({ contrast: 25, blacks: -10 }),
+    presence({ saturation: 15 }),
+    wheel('shadows', 230, 10),
+    hsl({ blue: [-6, 30, -20], aqua: [0, 15, -10], red: [0, 10, -5] })
   ),
   look(
     'silver-bleach',
@@ -134,7 +148,9 @@ export const OTHER_CAMERAS = collection('camera/other', [
       inspiredBy: ph('Amber'),
       description: 'Amber warmth through the whole picture.'
     },
-    wheel('global', 40, 18)
+    wheel('global', 35, 20),
+    wheel('shadows', 25, 10),
+    tone({ contrast: 8 })
   ),
   look(
     'gold-style',
@@ -144,8 +160,10 @@ export const OTHER_CAMERAS = collection('camera/other', [
       inspiredBy: ph('Gold'),
       description: 'Golden light, colour lifted a touch.'
     },
-    wheel('global', 50, 18),
-    presence({ vibrance: 5 })
+    wheel('global', 52, 18),
+    wheel('highlights', 55, 12),
+    tone({ shadows: 10, whites: 6 }),
+    presence({ vibrance: 8 })
   ),
   look(
     'rose-gold',
@@ -175,7 +193,8 @@ export const OTHER_CAMERAS = collection('camera/other', [
       inspiredBy: ph('Vibrant'),
       description: 'Brighter, more vibrant colour.'
     },
-    presence({ saturation: 20, vibrance: 15 })
+    tone({ shadows: 8, whites: 6 }),
+    presence({ saturation: 18, vibrance: 25 })
   ),
   look(
     'natural-style',
@@ -185,8 +204,9 @@ export const OTHER_CAMERAS = collection('camera/other', [
       inspiredBy: ph('Natural'),
       description: 'Less processed, softer colour.'
     },
-    tone({ contrast: -5 }),
-    presence({ saturation: -10 })
+    tone({ contrast: -10, highlights: -15, shadows: 12 }),
+    presence({ saturation: -12, clarity: -5 }),
+    hsl({ orange: [0, -5, 4], green: [0, -10, 0] })
   ),
   look(
     'luminous',
@@ -196,8 +216,9 @@ export const OTHER_CAMERAS = collection('camera/other', [
       inspiredBy: ph('Luminous'),
       description: 'Bright shadows and gentle glow.'
     },
-    tone({ shadows: 20, whites: 10 }),
-    presence({ vibrance: 10 })
+    tone({ contrast: -10, shadows: 30, whites: 15, highlights: -10 }),
+    presence({ vibrance: 15, clarity: -8 }),
+    wheel('highlights', 45, 6)
   ),
   look(
     'dramatic-style',
@@ -254,9 +275,10 @@ export const OTHER_CAMERAS = collection('camera/other', [
       inspiredBy: ph('Muted B&W'),
       description: 'A soft, faded black and white.'
     },
-    mono(),
-    tone({ contrast: -20 }),
-    fade(0.04)
+    mono({ yellow: 6, blue: 6 }),
+    tone({ contrast: -15, whites: -12, highlights: -10 }),
+    fade(0.05),
+    rolloff(0.04)
   ),
   look(
     'stark-bw',
@@ -266,8 +288,8 @@ export const OTHER_CAMERAS = collection('camera/other', [
       inspiredBy: ph('Stark B&W'),
       description: 'A hard, deep black and white.'
     },
-    mono(),
-    tone({ contrast: 45, blacks: -20 })
+    mono({ red: 8, orange: 8 }),
+    tone({ contrast: 45, blacks: -25, shadows: -15, whites: 10 })
   ),
   look(
     'polar-split',
@@ -277,7 +299,8 @@ export const OTHER_CAMERAS = collection('camera/other', [
       inspiredBy: ph('Cool'),
       description: 'Cool shadows and clean whites.'
     },
-    split(210, 12, 200, 4),
-    presence({ saturation: -5 })
+    split(210, 25, 200, 8),
+    tone({ contrast: 10, whites: 10 }),
+    presence({ saturation: -10 })
   )
 ])

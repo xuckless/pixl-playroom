@@ -1,5 +1,5 @@
 /** Press, fine-grain and night black-and-white stocks. */
-import { collection, fade, grain, look, mono, presence, sCurve, tone, wheel } from './dsl'
+import { collection, fade, grain, look, mono, presence, rolloff, sCurve, tone, wheel } from './dsl'
 
 export const FILM_BW = collection('film/bw', [
   look(
@@ -10,9 +10,9 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Kodak Tri-X 400',
       description: 'The reportage classic: mid-tone bite and rough grain.'
     },
-    mono({ red: 5, orange: 5, blue: -5 }),
-    sCurve(35),
-    tone({ blacks: -5 }),
+    mono({ red: -8, orange: -6, blue: 10, aqua: 5 }),
+    sCurve(38),
+    tone({ blacks: -8, whites: 5 }),
     grain(35, 35, 60)
   ),
   look(
@@ -23,9 +23,9 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Kodak Tri-X pushed to 1600',
       description: 'Pushed hard: inky shadows and big grain.'
     },
-    mono(),
+    mono({ red: -5, blue: 8 }),
     sCurve(50),
-    tone({ contrast: 25, blacks: -25 }),
+    tone({ contrast: 25, blacks: -25, shadows: -15, whites: 10 }),
     grain(55, 45, 75)
   ),
   look(
@@ -36,9 +36,9 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Kodak T-MAX 100',
       description: 'Smooth, modern and nearly grainless.'
     },
-    mono(),
-    tone({ contrast: 5 }),
-    wheel('global', 220, 3),
+    mono({ red: 14, orange: 10, blue: -4 }),
+    tone({ contrast: 6, highlights: -10, shadows: 6 }),
+    wheel('global', 220, 4),
     grain(6, 12, 25)
   ),
   look(
@@ -49,8 +49,9 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Kodak T-MAX 400',
       description: 'Clean modern mono with a little more grain.'
     },
-    mono(),
-    tone({ contrast: 10 }),
+    mono({ red: 10, orange: 8 }),
+    sCurve(22),
+    tone({ whites: 8, blacks: -4 }),
     grain(15, 20, 40)
   ),
   look(
@@ -61,8 +62,8 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Kodak T-MAX P3200',
       description: 'Low-light mono with soft blacks and large grain.'
     },
-    mono(),
-    tone({ contrast: 15 }),
+    mono({ red: 8, orange: 6 }),
+    tone({ contrast: 22, shadows: -12 }),
     fade(0.03),
     grain(60, 50, 70)
   ),
@@ -74,8 +75,9 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Ilford HP5 Plus',
       description: 'Forgiving, classic mono with medium grain.'
     },
-    mono(),
-    tone({ contrast: 10 }),
+    mono({ orange: 4, blue: 4 }),
+    sCurve(15),
+    tone({ highlights: -12, shadows: 12 }),
     grain(30, 32, 55)
   ),
   look(
@@ -86,8 +88,9 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Ilford FP4 Plus',
       description: 'Traditional, fine-grained mono.'
     },
-    mono(),
-    tone({ contrast: 12 }),
+    mono({ yellow: 10, orange: 8, red: 4, blue: -4 }),
+    sCurve(18),
+    tone({ highlights: -14, shadows: 8 }),
     grain(10, 18, 35)
   ),
   look(
@@ -98,9 +101,9 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Ilford Pan F Plus 50',
       description: 'Contrasty, deep and almost grainless.'
     },
-    mono(),
+    mono({ red: -15, orange: -10, blue: 6 }),
     sCurve(40),
-    tone({ contrast: 10, blacks: -5 }),
+    tone({ contrast: 10, blacks: -10 }),
     grain(4, 10, 20)
   ),
   look(
@@ -111,9 +114,10 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Ilford Delta 100',
       description: 'Crisp modern tabular-grain mono.'
     },
-    mono(),
-    tone({ contrast: 10 }),
-    presence({ clarity: 5 }),
+    mono({ yellow: 5, green: 5, blue: -6 }),
+    sCurve(18),
+    tone({ whites: 14, blacks: -8 }),
+    presence({ clarity: 14 }),
     grain(6, 12, 25)
   ),
   look(
@@ -124,9 +128,9 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Ilford Delta 3200',
       description: 'Soft, grainy and atmospheric.'
     },
-    mono(),
-    tone({ contrast: -5 }),
-    fade(0.04),
+    mono({ orange: 6 }),
+    tone({ contrast: -8, shadows: 12, highlights: -12 }),
+    fade(0.05),
     grain(65, 55, 80)
   ),
   look(
@@ -137,9 +141,10 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Ilford XP2 Super',
       description: 'Smooth, faintly warm mono from colour chemistry.'
     },
-    mono(),
-    tone({ contrast: -10 }),
-    wheel('global', 35, 4),
+    mono({ orange: 8, yellow: 4 }),
+    tone({ contrast: -12, highlights: -18, shadows: 8 }),
+    rolloff(0.03),
+    wheel('global', 35, 7),
     grain(8, 15, 30)
   ),
   look(
@@ -150,8 +155,9 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Fomapan 100 Classic',
       description: 'Old-fashioned tonality with soft highlights.'
     },
-    mono({ red: -5, blue: 5 }),
-    tone({ contrast: 15, highlights: -10 }),
+    mono({ red: -18, orange: -10, blue: 14, aqua: 8 }),
+    tone({ contrast: 15, highlights: -15 }),
+    fade(0.015),
     grain(15, 22, 45)
   ),
   look(
@@ -162,8 +168,9 @@ export const FILM_BW = collection('film/bw', [
       inspiredBy: 'Fujifilm Neopan Acros II 100',
       description: 'Fine grain and gently deepened skies.'
     },
-    mono({ blue: -10, aqua: -5 }),
-    tone({ contrast: 12 }),
+    mono({ blue: -32, aqua: -18, yellow: 8 }),
+    sCurve(30),
+    tone({ blacks: -10, highlights: -6 }),
     grain(8, 12, 25)
   )
 ])

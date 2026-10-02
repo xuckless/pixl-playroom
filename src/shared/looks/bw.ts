@@ -51,9 +51,9 @@ export const BW = collection('bw', [
       tags: ['bw', 'mono', 'red filter', 'sky', 'landscape'],
       description: 'Black skies and bright clouds, as through a red filter.'
     },
-    mono({ red: 50, orange: 35, yellow: 15, green: -20, aqua: -40, blue: -60 }),
-    tone({ contrast: 25 }),
-    presence({ clarity: 10 })
+    mono({ red: 55, orange: 40, yellow: 15, green: -25, aqua: -50, blue: -75 }),
+    tone({ contrast: 30, whites: 10 }),
+    presence({ clarity: 15 })
   ),
   look(
     'yellow-filter-classic',
@@ -62,8 +62,9 @@ export const BW = collection('bw', [
       tags: ['bw', 'mono', 'yellow filter', 'classic'],
       description: 'The everyday yellow filter: slightly deeper skies.'
     },
-    mono({ yellow: 20, orange: 15, red: 5, blue: -25 }),
-    tone({ contrast: 15 })
+    mono({ yellow: 25, orange: 18, red: 8, blue: -30, aqua: -10 }),
+    tone({ contrast: 10, shadows: 10, whites: 10 }),
+    fade(0.015)
   ),
   look(
     'green-filter-portrait',
@@ -72,8 +73,9 @@ export const BW = collection('bw', [
       tags: ['bw', 'mono', 'green filter', 'portrait', 'skin'],
       description: 'Fuller skin tones and bright foliage.'
     },
-    mono({ green: 30, yellow: 15, red: -20, orange: -10 }),
-    tone({ contrast: 12 })
+    mono({ green: 40, yellow: 20, red: -28, orange: -18 }),
+    tone({ contrast: 8, highlights: -10, shadows: 10 }),
+    fade(0.015)
   ),
   look(
     'infrared-mono',
@@ -95,9 +97,9 @@ export const BW = collection('bw', [
       description: 'Faded blacks and a soft, printed top end.'
     },
     mono(),
-    sCurve(20),
-    fade(0.08),
-    rolloff(0.04)
+    sCurve(30),
+    fade(0.1),
+    rolloff(0.06)
   ),
   look(
     'silver-gelatin',
@@ -106,10 +108,10 @@ export const BW = collection('bw', [
       tags: ['bw', 'mono', 'darkroom', 'print', 'classic'],
       description: 'A rich darkroom print with a hint of warmth.'
     },
-    mono({ orange: 5 }),
-    sCurve(30),
-    tone({ blacks: -5 }),
-    wheel('global', 40, 4),
+    mono({ orange: 8, red: 4 }),
+    sCurve(36),
+    tone({ blacks: -10, highlights: -8 }),
+    wheel('global', 40, 9),
     grain(12, 20, 40)
   ),
   look(

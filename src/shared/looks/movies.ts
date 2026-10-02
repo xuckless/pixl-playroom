@@ -8,6 +8,7 @@ import {
   bloomApprox,
   collection,
   fade,
+  foliage,
   grain,
   halationApprox,
   hsl,
@@ -31,19 +32,15 @@ export const MOVIES = collection('movies', [
       inspiredBy: 'The Batman (2022)',
       description: 'Crushed blacks and amber-red light in a drowned, blue-less city.'
     },
-    sCurve(40),
-    tone({ whites: -20, highlights: -15, blacks: -10 }),
-    rolloff(0.03),
-    presence({ saturation: -15 }),
-    wheel('midtones', 25, 18),
-    wheel('shadows', 20, 12),
-    hsl({
-      red: [0, 15, 0],
-      orange: [0, 15, 0],
-      green: [0, -40, 0],
-      aqua: [0, -50, 0],
-      blue: [0, -50, 0]
-    }),
+    sCurve(45),
+    tone({ whites: -25, highlights: -25, shadows: -20, blacks: -15 }),
+    rolloff(0.04),
+    presence({ saturation: -30 }),
+    wheel('midtones', 28, 25),
+    wheel('shadows', 20, 15),
+    hsl({ red: [0, 25, -5], orange: [-4, 5, -5], aqua: [0, -60, 0], blue: [0, -60, -10] }),
+    foliage(0, -50, 0),
+    vignette(-20, { feather: 70 }),
     grain(12, 22, 45)
   ),
   look(
@@ -57,10 +54,13 @@ export const MOVIES = collection('movies', [
     },
     sCurve(25),
     rolloff(0.02),
-    tone({ highlights: -10 }),
-    wheel('midtones', 30, 12),
-    wheel('highlights', 40, 10),
-    hsl({ blue: [-5, 0, 0] }),
+    tone({ highlights: -12 }),
+    presence({ saturation: -5 }),
+    wheel('midtones', 30, 20),
+    wheel('highlights', 40, 16),
+    wheel('shadows', 20, 8),
+    hsl({ orange: [0, 5, 0], blue: [-5, -15, 0] }),
+    foliage(5, -15, 0),
     grain(4, 12, 25)
   ),
   look(
@@ -73,9 +73,10 @@ export const MOVIES = collection('movies', [
     },
     tone({ contrast: -5 }),
     fade(0.02),
-    presence({ saturation: -25 }),
-    wheel('global', 35, 12),
-    hsl({ orange: [0, 0, 5], green: [0, -50, 0], blue: [0, -30, 0] }),
+    presence({ saturation: -28 }),
+    wheel('global', 35, 18),
+    hsl({ orange: [0, 0, 5], blue: [0, -30, 0] }),
+    foliage(0, -50, 0),
     grain(10, 20, 40)
   ),
   look(
@@ -90,7 +91,8 @@ export const MOVIES = collection('movies', [
     presence({ saturation: -10 }),
     wheel('global', 35, 20),
     wheel('highlights', 40, 15),
-    hsl({ green: [0, -50, 0], blue: [0, -30, 0] })
+    hsl({ blue: [0, -30, 0] }),
+    foliage(0, -50, 0)
   ),
   look(
     'infrared-arena',
@@ -118,12 +120,12 @@ export const MOVIES = collection('movies', [
     wheel('shadows', 30, 30),
     hsl({
       red: [0, -30, 0],
-      green: [0, -60, 0],
       aqua: [0, -60, 0],
       blue: [0, -60, 0],
       purple: [0, -60, 0],
       magenta: [0, -60, 0]
     }),
+    foliage(0, -60, 0),
     bloomApprox(30)
   ),
   look(
@@ -137,8 +139,9 @@ export const MOVIES = collection('movies', [
     tone({ contrast: -10 }),
     fade(0.05),
     presence({ saturation: -40 }),
-    wheel('shadows', 200, 15),
-    hsl({ magenta: [0, 20, 0], purple: [0, 15, 0] }),
+    wheel('shadows', 200, 20),
+    wheel('midtones', 210, 8),
+    hsl({ magenta: [0, 40, 0], purple: [0, 30, 0] }),
     bloomApprox(20),
     grain(6, 15, 30)
   ),
@@ -174,10 +177,11 @@ export const MOVIES = collection('movies', [
       inspiredBy: 'The Matrix (1999), inside the code',
       description: 'A sickly green cast over hard contrast, reds and blues drained.'
     },
-    tone({ contrast: 25, blacks: -5 }),
-    presence({ saturation: -25 }),
-    wheel('midtones', 115, 20),
-    wheel('shadows', 120, 15),
+    tone({ contrast: 25, blacks: -10 }),
+    presence({ saturation: -35 }),
+    wheel('global', 120, 12),
+    wheel('midtones', 115, 30),
+    wheel('shadows', 125, 25),
     hsl({ red: [0, -40, 0], blue: [0, -40, 0] })
   ),
   look(
@@ -229,9 +233,10 @@ export const MOVIES = collection('movies', [
       inspiredBy: 'Oppenheimer (2023), the black-and-white sequences',
       description: 'Hard, bright, large-format black and white.'
     },
-    mono(),
+    mono({ red: -6, orange: -4, blue: 6 }),
     sCurve(50),
-    tone({ contrast: 20, whites: 15, blacks: -5 }),
+    tone({ contrast: 20, whites: 25, highlights: 10, blacks: -5 }),
+    presence({ clarity: 10 }),
     grain(8, 12, 25)
   ),
   look(
@@ -242,10 +247,12 @@ export const MOVIES = collection('movies', [
       inspiredBy: 'Interstellar (2014)',
       description: 'Dusty, warm and slightly muted, on film.'
     },
-    tone({ contrast: 10 }),
-    presence({ saturation: -10 }),
-    wheel('global', 40, 8),
-    hsl({ blue: [0, -10, 0] }),
+    sCurve(20),
+    presence({ saturation: -15 }),
+    wheel('global', 40, 12),
+    wheel('shadows', 200, 10),
+    hsl({ blue: [0, -20, 0] }),
+    foliage(10, -20, 0),
     grain(8, 18, 35)
   ),
   look(
@@ -286,7 +293,8 @@ export const MOVIES = collection('movies', [
     presence({ saturation: 10 }),
     wheel('midtones', 70, 20),
     wheel('highlights', 45, 15),
-    hsl({ red: [0, 20, 0], green: [-10, 15, 0], blue: [-25, -30, 0] })
+    hsl({ red: [0, 20, 0], blue: [-25, -30, 0] }),
+    foliage(-10, 15, 0)
   ),
   look(
     'crimson-melancholy',
@@ -298,7 +306,8 @@ export const MOVIES = collection('movies', [
     },
     tone({ contrast: 25, blacks: -5 }),
     wheel('global', 35, 12),
-    hsl({ red: [0, 30, -10], green: [10, 10, 0] }),
+    hsl({ red: [0, 30, -10] }),
+    foliage(10, 10, 0),
     bloomApprox(15),
     grain(20, 25, 50)
   ),
@@ -474,9 +483,11 @@ export const MOVIES = collection('movies', [
       description: 'Warm interiors, blue nights and soft film blacks.'
     },
     fade(0.03),
-    presence({ saturation: 5 }),
-    wheel('midtones', 40, 12),
-    wheel('shadows', 215, 15),
+    tone({ contrast: 10 }),
+    presence({ saturation: 8 }),
+    wheel('midtones', 40, 16),
+    wheel('shadows', 215, 22),
+    hsl({ red: [0, 12, 0] }),
     grain(15, 22, 45)
   ),
   look(
@@ -503,7 +514,8 @@ export const MOVIES = collection('movies', [
     tone({ contrast: 10 }),
     presence({ saturation: -15 }),
     wheel('global', 45, 25),
-    hsl({ green: [-40, -60, 0], aqua: [-20, -40, 0] })
+    hsl({ aqua: [-20, -40, 0] }),
+    foliage(-40, -60, 0)
   ),
   look(
     'yellow-border',
@@ -553,8 +565,10 @@ export const MOVIES = collection('movies', [
       inspiredBy: "Schindler's List (1993)",
       description: 'Documentary black and white. (The film’s single red coat needs a colour mask.)'
     },
-    mono(),
-    tone({ contrast: 30 }),
+    mono({ red: -10, orange: -6 }),
+    sCurve(25),
+    tone({ contrast: 10, highlights: -15, shadows: -8 }),
+    fade(0.02),
     grain(25, 28, 55),
     approximates('selectiveColour')
   ),
@@ -621,10 +635,11 @@ export const MOVIES = collection('movies', [
       inspiredBy: 'Arrival (2016)',
       description: 'Milky, overcast and nearly colourless.'
     },
-    tone({ contrast: -20 }),
-    fade(0.05),
+    tone({ contrast: -25 }),
+    fade(0.07),
+    rolloff(0.03),
     presence({ saturation: -35 }),
-    wheel('shadows', 200, 10)
+    wheel('global', 180, 5)
   ),
   look(
     'kitchen-heat',
@@ -635,8 +650,10 @@ export const MOVIES = collection('movies', [
       description: 'Hot, greenish-yellow kitchen light and hard contrast.'
     },
     tone({ contrast: 20 }),
-    presence({ saturation: -10 }),
-    wheel('midtones', 60, 12),
+    presence({ saturation: -12 }),
+    wheel('midtones', 60, 20),
+    wheel('highlights', 50, 10),
+    hsl({ yellow: [0, 10, 0] }),
     grain(10, 20, 40)
   ),
   look(
@@ -660,9 +677,10 @@ export const MOVIES = collection('movies', [
       inspiredBy: 'Squid Game (2021–2025)',
       description: 'Mint greens and candy pinks, clean and bright.'
     },
-    tone({ contrast: 5 }),
-    presence({ saturation: 20 }),
-    hsl({ green: [20, 20, 0], aqua: [0, 10, 5], magenta: [0, 30, 0] })
+    tone({ contrast: 10 }),
+    presence({ saturation: 15 }),
+    wheel('shadows', 170, 8),
+    hsl({ red: [10, 15, 0], green: [25, 25, 0], aqua: [0, 20, 5], magenta: [0, 40, 5] })
   ),
   look(
     'sterile-office',
@@ -698,8 +716,9 @@ export const MOVIES = collection('movies', [
       inspiredBy: 'Roma (2018)',
       description: 'A clean, wide-range digital black and white.'
     },
-    mono(),
-    tone({ contrast: 5, shadows: 10, highlights: -15 })
+    mono({ blue: -8, aqua: -4, yellow: 6 }),
+    tone({ contrast: 5, shadows: 22, highlights: -25, whites: 10 }),
+    presence({ clarity: 8 })
   ),
   look(
     'vintage-studio-mono',
@@ -709,11 +728,11 @@ export const MOVIES = collection('movies', [
       inspiredBy: 'Mank (2020)',
       description: 'Classic studio-era black and white with a soft glow.'
     },
-    mono(),
-    tone({ contrast: 15 }),
-    fade(0.02),
-    vignette(-15),
-    bloomApprox(15),
+    mono({ red: 6, orange: 6 }),
+    tone({ contrast: 15, highlights: -12 }),
+    fade(0.03),
+    vignette(-25, { feather: 70 }),
+    bloomApprox(25),
     grain(30, 30, 55)
   ),
   look(
@@ -750,7 +769,7 @@ export const MOVIES = collection('movies', [
     },
     fade(0.04),
     presence({ saturation: -20 }),
-    hsl({ green: [-10, -30, 0] }),
+    foliage(-10, -30, 0),
     grain(35, 35, 60)
   ),
   look(
@@ -798,9 +817,10 @@ export const MOVIES = collection('movies', [
       description: 'Muted, cool ruins overrun with soft greens.'
     },
     tone({ contrast: 10 }),
-    presence({ saturation: -20 }),
-    wheel('shadows', 190, 10),
-    hsl({ green: [-5, 10, 0], yellow: [-10, -10, 0] }),
+    fade(0.02),
+    presence({ saturation: -22 }),
+    split(190, 15, 50, 6),
+    hsl({ green: [-5, 15, 0], yellow: [-15, 0, 0] }),
     grain(10, 20, 40)
   )
 ])

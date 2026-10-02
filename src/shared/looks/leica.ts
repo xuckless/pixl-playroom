@@ -11,6 +11,7 @@ import {
   mono,
   presence,
   rolloff,
+  sCurve,
   split,
   tone,
   wheel
@@ -27,9 +28,11 @@ export const LEICA = collection('camera/leica', [
       inspiredBy: insp('Looks: Natural'),
       description: 'Accurate colour with a long, quiet highlight roll-off.'
     },
-    tone({ highlights: -10 }),
-    rolloff(0.01),
-    presence({ saturation: -5 })
+    sCurve(12),
+    tone({ highlights: -22, shadows: 6 }),
+    rolloff(0.03),
+    presence({ saturation: -8 }),
+    hsl({ yellow: [0, -10, 0], green: [5, -10, 0] })
   ),
   look(
     'contemporary-clean',
@@ -39,9 +42,11 @@ export const LEICA = collection('camera/leica', [
       inspiredBy: insp('Looks: Contemporary'),
       description: 'Clean modern contrast with smooth mid-to-highlight transitions.'
     },
-    tone({ contrast: 10, highlights: -5 }),
-    presence({ saturation: 5 }),
-    wheel('shadows', 205, 5)
+    sCurve(25),
+    tone({ highlights: -10, blacks: -6 }),
+    presence({ saturation: 6, clarity: 8 }),
+    split(205, 10, 30, 4),
+    hsl({ red: [0, 6, -4], blue: [0, 10, -8] })
   ),
   look(
     'analog-cinema',
@@ -77,10 +82,10 @@ export const LEICA = collection('camera/leica', [
       inspiredBy: insp('Looks: Chrome'),
       description: 'Slide-like restraint: firm contrast, quiet colour.'
     },
-    tone({ contrast: 15 }),
+    tone({ contrast: 18 }),
     presence({ saturation: -25 }),
-    split(195, 8, 50, 6),
-    hsl({ green: [0, -20, 0] })
+    split(195, 8, 50, 10),
+    hsl({ yellow: [0, -20, 0], green: [0, -25, 0] })
   ),
   look(
     'teal-tone',
@@ -141,9 +146,10 @@ export const LEICA = collection('camera/leica', [
       inspiredBy: insp('M Monochrom'),
       description: 'A long, even tonal scale from a sensor that sees only light.'
     },
-    mono(),
-    tone({ shadows: 10, highlights: -10 }),
-    presence({ clarity: 5 }),
+    mono({ red: 10, orange: 8, yellow: 4 }),
+    sCurve(15),
+    tone({ shadows: 15, highlights: -20, blacks: -6 }),
+    presence({ clarity: 8 }),
     grain(6, 15, 30)
   )
 ])

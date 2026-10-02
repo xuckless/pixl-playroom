@@ -1,5 +1,18 @@
 /** Classic-neo colour, cine gammas and dynamic monochromes, in the spirit of LUMIX. */
-import { collection, fade, grain, hsl, look, mono, presence, split, tone, wheel } from './dsl'
+import {
+  collection,
+  fade,
+  foliage,
+  grain,
+  hsl,
+  look,
+  mono,
+  presence,
+  sCurve,
+  split,
+  tone,
+  wheel
+} from './dsl'
 
 const lx = (name: string): string => `Panasonic LUMIX ${name}`
 
@@ -15,9 +28,10 @@ export const PANASONIC = collection('camera/panasonic', [
     tone({ contrast: -10 }),
     fade(0.03),
     presence({ saturation: -10 }),
-    wheel('highlights', 45, 8),
-    hsl({ orange: [0, 0, 5], blue: [0, 0, 8] }),
-    grain(8, 20, 40)
+    wheel('highlights', 45, 14),
+    hsl({ orange: [0, -5, 6], blue: [0, -10, 10] }),
+    foliage(10, -15, 0),
+    grain(12, 20, 40)
   ),
   look(
     'classic-shift',
@@ -39,9 +53,10 @@ export const PANASONIC = collection('camera/panasonic', [
       inspiredBy: lx('L.Monochrome'),
       description: 'A faintly warm, even mono.'
     },
-    mono(),
-    tone({ contrast: 5 }),
-    wheel('global', 40, 4)
+    mono({ orange: 5 }),
+    sCurve(12),
+    tone({ shadows: 6 }),
+    wheel('global', 40, 9)
   ),
   look(
     'dynamic-mono',
@@ -51,9 +66,10 @@ export const PANASONIC = collection('camera/panasonic', [
       inspiredBy: lx('L.Monochrome D'),
       description: 'Dramatic mono with bright whites and deep blacks.'
     },
-    mono(),
-    tone({ contrast: 30, whites: 15, blacks: -15 }),
-    presence({ clarity: 15 })
+    mono({ red: 10, orange: 10, blue: -15 }),
+    sCurve(30),
+    tone({ contrast: 25, whites: 18, blacks: -18 }),
+    presence({ clarity: 18 })
   ),
   look(
     'soft-mono',
@@ -63,9 +79,10 @@ export const PANASONIC = collection('camera/panasonic', [
       inspiredBy: lx('L.Monochrome S'),
       description: 'A soft, low-contrast mono.'
     },
-    mono(),
-    tone({ contrast: -20 }),
-    fade(0.03)
+    mono({ orange: 6, green: 6 }),
+    tone({ contrast: -22, highlights: -15, shadows: 15 }),
+    fade(0.02),
+    wheel('global', 220, 3)
   ),
   look(
     'cine-wide',

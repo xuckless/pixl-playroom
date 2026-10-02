@@ -169,13 +169,31 @@ export const hsl =
   }
 
 /**
+ * Foliage, as [hue, saturation, luminance]. Leaves sit mostly in the yellow
+ * band (yellow-greens, 60–100°) and only partly in green, so "mute the
+ * greens" moves green fully and yellow at 60%; a bare `hsl({ green })` barely
+ * touches a tree.
+ */
+export const foliage =
+  (h: number, s: number, l: number): LookStep =>
+  (r) => {
+    const k = 0.6
+    r.hsl.green.hue += h
+    r.hsl.green.saturation += s
+    r.hsl.green.luminance += l
+    r.hsl.yellow.hue += Math.round(h * k)
+    r.hsl.yellow.saturation += Math.round(s * k)
+    r.hsl.yellow.luminance += Math.round(l * k)
+  }
+
+/**
  * An S on the master curve: `k` −100…100 pulls the quarter tones apart
  * (positive) or together; `pivot` 0…1 moves where it turns.
  */
 export const sCurve =
   (k: number, pivot = 0.5): LookStep =>
   (r) => {
-    const d = (k / 100) * 0.08
+    const d = (k / 100) * 0.12
     const q1 = pivot / 2
     const q3 = pivot + (1 - pivot) / 2
     r.toneCurve.master = [
