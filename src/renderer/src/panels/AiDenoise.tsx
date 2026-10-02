@@ -23,14 +23,14 @@ import { useUi } from '../state/ui'
 
 const MODELS: { value: AiDenoiseModel; label: string; hint: string }[] = [
   {
-    value: 'scunet-color-real',
-    label: 'SCUNet · real noise',
-    hint: 'Trained on real camera noise; judges it by itself. Best on high-ISO shots.'
-  },
-  {
     value: 'drunet-color',
     label: 'DRUNet · measured',
     hint: 'Told the noise it measures on the photo; gentler, keeps fine texture.'
+  },
+  {
+    value: 'scunet-color-real',
+    label: 'SCUNet · real noise',
+    hint: 'Trained on real camera noise; judges it by itself. Best on high-ISO shots.'
   }
 ]
 

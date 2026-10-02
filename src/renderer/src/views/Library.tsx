@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { DuplicateGroup, LibraryItem } from '../../../shared/ipc'
+import { GlassSelect } from '../components/GlassSelect'
 import { LiquidGlass } from '../components/glass/LiquidGlass'
 import { Icon } from '../components/icons'
 import { Stars } from '../components/ui'
@@ -206,6 +207,15 @@ export function LibraryIdentity(): React.JSX.Element {
   )
 }
 
+const SORTS: { value: SortKey; label: string }[] = [
+  { value: 'name', label: 'Name' },
+  { value: 'captured', label: 'Capture time' },
+  { value: 'added', label: 'Date added' },
+  { value: 'rating', label: 'Rating' },
+  { value: 'size', label: 'File size' },
+  { value: 'edited', label: 'Edited first' }
+]
+
 export function Toolbar(): React.JSX.Element {
   const filter = useLibrary((s) => s.filter)
   const setFilter = useLibrary((s) => s.setFilter)
@@ -251,7 +261,7 @@ export function Toolbar(): React.JSX.Element {
       </button>
       {source?.kind === 'folder' && (
         <button
-          className={`chip subfolders${source.deep ? ' on' : ''}`}
+          className={`lg subfolders${source.deep ? ' on' : ''}`}
           aria-pressed={!!source.deep}
           title={
             source.deep
@@ -265,6 +275,7 @@ export function Toolbar(): React.JSX.Element {
             void openSource({ kind: 'folder', path: source.path, ...(deep ? { deep } : {}) })
           }}
         >
+          <Icon name="stack" />
           Subfolders
         </button>
       )}
@@ -281,19 +292,14 @@ export function Toolbar(): React.JSX.Element {
       </label>
       <FilterButton />
       {!dupes && (
-        <select
-          className="sort-select"
+        <GlassSelect<SortKey>
+          className="lg sort-select"
+          label="Sort by"
+          prefix="Sort"
           value={sort}
-          onChange={(e) => setSort(e.target.value as SortKey)}
-          title="Sort by"
-          aria-label="Sort by"
-        >
-          <option value="name">Name</option>
-          <option value="captured">Capture time</option>
-          <option value="rating">Rating</option>
-          <option value="size">File size</option>
-          <option value="edited">Edited first</option>
-        </select>
+          options={SORTS}
+          onChange={setSort}
+        />
       )}
       <span className="spacer" />
       {dupes ? (
@@ -501,6 +507,7 @@ export function LibraryView(): React.JSX.Element {
   const total = useLibrary((s) => s.items.length)
   const size = useLibrary((s) => s.thumbSize)
   const focus = useLibrary((s) => s.focus)
+  const sort = useLibrary((s) => s.sort)
   const setView = useLibrary((s) => s.setView)
   const setFocus = useLibrary((s) => s.setFocus)
   const open = useDevelop((s) => s.open)
@@ -526,7 +533,8 @@ export function LibraryView(): React.JSX.Element {
   }, [waiting, dupesLoading])
   const cols = Math.max(1, Math.floor((width - 2 * GRID_PAD_X + GRID_GAP) / (size + GRID_GAP)))
   const rows = useMemo(() => gridRows(items, groups, cols), [items, groups, cols])
-  const showFolder = source?.kind !== 'folder'
+  // Photos from more than one folder say which: a collection's, or a folder's with its subfolders.
+  const showFolder = source?.kind !== 'folder' || !!source.deep
   const tileHeight = Math.round(size * 0.72 + (showFolder ? 48 : 34)) + 2
   // The virtualiser is mutable by design (it re-renders this on scroll): the
   // compiler lint's warning about it does not apply to a build without it.
@@ -541,19 +549,33 @@ export function LibraryView(): React.JSX.Element {
     paddingEnd: 12
   })
   // The focused photo kept in view (it may be rows away, not in the page at
-  // all) when the focus moves; not when the rows change under it (a
-  // thumbnail arriving), which would pull the grid back from a scroll.
+  // all) when the focus moves, and once the grid knows its columns (coming
+  // back from Develop, its first layout has none: placed then, the photo's
+  // row is reckoned one photo per row, far down); not when the rows change
+  // under it (a thumbnail arriving), which would pull the grid back from a
+  // scroll. The first time it is centred, after that only brought into view.
   const rowsNow = useRef(rows)
   useEffect(() => {
     rowsNow.current = rows
   }, [rows])
+  const placed = useRef(false)
+  const laidOut = width > 0
   useEffect(() => {
-    if (!focus) return
+    if (!focus || !laidOut) return
     const i = rowsNow.current.findIndex(
       (r) => r.kind === 'tiles' && r.items.some((it) => it.key === focus)
     )
-    if (i >= 0) virtual.scrollToIndex(i, { align: 'auto' })
-  }, [focus, virtual])
+    if (i < 0) return
+    virtual.scrollToIndex(i, { align: placed.current ? 'auto' : 'center' })
+    placed.current = true
+  }, [focus, virtual, laidOut, cols])
+  // A new order starts at its top: where the sort puts its first photos.
+  const sortNow = useRef(sort)
+  useEffect(() => {
+    if (sortNow.current === sort) return
+    sortNow.current = sort
+    virtual.scrollToOffset(0)
+  }, [sort, virtual])
   const entering = useEntering(source)
   if (waiting) return <EmptyLibrary />
   if (dupesLoading)

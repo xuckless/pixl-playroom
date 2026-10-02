@@ -2,7 +2,7 @@ import { newLocalLayer } from '../../../shared/recipe'
 import { Histogram, HueChart } from '../components/charts'
 import { emptyRange } from '../lib/helpers'
 import { useDevelop } from '../state/develop'
-import { openMasks, selectPanel } from './tools'
+import { jumpToCard, openMasks } from './tools'
 
 /**
  * The scopes, pinned above the thumb-wheel: the histogram, and the
@@ -44,7 +44,7 @@ export function Scopes(): React.JSX.Element {
           } else {
             setHslFocus(band)
             setHslTab('all')
-            selectPanel('hsl')
+            jumpToCard('mixer')
           }
         }}
       />

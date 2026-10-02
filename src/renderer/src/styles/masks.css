@@ -465,6 +465,27 @@ button.mode-badge:disabled {
 .mf-foot .check {
   margin: 0;
 }
+.mf-foot .mf-menu-anchor {
+  flex: 1;
+  min-width: 0;
+}
+.mf-overlay-btn {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  border-color: transparent;
+}
+.mf-overlay-btn .mf-overlay-mode {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.mf-overlay-btn.off .mf-swatch {
+  opacity: 0.35;
+  box-shadow: none;
+}
 .mf-swatch-btn {
   width: 22px;
   height: 22px;

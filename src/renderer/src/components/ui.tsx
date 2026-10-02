@@ -114,8 +114,10 @@ export function Card({
   const [own, setOwn] = useState(() => storedOpen(id, defaultOpen))
   const open = openProp ?? own
   const toggle = (): void => {
-    rememberCardOpen(id, !open)
-    setOwn(!open)
+    if (openProp === undefined) {
+      rememberCardOpen(id, !open)
+      setOwn(!open)
+    }
     onOpenChange?.(!open)
   }
   return (

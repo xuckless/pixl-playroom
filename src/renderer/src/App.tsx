@@ -7,9 +7,9 @@ import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
 import { ConfirmHost } from './components/ConfirmHost'
 import { Scopes } from './develop/Scopes'
-import { ToolDial } from './develop/ToolDial'
-import { ToolPanelHost } from './develop/ToolPanelHost'
-import { startWheelMemory } from './develop/wheelMemory'
+import { AdjustStack } from './develop/AdjustStack'
+import { ToolStrip } from './develop/ToolStrip'
+import { startDrawerSync } from './develop/tools'
 import { startDenoiseUpkeep } from './lib/denoise'
 import { startHdrUpkeep } from './lib/hdr'
 import { DevelopToolbar } from './shell/DevelopToolbar'
@@ -65,8 +65,8 @@ const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
         </main>
         <aside className="right">
           <Scopes />
-          <ToolDial />
-          <ToolPanelHost />
+          <ToolStrip />
+          <AdjustStack />
         </aside>
       </div>
     </div>
@@ -410,7 +410,7 @@ export default function App(): React.JSX.Element {
         if (!isFrame(e.url)) return useDevelop.getState().onRendered(e)
         void whenFrame(e.url).then((bmp) => bmp && useDevelop.getState().onRendered(e))
       }),
-      startWheelMemory(),
+      startDrawerSync(),
       startDenoiseUpkeep(),
       startHdrUpkeep(),
       api.app.onRenderScale(onRenderScale),

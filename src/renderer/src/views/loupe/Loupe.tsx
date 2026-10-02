@@ -130,9 +130,9 @@ export function Loupe(): React.JSX.Element {
     return () => clearTimeout(t)
   }, [size.w, size.h, setTargetEdge])
 
-  const panel = useUi((s) => s.panel)
+  const drawer = useUi((s) => s.drawer)
   // Visualise Spots, while the Heal tool is the one showing.
-  const spots = useUi((s) => s.panel === 'heal' && !!s.heal.visualise)
+  const spots = useUi((s) => s.drawer === 'heal' && !!s.heal.visualise)
   const spotLevel = useUi((s) => s.heal.spotLevel ?? 50)
   // On the geometry alone (a slider elsewhere keeps it), so what takes `g`
   // stays memoised through a drag.
@@ -588,7 +588,9 @@ export function Loupe(): React.JSX.Element {
         {vrect && g && <LookPick rect={vrect} g={g} />}
         {!wholeFrameTool(tool) && vrect && g && <LassoEditor rect={vrect} g={g} />}
         {tool === 'upright-guide' && rect && <UprightGuides rect={rect} />}
-        {panel === 'heal' && !wholeFrameTool(tool) && vrect && g && <HealTool rect={vrect} g={g} />}
+        {drawer === 'heal' && !wholeFrameTool(tool) && vrect && g && (
+          <HealTool rect={vrect} g={g} />
+        )}
       </div>
       <LoupeHud scale={scale} />
     </div>

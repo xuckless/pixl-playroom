@@ -40,12 +40,13 @@ test('a straighten too small to say is none: no outside the engine would refuse'
   assert.ok(!f || (f.rotate_degrees === 0 && f.outside === undefined))
 })
 
-test('a RAW starts with its profile curve, capture sharpening and colour noise reduction', () => {
+test('a RAW starts with its profile look, capture sharpening and colour noise reduction', () => {
   const c = compile(defaultRecipe(true), { ...ctx, isRaw: true, scale: 1 })
   const stages = c.grade!.layers[0].stages
   assert.deepEqual(kinds(stages[0].ops), ['Denoise'])
   assert.equal(stages[0].space, 'LinearWorking')
-  assert.deepEqual(kinds(stages[1].ops), ['Curves', 'Sharpen'])
+  // Playroom Standard: Vivid's curve and vibrance, and a little more saturation.
+  assert.deepEqual(kinds(stages[1].ops), ['Curves', 'Vibrance', 'Primary', 'Sharpen'])
 })
 
 test('AI-denoised pixels get no classic noise reduction on top', () => {

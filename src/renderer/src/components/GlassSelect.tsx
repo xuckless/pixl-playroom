@@ -61,6 +61,7 @@ export function GlassSelect<T extends string>({
       {open && (
         <Menu
           anchor={btn}
+          className="gs-menu"
           onClose={() => setOpen(false)}
           items={options.map((o) => ({
             label: o.label,

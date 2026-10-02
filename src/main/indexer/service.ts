@@ -520,7 +520,7 @@ export class IndexService {
           if (!st.isFile()) continue
           present.add(path)
           let row = known.get(path)
-          if (!row || row.size !== st.size || row.mtime !== st.mtimeMs) {
+          if (!row || row.size !== st.size || row.mtime !== st.mtimeMs || row.added == null) {
             row = this.store.upsertPhoto({
               path,
               folder,
@@ -528,7 +528,9 @@ export class IndexService {
               ext,
               size: st.size,
               mtime: st.mtimeMs,
-              isRaw: isRawExt(ext)
+              isRaw: isRawExt(ext),
+              // A filesystem that keeps no birth time reports 0.
+              added: st.birthtimeMs > 0 ? st.birthtimeMs : st.mtimeMs
             })
             n++
           }
@@ -1084,6 +1086,11 @@ export class IndexService {
     return this.store.recentFolders().filter((f) => existsSync(f))
   }
 
+  /** Take a folder off the sidebar's list; it comes back when it is opened again. */
+  forgetFolder(folder: string): void {
+    this.store.forgetFolder(folder)
+  }
+
   /**
    * Files (dropped, or handed over by the OS) as the folder of the first and
    * their items' keys, indexing any folder the index has not seen. A folder
@@ -1248,6 +1255,7 @@ export class IndexService {
       ext: row.ext,
       size: row.size,
       mtime: row.mtime,
+      added: row.added ?? row.mtime,
       isRaw: row.is_raw === 1,
       rating: copy ? copy.rating : row.rating,
       flag: ((copy ? copy.flag : row.flag) as Flag) ?? null,

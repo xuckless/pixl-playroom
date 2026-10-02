@@ -233,6 +233,7 @@ export function registerIpc(s: Services): void {
     items: await s.library.openFolder(folder)
   }))
   handle(IPC.library.recentFolders, () => s.index.recentFolders())
+  handle(IPC.library.forgetFolder, (folder: string) => s.index.forgetFolder(folder))
   handle(IPC.library.subfolders, (folder: string) => s.index.subfolders(folder))
   handle(IPC.library.setMeta, (keys: string[], patch: MetaPatch) => s.index.setMeta(keys, patch))
   handle(IPC.library.createCopy, async (key: string) => {

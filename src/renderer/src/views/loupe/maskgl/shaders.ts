@@ -194,8 +194,9 @@ void main() {
  * Molten glass (view 5) treats the mask as a pane of liquid glass laid on
  * the photo, the mask its thickness: where it rises (its edge) the picture
  * behind bends inward and the rim catches a light from the top left, with a
- * soft shadow on the far side; inside, the picture is frosted, a little more
- * saturated and tinted the mask's colour. For a moment after the mask
+ * soft shadow on the far side, and the rim is frosted; inside, the glass is
+ * clear: the picture stays sharp, a little more saturated and tinted the
+ * mask's colour, so the edit can be judged through it. For a moment after the mask
  * changes the light on the rim flows (uFlow), then settles. Without the
  * picture yet it shows as the colour view.
  */
@@ -242,10 +243,12 @@ void main() {
     // Refraction: the picture behind the rim pulled in toward the thick side.
     vec2 q = d - g * 0.045;
     float body = smoothstep(0.0, 0.75, m);
-    vec3 c = mix(P(uPicture, q), P(uFrost, q), body);
+    // Clear glass: the picture stays sharp inside, so the edit reads through
+    // it; only the rim, where the glass bends light, is frosted.
+    vec3 c = mix(P(uPicture, q), P(uFrost, q), 0.55 * slope);
     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
     c = mix(vec3(luma), c, 1.0 + 0.3 * body);
-    c = mix(c, uTint, 0.2 * body) * 1.03 + 0.012;
+    c = mix(c, uTint, 0.16 * body) * 1.03 + 0.012;
     // The rim: lit where it faces the light (top left), shaded where it faces away.
     float facing = dot(-n, normalize(vec2(-0.6, -0.8)));
     float flow = 1.0 + uFlow * 0.6 * sin(d.x * 38.0 + d.y * 27.0 - uTime * 2.4)

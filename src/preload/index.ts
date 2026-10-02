@@ -130,6 +130,7 @@ const api = {
     subfolders: (folder: string) =>
       call<{ path: string; name: string }[]>(IPC.library.subfolders, folder),
     recentFolders: () => call<string[]>(IPC.library.recentFolders),
+    forgetFolder: (folder: string) => call<void>(IPC.library.forgetFolder, folder),
     setMeta: (keys: string[], patch: MetaPatch) =>
       call<(LibraryItem | undefined)[]>(IPC.library.setMeta, keys, patch),
     createCopy: (key: string) => call<LibraryItem>(IPC.library.createCopy, key),

@@ -21,7 +21,7 @@ import { useDevelop, type CurveChannel } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { runJob } from '../state/busy'
 import { ASPECTS, aspectValue } from '../lib/aspects'
-import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../lib/geometry'
+import { setAspect } from '../lib/geometry'
 import { Icon, PathIcon } from '../components/icons'
 import { CurvePresets } from './CurvePresets'
 import { AiDenoise } from './AiDenoise'
@@ -382,15 +382,42 @@ function WhiteBalanceRows(): React.JSX.Element | null {
   )
 }
 
-export function BasicPanel(): React.JSX.Element | null {
+/** Above the cards: the profile, and colour or black and white (the whole photo's only). */
+export function AdjustHead(): React.JSX.Element | null {
+  const { recipe, replace, layer } = useScope()
+  if (!recipe || layer) return null
+  return (
+    <div className="adjust-head">
+      <div className="row">
+        <span className="adjust-head-label">Treatment</span>
+        <Tabs
+          value={recipe.treatment}
+          tabs={[
+            { value: 'color', label: 'Colour' },
+            { value: 'bw', label: 'B&W' }
+          ]}
+          onChange={(t) =>
+            replace({ ...recipe, treatment: t }, t === 'bw' ? 'Black & white' : 'Colour')
+          }
+        />
+      </div>
+      <ProfileRow />
+    </div>
+  )
+}
+
+export function WhiteBalanceBody(): React.JSX.Element {
+  return <WhiteBalanceRows />
+}
+
+/** Light's Auto: the engine sets the six sliders from the picture (the whole photo only). */
+export function AutoTone(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
   const { recipe, replace, layer } = useScope()
-  if (!session || !recipe) return null
+  if (!session || !recipe || layer) return null
   const auto = async (): Promise<void> => {
     try {
-      const basic = await runJob('Auto tone', () => api.develop.autoTone(session.key), {
-        detail: 'Measuring the picture with the tone sliders at zero'
-      })
+      const basic = await runJob('Auto tone', () => api.develop.autoTone(session.key))
       const now = useDevelop.getState().recipe ?? recipe
       replace({ ...now, basic }, 'Auto tone')
     } catch (err) {
@@ -398,119 +425,110 @@ export function BasicPanel(): React.JSX.Element | null {
     }
   }
   return (
-    <ToolPanel
-      actions={
-        layer ? undefined : (
-          <Tabs
-            value={recipe.treatment}
-            tabs={[
-              { value: 'color', label: 'Colour' },
-              { value: 'bw', label: 'B&W' }
-            ]}
-            onChange={(t) =>
-              replace({ ...recipe, treatment: t }, t === 'bw' ? 'Black & white' : 'Colour')
-            }
-          />
-        )
-      }
-    >
-      <Section id="basic.wb" title={layer ? 'White balance' : 'Profile & white balance'}>
-        {!layer && <ProfileRow />}
-        <WhiteBalanceRows />
-      </Section>
-      <Section
-        id="basic.tone"
-        title="Tone"
-        right={
-          layer ? undefined : (
-            <button
-              className="sm"
-              onClick={() => void auto()}
-              title={withKey('Auto tone', 'autoTone')}
-            >
-              Auto
-            </button>
-          )
-        }
-      >
+    <button className="sm" onClick={() => void auto()} title={withKey('Auto tone', 'autoTone')}>
+      Auto
+    </button>
+  )
+}
+
+export function LightBody(): React.JSX.Element {
+  return (
+    <>
+      <RS
+        label="Exposure"
+        tip={TIPS['light.exposure']}
+        read={(r) => r.basic.exposure}
+        write={(r, v) => (r.basic.exposure = v)}
+        min={-5}
+        max={5}
+        step={0.01}
+        format={(v) => (v > 0 ? '+' : '') + v.toFixed(2)}
+      />
+      <RS
+        label="Contrast"
+        tip={TIPS['light.contrast']}
+        read={(r) => r.basic.contrast}
+        write={(r, v) => (r.basic.contrast = v)}
+      />
+      <RS
+        label="Highlights"
+        tip={TIPS['light.highlights']}
+        read={(r) => r.basic.highlights}
+        write={(r, v) => (r.basic.highlights = v)}
+      />
+      <RS
+        label="Shadows"
+        tip={TIPS['light.shadows']}
+        read={(r) => r.basic.shadows}
+        write={(r, v) => (r.basic.shadows = v)}
+      />
+      <RS
+        label="Whites"
+        tip={TIPS['light.whites']}
+        read={(r) => r.basic.whites}
+        write={(r, v) => (r.basic.whites = v)}
+      />
+      <RS
+        label="Blacks"
+        tip={TIPS['light.blacks']}
+        read={(r) => r.basic.blacks}
+        write={(r, v) => (r.basic.blacks = v)}
+      />
+    </>
+  )
+}
+
+export function PresenceBody(): React.JSX.Element {
+  return (
+    <>
+      <RS
+        label="Texture"
+        tip={TIPS['presence.texture']}
+        read={(r) => r.presence.texture}
+        write={(r, v) => (r.presence.texture = v)}
+      />
+      <RS
+        label="Clarity"
+        tip={TIPS['presence.clarity']}
+        read={(r) => r.presence.clarity}
+        write={(r, v) => (r.presence.clarity = v)}
+      />
+      <RS
+        label="Dehaze"
+        tip={TIPS['presence.dehaze']}
+        read={(r) => r.presence.dehaze}
+        write={(r, v) => (r.presence.dehaze = v)}
+      />
+    </>
+  )
+}
+
+export function ColourBody(): React.JSX.Element {
+  const { layer } = useScope()
+  return (
+    <>
+      <RS
+        label="Vibrance"
+        tip={TIPS['colour.vibrance']}
+        read={(r) => r.presence.vibrance}
+        write={(r, v) => (r.presence.vibrance = v)}
+      />
+      <RS
+        label="Saturation"
+        tip={TIPS['colour.saturation']}
+        read={(r) => r.presence.saturation}
+        write={(r, v) => (r.presence.saturation = v)}
+      />
+      {layer && (
         <RS
-          label="Exposure"
-          tip={TIPS['light.exposure']}
-          read={(r) => r.basic.exposure}
-          write={(r, v) => (r.basic.exposure = v)}
-          min={-5}
-          max={5}
-          step={0.01}
-          format={(v) => (v > 0 ? '+' : '') + v.toFixed(2)}
+          label="Hue"
+          tip={TIPS['colour.hue']}
+          read={(r) => r.presence.hue}
+          write={(r, v) => (r.presence.hue = v)}
+          track="linear-gradient(90deg,#2df,#f2d,#fd2,#2f8,#2df)"
         />
-        <RS
-          label="Contrast"
-          tip={TIPS['light.contrast']}
-          read={(r) => r.basic.contrast}
-          write={(r, v) => (r.basic.contrast = v)}
-        />
-        <RS
-          label="Highlights"
-          tip={TIPS['light.highlights']}
-          read={(r) => r.basic.highlights}
-          write={(r, v) => (r.basic.highlights = v)}
-        />
-        <RS label="Shadows" read={(r) => r.basic.shadows} write={(r, v) => (r.basic.shadows = v)} />
-        <RS
-          label="Whites"
-          tip={TIPS['light.whites']}
-          read={(r) => r.basic.whites}
-          write={(r, v) => (r.basic.whites = v)}
-        />
-        <RS
-          label="Blacks"
-          tip={TIPS['light.blacks']}
-          read={(r) => r.basic.blacks}
-          write={(r, v) => (r.basic.blacks = v)}
-        />
-      </Section>
-      <Section id="basic.presence" title="Presence">
-        <RS
-          label="Texture"
-          tip={TIPS['presence.texture']}
-          read={(r) => r.presence.texture}
-          write={(r, v) => (r.presence.texture = v)}
-        />
-        <RS
-          label="Clarity"
-          tip={TIPS['presence.clarity']}
-          read={(r) => r.presence.clarity}
-          write={(r, v) => (r.presence.clarity = v)}
-        />
-        <RS
-          label="Dehaze"
-          tip={TIPS['presence.dehaze']}
-          read={(r) => r.presence.dehaze}
-          write={(r, v) => (r.presence.dehaze = v)}
-        />
-        <RS
-          label="Vibrance"
-          tip={TIPS['colour.vibrance']}
-          read={(r) => r.presence.vibrance}
-          write={(r, v) => (r.presence.vibrance = v)}
-        />
-        <RS
-          label="Saturation"
-          tip={TIPS['colour.saturation']}
-          read={(r) => r.presence.saturation}
-          write={(r, v) => (r.presence.saturation = v)}
-        />
-        {layer && (
-          <RS
-            label="Hue"
-            read={(r) => r.presence.hue}
-            write={(r, v) => (r.presence.hue = v)}
-            track="linear-gradient(90deg,#2df,#f2d,#fd2,#2f8,#2df)"
-            title="Turns every colour where the mask selects"
-          />
-        )}
-      </Section>
-    </ToolPanel>
+      )}
+    </>
   )
 }
 
@@ -547,7 +565,7 @@ function TatToggle({ target }: { target: 'hsl' | 'curve' }): React.JSX.Element {
   )
 }
 
-export function ToneCurvePanel(): React.JSX.Element | null {
+export function CurveBody(): React.JSX.Element | null {
   const { recipe, edit, commit } = useScope()
   const stats = useDevelop((s) => s.stats)
   const channel = useDevelop((s) => s.curveChannel)
@@ -653,7 +671,7 @@ export function ToneCurvePanel(): React.JSX.Element | null {
 
 const BAND_LABEL = (b: HslBand): string => b[0].toUpperCase() + b.slice(1)
 
-export function HslPanel(): React.JSX.Element | null {
+export function MixerBody(): React.JSX.Element | null {
   const { recipe, layer } = useScope()
   const tab = useDevelop((s) => s.hslTab)
   const setTab = useDevelop((s) => s.setHslTab)
@@ -871,7 +889,7 @@ function PointColorSection(): React.JSX.Element | null {
 
 // ── Colour grading ───────────────────────────────────────────────────────────
 
-export function ColorGradePanel(): React.JSX.Element | null {
+export function GradingBody(): React.JSX.Element | null {
   const { recipe, edit, commit, layer } = useScope()
   if (!recipe) return null
   const wheel = (
@@ -926,7 +944,7 @@ export function ColorGradePanel(): React.JSX.Element | null {
 
 // ── Detail ───────────────────────────────────────────────────────────────────
 
-export function DetailPanel(): React.JSX.Element | null {
+export function DetailBody(): React.JSX.Element | null {
   const { recipe } = useScope()
   const noise = useDevelop((s) => s.noise)
   const measure = useDevelop((s) => s.measureNoise)
@@ -1052,7 +1070,7 @@ export function DetailPanel(): React.JSX.Element | null {
 
 // ── Effects ──────────────────────────────────────────────────────────────────
 
-export function EffectsPanel(): React.JSX.Element | null {
+export function EffectsBody(): React.JSX.Element | null {
   const { recipe, edit, commit, layer } = useScope()
   const isHdr = useDevelop((s) => s.session?.isHdr === true)
   if (!recipe) return null
@@ -1157,7 +1175,7 @@ export function EffectsPanel(): React.JSX.Element | null {
 
 // ── Calibration ──────────────────────────────────────────────────────────────
 
-export function CalibrationPanel(): React.JSX.Element {
+export function CalibrationBody(): React.JSX.Element {
   return (
     <ToolPanel>
       <Section id="calibration.shadows" title="Shadows">
@@ -1216,42 +1234,14 @@ export function CalibrationPanel(): React.JSX.Element {
 
 // ── Crop & geometry ──────────────────────────────────────────────────────────
 
-export function GeometryPanel(): React.JSX.Element | null {
-  const session = useDevelop((s) => s.session)
+/** Crop's panel, in place of the cards while the crop tool is in hand. */
+export function CropDrawer(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
-  const tool = useDevelop((s) => s.tool)
-  const setTool = useDevelop((s) => s.setTool)
   const setGesture = useDevelop((s) => s.setGesture)
-  const edit = useDevelop((s) => s.edit)
-  const commit = useDevelop((s) => s.commit)
-  if (!recipe || !session) return null
+  if (!recipe) return null
   const g = recipe.geometry
   return (
     <ToolPanel>
-      <div className="row">
-        <Toggle
-          on={tool === 'crop'}
-          onChange={(on) => setTool(on ? 'crop' : 'none')}
-          title={withKey('Crop tool', 'tool.crop')}
-        >
-          <Icon name="crop" />
-          Crop
-        </Toggle>
-        <button className="icon" title="Rotate left" onClick={rotateLeft}>
-          <Icon name="rotateLeft" />
-        </button>
-        <button className="icon" title="Rotate right" onClick={rotateRight}>
-          <Icon name="rotateRight" />
-        </button>
-        <button className="icon" title="Flip horizontal" onClick={flip}>
-          <Icon name="flip" />
-        </button>
-        <span className="spacer" />
-        <button onClick={resetCrop} title="Clear the crop and the straighten">
-          <Icon name="reset" />
-          Reset
-        </button>
-      </div>
       <Select
         label="Aspect"
         value={aspectValue(g.aspect)}
@@ -1268,6 +1258,21 @@ export function GeometryPanel(): React.JSX.Element | null {
         format={(v) => `${v.toFixed(2)}°`}
         onGesture={(on) => setGesture(on ? 'straighten' : null)}
       />
+    </ToolPanel>
+  )
+}
+
+/** Upright and Transform: perspective, kept with the adjustments (the crop has its own panel). */
+export function GeometryBody(): React.JSX.Element | null {
+  const session = useDevelop((s) => s.session)
+  const recipe = useDevelop((s) => s.recipe)
+  const tool = useDevelop((s) => s.tool)
+  const edit = useDevelop((s) => s.edit)
+  const commit = useDevelop((s) => s.commit)
+  if (!recipe || !session) return null
+  const g = recipe.geometry
+  return (
+    <ToolPanel>
       <Section id="crop.upright" title="Upright">
         <div className="seg upright-modes" role="group" aria-label="Upright">
           {UPRIGHT_MODES.map((m) => (

@@ -563,24 +563,22 @@ function OverlayControls(): React.JSX.Element {
   const o = useUi((s) => s.maskOverlay)
   const set = useUi((s) => s.setMaskOverlay)
   const [open, setOpen] = useState(false)
+  const modeLabel = OVERLAY_MODES.find((m) => m.value === o.mode)?.label ?? o.mode
   return (
     <div className="mf-foot">
-      <label className="check" title={withKey('Show the overlay', 'mask.overlay')}>
-        <input type="checkbox" checked={overlay} onChange={(e) => setOverlay(e.target.checked)} />
-        Overlay
-      </label>
-      <span
-        className="mf-swatch"
-        style={{ background: `hsl(${o.hue} 90% 58%)` }}
-        title="Overlay colour"
-      />
-      <span className="spacer" />
       <span className="mf-menu-anchor">
-        <button className="icon sm" title="Overlay options" onClick={() => setOpen(!open)}>
-          <Icon name="settings" />
+        <button
+          className={`mf-overlay-btn${overlay ? '' : ' off'}`}
+          title="Overlay options"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          <span className="mf-swatch" style={{ background: `hsl(${o.hue} 90% 58%)` }} />
+          <span>Overlay</span>
+          <span className="mf-overlay-mode">{overlay ? modeLabel : 'Off'}</span>
         </button>
         {open && (
-          <Popover onClose={() => setOpen(false)} align="right" side="top" className="overlay-pop">
+          <Popover onClose={() => setOpen(false)} align="left" side="top" className="overlay-pop">
             <span className="micro">
               Overlay{keyHint('mask.overlayMode') && ` · ${keyHint('mask.overlayMode')} cycles`}
             </span>
@@ -605,6 +603,14 @@ function OverlayControls(): React.JSX.Element {
                 value={o.hue}
                 onChange={(e) => set({ hue: Number(e.target.value) })}
               />
+            </label>
+            <label className="check" title={withKey('Show the overlay', 'mask.overlay')}>
+              <input
+                type="checkbox"
+                checked={overlay}
+                onChange={(e) => setOverlay(e.target.checked)}
+              />
+              Show the overlay{keyHint('mask.overlay') && ` (${keyHint('mask.overlay')})`}
             </label>
             <label className="op-row">
               <span>Opacity</span>

@@ -238,7 +238,7 @@ export function parametricCurve(tc: Recipe['toneCurve']): CurvePointSetting[] | 
   return pts
 }
 
-/** The profile looks, as control points on encoded values. */
+/** The profile looks, as control points on encoded values (Standard's is Monochrome's now). */
 const STANDARD_CURVE: CurvePointSetting[] = [
   { x: 0, y: 0 },
   { x: 0.1, y: 0.075 },
@@ -248,6 +248,8 @@ const STANDARD_CURVE: CurvePointSetting[] = [
   { x: 0.92, y: 0.945 },
   { x: 1, y: 1 }
 ]
+/** Playroom Standard's saturation over Vivid's look. */
+const STANDARD_SATURATION = 1.12
 const VIVID_CURVE: CurvePointSetting[] = [
   { x: 0, y: 0 },
   { x: 0.1, y: 0.06 },
@@ -1079,7 +1081,11 @@ function settingsStages(
   }
   switch (base?.profile.kind ?? 'neutral') {
     case 'standard':
-      look.push(curvesOp({ master: tonal(STANDARD_CURVE, hdr) }))
+      // Vivid's curve and vibrance, and a little more saturation on top: a
+      // RAW opens with colour that already pops.
+      look.push(curvesOp({ master: tonal(VIVID_CURVE, hdr) }))
+      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7 } })
+      look.push({ Primary: primary({ saturation: STANDARD_SATURATION }) })
       break
     case 'vivid':
       look.push(curvesOp({ master: tonal(VIVID_CURVE, hdr) }))

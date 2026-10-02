@@ -211,16 +211,24 @@ export function Menu({
   onClose,
   align,
   anchor,
-  solid
+  solid,
+  className
 }: {
   items: (MenuItem | 'sep')[]
   onClose: () => void
   align?: 'left' | 'right'
   anchor?: PopoverAnchor
   solid?: boolean
+  className?: string
 }): React.JSX.Element {
   return (
-    <Popover onClose={onClose} className="menu" align={align} anchor={anchor} solid={solid}>
+    <Popover
+      onClose={onClose}
+      className={`menu${className ? ` ${className}` : ''}`}
+      align={align}
+      anchor={anchor}
+      solid={solid}
+    >
       <div
         role="menu"
         onKeyDown={(e) => {

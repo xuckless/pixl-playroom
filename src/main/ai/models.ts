@@ -29,6 +29,9 @@ import type { EngineClient } from '../engine/client'
 import type { IndexClient } from '../indexer/client'
 import { paths } from '../paths'
 import { BACKGROUND_THREADS } from '../source'
+import { ENHANCE_MODEL, FIRST_GUESS_MS_PER_MP, type EnhanceStepKind } from '../../shared/enhance'
+import { modelSpeed, referenceOf, testFactor, type ModelSpeed } from '../../shared/modelSpeed'
+import { DENOISE_RATE_KEY, ENHANCE_RATE_KEY } from './rates'
 
 import * as pixlModels from '@xuckless/pixl-models'
 import type { ModelEntry as RosterEntry, ModelFile as RosterFile } from '@xuckless/pixl-models'
@@ -47,6 +50,8 @@ export const MODELS_BASE = BASE
 const PROVIDER_KEY = 'ai.provider'
 /** What the performance test measured, per provider. */
 const MEASURED_KEY = 'ai.providerTimes'
+/** How long the models' speeds are kept before the remembered rates are read again. */
+const SPEED_CACHE_MS = 5000
 
 /** A model's name alone: the roster's title less what it is for ("U²-Netp: salient…"). */
 export function modelName(e: Pick<RosterEntry, 'title'>): string {
@@ -102,10 +107,12 @@ export class ModelStore {
   }
 
   async list(): Promise<ModelInfo[]> {
+    const speeds = await this.speeds()
     return Promise.all(
       this.roster().map(async (e) => {
         const d = this.downloads.get(e.id)
         return {
+          speed: speeds.get(e.id) ?? null,
           id: e.id,
           title: e.title,
           role: e.role,
@@ -119,6 +126,50 @@ export class ModelStore {
         }
       })
     )
+  }
+
+  private speedCache: { at: number; speeds: Map<string, ModelSpeed | null> } | null = null
+
+  /**
+   * How long each model takes here, for one photo: from earlier runs, else
+   * its reference time scaled by the speed test, else the reference alone.
+   * Read again at most every few seconds (a download's progress lists the
+   * models many times a second).
+   */
+  private async speeds(): Promise<Map<string, ModelSpeed | null>> {
+    if (this.speedCache && Date.now() - this.speedCache.at < SPEED_CACHE_MS)
+      return this.speedCache.speeds
+    const read = async (key: string): Promise<Record<string, number>> => {
+      const v: unknown = await this.settings.getSetting(key).catch(() => null)
+      return v && typeof v === 'object' ? (v as Record<string, number>) : {}
+    }
+    const [denoise, enhance, info] = await Promise.all([
+      read(DENOISE_RATE_KEY),
+      read(ENHANCE_RATE_KEY),
+      this.providerInfo()
+    ])
+    const m = info.measured
+    const tested = m?.model ? this.roster().find((e) => e.id === m.model) : undefined
+    const testMs = m ? (info.choice === 'cpu' ? m.cpuMs : (m.acceleratedMs ?? m.cpuMs)) : null
+    const factor = tested ? testFactor(testMs, referenceOf(tested.measured)) : null
+    const kindOf = new Map<string, EnhanceStepKind>(
+      Object.entries(ENHANCE_MODEL).map(([k, id]) => [id, k as EnhanceStepKind])
+    )
+    const speeds = new Map<string, ModelSpeed | null>()
+    for (const e of this.roster()) {
+      const kind = kindOf.get(e.id)
+      speeds.set(
+        e.id,
+        modelSpeed({
+          reference: referenceOf(e.measured),
+          learnedMsPerMp: denoise[e.id] ?? (kind ? enhance[kind] : null),
+          guessMsPerMp: kind ? FIRST_GUESS_MS_PER_MP[kind] : null,
+          factor
+        })
+      )
+    }
+    this.speedCache = { at: Date.now(), speeds }
+    return speeds
   }
 
   private emit(): void {
@@ -340,7 +391,8 @@ export class ModelStore {
       const c = r.cases.find((x) => x.name === name)
       return c && !c.error && typeof c.median_run_ms === 'number' ? c.median_run_ms : null
     }
-    const measured = { cpuMs: ms('cpu'), acceleratedMs: ms('accelerated') }
+    const measured = { cpuMs: ms('cpu'), acceleratedMs: ms('accelerated'), model: id }
+    this.speedCache = null
     const choice =
       measured.acceleratedMs !== null &&
       (measured.cpuMs === null || measured.acceleratedMs <= measured.cpuMs)

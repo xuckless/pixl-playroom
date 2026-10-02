@@ -253,6 +253,7 @@ function Folders(): React.JSX.Element {
   const pinned = useLibrary((s) => s.pinned)
   const chooseFolder = useLibrary((s) => s.chooseFolder)
   const togglePin = useLibrary((s) => s.togglePin)
+  const forget = useLibrary((s) => s.forgetFolder)
   const rest = recent.filter((r) => !pinned.includes(r)).slice(0, 8)
   const row = (path: string, isPinned: boolean): React.JSX.Element => (
     <FolderTree
@@ -260,20 +261,36 @@ function Folders(): React.JSX.Element {
       path={path}
       depth={0}
       actions={
-        <button
-          className={`icon src-pin${isPinned ? ' pinned' : ''}`}
-          title={isPinned ? 'Unpin' : 'Pin to the top'}
-          aria-label={isPinned ? `Unpin ${folderName(path)}` : `Pin ${folderName(path)}`}
-          aria-pressed={isPinned}
-          onClick={(e) => {
-            e.stopPropagation()
-            togglePin(path)
-          }}
-        >
-          <Icon name="pin" />
-        </button>
+        <>
+          <button
+            className="icon src-forget"
+            title="Remove from the list (the folder and its photos stay on disk)"
+            aria-label={`Remove ${folderName(path)} from the list`}
+            onClick={(e) => {
+              e.stopPropagation()
+              void forget(path)
+            }}
+          >
+            <Icon name="close" />
+          </button>
+          <button
+            className={`icon src-pin${isPinned ? ' pinned' : ''}`}
+            title={isPinned ? 'Unpin' : 'Pin to the top'}
+            aria-label={isPinned ? `Unpin ${folderName(path)}` : `Pin ${folderName(path)}`}
+            aria-pressed={isPinned}
+            onClick={(e) => {
+              e.stopPropagation()
+              togglePin(path)
+            }}
+          >
+            <Icon name="pin" />
+          </button>
+        </>
       }
-      menu={[{ label: isPinned ? 'Unpin' : 'Pin to the top', onSelect: () => togglePin(path) }]}
+      menu={[
+        { label: isPinned ? 'Unpin' : 'Pin to the top', onSelect: () => togglePin(path) },
+        { label: 'Remove from the list', onSelect: () => void forget(path) }
+      ]}
     />
   )
   return (

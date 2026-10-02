@@ -42,6 +42,7 @@ import { addPixelStep, storesLossless } from '../pixels/steps'
 import { ensureWorking } from '../pixels/working'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
 import { ModelMissing, modelName, type ModelStore } from './models'
+import { DENOISE_RATE_KEY } from './rates'
 
 export const DENOISE_SHORT: Record<AiDenoiseModel, string> = {
   'scunet-color-real': 'SCUNet',
@@ -126,7 +127,7 @@ async function legacyMaster(
 type DenoiseRequest = Extract<AiStartRequest, { task: 'denoise' }>
 
 /** How long a megapixel of the full-resolution step takes, per model, remembered between runs. */
-const RATE_KEY = 'ai.denoise.msPerMp'
+const RATE_KEY = DENOISE_RATE_KEY
 const FIRST_GUESS_MS_PER_MP: Record<string, number> = {
   'scunet-color-real': 27000,
   'drunet-color': 9000

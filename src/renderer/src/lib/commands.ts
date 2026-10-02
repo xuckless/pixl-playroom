@@ -7,7 +7,16 @@
 import { useSyncExternalStore } from 'react'
 import { nextOf } from '../../../shared/masks'
 import { RECIPE_GROUPS } from '../../../shared/recipe'
-import { masksOpen, openMasks, selectPanel, stepPanel, toggleMasks, TOOLS } from '../develop/tools'
+import {
+  jumpToCard,
+  masksOpen,
+  openDrawer,
+  openMasks,
+  stepCard,
+  toggleDrawer,
+  toggleMasks
+} from '../develop/tools'
+import { CARDS } from '../../../shared/cards'
 import {
   componentLabel,
   deleteComponent,
@@ -69,8 +78,10 @@ const lib = (): ReturnType<typeof useLibrary.getState> => useLibrary.getState()
 const dev = (): ReturnType<typeof useDevelop.getState> => useDevelop.getState()
 const ui = (): ReturnType<typeof useUi.getState> => useUi.getState()
 
-const panelIs = (id: string): boolean => ui().panel === id
-const healOpen = (): boolean => panelIs('heal')
+const healOpen = (): boolean => ui().drawer === 'heal'
+/** Whether a card is showing open in the column (the cards up, it unfolded). */
+const cardShown = (id: 'mixer' | 'curve'): boolean =>
+  ui().drawer === 'adjust' && !!ui().cardsOpen[id]
 const notInField = (e: KeyboardEvent): boolean => (e.target as HTMLElement)?.tagName !== 'INPUT'
 const focusedItem = (): ReturnType<typeof lib>['items'][number] | undefined =>
   lib().items.find((i) => i.key === lib().focus)
@@ -110,14 +121,14 @@ const labels = (['red', 'yellow', 'green', 'blue'] as const).map<KeyCommand>((la
   }
 }))
 
-const tools = TOOLS.map<KeyCommand>((t, i) => ({
-  id: `tool.${t.id}`,
-  label: `Show ${t.name}`,
+const cards = CARDS.map<KeyCommand>((c, i) => ({
+  id: `card.${c.id}`,
+  label: `Show ${c.title}`,
   group: 'Tools',
   context: 'develop',
   keys: i < 9 ? [`Mod+${i + 1}`] : [],
   run: (e) => {
-    selectPanel(t.id)
+    jumpToCard(c.id)
     stop(e)
   }
 }))
@@ -301,10 +312,10 @@ export const COMMANDS: KeyCommand[] = [
     run: () => {
       const d = dev()
       if (d.tool !== 'none') {
-        const wasCrop = d.tool === 'crop'
+        // Crop's and Heal's panels go with their tools: the cards come back.
+        if (d.tool === 'crop' || d.tool === 'heal' || d.tool === 'upright-guide')
+          return openDrawer('adjust')
         d.setTool('none')
-        const u = ui()
-        if (wasCrop && u.panel === 'crop') u.setPanel(u.previousPanel)
         return
       }
       // A selected mask is what the panels edit: Esc gives them the whole photo back.
@@ -370,26 +381,26 @@ export const COMMANDS: KeyCommand[] = [
     keys: ['Mod+Shift+Z'],
     run: () => dev().redoStep()
   },
-  ...tools,
+  ...cards,
   {
     id: 'tool.prev',
-    label: 'Turn the wheel up',
+    label: 'Previous panel',
     group: 'Tools',
     context: 'develop',
     keys: ['Mod+ArrowUp'],
     run: (e) => {
-      stepPanel(-1)
+      stepCard(-1)
       stop(e)
     }
   },
   {
     id: 'tool.next',
-    label: 'Turn the wheel down',
+    label: 'Next panel',
     group: 'Tools',
     context: 'develop',
     keys: ['Mod+ArrowDown'],
     run: (e) => {
-      stepPanel(1)
+      stepCard(1)
       stop(e)
     }
   },
@@ -498,7 +509,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Tools',
     context: 'develop',
     keys: ['Q'],
-    run: () => selectPanel(healOpen() ? ui().previousPanel : 'heal')
+    run: () => toggleDrawer('heal')
   },
   {
     id: 'mask.delete',
@@ -568,14 +579,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Tools',
     context: 'develop',
     keys: ['R'],
-    run: () => {
-      const u = ui()
-      if (dev().tool === 'crop') {
-        dev().setTool('none')
-        return selectPanel(u.panel === 'crop' ? u.previousPanel : u.panel)
-      }
-      selectPanel('crop', { tool: 'crop' })
-    }
+    run: () => toggleDrawer('crop')
   },
   {
     id: 'mask.brush',
@@ -659,11 +663,14 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Tools',
     context: 'develop.curve',
     keys: ['T'],
-    when: () => panelIs('hsl') || panelIs('curve'),
+    when: () => cardShown('mixer') || cardShown('curve'),
     run: () => {
       const d = dev()
       if (d.tool === 'tat') return d.setTool('none')
-      d.setTatTarget(ui().panel as 'hsl' | 'curve')
+      // The focused card if it is one of the two, else whichever is open.
+      const focus = ui().focusCard
+      const curve = focus === 'curve' || (focus !== 'mixer' && cardShown('curve'))
+      d.setTatTarget(curve && cardShown('curve') ? 'curve' : 'hsl')
       d.setTool('tat')
     }
   },

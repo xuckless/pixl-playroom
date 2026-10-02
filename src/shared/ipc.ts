@@ -1,4 +1,5 @@
 import type { ResolvedProfile } from './lens'
+import type { ModelSpeed } from './modelSpeed'
 /** IPC channel names and the app-level types both sides of the bridge share. */
 import type {
   ConvertReport,
@@ -85,6 +86,8 @@ export const IPC = {
     /** A folder's subfolders (one level): the sidebar's folder tree. */
     subfolders: 'library:subfolders',
     recentFolders: 'library:recent-folders',
+    /** Take a folder off the sidebar's list (nothing on disk changes). */
+    forgetFolder: 'library:forget-folder',
     setMeta: 'library:set-meta',
     createCopy: 'library:create-copy',
     deleteCopy: 'library:delete-copy',
@@ -305,6 +308,8 @@ export interface LibraryItem {
   ext: string
   size: number
   mtime: number
+  /** When the file arrived on this disk (ms), for Date added; its mtime until known. */
+  added?: number
   isRaw: boolean
   rating: number
   flag: Flag
@@ -796,6 +801,8 @@ export interface ModelInfo {
   /** 0…1 while downloading, else null. */
   progress: number | null
   error?: string
+  /** How long it takes on this computer, for one photo (see `modelSpeed.ts`). */
+  speed: ModelSpeed | null
 }
 
 /** Which provider AI models run on, and what the performance test measured. */
@@ -803,7 +810,8 @@ export interface ProviderInfo {
   choice: 'cpu' | 'accelerated'
   /** The accelerator the bundled runtime offers ('coreml', 'directml'), if any. */
   accelerator: string | null
-  measured?: { cpuMs: number | null; acceleratedMs: number | null }
+  /** The last test's times, and which model it timed (absent in a test saved before it was kept). */
+  measured?: { cpuMs: number | null; acceleratedMs: number | null; model?: string }
 }
 
 /** Where a photo's AI denoise stands: nothing made yet, the preview, or the full resolution. */

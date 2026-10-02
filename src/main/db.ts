@@ -58,6 +58,8 @@ export interface PhotoRow {
   /** What kind of HDR the file is ('' none), as last probed; `hdr_key` names that file version. */
   hdr: string | null
   hdr_key: string | null
+  /** When the file arrived on this disk (ms): its birth time, else its modification time. */
+  added?: number | null
   /** The photo's `.pixl` project (the truth about its edits once it has one), and its mtime as mirrored. */
   project_path: string | null
   project_mtime: number | null
@@ -309,7 +311,11 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
       }
     }
     db.exec('DROP TABLE planes')
-  }
+  },
+  // 10. When each file arrived on this disk (its birth time, else its
+  // modification time), for the library's Date added order. Filled as each
+  // folder is scanned again.
+  (db) => addColumns(db, 'photos', { added: 'REAL' })
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -423,6 +429,11 @@ export class Store {
     ).run(path, new Date().toISOString())
   }
 
+  /** Take a folder off the list of folders opened (its photos stay indexed). */
+  forgetFolder(path: string): void {
+    this.prepare('DELETE FROM folders WHERE path = ?').run(path)
+  }
+
   recentFolders(limit = 12): string[] {
     return (
       this.prepare('SELECT path FROM folders ORDER BY opened_at DESC LIMIT ?').all(limit) as {
@@ -456,11 +467,14 @@ export class Store {
     size: number
     mtime: number
     isRaw: boolean
+    /** When the file arrived on this disk (ms); kept once known. */
+    added?: number | null
   }): PhotoRow {
     this.prepare(
-      `INSERT INTO photos(path, folder, name, ext, size, mtime, is_raw) VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(path) DO UPDATE SET size = excluded.size, mtime = excluded.mtime`
-    ).run(p.path, p.folder, p.name, p.ext, p.size, p.mtime, p.isRaw ? 1 : 0)
+      `INSERT INTO photos(path, folder, name, ext, size, mtime, is_raw, added) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(path) DO UPDATE SET size = excluded.size, mtime = excluded.mtime,
+           added = COALESCE(photos.added, excluded.added)`
+    ).run(p.path, p.folder, p.name, p.ext, p.size, p.mtime, p.isRaw ? 1 : 0, p.added ?? null)
     return this.photoByPath(p.path) as PhotoRow
   }
 

@@ -64,6 +64,7 @@ import { ensureWorking } from './pixels/working'
 const TIFF = { Tiff: { compression: 'None' } } as const
 const ICC_ONLY = { exif: false, icc: true, xmp: false, iptc: false } as const
 import { estimate } from '../shared/ai'
+import { ENHANCE_RATE_KEY } from './ai/rates'
 
 export interface EnhanceAvailability {
   available: boolean
@@ -85,7 +86,7 @@ export function enhanceAvailability(status: EngineStatus): EnhanceAvailability {
 type EnhanceRequest = Extract<AiStartRequest, { task: 'enhance' }>
 
 /** How long each step takes per megapixel, remembered between runs, for the estimate. */
-export const RATE_KEY = 'ai.enhance.rates'
+export const RATE_KEY = ENHANCE_RATE_KEY
 
 /** The remembered speeds (an older build kept one number for ×2). */
 export async function enhanceRates(settings: IndexClient): Promise<EnhanceRates> {

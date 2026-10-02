@@ -876,6 +876,9 @@ input[type='checkbox']:disabled {
   color: var(--muted);
   transition: transform var(--dur-toggle) var(--spring);
 }
+.popover.gs-menu {
+  width: 260px;
+}
 .glass-select.on svg {
   transform: rotate(180deg);
   color: var(--acc);
