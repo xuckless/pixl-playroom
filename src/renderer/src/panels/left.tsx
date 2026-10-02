@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react'
 import { dependents, patchSummary, prerequisites, type Step } from '../../../shared/history'
 import type { Preset, ProjectInfo } from '../../../shared/ipc'
 import { applyLook, needsLens } from '../../../shared/looks/apply'
+import { LOOK_BY_ID, LOOKS } from '../../../shared/looks/catalog'
+import { searchLooks } from '../../../shared/looks/search'
 import { Icon } from '../components/icons'
 import { api, errorText } from '../lib/api'
-import { presetsChanged, usePresets } from '../lib/hooks'
+import { presetsChanged } from '../lib/hooks'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
+import { useLooks } from '../state/looks'
 import { MetadataEditor } from '../views/library/MetadataEditor'
 import { useMaskPresets, useSelectedMask } from './masks/presets'
 
@@ -29,8 +32,13 @@ export function PresetsPane(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
   const session = useDevelop((s) => s.session)
   const replace = useDevelop((s) => s.replace)
-  const [presets, reload] = usePresets()
+  const mine = useLooks((s) => s.mine)
+  const user = useLooks((s) => s.user)
   const [applied, setApplied] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  useEffect(() => {
+    if (useLooks.getState().mine === null) void useLooks.getState().load()
+  }, [])
   if (!recipe) return <p className="rail-empty">Open a photo to use presets.</p>
   const apply = async (p: Preset): Promise<void> => {
     if (!session) return
@@ -46,60 +54,150 @@ export function PresetsPane(): React.JSX.Element | null {
     const now = useDevelop.getState()
     if (now.session?.key !== session.key || !now.recipe) return
     const next = applyLook(now.recipe, p, { wb: session, lensResolved: resolved })
-    replace(next, `Preset: ${p.name}`)
+    replace(next, `${p.meta ? 'Look' : 'Preset'}: ${p.name}`)
   }
-  // Presets keep the groups they were saved under.
-  const groups = [...new Set(presets.map((p) => p.group))]
+  const myLooks = (mine ?? []).flatMap((id) => LOOK_BY_ID.get(id) ?? [])
+  const q = query.trim()
+  const shownMine = q ? searchLooks(myLooks, q) : myLooks
+  const shownUser = q ? searchLooks(user, q) : user
+  // While searching, the rest of the catalog answers too, ready to add.
+  const found = q
+    ? searchLooks(LOOKS, q, {})
+        .filter((l) => !(mine ?? []).includes(l.id))
+        .slice(0, CATALOG_HITS)
+    : []
+  // Saved presets keep the groups they were saved under.
+  const userGroups = [...new Set(shownUser.map((p) => p.group))]
+  const row = (p: Preset, action: React.ReactNode): React.JSX.Element => (
+    <div
+      key={p.id}
+      role="button"
+      tabIndex={0}
+      className={`preset rail-item${applied === p.id ? ' on' : ''}`}
+      onClick={() => void apply(p)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') void apply(p)
+      }}
+      title={describe(p)}
+    >
+      <span className="rail-label">
+        <i className="dot" />
+        {p.name}
+      </span>
+      {action}
+    </div>
+  )
+  const nothing = q && shownMine.length + shownUser.length + found.length === 0
   return (
     <div className="rail-list">
+      <label className="search-field rail-search">
+        <Icon name="search" />
+        <input
+          className="search"
+          placeholder="Search looks"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Escape') setQuery('')
+          }}
+        />
+      </label>
       <MaskPresetsGroup />
-      {groups.map((g) => (
-        <div key={g} className="preset-group">
-          <div className="rail-group">
-            <span className="micro">{g}</span>
-            <span className="line" />
-          </div>
-          <div className="stagger">
-            {presets
-              .filter((p) => p.group === g)
-              .map((p) => (
-                <div
-                  key={p.id}
-                  role="button"
-                  tabIndex={0}
-                  className={`preset rail-item${applied === p.id ? ' on' : ''}`}
-                  onClick={() => void apply(p)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void apply(p)
+      {shownMine.length > 0 && (
+        <Group label="My Looks">
+          {shownMine.map((p) =>
+            row(
+              p,
+              <button
+                className="icon sm"
+                title="Remove from My Looks"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  useLooks.getState().remove(p.id)
+                }}
+              >
+                <Icon name="minus" />
+              </button>
+            )
+          )}
+        </Group>
+      )}
+      {userGroups.map((g) => (
+        <Group key={g} label={g}>
+          {shownUser
+            .filter((p) => p.group === g)
+            .map((p) =>
+              row(
+                p,
+                <button
+                  className="icon sm"
+                  title="Delete preset"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void api.presets.remove(p.id).then(presetsChanged)
                   }}
-                  title={`Carries: ${p.groups.join(', ')}`}
                 >
-                  <span className="rail-label">
-                    <i className="dot" />
-                    {p.name}
-                  </span>
-                  {p.builtin ? (
-                    <span className="t">{p.groups.length}</span>
-                  ) : (
-                    <button
-                      className="icon sm"
-                      title="Delete preset"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void api.presets.remove(p.id).then(() => {
-                          reload()
-                          presetsChanged()
-                        })
-                      }}
-                    >
-                      <Icon name="trash" />
-                    </button>
-                  )}
-                </div>
-              ))}
-          </div>
-        </div>
+                  <Icon name="trash" />
+                </button>
+              )
+            )}
+        </Group>
       ))}
+      {found.length > 0 && (
+        <Group label="From the catalog">
+          {found.map((p) =>
+            row(
+              p,
+              <button
+                className="icon sm"
+                title="Add to My Looks"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  useLooks.getState().add(p.id)
+                }}
+              >
+                <Icon name="plus" />
+              </button>
+            )
+          )}
+        </Group>
+      )}
+      {nothing && <p className="rail-empty">No look matches “{q}”.</p>}
+      {!q && mine !== null && myLooks.length === 0 && user.length === 0 && (
+        <p className="rail-empty">
+          No looks kept yet. Search above to find one in the catalog and add it.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** How many catalog looks a rail search lists beside the user's own. */
+const CATALOG_HITS = 30
+
+/** A row's tooltip: what the look is like and what inspired it, or what a preset carries. */
+function describe(p: Preset): string {
+  if (!p.meta) return `Carries: ${p.groups.join(', ')}`
+  return [p.meta.description, p.meta.inspiredBy && `Inspired by ${p.meta.inspiredBy}`]
+    .filter(Boolean)
+    .join('\n')
+}
+
+function Group({
+  label,
+  children
+}: {
+  label: string
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="preset-group">
+      <div className="rail-group">
+        <span className="micro">{label}</span>
+        <span className="line" />
+      </div>
+      <div className="stagger">{children}</div>
     </div>
   )
 }

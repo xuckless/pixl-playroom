@@ -28,7 +28,6 @@ import {
 } from '../shared/ipc'
 import { convertWb, type WbContext } from '../shared/wbconvert'
 import { LicenceError } from '../shared/licence'
-import { BUILTIN_PRESETS } from '../shared/presets'
 import { applyGroups, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
 import { planeRef } from './planeref'
 import { equivalentFocal } from '../shared/upright'
@@ -476,8 +475,9 @@ export function registerIpc(s: Services): void {
   )
 
   // ── presets and profiles ──
+  // The user's own presets: the catalog's looks are code both sides import.
   handle(IPC.presets.list, async (): Promise<Preset[]> =>
-    [...BUILTIN_PRESETS, ...(await s.index.presets())].map((p) => ({
+    (await s.index.presets()).map((p) => ({
       ...p,
       recipe: s.planes.slim(p.recipe)
     }))
