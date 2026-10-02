@@ -86,12 +86,13 @@ const TIFF_II = Buffer.from('II*\0', 'latin1')
 const TIFF_MM = Buffer.from('MM\0*', 'latin1')
 
 /**
- * A JPEG's EXIF block put right. The engine's JPEG writer repeats the
- * `Exif\0\0` header ("Exif\0\0Exif\0\0MM…"), which ExifTool calls a
- * malformed APP1 and then refuses to write the file at all. The extra
- * header goes (TIFF offsets count from the TIFF header, so nothing else
- * moves); an EXIF block that still does not start with a TIFF header is
- * dropped. `changed` false: the buffer is returned as it came.
+ * A JPEG's EXIF block put right. The engine's JPEG writer repeated the
+ * `Exif\0\0` header ("Exif\0\0Exif\0\0MM…") until 0.16.1, which ExifTool
+ * calls a malformed APP1 and then refuses to write the file at all. The
+ * extra header goes (TIFF offsets count from the TIFF header, so nothing
+ * else moves); an EXIF block that still does not start with a TIFF header is
+ * dropped. `changed` false: the buffer is returned as it came (every 0.16.1
+ * export).
  */
 export function repairJpegExif(jpeg: Buffer): { data: Buffer; changed: boolean; dropped: boolean } {
   const same = { data: jpeg, changed: false, dropped: false }

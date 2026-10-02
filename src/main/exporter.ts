@@ -305,8 +305,8 @@ export class Exporter {
       color,
       sdr: gainMapOut ? sdrRendition(s, peak) : null,
       grade: compiled.grade,
-      // A HEIF's EXIF says to turn what libheif has already turned: a stated
-      // framing resets the tag in what is written.
+      // A HEIF's EXIF tag is never applied: a stated framing resets it in
+      // what is written.
       framing: compiled.framing ?? (master ? null : uprightFraming('Normal', info)),
       lens: compiled.lens,
       retouch: compiled.retouch,

@@ -125,6 +125,7 @@ export function sourceOrientation(info: SourceInfo, raw: RawMode | null): Orient
   // A HEIF or AVIF is decoded (by libheif) with its own transforms — irot,
   // imir — applied, and the spec says the EXIF tag must then be ignored: an
   // iPhone writes both, so turning by the tag too lays a portrait on its side.
+  // 0.16.1 reports 1 for such a file; a tag no irot backs is ignored as well.
   if (info.input === 'Heif') return 'Normal'
   return fromExif(info.orientation)
 }
@@ -132,8 +133,9 @@ export function sourceOrientation(info: SourceInfo, raw: RawMode | null): Orient
 /**
  * Framing that only turns a source upright, for a new file that keeps the
  * source's EXIF: null when nothing turns, except for a HEIF, whose EXIF tag
- * still says to turn pixels libheif has already turned — a stated framing
- * makes the engine reset that tag to 1.
+ * is never applied — a stated framing makes the engine reset that tag to 1.
+ * (0.16.1 resets it by itself when libheif applied irot/imir; the framing
+ * still covers a tag no irot backs.)
  */
 export function uprightFraming(
   orientation: Orientation,

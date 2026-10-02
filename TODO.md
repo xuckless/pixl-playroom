@@ -1395,6 +1395,7 @@ Playroom work that starts once the engine request lands
 ([ENGINE-REQUESTS.md](ENGINE-REQUESTS.md)). Becomes a pass then.
 
 - [ ] **S** · Drop `repairJpegExif` once JPEG EXIF is written correctly (E1).
+      _Unblocked: 0.16.1 writes it once._
 - [ ] **S** · HEIC export and HEIC gain-map export (E2).
 - [x] **M** · Sharp 1:1 zoom and 1:1 tiles on straightened, Upright and
       lens-warped photos (E3).
@@ -1753,6 +1754,12 @@ masters are in `build/brand/`.
       by click, a lasso's Find object, and the Model needed popup.
 - [x] Phase 5 — sharp 1:1 on framed photos (E3); half-size RAW proxies
       (`Cell`); fisheye defish (E18).
+- [x] 0.16.1, a patch: a HEIF that libheif turns by `irot`/`imir` probes as
+      orientation 1 (its tag is `exif_orientation`) and is written with the
+      tag reset (`ConvertReport.exif_orientation_reset`); JPEG EXIF written
+      once (E1). Found on the way: LibRaw turns a RAW's embedded preview
+      upright (since 0.16.0), so an unedited RAW's thumbnail no longer turns
+      it a second time.
 
 ### Upgrade to pixl-engine 0.15.0
 

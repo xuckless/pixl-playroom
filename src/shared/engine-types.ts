@@ -1314,6 +1314,11 @@ export interface ConvertReport {
   /** Present only for a `Bytes` sink: a Buffer from the binding. */
   output: Uint8Array | null
   metadata_written: MetadataPolicy
+  /**
+   * The output's EXIF Orientation was rewritten to 1: the pixels were upright
+   * already (`framing`, or a HEIF's `irot`/`imir` applied by the decoder; 0.16.1).
+   */
+  exif_orientation_reset: boolean
   color: ColorReport
   upscale: UpscaleReport | null
   loss: LossReport
@@ -1453,7 +1458,14 @@ export interface SourceInfo {
   color_source: ColorSource
   is_hdr: boolean
   peak_nits: number | null
+  /**
+   * The orientation (EXIF values, 0 for none) still to apply to the decoded
+   * frame: 1 for a HEIF whose `irot`/`imir` libheif applied (0.16.1). A RAW's
+   * is the camera's, for information: every call turns a RAW upright itself.
+   */
   orientation: number
+  /** The EXIF Orientation tag as the file states it; informational (0.16.1). */
+  exif_orientation: number
   is_raw_mosaic: boolean
   jpeg: JpegInfo | null
   heif: HeifInfo | null

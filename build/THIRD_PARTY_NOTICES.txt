@@ -25,7 +25,7 @@ PIXL Engine's components
   Source:    the source of LibRaw, PIXL's LibRaw shim, libheif and libde265 ships inside the application, beside the engine (app.asar.unpacked/node_modules/@xuckless/pixl-engine-<platform>/); each notice below also names its upstream
   Copyright (c) their respective authors, as each notice below states
 
-    PIXL Engine 0.16.0 (aarch64-apple-darwin)
+    PIXL Engine 0.16.1 (aarch64-apple-darwin)
     Copyright (c) 2026 Syed Ali (xuckless), PixlFoundation. All rights reserved.
 
     This package contains third-party software, listed below with its licence.
@@ -59,7 +59,7 @@ PIXL Engine's components
     LibRaw: CDDL-1.0 (or LGPL-2.1); the shim: MIT
     ================================================================================
 
-    Sources beside it: LibRaw-0.22.2.tar.gz and pixl_libraw-0.16.0-source.tar.gz (REBUILD.md inside says how to rebuild the library and put it in place).
+    Sources beside it: LibRaw-0.22.2.tar.gz and pixl_libraw-0.16.1-source.tar.gz (REBUILD.md inside says how to rebuild the library and put it in place).
 
     LibRaw in PIXL
     ==============
@@ -9190,7 +9190,7 @@ PIXL Engine's components
     Common Development and Distribution License 1.0 (CDDL-1.0)
 
     Used by:
-        libraw-src 0.16.0 (https://github.com/LibRaw/LibRaw)
+        libraw-src 0.22.2 (https://github.com/LibRaw/LibRaw)
 
     COMMON DEVELOPMENT AND DISTRIBUTION LICENSE (CDDL) Version 1.0
 
