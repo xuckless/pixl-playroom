@@ -26,10 +26,15 @@ interface JobsState {
   reveal: Reveal | null
   onEvent(e: AiJobEvent): void
   load(): Promise<void>
+  /** Ask again what can run (a smart look about to plan). */
+  refresh(): Promise<AiCapabilities>
   setReveal(layerId: string): void
 }
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
+/** How often, and how many times, capabilities are asked again while the engine starts. */
+const ENGINE_WAIT_MS = 1000
+const ENGINE_WAIT_TRIES = 60
 
 export const useAiJobs = create<JobsState>((set, get) => ({
   jobs: {},
@@ -57,10 +62,25 @@ export const useAiJobs = create<JobsState>((set, get) => ({
     const [list, capabilities] = await Promise.all([api.ai.list(), api.ai.capabilities()])
     set({ capabilities })
     for (const e of list) get().onEvent(e)
+    // Asked at launch, the background engine may not have said yet whether it
+    // runs models: asked again until it has (or a minute has gone by).
+    void (async () => {
+      for (let i = 0; i < ENGINE_WAIT_TRIES && !get().capabilities?.denoise; i++) {
+        await new Promise((r) => setTimeout(r, ENGINE_WAIT_MS))
+        await get()
+          .refresh()
+          .catch(() => undefined)
+      }
+    })()
     // A model downloaded or removed changes what can run.
     api.models.onEvent(() => {
       void api.ai.capabilities().then((c) => set({ capabilities: c }))
     })
+  },
+  async refresh() {
+    const capabilities = await api.ai.capabilities()
+    set({ capabilities })
+    return capabilities
   },
   setReveal(layerId) {
     set({ reveal: { layerId, at: performance.now() } })

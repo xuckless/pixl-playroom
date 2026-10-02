@@ -14,9 +14,12 @@ import {
   type LookFamily
 } from '../../../../shared/looks/collections'
 import { searchLooks } from '../../../../shared/looks/search'
+import { formatEta } from '../../../../shared/looks/run'
+import { planSmart, smartBlockers } from '../../../../shared/looks/smart'
 import { Icon } from '../../components/icons'
 import { Modal } from '../../components/ui'
-import { applyToPhoto, removeLook, useApplied } from '../../lib/applyLook'
+import { applyToPhoto, removeLook, smartReady, useApplied } from '../../lib/applyLook'
+import { useAiJobs } from '../../state/jobs'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { useLooks } from '../../state/looks'
@@ -44,6 +47,11 @@ export function LooksBrowser(): React.JSX.Element | null {
   const mine = useLooks((s) => s.mine)
   const user = useLooks((s) => s.user)
   const applied = useApplied()
+  const worksNow = useLooks((s) => s.worksNow)
+  // What this build can do for smart looks (a model downloaded changes it).
+  const caps = useAiJobs((s) => s.capabilities)
+  const ready = useMemo(() => caps?.smart ?? smartReady(), [caps])
+  const blockers = (p: Preset): string[] => (p.smart ? smartBlockers(p.smart, ready) : [])
   const [query, setQuery] = useState(() => useLooks.getState().browseQuery)
   const [shelf, setShelf] = useState<Shelf>({ kind: 'all' })
   const [focus, setFocus] = useState<string | null>(null)
@@ -74,7 +82,13 @@ export function LooksBrowser(): React.JSX.Element | null {
     }
   }, [shelf, user, mineIds])
   const q = query.trim()
-  const shown = useMemo(() => (q ? searchLooks(source, q) : source), [source, q])
+  const shown = useMemo(() => {
+    const found = q ? searchLooks(source, q) : source
+    // "Works now": the smart looks this build cannot do all of are left out.
+    return worksNow
+      ? found.filter((p) => !p.smart || smartBlockers(p.smart, ready).length === 0)
+      : found
+  }, [source, q, worksNow, ready])
   // Shelves of collections while browsing; one ranked list while searching.
   const sections = useMemo(() => {
     if (q || shelf.kind === 'mine' || shelf.kind === 'user' || shelf.kind === 'collection')
@@ -158,6 +172,18 @@ export function LooksBrowser(): React.JSX.Element | null {
         </div>
         <div className="look-meta">
           <span className="look-name">{p.name}</span>
+          {p.smart && (
+            <span
+              className={`look-badge smart${blockers(p).length ? ' blocked' : ''}`}
+              title={
+                blockers(p).length
+                  ? `Smart look. ${blockers(p).join('; ')}`
+                  : 'Smart look: makes masks or runs AI as it is applied'
+              }
+            >
+              Smart
+            </span>
+          )}
           {isApplied && (
             <span className="look-badge applied" title="Applied to the photo">
               <Icon name="check" />
@@ -236,6 +262,14 @@ export function LooksBrowser(): React.JSX.Element | null {
               {focused.meta?.inspiredBy && <span>Inspired by {focused.meta.inspiredBy}</span>}
               {focused.meta?.description && (
                 <span className="muted">{focused.meta.description}</span>
+              )}
+              {focused.smart && session && (
+                <SmartDetail
+                  plan={planSmart(focused.smart, ready, {
+                    frameWidth: session.frameWidth,
+                    frameHeight: session.frameHeight
+                  })}
+                />
               )}
               {focused.meta?.approximates && (
                 <span className="muted">
@@ -330,6 +364,17 @@ export function LooksBrowser(): React.JSX.Element | null {
             />
             <span className="t">{shown.length}</span>
           </label>
+          <label
+            className="looks-worksnow"
+            title="Hide the smart looks that need something this build does not have yet"
+          >
+            <input
+              type="checkbox"
+              checked={worksNow}
+              onChange={(e) => useLooks.setState({ worksNow: e.target.checked })}
+            />
+            Works now
+          </label>
           <div className="looks-grid" ref={grid} tabIndex={0} onKeyDown={onKey}>
             {sections.map((s, i) => (
               <SectionCards key={s.id} label={s.label}>
@@ -362,6 +407,27 @@ function SectionCards({
         </div>
       )}
       {children}
+    </>
+  )
+}
+
+/** What a smart look makes on this photo, how long it takes, and what it waits for. */
+function SmartDetail({ plan }: { plan: ReturnType<typeof planSmart> }): React.JSX.Element {
+  const makes = plan.summary.join(' · ')
+  return (
+    <>
+      {makes && (
+        <span className="muted">
+          Makes: {makes}
+          {plan.etaMs > 0 && ` · ${formatEta(plan.etaMs)}`}
+          {plan.picks > 0 && ' · asks you to point at an object'}
+        </span>
+      )}
+      {plan.skipped.length > 0 && (
+        <span className="looks-needs">
+          {plan.skipped.map((x) => `${x.name}: ${x.why}`).join(' · ')}
+        </span>
+      )}
     </>
   )
 }

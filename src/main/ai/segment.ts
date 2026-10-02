@@ -145,6 +145,14 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     const png = encodeGreyPng(grey, d.width, d.height).toString('base64')
     const ref = planeRef(png)
     this.planes.put(ref, png)
-    return { kind: 'mask', ref, width: d.width, height: d.height, label: SEGMENT_LABEL[req.target] }
+    return {
+      kind: 'mask',
+      ref,
+      width: d.width,
+      height: d.height,
+      label: SEGMENT_LABEL[req.target],
+      // Into the mask it was asked for (Add to the selected mask, a smart look's), else a new one.
+      ...(req.into ? { into: { ...req.into } } : {})
+    }
   }
 }

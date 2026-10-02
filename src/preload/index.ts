@@ -57,6 +57,7 @@ import type { GateState } from '../shared/gate'
 import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
+import type { LookRunEvent, LookRunRequest, PickAnswer } from '../shared/looks/run'
 import type { EnhanceRates } from '../shared/enhance'
 
 async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -253,7 +254,11 @@ const api = {
   looks: {
     thumbs: (req: LookThumbRequest) => call<void>(IPC.looks.thumbs, req),
     cancel: (key: string) => call<void>(IPC.looks.cancel, key),
-    onThumb: (cb: (e: LookThumbEvent) => void) => on(IPC.looks.thumb, cb)
+    onThumb: (cb: (e: LookThumbEvent) => void) => on(IPC.looks.thumb, cb),
+    run: (req: LookRunRequest) => call<void>(IPC.looks.run, req),
+    cancelRun: (by: { runId?: string; key?: string }) => call<void>(IPC.looks.cancelRun, by),
+    answer: (runId: string, a: PickAnswer) => call<void>(IPC.looks.answer, runId, a),
+    onRun: (cb: (e: LookRunEvent) => void) => on(IPC.looks.runEvent, cb)
   },
   export: {
     chooseFolder: () => call<string | null>(IPC.export.chooseFolder),

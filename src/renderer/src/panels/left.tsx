@@ -8,6 +8,7 @@ import { Slider } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import {
   applyToPhoto,
+  cancelLookRun,
   commitLookAmount,
   hoverLook,
   leaveLook,
@@ -20,6 +21,8 @@ import { presetsChanged } from '../lib/hooks'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { useLooks } from '../state/looks'
+import { useAiJobs } from '../state/jobs'
+import { formatEta, runProgress, runRemaining } from '../../../shared/looks/run'
 import { MetadataEditor } from '../views/library/MetadataEditor'
 import { useMaskPresets, useSelectedMask } from './masks/presets'
 import { useReorder } from './masks/useReorder'
@@ -256,6 +259,38 @@ function AppliedLookBar(): React.JSX.Element | null {
         onChange={(v, live) => setLookAmount(Math.round(v), live)}
         onCommit={commitLookAmount}
       />
+      {applied.runId && <LookRunProgress runId={applied.runId} />}
+    </div>
+  )
+}
+
+/** A smart look's model work under way: one bar for all its parts, what it is on, time left. */
+function LookRunProgress({ runId }: { runId: string }): React.JSX.Element | null {
+  const run = useLooks((s) => s.runs[runId])
+  // The model job under way, if one is: its own progress moves the bar between parts.
+  const job = useAiJobs((s) =>
+    Object.values(s.jobs).find((j) => j.group === runId && j.phase === 'running')
+  )
+  if (!run) return null
+  const p = run.phase === 'running' ? (job?.progress ?? 0) : 0
+  const done = runProgress(run.parts, run.index, p)
+  const left = runRemaining(run.parts, run.index, p)
+  return (
+    <div className="look-run" title={run.parts.map((x) => x.label).join(' → ')}>
+      <div className="look-run-bar">
+        <i style={{ width: `${Math.round(done * 100)}%` }} />
+      </div>
+      <div className="look-run-text">
+        <span>
+          {run.phase === 'pick'
+            ? `Point at the ${run.label.replace(/^Pointing at the /, '')} on the photo`
+            : run.label}
+        </span>
+        {run.phase === 'running' && <span className="t">{formatEta(left)}</span>}
+        <button className="sm ghost" onClick={cancelLookRun} title="Stop the look's AI work">
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }

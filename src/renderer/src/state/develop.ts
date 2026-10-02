@@ -39,6 +39,8 @@ export type Tool =
   | 'upright-guide'
   | 'heal'
   | 'tat'
+  /** A smart look's run asks the user to point at an object (views/loupe/LookPick.tsx). */
+  | 'look-pick'
 export type Compare = 'off' | 'before' | 'split'
 
 /**

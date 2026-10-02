@@ -49,6 +49,7 @@ import { Guides } from './Guides'
 import { LassoEditor, PolygonLayer } from './LassoTool'
 import { LoupeHud } from './LoupeHud'
 import { GradientTools } from './GradientTools'
+import { LookPick } from './LookPick'
 import { MaskPins } from './MaskPins'
 import { AiScan } from '../../fx/AiScan'
 import { MaskOverlay } from './MaskOverlay'
@@ -584,6 +585,7 @@ export function Loupe(): React.JSX.Element {
         {tool === 'brush' && vrect && g && <BrushLayer rect={vrect} box={size} g={g} />}
         {tool === 'polygon' && vrect && g && <PolygonLayer rect={vrect} g={g} />}
         {!wholeFrameTool(tool) && vrect && g && <GradientTools rect={vrect} g={g} />}
+        {vrect && g && <LookPick rect={vrect} g={g} />}
         {!wholeFrameTool(tool) && vrect && g && <LassoEditor rect={vrect} g={g} />}
         {tool === 'upright-guide' && rect && <UprightGuides rect={rect} />}
         {panel === 'heal' && !wholeFrameTool(tool) && vrect && g && <HealTool rect={vrect} g={g} />}

@@ -58,9 +58,11 @@ export interface AiJobEvent {
   phase: AiPhase
   message?: string
   result?: AiResult
+  /** The look run it belongs to (a smart look's masks and steps): that run records its history. */
+  group?: string
 }
 
-export type AiStartRequest =
+export type AiStartRequest = (
   | {
       task: 'enhance'
       key: string
@@ -88,6 +90,10 @@ export type AiStartRequest =
        */
       legacy?: boolean
     }
+) & {
+  /** A look run's id (`AiJobEvent.group`). */
+  group?: string
+}
 
 export interface AiCapabilities {
   enhance: boolean

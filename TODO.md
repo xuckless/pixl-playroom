@@ -1289,45 +1289,54 @@ faked. The result is ordinary masks and pixel steps.
 
 ### Pass 72 — Smart looks 1/4: instructions and the planner · 5 pts
 
-- [ ] **L** · `src/shared/looks/smart.ts`: `MaskTarget` (range, linear,
+- [x] **L** · `src/shared/looks/smart.ts`: `MaskTarget` (range, linear,
       radial, subject, background, sky, person part, object by label),
       `MaskInstruction` (parts with Add/Subtract/Intersect, feather, settings,
       amount, required), `StepInstruction` (denoise, deblur, scoped to a
       mask); `smart?` on `Preset`; `mask()`/`step()` in the DSL; `smart` in
       `LookFile` (`schema.ts`).
-- [ ] **M** · `AiCapabilities.targets` (ready / needs model / needs engine)
+- [x] **M** · `AiCapabilities.targets` (ready / needs model / needs engine)
       and `pick`; `planSmart(look, caps, photo)` → immediate layers, ordered
       jobs (segments before the steps scoped to them), picks, skipped, ETA
       from the learned per-model rates. Tests: `tests/smartlooks.test.ts`.
+      _Done: readiness is `AiCapabilities.smart` (`smartReadiness`); the next
+      engine's flags are off in `main/ipc.ts` until its binding lands._
 
 ### Pass 73 — Smart looks 2/4: the runner · 5 pts
 
 After: Pass 72.
 
-- [ ] **L** · `src/main/looks/runner.ts`: one run per photo, its jobs grouped
+- [x] **L** · `src/main/looks/runner.ts`: one run per photo, its jobs grouped
       (`group` on the job queue) under one progress bar; each starts when the
       one before lands; cancel stops the run. Lands on its photo when the
       user has moved on.
-- [ ] **M** · Each mask or step that lands amends the look's history step
+- [x] **M** · Each mask or step that lands amends the look's history step
       while it is the newest (Phase 5's amend), else adds "Look: X · Sky".
       Amount also scales the look's layers (`LocalLayer.amount`) and the
       denoise step's strength; swapping removes them and cancels the run.
+      _Done: `LookRuns` in `main/looks/runner.ts` (tests:
+      `tests/lookrunner.test.ts`), the protocol in `shared/looks/run.ts`, the
+      renderer's side in `lib/applyLook.ts`. A mask that cannot be made is
+      taken off and its scoped steps skipped. `promptJob` and `personJob`
+      are wired when the engine has SAM2, the detector and people (E30, E45)._
 
 ### Pass 74 — Smart looks 3/4: picking, progress and the smart catalog · 5 pts
 
 After: Pass 73.
 
-- [ ] **M** · Pick flow: an object with no detector, or no or several
+- [x] **M** · Pick flow: an object with no detector, or no or several
       equally likely boxes, puts the loupe in a pick tool ("Click the car for
       Rain City Noir · drag for a box · Esc to skip"); the click or box is
       SAM2's prompt. Shared with "Objects by brush or box" (E30).
-- [ ] **M** · Progress in the Applied bar and the browser's detail: what the
+- [x] **M** · Progress in the Applied bar and the browser's detail: what the
       look includes, the time estimate, stage labels, Cancel. Cards get a
       Smart badge; the browser a "Smart" shelf and a "Works now" toggle.
-- [ ] **M** · `smart-catalog.ts`: 15–25 smart looks (Moody Sky, Portrait
+- [x] **M** · `smart-catalog.ts`: 15–25 smart looks (Moody Sky, Portrait
       Polish, Night City Clean, Golden Subject, Product Pop, Foliage Autumn,
       Teal Water…) and smart variants of movie looks; catalog tests cover
       targets, scopes and ranges.
+      _Done: 22 looks, 15 working today (ranges, gradients, subject and
+      background, DRUNet, deblur); the pick tool is `views/loupe/LookPick.tsx`._
 
 ### Pass 75 — Smart looks 4/4: user presets as instructions · 4 pts
 

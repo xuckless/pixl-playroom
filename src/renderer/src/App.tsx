@@ -250,6 +250,8 @@ async function openLastSource(lists: Promise<void>): Promise<void> {
  */
 async function aiJobEnded(e: AiJobEvent): Promise<void> {
   const lib = useLibrary.getState()
+  // A smart look's own jobs: its run records them in the look's history step (lib/applyLook.ts).
+  if (e.group) return
   if (e.phase === 'error') return lib.say(`${e.title}: ${e.message ?? 'failed'}`, 'error')
   if (e.phase !== 'done') return
   const r = e.result

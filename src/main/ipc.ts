@@ -47,7 +47,10 @@ import { autoWbBatch, setWbBatch } from './autowb'
 import { crashConsent, reportRendererError, sendProblemReport, setCrashConsent } from './crash'
 import { freeDevice, licence, refreshLicence, requireLicence, startTrial } from './licence'
 import type { AiCapabilities, AiStartRequest } from '../shared/ai'
-import { smartReadiness } from '../shared/looks/smart'
+import { immediateLayers, previewLayers, smartReadiness } from '../shared/looks/smart'
+import type { LookRunRequest, PickAnswer } from '../shared/looks/run'
+import { LookRuns } from './looks/runner'
+import { editPhotoRecipe } from './ai/apply'
 import type { ProblemInput } from '../shared/crash'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
@@ -530,15 +533,52 @@ export function registerIpc(s: Services): void {
     const base = await s.planes.hydrate(req.base)
     userPresets ??= s.index.presets()
     const user = await userPresets
+    // A smart look's card shows the masks it makes without a model (ranges, gradients).
+    const frame = req.ids.some((id) => resolveLook(id)?.smart) ? await baseFrame(s, req.key) : null
     const jobs = req.ids.flatMap((id) => {
       if (id === 'current') return [{ id, recipe: base }]
       const p = resolveLook(id) ?? user.find((u) => u.id === id)
+      if (!p) return []
       // A card never looks a lens up: the preset's resolution stands in.
-      return p ? [{ id, recipe: applyLook(base, p, { wb, lensResolved: 'keep' }) }] : []
+      const recipe = applyLook(base, p, { wb, lensResolved: 'keep' })
+      if (p.smart && frame)
+        recipe.layers.push(
+          ...previewLayers(
+            p.id,
+            immediateLayers(p.smart, {
+              frameWidth: frame.width,
+              frameHeight: frame.height
+            })
+          )
+        )
+      return [{ id, recipe }]
     })
     s.sessions.lookThumbs(req.key, req.token, jobs, req.edge)
   })
   handle(IPC.looks.cancel, (key: string) => s.sessions.cancelLookThumbs(key))
+  // Smart looks' model work: one job at a time on the AI queue, landing on its photo.
+  const runs = new LookRuns({
+    startJob: (req) => s.ai.start(req),
+    cancelJob: (id) => s.ai.cancel(id),
+    onJobEnded: (l) => s.ai.onEnded(l),
+    edit: (key, change) =>
+      editPhotoRecipe(key, change, { library: s.library, sessions: s.sessions }),
+    send: (e) => {
+      for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.looks.runEvent, e)
+    },
+    megapixels: async (key) => {
+      const f = await baseFrame(s, key)
+      return (f.width * f.height) / 1e6
+    }
+    // SAM2 prompts, the detector and the people model come with the next
+    // engine (E30, E45): `promptJob` and `personJob` are given then.
+  })
+  handle(IPC.looks.run, (req: LookRunRequest) => runs.start(req))
+  handle(IPC.looks.cancelRun, (by: { runId?: string; key?: string }) => {
+    if (by.runId) runs.cancel(by.runId)
+    if (by.key) runs.cancelFor(by.key)
+  })
+  handle(IPC.looks.answer, (runId: string, a: PickAnswer) => runs.answer(runId, a))
   handle(IPC.presets.luts, async (): Promise<LutProfile[]> =>
     (await readdir(paths.luts()))
       .filter((f) => f.toLowerCase().endsWith('.cube'))

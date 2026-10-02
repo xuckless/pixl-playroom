@@ -13,6 +13,7 @@ import { COLLECTIONS, COLLECTION_BY_ID } from '../src/shared/looks/collections'
 import { allowedPath, BRAND_WORDS, CURVE_PATHS, rangeOf } from '../src/shared/looks/ranges'
 import { fold, searchLooks } from '../src/shared/looks/search'
 import { applyLook, lookFields } from '../src/shared/looks/apply'
+import { immediateLayers } from '../src/shared/looks/smart'
 import { look, collection, fade, grain, mono, sCurve, tone } from '../src/shared/looks/dsl'
 
 const ctx = (isRaw: boolean): CompileContext => ({
@@ -60,7 +61,8 @@ test('names are unique and our own: no maker, stock or film in them', () => {
 
 test('every look sets something, and only what a look may set, within the sliders', () => {
   for (const l of LOOKS) {
-    assert.ok(l.fields.length > 0, `${l.name} changes nothing`)
+    // A smart look may be masks alone (a graduated sky).
+    assert.ok(l.fields.length > 0 || l.smart, `${l.name} changes nothing`)
     for (const path of l.fields) {
       const where = `${l.name}: ${path.join('.')}`
       assert.ok(allowedPath(path), `${where} is not a look's to set`)
@@ -96,7 +98,12 @@ test('every look compiles on a RAW and on a rendered photo', () => {
   for (const isRaw of [false, true]) {
     for (const l of LOOKS) {
       const r = applyFields(defaultRecipe(isRaw), l.recipe, l.fields)
+      // A smart look's masks without a model are part of it from the start.
+      if (l.smart)
+        r.layers.push(...immediateLayers(l.smart, { frameWidth: 6000, frameHeight: 4000 }))
       const out = compile(r, ctx(isRaw))
+      // Masks waiting on a model (and AI steps) are all a smart look may have here.
+      if (l.smart && !out.grade) continue
       assert.ok(out.grade, `${l.name} (${isRaw ? 'RAW' : 'rendered'}) has no grade`)
     }
   }
@@ -111,7 +118,7 @@ test('every look sits in a known collection, and every collection has looks', ()
     assert.equal(l.meta.author.kind, 'pixl')
     if (l.recipe.treatment === 'bw') assert.ok(l.meta.tags.includes('bw'), `${l.name} is mono`)
     const family = COLLECTION_BY_ID.get(l.meta.collection)!.family
-    if (family !== 'essentials' && family !== 'bw' && family !== 'creative')
+    if (family !== 'essentials' && family !== 'bw' && family !== 'creative' && family !== 'smart')
       assert.ok(l.meta.inspiredBy, `${l.name} says what inspired it`)
   }
   const used = new Set(LOOKS.map((l) => l.meta.collection))

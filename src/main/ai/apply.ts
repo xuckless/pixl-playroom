@@ -46,13 +46,38 @@ export async function applyMaskResult(
     recipe.layers.push(layer)
     r.into = { layerId: layer.id, mode: 'Add' }
   }
-  if (live) {
-    deps.sessions.update(e.key, recipe, false)
+  await keepRecipe(e.key, recipe, live !== undefined, deps)
+}
+
+/** The photo's recipe changed by main: into its open session, else its saved recipe. */
+async function keepRecipe(
+  key: string,
+  recipe: Recipe,
+  open: boolean,
+  deps: { library: Library; sessions: DevelopSessions }
+): Promise<void> {
+  if (open) {
+    deps.sessions.update(key, recipe, false)
     // Saved at once: the loupe reads the recipe back as soon as it hears.
-    await deps.sessions.flush(e.key)
+    await deps.sessions.flush(key)
   } else {
-    await deps.library.saveRecipe(e.key, recipe)
-    const { photoId, copyId } = parseKey(e.key)
+    await deps.library.saveRecipe(key, recipe)
+    const { photoId, copyId } = parseKey(key)
     deps.library.queueThumb(photoId, copyId, true)
   }
+}
+
+/**
+ * Change a photo's recipe from main (a smart look's run shaping its masks),
+ * whichever photo is open: as `applyMaskResult` lands a mask.
+ */
+export async function editPhotoRecipe(
+  key: string,
+  change: (r: Recipe) => void,
+  deps: { library: Library; sessions: DevelopSessions }
+): Promise<void> {
+  const live = deps.sessions.liveRecipe(key)
+  const recipe: Recipe = structuredClone(live ?? (await deps.library.recipe(key)))
+  change(recipe)
+  await keepRecipe(key, recipe, live !== undefined, deps)
 }

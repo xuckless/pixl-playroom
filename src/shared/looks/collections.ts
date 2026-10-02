@@ -5,7 +5,15 @@
  */
 
 export type LookFamily =
-  'camera' | 'cinema' | 'film-colour' | 'film-bw' | 'movies' | 'bw' | 'creative' | 'essentials'
+  | 'camera'
+  | 'cinema'
+  | 'film-colour'
+  | 'film-bw'
+  | 'movies'
+  | 'smart'
+  | 'bw'
+  | 'creative'
+  | 'essentials'
 
 export const FAMILIES: { id: LookFamily; label: string }[] = [
   { id: 'camera', label: 'Camera colour' },
@@ -13,6 +21,7 @@ export const FAMILIES: { id: LookFamily; label: string }[] = [
   { id: 'film-colour', label: 'Colour film' },
   { id: 'film-bw', label: 'B&W film' },
   { id: 'movies', label: 'Movies & TV' },
+  { id: 'smart', label: 'Smart looks' },
   { id: 'bw', label: 'Black & white' },
   { id: 'creative', label: 'Creative' },
   { id: 'essentials', label: 'Essentials' }
@@ -121,6 +130,13 @@ export const COLLECTIONS: LookCollection[] = [
     label: 'Creative',
     family: 'creative',
     blurb: 'Seasons, moods and colour play.'
+  },
+  {
+    id: 'smart',
+    label: 'Smart looks',
+    family: 'smart',
+    blurb:
+      'Looks that mask as they go: the sky, the subject, skin, a colour, an object; AI denoise.'
   },
   {
     id: 'essentials',

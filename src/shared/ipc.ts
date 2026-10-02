@@ -178,7 +178,15 @@ export const IPC = {
     /** The browser closed: stop making cards. */
     cancel: 'looks:cancel',
     /** main → renderer: a card made (`LookThumbEvent`). */
-    thumb: 'looks:thumb'
+    thumb: 'looks:thumb',
+    /** A smart look's model work, started (`LookRunRequest`). */
+    run: 'looks:run',
+    /** Stop a run (by id), or every run on a photo (by key). */
+    cancelRun: 'looks:cancel-run',
+    /** The user pointed at what a run asked for (`PickAnswer`). */
+    answer: 'looks:answer',
+    /** main → renderer: how a run is going (`LookRunEvent`). */
+    runEvent: 'looks:run-event'
   },
   models: {
     list: 'models:list',

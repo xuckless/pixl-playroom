@@ -20,6 +20,7 @@ import { NIKON } from './nikon'
 import { OTHER_CAMERAS } from './other-cameras'
 import { PANASONIC } from './panasonic'
 import { RICOH } from './ricoh'
+import { SMART } from './smart-catalog'
 import { SONY } from './sony'
 import type { Look } from './types'
 
@@ -39,6 +40,7 @@ export const LOOKS: Look[] = [
   ...FILM_INSTANT,
   ...FILM_BW,
   ...MOVIES,
+  ...SMART,
   ...BW,
   ...CREATIVE,
   ...ESSENTIALS

@@ -7,6 +7,7 @@
 import { create } from 'zustand'
 import type { Preset } from '../../../shared/ipc'
 import type { Recipe } from '../../../shared/recipe'
+import type { LookRunEvent } from '../../../shared/looks/run'
 import {
   addMine,
   MINE_KEY,
@@ -34,6 +35,33 @@ export interface AppliedLook {
   amount: number
   /** Its history step. */
   seq: number
+  /** A smart look's model work, while it runs. */
+  runId?: string
+  /** The masks it made, and their Amount at full strength: the look's Amount scales them. */
+  layers: Record<string, number>
+  /** The pixel steps it made (an AI denoise), and their strength at full. */
+  pixels: Record<string, number>
+}
+
+/** A smart look's run as the rail and the browser show it. */
+export interface LookRunState {
+  runId: string
+  key: string
+  look: string
+  parts: { label: string; ms: number }[]
+  /** The part under way. */
+  index: number
+  label: string
+  phase: 'running' | 'pick' | 'done' | 'cancelled' | 'error'
+  failed: { label: string; why: string }[]
+}
+
+/** The object a run waits for the user to point at. */
+export interface LookPickAsk {
+  runId: string
+  key: string
+  label: string
+  look: string
 }
 
 interface LooksState {
@@ -44,6 +72,10 @@ interface LooksState {
   /** What the Looks browser opens searching for (the rail's search, Enter). */
   browseQuery: string
   applied: AppliedLook | null
+  runs: Record<string, LookRunState>
+  pick: LookPickAsk | null
+  /** The browser shows only looks this build can do all of. */
+  worksNow: boolean
   load(): Promise<void>
   reloadUser(): Promise<void>
   add(id: string): void
@@ -61,6 +93,9 @@ export const useLooks = create<LooksState>((set, get) => {
     user: [],
     browseQuery: '',
     applied: null,
+    runs: {},
+    pick: null,
+    worksNow: false,
     async load() {
       const [raw] = await Promise.all([api.app.getSetting<unknown>(MINE_KEY), get().reloadUser()])
       set({ mine: readMine(raw) })
@@ -79,3 +114,41 @@ export const useLooks = create<LooksState>((set, get) => {
     }
   }
 })
+
+/** A run's event laid on the runs as shown. */
+export function runOnEvent(
+  runs: Record<string, LookRunState>,
+  e: LookRunEvent
+): Record<string, LookRunState> {
+  const cur = runs[e.runId]
+  switch (e.kind) {
+    case 'start':
+      return {
+        ...runs,
+        [e.runId]: {
+          runId: e.runId,
+          key: e.key,
+          look: e.look,
+          parts: e.parts,
+          index: 0,
+          label: e.parts[0]?.label ?? '',
+          phase: 'running',
+          failed: []
+        }
+      }
+    case 'part':
+      return cur
+        ? { ...runs, [e.runId]: { ...cur, index: e.index, label: e.label, phase: 'running' } }
+        : runs
+    case 'pick':
+      return cur
+        ? { ...runs, [e.runId]: { ...cur, index: e.index, label: e.label, phase: 'pick' } }
+        : runs
+    case 'landed':
+      return runs
+    case 'end': {
+      if (!cur) return runs
+      return { ...runs, [e.runId]: { ...cur, phase: e.phase, failed: e.failed } }
+    }
+  }
+}

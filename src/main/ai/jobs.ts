@@ -68,6 +68,7 @@ let nextId = 1
 export class AiJobs {
   private readonly jobs = new Map<string, Job>()
   private running: string | null = null
+  private readonly ended = new Set<(e: AiJobEvent) => void>()
 
   constructor(
     private readonly runners: Partial<Record<AiTask, AiRunner>>,
@@ -96,7 +97,8 @@ export class AiJobs {
       stages,
       stage: stages[0]?.id ?? '',
       progress: 0,
-      phase: 'queued'
+      phase: 'queued',
+      ...(req.group ? { group: req.group } : {})
     }
     this.jobs.set(jobId, { event, req, control: new AbortController(), at: Date.now() })
     this.send(event)
@@ -114,6 +116,12 @@ export class AiJobs {
     if (job.event.phase === 'running') job.control.abort()
   }
 
+  /** Hear every job that ends (done, failed or cancelled), after its result is applied. */
+  onEnded(listener: (e: AiJobEvent) => void): () => void {
+    this.ended.add(listener)
+    return () => this.ended.delete(listener)
+  }
+
   list(): AiJobEvent[] {
     return [...this.jobs.values()].map((j) => j.event)
   }
@@ -121,6 +129,7 @@ export class AiJobs {
   private finish(job: Job, patch: Partial<AiJobEvent>): void {
     job.event = { ...job.event, ...patch }
     this.send(job.event)
+    for (const l of this.ended) l(job.event)
     setTimeout(() => this.jobs.delete(job.event.jobId), KEEP_FINISHED_MS)
   }
 

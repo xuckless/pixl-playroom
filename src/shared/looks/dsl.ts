@@ -400,7 +400,14 @@ export const part = {
     radiusY = radiusX,
     softness = 50
   ): MaskPart => ({
-    target: { kind: 'radial', centre: { x: centre[0], y: centre[1] }, radiusX, radiusY, softness },
+    target: {
+      kind: 'radial',
+      centre: { x: centre[0], y: centre[1] },
+      radiusX,
+      radiusY,
+      angle: 0,
+      softness
+    },
     mode: 'Add'
   }),
   subject: (): MaskPart => ({ target: { kind: 'subject' }, mode: 'Add' }),

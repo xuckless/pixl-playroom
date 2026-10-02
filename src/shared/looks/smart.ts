@@ -463,6 +463,36 @@ export function planSmart(smart: SmartPart, ready: SmartReadiness, photo: SmartP
   return plan
 }
 
+/** A build with no models: what a look makes with sliders and shapes alone. */
+const NO_MODELS = smartReadiness({
+  models: false,
+  subjectModel: false,
+  drunetModel: false,
+  enhance: false,
+  engine: { sky: false, people: false, sam2: false, detector: false, nafnet: false }
+})
+
+/**
+ * The masks a smart look makes without a model (its ranges and gradients),
+ * whole: what a hover preview and a browser card show of it.
+ */
+export function immediateLayers(smart: SmartPart, photo: SmartPhoto): LocalLayer[] {
+  return planSmart(smart, NO_MODELS, photo).layers.filter((l) => l.enabled)
+}
+
+/**
+ * Layers for a preview, their ids made from the look's (`look:0`, …): the
+ * same look shows the same picture every time, so a card made once is found
+ * again rather than made anew.
+ */
+export function previewLayers(lookId: string, layers: LocalLayer[]): LocalLayer[] {
+  return layers.map((l, i) => ({
+    ...l,
+    id: `${lookId}:${i}`,
+    components: l.components.map((c, j) => ({ ...c, id: `${lookId}:${i}:${j}` }))
+  }))
+}
+
 // ── Reading instructions from outside (a look file) ─────────────────────────
 
 type Obj = Record<string, unknown>

@@ -275,3 +275,32 @@ test('readiness follows the build: no models, a missing model, the next engine',
   for (const k of ['sky', 'person', 'object', 'pick', 'nafnet'] as const)
     assert.equal(next[k], 'ready')
 })
+
+test('the smart catalog: every look reads back whole, and today only sky, people and objects wait', async () => {
+  const { LOOKS } = await import('../src/shared/looks/catalog')
+  const smart = LOOKS.filter((l) => l.smart)
+  assert.ok(smart.length >= 15, `${smart.length} smart looks`)
+  for (const l of smart) {
+    const back = readSmart(JSON.parse(JSON.stringify(l.smart)))
+    assert.deepEqual(back.dropped, [], l.name)
+    assert.deepEqual(back.smart, l.smart, l.name)
+  }
+  const today = smartReadiness(TODAY)
+  const waiting = smart.filter((l) => smartBlockers(l.smart!, today).length > 0).map((l) => l.name)
+  assert.deepEqual(waiting.sort(), [
+    'Blue Sky Pop',
+    'Bright Eyes',
+    'Car Shine',
+    'Golden Hour Skin',
+    'Moody Sky',
+    'Portrait Polish',
+    'Rain City Noir Lift'
+  ])
+  // Everything else plans whole today, and nothing waits once the next engine is here.
+  for (const l of smart) {
+    if (waiting.includes(l.name)) continue
+    const plan = planSmart(l.smart!, today, photo)
+    assert.deepEqual(plan.skipped, [], l.name)
+  }
+  for (const l of smart) assert.deepEqual(smartBlockers(l.smart!, smartReadiness(NEXT)), [], l.name)
+})
