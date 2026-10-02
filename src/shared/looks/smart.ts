@@ -1,0 +1,615 @@
+/**
+ * Smart looks: a look that carries instructions as well as sliders. "Mask
+ * the sky and darken it", "mask skin and warm it", "mask this colour range",
+ * "mask the car", "AI denoise inside the subject". Applied, they become
+ * ordinary masks and pixel steps, editable like any others.
+ *
+ * What each target needs, and whether this build has it, is `SmartReadiness`
+ * (from the engine and the installed models); `planSmart` turns a look's
+ * instructions into what to do on one photo: masks made at once (ranges,
+ * gradients), the AI work in order (every segment before a step scoped to
+ * its mask, since a denoise freezes its mask when it starts), what the user
+ * is asked to point at, what is skipped and why, and how long it will take.
+ * Nothing is faked: a target this build cannot do is skipped and said so.
+ *
+ * Pure: shared by the catalog, the look file reader and the runner.
+ */
+import type { KeyBand, MaskMode } from '../engine-types'
+import { gradientPlaneSize } from '../gradients'
+import {
+  newId,
+  newLocalLayer,
+  type LocalLayer,
+  type MaskComponentSetting,
+  type LayerSettings
+} from '../recipe'
+import { rangeOf } from './ranges'
+
+export type PersonPart = 'skin' | 'face' | 'hair' | 'eyes' | 'lips' | 'teeth' | 'clothes' | 'body'
+
+export const PERSON_PARTS: PersonPart[] = [
+  'skin',
+  'face',
+  'hair',
+  'eyes',
+  'lips',
+  'teeth',
+  'clothes',
+  'body'
+]
+
+/** A point in the frame, 0…1 on each axis. */
+export interface FramePoint {
+  x: number
+  y: number
+}
+
+/** What a mask part selects. Gradients are frame-relative, so they fit any photo. */
+export type MaskTarget =
+  | {
+      kind: 'range'
+      hue?: KeyBand
+      saturation?: KeyBand
+      luma?: KeyBand
+      /** 0…100 */
+      smoothness?: number
+    }
+  | { kind: 'linear'; start: FramePoint; end: FramePoint }
+  | {
+      kind: 'radial'
+      centre: FramePoint
+      /** Semi-axes as fractions of the frame's shorter side. */
+      radiusX: number
+      radiusY: number
+      angle?: number
+      /** 0…100: the outer share of the radius that fades. */
+      softness?: number
+    }
+  | { kind: 'subject' }
+  | { kind: 'background' }
+  | { kind: 'sky' }
+  | { kind: 'person'; part: PersonPart }
+  /** Found by label ("car") by the detector, else pointed at by the user. */
+  | { kind: 'object'; label: string }
+
+export interface MaskPart {
+  target: MaskTarget
+  /** How it joins the parts before it (the first part adds). */
+  mode: MaskMode
+  invert?: boolean
+}
+
+export interface MaskInstruction {
+  /** Within the look: what a step's `scope` names. */
+  id: string
+  /** The mask's name in the Masks panel ("Sky"). */
+  name: string
+  parts: MaskPart[]
+  /** 0…100, for the parts that are not a model's (a range, a gradient). */
+  feather?: number
+  /** What the mask does, as dotted paths into a mask's settings ("basic.exposure": -0.4). */
+  adjust: Record<string, number>
+  /** 0…200, the mask's Amount (100 when unset). */
+  amount?: number
+  /** Without it the look is not itself: it is listed as not working on this build. */
+  required?: boolean
+}
+
+/** `auto` takes the quickest model this build has (NAFNet, else DRUNet). */
+export type SmartDenoiseModel = 'auto' | 'drunet' | 'nafnet'
+
+export type StepInstruction =
+  | {
+      kind: 'denoise'
+      model: SmartDenoiseModel
+      /** 1…100: the step's opacity. */
+      strength: number
+      /** A mask's `id`: denoise inside it only. */
+      scope?: string
+    }
+  | { kind: 'deblur'; strength: number; scope?: string }
+
+export interface SmartPart {
+  masks: MaskInstruction[]
+  steps: StepInstruction[]
+}
+
+// ── What this build can do ──────────────────────────────────────────────────
+
+export type Readiness = 'ready' | 'needs-model' | 'needs-engine'
+
+/** Everything a smart look can ask for, by what it needs. */
+export type SmartKey =
+  | 'range'
+  | 'linear'
+  | 'radial'
+  | 'subject'
+  | 'background'
+  | 'sky'
+  | 'person'
+  /** An object by label: the detector and SAM2. */
+  | 'object'
+  /** An object the user points at (a click or a box): SAM2 alone. */
+  | 'pick'
+  | 'drunet'
+  | 'nafnet'
+  | 'deblur'
+
+export type SmartReadiness = Record<SmartKey, Readiness>
+
+/** What the main process knows about this build: models it can run, and what the engine has. */
+export interface SmartBuild {
+  /** The engine runs models at all. */
+  models: boolean
+  /** The subject model (U²-Net) is installed. */
+  subjectModel: boolean
+  /** The DRUNet denoise model is installed. */
+  drunetModel: boolean
+  /** Enhance (NAFNet deblur) is available. */
+  enhance: boolean
+  /** In the engine release after 0.15: E28 sky, E30 people and SAM2, E45 detector, NAFNet denoise. */
+  engine: { sky: boolean; people: boolean; sam2: boolean; detector: boolean; nafnet: boolean }
+}
+
+export function smartReadiness(b: SmartBuild): SmartReadiness {
+  const model = (installed: boolean): Readiness =>
+    !b.models ? 'needs-engine' : installed ? 'ready' : 'needs-model'
+  const engine = (has: boolean): Readiness => (b.models && has ? 'ready' : 'needs-engine')
+  return {
+    range: 'ready',
+    linear: 'ready',
+    radial: 'ready',
+    subject: model(b.subjectModel),
+    background: model(b.subjectModel),
+    sky: engine(b.engine.sky),
+    person: engine(b.engine.people),
+    object: engine(b.engine.detector && b.engine.sam2),
+    pick: engine(b.engine.sam2),
+    drunet: model(b.drunetModel),
+    nafnet: engine(b.engine.nafnet),
+    deblur: b.enhance ? 'ready' : 'needs-engine'
+  }
+}
+
+/** Why something cannot run, for the browser and the Applied bar. */
+export function whyNot(r: Readiness): string {
+  return r === 'needs-model'
+    ? 'needs a model: download it in Settings → AI models'
+    : 'needs the next engine update'
+}
+
+const IMMEDIATE = new Set<MaskTarget['kind']>(['range', 'linear', 'radial'])
+
+/** A part's own need; an object falls back to the user pointing at it. */
+function partNeed(t: MaskTarget, r: SmartReadiness): { key: SmartKey; ready: boolean } {
+  if (t.kind === 'object') {
+    if (r.object === 'ready') return { key: 'object', ready: true }
+    return { key: 'pick', ready: r.pick === 'ready' }
+  }
+  return { key: t.kind, ready: r[t.kind] === 'ready' }
+}
+
+function denoiseModel(m: SmartDenoiseModel, r: SmartReadiness): 'drunet' | 'nafnet' | null {
+  if (m === 'nafnet') return r.nafnet === 'ready' ? 'nafnet' : null
+  if (m === 'drunet') return r.drunet === 'ready' ? 'drunet' : null
+  return r.nafnet === 'ready' ? 'nafnet' : r.drunet === 'ready' ? 'drunet' : null
+}
+
+/** What a smart look needs that this build lacks: why the browser marks it, or nothing. */
+export function smartBlockers(s: SmartPart, r: SmartReadiness): string[] {
+  const out: string[] = []
+  for (const m of s.masks) {
+    if (!m.required) continue
+    for (const p of m.parts) {
+      const need = partNeed(p.target, r)
+      if (!need.ready) out.push(`${m.name}: ${whyNot(r[need.key])}`)
+    }
+  }
+  return out
+}
+
+// ── The plan ────────────────────────────────────────────────────────────────
+
+/** One thing to do, in order. A mask with any model's part is built part by part, then enabled. */
+export type PlanOp =
+  | { kind: 'component'; layerId: string; mask: string; component: MaskComponentSetting }
+  | {
+      kind: 'segment'
+      layerId: string
+      mask: string
+      target: 'subject' | 'background' | 'sky'
+      mode: MaskMode
+      invert: boolean
+    }
+  | {
+      kind: 'person'
+      layerId: string
+      mask: string
+      part: PersonPart
+      mode: MaskMode
+      invert: boolean
+    }
+  | {
+      kind: 'object'
+      layerId: string
+      mask: string
+      label: string
+      mode: MaskMode
+      invert: boolean
+      /** False: no detector here, the user points at it (SAM2 alone). */
+      detect: boolean
+    }
+  | { kind: 'enable'; layerId: string; mask: string }
+  | { kind: 'denoise'; model: 'drunet' | 'nafnet'; strength: number; layerId: string | null }
+  | { kind: 'deblur'; strength: number; layerId: string | null }
+
+export interface SmartPlan {
+  /** New masks, in order: a mask of ranges and gradients whole; one waiting on a model off and empty. */
+  layers: LocalLayer[]
+  ops: PlanOp[]
+  /** How many objects the user will be asked to point at. */
+  picks: number
+  skipped: { name: string; why: string }[]
+  /** Every required mask can be made. */
+  complete: boolean
+  /** The model work's expected time, ms (what the user points at not counted). */
+  etaMs: number
+  /** What the look does on this photo, in words ("Sky mask", "AI denoise (DRUNet)"). */
+  summary: string[]
+}
+
+/** How long model work takes when nothing has been measured here yet. */
+export const SMART_RATES = {
+  /** Per run, whatever the photo's size (the models work on a proxy). */
+  segmentMs: 1500,
+  personMs: 2500,
+  detectMs: 900,
+  sam2Ms: 1200,
+  /** Per megapixel of the full-resolution step. */
+  drunetMsPerMp: 9000,
+  nafnetMsPerMp: 3000,
+  deblurMsPerMp: 6000
+}
+
+export type SmartRates = typeof SMART_RATES
+
+export interface SmartPhoto {
+  frameWidth: number
+  frameHeight: number
+  /** What this machine measured (the denoise job's remembered rates), over the defaults. */
+  rates?: Partial<SmartRates>
+}
+
+/** Mask settings a smart look may set: colour and tone, the mask's white, never its noise or lens. */
+const ADJUST_ROOTS = ['basic', 'presence', 'toneCurve', 'hsl', 'colorGrade']
+const ADJUST_EXTRA: Record<string, [number, number]> = {
+  'basic.exposure': [-5, 5],
+  'wb.temperature': [-100, 100],
+  'wb.tint': [-100, 100]
+}
+
+/** The range a mask's adjustment must be in, or null when a look may not set it. */
+export function adjustRange(path: string): [number, number] | null {
+  if (ADJUST_EXTRA[path]) return ADJUST_EXTRA[path]
+  const parts = path.split('.')
+  if (!ADJUST_ROOTS.includes(parts[0])) return null
+  return rangeOf(parts)
+}
+
+/** `settings` with `adjust` laid on (clamped; what a look may not set is left out). */
+export function applyAdjust(settings: LayerSettings, adjust: Record<string, number>): void {
+  for (const [path, value] of Object.entries(adjust)) {
+    const range = adjustRange(path)
+    if (!range || !Number.isFinite(value)) continue
+    const keys = path.split('.')
+    let node: Record<string, unknown> = settings as unknown as Record<string, unknown>
+    for (const k of keys.slice(0, -1)) {
+      const next = node[k]
+      if (typeof next !== 'object' || next === null) {
+        node = {}
+        break
+      }
+      node = next as Record<string, unknown>
+    }
+    const last = keys[keys.length - 1]
+    if (typeof node[last] !== 'number') continue
+    node[last] = Math.min(range[1], Math.max(range[0], value))
+    // A mask's white is relative, and only counts once it is custom.
+    if (keys[0] === 'wb') settings.wb.mode = 'custom'
+  }
+}
+
+function componentOf(
+  part: MaskPart,
+  feather: number,
+  plane: { width: number; height: number }
+): MaskComponentSetting {
+  const base = {
+    id: newId(),
+    mode: part.mode,
+    opacity: 100,
+    invert: part.invert ?? false,
+    feather
+  }
+  const t = part.target
+  if (t.kind === 'range')
+    return {
+      ...base,
+      kind: 'range',
+      hue: t.hue ?? null,
+      saturation: t.saturation ?? null,
+      luma: t.luma ?? null,
+      smoothness: t.smoothness ?? 0
+    }
+  if (t.kind === 'linear')
+    return { ...base, kind: 'linear', start: { ...t.start }, end: { ...t.end }, ...plane }
+  if (t.kind === 'radial')
+    return {
+      ...base,
+      kind: 'radial',
+      centre: { ...t.centre },
+      radiusX: t.radiusX,
+      radiusY: t.radiusY,
+      angle: t.angle ?? 0,
+      softness: t.softness ?? 50,
+      ...plane
+    }
+  throw new Error(`not a component: ${t.kind}`)
+}
+
+const DENOISE_NAME = { drunet: 'DRUNet', nafnet: 'NAFNet' }
+
+/** What `smart` does on a photo of this build. */
+export function planSmart(smart: SmartPart, ready: SmartReadiness, photo: SmartPhoto): SmartPlan {
+  const rates = { ...SMART_RATES, ...photo.rates }
+  const mp = (photo.frameWidth * photo.frameHeight) / 1e6
+  const plane = gradientPlaneSize(photo.frameWidth, photo.frameHeight)
+  const plan: SmartPlan = {
+    layers: [],
+    ops: [],
+    picks: 0,
+    skipped: [],
+    complete: true,
+    etaMs: 0,
+    summary: []
+  }
+  /** Each mask made: its layer, by instruction id. */
+  const made = new Map<string, string>()
+
+  for (const m of smart.masks) {
+    const missing = m.parts
+      .map((p) => partNeed(p.target, ready))
+      .filter((n) => !n.ready)
+      .map((n) => whyNot(ready[n.key]))
+    if (missing.length > 0) {
+      plan.skipped.push({ name: m.name, why: missing[0] })
+      if (m.required) plan.complete = false
+      continue
+    }
+    const layer = newLocalLayer(m.name)
+    applyAdjust(layer.settings, m.adjust)
+    layer.amount = Math.min(200, Math.max(0, m.amount ?? 100))
+    const feather = m.feather ?? 5
+    made.set(m.id, layer.id)
+    plan.summary.push(`${m.name} mask`)
+    if (m.parts.every((p) => IMMEDIATE.has(p.target.kind))) {
+      layer.components = m.parts.map((p) => componentOf(p, feather, plane))
+      plan.layers.push(layer)
+      continue
+    }
+    // Waiting on a model: off and empty until every part is in, in order.
+    layer.enabled = false
+    plan.layers.push(layer)
+    for (const p of m.parts) {
+      const t = p.target
+      const at = { layerId: layer.id, mask: m.id, mode: p.mode, invert: p.invert ?? false }
+      if (IMMEDIATE.has(t.kind)) {
+        plan.ops.push({
+          kind: 'component',
+          layerId: layer.id,
+          mask: m.id,
+          component: componentOf(p, feather, plane)
+        })
+      } else if (t.kind === 'subject' || t.kind === 'background' || t.kind === 'sky') {
+        plan.ops.push({ kind: 'segment', ...at, target: t.kind })
+        plan.etaMs += rates.segmentMs
+      } else if (t.kind === 'person') {
+        plan.ops.push({ kind: 'person', ...at, part: t.part })
+        plan.etaMs += rates.personMs
+      } else if (t.kind === 'object') {
+        const detect = ready.object === 'ready'
+        plan.ops.push({ kind: 'object', ...at, label: t.label, detect })
+        plan.etaMs += (detect ? rates.detectMs : 0) + rates.sam2Ms
+        if (!detect) plan.picks++
+      }
+    }
+    plan.ops.push({ kind: 'enable', layerId: layer.id, mask: m.id })
+  }
+
+  // Steps after every mask: one scoped to a mask freezes it when it starts.
+  for (const s of smart.steps) {
+    const name = s.kind === 'denoise' ? 'AI denoise' : 'AI deblur'
+    let layerId: string | null = null
+    if (s.scope !== undefined) {
+      const id = made.get(s.scope)
+      if (!id) {
+        plan.skipped.push({ name, why: 'its mask could not be made' })
+        continue
+      }
+      layerId = id
+    }
+    const strength = Math.min(100, Math.max(1, s.strength))
+    if (s.kind === 'denoise') {
+      const model = denoiseModel(s.model, ready)
+      if (!model) {
+        const want = s.model === 'nafnet' ? ready.nafnet : ready.drunet
+        plan.skipped.push({ name, why: whyNot(want) })
+        continue
+      }
+      plan.ops.push({ kind: 'denoise', model, strength, layerId })
+      plan.etaMs += mp * (model === 'nafnet' ? rates.nafnetMsPerMp : rates.drunetMsPerMp)
+      plan.summary.push(`AI denoise (${DENOISE_NAME[model]})`)
+    } else {
+      if (ready.deblur !== 'ready') {
+        plan.skipped.push({ name, why: whyNot(ready.deblur) })
+        continue
+      }
+      plan.ops.push({ kind: 'deblur', strength, layerId })
+      plan.etaMs += mp * rates.deblurMsPerMp
+      plan.summary.push('AI deblur (NAFNet)')
+    }
+  }
+  plan.etaMs = Math.round(plan.etaMs)
+  return plan
+}
+
+// ── Reading instructions from outside (a look file) ─────────────────────────
+
+type Obj = Record<string, unknown>
+const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
+const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
+const MODES: MaskMode[] = ['Add', 'Subtract', 'Intersect']
+const MAX_MASKS = 8
+const MAX_PARTS = 6
+const MAX_STEPS = 4
+
+function band(v: unknown, hue: boolean): KeyBand | undefined {
+  if (!isObj(v) || !num(v.centre) || !num(v.width) || !num(v.softness)) return undefined
+  const top = hue ? 360 : 1
+  return {
+    centre: clamp(v.centre, 0, top),
+    width: clamp(v.width, 0, top),
+    softness: clamp(v.softness, 0, top)
+  }
+}
+
+const point = (v: unknown): FramePoint | undefined =>
+  isObj(v) && num(v.x) && num(v.y) ? { x: clamp(v.x, -1, 2), y: clamp(v.y, -1, 2) } : undefined
+
+function targetOf(v: unknown): MaskTarget | null {
+  if (!isObj(v)) return null
+  switch (v.kind) {
+    case 'range': {
+      const t: MaskTarget = { kind: 'range' }
+      const h = band(v.hue, true)
+      const s = band(v.saturation, false)
+      const l = band(v.luma, false)
+      if (h) t.hue = h
+      if (s) t.saturation = s
+      if (l) t.luma = l
+      if (!h && !s && !l) return null
+      if (num(v.smoothness)) t.smoothness = clamp(v.smoothness, 0, 100)
+      return t
+    }
+    case 'linear': {
+      const start = point(v.start)
+      const end = point(v.end)
+      return start && end ? { kind: 'linear', start, end } : null
+    }
+    case 'radial': {
+      const centre = point(v.centre)
+      if (!centre || !num(v.radiusX) || !num(v.radiusY)) return null
+      return {
+        kind: 'radial',
+        centre,
+        radiusX: clamp(v.radiusX, 0.001, 4),
+        radiusY: clamp(v.radiusY, 0.001, 4),
+        angle: num(v.angle) ? v.angle % 360 : 0,
+        softness: num(v.softness) ? clamp(v.softness, 0, 100) : 50
+      }
+    }
+    case 'subject':
+    case 'background':
+    case 'sky':
+      return { kind: v.kind }
+    case 'person':
+      return PERSON_PARTS.includes(v.part as PersonPart)
+        ? { kind: 'person', part: v.part as PersonPart }
+        : null
+    case 'object': {
+      const label = typeof v.label === 'string' ? v.label.trim().toLowerCase().slice(0, 40) : ''
+      return label ? { kind: 'object', label } : null
+    }
+    default:
+      return null
+  }
+}
+
+/**
+ * Instructions read from outside, kept to what we understand and what a
+ * look may do: unknown targets, settings a look may not set, and steps
+ * scoped to masks it does not have are dropped (and said, in `dropped`).
+ */
+export function readSmart(raw: unknown): { smart: SmartPart | null; dropped: string[] } {
+  const dropped: string[] = []
+  if (!isObj(raw)) return { smart: null, dropped }
+  const masks: MaskInstruction[] = []
+  const rawMasks = Array.isArray(raw.masks) ? raw.masks.slice(0, MAX_MASKS) : []
+  for (const [i, m] of rawMasks.entries()) {
+    if (!isObj(m)) {
+      dropped.push(`masks.${i}`)
+      continue
+    }
+    const id = typeof m.id === 'string' && m.id ? m.id.slice(0, 40) : `m${i}`
+    const name = typeof m.name === 'string' && m.name.trim() ? m.name.trim().slice(0, 40) : 'Mask'
+    const parts: MaskPart[] = []
+    const rawParts = Array.isArray(m.parts) ? m.parts.slice(0, MAX_PARTS) : []
+    for (const [j, p] of rawParts.entries()) {
+      const target = isObj(p) ? targetOf(p.target) : null
+      if (!target || !isObj(p)) {
+        dropped.push(`masks.${i}.parts.${j}`)
+        continue
+      }
+      // The first part adds, whatever it says.
+      const mode =
+        parts.length === 0
+          ? 'Add'
+          : MODES.includes(p.mode as MaskMode)
+            ? (p.mode as MaskMode)
+            : 'Add'
+      parts.push({ target, mode, ...(p.invert === true ? { invert: true } : {}) })
+    }
+    if (parts.length === 0 || masks.some((x) => x.id === id)) {
+      dropped.push(`masks.${i}`)
+      continue
+    }
+    const adjust: Record<string, number> = {}
+    if (isObj(m.adjust))
+      for (const [path, v] of Object.entries(m.adjust)) {
+        const range = adjustRange(path)
+        if (!range || !num(v)) {
+          dropped.push(`masks.${i}.adjust.${path}`)
+          continue
+        }
+        adjust[path] = clamp(v, range[0], range[1])
+      }
+    const out: MaskInstruction = { id, name, parts, adjust }
+    if (num(m.feather)) out.feather = clamp(m.feather, 0, 100)
+    if (num(m.amount)) out.amount = clamp(m.amount, 0, 200)
+    if (m.required === true) out.required = true
+    masks.push(out)
+  }
+  const steps: StepInstruction[] = []
+  const rawSteps = Array.isArray(raw.steps) ? raw.steps.slice(0, MAX_STEPS) : []
+  for (const [i, s] of rawSteps.entries()) {
+    if (!isObj(s) || !num(s.strength)) {
+      dropped.push(`steps.${i}`)
+      continue
+    }
+    const scope = typeof s.scope === 'string' ? s.scope : undefined
+    if (scope !== undefined && !masks.some((m) => m.id === scope)) {
+      dropped.push(`steps.${i}`)
+      continue
+    }
+    const strength = clamp(s.strength, 1, 100)
+    const scoped = scope !== undefined ? { scope } : {}
+    if (s.kind === 'denoise') {
+      const model = (['auto', 'drunet', 'nafnet'] as const).find((x) => x === s.model) ?? 'auto'
+      steps.push({ kind: 'denoise', model, strength, ...scoped })
+    } else if (s.kind === 'deblur') steps.push({ kind: 'deblur', strength, ...scoped })
+    else dropped.push(`steps.${i}`)
+  }
+  if (masks.length === 0 && steps.length === 0) return { smart: null, dropped }
+  return { smart: { masks, steps }, dropped }
+}

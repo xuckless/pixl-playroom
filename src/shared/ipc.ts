@@ -13,6 +13,7 @@ import type { Step } from './history'
 import type { BasicSetting, Recipe, RecipeGroup } from './recipe'
 import type { SmartGroup } from './smart'
 import type { LookMeta } from './looks/types'
+import type { SmartPart } from './looks/smart'
 
 export const IPC = {
   app: {
@@ -606,6 +607,8 @@ export interface Preset {
   wbOp?: { kelvin: number; tint: number; absolute: boolean }
   /** A look's collection, tags and source (`looks/types.ts`); absent on a saved preset. */
   meta?: LookMeta
+  /** Masks and AI steps it makes on the photo it is applied to (`looks/smart.ts`). */
+  smart?: SmartPart
 }
 
 /** The cards the Looks browser can see, in its order, on the open photo. */

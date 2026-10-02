@@ -19,6 +19,7 @@ import { defaultRecipe, RECIPE_VERSION, type Recipe } from '../recipe'
 import { COLLECTION_BY_ID } from './collections'
 import { groupsOf } from './dsl'
 import { allowedPath, CURVE_PATHS, rangeOf } from './ranges'
+import { readSmart, type SmartPart } from './smart'
 import { LOOK_SCHEMA, type LookApproximation, type LookAuthor, type LookMeta } from './types'
 
 export const LOOK_FILE_FORMAT = 'pixl-look'
@@ -40,6 +41,8 @@ export interface LookFile {
     approximates?: LookApproximation[]
     /** Each field the look sets, by dotted path. */
     values: Record<string, unknown>
+    /** The masks and AI steps it makes (`smart.ts`). */
+    smart?: SmartPart
   }
 }
 
@@ -79,7 +82,8 @@ export function lookToFile(look: Preset & { fields: string[][]; meta: LookMeta }
       ...(m.inspiredBy ? { inspiredBy: m.inspiredBy } : {}),
       ...(m.description ? { description: m.description } : {}),
       ...(m.approximates?.length ? { approximates: [...m.approximates] } : {}),
-      values
+      values,
+      ...(look.smart ? { smart: structuredClone(look.smart) } : {})
     }
   }
 }
@@ -225,6 +229,8 @@ export function lookFromFile(
       )
     : []
   if (approx.length) meta.approximates = approx
+  const smart = readSmart(l.smart)
+  for (const d of smart.dropped) dropped.push(`smart.${d}`)
 
   const fileId = typeof l.id === 'string' ? l.id : ''
   const id =
@@ -242,7 +248,8 @@ export function lookFromFile(
       groups: groupsOf(fields),
       recipe,
       fields,
-      meta
+      meta,
+      ...(smart.smart ? { smart: smart.smart } : {})
     },
     dropped,
     clamped

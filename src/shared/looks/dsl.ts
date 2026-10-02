@@ -23,6 +23,8 @@ import {
   type RecipeGroup
 } from '../recipe'
 import { COLLECTION_BY_ID } from './collections'
+import type { MaskMode } from '../engine-types'
+import type { MaskPart, MaskTarget, PersonPart, SmartDenoiseModel, SmartPart } from './smart'
 import type { Look, LookApproximation, LookMeta } from './types'
 
 interface BuildState {
@@ -32,6 +34,8 @@ interface BuildState {
   approximates: Set<LookApproximation>
   /** Fields the look sets even where they equal the default (grain's size with its amount). */
   include: Set<string>
+  /** Masks and AI steps, for a smart look. */
+  smart: SmartPart
 }
 
 export type LookStep = (r: Recipe, s: BuildState) => void
@@ -52,6 +56,7 @@ export interface LookDraft {
   recipe: Recipe
   approximates: LookApproximation[]
   include: string[][]
+  smart?: SmartPart
 }
 
 const ROOT_GROUP: Record<string, RecipeGroup> = {
@@ -81,7 +86,13 @@ const round = (v: number, d = 4): number => Math.round(v * 10 ** d) / 10 ** d
 
 export function look(slug: string, name: string, info: LookInfo, ...steps: LookStep[]): LookDraft {
   const recipe = defaultRecipe(false)
-  const s: BuildState = { lift: 0, drop: 0, approximates: new Set(), include: new Set() }
+  const s: BuildState = {
+    lift: 0,
+    drop: 0,
+    approximates: new Set(),
+    include: new Set(),
+    smart: { masks: [], steps: [] }
+  }
   for (const step of steps) step(recipe, s)
   if (s.lift !== 0 || s.drop !== 0) {
     const lo = s.lift
@@ -97,7 +108,8 @@ export function look(slug: string, name: string, info: LookInfo, ...steps: LookS
     info,
     recipe,
     approximates: [...s.approximates],
-    include: [...s.include].map((p) => p.split('.'))
+    include: [...s.include].map((p) => p.split('.')),
+    ...(s.smart.masks.length || s.smart.steps.length ? { smart: s.smart } : {})
   }
 }
 
@@ -126,7 +138,8 @@ export function collection(id: string, drafts: LookDraft[]): Look[] {
       groups: groupsOf(fields),
       recipe: d.recipe,
       fields,
-      meta
+      meta,
+      ...(d.smart ? { smart: d.smart } : {})
     }
   })
 }
@@ -363,4 +376,85 @@ export const approximates =
   (what: LookApproximation): LookStep =>
   (_r, s) => {
     s.approximates.add(what)
+  }
+
+// ── Smart steps (`smart.ts`) ────────────────────────────────────────────────
+
+/** Mask parts, for `mask(…)`: the first adds; `minus` and `within` join the rest. */
+export const part = {
+  range: (t: Omit<Extract<MaskTarget, { kind: 'range' }>, 'kind'>): MaskPart => ({
+    target: { kind: 'range', ...t },
+    mode: 'Add'
+  }),
+  linear: (start: [number, number], end: [number, number]): MaskPart => ({
+    target: {
+      kind: 'linear',
+      start: { x: start[0], y: start[1] },
+      end: { x: end[0], y: end[1] }
+    },
+    mode: 'Add'
+  }),
+  radial: (
+    centre: [number, number],
+    radiusX: number,
+    radiusY = radiusX,
+    softness = 50
+  ): MaskPart => ({
+    target: { kind: 'radial', centre: { x: centre[0], y: centre[1] }, radiusX, radiusY, softness },
+    mode: 'Add'
+  }),
+  subject: (): MaskPart => ({ target: { kind: 'subject' }, mode: 'Add' }),
+  background: (): MaskPart => ({ target: { kind: 'background' }, mode: 'Add' }),
+  sky: (): MaskPart => ({ target: { kind: 'sky' }, mode: 'Add' }),
+  person: (p: PersonPart): MaskPart => ({ target: { kind: 'person', part: p }, mode: 'Add' }),
+  object: (label: string): MaskPart => ({ target: { kind: 'object', label }, mode: 'Add' })
+}
+
+const joined = (p: MaskPart, mode: MaskMode): MaskPart => ({ ...p, mode })
+/** Taken away from the parts before it ("sky minus the subject"). */
+export const minus = (p: MaskPart): MaskPart => joined(p, 'Subtract')
+/** Only where it and the parts before it meet ("skin within the subject"). */
+export const within = (p: MaskPart): MaskPart => joined(p, 'Intersect')
+/** Everything but it. */
+export const inverted = (p: MaskPart): MaskPart => ({ ...p, invert: !p.invert })
+
+/**
+ * A mask the look makes: `id` names it for a step's scope; `adjust` is what
+ * it does, by dotted path into a mask's settings ("basic.exposure": -0.4).
+ */
+export const mask =
+  (
+    id: string,
+    name: string,
+    parts: MaskPart[],
+    adjust: Record<string, number>,
+    opts: { feather?: number; amount?: number; required?: boolean } = {}
+  ): LookStep =>
+  (_r, s) => {
+    s.smart.masks.push({
+      id,
+      name,
+      parts: parts.map((p, i) => (i === 0 ? { ...p, mode: 'Add' } : p)),
+      adjust,
+      ...opts
+    })
+  }
+
+/** AI denoise, on the whole photo or inside a mask the look makes (`scope`). */
+export const denoise =
+  (strength: number, opts: { model?: SmartDenoiseModel; scope?: string } = {}): LookStep =>
+  (_r, s) => {
+    s.smart.steps.push({
+      kind: 'denoise',
+      model: opts.model ?? 'auto',
+      strength,
+      ...(opts.scope ? { scope: opts.scope } : {})
+    })
+  }
+
+/** AI deblur (NAFNet), on the whole photo or inside a mask the look makes. */
+export const deblur =
+  (strength: number, opts: { scope?: string } = {}): LookStep =>
+  (_r, s) => {
+    s.smart.steps.push({ kind: 'deblur', strength, ...(opts.scope ? { scope: opts.scope } : {}) })
   }

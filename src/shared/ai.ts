@@ -9,6 +9,7 @@
 import type { EnhanceSettings } from './enhance'
 import type { MaskMode } from './engine-types'
 import type { AiDenoiseModel } from './recipe'
+import type { SmartReadiness } from './looks/smart'
 
 export type AiTask = 'enhance' | 'segment' | 'denoise'
 export type SegmentTarget = 'subject' | 'sky' | 'background'
@@ -94,6 +95,8 @@ export interface AiCapabilities {
   denoise: boolean
   /** Why a task cannot run, when it cannot. */
   why: Partial<Record<AiTask, string>>
+  /** What smart looks can ask for on this build (`looks/smart.ts`). */
+  smart: SmartReadiness
 }
 
 export const SEGMENT_LABEL: Record<SegmentTarget, string> = {

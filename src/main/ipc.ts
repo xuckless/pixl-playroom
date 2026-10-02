@@ -47,6 +47,7 @@ import { autoWbBatch, setWbBatch } from './autowb'
 import { crashConsent, reportRendererError, sendProblemReport, setCrashConsent } from './crash'
 import { freeDevice, licence, refreshLicence, requireLicence, startTrial } from './licence'
 import type { AiCapabilities, AiStartRequest } from '../shared/ai'
+import { smartReadiness } from '../shared/looks/smart'
 import type { ProblemInput } from '../shared/crash'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
@@ -636,10 +637,21 @@ export function registerIpc(s: Services): void {
     // offered for download where it is picked (Detail → Noise reduction).
     const models = s.bgEngine.getStatus().enhance === true
     const segment = models && subject
+    const smart = smartReadiness({
+      models,
+      subjectModel: subject,
+      drunetModel: await s.models.installed('drunet-color'),
+      enhance: enhance.available,
+      // The engine release after 0.15 brings these (E28 sky, E30 people and
+      // SAM2, E45 the detector, NAFNet denoise); they turn on with the
+      // binding that has them. Until then smart looks skip what needs them.
+      engine: { sky: false, people: false, sam2: false, detector: false, nafnet: false }
+    })
     return {
       enhance: enhance.available,
       segment,
       denoise: models,
+      smart,
       why: {
         ...(enhance.available ? {} : { enhance: enhance.reason }),
         ...(segment
