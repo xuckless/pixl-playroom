@@ -17,6 +17,7 @@ import { applyGroups, defaultRecipe, normaliseRecipe } from '../src/shared/recip
 import {
   cellFactor,
   proxyByCell,
+  RAW_DEVELOP,
   sourceOrientation,
   uprightFraming,
   versionStamp
@@ -117,6 +118,12 @@ test('a HEIF is upright as decoded: its EXIF tag is not applied again', () => {
   assert.notEqual(uprightFraming('Normal', heif), null)
   assert.equal(uprightFraming('Normal', jpeg), null)
   assert.equal(uprightFraming('Rotate90', jpeg)?.orientation, 'Rotate90')
+})
+
+test("a RAW is upright in every mode, its embedded preview too: the camera's orientation is not applied again", () => {
+  const cr2 = { input: 'Raw', orientation: 8 } as unknown as SourceInfo
+  assert.equal(sourceOrientation(cr2, 'EmbeddedPreview'), 'Normal')
+  assert.equal(sourceOrientation(cr2, RAW_DEVELOP), 'Normal')
 })
 
 test('HEIF working copies made before the fix are made again', () => {

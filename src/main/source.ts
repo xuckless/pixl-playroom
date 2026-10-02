@@ -118,10 +118,11 @@ export function proxyByCell(probeLong: number, cell: number, proxyEdge: number):
 
 /** The orientation to hand the engine for a source decoded this way. */
 export function sourceOrientation(info: SourceInfo, raw: RawMode | null): Orientation {
-  // A developed RAW (PIXL's develop or the scene-linear one) comes out
-  // upright, with no Orientation tag in its EXIF; every other path carries
-  // the tag.
-  if (info.input === 'Raw' && raw !== null && raw !== 'EmbeddedPreview') return 'Normal'
+  // A RAW comes out upright, whatever the mode: a develop (PIXL's or the
+  // scene-linear one) with no Orientation tag in its EXIF, and since 0.16 the
+  // embedded preview too (LibRaw turns it). Its `orientation` is the camera's,
+  // for information; stated as framing it would turn the frame again.
+  if (info.input === 'Raw' && raw !== null) return 'Normal'
   // A HEIF or AVIF is decoded (by libheif) with its own transforms — irot,
   // imir — applied, and the spec says the EXIF tag must then be ignored: an
   // iPhone writes both, so turning by the tag too lays a portrait on its side.
