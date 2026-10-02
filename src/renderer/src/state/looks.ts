@@ -6,6 +6,7 @@
  */
 import { create } from 'zustand'
 import type { Preset } from '../../../shared/ipc'
+import type { Recipe } from '../../../shared/recipe'
 import {
   addMine,
   MINE_KEY,
@@ -16,6 +17,25 @@ import {
 } from '../../../shared/looks/mine'
 import { api } from '../lib/api'
 
+/** The look applied last, for its Amount and to be swapped (see `lib/applyLook.ts`). */
+export interface AppliedLook {
+  /** The photo it was applied to. */
+  key: string
+  lookId: string
+  name: string
+  /** Its history label at full strength. */
+  label: string
+  /** The photo before the look, and with it at full strength. */
+  before: Recipe
+  after: Recipe
+  /** What the look moved: what its Amount scales. */
+  fields: string[][]
+  /** 0…100 */
+  amount: number
+  /** Its history step. */
+  seq: number
+}
+
 interface LooksState {
   /** My Looks, catalog ids in order; null until read. */
   mine: string[] | null
@@ -23,6 +43,7 @@ interface LooksState {
   user: Preset[]
   /** What the Looks browser opens searching for (the rail's search, Enter). */
   browseQuery: string
+  applied: AppliedLook | null
   load(): Promise<void>
   reloadUser(): Promise<void>
   add(id: string): void
@@ -39,6 +60,7 @@ export const useLooks = create<LooksState>((set, get) => {
     mine: null,
     user: [],
     browseQuery: '',
+    applied: null,
     async load() {
       const [raw] = await Promise.all([api.app.getSetting<unknown>(MINE_KEY), get().reloadUser()])
       set({ mine: readMine(raw) })

@@ -21,6 +21,7 @@ import {
   type ExportPreset,
   type ExportProgress,
   type FolderListing,
+  type HistoryAmend,
   type HistoryAppend,
   type HistoryLog,
   type KeywordNode,
@@ -207,6 +208,10 @@ const api = {
     warm: (keys: string[]) => call<void>(IPC.develop.warm, keys),
     historyAppend: (key: string, label: string, recipe: Recipe) =>
       call<HistoryAppend>(IPC.develop.historyAppend, key, label, recipe),
+    historyAmend: (key: string, seq: number, label: string, recipe: Recipe) =>
+      call<HistoryAmend | null>(IPC.develop.historyAmend, key, seq, label, recipe),
+    /** Show `recipe` on the loupe without making it the photo's (null: the photo's again). */
+    preview: (key: string, recipe: Recipe | null) => call<void>(IPC.develop.preview, key, recipe),
     historySetHidden: (key: string, seqs: number[], hidden: boolean) =>
       call<HistoryLog>(IPC.develop.historySetHidden, key, seqs, hidden),
     historyDelete: (key: string, seqs: number[]) =>

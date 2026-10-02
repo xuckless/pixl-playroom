@@ -337,6 +337,57 @@ aside.right .panels {
 .rail-item.on .dot {
   opacity: 1;
 }
+.rail-grip {
+  width: 5px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+}
+.rail-grip svg {
+  width: 11px;
+  height: 11px;
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+.rail-item:hover .rail-grip svg,
+.rail-item.dragging .rail-grip svg {
+  opacity: 1;
+}
+.rail-item.dragging {
+  position: relative;
+  z-index: 1;
+  background: var(--s2);
+  transition: none;
+}
+.applied-look {
+  margin: 8px 2px 4px;
+  padding: 8px 10px 4px;
+  border: 1px solid rgba(157, 139, 234, 0.35);
+  border-radius: var(--r);
+  background: linear-gradient(90deg, rgba(157, 139, 234, 0.12), transparent);
+}
+.applied-look-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+.applied-look-head strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text);
+}
+.applied-look-head button.icon svg {
+  width: 13px;
+  height: 13px;
+}
 .rail-item .t {
   font-size: 11px;
   color: var(--muted);

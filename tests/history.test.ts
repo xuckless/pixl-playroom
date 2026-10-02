@@ -7,6 +7,7 @@ import { join } from 'path'
 import { Store } from '../src/main/db'
 import { KEYFRAME_EVERY } from '../src/main/historytable'
 import {
+  amendLog,
   appendToLog,
   applyPatch,
   dependents,
@@ -313,4 +314,77 @@ test('whole-recipe rows from before steps are converted when read', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('the newest step is amended in place, refused once it is not the newest', () => {
+  withStore((store, file) => {
+    const base = defaultRecipe(false)
+    let log = appendToLog({ base: null, steps: [] }, store.appendHistory('k', 'Opened', base))
+    const a = structuredClone(base)
+    a.basic.exposure = 0.5
+    log = appendToLog(log, store.appendHistory('k', 'Exposure', a))
+    const look = structuredClone(a)
+    look.basic.contrast = 30
+    look.presence.saturation = -20
+    log = appendToLog(log, store.appendHistory('k', 'Look: A', look))
+    const seq = log.steps.at(-1)!.seq
+
+    // Half the look: the same step, now holding half of each, under a new label.
+    const half = structuredClone(a)
+    half.basic.contrast = 15
+    half.presence.saturation = -10
+    const amended = store.amendHistory('k', seq, 'Look: A · 50%', half)!
+    assert.equal(amended.seq, seq)
+    assert.equal(amended.step!.label, 'Look: A · 50%')
+    log = amendLog(log, amended)
+    const stored = store.history('k')
+    assert.deepEqual(
+      { base: log.base, steps: log.steps },
+      { base: stored.base, steps: stored.steps }
+    )
+    assert.equal(stored.steps.length, 2)
+    assert.equal(stored.head!.basic.contrast, 15)
+    assert.equal(stored.head!.basic.exposure, 0.5, 'the step before is untouched')
+
+    // Back to nothing: the step goes.
+    const gone = store.amendHistory('k', seq, 'Look: A · 0%', a)!
+    assert.equal(gone.step, null)
+    log = amendLog(log, gone)
+    assert.equal(store.history('k').steps.length, 1)
+    assert.equal(log.steps.length, 1)
+
+    // Not the newest (or hidden, or gone): refused, nothing written.
+    log = appendToLog(log, store.appendHistory('k', 'Look: B', look))
+    const b = log.steps.at(-1)!.seq
+    log = appendToLog(
+      log,
+      store.appendHistory('k', 'Whites', { ...look, basic: { ...look.basic, whites: 5 } })
+    )
+    assert.equal(store.amendHistory('k', b, 'Look: B · 50%', half), null)
+    assert.equal(store.amendHistory('k', seq, 'Look: A', half), null)
+    const last = log.steps.at(-1)!.seq
+    store.setHistoryHidden('k', [last], true)
+    assert.equal(store.amendHistory('k', last, 'Whites', look), null)
+    assert.equal(store.history('k').steps.length, 3)
+    void file
+  })
+})
+
+test('an amended keyframe step keeps its keyframe, of the step as it is now', () => {
+  withStore((store) => {
+    let r = defaultRecipe(false)
+    store.appendHistory('k', 'Opened', r)
+    for (let i = 1; i <= KEYFRAME_EVERY; i++) {
+      r = structuredClone(r)
+      r.basic.exposure = i / 100
+      store.appendHistory('k', `Exposure ${i}`, r)
+    }
+    const seq = store.history('k').steps.at(-1)!.seq
+    const next = structuredClone(r)
+    next.basic.contrast = 22
+    assert.ok(store.amendHistory('k', seq, 'Look', next))
+    const log = store.history('k')
+    assert.equal(log.head!.basic.contrast, 22)
+    assert.deepEqual(log.head, replay(log.base!.recipe, log.steps))
+  })
 })

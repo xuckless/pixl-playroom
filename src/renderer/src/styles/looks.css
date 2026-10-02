@@ -185,6 +185,18 @@
   color: var(--muted);
   font-size: 12px;
 }
+.look-badge.applied {
+  display: grid;
+  place-items: center;
+  color: var(--acc);
+}
+.look-badge.applied svg {
+  width: 13px;
+  height: 13px;
+}
+.look-card.applied .look-thumb {
+  box-shadow: 0 0 0 1px var(--acc-a55);
+}
 .look-keep {
   position: absolute;
   top: 12px;

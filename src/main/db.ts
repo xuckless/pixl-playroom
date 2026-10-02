@@ -11,6 +11,7 @@ import type {
   ColorLabel,
   ExportPreset,
   Flag,
+  HistoryAmend,
   HistoryAppend,
   HistoryLog,
   Preset
@@ -831,6 +832,10 @@ export class Store {
 
   appendHistory(itemKey: string, label: string, recipe: Recipe): HistoryAppend {
     return this.hist.append(itemKey, label, recipe)
+  }
+
+  amendHistory(itemKey: string, seq: number, label: string, recipe: Recipe): HistoryAmend | null {
+    return this.hist.amendLast(itemKey, seq, label, recipe)
   }
 
   setHistoryHidden(itemKey: string, seqs: number[], hidden: boolean): HistoryLog {

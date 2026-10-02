@@ -1,6 +1,7 @@
 // REPL driver for Pixl Playroom: launches the built app (out/) with a hidden
 // window and a throwaway profile, and takes commands on stdin.
 //   node scripts/drive.mjs            then: launch, folder <path>, open <n>, ss <name>, eval <js>, quit
+//   (also click, click-text, hover-text, drag-grip, press, stroke, drag, tap, wheel, panel, settle, wait)
 import { _electron as electron } from 'playwright-core'
 import * as readline from 'node:readline'
 import * as fs from 'node:fs'
@@ -134,6 +135,47 @@ const COMMANDS = {
         return 'OK'
       }, t)
     )
+  },
+  /** hover-text <text> — the real pointer onto the rail row (or button) showing <text>; `-` moves it away. */
+  async 'hover-text'(t) {
+    if (t === '-') {
+      await page.mouse.move(800, 500, { steps: 4 })
+      return console.log('away')
+    }
+    const box = await page.evaluate((t) => {
+      const el = [...document.querySelectorAll('.rail-item, button')].find((e) =>
+        e.textContent?.includes(t)
+      )
+      const r = el?.getBoundingClientRect()
+      return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null
+    }, t)
+    if (!box) return console.log('NOT_FOUND')
+    await page.mouse.move(box.x, box.y, { steps: 4 })
+    console.log('hovering', t)
+  },
+  /** drag-grip <from>|<to> — drag the rail row showing <from> by its grip onto the row showing <to>. */
+  async 'drag-grip'(arg) {
+    const [from, to] = arg.split('|')
+    const pts = await page.evaluate(
+      ([from, to]) => {
+        const rows = [...document.querySelectorAll('.rail-item')]
+        const a = rows.find((e) => e.textContent?.includes(from))?.querySelector('.rail-grip')
+        const b = rows.find((e) => e.textContent?.includes(to))
+        if (!a || !b) return null
+        const ra = a.getBoundingClientRect()
+        const rb = b.getBoundingClientRect()
+        return [ra.x + ra.width / 2, ra.y + ra.height / 2, rb.y + rb.height / 2]
+      },
+      [from, to]
+    )
+    if (!pts) return console.log('NOT_FOUND')
+    const [x, y, ty] = pts
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    for (let k = 1; k <= 16; k++) await page.mouse.move(x, y + ((ty - y) * k) / 16)
+    await sleep(100)
+    await page.mouse.up()
+    console.log('dragged', from, 'to', to)
   },
   async press(k) {
     await page.keyboard.press(k)

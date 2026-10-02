@@ -4,14 +4,25 @@ import type { Preset, ProjectInfo } from '../../../shared/ipc'
 import { LOOK_BY_ID, LOOKS } from '../../../shared/looks/catalog'
 import { searchLooks } from '../../../shared/looks/search'
 import { Icon } from '../components/icons'
+import { Slider } from '../components/ui'
 import { api, errorText } from '../lib/api'
-import { applyToPhoto } from '../lib/applyLook'
+import {
+  applyToPhoto,
+  commitLookAmount,
+  hoverLook,
+  leaveLook,
+  removeLook,
+  setLookAmount,
+  useApplied,
+  useLookHoverCleanup
+} from '../lib/applyLook'
 import { presetsChanged } from '../lib/hooks'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { useLooks } from '../state/looks'
 import { MetadataEditor } from '../views/library/MetadataEditor'
 import { useMaskPresets, useSelectedMask } from './masks/presets'
+import { useReorder } from './masks/useReorder'
 
 /**
  * The left rail's panes. Each shows one list at a time under the rail's
@@ -50,17 +61,20 @@ export function PresetsPane(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
   const mine = useLooks((s) => s.mine)
   const user = useLooks((s) => s.user)
-  const [applied, setApplied] = useState<string | null>(null)
+  const applied = useApplied()
   const [query, setQuery] = useState('')
   useEffect(() => {
     if (useLooks.getState().mine === null) void useLooks.getState().load()
   }, [])
-  if (!recipe) return <p className="rail-empty">Open a photo to use presets.</p>
-  const apply = (p: Preset): void => {
-    setApplied(p.id)
-    void applyToPhoto(p)
-  }
+  useLookHoverCleanup()
   const myLooks = (mine ?? []).flatMap((id) => LOOK_BY_ID.get(id) ?? [])
+  const reorder = useReorder((from, to) => useLooks.getState().move(myLooks[from].id, to))
+  if (!recipe) return <p className="rail-empty">Open a photo to use presets.</p>
+  // Alt (Option) puts a look on top of the applied one instead of in its place.
+  const apply = (p: Preset, stack: boolean): void => {
+    leaveLook(true)
+    void applyToPhoto(p, { stack })
+  }
   const q = query.trim()
   const shownMine = q ? searchLooks(myLooks, q) : myLooks
   const shownUser = q ? searchLooks(user, q) : user
@@ -72,25 +86,53 @@ export function PresetsPane(): React.JSX.Element | null {
     : []
   // Saved presets keep the groups they were saved under.
   const userGroups = [...new Set(shownUser.map((p) => p.group))]
-  const row = (p: Preset, action: React.ReactNode): React.JSX.Element => (
-    <div
-      key={p.id}
-      role="button"
-      tabIndex={0}
-      className={`preset rail-item${applied === p.id ? ' on' : ''}`}
-      onClick={() => apply(p)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') apply(p)
-      }}
-      title={describe(p)}
-    >
-      <span className="rail-label">
-        <i className="dot" />
-        {p.name}
-      </span>
-      {action}
-    </div>
-  )
+  const row = (
+    p: Preset,
+    action: React.ReactNode,
+    order?: { index: number }
+  ): React.JSX.Element => {
+    const offset = order ? reorder.offset(order.index) : 0
+    const dragging = order !== undefined && reorder.drag?.from === order.index
+    return (
+      <div
+        key={p.id}
+        role="button"
+        tabIndex={0}
+        data-reorder={order ? '' : undefined}
+        className={`preset rail-item${applied?.lookId === p.id ? ' on' : ''}${dragging ? ' dragging' : ''}`}
+        style={offset ? { transform: `translateY(${offset}px)` } : undefined}
+        onClick={(e) => apply(p, e.altKey)}
+        onMouseEnter={(e) => {
+          if (!reorder.drag) hoverLook(p, e.altKey)
+        }}
+        onMouseLeave={() => leaveLook()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') apply(p, e.altKey)
+        }}
+        title={describe(p)}
+      >
+        <span className="rail-label">
+          {order ? (
+            <span
+              className="rail-grip"
+              title="Drag to reorder"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => {
+                leaveLook(true)
+                reorder.start(e, order.index)
+              }}
+            >
+              <Icon name="grip" />
+            </span>
+          ) : (
+            <i className="dot" />
+          )}
+          {p.name}
+        </span>
+        {action}
+      </div>
+    )
+  }
   const nothing = q && shownMine.length + shownUser.length + found.length === 0
   return (
     <div className="rail-list">
@@ -108,10 +150,11 @@ export function PresetsPane(): React.JSX.Element | null {
           }}
         />
       </label>
+      {applied && <AppliedLookBar />}
       <MaskPresetsGroup />
       {shownMine.length > 0 && (
         <Group label="My Looks">
-          {shownMine.map((p) =>
+          {shownMine.map((p, i) =>
             row(
               p,
               <button
@@ -123,7 +166,9 @@ export function PresetsPane(): React.JSX.Element | null {
                 }}
               >
                 <Icon name="minus" />
-              </button>
+              </button>,
+              // Reordered by dragging, while the whole list shows.
+              q ? undefined : { index: i }
             )
           )}
         </Group>
@@ -174,6 +219,43 @@ export function PresetsPane(): React.JSX.Element | null {
           No looks kept yet. Search above to find one in the catalog and add it.
         </p>
       )}
+    </div>
+  )
+}
+
+/**
+ * The look applied last, at the top of the rail while its step is the
+ * newest: its Amount, taking it off, or keeping it as it is (the next look
+ * then goes on top of it).
+ */
+function AppliedLookBar(): React.JSX.Element | null {
+  const applied = useApplied()
+  if (!applied) return null
+  return (
+    <div className="applied-look">
+      <div className="applied-look-head">
+        <strong title={`Applied: ${applied.label}`}>{applied.name}</strong>
+        <button className="icon sm" title="Take the look off" onClick={removeLook}>
+          <Icon name="reset" />
+        </button>
+        <button
+          className="icon sm"
+          title="Keep it as it is: the next look goes on top"
+          onClick={() => useLooks.setState({ applied: null })}
+        >
+          <Icon name="check" />
+        </button>
+      </div>
+      <Slider
+        label="Amount"
+        value={applied.amount}
+        min={0}
+        max={100}
+        def={100}
+        format={(v) => `${Math.round(v)}%`}
+        onChange={(v, live) => setLookAmount(Math.round(v), live)}
+        onCommit={commitLookAmount}
+      />
     </div>
   )
 }

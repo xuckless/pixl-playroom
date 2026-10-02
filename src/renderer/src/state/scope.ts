@@ -81,7 +81,10 @@ export const scoped = {
   },
   replace(next: Recipe, label: string): void {
     const layer = scoped.layer()
-    if (!layer) return useDevelop.getState().replace(next, label)
+    if (!layer) {
+      void useDevelop.getState().replace(next, label)
+      return
+    }
     useDevelop.getState().edit((r) => {
       const l = r.layers.find((x) => x.id === layer.id)
       if (!l) return

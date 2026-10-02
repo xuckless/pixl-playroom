@@ -408,6 +408,9 @@ export function registerIpc(s: Services): void {
     async (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
       s.sessions.update(key, await s.planes.hydrate(recipe), interactive, rev)
   )
+  handle(IPC.develop.preview, async (key: string, recipe: Recipe | null) =>
+    s.sessions.preview(key, recipe ? await s.planes.hydrate(recipe) : null)
+  )
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))
   handle(IPC.develop.measureCa, (key: string) => s.sessions.measureCa(key))
@@ -470,6 +473,17 @@ export function registerIpc(s: Services): void {
       ? { ...change, base: { ...change.base, recipe: s.planes.slim(change.base.recipe) } }
       : change
   })
+  handle(
+    IPC.develop.historyAmend,
+    async (key: string, seq: number, label: string, recipe: Recipe) => {
+      // As an append: the step and the photo's live recipe saved together.
+      const live = s.sessions.liveRecipe(key)
+      const saved = live ? s.planes.slim(live) : recipe
+      const change = await s.index.amendEdit(key, seq, label, s.planes.slim(recipe), saved)
+      if (change && live) s.sessions.saved(key, live)
+      return change
+    }
+  )
   handle(IPC.develop.historySetHidden, async (key: string, seqs: number[], hidden: boolean) =>
     slimLog(await s.index.setHistoryHidden(key, seqs, hidden))
   )

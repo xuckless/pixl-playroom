@@ -31,6 +31,7 @@ import type {
   DuplicateGroup,
   ExportPreset,
   Flag,
+  HistoryAmend,
   HistoryAppend,
   HistoryLog,
   KeywordNode,
@@ -2207,6 +2208,40 @@ export class IndexService {
     )
     this.noteProjectWrite(key)
     return log
+  }
+
+  /**
+   * A settled change to the newest step (a look's Amount, a look swapped):
+   * the step rewritten and the recipe saved together, as `commitEdit` does.
+   * Null when the step is no longer the newest shown one; nothing is written.
+   */
+  amendEdit(
+    key: string,
+    seq: number,
+    label: string,
+    step: Recipe,
+    recipe: Recipe
+  ): HistoryAmend | null {
+    const amendIn = (p: PixlFile, itemKey: string): HistoryAmend | null => {
+      const change = p.history.amendLast(itemKey, seq, label, step)
+      if (!change) return null
+      this.saveRecipe(key, recipe)
+      for (const ref of refsIn(JSON.stringify(step))) {
+        if (p.hasPlane(ref)) continue
+        const png = this.store.plane(ref)
+        if (png !== undefined) p.putPlane(ref, png)
+      }
+      return change
+    }
+    return this.inHistory(
+      key,
+      (p, k) => p.tx(() => amendIn(p, k)),
+      () => {
+        const change = this.store.amendHistory(key, seq, label, step)
+        if (change) this.saveRecipe(key, recipe)
+        return change
+      }
+    )
   }
 
   setHistoryHidden(key: string, seqs: number[], hidden: boolean): HistoryLog {

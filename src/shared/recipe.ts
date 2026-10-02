@@ -961,6 +961,33 @@ export function applyFields(to: Recipe, from: Recipe, fields: string[][]): Recip
   return r
 }
 
+/**
+ * `applyFields` in place: each of `fields` in `to` set from `from`. For a
+ * draft (an immer edit), where only what moved should change identity.
+ */
+export function assignFields(to: Recipe, from: Recipe, fields: string[][]): void {
+  for (const path of fields) {
+    if (path.length === 0) continue
+    let src: unknown = from
+    let dst: Record<string, unknown> = to as unknown as Record<string, unknown>
+    let ok = true
+    for (let i = 0; i < path.length - 1; i++) {
+      src = isObject(src) ? src[path[i]] : undefined
+      const next = dst[path[i]]
+      if (!isObject(next)) {
+        ok = false
+        break
+      }
+      dst = next
+    }
+    if (!ok) continue
+    const last = path[path.length - 1]
+    src = isObject(src) ? src[last] : undefined
+    if (src !== undefined && last in dst && !sameValue(dst[last], src))
+      dst[last] = structuredClone(src)
+  }
+}
+
 /** What a group carries of a recipe (the fields `applyGroups` copies), read in place. */
 function groupValues(r: Recipe, g: RecipeGroup): unknown[] {
   const d = r.detail

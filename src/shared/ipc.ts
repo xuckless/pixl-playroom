@@ -139,6 +139,8 @@ export const IPC = {
     saveSnapshots: 'develop:save-snapshots',
     historyList: 'develop:history-list',
     historyAppend: 'develop:history-append',
+    historyAmend: 'develop:history-amend',
+    preview: 'develop:preview',
     /** main → renderer: the port preview frames arrive on, from the interactive engine */
     previewPort: 'develop:preview-port',
     /** main → renderer: a preview frame main relays (when the engine had no port) */
@@ -459,6 +461,12 @@ export interface HistoryAppend {
   base: HistoryBase | null
   step: Step | null
   folded: number[]
+}
+
+/** The newest step rewritten in place (`HistoryTable.amendLast`): `step` null when it was dropped. */
+export interface HistoryAmend {
+  seq: number
+  step: Step | null
 }
 
 export interface DevelopSession {

@@ -135,6 +135,11 @@ const THUMB_IDLE_MS = 4000
 const MID_SHORTFALL = 0.8
 /** Picture files of each kind kept on disk besides any a kept event names. */
 const KEEP_RENDERS = 6
+/**
+ * Settled pictures remembered by what they show: going back to one (a look
+ * hovered and left, an Amount dragged back) is the file already made.
+ */
+const RECENT_FULL = 3
 /** The Looks browser's cards: the long edge asked for, within reason, and how many are kept. */
 const LOOK_EDGE_DEFAULT = 320
 const LOOK_EDGE_MIN = 96
@@ -548,6 +553,8 @@ class Session {
     // added since), the session only ever holds a complete recipe.
     const recipe = normaliseRecipe(next, this.isRaw)
     this.recipe = recipe
+    // An edit ends any preview: the photo's own recipe is what shows.
+    this.previewing = null
     if (rev !== undefined) this.rev = rev
     // A pixel step added, undone, hidden or its strength changed: the working
     // pixels for the steps now (made already, for an undo or a redo).
@@ -558,6 +565,19 @@ class Session {
     clearTimeout(this.save)
     this.save = setTimeout(() => this.persist(), SAVE_MS)
     this.schedule(interactive ? 'draft' : 'full')
+  }
+
+  /**
+   * A recipe shown on the loupe and nothing more (a look hovered in the
+   * rail): never saved, never the thumbnail, no mask, before or headroom
+   * render made for it. Null goes back to the photo's own recipe, which a
+   * moment ago was a settled picture and so comes back at once.
+   */
+  previewRecipe(next: Recipe | null): void {
+    if (!next && !this.previewing) return
+    this.previewing = next ? normaliseRecipe(next, this.isRaw) : null
+    if (this.inflight) this.abort?.abort()
+    this.schedule(next ? 'draft' : 'full')
   }
 
   /** Save the recipe now. The index answers in order, so what is asked of it next sees this. */
@@ -645,10 +665,18 @@ class Session {
       if (kind === 'full') this.bake()
       await this.renderPicture(kind, signal)
       // A newer edit waiting behind this render will redo what follows.
-      if (kind === 'draft' && this.view.maskLive && this.view.maskLayer && !this.closed)
+      if (
+        kind === 'draft' &&
+        this.view.maskLive &&
+        this.view.maskLayer &&
+        !this.closed &&
+        !this.previewing
+      )
         await this.renderMask('draft', signal)
       // While a bake is pending, what follows waits for the render it brings.
-      if (kind === 'full' && !this.closed && !this.pending && !this.bakePending()) {
+      // A preview is the picture alone: what follows belongs to the photo's own recipe.
+      const extras = !this.closed && !this.pending && !this.bakePending() && !this.previewing
+      if (kind === 'full' && extras) {
         if (this.view.maskLayer) await this.renderMask('full', signal)
         if (this.view.before) await this.renderBefore(signal)
         if (this.view.headroom) await this.renderHeadroom(signal)
@@ -693,7 +721,13 @@ class Session {
   private nextFile(stem: string, ext: string): string {
     const out = join(this.dir, `${stem}-${this.tag}-${++this.fileSeq}.${ext}`)
     const list = [...(this.files[stem] ?? []), out]
-    const held = new Set([this.lastOut.draft, this.lastOut.full, this.lastFull, this.lastMaskOut])
+    const held = new Set([
+      this.lastOut.draft,
+      this.lastOut.full,
+      this.lastFull,
+      this.lastMaskOut,
+      ...[...this.recentFull.values()].map((r) => r.out)
+    ])
     const drop = new Set(list.slice(0, -KEEP_RENDERS).filter((f) => !held.has(f)))
     this.files[stem] = list.filter((f) => !drop.has(f))
     for (const f of drop) void rm(f, { force: true }).catch(() => undefined)
@@ -706,12 +740,13 @@ class Session {
     // The view is read once, here: the event says which view it was made for.
     const cropMode = this.view.cropMode
     const rev = this.rev
-    const recipe = this.recipe
+    const preview = this.previewing
+    const recipe = preview ?? this.recipe
     const compiled = await this.compileFor(recipe, src, !cropMode)
     const seq = ++this.seq
     // A whole picture of this recipe (framed, no corners left empty): what
-    // the library's thumbnail can be shrunk from.
-    const whole = kind === 'full' && !cropMode && !framingTransparent(compiled.framing)
+    // the library's thumbnail can be shrunk from. A preview is never that.
+    const whole = kind === 'full' && !cropMode && !preview && !framingTransparent(compiled.framing)
     const sig = String(
       hash32(
         gradeKey([
@@ -724,9 +759,15 @@ class Session {
         ])
       )
     )
-    const last = this.lastEvent[kind]
-    if (last && sig === this.lastSig[kind]) {
-      if (kind === 'full') this.lastFull = this.lastFullFor[sig] ?? this.lastFull
+    const known = kind === 'full' ? this.recentFull.get(sig) : undefined
+    const last = known?.event ?? (sig === this.lastSig[kind] ? this.lastEvent[kind] : null)
+    if (last) {
+      if (known) {
+        this.lastFull = known.out
+        this.lastSig.full = sig
+        this.lastEvent.full = known.event
+        this.lastOut.full = known.out
+      }
       if (whole)
         this.fullPicture = {
           recipe,
@@ -787,10 +828,10 @@ class Session {
     const stats = statsOf(report)
     if (kind === 'full') {
       this.lastFull = out
-      this.lastFullFor = { [sig]: out }
-      this.fullPicture = whole
-        ? { recipe, picture: { path: out, width: report.width, height: report.height } }
-        : null
+      if (!preview)
+        this.fullPicture = whole
+          ? { recipe, picture: { path: out, width: report.width, height: report.height } }
+          : null
     }
     const hdr = await hdrStats
     if (this.closed) return
@@ -815,6 +856,12 @@ class Session {
     this.lastSig[kind] = sig
     this.lastEvent[kind] = event
     this.lastOut[kind] = out
+    if (kind === 'full') {
+      this.recentFull.delete(sig)
+      this.recentFull.set(sig, { event, out })
+      while (this.recentFull.size > RECENT_FULL)
+        this.recentFull.delete(this.recentFull.keys().next().value as string)
+    }
     this.owner.send(IPC.develop.rendered, event)
   }
 
@@ -1150,7 +1197,10 @@ class Session {
 
   /** The most recent full render's file: what the masked hue chart measures. */
   private lastFull = ''
-  private lastFullFor: Record<string, string> = {}
+  /** The last few settled pictures by signature, newest last (see RECENT_FULL). */
+  private recentFull = new Map<string, { event: RenderEvent; out: string }>()
+  /** A recipe shown instead of the photo's, not saved (see `previewRecipe`). */
+  private previewing: Recipe | null = null
   /** The last whole settled picture and the recipe it shows (see `thumbLater`). */
   private fullPicture: { recipe: Recipe; picture: Picture } | null = null
 
@@ -1846,6 +1896,11 @@ export class DevelopSessions {
 
   update(key: string, recipe: Recipe, interactive: boolean, rev?: number): void {
     this.get(key).update(recipe, interactive, rev)
+  }
+
+  /** Show `recipe` on an open photo's loupe without making it the photo's (null: its own again). */
+  preview(key: string, recipe: Recipe | null): void {
+    this.sessions.get(key)?.previewRecipe(recipe)
   }
 
   /** What a white balance saved elsewhere converts into on this photo; null when it is not open. */

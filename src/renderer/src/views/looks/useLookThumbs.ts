@@ -2,12 +2,14 @@
  * The Looks browser's thumbnails: the cards on screen (and a little beyond)
  * are asked of the main process in the order they are shown, again whenever
  * the photo's recipe changes; what comes back is kept per photo, so the
- * browser opened again shows them at once.
+ * browser opened again shows them at once. A card is the photo as clicking
+ * the look would leave it: with a look applied, that look swapped for it.
  */
 import { useCallback, useEffect, useRef } from 'react'
 import { create } from 'zustand'
 import type { LookThumbEvent } from '../../../../shared/ipc'
 import { api } from '../../lib/api'
+import { lookBase } from '../../lib/applyLook'
 import { useDevelop } from '../../state/develop'
 
 interface ThumbsState {
@@ -55,11 +57,13 @@ export function useLookThumbs(
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
       const d = useDevelop.getState()
-      if (!d.session || !d.recipe) return
+      // Each card shows what clicking it gives: the applied look swapped for it.
+      const base = lookBase()
+      if (!d.session || !base) return
       const ids = orderRef.current.filter((id) => visible.current.has(id))
       if (ids.length === 0) return
       void api.looks
-        .thumbs({ key: d.session.key, token: ++token, base: d.recipe, ids, edge })
+        .thumbs({ key: d.session.key, token: ++token, base, ids, edge })
         .catch(() => undefined)
     }, ASK_MS)
   }, [edge])

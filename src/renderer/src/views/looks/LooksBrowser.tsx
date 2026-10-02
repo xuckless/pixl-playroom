@@ -16,7 +16,7 @@ import {
 import { searchLooks } from '../../../../shared/looks/search'
 import { Icon } from '../../components/icons'
 import { Modal } from '../../components/ui'
-import { applyToPhoto } from '../../lib/applyLook'
+import { applyToPhoto, removeLook, useApplied } from '../../lib/applyLook'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { useLooks } from '../../state/looks'
@@ -43,6 +43,7 @@ export function LooksBrowser(): React.JSX.Element | null {
   const picture = useDevelop((s) => s.picture)
   const mine = useLooks((s) => s.mine)
   const user = useLooks((s) => s.user)
+  const applied = useApplied()
   const [query, setQuery] = useState(() => useLooks.getState().browseQuery)
   const [shelf, setShelf] = useState<Shelf>({ kind: 'all' })
   const [focus, setFocus] = useState<string | null>(null)
@@ -108,9 +109,11 @@ export function LooksBrowser(): React.JSX.Element | null {
     if (kept(p.id)) useLooks.getState().remove(p.id)
     else useLooks.getState().add(p.id)
   }
-  const apply = (p: Preset): void => {
-    void applyToPhoto(p)
-    close()
+  // Applying keeps the browser open to try another (which takes its place);
+  // a double-click applies and closes. Alt puts it on top instead.
+  const apply = (p: Preset, opts: { stack?: boolean; done?: boolean } = {}): void => {
+    void applyToPhoto(p, { stack: opts.stack })
+    if (opts.done) close()
   }
 
   const move = (delta: number | 'up' | 'down'): void => {
@@ -129,7 +132,7 @@ export function LooksBrowser(): React.JSX.Element | null {
     else if (e.key === 'ArrowLeft') move(-1)
     else if (e.key === 'ArrowDown') move('down')
     else if (e.key === 'ArrowUp') move('up')
-    else if (e.key === 'Enter' && focused) apply(focused)
+    else if (e.key === 'Enter' && focused) apply(focused, { stack: e.altKey })
     else if (e.key === ' ' && focused) toggleKeep(focused)
     else return
     e.preventDefault()
@@ -138,15 +141,16 @@ export function LooksBrowser(): React.JSX.Element | null {
   const card = (p: Preset): React.JSX.Element => {
     const t = thumbs[p.id]
     const on = focus === p.id
+    const isApplied = applied?.lookId === p.id
     return (
       <div
         key={p.id}
         ref={observe(p.id)}
-        className={`look-card${on ? ' on' : ''}`}
+        className={`look-card${on ? ' on' : ''}${isApplied ? ' applied' : ''}`}
         role="button"
         tabIndex={-1}
         onClick={() => setFocus(p.id)}
-        onDoubleClick={() => apply(p)}
+        onDoubleClick={(e) => apply(p, { stack: e.altKey, done: true })}
         title={p.meta?.inspiredBy ? `Inspired by ${p.meta.inspiredBy}` : p.name}
       >
         <div className="look-thumb" style={{ aspectRatio: String(aspect) }}>
@@ -154,6 +158,11 @@ export function LooksBrowser(): React.JSX.Element | null {
         </div>
         <div className="look-meta">
           <span className="look-name">{p.name}</span>
+          {isApplied && (
+            <span className="look-badge applied" title="Applied to the photo">
+              <Icon name="check" />
+            </span>
+          )}
           {p.meta?.approximates && (
             <span className="look-badge" title="Approximated with the sliders we have">
               ≈
@@ -208,7 +217,7 @@ export function LooksBrowser(): React.JSX.Element | null {
         )}
       </div>
       <div className="look-meta">
-        <span className="look-name">Current</span>
+        <span className="look-name">{applied ? 'Without look' : 'Current'}</span>
       </div>
     </div>
   )
@@ -240,8 +249,29 @@ export function LooksBrowser(): React.JSX.Element | null {
                 {kept(focused.id) ? 'In My Looks' : 'Add to My Looks'}
               </button>
             )}
-            <button className="primary" onClick={() => apply(focused)}>
-              Apply
+            <button
+              className="primary"
+              disabled={applied?.lookId === focused.id}
+              onClick={(e) => apply(focused, { stack: e.altKey })}
+              title={applied ? `Takes the place of ${applied.name} (Alt: on top of it)` : undefined}
+            >
+              {applied?.lookId === focused.id ? 'Applied' : 'Apply'}
+            </button>
+          </div>
+        ) : applied ? (
+          <div className="looks-detail">
+            <div className="looks-detail-text">
+              <strong>{applied.name}</strong>
+              <span className="muted">
+                Applied at {applied.amount}%. Pick another look to swap it, or take it off.
+              </span>
+            </div>
+            <button className="ghost" onClick={removeLook}>
+              <Icon name="reset" />
+              Take off
+            </button>
+            <button className="primary" onClick={close}>
+              Done
             </button>
           </div>
         ) : (
