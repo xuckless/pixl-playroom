@@ -4,15 +4,13 @@
  * (the loupe re-reads it), else into its saved recipe.
  */
 import type { AiJobEvent } from '../../shared/ai'
+import { AI_MASK_EDGE } from '../../shared/maskcontrols'
 import { nextMaskName } from '../../shared/masks'
 import { newId, newLocalLayer, type BrushComponent, type Recipe } from '../../shared/recipe'
 import { parseKey } from '../keys'
 import type { Library } from '../library'
 import type { PlaneStore } from '../planestore'
 import type { DevelopSessions } from '../render'
-
-/** What a new AI mask's edge starts at: a little in, somewhat harder. */
-const AI_MASK_EDGE = { shift: -15, harden: 35 }
 
 export async function applyMaskResult(
   e: AiJobEvent,
@@ -36,8 +34,8 @@ export async function applyMaskResult(
     height: r.height,
     png,
     // A model's plane is soft and low resolution, and blooms past the edge:
-    // pulled in a little and firmed up (both changeable on the component).
-    edge: AI_MASK_EDGE
+    // pulled in a little and firmed up.
+    edge: { ...AI_MASK_EDGE }
   }
   const into = r.into && recipe.layers.find((l) => l.id === r.into!.layerId)
   if (into) into.components.push({ ...comp, mode: into.components.length ? r.into!.mode : 'Add' })

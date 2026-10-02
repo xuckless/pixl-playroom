@@ -1287,6 +1287,12 @@ Playroom work that starts once the engine request lands
 - [ ] **M** · Depth range mask (its picker entry is disabled) (E12).
 - [ ] **M** · Smoothed range masks and an edge-aware brush in the tools (E13).
 - [ ] **S** · Move mask shift/harden to the engine, if E14 lands.
+- [ ] **M** · Brush and AI mask planes (and gradients until E11) at the
+      photo's resolution, or brush strokes sent as vectors (E36).
+- [ ] **M** · A live brush effect while painting, the adjustment itself under
+      the brush and not only a tint (E37).
+- [ ] **S** · The mask overlay from the render instead of a second
+      `convert` (E38).
 - [ ] **S** · Highlight recovery on RAW, in the develop (E15).
 - [ ] **S** · Raw-domain noise reduction controls (E16).
 - [ ] **S** · Pixel steps' image caches as uncompressed TIFF overlays (E33).
@@ -1307,7 +1313,8 @@ Playroom work that starts once the engine request lands
 - [ ] **L** · AI Remove (generative remove) in the Heal tool (E29).
 - [ ] **L** · Select People: face, skin, hair, eyes, lips, teeth, clothes
       (E30).
-- [ ] **L** · Objects by brush or box (E30).
+- [ ] **L** · Objects by brush or box, on SAM2 (E30).
+- [ ] **M** · "Snap to edges" on a lasso: its polygon as SAM2's prompt (E30).
 - [ ] **L** · Catalog: people (E30).
 - [ ] **M** · Learned auto white balance beside the grey-pixel estimate (E31).
 - [ ] **M** · An adaptive/learned auto tone (E31).

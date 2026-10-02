@@ -9,6 +9,7 @@ import { presetsChanged, usePresets } from '../lib/hooks'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { MetadataEditor } from '../views/library/MetadataEditor'
+import { useMaskPresets, useSelectedMask } from './masks/presets'
 
 /**
  * The left rail's panes. Each shows one list at a time under the rail's
@@ -65,6 +66,7 @@ export function PresetsPane(): React.JSX.Element | null {
   const groups = [...new Set(presets.map((p) => p.group))]
   return (
     <div className="rail-list">
+      <MaskPresetsGroup />
       {groups.map((g) => (
         <div key={g} className="preset-group">
           <div className="rail-group">
@@ -112,6 +114,92 @@ export function PresetsPane(): React.JSX.Element | null {
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+/**
+ * While a mask is selected, its own presets head the list: a mask's sliders
+ * and Amount saved under a name, applied to whichever mask is selected.
+ */
+function MaskPresetsGroup(): React.JSX.Element | null {
+  const layer = useSelectedMask()
+  const { presets, save, apply, remove } = useMaskPresets()
+  const [naming, setNaming] = useState<string | null>(null)
+  if (!layer) return null
+  const finish = (): void => {
+    const name = naming?.trim()
+    if (name) void save(layer, name)
+    setNaming(null)
+  }
+  return (
+    <div className="preset-group">
+      <div className="rail-group">
+        <span className="micro">Mask · {layer.name}</span>
+        <span className="line" />
+      </div>
+      <div className="stagger">
+        {presets.map((p) => (
+          <div
+            key={p.name}
+            role="button"
+            tabIndex={0}
+            className="preset rail-item"
+            onClick={() => apply(layer, p)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') apply(layer, p)
+            }}
+            title={`Apply to ${layer.name}`}
+          >
+            <span className="rail-label">
+              <i className="dot" />
+              {p.name}
+            </span>
+            <button
+              className="icon sm"
+              title="Delete mask preset"
+              onClick={(e) => {
+                e.stopPropagation()
+                void remove(p.name)
+              }}
+            >
+              <Icon name="trash" />
+            </button>
+          </div>
+        ))}
+        {naming === null ? (
+          <div
+            role="button"
+            tabIndex={0}
+            className="preset rail-item muted"
+            onClick={() => setNaming('')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setNaming('')
+            }}
+          >
+            <span className="rail-label">
+              <Icon name="plus" />
+              Save this mask&apos;s settings…
+            </span>
+          </div>
+        ) : (
+          <div className="rail-form">
+            <input
+              className="name"
+              autoFocus
+              placeholder="Mask preset name"
+              value={naming}
+              onChange={(e) => setNaming(e.target.value)}
+              onBlur={finish}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter') finish()
+                if (e.key === 'Escape') setNaming(null)
+              }}
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }
