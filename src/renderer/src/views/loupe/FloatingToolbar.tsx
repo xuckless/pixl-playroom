@@ -179,7 +179,7 @@ function BrushBar(): React.JSX.Element {
 const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
   polygon: {
     title: 'Lasso',
-    hint: 'Click points · click the first or double-click to close · Alt subtracts · Esc cancels'
+    hint: 'Click corners or drag freehand · ⌫ undo point · Alt subtracts · Esc cancels'
   },
   linear: {
     title: 'Linear gradient',

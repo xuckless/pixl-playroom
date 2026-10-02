@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { maskJoins } from '../../../../../shared/maskpreview'
 import type { LocalLayer } from '../../../../../shared/recipe'
 import { displayToBase, type P, type ViewGeometry } from '../../../../../shared/view'
@@ -6,7 +6,7 @@ import { planePng } from '../../../lib/planes'
 import { lastSentRev, useDevelop } from '../../../state/develop'
 import { useUi, type OverlayMode } from '../../../state/ui'
 import { BASE_EDGE, MaskGl, type Join, type ViewMode } from './MaskGl'
-import { useMaskGlBroken } from './state'
+import { useMaskDraft, useMaskGlBroken } from './state'
 import { useAiJobs } from '../../../state/jobs'
 
 /** The canvas is at most this many device pixels on its long edge (the tint is soft). */
@@ -108,7 +108,10 @@ export function MaskCanvas({
   const layerId = useDevelop((s) => s.layerId)
   // The selected mask's shape, by identity: its sliders moving leave these
   // as they are, so nothing here redraws on a slider's tick.
-  const components = useDevelop((s) => s.recipe?.layers.find((l) => l.id === s.layerId)?.components)
+  const saved = useDevelop((s) => s.recipe?.layers.find((l) => l.id === s.layerId)?.components)
+  // A shape still being drawn (a lasso before it closes) shows as part of the mask.
+  const draft = useMaskDraft((s) => s.draft)
+  const components = useMemo(() => (draft && saved ? [...saved, draft] : saved), [draft, saved])
   const layerInvert = useDevelop(
     (s) => s.recipe?.layers.find((l) => l.id === s.layerId)?.invert ?? false
   )
@@ -324,6 +327,7 @@ export function MaskCanvas({
     // Hand over to the engine once it has drawn this recipe (or at once, when
     // the loupe has nothing to show).
     const agreed =
+      !draft &&
       gl.haveEngine &&
       mask !== null &&
       (mask.rev ?? 0) >= target.current &&
@@ -377,6 +381,7 @@ export function MaskCanvas({
     frame.current = requestAnimationFrame(step)
   }, [
     components,
+    draft,
     layerInvert,
     overlayHue,
     layerId,
