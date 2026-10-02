@@ -19,7 +19,7 @@ import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
 import { ensureModel } from '../../lib/ensureModel'
 import { useObjects } from '../../state/objects'
-import { SKY_BY_CLICK } from '../../../../shared/ai'
+import { PEOPLE_BY_CLICK, SKY_BY_CLICK } from '../../../../shared/ai'
 import { CONCEPTS, conceptOf, type ConceptId } from '../../../../shared/concepts'
 import type { PersonPart } from '../../../../shared/looks/smart'
 import { useLibrary } from '../../state/library'
@@ -90,15 +90,16 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
   },
   {
     // Found by a click for now (SAM 2.1); by name once a parts model or
-    // SAM 3 ships (shared/concepts.ts finders).
+    // SAM 3 ships (shared/concepts.ts finders). Coming soon until
+    // `PEOPLE_BY_CLICK` is on.
     title: 'People',
     tools: CONCEPTS.filter((c) => c.group === 'people').map((c): MaskToolInfo => ({
       kind: `part:${c.id as PersonPart}`,
       label: c.label,
       icon: c.id === 'body' ? 'subject' : 'objects',
-      needs: 'download SAM 2.1',
-      ai: 'prompt',
-      badge: 'click'
+      ...(PEOPLE_BY_CLICK
+        ? { needs: 'download SAM 2.1', ai: 'prompt' as const, badge: 'click' }
+        : { needs: 'coming soon' })
     }))
   },
   {

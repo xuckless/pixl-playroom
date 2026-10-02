@@ -22,6 +22,12 @@ export type AiTask = 'enhance' | 'segment' | 'denoise' | 'prompt'
  * model (ai/segment.ts).
  */
 export const SKY_BY_CLICK = true
+/**
+ * The masks' People tools (body, face, hair, skin…), each found by a click
+ * on the part (SAM 2.1). Off until they are ready to release: the tools say
+ * "soon" in the picker.
+ */
+export const PEOPLE_BY_CLICK = false
 export type SegmentTarget = 'subject' | 'sky' | 'background'
 
 /** One step a job goes through, in order (Model → Analyse → Refine). */
