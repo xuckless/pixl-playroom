@@ -13,6 +13,7 @@ import { Section, Select, Slider, Toggle } from '../../components/ui'
 import { useDevelop } from '../../state/develop'
 import { changeLayer, layerOf, patchComponent } from './model'
 import { findObject } from '../../lib/objects'
+import { ensureModel } from '../../lib/ensureModel'
 import { BandBar } from './BandBar'
 
 const BLENDS: BlendMode[] = [
@@ -71,11 +72,16 @@ export function ComponentCard({
     }, live)
   const snapping = c.refine?.on === true
   const radiusDef = defaultEdgeRadius(c)
+  // A painted stroke snaps to the object SAM finds under it (main/brushes.ts).
+  const stroke = c.kind === 'brush' && !c.source
   // Snap to edges on: a model's mask lets the snap firm its edge, in place of
   // an older recipe's harden.
-  const setSnap = (on: boolean): void => {
+  const setSnap = async (on: boolean): Promise<void> => {
+    // SAM offered first when it is not here; without it nothing changes.
+    if (on && stroke && !(await ensureModel('prompt', 'Snap to edges'))) return
     edit((x) => {
-      x.refine = { on, radius: x.refine?.radius ?? radiusDef }
+      // A stroke's snap is the object's edge: a light refine on it, whatever it was.
+      x.refine = { on, radius: on && stroke ? radiusDef : (x.refine?.radius ?? radiusDef) }
       if (on && fromModel(x) && x.edge) {
         const e = normaliseEdge({ ...x.edge, harden: 0 })
         if (e) x.edge = e
@@ -91,8 +97,12 @@ export function ComponentCard({
           <div className="mf-card-row">
             <Toggle
               on={snapping}
-              onChange={setSnap}
-              title="Pull this edge onto the photo's own edges, at full resolution (the engine's refine)"
+              onChange={(on) => void setSnap(on)}
+              title={
+                stroke
+                  ? "Keep this stroke to the object it was painted on, cut at the object's edges (SAM 2.1)"
+                  : "Pull this edge onto the photo's own edges, at full resolution (the engine's refine)"
+              }
             >
               Snap to edges
             </Toggle>

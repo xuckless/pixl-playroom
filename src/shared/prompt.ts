@@ -240,6 +240,76 @@ export function lassoPrompt(
   return { rect, points }
 }
 
+/** The most clicks a stroke's prompt is given (Snap to edges on a brush). */
+export const STROKE_CLICKS = 12
+
+/**
+ * Snap to edges on a brush: SAM asked where a stroke was painted, with
+ * clicks over the stroke's core (where it is at least nine tenths of its
+ * strongest), the first nearest the core's middle and each after it the
+ * farthest from those taken, so a long stroke is asked about all along.
+ * `plane` is the stroke's grey plane (base frame). Null for a stroke with
+ * no core (nothing painted, or too faint to say where).
+ */
+export function strokePrompt(
+  plane: Uint8Array,
+  width: number,
+  height: number,
+  clicks = STROKE_CLICKS
+): PromptGeometry | null {
+  let max = 0
+  for (const v of plane) if (v > max) max = v
+  if (max < 64) return null
+  const at = max * 0.9
+  // The core on a coarse grid: a 1024 px plane is looked at every 8 px.
+  const step = Math.max(1, Math.round(Math.max(width, height) / 128))
+  const core: { x: number; y: number }[] = []
+  for (let y = step >> 1; y < height; y += step)
+    for (let x = step >> 1; x < width; x += step)
+      if (plane[y * width + x] >= at) core.push({ x, y })
+  if (core.length === 0) return null
+  const cx = core.reduce((s, p) => s + p.x, 0) / core.length
+  const cy = core.reduce((s, p) => s + p.y, 0) / core.length
+  const d2 = (p: { x: number; y: number }, x: number, y: number): number =>
+    (p.x - x) ** 2 + (p.y - y) ** 2
+  let first = 0
+  for (let i = 1; i < core.length; i++) if (d2(core[i], cx, cy) < d2(core[first], cx, cy)) first = i
+  const taken = [core[first]]
+  const far = core.map((p) => d2(p, core[first].x, core[first].y))
+  // Clicks closer than a couple of grid steps say nothing new.
+  const apart = (2 * step) ** 2
+  while (taken.length < clicks) {
+    let i = 0
+    for (let k = 1; k < far.length; k++) if (far[k] > far[i]) i = k
+    if (far[i] < apart) break
+    taken.push(core[i])
+    for (let k = 0; k < far.length; k++)
+      far[k] = Math.min(far[k], d2(core[k], core[i].x, core[i].y))
+  }
+  return {
+    rect: null,
+    points: taken.map((p) => ({
+      x: unit((p.x + 0.5) / width),
+      y: unit((p.y + 0.5) / height),
+      fg: true
+    }))
+  }
+}
+
+/**
+ * Which of SAM's answers a stroke was painted on: the smallest that holds
+ * nearly all of the stroke's core (`held`, the share of it inside each),
+ * else the one that holds most. `area` is each answer's coverage.
+ */
+export function strokeObject(held: number[], area: number[], enough = 0.85): number {
+  let best = -1
+  for (let i = 0; i < held.length; i++)
+    if (held[i] >= enough && (best < 0 || area[i] < area[best])) best = i
+  if (best >= 0) return best
+  for (let i = 0; i < held.length; i++) if (best < 0 || held[i] > held[best]) best = i
+  return best
+}
+
 // ── The select tool's calls (main's select/service.ts) ────────────────────────
 
 /** A mask as the tool shows it while it is being made. */

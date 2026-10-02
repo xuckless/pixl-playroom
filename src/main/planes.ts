@@ -39,19 +39,59 @@ export function writeGradientPlane(file: string, c: GradientComponent, user: Ori
   writeAtomic(file, encodeGreyPng(turned.data, turned.width, turned.height, PLANE_DEFLATE))
 }
 
-/** A painted (or AI) plane turned to the user's orientation, its edge moved and hardened. */
+/**
+ * A painted (or AI) plane turned to the user's orientation, its edge moved
+ * and hardened; with `object` (Snap to edges on a stroke), first cut to the
+ * object at the object's size, so its edge is the object's.
+ */
 export function writeBrushPlane(
   file: string,
   png: string,
   user: Orientation,
-  edge?: MaskEdge
+  edge?: MaskEdge,
+  object?: { data: Uint8Array; width: number; height: number }
 ): void {
   const buf = Buffer.from(png, 'base64')
-  if (user === 'Normal' && !edge) return writeAtomic(file, buf)
+  if (user === 'Normal' && !edge && !object) return writeAtomic(file, buf)
   const d = decodePng(buf)
-  const shaped = applyEdge(new Uint8Array(d.rows), d.width, d.height, edge)
-  const turned = orientPlane(user, shaped, d.width, d.height)
+  let plane: { data: Uint8Array; width: number; height: number } = {
+    data: new Uint8Array(d.rows),
+    width: d.width,
+    height: d.height
+  }
+  if (object) plane = cutToObject(plane, object)
+  const shaped = applyEdge(plane.data, plane.width, plane.height, edge)
+  const turned = orientPlane(user, shaped, plane.width, plane.height)
   writeAtomic(file, encodeGreyPng(turned.data, turned.width, turned.height, PLANE_DEFLATE))
+}
+
+/** A stroke kept to an object: the stroke, stretched to the object's size, times the object. */
+export function cutToObject(
+  stroke: { data: Uint8Array; width: number; height: number },
+  object: { data: Uint8Array; width: number; height: number }
+): { data: Uint8Array; width: number; height: number } {
+  const { width: W, height: H } = object
+  const { data: s, width: w, height: h } = stroke
+  const out = new Uint8Array(W * H)
+  for (let y = 0; y < H; y++) {
+    // The stroke sampled bilinearly at this pixel's centre.
+    const sy = Math.min(h - 1, Math.max(0, ((y + 0.5) * h) / H - 0.5))
+    const y0 = Math.floor(sy)
+    const y1 = Math.min(h - 1, y0 + 1)
+    const fy = sy - y0
+    for (let x = 0; x < W; x++) {
+      const o = object.data[y * W + x]
+      if (o === 0) continue
+      const sx = Math.min(w - 1, Math.max(0, ((x + 0.5) * w) / W - 0.5))
+      const x0 = Math.floor(sx)
+      const x1 = Math.min(w - 1, x0 + 1)
+      const fx = sx - x0
+      const top = s[y0 * w + x0] * (1 - fx) + s[y0 * w + x1] * fx
+      const bottom = s[y1 * w + x0] * (1 - fx) + s[y1 * w + x1] * fx
+      out[y * W + x] = Math.round(((top * (1 - fy) + bottom * fy) * o) / 255)
+    }
+  }
+  return { data: out, width: W, height: H }
 }
 
 /** Per folder: writes since it was last pruned, and when that was. */

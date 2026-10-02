@@ -6,13 +6,24 @@
  * the pixels worker. Gradients reach the engine as its own shapes; only one
  * an older version gave an edge is drawn into a plane here
  * (`rasterGradient`).
+ *
+ * A painted stroke with Snap to edges is kept to the object it was painted
+ * on: SAM (main/select) finds that object, and the plane written is the
+ * stroke cut to it, so its edge is the object's (`snapsToObject`). Written
+ * once per stroke, photo and lens correction, and found again by its name,
+ * without SAM. Without SAM the stroke is written as it is, and only the
+ * engine's refine snaps it.
  */
 import { join } from 'path'
 import type { Orientation } from '../shared/engine-types'
 import { gradientKey, rasterGradient } from '../shared/gradients'
 import { edgeKey } from '../shared/maskedge'
-import { planeEdge } from '../shared/refine'
+import type { LensCorrection } from '../shared/engine-types'
+import { lensCorrection } from '../shared/lens'
+import { planeEdge, snapsToObject } from '../shared/refine'
 import type { Recipe } from '../shared/recipe'
+import log from 'electron-log/main'
+import { grey8 } from './pngio'
 import { planeRef } from './planeref'
 import { exists } from './exists'
 import { paths } from './paths'
@@ -21,6 +32,62 @@ import { pixels, type PixelsJob } from './workers/pool'
 
 /** Planes being written now, by file: two renders asking for one plane share the work. */
 const writing = new Map<string, Promise<void>>()
+
+/** A grey plane, 8 bits, row by row. */
+export interface Grey {
+  data: Uint8Array
+  width: number
+  height: number
+}
+
+/** What finds the object a stroke was painted on (main/select's SAM), once the app has one. */
+export interface BrushSnapper {
+  /** What a stroke's snap depends on besides the stroke (the photo, the lens): no model run. */
+  key(photoKey: string, lens: LensCorrection | null): Promise<string>
+  /** The object under a stroke at the frame's size, or null (no SAM, nothing found). */
+  object(photoKey: string, lens: LensCorrection | null, stroke: Grey): Promise<Grey | null>
+}
+let snapper: BrushSnapper | null = null
+
+/** Strokes are snapped to objects from now on (SAM can run). */
+export function setBrushSnapper(s: BrushSnapper | null): void {
+  snapper = s
+}
+
+/** Snapped planes being found now, by file: the path each lands at. */
+const snapping = new Map<string, Promise<string>>()
+
+/**
+ * A stroke kept to its object: the snapped plane when there is one (made
+ * now if need be), else the stroke's own.
+ */
+function snapped(
+  snapFile: string,
+  plainFile: string,
+  photoKey: string,
+  lens: LensCorrection | null,
+  job: PixelsJob & { op: 'brush' }
+): Promise<string> {
+  const running = snapping.get(snapFile)
+  if (running) return running
+  const p = (async () => {
+    if (await exists(snapFile)) return snapFile
+    const object = await snapper
+      ?.object(photoKey, lens, grey8(Buffer.from(job.png, 'base64')))
+      .catch((err) => {
+        log.warn('brush snap: no object', err)
+        return null
+      })
+    if (!object) {
+      await ensure(plainFile, job)
+      return plainFile
+    }
+    await ensure(snapFile, { ...job, file: snapFile, object })
+    return snapFile
+  })().finally(() => snapping.delete(snapFile))
+  snapping.set(snapFile, p)
+  return p
+}
 
 function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Promise<void> {
   const running = writing.get(file)
@@ -32,7 +99,7 @@ function ensure(file: string, job: PixelsJob & { op: 'gradient' | 'brush' }): Pr
       if (job.op === 'gradient') {
         writeGradientPlane(file, job.c, job.user)
         pruneGradientsSometimes(job.dir)
-      } else writeBrushPlane(file, job.png, job.user, job.edge)
+      } else writeBrushPlane(file, job.png, job.user, job.edge, job.object)
     })
     .finally(() => writing.delete(file))
   writing.set(file, p)
@@ -48,6 +115,12 @@ export async function brushPlanes(
   const out: Record<string, string> = {}
   const dir = paths.photoCache(photoId)
   const work: Promise<void>[] = []
+  const photoKey = String(photoId)
+  const lens = lensCorrection(recipe.lens)
+  // Asked once, and only when a stroke is to be snapped.
+  let snapKey: Promise<string | null> | null = null
+  const snapKeyOf = (): Promise<string | null> =>
+    (snapKey ??= snapper ? snapper.key(photoKey, lens).catch(() => null) : Promise.resolve(null))
   for (const layer of recipe.layers) {
     for (const c of layer.components) {
       if (c.kind === 'linear' || c.kind === 'radial' || c.kind === 'bidirectional') {
@@ -62,8 +135,22 @@ export async function brushPlanes(
       // one: hashing megabytes of PNG on every compile is what it saves. A
       // snapped plane's shift is the engine's (refine), not the plane's.
       const edge = planeEdge(c)
-      const file = join(dir, `brush-${c.ref ?? planeRef(c.png)}${edgeKey(edge)}-${user}.png`)
-      work.push(ensure(file, { op: 'brush', file, png: c.png, user, ...(edge ? { edge } : {}) }))
+      const name = `brush-${c.ref ?? planeRef(c.png)}${edgeKey(edge)}`
+      const file = join(dir, `${name}-${user}.png`)
+      const job = { op: 'brush' as const, file, png: c.png, user, ...(edge ? { edge } : {}) }
+      if (snapsToObject(c) && snapper) {
+        const id = c.id
+        work.push(
+          snapKeyOf().then(async (k) => {
+            out[id] = k
+              ? await snapped(join(dir, `${name}-on${k}-${user}.png`), file, photoKey, lens, job)
+              : file
+            if (!k) await ensure(file, job)
+          })
+        )
+        continue
+      }
+      work.push(ensure(file, job))
       out[c.id] = file
     }
   }

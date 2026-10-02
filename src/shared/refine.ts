@@ -8,9 +8,15 @@
  * about three times how far off the plane is.
  *
  * Offered on a brush, a lasso and a model's mask (`refinable`), and on by
- * default for a model's (`AI_REFINE`). On a model's mask the panel's Shift
+ * default for a model's (`MODEL_REFINE`). On a model's mask the panel's Shift
  * edge moves the snapped edge (the refine's `contract`, resolution-free)
  * rather than the plane, which is then drawn without it (`planeEdge`).
+ *
+ * A painted stroke snaps further (`snapsToObject`): a luminance filter
+ * cannot tell which side of an edge a stroke meant (skin against skin, or
+ * against a wall as bright, barely is an edge to it), so the stroke is first
+ * kept to the object SAM finds under it (main/brushes.ts), and the refine
+ * then only smooths that object's last pixels.
  */
 import type { Refine } from './engine-types'
 import { EDGE_SHIFT_SPAN, isPlainEdge, type MaskEdge } from './maskedge'
@@ -59,9 +65,15 @@ export function hardenPlane(grey: Uint8Array, at: number, times: number): void {
 /** The Edge radius a component's snap starts at, and resets to. */
 export function defaultEdgeRadius(c: MaskComponentSetting): number {
   if (c.kind !== 'brush') return DRAWN_EDGE_RADIUS
-  if (c.source) return MODEL_EDGE_RADIUS
+  // A model's plane, or a stroke kept to its object: both already on the photo's edges.
+  if (c.source || !(c.edge?.harden ?? 0)) return MODEL_EDGE_RADIUS
   // An older recipe's model mask: no source, a hardened soft plane.
-  return (c.edge?.harden ?? 0) > 0 ? AI_EDGE_RADIUS : DRAWN_EDGE_RADIUS
+  return AI_EDGE_RADIUS
+}
+
+/** A painted stroke snapped: kept to the object SAM finds under it, then refined. */
+export function snapsToObject(c: MaskComponentSetting): boolean {
+  return c.kind === 'brush' && !c.source && c.refine?.on === true
 }
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))

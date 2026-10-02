@@ -21,6 +21,7 @@
  */
 import log from 'electron-log/main'
 import type {
+  LensCorrection,
   ModelRef,
   PlaneUpsample,
   PromptEmbeddingRequest,
@@ -32,6 +33,8 @@ import {
   addPart,
   enginePrompt,
   promptSteps,
+  strokeObject,
+  strokePrompt,
   type PromptGeometry,
   type PromptVia,
   type SelectCommit,
@@ -86,6 +89,14 @@ function guided(frameWidth: number, frameHeight: number): PlaneUpsample {
 const RESAMPLED: PlaneUpsample = { Resample: { kernel: 'Bilinear' } }
 /** How a plane reaches its size: guided for a mask kept, resampled for a preview. */
 type Upsample = 'guided' | 'resampled'
+/** A lens correction masks are placed after (none: null). */
+type Lens = LensCorrection | null
+/** A grey plane, 8 bits, row by row. */
+export interface Grey {
+  data: Uint8Array
+  width: number
+  height: number
+}
 
 interface Embedding {
   id: string
@@ -167,20 +178,28 @@ export class SelectService {
     return this.loading
   }
 
-  private async embKeyOf(key: string): Promise<string> {
-    const row = await this.library.photoRow(key)
+  /** The lens correction a photo's masks are placed after: the one given, else its recipe's. */
+  private async lensFor(key: string, lens?: Lens): Promise<Lens> {
+    if (lens !== undefined) return lens
     const recipe = this.sessions()?.liveRecipe(key) ?? (await this.library.recipe(key))
-    const lens = JSON.stringify(lensCorrection(recipe.lens))
-    return `${key}|${versionStamp(row)}|${hash32(lens).toString(16)}`
+    return lensCorrection(recipe.lens)
+  }
+
+  private async embKeyOf(key: string, lens?: Lens): Promise<string> {
+    const row = await this.library.photoRow(key)
+    const l = JSON.stringify(await this.lensFor(key, lens))
+    return `${key}|${versionStamp(row)}|${hash32(l).toString(16)}`
   }
 
   /** The photo's embedding, made if it is not held (the encoder, about a second). */
   private async embedding(
     key: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    /** The lens correction to embed after; the live recipe's when not given. */
+    lens?: Lens
   ): Promise<{ embKey: string; e: Embedding }> {
     await this.sessionsReady()
-    const embKey = await this.embKeyOf(key)
+    const embKey = await this.embKeyOf(key, lens)
     const had = this.embeddings.get(embKey)
     if (had && had.generation === this.engine.generation) {
       // Most recent last, as the host keeps them.
@@ -197,7 +216,6 @@ export class SelectService {
         const row = await this.library.photoRow(key)
         const info = await this.library.probe(row)
         const px = await ensureProxies(this.proxyEngine, row, info)
-        const recipe = this.sessions()?.liveRecipe(key) ?? (await this.library.recipe(key))
         const request: PromptEmbeddingRequest = {
           source: { Path: px.proxy.path },
           input: px.proxy.input,
@@ -205,7 +223,7 @@ export class SelectService {
           gain_map: null,
           // The proxy is the base frame, upright: what masks are placed on.
           orientation: 'Normal',
-          lens: lensCorrection(recipe.lens),
+          lens: await this.lensFor(key, lens),
           encoder: this.refs!.encoder,
           // Kept for the committed plane's guided upsample (about 10 MB more).
           guide: true,
@@ -245,6 +263,8 @@ export class SelectService {
       upsample: Upsample
       longest: number
       signal?: AbortSignal
+      /** Every answer the decoder gives, not only its best. */
+      all?: boolean
     }
   ): Promise<Extract<SamResult, { op: 'decode' }>> {
     const e = this.embeddings.get(embKey)
@@ -254,7 +274,7 @@ export class SelectService {
     const request: PromptSegmentRequest = {
       decoder: this.refs!.decoder,
       prompt: enginePrompt(prompt, opts.count),
-      candidates: 'HighestPredictedIou',
+      candidates: opts.all ? 'All' : 'HighestPredictedIou',
       activation: ACTIVATION,
       upsample: opts.upsample === 'guided' ? guided(frameWidth, frameHeight) : RESAMPLED,
       bounds_at: 0.5,
@@ -464,6 +484,59 @@ export class SelectService {
     }
   }
 
+  // ── Snap to edges on a brush ─────────────────────────────────────────────
+
+  /**
+   * What a stroke's snap depends on besides the stroke: the photo's pixels
+   * and the lens correction its masks are placed after. Cheap (no model),
+   * so a plane already made for it is found without SAM.
+   */
+  async snapKey(key: string, lens: Lens): Promise<string> {
+    return hash32(await this.embKeyOf(key, lens)).toString(16)
+  }
+
+  /**
+   * The object a brush stroke was painted on, as an 8-bit plane at the
+   * frame's size: SAM asked with clicks over the stroke's core, and of its
+   * answers the smallest that holds (nearly) all of that core. Null when SAM
+   * is not on this machine or the stroke has no core.
+   */
+  async objectUnder(
+    key: string,
+    lens: Lens,
+    stroke: Grey,
+    signal?: AbortSignal
+  ): Promise<Grey | null> {
+    const prompt = strokePrompt(stroke.data, stroke.width, stroke.height)
+    if (!prompt || !(await this.installed())) return null
+    this.busy++
+    const lane = `snap-${nextId++}`
+    try {
+      const { embKey } = await this.embedding(key, signal, lens)
+      const r = await this.decodeOn(lane, embKey, prompt, {
+        maskInput: false,
+        keep: false,
+        upsample: 'guided',
+        longest: FRAME_SIZE,
+        signal,
+        all: true
+      })
+      const answers = r.planes.map((p) => grey8(Buffer.from(p.png)))
+      if (answers.length === 0) return null
+      const held = answers.map((a) => coreHeld(stroke, a))
+      return answers[
+        strokeObject(
+          held,
+          r.planes.map((p) => p.coverage)
+        )
+      ]
+    } finally {
+      this.busy--
+      void this.engine.sam({ op: 'release', lanes: [lane] }).catch(() => undefined)
+      this.awake()
+    }
+  }
+
   // ── Sleep ────────────────────────────────────────────────────────────────
 
   /** Something happened: sleep only after IDLE_MS of nothing. */
@@ -475,6 +548,26 @@ export class SelectService {
       if (this.engine.sleep()) log.info('select: idle, the host sleeps')
     }, IDLE_MS)
   }
+}
+
+/** The share of a stroke's core (nine tenths of its strongest and up) inside `object`. */
+function coreHeld(stroke: Grey, object: Grey): number {
+  let max = 0
+  for (const v of stroke.data) if (v > max) max = v
+  const at = max * 0.9
+  let core = 0
+  let inside = 0
+  const step = Math.max(1, Math.round(Math.max(stroke.width, stroke.height) / 256))
+  for (let y = step >> 1; y < stroke.height; y += step) {
+    const oy = Math.min(object.height - 1, Math.floor(((y + 0.5) / stroke.height) * object.height))
+    for (let x = step >> 1; x < stroke.width; x += step) {
+      if (stroke.data[y * stroke.width + x] < at) continue
+      core++
+      const ox = Math.min(object.width - 1, Math.floor(((x + 0.5) / stroke.width) * object.width))
+      if (object.data[oy * object.width + ox] >= 128) inside++
+    }
+  }
+  return core ? inside / core : 0
 }
 
 function planeOf(seq: number, r: Extract<SamResult, { op: 'decode' }>, ms: number): SelectPlane {

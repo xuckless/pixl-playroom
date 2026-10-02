@@ -134,7 +134,8 @@ test("a model's new mask snaps lightly, and its radius slider starts there", () 
   assert.equal(defaultEdgeRadius(ai), MODEL_EDGE_RADIUS)
   // An older recipe's model mask (no source, a harden on a soft plane) snaps wider.
   assert.equal(defaultEdgeRadius({ ...brush, edge: { shift: 0, harden: 40 } }), AI_EDGE_RADIUS)
-  assert.equal(defaultEdgeRadius(brush), DRAWN_EDGE_RADIUS)
+  // A stroke snaps to the object under it (SAM), so lightly too.
+  assert.equal(defaultEdgeRadius(brush), MODEL_EDGE_RADIUS)
   assert.equal(defaultEdgeRadius(lasso), DRAWN_EDGE_RADIUS)
   // Each call its own object: a component's refine is edited in place.
   assert.notEqual(modelRefine(), modelRefine())

@@ -1,6 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  STROKE_CLICKS,
+  strokeObject,
+  strokePrompt,
   addPart,
   boxAround,
   enginePrompt,
@@ -180,4 +183,37 @@ test('an object mask keeps the prompt it was made from, and how it was asked', (
   // An unknown way of asking is dropped; the mask stays.
   const odd = normaliseComponent({ ...c, source: { kind: 'prompt', via: 'telepathy' } })
   assert.ok(odd?.kind === 'brush' && odd.source?.kind === 'prompt' && !('via' in odd.source))
+})
+
+test("a stroke's prompt clicks along its core, spread out, and nothing for no stroke", () => {
+  const w = 256
+  const h = 128
+  const plane = new Uint8Array(w * h)
+  // A horizontal stroke, strong along y 60…68 from x 20 to 236, faint around it.
+  for (let y = 50; y < 78; y++)
+    for (let x = 10; x < 246; x++)
+      plane[y * w + x] = y >= 60 && y < 68 && x >= 20 && x < 236 ? 240 : 60
+  const p = strokePrompt(plane, w, h)!
+  assert.equal(p.rect, null)
+  assert.ok(p.points.length >= 3 && p.points.length <= STROKE_CLICKS)
+  for (const q of p.points) {
+    assert.equal(q.fg, true)
+    // On the core, not the faint rim.
+    assert.ok(q.y > 60 / h && q.y < 68 / h, `y ${q.y}`)
+    assert.ok(q.x > 20 / w && q.x < 236 / w, `x ${q.x}`)
+  }
+  // Both ends asked about, not just the middle.
+  const xs = p.points.map((q) => q.x)
+  assert.ok(Math.min(...xs) < 0.2 && Math.max(...xs) > 0.8)
+  assert.equal(strokePrompt(new Uint8Array(w * h), w, h), null)
+  assert.equal(strokePrompt(new Uint8Array(w * h).fill(40), w, h), null)
+})
+
+test('the object a stroke was on is the smallest answer holding its core', () => {
+  // A face (small, holds all), the person (large, holds all), a cheek (holds half).
+  assert.equal(strokeObject([1, 1, 0.5], [0.1, 0.4, 0.02]), 0)
+  assert.equal(strokeObject([0.9, 1, 0.5], [0.3, 0.1, 0.02]), 1)
+  // None holds enough: the one holding most.
+  assert.equal(strokeObject([0.4, 0.7, 0.5], [0.1, 0.4, 0.02]), 1)
+  assert.equal(strokeObject([], []), -1)
 })

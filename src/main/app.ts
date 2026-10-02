@@ -9,6 +9,7 @@ import { startCrashReporting } from './crash'
 import { onRenderScale, settleScale, watchDisplay } from './display'
 import { EngineClient } from './engine/client'
 import { SelectService } from './select/service'
+import { setBrushSnapper } from './brushes'
 import { PromptRunner } from './ai/prompt'
 import { endExiftool } from './exiftool'
 import { externalAllowed } from './guard'
@@ -239,6 +240,11 @@ app.whenReady().then(() => {
   void lenses.start()
   const exporter = new Exporter(library, sessions, bgEngine)
   const select = new SelectService(selectEngine, bgEngine, library, planes, models, () => sessions)
+  // A stroke with Snap to edges is kept to the object SAM finds under it.
+  setBrushSnapper({
+    key: (key, lens) => select.snapKey(key, lens),
+    object: (key, lens, stroke) => select.objectUnder(key, lens, stroke)
+  })
   const ai = new AiJobs(
     {
       prompt: new PromptRunner(select, models),

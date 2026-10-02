@@ -19,7 +19,15 @@ export type PixelsJob =
       c: GradientComponent
       user: Orientation
     }
-  | { op: 'brush'; file: string; png: string; user: Orientation; edge?: MaskEdge }
+  | {
+      op: 'brush'
+      file: string
+      png: string
+      user: Orientation
+      edge?: MaskEdge
+      /** The object the stroke is kept to (Snap to edges), at the frame's size. */
+      object?: { data: Uint8Array; width: number; height: number }
+    }
   /** A masked pixel step's overlay (pixels/ops.ts). */
   | { op: 'compose'; image: string; mask: string; out: string }
   /** A coordinate ramp for a lens map (pixels/ops.ts). */
