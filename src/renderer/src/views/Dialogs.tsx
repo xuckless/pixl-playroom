@@ -21,6 +21,7 @@ import {
 import { toInstructions } from '../../../shared/looks/smart'
 import { savedWhite } from '../../../shared/wbconvert'
 import { Modal } from '../components/ui'
+import { InfoTip } from '../components/InfoTip'
 import { Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
 import { autoWbBatch } from '../lib/autowb'
@@ -276,7 +277,7 @@ export function ExportDialog(): React.JSX.Element {
               <option value="webp">WebP</option>
               <option value="avif">AVIF</option>
               <option value="jxl">JPEG XL</option>
-              <option value="heic">HEIC (needs x265 in the engine build)</option>
+              <option value="heic">HEIC</option>
             </select>
           </Field>
           {['jpeg', 'webp', 'avif', 'heic'].includes(s.format) && (
@@ -545,7 +546,17 @@ export function ExportDialog(): React.JSX.Element {
           thumbUrl={items.find((i) => i.key === targets[0])?.thumbUrl ?? null}
         />
         <fieldset>
-          <legend>Metadata</legend>
+          <legend>
+            Metadata
+            <InfoTip
+              label="Metadata"
+              tip={{
+                what: 'Which blocks of the original’s metadata the export keeps.',
+                expect:
+                  'Each block is copied whole or left out; the title, caption, keywords and copyright are then written into the ones kept.'
+              }}
+            />
+          </legend>
           <Field label="Include">
             <select
               value={s.metaMode}
@@ -583,10 +594,6 @@ export function ExportDialog(): React.JSX.Element {
               onKeyDown={(e) => e.stopPropagation()}
             />
           </Field>
-          <p className="muted small">
-            Blocks are copied verbatim or not at all; the title, caption, keywords and copyright are
-            then written into the ones kept.
-          </p>
         </fieldset>
         <fieldset>
           <legend>HDR</legend>

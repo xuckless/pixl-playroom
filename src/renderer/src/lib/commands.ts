@@ -759,9 +759,7 @@ export const COMMANDS: KeyCommand[] = [
       const s = dev().session
       if (!s) return
       const key = s.key
-      void runJob('Auto tone', () => api.develop.autoTone(key), {
-        detail: 'Measuring the picture with the tone sliders at zero'
-      })
+      void runJob('Auto tone', () => api.develop.autoTone(key))
         .then((basic) => {
           const r = dev().recipe
           if (r) dev().replace({ ...r, basic }, 'Auto tone')

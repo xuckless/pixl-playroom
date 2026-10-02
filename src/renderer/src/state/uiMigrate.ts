@@ -25,11 +25,8 @@ export function migrateUi(persisted: unknown, version: number): Saved {
   const overlay = p.maskOverlay as Saved | undefined
   if (version < 2 && overlay?.mode === 'color') p.maskOverlay = { ...overlay, mode: 'glass' }
   // 3: the wheel's one tool became a stack of cards; the tool last shown
-  // becomes the card that is open and focused. AI denoise's default model
-  // became DRUNet: one left at the old default (SCUNet) moves with it.
+  // becomes the card that is open and focused.
   if (version < 3) {
-    const denoise = p.denoise as Saved | undefined
-    if (denoise?.model === 'scunet-color-real') p.denoise = { ...denoise, model: 'drunet-color' }
     const { panel, previousPanel: _previous, ...rest } = p
     void _previous
     p = rest
@@ -38,6 +35,12 @@ export function migrateUi(persisted: unknown, version: number): Saved {
       p.focusCard = card
       p.cardsOpen = { wb: true, light: true, presence: true, colour: true, [card]: true }
     }
+  }
+  // 4: AI denoise's default model became DRUNet; whoever has SCUNet (the old
+  // default, and nearly always never chosen) moves to it once.
+  if (version < 4) {
+    const denoise = p.denoise as Saved | undefined
+    if (denoise?.model === 'scunet-color-real') p.denoise = { ...denoise, model: 'drunet-color' }
   }
   return p
 }

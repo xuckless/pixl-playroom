@@ -850,6 +850,30 @@ input[type='checkbox']:disabled {
   text-transform: uppercase;
 }
 
+/* ── </>: the numbers behind an option ───────────────────────────── */
+.tech-info {
+  width: 24px;
+  height: 24px;
+  color: var(--muted);
+}
+.tech-info svg {
+  width: 13px;
+  height: 13px;
+}
+.popover.tech-pop {
+  width: 300px;
+}
+.tech-body {
+  margin-top: 6px;
+  color: var(--text2);
+  font-size: 11.5px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.tech-body p {
+  margin: 0 0 6px;
+}
+
 /* ── glass dropdown ─────────────────────────────────────────────────── */
 .glass-select {
   justify-content: flex-start;

@@ -24,6 +24,7 @@ import {
 import { ModelGet } from '../components/ModelGet'
 import { allInstalled, useModels } from '../lib/models'
 import { Section, Select, Slider, Toggle, ToolPanel } from '../components/ui'
+import { TIPS } from './tips'
 import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useAiJobs } from '../state/jobs'
@@ -135,7 +136,7 @@ export function EnhancePanel(): React.JSX.Element | null {
 
   return (
     <ToolPanel>
-      <Section id="enhance.jpeg" title="JPEG restore">
+      <Section id="enhance.jpeg" title="JPEG restore" tip={TIPS['enhance.jpeg']}>
         <Select
           label="Method"
           value={s.jpeg}
@@ -144,7 +145,7 @@ export function EnhancePanel(): React.JSX.Element | null {
         />
         {!isJpeg && s.jpeg !== 'off' && (
           <p className="muted small">
-            This photo is {FORMAT_NAME[info.input] ?? 'not a JPEG'}: JPEG restore is skipped for it.
+            Skipped: this photo is {FORMAT_NAME[info.input] ?? 'not a JPEG'}.
           </p>
         )}
         {s.jpeg === 'reconstruct' && (
@@ -164,10 +165,6 @@ export function EnhancePanel(): React.JSX.Element | null {
                 Colour follows edges
               </Toggle>
             )}
-            <p className="muted small">
-              Rebuilds the picture from the file&apos;s compressed data instead of decoding it:
-              blocking and banding go, and nothing the file states is changed.
-            </p>
           </>
         )}
         {(s.jpeg === 'fbcnn' || s.jpeg === 'fbcnn-qf') && (
@@ -205,7 +202,7 @@ export function EnhancePanel(): React.JSX.Element | null {
         )}
       </Section>
 
-      <Section id="enhance.deblur" title="Deblur">
+      <Section id="enhance.deblur" title="Deblur" tip={TIPS['enhance.deblur']}>
         <Toggle on={s.deblur} onChange={(deblur) => set({ deblur })}>
           Remove motion blur
         </Toggle>
@@ -221,14 +218,11 @@ export function EnhancePanel(): React.JSX.Element | null {
               onCommit={() => undefined}
             />
             <ModelGet id="nafnet-gopro-w32" models={models} />
-            <p className="muted small">
-              For camera shake and moving subjects; it cannot bring back a missed focus.
-            </p>
           </>
         )}
       </Section>
 
-      <Section id="enhance.upscale" title="Super resolution">
+      <Section id="enhance.upscale" title="Super resolution" tip={TIPS['enhance.upscale']}>
         <Select
           label="Scale"
           value={s.upscale}
@@ -249,7 +243,7 @@ export function EnhancePanel(): React.JSX.Element | null {
         )}
       </Section>
 
-      <Section id="enhance.run" title="Apply">
+      <Section id="enhance.run" title="Apply" tip={TIPS['enhance.apply']}>
         <div className="enhance-sum">
           <span>
             {session.frameWidth} × {session.frameHeight}
@@ -316,16 +310,7 @@ export function EnhancePanel(): React.JSX.Element | null {
             ))}
           </ul>
         )}
-        {layer && k > 1 && (
-          <p className="muted small">
-            An upscale is always the whole photo: {layer.name} is left out of this one.
-          </p>
-        )}
-        <p className="muted small">
-          Kept in the photo&apos;s project as a step: undo, redo and History never run the models
-          again, and no file is written beside the photo. An upscale makes the photo larger from
-          this step on (crop, masks and spots keep their places).
-        </p>
+        {layer && k > 1 && <p className="muted small">An upscale is always the whole photo.</p>}
       </Section>
     </ToolPanel>
   )

@@ -55,8 +55,9 @@
   margin-top: 6px;
   font-variant-numeric: tabular-nums;
 }
-.histogram-foot .muted {
-  margin-left: auto;
+.histogram-foot .tech-info,
+.histogram-foot .info-tip {
+  flex: none;
 }
 .histogram .hdr-headroom {
   fill: rgba(255, 214, 120, 0.05);
@@ -301,12 +302,18 @@
 }
 
 /* ── detail, advanced ──────────────────────────────────────────── */
+.noise-tabs {
+  justify-content: space-between;
+}
+.popover.noise-pop {
+  width: 300px;
+}
 .noise-readout {
   display: flex;
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
-  margin: 10px 0;
+  margin: 8px 0;
   font-size: 11.5px;
   color: var(--text2);
   font-variant-numeric: tabular-nums;
@@ -859,13 +866,6 @@ aside.right .panels.adjust {
 }
 .lens-pick li.muted {
   padding: 8px;
-}
-.lens-credit {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 12px;
 }
 /* AI denoise's steps: each one made, with its own strength. */
 .pixel-steps {

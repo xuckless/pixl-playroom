@@ -400,12 +400,6 @@ button.mode-badge:disabled {
 .mode-badge.m-intersect {
   color: var(--acc);
 }
-.mf-inv-tag {
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-  color: var(--acc);
-  text-transform: uppercase;
-}
 .mf-add {
   display: flex;
   align-items: center;

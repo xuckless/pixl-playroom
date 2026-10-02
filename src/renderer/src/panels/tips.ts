@@ -184,9 +184,21 @@ export const TIPS = {
     expect: 'Safe to raise to 25 or so; very high values bleed colour at edges.'
   },
   'detail.ai': {
-    what: 'A trained model that removes noise while keeping detail.',
-    expect: 'Much cleaner than classic noise reduction at high ISO; it takes a few seconds.',
-    tip: 'Run it once, then fine-tune with Strength without running it again.'
+    what: 'A trained model removes the noise once; Strength then blends its result with the original.',
+    expect:
+      'Much cleaner than classic noise reduction at high ISO. The result is kept with the photo, so undo, redo and Strength never run the model again.',
+    tip: 'Run it once, then fine-tune with Strength.'
+  },
+  'detail.ai.raw': {
+    what: 'On a RAW, the model works on the developed, linear pixels: white balance, profile and tone stay as editable as before.',
+    expect:
+      'The result is kept losslessly, so pushing it later shows no compression; undo, redo and Strength never run the model again.',
+    tip: 'Run it once the exposure is roughly right, before fine colour work.'
+  },
+  'detail.ai.lossless': {
+    what: 'Keeps each AI result exactly, at about six times the size of near-lossless.',
+    expect:
+      'Near-lossless (the default) cannot be told apart, but leaves a little less room for very strong exposure or shadow pushes.'
   },
 
   // ── Effects ────────────────────────────────────────────────────────
@@ -203,6 +215,16 @@ export const TIPS = {
     what: 'Adds film-like grain.',
     expect: 'Hides banding and noise and adds texture; Size and Roughness shape its character.',
     tip: 'Judge it at 100%: grain that looks right fitted is usually too strong.'
+  },
+  'grading.add': {
+    what: 'Adds coloured light to the whole scene, as a gel on a lamp would, after exposure.',
+    expect: 'Unlike the wheels it tints by adding light, so shadows warm without going muddy.',
+    tip: 'Neutralise turns a colour you click grey; Match turns one colour into another.'
+  },
+  'grading.add.mask': {
+    what: 'Adds coloured light only where the mask selects.',
+    expect: 'A warm glow on a face, a cooler sky, without touching the rest.',
+    tip: 'Neutralise turns a colour you click grey; Match turns one colour into another.'
   },
   'effects.wash': {
     what: 'Lifts the whole finished picture toward one colour, blacks as much as whites.',
@@ -239,6 +261,16 @@ export const TIPS = {
     expect: 'Buildings stop leaning backwards; the crop fits the corrected picture.',
     tip: 'Try Auto first; Guided lets you draw the lines that should be straight.'
   },
+  'geometry.upright': {
+    what: 'Levels the photo and makes it upright from the straight lines in it.',
+    expect:
+      'Auto picks the most the lines support. The crop then fits the corrected picture; Transform adds to it.',
+    tip: 'Guided: draw two to four lines that should be upright or level.'
+  },
+  'geometry.transform': {
+    what: 'Perspective by hand: tilt, turn, rotate, stretch and move the picture.',
+    expect: 'Added on top of Upright. Reset puts the sliders back and keeps the Upright mode.'
+  },
   'geometry.vertical': {
     what: 'Tilts the picture forward or back to fix converging verticals.',
     expect: 'Leaning buildings stand up straight; some of the frame is cropped.'
@@ -262,11 +294,18 @@ export const TIPS = {
   },
   'enhance.jpeg': {
     what: 'Repairs the blocks and colour smearing of heavily compressed JPEGs.',
-    expect: 'Cleaner edges and gradients on old or downloaded pictures.'
+    expect:
+      'Rebuild works from the file’s own compressed data, changing nothing it states; the AI methods repaint the damage.',
+    tip: 'Rebuild first; the AI suits pictures saved from the web or messaging apps.'
   },
   'enhance.deblur': {
     what: 'Reduces motion blur from camera shake or a moving subject.',
     expect: 'It cannot bring back focus that was missed.'
+  },
+  'enhance.apply': {
+    what: 'Runs the steps above once and keeps the result in the photo’s project as a step.',
+    expect:
+      'Undo, redo and History never run the models again, and no file is written beside the photo. An upscale makes the photo larger from this step on; crop, masks and spots keep their places.'
   },
   'enhance.upscale': {
     what: 'Makes the photo larger with a model that adds believable detail.',

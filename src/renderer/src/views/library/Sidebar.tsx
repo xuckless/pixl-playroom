@@ -8,6 +8,7 @@ import { askConfirm } from '../../state/confirm'
 import {
   collectionTree,
   folderName,
+  isUnder,
   KEYS_MIME,
   sameSource,
   type CollectionNode
@@ -199,7 +200,11 @@ function FolderTree({
 }): React.JSX.Element {
   const source = useLibrary((s) => s.source)
   const openFolder = useLibrary((s) => s.openFolder)
-  const [open, setOpen] = useState(() => openTrees.has(path))
+  // Opened or folded by hand, else (null) open while the folder shown is
+  // inside this one, so the selection shows where it is.
+  const [chosen, setChosen] = useState<boolean | null>(() => (openTrees.has(path) ? true : null))
+  const holdsShown = source?.kind === 'folder' && isUnder(source.path, path)
+  const open = chosen ?? holdsShown
   const [children, setChildren] = useState<{ path: string; name: string }[] | null>(null)
   useEffect(() => {
     if (!open || children) return
@@ -215,7 +220,7 @@ function FolderTree({
   const toggle = (): void => {
     if (open) openTrees.delete(path)
     else openTrees.add(path)
-    setOpen(!open)
+    setChosen(!open)
   }
   return (
     <>
@@ -248,13 +253,23 @@ function FolderTree({
 /** The folder trees opened out, kept while the app runs. */
 const openTrees = new Set<string>()
 
+/** Folder names in the order a person reads them ("Day 2" before "Day 10"). */
+const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+
 function Folders(): React.JSX.Element {
   const recent = useLibrary((s) => s.recent)
   const pinned = useLibrary((s) => s.pinned)
   const chooseFolder = useLibrary((s) => s.chooseFolder)
   const togglePin = useLibrary((s) => s.togglePin)
   const forget = useLibrary((s) => s.forgetFolder)
-  const rest = recent.filter((r) => !pinned.includes(r)).slice(0, 8)
+  // The folders seen lately, in a steady order by name (not by when each was
+  // last opened, which moved the one just picked to the top), and none that
+  // sits inside another one listed: it shows in that folder's tree.
+  const latest = recent.filter((r) => !pinned.includes(r)).slice(0, 8)
+  const listed = [...pinned, ...latest]
+  const rest = latest
+    .filter((r) => !listed.some((p) => isUnder(r, p)))
+    .sort((a, b) => byName.compare(folderName(a), folderName(b)))
   const row = (path: string, isPinned: boolean): React.JSX.Element => (
     <FolderTree
       key={path}

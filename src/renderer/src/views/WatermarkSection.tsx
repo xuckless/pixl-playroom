@@ -13,6 +13,7 @@ import {
   type WatermarkBlend,
   type WatermarkSettings
 } from '../../../shared/watermark'
+import { InfoTip } from '../components/InfoTip'
 import { Slider } from '../components/ui'
 import { api, errorText } from '../lib/api'
 
@@ -210,8 +211,14 @@ export function WatermarkSection({
       )}
       {file && (
         <p className="muted small">
-          {file.width} × {file.height} PNG · composited after the crop and resize, so it stays sharp
-          at any size and is never graded.
+          {file.width} × {file.height} PNG
+          <InfoTip
+            label="Watermark"
+            tip={{
+              what: 'Laid on after the crop and resize, at the size the picture is exported.',
+              expect: 'It stays sharp at any size and is never graded with the photo.'
+            }}
+          />
         </p>
       )}
     </fieldset>

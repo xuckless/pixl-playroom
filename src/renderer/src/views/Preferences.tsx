@@ -8,6 +8,7 @@ import { MAX_PROBLEM_TEXT } from '../../../shared/crash'
 import type { AccountStatus } from '../../../shared/account'
 import type { Prefs, UpdateState } from '../../../shared/ipc'
 import { ACCOUNT_URL, BUY_URL, LICENCE_RULES, type LicenceStatus } from '../../../shared/licence'
+import { InfoTip } from '../components/InfoTip'
 import { Modal, Select, Tabs } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { takeReportFocus } from '../lib/report'
@@ -349,11 +350,17 @@ function ProjectsSection(): React.JSX.Element {
   const mode = typeof loc === 'object' ? 'folder' : loc
   return (
     <fieldset>
-      <legend>Projects</legend>
-      <p className="muted small">
-        A photo&apos;s first edit makes its project: one <b>.pixl</b> file with its edits, copies,
-        snapshots and whole history, so they go wherever the file goes.
-      </p>
+      <legend>
+        Projects
+        <InfoTip
+          label="Projects"
+          tip={{
+            what: 'A photo’s first edit makes its project: one .pixl file with its edits, copies, snapshots and whole history.',
+            expect:
+              'They go wherever the file goes. A folder that cannot be written (a locked card) puts its projects in ~/Pixl Projects; projects already made stay where they are.'
+          }}
+        />
+      </legend>
       <Select
         label="Make projects"
         value={mode}
@@ -373,10 +380,6 @@ function ProjectsSection(): React.JSX.Element {
           <button onClick={() => void choose()}>Change…</button>
         </div>
       )}
-      <p className="muted small">
-        A folder that cannot be written (a locked card) puts its projects in ~/Pixl Projects.
-        Projects already made stay where they are.
-      </p>
       <label className="check">
         <input
           type="checkbox"
@@ -389,13 +392,15 @@ function ProjectsSection(): React.JSX.Element {
           }}
         />
         Carry a copy of the original in each project
+        <InfoTip
+          label="Carry the original"
+          tip={{
+            what: 'The project then needs nothing else: move or lose the photo and it still opens, develops and exports.',
+            expect:
+              'Each original is kept as small as it can be without losing a bit (a RAW as lossless DNG, a JPEG repacked into JPEG XL), so a project takes about as much space as its photo again.'
+          }}
+        />
       </label>
-      <p className="muted small">
-        The project then needs nothing else: move or lose the photo and it still opens, develops and
-        exports. Each is kept as small as it can be without losing a bit: a RAW as lossless DNG, a
-        JPEG repacked into JPEG XL (about a fifth smaller, and the same JPEG comes back), large PNGs
-        and TIFFs as lossless JPEG XL. A project then takes about as much space as its photo again.
-      </p>
     </fieldset>
   )
 }

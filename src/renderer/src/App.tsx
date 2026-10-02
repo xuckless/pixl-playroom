@@ -141,7 +141,7 @@ function EngineBanner(): React.JSX.Element | null {
   return (
     <div className="engine-banner" role="alert">
       {engine.code === 'VersionMismatch'
-        ? 'Engine version mismatch — reinstall the app (or run pnpm install in a checkout)'
+        ? 'Engine version mismatch: reinstall the app'
         : `Engine ${engine.status}`}
       {engine.reason ? `: ${engine.reason}` : ''}
     </div>

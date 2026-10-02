@@ -50,20 +50,16 @@ export async function applyUpright(mode: UprightMode): Promise<void> {
   if (mode === 'off') return keep('off', null, focal, dev.recipe.geometry.upright.guides)
   const tries = mode === 'auto' ? (['full', 'vertical', 'level'] as const) : [mode]
   let why = ''
-  const t = await runJob(
-    'Finding the lines',
-    async () => {
-      for (const m of tries) {
-        try {
-          return await api.develop.suggestUpright(session.key, ENGINE_MODE[m], focal)
-        } catch (err) {
-          why = errorText(err)
-        }
+  const t = await runJob('Finding the lines', async () => {
+    for (const m of tries) {
+      try {
+        return await api.develop.suggestUpright(session.key, ENGINE_MODE[m], focal)
+      } catch (err) {
+        why = errorText(err)
       }
-      return null
-    },
-    { detail: 'Straight edges measured on the photo' }
-  )
+    }
+    return null
+  })
   if (!t) {
     useLibrary
       .getState()

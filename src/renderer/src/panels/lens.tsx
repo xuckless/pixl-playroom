@@ -13,6 +13,8 @@ import type {
 } from '../../../shared/ipc'
 import { describeLens, profileDistorts, profileName, type LensSetting } from '../../../shared/lens'
 import { Section, Slider, Toggle, ToolPanel } from '../components/ui'
+import { TechInfo } from '../components/TechInfo'
+import { TIPS } from './tips'
 import { api, errorText } from '../lib/api'
 import { runJob } from '../state/busy'
 import { useDevelop } from '../state/develop'
@@ -191,7 +193,45 @@ function LensProfileSection(): React.JSX.Element | null {
   const using = match?.profile
   const crop = resolved?.crop
   return (
-    <Section id="lens.profile" title="Profile">
+    <Section
+      id="lens.profile"
+      title="Profile"
+      tip={TIPS['optics.profile']}
+      right={
+        <TechInfo title="Lens profile details">
+          {resolved && (
+            <p>
+              {resolved.focal
+                ? `At ${Math.round(resolved.focal * 10) / 10} mm`
+                : 'At its middle focal'}
+              {resolved.aperture ? `, f/${Math.round(resolved.aperture * 10) / 10}` : ''}
+              {using?.calibrationCrop && crop
+                ? ` · calibrated at crop ${using.calibrationCrop}, this photo ${crop.value}${
+                    crop.from === 'camera' && match?.camera
+                      ? ` (${match.camera.name})`
+                      : crop.from === 'calibration'
+                        ? ' (assumed)'
+                        : ''
+                  }`
+                : ''}
+            </p>
+          )}
+          <p>
+            Lens data: Lensfun (CC BY-SA 3.0) · {shortVersion(status?.version ?? null)}
+            {status?.origin === 'online' ? ' · updated' : ''}
+            {status
+              ? ` · ${status.lenses} lenses, ${status.cameras} cameras${
+                  status.imported ? `, ${status.imported} imported` : ''
+                }`
+              : ''}
+            {status?.error ? ` · last check: ${status.error}` : ''}
+          </p>
+          <button className="sm" disabled={checking} onClick={() => void check()}>
+            {checking ? 'Checking…' : 'Check for updates'}
+          </button>
+        </TechInfo>
+      }
+    >
       <p className="muted small">{describeLens(shot) ?? 'The file names no lens.'}</p>
       <div className="row">
         <Toggle
@@ -255,28 +295,10 @@ function LensProfileSection(): React.JSX.Element | null {
         </div>
       )}
       {l.profile.enabled && !resolved && !picking && (
-        <p className="note small">
-          The catalogue has no profile for this lens. Search it by hand with Change…, or import one
-          (Lensfun&apos;s models, as JSON).
-        </p>
+        <p className="note small">No profile for this lens: find one with Change….</p>
       )}
       {resolved && (
         <>
-          <p className="muted small">
-            {resolved.focal
-              ? `At ${Math.round(resolved.focal * 10) / 10} mm`
-              : 'At its middle focal'}
-            {resolved.aperture ? `, f/${Math.round(resolved.aperture * 10) / 10}` : ''}
-            {using?.calibrationCrop && crop
-              ? ` · calibrated at crop ${using.calibrationCrop}, this photo ${crop.value}${
-                  crop.from === 'camera' && match?.camera
-                    ? ` (${match.camera.name})`
-                    : crop.from === 'calibration'
-                      ? ' (assumed)'
-                      : ''
-                }`
-              : ''}
-          </p>
           <LS
             label="Distortion"
             read={(x) => x.profile.distortion}
@@ -299,25 +321,6 @@ function LensProfileSection(): React.JSX.Element | null {
           />
         </>
       )}
-      <div className="lens-credit muted micro">
-        <span
-          title={
-            status
-              ? `${status.lenses} lenses, ${status.cameras} cameras${
-                  status.imported ? `, ${status.imported} imported` : ''
-                } · ${status.origin === 'online' ? 'updated from' : 'shipped; updates from'} ${status.url}${
-                  status.error ? ` · last check: ${status.error}` : ''
-                }`
-              : undefined
-          }
-        >
-          Lens data: Lensfun (CC BY-SA 3.0) · {shortVersion(status?.version ?? null)}
-          {status?.origin === 'online' ? ' · updated' : ''}
-        </span>
-        <button className="sm ghost" disabled={checking} onClick={() => void check()}>
-          {checking ? 'Checking…' : 'Check for updates'}
-        </button>
-      </div>
     </Section>
   )
 }
@@ -338,12 +341,8 @@ export function LensPanel(): React.JSX.Element | null {
   const measureCa = async (): Promise<void> => {
     setMeasuring(true)
     try {
-      const m = await runJob(
-        'Measuring chromatic aberration',
-        () => api.develop.measureCa(session.key),
-        {
-          detail: 'Red and blue against green, along the edges of the whole photo'
-        }
+      const m = await runJob('Measuring chromatic aberration', () =>
+        api.develop.measureCa(session.key)
       )
       setMeasured(m)
       edit((r) => {
@@ -366,7 +365,25 @@ export function LensPanel(): React.JSX.Element | null {
     <ToolPanel>
       <LensProfileSection />
 
-      <Section id="lens.ca" title="Chromatic aberration">
+      <Section
+        id="lens.ca"
+        title="Chromatic aberration"
+        tip={TIPS['optics.ca']}
+        right={
+          measured || (l.removeCa && !l.ca && resolved?.tca) ? (
+            <TechInfo title="Chromatic aberration measured">
+              {measured ? (
+                <p>
+                  Red {px(measured.red[0])} → {px(measured.red[1])} · blue {px(measured.blue[0])} →{' '}
+                  {px(measured.blue[1])}, from {measured.points} edge points
+                </p>
+              ) : (
+                <p>From the lens profile.</p>
+              )}
+            </TechInfo>
+          ) : undefined
+        }
+      >
         <div className="row">
           <Toggle
             on={l.removeCa}
@@ -385,21 +402,12 @@ export function LensPanel(): React.JSX.Element | null {
             </button>
           )}
         </div>
-        {measured && (
-          <p className="muted small">
-            Red {px(measured.red[0])} → {px(measured.red[1])} · blue {px(measured.blue[0])} →{' '}
-            {px(measured.blue[1])} ({measured.points} edge points)
-          </p>
-        )}
         {session.isHdr && !resolved?.tca && (
-          <p className="muted small">
-            Measuring needs an SDR picture: an HDR photo takes its CA from a profile.
-          </p>
+          <p className="muted small">HDR photos take it from a lens profile.</p>
         )}
-        {l.removeCa && !l.ca && resolved?.tca && <p className="muted small">From the profile.</p>}
       </Section>
 
-      <Section id="lens.manual" title="Manual">
+      <Section id="lens.manual" title="Manual" tip={TIPS['optics.manual']}>
         <LS
           label="Distortion"
           read={(x) => x.distortion}
@@ -426,14 +434,12 @@ export function LensPanel(): React.JSX.Element | null {
           def={50}
           disabled={l.vignetting === 0}
         />
-        <p className="muted small">
-          A correction that warps the frame crops its empty edges, keeping the frame&apos;s shape.
-        </p>
       </Section>
 
       <Section
         id="lens.defringe"
         title="Defringe"
+        tip={TIPS['optics.defringe']}
         right={
           <Toggle
             on={tool === 'fringe-pick'}
@@ -478,7 +484,6 @@ export function LensPanel(): React.JSX.Element | null {
           track={GREEN_TRACK}
           format={(v) => `${Math.round(v)}°`}
         />
-        <p className="muted small">Only along edges: flat colour of the same hue is left alone.</p>
       </Section>
     </ToolPanel>
   )

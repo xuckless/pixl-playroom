@@ -26,6 +26,7 @@ import { useAiJobs } from '../state/jobs'
 import { formatEta, runProgress, runRemaining } from '../../../shared/looks/run'
 import { MetadataEditor } from '../views/library/MetadataEditor'
 import { useMaskPresets, useSelectedMask } from './masks/presets'
+import { TechInfo } from '../components/TechInfo'
 import { useReorder } from './masks/useReorder'
 
 /**
@@ -700,7 +701,7 @@ export function InfoPane(): React.JSX.Element {
         <dd>{item.name}</dd>
         <dt>Format</dt>
         <dd>
-          {info.format.toUpperCase()} · {info.bits}-bit · {info.channels} ch
+          {info.format.toUpperCase()} · {info.bits}-bit
         </dd>
         <dt>Pixels</dt>
         <dd>
@@ -709,7 +710,7 @@ export function InfoPane(): React.JSX.Element {
         </dd>
         <dt>Colour</dt>
         <dd>
-          {info.color} ({info.color_source})
+          {info.color}
           {info.is_hdr ? ` · HDR${info.peak_nits ? ` ${info.peak_nits} nits` : ''}` : ''}
         </dd>
         {session.asShot && (
@@ -732,23 +733,30 @@ export function InfoPane(): React.JSX.Element {
         </dd>
         <dt>Taken</dt>
         <dd>{c.capturedAt ? new Date(c.capturedAt).toLocaleString() : '—'}</dd>
-        <dt>Proxy</dt>
-        <dd>
-          {session.proxyWidth} × {session.proxyHeight}
-        </dd>
         <ProjectRows sessionKey={session.key} />
       </dl>
-      <button
-        className="sm"
-        onClick={() =>
-          void api.app
-            .reveal(item.path)
-            .catch((e) => useLibrary.getState().say(errorText(e), 'error'))
-        }
-      >
-        <Icon name="folder" />
-        Show in folder
-      </button>
+      <div className="row">
+        <button
+          className="sm"
+          onClick={() =>
+            void api.app
+              .reveal(item.path)
+              .catch((e) => useLibrary.getState().say(errorText(e), 'error'))
+          }
+        >
+          <Icon name="folder" />
+          Show in folder
+        </button>
+        <span className="spacer" />
+        <TechInfo title="File details">
+          <p>
+            {info.channels} channels · colour from {info.color_source}
+          </p>
+          <p>
+            Working copy {session.proxyWidth} × {session.proxyHeight}
+          </p>
+        </TechInfo>
+      </div>
       <div className="rail-group">
         <span className="micro">Metadata</span>
         <span className="line" />

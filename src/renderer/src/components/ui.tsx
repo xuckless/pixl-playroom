@@ -2,7 +2,7 @@ import { motion } from 'motion/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { DialogBackdrop } from '../fx/DialogBackdrop'
 import { touchAdjusting } from '../lib/interacting'
-import { dragValue, keyValue } from '../lib/sliderDrag'
+import { dragValue, dragValueLog, keyValue, keyValueLog, logFraction } from '../lib/sliderDrag'
 import { LiquidGlass } from './glass/LiquidGlass'
 import { Icon, type IconName } from './icons'
 import { InfoTip, type Tip } from './InfoTip'
@@ -13,12 +13,15 @@ export function Section({
   title,
   children,
   right,
+  tip,
   defaultOpen = true
 }: {
   id: string
   title: string
   children: ReactNode
   right?: ReactNode
+  /** What the section is for, behind an (i) in its header. */
+  tip?: Tip
   defaultOpen?: boolean
 }): React.JSX.Element {
   const storageKey = `section:${id}`
@@ -47,6 +50,7 @@ export function Section({
         <span className="line" />
         <span className="right" onClick={(e) => e.stopPropagation()}>
           {right}
+          {tip && <InfoTip tip={tip} label={title} />}
         </span>
         <svg className="caret" viewBox="0 0 10 10" aria-hidden>
           <path d="M2 3.5 5 6.5 8 3.5" />
@@ -203,6 +207,8 @@ export interface SliderProps {
   title?: string
   /** What the slider does, behind an (i) that shows on hover. */
   tip?: Tip
+  /** 'log': the bar runs on a log scale (finer at the small end); values stay as they are. */
+  scale?: 'linear' | 'log'
   /**
    * Whether moving it changes the picture (the default), so the mask overlay
    * steps aside while it moves; false for a slider that shapes a mask.
@@ -252,8 +258,10 @@ export function Slider({
   disabled,
   title,
   tip,
+  scale = 'linear',
   adjusts = true
 }: SliderProps): React.JSX.Element {
+  const log = scale === 'log'
   const [text, setText] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const grab = useRef<Grab | null>(null)
@@ -288,8 +296,9 @@ export function Slider({
     if (g.moved) onCommit()
     else if (g.onValue) setText(format(value))
   }
-  const at = frac(value, min, max)
-  const rest = frac(def, min, max)
+  const place = (v: number): number => (log ? logFraction(v, min, max) : frac(v, min, max))
+  const at = place(value)
+  const rest = place(def)
   const showZero = !track && def > min && def < max
   return (
     <div
@@ -342,7 +351,15 @@ export function Slider({
           g.x = e.clientX
           g.from = g.last
         }
-        const v = dragValue(g.from, e.clientX - g.x, g.width, min, max, step, g.fine)
+        const v = (log ? dragValueLog : dragValue)(
+          g.from,
+          e.clientX - g.x,
+          g.width,
+          min,
+          max,
+          step,
+          g.fine
+        )
         if (v === g.last) return
         g.last = v
         if (adjusts) touchAdjusting()
@@ -364,7 +381,7 @@ export function Slider({
               ? -1
               : 0
         if (dir !== 0) {
-          onChange(keyValue(value, dir, min, max, step, mod), false)
+          onChange((log ? keyValueLog : keyValue)(value, dir, min, max, step, mod), false)
           onCommit()
         } else if (e.key === 'Home') reset()
         else if (e.key === 'Enter') setText(format(value))

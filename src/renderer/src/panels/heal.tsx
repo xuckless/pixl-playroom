@@ -6,6 +6,7 @@
 import type { SpotKind } from '../../../shared/retouch'
 import { Icon } from '../components/icons'
 import { useState } from 'react'
+import { InfoTip, type Tip } from '../components/InfoTip'
 import { Section, Slider, Tabs, ToolPanel } from '../components/ui'
 import { bakeLiveSpots, removeLiveSpots } from '../lib/heal'
 import { useScope } from '../state/scope'
@@ -20,13 +21,35 @@ const MODES: { value: SpotKind; label: string }[] = [
   { value: 'peteye', label: 'Pet eye' }
 ]
 
-const HINT: Record<SpotKind, string> = {
-  heal: 'Press on the flaw, hold and drag to where it should copy from, and let go. Let go without dragging and it picks a source itself. The texture comes from the source, the tone from around the spot.',
-  clone:
-    'Press on what should go, hold and drag to what should replace it, and let go: the pixels come exactly as they are.',
-  fill: 'Click what should go: it is rebuilt from the rest of the photo (content-aware).',
-  redeye: 'Click a red pupil to darken it to neutral (Size sets how big).',
-  peteye: 'Click a glowing pet pupil to bring it to dark (Size sets how big).'
+/** How each mode is used, behind the (i) beside the modes. */
+const HINT: Record<SpotKind, Tip> = {
+  heal: {
+    what: 'Press on the flaw, hold and drag to where it should copy from, and let go.',
+    expect: 'The texture comes from the source, the tone from around the spot.',
+    tip: 'Let go without dragging and it picks a source itself.'
+  },
+  clone: {
+    what: 'Press on what should go, hold and drag to what should replace it, and let go.',
+    expect: 'The pixels come exactly as they are, tone and all.'
+  },
+  fill: {
+    what: 'Click what should go: it is rebuilt from the rest of the photo.',
+    expect: 'Best on small things against plain or repeating backgrounds.'
+  },
+  redeye: {
+    what: 'Click a red pupil to darken it to neutral.',
+    expect: 'Size sets how big the pupil is.'
+  },
+  peteye: {
+    what: 'Click a glowing pet pupil to bring it to dark.',
+    expect: 'Size sets how big the pupil is.'
+  }
+}
+
+/** What becomes of a spot, behind the (i) on the Brush section. */
+const BAKED: Tip = {
+  what: 'Each spot is baked into the photo’s pixels and kept in its project.',
+  expect: 'Undo takes it away; the next spot works on what the last one healed.'
 }
 
 export function HealPanel(): React.JSX.Element | null {
@@ -43,20 +66,36 @@ export function HealPanel(): React.JSX.Element | null {
 
   return (
     <ToolPanel
-      actions={<Tabs value={heal.mode} onChange={(m) => setHeal({ mode: m })} tabs={MODES} />}
+      actions={
+        <>
+          <Tabs value={heal.mode} onChange={(m) => setHeal({ mode: m })} tabs={MODES} />
+          <InfoTip tip={HINT[heal.mode]} label={MODES.find((m) => m.value === heal.mode)!.label} />
+        </>
+      }
     >
-      <p className="muted small">{HINT[heal.mode]}</p>
       {layer && !isHdr && <p className="scope-note small">Strokes keep inside {layer.name}.</p>}
-      <Section id="heal.brush" title="Brush">
+      <Section
+        id="heal.brush"
+        title="Brush"
+        tip={BAKED}
+        right={
+          strokes > 0 ? (
+            <span className="muted micro">
+              {strokes} spot{strokes === 1 ? '' : 's'} baked
+            </span>
+          ) : undefined
+        }
+      >
         {
           <Slider
             label="Size"
-            value={Math.round(heal.size * 1000) / 10}
+            value={Math.round(heal.size * 10000) / 100}
             min={0.2}
             max={25}
-            step={0.1}
+            step={0.01}
             def={2}
-            format={(v) => `${v.toFixed(1)}%`}
+            scale="log"
+            format={(v) => `${v < 1 ? v.toFixed(2) : v.toFixed(1)}%`}
             onChange={(v) => setHeal({ size: v / 100 })}
             onCommit={() => undefined}
           />
@@ -107,9 +146,8 @@ export function HealPanel(): React.JSX.Element | null {
       {live > 0 && (
         <Section id="heal.live" title="Earlier spots">
           <p className="muted small">
-            {isHdr
-              ? `${live} spot${live === 1 ? '' : 's'} on this HDR photo, drawn live (HDR photos cannot take baked strokes yet).`
-              : `${live} spot${live === 1 ? '' : 's'} from before strokes were baked, still drawn live.`}
+            {live} spot{live === 1 ? '' : 's'} drawn live
+            {isHdr ? ' (HDR photos cannot be baked yet).' : ', from before spots were baked.'}
           </p>
           <div className="row">
             {!isHdr && (
@@ -131,11 +169,6 @@ export function HealPanel(): React.JSX.Element | null {
           </div>
         </Section>
       )}
-      <p className="muted small">
-        {strokes > 0 ? `${strokes} spot${strokes === 1 ? '' : 's'} baked into the photo. ` : ''}
-        Each spot is baked into the photo&apos;s pixels and kept in its project: undo takes it away,
-        and the next one works on what it healed.
-      </p>
     </ToolPanel>
   )
 }

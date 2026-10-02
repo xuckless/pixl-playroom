@@ -54,3 +54,46 @@ export function keyValue(
   // A fine step finer than the grid keeps its own precision.
   return mod === 'fine' ? Number(next.toFixed(places(step) + 1)) : snap(next, min, max, step)
 }
+
+/**
+ * A slider on a log scale (a brush size: as much travel from 0.2 to 2 as
+ * from 2 to 20): where `v` sits along the bar, 0…1, and the value at a place.
+ */
+export function logFraction(v: number, min: number, max: number): number {
+  if (!(min > 0) || !(max > min)) return 0
+  return (Math.log(clamp(v, min, max)) - Math.log(min)) / (Math.log(max) - Math.log(min))
+}
+
+export function logValue(t: number, min: number, max: number): number {
+  return Math.exp(Math.log(min) + clamp(t, 0, 1) * (Math.log(max) - Math.log(min)))
+}
+
+/** A drag on a log slider: the place along the bar moves by the distance, the value follows. */
+export function dragValueLog(
+  start: number,
+  dx: number,
+  width: number,
+  min: number,
+  max: number,
+  step: number,
+  fine = false
+): number {
+  const t = logFraction(start, min, max) + (dx / Math.max(1, width)) * (fine ? 0.1 : 1)
+  return snap(logValue(t, min, max), min, max, step)
+}
+
+/** A key on a log slider: one hundredth of the bar (Shift a tenth, Alt a thousandth). */
+export function keyValueLog(
+  v: number,
+  dir: 1 | -1,
+  min: number,
+  max: number,
+  step: number,
+  mod: 'none' | 'coarse' | 'fine'
+): number {
+  const by = mod === 'coarse' ? 0.1 : mod === 'fine' ? 0.001 : 0.01
+  const next = logValue(logFraction(v, min, max) + dir * by, min, max)
+  const snapped = snap(next, min, max, step)
+  // Never stuck: a step too small to move past the grid takes one grid step.
+  return snapped === v ? snap(v + dir * step, min, max, step) : snapped
+}

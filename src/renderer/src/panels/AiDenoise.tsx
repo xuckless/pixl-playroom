@@ -11,6 +11,8 @@ import type { PixelStep } from '../../../shared/pixels'
 import { ModelGet } from '../components/ModelGet'
 import { useModels } from '../lib/models'
 import { Icon } from '../components/icons'
+import { InfoTip } from '../components/InfoTip'
+import { TIPS } from './tips'
 import { Select, Slider } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { applyDenoise } from '../lib/denoise'
@@ -153,6 +155,7 @@ export function AiDenoise(): React.JSX.Element | null {
         max={100}
         def={100}
         format={(v) => `${Math.round(v)}%`}
+        tip={isRaw ? TIPS['detail.ai.raw'] : TIPS['detail.ai']}
         onChange={(v) => setPrefs({ strength: v })}
         onCommit={() => undefined}
       />
@@ -182,14 +185,9 @@ export function AiDenoise(): React.JSX.Element | null {
           ))}
         </div>
       )}
-      {isRaw ? (
-        <p className="muted small">
-          On a RAW, denoise works on its developed, linear pixels: white balance, profile and tone
-          stay as editable as before, and the result is kept losslessly so pushing it later shows no
-          compression. Best done once the exposure is roughly right, before fine colour work.
-        </p>
-      ) : (
-        <>
+      {/* A RAW's results are always lossless: nothing to choose. */}
+      {!isRaw && (
+        <div className="row ai-lossless">
           <label className="check">
             <input
               type="checkbox"
@@ -198,16 +196,9 @@ export function AiDenoise(): React.JSX.Element | null {
             />
             Store results losslessly
           </label>
-          <p className="muted small">
-            Near-lossless (the default) is about a sixth of the size and cannot be told apart, but
-            leaves a little less room for heavy edits afterwards (strong exposure or shadow pushes).
-          </p>
-        </>
+          <InfoTip tip={TIPS['detail.ai.lossless']} label="Store results losslessly" />
+        </div>
       )}
-      <p className="muted small">
-        Made once and kept in the photo&apos;s project: undo, redo and Strength never run the model
-        again.
-      </p>
     </div>
   )
 }

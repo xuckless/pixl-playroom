@@ -198,7 +198,6 @@ function ComponentRow({
           >
             <Icon name={componentIcon(c)} />
             <span className="mf-comp-name">{componentLabel(c)}</span>
-            {c.invert && <span className="mf-inv-tag">inv</span>}
           </button>
         )}
         <span className="mf-acts">

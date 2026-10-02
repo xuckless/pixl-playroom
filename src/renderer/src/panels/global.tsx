@@ -23,6 +23,7 @@ import { runJob } from '../state/busy'
 import { ASPECTS, aspectValue } from '../lib/aspects'
 import { setAspect } from '../lib/geometry'
 import { Icon, PathIcon } from '../components/icons'
+import { Popover } from '../components/Popover'
 import { CurvePresets } from './CurvePresets'
 import { AiDenoise } from './AiDenoise'
 import { applyUpright, startGuides } from '../lib/upright'
@@ -931,11 +932,7 @@ export function GradingBody(): React.JSX.Element | null {
           target={layer ? { layer: layer.id, part: 'grade' } : 'grade'}
           value={recipe.colorGrade.add}
           onChange={(v, live) => edit((r) => (r.colorGrade.add = v), live)}
-          hint={
-            layer
-              ? 'Coloured light added where the mask selects, in linear light.'
-              : 'Coloured light on the whole scene, added in linear light after exposure.'
-          }
+          hint={layer ? TIPS['grading.add.mask'] : TIPS['grading.add']}
         />
       </Section>
     </ToolPanel>
@@ -944,18 +941,71 @@ export function GradingBody(): React.JSX.Element | null {
 
 // ── Detail ───────────────────────────────────────────────────────────────────
 
-export function DetailBody(): React.JSX.Element | null {
-  const { recipe } = useScope()
+/**
+ * The noise as the engine sees it, behind a </> beside the tabs: the
+ * measured σ̂ of each plane and the denoise lines of the last render. For
+ * whoever wants the numbers; nobody needs them to denoise.
+ */
+function NoiseAnalysis(): React.JSX.Element {
   const noise = useDevelop((s) => s.noise)
   const measure = useDevelop((s) => s.measureNoise)
   const report = useDevelop((s) => s.report)
+  const [open, setOpen] = useState(false)
   const [measuring, setMeasuring] = useState(false)
-  // The AI tab while the photo has denoise steps, until the user turns away.
-  const [noiseTab, setNoiseTab] = useState<'classic' | 'ai'>(() =>
-    (useDevelop.getState().recipe?.pixels.length ?? 0) > 0 ? 'ai' : 'classic'
-  )
-  if (!recipe) return null
   const seen = report?.gradeLines.filter((l) => l.includes('denoise')) ?? []
+  return (
+    <span className="menu-anchor">
+      <button
+        className={`icon sm${open ? ' on' : ''}`}
+        title="Noise analysis"
+        aria-label="Noise analysis"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <Icon name="engine" />
+      </button>
+      {open && (
+        <Popover onClose={() => setOpen(false)} align="right" className="noise-pop">
+          <span className="micro">Noise analysis</span>
+          <div className="noise-readout">
+            <button
+              className="sm"
+              disabled={measuring}
+              onClick={() => {
+                setMeasuring(true)
+                void runJob('Measuring noise', () => measure()).finally(() => setMeasuring(false))
+              }}
+            >
+              {measuring ? 'Measuring…' : 'Measure noise'}
+            </button>
+            {noise && (
+              <span title="σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values">
+                σ̂ luma {(noise.luminance * 255).toFixed(2)} · chroma{' '}
+                {noise.color.map((c) => (c * 255).toFixed(2)).join(' / ')}
+              </span>
+            )}
+          </div>
+          {seen.length > 0 ? (
+            <pre className="report-lines">{seen.map((l) => l.trim()).join('\n')}</pre>
+          ) : (
+            <p className="muted small">No noise reduction in the last render.</p>
+          )}
+        </Popover>
+      )}
+    </span>
+  )
+}
+
+export function DetailBody(): React.JSX.Element | null {
+  const { recipe } = useScope()
+  // AI first, as Lightroom's Denoise: Classic only for a photo that already
+  // uses it (and has no AI steps), until the user turns away.
+  const [noiseTab, setNoiseTab] = useState<'classic' | 'ai'>(() => {
+    const r = useDevelop.getState().recipe
+    const classic = !!r && (r.detail.noiseLuminance > 0 || r.detail.noiseColor > 0)
+    return classic && (r?.pixels.length ?? 0) === 0 ? 'classic' : 'ai'
+  })
+  if (!recipe) return null
   return (
     <ToolPanel>
       <Section id="detail.sharpen" title="Sharpening">
@@ -994,14 +1044,17 @@ export function DetailBody(): React.JSX.Element | null {
       </Section>
       <Section id="detail.noise" title="Noise reduction">
         {/* Classic is a setting; AI makes pixel steps (both can apply, inside a mask too). */}
-        <Tabs
-          value={noiseTab}
-          tabs={[
-            { value: 'classic', label: 'Classic' },
-            { value: 'ai', label: 'AI' }
-          ]}
-          onChange={setNoiseTab}
-        />
+        <div className="row noise-tabs">
+          <Tabs
+            value={noiseTab}
+            tabs={[
+              { value: 'ai', label: 'AI' },
+              { value: 'classic', label: 'Classic' }
+            ]}
+            onChange={setNoiseTab}
+          />
+          <NoiseAnalysis />
+        </div>
         {noiseTab === 'ai' ? (
           <AiDenoise />
         ) : (
@@ -1036,33 +1089,8 @@ export function DetailBody(): React.JSX.Element | null {
               max={100}
               def={50}
             />
-            <div className="noise-readout">
-              <button
-                disabled={measuring}
-                onClick={() => {
-                  setMeasuring(true)
-                  void runJob('Measuring noise', () => measure(), {
-                    detail: 'Estimating σ̂ on each plane, as the denoiser does'
-                  }).finally(() => setMeasuring(false))
-                }}
-              >
-                {measuring ? 'Measuring…' : 'Measure noise'}
-              </button>
-              {noise && (
-                <span title="σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values">
-                  σ̂ luma {(noise.luminance * 255).toFixed(2)} · chroma{' '}
-                  {noise.color.map((c) => (c * 255).toFixed(2)).join(' / ')}
-                </span>
-              )}
-            </div>
           </>
         )}
-        {seen.length > 0 && (
-          <pre className="report-lines">{seen.map((l) => l.trim()).join('\n')}</pre>
-        )}
-        <p className="muted small">
-          Sharpening and noise reduction read true at {withKey('100%', 'zoom.toggle')}.
-        </p>
       </Section>
     </ToolPanel>
   )
@@ -1077,7 +1105,7 @@ export function EffectsBody(): React.JSX.Element | null {
   const paint = recipe.effects.vignetteStyle === 'paint'
   return (
     <ToolPanel>
-      <Section id="effects.vignette" title="Post-crop vignette">
+      <Section id="effects.vignette" title="Post-crop vignette" tip={TIPS['effects.vignette']}>
         <Select
           label="Style"
           value={recipe.effects.vignetteStyle}
@@ -1130,21 +1158,17 @@ export function EffectsBody(): React.JSX.Element | null {
             max={100}
           />
         )}
-        {isHdr && paint && (
-          <p className="note small">
-            Paint overlay needs an SDR picture; this HDR photo keeps highlight priority.
-          </p>
-        )}
+        {isHdr && paint && <p className="note small">HDR photos keep highlight priority.</p>}
       </Section>
       <Section id="effects.wash" title="Colour wash">
         <AddColourControl
           target={layer ? { layer: layer.id, part: 'wash' } : 'wash'}
           value={recipe.effects.wash}
           onChange={(v, live) => edit((r) => (r.effects.wash = v), live)}
-          hint="A lift toward the colour on the finished look, blacks as much as whites: a wash or a light leak."
+          hint={TIPS['effects.wash']}
         />
       </Section>
-      <Section id="effects.grain" title="Grain">
+      <Section id="effects.grain" title="Grain" tip={TIPS['effects.grain']}>
         <RS
           label="Amount"
           read={(r) => r.effects.grainAmount}
@@ -1273,7 +1297,7 @@ export function GeometryBody(): React.JSX.Element | null {
   const g = recipe.geometry
   return (
     <ToolPanel>
-      <Section id="crop.upright" title="Upright">
+      <Section id="crop.upright" title="Upright" tip={TIPS['geometry.upright']}>
         <div className="seg upright-modes" role="group" aria-label="Upright">
           {UPRIGHT_MODES.map((m) => (
             <button
@@ -1294,15 +1318,11 @@ export function GeometryBody(): React.JSX.Element | null {
             </button>
           </div>
         )}
-        <p className="muted small">
-          {g.upright.mode === 'off'
-            ? 'Levels and makes upright from the straight lines in the photo.'
-            : 'The crop fits the corrected picture; the sliders below add to it.'}
-        </p>
       </Section>
       <Section
         id="crop.transform"
         title="Transform"
+        tip={TIPS['geometry.transform']}
         right={
           <button
             className="sm ghost"

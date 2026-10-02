@@ -380,11 +380,7 @@ function EmptyLibrary(): React.JSX.Element {
       <LiquidGlass className="empty-card" radius={2} bezel={14} strength={0.8}>
         <span className="micro accent">Library</span>
         <h1>Open a folder of photographs.</h1>
-        <p>
-          There is no import step. Files stay where they are; edits live in a sidecar beside each
-          photo, and the engine renders thumbnails from a RAW&apos;s embedded preview until it is
-          edited.
-        </p>
+        <p>There is no import step: your photos stay where they are.</p>
         <div className="row">
           <button className="primary lg" onClick={() => void chooseFolder()}>
             <Icon name="folder" />
