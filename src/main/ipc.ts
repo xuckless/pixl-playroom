@@ -78,6 +78,7 @@ import { paths } from './paths'
 import type { DevelopSessions } from './render'
 import { readSettings } from './settings'
 import { checkForUpdates, installUpdate, setUpdateChannel, updateState } from './updater'
+import { notesSeen, whatsNew } from './whatsnew'
 
 function toAppError(err: unknown): AppError {
   if (err instanceof EngineError)
@@ -195,6 +196,8 @@ export function registerIpc(s: Services): void {
   })
 
   // ── the account, updates and preferences ──
+  handle(IPC.app.whatsNew, () => whatsNew())
+  handle(IPC.app.notesSeen, () => notesSeen())
   handle(IPC.app.gate, () => gate())
   handle(IPC.account.status, () => accountStatus())
   handle(IPC.account.signIn, () => signIn())

@@ -8,6 +8,7 @@ import { MAX_PROBLEM_TEXT } from '../../../shared/crash'
 import type { AccountStatus } from '../../../shared/account'
 import type { Prefs, UpdateState } from '../../../shared/ipc'
 import { ACCOUNT_URL, BUY_URL, LICENCE_RULES, type LicenceStatus } from '../../../shared/licence'
+import { latestNotes } from '../../../shared/releasenotes'
 import { InfoTip } from '../components/InfoTip'
 import { Modal, Select, Tabs } from '../components/ui'
 import { api, errorText } from '../lib/api'
@@ -15,6 +16,7 @@ import { takeReportFocus } from '../lib/report'
 import { useLibrary } from '../state/library'
 import { KeyBindingsSection } from './KeyBindings'
 import { ModelsSection } from './ModelsSection'
+import { openReleaseNotes } from '../state/whatsNew'
 
 const LEGAL = 'https://playroom.pixlfoundation.com/legal'
 
@@ -488,6 +490,11 @@ function GeneralSettings(): React.JSX.Element {
               {update.phase === 'downloaded' && (
                 <button className="primary" onClick={() => void api.updates.install()}>
                   Restart to update
+                </button>
+              )}
+              {latestNotes(update.currentVersion) && (
+                <button className="link" onClick={() => openReleaseNotes(update.currentVersion)}>
+                  What’s new
                 </button>
               )}
             </div>

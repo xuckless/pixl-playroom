@@ -27,6 +27,8 @@ import { chordOf } from './lib/keys'
 import { ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
+import { WhatsNewDialog } from './views/WhatsNew'
+import { showWhatsNew } from './state/whatsNew'
 import { BetaGate, UpdateRequiredGate } from './views/Gate'
 import { useGate } from './lib/gate'
 import { isFrame, whenFrame } from './lib/frames'
@@ -111,6 +113,7 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'preferences' && <PreferencesDialog key="preferences" />}
       {dialog === 'crash-consent' && <CrashConsentDialog key="crash-consent" />}
       {dialog === 'engine' && <EngineReportDialog key="engine" />}
+      {dialog === 'whats-new' && <WhatsNewDialog key="whats-new" />}
     </AnimatePresence>
   )
 }
@@ -468,7 +471,8 @@ export default function App(): React.JSX.Element {
     })()
     void Promise.allSettled([engineUp, libraryUp]).then(() => {
       boot.end()
-      void askCrashConsent()
+      // After an update, what it brought; the crash-report question waits for a launch without it.
+      void showWhatsNew().then(askCrashConsent)
     })
     const t = setInterval(() => void refreshEngine(), 5000)
     return () => {

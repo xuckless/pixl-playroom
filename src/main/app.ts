@@ -45,6 +45,7 @@ import { registerProtocol, registerSchemePrivileges } from './protocol'
 import { DevelopSessions } from './render'
 import { setupUpdater } from './updater'
 import { startPolicy } from './policy'
+import { noteInstall } from './whatsnew'
 import { IPC } from '../shared/ipc'
 
 log.initialize()
@@ -121,6 +122,9 @@ const selectEngine = new EngineClient('select', 4)
 // while a preview is being rendered, rather than splitting the cores with it.
 bgEngine.holdFor(engine)
 aiEngine.holdFor(engine)
+// Before the index is opened (and made, on a fresh install): whether this
+// install is older than now decides whether an update's notes show.
+noteInstall()
 /** The SQLite index and the sidecars, in their own process. */
 const index = openIndex()
 let sessions: DevelopSessions | undefined

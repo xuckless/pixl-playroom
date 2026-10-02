@@ -45,6 +45,9 @@ export const IPC = {
     openNotices: 'app:open-notices',
     /** The bundled beta terms, opened in the system's text viewer. */
     openBetaTerms: 'app:open-beta-terms',
+    /** The release notes to show at launch (shared/releasenotes.ts), and that they were shown. */
+    whatsNew: 'app:whats-new',
+    notesSeen: 'app:notes-seen',
     /** The beta gate (shared/gate.ts): what stands in front of the window. */
     gate: 'app:gate',
     /** main → renderer: the gate changed */

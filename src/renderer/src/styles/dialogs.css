@@ -684,3 +684,87 @@ button.keybind-key.waiting {
 .gate-card .gate-fine .link {
   font-size: inherit;
 }
+
+/* What's new: after an update, what it brought and what is on its way. */
+.modal.whats-new {
+  width: 600px;
+}
+.whats-new .wn-release + .wn-release {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hair);
+}
+.whats-new .wn-version {
+  margin: 0 0 6px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.whats-new .wn-headline {
+  margin: 0 0 16px;
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.whats-new .wn-section + .wn-section {
+  margin-top: 14px;
+}
+.whats-new .wn-section .micro,
+.whats-new .wn-next > .micro {
+  color: var(--acc);
+}
+.whats-new ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.whats-new li {
+  position: relative;
+  padding-left: 16px;
+  line-height: 1.5;
+}
+.whats-new li + li {
+  margin-top: 5px;
+}
+.whats-new li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.62em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--acc);
+  box-shadow: 0 0 8px var(--glow);
+}
+.whats-new .wn-next {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid transparent;
+  border-image: var(--hl-x) 1;
+}
+.whats-new .wn-next-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.whats-new .wn-next-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--acc-a20);
+  border-radius: var(--r);
+  background: linear-gradient(160deg, var(--acc-a10), rgba(157, 139, 234, 0.02));
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.whats-new .wn-next-card strong {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}

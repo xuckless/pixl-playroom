@@ -76,6 +76,7 @@ interface LibraryState {
     | 'preferences'
     | 'crash-consent'
     | 'engine'
+    | 'whats-new'
   /** The collection the 'collection' dialog edits. */
   editing: CollectionDraft | null
   clipboard: { recipe: Recipe; groups: RecipeGroup[]; source: string | null } | null
