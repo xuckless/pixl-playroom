@@ -173,12 +173,21 @@ test('a look moves only its own sliders; Amount sees just those', () => {
   assert.ok(!changed.some((c) => c.startsWith('basic.')))
 })
 
-test('search finds by name, tag, description and a typo, best match first', () => {
+test('search finds by name, source, tag and a typo, best match first', () => {
   const names = (q: string): string[] => searchLooks(LOOKS, q).map((l) => l.name)
-  assert.equal(names('teal')[0], 'Teal & orange')
-  assert.equal(names('portriat')[0], 'Soft portrait')
+  assert.equal(names('classic chrome')[0], 'Documentary Chrome')
+  assert.equal(names('batman')[0], 'Rain City Noir')
+  assert.equal(names('odyssey')[0], 'Bronze Age Epic')
+  // A stock's name beats the start of a longer word in a look's name.
+  assert.deepEqual(names('portra').slice(0, 3), [
+    'Fine Portrait 160',
+    'Warm Portrait 400',
+    'Warm Portrait 800'
+  ])
+  assert.deepEqual(names('tri-x'), ['Gritty Press 400', 'Pushed Press 1600'])
+  assert.ok(names('teal').includes('Teal & orange'))
+  assert.ok(names('portriat').includes('Soft portrait'))
   assert.ok(names('sunset').includes('Golden hour'))
-  assert.ok(names('matte').includes('Cool matte'))
   assert.ok(names('bw soft').includes('Soft B&W'))
   assert.deepEqual(names('zzzz'), [])
   assert.equal(searchLooks(LOOKS, '').length, LOOKS.length)
@@ -186,4 +195,18 @@ test('search finds by name, tag, description and a typo, best match first', () =
     searchLooks(LOOKS, '', { ids: ['builtin:vivid'] }).map((l) => l.id),
     ['builtin:vivid']
   )
+  assert.ok(
+    searchLooks(LOOKS, '', { collections: ['camera/fujifilm'] }).every(
+      (l) => l.meta?.collection === 'camera/fujifilm'
+    )
+  )
+})
+
+test('the catalog is large and every collection is stocked', () => {
+  assert.ok(LOOKS.length >= 200, `${LOOKS.length} looks`)
+  for (const c of COLLECTIONS)
+    assert.ok(
+      LOOKS.some((l) => l.meta.collection === c.id),
+      `${c.label} is empty`
+    )
 })

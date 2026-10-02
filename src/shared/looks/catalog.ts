@@ -4,10 +4,45 @@
  * good, since My Looks stores ids. A look renamed or retired leaves an
  * alias behind.
  */
+import { BW } from './bw'
+import { CANON } from './canon'
+import { CINEMA } from './cinema'
+import { CREATIVE } from './creative'
 import { ESSENTIALS } from './essentials'
+import { FILM_BW } from './film-bw'
+import { FILM_COLOUR } from './film-colour'
+import { FILM_INSTANT } from './film-instant'
+import { FUJIFILM } from './fujifilm'
+import { HASSELBLAD } from './hasselblad'
+import { LEICA } from './leica'
+import { MOVIES } from './movies'
+import { NIKON } from './nikon'
+import { OTHER_CAMERAS } from './other-cameras'
+import { PANASONIC } from './panasonic'
+import { RICOH } from './ricoh'
+import { SONY } from './sony'
 import type { Look } from './types'
 
-export const LOOKS: Look[] = [...ESSENTIALS]
+/** In browsing order: camera colour first, as the collections are. */
+export const LOOKS: Look[] = [
+  ...FUJIFILM,
+  ...LEICA,
+  ...HASSELBLAD,
+  ...CANON,
+  ...NIKON,
+  ...SONY,
+  ...RICOH,
+  ...PANASONIC,
+  ...OTHER_CAMERAS,
+  ...CINEMA,
+  ...FILM_COLOUR,
+  ...FILM_INSTANT,
+  ...FILM_BW,
+  ...MOVIES,
+  ...BW,
+  ...CREATIVE,
+  ...ESSENTIALS
+]
 
 export const LOOK_BY_ID = new Map(LOOKS.map((l) => [l.id, l]))
 

@@ -56,14 +56,16 @@ function wordScore(token: string, words: string[], phrase: string): number {
   let best = 0
   for (const w of words) {
     if (w === token) return 1
-    if (w.startsWith(token)) best = Math.max(best, 0.8)
-    else if (w.includes(token)) best = Math.max(best, 0.5)
+    // A whole word anywhere beats the start of one in the name ("portra" is a
+    // stock, not the start of "portrait").
+    if (w.startsWith(token)) best = Math.max(best, 0.6)
+    else if (token.length >= 4 && w.includes(token)) best = Math.max(best, 0.35)
     else if (token.length >= 5 && oneEdit(token, w.slice(0, token.length + 1)))
-      best = Math.max(best, 0.4)
-    else if (token.length >= 5 && oneEdit(token, w)) best = Math.max(best, 0.4)
+      best = Math.max(best, 0.3)
+    else if (token.length >= 5 && oneEdit(token, w)) best = Math.max(best, 0.3)
   }
   // "classic chrome" typed as one word still finds "Classic Chrome".
-  if (best < 0.5 && phrase.replace(/ /g, '').includes(token)) best = 0.5
+  if (best < 0.35 && token.length >= 4 && phrase.replace(/ /g, '').includes(token)) best = 0.35
   return best
 }
 
