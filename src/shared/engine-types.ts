@@ -1794,6 +1794,12 @@ export type SamOp =
       request: PromptSegmentRequest
       maskInput: boolean
       keep: boolean
+      /**
+       * With `candidates: 'All'`: the one answer to keep (and answer with),
+       * chosen by size (shared/concepts.ts `pickBySize`); its logits feed
+       * the lane's next decode.
+       */
+      pick?: 'small' | 'large' | 'best'
     }
   | { op: 'release'; embeddings?: string[]; lanes?: string[]; sessions?: string[] }
 

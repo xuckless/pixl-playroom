@@ -57,7 +57,7 @@ import type { GateState } from '../shared/gate'
 import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
-import type { PromptVia, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
+import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../shared/looks/run'
 import type { EnhanceRates } from '../shared/enhance'
 
@@ -294,7 +294,7 @@ const api = {
     /** Null for a probe a later one replaced. */
     decode: (selId: string, req: SelectDecode) =>
       call<SelectPlane | null>(IPC.select.decode, selId, req),
-    commit: (selId: string, source: { label?: string; via: PromptVia }) =>
+    commit: (selId: string, source: PromptSourceAsk) =>
       call<SelectCommit>(IPC.select.commit, selId, source),
     close: (selId: string) => call<void>(IPC.select.close, selId)
   }

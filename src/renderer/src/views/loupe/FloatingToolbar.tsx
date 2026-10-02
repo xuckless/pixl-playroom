@@ -8,6 +8,7 @@ import { addLabel, addPickHint } from '../../lib/addpick'
 import { applyGuides } from '../../lib/upright'
 import { MAX_GUIDES } from './UprightGuides'
 import { withKey } from '../../lib/commands'
+import { conceptOf } from '../../../../shared/concepts'
 import { cancelObjects, commitObjects } from '../../lib/objects'
 import { useObjects, type ObjectsMode } from '../../state/objects'
 
@@ -225,13 +226,15 @@ function ObjectsBar(): React.JSX.Element {
   const target = useObjects((s) => s.target)
   const selected = useObjects((s) => s.plane !== null)
   const busy = useObjects((s) => s.status === 'working' || s.status === 'loading')
-  if (target === 'sky')
+  // A class asked for by a click (the Sky tool, Hair, Eyes…).
+  const concept = conceptOf(target)
+  if (concept)
     return (
       <>
-        <span className="bar-title micro">Sky</span>
-        <span className="bar-hint">Click the sky · SAM 2.1 selects it</span>
+        <span className="bar-title micro">{concept.label}</span>
+        <span className="bar-hint">{concept.ask} · SAM 2.1 selects it</span>
         <button className="sm ghost" onClick={cancelObjects} title="Esc">
-          Cancel
+          {concept.many ? 'Done' : 'Cancel'}
         </button>
       </>
     )

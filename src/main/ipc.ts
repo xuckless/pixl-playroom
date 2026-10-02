@@ -73,7 +73,7 @@ import { AccountError } from './account/api'
 import { OAuthError } from './account/oauth'
 import { takeOpens } from './open'
 import { SAM_MODEL, type SelectService } from './select/service'
-import { boxAround, type PromptVia, type SelectDecode } from '../shared/prompt'
+import { boxAround, type PromptSourceAsk, type SelectDecode } from '../shared/prompt'
 import { paths } from './paths'
 import type { DevelopSessions } from './render'
 import { readSettings } from './settings'
@@ -725,6 +725,9 @@ export function registerIpc(s: Services): void {
       denoise: models,
       prompt: sam2 && samModel,
       smart,
+      // By name: a text-prompted segmenter (SAM 3, or the detector, E45),
+      // people's parts (E30) and a sky model (E28) are still to come.
+      finders: { click: sam2, text: false, parts: false, 'sky-model': false },
       // What to download for a task that waits only on its model: the one
       // Playroom recommends (the detailed subject model, SAM 2.1, DRUNet).
       get: {
@@ -750,7 +753,7 @@ export function registerIpc(s: Services): void {
   // ── select by clicks, a box or strokes (SAM 2.1) ──
   handle(IPC.select.open, (key: string) => s.select.open(key))
   handle(IPC.select.decode, (selId: string, req: SelectDecode) => s.select.decode(selId, req))
-  handle(IPC.select.commit, (selId: string, source: { label?: string; via: PromptVia }) =>
+  handle(IPC.select.commit, (selId: string, source: PromptSourceAsk) =>
     s.select.commit(selId, source)
   )
   handle(IPC.select.close, (selId: string) => s.select.close(selId))

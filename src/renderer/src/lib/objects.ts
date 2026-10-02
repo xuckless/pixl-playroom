@@ -5,6 +5,7 @@
  * painted component that remembers its prompt and snaps to the photo's
  * edges, or dropped. A lasso's Find object goes the same way in one step.
  */
+import { conceptOf } from '../../../shared/concepts'
 import { lassoPrompt, type SelectPlane } from '../../../shared/prompt'
 import { newId, type BrushComponent } from '../../../shared/recipe'
 import { modelRefine } from '../../../shared/refine'
@@ -49,15 +50,23 @@ export function showDraft(plane: SelectPlane | null): void {
 }
 const DRAFT_ID = 'objects-draft'
 
-/** The selection as a component of the selected mask, a History step, and the tool put down. */
+/**
+ * The selection as a component of the selected mask, a History step, and
+ * the tool put down; a class of which there are several (both eyes) keeps
+ * the tool up for the next one.
+ */
 export async function commitObjects(): Promise<void> {
   const o = useObjects.getState()
   if (!o.selId || !o.plane) return
-  const sky = o.target === 'sky'
-  const label = sky ? 'Sky' : undefined
+  const concept = conceptOf(o.target)
+  const label = concept?.label
   try {
     useObjects.setState({ status: 'working' })
-    const made = await api.select.commit(o.selId, { label, via: o.via })
+    const made = await api.select.commit(o.selId, {
+      ...(label ? { label } : {}),
+      via: o.via,
+      ...(concept ? { concept: concept.id } : {})
+    })
     const d = useDevelop.getState()
     const layerId = d.layerId
     const layer = layerOf(d.recipe, layerId)
@@ -66,7 +75,8 @@ export async function commitObjects(): Promise<void> {
       id: newId(),
       kind: 'brush',
       name: label ?? 'Object',
-      mode: modeForNew(layer),
+      // Every one of several is added: what one click takes, the next does not take away.
+      mode: concept?.many && layer.components.length > 0 ? 'Add' : modeForNew(layer),
       opacity: 100,
       invert: false,
       feather: 0,
@@ -81,15 +91,15 @@ export async function commitObjects(): Promise<void> {
     d.edit((r) => {
       const l = layerOf(r, layerId)
       if (!l) return
-      // A new mask that is only the sky is called that.
-      if (sky && l.components.length === 0) l.name = 'Sky'
+      // A new mask that is only the sky (the hair…) is called that.
+      if (label && l.components.length === 0) l.name = label
       l.components.push(comp)
     })
-    d.commit(sky ? 'Select sky' : 'Select object')
+    d.commit(label ? `Select ${label.toLowerCase()}` : 'Select object')
     madeComponent(comp.id)
     showDraft(null)
     useObjects.setState({ plane: null })
-    useDevelop.getState().setTool('none')
+    if (!concept?.many) useDevelop.getState().setTool('none')
   } catch (err) {
     useLibrary.getState().say(errorText(err), 'error')
   } finally {

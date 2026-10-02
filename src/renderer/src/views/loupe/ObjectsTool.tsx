@@ -5,8 +5,11 @@
  * drag; in Brush a scribble over it. Once something is selected,
  * Shift-click adds a part and Alt-click takes one away (each refining the
  * last answer); a plain click or a new box starts over. Enter keeps it,
- * Esc drops it (lib/objects.ts). The Sky tool is this one asking for a
- * single click on the sky, kept at once.
+ * Esc drops it (lib/objects.ts). A class tool (Sky, Hair, Eyes…,
+ * shared/concepts.ts) is this one asking for a click on that class: the
+ * answer of the class's size is kept at once, with its name, and for a
+ * class of which there are several (both eyes) the tool stays up for the
+ * next click.
  *
  * The photo is analysed once when the tool comes up (about a second), and
  * each answer after it is a few tens of milliseconds: one probe runs at a
@@ -21,6 +24,7 @@ import {
 } from '../../../../shared/prompt'
 import { displayToBase, normalisedIn, type Rect, type ViewGeometry } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
+import { conceptOf } from '../../../../shared/concepts'
 import { cancelObjects, commitObjects, showDraft } from '../../lib/objects'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
@@ -66,7 +70,9 @@ export const ObjectsTool = memo(function ObjectsTool({
    */
   const probing = useRef(false)
   const nextProbe = useRef<{ prompt: PromptGeometry; over: boolean } | null>(null)
-  const sky = target === 'sky'
+  // A class asked for by a click (the Sky tool, Hair…): one click, kept at once.
+  const concept = conceptOf(target)
+  const asked = concept !== null
 
   // The photo analysed once, for every prompt on it; let go when the tool is put down.
   useEffect(() => {
@@ -170,12 +176,17 @@ export const ObjectsTool = memo(function ObjectsTool({
     const n = ++seq.current
     useObjects.setState({ status: 'working' })
     try {
-      const plane = await api.select.decode(o.selId, { seq: n, mode, prompt })
+      const plane = await api.select.decode(o.selId, {
+        seq: n,
+        mode,
+        prompt,
+        ...(concept ? { size: concept.size } : {})
+      })
       if (!plane || n !== seq.current) return
-      useObjects.setState({ plane, via: sky ? 'sky' : mode === 'replace' ? via : o.via })
+      useObjects.setState({ plane, via: mode === 'replace' ? via : o.via })
       showDraft(plane)
-      // The sky is one click: kept at once.
-      if (sky) await commitObjects()
+      // A class is one click: kept at once.
+      if (concept) await commitObjects()
     } catch (err) {
       useLibrary.getState().say(errorText(err), 'error')
     } finally {
@@ -195,16 +206,16 @@ export const ObjectsTool = memo(function ObjectsTool({
     const p = local(e)
     if (!press) {
       // Hovering in Auto, before anything is chosen: what a click would take.
-      if (mode === 'auto' && !sky && status === 'ready' && !useObjects.getState().plane)
+      if (mode === 'auto' && !asked && status === 'ready' && !useObjects.getState().plane)
         probe({ rect: null, points: [{ ...toBase(p.x, p.y), fg: true }] })
       return
     }
     const next = { ...press, x1: p.x, y1: p.y }
-    if (mode === 'brush' && !sky) next.stroke = [...press.stroke, p]
+    if (mode === 'brush' && !asked) next.stroke = [...press.stroke, p]
     setPress(next)
     // A box being dragged: the mask follows it, over what is selected (which
     // the box will replace).
-    if ((mode === 'box' || mode === 'auto') && !sky && dragged(next)) {
+    if ((mode === 'box' || mode === 'auto') && !asked && dragged(next)) {
       const r = boxOf(next)
       if (r) probe({ rect: r, points: [] }, true)
     }
@@ -223,7 +234,7 @@ export const ObjectsTool = memo(function ObjectsTool({
     setPress(null)
     if (!pr) return
     const has = useObjects.getState().plane !== null
-    if (mode === 'brush' && !sky && dragged(pr)) {
+    if (mode === 'brush' && !asked && dragged(pr)) {
       const pts = strokePoints(
         pr.stroke.map((q) => toBase(q.x, q.y)),
         aspect
@@ -233,13 +244,13 @@ export const ObjectsTool = memo(function ObjectsTool({
       if (pr.alt) return
       return void choose('replace', { rect: null, points: pts }, 'brush')
     }
-    if (dragged(pr) && !sky) {
+    if (dragged(pr) && !asked) {
       const r = boxOf(pr)
       if (r) return void choose('replace', { rect: r, points: [] }, 'box')
     }
     const at = toBase(pr.x0, pr.y0)
     // Shift adds a part, Alt takes one away: refining what is selected.
-    if (has && (pr.shift || pr.alt) && !sky)
+    if (has && (pr.shift || pr.alt) && !asked)
       return void choose('part', { rect: null, points: [{ ...at, fg: !pr.alt }] }, 'click')
     if (pr.alt) return
     void choose('replace', { rect: null, points: [{ ...at, fg: true }] }, 'click')
@@ -256,19 +267,22 @@ export const ObjectsTool = memo(function ObjectsTool({
 
   const box = press &&
     (mode === 'box' || mode === 'auto') &&
-    !sky &&
+    !asked &&
     dragged(press) && {
       left: Math.min(press.x0, press.x1),
       top: Math.min(press.y0, press.y1),
       width: Math.abs(press.x1 - press.x0),
       height: Math.abs(press.y1 - press.y0)
     }
-  const stroke = press && mode === 'brush' && !sky && press.stroke.length > 1 ? press.stroke : null
+  const stroke =
+    press && mode === 'brush' && !asked && press.stroke.length > 1 ? press.stroke : null
   const note =
     status === 'loading'
       ? 'Analysing the photo…'
-      : sky
-        ? 'Click the sky'
+      : concept
+        ? concept.many
+          ? `${concept.ask} · Esc when done`
+          : concept.ask
         : selected
           ? 'Shift-click adds a part · Alt-click removes one · Enter keeps it'
           : mode === 'auto'

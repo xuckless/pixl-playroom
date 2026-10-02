@@ -28,6 +28,7 @@ import type {
   PromptSegmentRequest,
   SamResult
 } from '../../shared/engine-types'
+import type { ConceptSize } from '../../shared/concepts'
 import { lensCorrection } from '../../shared/lens'
 import {
   addPart,
@@ -36,7 +37,7 @@ import {
   strokeObject,
   strokePrompt,
   type PromptGeometry,
-  type PromptVia,
+  type PromptSourceAsk,
   type SelectCommit,
   type SelectDecode,
   type SelectPlane
@@ -111,6 +112,8 @@ interface Selection {
   prompt: PromptGeometry | null
   probe: AbortController | null
   last: SelectPlane | null
+  /** A class's clicks keep SAM's answer of this size (shared/concepts.ts). */
+  size?: ConceptSize
 }
 
 /** The decode the engine could not run because the host is new: catch up and try again. */
@@ -265,6 +268,8 @@ export class SelectService {
       signal?: AbortSignal
       /** Every answer the decoder gives, not only its best. */
       all?: boolean
+      /** Of every answer, the one of this size, kept for the lane and answered with. */
+      pick?: ConceptSize
     }
   ): Promise<Extract<SamResult, { op: 'decode' }>> {
     const e = this.embeddings.get(embKey)
@@ -274,7 +279,7 @@ export class SelectService {
     const request: PromptSegmentRequest = {
       decoder: this.refs!.decoder,
       prompt: enginePrompt(prompt, opts.count),
-      candidates: opts.all ? 'All' : 'HighestPredictedIou',
+      candidates: opts.all || opts.pick ? 'All' : 'HighestPredictedIou',
       activation: ACTIVATION,
       upsample: opts.upsample === 'guided' ? guided(frameWidth, frameHeight) : RESAMPLED,
       bounds_at: 0.5,
@@ -290,7 +295,8 @@ export class SelectService {
         lane,
         request,
         maskInput: opts.maskInput,
-        keep: opts.keep
+        keep: opts.keep,
+        ...(opts.pick ? { pick: opts.pick } : {})
       },
       { signal: opts.signal }
     )) as Extract<SamResult, { op: 'decode' }>
@@ -306,7 +312,8 @@ export class SelectService {
     prompt: PromptGeometry,
     upsample: Upsample,
     longest: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    pick?: ConceptSize
   ): Promise<Extract<SamResult, { op: 'decode' }>> {
     const steps = promptSteps(prompt)
     let out: Extract<SamResult, { op: 'decode' }> | null = null
@@ -319,7 +326,8 @@ export class SelectService {
         // The steps before the last are only the next one's input.
         upsample: last ? upsample : 'resampled',
         longest: last ? longest : 256,
-        signal
+        signal,
+        ...(pick ? { pick } : {})
       })
     }
     return out!
@@ -369,6 +377,8 @@ export class SelectService {
         if (sel.probe === abort) sel.probe = null
       }
     }
+    if (req.mode === 'replace') sel.size = req.size
+    const pick = sel.size
     const prev = sel.prompt
     const next: PromptGeometry =
       req.mode === 'replace' || !prev
@@ -382,14 +392,16 @@ export class SelectService {
           maskInput: true,
           keep: true,
           upsample: 'guided',
-          longest: FRAME_SIZE
+          longest: FRAME_SIZE,
+          ...(pick ? { pick } : {})
         })
       }
       return this.decodeOn(sel.id, sel.embKey, next, {
         maskInput: false,
         keep: true,
         upsample: 'guided',
-        longest: FRAME_SIZE
+        longest: FRAME_SIZE,
+        ...(pick ? { pick } : {})
       })
     })
     sel.prompt = next
@@ -412,23 +424,20 @@ export class SelectService {
       this.embeddings.clear()
       const { embKey } = await this.embedding(sel.key)
       sel.embKey = embKey
-      if (sel.prompt) await this.replay(sel.id, embKey, sel.prompt, 'resampled', 256)
+      if (sel.prompt)
+        await this.replay(sel.id, embKey, sel.prompt, 'resampled', 256, undefined, sel.size)
       return run()
     }
   }
 
   /** The selection as a mask: its last answer, at the frame's size, in the plane store. */
-  async commit(selId: string, source: { label?: string; via: PromptVia }): Promise<SelectCommit> {
+  async commit(selId: string, source: PromptSourceAsk): Promise<SelectCommit> {
     const sel = this.selections.get(selId)
     if (!sel?.last || !sel.prompt) throw new Error('nothing is selected yet')
     return this.keep(sel.last.png, sel.prompt, source)
   }
 
-  private keep(
-    png16: Uint8Array,
-    prompt: PromptGeometry,
-    source: { label?: string; via: PromptVia }
-  ): SelectCommit {
+  private keep(png16: Uint8Array, prompt: PromptGeometry, source: PromptSourceAsk): SelectCommit {
     const d = grey8(Buffer.from(png16))
     const png = encodeGreyPng(d.data, d.width, d.height).toString('base64')
     const ref = planeRef(png)
@@ -441,7 +450,8 @@ export class SelectService {
         kind: 'prompt',
         ...(source.label ? { label: source.label } : {}),
         prompt: { ...prompt, parts: promptSteps(prompt) },
-        via: source.via
+        via: source.via,
+        ...(source.concept ? { concept: source.concept } : {})
       }
     }
   }
@@ -463,7 +473,7 @@ export class SelectService {
   async oneShot(
     key: string,
     prompt: PromptGeometry,
-    source: { label?: string; via: PromptVia },
+    source: PromptSourceAsk,
     signal: AbortSignal,
     onStage?: (stage: 'embed' | 'decode') => void
   ): Promise<SelectCommit> {

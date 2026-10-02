@@ -1,11 +1,13 @@
 /**
- * The Objects tool (and the Sky tool, which is it asking for one click on
- * the sky): SAM 2.1 selecting what the user points at. Its way of pointing,
- * what it is selecting, and where its selection on the open photo stands.
+ * The Objects tool (and the class tools — Sky, Hair, Eyes… — which are it
+ * asking for a click on that class, shared/concepts.ts): SAM 2.1 selecting
+ * what the user points at. Its way of pointing, what it is selecting, and
+ * where its selection on the open photo stands.
  * The canvas side is views/loupe/ObjectsTool.tsx; committing and cancelling
  * are lib/objects.ts.
  */
 import { create } from 'zustand'
+import type { ConceptId } from '../../../shared/concepts'
 import type { SelectPlane } from '../../../shared/prompt'
 
 /**
@@ -13,7 +15,8 @@ import type { SelectPlane } from '../../../shared/prompt'
  * takes it), Box (drag around it) or Brush (scribble over it).
  */
 export type ObjectsMode = 'auto' | 'box' | 'brush'
-export type ObjectsTarget = 'object' | 'sky'
+/** Any object, or a class (the click keeps SAM's answer of the class's size, and its name). */
+export type ObjectsTarget = 'object' | ConceptId
 
 interface ObjectsState {
   mode: ObjectsMode
@@ -40,7 +43,7 @@ export const useObjects = create<ObjectsState>((set) => ({
   plane: null,
   via: 'click',
   begin(target) {
-    set({ target, plane: null, via: target === 'sky' ? 'sky' : 'click' })
+    set({ target, plane: null, via: 'click' })
   },
   setMode(mode) {
     set({ mode })

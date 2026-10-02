@@ -20,6 +20,8 @@ import { emptyRange } from '../../lib/helpers'
 import { ensureModel } from '../../lib/ensureModel'
 import { useObjects } from '../../state/objects'
 import { SKY_BY_CLICK } from '../../../../shared/ai'
+import { CONCEPTS, conceptOf, type ConceptId } from '../../../../shared/concepts'
+import type { PersonPart } from '../../../../shared/looks/smart'
 import { useLibrary } from '../../state/library'
 import { useDevelop, type Tool } from '../../state/develop'
 
@@ -36,6 +38,8 @@ export type MaskToolKind =
   | 'color'
   | 'luminance'
   | 'depth'
+  /** A person's part, asked for by a click (shared/concepts.ts). */
+  | `part:${PersonPart}`
 
 export interface MaskToolInfo {
   kind: MaskToolKind
@@ -83,6 +87,19 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
         ai: 'segment'
       }
     ]
+  },
+  {
+    // Found by a click for now (SAM 2.1); by name once a parts model or
+    // SAM 3 ships (shared/concepts.ts finders).
+    title: 'People',
+    tools: CONCEPTS.filter((c) => c.group === 'people').map((c): MaskToolInfo => ({
+      kind: `part:${c.id as PersonPart}`,
+      label: c.label,
+      icon: c.id === 'body' ? 'subject' : 'objects',
+      needs: 'download SAM 2.1',
+      ai: 'prompt',
+      badge: 'click'
+    }))
   },
   {
     title: 'Draw',
@@ -178,25 +195,33 @@ export function madeComponent(id: string): void {
  * then wait on the canvas; a range is added at once and the picker asks for
  * the colour or tone to key on.
  */
+/** The class a tool asks a click for: the sky (until a sky model), or a person's part. */
+function askedConcept(kind: MaskToolKind): ConceptId | null {
+  if (kind === 'sky') return SKY_BY_CLICK ? 'sky' : null
+  return kind.startsWith('part:') ? (kind.slice(5) as PersonPart) : null
+}
+
 export function startMaskTool(kind: MaskToolKind): void {
   const d = useDevelop.getState()
   if (!d.recipe) return
   const adding = d.addMode !== null && layerOf(d.recipe, d.layerId) !== undefined
-  // Pointed at (SAM 2.1): the Objects tool on the canvas, or the Sky tool,
-  // which is the same tool asking for one click on the sky, until a sky
-  // model ships. Its model offered first when it is not downloaded.
-  if (kind === 'objects' || (kind === 'sky' && SKY_BY_CLICK)) {
+  // Pointed at (SAM 2.1): the Objects tool on the canvas, or a class tool
+  // (Sky, Hair, Eyes…), which is the same tool asking for a click on that
+  // class until a finder that knows its name ships. Its model offered first
+  // when it is not downloaded.
+  const asked = askedConcept(kind)
+  if (kind === 'objects' || asked) {
     if (!d.session) return
     const mode = d.addMode
     openMasks()
     void (async () => {
-      if (!(await ensureModel('prompt'))) return
+      if (!(await ensureModel('prompt', asked ? conceptOf(asked)?.label : undefined))) return
       const now = useDevelop.getState()
       if (!now.recipe || !now.session) return
       if (!(adding && layerOf(now.recipe, now.layerId))) {
         if (!createMask()) return
       } else if (mode) now.setAddMode(mode)
-      useObjects.getState().begin(kind === 'sky' ? 'sky' : 'object')
+      useObjects.getState().begin(asked ?? 'object')
       useDevelop.getState().setTool('objects')
     })()
     return

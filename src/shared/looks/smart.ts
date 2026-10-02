@@ -771,7 +771,10 @@ function partOf(c: MaskComponentSetting): MaskPart | string {
           return `“${src.part}” is not a part we can find`
         return { target: { kind: 'person', part: src.part as PersonPart }, ...join }
       }
-      // The sky clicked by hand (SKY_BY_CLICK) is still the sky to ask for.
+      // Pointed at as a class (shared/concepts.ts): that class, to find again.
+      if (src.concept === 'sky') return { target: { kind: 'sky' }, ...join }
+      if (src.concept) return { target: { kind: 'person', part: src.concept }, ...join }
+      // The sky clicked by hand before classes (SKY_BY_CLICK) is still the sky to ask for.
       if (src.via === 'sky') return { target: { kind: 'sky' }, ...join }
       if (!src.label) return 'an object pointed at by hand has no name to look for'
       return { target: { kind: 'object', label: src.label }, ...join }

@@ -10,6 +10,7 @@
  * Pure: the Objects tool builds prompts with it, main checks them and hands
  * them to the engine, and saved presets carry them.
  */
+import type { ConceptId, ConceptSize } from './concepts'
 import type { Prompt } from './engine-types'
 import type { BrushSource } from './recipe'
 
@@ -334,6 +335,16 @@ export interface SelectDecode {
   prompt: PromptGeometry
   /** The plane's long side for a probe (the view's size), at most PREVIEW_MAX. */
   longest?: number
+  /** A class's click (shared/concepts.ts): which of SAM's answers to keep; its surest otherwise. */
+  size?: ConceptSize
+}
+
+/** What a selection kept is recorded as: how it was pointed at, and what it is when it has a name. */
+export interface PromptSourceAsk {
+  label?: string
+  via: PromptVia
+  /** The class it was asked for (shared/concepts.ts), so a better finder can make it again. */
+  concept?: ConceptId
 }
 
 /** A mask made, held by the plane store, ready to become a component. */

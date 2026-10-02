@@ -20,6 +20,7 @@ import type {
   SamOp,
   SamResult
 } from '../../shared/engine-types'
+import { pickBySize } from '../../shared/concepts'
 
 const ENGINE_PACKAGE = '@xuckless/pixl-engine'
 /** What Playroom cannot run without. The rest (lens, upright, AI…) are looked up per call. */
@@ -185,10 +186,19 @@ async function sam(e: PixlEngineModule, call: SamOp, signal?: AbortSignal): Prom
         signal,
         ...(maskInput ? { maskInput } : {})
       })
-      if (call.keep && r.planes[0]) lanes.set(call.lane, r.planes[0].logits)
+      // A class's answer chosen by size; else the decoder's own choice.
+      const i = call.pick
+        ? pickBySize(
+            call.pick,
+            r.planes.map((p) => p.coverage),
+            r.planes.map((p) => p.predicted_iou)
+          )
+        : 0
+      const kept = i >= 0 && r.planes[i] ? [r.planes[i]] : []
+      if (call.keep && kept[0]) lanes.set(call.lane, kept[0].logits)
       return {
         op: 'decode',
-        planes: r.planes.map((p) => ({
+        planes: (call.pick ? kept : r.planes).map((p) => ({
           png: p.png,
           predicted_iou: p.predicted_iou,
           coverage: p.coverage,

@@ -10,6 +10,7 @@ import type { EnhanceSettings } from './enhance'
 import type { MaskMode } from './engine-types'
 import type { AiDenoiseModel, BrushSource } from './recipe'
 import type { SmartReadiness } from './looks/smart'
+import type { Finders } from './concepts'
 import type { PromptGeometry, PromptVia } from './prompt'
 
 export type AiTask = 'enhance' | 'segment' | 'denoise' | 'prompt'
@@ -133,6 +134,12 @@ export interface AiCapabilities {
   get: Partial<Record<AiTask, string>>
   /** What smart looks can ask for on this build (`looks/smart.ts`). */
   smart: SmartReadiness
+  /**
+   * How a class (shared/concepts.ts) can be found on this build: by a click
+   * where SAM 2.1 runs (its model here or offered); by name once a finder
+   * that knows names ships.
+   */
+  finders: Finders
 }
 
 export const SEGMENT_LABEL: Record<SegmentTarget, string> = {

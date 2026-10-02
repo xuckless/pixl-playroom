@@ -1457,7 +1457,14 @@ Playroom work that starts once the engine request lands
       `shared/ai.ts`); turn the flag off when a sky model ships._
 - [ ] **L** · AI Remove (generative remove) in the Heal tool (E29).
 - [ ] **L** · Select People: face, skin, hair, eyes, lips, teeth, clothes
-      (E30).
+      (E30). _Since 2026-10-02 they are classes (`shared/concepts.ts`): the
+      masks menu's People group asks for a click on each and SAM 2.1 keeps
+      the answer of the class's size, the mask remembering its class. A
+      finder that knows names (a parts model, SAM 3, a detector boxing for
+      SAM) goes first in each class's `finders` and turns on in
+      `AiCapabilities.finders`; then masks with a class can be made again by
+      name, and smart looks' people parts stop waiting. Eyes, lips and teeth
+      answer on close-ups only with SAM 2.1._
 - [x] **L** · Objects by brush or box, on SAM2 (E30).
       _Done 2026-10-02 (engine 0.16): the Objects tool (Auto hover-and-click, Box, Brush; Shift/Alt
       parts), on its own engine host (`main/select/service.ts`)._

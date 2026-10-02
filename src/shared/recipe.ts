@@ -16,6 +16,7 @@ import type { RetouchSpot } from './retouch'
 import { normalisePixelStep, type PixelStep } from './pixels'
 import { normaliseEdge, type MaskEdge } from './maskedge'
 import { normalisePrompt, PROMPT_VIAS, type PromptGeometry, type PromptVia } from './prompt'
+import { conceptOf, type ConceptId } from './concepts'
 
 export const RECIPE_VERSION = 2
 
@@ -274,7 +275,14 @@ export type BrushSource =
    * when it has one. `prompt` is what it was asked (base-frame fractions),
    * so the mask can be made again; `via` how.
    */
-  | { kind: 'prompt'; label?: string; prompt?: PromptGeometry; via?: PromptVia }
+  | {
+      kind: 'prompt'
+      label?: string
+      prompt?: PromptGeometry
+      via?: PromptVia
+      /** The class it was asked for (shared/concepts.ts): found again by name when a finder can. */
+      concept?: ConceptId
+    }
 
 /** A lasso or pen outline, in normalised base-frame coordinates. */
 export interface PolygonComponent extends ComponentBase {
@@ -771,7 +779,8 @@ function brushSource(v: unknown): BrushSource | null {
       kind: 'prompt',
       ...(typeof v.label === 'string' && v.label ? { label: v.label } : {}),
       ...(prompt ? { prompt } : {}),
-      ...(PROMPT_VIAS.includes(v.via as PromptVia) ? { via: v.via as PromptVia } : {})
+      ...(PROMPT_VIAS.includes(v.via as PromptVia) ? { via: v.via as PromptVia } : {}),
+      ...(conceptOf(v.concept) ? { concept: v.concept as ConceptId } : {})
     }
   }
   return null
