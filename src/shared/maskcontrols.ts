@@ -25,7 +25,7 @@ import type { MaskComponentSetting } from './recipe'
 /**
  * An AI mask's edge before Snap to edges (engine 0.16): a little in,
  * somewhat harder (its plane is soft and blooms). Masks made since snap to
- * the picture instead (`AI_REFINE`); this stays an older recipe's.
+ * the picture instead (`MODEL_REFINE`); this stays an older recipe's.
  */
 export const AI_MASK_EDGE: MaskEdge = { shift: -15, harden: 35 }
 

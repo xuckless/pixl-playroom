@@ -14,43 +14,54 @@
  */
 import type { Refine } from './engine-types'
 import { EDGE_SHIFT_SPAN, isPlainEdge, type MaskEdge } from './maskedge'
-import type { BrushSource, MaskComponentSetting, MaskRefine } from './recipe'
+import type { MaskComponentSetting, MaskRefine } from './recipe'
 
 /** The Edge radius slider's ends, % of the frame's shorter side (the engine's 0.0005…0.05). */
 export const EDGE_RADIUS_MIN = 0.05
 export const EDGE_RADIUS_MAX = 5
 /**
- * A model's plane is 1024 px on its long side: on a 24 MP frame a texel is
- * about 0.15% of the shorter side, and the plane is a texel or so off.
+ * An older model mask's plane (before its edge was made crisp): 1024 px on
+ * its long side and soft, a texel or so off on a 24 MP frame (0.15% of the
+ * shorter side).
  */
 export const AI_EDGE_RADIUS = 0.4
 /**
- * SAM's plane is already crisp and on the photo's edges at the proxy's size
- * (main/select): only its last pixel or two is snapped. Where the ground
- * beside an edge is flat the refine blurs it over its radius, so a wider
- * one would put a halo back around the object.
+ * A model's plane now (SAM's, and the subject model's hardened one) is
+ * already crisp and on the photo's edges at the proxy's size: only its last
+ * pixel or two is snapped. Where the ground beside an edge is flat the
+ * refine blurs it over its radius, so a wider one would put a halo back
+ * around the subject (measured: 0.2% starts tracing noise as well).
  */
-export const PROMPT_EDGE_RADIUS = 0.1
+export const MODEL_EDGE_RADIUS = 0.1
 /** A hand-drawn edge is further off than a model's. */
 export const DRAWN_EDGE_RADIUS = 0.6
 /** How strong a luminance step must be to hold the selection (steps from about 0.1 do). */
 export const REFINE_EPSILON = 1e-3
 
-/** A new AI mask's: snapped, a little more than its plane is off. */
-export const AI_REFINE: MaskRefine = { on: true, radius: AI_EDGE_RADIUS }
-/** A new SAM mask's (Objects, Sky, Find object, a look's pick). */
-export const PROMPT_REFINE: MaskRefine = { on: true, radius: PROMPT_EDGE_RADIUS }
+/** A model's new mask (Subject, Background, Objects, Sky, Find object, a look's pick). */
+export const MODEL_REFINE: MaskRefine = { on: true, radius: MODEL_EDGE_RADIUS }
 
-/** The snap a model's new mask starts with: SAM's lighter than a saliency map's. */
-export function modelRefine(source: BrushSource | undefined): MaskRefine {
-  return { ...(source?.kind === 'prompt' ? PROMPT_REFINE : AI_REFINE) }
+/** The snap a model's new mask starts with. */
+export function modelRefine(): MaskRefine {
+  return { ...MODEL_REFINE }
+}
+
+/**
+ * A soft model plane made crisp, in place: its values about `at` (0…1)
+ * stretched `times` times, what is well inside and outside kept.
+ */
+export function hardenPlane(grey: Uint8Array, at: number, times: number): void {
+  const mid = at * 255
+  for (let i = 0; i < grey.length; i++)
+    grey[i] = Math.max(0, Math.min(255, Math.round((grey[i] - mid) * times + 127.5)))
 }
 
 /** The Edge radius a component's snap starts at, and resets to. */
 export function defaultEdgeRadius(c: MaskComponentSetting): number {
   if (c.kind !== 'brush') return DRAWN_EDGE_RADIUS
-  if (c.source?.kind === 'prompt') return PROMPT_EDGE_RADIUS
-  return c.source || (c.edge?.harden ?? 0) > 0 ? AI_EDGE_RADIUS : DRAWN_EDGE_RADIUS
+  if (c.source) return MODEL_EDGE_RADIUS
+  // An older recipe's model mask: no source, a hardened soft plane.
+  return (c.edge?.harden ?? 0) > 0 ? AI_EDGE_RADIUS : DRAWN_EDGE_RADIUS
 }
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))

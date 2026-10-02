@@ -7,7 +7,7 @@
  */
 import { lassoPrompt, type SelectPlane } from '../../../shared/prompt'
 import { newId, type BrushComponent } from '../../../shared/recipe'
-import { PROMPT_REFINE } from '../../../shared/refine'
+import { modelRefine } from '../../../shared/refine'
 import { layerOf, madeComponent, modeForNew } from '../panels/masks/model'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
@@ -76,7 +76,7 @@ export async function commitObjects(): Promise<void> {
       ref: made.ref,
       source: made.source,
       // A model's plane: snapped to the photo's edges at whatever size it renders.
-      refine: { ...PROMPT_REFINE }
+      refine: modelRefine()
     }
     d.edit((r) => {
       const l = layerOf(r, layerId)
@@ -147,7 +147,7 @@ export async function findObject(compId: string): Promise<void> {
           png: '',
           ref: made.ref,
           source: made.source,
-          refine: { ...PROMPT_REFINE }
+          refine: modelRefine()
         }
       }
     })

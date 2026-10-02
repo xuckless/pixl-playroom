@@ -36,7 +36,7 @@ export async function applyMaskResult(
     // A model's plane is snapped to the picture's edges at whatever resolution
     // the engine renders: a soft saliency map further than SAM's crisp one
     // (shared/refine.ts).
-    refine: modelRefine(r.source),
+    refine: modelRefine(),
     ...(r.source ? { source: r.source } : {})
   }
   const into = r.into && recipe.layers.find((l) => l.id === r.into!.layerId)

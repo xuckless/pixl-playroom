@@ -2,11 +2,12 @@
  * Segmentation (Select Subject / Background) as an AI job: a salient-object
  * model (U²-Net, or its small sibling U²-Netp — whichever is downloaded,
  * the larger first) on the engine's bundled ONNX Runtime turns the photo's
- * proxy into a grey plane, guided up by the photo's own edges to a painted
- * plane's size (the engine's `segment`, `plane_longest`). The plane is of
- * the base frame after the lens correction — what masks are placed on — and
- * becomes a painted mask component, its edge snapped to the picture's at
- * render time (shared/refine.ts); Background is the same plane inverted.
+ * proxy into a grey plane at the proxy's size, its edge pulled onto the
+ * photo's by a tight guided upsample and then hardened (`harden`). The plane
+ * is of the base frame after the lens correction — what masks are placed
+ * on — and becomes a painted mask component, its last pixel or two snapped
+ * to the picture's at render time (shared/refine.ts); Background is the same
+ * plane inverted (and hardened that way round).
  *
  * Sky has no model yet (the roster ships salient-object models only): the
  * Sky tool asks the user to click it instead (SAM 2.1, `SKY_BY_CLICK`).
@@ -14,6 +15,7 @@
 import type { AiResult, AiStartRequest } from '../../shared/ai'
 import { estimate, SEGMENT_LABEL } from '../../shared/ai'
 import { lensCorrection } from '../../shared/lens'
+import { hardenPlane } from '../../shared/refine'
 import { planeRef } from '../planeref'
 import type { EngineClient } from '../engine/client'
 import type { Library } from '../library'
@@ -27,8 +29,20 @@ import { ModelMissing, type ModelStore } from './models'
 
 type SegmentRequest = Extract<AiStartRequest, { task: 'segment' }>
 
-/** Segment planes are this many pixels on their long edge (as painted planes are). */
-const PLANE_EDGE = 1024
+/**
+ * How the model's 320 px answer reaches the proxy: guided by the photo's
+ * luminance over about one of the model's pixels. A wider box blurred the
+ * edge wherever the ground beside the subject is flat (0.02 made a glow
+ * about 100 px wide on a 24 MP portrait against a plain wall).
+ */
+const UPSAMPLE = { Guided: { radius: 0.004, epsilon: 0.001 } }
+/** The model's answer is soft over a few of its pixels: its middle is stretched this many times. */
+const HARDEN = 4
+/**
+ * Where it is stretched about, 0…1: a little above the middle, so the mask
+ * leaves the uncertain rim (light wall along dark hair) rather than taking it.
+ */
+const HARDEN_AT = 0.6
 
 /** The subject models, best first. */
 const SUBJECT_MODELS = ['u2net', 'u2netp']
@@ -87,7 +101,6 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     ctx.stage('analyse', 0, `Finding the ${SEGMENT_LABEL[req.target].toLowerCase()}`)
     const t0 = Date.now()
     const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, 2500), true), 200)
-    const long = Math.max(px.proxy.width, px.proxy.height)
     let report: Awaited<ReturnType<EngineClient['segment']>>
     try {
       // Stopped mid-run by the signal (the engine's model calls take one since 0.16).
@@ -101,11 +114,11 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
           orientation: 'Normal',
           lens: lensCorrection(recipe.lens),
           segmenter: { Classes: segmenter },
-          upsample: { Guided: { radius: 0.02, epsilon: 0.001 } },
+          upsample: UPSAMPLE,
           png: { compression: 'Fast', filter: 'Sub' },
           threads: BACKGROUND_THREADS,
-          // At a painted plane's size, straight from the model's grid.
-          plane_longest: long > PLANE_EDGE ? PLANE_EDGE : null
+          // At the proxy's own size: the edge is followed there, not stretched later.
+          plane_longest: null
         },
         { signal: ctx.signal }
       )
@@ -125,6 +138,9 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     const d = grey8(Buffer.from(plane.png))
     const grey = d.data
     if (req.target === 'background') for (let i = 0; i < grey.length; i++) grey[i] = 255 - grey[i]
+    // Measured on a 24 MP portrait: the edge went from fading over 24–75 px
+    // to 5–9 px, and to 11–13 px with the render's snap.
+    hardenPlane(grey, HARDEN_AT, HARDEN)
     ctx.progress(0.8)
     const png = encodeGreyPng(grey, d.width, d.height).toString('base64')
     const ref = planeRef(png)
