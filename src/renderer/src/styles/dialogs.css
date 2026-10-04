@@ -825,3 +825,169 @@ button.keybind-key.waiting {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* ── Export: four steps of the editor's own cards ── */
+.modal.export-wizard {
+  width: min(760px, calc(100vw - 48px));
+}
+.export-wizard .ew-steps {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.export-wizard .ew-step {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--hair);
+  border-radius: var(--r);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.export-wizard .ew-step:hover {
+  color: var(--text2);
+}
+.export-wizard .ew-step.on {
+  color: #fff;
+  border-color: var(--acc-a55);
+  background: linear-gradient(180deg, rgba(157, 139, 234, 0.26), rgba(123, 104, 216, 0.1));
+}
+.export-wizard .ew-step.done:not(.on) {
+  color: var(--text2);
+}
+.export-wizard .ew-n {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 11px;
+  border: 1px solid var(--hair2);
+}
+.export-wizard .ew-step.on .ew-n {
+  border-color: var(--acc-a55);
+}
+.export-wizard .ew-step.bad .ew-n {
+  color: #fff;
+  background: var(--bad, #c2494d);
+  border-color: transparent;
+}
+.export-wizard .ew-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 320px;
+}
+.export-wizard .ew-body fieldset {
+  animation: none;
+}
+.export-wizard .card-body > * + * {
+  margin-top: 6px;
+}
+.export-wizard .ew-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.export-wizard .ew-box .field {
+  grid-template-columns: 56px minmax(0, 1fr);
+}
+.export-wizard .ew-x {
+  color: var(--muted);
+}
+.export-wizard .ew-intent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.export-wizard .ew-checks {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  justify-content: start;
+  gap: 2px 18px;
+}
+.export-wizard .ew-summary {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--text);
+}
+.export-wizard .ew-guards {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.export-wizard .ew-guards li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text2);
+}
+.export-wizard .ew-guards li.minor {
+  color: var(--muted);
+}
+.export-wizard .ew-guards li.block {
+  color: var(--text);
+}
+.export-wizard .ew-mark {
+  text-align: center;
+  font-weight: 700;
+}
+.export-wizard .ew-guards li.block .ew-mark {
+  color: var(--bad, #e0686c);
+}
+.export-wizard .ew-guards li.warn .ew-mark {
+  color: var(--warn, #e3b04b);
+}
+.export-wizard .ew-chip {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 13px;
+  margin-right: auto;
+}
+.export-wizard .ew-chip.block {
+  color: #fff;
+  background: rgba(194, 73, 77, 0.55);
+  border-color: rgba(224, 104, 108, 0.7);
+}
+.export-wizard .ew-chip.warn {
+  color: var(--text);
+  background: rgba(227, 176, 75, 0.18);
+  border-color: rgba(227, 176, 75, 0.45);
+}
+.export-wizard .ew-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.export-wizard .ew-preview {
+  margin: 10px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.export-wizard .ew-preview img {
+  width: 100%;
+  max-height: 46vh;
+  object-fit: contain;
+  border-radius: var(--r);
+  border: 1px solid var(--hair2);
+  background: var(--bg2);
+}
+.export-wizard .ew-preview figcaption {
+  font-size: 12px;
+  color: var(--text2);
+}

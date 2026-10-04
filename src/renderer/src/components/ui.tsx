@@ -209,6 +209,8 @@ export interface SliderProps {
   tip?: Tip
   /** 'log': the bar runs on a log scale (finer at the small end); values stay as they are. */
   scale?: 'linear' | 'log'
+  /** Marks along the rail at this many evenly spaced stops (a stepped slider: 2 or more). */
+  ticks?: number
   /**
    * Whether moving it changes the picture (the default), so the mask overlay
    * steps aside while it moves; false for a slider that shapes a mask.
@@ -259,6 +261,7 @@ export function Slider({
   title,
   tip,
   scale = 'linear',
+  ticks,
   adjusts = true
 }: SliderProps): React.JSX.Element {
   const log = scale === 'log'
@@ -396,6 +399,13 @@ export function Slider({
         style={track ? { background: track } : undefined}
       />
       {showZero && <div className="sl-zero" />}
+      {ticks !== undefined && ticks > 1 && (
+        <div className="sl-ticks" aria-hidden>
+          {Array.from({ length: ticks }, (_, i) => (
+            <i key={i} style={{ '--i': i / (ticks - 1) } as React.CSSProperties} />
+          ))}
+        </div>
+      )}
       {!track && <div className="sl-fill" />}
       <div className="sl-knob" />
       <div className="sl-text">
@@ -425,6 +435,55 @@ export function Slider({
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * A slider over a few named stops (a format, a chroma): the editor's slider,
+ * with a tick for each stop and the stop's name where the number would be.
+ * It snaps to the stops; the bar fills from the first.
+ */
+export function StepSlider<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+  tip,
+  title,
+  disabled
+}: {
+  label: string
+  value: T
+  options: { value: T; label: string }[]
+  onChange: (v: T) => void
+  tip?: Tip
+  title?: string
+  disabled?: boolean
+}): React.JSX.Element {
+  const at = Math.max(
+    0,
+    options.findIndex((o) => o.value === value)
+  )
+  return (
+    <Slider
+      label={label}
+      value={at}
+      min={0}
+      max={options.length - 1}
+      step={1}
+      def={0}
+      ticks={options.length}
+      format={(i) => options[Math.min(options.length - 1, Math.max(0, Math.round(i)))].label}
+      onChange={(i) => {
+        const next = options[Math.min(options.length - 1, Math.max(0, Math.round(i)))]
+        if (next.value !== value) onChange(next.value)
+      }}
+      onCommit={() => undefined}
+      adjusts={false}
+      tip={tip}
+      title={title}
+      disabled={disabled}
+    />
   )
 }
 

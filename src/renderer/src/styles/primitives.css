@@ -490,6 +490,20 @@ input[type='checkbox']:disabled {
   background: var(--hair2);
   pointer-events: none;
 }
+.sl-ticks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sl-ticks i {
+  position: absolute;
+  top: calc(50% - 1.5px);
+  left: calc(var(--knob) / 2 + var(--travel) * var(--i) - 1.5px);
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--hair2);
+}
 .sl-fill {
   position: absolute;
   top: 1px;
