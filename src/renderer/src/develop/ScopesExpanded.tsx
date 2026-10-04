@@ -15,7 +15,7 @@ import { useScopesView, type ScopesTab } from '../state/scopesView'
 import { BigHistogram } from './scopes/BigHistogram'
 import { CieChart } from './scopes/CieChart'
 import { MetricsPanel } from './scopes/MetricsPanel'
-import { pickHue } from './Scopes'
+import { pickHue } from './huePick'
 
 const TABS: { value: ScopesTab; label: string }[] = [
   { value: 'histogram', label: 'Histogram' },

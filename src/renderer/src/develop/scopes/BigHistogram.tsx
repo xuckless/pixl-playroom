@@ -7,8 +7,7 @@
  */
 import { useMemo, useState } from 'react'
 import type { ImageStats } from '../../../../shared/engine-types'
-import { HDR_FLOOR_STOPS, stopsBins, stopsX } from '../../../../shared/scopes'
-import { areaPath } from '../../components/charts'
+import { HDR_FLOOR_STOPS, areaPath, stopsBins, stopsX } from '../../../../shared/scopes'
 
 type Mode = 'overlay' | 'parade' | 'red' | 'green' | 'blue' | 'luma'
 
@@ -64,13 +63,15 @@ export function BigHistogram({
   const [ghost, setGhost] = useState(true)
   const [wantHdr, setWantHdr] = useState(true)
   const showHdr = wantHdr && hdr !== null
-  const now: Source | null = showHdr
-    ? { stats: hdr, hdr: true }
-    : stats
-      ? { stats, hdr: false }
-      : null
+  const now = useMemo<Source | null>(
+    () => (showHdr && hdr ? { stats: hdr, hdr: true } : stats ? { stats, hdr: false } : null),
+    [showHdr, hdr, stats]
+  )
   // The ungraded picture is measured on the screen scale only.
-  const then: Source | null = !showHdr && ghost && before ? { stats: before, hdr: false } : null
+  const then = useMemo<Source | null>(
+    () => (!showHdr && ghost && before ? { stats: before, hdr: false } : null),
+    [showHdr, ghost, before]
+  )
 
   const chart = useMemo(() => {
     if (!now) return null

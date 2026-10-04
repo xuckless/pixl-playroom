@@ -3,7 +3,7 @@ import { hslToRgb } from '../../../shared/palette'
 import { simulateVision, type VisionKind } from '../../../shared/scopemetrics'
 import type { HueBin, ImageStats } from '../../../shared/engine-types'
 import type { HslBand } from '../../../shared/recipe'
-import { stopsBins, stopsX } from '../../../shared/scopes'
+import { areaPath, stopsBins, stopsX } from '../../../shared/scopes'
 import { withKey } from '../lib/commands'
 import { bandOfHue } from '../lib/helpers'
 import { Icon } from './icons'
@@ -21,22 +21,6 @@ const HUE_TIP: Tip = {
   what: 'How much of each colour the photo holds; the faint bars are the photo before your edits.',
   expect: 'Click a bar to open that colour in the Colour mixer.',
   tip: 'Shift-click a bar to make a mask of that colour.'
-}
-
-export function areaPath(
-  counts: number[],
-  w: number,
-  h: number,
-  max: number,
-  log: boolean
-): string {
-  const n = counts.length
-  if (n === 0) return ''
-  const scale = (c: number): number => (log ? Math.log1p(c) / Math.log1p(max) : c / max)
-  const pts = counts.map(
-    (c, i) => `${((i / (n - 1)) * w).toFixed(1)},${(h - scale(c) * (h - 2)).toFixed(1)}`
-  )
-  return `M0,${h} L${pts.join(' L')} L${w},${h} Z`
 }
 
 /**

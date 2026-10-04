@@ -50,3 +50,20 @@ export function stopsBins(
   }
   return bins
 }
+
+/** The closed SVG path of a histogram's counts across `w × h`, scaled to `max` (log or linear). */
+export function areaPath(
+  counts: number[],
+  w: number,
+  h: number,
+  max: number,
+  log: boolean
+): string {
+  const n = counts.length
+  if (n === 0) return ''
+  const scale = (c: number): number => (log ? Math.log1p(c) / Math.log1p(max) : c / max)
+  const pts = counts.map(
+    (c, i) => `${((i / (n - 1)) * w).toFixed(1)},${(h - scale(c) * (h - 2)).toFixed(1)}`
+  )
+  return `M0,${h} L${pts.join(' L')} L${w},${h} Z`
+}
