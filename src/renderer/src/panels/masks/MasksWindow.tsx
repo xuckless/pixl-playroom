@@ -35,15 +35,17 @@ import { useReorder } from './useReorder'
 import { keyHint, withKey } from '../../lib/commands'
 import { touchInteracting } from '../../lib/interacting'
 
-/** The drawing and range tools, one click from the selected mask's add bar. */
+/**
+ * The tools one click from the selected mask's add bar: the drawing tools
+ * and Object detection. The bidirectional gradient and the colour and
+ * luminance ranges are in the "…" picker with the rest.
+ */
 const ADD_TOOLS: { kind: MaskToolKind; icon: IconName; label: string }[] = [
   { kind: 'brush', icon: 'brush', label: 'Brush' },
   { kind: 'linear', icon: 'linear', label: 'Linear gradient' },
   { kind: 'radial', icon: 'radial', label: 'Radial gradient' },
-  { kind: 'bidirectional', icon: 'bidirectional', label: 'Bidirectional gradient' },
   { kind: 'polygon', icon: 'lasso', label: 'Lasso' },
-  { kind: 'color', icon: 'colourRange', label: 'Colour range' },
-  { kind: 'luminance', icon: 'lumRange', label: 'Luminance range' }
+  { kind: 'objects', icon: 'objects', label: 'Object detection' }
 ]
 
 const JOIN_VERB: Record<MaskMode, string> = {

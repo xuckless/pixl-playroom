@@ -20,14 +20,10 @@ const GHOST_ALPHA = 0.85
 /** With the overlay off, how long the changing mask's outline stays, then fades (ms). */
 const GHOST_HOLD_MS = 900
 const GHOST_FADE_MS = 400
-/** How long the glass's rim light flows after the mask changes. */
-const FLOW_MS = 1400
 /** A hovered mask shows at least this strongly, overlay on or off. */
 const HOVER_OPACITY = 55
 /** So does the Objects tool's selection while it is made. */
 const SELECT_OPACITY = 55
-
-const reducedMotion = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /** The shade's strength for a view at the overlay's opacity (0…100): glass reads stronger. */
 function alphaFor(view: ViewMode, opacity: number): number {
@@ -191,9 +187,6 @@ export function MaskCanvas({
   // When the mask's shape last changed: the overlay-off outline fades after it.
   const ghostFrom = useRef(0)
   const ghostFrame = useRef(0)
-  // The glass's rim light: flowing for a moment after the mask changes.
-  const flowFrom = useRef(0)
-  const flowFrame = useRef(0)
 
   // Set before the edit reaches the engine: the store calls this inside the
   // edit, and the edit is sent as the next number.
@@ -426,8 +419,6 @@ export function MaskCanvas({
           ? Math.max(o.opacity, SELECT_OPACITY)
           : o.opacity
       const t = performance.now()
-      const flow =
-        view === 'glass' && !reducedMotion() ? Math.max(0, 1 - (t - flowFrom.current) / FLOW_MS) : 0
       gl.shade({
         layerInvert,
         live: live.current,
@@ -441,8 +432,6 @@ export function MaskCanvas({
             ? Math.max(0.9, opacity / 100)
             : alphaFor(view, opacity),
         reveal: revealAt.current,
-        time: t / 1000,
-        flow: flow * flow,
         px: w > 0 ? cw / w : 1
       })
       stats.live = live.current
@@ -501,20 +490,6 @@ export function MaskCanvas({
     ghostFrame.current = requestAnimationFrame(step)
     return () => cancelAnimationFrame(ghostFrame.current)
   }, [overlay, components])
-
-  // A change to the mask's shape sets the glass's rim light flowing, then still.
-  useEffect(() => {
-    if (!glass || !components || reducedMotion()) return
-    flowFrom.current = performance.now()
-    cancelAnimationFrame(flowFrame.current)
-    const step = (): void => {
-      redraw.current?.()
-      if (performance.now() - flowFrom.current < FLOW_MS)
-        flowFrame.current = requestAnimationFrame(step)
-    }
-    flowFrame.current = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(flowFrame.current)
-  }, [glass, components])
 
   useEffect(() => {
     if (isHover || !reveal || reveal.layerId !== layerId) return

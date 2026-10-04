@@ -27,7 +27,7 @@ export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
 export type OverlayMode =
   'glass' | 'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
 export const OVERLAY_MODES: { value: OverlayMode; label: string }[] = [
-  { value: 'glass', label: 'Molten glass' },
+  { value: 'glass', label: 'Glass' },
   { value: 'color', label: 'Colour overlay' },
   { value: 'color-bw', label: 'Colour overlay on B&W' },
   { value: 'image-black', label: 'Image on black' },
