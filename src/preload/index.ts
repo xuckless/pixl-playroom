@@ -4,6 +4,7 @@ import type { GuideLine } from '../shared/upright'
 import type { P as SpotPoint, RetouchSpot } from '../shared/retouch'
 import type { PixelStep } from '../shared/pixels'
 import type { ExportSettings } from '../shared/export'
+import type { Guard } from '../shared/exportGuards'
 import type { LensProfile } from '../shared/lens'
 import {
   IPC,
@@ -38,6 +39,7 @@ import {
   type MetaPatch,
   type MetaTextPatch,
   type Preset,
+  type ExportPreview,
   type LegacyPreview,
   type Prefs,
   type RegionRequest,
@@ -286,6 +288,13 @@ const api = {
     savePreset: (p: Omit<ExportPreset, 'id'> & { id?: string }) =>
       call<ExportPreset>(IPC.export.savePreset, p),
     removePreset: (id: string) => call<void>(IPC.export.removePreset, id),
+    /** One photo as the export would write it, at a reduced size. A newer call stops the one before. */
+    preview: (key: string, settings: ExportSettings) =>
+      call<ExportPreview>(IPC.export.preview, key, settings),
+    cancelPreview: () => call<void>(IPC.export.cancelPreview),
+    /** The checks the disk and the photos make: folder, room, replaced files, size. */
+    check: (keys: string[], settings: ExportSettings) =>
+      call<Guard[]>(IPC.export.check, keys, settings),
     onProgress: (cb: (p: ExportProgress) => void) => on(IPC.export.progress, cb)
   },
   enhance: {

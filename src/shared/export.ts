@@ -40,7 +40,16 @@ export const FORMAT_EXT: Record<ExportFormat, string> = {
   jxl: 'jxl'
 }
 
-export type ResizeMode = 'none' | 'long' | 'short' | 'width' | 'height' | 'megapixels' | 'percent'
+export type ResizeMode =
+  | 'none'
+  | 'long'
+  | 'short'
+  | 'width'
+  | 'height'
+  /** Fit inside a width × height box, the picture's shape kept. */
+  | 'box'
+  | 'megapixels'
+  | 'percent'
 
 /** Output sharpening: after the resize, for where the picture will be seen. */
 export interface OutputSharpenSetting {
@@ -74,7 +83,8 @@ export interface ExportSettings {
   colorSpace: 'Srgb' | 'DisplayP3' | 'AdobeRgb' | 'Rec2020'
   intent: RenderingIntent
   blackPointCompensation: boolean
-  resize: { mode: ResizeMode; value: number; enlarge: boolean }
+  /** `value` is the width in `box` mode, `valueH` its height; every other mode reads `value` alone. */
+  resize: { mode: ResizeMode; value: number; valueH: number; enlarge: boolean }
   metadata: MetadataPolicy
   /** all: the photo's metadata plus its title, caption, keywords; copyrightOnly: only the copyright. */
   metaMode: 'all' | 'copyrightOnly'
@@ -143,7 +153,7 @@ export function defaultExportSettings(): ExportSettings {
     colorSpace: 'Srgb',
     intent: 'RelativeColorimetric',
     blackPointCompensation: true,
-    resize: { mode: 'none', value: 2048, enlarge: false },
+    resize: { mode: 'none', value: 2048, valueH: 2048, enlarge: false },
     metadata: { exif: true, icc: true, xmp: true, iptc: true },
     metaMode: 'all',
     removeLocation: false,
@@ -427,12 +437,64 @@ export function buildEncode(
   }
 }
 
+/** The longest side an export preview is rendered at: enough to judge colour and tone on one screen. */
+export const PREVIEW_EDGE = 1600
+
+/**
+ * The settings an export preview renders with: what the picture will look
+ * like through the same colour path and encoder, as the window can show it.
+ * A format the window cannot show (JPEG XL, TIFF) is written as PNG, an HDR
+ * output kept or expanded is shown as its SDR picture, and the metadata a
+ * preview does not need (all but the profile, which the colour needs) is
+ * left out. Everything that moves pixels stays as it is.
+ */
+export function previewSettings(s: ExportSettings): ExportSettings {
+  const format: ExportFormat = s.format === 'jxl' || s.format === 'tiff' ? 'png' : s.format
+  const hdr =
+    s.hdr.mode === 'keep' || s.hdr.mode === 'expand' ? { ...s.hdr, mode: 'sdr' as const } : s.hdr
+  return {
+    ...s,
+    format,
+    bitDepth: 8,
+    hdr,
+    metaMode: 'all',
+    metadata: { exif: false, icc: true, xmp: false, iptc: false },
+    removeLocation: false,
+    copyright: ''
+  }
+}
+
+/** The size a preview is rendered at: the export's own when that is smaller than the preview edge. */
+export function previewResize(
+  s: ExportSettings,
+  w: number,
+  h: number,
+  edge = PREVIEW_EDGE
+): Resize {
+  const full = buildResize(s, w, h)
+  const out =
+    full === 'None'
+      ? { w, h }
+      : 'Exact' in full
+        ? { w: full.Exact.width, h: full.Exact.height }
+        : { w, h }
+  const long = Math.max(out.w, out.h)
+  if (long <= edge) return full
+  const k = edge / long
+  return {
+    Exact: { width: Math.max(1, Math.round(out.w * k)), height: Math.max(1, Math.round(out.h * k)) }
+  }
+}
+
 /** The output size for a framed picture of `w × h`, or `None`. */
 export function buildResize(s: ExportSettings, w: number, h: number): Resize {
-  const { mode, value, enlarge } = s.resize
-  if (mode === 'none' || !(value > 0)) return 'None'
+  const { mode, value, valueH, enlarge } = s.resize
+  if (mode === 'none' || !(value > 0) || (mode === 'box' && !(valueH > 0))) return 'None'
   let k: number
   switch (mode) {
+    case 'box':
+      k = Math.min(value / w, valueH / h)
+      break
     case 'long':
       k = value / Math.max(w, h)
       break

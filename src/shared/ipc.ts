@@ -231,6 +231,10 @@ export const IPC = {
     presets: 'export:presets',
     savePreset: 'export:save-preset',
     removePreset: 'export:remove-preset',
+    /** One photo as the export would write it, for the dialog; and the checks the disk and the photos make. */
+    preview: 'export:preview',
+    cancelPreview: 'export:cancel-preview',
+    check: 'export:check',
     /** main → renderer */
     progress: 'export:progress'
   },
@@ -727,6 +731,19 @@ export interface ExportPreset {
   id: string
   name: string
   settings: ExportSettings
+}
+
+/** One photo as an export would write it, at a reduced size (main/exporter.ts `preview`). */
+export interface ExportPreview {
+  url: string
+  /** The preview's own size, not the export's. */
+  width: number
+  height: number
+  /** The preview file's size in bytes: the encoder's quality, at that size. */
+  bytes: number
+  format: string
+  /** Where the preview differs from the export, and what the engine said. */
+  notes: string[]
 }
 
 export interface ExportProgress {

@@ -7,10 +7,11 @@
  */
 import { BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
-import { mkdir } from 'fs/promises'
-import { basename, extname, join } from 'path'
+import { constants as fsConstants } from 'fs'
+import { access, mkdir, rm, statfs } from 'fs/promises'
+import { basename, dirname, extname, join } from 'path'
 import { compile, framingWarps, orientedFrame } from '../shared/compile'
-import type { ColorPolicy, ConvertRequest, Dither } from '../shared/engine-types'
+import type { ColorPolicy, ConvertReport, ConvertRequest, Dither } from '../shared/engine-types'
 import {
   buildColor,
   buildEncode,
@@ -23,13 +24,19 @@ import {
   metadataPlan,
   outputSharpen,
   outputSharpenRequest,
+  previewResize,
+  previewSettings,
   sdrRendition,
   supportsGainMap,
   supportsHdr,
   withGainMap,
   type ExportSettings
 } from '../shared/export'
-import { IPC, type ExportProgress } from '../shared/ipc'
+import { FORMAT_NAME, receiptNotes, type Guard } from '../shared/exportGuards'
+import { IPC, type ExportPreview, type ExportProgress, type LibraryItem } from '../shared/ipc'
+import { READ_LIMITS } from '../shared/limits'
+import { paths } from './paths'
+import { cacheUrl } from './protocol'
 import { brushPlanes } from './brushes'
 import { embedMetadata } from './exiftool'
 import { exists, sameFile } from './exists'
@@ -58,6 +65,38 @@ import {
 interface Job {
   id: string
   abort: AbortController
+}
+
+/** Photos probed for their size in a preflight: a probe is cached, but a thousand are still a wait. */
+const PROBE_LIMIT = 100
+/** The room an export leaves, below which it is refused. */
+const MIN_FREE = 50 * 1024 * 1024
+
+/** The nearest folder that exists at or above `dir`: where a missing one would be made. */
+async function nearestExisting(dir: string): Promise<string> {
+  let d = dir
+  while (!(await exists(d))) {
+    const up = dirname(d)
+    if (up === d) break
+    d = up
+  }
+  return d
+}
+
+/** Bytes free on the disk `dir` is on, or null when the system will not say. */
+async function freeBytes(dir: string): Promise<number | null> {
+  try {
+    const st = await statfs(dir)
+    return st.bavail * st.bsize
+  } catch {
+    return null
+  }
+}
+
+function formatBytes(n: number): string {
+  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
+  if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} MB`
+  return `${Math.max(1, Math.round(n / 1024))} KB`
 }
 
 export class Exporter {
@@ -154,6 +193,24 @@ export class Exporter {
     signal: AbortSignal,
     warn: (message: string) => void
   ): Promise<string | null> {
+    return (await this.render(key, s, seq, signal, warn))?.out ?? null
+  }
+
+  /**
+   * The export of one item; with `preview` the same request at the preview's
+   * size and settings (`previewSettings`), written to `preview.out`: what
+   * the picture will look like through the same colour path and encoder.
+   * Returns the written path and the engine's report, or null when skipped.
+   */
+  private async render(
+    key: string,
+    s0: ExportSettings,
+    seq: number,
+    signal: AbortSignal,
+    warn: (message: string) => void,
+    preview?: { out: string }
+  ): Promise<{ out: string; report: ConvertReport } | null> {
+    const s = preview ? previewSettings(s0) : s0
     await this.sessions.flush(key)
     const row = await this.library.photoRow(key)
     const item = await this.library.item(key)
@@ -219,30 +276,25 @@ export class Exporter {
     const pqOut = pixl?.headroom === true && (s.format === 'jxl' || s.format === 'png')
     const { encode, depth } = buildEncode(s, BACKGROUND_THREADS * 2, hdrOut || pqOut)
 
-    // Beside the photo: where it is listed (its copy may be the project's own).
-    const folder = s.folder ?? row.folder
-    const target = s.subfolder ? join(folder, s.subfolder) : folder
-    await mkdir(target, { recursive: true })
-    const stem = expandTemplate(s.template, {
-      name: basename(row.name, extname(row.name)),
-      ext: row.ext,
-      seq,
-      date: new Date().toISOString().slice(0, 10),
-      rating: item?.rating ?? 0,
-      copy: item?.copyName ?? ''
-    })
-    const ext = FORMAT_EXT[s.format]
-    let out = join(target, `${stem}.${ext}`)
-    if (await exists(out)) {
-      if (s.collision === 'skip') return null
-      if (s.collision === 'suffix') {
-        let n = 2
-        while (await exists(join(target, `${stem}-${n}.${ext}`))) n++
-        out = join(target, `${stem}-${n}.${ext}`)
+    let out: string
+    if (preview) out = preview.out
+    else {
+      // Beside the photo: where it is listed (its copy may be the project's own).
+      const { target, stem } = this.nameOf(row, item, s, seq)
+      await mkdir(target, { recursive: true })
+      const ext = FORMAT_EXT[s.format]
+      out = join(target, `${stem}.${ext}`)
+      if (await exists(out)) {
+        if (s.collision === 'skip') return null
+        if (s.collision === 'suffix') {
+          let n = 2
+          while (await exists(join(target, `${stem}-${n}.${ext}`))) n++
+          out = join(target, `${stem}-${n}.${ext}`)
+        }
       }
+      // By the file, not the name: IMG_1.jpg is IMG_1.JPG on a case-insensitive disk.
+      if (await sameFile(out, row.path)) throw new Error('the export would overwrite the original')
     }
-    // By the file, not the name: IMG_1.jpg is IMG_1.JPG on a case-insensitive disk.
-    if (await sameFile(out, row.path)) throw new Error('the export would overwrite the original')
 
     // An HDR source stays HDR only where the settings ask and the format can
     // say so; otherwise it is tone mapped like any SDR delivery.
@@ -253,7 +305,7 @@ export class Exporter {
         ? { ...s, hdr: { ...s.hdr, mode: 'sdr' } }
         : s
     const peak = info.peak_nits ?? s.hdr.peak
-    const resize = buildResize(s, cw, ch)
+    const resize = preview ? previewResize(s, cw, ch) : buildResize(s, cw, ch)
     // The watermark, placed on the output as it will be: cropped, then resized.
     const wm = s.watermark
     const overlay =
@@ -365,6 +417,10 @@ export class Exporter {
     // What the engine's own path did, in its words: for the log and the receipt.
     const m = report.color.master
     if (m) log.info('export master', key, m.output, ...m.notes)
+    if (preview) return { out, report }
+    // The receipt: what landed against what the settings asked.
+    for (const note of receiptNotes(request.metadata, report.metadata_written, m?.notes ?? []))
+      warn(note)
 
     // The engine copies blocks as they are; the photo's own fields, the
     // copyright and the location are ExifTool's. The picture is written by
@@ -378,6 +434,186 @@ export class Exporter {
       log.warn('export metadata failed', out, err)
       warn(`metadata not written: ${(err as Error).message}`)
     }
+    return { out, report }
+  }
+
+  /** Where an item's file goes: its folder (beside the original unless one is chosen) and its name. */
+  private nameOf(
+    row: PhotoRow,
+    item: LibraryItem | null | undefined,
+    s: ExportSettings,
+    seq: number
+  ): { target: string; stem: string } {
+    const folder = s.folder ?? row.folder
+    return {
+      target: s.subfolder ? join(folder, s.subfolder) : folder,
+      stem: expandTemplate(s.template, {
+        name: basename(row.name, extname(row.name)),
+        ext: row.ext,
+        seq,
+        date: new Date().toISOString().slice(0, 10),
+        rating: item?.rating ?? 0,
+        copy: item?.copyName ?? ''
+      })
+    }
+  }
+
+  private previewAbort: AbortController | null = null
+  private previewFile: string | null = null
+
+  /**
+   * One photo as the export would write it, at the preview's size: the same
+   * request through the same colour path and encoder (`previewSettings` says
+   * where it differs), for the export dialog to show. A newer preview stops
+   * the one before.
+   */
+  async preview(key: string, s: ExportSettings): Promise<ExportPreview> {
+    this.previewAbort?.abort()
+    const abort = new AbortController()
+    this.previewAbort = abort
+    const shown = previewSettings(s)
+    const dir = join(paths.cacheRoot(), 'export-preview')
+    await mkdir(dir, { recursive: true })
+    const out = join(dir, `${Math.random().toString(36).slice(2)}.${FORMAT_EXT[shown.format]}`)
+    const notes: string[] = []
+    try {
+      const done = await this.render(key, s, 1, abort.signal, (m) => notes.push(m), { out })
+      if (!done) throw new Error('nothing was rendered')
+      if (this.previewFile && this.previewFile !== out) await rm(this.previewFile, { force: true })
+      this.previewFile = out
+      const { report } = done
+      const shownAs: string[] = []
+      if (shown.format !== s.format)
+        shownAs.push(
+          `Shown as ${FORMAT_NAME[shown.format]}: the window cannot show ${FORMAT_NAME[s.format]}.`
+        )
+      if (shown.hdr.mode !== s.hdr.mode) shownAs.push('Shown as its SDR picture.')
+      return {
+        url: cacheUrl(out, Date.now()),
+        width: report.width,
+        height: report.height,
+        bytes: report.output_bytes,
+        format: shown.format,
+        notes: [...shownAs, ...notes]
+      }
+    } catch (err) {
+      await rm(out, { force: true }).catch(() => undefined)
+      throw err
+    } finally {
+      if (this.previewAbort === abort) this.previewAbort = null
+    }
+  }
+
+  cancelPreview(): void {
+    this.previewAbort?.abort()
+  }
+
+  /**
+   * The checks an export's settings cannot make on their own: a folder that
+   * cannot be written, too little room, files that would be replaced or
+   * skipped, a photo past what the engine opens. The same `Guard`s as
+   * `exportGuards`, raised before anything is written.
+   */
+  async preflight(keys: string[], s: ExportSettings): Promise<Guard[]> {
+    const out: Guard[] = []
+    const folders = new Set<string>()
+    let existing = 0
+    let replaced = false
+    let need = 0
+    const big: string[] = []
+    for (const [i, key] of keys.entries()) {
+      const row = await this.library.photoRow(key).catch(() => null)
+      if (!row) continue
+      const item = await this.library.item(key)
+      const { target, stem } = this.nameOf(row, item, s, i + 1)
+      folders.add(target)
+      const file = join(target, `${stem}.${FORMAT_EXT[s.format]}`)
+      if (await exists(file)) {
+        if (await sameFile(file, row.path)) replaced = true
+        else existing++
+      }
+      need += row.size * 2
+      if (i < PROBE_LIMIT) {
+        const info = await this.library.probe(row).catch(() => null)
+        if (
+          info &&
+          (info.width * info.height > READ_LIMITS.max_pixels ||
+            Math.max(info.width, info.height) > READ_LIMITS.max_side)
+        )
+          big.push(row.name)
+      }
+    }
+    if (replaced)
+      out.push({
+        id: 'overwrite-original',
+        severity: 'block',
+        step: 'review',
+        message:
+          'A file would be written over its original: change the name, the folder or the format.'
+      })
+    for (const dir of folders) {
+      const there = await nearestExisting(dir)
+      const writable = await access(there, fsConstants.W_OK).then(
+        () => true,
+        () => false
+      )
+      if (!writable) {
+        out.push({
+          id: 'folder-unwritable',
+          severity: 'block',
+          step: 'review',
+          message: `Playroom cannot write to ${there}: choose another folder.`
+        })
+        continue
+      }
+      const free = await freeBytes(there)
+      if (free !== null && free < MIN_FREE)
+        out.push({
+          id: 'disk-full',
+          severity: 'block',
+          step: 'review',
+          message: `Only ${formatBytes(free)} is free where ${there} is.`
+        })
+      else if (free !== null && free < need + MIN_FREE)
+        out.push({
+          id: 'disk-low',
+          severity: 'warn',
+          step: 'review',
+          message: `${formatBytes(free)} is free where ${there} is; this export may need about ${formatBytes(need)}.`
+        })
+    }
+    if (existing > 0) {
+      const many = existing === 1 ? '1 file already exists' : `${existing} files already exist`
+      out.push(
+        s.collision === 'overwrite'
+          ? {
+              id: 'collide',
+              severity: 'warn',
+              step: 'review',
+              message: `${many} and will be replaced.`
+            }
+          : s.collision === 'skip'
+            ? {
+                id: 'collide',
+                severity: 'warn',
+                step: 'review',
+                message: `${many} and will be skipped.`
+              }
+            : {
+                id: 'collide',
+                severity: 'minor',
+                step: 'review',
+                message: `${many}: the new ones get a number.`
+              }
+      )
+    }
+    if (big.length > 0)
+      out.push({
+        id: 'too-large',
+        severity: 'warn',
+        step: 'format',
+        message: `${big[0]}${big.length > 1 ? ` and ${big.length - 1} more are` : ' is'} larger than Playroom opens (${READ_LIMITS.max_pixels / 1e6} megapixels) and will fail.`
+      })
     return out
   }
 }
