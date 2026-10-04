@@ -51,7 +51,6 @@ import { ObjectsTool } from './ObjectsTool'
 import { LoupeHud } from './LoupeHud'
 import { GradientTools } from './GradientTools'
 import { LookPick } from './LookPick'
-import { MaskPins } from './MaskPins'
 import { AiScan } from '../../fx/AiScan'
 import { MaskOverlay } from './MaskOverlay'
 import { useGreyUnderOverlay } from './useGreyUnderOverlay'
@@ -581,7 +580,6 @@ export function Loupe(): React.JSX.Element {
             <Guides kind="grid" w={vrect.w} h={vrect.h} fine strong />
           </div>
         )}
-        {vrect && <MaskPins rect={vrect} g={g ?? null} />}
         {vrect && <AiScan rect={vrect} />}
         {tool === 'brush' && vrect && g && <BrushLayer rect={vrect} box={size} g={g} />}
         {tool === 'polygon' && vrect && g && <PolygonLayer rect={vrect} g={g} />}

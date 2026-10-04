@@ -35,7 +35,6 @@ export const OVERLAY_MODES: { value: OverlayMode; label: string }[] = [
   { value: 'white-black', label: 'White on black' },
   { value: 'outline', label: 'Outline' }
 ]
-export type PinsMode = 'auto' | 'always' | 'never'
 
 export interface BrushSettings {
   /** Diameter in screen pixels. */
@@ -64,8 +63,6 @@ export interface MaskOverlaySettings {
   showAll: boolean
   /** The selected mask's components each in a colour of their own (the colour view). */
   byComponent?: boolean
-  /** When the on-canvas pins and handles show. */
-  pins: PinsMode
   /** Hide the overlay while a slider moves, so the edit itself shows (Lightroom's auto toggle). */
   autoToggle: boolean
 }
@@ -75,8 +72,14 @@ export const DEFAULT_MASK_OVERLAY: MaskOverlaySettings = {
   hue: 350,
   opacity: 45,
   showAll: false,
-  pins: 'auto',
   autoToggle: true
+}
+
+/** A saved overlay setting without `pins`: the pin markers are gone, the handles show on hover. */
+function withoutPins<T extends object>(o: T): T {
+  const copy = { ...o } as Record<string, unknown>
+  delete copy.pins
+  return copy as T
 }
 
 export interface HealSettings {
@@ -317,7 +320,7 @@ export const useUi = create<UiState>()(
           // Settings saved before a field existed take its default.
           enhance: normaliseEnhance(p.enhance),
           masksWin: { ...DEFAULT_MASKS_WIN, ...p.masksWin },
-          maskOverlay: { ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay },
+          maskOverlay: withoutPins({ ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay }),
           denoise: { model: 'drunet-color', strength: 100, ...p.denoise },
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
           cardsOpen:

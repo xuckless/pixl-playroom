@@ -1758,12 +1758,32 @@ and a before/after on each project's first open.
 - [ ] The lockfile: `pnpm install` with a PAT that has `read:packages` (the
       container this was written in had none), to take 0.17.0 into
       `pnpm-lock.yaml`.
-- [ ] Phase 1 — migration notice, per-project before/after on first open.
-- [ ] Phase 2 — `Master` on export; HDR/gain-map branches rewritten.
-- [ ] Phase 3 — export wizard, guards, preview, receipt, sliders, size W×H,
-      Intent (i).
-- [ ] Phase 4 — expanded scopes (histogram parade, hue chart, metrics).
-- [ ] Phase 5 — masks: Objects button, crisp outline, MaskPins removed.
+- [x] Phase 1 — legacy previews: an edited photo's last thumbnail from the
+      engine before 0.17 is kept (`main/legacy.ts`, taken just before the new
+      one replaces it; thumbnail stamps carry `ENGINE_RENDER_REV`), and the
+      first opening of such a photo shows before and after, with Send
+      feedback and Remove this preview / Remove all; View ▸ Compare with the
+      previous engine reopens it. A later app version removes the previews on
+      its own. They are 400 px library thumbnails, the only 0.16 render kept.
+- [x] Phase 2 — `Master` on export for an HDR photo's gain-map (JPEG, AVIF),
+      PQ (JXL, PNG) and Display P3 SDR files (`masterPolicy`); SDR sources,
+      expand, PQ AVIF, other colour spaces and a gain-map photo edited on its
+      SDR base stay classic. `TooLarge` and `StaleCache` have plain messages.
+- [x] Phase 3 — export as four steps of the editor's cards (Format, Size &
+      colour, Metadata & HDR, Review); sliders for quality, chroma, bit
+      depth, format; fit inside W×H; Intent (i); guards that block or warn
+      and never fix (`shared/exportGuards.ts`, plus the disk's through
+      `Exporter.preflight`); a preview through the real export request; a
+      receipt of what landed.
+- [x] Phase 4 — the scopes at full size (histogram overlay and parade, colour
+      chart with colour-vision simulation, CIE 1976 chart, metrics with
+      colour-vision collisions and a dominant palette). The CIE tab's photo
+      cloud and the gamut coverage rows wait for the engine request below.
+- [x] Phase 5 — masks: an Object detection button (bidirectional and the
+      colour and luminance ranges are in the … picker), a crisp one-pixel
+      mask edge in the mask's colour at any zoom, MaskPins removed (the
+      gradient and lasso handles stay, shown while the pointer is over the
+      photo).
 - [ ] RAW colour: `{ Pixl: { version: 1 } }` where `camera_colour.pixl_versions`
       holds it (46 bodies), named in saved recipes; start the temperature UI
       from `camera_colour.as_shot_white`. Moves pixels: needs a recipe/RAW rev.

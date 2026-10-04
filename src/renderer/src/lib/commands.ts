@@ -670,18 +670,6 @@ export const COMMANDS: KeyCommand[] = [
     }
   },
   {
-    id: 'mask.pins',
-    label: 'Cycle the mask pins (Auto → Always → Never)',
-    group: 'Masks',
-    context: 'develop',
-    keys: ['Shift+H', 'H'],
-    run: () => {
-      const order = ['auto', 'always', 'never'] as const
-      const cur = order.indexOf(ui().maskOverlay.pins)
-      ui().setMaskOverlay({ pins: order[(cur + 1) % order.length] })
-    }
-  },
-  {
     id: 'tool.wb',
     label: 'White balance picker',
     group: 'Tools',

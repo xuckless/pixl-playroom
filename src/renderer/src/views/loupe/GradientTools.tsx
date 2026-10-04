@@ -83,7 +83,6 @@ export const GradientTools = memo(function GradientTools({
   const compId = useDevelop((s) => s.compId)
   const recipe = useDevelop((s) => s.recipe)
   const session = useDevelop((s) => s.session)
-  const pins = useUi((s) => s.maskOverlay.pins)
   const masksUp = useUi((s) => s.masksWin.open)
   const layer = useRef<HTMLDivElement>(null)
   const drag = useRef<Drag | null>(null)
@@ -100,7 +99,7 @@ export const GradientTools = memo(function GradientTools({
     (c): c is Gradient => isGradient(c) && c.id !== compId
   )
   if (!recipe || !session) return null
-  const handlesUp = masksUp && tool !== 'heal' && pins !== 'never'
+  const handlesUp = masksUp && tool !== 'heal'
   if (!drawing && (!handlesUp || (!shown && others.length === 0))) return null
 
   // plane pixels of a component ↔ display pixels of the loupe
@@ -586,7 +585,7 @@ export const GradientTools = memo(function GradientTools({
   return (
     <div
       ref={layer}
-      className={`tool-layer gradients${drawing ? ' drawing' : ''}${shown || others.length ? ` pins-${pins}` : ''}`}
+      className={`tool-layer gradients${drawing ? ' drawing' : ''}${shown || others.length ? ' on-hover' : ''}`}
       style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
       onPointerDown={create}
       onPointerMove={move}

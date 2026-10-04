@@ -775,65 +775,6 @@ button.mode-badge:disabled {
   stroke-linejoin: round;
 }
 
-/* ── pins on the photo ─────────────────────────────────────────── */
-.mask-pins {
-  position: absolute;
-  pointer-events: none;
-  z-index: 5;
-  transition: opacity 0.3s var(--ease);
-}
-.mask-pins.auto {
-  opacity: 0;
-}
-.stage:hover .mask-pins.auto {
-  opacity: 1;
-}
-.mask-pin {
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  margin: -9px 0 0 -9px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  pointer-events: auto;
-  display: grid;
-  place-items: center;
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.5),
-    0 4px 12px -2px rgba(0, 0, 0, 0.6);
-  animation: pinIn 0.5s var(--spring) both;
-}
-.mask-pin i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.85);
-  transition:
-    background 0.2s,
-    transform 0.3s var(--spring);
-}
-.mask-pin:hover:not(:disabled) {
-  transform: scale(1.25);
-  border-color: var(--acc);
-}
-.mask-pin.on {
-  border-color: var(--acc);
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.5),
-    0 0 16px -2px var(--glow);
-}
-.mask-pin.on i {
-  background: var(--acc);
-  transform: scale(1.2);
-}
-.mask-pin.off {
-  opacity: 0.5;
-}
-.mask-pin::after {
-  display: none;
-}
-
 /* ── gradient handles ──────────────────────────────────────────── */
 .tool-layer.gradients {
   pointer-events: none;
@@ -966,19 +907,19 @@ button.grad-other:hover:not(:disabled) {
 .grad-pin:hover {
   transform: scale(1.2);
 }
-.tool-layer.gradients.pins-auto:not(.drawing) .grad-lines,
-.tool-layer.gradients.pins-auto:not(.drawing) .grad-handle,
-.tool-layer.gradients.pins-auto:not(.drawing) .grad-feather,
-.tool-layer.gradients.pins-auto:not(.drawing) .grad-other,
-.tool-layer.gradients.pins-auto:not(.drawing) .grad-knob {
+.tool-layer.gradients.on-hover:not(.drawing) .grad-lines,
+.tool-layer.gradients.on-hover:not(.drawing) .grad-handle,
+.tool-layer.gradients.on-hover:not(.drawing) .grad-feather,
+.tool-layer.gradients.on-hover:not(.drawing) .grad-other,
+.tool-layer.gradients.on-hover:not(.drawing) .grad-knob {
   opacity: 0;
   transition: opacity 0.3s var(--ease);
 }
-.stage:hover .tool-layer.gradients.pins-auto .grad-lines,
-.stage:hover .tool-layer.gradients.pins-auto .grad-handle,
-.stage:hover .tool-layer.gradients.pins-auto .grad-feather,
-.stage:hover .tool-layer.gradients.pins-auto .grad-other,
-.stage:hover .tool-layer.gradients.pins-auto .grad-knob {
+.stage:hover .tool-layer.gradients.on-hover .grad-lines,
+.stage:hover .tool-layer.gradients.on-hover .grad-handle,
+.stage:hover .tool-layer.gradients.on-hover .grad-feather,
+.stage:hover .tool-layer.gradients.on-hover .grad-other,
+.stage:hover .tool-layer.gradients.on-hover .grad-knob {
   opacity: 1;
 }
 
@@ -1010,11 +951,11 @@ button.grad-other:hover:not(:disabled) {
   r: 7;
   fill: var(--acc);
 }
-.lasso-editor.pins-auto {
+.lasso-editor.on-hover {
   opacity: 0;
   transition: opacity 0.3s var(--ease);
 }
-.stage:hover .lasso-editor.pins-auto {
+.stage:hover .lasso-editor.on-hover {
   opacity: 1;
 }
 .floating-toolbar .bar-hint {

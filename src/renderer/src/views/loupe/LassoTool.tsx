@@ -284,11 +284,9 @@ export const LassoEditor = memo(function LassoEditor({
   const commit = useDevelop((s) => s.commit)
   const masksUp = useUi((s) => s.masksWin.open)
   const tool = useDevelop((s) => s.tool)
-  const pins = useUi((s) => s.maskOverlay.pins)
   const drag = useRef<{ i: number; moved: boolean } | null>(null)
   const svg = useRef<SVGSVGElement>(null)
-  if (!comp || comp.kind !== 'polygon' || !masksUp || tool === 'heal' || pins === 'never')
-    return null
+  if (!comp || comp.kind !== 'polygon' || !masksUp || tool === 'heal') return null
   const pts = comp.points.map((p) => baseToDisplay(g, p))
   const toBase = (e: React.PointerEvent | React.MouseEvent): P => {
     const b = svg.current?.getBoundingClientRect()
@@ -306,7 +304,7 @@ export const LassoEditor = memo(function LassoEditor({
   return (
     <svg
       ref={svg}
-      className={`lasso-editor pins-${pins}`}
+      className="lasso-editor on-hover"
       width={rect.w}
       height={rect.h}
       style={{ left: rect.x, top: rect.y }}

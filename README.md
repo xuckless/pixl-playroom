@@ -384,7 +384,7 @@ Every key can be changed in Settings → Key bindings; these are the defaults.
 | M                        | develop        | show or hide the masks window                                           |
 | B/K, L, Shift+M, Alt+M   | develop        | brush, lasso, linear, radial gradient (a new mask if none is selected)  |
 | O, Shift+O               | develop        | mask overlay; cycle its view (in the crop tool O cycles guides)         |
-| H, Shift+H               | develop        | hide / show the selected mask (masks window); pins: auto, always, never |
+| H, Shift+H               | develop        | hide / show the selected mask (masks window) |
 | '                        | develop        | invert the selected component, or else the mask (masks window)          |
 | Delete / Backspace       | develop        | delete the selected mask component, or else the mask (masks window)     |
 | Ctrl+D                   | develop        | duplicate the selected mask component, or else the mask (masks window)  |
