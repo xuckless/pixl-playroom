@@ -20,14 +20,13 @@ import type {
   UpscalerRef
 } from '../shared/engine-types'
 import type { AiStartRequest } from '../shared/ai'
-import { RAW_DEVELOP_REV, type PixelStep } from '../shared/pixels'
+import { type PixelStep } from '../shared/pixels'
+import { developMark } from '../shared/rawcolour'
 import { newId, type Recipe } from '../shared/recipe'
 import {
   chainSubject,
   enhanceRefusal,
   estimateMs,
-  FALLBACK_JPEG_QUALITY,
-  fbcnnQuality,
   jpegRestoreRefusal,
   learnRates,
   planSteps,
@@ -46,6 +45,7 @@ import type { Library } from './library'
 import {
   BACKGROUND_THREADS,
   blankRequest,
+  colourOf,
   seedOf,
   sourceOrientation,
   uprightFraming,
@@ -127,12 +127,7 @@ async function chainOf(
       out.push({ Upscale: (await models.ref(id, provider)) as unknown as UpscalerRef })
       continue
     }
-    const quality = s.jpegQuality ?? info.jpeg?.quality ?? FALLBACK_JPEG_QUALITY
-    const ref = (await models.ref(
-      id,
-      provider,
-      p.kind === 'fbcnn-qf' ? { quality: { Stated: { value: fbcnnQuality(quality) } } } : {}
-    )) as unknown as EnhancerRef
+    const ref = (await models.ref(id, provider, {})) as unknown as EnhancerRef
     const strength = p.kind === 'deblur' ? s.deblurStrength : s.jpegStrength
     out.push({ Model: { ...ref, strength: Math.min(1, Math.max(0.01, strength / 100)) } })
   }
@@ -177,9 +172,10 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const avail = enhanceAvailability(this.status())
     if (!avail.available) throw new Error(avail.reason ?? 'unavailable')
     const sessions = this.sessions()
-    const recipe: Recipe = sessions?.liveRecipe(key) ?? (await this.library.recipe(key))
+    // The probe first: it records a RAW's camera colour and moves its saved white with it.
     const row = await this.library.photoRow(key)
     const info = await this.library.probe(row)
+    const recipe: Recipe = sessions?.liveRecipe(key) ?? (await this.library.recipe(key))
     const isJpeg = info.input === 'Jpeg'
     const refused =
       enhanceRefusal(settings, { isJpeg, isHdr: info.is_hdr }) ??
@@ -327,7 +323,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           scale: k,
           resizes: k > 1,
           lossless,
-          ...(row.is_raw === 1 ? { develop: RAW_DEVELOP_REV } : {})
+          ...(row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {})
         }
       }
       // Over the steps there were when it began, under any added while it ran.

@@ -5,9 +5,9 @@ import {
   chainSubject,
   enhanceRefusal,
   estimateMs,
-  fbcnnQuality,
   learnRates,
   neededModels,
+  normaliseEnhance,
   planSteps,
   reconstructParams,
   scaleOf,
@@ -16,7 +16,7 @@ import {
 
 const all: EnhanceSettings = {
   ...DEFAULT_ENHANCE,
-  jpeg: 'fbcnn-qf',
+  jpeg: 'fbcnn',
   deblur: true,
   upscale: 'x4-wdn'
 }
@@ -24,10 +24,10 @@ const all: EnhanceSettings = {
 test('the chain runs in the engine order: JPEG restore, deblur, then the upscaler', () => {
   assert.deepEqual(
     planSteps(all, true).map((p) => p.kind),
-    ['fbcnn-qf', 'deblur', 'x4-wdn']
+    ['fbcnn', 'deblur', 'x4-wdn']
   )
   assert.deepEqual(neededModels(all, true), [
-    'fbcnn-color-qf',
+    'fbcnn-color-blind',
     'nafnet-gopro-w32',
     'realesr-general-wdn-x4v3'
   ])
@@ -70,10 +70,11 @@ test('Smoothing 50 is the engine’s measured choice, and the ends span two deca
   assert.ok(reconstructParams(80).fidelity < reconstructParams(20).fidelity)
 })
 
-test('FBCNN is told 1 − quality/100', () => {
-  assert.equal(fbcnnQuality(20), 0.8)
-  assert.equal(fbcnnQuality(100), 0)
-  assert.equal(fbcnnQuality(0), 0.99)
+test('a saved FBCNN-at-a-quality (retired in engine 0.17) reads as FBCNN', () => {
+  const saved = { jpeg: 'fbcnn-qf', jpegQuality: 40 } as unknown as Partial<EnhanceSettings>
+  assert.equal(normaliseEnhance(saved).jpeg, 'fbcnn')
+  assert.equal(normaliseEnhance({ jpeg: 'reconstruct' }).jpeg, 'reconstruct')
+  assert.equal(normaliseEnhance(undefined).jpeg, 'off')
 })
 
 test('the estimate sums each step over the input’s megapixels, and learns from a run', () => {

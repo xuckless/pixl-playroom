@@ -60,14 +60,30 @@ export const PIXEL_LABEL: Record<PixelStepKind, string> = {
 export const RAW_DEVELOP_REV = 'l'
 
 /**
- * A step on a RAW made from another develop than today's (rawler's, before
- * engine 0.16): its pixels are that develop's, so where it is laid partly
- * (a mask's edge, a Strength under 100, a heal's patch) the two can show,
- * and a camera whose frame the new develop crops differently puts it out of
- * place. Running it again makes it from today's.
+ * Which engine's grade made a graded render: it names the library thumbnails
+ * of edited photos, so an engine that moves graded pixels makes them again.
+ * 2 is engine 0.17: PixlRGB is the working space, and what acts on the
+ * channels themselves (curves, per-channel gain, HSL bands, the channel
+ * mixer) renders differently. (A RAW's develop is `Container`, 0.16.0's
+ * pixels, so `RAW_DEVELOP_REV` and the steps laid on it stand.)
  */
-export function staleRawStep(step: PixelStep, isRaw: boolean): boolean {
-  return isRaw && step.params.develop !== RAW_DEVELOP_REV
+export const ENGINE_RENDER_REV = 2
+
+/**
+ * A step on a RAW made from another develop than the photo's now (rawler's,
+ * before engine 0.16; the file's own camera colour when the photo has since
+ * moved to PIXL's, or back): its pixels are that develop's, so where it is
+ * laid partly (a mask's edge, a Strength under 100, a heal's patch) the two
+ * can show, and a camera whose frame the new develop crops differently puts
+ * it out of place. Running it again makes it from today's. `mark` is the
+ * photo's own (`developMark`); the file's own colour's is `RAW_DEVELOP_REV`.
+ */
+export function staleRawStep(
+  step: PixelStep,
+  isRaw: boolean,
+  mark: string = RAW_DEVELOP_REV
+): boolean {
+  return isRaw && step.params.develop !== mark
 }
 
 const HEX64 = /^[0-9a-f]{64}$/

@@ -45,6 +45,20 @@ export function convertWb(wb: Recipe['wb'], from: WbContext, to: WbContext): Rec
   return wbFromOp(opOf(wb, from), to)
 }
 
+/**
+ * The same white balance for the same RAW developed with another colour, so
+ * another as-shot white (the file's own, then PIXL's: R5 3671 → 3327 K): the
+ * engine white it makes is kept and the numbers re-expressed against the new
+ * as-shot, so the picture keeps its white. `as-shot` has no numbers and stays.
+ * A relative balance (no known as-shot white) is the same either way.
+ */
+export function convertAsShot(wb: Recipe['wb'], from: WbContext, to: WbContext): Recipe['wb'] {
+  if (wb.mode !== 'custom') return wb
+  if (absoluteWb(from) !== absoluteWb(to)) return convertWb(wb, from, to)
+  if (!absoluteWb(to)) return wb
+  return { ...wbFromOp(opOf(wb, from), to), preset: wb.preset }
+}
+
 /** A white balance saved with its engine white (a WB preset, a develop preset). */
 export interface SavedWhite {
   kelvin: number

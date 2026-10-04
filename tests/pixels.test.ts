@@ -689,6 +689,14 @@ test("a RAW's step made on rawler's develop is told apart from one made on today
   assert.equal(staleRawStep(step({ model: 'drunet-color', develop: RAW_DEVELOP_REV }), true), false)
   // Only a RAW's pixels come from a develop.
   assert.equal(staleRawStep(step({ model: 'drunet-color' }), false), false)
+  // A photo that moved to PIXL's camera colour: steps made on the file's own are stale, and the other way.
+  const pixl = `${RAW_DEVELOP_REV}p1`
+  assert.equal(
+    staleRawStep(step({ model: 'drunet-color', develop: RAW_DEVELOP_REV }), true, pixl),
+    true
+  )
+  assert.equal(staleRawStep(step({ model: 'drunet-color', develop: pixl }), true, pixl), false)
+  assert.equal(staleRawStep(step({ model: 'drunet-color', develop: pixl }), true), true)
   // The mark survives a round trip through the project.
   assert.equal(
     normalisePixelStep(step({ develop: RAW_DEVELOP_REV }))?.params.develop,

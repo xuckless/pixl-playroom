@@ -21,6 +21,7 @@ import { FIT, type ZoomView } from '../../../shared/view'
 import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
 import { useLibrary } from './library'
+import { offerLegacy } from './legacy'
 import { useUi } from './ui'
 import type { GuideLine } from '../../../shared/upright'
 
@@ -406,6 +407,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       })
       get().pushView()
       warmNeighbours(key)
+      void offerLegacy(key, stale)
     } catch (err) {
       if (stale()) return
       openingKey = null

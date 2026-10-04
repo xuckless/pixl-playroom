@@ -5,6 +5,8 @@ import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { cpus } from 'os'
 import { pathToFileURL } from 'url'
+import { cacheUrl } from './protocol'
+import type { RawColour } from '../shared/rawcolour'
 import { is } from '@electron-toolkit/utils'
 import type { ExportSettings } from '../shared/export'
 import {
@@ -15,6 +17,7 @@ import {
   type ErrorReport,
   type ExportPreset,
   type HistoryLog,
+  type LegacyPreview,
   type LibrarySource,
   type LookThumbRequest,
   type LutProfile,
@@ -207,6 +210,17 @@ export function registerIpc(s: Services): void {
   handle(IPC.updates.check, () => checkForUpdates())
   handle(IPC.updates.install, () => installUpdate())
   handle(IPC.updates.setChannel, (c: UpdateChannel) => setUpdateChannel(c))
+  // ── legacy previews ──
+  handle(IPC.legacy.get, async (key: string): Promise<LegacyPreview | null> => {
+    const { fresh } = await s.library.legacyFor(key)
+    const e = s.library.legacy.get(key)
+    return e ? { url: cacheUrl(e.path, e.capturedIn), engine: e.engine, seen: e.seen, fresh } : null
+  })
+  handle(IPC.legacy.seen, (key: string) => s.library.legacy.markSeen(key))
+  handle(IPC.legacy.remove, (key: string) => s.library.legacy.remove(key))
+  handle(IPC.legacy.removeAll, () => s.library.legacy.removeAll())
+  handle(IPC.legacy.count, () => s.library.legacy.count())
+
   handle(IPC.prefs.get, (): Prefs => ({
     updateChannel: readSettings().updateChannel,
     crashReports: crashConsent(),
@@ -416,6 +430,14 @@ export function registerIpc(s: Services): void {
     }
   })
   handle(IPC.develop.close, (key: string) => s.sessions.close(key))
+  handle(IPC.develop.setRawColour, async (key: string, colour: RawColour) => {
+    // What the person typed last is saved first; the session holds the old colour's proxies
+    // and white, so it is closed: the caller opens it again.
+    await s.sessions.flush(key)
+    const now = await s.library.setRawColour(key, colour)
+    await s.sessions.close(key)
+    return now
+  })
   handle(
     IPC.develop.update,
     async (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
@@ -675,6 +697,13 @@ export function registerIpc(s: Services): void {
     return s.exporter.start(keys, settings)
   })
   handle(IPC.export.cancel, (id: string) => s.exporter.cancel(id))
+  handle(IPC.export.preview, (key: string, settings: ExportSettings) =>
+    s.exporter.preview(key, settings)
+  )
+  handle(IPC.export.cancelPreview, () => s.exporter.cancelPreview())
+  handle(IPC.export.check, (keys: string[], settings: ExportSettings) =>
+    s.exporter.preflight(keys, settings)
+  )
   handle(IPC.export.presets, () => s.index.exportPresets())
   handle(IPC.export.savePreset, async (p: Omit<ExportPreset, 'id'> & { id?: string }) => {
     const preset: ExportPreset = { ...p, id: p.id ?? newId() }
@@ -734,13 +763,13 @@ export function registerIpc(s: Services): void {
       // What to download for a task that waits only on its model: the one
       // Playroom recommends (the detailed subject model, SAM 2.1, DRUNet).
       get: {
-        ...(models && !subject ? { segment: 'u2net' } : {}),
+        ...(models && !subject ? { segment: 'u2netp' } : {}),
         ...(sam2 && !samModel ? { prompt: SAM_MODEL } : {}),
         ...(models && !drunet ? { denoise: 'drunet-color' } : {})
       },
       why: {
         ...(enhance.available ? {} : { enhance: enhance.reason }),
-        ...(segment ? {} : { segment: `download ${modelName(s.models.entry('u2net'))}` }),
+        ...(segment ? {} : { segment: `download ${modelName(s.models.entry('u2netp'))}` }),
         ...(models ? {} : { denoise: 'this engine build runs no models' }),
         ...(sam2 && samModel
           ? {}

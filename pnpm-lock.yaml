@@ -173,11 +173,11 @@ importers:
         specifier: ^4.0.0
         version: 4.0.0(electron@44.4.3(supports-color@7.2.0))
       '@xuckless/pixl-engine':
-        specifier: 0.16.1
-        version: 0.16.1
+        specifier: 0.17.0
+        version: 0.17.0
       '@xuckless/pixl-models':
-        specifier: 0.16.1
-        version: 0.16.1
+        specifier: 0.17.0
+        version: 0.17.0
       electron-log:
         specifier: ^5.4.4
         version: 5.4.4
@@ -1223,30 +1223,30 @@ packages:
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
     engines: {node: '>=10.0.0'}
 
-  '@xuckless/pixl-engine-darwin-arm64@0.16.1':
-    resolution: {integrity: sha512-ycIvkul0149vEXk6fTUxpKba+yu0iA0yT6uC9hw1gb4ORZe2pedSUy2GUYwyW9Yqwd8+UMVbYmbdMYATs9HbMQ==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-darwin-arm64/0.16.1/0054f701d605e19ac9d2929db618fbef67a6479c}
+  '@xuckless/pixl-engine-darwin-arm64@0.17.0':
+    resolution: {integrity: sha512-xNewGPIRdhEABHp9P5p7DrUDGRk/nsaYOfBkgK5KuXBtIq4q+ZAnwJiK/MhxbH5hO4PkztyAUTC1h28ZpYfRiA==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-darwin-arm64/0.17.0/09af77b92773f2c072a1d460c9bd6ea80d08cd3f}
     engines: {node: '>= 20'}
     cpu: [arm64]
     os: [darwin]
 
-  '@xuckless/pixl-engine-darwin-x64@0.16.1':
-    resolution: {integrity: sha512-9d3Zao8xOHrYVV3WvTsEIuQY/PrZZfcY25QbazqsLgs4oDG+Es2XZRNUrtBJ35zEnv8JD11xA0AWzjAGZ9RsjA==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-darwin-x64/0.16.1/40367b9534dc6d4e3fdad0b461be83f7fdaae95d}
+  '@xuckless/pixl-engine-darwin-x64@0.17.0':
+    resolution: {integrity: sha512-m9RejPsYLm+ZTzqJLMWNWItmbw/88x+EWWu9gKix5IRTpkViMCecIjMnWTbnx29kQ2S9PjkVDbKiBm++weSwmg==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-darwin-x64/0.17.0/3e83c8f5fd8ce090d8a167fb4389ae8d857c0e95}
     engines: {node: '>= 20'}
     cpu: [x64]
     os: [darwin]
 
-  '@xuckless/pixl-engine-win32-x64-msvc@0.16.1':
-    resolution: {integrity: sha512-WauNHIr3pAP38npS3PlXG0i9DX8XTyWOBjcBsdIM1Q+9lBxBvXXAILfYzqrVy94orGYi33ybOwTaBRUfdO699w==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-win32-x64-msvc/0.16.1/91fc2bb93d1bd610c9645a2a13aa4f2928efe3f3}
+  '@xuckless/pixl-engine-win32-x64-msvc@0.17.0':
+    resolution: {integrity: sha512-g5UkWW2uGgbw36k5nSWHrq/k5/9ZvdJA7ldiqwwTg5Qm/YyGrt7z0aphgFK9Xnf4zuRLdIpISKzNujRRhBjjmA==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-win32-x64-msvc/0.17.0/0089db4147f2fb5d0a14653e7b155fbeec851c93}
     engines: {node: '>= 20'}
     cpu: [x64]
     os: [win32]
 
-  '@xuckless/pixl-engine@0.16.1':
-    resolution: {integrity: sha512-7k4Ooz0qJSa6XcbIdzm2f97K6muWVXupab+ZJeCax3Vv0dVALXHstcJvCe1AKUito4EGQOthbSDnDAlWrwWcuQ==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine/0.16.1/045ef8a69c6dfd2e399493834a8c4b2b85cf138f}
+  '@xuckless/pixl-engine@0.17.0':
+    resolution: {integrity: sha512-yC98PFXCKGeNl+baPoJXFuWLVucXk6Sd7C+14CAMeBVKBtmuTJCs9+LGuVB7CZbUIyLIpPAGhXN6GXvfmNqUqw==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine/0.17.0/4cf3145a37e9e81486027dae6cbf643fcfda08d1}
     engines: {node: '>= 20'}
 
-  '@xuckless/pixl-models@0.16.1':
-    resolution: {integrity: sha512-1U2dcAEEeypBKU0Q8DGZvdVtQFHiRqui1KKtIEQgm8svJKp98ZrPS+prJILCPops/9v6y+c3+tcyCopmoF5oug==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-models/0.16.1/b5889f6088ae274ac6df4b2b74d512bd6b1006fd}
+  '@xuckless/pixl-models@0.17.0':
+    resolution: {integrity: sha512-YKHh1gASeguamU8g8SpfXcVfWHkfoegVGtDeSjhz9ahPPaicihmjEJ+f26kkEKkHJb6gGZU1+1BEeeXidZYOlw==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-models/0.17.0/d47ac524f02b1cd7418f368fe0c9af78dd123939}
     engines: {node: '>= 20'}
 
   abbrev@4.0.0:
@@ -3950,22 +3950,22 @@ snapshots:
 
   '@xmldom/xmldom@0.8.15': {}
 
-  '@xuckless/pixl-engine-darwin-arm64@0.16.1':
+  '@xuckless/pixl-engine-darwin-arm64@0.17.0':
     optional: true
 
-  '@xuckless/pixl-engine-darwin-x64@0.16.1':
+  '@xuckless/pixl-engine-darwin-x64@0.17.0':
     optional: true
 
-  '@xuckless/pixl-engine-win32-x64-msvc@0.16.1':
+  '@xuckless/pixl-engine-win32-x64-msvc@0.17.0':
     optional: true
 
-  '@xuckless/pixl-engine@0.16.1':
+  '@xuckless/pixl-engine@0.17.0':
     optionalDependencies:
-      '@xuckless/pixl-engine-darwin-arm64': 0.16.1
-      '@xuckless/pixl-engine-darwin-x64': 0.16.1
-      '@xuckless/pixl-engine-win32-x64-msvc': 0.16.1
+      '@xuckless/pixl-engine-darwin-arm64': 0.17.0
+      '@xuckless/pixl-engine-darwin-x64': 0.17.0
+      '@xuckless/pixl-engine-win32-x64-msvc': 0.17.0
 
-  '@xuckless/pixl-models@0.16.1': {}
+  '@xuckless/pixl-models@0.17.0': {}
 
   abbrev@4.0.0: {}
 

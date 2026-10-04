@@ -11,6 +11,7 @@ import type {
   Encode,
   GainMapEncode,
   GamutMap,
+  MasterPolicy,
   HdrLimit,
   SdrRendition,
   MetadataPolicy,
@@ -28,7 +29,7 @@ import type { PhotoMeta } from './ipc'
 import { DEFAULT_WATERMARK, type WatermarkSettings } from './watermark'
 import { flatSubjects } from './keywords'
 
-export type ExportFormat = 'jpeg' | 'png' | 'tiff' | 'webp' | 'avif' | 'jxl' | 'heic'
+export type ExportFormat = 'jpeg' | 'png' | 'tiff' | 'webp' | 'avif' | 'jxl'
 
 export const FORMAT_EXT: Record<ExportFormat, string> = {
   jpeg: 'jpg',
@@ -36,11 +37,19 @@ export const FORMAT_EXT: Record<ExportFormat, string> = {
   tiff: 'tif',
   webp: 'webp',
   avif: 'avif',
-  jxl: 'jxl',
-  heic: 'heic'
+  jxl: 'jxl'
 }
 
-export type ResizeMode = 'none' | 'long' | 'short' | 'width' | 'height' | 'megapixels' | 'percent'
+export type ResizeMode =
+  | 'none'
+  | 'long'
+  | 'short'
+  | 'width'
+  | 'height'
+  /** Fit inside a width × height box, the picture's shape kept. */
+  | 'box'
+  | 'megapixels'
+  | 'percent'
 
 /** Output sharpening: after the resize, for where the picture will be seen. */
 export interface OutputSharpenSetting {
@@ -67,14 +76,15 @@ export interface ExportSettings {
   webpLossless: boolean
   pngCompression: PngCompression
   tiffCompression: TiffCompression
-  /** 8 or 16 for PNG, TIFF, JXL; 8, 10 or 12 for AVIF and HEIC. */
+  /** 8 or 16 for PNG, TIFF, JXL; 8, 10 or 12 for AVIF. */
   bitDepth: number
   chroma: Chroma
   lossless: boolean
   colorSpace: 'Srgb' | 'DisplayP3' | 'AdobeRgb' | 'Rec2020'
   intent: RenderingIntent
   blackPointCompensation: boolean
-  resize: { mode: ResizeMode; value: number; enlarge: boolean }
+  /** `value` is the width in `box` mode, `valueH` its height; every other mode reads `value` alone. */
+  resize: { mode: ResizeMode; value: number; valueH: number; enlarge: boolean }
   metadata: MetadataPolicy
   /** all: the photo's metadata plus its title, caption, keywords; copyrightOnly: only the copyright. */
   metaMode: 'all' | 'copyrightOnly'
@@ -88,7 +98,7 @@ export interface ExportSettings {
     /**
      * sdr: an SDR file (HDR sources are tone mapped); keep: stay PQ/HLG;
      * expand: SDR → PQ/HLG; gainmap: an HDR source as an SDR picture with a
-     * gain map (UltraHDR JPEG, AVIF, HEIC), which HDR displays lift back.
+     * gain map (UltraHDR JPEG, AVIF), which HDR displays lift back.
      */
     mode: 'sdr' | 'keep' | 'expand' | 'gainmap'
     /** What happens above the HDR output's peak: a hard clip, or BT.2390's roll-off. */
@@ -106,6 +116,14 @@ export interface ExportSettings {
     peak: number
     sdrWhite: number
     referenceWhite: number
+    /**
+     * PIXL's own tone mapping, gamut compression and gain map (engine 0.17's
+     * `ColorPolicy::Master`) for an HDR photo's HDR and gain-map deliveries
+     * and its Display P3 SDR file. Off: the classic path (see `masterPolicy`).
+     */
+    pixl: boolean
+    /** The HDR output's ceiling in cd/m² (203…10 000); null holds it to the photo's own peak. */
+    ceiling: number | null
   }
   /** A PNG composited onto every exported picture (see `watermark.ts`). */
   watermark: WatermarkSettings
@@ -135,7 +153,7 @@ export function defaultExportSettings(): ExportSettings {
     colorSpace: 'Srgb',
     intent: 'RelativeColorimetric',
     blackPointCompensation: true,
-    resize: { mode: 'none', value: 2048, enlarge: false },
+    resize: { mode: 'none', value: 2048, valueH: 2048, enlarge: false },
     metadata: { exif: true, icc: true, xmp: true, iptc: true },
     metaMode: 'all',
     removeLocation: false,
@@ -154,7 +172,9 @@ export function defaultExportSettings(): ExportSettings {
       referenceWhite: 203,
       limit: 'clip',
       knee: 100,
-      gainMapQuality: 85
+      gainMapQuality: 85,
+      pixl: true,
+      ceiling: null
     },
     watermark: { ...DEFAULT_WATERMARK },
     reveal: true
@@ -169,7 +189,6 @@ export function depthsFor(format: ExportFormat): number[] {
     case 'jxl':
       return [8, 16]
     case 'avif':
-    case 'heic':
       return [8, 10, 12]
     default:
       return [8]
@@ -178,7 +197,7 @@ export function depthsFor(format: ExportFormat): number[] {
 
 /** Formats that carry a gain map beside an SDR picture. */
 export function supportsGainMap(format: ExportFormat): boolean {
-  return format === 'jpeg' || format === 'avif' || format === 'heic'
+  return format === 'jpeg' || format === 'avif'
 }
 
 /**
@@ -193,6 +212,8 @@ export function normaliseExportSettings(
   return {
     ...d,
     ...v,
+    // HEIC export left with engine 0.17 (no GPL x265): AVIF is its successor.
+    format: (v.format as string) === 'heic' ? 'avif' : (v.format ?? d.format),
     resize: { ...d.resize, ...v.resize },
     metadata: { ...d.metadata, ...v.metadata },
     outputSharpen: { ...d.outputSharpen, ...v.outputSharpen },
@@ -244,11 +265,60 @@ export function hdrLimit(s: ExportSettings, peak: number): HdrLimit {
     : 'Clip'
 }
 
+/** What `masterPolicy` needs to know of the source. */
+export interface MasterSource {
+  /** PQ or HLG. */
+  isHdr: boolean
+  /** The file carries a gain map (UltraHDR JPEG, an iPhone HEIC). */
+  hasGainMap: boolean
+  /** A gain-map photo edited on its SDR base (`recipe.gainMap === 'base'`): the engine would read the map. */
+  editsBase: boolean
+}
+
+/** The ceiling's bounds the engine accepts, in cd/m². */
+export const CEILING_MIN = 203
+export const CEILING_MAX = 10000
+
+/**
+ * The engine's built-in colour path for this export, or null for the classic
+ * one (`buildColor`). It applies to an HDR source's HDR deliveries (a gain
+ * map in a JPEG or AVIF; PQ in JXL or PNG) and its SDR file when that is
+ * Display P3, which is all `Master` writes for SDR. An SDR source being
+ * expanded, a PQ AVIF and any other colour space stay classic: `Master`
+ * refuses `hdr`, `sdr` and `gain_map`, reads a gain map itself, and has no
+ * way to expand or to name a space. A gain-map photo edited on its SDR base
+ * stays classic too, because the engine would apply the map under the edit.
+ */
+export function masterPolicy(s: ExportSettings, src: MasterSource): MasterPolicy | null {
+  if (!s.hdr.pixl) return null
+  if (!src.isHdr && !src.hasGainMap) return null
+  if (src.hasGainMap && src.editsBase) return null
+  let headroom: boolean
+  if (s.hdr.mode === 'gainmap' && supportsGainMap(s.format)) headroom = true
+  else if (s.hdr.mode === 'keep' && (s.format === 'jxl' || s.format === 'png')) headroom = true
+  else if (s.hdr.mode === 'sdr' && s.colorSpace === 'DisplayP3') headroom = false
+  else return null
+  const ceiling =
+    s.hdr.ceiling === null
+      ? 'Peak'
+      : { Nits: Math.min(CEILING_MAX, Math.max(CEILING_MIN, Math.round(s.hdr.ceiling))) }
+  return {
+    headroom,
+    // The 99.9th percentile of the render; a region would state it (not used by an export).
+    peak: 'Measured',
+    ceiling: headroom ? ceiling : null,
+    reach: 'Measured',
+    // PIXL's look acts on a RAW developed in Scene; an HDR source here is never one.
+    look: 'Colorimetric'
+  }
+}
+
 /** The SDR picture a gain-map export writes: the HDR master tone mapped as an SDR export would be. */
 export function sdrRendition(s: ExportSettings, peak: number): SdrRendition {
   return {
     to: s.colorSpace as ColorSpaceRef,
     operator: s.hdr.operator,
+    mode: 'PerChannel',
     source_peak_nits: peak,
     target_peak_nits: s.hdr.targetPeak,
     gamut: s.hdr.gamut,
@@ -285,12 +355,11 @@ export function withGainMap(encode: Encode, map: GainMapEncode): Encode {
   if (typeof encode !== 'object') return encode
   if ('Jpeg' in encode) return { Jpeg: { ...encode.Jpeg, gain_map: map } }
   if ('Avif' in encode) return { Avif: { ...encode.Avif, gain_map: map } }
-  if ('Heic' in encode) return { Heic: { ...encode.Heic, gain_map: map } }
   return encode
 }
 
 export function supportsHdr(format: ExportFormat): boolean {
-  return format === 'avif' || format === 'heic' || format === 'jxl' || format === 'png'
+  return format === 'avif' || format === 'jxl' || format === 'png'
 }
 
 /**
@@ -346,21 +415,14 @@ export function buildEncode(
             lossless: s.lossless,
             bit_depth: heifBits,
             chroma: s.lossless ? 'Full' : s.chroma,
-            speed: s.avifSpeed,
-            matrix: heifMatrix(s, hdrOut)
-          }
-        },
-        depth: deep ? 'Sixteen' : 'Eight'
-      }
-    case 'heic':
-      return {
-        encode: {
-          Heic: {
-            quality: s.quality,
-            lossless: s.lossless,
-            bit_depth: heifBits,
-            chroma: s.lossless ? 'Full' : s.chroma,
-            matrix: heifMatrix(s, hdrOut)
+            // The aom plug-in never took 10 (engine 0.17 refuses it).
+            speed: Math.min(9, Math.max(0, s.avifSpeed)),
+            matrix: heifMatrix(s, hdrOut),
+            // From 2 up the file is byte-identical at any count; 1 is another encode.
+            threads: Math.min(64, Math.max(2, threads)),
+            // 0.16.0's tuning, which libheif chose unasked; `Iq` needs aom 3.12.
+            tune: 'Ssim',
+            tiling: 'Single'
           }
         },
         depth: deep ? 'Sixteen' : 'Eight'
@@ -375,12 +437,64 @@ export function buildEncode(
   }
 }
 
+/** The longest side an export preview is rendered at: enough to judge colour and tone on one screen. */
+export const PREVIEW_EDGE = 1600
+
+/**
+ * The settings an export preview renders with: what the picture will look
+ * like through the same colour path and encoder, as the window can show it.
+ * A format the window cannot show (JPEG XL, TIFF) is written as PNG, an HDR
+ * output kept or expanded is shown as its SDR picture, and the metadata a
+ * preview does not need (all but the profile, which the colour needs) is
+ * left out. Everything that moves pixels stays as it is.
+ */
+export function previewSettings(s: ExportSettings): ExportSettings {
+  const format: ExportFormat = s.format === 'jxl' || s.format === 'tiff' ? 'png' : s.format
+  const hdr =
+    s.hdr.mode === 'keep' || s.hdr.mode === 'expand' ? { ...s.hdr, mode: 'sdr' as const } : s.hdr
+  return {
+    ...s,
+    format,
+    bitDepth: 8,
+    hdr,
+    metaMode: 'all',
+    metadata: { exif: false, icc: true, xmp: false, iptc: false },
+    removeLocation: false,
+    copyright: ''
+  }
+}
+
+/** The size a preview is rendered at: the export's own when that is smaller than the preview edge. */
+export function previewResize(
+  s: ExportSettings,
+  w: number,
+  h: number,
+  edge = PREVIEW_EDGE
+): Resize {
+  const full = buildResize(s, w, h)
+  const out =
+    full === 'None'
+      ? { w, h }
+      : 'Exact' in full
+        ? { w: full.Exact.width, h: full.Exact.height }
+        : { w, h }
+  const long = Math.max(out.w, out.h)
+  if (long <= edge) return full
+  const k = edge / long
+  return {
+    Exact: { width: Math.max(1, Math.round(out.w * k)), height: Math.max(1, Math.round(out.h * k)) }
+  }
+}
+
 /** The output size for a framed picture of `w × h`, or `None`. */
 export function buildResize(s: ExportSettings, w: number, h: number): Resize {
-  const { mode, value, enlarge } = s.resize
-  if (mode === 'none' || !(value > 0)) return 'None'
+  const { mode, value, valueH, enlarge } = s.resize
+  if (mode === 'none' || !(value > 0) || (mode === 'box' && !(valueH > 0))) return 'None'
   let k: number
   switch (mode) {
+    case 'box':
+      k = Math.min(value / w, valueH / h)
+      break
     case 'long':
       k = value / Math.max(w, h)
       break
@@ -424,6 +538,7 @@ export function buildColor(
       ToneMap: {
         to,
         operator: s.hdr.operator,
+        mode: 'PerChannel',
         source_peak:
           s.hdr.sourcePeak !== null
             ? { Nits: s.hdr.sourcePeak }

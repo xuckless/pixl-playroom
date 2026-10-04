@@ -12,7 +12,7 @@ import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { Icon, type IconName } from '../../components/icons'
 import { Menu, Popover } from '../../components/Popover'
 import { useDevelop } from '../../state/develop'
-import { OVERLAY_MODES, useUi, type OverlayMode, type PinsMode } from '../../state/ui'
+import { OVERLAY_MODES, useUi, type OverlayMode } from '../../state/ui'
 import {
   componentIcon,
   componentLabel,
@@ -35,15 +35,17 @@ import { useReorder } from './useReorder'
 import { keyHint, withKey } from '../../lib/commands'
 import { touchInteracting } from '../../lib/interacting'
 
-/** The drawing and range tools, one click from the selected mask's add bar. */
+/**
+ * The tools one click from the selected mask's add bar: the drawing tools
+ * and Object detection. The bidirectional gradient and the colour and
+ * luminance ranges are in the "…" picker with the rest.
+ */
 const ADD_TOOLS: { kind: MaskToolKind; icon: IconName; label: string }[] = [
   { kind: 'brush', icon: 'brush', label: 'Brush' },
   { kind: 'linear', icon: 'linear', label: 'Linear gradient' },
   { kind: 'radial', icon: 'radial', label: 'Radial gradient' },
-  { kind: 'bidirectional', icon: 'bidirectional', label: 'Bidirectional gradient' },
   { kind: 'polygon', icon: 'lasso', label: 'Lasso' },
-  { kind: 'color', icon: 'colourRange', label: 'Colour range' },
-  { kind: 'luminance', icon: 'lumRange', label: 'Luminance range' }
+  { kind: 'objects', icon: 'objects', label: 'Object detection' }
 ]
 
 const JOIN_VERB: Record<MaskMode, string> = {
@@ -657,20 +659,6 @@ function OverlayControls(): React.JSX.Element {
               />
               Hide while adjusting
             </label>
-            <span className="micro">
-              Pins{keyHint('mask.pins') && ` · ${keyHint('mask.pins')} cycles`}
-            </span>
-            <div className="seg" role="group" aria-label={withKey('Pins', 'mask.pins')}>
-              {(['auto', 'always', 'never'] as PinsMode[]).map((p) => (
-                <button
-                  key={p}
-                  className={o.pins === p ? 'on' : ''}
-                  onClick={() => set({ pins: p })}
-                >
-                  {p[0].toUpperCase() + p.slice(1)}
-                </button>
-              ))}
-            </div>
           </Popover>
         )}
       </span>

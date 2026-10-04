@@ -30,6 +30,7 @@ import {
 import { runJob } from '../state/busy'
 import { useDevelop } from '../state/develop'
 import { scoped } from '../state/scope'
+import { useLegacy } from '../state/legacy'
 import { useLibrary } from '../state/library'
 import { OVERLAY_MODES, useUi } from '../state/ui'
 import { flashHud } from '../views/loupe/hudNote'
@@ -538,6 +539,21 @@ export const COMMANDS: KeyCommand[] = [
     run: () => dev().setCompare(dev().compare === 'before' ? 'off' : 'before')
   },
   {
+    id: 'view.legacy',
+    label: 'Compare with the previous engine',
+    group: 'View',
+    context: 'develop',
+    keys: [],
+    run: () => {
+      const key = dev().session?.key
+      if (!key) return
+      void api.legacy.get(key).then((p) => {
+        if (p) useLegacy.getState().show(key)
+        else lib().say('No old preview is kept for this photo', 'info')
+      })
+    }
+  },
+  {
     id: 'view.split',
     label: 'Before / after split',
     group: 'View',
@@ -651,18 +667,6 @@ export const COMMANDS: KeyCommand[] = [
       patchMask(layer.id, layer.enabled ? 'Hide mask' : 'Show mask', (l) => {
         l.enabled = !l.enabled
       })
-    }
-  },
-  {
-    id: 'mask.pins',
-    label: 'Cycle the mask pins (Auto → Always → Never)',
-    group: 'Masks',
-    context: 'develop',
-    keys: ['Shift+H', 'H'],
-    run: () => {
-      const order = ['auto', 'always', 'never'] as const
-      const cur = order.indexOf(ui().maskOverlay.pins)
-      ui().setMaskOverlay({ pins: order[(cur + 1) % order.length] })
     }
   },
   {

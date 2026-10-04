@@ -6,6 +6,7 @@ import { join } from 'path'
 import { Store } from '../src/main/db'
 import { defaultRecipe, type Recipe } from '../src/shared/recipe'
 import {
+  convertAsShot,
   convertWb,
   opOf,
   savedWhite,
@@ -98,4 +99,45 @@ test('a saved white keeps its numbers on its own kind and converts across', () =
   assert.deepEqual(wbFromSaved(wb, saved, other), wb)
   const onJpeg = wbFromSaved(wb, saved, JPEG)
   assert.deepEqual(onJpeg, { ...convertWb(wb, RAW, JPEG), preset: 'mine:Sun' })
+})
+
+test('a RAW’s white keeps its engine white when its as-shot moves (R5 3671 → 3327 K), and comes back', () => {
+  const own: WbContext = {
+    isRaw: true,
+    asShot: { x: 0.3, y: 0.3, temperature_kelvin: 3671, tint: 0 }
+  }
+  const pixl: WbContext = {
+    isRaw: true,
+    asShot: { x: 0.31, y: 0.31, temperature_kelvin: 3327, tint: 0.002 }
+  }
+  const wb = custom(5500, 12)
+  const there = convertAsShot(wb, own, pixl)
+  assert.equal(there.mode, 'custom')
+  // The engine white is the same: it is the numbers that were re-expressed.
+  const a = opOf(wb, own)
+  const b = opOf(there, pixl)
+  // To integer Kelvin and tint units: within a percent or so of the engine white (mired scale).
+  close(a.kelvin, b.kelvin, a.kelvin * 0.015, 'engine kelvin')
+  close(a.tint, b.tint, 0.0005, 'engine tint')
+  assert.notEqual(there.temperature, wb.temperature)
+  const back = convertAsShot(there, pixl, own)
+  close(back.temperature, wb.temperature, 40, 'round trip kelvin')
+  close(back.tint, wb.tint, 3, 'round trip tint')
+})
+
+test('as-shot has no numbers to carry; a relative white (no as-shot) is the same either way', () => {
+  const own: WbContext = {
+    isRaw: true,
+    asShot: { x: 0.3, y: 0.3, temperature_kelvin: 3671, tint: 0 }
+  }
+  const pixl: WbContext = {
+    isRaw: true,
+    asShot: { x: 0.3, y: 0.3, temperature_kelvin: 3327, tint: 0 }
+  }
+  const shot: Recipe['wb'] = { mode: 'as-shot', temperature: 0, tint: 0, preset: null }
+  assert.equal(convertAsShot(shot, own, pixl), shot)
+  const rel = custom(20, -5)
+  assert.equal(convertAsShot(rel, JPEG, JPEG), rel)
+  const noWhite: WbContext = { isRaw: true, asShot: null }
+  assert.equal(convertAsShot(rel, noWhite, noWhite), rel)
 })

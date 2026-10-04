@@ -14,7 +14,7 @@ import {
   type WatermarkSettings
 } from '../../../shared/watermark'
 import { InfoTip } from '../components/InfoTip'
-import { Slider } from '../components/ui'
+import { Card, Slider } from '../components/ui'
 import { api, errorText } from '../lib/api'
 
 const ANCHOR_TITLE: Record<WatermarkAnchor, string> = {
@@ -85,8 +85,7 @@ export function WatermarkSection({
   const mark = file && thumb ? placeMark(w, thumb.w, thumb.h, file.width, file.height) : null
 
   return (
-    <fieldset className="watermark">
-      <legend>Watermark</legend>
+    <Card id="export.watermark" title="Watermark" defaultOpen={w.enabled || !!w.path}>
       <label className="check">
         <input
           type="checkbox"
@@ -221,6 +220,6 @@ export function WatermarkSection({
           />
         </p>
       )}
-    </fieldset>
+    </Card>
   )
 }

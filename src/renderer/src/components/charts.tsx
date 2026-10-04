@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react'
+import { hslToRgb } from '../../../shared/palette'
+import { simulateVision, type VisionKind } from '../../../shared/scopemetrics'
 import type { HueBin, ImageStats } from '../../../shared/engine-types'
 import type { HslBand } from '../../../shared/recipe'
-import { stopsBins, stopsX } from '../../../shared/scopes'
+import { areaPath, stopsBins, stopsX } from '../../../shared/scopes'
 import { withKey } from '../lib/commands'
 import { bandOfHue } from '../lib/helpers'
+import { Icon } from './icons'
 import { InfoTip, type Tip } from './InfoTip'
 import { TechInfo } from './TechInfo'
 
@@ -20,16 +23,6 @@ const HUE_TIP: Tip = {
   tip: 'Shift-click a bar to make a mask of that colour.'
 }
 
-function areaPath(counts: number[], w: number, h: number, max: number, log: boolean): string {
-  const n = counts.length
-  if (n === 0) return ''
-  const scale = (c: number): number => (log ? Math.log1p(c) / Math.log1p(max) : c / max)
-  const pts = counts.map(
-    (c, i) => `${((i / (n - 1)) * w).toFixed(1)},${(h - scale(c) * (h - 2)).toFixed(1)}`
-  )
-  return `M0,${h} L${pts.join(' L')} L${w},${h} Z`
-}
-
 /**
  * The histogram of what is on screen: red, green and blue added together
  * where they overlap, luma as a line, clipping marked at both ends. Clicking
@@ -43,12 +36,15 @@ export function Histogram({
   stats,
   hdr = null,
   clipping,
-  onClipping
+  onClipping,
+  onExpand
 }: {
   stats: ImageStats | null
   hdr?: ImageStats | null
   clipping: boolean
   onClipping: (on: boolean) => void
+  /** Opens the expanded scopes at the histogram. */
+  onExpand?: () => void
 }): React.JSX.Element {
   const [log, setLog] = useState(true)
   const [wantHdr, setWantHdr] = useState(true)
@@ -162,6 +158,7 @@ export function Histogram({
           )}
           <span className="spacer" />
           <InfoTip tip={HISTOGRAM_TIP(log)} label="Histogram" />
+          {onExpand && <ExpandButton label="Expand the histogram" onClick={onExpand} />}
         </div>
       )}
     </div>
@@ -197,12 +194,18 @@ export function HueChart({
   stats,
   before,
   masked,
-  onPick
+  onPick,
+  onExpand,
+  vision = null
 }: {
   stats: ImageStats | null
   before: ImageStats | null
   masked: ImageStats | null
   onPick: (hue: number, band: HslBand, newMask: boolean) => void
+  /** Opens the expanded scopes at the colours. */
+  onExpand?: () => void
+  /** Paint the bars as this colour-vision deficiency sees them. */
+  vision?: VisionKind | null
 }): React.JSX.Element {
   const [inside, setInside] = useState(true)
   const [ghost, setGhost] = useState(true)
@@ -237,7 +240,9 @@ export function HueChart({
                 className="fill"
                 style={{
                   height: `${(share / max) * 100}%`,
-                  background: `hsl(${mid} ${Math.round(35 + bin.mean_saturation * 65)}% 52%)`
+                  background: vision
+                    ? `rgb(${simulateVision(hslToRgb(mid, (35 + bin.mean_saturation * 65) / 100, 0.52), vision).join(' ')})`
+                    : `hsl(${mid} ${Math.round(35 + bin.mean_saturation * 65)}% 52%)`
                 }}
               />
             </div>
@@ -277,8 +282,30 @@ export function HueChart({
               in mask
             </label>
           )}
+          {onExpand && <ExpandButton label="Expand the colour chart" onClick={onExpand} />}
         </span>
       </div>
     </div>
+  )
+}
+
+/** The small corner button that opens a scope's expanded view. */
+function ExpandButton({
+  label,
+  onClick
+}: {
+  label: string
+  onClick: () => void
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      className="icon sm scope-expand"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
+      <Icon name="expand" />
+    </button>
   )
 }

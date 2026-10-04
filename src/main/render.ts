@@ -34,7 +34,8 @@ import {
   type P as SpotPoint,
   type RetouchSpot
 } from '../shared/retouch'
-import { RAW_DEVELOP_REV, stackSignature, type PixelStep } from '../shared/pixels'
+import { stackSignature, type PixelStep } from '../shared/pixels'
+import { developMark, pixlSupported, resolveRawColour } from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
 import { ensureBase, pixelDeps } from './pixels/base'
@@ -95,6 +96,7 @@ import {
   type ProxyFile
 } from './proxy'
 import { editsHdr, ensureHdrSource } from './hdrsource'
+import { READ_LIMITS } from '../shared/limits'
 import type { LensShot } from './lensprofiles'
 import {
   blankRequest,
@@ -102,6 +104,8 @@ import {
   displayPolicy,
   gainMapOf,
   interactiveThreads,
+  colourOf,
+  rawDevelop,
   RAW_DEVELOP,
   sourceOrientation,
   seedOf,
@@ -1447,6 +1451,7 @@ class Session {
           ToneMap: {
             to: 'LinearSrgb',
             operator: 'Clip',
+            mode: 'PerChannel',
             source_peak: { Nits: this.info.peak_nits ?? 1000 },
             target_peak_nits: 203,
             gamut: 'Clip',
@@ -1527,7 +1532,7 @@ class Session {
    * for the previews and the export.
    */
   async measureCa(): Promise<CaMeasurement> {
-    const raw = this.isRaw ? RAW_DEVELOP : null
+    const raw = this.isRaw ? rawDevelop(colourOf(this.row)) : null
     const r = (await this.owner.bgEngine.suggestLateralCa({
       source: { Path: this.row.path },
       input: this.file.input,
@@ -1536,6 +1541,9 @@ class Session {
       orientation: sourceOrientation(this.file, raw),
       geometry: MANUAL_GEOMETRY,
       model: 'Scale',
+      // The source's own primaries: 0.16.0's fit, valid for every source.
+      planes: 'Frame',
+      limits: READ_LIMITS,
       threads: BACKGROUND_THREADS
     })) as unknown as {
       lateral_ca: LateralCa
@@ -1572,6 +1580,7 @@ class Session {
       lens: lensCorrection(this.recipe.lens),
       mode,
       focal,
+      limits: READ_LIMITS,
       threads: interactiveThreads()
     })) as unknown as { transform: Transform }
     this.usableUpright(r.transform, src.width, src.height)
@@ -1627,6 +1636,7 @@ class Session {
       shape: spotShape(points, radius),
       feather: featherOf({ feather, radius }),
       score: kind === 'heal' ? 'Texture' : 'Difference',
+      limits: READ_LIMITS,
       threads: BACKGROUND_THREADS
     })) as unknown as { source_offset: SpotPoint }
     const at = points[0]
@@ -1677,7 +1687,7 @@ class Session {
       layerId
     )
     // Made from today's RAW develop (see `staleRawStep`).
-    if (step && this.isRaw) step.params.develop = RAW_DEVELOP_REV
+    if (step && this.isRaw) step.params.develop = developMark(colourOf(this.row))
     // The full-size frame with this stroke, started now: a 1:1 view wants it
     // the moment the step lands, and it is the last one plus a small patch.
     if (step)
@@ -1842,13 +1852,20 @@ export class DevelopSessions {
       this.openingKey = key
       this.closeOthers(key)
     }
-    const data = await this.library.index.openData(key)
+    let data = await this.library.index.openData(key)
+    // The original, or the copy its project carries when it is gone.
+    let row = await this.library.readable(data.row)
+    let info = await this.library.probe(row, this.engine)
+    // A RAW's camera colour is chosen the first time it is probed, and its
+    // saved white balance moves with it: what was read before is read again.
+    if (data.row.is_raw === 1 && !data.row.raw_colour && row.raw_colour) {
+      data = await this.library.index.openData(key)
+      row = await this.library.readable(data.row)
+      info = await this.library.probe(row, this.engine)
+    }
     const { item, snapshots } = data
     // The index names planes; the session renders them.
     const recipe = await this.library.planes.hydrate(data.recipe)
-    // The original, or the copy its project carries when it is gone.
-    const row = await this.library.readable(data.row)
-    const info = await this.library.probe(row, this.engine)
     // A gain-map photo edited as HDR opens on its applied rendition.
     const hdr = editsHdr(recipe, info) ? await ensureHdrSource(this.engine, row, info) : null
     const graded = hdr?.info ?? info
@@ -1875,6 +1892,16 @@ export class DevelopSessions {
       isRaw: row.is_raw === 1,
       isHdr: graded.is_hdr,
       asShot: info.as_shot_white,
+      rawColour: row.is_raw === 1 ? resolveRawColour(row.raw_colour, info) : null,
+      cameraColour:
+        row.is_raw === 1 && info.camera_colour
+          ? {
+              make: info.camera_colour.make,
+              model: info.camera_colour.model,
+              pixlCamera: info.camera_colour.pixl_camera,
+              supported: pixlSupported(info)
+            }
+          : null,
       // The working frame: an upscale step makes it larger than the file.
       frameWidth: session.frameSize().width,
       frameHeight: session.frameSize().height,

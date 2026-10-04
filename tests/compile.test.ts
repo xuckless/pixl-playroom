@@ -393,3 +393,13 @@ test('a RAW the engine refuses by name is said plainly', async () => {
   assert.equal(unsupportedRaw({ Unsupported: { operation: 'resize', detail: 'x' } }), null)
   assert.equal(unsupportedRaw(undefined), null)
 })
+
+test('a picture past the limits, and a stale cache, are said plainly', async () => {
+  const { describeEngineError } = await import('../src/shared/engine-types')
+  assert.match(
+    describeEngineError('TooLarge', { TooLarge: { field: 'limits', pixels: 900e6, side: 40000 } })!,
+    /900 megapixels \(40000 px on its longest side\), more than Playroom opens/
+  )
+  assert.match(describeEngineError('StaleCache', undefined)!, /another engine/)
+  assert.equal(describeEngineError('Decode', undefined), null)
+})

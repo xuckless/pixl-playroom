@@ -4,6 +4,8 @@ import type { GuideLine } from '../shared/upright'
 import type { P as SpotPoint, RetouchSpot } from '../shared/retouch'
 import type { PixelStep } from '../shared/pixels'
 import type { ExportSettings } from '../shared/export'
+import type { Guard } from '../shared/exportGuards'
+import type { RawColour } from '../shared/rawcolour'
 import type { LensProfile } from '../shared/lens'
 import {
   IPC,
@@ -38,6 +40,8 @@ import {
   type MetaPatch,
   type MetaTextPatch,
   type Preset,
+  type ExportPreview,
+  type LegacyPreview,
   type Prefs,
   type RegionRequest,
   type RegionResult,
@@ -124,6 +128,13 @@ const api = {
     freeDevice: (id: string) => call<LicenceStatus>(IPC.licence.freeDevice, id),
     onChange: (cb: (s: LicenceStatus) => void) => on(IPC.licence.changed, cb)
   },
+  legacy: {
+    get: (key: string) => call<LegacyPreview | null>(IPC.legacy.get, key),
+    seen: (key: string) => call<void>(IPC.legacy.seen, key),
+    remove: (key: string) => call<void>(IPC.legacy.remove, key),
+    removeAll: () => call<number>(IPC.legacy.removeAll),
+    count: () => call<number>(IPC.legacy.count)
+  },
   prefs: {
     get: () => call<Prefs>(IPC.prefs.get),
     setCrashReports: (c: CrashConsent) => call<CrashConsent>(IPC.prefs.setCrashReports, c)
@@ -182,6 +193,8 @@ const api = {
   },
   develop: {
     open: (key: string) => call<DevelopSession>(IPC.develop.open, key),
+    setRawColour: (key: string, colour: RawColour) =>
+      call<RawColour>(IPC.develop.setRawColour, key, colour),
     close: (key: string) => call<void>(IPC.develop.close, key),
     update: (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
       call<void>(IPC.develop.update, key, recipe, interactive, rev),
@@ -278,6 +291,13 @@ const api = {
     savePreset: (p: Omit<ExportPreset, 'id'> & { id?: string }) =>
       call<ExportPreset>(IPC.export.savePreset, p),
     removePreset: (id: string) => call<void>(IPC.export.removePreset, id),
+    /** One photo as the export would write it, at a reduced size. A newer call stops the one before. */
+    preview: (key: string, settings: ExportSettings) =>
+      call<ExportPreview>(IPC.export.preview, key, settings),
+    cancelPreview: () => call<void>(IPC.export.cancelPreview),
+    /** The checks the disk and the photos make: folder, room, replaced files, size. */
+    check: (keys: string[], settings: ExportSettings) =>
+      call<Guard[]>(IPC.export.check, keys, settings),
     onProgress: (cb: (p: ExportProgress) => void) => on(IPC.export.progress, cb)
   },
   enhance: {

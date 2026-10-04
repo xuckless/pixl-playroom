@@ -173,47 +173,26 @@ void main() {
   o = vec4(uTint * a, a);
 }`
 
-/** One direction of a Gaussian over a colour picture (its edge pixels repeated): the frost behind the glass. */
-export const PBLUR_FS = `${HEAD}
-uniform sampler2D uSrc;
-uniform vec2 uStep;
-uniform float uSigma;
-void main() {
-  vec2 p = here();
-  int r = int(ceil(uSigma * 3.0));
-  vec4 sum = vec4(0.0);
-  float wsum = 0.0;
-  for (int i = -32; i <= 32; i++) {
-    if (i < -r || i > r) continue;
-    float w = exp(-0.5 * float(i * i) / (uSigma * uSigma));
-    vec2 q = clamp(p + uStep * float(i), vec2(0.0), vec2(1.0));
-    sum += texture(uSrc, vec2(q.x, 1.0 - q.y)) * w;
-    wsum += w;
-  }
-  o = sum / wsum;
-}`
-
 /**
  * The overlay: the loupe's mask and the engine's, crossfaded, shown as the
  * chosen view. Premultiplied alpha out.
  *
- * Molten glass (view 5) treats the mask as a pane of liquid glass laid on
- * the photo, the mask its thickness: where it rises (its edge) the picture
- * behind bends inward and the rim catches a light from the top left, with a
- * soft shadow on the far side, and the rim is frosted; inside, the glass is
- * clear: the picture stays sharp, a little more saturated and tinted the
- * mask's colour, so the edit can be judged through it. For a moment after the mask
- * changes the light on the rim flows (uFlow), then settles. Without the
- * picture yet it shows as the colour view.
+ * Clear glass (view 5) lays the mask on the photo as a pane of tinted glass:
+ * inside, the picture stays sharp, a little more saturated and tinted the
+ * mask's colour, so the edit can be judged through it. Its edge is one
+ * crisp line, a CSS pixel wide, in the mask's colour, wherever the mask
+ * crosses half; without the picture yet it shows as the colour view.
  *
- * Inside, away from the rim, the glass is lighter. A sharp edge is drawn
- * as a solid line; a feathered one keeps a hairline.
+ * The line is placed from how far each screen pixel is from that crossing
+ * (the mask's value over its steepness), not from a blur of it, so it keeps
+ * its width at any zoom, and the mask is averaged over the pixel's own area
+ * so a minified edge does not shimmer. A feathered edge keeps the line,
+ * fainter.
  */
 export const SHADE_FS = `${HEAD}
 uniform sampler2D uAcc;
 uniform sampler2D uEngine;
 uniform sampler2D uPicture;
-uniform sampler2D uFrost;
 uniform bool uHaveAcc;
 uniform bool uHaveEngine;
 uniform bool uHavePicture;
@@ -223,8 +202,6 @@ uniform int uView;        // 0 colour, 1 image on black, 2 image on white, 3 whi
 uniform vec3 uTint;
 uniform float uAlpha;
 uniform float uReveal;    // 0…1: a wipe from the top (a mask arriving from a model)
-uniform float uTime;      // seconds
-uniform float uFlow;      // 0…1: how much the glass's rim light moves
 uniform float uPx;        // canvas pixels per CSS pixel: the edge line keeps its width on screen
 float M(vec2 d) {
   float live = 0.0;
@@ -236,6 +213,19 @@ vec3 P(sampler2D t, vec2 q) {
   q = clamp(q, vec2(0.0), vec2(1.0));
   return texture(t, vec2(q.x, 1.0 - q.y)).rgb;
 }
+// The mask averaged over this pixel's own area (4 x 4 taps): steady where the plane is minified.
+float MA(vec2 d) {
+  float sum = 0.0;
+  for (int j = 0; j < 4; j++)
+    for (int i = 0; i < 4; i++)
+      sum += M(d + (vec2(float(i), float(j)) - 1.5) * 0.25 / uSize);
+  return sum * 0.0625;
+}
+// How much of this pixel a line lw pixels wide along the mask's half-crossing covers.
+float edgeLine(float m, float lw) {
+  float w = max(fwidth(m), 1e-4);
+  return clamp(0.5 * lw + 0.5 - abs((m - 0.5) / w), 0.0, 1.0);
+}
 void main() {
   vec2 d = here();
   float m = M(d);
@@ -244,46 +234,23 @@ void main() {
   if (d.y > uReveal + 0.008) { o = vec4(0.0); return; }
   if (d.y > uReveal) { o = vec4(vec3(0.62, 0.55, 0.92) * front, front); return; }
   if (uView == 5 && uHavePicture) {
-    // How the glass rises across a few pixels: toward its thick side.
-    vec2 px = 3.0 / uSize;
-    vec2 g = 0.5 * vec2(M(d + vec2(px.x, 0.0)) - M(d - vec2(px.x, 0.0)),
-                        M(d + vec2(0.0, px.y)) - M(d - vec2(0.0, px.y)));
-    float slope = clamp(length(g) * 2.5, 0.0, 1.0);
-    vec2 n = g / max(length(g), 1e-5);
-    // Refraction: the picture behind the rim pulled in toward the thick side.
-    vec2 q = d - g * 0.045;
-    float body = smoothstep(0.0, 0.75, m);
-    // Clear glass: the picture stays sharp inside, so the edit reads through
-    // it; only the rim, where the glass bends light, is frosted.
-    vec3 c = mix(P(uPicture, q), P(uFrost, q), 0.55 * slope);
+    float ma = MA(d);
+    // Clear glass: the picture stays sharp, a little more saturated and tinted inside.
+    vec3 c = P(uPicture, d);
     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float body = smoothstep(0.0, 0.75, ma);
     c = mix(vec3(luma), c, 1.0 + 0.3 * body);
     c = mix(c, uTint, 0.16 * body) * 1.03 + 0.012;
-    // The rim: lit where it faces the light (top left), shaded where it faces away.
-    float facing = dot(-n, normalize(vec2(-0.6, -0.8)));
-    float flow = 1.0 + uFlow * 0.6 * sin(d.x * 38.0 + d.y * 27.0 - uTime * 2.4)
-                                   * sin(d.y * 21.0 - d.x * 13.0 + uTime * 1.7);
-    float hi = clamp(pow(max(facing, 0.0) * slope, 1.4) * 0.65 * flow, 0.0, 1.0);
-    c *= 1.0 - 0.32 * max(-facing, 0.0) * slope;
-    // Inside, away from the rim, the glass is lighter.
-    float inner = body * (1.0 - slope);
-    float a = clamp(m * uAlpha, 0.0, 1.0) * (1.0 - 0.45 * inner);
+    // Well inside, away from the edge, the glass is lighter.
+    float inner = body * smoothstep(0.6, 1.0, ma);
+    float a = clamp(ma * uAlpha, 0.0, 1.0) * (1.0 - 0.45 * inner);
     o = vec4(c * a, a);
-    float w = max(fwidth(m), 1e-4);
-    // The mask's edge where the glass is half thick. Sharp, it is a solid
-    // line about two CSS pixels wide: wherever the mask crosses half within
-    // a pixel each way, from well below to well above (a feathered edge
-    // never does, so it keeps a hairline).
-    vec2 e = vec2(clamp(uPx, 1.0, 2.5), 0.0) / uSize;
-    float m1 = M(d + e.xy), m2 = M(d - e.xy), m3 = M(d + e.yx), m4 = M(d - e.yx);
-    float lo = min(m, min(min(m1, m2), min(m3, m4)));
-    float up = max(m, max(max(m1, m2), max(m3, m4)));
-    float solid = smoothstep(0.1, 0.3, min(up - 0.5, 0.5 - lo));
-    float hair = (1.0 - smoothstep(0.0, 1.5 * w, abs(m - 0.5))) * 0.22 * (1.0 - solid);
-    float h = clamp(hi + hair, 0.0, 1.0);
-    o = vec4(vec3(h) + (1.0 - h) * o.rgb, h + (1.0 - h) * o.a);
-    float la = solid * mix(0.55, 0.85, uAlpha);
-    o = vec4(mix(uTint, vec3(1.0), 0.45) * la + (1.0 - la) * o.rgb, la + (1.0 - la) * o.a);
+    // The edge: one line a CSS pixel wide, in the mask's colour. A sharp
+    // edge (a steep change) is drawn full; a feathered one fainter.
+    float steep = smoothstep(0.03, 0.25, fwidth(ma));
+    float la = edgeLine(ma, max(1.0, uPx)) * mix(0.4, 1.0, steep) * mix(0.8, 1.0, uAlpha);
+    vec3 line = mix(uTint, vec3(1.0), 0.08);
+    o = vec4(line * la + (1.0 - la) * o.rgb, la + (1.0 - la) * o.a);
   } else if (uView == 0 || uView == 5) {
     float a = uAlpha * m;
     o = vec4(uTint * a, a);
@@ -295,17 +262,17 @@ void main() {
     o = vec4(vec3(m), 1.0);
   } else if (uView == 6) {
     // The overlay off and the mask changing: its edge alone, faintly.
-    float w = max(fwidth(m), 1e-4);
-    float a = (1.0 - smoothstep(0.0, 1.6 * w, abs(m - 0.5))) * uAlpha;
-    o = vec4(mix(uTint, vec3(1.0), 0.6) * a, a);
+    float a = edgeLine(MA(d), max(1.0, uPx)) * uAlpha;
+    o = vec4(mix(uTint, vec3(1.0), 0.08) * a, a);
   } else {
-    float w = max(fwidth(m), 1e-4);
-    float line = 1.0 - smoothstep(0.0, 1.6 * w, abs(m - 0.5));
-    float faint = max(1.0 - smoothstep(0.0, 1.2 * w, abs(m - 0.12)),
-                      1.0 - smoothstep(0.0, 1.2 * w, abs(m - 0.88)));
-    float fill = 0.10 * m;
+    float ma = MA(d);
+    float w = max(fwidth(ma), 1e-4);
+    float line = edgeLine(ma, max(1.0, uPx));
+    float faint = max(1.0 - smoothstep(0.0, 1.2 * w, abs(ma - 0.12)),
+                      1.0 - smoothstep(0.0, 1.2 * w, abs(ma - 0.88)));
+    float fill = 0.10 * ma;
     float a = clamp(max(line, faint * 0.35) + fill, 0.0, 1.0) * uAlpha;
-    o = vec4(mix(uTint, vec3(1.0), line * 0.5) * a, a);
+    o = vec4(mix(uTint, vec3(1.0), line * 0.2) * a, a);
   }
   o = max(o, vec4(vec3(0.62, 0.55, 0.92) * front, front));
 }`

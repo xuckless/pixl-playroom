@@ -1,5 +1,6 @@
 import type { ResolvedProfile } from './lens'
 import type { ModelSpeed } from './modelSpeed'
+import type { RawColour } from './rawcolour'
 /** IPC channel names and the app-level types both sides of the bridge share. */
 import type {
   ConvertReport,
@@ -60,6 +61,14 @@ export const IPC = {
     setChannel: 'updates:set-channel',
     /** main → renderer: the update state changed */
     event: 'updates:event'
+  },
+  /** Legacy previews: an edited photo as the engine before 0.17 showed it (main/legacy.ts). */
+  legacy: {
+    get: 'legacy:get',
+    seen: 'legacy:seen',
+    remove: 'legacy:remove',
+    removeAll: 'legacy:remove-all',
+    count: 'legacy:count'
   },
   prefs: {
     get: 'prefs:get',
@@ -131,6 +140,8 @@ export const IPC = {
   },
   develop: {
     open: 'develop:open',
+    /** A RAW's camera colour chosen (returns the one in force); the session is closed for the caller to reopen. */
+    setRawColour: 'develop:set-raw-colour',
     /** Make these photos' proxies ahead (the open one's neighbours in the filmstrip). */
     warm: 'develop:warm',
     close: 'develop:close',
@@ -223,6 +234,10 @@ export const IPC = {
     presets: 'export:presets',
     savePreset: 'export:save-preset',
     removePreset: 'export:remove-preset',
+    /** One photo as the export would write it, for the dialog; and the checks the disk and the photos make. */
+    preview: 'export:preview',
+    cancelPreview: 'export:cancel-preview',
+    check: 'export:check',
     /** main → renderer */
     progress: 'export:progress'
   },
@@ -501,7 +516,18 @@ export interface DevelopSession {
   info: SourceInfo
   isRaw: boolean
   isHdr: boolean
+  /** The white the develop balanced for: PIXL's under PIXL's camera colour (`info` carries the same). */
   asShot: WhitePoint | null
+  /** A RAW's camera colour in force ('container' or 'pixl:1'); null for anything else. */
+  rawColour: RawColour | null
+  /** A RAW's camera and whether PIXL's database holds it (the choice's menu); null for anything else. */
+  cameraColour: {
+    make: string
+    model: string
+    /** The camera as PIXL's database names it. */
+    pixlCamera: string | null
+    supported: boolean
+  } | null
   /** The full-resolution base frame (upright, before the user's turns). */
   frameWidth: number
   frameHeight: number
@@ -721,6 +747,19 @@ export interface ExportPreset {
   settings: ExportSettings
 }
 
+/** One photo as an export would write it, at a reduced size (main/exporter.ts `preview`). */
+export interface ExportPreview {
+  url: string
+  /** The preview's own size, not the export's. */
+  width: number
+  height: number
+  /** The preview file's size in bytes: the encoder's quality, at that size. */
+  bytes: number
+  format: string
+  /** Where the preview differs from the export, and what the engine said. */
+  notes: string[]
+}
+
 export interface ExportProgress {
   jobId: string
   done: number
@@ -774,6 +813,17 @@ export interface UpdateState {
 // ── Preferences ──────────────────────────────────────────────────────────────
 
 /** Crash reports leave the machine only once the user says yes; `unset` asks once. */
+/** A photo's legacy preview: the picture and what it is of. */
+export interface LegacyPreview {
+  url: string
+  /** The engine that made it ("0.16"). */
+  engine: string
+  /** The first-open comparison was already shown. */
+  seen: boolean
+  /** The new engine's thumbnail is made: until it is, there is nothing to compare with. */
+  fresh: boolean
+}
+
 export type CrashConsent = 'unset' | 'on' | 'off'
 
 export interface Prefs {
@@ -816,6 +866,10 @@ export interface ModelInfo {
   error?: string
   /** How long it takes on this computer, for one photo (see `modelSpeed.ts`). */
   speed: ModelSpeed | null
+  /** Retired by engine 0.17 and kept this release for who has it: Remove only, gone next update. */
+  retiring?: boolean
+  /** The model that takes its place. */
+  replacedBy?: string
 }
 
 /** Which provider AI models run on, and what the performance test measured. */

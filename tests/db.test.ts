@@ -190,8 +190,8 @@ test('RAWs the old decoder could not read are tried again; other failures stay',
     )
     add.run('/a/x.cr2', 'x.cr2', 'cr2', 1)
     add.run('/a/y.jpg', 'y.jpg', 'jpg', 0)
-    // As an index from 0.15 would stand: every migration but LibRaw's run.
-    db.exec(`PRAGMA user_version = ${MIGRATIONS.length - 1}`)
+    // As an index from 0.15 would stand: every migration before LibRaw's (the 12th) run.
+    db.exec('PRAGMA user_version = 11')
     migrate(db)
     const failed = (name: string): unknown =>
       (
@@ -202,6 +202,38 @@ test('RAWs the old decoder could not read are tried again; other failures stay',
     assert.equal(failed('x.cr2'), null)
     assert.equal(failed('y.jpg'), 'k')
     db.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a RAW’s camera colour is a column that starts empty and is kept', () => {
+  const dir = tmp()
+  try {
+    const file = join(dir, 'playroom.db')
+    const store = Store.open(file)
+    store.close()
+    const db = new DatabaseSync(file)
+    db.prepare(
+      `INSERT INTO photos (path, folder, name, ext, size, mtime, is_raw) VALUES ('/a/x.cr3', '/a', 'x.cr3', 'cr3', 1, 1, 1)`
+    ).run()
+    const at = (): unknown =>
+      (
+        db.prepare('SELECT raw_colour FROM photos WHERE path = ?').get('/a/x.cr3') as {
+          raw_colour: unknown
+        }
+      ).raw_colour
+    assert.equal(at(), null)
+    db.prepare("UPDATE photos SET raw_colour = 'pixl:1'").run()
+    // Opened again (every migration already run): kept.
+    db.close()
+    Store.open(file).close()
+    const again = new DatabaseSync(file)
+    assert.equal(
+      (again.prepare('SELECT raw_colour FROM photos').get() as { raw_colour: string }).raw_colour,
+      'pixl:1'
+    )
+    again.close()
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

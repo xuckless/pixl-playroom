@@ -233,7 +233,8 @@ export function compileRetouch(
             pupils: [eyeEllipse(s, user)],
             feather,
             amount: clamp(s.amount / 100, 0, 1),
-            pupil_level: clamp(s.pupilLevel / 100, 0, 1)
+            pupil_level: clamp(s.pupilLevel / 100, 0, 1),
+            catchlights: []
           }
         })
         break

@@ -1389,6 +1389,48 @@ What the 0.16 integration (branch `feat/engine-0.16`) left open.
       panel (today a note says to; `staleRawStep`).
 - [ ] **S** · Snap to edges on a colour or luminance range (E13's other half).
 
+## Later: a slimmer `.pixl` (2026-10-02)
+
+Nothing lossy, nothing slower; full plan in
+`~/.claude/plans/okay-hear-me-out-toasty-pearl.md`. Measured on 32 real
+projects (1.43 GB): the embedded DNG is 59% of the bytes, lossless AI steps
+in use 34%, AI steps named only by undo history 6%, masks/planes/patches
+0.7%, SQLite overhead 0.6%. About 13% can go without touching quality or
+speed; half of it needs the engine (E46, E47). Lossy AI steps (−84% of
+their size) are ruled out. Higher lossless effort gains nothing.
+
+- [ ] **S** · Container trim for new files, no version bump: `WITHOUT
+      ROWID` on `meta` and `blobs`; `items` and `history` only if measured
+      smaller and no slower (multi-KB JSON rows); 16 KiB pages stay. Same PR:
+      drop the ungated HEIC export option (the encoder is going, the decoder
+      stays; `export.ts`, `Dialogs.tsx:280`, `upgradeExportSettings` maps
+      saved `heic` to `jpeg`).
+- [ ] **S** · Fix `HistoryTable.json()` first: it yields only rows with
+      `"ref":`, so `gc()` never sees a history row that names a pixel blob
+      without a plane and could drop a history-only AI result after an hour
+      (reached today only from `deleteHistory` and a replaced original).
+- [ ] **M** · "Compact project" (only on request: Organise menu for a
+      selection, a button in the develop pane's project row): releases
+      `pixels`/`mask` blobs named by nothing but history (planes and LUTs
+      stay), 5-minute guard, flush the session and skip photos with a running
+      AI job, then `vacuumStep` loop; before/after sizes in the toast; cache
+      copies removed. A released step renders as nothing (`overlaysOf` skips
+      it, export too) with a one-time "run it again or remove the step"
+      notice instead of today's "its image is missing" failure.
+- [ ] **M** · Format v3, one batched bump: LUTs embedded as blobs (`kind`
+      `lut`, `codec` `cube`; `profile.blob` stamped where recipes enter main,
+      stored in `PixlFile.write`/`appendIn`, written out to the cache and
+      passed by path before compile; a moved project renders without
+      `userData/luts`); `recipe.process` (colour-math version, absent = 1,
+      written not acted on, ahead of the engine's colour tools); readers pick
+      a blob's extension from `blobs.codec` so masks can turn to JXL in a
+      minor version later; spec fixes (`blobs.codec` omits `png` and
+      `jxl-lossless`; "What later versions add" is stale).
+- [ ] **M** · Masks, planes and heal patches as lossless JXL (−45…−75% of
+      those blobs, bit-exact): waits on E47; no transcode on open.
+- [ ] **S** · Embedded RAW as a JXL-compressed DNG (≈ −10% of the original):
+      a branch in `planFor` once E46 lands.
+
 ## Waiting on the engine
 
 Playroom work that starts once the engine request lands
@@ -1397,6 +1439,10 @@ Playroom work that starts once the engine request lands
 - [ ] **S** · Drop `repairJpegExif` once JPEG EXIF is written correctly (E1).
       _Unblocked: 0.16.1 writes it once._
 - [ ] **S** · HEIC export and HEIC gain-map export (E2).
+      _2026-10-02: the engine drops the HEVC encoder (no patent licence); the
+      option goes from the dialog until one ships._
+- [ ] **S** · Embedded RAW as a JXL-compressed DNG (E46; "a slimmer `.pixl`").
+- [ ] **M** · Masks, planes and heal patches as lossless JXL (E47; "a slimmer `.pixl`").
 - [x] **M** · Sharp 1:1 zoom and 1:1 tiles on straightened, Upright and
       lens-warped photos (E3).
       _Done 2026-10-02 (engine 0.16): the tile is asked for in fractions of the picture as shown
@@ -1734,6 +1780,107 @@ masters are in `build/brand/`.
       `scripts/site-media.sh`, tool screenshots by `scripts/site-tools.mjs`.
       `site/` is only a redirect from the old GitHub Pages address. Downloads
       say "Soon" until the first release.
+
+### Upgrade to pixl-engine 0.17.0 (branch `claude/dazzling-noether-nssfax`, 2026-10-04)
+
+Roadmap: PixlRGB working space, `ColorPolicy::Master`, new required request
+fields, AVIF `threads`/`tune`/`tiling`, `limits`, retired models, no HEIC
+sink. Decisions: export wizard (stepped), Master on export only, MaskPins
+removed (gradient/lasso/heal handles stay), export guards block and warn but
+never auto-fix, an export preview, existing edits kept with an update notice
+and a before/after on each project's first open.
+
+- [x] Phase 0 — mirror types (`engine-types.ts`): `colour` + `dng_opcodes`
+      on RAW develops (`Container`, both lists `Apply`), `planes: 'Frame'` on
+      lateral CA / flat field (0.16.0's, valid for every source), tone-map
+      `mode: 'PerChannel'` (0.16.0), `AnalyzeRequest` orientation/lens/limits,
+      AVIF `threads`/`tune: 'Ssim'`/`tiling`, `PetEye.catchlights`, `Master`
+      policy, PixlRGB spaces; `limits` (`READ_LIMITS`) on every request that
+      reads a user's file; `Heic` sink gone (saved `heic` settings read as
+      AVIF); U²-Net and FBCNN-with-QF retired (a saved `fbcnn-qf` reads as
+      `fbcnn`); edited-photo thumbnails named by `ENGINE_RENDER_REV` so they
+      are made again. `RAW_DEVELOP_REV` stays `l`: `Container` is 0.16.0's
+      pixels, so pixel steps on RAWs stand (DNGs with ForwardMatrix tags move).
+- [ ] The lockfile: `pnpm install` with a PAT that has `read:packages` (the
+      container this was written in had none), to take 0.17.0 into
+      `pnpm-lock.yaml`.
+- [x] Phase 1 — legacy previews: an edited photo's last thumbnail from the
+      engine before 0.17 is kept (`main/legacy.ts`, taken just before the new
+      one replaces it; thumbnail stamps carry `ENGINE_RENDER_REV`), and the
+      first opening of such a photo shows before and after, with Send
+      feedback and Remove this preview / Remove all; View ▸ Compare with the
+      previous engine reopens it. A later app version removes the previews on
+      its own. They are 400 px library thumbnails, the only 0.16 render kept.
+- [x] Phase 2 — `Master` on export for an HDR photo's gain-map (JPEG, AVIF),
+      PQ (JXL, PNG) and Display P3 SDR files (`masterPolicy`); SDR sources,
+      expand, PQ AVIF, other colour spaces and a gain-map photo edited on its
+      SDR base stay classic. `TooLarge` and `StaleCache` have plain messages.
+- [x] Phase 3 — export as four steps of the editor's cards (Format, Size &
+      colour, Metadata & HDR, Review); sliders for quality, chroma, bit
+      depth, format; fit inside W×H; Intent (i); guards that block or warn
+      and never fix (`shared/exportGuards.ts`, plus the disk's through
+      `Exporter.preflight`); a preview through the real export request; a
+      receipt of what landed.
+- [x] Phase 4 — the scopes at full size (histogram overlay and parade, colour
+      chart with colour-vision simulation, CIE 1976 chart, metrics with
+      colour-vision collisions and a dominant palette). The CIE tab's photo
+      cloud and the gamut coverage rows wait for the engine request below.
+- [x] Phase 5 — masks: an Object detection button (bidirectional and the
+      colour and luminance ranges are in the … picker), a crisp one-pixel
+      mask edge in the mask's colour at any zoom, MaskPins removed (the
+      gradient and lasso handles stay, shown while the pointer is over the
+      photo).
+- [x] RAW colour: `{ Pixl: { version: 1 } }` for every RAW whose body
+      `camera_colour.pixl_versions` holds (46), else `Container`. Recorded per
+      photo (`photos.raw_colour`, 'container' | 'pixl:1', in the sidecar and
+      project too; `shared/rawcolour.ts`), resolved by the first probe
+      (`Library.withColour`), named in every cache (`versionStamp` ends in
+      `developMark`: `l` for the file's own, `lp1` for PIXL's) and on the
+      pixel steps laid on it (`staleRawStep(step, isRaw, mark)`). The as-shot
+      white (and where Temp/Tint start) is PIXL's under PIXL colour
+      (`effectiveInfo`); a saved absolute white balance moves with it
+      (`convertAsShot`). A Colour select in the develop panel and a line in
+      the info panel switch a photo. Existing RAWs move (heals/denoise/enhance
+      on them are marked stale): the notice and the legacy before/after cover
+      it. Still to check with the real engine and a RAW: that `Pixl` develops
+      (R5 3671 → 3327 K), and the first open of an edited RAW.
+
+#### Retiring models: U²-Net and FBCNN-at-a-quality (gone in the next update)
+
+Engine 0.17 retired both (`retired[]` in the models roster, `ship: false`); this
+release keeps them for who downloaded them (`src/main/ai/legacymodels.ts`):
+an installed one is listed under AI models as "Being retired" with Remove
+only, never offered for download. U²-Net still makes Subject and Background
+masks (preferred over U²-Netp as before; if the 0.17 engine will not run its
+graph, the job falls back to U²-Netp and logs it). FBCNN-QF runs nothing.
+
+- [ ] First thing to check on a machine with the engine installed: U²-Net
+      really runs on 0.17 (`ClassSegmenter` with the vendored roster `ref`).
+- [ ] **In the next update:** delete `legacymodels.ts` and `tests/legacymodels.test.ts`;
+      remove `'u2net'` from `SUBJECT_MODELS` (`ai/segment.ts`), the fallback
+      block in `SegmentRunner.run`, the `installed('u2net')` check in
+      `ipc.ts` capabilities, `'u2net'` in the benchmark order and `legacy`
+      uses in `ai/models.ts` (`legacy()`, `legacyDirs`, `list()`'s retiring
+      loop, `ref()` branch); the `u2net` and `fbcnn-color-qf` entries in
+      `views/modelCopy.ts`; `retiring`/`replacedBy` in `ModelInfo` and the
+      badge in `ModelsSection.tsx`; and add a one-time start-up clean-up that
+      removes `userData/models/u2net` and `userData/models/fbcnn-color-qf`.
+
+#### ENGINE REQUEST: need u'v' and gamut coverage metrics
+
+The expanded scope's CIE 1976 u'v' chart (the image's chromaticity cloud and
+hull, before/after) and gamut coverage need them from `analyze`/`measure`,
+which today return RGB/luma histograms and a hue histogram only:
+
+- [ ] `ImageStats.chromaticity`: a 2-D histogram of CIE 1976 u'v' (say 256 ×
+      256 over the visible range, plus the pixel count, the domain's white
+      point and `Y` weighting), measured in the stats' domain (HDR in stops).
+- [ ] `ImageStats.gamut_coverage`: the fraction of measured pixels inside
+      sRGB, Display P3, Adobe RGB, Rec.2020 and PixlRGB, and the fraction
+      outside the visible range (what the guard would pull back).
+- [ ] The same for `ConvertRequest::measure` so before/after come from one
+      render each. Until then the CIE tab is a shell, with no renderer-side
+      approximation.
 
 ### Upgrade to pixl-engine 0.16.0 (branch `feat/engine-0.16`, 2026-10-02)
 

@@ -35,6 +35,12 @@ export interface PixelSpec {
   channels: number | null
 }
 
+/** `{ max_pixels, max_side }`: a picture past either is `TooLarge`, before its pixels are allocated. */
+export interface Limits {
+  max_pixels: number
+  max_side: number
+}
+
 /** The eight EXIF orientations, as operations (EXIF values 1–8 in order). */
 export type Orientation =
   | 'Normal'
@@ -116,6 +122,14 @@ export type DngCrop = 'None' | 'ActiveArea' | 'Best'
  */
 export type RawResolution = 'Full' | 'Cell'
 
+/** What a RAW says about its colour. `Pixl` is refused on a body the version does not hold. */
+export type CameraColour = 'Container' | { Pixl: { version: number } } | { Stated: unknown }
+export type OpcodeUse = 'Apply' | 'Skip'
+export interface DngOpcodes {
+  list1: OpcodeUse
+  list2: OpcodeUse
+}
+
 export type RawMode =
   | {
       Develop: {
@@ -128,10 +142,12 @@ export type RawMode =
         crop: DngCrop
         /** `Cell` with `demosaic: false` is refused. */
         resolution: RawResolution
+        colour: CameraColour
+        dng_opcodes: DngOpcodes
       }
     }
   | 'EmbeddedPreview'
-  /** PIXL's own scene-linear develop: F32 linear Rec.2020, unclamped. */
+  /** PIXL's own scene-linear develop: F32 linear PixlRGB, unclamped. */
   | {
       Scene: {
         white_balance: 'AsShot' | { Stated: { temperature_kelvin: number; tint: number } }
@@ -139,6 +155,8 @@ export type RawMode =
         crop: DngCrop
         denoise: Denoise | null
         resolution: RawResolution
+        colour: CameraColour
+        dng_opcodes: DngOpcodes
       }
     }
 
@@ -263,24 +281,19 @@ export type Encode =
     }
   | { Png: { compression: PngCompression; filter: PngFilter } }
   | {
-      Heic: {
-        quality: number
-        lossless: boolean
-        bit_depth: number
-        chroma: Chroma
-        matrix: YCbCrMatrix
-        gain_map?: GainMapEncode | null
-      }
-    }
-  | {
       Avif: {
         quality: number
         lossless: boolean
         bit_depth: number
         chroma: Chroma
+        /** 0–9: 10 is refused. */
         speed: number
         matrix: YCbCrMatrix
         gain_map?: GainMapEncode | null
+        /** The AV1 encoder's own threads, 1–64. */
+        threads: number
+        tune: AvifTune
+        tiling: AvifTiling
       }
     }
   | { Tiff: { compression: TiffCompression } }
@@ -343,6 +356,9 @@ export interface MetadataPolicy {
 export const STRIP_ALL: MetadataPolicy = { exif: false, icc: false, xmp: false, iptc: false }
 export const PRESERVE_ALL: MetadataPolicy = { exif: true, icc: true, xmp: true, iptc: true }
 
+export type AvifTune = 'Psnr' | 'Ssim' | 'Iq'
+export type AvifTiling = 'Single' | { Grid: { tile: number } }
+
 export type Dither = 'None' | { TriangularNoise: { seed: number } }
 
 // ── Colour ───────────────────────────────────────────────────────────────────
@@ -353,6 +369,9 @@ export type ColorSpaceRef =
   | 'DisplayP3'
   | 'AdobeRgb'
   | 'Rec2020'
+  /** PIXL's working space. Refused at 8 bits. */
+  | 'PixlRgb'
+  | 'LinearPixlRgb'
   | 'Rec2100Pq'
   | 'Rec2100Hlg'
   | 'GenericGray22'
@@ -365,6 +384,22 @@ export type ToneMapOperator = 'Bt2390' | 'Hable' | 'Reinhard' | 'Clip'
 export type ExpandOperator = { Linear: { sdr_white_nits: number } } | 'Bt2446A'
 export type Peak = 'FromFile' | { Nits: number }
 export type GamutMap = 'Clip' | 'Compress'
+/** How a tone map treats the channels: `PerChannel` is 0.16.0 bit for bit. */
+export type ToneMapMode = 'PerChannel' | 'MaxRgb' | 'Luminance'
+
+/** `ColorPolicy::Master`: every field is required. */
+export type MasterPeak = 'Measured' | { Nits: number }
+export type MasterCeiling = 'Peak' | { Nits: number }
+export type MasterReach = 'Measured' | { Stated: number }
+export type MasterLook = 'Colorimetric' | { Pixl: { version: 1 | 2 } }
+export interface MasterPolicy {
+  headroom: boolean
+  peak: MasterPeak
+  /** `null` with `headroom: false`. */
+  ceiling: MasterCeiling | null
+  reach: MasterReach
+  look: MasterLook
+}
 
 /**
  * What happens to luminance above the peak when PQ/HLG pixels leave the
@@ -395,6 +430,7 @@ export type ColorPolicy =
       ToneMap: {
         to: ColorSpaceRef
         operator: ToneMapOperator
+        mode: ToneMapMode
         source_peak: Peak
         target_peak_nits: number
         gamut: GamutMap
@@ -405,6 +441,8 @@ export type ColorPolicy =
   | {
       Expand: { to: ColorSpaceRef; operator: ExpandOperator; peak_nits: number; limit: HdrLimit }
     }
+  /** The engine's own path from any source to an HDR or SDR output. */
+  | { Master: MasterPolicy }
 
 export type ColorSource = 'IccProfile' | 'Cicp' | 'Assumed'
 
@@ -933,10 +971,14 @@ export type LateralCaModel =
   | { Poly3: { red: TcaPoly3; blue: TcaPoly3 } }
   | { Rectilinear: { red: WarpRectilinear; blue: WarpRectilinear } }
 
+/** `Frame` is the source's own primaries (0.16.0); `Camera` is a developed RAW's camera planes. */
+export type CaPlanes = 'Frame' | 'Camera'
+
 export interface LateralCa {
   model: LateralCaModel
   geometry: LensGeometry
   amount: number
+  planes: CaPlanes
 }
 
 export interface Vignetting {
@@ -960,6 +1002,7 @@ export interface FlatField {
   apply: 'Divide' | 'Multiply'
   full_scale: number
   amount: number
+  planes: CaPlanes
 }
 
 /** `outside` and `resampler` are required exactly when distortion or lateral CA is set. */
@@ -1026,6 +1069,8 @@ export interface PetEye {
   feather: Feather
   amount: number
   pupil_level: number
+  /** `[]` is 0.16.0 byte for byte. */
+  catchlights: unknown[]
 }
 
 export type RetouchStep =
@@ -1072,6 +1117,7 @@ export interface OverlayReport {
 export interface SdrRendition {
   to: ColorSpaceRef
   operator: ToneMapOperator
+  mode: ToneMapMode
   source_peak_nits: number
   target_peak_nits: number
   gamut: GamutMap
@@ -1164,6 +1210,8 @@ export interface ConvertRequest {
   lens: LensCorrection | null
   retouch: Retouch | null
   output_sharpen: OutputSharpen | null
+  /** Refuses a picture past it from its header; `null` checks nothing. */
+  limits: Limits | null
   measure: Measure | null
 }
 
@@ -1185,6 +1233,11 @@ export interface AnalyzeRequest {
   threads: number
   weights: RasterMask | null
   noise: boolean
+  /** `'Normal'` is 0.16.0. With a lens or a turn, `weights` must have the corrected frame's aspect. */
+  orientation: Orientation
+  lens: LensCorrection | null
+  /** Refuses a picture past it from its header. Set it on every request that reads a user's file. */
+  limits: Limits | null
   /**
    * How a PQ/HLG source enters the `Linear` domain (1.0 is the reference
    * white; the measurement spans to the peak). Required exactly for a PQ/HLG
@@ -1203,7 +1256,36 @@ export interface LightLevel {
   headroom_stops: number | null
 }
 
+/** What `ColorPolicy::Master` did, each built-in number it used and every choice it made, in words. */
+export interface MasterReport {
+  headroom: boolean
+  entered: string
+  primaries: string
+  white_nits: number
+  peak_nits: number
+  peak_measured: boolean
+  ceiling_nits: number | null
+  output: string
+  sdr_space: string | null
+  display_tone_map_version: number | null
+  rolloff: unknown | null
+  final_guard_pixels: number
+  look: string
+  look_pixels: number
+  look_guarded_pixels: number
+  gamut: {
+    reach: number
+    reach_measured: boolean
+    knee: number
+    moved_pixels: number
+    [k: string]: unknown
+  } | null
+  notes: string[]
+}
+
 export interface ColorReport {
+  /** The engine's own path, when `color` was `Master`. */
+  master?: MasterReport | null
   space: string
   source: ColorSource
   converted: boolean
@@ -1439,6 +1521,26 @@ export interface WhitePoint {
   tint: number
 }
 
+/** Which names a RAW's camera is known by (PIXL's camera database matches them exactly). */
+export type CameraNameForm = 'LibRaw' | 'Exif'
+
+/**
+ * A RAW's camera and which versions of PIXL's camera database hold it, so a
+ * host can choose its colour without trying a develop. `as_shot_white` is the
+ * white the camera balanced for, found through the newest of those versions'
+ * calibrations: where the temperature and tint start under `Pixl` (R5 3671 →
+ * 3327 K). Null when none holds the camera.
+ */
+export interface CameraColourInfo {
+  form: CameraNameForm
+  make: string
+  model: string
+  /** Oldest first; empty when none holds the camera (`Container` is then the only built-in colour). */
+  pixl_versions: number[]
+  pixl_camera: string | null
+  as_shot_white: WhitePoint | null
+}
+
 /** What a source actually is. Returned by `probe`. */
 export interface SourceInfo {
   format: string
@@ -1474,6 +1576,8 @@ export interface SourceInfo {
   jxl: JxlInfo | null
   tiff: TiffInfo | null
   as_shot_white: WhitePoint | null
+  /** A RAW's camera and what PIXL's database holds of it; null for any other file. */
+  camera_colour: CameraColourInfo | null
   gain_map: GainMapInfo | null
   /** What the file says about the lens. The engine never looks up a correction. */
   lens: ShotLens | null
@@ -1513,6 +1617,8 @@ export interface NoiseEstimate {
 
 /** What the pixels look like. Returned by `analyze`. */
 export interface ImageStats {
+  /** What `AnalyzeRequest::lens` did; `null` without a lens. */
+  lens?: LensReport | null
   width: number
   height: number
   channels: number
@@ -1577,6 +1683,26 @@ export function unsupportedRaw(detail: EngineErrorShape['detail']): string | nul
   return null
 }
 
+/**
+ * Plainer words for the errors engine 0.17 added: a picture past `limits`
+ * (`TooLarge`: `{ field, pixels, side }`) and a master cache made by another
+ * engine (`StaleCache`). Null for every other code.
+ */
+export function describeEngineError(
+  code: string,
+  detail: EngineErrorShape['detail']
+): string | null {
+  if (code === 'TooLarge') {
+    const d = detail?.['TooLarge']
+    const px = d && typeof d['pixels'] === 'number' ? (d['pixels'] as number) : null
+    const side = d && typeof d['side'] === 'number' ? (d['side'] as number) : null
+    const size = px !== null ? `${Math.round(px / 1e6)} megapixels` : 'too large'
+    return `This picture is ${size}${side !== null ? ` (${side} px on its longest side)` : ''}, more than Playroom opens.`
+  }
+  if (code === 'StaleCache') return 'A saved render was made by another engine and is made again.'
+  return null
+}
+
 // ── Segmentation and prompts ─────────────────────────────────────────────────
 
 /** How a model's coarse plane reaches the frame's (or `plane_longest`'s) size. */
@@ -1631,6 +1757,7 @@ export interface PromptEmbeddingRequest {
   encoder: Record<string, unknown>
   /** Keep the frame's luminance, which a `Guided` decode needs. */
   guide: boolean
+  limits: Limits | null
   threads: number
 }
 

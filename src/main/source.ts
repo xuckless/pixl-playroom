@@ -5,6 +5,7 @@
  * exports and enhancement alike.
  */
 import type {
+  DngOpcodes,
   ColorPolicy,
   ConvertRequest,
   Framing,
@@ -16,9 +17,10 @@ import type {
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
 import { fromExif } from '../shared/orientation'
+import { READ_LIMITS } from '../shared/limits'
 import { hash32 } from '../shared/recipe'
 import type { PhotoRow } from './db'
-import { RAW_DEVELOP_REV } from '../shared/pixels'
+import { cameraColourOf, developMark, parseRawColour, type RawColour } from '../shared/rawcolour'
 import { execFileSync } from 'child_process'
 import { cpus } from 'os'
 
@@ -62,20 +64,28 @@ export function isRawExt(ext: string): boolean {
   return RAW_EXTENSIONS.includes(ext.toLowerCase())
 }
 
+/** Both DNG opcode lists applied: what Adobe's readers do, and Playroom's choice (engine 0.17). */
+export const DNG_OPCODES: DngOpcodes = { list1: 'Apply', list2: 'Apply' }
+
 /**
  * A RAW is developed in linear light with the camera's own white balance and
- * colour matrix, cropped to the sensor's best area: the physically honest
- * start, and the right input to the grade's linear stage.
+ * colour (`colour`: the file's own, or PIXL's fit for the body; see
+ * `shared/rawcolour.ts`), cropped to the sensor's best area: the physically
+ * honest start, and the right input to the grade's linear stage.
  */
-export const RAW_DEVELOP: RawMode = {
-  Develop: {
-    scaling: true,
-    demosaic: true,
-    white_balance: true,
-    calibrate: true,
-    srgb_gamma: false,
-    crop: 'Best',
-    resolution: 'Full'
+export function rawDevelop(colour: RawColour): RawMode {
+  return {
+    Develop: {
+      scaling: true,
+      demosaic: true,
+      white_balance: true,
+      calibrate: true,
+      srgb_gamma: false,
+      crop: 'Best',
+      resolution: 'Full',
+      colour: cameraColourOf(colour),
+      dng_opcodes: DNG_OPCODES
+    }
   }
 }
 
@@ -88,17 +98,18 @@ export const RAW_DEVELOP: RawMode = {
  * full develop takes 4.9 s and 1.5 GB). Never for what is seen at 1:1 or
  * exported.
  */
-export const RAW_PROXY_DEVELOP: RawMode = {
-  Develop: {
-    scaling: true,
-    demosaic: true,
-    white_balance: true,
-    calibrate: true,
-    srgb_gamma: false,
-    crop: 'Best',
-    resolution: 'Cell'
-  }
+export function rawProxyDevelop(colour: RawColour): RawMode {
+  const full = rawDevelop(colour) as { Develop: Record<string, unknown> }
+  return { Develop: { ...full.Develop, resolution: 'Cell' } } as RawMode
 }
+
+/** The file's own colour: what a RAW was developed with before engine 0.17 named one. */
+export const RAW_DEVELOP: RawMode = rawDevelop('container')
+export const RAW_PROXY_DEVELOP: RawMode = rawProxyDevelop('container')
+
+/** A photo's camera colour as recorded; the file's own until it is (shared/rawcolour.ts). */
+export const colourOf = (photo: { raw_colour?: string | null }): RawColour =>
+  parseRawColour(photo.raw_colour) ?? 'container'
 
 /**
  * How many photosites across a RAW's colour filter array cell is: 3 for
@@ -153,17 +164,18 @@ const HEIF_EXT = /^(heic|heif|hif|avif)$/i
  * What names a file version in the caches made from it: its time and size,
  * and a mark on HEIF/AVIF copies made since their orientation was fixed, so
  * the older (sideways) ones are made again, and on RAW developments made by
- * LibRaw and PIXL's own develop (engine 0.16), so rawler's are made again.
+ * LibRaw and PIXL's own develop (engine 0.16), so rawler's are made again;
+ * and, for a RAW, the camera colour it was developed with (`developMark`).
  */
 export function versionStamp(
-  photo: Pick<PhotoRow, 'mtime' | 'size' | 'ext'>,
+  photo: Pick<PhotoRow, 'mtime' | 'size' | 'ext'> & { raw_colour?: string | null },
   /** False for what no develop made (a RAW's embedded preview). */
   developed = true
 ): string {
   const mark = HEIF_EXT.test(photo.ext)
     ? '-u'
     : developed && isRawExt(photo.ext)
-      ? `-${RAW_DEVELOP_REV}`
+      ? `-${developMark(colourOf(photo))}`
       : ''
   return `${Math.round(photo.mtime)}-${photo.size}${mark}`
 }
@@ -180,6 +192,7 @@ export function displayPolicy(info: SourceInfo, to: 'DisplayP3' | 'Srgb'): Color
       ToneMap: {
         to,
         operator: 'Bt2390',
+        mode: 'PerChannel',
         source_peak: { Nits: info.peak_nits ?? ASSUMED_HDR_PEAK },
         target_peak_nits: SDR_WHITE_NITS,
         gamut: 'Compress',
@@ -265,6 +278,7 @@ export function blankRequest(
     lens: null,
     retouch: null,
     output_sharpen: null,
+    limits: READ_LIMITS,
     measure: null
   }
 }
