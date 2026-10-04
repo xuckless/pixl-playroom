@@ -10,7 +10,7 @@ import log from 'electron-log/main'
 import { mkdir } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import { compile, framingWarps, orientedFrame } from '../shared/compile'
-import type { ConvertRequest, Dither } from '../shared/engine-types'
+import type { ColorPolicy, ConvertRequest, Dither } from '../shared/engine-types'
 import {
   buildColor,
   buildEncode,
@@ -19,6 +19,7 @@ import {
   FORMAT_EXT,
   gainMapEncode,
   hdrLimit,
+  masterPolicy,
   metadataPlan,
   outputSharpen,
   outputSharpenRequest,
@@ -158,9 +159,18 @@ export class Exporter {
     const item = await this.library.item(key)
     const recipe = this.sessions.liveRecipe(key) ?? (await this.library.recipe(key))
     const file = await this.library.probe(row)
+    // The engine's own HDR path (`ColorPolicy::Master`) where the settings
+    // and the photo allow it: it reads a gain map itself and grades with
+    // headroom, so the rendition below is not made for it.
+    const pixl = masterPolicy(s, {
+      isHdr: file.is_hdr,
+      hasGainMap: !!file.gain_map,
+      editsBase: !!file.gain_map && !editsHdr(recipe, file)
+    })
     // A gain-map photo edited as HDR is exported from its applied rendition,
     // a PQ master: from here on it is an HDR source like any other.
-    const hdrSource = editsHdr(recipe, file) ? await ensureHdrSource(this.engine, row, file) : null
+    const hdrSource =
+      !pixl && editsHdr(recipe, file) ? await ensureHdrSource(this.engine, row, file) : null
     const info = hdrSource?.info ?? file
     // Pixel steps (an AI denoise): the photo at full size with them laid on is the source.
     const master = hdrSource?.master ?? (await this.stepsMaster(row, info, recipe))
@@ -179,13 +189,14 @@ export class Exporter {
     const { user, width, height } = orientedFrame(recipe, frameW, frameH)
     // PQ/HLG out: an HDR source kept HDR, or an SDR one expanded.
     const hdrOut =
+      !pixl &&
       supportsHdr(s.format) &&
       ((info.is_hdr && s.hdr.mode === 'keep') || (!info.is_hdr && s.hdr.mode === 'expand'))
     // An HDR source as an SDR picture with a gain map, where the format
     // carries one: the grade states the HDR master, the engine renders its
     // SDR picture and writes the map between them. An SDR source has nothing
     // above white to map, and is written as plain SDR.
-    const gainMapOut = info.is_hdr && s.hdr.mode === 'gainmap' && supportsGainMap(s.format)
+    const gainMapOut = !pixl && info.is_hdr && s.hdr.mode === 'gainmap' && supportsGainMap(s.format)
     const compiled = compile(recipe, {
       isRaw: row.is_raw === 1,
       asShot: info.as_shot_white,
@@ -199,12 +210,14 @@ export class Exporter {
       // HDR only where the pipeline keeps room above white: PQ/HLG out, or
       // the gain map's HDR master. Tone mapped to SDR, the grade runs after
       // the tone map on values that stop at 1.
-      hdr: hdrOut || gainMapOut
+      hdr: hdrOut || gainMapOut || pixl !== null
     })
     const cw = Math.round((compiled.crop?.width ?? 1) * width)
     const ch = Math.round((compiled.crop?.height ?? 1) * height)
     // An export runs behind the editing: the encoder takes the export's share too.
-    const { encode, depth } = buildEncode(s, BACKGROUND_THREADS * 2, hdrOut)
+    // `Master` writes PQ into JXL and PNG, at 16 bits (8-bit PQ is refused).
+    const pqOut = pixl?.headroom === true && (s.format === 'jxl' || s.format === 'png')
+    const { encode, depth } = buildEncode(s, BACKGROUND_THREADS * 2, hdrOut || pqOut)
 
     // Beside the photo: where it is listed (its copy may be the project's own).
     const folder = s.folder ?? row.folder
@@ -233,10 +246,10 @@ export class Exporter {
 
     // An HDR source stays HDR only where the settings ask and the format can
     // say so; otherwise it is tone mapped like any SDR delivery.
-    const hdrKeep = info.is_hdr && s.hdr.mode === 'keep' && supportsHdr(s.format)
+    const hdrKeep = !pixl && info.is_hdr && s.hdr.mode === 'keep' && supportsHdr(s.format)
     const effective: ExportSettings =
       (info.is_hdr && s.hdr.mode === 'keep' && !hdrKeep) ||
-      (s.hdr.mode === 'gainmap' && !gainMapOut)
+      (s.hdr.mode === 'gainmap' && !gainMapOut && !pixl)
         ? { ...s, hdr: { ...s.hdr, mode: 'sdr' } }
         : s
     const peak = info.peak_nits ?? s.hdr.peak
@@ -266,7 +279,7 @@ export class Exporter {
               outH,
               pic.width,
               pic.height,
-              hdrOut || gainMapOut
+              hdrOut || gainMapOut || pixl !== null
             )
           })()
         : null
@@ -276,12 +289,17 @@ export class Exporter {
       compiled.retouch !== null ||
       overlay !== null ||
       framingWarps(compiled.framing)
-    const color = gainMapOut ? 'Preserve' : buildColor(effective, info.is_hdr, info.peak_nits)
+    const color: ColorPolicy = pixl
+      ? { Master: pixl }
+      : gainMapOut
+        ? 'Preserve'
+        : buildColor(effective, info.is_hdr, info.peak_nits)
     // Dither acts on the one float → integer rounding, so it is only asked
     // for when there is one (the engine refuses it otherwise).
     const floatPath =
       floatWork ||
       gainMapOut ||
+      pixl !== null ||
       (resize !== 'None' && !hdrKeep) ||
       (typeof color === 'object' && ('ToneMap' in color || 'Expand' in color))
     const dither: Dither =
@@ -301,9 +319,13 @@ export class Exporter {
       encode: gainMapOut ? withGainMap(encode, gainMapEncode(s, peak)) : encode,
       // A reader reaches the base's linear light, which the map multiplies,
       // through its colour description.
-      metadata: gainMapOut ? { ...plan.policy, icc: true } : plan.policy,
+      // `Master` refuses `icc: false`; so does a gain map's base, which a
+      // reader reaches the linear light of through its colour description.
+      metadata: gainMapOut || pixl ? { ...plan.policy, icc: true } : plan.policy,
       color,
       sdr: gainMapOut ? sdrRendition(s, peak) : null,
+      // `Master` reads the map itself and refuses the field.
+      ...(pixl ? { gain_map: null } : {}),
       grade: compiled.grade,
       // A HEIF's EXIF tag is never applied: a stated framing resets it in
       // what is written.
@@ -324,9 +346,11 @@ export class Exporter {
     }
     // Only an SDR file is sharpened for output, after the resize, on the
     // values the file will hold.
-    const sdrOut = typeof color === 'object' && ('ConvertTo' in color || 'ToneMap' in color)
+    const sdrOut =
+      typeof color === 'object' &&
+      ('ConvertTo' in color || 'ToneMap' in color || ('Master' in color && !color.Master.headroom))
     const sharpen = sdrOut ? outputSharpen(s) : null
-    await this.engine.convert(
+    const report = await this.engine.convert(
       sharpen
         ? {
             ...request,
@@ -337,6 +361,10 @@ export class Exporter {
         : request,
       { signal }
     )
+
+    // What the engine's own path did, in its words: for the log and the receipt.
+    const m = report.color.master
+    if (m) log.info('export master', key, m.output, ...m.notes)
 
     // The engine copies blocks as they are; the photo's own fields, the
     // copyright and the location are ExifTool's. The picture is written by

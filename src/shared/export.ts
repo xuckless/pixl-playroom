@@ -11,6 +11,7 @@ import type {
   Encode,
   GainMapEncode,
   GamutMap,
+  MasterPolicy,
   HdrLimit,
   SdrRendition,
   MetadataPolicy,
@@ -105,6 +106,14 @@ export interface ExportSettings {
     peak: number
     sdrWhite: number
     referenceWhite: number
+    /**
+     * PIXL's own tone mapping, gamut compression and gain map (engine 0.17's
+     * `ColorPolicy::Master`) for an HDR photo's HDR and gain-map deliveries
+     * and its Display P3 SDR file. Off: the classic path (see `masterPolicy`).
+     */
+    pixl: boolean
+    /** The HDR output's ceiling in cd/m² (203…10 000); null holds it to the photo's own peak. */
+    ceiling: number | null
   }
   /** A PNG composited onto every exported picture (see `watermark.ts`). */
   watermark: WatermarkSettings
@@ -153,7 +162,9 @@ export function defaultExportSettings(): ExportSettings {
       referenceWhite: 203,
       limit: 'clip',
       knee: 100,
-      gainMapQuality: 85
+      gainMapQuality: 85,
+      pixl: true,
+      ceiling: null
     },
     watermark: { ...DEFAULT_WATERMARK },
     reveal: true
@@ -242,6 +253,54 @@ export function hdrLimit(s: ExportSettings, peak: number): HdrLimit {
   return knee > 0
     ? { Rolloff: { knee_nits: knee, source_max_nits: Math.round(sourceMax) } }
     : 'Clip'
+}
+
+/** What `masterPolicy` needs to know of the source. */
+export interface MasterSource {
+  /** PQ or HLG. */
+  isHdr: boolean
+  /** The file carries a gain map (UltraHDR JPEG, an iPhone HEIC). */
+  hasGainMap: boolean
+  /** A gain-map photo edited on its SDR base (`recipe.gainMap === 'base'`): the engine would read the map. */
+  editsBase: boolean
+}
+
+/** The ceiling's bounds the engine accepts, in cd/m². */
+export const CEILING_MIN = 203
+export const CEILING_MAX = 10000
+
+/**
+ * The engine's built-in colour path for this export, or null for the classic
+ * one (`buildColor`). It applies to an HDR source's HDR deliveries (a gain
+ * map in a JPEG or AVIF; PQ in JXL or PNG) and its SDR file when that is
+ * Display P3, which is all `Master` writes for SDR. An SDR source being
+ * expanded, a PQ AVIF and any other colour space stay classic: `Master`
+ * refuses `hdr`, `sdr` and `gain_map`, reads a gain map itself, and has no
+ * way to expand or to name a space. A gain-map photo edited on its SDR base
+ * stays classic too, because the engine would apply the map under the edit.
+ */
+export function masterPolicy(s: ExportSettings, src: MasterSource): MasterPolicy | null {
+  if (!s.hdr.pixl) return null
+  if (!src.isHdr && !src.hasGainMap) return null
+  if (src.hasGainMap && src.editsBase) return null
+  let headroom: boolean
+  if (s.hdr.mode === 'gainmap' && supportsGainMap(s.format)) headroom = true
+  else if (s.hdr.mode === 'keep' && (s.format === 'jxl' || s.format === 'png')) headroom = true
+  else if (s.hdr.mode === 'sdr' && s.colorSpace === 'DisplayP3') headroom = false
+  else return null
+  const ceiling =
+    s.hdr.ceiling === null
+      ? 'Peak'
+      : { Nits: Math.min(CEILING_MAX, Math.max(CEILING_MIN, Math.round(s.hdr.ceiling))) }
+  return {
+    headroom,
+    // The 99.9th percentile of the render; a region would state it (not used by an export).
+    peak: 'Measured',
+    ceiling: headroom ? ceiling : null,
+    reach: 'Measured',
+    // PIXL's look acts on a RAW developed in Scene; an HDR source here is never one.
+    look: 'Colorimetric'
+  }
 }
 
 /** The SDR picture a gain-map export writes: the HDR master tone mapped as an SDR export would be. */

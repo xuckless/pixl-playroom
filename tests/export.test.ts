@@ -4,6 +4,8 @@ import {
   buildColor,
   buildEncode,
   defaultExportSettings,
+  masterPolicy,
+  normaliseExportSettings,
   metadataPlan,
   outputSharpen,
   outputSharpenRequest,
@@ -252,4 +254,70 @@ test('an export never takes the original by another name', async () => {
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+// ── The engine's own HDR path (`ColorPolicy::Master`) ──
+
+const hdrPhoto = { isHdr: true, hasGainMap: false, editsBase: false }
+const mapPhoto = { isHdr: false, hasGainMap: true, editsBase: false }
+const withHdr = (
+  format: ExportSettings['format'],
+  mode: ExportSettings['hdr']['mode'],
+  more: Partial<ExportSettings> = {}
+): ExportSettings => {
+  const d = defaultExportSettings()
+  return { ...d, format, ...more, hdr: { ...d.hdr, mode } }
+}
+
+test('Master takes an HDR photo’s gain map, PQ and Display P3 SDR; nothing else', () => {
+  assert.deepEqual(masterPolicy(withHdr('jpeg', 'gainmap'), hdrPhoto), {
+    headroom: true,
+    peak: 'Measured',
+    ceiling: 'Peak',
+    reach: 'Measured',
+    look: 'Colorimetric'
+  })
+  assert.equal(masterPolicy(withHdr('avif', 'gainmap'), mapPhoto)?.headroom, true)
+  assert.equal(masterPolicy(withHdr('jxl', 'keep'), hdrPhoto)?.headroom, true)
+  assert.equal(masterPolicy(withHdr('png', 'keep'), hdrPhoto)?.headroom, true)
+  const sdr = masterPolicy(withHdr('jpeg', 'sdr', { colorSpace: 'DisplayP3' }), hdrPhoto)
+  assert.equal(sdr?.headroom, false)
+  // SDR carries no ceiling (the engine refuses one).
+  assert.equal(sdr?.ceiling, null)
+})
+
+test('Master stays out where the engine has no way to say it', () => {
+  // A PQ AVIF, an expanded SDR photo, an SDR file in sRGB, an SDR source.
+  assert.equal(masterPolicy(withHdr('avif', 'keep'), hdrPhoto), null)
+  assert.equal(masterPolicy(withHdr('jxl', 'expand'), { ...hdrPhoto, isHdr: false }), null)
+  assert.equal(masterPolicy(withHdr('jpeg', 'sdr'), hdrPhoto), null)
+  assert.equal(
+    masterPolicy(withHdr('jpeg', 'gainmap'), { isHdr: false, hasGainMap: false, editsBase: false }),
+    null
+  )
+  // A gain-map photo edited on its SDR base: the engine would apply the map under the edit.
+  assert.equal(masterPolicy(withHdr('jpeg', 'gainmap'), { ...mapPhoto, editsBase: true }), null)
+  // Off by the setting.
+  const off = withHdr('jpeg', 'gainmap')
+  assert.equal(masterPolicy({ ...off, hdr: { ...off.hdr, pixl: false } }, hdrPhoto), null)
+})
+
+test('Master’s ceiling is the photo’s peak or a stated number the engine accepts', () => {
+  const s = withHdr('jxl', 'keep')
+  const at = (ceiling: number | null): unknown =>
+    masterPolicy({ ...s, hdr: { ...s.hdr, ceiling } }, hdrPhoto)?.ceiling
+  assert.equal(at(null), 'Peak')
+  assert.deepEqual(at(1000), { Nits: 1000 })
+  assert.deepEqual(at(50), { Nits: 203 })
+  assert.deepEqual(at(99999), { Nits: 10000 })
+})
+
+test('saved settings from before Master read as PIXL’s path on, ceiling the photo’s', () => {
+  const old = defaultExportSettings() as Partial<ExportSettings>
+  const { pixl, ceiling, ...hdr } = defaultExportSettings().hdr
+  void pixl
+  void ceiling
+  const n = normaliseExportSettings({ ...old, hdr } as Partial<ExportSettings>)
+  assert.equal(n.hdr.pixl, true)
+  assert.equal(n.hdr.ceiling, null)
 })

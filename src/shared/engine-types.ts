@@ -1256,7 +1256,36 @@ export interface LightLevel {
   headroom_stops: number | null
 }
 
+/** What `ColorPolicy::Master` did, each built-in number it used and every choice it made, in words. */
+export interface MasterReport {
+  headroom: boolean
+  entered: string
+  primaries: string
+  white_nits: number
+  peak_nits: number
+  peak_measured: boolean
+  ceiling_nits: number | null
+  output: string
+  sdr_space: string | null
+  display_tone_map_version: number | null
+  rolloff: unknown | null
+  final_guard_pixels: number
+  look: string
+  look_pixels: number
+  look_guarded_pixels: number
+  gamut: {
+    reach: number
+    reach_measured: boolean
+    knee: number
+    moved_pixels: number
+    [k: string]: unknown
+  } | null
+  notes: string[]
+}
+
 export interface ColorReport {
+  /** The engine's own path, when `color` was `Master`. */
+  master?: MasterReport | null
   space: string
   source: ColorSource
   converted: boolean
@@ -1629,6 +1658,26 @@ export function unsupportedRaw(detail: EngineErrorShape['detail']): string | nul
     return 'This RAW holds several frames (dual pixel, pixel shift or a burst), which Playroom cannot develop yet.'
   if (op === 'raw decode')
     return `This RAW format isn't supported${typeof d?.['detail'] === 'string' && d['detail'] ? ` (${d['detail']})` : ''}.`
+  return null
+}
+
+/**
+ * Plainer words for the errors engine 0.17 added: a picture past `limits`
+ * (`TooLarge`: `{ field, pixels, side }`) and a master cache made by another
+ * engine (`StaleCache`). Null for every other code.
+ */
+export function describeEngineError(
+  code: string,
+  detail: EngineErrorShape['detail']
+): string | null {
+  if (code === 'TooLarge') {
+    const d = detail?.['TooLarge']
+    const px = d && typeof d['pixels'] === 'number' ? (d['pixels'] as number) : null
+    const side = d && typeof d['side'] === 'number' ? (d['side'] as number) : null
+    const size = px !== null ? `${Math.round(px / 1e6)} megapixels` : 'too large'
+    return `This picture is ${size}${side !== null ? ` (${side} px on its longest side)` : ''}, more than Playroom opens.`
+  }
+  if (code === 'StaleCache') return 'A saved render was made by another engine and is made again.'
   return null
 }
 

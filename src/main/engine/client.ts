@@ -32,7 +32,7 @@ import type {
   Transform,
   WhiteBalance
 } from '../../shared/engine-types'
-import { unsupportedRaw } from '../../shared/engine-types'
+import { describeEngineError, unsupportedRaw } from '../../shared/engine-types'
 import { IPC, type EngineStatus } from '../../shared/ipc'
 import type { MainToHost } from '../../shared/engine-types'
 
@@ -59,7 +59,9 @@ export class EngineError extends Error {
 
   /** What to tell the user: the engine's words, or plainer ones where it has them. */
   get userMessage(): string {
-    return unsupportedRaw(this.detail) ?? this.message
+    return (
+      unsupportedRaw(this.detail) ?? describeEngineError(this.code, this.detail) ?? this.message
+    )
   }
 }
 
