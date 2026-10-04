@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.3.0-beta](https://github.com/xuckless/pixl-playroom/compare/v0.2.0-beta...v0.3.0-beta) (2026-10-04)
+
+
+### docs
+
+* the README brought up to 0.3.0-beta ([ba17b77](https://github.com/xuckless/pixl-playroom/commit/ba17b77e1c061fe31c2138739517e84549d82d72))
+
+
+### Features
+
+* engine 0.17, the four-step export, scopes at full size, PIXL's camera colour ([5073789](https://github.com/xuckless/pixl-playroom/commit/5073789a897dd4f7e20f587a6045a5473e69e656))
+* **engine:** move Playroom's request types to engine 0.17.0 ([11739ee](https://github.com/xuckless/pixl-playroom/commit/11739ee4fbe40da5e7ebd5558735f8f6e361f241))
+* **export:** guards, preview, preflight and receipt (engine side) ([9002d1e](https://github.com/xuckless/pixl-playroom/commit/9002d1e298c69228f47098f6f55050758febcb5c))
+* **export:** the export dialog as four steps of the editor's cards ([e2c67a9](https://github.com/xuckless/pixl-playroom/commit/e2c67a9f5cec8203b8a05bba1b3ea0919ae59669))
+* **export:** use the engine's Master colour path for HDR deliveries ([ef2bc28](https://github.com/xuckless/pixl-playroom/commit/ef2bc286cac1da266129e931e19619f59f566c38))
+* **masks:** Object detection button, and a crisp one-pixel mask edge ([2b8d78b](https://github.com/xuckless/pixl-playroom/commit/2b8d78be962cfad11cd7424cd6173e20d256f9a1))
+* **masks:** remove the pin balls over the photo ([985cdf9](https://github.com/xuckless/pixl-playroom/commit/985cdf93664b4f79f1e37292a99fe912ef3bf78c))
+* **models:** keep U2-Net and FBCNN-QF visible as being retired until the next update ([4b1a6f4](https://github.com/xuckless/pixl-playroom/commit/4b1a6f47e58d2dddfd98b4b56faa503ae0e25bb0))
+* **raw:** PIXL's own camera colour for every RAW whose body it holds ([992cea8](https://github.com/xuckless/pixl-playroom/commit/992cea8190b73b0f621e3947eef3e4d860c3c5a8))
+* **scopes:** the scopes at full size, with CIE 1976 and metrics ([9523e70](https://github.com/xuckless/pixl-playroom/commit/9523e707d890f85a0a4ba85fecc6b700c0a60590))
+* **update:** keep legacy previews and compare before/after on first open ([c131898](https://github.com/xuckless/pixl-playroom/commit/c131898b324f869dfa7af6e150bbe00c20c290db))
+
+
+### Bug Fixes
+
+* **models:** a model whose version moved keeps its downloaded files — ([2eec6e0](https://github.com/xuckless/pixl-playroom/commit/2eec6e0a53cd872bd8cadc3315eb461bedb1dedc))
+* **scopes:** helpers out of component files, memoised histogram sources ([d5817a8](https://github.com/xuckless/pixl-playroom/commit/d5817a827d2330cb29a65a9d7f1ac5b462cffcf7))
+
 ## [0.2.0-beta](https://github.com/xuckless/pixl-playroom/compare/v0.1.1-beta.1...v0.2.0-beta) (2026-10-02)
 
 
