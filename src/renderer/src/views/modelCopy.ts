@@ -61,12 +61,6 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     what: 'For very grainy night and indoor shots. It judges the grain by itself and cleans harder, which can smooth fine texture a little.',
     where: 'Detail → Noise reduction → AI'
   },
-  u2net: {
-    name: 'Detailed subject',
-    what: 'Finds the main subject for the Subject and Background masks, with clean edges around hair and fine shapes. Playroom uses this one when it is downloaded.',
-    where: 'Masks → New → Subject or Background',
-    recommended: true
-  },
   'sam2-1-hiera-tiny': {
     name: 'Select anything',
     what: 'Click, drag a box or brush over anything in a photo (a car, a dog, a window, the sky) and the mask takes exactly that, its edges snapped to the photo’s own.',
@@ -74,9 +68,10 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     recommended: true
   },
   u2netp: {
-    name: 'Quick subject',
-    what: 'The same job, small and fast, with rougher edges. Playroom uses it when the detailed one is not downloaded.',
-    where: 'Masks → New → Subject or Background'
+    name: 'Subject finder',
+    what: 'Finds the main subject for the Subject and Background masks, small and fast.',
+    where: 'Masks → New → Subject or Background',
+    recommended: true
   },
   'real-esrgan-x2plus': {
     name: 'Twice the size',
@@ -105,11 +100,6 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     what: 'Works out by itself how damaged the file is. Good for pictures saved from the web or sent through messaging apps.',
     where: 'Enhance → JPEG restore → AI, judges the damage',
     recommended: true
-  },
-  'fbcnn-color-qf': {
-    name: 'JPEG repair, exact',
-    what: 'The same repair, told exactly how compressed the file is. Use it when the automatic one cleans too much or too little.',
-    where: 'Enhance → JPEG restore → AI, at a quality'
   }
 }
 

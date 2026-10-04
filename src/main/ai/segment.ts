@@ -24,6 +24,7 @@ import type { PlaneStore } from '../planestore'
 import { ensureProxies } from '../proxy'
 import type { DevelopSessions } from '../render'
 import { BACKGROUND_THREADS } from '../source'
+import { READ_LIMITS } from '../../shared/limits'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
 import { ModelMissing, type ModelStore } from './models'
 
@@ -44,8 +45,8 @@ const HARDEN = 4
  */
 const HARDEN_AT = 0.6
 
-/** The subject models, best first. */
-const SUBJECT_MODELS = ['u2net', 'u2netp']
+/** The subject models, best first (U²-Net left with engine 0.17: U²-Netp is the subject model). */
+const SUBJECT_MODELS = ['u2netp']
 
 /** Below this the model saw nothing salient (a flat plane stretched to full range). */
 const NOTHING_SALIENT = 0.2
@@ -117,6 +118,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
           upsample: UPSAMPLE,
           png: { compression: 'Fast', filter: 'Sub' },
           threads: BACKGROUND_THREADS,
+          limits: READ_LIMITS,
           // At the proxy's own size: the edge is followed there, not stretched later.
           plane_longest: null
         },

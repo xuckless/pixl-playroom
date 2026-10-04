@@ -45,6 +45,7 @@ import type {
   Snapshot,
   SourceListing
 } from '../../shared/ipc'
+import { ENGINE_RENDER_REV } from '../../shared/pixels'
 import { groupNear } from '../../shared/dupes'
 import { keywordPrefixes, normaliseKeyword } from '../../shared/keywords'
 import {
@@ -204,7 +205,7 @@ function mapRecipes(s: Sidecar, fn: (r: Recipe) => Recipe): Sidecar {
 /** A recipe as its thumbnail knows it: 'plain' when unedited, else its slim form's hash. */
 function thumbRecipeKey(recipe: Recipe | null, raw: boolean): string {
   if (!recipe || !isEdited(recipe, raw)) return 'plain'
-  return hash32(JSON.stringify(slim(recipe))).toString(16)
+  return hash32(JSON.stringify([ENGINE_RENDER_REV, slim(recipe)])).toString(16)
 }
 
 /** The row's content hash, when the one recorded is of the file as it is now. */

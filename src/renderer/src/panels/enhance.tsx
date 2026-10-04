@@ -35,8 +35,7 @@ import { useUi } from '../state/ui'
 const JPEG_OPTIONS: { value: JpegRestore; label: string }[] = [
   { value: 'off', label: 'Off' },
   { value: 'reconstruct', label: 'Rebuild (no model)' },
-  { value: 'fbcnn', label: 'AI · judges the damage' },
-  { value: 'fbcnn-qf', label: 'AI · at a quality' }
+  { value: 'fbcnn', label: 'AI · judges the damage' }
 ]
 
 const UPSCALE_OPTIONS: { value: UpscaleChoice; label: string }[] = [
@@ -109,7 +108,6 @@ export function EnhancePanel(): React.JSX.Element | null {
   const outMp = (outW * outH) / 1e6
   const eta = estimateMs(steps, session.frameWidth, session.frameHeight, rates)
   const many = targets.length > 1 && targets.includes(session.key)
-  const quality = info.jpeg?.quality ?? null
   const subsampled = info.jpeg?.subsampling === 'Half' || info.jpeg?.subsampling === 'Quarter'
   const list = ids.map((id) => jobs[id] ?? ended[id]).filter((j): j is AiJobEvent => !!j)
 
@@ -167,24 +165,8 @@ export function EnhancePanel(): React.JSX.Element | null {
             )}
           </>
         )}
-        {(s.jpeg === 'fbcnn' || s.jpeg === 'fbcnn-qf') && (
+        {s.jpeg === 'fbcnn' && (
           <>
-            {s.jpeg === 'fbcnn-qf' && (
-              <Slider
-                label="Quality"
-                value={s.jpegQuality ?? quality ?? 75}
-                min={1}
-                max={100}
-                def={quality ?? 75}
-                onChange={(q) => set({ jpegQuality: Math.round(q) })}
-                onCommit={() => undefined}
-                title={
-                  quality !== null
-                    ? `The file says about q${quality}; lower tells the model to clean up harder`
-                    : 'The JPEG quality the model is told; lower cleans up harder'
-                }
-              />
-            )}
             <Slider
               label="Strength"
               value={s.jpegStrength}
@@ -194,10 +176,7 @@ export function EnhancePanel(): React.JSX.Element | null {
               onChange={(jpegStrength) => set({ jpegStrength })}
               onCommit={() => undefined}
             />
-            <ModelGet
-              id={s.jpeg === 'fbcnn' ? 'fbcnn-color-blind' : 'fbcnn-color-qf'}
-              models={models}
-            />
+            <ModelGet id="fbcnn-color-blind" models={models} />
           </>
         )}
       </Section>

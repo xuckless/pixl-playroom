@@ -277,10 +277,9 @@ export function ExportDialog(): React.JSX.Element {
               <option value="webp">WebP</option>
               <option value="avif">AVIF</option>
               <option value="jxl">JPEG XL</option>
-              <option value="heic">HEIC</option>
             </select>
           </Field>
-          {['jpeg', 'webp', 'avif', 'heic'].includes(s.format) && (
+          {['jpeg', 'webp', 'avif'].includes(s.format) && (
             <Field label="Quality">
               <Num value={s.quality} min={1} max={100} onChange={(v) => up('quality', v)} />
             </Field>
@@ -325,7 +324,7 @@ export function ExportDialog(): React.JSX.Element {
               </Field>
             </>
           )}
-          {(s.format === 'avif' || s.format === 'heic') && (
+          {s.format === 'avif' && (
             <>
               <label className="check">
                 <input
@@ -347,7 +346,7 @@ export function ExportDialog(): React.JSX.Element {
               </Field>
               {s.format === 'avif' && (
                 <Field label="Speed">
-                  <Num value={s.avifSpeed} min={0} max={10} onChange={(v) => up('avifSpeed', v)} />
+                  <Num value={s.avifSpeed} min={0} max={9} onChange={(v) => up('avifSpeed', v)} />
                 </Field>
               )}
             </>

@@ -60,6 +60,16 @@ export const PIXEL_LABEL: Record<PixelStepKind, string> = {
 export const RAW_DEVELOP_REV = 'l'
 
 /**
+ * Which engine's grade made a graded render: it names the library thumbnails
+ * of edited photos, so an engine that moves graded pixels makes them again.
+ * 2 is engine 0.17: PixlRGB is the working space, and what acts on the
+ * channels themselves (curves, per-channel gain, HSL bands, the channel
+ * mixer) renders differently. (A RAW's develop is `Container`, 0.16.0's
+ * pixels, so `RAW_DEVELOP_REV` and the steps laid on it stand.)
+ */
+export const ENGINE_RENDER_REV = 2
+
+/**
  * A step on a RAW made from another develop than today's (rawler's, before
  * engine 0.16): its pixels are that develop's, so where it is laid partly
  * (a mask's edge, a Strength under 100, a heal's patch) the two can show,

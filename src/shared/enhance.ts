@@ -11,9 +11,10 @@
 
 /**
  * JPEG restore: off; rebuilt from the file's DCT coefficients (no model);
- * FBCNN judging the compression itself; FBCNN told a quality.
+ * FBCNN judging the compression itself. (FBCNN told a quality left with
+ * engine 0.17; a saved `fbcnn-qf` reads as `fbcnn`, see `normaliseEnhance`.)
  */
-export type JpegRestore = 'off' | 'reconstruct' | 'fbcnn' | 'fbcnn-qf'
+export type JpegRestore = 'off' | 'reconstruct' | 'fbcnn'
 
 /** Super-resolution: off, ×2 (Real-ESRGAN), ×4 (general), ×4 keeping texture (weak denoise). */
 export type UpscaleChoice = 'off' | 'x2' | 'x4' | 'x4-wdn'
@@ -26,8 +27,6 @@ export interface EnhanceSettings {
   guidedChroma: boolean
   /** FBCNN's blend with what it was shown, 1…100. */
   jpegStrength: number
-  /** FBCNN at a quality: what it is told; null takes the file's own estimate. */
-  jpegQuality: number | null
   deblur: boolean
   /** NAFNet's blend, 1…100. */
   deblurStrength: number
@@ -39,7 +38,6 @@ export const DEFAULT_ENHANCE: EnhanceSettings = {
   smoothing: 50,
   guidedChroma: false,
   jpegStrength: 100,
-  jpegQuality: null,
   deblur: false,
   deblurStrength: 100,
   upscale: 'x2'
@@ -48,14 +46,13 @@ export const DEFAULT_ENHANCE: EnhanceSettings = {
 /** The roster's model for each step that runs one. */
 export const ENHANCE_MODEL = {
   fbcnn: 'fbcnn-color-blind',
-  'fbcnn-qf': 'fbcnn-color-qf',
   deblur: 'nafnet-gopro-w32',
   x2: 'real-esrgan-x2plus',
   x4: 'realesr-general-x4v3',
   'x4-wdn': 'realesr-general-wdn-x4v3'
 } as const
 
-export type EnhanceStepKind = 'reconstruct' | 'fbcnn' | 'fbcnn-qf' | 'deblur' | UpscaleChoice
+export type EnhanceStepKind = 'reconstruct' | 'fbcnn' | 'deblur' | UpscaleChoice
 
 /** One step of the chain as planned: what it is and the model it needs (none for Reconstruct). */
 export interface PlannedStep {
@@ -75,8 +72,8 @@ export function planSteps(s: EnhanceSettings, isJpeg: boolean): PlannedStep[] {
   const steps: PlannedStep[] = []
   if (isJpeg && s.jpeg === 'reconstruct')
     steps.push({ kind: 'reconstruct', model: null, label: 'JPEG rebuild' })
-  if (isJpeg && (s.jpeg === 'fbcnn' || s.jpeg === 'fbcnn-qf'))
-    steps.push({ kind: s.jpeg, model: ENHANCE_MODEL[s.jpeg], label: 'JPEG restore' })
+  if (isJpeg && s.jpeg === 'fbcnn')
+    steps.push({ kind: 'fbcnn', model: ENHANCE_MODEL.fbcnn, label: 'JPEG restore' })
   if (s.deblur) steps.push({ kind: 'deblur', model: ENHANCE_MODEL.deblur, label: 'Deblur' })
   if (s.upscale !== 'off')
     steps.push({
@@ -124,13 +121,11 @@ export function reconstructParams(smoothing: number): {
   }
 }
 
-/** FBCNN's quality input: its convention is 1 − quality/100. */
-export function fbcnnQuality(quality: number): number {
-  return 1 - Math.max(1, Math.min(100, quality)) / 100
+/** Saved settings brought up to date: a retired JPEG restore reads as its successor. */
+export function normaliseEnhance(p: Partial<EnhanceSettings> | undefined): EnhanceSettings {
+  const { jpeg, ...rest } = { ...DEFAULT_ENHANCE, ...p }
+  return { ...rest, jpeg: (jpeg as string) === 'fbcnn-qf' ? 'fbcnn' : jpeg }
 }
-
-/** What a quality defaults to when the file's estimate is missing. */
-export const FALLBACK_JPEG_QUALITY = 75
 
 /**
  * How long each step takes per megapixel of its input, before any run has
@@ -140,7 +135,6 @@ export const FALLBACK_JPEG_QUALITY = 75
 export const FIRST_GUESS_MS_PER_MP: Record<EnhanceStepKind, number> = {
   reconstruct: 1000,
   fbcnn: 50000,
-  'fbcnn-qf': 50000,
   deblur: 17000,
   off: 0,
   x2: 36000,
@@ -203,9 +197,7 @@ export function jpegRestoreRefusal(
   isJpeg: boolean,
   stepsBefore: number
 ): string | null {
-  const restores = planSteps(s, isJpeg).some(
-    (p) => p.kind === 'reconstruct' || p.kind === 'fbcnn' || p.kind === 'fbcnn-qf'
-  )
+  const restores = planSteps(s, isJpeg).some((p) => p.kind === 'reconstruct' || p.kind === 'fbcnn')
   return restores && stepsBefore > 0
     ? 'JPEG restore reads the file itself, so it must come first: undo the other pixel steps, or leave it off'
     : null

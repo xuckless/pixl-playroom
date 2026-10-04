@@ -767,9 +767,15 @@ export function lensCorrection(l: LensSetting): LensCorrection | null {
     }
   }
   let lateral: LateralCa | null = null
-  if (l.removeCa && l.ca) lateral = { ...l.ca, amount: 1 }
+  if (l.removeCa && l.ca) lateral = { ...l.ca, amount: 1, planes: 'Frame' }
   else if (l.removeCa && p?.tca)
-    lateral = { model: p.tca, geometry: profileGeometry(p, 'geometry'), amount: 1 }
+    lateral = {
+      model: p.tca,
+      geometry: profileGeometry(p, 'geometry'),
+      amount: 1,
+      // The source's own primaries: 0.16.0's, and valid for every source.
+      planes: 'Frame'
+    }
   const profileVig =
     p?.vignetting && l.profile.vignetting > 0
       ? p.vignetting.map((k) => k * clamp(l.profile.vignetting / 100, 0, 2))

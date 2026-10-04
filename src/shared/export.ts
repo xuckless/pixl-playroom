@@ -28,7 +28,7 @@ import type { PhotoMeta } from './ipc'
 import { DEFAULT_WATERMARK, type WatermarkSettings } from './watermark'
 import { flatSubjects } from './keywords'
 
-export type ExportFormat = 'jpeg' | 'png' | 'tiff' | 'webp' | 'avif' | 'jxl' | 'heic'
+export type ExportFormat = 'jpeg' | 'png' | 'tiff' | 'webp' | 'avif' | 'jxl'
 
 export const FORMAT_EXT: Record<ExportFormat, string> = {
   jpeg: 'jpg',
@@ -36,8 +36,7 @@ export const FORMAT_EXT: Record<ExportFormat, string> = {
   tiff: 'tif',
   webp: 'webp',
   avif: 'avif',
-  jxl: 'jxl',
-  heic: 'heic'
+  jxl: 'jxl'
 }
 
 export type ResizeMode = 'none' | 'long' | 'short' | 'width' | 'height' | 'megapixels' | 'percent'
@@ -67,7 +66,7 @@ export interface ExportSettings {
   webpLossless: boolean
   pngCompression: PngCompression
   tiffCompression: TiffCompression
-  /** 8 or 16 for PNG, TIFF, JXL; 8, 10 or 12 for AVIF and HEIC. */
+  /** 8 or 16 for PNG, TIFF, JXL; 8, 10 or 12 for AVIF. */
   bitDepth: number
   chroma: Chroma
   lossless: boolean
@@ -88,7 +87,7 @@ export interface ExportSettings {
     /**
      * sdr: an SDR file (HDR sources are tone mapped); keep: stay PQ/HLG;
      * expand: SDR → PQ/HLG; gainmap: an HDR source as an SDR picture with a
-     * gain map (UltraHDR JPEG, AVIF, HEIC), which HDR displays lift back.
+     * gain map (UltraHDR JPEG, AVIF), which HDR displays lift back.
      */
     mode: 'sdr' | 'keep' | 'expand' | 'gainmap'
     /** What happens above the HDR output's peak: a hard clip, or BT.2390's roll-off. */
@@ -169,7 +168,6 @@ export function depthsFor(format: ExportFormat): number[] {
     case 'jxl':
       return [8, 16]
     case 'avif':
-    case 'heic':
       return [8, 10, 12]
     default:
       return [8]
@@ -178,7 +176,7 @@ export function depthsFor(format: ExportFormat): number[] {
 
 /** Formats that carry a gain map beside an SDR picture. */
 export function supportsGainMap(format: ExportFormat): boolean {
-  return format === 'jpeg' || format === 'avif' || format === 'heic'
+  return format === 'jpeg' || format === 'avif'
 }
 
 /**
@@ -193,6 +191,8 @@ export function normaliseExportSettings(
   return {
     ...d,
     ...v,
+    // HEIC export left with engine 0.17 (no GPL x265): AVIF is its successor.
+    format: (v.format as string) === 'heic' ? 'avif' : (v.format ?? d.format),
     resize: { ...d.resize, ...v.resize },
     metadata: { ...d.metadata, ...v.metadata },
     outputSharpen: { ...d.outputSharpen, ...v.outputSharpen },
@@ -249,6 +249,7 @@ export function sdrRendition(s: ExportSettings, peak: number): SdrRendition {
   return {
     to: s.colorSpace as ColorSpaceRef,
     operator: s.hdr.operator,
+    mode: 'PerChannel',
     source_peak_nits: peak,
     target_peak_nits: s.hdr.targetPeak,
     gamut: s.hdr.gamut,
@@ -285,12 +286,11 @@ export function withGainMap(encode: Encode, map: GainMapEncode): Encode {
   if (typeof encode !== 'object') return encode
   if ('Jpeg' in encode) return { Jpeg: { ...encode.Jpeg, gain_map: map } }
   if ('Avif' in encode) return { Avif: { ...encode.Avif, gain_map: map } }
-  if ('Heic' in encode) return { Heic: { ...encode.Heic, gain_map: map } }
   return encode
 }
 
 export function supportsHdr(format: ExportFormat): boolean {
-  return format === 'avif' || format === 'heic' || format === 'jxl' || format === 'png'
+  return format === 'avif' || format === 'jxl' || format === 'png'
 }
 
 /**
@@ -346,21 +346,14 @@ export function buildEncode(
             lossless: s.lossless,
             bit_depth: heifBits,
             chroma: s.lossless ? 'Full' : s.chroma,
-            speed: s.avifSpeed,
-            matrix: heifMatrix(s, hdrOut)
-          }
-        },
-        depth: deep ? 'Sixteen' : 'Eight'
-      }
-    case 'heic':
-      return {
-        encode: {
-          Heic: {
-            quality: s.quality,
-            lossless: s.lossless,
-            bit_depth: heifBits,
-            chroma: s.lossless ? 'Full' : s.chroma,
-            matrix: heifMatrix(s, hdrOut)
+            // The aom plug-in never took 10 (engine 0.17 refuses it).
+            speed: Math.min(9, Math.max(0, s.avifSpeed)),
+            matrix: heifMatrix(s, hdrOut),
+            // From 2 up the file is byte-identical at any count; 1 is another encode.
+            threads: Math.min(64, Math.max(2, threads)),
+            // 0.16.0's tuning, which libheif chose unasked; `Iq` needs aom 3.12.
+            tune: 'Ssim',
+            tiling: 'Single'
           }
         },
         depth: deep ? 'Sixteen' : 'Eight'
@@ -424,6 +417,7 @@ export function buildColor(
       ToneMap: {
         to,
         operator: s.hdr.operator,
+        mode: 'PerChannel',
         source_peak:
           s.hdr.sourcePeak !== null
             ? { Nits: s.hdr.sourcePeak }

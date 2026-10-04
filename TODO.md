@@ -1735,6 +1735,55 @@ masters are in `build/brand/`.
       `site/` is only a redirect from the old GitHub Pages address. Downloads
       say "Soon" until the first release.
 
+### Upgrade to pixl-engine 0.17.0 (branch `claude/dazzling-noether-nssfax`, 2026-10-04)
+
+Roadmap: PixlRGB working space, `ColorPolicy::Master`, new required request
+fields, AVIF `threads`/`tune`/`tiling`, `limits`, retired models, no HEIC
+sink. Decisions: export wizard (stepped), Master on export only, MaskPins
+removed (gradient/lasso/heal handles stay), export guards block and warn but
+never auto-fix, an export preview, existing edits kept with an update notice
+and a before/after on each project's first open.
+
+- [x] Phase 0 — mirror types (`engine-types.ts`): `colour` + `dng_opcodes`
+      on RAW develops (`Container`, both lists `Apply`), `planes: 'Frame'` on
+      lateral CA / flat field (0.16.0's, valid for every source), tone-map
+      `mode: 'PerChannel'` (0.16.0), `AnalyzeRequest` orientation/lens/limits,
+      AVIF `threads`/`tune: 'Ssim'`/`tiling`, `PetEye.catchlights`, `Master`
+      policy, PixlRGB spaces; `limits` (`READ_LIMITS`) on every request that
+      reads a user's file; `Heic` sink gone (saved `heic` settings read as
+      AVIF); U²-Net and FBCNN-with-QF retired (a saved `fbcnn-qf` reads as
+      `fbcnn`); edited-photo thumbnails named by `ENGINE_RENDER_REV` so they
+      are made again. `RAW_DEVELOP_REV` stays `l`: `Container` is 0.16.0's
+      pixels, so pixel steps on RAWs stand (DNGs with ForwardMatrix tags move).
+- [ ] The lockfile: `pnpm install` with a PAT that has `read:packages` (the
+      container this was written in had none), to take 0.17.0 into
+      `pnpm-lock.yaml`.
+- [ ] Phase 1 — migration notice, per-project before/after on first open.
+- [ ] Phase 2 — `Master` on export; HDR/gain-map branches rewritten.
+- [ ] Phase 3 — export wizard, guards, preview, receipt, sliders, size W×H,
+      Intent (i).
+- [ ] Phase 4 — expanded scopes (histogram parade, hue chart, metrics).
+- [ ] Phase 5 — masks: Objects button, crisp outline, MaskPins removed.
+- [ ] RAW colour: `{ Pixl: { version: 1 } }` where `camera_colour.pixl_versions`
+      holds it (46 bodies), named in saved recipes; start the temperature UI
+      from `camera_colour.as_shot_white`. Moves pixels: needs a recipe/RAW rev.
+
+#### ENGINE REQUEST: need u'v' and gamut coverage metrics
+
+The expanded scope's CIE 1976 u'v' chart (the image's chromaticity cloud and
+hull, before/after) and gamut coverage need them from `analyze`/`measure`,
+which today return RGB/luma histograms and a hue histogram only:
+
+- [ ] `ImageStats.chromaticity`: a 2-D histogram of CIE 1976 u'v' (say 256 ×
+      256 over the visible range, plus the pixel count, the domain's white
+      point and `Y` weighting), measured in the stats' domain (HDR in stops).
+- [ ] `ImageStats.gamut_coverage`: the fraction of measured pixels inside
+      sRGB, Display P3, Adobe RGB, Rec.2020 and PixlRGB, and the fraction
+      outside the visible range (what the guard would pull back).
+- [ ] The same for `ConvertRequest::measure` so before/after come from one
+      render each. Until then the CIE tab is a shell, with no renderer-side
+      approximation.
+
 ### Upgrade to pixl-engine 0.16.0 (branch `feat/engine-0.16`, 2026-10-02)
 
 - [x] Phase 1 — at parity: engine and models 0.16.0; every `Lut` states

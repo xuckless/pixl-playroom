@@ -211,20 +211,20 @@ test('location is removed only where it could be', () => {
   )
 })
 
-test('HEIF files state their matrix: BT.601 for SDR as before, BT.2020 wide or HDR, none lossless', () => {
-  const s = { ...defaultExportSettings(), format: 'heic' as const, bitDepth: 8 }
-  type Heic = Extract<ReturnType<typeof buildEncode>['encode'], { Heic: unknown }>['Heic']
-  const heic = (e: ReturnType<typeof buildEncode>['encode']): Heic => {
-    assert.ok(typeof e === 'object' && 'Heic' in e)
-    return e.Heic
+test('AVIF files state their matrix: BT.601 for SDR as before, BT.2020 wide or HDR, none lossless', () => {
+  const s = { ...defaultExportSettings(), format: 'avif' as const, bitDepth: 8 }
+  type Avif = Extract<ReturnType<typeof buildEncode>['encode'], { Avif: unknown }>['Avif']
+  const avif = (e: ReturnType<typeof buildEncode>['encode']): Avif => {
+    assert.ok(typeof e === 'object' && 'Avif' in e)
+    return e.Avif
   }
-  assert.equal(heic(buildEncode(s, 4).encode).matrix, 'Bt601')
-  assert.equal(heic(buildEncode({ ...s, colorSpace: 'Rec2020' }, 4).encode).matrix, 'Bt2020Ncl')
-  assert.equal(heic(buildEncode({ ...s, lossless: true }, 4).encode).matrix, 'Identity')
+  assert.equal(avif(buildEncode(s, 4).encode).matrix, 'Bt601')
+  assert.equal(avif(buildEncode({ ...s, colorSpace: 'Rec2020' }, 4).encode).matrix, 'Bt2020Ncl')
+  assert.equal(avif(buildEncode({ ...s, lossless: true }, 4).encode).matrix, 'Identity')
   const hdr = buildEncode(s, 4, true)
-  assert.equal(heic(hdr.encode).matrix, 'Bt2020Ncl')
+  assert.equal(avif(hdr.encode).matrix, 'Bt2020Ncl')
   // PQ/HLG never leaves at 8 bits.
-  assert.equal(heic(hdr.encode).bit_depth, 10)
+  assert.equal(avif(hdr.encode).bit_depth, 10)
   assert.equal(hdr.depth, 'Sixteen')
 })
 

@@ -26,8 +26,6 @@ import {
   chainSubject,
   enhanceRefusal,
   estimateMs,
-  FALLBACK_JPEG_QUALITY,
-  fbcnnQuality,
   jpegRestoreRefusal,
   learnRates,
   planSteps,
@@ -127,12 +125,7 @@ async function chainOf(
       out.push({ Upscale: (await models.ref(id, provider)) as unknown as UpscalerRef })
       continue
     }
-    const quality = s.jpegQuality ?? info.jpeg?.quality ?? FALLBACK_JPEG_QUALITY
-    const ref = (await models.ref(
-      id,
-      provider,
-      p.kind === 'fbcnn-qf' ? { quality: { Stated: { value: fbcnnQuality(quality) } } } : {}
-    )) as unknown as EnhancerRef
+    const ref = (await models.ref(id, provider, {})) as unknown as EnhancerRef
     const strength = p.kind === 'deblur' ? s.deblurStrength : s.jpegStrength
     out.push({ Model: { ...ref, strength: Math.min(1, Math.max(0.01, strength / 100)) } })
   }

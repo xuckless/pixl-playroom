@@ -4,7 +4,7 @@
  * of a recipe.
  */
 import { create } from 'zustand'
-import { DEFAULT_ENHANCE, type EnhanceSettings } from '../../../shared/enhance'
+import { DEFAULT_ENHANCE, normaliseEnhance, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind } from '../../../shared/retouch'
 import type { AiDenoiseModel } from '../../../shared/recipe'
 import { isCardId, type CardId } from '../../../shared/cards'
@@ -315,7 +315,7 @@ export const useUi = create<UiState>()(
           ...current,
           ...p,
           // Settings saved before a field existed take its default.
-          enhance: { ...DEFAULT_ENHANCE, ...p.enhance },
+          enhance: normaliseEnhance(p.enhance),
           masksWin: { ...DEFAULT_MASKS_WIN, ...p.masksWin },
           maskOverlay: { ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay },
           denoise: { model: 'drunet-color', strength: 100, ...p.denoise },

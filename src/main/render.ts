@@ -95,6 +95,7 @@ import {
   type ProxyFile
 } from './proxy'
 import { editsHdr, ensureHdrSource } from './hdrsource'
+import { READ_LIMITS } from '../shared/limits'
 import type { LensShot } from './lensprofiles'
 import {
   blankRequest,
@@ -1447,6 +1448,7 @@ class Session {
           ToneMap: {
             to: 'LinearSrgb',
             operator: 'Clip',
+            mode: 'PerChannel',
             source_peak: { Nits: this.info.peak_nits ?? 1000 },
             target_peak_nits: 203,
             gamut: 'Clip',
@@ -1536,6 +1538,9 @@ class Session {
       orientation: sourceOrientation(this.file, raw),
       geometry: MANUAL_GEOMETRY,
       model: 'Scale',
+      // The source's own primaries: 0.16.0's fit, valid for every source.
+      planes: 'Frame',
+      limits: READ_LIMITS,
       threads: BACKGROUND_THREADS
     })) as unknown as {
       lateral_ca: LateralCa
@@ -1572,6 +1577,7 @@ class Session {
       lens: lensCorrection(this.recipe.lens),
       mode,
       focal,
+      limits: READ_LIMITS,
       threads: interactiveThreads()
     })) as unknown as { transform: Transform }
     this.usableUpright(r.transform, src.width, src.height)
@@ -1627,6 +1633,7 @@ class Session {
       shape: spotShape(points, radius),
       feather: featherOf({ feather, radius }),
       score: kind === 'heal' ? 'Texture' : 'Difference',
+      limits: READ_LIMITS,
       threads: BACKGROUND_THREADS
     })) as unknown as { source_offset: SpotPoint }
     const at = points[0]

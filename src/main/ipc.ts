@@ -701,7 +701,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.ai.list, () => s.ai.list())
   handle(IPC.ai.capabilities, async (): Promise<AiCapabilities> => {
     const enhance = enhanceAvailability(s.bgEngine.getStatus())
-    const subject = (await s.models.installed('u2net')) || (await s.models.installed('u2netp'))
+    const subject = await s.models.installed('u2netp')
     // Models run on the engine's bundled runtime; each denoise model is
     // offered for download where it is picked (Detail → Noise reduction).
     const status = s.bgEngine.getStatus()
@@ -734,13 +734,13 @@ export function registerIpc(s: Services): void {
       // What to download for a task that waits only on its model: the one
       // Playroom recommends (the detailed subject model, SAM 2.1, DRUNet).
       get: {
-        ...(models && !subject ? { segment: 'u2net' } : {}),
+        ...(models && !subject ? { segment: 'u2netp' } : {}),
         ...(sam2 && !samModel ? { prompt: SAM_MODEL } : {}),
         ...(models && !drunet ? { denoise: 'drunet-color' } : {})
       },
       why: {
         ...(enhance.available ? {} : { enhance: enhance.reason }),
-        ...(segment ? {} : { segment: `download ${modelName(s.models.entry('u2net'))}` }),
+        ...(segment ? {} : { segment: `download ${modelName(s.models.entry('u2netp'))}` }),
         ...(models ? {} : { denoise: 'this engine build runs no models' }),
         ...(sam2 && samModel
           ? {}

@@ -5,6 +5,7 @@
  * exports and enhancement alike.
  */
 import type {
+  DngOpcodes,
   ColorPolicy,
   ConvertRequest,
   Framing,
@@ -16,6 +17,7 @@ import type {
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
 import { fromExif } from '../shared/orientation'
+import { READ_LIMITS } from '../shared/limits'
 import { hash32 } from '../shared/recipe'
 import type { PhotoRow } from './db'
 import { RAW_DEVELOP_REV } from '../shared/pixels'
@@ -62,6 +64,9 @@ export function isRawExt(ext: string): boolean {
   return RAW_EXTENSIONS.includes(ext.toLowerCase())
 }
 
+/** Both DNG opcode lists applied: what Adobe's readers do, and Playroom's choice (engine 0.17). */
+export const DNG_OPCODES: DngOpcodes = { list1: 'Apply', list2: 'Apply' }
+
 /**
  * A RAW is developed in linear light with the camera's own white balance and
  * colour matrix, cropped to the sensor's best area: the physically honest
@@ -75,7 +80,9 @@ export const RAW_DEVELOP: RawMode = {
     calibrate: true,
     srgb_gamma: false,
     crop: 'Best',
-    resolution: 'Full'
+    resolution: 'Full',
+    colour: 'Container',
+    dng_opcodes: DNG_OPCODES
   }
 }
 
@@ -96,7 +103,9 @@ export const RAW_PROXY_DEVELOP: RawMode = {
     calibrate: true,
     srgb_gamma: false,
     crop: 'Best',
-    resolution: 'Cell'
+    resolution: 'Cell',
+    colour: 'Container',
+    dng_opcodes: DNG_OPCODES
   }
 }
 
@@ -180,6 +189,7 @@ export function displayPolicy(info: SourceInfo, to: 'DisplayP3' | 'Srgb'): Color
       ToneMap: {
         to,
         operator: 'Bt2390',
+        mode: 'PerChannel',
         source_peak: { Nits: info.peak_nits ?? ASSUMED_HDR_PEAK },
         target_peak_nits: SDR_WHITE_NITS,
         gamut: 'Compress',
@@ -265,6 +275,7 @@ export function blankRequest(
     lens: null,
     retouch: null,
     output_sharpen: null,
+    limits: READ_LIMITS,
     measure: null
   }
 }

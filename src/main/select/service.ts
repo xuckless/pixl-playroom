@@ -51,6 +51,7 @@ import { planeRef } from '../planeref'
 import { ensureProxies } from '../proxy'
 import type { DevelopSessions } from '../render'
 import { interactiveThreads, versionStamp } from '../source'
+import { READ_LIMITS } from '../../shared/limits'
 import type { ModelStore } from '../ai/models'
 
 /** The prompt segmenter the roster ships. */
@@ -230,6 +231,7 @@ export class SelectService {
           encoder: this.refs!.encoder,
           // Kept for the committed plane's guided upsample (about 10 MB more).
           guide: true,
+          limits: READ_LIMITS,
           threads: Math.max(2, interactiveThreads())
         }
         const t0 = Date.now()

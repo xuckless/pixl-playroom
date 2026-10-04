@@ -17,6 +17,7 @@ import type {
   WhitePoint
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
+import { READ_LIMITS } from '../shared/limits'
 import type { AutoWbResult, SampleResult } from '../shared/ipc'
 import { newLocalLayer, type Recipe } from '../shared/recipe'
 import type { PhotoRow } from './db'
@@ -52,6 +53,9 @@ export function analyzeRequest(
     threads,
     weights: null,
     noise: false,
+    orientation: 'Normal',
+    lens: null,
+    limits: READ_LIMITS,
     hdr: null,
     gain_map: null
   }
