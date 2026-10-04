@@ -464,26 +464,48 @@ export function StepSlider<T extends string | number>({
     0,
     options.findIndex((o) => o.value === value)
   )
+  const last = options.length - 1
+  const pick = (i: number): void => {
+    const next = options[Math.min(last, Math.max(0, Math.round(i)))]
+    if (next.value !== value) onChange(next.value)
+  }
   return (
-    <Slider
-      label={label}
-      value={at}
-      min={0}
-      max={options.length - 1}
-      step={1}
-      def={0}
-      ticks={options.length}
-      format={(i) => options[Math.min(options.length - 1, Math.max(0, Math.round(i)))].label}
-      onChange={(i) => {
-        const next = options[Math.min(options.length - 1, Math.max(0, Math.round(i)))]
-        if (next.value !== value) onChange(next.value)
-      }}
-      onCommit={() => undefined}
-      adjusts={false}
-      tip={tip}
-      title={title}
-      disabled={disabled}
-    />
+    <div className={`step-slider${disabled ? ' disabled' : ''}`} title={title}>
+      <div className="ss-head">
+        <span className="ss-label">{label}</span>
+        {tip && <InfoTip tip={tip} label={label} />}
+        <span className="ss-value">{options[at].label}</span>
+      </div>
+      <Slider
+        label={label}
+        value={at}
+        min={0}
+        max={last}
+        step={1}
+        def={0}
+        ticks={options.length}
+        format={(i) => options[Math.min(last, Math.max(0, Math.round(i)))].label}
+        onChange={pick}
+        onCommit={() => undefined}
+        adjusts={false}
+        disabled={disabled}
+      />
+      <div className="ss-stops" aria-hidden>
+        {options.map((o, i) => (
+          <button
+            key={String(o.value)}
+            type="button"
+            tabIndex={-1}
+            disabled={disabled}
+            className={i === at ? 'on' : ''}
+            style={{ '--i': last > 0 ? i / last : 0 } as React.CSSProperties}
+            onClick={() => pick(i)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 

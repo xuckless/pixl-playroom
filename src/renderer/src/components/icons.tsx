@@ -56,6 +56,7 @@ const PATHS = {
       <path d="M12 7v5l3 2" />
     </>
   ),
+  expand: <path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" />,
   info: (
     <>
       <circle cx="12" cy="12" r="9" />

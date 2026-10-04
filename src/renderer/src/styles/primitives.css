@@ -490,6 +490,73 @@ input[type='checkbox']:disabled {
   background: var(--hair2);
   pointer-events: none;
 }
+.step-slider {
+  margin: 4px 0 8px;
+}
+.step-slider.disabled {
+  opacity: 0.5;
+}
+.step-slider .ss-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+  font-size: 12px;
+  color: var(--text2);
+}
+.step-slider .ss-value {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+/* The bar carries the stops; the name and value are in the header above it. */
+.step-slider .sl-text {
+  display: none;
+}
+.step-slider .slider {
+  margin: 0;
+}
+.ss-stops {
+  position: relative;
+  height: 20px;
+  margin-top: 2px;
+}
+.ss-stops button {
+  position: absolute;
+  top: 0;
+  height: 18px;
+  padding: 0 4px;
+  left: calc(13px + (100% - 26px) * var(--i));
+  transform: translateX(-50%);
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ss-stops button:first-child {
+  transform: translateX(-13px);
+}
+.ss-stops button:last-child:not(:first-child) {
+  transform: translateX(calc(-100% + 13px));
+}
+.ss-stops button:hover:not(:disabled) {
+  color: var(--text2);
+  transform: translateX(-50%);
+}
+.ss-stops button:first-child:hover:not(:disabled) {
+  transform: translateX(-13px);
+}
+.ss-stops button:last-child:not(:first-child):hover:not(:disabled) {
+  transform: translateX(calc(-100% + 13px));
+}
+.ss-stops button.on {
+  color: var(--text);
+  font-weight: 600;
+}
 .sl-ticks {
   position: absolute;
   inset: 0;

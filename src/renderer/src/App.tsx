@@ -30,6 +30,7 @@ import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
 import { WhatsNewDialog } from './views/WhatsNew'
 import { LegacyCompareDialog } from './views/LegacyCompare'
+import { ScopesExpandedDialog } from './develop/ScopesExpanded'
 import { showWhatsNew } from './state/whatsNew'
 import { BetaGate, UpdateRequiredGate } from './views/Gate'
 import { useGate } from './lib/gate'
@@ -117,6 +118,7 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'engine' && <EngineReportDialog key="engine" />}
       {dialog === 'whats-new' && <WhatsNewDialog key="whats-new" />}
       {dialog === 'legacy' && <LegacyCompareDialog key="legacy" />}
+      {dialog === 'scopes' && <ScopesExpandedDialog key="scopes" />}
     </AnimatePresence>
   )
 }
