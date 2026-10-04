@@ -74,7 +74,7 @@ Heal, Masks).
 | Crop (strip, R)     | Crop tool with aspect presets and straighten; rotate left/right, flip and guides on its floating bar                                                                                                                                                                                                                                                                                                                                                                  | `Framing`                                                                                                                                     |
 | Masks (strip, M)    | The masks window (below)                                                                                                                                                                                                                                                                                                                                                                                                                                              | `GradeLayer`, `Mask`, `LinearGradient`, `RadialGradient`, `BidirectionalGradient`, `Refine`, `segment`, `segmentPrompt`, `Inspect::LayerMask` |
 | Heal (strip, Q)     | Heal, clone and content-aware fill, Photoshop's way (click or paint, then drag from the spot to its source, live; or Alt-click a source first, later spots keep the offset), red eye and pet eye (drag over the pupil); outlines only while editing (hover or H shows them); a spot list; Q, H, ⌫, Enter, [ ]                                                                                                                                                         | `Retouch`, `suggestHealSource`                                                                                                                |
-| Enhance (last card) | JPEG restore (rebuilt from the file's coefficients, or FBCNN blind / at a quality), deblur (NAFNet), super-resolution (×2 Real-ESRGAN, ×4 general or keep-texture) into a new 16-bit TIFF with the recipe                                                                                                                                                                                                                                                             | `enhance` (JpegReconstruct, Model, Upscale)                                                                                                   |
+| Enhance (last card) | JPEG restore (rebuilt from the file's coefficients, or FBCNN blind), deblur (NAFNet), super-resolution (×2 Real-ESRGAN, ×4 general or keep-texture) into a new 16-bit TIFF with the recipe                                                                                                                                                                                                                                                             | `enhance` (JpegReconstruct, Model, Upscale)                                                                                                   |
 | Engine report       | View ▸ Engine Report… (Ctrl+Alt+E) or the toolbar's `</>`: the last render's engine report line by line, the compiled grade JSON, and custom layers written directly in the engine's terms (any op, any stage space, CDL, qualifiers)                                                                                                                                                                                                                                 | the whole `Grade` model                                                                                                                       |
 
 **Masks** — a window that floats over the photo or docks beside it (M):
@@ -83,14 +83,14 @@ Intersect, each mask with its own overlay colour). A selected mask edits with
 every card but Optics and Geometry, plus Amount, blend and opacity. New masks
 come from:
 
-- **Automatic** — Subject and Background (U²-Net); **Objects** (SAM 2.1, on
+- **Automatic** — Subject and Background (U²-Netp); **Objects** (SAM 2.1, on
   its own engine host): hover to see what lies under the pointer and click to
   take it, drag a box, or scribble over it; Shift-click adds a part, Alt-click
   takes one away, Enter keeps it, Esc drops it. **Sky** is one click on the
   sky (SAM 2.1) until a sky model ships. The People tools (body, face, hair,
   skin…) are marked "soon".
 - **Draw** — brush A/B/erase with flow, density, pressure and Auto Mask;
-  linear, radial and bidirectional gradients with pins (drawn by the engine,
+  linear, radial and bidirectional gradients with handles (drawn by the engine,
   exact at any size); an editable lasso, whose Find object puts the object
   inside it in its place.
 - **Range** — colour and luminance ranges with smoothness. Depth range is
@@ -109,7 +109,12 @@ own colour.
 and mean saturation, the _before_ picture's bars as dashed ghosts behind, a
 masked-region mode that measures inside the selected mask, click a bar to
 open that colour in the Colour mixer, Shift-click to make a colour-range mask
-there. The histogram's numbers wait behind its `</>`.
+there. The histogram's numbers wait behind its `</>`. An expand icon on either
+opens the scopes at full size: the histogram as overlay, parade, one channel
+or luma (log, the before picture as a ghost, HDR in stops); the colour chart
+with colour-vision simulation; a CIE 1976 u′v′ chart with PixlRGB and
+reference gamuts; and metrics before and after (range, contrast, clipping,
+cast), with a dominant palette in Lab and hex.
 
 **Viewing** — before (\\), split before/after (Y), zoom from fit to 400%
 (pinch, wheel, Z for 100%) with every tool still on the photo, the part in
@@ -170,12 +175,15 @@ faces). The browser can show only the looks that work now. A look can travel
 as a `pixl-look` file (`src/shared/looks/schema.ts`), the format a marketplace
 will use.
 
-**Export** — chosen folder (or beside each original), subfolder, filename
+**Export** — four steps (Format, Size & colour, Metadata & HDR, Review) of
+the editor's cards; Review renders the first photo through the real export
+request, and guards and a preflight (writable folder, room, replaced files)
+block an export that cannot work. Chosen folder (or beside each original), subfolder, filename
 template (`{name} {seq} {date} {rating} {copy} {ext}`), JPEG/PNG/TIFF/WebP/
-AVIF/JPEG XL/HEIC with each codec's knobs, bit depth, resize (long/short edge,
-width, height, megapixels, percent), colour space + intent + BPC, metadata
+AVIF/JPEG XL with each codec's knobs, bit depth, resize (long/short edge,
+width, height, fit inside a box, megapixels, percent), colour space + intent + BPC, metadata
 blocks, dither, HDR (tone map HDR sources, keep HDR, expand SDR to PQ/HLG,
-or SDR + gain map: UltraHDR JPEG, AVIF, HEIC; highlights clipped at the peak
+or SDR + gain map: UltraHDR JPEG, AVIF; highlights clipped at the peak
 or rolled off by BT.2390 from a chosen knee),
 a watermark (a PNG at one of nine anchors, sized and inset by the
 picture's shorter edge, with opacity and Normal / Multiply / Screen, previewed
@@ -207,7 +215,7 @@ data and how long it takes for a photo on this computer (measured on earlier
 runs, else scaled by the speed test), marks the one Playroom recommends for
 each task, and removes it. A tool that needs a missing model offers it right
 there, in a "Model needed" popup, and goes on when it is here. Select Subject
-and Background (Masks) run U²-Net; Objects, Sky and Find object run SAM 2.1.
+and Background (Masks) run U²-Netp; Objects, Sky and Find object run SAM 2.1.
 
 **Lens profiles** — the app ships Lensfun's database (CC BY-SA 3.0) as its
 lens catalogue, so every lens Lensfun knows is corrected offline (a fisheye
