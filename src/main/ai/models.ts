@@ -33,6 +33,7 @@ import { ENHANCE_MODEL, FIRST_GUESS_MS_PER_MP, type EnhanceStepKind } from '../.
 import { modelSpeed, referenceOf, testFactor, type ModelSpeed } from '../../shared/modelSpeed'
 import { DENOISE_RATE_KEY, ENHANCE_RATE_KEY } from './rates'
 import { LEGACY_MODELS, fillRef, legacyInstalledDir, legacyModel } from './legacymodels'
+import { carryOver } from './carryover'
 
 import * as pixlModels from '@xuckless/pixl-models'
 import type { ModelEntry as RosterEntry, ModelFile as RosterFile } from '@xuckless/pixl-models'
@@ -121,6 +122,11 @@ export class ModelStore {
     for (const f of e.files) {
       const s = await stat(join(this.dir(id), f.name)).catch(() => null)
       if (!s || s.size !== f.bytes) ok = false
+    }
+    // The same files under the version an earlier release knew: moved, not downloaded again.
+    if (!ok && (await carryOver(paths.models(), e).catch(() => false))) {
+      ok = true
+      log.info('model carried over from an earlier version', id, e.version)
     }
     this.installedCache.set(id, ok)
     return ok

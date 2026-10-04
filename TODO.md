@@ -1389,6 +1389,48 @@ What the 0.16 integration (branch `feat/engine-0.16`) left open.
       panel (today a note says to; `staleRawStep`).
 - [ ] **S** · Snap to edges on a colour or luminance range (E13's other half).
 
+## Later: a slimmer `.pixl` (2026-10-02)
+
+Nothing lossy, nothing slower; full plan in
+`~/.claude/plans/okay-hear-me-out-toasty-pearl.md`. Measured on 32 real
+projects (1.43 GB): the embedded DNG is 59% of the bytes, lossless AI steps
+in use 34%, AI steps named only by undo history 6%, masks/planes/patches
+0.7%, SQLite overhead 0.6%. About 13% can go without touching quality or
+speed; half of it needs the engine (E46, E47). Lossy AI steps (−84% of
+their size) are ruled out. Higher lossless effort gains nothing.
+
+- [ ] **S** · Container trim for new files, no version bump: `WITHOUT
+      ROWID` on `meta` and `blobs`; `items` and `history` only if measured
+      smaller and no slower (multi-KB JSON rows); 16 KiB pages stay. Same PR:
+      drop the ungated HEIC export option (the encoder is going, the decoder
+      stays; `export.ts`, `Dialogs.tsx:280`, `upgradeExportSettings` maps
+      saved `heic` to `jpeg`).
+- [ ] **S** · Fix `HistoryTable.json()` first: it yields only rows with
+      `"ref":`, so `gc()` never sees a history row that names a pixel blob
+      without a plane and could drop a history-only AI result after an hour
+      (reached today only from `deleteHistory` and a replaced original).
+- [ ] **M** · "Compact project" (only on request: Organise menu for a
+      selection, a button in the develop pane's project row): releases
+      `pixels`/`mask` blobs named by nothing but history (planes and LUTs
+      stay), 5-minute guard, flush the session and skip photos with a running
+      AI job, then `vacuumStep` loop; before/after sizes in the toast; cache
+      copies removed. A released step renders as nothing (`overlaysOf` skips
+      it, export too) with a one-time "run it again or remove the step"
+      notice instead of today's "its image is missing" failure.
+- [ ] **M** · Format v3, one batched bump: LUTs embedded as blobs (`kind`
+      `lut`, `codec` `cube`; `profile.blob` stamped where recipes enter main,
+      stored in `PixlFile.write`/`appendIn`, written out to the cache and
+      passed by path before compile; a moved project renders without
+      `userData/luts`); `recipe.process` (colour-math version, absent = 1,
+      written not acted on, ahead of the engine's colour tools); readers pick
+      a blob's extension from `blobs.codec` so masks can turn to JXL in a
+      minor version later; spec fixes (`blobs.codec` omits `png` and
+      `jxl-lossless`; "What later versions add" is stale).
+- [ ] **M** · Masks, planes and heal patches as lossless JXL (−45…−75% of
+      those blobs, bit-exact): waits on E47; no transcode on open.
+- [ ] **S** · Embedded RAW as a JXL-compressed DNG (≈ −10% of the original):
+      a branch in `planFor` once E46 lands.
+
 ## Waiting on the engine
 
 Playroom work that starts once the engine request lands
@@ -1397,6 +1439,10 @@ Playroom work that starts once the engine request lands
 - [ ] **S** · Drop `repairJpegExif` once JPEG EXIF is written correctly (E1).
       _Unblocked: 0.16.1 writes it once._
 - [ ] **S** · HEIC export and HEIC gain-map export (E2).
+      _2026-10-02: the engine drops the HEVC encoder (no patent licence); the
+      option goes from the dialog until one ships._
+- [ ] **S** · Embedded RAW as a JXL-compressed DNG (E46; "a slimmer `.pixl`").
+- [ ] **M** · Masks, planes and heal patches as lossless JXL (E47; "a slimmer `.pixl`").
 - [x] **M** · Sharp 1:1 zoom and 1:1 tiles on straightened, Upright and
       lens-warped photos (E3).
       _Done 2026-10-02 (engine 0.16): the tile is asked for in fractions of the picture as shown
