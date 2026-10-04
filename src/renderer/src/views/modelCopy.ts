@@ -95,6 +95,17 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     where: 'Enhance → Deblur',
     recommended: true
   },
+  // Retired by engine 0.17 and kept for who downloaded them until the next update.
+  u2net: {
+    name: 'Detailed subject',
+    what: 'Finds the main subject for the Subject and Background masks. It is being retired: the next update replaces it with the smaller, faster Subject finder. Until then Playroom keeps using it, since you have it.',
+    where: 'Masks → New → Subject or Background'
+  },
+  'fbcnn-color-qf': {
+    name: 'JPEG repair, exact',
+    what: 'The JPEG repair that was told exactly how compressed the file is. It is being retired and no longer runs: the automatic JPEG repair does the same job. Remove it to free the space.',
+    where: ''
+  },
   'fbcnn-color-blind': {
     name: 'JPEG repair, automatic',
     what: 'Works out by itself how damaged the file is. Good for pictures saved from the web or sent through messaging apps.',

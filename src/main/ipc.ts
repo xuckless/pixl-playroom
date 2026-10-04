@@ -721,7 +721,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.ai.list, () => s.ai.list())
   handle(IPC.ai.capabilities, async (): Promise<AiCapabilities> => {
     const enhance = enhanceAvailability(s.bgEngine.getStatus())
-    const subject = await s.models.installed('u2netp')
+    const subject = (await s.models.installed('u2net')) || (await s.models.installed('u2netp'))
     // Models run on the engine's bundled runtime; each denoise model is
     // offered for download where it is picked (Detail → Noise reduction).
     const status = s.bgEngine.getStatus()

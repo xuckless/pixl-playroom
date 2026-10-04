@@ -23,6 +23,7 @@ import { encodeGreyPng, grey8 } from '../pngio'
 import type { PlaneStore } from '../planestore'
 import { ensureProxies } from '../proxy'
 import type { DevelopSessions } from '../render'
+import log from 'electron-log/main'
 import { BACKGROUND_THREADS } from '../source'
 import { READ_LIMITS } from '../../shared/limits'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
@@ -45,8 +46,12 @@ const HARDEN = 4
  */
 const HARDEN_AT = 0.6
 
-/** The subject models, best first (U²-Net left with engine 0.17: U²-Netp is the subject model). */
-const SUBJECT_MODELS = ['u2netp']
+/**
+ * The subject models, best first. U²-Net was retired by engine 0.17 (U²-Netp
+ * replaces it) and is kept for who downloaded it until the next update
+ * (`legacymodels.ts`): it goes from this list then.
+ */
+const SUBJECT_MODELS = ['u2net', 'u2netp']
 
 /** Below this the model saw nothing salient (a flat plane stretched to full range). */
 const NOTHING_SALIENT = 0.2
@@ -103,27 +108,43 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     const t0 = Date.now()
     const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, 2500), true), 200)
     let report: Awaited<ReturnType<EngineClient['segment']>>
+    const request = (model: Record<string, unknown>): Record<string, unknown> => ({
+      source: { Path: px.proxy.path },
+      input: px.proxy.input,
+      raw: null,
+      gain_map: null,
+      // The proxy is the base frame, upright: what masks are placed on.
+      orientation: 'Normal',
+      lens: lensCorrection(recipe.lens),
+      segmenter: { Classes: model },
+      upsample: UPSAMPLE,
+      png: { compression: 'Fast', filter: 'Sub' },
+      threads: BACKGROUND_THREADS,
+      limits: READ_LIMITS,
+      // At the proxy's own size: the edge is followed there, not stretched later.
+      plane_longest: null
+    })
     try {
       // Stopped mid-run by the signal (the engine's model calls take one since 0.16).
-      report = await this.engine.segment(
-        {
-          source: { Path: px.proxy.path },
-          input: px.proxy.input,
-          raw: null,
-          gain_map: null,
-          // The proxy is the base frame, upright: what masks are placed on.
-          orientation: 'Normal',
-          lens: lensCorrection(recipe.lens),
-          segmenter: { Classes: segmenter },
-          upsample: UPSAMPLE,
-          png: { compression: 'Fast', filter: 'Sub' },
-          threads: BACKGROUND_THREADS,
-          limits: READ_LIMITS,
-          // At the proxy's own size: the edge is followed there, not stretched later.
-          plane_longest: null
-        },
-        { signal: ctx.signal }
-      )
+      try {
+        report = await this.engine.segment(request(segmenter), { signal: ctx.signal })
+      } catch (err) {
+        // U²-Net is retired and the 0.17 engine no longer tests its own
+        // weights: if it will not run, U²-Netp (the model that replaces it)
+        // makes the mask, and the failure is logged.
+        const model = (err as { code?: string })?.code === 'Model'
+        if (
+          ctx.signal.aborted ||
+          id !== 'u2net' ||
+          !model ||
+          !(await this.models.installed('u2netp'))
+        )
+          throw err
+        log.warn('U²-Net would not run; using U²-Netp', (err as Error).message)
+        report = await this.engine.segment(request(await this.models.ref('u2netp', 'Cpu')), {
+          signal: ctx.signal
+        })
+      }
     } catch (err) {
       if (ctx.signal.aborted) throw new Cancelled()
       throw err

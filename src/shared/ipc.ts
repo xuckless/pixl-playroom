@@ -852,6 +852,10 @@ export interface ModelInfo {
   error?: string
   /** How long it takes on this computer, for one photo (see `modelSpeed.ts`). */
   speed: ModelSpeed | null
+  /** Retired by engine 0.17 and kept this release for who has it: Remove only, gone next update. */
+  retiring?: boolean
+  /** The model that takes its place. */
+  replacedBy?: string
 }
 
 /** Which provider AI models run on, and what the performance test measured. */

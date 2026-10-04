@@ -1788,6 +1788,27 @@ and a before/after on each project's first open.
       holds it (46 bodies), named in saved recipes; start the temperature UI
       from `camera_colour.as_shot_white`. Moves pixels: needs a recipe/RAW rev.
 
+#### Retiring models: U²-Net and FBCNN-at-a-quality (gone in the next update)
+
+Engine 0.17 retired both (`retired[]` in the models roster, `ship: false`); this
+release keeps them for who downloaded them (`src/main/ai/legacymodels.ts`):
+an installed one is listed under AI models as "Being retired" with Remove
+only, never offered for download. U²-Net still makes Subject and Background
+masks (preferred over U²-Netp as before; if the 0.17 engine will not run its
+graph, the job falls back to U²-Netp and logs it). FBCNN-QF runs nothing.
+
+- [ ] First thing to check on a machine with the engine installed: U²-Net
+      really runs on 0.17 (`ClassSegmenter` with the vendored roster `ref`).
+- [ ] **In the next update:** delete `legacymodels.ts` and `tests/legacymodels.test.ts`;
+      remove `'u2net'` from `SUBJECT_MODELS` (`ai/segment.ts`), the fallback
+      block in `SegmentRunner.run`, the `installed('u2net')` check in
+      `ipc.ts` capabilities, `'u2net'` in the benchmark order and `legacy`
+      uses in `ai/models.ts` (`legacy()`, `legacyDirs`, `list()`'s retiring
+      loop, `ref()` branch); the `u2net` and `fbcnn-color-qf` entries in
+      `views/modelCopy.ts`; `retiring`/`replacedBy` in `ModelInfo` and the
+      badge in `ModelsSection.tsx`; and add a one-time start-up clean-up that
+      removes `userData/models/u2net` and `userData/models/fbcnn-color-qf`.
+
 #### ENGINE REQUEST: need u'v' and gamut coverage metrics
 
 The expanded scope's CIE 1976 u'v' chart (the image's chromaticity cloud and

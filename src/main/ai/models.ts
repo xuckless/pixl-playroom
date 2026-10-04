@@ -32,6 +32,7 @@ import { BACKGROUND_THREADS } from '../source'
 import { ENHANCE_MODEL, FIRST_GUESS_MS_PER_MP, type EnhanceStepKind } from '../../shared/enhance'
 import { modelSpeed, referenceOf, testFactor, type ModelSpeed } from '../../shared/modelSpeed'
 import { DENOISE_RATE_KEY, ENHANCE_RATE_KEY } from './rates'
+import { LEGACY_MODELS, fillRef, legacyInstalledDir, legacyModel } from './legacymodels'
 
 import * as pixlModels from '@xuckless/pixl-models'
 import type { ModelEntry as RosterEntry, ModelFile as RosterFile } from '@xuckless/pixl-models'
@@ -69,6 +70,8 @@ export class ModelStore {
   private downloads = new Map<string, { abort: AbortController; done: number; total: number }>()
   private failed = new Map<string, string>()
   private installedCache = new Map<string, boolean>()
+  /** Where each installed legacy model (see `legacymodels.ts`) is on this machine. */
+  private legacyDirs = new Map<string, string>()
 
   constructor(
     private readonly settings: IndexClient,
@@ -86,8 +89,18 @@ export class ModelStore {
     return e
   }
 
+  /**
+   * A model engine 0.17 retired that this release still honours (U²-Net,
+   * FBCNN at a quality): not in the roster, so `entry()` cannot name it.
+   */
+  private legacy(id: string): ReturnType<typeof legacyModel> {
+    return this.roster().some((m) => m.id === id) ? undefined : legacyModel(id)
+  }
+
   /** Where a model's files live on this machine. */
   dir(id: string): string {
+    const l = this.legacy(id)
+    if (l) return this.legacyDirs.get(id) ?? join(paths.models(), l.id, l.version)
     const e = this.entry(id)
     return join(paths.models(), e.id, e.version)
   }
@@ -96,6 +109,13 @@ export class ModelStore {
   async installed(id: string): Promise<boolean> {
     const cached = this.installedCache.get(id)
     if (cached !== undefined) return cached
+    const l = this.legacy(id)
+    if (l) {
+      const dir = await legacyInstalledDir(paths.models(), l)
+      if (dir) this.legacyDirs.set(id, dir)
+      this.installedCache.set(id, dir !== null)
+      return dir !== null
+    }
     const e = this.entry(id)
     let ok = true
     for (const f of e.files) {
@@ -108,7 +128,26 @@ export class ModelStore {
 
   async list(): Promise<ModelInfo[]> {
     const speeds = await this.speeds()
-    return Promise.all(
+    // The retired ones people already have: listed to be removed, never offered.
+    const retiring: ModelInfo[] = []
+    for (const l of LEGACY_MODELS) {
+      if (this.legacy(l.id) && (await this.installed(l.id)))
+        retiring.push({
+          speed: null,
+          id: l.id,
+          title: l.title,
+          role: l.role,
+          bytes: l.files.reduce((s, f) => s + f.bytes, 0),
+          licence: l.licence.spdx,
+          holder: l.licence.holder,
+          caveat: l.caveat,
+          installed: true,
+          progress: null,
+          retiring: true,
+          replacedBy: l.replacedBy
+        })
+    }
+    const shipped = await Promise.all(
       this.roster().map(async (e) => {
         const d = this.downloads.get(e.id)
         return {
@@ -126,6 +165,7 @@ export class ModelStore {
         }
       })
     )
+    return [...shipped, ...retiring]
   }
 
   private speedCache: { at: number; speeds: Map<string, ModelSpeed | null> } | null = null
@@ -180,6 +220,8 @@ export class ModelStore {
 
   /** Download a model's files, resuming what an earlier try left, and check each. */
   async download(id: string): Promise<void> {
+    // A retired model is kept for who has it, never fetched again.
+    if (this.legacy(id)) return
     if (this.downloads.has(id) || (await this.installed(id))) return
     const e = this.entry(id)
     const dir = this.dir(id)
@@ -250,6 +292,7 @@ export class ModelStore {
   async remove(id: string): Promise<void> {
     this.cancel(id)
     await rm(join(paths.models(), id), { recursive: true, force: true })
+    this.legacyDirs.delete(id)
     this.installedCache.set(id, false)
     this.failed.delete(id)
     this.emit()
@@ -368,7 +411,7 @@ export class ModelStore {
    * will not load the model, or is slower, gives way to the CPU.
    */
   async benchmark(engine: EngineClient): Promise<ProviderInfo> {
-    const order = ['u2netp', 'realesr-general-x4v3', 'real-esrgan-x2plus']
+    const order = ['u2netp', 'realesr-general-x4v3', 'real-esrgan-x2plus', 'u2net']
     let id: string | null = null
     for (const m of order) if (await this.installed(m)) id = id ?? m
     if (!id) throw new Error('Download a model first: U²-Netp is the smallest')
@@ -377,7 +420,7 @@ export class ModelStore {
       await engine.whenStarted()
     }
     const base = (await this.ref(id, 'Cpu')) as { model: Record<string, unknown>; input: unknown }
-    const size = this.entry(id).kind === 'segmenter' ? 320 : 256
+    const size = (legacyModel(id) ?? this.entry(id)).kind === 'segmenter' ? 320 : 256
     const feed = { Image: { input: base.input, width: size, height: size, conditioning: [] } }
     const accel = this.accelerated()
     const cases = [{ name: 'cpu', model: base.model, feed }]
@@ -430,6 +473,11 @@ export class ModelStore {
     provider?: ExecutionProvider,
     extra: Record<string, unknown> = {}
   ): Promise<Record<string, unknown>> {
+    const l = this.legacy(id)
+    if (l) {
+      if (!(await this.installed(id))) throw new Error(`${l.title} is not downloaded`)
+      return fillRef(l.ref, this.dir(id), await this.host(provider, extra))
+    }
     const e = this.entry(id)
     if (!(await this.installed(id))) throw new ModelMissing(e)
     return pixlModels.ref(id, await this.host(provider, extra), { dir: this.dir(id) }) as Record<

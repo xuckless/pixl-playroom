@@ -341,6 +341,11 @@ button.link:hover {
   font-weight: 600;
   letter-spacing: 0.06em;
 }
+.model-rec.retiring {
+  color: var(--warn, #e3b04b);
+  border-color: rgba(227, 176, 75, 0.45);
+  background: rgba(227, 176, 75, 0.1);
+}
 .model-what {
   margin: 3px 0 5px;
   color: var(--text2);
