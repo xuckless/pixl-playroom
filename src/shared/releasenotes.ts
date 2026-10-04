@@ -18,6 +18,27 @@ export interface ReleaseNotes {
 
 export const RELEASE_NOTES: ReleaseNotes[] = [
   {
+    version: '0.3.0-beta',
+    headline: 'PIXL’s own colour engine, and a clearer way to export.',
+    sections: [
+      {
+        title: 'Colour',
+        items: [
+          'The engine now works in PixlRGB, PIXL’s own wide working space.',
+          'Edits that act on the colour channels themselves (curves, colour mixing, per-channel gain, HSL) can look a little different. Open any photo you edited before to see it before and after; remove the old previews whenever you like.',
+          'HDR exports use the engine’s own tone mapping, gamut compression and gain maps.'
+        ]
+      },
+      {
+        title: 'Changes',
+        items: [
+          'HEIC export is replaced by AVIF (HEIC files still open).',
+          'Select Subject uses one model now (U²-Netp); JPEG restore keeps the automatic mode.'
+        ]
+      }
+    ]
+  },
+  {
     version: '0.2.0-beta',
     headline: 'Looks, a new way to make masks, and a new RAW engine.',
     sections: [

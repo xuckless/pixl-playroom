@@ -5,6 +5,7 @@ import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { cpus } from 'os'
 import { pathToFileURL } from 'url'
+import { cacheUrl } from './protocol'
 import { is } from '@electron-toolkit/utils'
 import type { ExportSettings } from '../shared/export'
 import {
@@ -15,6 +16,7 @@ import {
   type ErrorReport,
   type ExportPreset,
   type HistoryLog,
+  type LegacyPreview,
   type LibrarySource,
   type LookThumbRequest,
   type LutProfile,
@@ -207,6 +209,17 @@ export function registerIpc(s: Services): void {
   handle(IPC.updates.check, () => checkForUpdates())
   handle(IPC.updates.install, () => installUpdate())
   handle(IPC.updates.setChannel, (c: UpdateChannel) => setUpdateChannel(c))
+  // ── legacy previews ──
+  handle(IPC.legacy.get, async (key: string): Promise<LegacyPreview | null> => {
+    const { fresh } = await s.library.legacyFor(key)
+    const e = s.library.legacy.get(key)
+    return e ? { url: cacheUrl(e.path, e.capturedIn), engine: e.engine, seen: e.seen, fresh } : null
+  })
+  handle(IPC.legacy.seen, (key: string) => s.library.legacy.markSeen(key))
+  handle(IPC.legacy.remove, (key: string) => s.library.legacy.remove(key))
+  handle(IPC.legacy.removeAll, () => s.library.legacy.removeAll())
+  handle(IPC.legacy.count, () => s.library.legacy.count())
+
   handle(IPC.prefs.get, (): Prefs => ({
     updateChannel: readSettings().updateChannel,
     crashReports: crashConsent(),

@@ -28,6 +28,7 @@ import { ExportDialog, SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
 import { WhatsNewDialog } from './views/WhatsNew'
+import { LegacyCompareDialog } from './views/LegacyCompare'
 import { showWhatsNew } from './state/whatsNew'
 import { BetaGate, UpdateRequiredGate } from './views/Gate'
 import { useGate } from './lib/gate'
@@ -114,6 +115,7 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'crash-consent' && <CrashConsentDialog key="crash-consent" />}
       {dialog === 'engine' && <EngineReportDialog key="engine" />}
       {dialog === 'whats-new' && <WhatsNewDialog key="whats-new" />}
+      {dialog === 'legacy' && <LegacyCompareDialog key="legacy" />}
     </AnimatePresence>
   )
 }

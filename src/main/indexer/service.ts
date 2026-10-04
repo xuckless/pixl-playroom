@@ -137,6 +137,11 @@ export interface ThumbWork {
   recipe: Recipe
   edited: boolean
   stamp: string
+  /**
+   * The thumbnail on disk that an earlier engine made of this edited photo,
+   * about to be replaced: the library keeps it as the legacy preview.
+   */
+  legacy: string | null
 }
 
 /** What opening a photo in develop needs from the index, in one trip. */
@@ -205,7 +210,7 @@ function mapRecipes(s: Sidecar, fn: (r: Recipe) => Recipe): Sidecar {
 /** A recipe as its thumbnail knows it: 'plain' when unedited, else its slim form's hash. */
 function thumbRecipeKey(recipe: Recipe | null, raw: boolean): string {
   if (!recipe || !isEdited(recipe, raw)) return 'plain'
-  return hash32(JSON.stringify([ENGINE_RENDER_REV, slim(recipe)])).toString(16)
+  return hash32(JSON.stringify(slim(recipe))).toString(16)
 }
 
 /** The row's content hash, when the one recorded is of the file as it is now. */
@@ -2084,10 +2089,16 @@ export class IndexService {
     const recipeKey = existing.recipe_key ?? thumbRecipeKey(this.slimRecipeOf(key), raw)
     const edited = recipeKey !== 'plain'
     // An unedited RAW's thumbnail is its embedded preview, which no develop makes.
-    const stamp = `${versionStamp(row, !raw || edited)}-${recipeKey}`
-    if (existing.thumb_key === stamp && existing.thumb_path && existsSync(existing.thumb_path))
-      return null
-    return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp }
+    // An edited photo's thumbnail is of the engine that graded it (`ENGINE_RENDER_REV`).
+    const stamp = `${versionStamp(row, !raw || edited)}${edited ? `-e${ENGINE_RENDER_REV}` : ''}-${recipeKey}`
+    const have = existing.thumb_path && existsSync(existing.thumb_path)
+    if (existing.thumb_key === stamp && have) return null
+    // Made by an earlier engine: no `-e<rev>` in its stamp.
+    const legacy =
+      edited && have && !(existing.thumb_key ?? '').includes(`-e${ENGINE_RENDER_REV}-`)
+        ? existing.thumb_path
+        : null
+    return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp, legacy }
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, stamp: string): void {
