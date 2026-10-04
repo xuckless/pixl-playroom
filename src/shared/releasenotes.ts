@@ -26,14 +26,15 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
         items: [
           'The engine now works in PixlRGB, PIXL’s own wide working space.',
           'Edits that act on the colour channels themselves (curves, colour mixing, per-channel gain, HSL) can look a little different. Open any photo you edited before to see it before and after; remove the old previews whenever you like.',
-          'HDR exports use the engine’s own tone mapping, gamut compression and gain maps.'
+          'HDR exports use the engine’s own tone mapping, gamut compression and gain maps.',
+          'RAW files use PIXL’s own camera colour for the 46 bodies it knows (the others keep the file’s own). RAWs you edited before can shift a little, and heals, denoise and enhance made on the old colour are marked, because their pixels moved. Your white balance keeps its look. Switch any photo back under Colour in the develop panel.'
         ]
       },
       {
         title: 'Changes',
         items: [
           'HEIC export is replaced by AVIF (HEIC files still open).',
-          'Select Subject uses one model now (U²-Netp); JPEG restore keeps the automatic mode.'
+          'Select Subject is moving to one smaller model (U²-Netp). If you already have U²-Net or the exact JPEG repair, they are listed under AI models as being retired: U²-Net keeps making Subject and Background masks until the next update, and either can be removed to free the space.'
         ]
       }
     ]

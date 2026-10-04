@@ -55,7 +55,8 @@ import type { DevelopSessions } from './render'
 import {
   BACKGROUND_THREADS,
   blankRequest,
-  RAW_DEVELOP,
+  colourOf,
+  rawDevelop,
   sourceOrientation,
   uprightFraming,
   seedOf,
@@ -213,9 +214,11 @@ export class Exporter {
     const s = preview ? previewSettings(s0) : s0
     await this.sessions.flush(key)
     const row = await this.library.photoRow(key)
+    // First: a RAW's camera colour is recorded by its first probe, and its
+    // saved white balance moves with it, before the recipe is read.
+    const file = await this.library.probe(row)
     const item = await this.library.item(key)
     const recipe = this.sessions.liveRecipe(key) ?? (await this.library.recipe(key))
-    const file = await this.library.probe(row)
     // The engine's own HDR path (`ColorPolicy::Master`) where the settings
     // and the photo allow it: it reads a gain map itself and grades with
     // headroom, so the rendition below is not made for it.
@@ -231,7 +234,7 @@ export class Exporter {
     const info = hdrSource?.info ?? file
     // Pixel steps (an AI denoise): the photo at full size with them laid on is the source.
     const master = hdrSource?.master ?? (await this.stepsMaster(row, info, recipe))
-    const raw = master ? null : info.input === 'Raw' ? RAW_DEVELOP : null
+    const raw = master ? null : info.input === 'Raw' ? rawDevelop(colourOf(row)) : null
     const srcOrientation = master ? 'Normal' : sourceOrientation(info, raw)
     // The full-resolution frame, upright. A RAW's developed frame is smaller
     // than its mosaic and not always the same shape (a Canon's masked borders

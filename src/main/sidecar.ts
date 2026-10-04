@@ -11,6 +11,7 @@
 import { existsSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'fs'
 import type { ColorLabel, Flag, Snapshot } from '../shared/ipc'
 import { normaliseRecipe, type Recipe } from '../shared/recipe'
+import { parseRawColour, type RawColour } from '../shared/rawcolour'
 
 export const SIDECAR_SUFFIX = '.playroom.json'
 
@@ -41,6 +42,8 @@ export interface Sidecar {
   copies: SidecarCopy[]
   /** Added without a version bump: older builds ignore it. */
   stack: SidecarStack | null
+  /** A RAW's camera colour, where the photo has a sidecar (shared/rawcolour.ts); absent is null. */
+  rawColour?: RawColour | null
 }
 
 export function sidecarPath(photoPath: string): string {
@@ -53,7 +56,8 @@ export function emptySidecar(): Sidecar {
     version: 1,
     photo: { rating: 0, flag: null, label: null, recipe: null, snapshots: [] },
     copies: [],
-    stack: null
+    stack: null,
+    rawColour: null
   }
 }
 
@@ -100,7 +104,8 @@ export function readSidecar(
         version: 1,
         photo: item(raw.photo, isRaw),
         copies,
-        stack: stackOf(raw.stack)
+        stack: stackOf(raw.stack),
+        rawColour: parseRawColour(raw.rawColour)
       },
       mtime: statSync(file).mtimeMs
     }
@@ -120,6 +125,7 @@ function saysNothing(s: Sidecar): boolean {
   return (
     s.copies.length === 0 &&
     s.stack === null &&
+    !s.rawColour &&
     p.rating === 0 &&
     p.flag === null &&
     p.label === null &&
@@ -136,9 +142,16 @@ export function writeSidecar(photoPath: string, sidecar: Sidecar): number | null
     return null
   }
   const tmp = `${file}.tmp-${process.pid}`
-  // No stack, no key: a sidecar stays what older builds wrote.
-  const { stack, ...rest } = sidecar
-  writeFileSync(tmp, JSON.stringify(stack ? sidecar : rest, null, 2))
+  // No stack and no colour, no keys: a sidecar stays what older builds wrote.
+  const { stack, rawColour, ...rest } = sidecar
+  writeFileSync(
+    tmp,
+    JSON.stringify(
+      { ...rest, ...(stack ? { stack } : {}), ...(rawColour ? { rawColour } : {}) },
+      null,
+      2
+    )
+  )
   renameSync(tmp, file)
   return statSync(file).mtimeMs
 }

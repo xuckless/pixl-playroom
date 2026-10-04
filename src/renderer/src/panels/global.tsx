@@ -11,6 +11,7 @@ import {
   type ProfileRef,
   type Recipe
 } from '../../../shared/recipe'
+import { rawColourReason } from '../../../shared/rawcolour'
 import { WB_PRESETS } from '../../../shared/wb'
 import { opOf, wbFromSaved } from '../../../shared/wbconvert'
 import { AddColourControl } from '../components/AddColour'
@@ -180,6 +181,58 @@ function ProfileRow(): React.JSX.Element | null {
   )
 }
 
+/**
+ * A RAW's camera colour: PIXL's fit for the body where its database holds it,
+ * or the file's own. Choosing records it for the photo, carries the saved
+ * white balance to the new as-shot white and opens the photo again; steps
+ * made on the other colour are marked stale (their pixels moved).
+ */
+function CameraColourRow({
+  session
+}: {
+  session: NonNullable<ReturnType<typeof useDevelop.getState>['session']>
+}): React.JSX.Element {
+  const say = useLibrary((s) => s.say)
+  const steps = useDevelop((s) => s.recipe?.pixels.length ?? 0)
+  const cc = session.cameraColour
+  const options = [
+    ...(cc?.supported
+      ? [{ value: 'pixl:1', label: `PIXL · ${cc.pixlCamera ?? `${cc.make} ${cc.model}`}` }]
+      : []),
+    { value: 'container', label: 'Container (the file’s own)' }
+  ]
+  const choose = async (v: string): Promise<void> => {
+    try {
+      await api.develop.setRawColour(session.key, v as 'container' | 'pixl:1')
+      await useDevelop.getState().reopen()
+      say(
+        steps > 0
+          ? 'Camera colour changed: heals, denoise and enhance steps made on the other colour are marked'
+          : 'Camera colour changed'
+      )
+    } catch (err) {
+      say(errorText(err), 'error')
+    }
+  }
+  return (
+    <div
+      className="row"
+      title={
+        cc?.supported
+          ? 'How this camera’s colours are read. PIXL’s is fitted to the body; the file’s own is the maker’s matrix.'
+          : (rawColourReason(session.info) ?? undefined)
+      }
+    >
+      <Select
+        label="Colour"
+        value={session.rawColour ?? 'container'}
+        onChange={(v) => void choose(v)}
+        options={options}
+      />
+    </div>
+  )
+}
+
 function WhiteBalanceRows(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
   // In a mask the white is a relative shift, without presets or the picker.
@@ -280,6 +333,7 @@ function WhiteBalanceRows(): React.JSX.Element | null {
   const presetValue = recipe.wb.mode === 'as-shot' ? 'as-shot' : (recipe.wb.preset ?? 'custom')
   return (
     <>
+      {!layer && session.rawColour && <CameraColourRow session={session} />}
       {!layer && (
         <div className="row">
           <Select

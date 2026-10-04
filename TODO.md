@@ -1784,9 +1784,20 @@ and a before/after on each project's first open.
       mask edge in the mask's colour at any zoom, MaskPins removed (the
       gradient and lasso handles stay, shown while the pointer is over the
       photo).
-- [ ] RAW colour: `{ Pixl: { version: 1 } }` where `camera_colour.pixl_versions`
-      holds it (46 bodies), named in saved recipes; start the temperature UI
-      from `camera_colour.as_shot_white`. Moves pixels: needs a recipe/RAW rev.
+- [x] RAW colour: `{ Pixl: { version: 1 } }` for every RAW whose body
+      `camera_colour.pixl_versions` holds (46), else `Container`. Recorded per
+      photo (`photos.raw_colour`, 'container' | 'pixl:1', in the sidecar and
+      project too; `shared/rawcolour.ts`), resolved by the first probe
+      (`Library.withColour`), named in every cache (`versionStamp` ends in
+      `developMark`: `l` for the file's own, `lp1` for PIXL's) and on the
+      pixel steps laid on it (`staleRawStep(step, isRaw, mark)`). The as-shot
+      white (and where Temp/Tint start) is PIXL's under PIXL colour
+      (`effectiveInfo`); a saved absolute white balance moves with it
+      (`convertAsShot`). A Colour select in the develop panel and a line in
+      the info panel switch a photo. Existing RAWs move (heals/denoise/enhance
+      on them are marked stale): the notice and the legacy before/after cover
+      it. Still to check with the real engine and a RAW: that `Pixl` develops
+      (R5 3671 → 3327 K), and the first open of an edited RAW.
 
 #### Retiring models: U²-Net and FBCNN-at-a-quality (gone in the next update)
 

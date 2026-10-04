@@ -26,6 +26,15 @@ import {
 } from '../shared/ipc'
 import { orientedFrame } from '../shared/compile'
 import { hash32, type Recipe } from '../shared/recipe'
+import {
+  asShotFor,
+  defaultRawColour,
+  effectiveInfo,
+  parseRawColour,
+  rawColourLabel,
+  resolveRawColour,
+  type RawColour
+} from '../shared/rawcolour'
 import { EngineError, type EngineClient } from './engine/client'
 import type { PhotoRow } from './db'
 import type { IndexClient } from './indexer/client'
@@ -124,6 +133,74 @@ export class Library {
    * interactive one, not the background one busy with thumbnails).
    */
   async probe(photo: PhotoRow, engine: EngineClient = this.engine): Promise<SourceInfo> {
+    return this.withColour(photo, await this.engineProbe(photo, engine))
+  }
+
+  /** Photos whose camera colour is being chosen now, so two probes choose it once. */
+  private adopting = new Map<number, Promise<RawColour>>()
+
+  /**
+   * A RAW's probe as the app reads it: its camera colour recorded the first
+   * time it is wanted (PIXL's where the database holds the body, else the
+   * file's own), `photo.raw_colour` set on the caller's row (every cache's
+   * name, `versionStamp`, reads it), and the as-shot white the one that
+   * colour develops with (`effectiveInfo`). The first time, the photo's
+   * saved absolute white balances move with the white so the picture keeps
+   * its look; the colour is written before anything is made from it.
+   */
+  private async withColour(photo: PhotoRow, info: SourceInfo): Promise<SourceInfo> {
+    if (photo.is_raw !== 1) return info
+    if (!parseRawColour(photo.raw_colour)) {
+      let p = this.adopting.get(photo.id)
+      if (!p) {
+        p = this.adoptColour(photo.id, info).finally(() => this.adopting.delete(photo.id))
+        this.adopting.set(photo.id, p)
+      }
+      photo.raw_colour = await p
+    }
+    return effectiveInfo(info, resolveRawColour(photo.raw_colour, info))
+  }
+
+  private async adoptColour(photoId: number, info: SourceInfo): Promise<RawColour> {
+    const colour = defaultRawColour(info)
+    await this.index.setRawColour(photoId, colour)
+    if (colour !== 'container')
+      await this.index.carryWhite(
+        photoId,
+        { isRaw: true, asShot: asShotFor(info, 'container') },
+        { isRaw: true, asShot: asShotFor(info, colour) },
+        `Camera colour: ${rawColourLabel(info, colour)}`
+      )
+    return colour
+  }
+
+  /**
+   * The person's choice of camera colour for a RAW: recorded (in its sidecar
+   * or project too), its saved white balances carried to the new as-shot
+   * white, and the caches that name the colour made again on the next use.
+   * Returns the colour now in force. Nothing is changed for a body PIXL's
+   * database lacks.
+   */
+  async setRawColour(key: string, colour: RawColour): Promise<RawColour> {
+    const row = await this.photoRow(key)
+    if (row.is_raw !== 1) throw new Error('only a RAW has a camera colour')
+    const info = await this.engineProbe(row, this.engine)
+    const to = resolveRawColour(colour, info)
+    const from = resolveRawColour(row.raw_colour, info)
+    if (to === from && parseRawColour(row.raw_colour)) return to
+    await this.index.setRawColour(row.id, to, true)
+    await this.index.carryWhite(
+      row.id,
+      { isRaw: true, asShot: asShotFor(info, from) },
+      { isRaw: true, asShot: asShotFor(info, to) },
+      `Camera colour: ${rawColourLabel(info, to)}`
+    )
+    // Its thumbnail's stamp names the colour: made again.
+    this.queueThumb(row.id, null, true)
+    return to
+  }
+
+  private async engineProbe(photo: PhotoRow, engine: EngineClient): Promise<SourceInfo> {
     const k = versionOf(photo)
     const hit = this.probes.get(k)
     if (hit) return hit
@@ -442,8 +519,16 @@ export class Library {
   private async thumb(job: ThumbJob): Promise<void> {
     const picture = this.pictures.get(keyOf(job.photoId, job.copyId))
     this.pictures.delete(keyOf(job.photoId, job.copyId))
-    const work = await this.index.thumbJob(job.photoId, job.copyId)
+    let work = await this.index.thumbJob(job.photoId, job.copyId)
     if (!work) return
+    // A RAW's camera colour is chosen the first time it is probed and names
+    // what is made from it, its thumbnail's stamp too: take the work again
+    // with the colour recorded.
+    if (work.row.is_raw === 1 && !work.row.raw_colour) {
+      await this.probe(await this.readable(work.row))
+      work = await this.index.thumbJob(job.photoId, job.copyId)
+      if (!work) return
+    }
     // What an earlier engine made of this edit, before the new one replaces it.
     if (work.legacy) this.legacy.capture(keyOf(job.photoId, job.copyId), work.legacy)
     const { edited, stamp } = work

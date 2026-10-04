@@ -6,6 +6,7 @@ import { basename, join } from 'path'
 import { cpus } from 'os'
 import { pathToFileURL } from 'url'
 import { cacheUrl } from './protocol'
+import type { RawColour } from '../shared/rawcolour'
 import { is } from '@electron-toolkit/utils'
 import type { ExportSettings } from '../shared/export'
 import {
@@ -429,6 +430,14 @@ export function registerIpc(s: Services): void {
     }
   })
   handle(IPC.develop.close, (key: string) => s.sessions.close(key))
+  handle(IPC.develop.setRawColour, async (key: string, colour: RawColour) => {
+    // What the person typed last is saved first; the session holds the old colour's proxies
+    // and white, so it is closed: the caller opens it again.
+    await s.sessions.flush(key)
+    const now = await s.library.setRawColour(key, colour)
+    await s.sessions.close(key)
+    return now
+  })
   handle(
     IPC.develop.update,
     async (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>

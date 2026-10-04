@@ -5,6 +5,7 @@ import type { P as SpotPoint, RetouchSpot } from '../shared/retouch'
 import type { PixelStep } from '../shared/pixels'
 import type { ExportSettings } from '../shared/export'
 import type { Guard } from '../shared/exportGuards'
+import type { RawColour } from '../shared/rawcolour'
 import type { LensProfile } from '../shared/lens'
 import {
   IPC,
@@ -192,6 +193,8 @@ const api = {
   },
   develop: {
     open: (key: string) => call<DevelopSession>(IPC.develop.open, key),
+    setRawColour: (key: string, colour: RawColour) =>
+      call<RawColour>(IPC.develop.setRawColour, key, colour),
     close: (key: string) => call<void>(IPC.develop.close, key),
     update: (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
       call<void>(IPC.develop.update, key, recipe, interactive, rev),

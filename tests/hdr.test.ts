@@ -141,6 +141,21 @@ test("a RAW's developments are made again on LibRaw, its embedded preview is not
   assert.equal(versionStamp({ ...v, ext: 'jpg' }, true), '1000-42')
 })
 
+test("a RAW's camera colour names what is made from it; the file's own keeps every name it had", () => {
+  const v = { mtime: 1000.4, size: 42, ext: 'cr3' }
+  // Nothing recorded, or the file's own: the stamp from before the colour was named.
+  assert.equal(versionStamp({ ...v, raw_colour: null }), '1000-42-l')
+  assert.equal(versionStamp({ ...v, raw_colour: 'container' }), '1000-42-l')
+  // PIXL's colour is another develop: another name, so the proxies are made again.
+  assert.equal(versionStamp({ ...v, raw_colour: 'pixl:1' }), '1000-42-lp1')
+  // Not a develop: no colour in the name; nor does a JPEG have one.
+  assert.equal(versionStamp({ ...v, raw_colour: 'pixl:1' }, false), '1000-42')
+  assert.equal(
+    versionStamp({ mtime: 1000.4, size: 42, ext: 'jpg', raw_colour: 'pixl:1' }),
+    '1000-42'
+  )
+})
+
 test("a LUT profile keeps an HDR photo's headroom and clamps an SDR one as before", () => {
   const r = defaultRecipe(false)
   r.profile = { kind: 'lut', name: 'Film', path: '/luts/film.cube' }

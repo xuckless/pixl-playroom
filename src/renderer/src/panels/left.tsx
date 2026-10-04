@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { rawColourLabel, rawColourReason } from '../../../shared/rawcolour'
 import { dependents, patchSummary, prerequisites, type Step } from '../../../shared/history'
 import type { Preset, ProjectInfo } from '../../../shared/ipc'
 import { GROUP_LABELS } from '../../../shared/recipe'
@@ -724,6 +725,15 @@ export function InfoPane(): React.JSX.Element {
         )}
         <dt>Camera</dt>
         <dd>{[c.make, c.model].filter(Boolean).join(' ') || '—'}</dd>
+        {session.rawColour && (
+          <>
+            <dt>Camera colour</dt>
+            <dd title={rawColourReason(info) ?? undefined}>
+              {rawColourLabel(info, session.rawColour)}
+              {session.rawColour === 'container' && rawColourReason(info) ? ' *' : ''}
+            </dd>
+          </>
+        )}
         <dt>Lens</dt>
         <dd>{c.lens ?? '—'}</dd>
         <dt>Exposure</dt>

@@ -41,8 +41,9 @@ import {
   cellFactor,
   interactiveThreads,
   proxyByCell,
-  RAW_DEVELOP,
-  RAW_PROXY_DEVELOP,
+  colourOf,
+  rawDevelop,
+  rawProxyDevelop,
   sourceOrientation,
   versionStamp
 } from './source'
@@ -138,7 +139,9 @@ async function build(
   const encode = hdr
     ? ({ Png: { compression: 'Fast', filter: 'Sub' } } as const)
     : ({ Tiff: { compression: 'None' } } as const)
-  const raw = info.input === 'Raw' ? RAW_DEVELOP : null
+  // The camera colour the photo was recorded with (shared/rawcolour.ts): part of the stamp.
+  const colour = colourOf(photo)
+  const raw = info.input === 'Raw' ? rawDevelop(colour) : null
   const orientation = sourceOrientation(info, raw)
   const proxyPath = join(dir, `proxy-${s}.${ext}`)
 
@@ -168,13 +171,13 @@ async function build(
     })
   }
   // A RAW whose cells are more than the proxy needs develops at half size
-  // (RAW_PROXY_DEVELOP): the full frame's size is the cells' times their
+  // (`rawProxyDevelop`): the full frame's size is the cells' times their
   // width, to within a pixel or two of the full develop's crop, which only
   // the full-size master is cut by (its own size is used there).
   const cell = raw ? cellFactor(photo) : 1
   let byCell = raw !== null && proxyByCell(long, cell, PROXY_EDGE)
   let report = byCell
-    ? await develop(RAW_PROXY_DEVELOP, long / cell).catch(() => null)
+    ? await develop(rawProxyDevelop(colour), long / cell).catch(() => null)
     : await develop(raw, long)
   // A sensor the cells were not as expected on (or a develop that refused
   // them): the full develop, as before.
@@ -406,7 +409,7 @@ export function ensureMaster(engine: EngineClient, photo: PhotoRow): Promise<Pro
         return JSON.parse(await readFile(meta, 'utf8')) as ProxyFile
       const report = await engine.convert({
         ...blankRequest(photo.path, path, 'Raw'),
-        raw: RAW_DEVELOP,
+        raw: rawDevelop(colourOf(photo)),
         pixel: { depth: 'Sixteen', channels: 3 },
         encode: { Tiff: { compression: 'None' } },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },

@@ -47,6 +47,8 @@ import type {
 } from '../../shared/ipc'
 import { ENGINE_RENDER_REV } from '../../shared/pixels'
 import { groupNear } from '../../shared/dupes'
+import { parseRawColour } from '../../shared/rawcolour'
+import { convertAsShot, type WbContext } from '../../shared/wbconvert'
 import { keywordPrefixes, normaliseKeyword } from '../../shared/keywords'
 import {
   defaultRecipe,
@@ -1019,6 +1021,8 @@ export class IndexService {
       }))
     )
     this.store.setStack(row.id, sidecar.stack?.id ?? null, sidecar.stack?.position ?? null)
+    // The truth where one is written; a photo with none keeps what the index recorded.
+    if (sidecar.rawColour) this.store.setRawColour(row.id, sidecar.rawColour)
     if (from === 'project') {
       this.store.setProject(row.id, row.project_path, mtime)
       row.project_mtime = mtime
@@ -1951,11 +1955,17 @@ export class IndexService {
   ): Sidecar {
     const raw = row.is_raw === 1
     const project = this.projectOf(row)
+    // A sidecar or project made now keeps the camera colour the index recorded.
+    const colour = raw ? parseRawColour(row.raw_colour) : null
+    const apply = (s: Sidecar): void => {
+      change(s)
+      if (colour && !s.rawColour) s.rawColour = colour
+    }
     if (project) {
       const truth = this.projects.write(project, (p) => {
         // By reference: what the change leaves alone goes back as it was.
         const s = p.read(raw, false)
-        change(s)
+        apply(s)
         p.write(s, this.planeOf)
         return s
       })
@@ -1963,7 +1973,7 @@ export class IndexService {
       return truth
     }
     const sidecar = this.readSide(row)
-    change(sidecar)
+    apply(sidecar)
     if (needsProject?.(sidecar)) {
       this.createProject(row, sidecar)
       return sidecar
@@ -2121,6 +2131,49 @@ export class IndexService {
     } catch (err) {
       console.warn('project preview not saved', project, (err as Error).message)
     }
+  }
+
+  /**
+   * A RAW's camera colour, recorded: in the index always, and in its project
+   * or sidecar when the photo has one already or the person chose it
+   * (`explicit`): an untouched RAW gets no sidecar for a default that is
+   * worked out the same way again.
+   */
+  setRawColour(photoId: number, colour: string, explicit = false): void {
+    const c = parseRawColour(colour)
+    const row = this.store.photo(photoId)
+    if (!c || !row) return
+    this.store.setRawColour(photoId, c)
+    const kept = !!this.projectOf(row) || existsSync(sidecarPath(row.path))
+    if (explicit || kept)
+      this.updateRow(row, (s) => {
+        s.rawColour = c
+      })
+  }
+
+  /**
+   * After a RAW's camera colour changed its as-shot white: the custom
+   * absolute white balances of the photo and its copies re-expressed against
+   * the new white (`convertAsShot`), so the pictures keep their white, with a
+   * line in each one's history. Returns how many were changed.
+   */
+  carryWhite(photoId: number, from: WbContext, to: WbContext, label: string): number {
+    if (!this.store.photo(photoId)) return 0
+    const keys = [
+      keyOf(photoId, null),
+      ...this.store.copiesOf(photoId).map((c) => keyOf(photoId, c.copy_id))
+    ]
+    let changed = 0
+    for (const key of keys) {
+      const recipe = this.recipe(key)
+      const wb = convertAsShot(recipe.wb, from, to)
+      if (wb.temperature === recipe.wb.temperature && wb.tint === recipe.wb.tint) continue
+      const next = { ...recipe, wb }
+      this.saveRecipe(key, next)
+      this.appendHistory(key, label, next)
+      changed++
+    }
+    return changed
   }
 
   /** What kind of HDR a file version is ('' none), from its probe. */

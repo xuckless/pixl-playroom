@@ -25,7 +25,8 @@ import { join } from 'path'
 import type { AiStartRequest } from '../../shared/ai'
 import { estimate } from '../../shared/ai'
 import type { EnhancerRef } from '../../shared/engine-types'
-import { pixelStepRefusal, RAW_DEVELOP_REV, type PixelStep } from '../../shared/pixels'
+import { pixelStepRefusal, type PixelStep } from '../../shared/pixels'
+import { developMark } from '../../shared/rawcolour'
 import { hash32, newId, type AiDenoiseModel, type Recipe } from '../../shared/recipe'
 import { exists } from '../exists'
 import type { EngineClient } from '../engine/client'
@@ -35,7 +36,7 @@ import type { Library } from '../library'
 import { paths } from '../paths'
 import { ensureProxies, type ProxyFile } from '../proxy'
 import type { DevelopSessions } from '../render'
-import { BACKGROUND_THREADS, blankRequest, seedOf, versionStamp } from '../source'
+import { BACKGROUND_THREADS, blankRequest, colourOf, seedOf, versionStamp } from '../source'
 import { ensureBase, pixelDeps } from '../pixels/base'
 import { freezeMask } from '../pixels/freeze'
 import { addPixelStep, storesLossless } from '../pixels/steps'
@@ -166,12 +167,13 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
 
   async run(ctx: AiContext, req: DenoiseRequest): Promise<{ kind: 'step'; label: string }> {
     const sessions = this.sessions()
+    // The probe first: it records a RAW's camera colour and moves its saved white with it.
+    const row = await this.library.photoRow(req.key)
+    const info = await this.library.probe(row)
     const recipe: Recipe = sessions?.liveRecipe(req.key) ?? (await this.library.recipe(req.key))
     const layer = req.layerId ? recipe.layers.find((l) => l.id === req.layerId) : undefined
     if (req.layerId && !layer) throw new Error('the mask is gone')
     ctx.stage('model', 0, `Loading ${modelName(this.models.entry(req.model))}`)
-    const row = await this.library.photoRow(req.key)
-    const info = await this.library.probe(row)
     const refused = pixelStepRefusal(info)
     if (refused) throw new Error(refused)
     if (!(await this.models.installed(req.model)))
@@ -322,7 +324,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         params: {
           model: req.model,
           lossless,
-          ...(row.is_raw === 1 ? { develop: RAW_DEVELOP_REV } : {})
+          ...(row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {})
         }
       }
       // Computed on the steps there were when it began: it goes after them,

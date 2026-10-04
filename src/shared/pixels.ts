@@ -70,14 +70,20 @@ export const RAW_DEVELOP_REV = 'l'
 export const ENGINE_RENDER_REV = 2
 
 /**
- * A step on a RAW made from another develop than today's (rawler's, before
- * engine 0.16): its pixels are that develop's, so where it is laid partly
- * (a mask's edge, a Strength under 100, a heal's patch) the two can show,
- * and a camera whose frame the new develop crops differently puts it out of
- * place. Running it again makes it from today's.
+ * A step on a RAW made from another develop than the photo's now (rawler's,
+ * before engine 0.16; the file's own camera colour when the photo has since
+ * moved to PIXL's, or back): its pixels are that develop's, so where it is
+ * laid partly (a mask's edge, a Strength under 100, a heal's patch) the two
+ * can show, and a camera whose frame the new develop crops differently puts
+ * it out of place. Running it again makes it from today's. `mark` is the
+ * photo's own (`developMark`); the file's own colour's is `RAW_DEVELOP_REV`.
  */
-export function staleRawStep(step: PixelStep, isRaw: boolean): boolean {
-  return isRaw && step.params.develop !== RAW_DEVELOP_REV
+export function staleRawStep(
+  step: PixelStep,
+  isRaw: boolean,
+  mark: string = RAW_DEVELOP_REV
+): boolean {
+  return isRaw && step.params.develop !== mark
 }
 
 const HEX64 = /^[0-9a-f]{64}$/

@@ -20,7 +20,8 @@ import type {
   UpscalerRef
 } from '../shared/engine-types'
 import type { AiStartRequest } from '../shared/ai'
-import { RAW_DEVELOP_REV, type PixelStep } from '../shared/pixels'
+import { type PixelStep } from '../shared/pixels'
+import { developMark } from '../shared/rawcolour'
 import { newId, type Recipe } from '../shared/recipe'
 import {
   chainSubject,
@@ -44,6 +45,7 @@ import type { Library } from './library'
 import {
   BACKGROUND_THREADS,
   blankRequest,
+  colourOf,
   seedOf,
   sourceOrientation,
   uprightFraming,
@@ -170,9 +172,10 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const avail = enhanceAvailability(this.status())
     if (!avail.available) throw new Error(avail.reason ?? 'unavailable')
     const sessions = this.sessions()
-    const recipe: Recipe = sessions?.liveRecipe(key) ?? (await this.library.recipe(key))
+    // The probe first: it records a RAW's camera colour and moves its saved white with it.
     const row = await this.library.photoRow(key)
     const info = await this.library.probe(row)
+    const recipe: Recipe = sessions?.liveRecipe(key) ?? (await this.library.recipe(key))
     const isJpeg = info.input === 'Jpeg'
     const refused =
       enhanceRefusal(settings, { isJpeg, isHdr: info.is_hdr }) ??
@@ -320,7 +323,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           scale: k,
           resizes: k > 1,
           lossless,
-          ...(row.is_raw === 1 ? { develop: RAW_DEVELOP_REV } : {})
+          ...(row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {})
         }
       }
       // Over the steps there were when it began, under any added while it ran.

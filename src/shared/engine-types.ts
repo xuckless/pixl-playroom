@@ -1521,6 +1521,26 @@ export interface WhitePoint {
   tint: number
 }
 
+/** Which names a RAW's camera is known by (PIXL's camera database matches them exactly). */
+export type CameraNameForm = 'LibRaw' | 'Exif'
+
+/**
+ * A RAW's camera and which versions of PIXL's camera database hold it, so a
+ * host can choose its colour without trying a develop. `as_shot_white` is the
+ * white the camera balanced for, found through the newest of those versions'
+ * calibrations: where the temperature and tint start under `Pixl` (R5 3671 →
+ * 3327 K). Null when none holds the camera.
+ */
+export interface CameraColourInfo {
+  form: CameraNameForm
+  make: string
+  model: string
+  /** Oldest first; empty when none holds the camera (`Container` is then the only built-in colour). */
+  pixl_versions: number[]
+  pixl_camera: string | null
+  as_shot_white: WhitePoint | null
+}
+
 /** What a source actually is. Returned by `probe`. */
 export interface SourceInfo {
   format: string
@@ -1556,6 +1576,8 @@ export interface SourceInfo {
   jxl: JxlInfo | null
   tiff: TiffInfo | null
   as_shot_white: WhitePoint | null
+  /** A RAW's camera and what PIXL's database holds of it; null for any other file. */
+  camera_colour: CameraColourInfo | null
   gain_map: GainMapInfo | null
   /** What the file says about the lens. The engine never looks up a correction. */
   lens: ShotLens | null

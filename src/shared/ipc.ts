@@ -1,5 +1,6 @@
 import type { ResolvedProfile } from './lens'
 import type { ModelSpeed } from './modelSpeed'
+import type { RawColour } from './rawcolour'
 /** IPC channel names and the app-level types both sides of the bridge share. */
 import type {
   ConvertReport,
@@ -139,6 +140,8 @@ export const IPC = {
   },
   develop: {
     open: 'develop:open',
+    /** A RAW's camera colour chosen (returns the one in force); the session is closed for the caller to reopen. */
+    setRawColour: 'develop:set-raw-colour',
     /** Make these photos' proxies ahead (the open one's neighbours in the filmstrip). */
     warm: 'develop:warm',
     close: 'develop:close',
@@ -513,7 +516,18 @@ export interface DevelopSession {
   info: SourceInfo
   isRaw: boolean
   isHdr: boolean
+  /** The white the develop balanced for: PIXL's under PIXL's camera colour (`info` carries the same). */
   asShot: WhitePoint | null
+  /** A RAW's camera colour in force ('container' or 'pixl:1'); null for anything else. */
+  rawColour: RawColour | null
+  /** A RAW's camera and whether PIXL's database holds it (the choice's menu); null for anything else. */
+  cameraColour: {
+    make: string
+    model: string
+    /** The camera as PIXL's database names it. */
+    pixlCamera: string | null
+    supported: boolean
+  } | null
   /** The full-resolution base frame (upright, before the user's turns). */
   frameWidth: number
   frameHeight: number

@@ -5,6 +5,7 @@
  */
 import type { SpotKind } from '../../../shared/retouch'
 import { staleRawStep } from '../../../shared/pixels'
+import { developMark } from '../../../shared/rawcolour'
 import { Icon } from '../components/icons'
 import { useState } from 'react'
 import { InfoTip, type Tip } from '../components/InfoTip'
@@ -57,6 +58,7 @@ export function HealPanel(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
   const isHdr = useDevelop((s) => s.session?.isHdr === true)
   const isRaw = useDevelop((s) => s.session?.isRaw === true)
+  const mark = useDevelop((s) => developMark(s.session?.rawColour ?? 'container'))
   const heal = useUi((s) => s.heal)
   const setHeal = useUi((s) => s.setHeal)
   const { layer } = useScope()
@@ -64,7 +66,9 @@ export function HealPanel(): React.JSX.Element | null {
   if (!recipe) return null
   const live = recipe.retouch.length
   const strokes = recipe.pixels.filter((p) => p.kind === 'retouch').length
-  const stale = recipe.pixels.filter((p) => p.kind === 'retouch' && staleRawStep(p, isRaw)).length
+  const stale = recipe.pixels.filter(
+    (p) => p.kind === 'retouch' && staleRawStep(p, isRaw, mark)
+  ).length
   const eye = heal.mode === 'redeye' || heal.mode === 'peteye'
 
   return (

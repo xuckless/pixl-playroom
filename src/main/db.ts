@@ -59,6 +59,8 @@ export interface PhotoRow {
   /** What kind of HDR the file is ('' none), as last probed; `hdr_key` names that file version. */
   hdr: string | null
   hdr_key: string | null
+  /** A RAW's camera colour ('container' or 'pixl:1'); null until it is first developed. */
+  raw_colour: string | null
   /** When the file arrived on this disk (ms): its birth time, else its modification time. */
   added?: number | null
   /** The photo's `.pixl` project (the truth about its edits once it has one), and its mtime as mirrored. */
@@ -324,7 +326,11 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   // could not be read is tried again.
   (db) => {
     db.exec('UPDATE photos SET failed_key = NULL, failed_reason = NULL WHERE is_raw = 1')
-  }
+  },
+  // 13. A RAW's camera colour (engine 0.17): 'container' or 'pixl:1', recorded
+  // the first time the photo is developed (NULL until then) so it is chosen
+  // once and not re-derived from a probe (shared/rawcolour.ts).
+  (db) => addColumns(db, 'photos', { raw_colour: 'TEXT' })
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -780,6 +786,10 @@ export class Store {
       reason,
       photoId
     )
+  }
+
+  setRawColour(photoId: number, colour: string | null): void {
+    this.prepare('UPDATE photos SET raw_colour = ? WHERE id = ?').run(colour, photoId)
   }
 
   setHdr(photoId: number, kind: string, key: string): void {
