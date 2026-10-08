@@ -299,26 +299,63 @@ After: Pass 90.
 - [ ] **S** · Owner (optional): mirror BiRefNet to the model server; it
       downloads from the author's GitHub release meanwhile.
 
+### Found in testing — Smoothing blotches in masks (E53) · 2 pts
+
+Found by the owner 2026-10-08 on IMG_2347.CR2 (red, blue and magenta
+patches over the subject; all over it at 1:1). Pinpointed: an engine bug in
+0.18's adjustment smoothing, written up as E53. It needs the base layer's
+**smoothed Color Mixer** (`HslBands`, here Orange hue +18) and a mask's
+**smoothed Tone** on pixels the mask's exposure (+2.17 EV, no highlight
+shoulder in a mask) pushed far past white. Leave either unsmoothed, or set
+the mask's Smoothing to 0, and it is clean (the owner confirmed Smoothing 0).
+
+- [ ] **S** · Decide the stopgap until E53 is fixed (owner):
+      (d) **the Color Mixer (HslBands, B&W mix) goes unsmoothed everywhere**:
+      it is where both artifacts start (the mask blotches need it, and alone
+      it specks deep shadows cyan: 202 specks on IMG_2347's Scene proxy, 0
+      unsmoothed); the other five ops keep Smoothing; the recommended one;
+      (a) a mask's Tone goes unsmoothed (the rest keeps Smoothing);
+      (b) a mask's exposure above +1 EV gets the base's highlight shoulder,
+      so its pixels stay near white (changes how such masks look);
+      (c) Smoothing starts at 0 for masks (new photos keep 100).
+- [ ] **S** · Then a regression test from the compiled request (the shape of
+      E53), and the What's new line if users see a change.
+
 ### Pass 94 — The RAW master as Scene float 1/2 · 5 pts
 
 After: Pass 89.
 
-- [ ] **S** · `RAW_DEVELOP_REV` bumped here (moved from Pass 89): RAW proxies
-      and master caches are made again, and Pass 89's upkeep remakes the DRUNet
-      steps on them.
-
-- [ ] **L** · The RAW master is `RawMode::Scene` into float (an F32 TIFF or
-      the master cache), not Develop into a 16-bit TIFF that clips at 1.0
-      (`main/proxy.ts:401–421`, `main/source.ts:76–90`; 6% of IMG_2344
-      lost its headroom):
-      - camera colour `{ Pixl }` where PIXL holds the body;
-      - the denoise's `reach` (HR-0.18-4);
-      - the frame bookkeeping (probe ≠ develop size).
-- [ ] **M** · Proxies made from the float master.
+- [x] **S** · `RAW_DEVELOP_REV` `l` → `s` (moved from Pass 89): RAW proxies
+      and master caches are made again, and Pass 89's upkeep remakes the
+      DRUNet steps on them.
+- [x] **L** · The RAW master is `RawMode::Scene` into F32 (`rawMaster`,
+      `source.ts`): the as-shot white, `InpaintOpposed` highlights (owner,
+      2026-10-08), `crop: Best`, PIXL's camera colour where held, denoise
+      kept in the grade (its reach there, HR-0.18-4). Same 6000 × 4000 frame
+      as Develop on the owner's CR2s (no new bookkeeping), 2.1 s against 1.65.
+      Exports from the RAW use it too. The lateral-CA measurement keeps
+      Develop (a geometric fit).
+- [x] **M** · Proxies, draft, mid and lens-corrected sets from it are F32
+      (`ProxyFile.float`; owner: float, working space); the master is an F32
+      TIFF (288 MB at 24 MP, twice the 16-bit).
+- [x] **S** · A RAW's base rolls its headroom onto white for SDR whatever the
+      exposure (compile's shoulder, `RAW_SCENE_STOPS` = 2: the CR2s peak at
+      1.8–3.15, up to 25% of a frame over 1.0); none under HDR, which keeps it.
+      _Checked on IMG_2347: the same picture as Develop's, highlights
+      intact; the settled render 531 ms against 689 from the 16-bit proxy._
+      _Found on the way: smoothed HslBands specks deep shadows cyan, more on
+      the Scene proxy (it keeps the shadows' negatives): part of E53, and
+      stopgap (d) above._
 
 ### Pass 95 — The RAW master as Scene float 2/2 · 4 pts
 
 After: Pass 94.
+
+- [ ] **M** · AI steps guard the headroom (owner, 2026-10-08): where a
+      model's input was clipped (> 1.0), the master's own value is kept,
+      elsewhere the step's; the working set (`pixels/working.ts`), the base
+      (`pixels/base.ts`) and the heal bake stay F32 for a float master. To
+      loosen once PIXL's own denoisers take values over 1.0.
 
 - [ ] **M** · The 1:1 view and the noise measurement from the float master;
       AI steps on RAWs on the new master.

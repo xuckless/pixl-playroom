@@ -55,9 +55,11 @@ export const PIXEL_LABEL: Record<PixelStepKind, string> = {
 /**
  * Which RAW develop made a RAW's pixels: names its caches (`versionStamp`)
  * and, as `params.develop`, the steps laid on them. `l` is LibRaw's decode
- * under PIXL's own develop (engine 0.16); before it, rawler's (no mark).
+ * under PIXL's own develop (engine 0.16); `s` its scene-linear master in
+ * float (engine 0.18: `RawMode::Scene`, InpaintOpposed, nothing clipped at
+ * 1.0); before both, rawler's (no mark).
  */
-export const RAW_DEVELOP_REV = 'l'
+export const RAW_DEVELOP_REV = 's'
 
 /**
  * Which engine's grade made a graded render: it names the library thumbnails

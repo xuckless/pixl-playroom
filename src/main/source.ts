@@ -103,6 +103,35 @@ export function rawProxyDevelop(colour: RawColour): RawMode {
   return { Develop: { ...full.Develop, resolution: 'Cell' } } as RawMode
 }
 
+/**
+ * A RAW's master since engine 0.18 (its rule for a host: a RAW's master is
+ * `Scene` in float): PIXL's scene-linear develop, F32 linear PixlRGB,
+ * unclamped, the as-shot white, clipped channels rebuilt from the opposite
+ * ones (`InpaintOpposed`). Nothing clips at 1.0: up to about 1.65 stops over
+ * white on the owner's CR2s, which the 1:1 view, the export and (with Full
+ * HDR) the preview keep; an SDR picture rolls it onto white (compile's RAW
+ * shoulder). Denoise stays in the grade (`DENOISE_REACH` there, HR-0.18-4).
+ */
+export function rawMaster(colour: RawColour): RawMode {
+  return {
+    Scene: {
+      white_balance: 'AsShot',
+      highlights: 'InpaintOpposed',
+      crop: 'Best',
+      denoise: null,
+      resolution: 'Full',
+      colour: cameraColourOf(colour),
+      dng_opcodes: DNG_OPCODES
+    }
+  }
+}
+
+/** The master at half size (`Cell`: one pixel per CFA cell, no demosaic), for a proxy. */
+export function rawProxyMaster(colour: RawColour): RawMode {
+  const full = rawMaster(colour) as { Scene: Record<string, unknown> }
+  return { Scene: { ...full.Scene, resolution: 'Cell' } } as RawMode
+}
+
 /** The file's own colour: what a RAW was developed with before engine 0.17 named one. */
 export const RAW_DEVELOP: RawMode = rawDevelop('container')
 export const RAW_PROXY_DEVELOP: RawMode = rawProxyDevelop('container')

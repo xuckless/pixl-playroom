@@ -40,10 +40,11 @@ test('a straighten too small to say is none: no outside the engine would refuse'
   assert.ok(!f || (f.rotate_degrees === 0 && f.outside === undefined))
 })
 
-test('a RAW starts with its profile look, capture sharpening and colour noise reduction', () => {
+test('a RAW starts with its profile look, capture sharpening, colour noise reduction and its shoulder', () => {
   const c = compile(defaultRecipe(true), { ...ctx, isRaw: true, scale: 1 })
   const stages = c.grade!.layers[0].stages
-  assert.deepEqual(kinds(stages[0].ops), ['Denoise'])
+  // The Scene master's headroom rolled onto white for SDR (engine 0.18).
+  assert.deepEqual(kinds(stages[0].ops), ['Denoise', 'Lut'])
   assert.equal(stages[0].space, 'LinearWorking')
   // Playroom Standard: Vivid's curve and vibrance, and a little more saturation.
   assert.deepEqual(kinds(stages[1].ops), ['Curves', 'Vibrance', 'Primary', 'Sharpen'])
@@ -442,4 +443,23 @@ test('a picture past the limits, and a stale cache, are said plainly', async () 
   )
   assert.match(describeEngineError('StaleCache', undefined)!, /another engine/)
   assert.equal(describeEngineError('Decode', undefined), null)
+})
+
+test('a RAW’s Scene headroom rolls onto white for SDR, whatever the exposure; HDR keeps it', async () => {
+  const { RAW_SCENE_STOPS, gradeKey } = await import('../src/shared/compile')
+  const shoulderOf = (exposure: number, hdr: boolean, isRaw = true): string | null => {
+    const r = defaultRecipe(isRaw)
+    r.basic.exposure = exposure
+    const ops = compile(r, { ...ctx, isRaw, scale: 1, hdr }).grade?.layers[0].stages[0].ops ?? []
+    const lut = ops.find((o) => 'Lut' in o)
+    return lut
+      ? (JSON.parse(gradeKey(lut)) as { Lut: { lut: { Cube: string } } }).Lut.lut.Cube
+      : null
+  }
+  assert.equal(shoulderOf(0, false), `shoulder:${RAW_SCENE_STOPS}:1024`)
+  assert.equal(shoulderOf(-1, false), `shoulder:${RAW_SCENE_STOPS}:1024`)
+  assert.equal(shoulderOf(1, false), `shoulder:${1 + RAW_SCENE_STOPS}:1024`)
+  assert.equal(shoulderOf(0, true), null)
+  // Any other photo: only a positive exposure brings one, as before.
+  assert.equal(shoulderOf(0, false, false), null)
 })

@@ -79,6 +79,12 @@ export const DENOISE_REACH = 0.03
  * (HR-0.18-1, engine 0.18: a preview never drops an op silently). The report
  * carries them in `notes`; the 1:1 view renders them from the master.
  */
+/**
+ * How far over white a RAW's Scene master reaches, in stops: up to 1.65 on
+ * the owner's CR2s (InpaintOpposed), so its SDR shoulder spans 2.
+ */
+export const RAW_SCENE_STOPS = 2
+
 /** The smoothing's reach, a fraction of the shorter side: the engine's calibration point. */
 export const SMOOTHING_RADIUS = 0.02
 
@@ -1176,15 +1182,18 @@ function settingsStages(
     linear.push({ WhiteBalance: { temperature_kelvin: round4(wb.kelvin), tint: round4(wb.tint) } })
   const mix = calibrationMatrix(r.calibration)
   if (mix) linear.push({ ChannelMixer: { red: mix[0], green: mix[1], blue: mix[2] } })
-  if (r.basic.exposure !== 0) {
+  if (r.basic.exposure !== 0)
     linear.push({ Primary: primary({ exposure: round4(r.basic.exposure), contrast_pivot: 0.18 }) })
-    // An SDR picture's highlights are rolled onto white; an HDR one has
-    // room above white for them (and a shoulder there would flatten it).
-    if (base && r.basic.exposure > 0 && !ctx.hdr) {
-      linear.push({
-        Lut: { lut: { Cube: shoulderCube(r.basic.exposure) }, amount: 1, out_of_domain: 'Clamp' }
-      })
-    }
+  // An SDR picture's highlights are rolled onto white; an HDR one has room
+  // above white for them (and a shoulder there would flatten it). A RAW's
+  // Scene master (engine 0.18) is over white before any exposure, by up to
+  // RAW_SCENE_STOPS: its shoulder is always there and reaches that far.
+  const room = base && ctx.isRaw ? RAW_SCENE_STOPS : 0
+  if (base && !ctx.hdr && (r.basic.exposure > 0 || room > 0)) {
+    const stops = round4(Math.max(0, r.basic.exposure) + room)
+    linear.push({
+      Lut: { lut: { Cube: shoulderCube(stops) }, amount: 1, out_of_domain: 'Clamp' }
+    })
   }
   // Coloured light on the scene, after the exposure it is lit at.
   const light = addColorOp(r.colorGrade.add, 'light')

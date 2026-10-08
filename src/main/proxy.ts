@@ -42,8 +42,8 @@ import {
   interactiveThreads,
   proxyByCell,
   colourOf,
-  rawDevelop,
-  rawProxyDevelop,
+  rawMaster,
+  rawProxyMaster,
   sourceOrientation,
   versionStamp
 } from './source'
@@ -57,6 +57,16 @@ export interface ProxyFile {
   input: InputFormat
   width: number
   height: number
+  /**
+   * F32 samples (a RAW's Scene master and what is made from it, engine 0.18):
+   * what is made from this file is float too, or the headroom clips.
+   */
+  float?: boolean
+}
+
+/** The depth to write what is made from `from`: float stays float. */
+function depthOf(from: Pick<ProxyFile, 'float'>): 'F32' | 'Sixteen' {
+  return from.float ? 'F32' : 'Sixteen'
 }
 
 export interface Proxies {
@@ -141,7 +151,9 @@ async function build(
     : ({ Tiff: { compression: 'None' } } as const)
   // The camera colour the photo was recorded with (shared/rawcolour.ts): part of the stamp.
   const colour = colourOf(photo)
-  const raw = info.input === 'Raw' ? rawDevelop(colour) : null
+  const raw = info.input === 'Raw' ? rawMaster(colour) : null
+  // A RAW's master is Scene in float (engine 0.18): so are its proxies.
+  const float = raw !== null
   const orientation = sourceOrientation(info, raw)
   const proxyPath = join(dir, `proxy-${s}.${ext}`)
 
@@ -159,7 +171,7 @@ async function build(
       // Averaging in linear light keeps a downscale's tones honest; an HDR
       // signal is resized as it is (its float path would need HDR numbers).
       linear_resample: !hdr && factor < 1,
-      pixel: { depth: 'Sixteen', channels: 3 },
+      pixel: { depth: float ? 'F32' : 'Sixteen', channels: 3 },
       encode,
       metadata: { exif: false, icc: true, xmp: false, iptc: false },
       color: 'Preserve',
@@ -171,13 +183,13 @@ async function build(
     })
   }
   // A RAW whose cells are more than the proxy needs develops at half size
-  // (`rawProxyDevelop`): the full frame's size is the cells' times their
+  // (`rawProxyMaster`): the full frame's size is the cells' times their
   // width, to within a pixel or two of the full develop's crop, which only
   // the full-size master is cut by (its own size is used there).
   const cell = raw ? cellFactor(photo) : 1
   let byCell = raw !== null && proxyByCell(long, cell, PROXY_EDGE)
   let report = byCell
-    ? await develop(rawProxyDevelop(colour), long / cell).catch(() => null)
+    ? await develop(rawProxyMaster(colour), long / cell).catch(() => null)
     : await develop(raw, long)
   // A sensor the cells were not as expected on (or a develop that refused
   // them): the full develop, as before.
@@ -189,7 +201,13 @@ async function build(
     report = await develop(raw, long)
   }
   if (!report) throw new Error('the proxy was not made')
-  const proxy: ProxyFile = { path: proxyPath, input, width: report.width, height: report.height }
+  const proxy: ProxyFile = {
+    path: proxyPath,
+    input,
+    width: report.width,
+    height: report.height,
+    ...(float ? { float } : {})
+  }
   const scaleUp = byCell ? cell : 1
 
   const draftPath = join(dir, `draft-${s}.${ext}`)
@@ -197,7 +215,7 @@ async function build(
   const draftReport = await engine.convert({
     ...blankRequest(proxyPath, draftPath, input),
     resize: dFactor < 1 ? { Scale: { factor: dFactor } } : 'None',
-    pixel: { depth: 'Sixteen', channels: null },
+    pixel: { depth: depthOf(proxy), channels: null },
     encode,
     metadata: { exif: false, icc: true, xmp: false, iptc: false },
     color: 'Preserve',
@@ -207,7 +225,8 @@ async function build(
     path: draftPath,
     input,
     width: draftReport.width,
-    height: draftReport.height
+    height: draftReport.height,
+    ...(float ? { float } : {})
   }
   const mid =
     Math.max(proxy.width, proxy.height) > MID_EDGE
@@ -240,7 +259,7 @@ async function shrink(
   const report = await engine.convert({
     ...blankRequest(from.path, path, from.input),
     resize: factor < 1 ? { Scale: { factor } } : 'None',
-    pixel: { depth: 'Sixteen', channels: null },
+    pixel: { depth: depthOf(from), channels: null },
     encode: png
       ? { Png: { compression: 'Fast', filter: 'Sub' } }
       : { Tiff: { compression: 'None' } },
@@ -248,7 +267,13 @@ async function shrink(
     color: 'Preserve',
     threads
   })
-  return { path, input: from.input, width: report.width, height: report.height }
+  return {
+    path,
+    input: from.input,
+    width: report.width,
+    height: report.height,
+    ...(from.float ? { float: true } : {})
+  }
 }
 
 const lensing = new Map<string, Promise<Proxies>>()
@@ -302,7 +327,7 @@ async function bakeLens(
   const proxyPath = join(dir, `${prefix}-proxy.${ext}`)
   const report = await engine.convert({
     ...blankRequest(px.proxy.path, proxyPath, px.proxy.input),
-    pixel: { depth: 'Sixteen', channels: 3 },
+    pixel: { depth: depthOf(px.proxy), channels: 3 },
     encode,
     metadata: { exif: false, icc: true, xmp: false, iptc: false },
     color: 'Preserve',
@@ -318,14 +343,15 @@ async function bakeLens(
     path: proxyPath,
     input: px.proxy.input,
     width: report.width,
-    height: report.height
+    height: report.height,
+    ...(px.proxy.float ? { float: true } : {})
   }
   const draftPath = join(dir, `${prefix}-draft.${ext}`)
   const dFactor = Math.min(1, px.draft.width / px.proxy.width)
   const draftReport = await engine.convert({
     ...blankRequest(proxyPath, draftPath, px.proxy.input),
     resize: dFactor < 1 ? { Scale: { factor: dFactor } } : 'None',
-    pixel: { depth: 'Sixteen', channels: null },
+    pixel: { depth: depthOf(proxy), channels: null },
     encode,
     metadata: { exif: false, icc: true, xmp: false, iptc: false },
     color: 'Preserve',
@@ -403,19 +429,27 @@ export function ensureMaster(engine: EngineClient, photo: PhotoRow): Promise<Pro
   let p = mastering.get(key)
   if (!p) {
     p = (async (): Promise<ProxyFile> => {
+      // F32 (engine 0.18: a RAW's master is Scene in float): twice a 16-bit
+      // TIFF's size, nothing clipped at 1.0.
       const path = join(paths.photoCache(photo.id), `master-${stamp(photo)}.tiff`)
       const meta = `${path}.json`
       if ((await exists(path)) && (await exists(meta)))
         return JSON.parse(await readFile(meta, 'utf8')) as ProxyFile
       const report = await engine.convert({
         ...blankRequest(photo.path, path, 'Raw'),
-        raw: rawDevelop(colourOf(photo)),
-        pixel: { depth: 'Sixteen', channels: 3 },
+        raw: rawMaster(colourOf(photo)),
+        pixel: { depth: 'F32', channels: 3 },
         encode: { Tiff: { compression: 'None' } },
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: 'Preserve'
       })
-      const out: ProxyFile = { path, input: 'Tiff', width: report.width, height: report.height }
+      const out: ProxyFile = {
+        path,
+        input: 'Tiff',
+        width: report.width,
+        height: report.height,
+        float: true
+      }
       await writeFile(meta, JSON.stringify(out))
       return out
     })().finally(() => mastering.delete(key))
