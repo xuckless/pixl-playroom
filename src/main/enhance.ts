@@ -124,7 +124,7 @@ async function chainOf(
     const id = p.model!
     if (!(await models.installed(id))) throw new ModelMissing(models.entry(id))
     const provider = onCpu.has(id) ? ('Cpu' as const) : undefined
-    if (p.kind === 'x2' || p.kind === 'x4' || p.kind === 'x4-wdn') {
+    if (p.scale) {
       out.push({ Upscale: (await models.ref(id, provider)) as unknown as UpscalerRef })
       continue
     }

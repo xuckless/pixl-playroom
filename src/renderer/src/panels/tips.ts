@@ -322,7 +322,8 @@ export const TIPS = {
   },
   'enhance.upscale': {
     what: 'Makes the photo larger with a model that adds believable detail.',
-    expect: '×2 is a safe default; ×4 makes very large files.'
+    expect:
+      '×2 is a safe default; ×4 makes very large files. Source picks the model: Clean stays closest to a sharp original, Damaged repairs a compressed or noisy one as it enlarges, Keep texture leaves its grain.'
   }
 } satisfies Record<string, Tip>
 

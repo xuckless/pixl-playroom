@@ -27,8 +27,11 @@ export const paths = {
   /** Per-photo working files: proxies, renders, mask planes. */
   photoCache: (photoId: number): string => dir('cache', 'photos', String(photoId)),
   thumbs: (): string => dir('cache', 'thumbs'),
-  /** What edited photos looked like under the engine before 0.17 (`legacy.ts`). */
-  legacyPreviews: (): string => dir('cache', 'legacy-previews'),
+  /**
+   * Where 0.3's before/after kept edited photos' thumbnails from the engine
+   * before 0.17: only removed now (the comparison went with engine 0.18).
+   */
+  legacyPreviews: (): string => join(app.getPath('userData'), 'cache', 'legacy-previews'),
   luts: (): string => dir('luts'),
   /** Imported lens profiles, one JSON file per lens (`shared/lens.ts`). */
   lensProfiles: (): string => dir('lens-profiles'),

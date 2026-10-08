@@ -11,7 +11,7 @@ import { TYPICAL_MP } from '../../../shared/modelSpeed'
 import { GlassSelect } from '../components/GlassSelect'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
-import { copyOf, duration, MODEL_COPY, pace, PURPOSES, type Purpose } from './modelCopy'
+import { copyOf, duration, pace, PURPOSES, type Purpose } from './modelCopy'
 
 const mb = (bytes: number): string =>
   bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`
@@ -54,18 +54,9 @@ function ModelRow({ m }: { m: ModelInfo }): React.JSX.Element {
       <div className="model-main">
         <div className="model-name">
           {c.name}
-          {m.retiring ? (
-            <span className="model-rec retiring">Being retired</span>
-          ) : (
-            c.recommended && <span className="model-rec">Recommended</span>
-          )}
+          {c.recommended && <span className="model-rec">Recommended</span>}
         </div>
         <p className="model-what">{c.what}</p>
-        {m.retiring && m.replacedBy && (
-          <div className="model-where">
-            Replaced by {MODEL_COPY[m.replacedBy]?.name ?? m.replacedBy} in the next update
-          </div>
-        )}
         <Speed m={m} />
         {c.where && <div className="model-where">In Playroom: {c.where}</div>}
         <div className="model-tech muted" title={m.caveat}>
@@ -144,11 +135,7 @@ export function ModelsSection(): React.JSX.Element {
           <ul>
             {all
               .filter((m) => m.role === p.id)
-              .sort(
-                (a, b) =>
-                  Number(!!a.retiring) - Number(!!b.retiring) ||
-                  Number(!!copyOf(b).recommended) - Number(!!copyOf(a).recommended)
-              )
+              .sort((a, b) => Number(!!copyOf(b).recommended) - Number(!!copyOf(a).recommended))
               .map((m) => (
                 <ModelRow key={m.id} m={m} />
               ))}

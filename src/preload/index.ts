@@ -42,7 +42,6 @@ import {
   type MetaTextPatch,
   type Preset,
   type ExportPreview,
-  type LegacyPreview,
   type Prefs,
   type RegionRequest,
   type RegionResult,
@@ -128,13 +127,6 @@ const api = {
     startTrial: () => call<LicenceStatus>(IPC.licence.startTrial),
     freeDevice: (id: string) => call<LicenceStatus>(IPC.licence.freeDevice, id),
     onChange: (cb: (s: LicenceStatus) => void) => on(IPC.licence.changed, cb)
-  },
-  legacy: {
-    get: (key: string) => call<LegacyPreview | null>(IPC.legacy.get, key),
-    seen: (key: string) => call<void>(IPC.legacy.seen, key),
-    remove: (key: string) => call<void>(IPC.legacy.remove, key),
-    removeAll: () => call<number>(IPC.legacy.removeAll),
-    count: () => call<number>(IPC.legacy.count)
   },
   prefs: {
     get: () => call<Prefs>(IPC.prefs.get),

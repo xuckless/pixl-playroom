@@ -341,11 +341,6 @@ button.link:hover {
   font-weight: 600;
   letter-spacing: 0.06em;
 }
-.model-rec.retiring {
-  color: var(--warn, #e3b04b);
-  border-color: rgba(227, 176, 75, 0.45);
-  background: rgba(227, 176, 75, 0.1);
-}
 .model-what {
   margin: 3px 0 5px;
   color: var(--text2);
@@ -772,63 +767,6 @@ button.keybind-key.waiting {
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
-}
-
-/* ── Before and after an engine update ── */
-.modal.legacy-compare {
-  width: min(880px, calc(100vw - 48px));
-}
-.legacy-compare .lc-lead,
-.legacy-compare .lc-note {
-  margin: 0 0 12px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text2);
-}
-.legacy-compare .lc-note {
-  margin: 12px 0 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-.legacy-compare .lc-seg {
-  margin-bottom: 12px;
-}
-.legacy-compare .lc-stage {
-  display: grid;
-  gap: 12px;
-  min-height: 240px;
-  align-items: center;
-  justify-items: center;
-}
-.legacy-compare .lc-both {
-  grid-template-columns: 1fr 1fr;
-}
-.legacy-compare figure {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.legacy-compare img {
-  max-width: 100%;
-  max-height: 52vh;
-  border-radius: var(--r);
-  border: 1px solid var(--hair2);
-  background: var(--bg2);
-  object-fit: contain;
-}
-.legacy-compare figcaption {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  text-transform: uppercase;
-}
-.legacy-compare .lc-wait {
-  grid-column: 1 / -1;
-  color: var(--muted);
-  font-size: 13px;
 }
 
 /* ── Export: four steps of the editor's own cards ── */

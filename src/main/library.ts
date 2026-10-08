@@ -40,9 +40,8 @@ import type { PhotoRow } from './db'
 import type { IndexClient } from './indexer/client'
 import type { PlaneStore } from './planestore'
 import { brushPlanes } from './brushes'
-import { keyOf, parseKey } from './keys'
+import { keyOf } from './keys'
 import { paths } from './paths'
-import { LegacyPreviews } from './legacy'
 import { pixelDeps } from './pixels/base'
 import { ensureWorking } from './pixels/working'
 import { editsHdr, ensureHdrSource } from './hdrsource'
@@ -108,7 +107,6 @@ export class Library {
   private dupes: AbortController | null = null
 
   /** What edited photos looked like before engine 0.17: the first-open comparison. */
-  readonly legacy = new LegacyPreviews(paths.legacyPreviews(), app.getVersion())
 
   constructor(
     readonly index: IndexClient,
@@ -461,18 +459,6 @@ export class Library {
   }
 
   /** Move these keys' waiting thumbnails to the front of the queue. */
-  /**
-   * A photo's legacy preview, taken now if its old thumbnail is still the
-   * one on disk (a photo opened before its thumbnail was made again), and
-   * whether the new engine's thumbnail is ready to compare it with.
-   */
-  async legacyFor(key: string): Promise<{ fresh: boolean }> {
-    const { photoId, copyId } = parseKey(key)
-    const work = await this.index.thumbJob(photoId, copyId)
-    if (work?.legacy) this.legacy.capture(key, work.legacy)
-    if (work) this.prioritize([key])
-    return { fresh: work === null }
-  }
 
   prioritize(keys: string[]): void {
     const want = new Set(keys)
@@ -529,8 +515,6 @@ export class Library {
       work = await this.index.thumbJob(job.photoId, job.copyId)
       if (!work) return
     }
-    // What an earlier engine made of this edit, before the new one replaces it.
-    if (work.legacy) this.legacy.capture(keyOf(job.photoId, job.copyId), work.legacy)
     const { edited, stamp } = work
     const recipe = await this.planes.hydrate(work.recipe)
     const row = await this.readable(work.row)

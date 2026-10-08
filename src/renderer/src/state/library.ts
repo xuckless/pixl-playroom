@@ -77,7 +77,6 @@ interface LibraryState {
     | 'crash-consent'
     | 'engine'
     | 'whats-new'
-    | 'legacy'
     | 'scopes'
   /** The collection the 'collection' dialog edits. */
   editing: CollectionDraft | null

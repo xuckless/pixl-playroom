@@ -62,14 +62,6 @@ export const IPC = {
     /** main → renderer: the update state changed */
     event: 'updates:event'
   },
-  /** Legacy previews: an edited photo as the engine before 0.17 showed it (main/legacy.ts). */
-  legacy: {
-    get: 'legacy:get',
-    seen: 'legacy:seen',
-    remove: 'legacy:remove',
-    removeAll: 'legacy:remove-all',
-    count: 'legacy:count'
-  },
   prefs: {
     get: 'prefs:get',
     setCrashReports: 'prefs:set-crash-reports'
@@ -813,17 +805,6 @@ export interface UpdateState {
 // ── Preferences ──────────────────────────────────────────────────────────────
 
 /** Crash reports leave the machine only once the user says yes; `unset` asks once. */
-/** A photo's legacy preview: the picture and what it is of. */
-export interface LegacyPreview {
-  url: string
-  /** The engine that made it ("0.16"). */
-  engine: string
-  /** The first-open comparison was already shown. */
-  seen: boolean
-  /** The new engine's thumbnail is made: until it is, there is nothing to compare with. */
-  fresh: boolean
-}
-
 export type CrashConsent = 'unset' | 'on' | 'off'
 
 export interface Prefs {
@@ -866,10 +847,6 @@ export interface ModelInfo {
   error?: string
   /** How long it takes on this computer, for one photo (see `modelSpeed.ts`). */
   speed: ModelSpeed | null
-  /** Retired by engine 0.17 and kept this release for who has it: Remove only, gone next update. */
-  retiring?: boolean
-  /** The model that takes its place. */
-  replacedBy?: string
 }
 
 /** Which provider AI models run on, and what the performance test measured. */

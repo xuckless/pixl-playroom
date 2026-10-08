@@ -20,7 +20,8 @@ import {
   scaleOf,
   type EnhanceRates,
   type JpegRestore,
-  type UpscaleChoice
+  type UpscaleChoice,
+  type UpscaleSource
 } from '../../../shared/enhance'
 import { ModelGet } from '../components/ModelGet'
 import { staleRawStep } from '../../../shared/pixels'
@@ -43,9 +44,15 @@ const JPEG_OPTIONS: { value: JpegRestore; label: string }[] = [
 
 const UPSCALE_OPTIONS: { value: UpscaleChoice; label: string }[] = [
   { value: 'off', label: 'Off' },
-  { value: 'x2', label: '×2 · clean' },
-  { value: 'x4', label: '×4 · general' },
-  { value: 'x4-wdn', label: '×4 · keep texture' }
+  { value: 'x2', label: '×2' },
+  { value: 'x4', label: '×4' }
+]
+
+/** What the photo is like: picks the model (engine 0.18: SPAN for clean, x4v3 for damaged). */
+const SOURCE_OPTIONS: { value: UpscaleSource; label: string }[] = [
+  { value: 'clean', label: 'Clean · closest to the original' },
+  { value: 'damaged', label: 'Damaged · repairs compression and noise' },
+  { value: 'texture', label: 'Keep texture · leaves the grain' }
 ]
 
 const FORMAT_NAME: Record<string, string> = {
@@ -223,7 +230,17 @@ export function EnhancePanel(): React.JSX.Element | null {
           options={UPSCALE_OPTIONS}
           onChange={(upscale) => set({ upscale })}
         />
-        {s.upscale !== 'off' && <ModelGet id={ENHANCE_MODEL[s.upscale]} models={models} />}
+        {s.upscale !== 'off' && (
+          <>
+            <Select
+              label="Source"
+              value={s.upscaleSource}
+              options={SOURCE_OPTIONS}
+              onChange={(upscaleSource) => set({ upscaleSource })}
+            />
+            <ModelGet id={ENHANCE_MODEL[s.upscaleSource]} models={models} />
+          </>
+        )}
       </Section>
 
       <Section id="enhance.run" title="Apply" tip={TIPS['enhance.apply']}>

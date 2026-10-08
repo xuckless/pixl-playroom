@@ -81,45 +81,24 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
   'span-x4-ch48': {
     name: 'Bigger, clean',
     what: 'Makes a clean photo twice or four times as wide and tall, staying closest to the original. Quick: a fraction of a second.',
-    where: 'Enhance → Super resolution → ×2 and ×4',
+    where: 'Enhance → Super resolution → Source: Clean',
     recommended: true
   },
   'realesr-general-x4v3': {
-    name: 'Four times, quick',
-    what: 'Makes a photo four times as wide and tall, quickly. Best for small pictures; edges come out a little smooth.',
-    where: 'Enhance → Super resolution → ×4 general'
+    name: 'Bigger, repaired',
+    what: 'Makes a photo twice or four times as wide and tall and repairs compression blocks and noise as it goes. Best for small, damaged pictures; edges come out a little smooth.',
+    where: 'Enhance → Super resolution → Source: Damaged'
   },
   'realesr-general-wdn-x4v3': {
-    name: 'Four times, keeps texture',
-    what: 'Like the quick one, but leaves more of the photo’s own texture, and a little of its grain.',
-    where: 'Enhance → Super resolution → ×4 keep texture'
+    name: 'Bigger, keeps texture',
+    what: 'Like the repairing one, but leaves more of the photo’s own texture, and a little of its grain.',
+    where: 'Enhance → Super resolution → Source: Keep texture'
   },
   'nafnet-gopro-w32': {
     name: 'Motion blur fix',
     what: 'Sharpens a photo smeared by camera shake or a moving subject. It cannot rescue a photo that was simply out of focus.',
     where: 'Enhance → Deblur',
     recommended: true
-  },
-  // Retired by engine 0.17 and kept for who downloaded them until the next update.
-  u2net: {
-    name: 'Detailed subject',
-    what: 'Finds the main subject for the Subject and Background masks. It is being retired: the next update replaces it with the smaller, faster Subject finder. Until then Playroom keeps using it, since you have it.',
-    where: 'Masks → New → Subject or Background'
-  },
-  'fbcnn-color-qf': {
-    name: 'JPEG repair, exact',
-    what: 'The JPEG repair that was told exactly how compressed the file is. It is being retired and no longer runs: the automatic JPEG repair does the same job. Remove it to free the space.',
-    where: ''
-  },
-  'migan-512': {
-    name: 'Object remover',
-    what: 'Fills in what you paint over (a stranger, a sign, a power line) with what was likely behind it.',
-    where: 'Heal → Remove'
-  },
-  'depth-anything-v2-small': {
-    name: 'Depth finder',
-    what: 'Sees which parts of a photo are near and which are far, for the Depth range mask.',
-    where: 'Masks → New → Depth range'
   },
   'fbcnn-color-blind': {
     name: 'JPEG repair, automatic',

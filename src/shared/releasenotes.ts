@@ -41,7 +41,8 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
       {
         title: 'Changes',
         items: [
-          'Super Resolution ×2 uses a new, much faster model that stays closer to the original.',
+          'Super Resolution has a Source choice: Clean stays closest to a sharp original, with a new, much faster model; Damaged repairs compression and noise as it enlarges; Keep texture leaves the grain.',
+          'Retired AI models are removed from your disk, and so is the before-and-after with the previous engine from 0.3.',
           'If an adjustment ever breaks the picture, the slider responsible turns red and says so; your edit is kept.',
           'AI work runs on your Mac’s performance cores, where it is fastest.'
         ]

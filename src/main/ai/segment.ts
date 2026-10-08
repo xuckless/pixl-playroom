@@ -23,7 +23,6 @@ import { encodeGreyPng, grey8 } from '../pngio'
 import type { PlaneStore } from '../planestore'
 import { ensureProxies } from '../proxy'
 import type { DevelopSessions } from '../render'
-import log from 'electron-log/main'
 import { BACKGROUND_THREADS } from '../source'
 import { READ_LIMITS } from '../../shared/limits'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
@@ -46,12 +45,8 @@ const HARDEN = 4
  */
 const HARDEN_AT = 0.6
 
-/**
- * The subject models, best first. U²-Net was retired by engine 0.17 (U²-Netp
- * replaces it) and is kept for who downloaded it until the next update
- * (`legacymodels.ts`): it goes from this list then.
- */
-const SUBJECT_MODELS = ['u2net', 'u2netp']
+/** The subject models, best first. (U²-Net, retired by engine 0.17, went with 0.18.) */
+const SUBJECT_MODELS = ['u2netp']
 
 /** Below this the model saw nothing salient (a flat plane stretched to full range). */
 const NOTHING_SALIENT = 0.2
@@ -126,25 +121,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     })
     try {
       // Stopped mid-run by the signal (the engine's model calls take one since 0.16).
-      try {
-        report = await this.engine.segment(request(segmenter), { signal: ctx.signal })
-      } catch (err) {
-        // U²-Net is retired and the 0.17 engine no longer tests its own
-        // weights: if it will not run, U²-Netp (the model that replaces it)
-        // makes the mask, and the failure is logged.
-        const model = (err as { code?: string })?.code === 'Model'
-        if (
-          ctx.signal.aborted ||
-          id !== 'u2net' ||
-          !model ||
-          !(await this.models.installed('u2netp'))
-        )
-          throw err
-        log.warn('U²-Net would not run; using U²-Netp', (err as Error).message)
-        report = await this.engine.segment(request(await this.models.ref('u2netp', 'Cpu')), {
-          signal: ctx.signal
-        })
-      }
+      report = await this.engine.segment(request(segmenter), { signal: ctx.signal })
     } catch (err) {
       if (ctx.signal.aborted) throw new Cancelled()
       throw err

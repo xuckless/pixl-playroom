@@ -139,11 +139,6 @@ export interface ThumbWork {
   recipe: Recipe
   edited: boolean
   stamp: string
-  /**
-   * The thumbnail on disk that an earlier engine made of this edited photo,
-   * about to be replaced: the library keeps it as the legacy preview.
-   */
-  legacy: string | null
 }
 
 /** What opening a photo in develop needs from the index, in one trip. */
@@ -2103,12 +2098,7 @@ export class IndexService {
     const stamp = `${versionStamp(row, !raw || edited)}${edited ? `-e${ENGINE_RENDER_REV}` : ''}-${recipeKey}`
     const have = existing.thumb_path && existsSync(existing.thumb_path)
     if (existing.thumb_key === stamp && have) return null
-    // Made by an earlier engine: no `-e<rev>` in its stamp.
-    const legacy =
-      edited && have && !(existing.thumb_key ?? '').includes(`-e${ENGINE_RENDER_REV}-`)
-        ? existing.thumb_path
-        : null
-    return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp, legacy }
+    return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp }
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, stamp: string): void {

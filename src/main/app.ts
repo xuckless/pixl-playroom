@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
+import { rm } from 'fs/promises'
 import { join } from 'path'
 import { MAIN_DIR } from './dirs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -240,6 +241,12 @@ app.whenReady().then(() => {
     if (e.name === 'project') embedder.request(e.key)
   })
   const models = new ModelStore(index, () => bgEngine.getStatus())
+  // Off the launch's path: retired models' files off the disk, and the
+  // thumbnails 0.3's before/after (the previous engine's) kept.
+  setTimeout(() => {
+    void models.prune().catch((err) => log.warn('model clean-up failed', (err as Error).message))
+    void rm(paths.legacyPreviews(), { recursive: true, force: true }).catch(() => undefined)
+  }, 20_000).unref()
   const lenses = new LensProfileStore()
   void lenses.start()
   const exporter = new Exporter(library, sessions, bgEngine)

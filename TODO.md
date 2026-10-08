@@ -207,18 +207,26 @@ After: Passes 86–88.
 
 After: Pass 85.
 
-- [ ] **M** · Enhance's Super resolution: Scale ×2/×4 and Source Clean
-      (SPAN) / Damaged (x4v3) / Keep texture (wdn). The time guesses are
-      redone, and saved settings map onto it.
-- [ ] **M** · Retired models go quietly:
-      - `legacymodels.ts` and the "being retired" rows go;
-      - their folders and old version folders under `userData/models` are
-        deleted at start (x2plus, lama, u2net, fbcnn-color-qf);
-      - a recipe that names one falls back (U²-Net → U²-Netp).
-- [ ] **M** · The PixlRGB before/after goes: `views/LegacyCompare.tsx`,
-      `state/legacy.ts`, `main/legacy.ts`, the `legacy:*` IPC, the
-      `view.legacy` command and `offerLegacy`. The kept thumbnails in
-      `cache/legacy-previews` are deleted.
+- [x] **M** · Super resolution: Scale (Off / ×2 / ×4) and Source: Clean
+      (SPAN), Damaged (general-x4v3), Keep texture (wdn). ×2 is any of them
+      brought down by half. Saved settings keep the model they ran (`x4` →
+      ×4 Damaged, `x4-wdn` → ×4 Keep texture, `x2` → ×2 Clean); first time
+      guesses per source.
+      _Fixed on the way: a smart look's Deblur took the default ×2 with it,
+      enlarging the whole photo past its mask (`looks/runner.ts`)._
+- [x] **M** · Retired models go quietly:
+      - `legacymodels.ts` and the "Being retired" rows are gone; Subject is
+        U²-Netp alone;
+      - 20 s after start, `ModelStore.prune()` carries over what it can, then
+        deletes every model folder the roster doesn't ship (on-demand kept)
+        and every version a shipped one moved on from (`retiredModelDirs`);
+      - a saved FBCNN at a quality already reads as FBCNN.
+- [x] **M** · The PixlRGB before/after is gone: the dialog, `state/legacy`,
+      `main/legacy.ts`, the `legacy:*` IPC, the View command, the capture in
+      thumbnailing, the styles. Its kept thumbnails (`cache/legacy-previews`)
+      are deleted with the models' clean-up.
+      _Checked in the built app: a planted `models/lama` and
+      `cache/legacy-previews` were gone 20 s after start._
 
 ### Pass 91 — SAM's size rule and the Depth range mask · 5 pts
 

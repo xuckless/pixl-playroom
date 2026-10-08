@@ -18,13 +18,14 @@ const all: EnhanceSettings = {
   ...DEFAULT_ENHANCE,
   jpeg: 'fbcnn',
   deblur: true,
-  upscale: 'x4-wdn'
+  upscale: 'x4',
+  upscaleSource: 'texture'
 }
 
 test('the chain runs in the engine order: JPEG restore, deblur, then the upscaler', () => {
   assert.deepEqual(
     planSteps(all, true).map((p) => p.kind),
-    ['fbcnn', 'deblur', 'x4-wdn']
+    ['fbcnn', 'deblur', 'texture']
   )
   assert.deepEqual(neededModels(all, true), [
     'fbcnn-color-blind',
@@ -44,7 +45,7 @@ test('a rebuild needs no model, and comes first', () => {
 test('JPEG restore is left out for any other format', () => {
   assert.deepEqual(
     planSteps(all, false).map((p) => p.kind),
-    ['deblur', 'x4-wdn']
+    ['deblur', 'texture']
   )
   const only = { ...DEFAULT_ENHANCE, jpeg: 'fbcnn' as const, upscale: 'off' as const }
   assert.match(enhanceRefusal(only, { isJpeg: false, isHdr: false }) ?? '', /JPEG files/)
@@ -60,6 +61,32 @@ test('nothing chosen, or an HDR photo, is refused', () => {
 test('×2 is SPAN ×4 brought down: engine 0.18 retired its own ×2 model', () => {
   assert.deepEqual(neededModels({ ...DEFAULT_ENHANCE, upscale: 'x2' }, false), ['span-x4-ch48'])
   assert.ok(!neededModels(all, true).includes('real-esrgan-x2plus'))
+})
+
+test('Source picks the ×4 model; ×2 and ×4 run the same one', () => {
+  const at = (upscale: 'x2' | 'x4', upscaleSource: 'clean' | 'damaged' | 'texture'): string[] =>
+    neededModels({ ...DEFAULT_ENHANCE, upscale, upscaleSource }, false)
+  assert.deepEqual(at('x2', 'clean'), ['span-x4-ch48'])
+  assert.deepEqual(at('x4', 'clean'), ['span-x4-ch48'])
+  assert.deepEqual(at('x2', 'damaged'), ['realesr-general-x4v3'])
+  assert.deepEqual(at('x4', 'texture'), ['realesr-general-wdn-x4v3'])
+  assert.equal(chainSubject(planSteps({ ...DEFAULT_ENHANCE, upscale: 'x4' }, false)), '×4')
+})
+
+test('an upscale saved before Source keeps the model it ran', () => {
+  const old = (upscale: string): Partial<EnhanceSettings> =>
+    ({ upscale }) as unknown as Partial<EnhanceSettings>
+  assert.deepEqual(
+    [normaliseEnhance(old('x4')).upscale, normaliseEnhance(old('x4')).upscaleSource],
+    ['x4', 'damaged']
+  )
+  assert.deepEqual(
+    [normaliseEnhance(old('x4-wdn')).upscale, normaliseEnhance(old('x4-wdn')).upscaleSource],
+    ['x4', 'texture']
+  )
+  assert.equal(normaliseEnhance(old('x2')).upscaleSource, 'clean')
+  assert.equal(normaliseEnhance(old('nonsense')).upscale, 'x2')
+  assert.equal(normaliseEnhance({ upscale: 'x4', upscaleSource: 'clean' }).upscaleSource, 'clean')
 })
 
 test('scale follows the upscaler', () => {
@@ -84,10 +111,10 @@ test('a saved FBCNN-at-a-quality (retired in engine 0.17) reads as FBCNN', () =>
 
 test('the estimate sums each step over the input’s megapixels, and learns from a run', () => {
   const steps = planSteps({ ...DEFAULT_ENHANCE, deblur: true, upscale: 'x2' }, true)
-  const rates = { deblur: 1000, x2: 3000 }
+  const rates = { deblur: 1000, clean: 3000 }
   assert.equal(estimateMs(steps, 2000, 1000, rates), 2 * 4000)
   const slower = learnRates(steps, rates, 16000, 8000)
   assert.equal(slower.deblur, 1600)
-  assert.equal(slower.x2, 4800)
+  assert.equal(slower.clean, 4800)
   assert.equal(chainSubject(steps), 'Deblur + ×2')
 })

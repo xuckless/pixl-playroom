@@ -30,7 +30,6 @@ import {
 import { runJob } from '../state/busy'
 import { useDevelop } from '../state/develop'
 import { scoped } from '../state/scope'
-import { useLegacy } from '../state/legacy'
 import { useLibrary } from '../state/library'
 import { OVERLAY_MODES, useUi } from '../state/ui'
 import { flashHud } from '../views/loupe/hudNote'
@@ -537,21 +536,6 @@ export const COMMANDS: KeyCommand[] = [
     context: 'develop',
     keys: ['Backslash'],
     run: () => dev().setCompare(dev().compare === 'before' ? 'off' : 'before')
-  },
-  {
-    id: 'view.legacy',
-    label: 'Compare with the previous engine',
-    group: 'View',
-    context: 'develop',
-    keys: [],
-    run: () => {
-      const key = dev().session?.key
-      if (!key) return
-      void api.legacy.get(key).then((p) => {
-        if (p) useLegacy.getState().show(key)
-        else lib().say('No old preview is kept for this photo', 'info')
-      })
-    }
   },
   {
     id: 'view.split',
