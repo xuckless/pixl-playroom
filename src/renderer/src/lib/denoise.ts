@@ -13,7 +13,7 @@ import { useUi } from '../state/ui'
 import { errorText } from './api'
 import { staleRawStep, type PixelStep } from '../../../shared/pixels'
 import { developMark } from '../../../shared/rawcolour'
-import type { AiDenoiseModel } from '../../../shared/recipe'
+import { aiDenoiseModel, RETIRED_DENOISE } from '../../../shared/recipe'
 
 /** Start a denoise step for the open photo: in the selected mask when the panels edit one. */
 export async function applyDenoise(): Promise<void> {
@@ -49,8 +49,16 @@ export function startDenoiseUpkeep(): () => void {
   })
 }
 
-/** Denoise models quick enough to make a step again without asking (SCUNet takes minutes). */
-const QUICK_REDO: ReadonlySet<string> = new Set(['drunet-color'])
+/**
+ * Denoise models quick enough to make a step again without asking. A step
+ * SCUNet made (retired with engine 0.19) is made again on NAFNet SIDD, which
+ * takes seconds where SCUNet took minutes.
+ */
+const QUICK_REDO: ReadonlySet<string> = new Set([
+  'drunet-color',
+  'nafnet-sidd-w32',
+  RETIRED_DENOISE
+])
 
 /** Whether a stale step is made again on its own when its photo opens. */
 export function redoesQuietly(step: PixelStep): boolean {
@@ -62,7 +70,7 @@ export async function redoDenoise(key: string, step: PixelStep): Promise<void> {
   await api.ai.start({
     task: 'denoise',
     key,
-    model: step.params.model as AiDenoiseModel,
+    model: aiDenoiseModel(step.params.model),
     strength: step.opacity,
     redo: step.id
   })

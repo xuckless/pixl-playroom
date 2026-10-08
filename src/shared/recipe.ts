@@ -182,7 +182,26 @@ export interface DetailSetting {
   ai: AiDenoiseSetting
 }
 
-export type AiDenoiseModel = 'scunet-color-real' | 'drunet-color'
+export type AiDenoiseModel = 'nafnet-sidd-w32' | 'drunet-color'
+
+/**
+ * SCUNet, retired with engine 0.19 (its files go from every disk): what a
+ * saved setting, a step's params or a look may still name.
+ */
+export const RETIRED_DENOISE = 'scunet-color-real'
+
+/**
+ * NAFNet SIDD, SCUNet's successor in engine 0.19, is held back: as shipped it
+ * turns flat dark areas into bright noise (ENGINE-REQUESTS E55). While held,
+ * nothing offers it and whatever named SCUNet runs DRUNet; turned on, the
+ * blind choice is NAFNet SIDD again everywhere.
+ */
+export const NAFNET_DENOISE = false
+
+/** A denoise model as saved, today: SCUNet (or anything unknown) is the blind denoiser there is. */
+export function aiDenoiseModel(v: unknown): AiDenoiseModel {
+  return v === 'drunet-color' || !NAFNET_DENOISE ? 'drunet-color' : 'nafnet-sidd-w32'
+}
 
 export interface AiDenoiseSetting {
   enabled: boolean
@@ -618,7 +637,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       noiseLuminanceDetail: 50,
       noiseColor: isRaw ? 25 : 0,
       noiseColorDetail: 50,
-      ai: { enabled: false, model: 'scunet-color-real', strength: 100 }
+      ai: { enabled: false, model: aiDenoiseModel(RETIRED_DENOISE), strength: 100 }
     },
     lens: defaultLens(),
     effects: {
@@ -700,6 +719,7 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   }
   r.toneCurve = normaliseToneCurve(r.toneCurve)
   r.calibration = normaliseCalibration(r.calibration)
+  d.ai.model = aiDenoiseModel(d.ai.model)
   r.geometry.crop = normaliseCrop(r.geometry.crop)
   r.layers = (r.layers ?? []).filter(isObject).map(({ overlayHue, ...withOld }) => {
     // Version 1's sliders become settings (`layerSettingsOf`) and go.

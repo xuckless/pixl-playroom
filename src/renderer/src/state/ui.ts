@@ -6,7 +6,7 @@
 import { create } from 'zustand'
 import { DEFAULT_ENHANCE, normaliseEnhance, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind } from '../../../shared/retouch'
-import type { AiDenoiseModel } from '../../../shared/recipe'
+import { aiDenoiseModel, type AiDenoiseModel } from '../../../shared/recipe'
 import { isCardId, type CardId } from '../../../shared/cards'
 import { migrateUi } from './uiMigrate'
 import type { Bindings, Chord } from '../lib/keys'
@@ -329,7 +329,12 @@ export const useUi = create<UiState>()(
           enhance: normaliseEnhance(p.enhance),
           masksWin: { open: p.masksWin?.open === true },
           maskOverlay: withoutPins({ ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay }),
-          denoise: { model: 'drunet-color', strength: 100, ...p.denoise },
+          // SCUNet, retired with engine 0.19, is NAFNet SIDD now.
+          denoise: {
+            strength: 100,
+            ...p.denoise,
+            model: p.denoise ? aiDenoiseModel(p.denoise.model) : 'drunet-color'
+          },
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
           cardsOpen:
             p.cardsOpen && typeof p.cardsOpen === 'object' ? p.cardsOpen : current.cardsOpen,

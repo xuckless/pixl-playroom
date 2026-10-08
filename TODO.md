@@ -691,13 +691,28 @@ Decisions (the owner, 2026-10-08):
       Electron run. **Owner check:** switch apps on the Mac and watch the
       glass go flat and come back.
 
-### Pass 107 — AI denoise on NAFNet SIDD · 4 pts
+### Pass 107 — AI denoise on NAFNet SIDD · 4 pts (held: E55)
 
-- [ ] **M** · `nafnet-sidd-w32` through CoreML static shapes (512 tiles,
+- [~] **M** · `nafnet-sidd-w32` through CoreML static shapes (512 tiles,
       `dimensions` from the roster), CPU with threads ≤ P-cores elsewhere;
       saved SCUNet settings map to it; SCUNet's files deleted from every
       install when the update first runs; time guesses and the model copy
       redone.
+
+      Done (2026-10-08): `shared/modelshape.ts` (CoreML `CpuAndGpu`,
+      `dimensions` from the roster, `Fixed` 512/32) for NAFNet SIDD and
+      the NAFNet deblur (deblur measured 9.3 s against 103 s at 20 MP, M2
+      Pro); SCUNet's files go via `prune` (it left the roster); saved
+      SCUNet maps through `aiDenoiseModel`. **Held:** NAFNet SIDD breaks
+      flat dark areas (E55), so `NAFNET_DENOISE = false` hides it and SCUNet
+      runs DRUNet; flip it when the fixed export ships.
+      Also fixed: AI denoise and Enhance on a RAW had failed since Pass 94
+      (the float master reached the model; the engine refuses unbounded
+      input): `modelInput` makes a bounded 16-bit copy, the guard keeps
+      the headroom.
+      **Owner:** mirror the 0.19 models (`node scripts/publish-models.mjs
+      --bucket pixl-models`): the server has none of them yet (404), and
+      their roster entries have no upstream link.
 
 ### Pass 108 — RAW develop: DemosaicNet, AHD, PMRID, binned thumbnails · 5 pts
 

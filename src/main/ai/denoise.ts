@@ -1,6 +1,6 @@
 /**
  * AI noise reduction as a pixel step (shared/pixels.ts): a restoring model
- * (SCUNet, blind; or DRUNet, told the noise it measures) run once over the
+ * (NAFNet SIDD, blind; or DRUNet, told the noise it measures) run once over the
  * photo's pixels as they are (earlier steps laid on), its result kept in the
  * photo's project, and a step added to the recipe. From then on it undoes,
  * redoes and hides in History, and changes Strength, without the model ever
@@ -21,13 +21,20 @@
  * is what it shows after a reload, on another machine, from the project alone.
  */
 import { readFile, rm } from 'fs/promises'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import type { AiStartRequest } from '../../shared/ai'
 import { estimate } from '../../shared/ai'
 import type { EnhancerRef } from '../../shared/engine-types'
 import { pixelStepRefusal, type PixelStep } from '../../shared/pixels'
 import { developMark } from '../../shared/rawcolour'
-import { hash32, newId, type AiDenoiseModel, type Recipe } from '../../shared/recipe'
+import {
+  aiDenoiseModel,
+  hash32,
+  newId,
+  RETIRED_DENOISE,
+  type AiDenoiseModel,
+  type Recipe
+} from '../../shared/recipe'
 import { exists } from '../exists'
 import type { EngineClient } from '../engine/client'
 import type { IndexClient } from '../indexer/client'
@@ -47,13 +54,13 @@ import {
 import { ensureBase, pixelDeps } from '../pixels/base'
 import { freezeMask } from '../pixels/freeze'
 import { addPixelStep, replacePixelStep, storesLossless } from '../pixels/steps'
-import { ensureWorking } from '../pixels/working'
+import { ensureWorking, modelInput } from '../pixels/working'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
 import { ModelMissing, modelName, type ModelStore } from './models'
 import { DENOISE_RATE_KEY } from './rates'
 
 export const DENOISE_SHORT: Record<AiDenoiseModel, string> = {
-  'scunet-color-real': 'SCUNet',
+  'nafnet-sidd-w32': 'NAFNet',
   'drunet-color': 'DRUNet'
 }
 
@@ -88,12 +95,14 @@ async function denoise(
   signal: AbortSignal,
   threads: number
 ): Promise<ProxyFile> {
+  // A RAW's float frame is read clipped to 0..1 (the result is laid back under its headroom guard).
+  const input = await modelInput(engine, dirname(out), from, threads)
   const r = await models.withCpuFallback(
     [model],
     async (onCpu) =>
       engine.convert(
         {
-          ...blankRequest(from.path, out, from.input),
+          ...blankRequest(input.path, out, input.input),
           enhance: [{ Model: await enhancer(models, model, onCpu.has(model)) }],
           pixel: { depth: 'Sixteen', channels: 3 },
           encode: TIFF,
@@ -116,7 +125,7 @@ async function denoise(
 async function legacyMaster(
   dir: string,
   version: string,
-  model: AiDenoiseModel,
+  model: string,
   strength: number,
   frame: ProxyFile
 ): Promise<string | null> {
@@ -137,7 +146,8 @@ type DenoiseRequest = Extract<AiStartRequest, { task: 'denoise' }>
 /** How long a megapixel of the full-resolution step takes, per model, remembered between runs. */
 const RATE_KEY = DENOISE_RATE_KEY
 const FIRST_GUESS_MS_PER_MP: Record<string, number> = {
-  'scunet-color-real': 27000,
+  // CoreML with static shapes: 15.2 s at 24 MP on an M2 Pro (engine 0.19); the M1 is unmeasured.
+  'nafnet-sidd-w32': 1200,
   'drunet-color': 9000
 }
 
@@ -171,11 +181,13 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
   title(req: DenoiseRequest): { title: string; subject: string } {
     return {
       title: req.redo ? 'Remaking a denoise on the new RAW develop' : 'Denoising',
-      subject: DENOISE_SHORT[req.model] ?? 'AI'
+      subject: DENOISE_SHORT[aiDenoiseModel(req.model)]
     }
   }
 
-  async run(ctx: AiContext, req: DenoiseRequest): Promise<{ kind: 'step'; label: string }> {
+  async run(ctx: AiContext, asked: DenoiseRequest): Promise<{ kind: 'step'; label: string }> {
+    // A step SCUNet made is made again on NAFNet SIDD, its successor (engine 0.19).
+    const req = { ...asked, model: aiDenoiseModel(asked.model) }
     const sessions = this.sessions()
     // The probe first: it records a RAW's camera colour and moves its saved white with it.
     const row = await this.library.photoRow(req.key)
@@ -245,7 +257,10 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       // What the old setting made, when a photo from before steps still has it.
       const kept =
         req.legacy && recipe.pixels.length === 0
-          ? await legacyMaster(dir, versionStamp(row), req.model, req.strength, master)
+          ? ((await legacyMaster(dir, versionStamp(row), asked.model, req.strength, master)) ??
+            (req.model === 'nafnet-sidd-w32'
+              ? await legacyMaster(dir, versionStamp(row), RETIRED_DENOISE, req.strength, master)
+              : null))
           : null
       const result = kept ?? join(dir, `denoise-${stamp}.tiff`)
       if (!kept) {

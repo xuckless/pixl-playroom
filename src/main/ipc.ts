@@ -31,7 +31,7 @@ import {
 } from '../shared/ipc'
 import { convertWb, type WbContext } from '../shared/wbconvert'
 import { LicenceError } from '../shared/licence'
-import { applyGroups, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
+import { applyGroups, NAFNET_DENOISE, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
 import { applyLook } from '../shared/looks/apply'
 import { resolveLook } from '../shared/looks/catalog'
 import { planeRef } from './planeref'
@@ -767,12 +767,14 @@ export function registerIpc(s: Services): void {
       models,
       subjectModel: subject,
       drunetModel: await s.models.installed('drunet-color'),
+      nafnetModel: await s.models.installed('nafnet-sidd-w32'),
       samModel,
       enhance: enhance.available,
       // Still to come: a sky model (E28; meanwhile the sky is clicked,
-      // SKY_BY_CLICK), people's parts (E30), the detector (E45) and NAFNet
-      // denoise. They turn on with the binding that has them.
-      engine: { sky: false, people: false, sam2, detector: false, nafnet: false }
+      // SKY_BY_CLICK), people's parts (E30) and the detector (E45). They turn
+      // on with the binding that has them. NAFNet denoise came with 0.19, held
+      // back until its fixed export (E55).
+      engine: { sky: false, people: false, sam2, detector: false, nafnet: NAFNET_DENOISE }
     })
     const drunet = await s.models.installed('drunet-color')
     return {

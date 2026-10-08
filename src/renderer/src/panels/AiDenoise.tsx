@@ -6,7 +6,7 @@
  * With a mask selected the step is made inside it (the mask frozen as it is).
  */
 import { useEffect, useState } from 'react'
-import type { AiDenoiseModel } from '../../../shared/recipe'
+import { NAFNET_DENOISE, type AiDenoiseModel } from '../../../shared/recipe'
 import { staleRawStep, type PixelStep } from '../../../shared/pixels'
 import { developMark } from '../../../shared/rawcolour'
 import { ensureModelId } from '../lib/ensureModel'
@@ -24,18 +24,21 @@ import { askConfirm } from '../state/confirm'
 import { useScope } from '../state/scope'
 import { useUi } from '../state/ui'
 
-const MODELS: { value: AiDenoiseModel; label: string; hint: string }[] = [
+const ALL_MODELS: { value: AiDenoiseModel; label: string; hint: string }[] = [
   {
     value: 'drunet-color',
     label: 'DRUNet · measured',
     hint: 'Told the noise it measures on the photo; gentler, keeps fine texture.'
   },
   {
-    value: 'scunet-color-real',
-    label: 'SCUNet · real noise',
-    hint: 'Trained on real camera noise; judges it by itself. Best on high-ISO shots.'
+    value: 'nafnet-sidd-w32',
+    label: 'NAFNet · real noise',
+    hint: 'Trained on real camera noise; judges it by itself. Best on high-ISO shots, and quick on a Mac’s graphics chip.'
   }
 ]
+
+/** NAFNet SIDD is offered once the engine's fixed export is in (NAFNET_DENOISE). */
+const MODELS = ALL_MODELS.filter((m) => NAFNET_DENOISE || m.value !== 'nafnet-sidd-w32')
 
 const LOSSLESS_KEY = 'pixels.lossless'
 

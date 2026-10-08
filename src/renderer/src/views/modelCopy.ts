@@ -61,9 +61,9 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     where: 'Detail → Noise reduction → AI',
     recommended: true
   },
-  'scunet-color-real': {
+  'nafnet-sidd-w32': {
     name: 'Strong clean-up',
-    what: 'For very grainy night and indoor shots. It judges the grain by itself and cleans harder, which can smooth fine texture a little.',
+    what: 'For very grainy night and indoor shots. It judges the grain by itself and cleans harder, which can smooth fine texture a little. On a Mac it runs on the graphics chip: about a quarter of a minute for a 24 MP photo.',
     where: 'Detail → Noise reduction → AI'
   },
   'sam2-1-hiera-tiny': {

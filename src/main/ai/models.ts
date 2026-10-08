@@ -33,6 +33,8 @@ import { ENHANCE_MODEL, FIRST_GUESS_MS_PER_MP, type EnhanceStepKind } from '../.
 import { modelSpeed, referenceOf, testFactor, type ModelSpeed } from '../../shared/modelSpeed'
 import { DENOISE_RATE_KEY, ENHANCE_RATE_KEY } from './rates'
 import { carryOver, retiredModelDirs } from './carryover'
+import { staticPlan } from '../../shared/modelshape'
+import { NAFNET_DENOISE } from '../../shared/recipe'
 
 import * as pixlModels from '@xuckless/pixl-models'
 import type { ModelEntry as RosterEntry, ModelFile as RosterFile } from '@xuckless/pixl-models'
@@ -44,6 +46,11 @@ export type { RosterEntry }
  * BiRefNet lite, the Fine subject. SAM 3 and EfficientSAM3 wait for 0.19.
  */
 const OFFERED_ON_DEMAND = ['birefnet-lite']
+
+/** A shipped model Playroom holds back for now: not listed, offered or downloaded (NAFNET_DENOISE). */
+function held(id: string): boolean {
+  return id === 'nafnet-sidd-w32' && !NAFNET_DENOISE
+}
 
 const BASE = (process.env.PLAYROOM_MODELS_URL ?? 'https://models.pixlfoundation.com').replace(
   /\/+$/,
@@ -100,7 +107,7 @@ export class ModelStore {
     const offered = pixlModels
       .onDemand()
       .filter((m) => OFFERED_ON_DEMAND.includes(m.id)) as unknown as RosterEntry[]
-    return [...pixlModels.manifest().filter((m) => m.ship), ...offered]
+    return [...pixlModels.manifest().filter((m) => m.ship && !held(m.id)), ...offered]
   }
 
   /** An on-demand model: its licence texts and NOTICE are kept beside its files. */
@@ -475,7 +482,8 @@ export class ModelStore {
   /** What `ref()` needs from the host besides the model's own numbers. */
   async host(
     provider?: ExecutionProvider,
-    extra: Record<string, unknown> = {}
+    extra: Record<string, unknown> = {},
+    dimensions: SessionSpec['dimensions'] = []
   ): Promise<Record<string, unknown>> {
     const runtime = this.engineStatus().runtime
     if (!runtime) throw new Error('this build of the engine ships no ONNX Runtime')
@@ -483,7 +491,8 @@ export class ModelStore {
       threads: heavyThreads(),
       optimisation: 'All',
       deterministic: false,
-      ...IDLE_SESSION
+      ...IDLE_SESSION,
+      dimensions
     }
     return {
       runtime_library: runtime.library,
@@ -493,7 +502,11 @@ export class ModelStore {
     }
   }
 
-  /** A model's engine request type, its files and the host's values filled in. */
+  /**
+   * A model's engine request type, its files and the host's values filled
+   * in. On CoreML, a model Playroom runs with static shapes (modelshape.ts)
+   * gets its H × W fixed to its tile and the GPU; elsewhere it runs as it is.
+   */
   async ref(
     id: string,
     provider?: ExecutionProvider,
@@ -501,10 +514,11 @@ export class ModelStore {
   ): Promise<Record<string, unknown>> {
     const e = this.entry(id)
     if (!(await this.installed(id))) throw new ModelMissing(e)
-    return pixlModels.ref(id, await this.host(provider, extra), { dir: this.dir(id) }) as Record<
-      string,
-      unknown
-    >
+    const chosen = provider ?? (await this.provider())
+    const plan = staticPlan(id, e.files[0]?.dimensions ?? [], chosen)
+    const host = await this.host(plan?.provider ?? chosen, extra, plan?.dimensions)
+    const ref = pixlModels.ref(id, host, { dir: this.dir(id) }) as Record<string, unknown>
+    return plan ? { ...ref, tiling: plan.tiling } : ref
   }
 
   /** Models the accelerator would not load this session: they run on the CPU. */
@@ -512,8 +526,8 @@ export class ModelStore {
 
   /**
    * Run `make` with each of `ids` on the chosen provider, moving a model to
-   * the CPU when the accelerator cannot load it (SCUNet and FBCNN under
-   * CoreML: ONNX Runtime refuses them) — the one the error names, or all of
+   * the CPU when the accelerator cannot load it (FBCNN under CoreML: ONNX
+   * Runtime refuses it; a static-shaped model CoreML refuses) — the one the error names, or all of
    * them when it names none (a provider that cannot be registered). Never
    * silently: each move is logged, and the model stays on the CPU for the
    * session. `make` is told which models to put on the CPU.

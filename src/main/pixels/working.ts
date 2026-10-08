@@ -277,6 +277,43 @@ async function guardOf(deps: PixelDeps, from: ProxyFile): Promise<string | null>
   return out
 }
 
+/**
+ * What a model reads of a frame: a float frame (a RAW's Scene master, engine
+ * 0.18) as a 16-bit copy, its values clipped to 0..1, since the engine
+ * refuses an enhance chain on unbounded samples; the step's result is laid
+ * back under the headroom guard (`guards`), so the frame's light over white
+ * stays its own. A 16-bit frame is read as it is. Made once per frame file.
+ */
+export async function modelInput(
+  engine: EngineClient,
+  cacheDir: string,
+  from: ProxyFile,
+  threads = BACKGROUND_THREADS
+): Promise<ProxyFile> {
+  if (!from.float) return from
+  const at = await stat(from.path)
+  const out = join(
+    cacheDir,
+    'blobs',
+    `bounded-${hash32(`${from.path}:${at.size}:${at.mtimeMs}`).toString(36)}.tiff`
+  )
+  await mkdir(join(cacheDir, 'blobs'), { recursive: true })
+  await makeOnce(
+    out,
+    (to) =>
+      engine.convert({
+        ...blankRequest(from.path, to, from.input),
+        pixel: { depth: 'Sixteen', channels: 3 },
+        encode: { Tiff: { compression: 'None' } },
+        metadata: ICC_ONLY,
+        color: 'Preserve',
+        threads
+      }),
+    true
+  )
+  return { path: out, input: 'Tiff', width: from.width, height: from.height }
+}
+
 /** An overlay source kept off the guard's clipped pixels, its top left at `at` on the frame. */
 async function guarded(
   deps: PixelDeps,

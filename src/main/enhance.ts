@@ -60,7 +60,7 @@ import type { DevelopSessions } from './render'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { freezeMask } from './pixels/freeze'
 import { addPixelStep, storesLossless } from './pixels/steps'
-import { ensureWorking } from './pixels/working'
+import { ensureWorking, modelInput } from './pixels/working'
 
 const TIFF = { Tiff: { compression: 'None' } } as const
 const ICC_ONLY = { exif: false, icc: true, xmp: false, iptc: false } as const
@@ -241,8 +241,10 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           { signal: ctx.signal }
         )
       }
+      // A RAW's float frame is read clipped to 0..1 (laid back under its headroom guard).
+      const input = await modelInput(this.engine, dir, master, heavyThreads())
       return this.engine.convert(
-        { ...blankRequest(master.path, out, master.input), ...common },
+        { ...blankRequest(input.path, out, input.input), ...common },
         { signal: ctx.signal }
       )
     }

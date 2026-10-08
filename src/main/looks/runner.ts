@@ -230,14 +230,12 @@ export class LookRuns {
         return
       }
       case 'denoise': {
-        // NAFNet's denoise comes with the next engine; the plan only asks for it once it is there.
-        if (op.model !== 'drunet') throw new Error(NOT_YET)
         await this.job(
           run,
           this.deps.startJob({
             task: 'denoise',
             key,
-            model: 'drunet-color',
+            model: op.model === 'nafnet' ? 'nafnet-sidd-w32' : 'drunet-color',
             strength: op.strength,
             layerId: op.layerId,
             group

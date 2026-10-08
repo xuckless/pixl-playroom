@@ -151,13 +151,16 @@ export interface SmartBuild {
   subjectModel: boolean
   /** The DRUNet denoise model is installed. */
   drunetModel: boolean
+  /** NAFNet SIDD, the blind denoiser (engine 0.19), is installed. */
+  nafnetModel?: boolean
   /** SAM 2.1's model is installed (select by clicks or a box). */
   samModel?: boolean
   /** Enhance (NAFNet deblur) is available. */
   enhance: boolean
   /**
-   * What the engine has: SAM 2.1 came with 0.16; a sky model (E28), people's
-   * parts (E30), the detector (E45) and NAFNet denoise are still to come.
+   * What the engine has: SAM 2.1 came with 0.16, NAFNet denoise with 0.19;
+   * a sky model (E28), people's parts (E30) and the detector (E45) are still
+   * to come.
    */
   engine: { sky: boolean; people: boolean; sam2: boolean; detector: boolean; nafnet: boolean }
 }
@@ -185,7 +188,7 @@ export function smartReadiness(b: SmartBuild): SmartReadiness {
     object: b.engine.detector ? sam : 'needs-engine',
     pick: sam,
     drunet: model(b.drunetModel),
-    nafnet: engine(b.engine.nafnet),
+    nafnet: b.engine.nafnet ? model(b.nafnetModel === true) : 'needs-engine',
     deblur: b.enhance ? 'ready' : 'needs-engine'
   }
 }
@@ -286,7 +289,7 @@ export const SMART_RATES = {
   sam2Ms: 1200,
   /** Per megapixel of the full-resolution step. */
   drunetMsPerMp: 9000,
-  nafnetMsPerMp: 3000,
+  nafnetMsPerMp: 1200,
   deblurMsPerMp: 6000
 }
 
