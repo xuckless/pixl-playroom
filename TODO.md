@@ -167,15 +167,21 @@ After: Pass 85.
 
 After: Pass 85.
 
-- [ ] **M** · `presence.smoothing` (0–100) on the base and each mask layer:
-      100 for new photos, 0 for edits made before (`RECIPE_VERSION`).
-- [ ] **M** · `CompileContext.smoothing`: `{ radius: 0.02, strength: v/100 }`
-      on Dehaze, Vibrance, Tone, the HSL bands and B&W mix, Point colour and
-      Color grading:
-      - on for the settled render, `region()` and the export;
-      - off for drafts and a mask's live drag (≤ 100 ms per op on the M1).
-- [ ] **S** · The slider under Dehaze in Presence and in the mask panel, with
-      its tip.
+- [x] **M** · `presence.smoothing` (0–100) on the photo and each mask, 100
+      for new photos and masks. `RECIPE_VERSION` 4: an edit made before it
+      gets 0 (its masks too), so it looks as it did; an untouched photo takes
+      100 (nothing to smooth, and it stays "not edited"). A mask's Amount
+      leaves it alone.
+- [x] **M** · `smoothingOf()` → `{ radius: 0.02, strength: v/100 }` on Dehaze,
+      Vibrance (the slider and the profiles'), Tone, the HSL bands and B&W
+      mix, Point colour and Color grading. `CompileContext.smoothing: false`
+      for drafts (`render.ts` picture and mask drafts); everything else (the
+      settled picture, 1:1, the export, thumbnails) is smoothed.
+- [x] **S** · The slider under Dehaze in Presence (photo and mask scope),
+      with its tip.
+      _Measured on the M2 Pro, 2560 × 1707, five smoothed ops, 6 threads: the
+      settled render 1.2–1.3 s against 0.53–0.6 s bare (drafts stay bare).
+      The M1 is to be measured with Pass 98's timings._
 
 ### Pass 89 — New pixels, remade caches · 3 pts
 

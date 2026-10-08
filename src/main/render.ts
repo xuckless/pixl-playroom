@@ -309,13 +309,15 @@ class Session {
   /**
    * Compile a recipe for a source. A source from the prepared set already
    * carries the lens correction and the spots: the engine is not asked to do
-   * those again.
+   * those again. `smoothing` false for a draft: the Smoothing slider's work
+   * waits for the settled render (engine 0.18: on release, not while dragging).
    */
   async compileFor(
     recipe: Recipe,
     source: ProxyFile,
     applyCrop: boolean,
-    headroom = false
+    headroom = false,
+    smoothing = true
   ): Promise<Compiled> {
     const baked = this.isBaked(source)
     // The working pixels' frame: the photo's, or an upscale step's.
@@ -337,7 +339,8 @@ class Session {
       // its values stopping at 1, so it compiles as SDR (a curve carried past
       // 1 there is refused).
       hdr: headroom && this.info.is_hdr,
-      showTransform: !this.view.guides
+      showTransform: !this.view.guides,
+      smoothing
     })
     return baked ? { ...compiled, lens: null, retouch: null } : compiled
   }
@@ -758,7 +761,7 @@ class Session {
     const rev = this.rev
     const preview = this.previewing
     const recipe = preview ?? this.recipe
-    const compiled = await this.compileFor(recipe, src, !cropMode)
+    const compiled = await this.compileFor(recipe, src, !cropMode, false, kind !== 'draft')
     const seq = ++this.seq
     // A whole picture of this recipe (framed, no corners left empty): what
     // the library's thumbnail can be shrunk from. A preview is never that.
@@ -1031,7 +1034,13 @@ class Session {
   private async renderMask(kind: Kind, signal: AbortSignal): Promise<void> {
     const src = kind === 'draft' ? this.viewPx().draft : this.source('full')
     const rev = this.rev
-    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true)
+    const compiled = await this.compileFor(
+      this.recipe,
+      src,
+      !this.view.cropMode,
+      true,
+      kind !== 'draft'
+    )
     const layerId = this.view.maskLayer ?? undefined
     const index = layerId ? compiled.layerIndex[layerId] : undefined
     const send = (e: Omit<RenderEvent, 'key' | 'seq' | 'rev' | 'kind' | 'layerId'>): void => {

@@ -11,6 +11,7 @@
  * effects) — physics where it belongs, the look where Lightroom puts it.
  */
 import type {
+  AdjustmentSmoothing,
   Blend,
   BlendMode,
   ColorGrade,
@@ -78,6 +79,15 @@ export const DENOISE_REACH = 0.03
  * (HR-0.18-1, engine 0.18: a preview never drops an op silently). The report
  * carries them in `notes`; the 1:1 view renders them from the master.
  */
+/** The smoothing's reach, a fraction of the shorter side: the engine's calibration point. */
+export const SMOOTHING_RADIUS = 0.02
+
+/** The Smoothing slider (0–100) as the engine's field, or none for a draft or at 0. */
+export function smoothingOf(value: number, ctx: CompileContext): AdjustmentSmoothing | null {
+  if (ctx.smoothing === false || !(value > 0)) return null
+  return { radius: SMOOTHING_RADIUS, strength: round4(clamp(value / 100, 0, 1)) }
+}
+
 export const LEFT_OUT = {
   sharpen: 'Sharpening shows at 100% only: at this zoom its radius is under half a pixel.'
 } as const
@@ -132,6 +142,12 @@ export interface CompileContext {
   aiDenoised?: boolean
   /** False while Upright's guides are drawn: the frame as it is before the warp. */
   showTransform?: boolean
+  /**
+   * False for a draft (a slider moving): the Smoothing slider's work is left
+   * out, as it costs 2.6–3.3× the op (engine 0.18: on release, never while
+   * dragging). Missing or true: smoothed as set.
+   */
+  smoothing?: boolean
 }
 
 export interface Compiled {
@@ -749,8 +765,9 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
     basic: Object.fromEntries(
       Object.entries(s.basic).map(([key, v]) => [key, m(v)])
     ) as unknown as LayerSettings['basic'],
+    // Smoothing is how, not how much: Amount leaves it as set.
     presence: Object.fromEntries(
-      Object.entries(s.presence).map(([key, v]) => [key, m(v)])
+      Object.entries(s.presence).map(([key, v]) => [key, key === 'smoothing' ? v : m(v)])
     ) as unknown as LayerSettings['presence'],
     toneCurve: {
       ...tc,
@@ -952,13 +969,17 @@ function sharpenOp(
 }
 
 /** The HSL bands, or with `bwMix` the black-and-white mix's luminance bands. */
-function hslOp(hsl: Recipe['hsl'], bwMix: Recipe['bwMix'] | null): GradeOp | null {
+function hslOp(
+  hsl: Recipe['hsl'],
+  bwMix: Recipe['bwMix'] | null,
+  smoothing: AdjustmentSmoothing | null
+): GradeOp | null {
   if (bwMix) {
     if (HSL_BANDS.every((b) => bwMix[b] === 0)) return null
     const bands = Object.fromEntries(
       HSL_BANDS.map((b) => [b, { hue: 0, saturation: 0, luminance: round4(bwMix[b] * 0.006) }])
     ) as unknown as HslBands
-    return { HslBands: { ...bands, smoothing: null } }
+    return { HslBands: { ...bands, smoothing } }
   }
   if (HSL_BANDS.every((b) => hsl[b].hue === 0 && hsl[b].saturation === 0 && hsl[b].luminance === 0))
     return null
@@ -972,7 +993,7 @@ function hslOp(hsl: Recipe['hsl'], bwMix: Recipe['bwMix'] | null): GradeOp | nul
       }
     ])
   ) as unknown as HslBands
-  return { HslBands: { ...bands, smoothing: null } }
+  return { HslBands: { ...bands, smoothing } }
 }
 
 /** Point colours as `Masked` range masks instead of engine qualifiers. */
@@ -992,7 +1013,8 @@ const POINT_COLOR_SMOOTHNESS = 15
  */
 export function pointColorOps(
   points: PointColorSetting[],
-  keyScale: KeyScale = { width: 1, height: 1, scale: 0 }
+  keyScale: KeyScale = { width: 1, height: 1, scale: 0 },
+  smoothing: AdjustmentSmoothing | null = null
 ): GradeOp[] {
   const ops: GradeOp[] = []
   const blur = smoothnessRadius(POINT_COLOR_SMOOTHNESS, keyScale)
@@ -1044,12 +1066,15 @@ export function pointColorOps(
         space: LOOK_SPACE
       }
       ops.push({ Masked: { mask, opacity: 1, ops: [{ Primary: correction }] } })
-    } else ops.push({ Qualifier: { key, correction, smoothing: null } })
+    } else ops.push({ Qualifier: { key, correction, smoothing } })
   }
   return ops
 }
 
-function colorGradeOp(cg: Recipe['colorGrade']): GradeOp | null {
+function colorGradeOp(
+  cg: Recipe['colorGrade'],
+  smoothing: AdjustmentSmoothing | null
+): GradeOp | null {
   const wheels = [cg.shadows, cg.midtones, cg.highlights, cg.global]
   if (wheels.every((w) => w.saturation === 0 && w.luminance === 0)) return null
   const wheel = (w: Recipe['colorGrade']['shadows']): ColorGrade['shadows'] => ({
@@ -1065,7 +1090,7 @@ function colorGradeOp(cg: Recipe['colorGrade']): GradeOp | null {
       global: wheel(cg.global),
       blending: clamp(cg.blending / 100, 0, 1),
       balance: clamp(cg.balance / 100, -1, 1),
-      smoothing: null
+      smoothing
     }
   }
 }
@@ -1101,6 +1126,9 @@ function settingsStages(
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
   const hdr = ctx.hdr === true
+  // One value for every op that takes it (Tone, Vibrance, Dehaze, HSL, Point
+  // colour, Color grading); null in a draft.
+  const smoothing = smoothingOf(r.presence.smoothing, ctx)
   const d = r.detail
   const denoise =
     !(base && ctx.aiDenoised) && (d.noiseLuminance > 0 || d.noiseColor > 0)
@@ -1147,7 +1175,7 @@ function settingsStages(
   // values, so dehaze runs at the head of the look stage.
   if (r.presence.dehaze !== 0) {
     look.push({
-      Dehaze: { amount: clamp(r.presence.dehaze / 100, -1, 1), radius: 0.01, smoothing: null }
+      Dehaze: { amount: clamp(r.presence.dehaze / 100, -1, 1), radius: 0.01, smoothing }
     })
   }
   switch (base?.profile.kind ?? 'neutral') {
@@ -1155,12 +1183,12 @@ function settingsStages(
       // Vivid's curve and vibrance, and a little more saturation on top: a
       // RAW opens with colour that already pops.
       look.push(curvesOp({ master: tonal(VIVID_CURVE, hdr) }))
-      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7, smoothing: null } })
+      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7, smoothing } })
       look.push({ Primary: primary({ saturation: STANDARD_SATURATION }) })
       break
     case 'vivid':
       look.push(curvesOp({ master: tonal(VIVID_CURVE, hdr) }))
-      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7, smoothing: null } })
+      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7, smoothing } })
       break
     case 'monochrome':
       look.push(curvesOp({ master: tonal(STANDARD_CURVE, hdr) }))
@@ -1191,7 +1219,7 @@ function settingsStages(
         shadows: clamp(b.shadows / 100, -1, 1),
         whites: clamp(b.whites / 100, -1, 1),
         blacks: clamp(b.blacks / 100, -1, 1),
-        smoothing: null
+        smoothing
       }
     })
   }
@@ -1232,15 +1260,15 @@ function settingsStages(
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
   const bw = !!base && (base.treatment === 'bw' || base.profile.kind === 'monochrome')
   const tail = bw && finish ? finish : look
-  const hsl = hslOp(r.hsl, bw ? base.bwMix : null)
+  const hsl = hslOp(r.hsl, bw ? base.bwMix : null, smoothing)
   if (hsl) tail.push(hsl)
   if (!bw) {
     const keyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }
-    tail.push(...pointColorOps(r.pointColors, keyScale))
+    tail.push(...pointColorOps(r.pointColors, keyScale, smoothing))
   }
   if (!bw && p.vibrance !== 0) {
     tail.push({
-      Vibrance: { amount: clamp(p.vibrance / 100, -1, 1), skin_protection: 0.6, smoothing: null }
+      Vibrance: { amount: clamp(p.vibrance / 100, -1, 1), skin_protection: 0.6, smoothing }
     })
   }
   if (bw) tail.push({ Primary: primary({ saturation: 0 }) })
@@ -1249,7 +1277,7 @@ function settingsStages(
   // Hue turns every colour (a mask's Hue slider).
   if (!bw && p.hue)
     tail.push({ Primary: primary({ hue_shift: round4(clamp(p.hue, -100, 100) * 0.6) }) })
-  const cg = colorGradeOp(r.colorGrade)
+  const cg = colorGradeOp(r.colorGrade, smoothing)
   if (cg) tail.push(cg)
   if (r.calibration.shadowsTint !== 0) {
     const a = round4((r.calibration.shadowsTint / 100) * 0.02)

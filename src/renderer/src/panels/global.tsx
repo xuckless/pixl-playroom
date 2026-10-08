@@ -577,6 +577,15 @@ export function PresenceBody(): React.JSX.Element {
         read={(r) => r.presence.dehaze}
         write={(r, v) => (r.presence.dehaze = v)}
       />
+      <RS
+        label="Smoothing"
+        tip={TIPS['presence.smoothing']}
+        read={(r) => r.presence.smoothing}
+        write={(r, v) => (r.presence.smoothing = v)}
+        min={0}
+        max={100}
+        def={100}
+      />
     </>
   )
 }

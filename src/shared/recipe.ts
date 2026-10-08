@@ -20,9 +20,10 @@ import { conceptOf, type ConceptId } from './concepts'
 
 /**
  * 3 (engine 0.18): a RAW's untouched default sharpening takes the edge mask
- * (masking 50, HR-0.18-2).
+ * (masking 50, HR-0.18-2). 4: Smoothing, 100 for new photos and masks, 0
+ * for edits made before it (so they look as they did).
  */
-export const RECIPE_VERSION = 3
+export const RECIPE_VERSION = 4
 
 export const HSL_BANDS = [
   'red',
@@ -113,6 +114,13 @@ export interface PresenceSetting {
   saturation: number
   /** −100…100: turns every hue (a mask's Hue slider; the whole photo has HSL for this). */
   hue: number
+  /**
+   * 0…100: how much the colour and tone adjustments' change is smoothed where
+   * the picture is flat (engine 0.18's `smoothing`, strength = /100), so a
+   * hazy sea or a JPEG sky stops going blotchy. Applied when a slider is let
+   * go, never while it drags. Not scaled by a mask's Amount.
+   */
+  smoothing: number
 }
 
 export interface CurvePointSetting {
@@ -539,7 +547,15 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     gainMap: 'base',
     wb: { mode: 'as-shot', temperature: 0, tint: 0, preset: null },
     basic: { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 },
-    presence: { texture: 0, clarity: 0, dehaze: 0, vibrance: 0, saturation: 0, hue: 0 },
+    presence: {
+      texture: 0,
+      clarity: 0,
+      dehaze: 0,
+      vibrance: 0,
+      saturation: 0,
+      hue: 0,
+      smoothing: 100
+    },
     toneCurve: {
       highlights: 0,
       lights: 0,
@@ -697,6 +713,15 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     .map(normalisePointColor)
     .filter((p): p is PointColorSetting => p !== null)
     .slice(0, MAX_POINT_COLORS)
+  r.presence.smoothing = num(r.presence.smoothing, 100, 0, 100)
+  for (const l of r.layers)
+    l.settings.presence.smoothing = num(l.settings.presence.smoothing, 100, 0, 100)
+  // An edit made before Smoothing keeps its look: none, in the photo and its
+  // masks. An untouched photo takes the new default (it has nothing to smooth).
+  if (saved < 4 && isEdited(r, isRaw)) {
+    r.presence.smoothing = 0
+    for (const l of r.layers) l.settings.presence.smoothing = 0
+  }
   return r
 }
 

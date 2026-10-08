@@ -81,6 +81,12 @@ export const TIPS = {
     expect: 'Skies go deeper and colours denser; past +40, edges halo and blues get loud.',
     tip: 'Go negative for a soft, misty look.'
   },
+  'presence.smoothing': {
+    what: 'Keeps colour and tone changes smooth across flat areas such as sea, sky and skin, so they don’t go blotchy or show the file’s compression blocks.',
+    expect:
+      'Works on Dehaze, Highlights and Shadows, Vibrance, the Color Mixer, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.',
+    tip: 'Turn it down only if you want each pixel to follow an adjustment exactly.'
+  },
 
   // ── Colour ─────────────────────────────────────────────────────────
   colour: {
