@@ -85,13 +85,12 @@ export const TIPS = {
   'hsl.luminance': {
     what: 'Brightens or darkens one colour at a time.',
     expect:
-      'Even in feel across the range: all the way down halves a colour’s brightness, so a sky deepens without going black.',
-    tip: 'With Smoothing up, grey clouds under a darkened blue stay grey.'
+      'Even in feel across the range: all the way down halves a colour’s brightness, so a sky deepens without going black.'
   },
   'presence.smoothing': {
     what: 'Keeps colour and tone changes smooth across flat areas such as sea, sky and skin, so they don’t go blotchy or show the file’s compression blocks.',
     expect:
-      'Works on Dehaze, Highlights and Shadows, Vibrance, the Color Mixer, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.',
+      'Works on Dehaze, Highlights and Shadows, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.',
     tip: 'Turn it down only if you want each pixel to follow an adjustment exactly.'
   },
 

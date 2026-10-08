@@ -1156,8 +1156,8 @@ function settingsStages(
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
   const hdr = ctx.hdr === true
-  // One value for every op that takes it (Tone, Vibrance, Dehaze, HSL, Point
-  // colour, Color grading); null in a draft.
+  // One value for every op that takes it (Tone, Vibrance, Dehaze, Point
+  // colour, Color grading; HSL waits for E53); null in a draft.
   const smoothing = smoothingOf(r.presence.smoothing, ctx)
   const d = r.detail
   const denoise =
@@ -1293,7 +1293,10 @@ function settingsStages(
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
   const bw = !!base && (base.treatment === 'bw' || base.profile.kind === 'monochrome')
   const tail = bw && finish ? finish : look
-  const hsl = hslOp(r.hsl, bw ? base.bwMix : null, smoothing)
+  // Unsmoothed until E53 (engine 0.18): a smoothed HslBands specks deep
+  // shadows cyan and, under a mask's smoothed Tone past white, blotches red
+  // and blue. The owner's stopgap, 2026-10-08: the other ops keep Smoothing.
+  const hsl = hslOp(r.hsl, bw ? base.bwMix : null, null)
   if (hsl) tail.push(hsl)
   if (!bw) {
     const keyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }

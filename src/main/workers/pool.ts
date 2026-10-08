@@ -30,6 +30,8 @@ export type PixelsJob =
     }
   /** A masked pixel step's overlay (pixels/ops.ts). */
   | { op: 'compose'; image: string; mask: string; out: string }
+  /** A step's overlay kept off a float frame's clipped pixels (pixels/ops.ts). */
+  | { op: 'guard'; src: string; guard: string; out: string; at: { x: number; y: number } }
   /** A coordinate ramp for a lens map (pixels/ops.ts). */
   | { op: 'ramp'; file: string; w: number; h: number }
   /** A mask put back on the photo's own pixels through a lens map (pixels/ops.ts). */

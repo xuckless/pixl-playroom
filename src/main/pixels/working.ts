@@ -25,6 +25,8 @@ import { exists } from '../exists'
 import type { Proxies, ProxyFile } from '../proxy'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
 import type { PixelsJob } from '../workers/pool'
+import { encodeGreyPng } from '../pngio'
+import { headroomGuard } from './ops'
 
 /** What the working pixels need from outside: the engine, the project's blobs, a worker. */
 export interface PixelDeps {
@@ -212,12 +214,68 @@ async function patchOverlay(
   }
 }
 
+/**
+ * What a step's model clipped: an AI denoise or Enhance saw a float frame
+ * clipped at 1.0, so where the frame is over it its own value stays (the
+ * owner, 2026-10-08, until PIXL's own models take values over 1.0). A heal,
+ * fill or remove is a replacement, made by the engine in float: never guarded.
+ */
+function guards(step: PixelStep): boolean {
+  return step.kind === 'denoise' || step.kind === 'enhance'
+}
+
+/**
+ * A float frame's headroom guard (pixels/ops.ts `headroomGuard`), an 8-bit
+ * grey PNG at its size, made once per frame file; null for a 16-bit frame,
+ * which holds no headroom to keep.
+ */
+async function guardOf(deps: PixelDeps, from: ProxyFile): Promise<string | null> {
+  if (!from.float) return null
+  const at = await stat(from.path)
+  const out = join(
+    deps.cacheDir,
+    'blobs',
+    `guard-${hash32(`${from.path}:${at.size}:${at.mtimeMs}`).toString(36)}.png`
+  )
+  await mkdir(join(deps.cacheDir, 'blobs'), { recursive: true })
+  await makeOnce(out, async (tmp) => {
+    const r = await deps.engine.convert({
+      ...blankRequest(from.path, '', from.input),
+      sink: 'Bytes',
+      pixel: { depth: 'F32', channels: 3 },
+      encode: { Pixels: { sample: 'F32' } },
+      metadata: ICC_ONLY,
+      color: 'Preserve',
+      threads: BACKGROUND_THREADS
+    })
+    const b = r.output!
+    const rgb = new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4)
+    await writeFile(tmp, encodeGreyPng(headroomGuard(rgb, r.width, r.height), r.width, r.height, 1))
+  })
+  return out
+}
+
+/** An overlay source kept off the guard's clipped pixels, its top left at `at` on the frame. */
+async function guarded(
+  deps: PixelDeps,
+  src: string,
+  guard: string,
+  at: { x: number; y: number }
+): Promise<string> {
+  const g = guard.match(/guard-([0-9a-z]+)\.png$/)?.[1] ?? 'g'
+  const out = src.replace(/\.png$/, `-g${g}-${at.x}-${at.y}.png`)
+  await makeOnce(out, (tmp) => deps.work({ op: 'guard', src, guard, out: tmp, at }))
+  return out
+}
+
 /** The engine overlays for a list of steps over a `w × h` frame, in order. */
 export async function overlaysOf(
   deps: PixelDeps,
   steps: PixelStep[],
   w: number,
-  h: number
+  h: number,
+  /** The frame's headroom guard, for a float frame (`guardOf`). */
+  guard: string | null = null
 ): Promise<Overlay[]> {
   const out: Overlay[] = []
   for (const s of steps) {
@@ -227,8 +285,9 @@ export async function overlaysOf(
       if (o) out.push(o)
       continue
     }
+    const src = await sized(deps, await overlaySource(deps, s), s, w, h)
     out.push({
-      source: { Png: await sized(deps, await overlaySource(deps, s), s, w, h) },
+      source: { Png: guard && guards(s) ? await guarded(deps, src, guard, { x: 0, y: 0 }) : src },
       rect: { x: 0, y: 0, width: 1 },
       opacity: Math.min(1, s.opacity / 100),
       // In linear light, as light mixes; a step at 100% replaces exactly.
@@ -239,18 +298,23 @@ export async function overlaysOf(
   return out
 }
 
-/** `from` with the steps laid on (each sized to it), as a 16-bit TIFF at `out`. */
+/**
+ * `from` with the steps laid on (each sized to it), as a TIFF at `out`: F32
+ * from a float frame (its headroom kept under AI steps by the guard), else
+ * 16-bit.
+ */
 async function layOn(
   deps: PixelDeps,
   from: ProxyFile,
   out: string,
   steps: PixelStep[]
 ): Promise<ProxyFile> {
-  const overlays = await overlaysOf(deps, steps, from.width, from.height)
+  const guard = steps.some(guards) ? await guardOf(deps, from) : null
+  const overlays = await overlaysOf(deps, steps, from.width, from.height, guard)
   const r = await atomically(out, (tmp) =>
     deps.engine.convert({
       ...blankRequest(from.path, tmp, from.input),
-      pixel: { depth: 'Sixteen', channels: 3 },
+      pixel: { depth: from.float ? 'F32' : 'Sixteen', channels: 3 },
       encode: TIFF,
       metadata: ICC_ONLY,
       color: 'Preserve',
@@ -259,7 +323,13 @@ async function layOn(
       threads: BACKGROUND_THREADS
     })
   )
-  return { path: out, input: 'Tiff', width: r.width, height: r.height }
+  return {
+    path: out,
+    input: 'Tiff',
+    width: r.width,
+    height: r.height,
+    ...(from.float ? { float: true } : {})
+  }
 }
 
 /**
@@ -288,14 +358,14 @@ async function resized(
       ...blankRequest(from.path, tmp, from.input),
       resize: { Exact: { width: w, height: h } },
       resampler: 'Lanczos3',
-      pixel: { depth: 'Sixteen', channels: 3 },
+      pixel: { depth: from.float ? 'F32' : 'Sixteen', channels: 3 },
       encode: TIFF,
       metadata: ICC_ONLY,
       color: 'Preserve',
       threads: BACKGROUND_THREADS
     })
   )
-  return { path: out, input: 'Tiff', width: w, height: h }
+  return { path: out, input: 'Tiff', width: w, height: h, ...(from.float ? { float: true } : {}) }
 }
 
 /**
@@ -389,7 +459,7 @@ async function makeProxies(
     }
   }
   await writeSet(deps, set)
-  await prune(deps, key)
+  await prune(deps, key, plain.proxy.float === true)
   return set
 }
 
@@ -448,10 +518,14 @@ async function filesThere(set: WorkingSet): Promise<boolean> {
   return true
 }
 
-/** Sets kept per photo besides the newest: a 24 MP master is about 150 MB. */
+/**
+ * Sets kept per photo besides the newest: a 24 MP master is about 150 MB at
+ * 16 bits, 290 MB in float (a RAW's, engine 0.18), whose sets keep fewer.
+ */
 const KEEP = 4
+const KEEP_FLOAT = 2
 
-async function prune(deps: PixelDeps, keepKey: string): Promise<void> {
+async function prune(deps: PixelDeps, keepKey: string, float = false): Promise<void> {
   const others = (await readdir(deps.cacheDir).catch(() => [] as string[])).filter(
     (d) => d.startsWith('work-') && d !== `work-${keepKey}`
   )
@@ -462,6 +536,6 @@ async function prune(deps: PixelDeps, keepKey: string): Promise<void> {
     }))
   )
   dated.sort((a, b) => b.t - a.t)
-  for (const { d } of dated.slice(KEEP))
+  for (const { d } of dated.slice(float ? KEEP_FLOAT : KEEP))
     await rm(join(deps.cacheDir, d), { recursive: true, force: true })
 }

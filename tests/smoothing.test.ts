@@ -61,7 +61,8 @@ function busy(): Recipe {
   return r
 }
 
-const SMOOTHED = ['Dehaze', 'Vibrance', 'Tone', 'HslBands', 'Qualifier', 'ColorGrade']
+// HslBands is left unsmoothed until E53 (the owner's stopgap, 2026-10-08).
+const SMOOTHED = ['Dehaze', 'Vibrance', 'Tone', 'Qualifier', 'ColorGrade']
 
 function smoothings(ops: GradeOp[]): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -75,8 +76,12 @@ function smoothings(ops: GradeOp[]): Record<string, unknown> {
 const opsOf = (r: Recipe, c: CompileContext, layer = 0): GradeOp[] =>
   compile(r, c).grade!.layers[layer].stages.flatMap((s) => s.ops)
 
-test('a new photo smooths its six ops at the engine’s calibration point', () => {
+test('a new photo smooths its ops at the engine’s calibration point; HSL waits for E53', () => {
   assert.equal(defaultRecipe(false).presence.smoothing, 100)
+  const hsl = opsOf(busy(), ctx).find((o) => 'HslBands' in o) as {
+    HslBands: { smoothing: unknown }
+  }
+  assert.equal(hsl.HslBands.smoothing, null)
   const got = smoothings(opsOf(busy(), ctx))
   assert.deepEqual(Object.keys(got).sort(), [...SMOOTHED].sort())
   for (const v of Object.values(got)) assert.deepEqual(v, { radius: SMOOTHING_RADIUS, strength: 1 })

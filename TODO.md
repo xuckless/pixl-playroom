@@ -309,7 +309,10 @@ patches over the subject; all over it at 1:1). Pinpointed: an engine bug in
 shoulder in a mask) pushed far past white. Leave either unsmoothed, or set
 the mask's Smoothing to 0, and it is clean (the owner confirmed Smoothing 0).
 
-- [ ] **S** · Decide the stopgap until E53 is fixed (owner):
+- [x] **S** · Decide the stopgap until E53 is fixed (owner): **(d), applied
+      2026-10-08** (`compile.ts` `hslOp(…, null)`; on IMG_2347 the blotches
+      went 6840 → 5 garish pixels and the cyan specks 202 → 0). Turn it back on
+      when E53 lands. The options were:
       (d) **the Color Mixer (HslBands, B&W mix) goes unsmoothed everywhere**:
       it is where both artifacts start (the mask blotches need it, and alone
       it specks deep shadows cyan: 202 specks on IMG_2347's Scene proxy, 0
@@ -318,8 +321,8 @@ the mask's Smoothing to 0, and it is clean (the owner confirmed Smoothing 0).
       (b) a mask's exposure above +1 EV gets the base's highlight shoulder,
       so its pixels stay near white (changes how such masks look);
       (c) Smoothing starts at 0 for masks (new photos keep 100).
-- [ ] **S** · Then a regression test from the compiled request (the shape of
-      E53), and the What's new line if users see a change.
+- [x] **S** · A test holds HslBands unsmoothed (`tests/smoothing.test.ts`);
+      the Smoothing and Color Mixer tips no longer promise it.
 
 ### Pass 94 — The RAW master as Scene float 1/2 · 5 pts
 
@@ -351,18 +354,25 @@ After: Pass 89.
 
 After: Pass 94.
 
-- [ ] **M** · AI steps guard the headroom (owner, 2026-10-08): where a
-      model's input was clipped (> 1.0), the master's own value is kept,
-      elsewhere the step's; the working set (`pixels/working.ts`), the base
-      (`pixels/base.ts`) and the heal bake stay F32 for a float master. To
+- [x] **M** · AI steps guard the headroom (owner, 2026-10-08): over a float
+      frame, an AI Denoise or Enhance step's overlay takes the frame's
+      headroom guard as alpha (`headroomGuard`: kept at or under 0.95, the
+      frame's own at or over 1.0, a ramp between; the `guard` worker op), so
+      the master keeps what the model clipped. Heal, Fill and Remove are
+      replacements made in float: never guarded. The working set (proxies,
+      master, an upscale's resized base) stays F32 for a float frame. To
       loosen once PIXL's own denoisers take values over 1.0.
-
-- [ ] **M** · The 1:1 view and the noise measurement from the float master;
-      AI steps on RAWs on the new master.
-- [ ] **S** · A Linear DNG export from Scene into float (a Develop one
-      shoulders highlights twice).
-- [ ] **S** · Cache sizes and pruning looked at again; a RAW's develop time
-      on the M1 written here.
+      _Checked on IMG_2347's Scene proxy: a clipped stand-in step laid
+      unguarded kept 0 of 38 650 pixels over white (peak 1.000), guarded all
+      of them (peak 2.98)._
+- [x] **S** · The 1:1 view and the noise measurement read the float master
+      (and the float working master) as they are: nothing to change.
+- [x] **S** · Float working sets keep 2 spare sets per photo, not 4 (a 24 MP
+      float master is about 290 MB).
+- [ ] **S** · Not applicable yet: Playroom has no Linear DNG export ("After
+      engine 0.16"); when it has one, it writes from Scene into float.
+- [ ] **S** · A RAW's develop time measured on the M1 (no M1 here): the M2
+      Pro took 2.1 s for a 24 MP Scene master, 1.0 s for its proxy.
 
 ### Pass 96 — The display's peak and white (was 77) · 5 pts
 
