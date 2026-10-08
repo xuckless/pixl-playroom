@@ -565,7 +565,8 @@ export class Library {
 
   /**
    * A thumbnail shrunk from a picture Develop rendered (Display P3, so turned
-   * into sRGB on the way). False when it could not be (the picture already
+   * into sRGB on the way): its settled JPEG, or in Full HDR its SDR companion
+   * (a PNG), so the thumbnail is the picture as it was shown. False when it could not be (the picture already
    * replaced by a newer one): the caller grades the photo instead.
    */
   private async shrunk(
@@ -577,7 +578,7 @@ export class Library {
     const factor = Math.min(1, THUMB_EDGE / Math.max(picture.width, picture.height, 1))
     try {
       await this.engine.convert({
-        ...blankRequest(picture.path, out, 'Jpeg'),
+        ...blankRequest(picture.path, out, picture.path.endsWith('.png') ? 'Png' : 'Jpeg'),
         ...base,
         color: {
           ConvertTo: { to: 'Srgb', intent: 'RelativeColorimetric', black_point_compensation: false }

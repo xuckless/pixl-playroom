@@ -861,8 +861,7 @@ class Session {
     const seq = ++this.seq
     // A whole picture of this recipe (framed, no corners left empty): what
     // the library's thumbnail can be shrunk from. A preview is never that.
-    const whole =
-      kind === 'full' && !cropMode && !preview && !display && !framingTransparent(compiled.framing)
+    const whole = kind === 'full' && !cropMode && !preview && !framingTransparent(compiled.framing)
     const sig = String(
       hash32(
         gradeKey([
@@ -885,11 +884,12 @@ class Session {
         this.lastEvent.full = known.event
         this.lastOut.full = known.out
       }
-      if (whole)
-        this.fullPicture = {
-          recipe,
-          picture: { path: this.lastFull, width: last.width, height: last.height }
-        }
+      // In Full HDR the picture a thumbnail shrinks from is the companion,
+      // whose size is its own.
+      const shown = display
+        ? this.lastCompanion
+        : { path: this.lastFull, width: last.width, height: last.height }
+      if (whole && shown) this.fullPicture = { recipe, picture: shown }
       if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq, rev })
       return
     }
@@ -978,7 +978,14 @@ class Session {
         await writeFile(file, encodePng8(c.data, c.width, c.height, 1, [CICP_DISPLAY_P3]))
         this.lastFull = file
         readUrl = cacheUrl(file, seq)
-      } else this.lastFull = ''
+        // The library's thumbnail is a JPEG of the picture as shown: in
+        // Full HDR the master's SDR rendition of it, not a second SDR grade.
+        this.lastCompanion = { path: file, width: c.width, height: c.height }
+        if (!preview) this.fullPicture = whole ? { recipe, picture: this.lastCompanion } : null
+      } else {
+        this.lastFull = ''
+        this.lastCompanion = null
+      }
     } else if (kind === 'full' && out) {
       this.lastFull = out
       if (!preview)
@@ -1013,8 +1020,9 @@ class Session {
     this.lastSig[kind] = sig
     this.lastEvent[kind] = event
     this.lastOut[kind] = out
-    // A frame is kept by the window only a moment: a file alone can be shown again.
-    if (kind === 'full' && out) {
+    // A frame is kept by the window only a moment: a file alone can be shown
+    // again (and Full HDR's AVIF arm, which stays a dev switch, is not kept).
+    if (kind === 'full' && out && !display) {
       this.recentFull.delete(sig)
       this.recentFull.set(sig, { event, out })
       while (this.recentFull.size > RECENT_FULL)
@@ -1379,6 +1387,8 @@ class Session {
 
   /** The most recent full render's file: what the masked hue chart measures. */
   private lastFull = ''
+  /** The last settled Full HDR picture's SDR companion, as a file. */
+  private lastCompanion: Picture | null = null
   /** The last settled Full HDR picture's peak and reach (`HdrFigures`). */
   private hdrFigures: HdrFigures | null = null
   /** The last few settled pictures by signature, newest last (see RECENT_FULL). */
