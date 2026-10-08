@@ -989,13 +989,40 @@ export function isP3Floor(op: GradeOp): boolean {
   return 'Lut' in op && 'Cube' in op.Lut.lut && op.Lut.lut.Cube === P3_FLOOR
 }
 
-/** The look stage (display-referred, `LOOK_SPACE`), its negatives floored first. */
+const floorOp = (): GradeOp => ({
+  Lut: { lut: { Cube: P3_FLOOR }, amount: 1, out_of_domain: 'Clamp' }
+})
+
+/** Whether an op carries adjustment smoothing (engine 0.18). */
+function smoothed(op: GradeOp): boolean {
+  const v = Object.values(op)[0] as { smoothing?: unknown } | undefined
+  return !!v && typeof v === 'object' && v.smoothing != null
+}
+
+/**
+ * A floor before every smoothed op too (E53 again, 2026-10-08): ops after the
+ * stage's first floor make negatives of their own (Saturation, Vibrance, a
+ * profile's curve on a saturated colour), and a smoothed op spills colour
+ * from them in blobs (IMG_1826: Shadows +26 and Saturation at Exposure +4).
+ * Only where smoothing is on, so a draft is never touched; a floor already
+ * in place is not doubled. Into masked groups too.
+ */
+function withFloors(ops: GradeOp[]): GradeOp[] {
+  const out: GradeOp[] = []
+  for (const op of ops) {
+    const o: GradeOp =
+      'Masked' in op ? { Masked: { ...op.Masked, ops: withFloors(op.Masked.ops) } } : op
+    const last = out[out.length - 1]
+    if (smoothed(o) && !(last && isP3Floor(last))) out.push(floorOp())
+    out.push(o)
+  }
+  return out
+}
+
+/** The look stage (display-referred, `LOOK_SPACE`), its negatives floored first and before each smoothed op. */
 function lookStage(ops: GradeOp[]): { space: GradeSpace; ops: GradeOp[] }[] {
   if (ops.length === 0) return []
-  return stage(LOOK_SPACE, [
-    { Lut: { lut: { Cube: P3_FLOOR }, amount: 1, out_of_domain: 'Clamp' } },
-    ...ops
-  ])
+  return stage(LOOK_SPACE, withFloors([floorOp(), ...ops]))
 }
 
 function sharpenOp(

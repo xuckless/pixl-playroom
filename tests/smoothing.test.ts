@@ -135,3 +135,45 @@ test('an edit made before Smoothing keeps its look (0, masks too); an untouched 
     100
   )
 })
+
+test('E53: every smoothed op comes right after a floor; a draft has none of them', async () => {
+  const { compile, isP3Floor } = await import('../src/shared/compile')
+  const { defaultRecipe } = await import('../src/shared/recipe')
+  const r = defaultRecipe(true)
+  r.presence.smoothing = 100
+  r.presence.dehaze = 30
+  r.presence.vibrance = 20
+  r.presence.saturation = 30
+  r.basic.shadows = 26
+  r.hsl.red.saturation = 40
+  r.colorGrade.shadows.saturation = 30
+  r.colorGrade.shadows.hue = 200
+  const ctx = {
+    isRaw: true,
+    asShot: null,
+    sourceOrientation: 'Normal' as const,
+    frameWidth: 6000,
+    frameHeight: 4000,
+    scale: 0.4,
+    seed: 1,
+    brushPaths: {},
+    applyCrop: true
+  }
+  const ops = (g: ReturnType<typeof compile>['grade']): GradeOp[] =>
+    g!.layers.flatMap((l) => l.stages.flatMap((s) => s.ops))
+  const settled = ops(compile(r, ctx).grade)
+  let smoothedOps = 0
+  settled.forEach((o, i) => {
+    const v = Object.values(o)[0] as { smoothing?: unknown }
+    if (v && typeof v === 'object' && v.smoothing != null) {
+      smoothedOps++
+      assert.ok(
+        i > 0 && isP3Floor(settled[i - 1]),
+        `${Object.keys(o)[0]} without a floor before it`
+      )
+    }
+  })
+  assert.ok(smoothedOps >= 3, `${smoothedOps} smoothed ops`)
+  const draft = ops(compile(r, { ...ctx, smoothing: false }).grade)
+  assert.equal(draft.filter(isP3Floor).length, 1)
+})
