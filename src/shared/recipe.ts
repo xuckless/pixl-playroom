@@ -313,6 +313,8 @@ export type BrushSource =
       fine?: true
     }
   | { kind: 'person'; part: string }
+  /** Found by a phrase (SAM 3 or EfficientSAM3, engine 0.19): found again by the same words. */
+  | { kind: 'phrase'; text: string }
   /**
    * SAM 2.1 from clicks, a box, strokes or a lasso, and the object's name
    * when it has one. `prompt` is what it was asked (base-frame fractions),
@@ -928,6 +930,8 @@ function brushSource(v: unknown): BrushSource | null {
   )
     return { kind: 'segment', target: v.target, ...(v.fine === true ? { fine: true } : {}) }
   if (v.kind === 'person' && typeof v.part === 'string') return { kind: 'person', part: v.part }
+  if (v.kind === 'phrase' && typeof v.text === 'string' && v.text.trim())
+    return { kind: 'phrase', text: v.text.trim().slice(0, 80) }
   if (v.kind === 'prompt') {
     const prompt = normalisePrompt(v.prompt)
     return {

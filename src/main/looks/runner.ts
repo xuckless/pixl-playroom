@@ -223,6 +223,22 @@ export class LookRuns {
         return
       }
       case 'object': {
+        // Found by its name: a phrase model (engine 0.19).
+        if (op.detect) {
+          await this.job(
+            run,
+            this.deps.startJob({
+              task: 'segment',
+              key,
+              target: 'phrase',
+              phrase: op.label,
+              into: { layerId: op.layerId, mode: op.mode },
+              group
+            })
+          )
+          if (op.invert) await this.invertLast(key, op.layerId)
+          return
+        }
         if (!this.deps.promptJob) throw new Error(NOT_YET)
         let prompt: Parameters<NonNullable<RunnerDeps['promptJob']>>[0]['prompt'] = {
           kind: 'label'

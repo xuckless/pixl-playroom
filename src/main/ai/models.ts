@@ -35,6 +35,7 @@ import { DENOISE_RATE_KEY, ENHANCE_RATE_KEY } from './rates'
 import { carryOver, retiredModelDirs } from './carryover'
 import { staticPlan } from '../../shared/modelshape'
 import { NAFNET_DENOISE } from '../../shared/recipe'
+import { SAM3_PHRASE } from '../../shared/ai'
 
 import * as pixlModels from '@xuckless/pixl-models'
 import type { ModelEntry as RosterEntry, ModelFile as RosterFile } from '@xuckless/pixl-models'
@@ -43,13 +44,14 @@ export type { RosterEntry }
 
 /**
  * The on-demand models Playroom offers (engine 0.18's `onDemand()`):
- * BiRefNet lite, the Fine subject. SAM 3 and EfficientSAM3 wait for 0.19.
+ * BiRefNet lite, the Fine subject; SAM 3 and EfficientSAM3 (0.19), Find
+ * by name.
  */
-const OFFERED_ON_DEMAND = ['birefnet-lite']
+const OFFERED_ON_DEMAND = ['birefnet-lite', 'sam3', 'efficientsam3-ev-m']
 
 /** A shipped model Playroom holds back for now: not listed, offered or downloaded (NAFNET_DENOISE). */
 function held(id: string): boolean {
-  return id === 'nafnet-sidd-w32' && !NAFNET_DENOISE
+  return (id === 'nafnet-sidd-w32' && !NAFNET_DENOISE) || (id === 'sam3' && !SAM3_PHRASE)
 }
 
 const BASE = (process.env.PLAYROOM_MODELS_URL ?? 'https://models.pixlfoundation.com').replace(
@@ -109,7 +111,10 @@ export class ModelStore {
     const offered = pixlModels
       .onDemand()
       .filter((m) => OFFERED_ON_DEMAND.includes(m.id)) as unknown as RosterEntry[]
-    return [...pixlModels.manifest().filter((m) => m.ship && !held(m.id)), ...offered]
+    return [
+      ...pixlModels.manifest().filter((m) => m.ship && !held(m.id)),
+      ...offered.filter((m) => !held(m.id))
+    ]
   }
 
   /** An on-demand model: its licence texts and NOTICE are kept beside its files. */
@@ -283,7 +288,10 @@ export class ModelStore {
           state.done += n
           tick()
         }
-        const mirror = `${BASE}/${e.id}/${e.version}/${f.name}`
+        // An on-demand file PIXL hosts itself (SAM 3's on Hugging Face) comes
+        // from there; everything else from Playroom's mirror.
+        const hosted = (f as RosterFile & { hosted?: string | null }).hosted
+        const mirror = hosted ?? `${BASE}/${e.id}/${e.version}/${f.name}`
         try {
           await this.fetchFile(mirror, dest, f, abort.signal, onBytes)
         } catch (err) {

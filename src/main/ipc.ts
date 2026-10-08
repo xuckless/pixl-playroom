@@ -48,7 +48,13 @@ import { EngineError, type EngineClient } from './engine/client'
 import { autoWbBatch, setWbBatch } from './autowb'
 import { crashConsent, reportRendererError, sendProblemReport, setCrashConsent } from './crash'
 import { freeDevice, licence, refreshLicence, requireLicence, startTrial } from './licence'
-import { PARTS_MODEL, SCENE_MODEL, type AiCapabilities, type AiStartRequest } from '../shared/ai'
+import {
+  PARTS_MODEL,
+  PHRASE_MODELS,
+  SCENE_MODEL,
+  type AiCapabilities,
+  type AiStartRequest
+} from '../shared/ai'
 import { FACE_DETECTOR, FACE_LANDMARKER } from '../shared/faceparts'
 import { immediateLayers, previewLayers, smartReadiness } from '../shared/looks/smart'
 import type { LookRunRequest, PickAnswer } from '../shared/looks/run'
@@ -775,6 +781,9 @@ export function registerIpc(s: Services): void {
       partsModel: await s.models.installed(PARTS_MODEL),
       faceModels:
         (await s.models.installed(FACE_DETECTOR)) && (await s.models.installed(FACE_LANDMARKER)),
+      phraseModel:
+        (await s.models.installed(PHRASE_MODELS[0])) ||
+        (await s.models.installed(PHRASE_MODELS[1])),
       // The scene planes, people's parts and face parts came with 0.19
       // (models the engine runs); the detector (E45) is still to come. NAFNet
       // denoise came with 0.19 too, held back until its fixed export (E55).
@@ -782,6 +791,7 @@ export function registerIpc(s: Services): void {
         sky: models,
         people: models,
         faces: models,
+        phrase: models,
         sam2,
         detector: false,
         nafnet: NAFNET_DENOISE
@@ -794,9 +804,9 @@ export function registerIpc(s: Services): void {
       denoise: models,
       prompt: sam2 && samModel,
       smart,
-      // By name: the sky and people's parts by their models (0.19, offered
-      // when not downloaded); a text-prompted segmenter (SAM 3) is still to come.
-      finders: { click: sam2, text: false, parts: models, 'sky-model': models },
+      // By name: the sky, people's parts and anything by a phrase (SAM 3),
+      // their models (0.19) offered when not downloaded.
+      finders: { click: sam2, text: models, parts: models, 'sky-model': models },
       // What to download for a task that waits only on its model: the one
       // Playroom recommends (the detailed subject model, SAM 2.1, DRUNet).
       get: {

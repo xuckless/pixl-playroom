@@ -571,6 +571,34 @@ button.mode-badge:disabled {
 .tp-mode {
   color: var(--acc);
 }
+.tp-find {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+}
+.tp-find:focus-within {
+  border-color: var(--acc);
+}
+.tp-find .icon-svg {
+  width: 15px;
+  height: 15px;
+  color: var(--acc);
+  flex: none;
+}
+.tp-find input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+}
 .tp-group {
   display: flex;
   flex-direction: column;

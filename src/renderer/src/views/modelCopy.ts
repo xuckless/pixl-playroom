@@ -146,6 +146,17 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     what: 'Finds a person’s hair, face, skin and clothes in one click each. Best when the person fills a good part of the frame; edges are soft.',
     where: 'Masks → New → Face, Hair, Skin or Clothes'
   },
+  'efficientsam3-ev-m': {
+    name: 'Find by name',
+    what: 'Type what you want masked (“red car”, “the trees”) and it finds every one in the photo. Clear names work best; a vague one can find the wrong thing. About 4 seconds the first time on a photo, 2 seconds each word after.',
+    where: 'Masks → New → Find by name',
+    recommended: true
+  },
+  sam3: {
+    name: 'Find by name, best quality',
+    what: 'The larger, surer model behind Find by name: it says “nothing” rather than guess.',
+    where: 'Masks → New → Find by name'
+  },
   'yunet-2023mar': {
     name: 'Face finder',
     what: 'Finds every face in a photo, small ones in a group too, for the face part masks. Tiny and quick.',

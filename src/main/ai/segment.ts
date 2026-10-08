@@ -21,6 +21,8 @@ import {
   estimate,
   isPartTarget,
   isSceneTarget,
+  OFFERED_PHRASE_MODEL,
+  PHRASE_MODELS,
   segmentModel,
   SEGMENT_LABEL,
   type PartTarget
@@ -52,6 +54,8 @@ import { ensureProxies, type ProxyFile } from '../proxy'
 import type { DevelopSessions } from '../render'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
 import { READ_LIMITS } from '../../shared/limits'
+import type { SamResult } from '../../shared/engine-types'
+import log from 'electron-log/main'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
 import { ModelMissing, type ModelStore } from './models'
 
@@ -124,6 +128,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
   async run(ctx: AiContext, req: SegmentRequest): Promise<Extract<AiResult, { kind: 'mask' }>> {
     ctx.stage('model', 0, 'Loading the model')
     if (isFacePart(req.target)) return this.faceParts(ctx, req, req.target)
+    if (req.target === 'phrase') return this.phrase(ctx, req)
     const depth = req.target === 'depth'
     const scene = isSceneTarget(req.target)
     // The model the ask names (the depth map, the fine cut-out, a scene's or
@@ -254,6 +259,118 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         ...(req.fine ? { fine: true as const } : {})
       },
       // Into the mask it was asked for (Add to the selected mask, a smart look's), else a new one.
+      ...(req.into ? { into: { ...req.into } } : {})
+    }
+  }
+
+  /**
+   * Anything named by a phrase (engine 0.19's `segmentConcept`): SAM 3, or
+   * EfficientSAM3 when only it is here. Every instance it finds goes into
+   * the one mask. The plane is brought up bilinear: SAM 3's guided upsample
+   * lost small objects whose edge the luminance doesn't carry (the roster's
+   * measurement); the render's snap firms the edge instead.
+   */
+  private async phrase(
+    ctx: AiContext,
+    req: SegmentRequest
+  ): Promise<Extract<AiResult, { kind: 'mask' }>> {
+    const text = (req.phrase ?? '').trim().slice(0, 80)
+    if (!text) throw new Error('Type what to find: “red car”, “the dog”')
+    let id: string | null = null
+    for (const m of PHRASE_MODELS) if (!id && (await this.models.installed(m))) id = m
+    if (!id) throw new ModelMissing(this.models.entry(OFFERED_PHRASE_MODEL))
+    const row = await this.library.photoRow(req.key)
+    const info = await this.library.probe(row)
+    if (this.engine.getStatus().status === 'starting') {
+      this.engine.start()
+      await this.engine.whenStarted()
+    }
+    const px = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
+    const recipe = this.sessions()?.liveRecipe(req.key) ?? (await this.library.recipe(req.key))
+    const ref = (await this.models.ref(id, 'Cpu')) as {
+      encoder: Record<string, unknown>
+      text_encoder: Record<string, unknown>
+      decoder: Record<string, unknown>
+      segment: { min_score: number; max_instances: number; activation: string }
+    }
+    if (ctx.signal.aborted) throw new Cancelled()
+    const lens = lensCorrection(recipe.lens)
+    ctx.stage('analyse', 0, `Finding “${text}”`)
+    // SAM 3: about 9 s for the photo, then a second a phrase (8 CPU threads,
+    // the roster); EfficientSAM3 1.4 s and half a second.
+    const expected = id === 'sam3' ? 10_000 : 2_000
+    const t0 = Date.now()
+    const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 200)
+    let r: Extract<SamResult, { op: 'concept' }>
+    try {
+      r = (await this.engine.sam(
+        {
+          op: 'concept',
+          // The same frame (photo, proxy, lens) and model: its embedding is reused.
+          key: `${row.id}:${px.proxy.path}:${JSON.stringify(lens)}:${id}`,
+          embed: {
+            source: { Path: px.proxy.path },
+            input: px.proxy.input,
+            raw: null,
+            gain_map: null,
+            orientation: 'Normal',
+            lens,
+            encoder: ref.encoder,
+            guide: false,
+            limits: READ_LIMITS,
+            threads: BACKGROUND_THREADS
+          },
+          request: {
+            text_encoder: ref.text_encoder,
+            decoder: ref.decoder,
+            prompt: { text, exemplars: [] },
+            min_score: ref.segment.min_score,
+            max_instances: ref.segment.max_instances,
+            activation: ref.segment.activation,
+            upsample: DEPTH_UPSAMPLE,
+            bounds_at: null,
+            png: { compression: 'Fast', filter: 'Sub' },
+            threads: BACKGROUND_THREADS
+          }
+        },
+        { signal: ctx.signal }
+      )) as Extract<SamResult, { op: 'concept' }>
+    } catch (err) {
+      if (ctx.signal.aborted) throw new Cancelled()
+      throw err
+    } finally {
+      clearInterval(tick)
+    }
+    log.info(
+      'phrase',
+      id,
+      JSON.stringify(text),
+      `${r.instances.length} found`,
+      r.reused ? 'embedding reused' : `embedding ${r.embedMs} ms`,
+      `phrase ${r.conceptMs} ms`
+    )
+    if (r.instances.length === 0)
+      throw new Error(`Nothing found for “${text}”: try other words, or Objects to draw a box`)
+    ctx.stage('refine', 0, 'Joining what was found')
+    // Every instance in the one mask: the most of them at each pixel.
+    let plane: { data: Uint8Array; width: number; height: number } | null = null
+    for (const i of r.instances) {
+      const g = grey8(Buffer.from(i.png))
+      if (!plane) plane = g
+      else
+        for (let k = 0; k < plane.data.length; k++)
+          if (g.data[k] > plane.data[k]) plane.data[k] = g.data[k]
+    }
+    const png = encodeGreyPng(plane!.data, plane!.width, plane!.height).toString('base64')
+    const pref = planeRef(png)
+    this.planes.put(pref, png)
+    return {
+      kind: 'mask',
+      ref: pref,
+      width: plane!.width,
+      height: plane!.height,
+      label: text.charAt(0).toUpperCase() + text.slice(1),
+      source: { kind: 'phrase', text },
       ...(req.into ? { into: { ...req.into } } : {})
     }
   }

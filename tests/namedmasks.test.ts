@@ -116,3 +116,51 @@ test('a named mask is saved as what to ask for again', async () => {
     assert.deepEqual(c.source, source)
   }
 })
+
+test('a phrase runs the phrase model offered, and its mask is found again by the same words', async () => {
+  const { segmentModel, OFFERED_PHRASE_MODEL, SAM3_PHRASE } = await import('../src/shared/ai')
+  // SAM 3 held (E58): EfficientSAM3 is the one offered and run.
+  assert.equal(OFFERED_PHRASE_MODEL, SAM3_PHRASE ? 'sam3' : 'efficientsam3-ev-m')
+  assert.equal(segmentModel('phrase'), OFFERED_PHRASE_MODEL)
+  const { normaliseRecipe, defaultRecipe, newLocalLayer } = await import('../src/shared/recipe')
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('Red car')
+  l.components = [
+    {
+      id: 'c',
+      kind: 'brush',
+      mode: 'Add',
+      opacity: 100,
+      invert: false,
+      feather: 0,
+      width: 4,
+      height: 4,
+      png: 'AAAA',
+      source: { kind: 'phrase', text: '  red car ' }
+    } as never
+  ]
+  r.layers = [l]
+  const back = normaliseRecipe(JSON.parse(JSON.stringify(r)), false)
+  assert.deepEqual((back.layers[0].components[0] as { source?: unknown }).source, {
+    kind: 'phrase',
+    text: 'red car'
+  })
+  const { toInstructions } = await import('../src/shared/looks/smart')
+  const made = toInstructions(back.layers, [])
+  assert.deepEqual(made.smart?.masks[0].parts[0].target, { kind: 'object', label: 'red car' })
+})
+
+test('an object by its name is ready with a phrase model, else the user points at it', async () => {
+  const { smartReadiness } = await import('../src/shared/looks/smart')
+  const build = {
+    models: true,
+    subjectModel: true,
+    drunetModel: true,
+    samModel: true,
+    enhance: true,
+    engine: { sky: true, people: true, sam2: true, detector: false, nafnet: false, phrase: true }
+  }
+  assert.equal(smartReadiness({ ...build, phraseModel: true }).object, 'ready')
+  assert.equal(smartReadiness({ ...build, phraseModel: false }).object, 'needs-model')
+  assert.equal(smartReadiness({ ...build, phraseModel: false }).pick, 'ready')
+})

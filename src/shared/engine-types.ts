@@ -2037,6 +2037,19 @@ export interface PixlEngineModule {
   suggestLateralCa(request: Record<string, unknown>): Promise<Record<string, unknown>>
   suggestHealSource(request: Record<string, unknown>): Promise<Record<string, unknown>>
   segment(request: Record<string, unknown>, options?: ModelCallOptions): Promise<SegmentReport>
+  /** 0.19.0: every instance of a phrase on an embedding's frame (SAM 3). */
+  segmentConcept?(
+    request: Record<string, unknown>,
+    options?: { embedding?: PromptEmbedding; signal?: AbortSignal }
+  ): Promise<{
+    instances: {
+      png: Uint8Array
+      score: number
+      coverage: number
+      rect: { x: number; y: number; width: number; height: number }
+    }[]
+    presence: number
+  }>
   /** 0.19.0: faces (YuNet) and, with a landmarker, each one's outlines (Face Mesh v2). */
   faces(request: Record<string, unknown>, options?: ModelCallOptions): Promise<unknown>
   benchmark(
@@ -2131,6 +2144,19 @@ export type SamOp =
       pick?: 'small' | 'large' | 'best'
     }
   | { op: 'release'; embeddings?: string[]; lanes?: string[]; sessions?: string[] }
+  /**
+   * SAM 3 (or EfficientSAM3) on a phrase (engine 0.19's `segmentConcept`):
+   * the image encoder makes the frame's embedding (kept as `key`, the one
+   * most recent, so the next phrase on the same frame skips it) and is let
+   * go before the text encoder loads; then every instance of `request`'s
+   * phrase.
+   */
+  | {
+      op: 'concept'
+      key: string
+      embed: PromptEmbeddingRequest
+      request: Record<string, unknown>
+    }
 
 /** What a `sam` call answers. */
 export type SamResult =
@@ -2149,6 +2175,20 @@ export type SamResult =
       model_ms: number
     }
   | { op: 'release' }
+  | {
+      op: 'concept'
+      instances: {
+        png: Uint8Array
+        score: number
+        coverage: number
+        rect: { x: number; y: number; width: number; height: number }
+      }[]
+      presence: number
+      /** The embedding came from before (the same frame, another phrase). */
+      reused: boolean
+      embedMs: number
+      conceptMs: number
+    }
 
 export interface EngineSamMessage {
   kind: 'sam'

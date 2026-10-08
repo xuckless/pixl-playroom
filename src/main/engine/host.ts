@@ -132,6 +132,8 @@ const embeddings = new Map<string, PromptEmbedding>()
 const KEEP_EMBEDDINGS = 3
 /** Each selection's last answer, fed to its next decode. */
 const lanes = new Map<string, Float32Array>()
+/** SAM 3's embedding of the last frame a phrase was found on (one: each is large). */
+let concept: { key: string; emb: PromptEmbedding } | null = null
 
 /** An object main named that is not here (this host started after it was made). */
 function stale(what: string): Error & { code: string } {
@@ -209,6 +211,40 @@ async function sam(e: PixlEngineModule, call: SamOp, signal?: AbortSignal): Prom
         model_ms: r.model_ms
       }
     }
+    case 'concept': {
+      if (typeof e.segmentConcept !== 'function')
+        throw Object.assign(new Error('this engine has no phrase segmentation'), {
+          code: 'EngineUnavailable'
+        })
+      let reused = true
+      let embedMs = 0
+      if (!concept || concept.key !== call.key || concept.emb.closed) {
+        concept?.emb.close()
+        concept = null
+        reused = false
+        const t0 = Date.now()
+        // No session: the image encoder is loaded for this call and let go
+        // after it, before the text encoder loads (SAM 3's float32 compute).
+        const emb = await e.promptEmbedding(call.embed, { signal })
+        embedMs = Date.now() - t0
+        concept = { key: call.key, emb }
+      }
+      const t1 = Date.now()
+      const r = await e.segmentConcept(call.request, { embedding: concept.emb, signal })
+      return {
+        op: 'concept',
+        instances: r.instances.map((i) => ({
+          png: i.png,
+          score: i.score,
+          coverage: i.coverage,
+          rect: i.rect
+        })),
+        presence: r.presence,
+        reused,
+        embedMs,
+        conceptMs: Date.now() - t1
+      }
+    }
     case 'release': {
       for (const id of call.embeddings ?? []) {
         embeddings.get(id)?.close()
@@ -218,6 +254,10 @@ async function sam(e: PixlEngineModule, call: SamOp, signal?: AbortSignal): Prom
       for (const name of call.sessions ?? []) {
         samSessions.get(name)?.obj.close()
         samSessions.delete(name)
+      }
+      if (call.embeddings?.includes('concept')) {
+        concept?.emb.close()
+        concept = null
       }
       return { op: 'release' }
     }

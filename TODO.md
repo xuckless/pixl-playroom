@@ -591,7 +591,7 @@ After: Passes 96–102.
 
 ---
 
-## Next: Phase O, engine 0.19.1 (passes 104–116)
+## Next: Phase O, engine 0.19.1 (passes 104–117)
 
 **After Phase N, before everything else.** Branch `feat/engine-0.18` (0.18 and
 0.19 ship together): this phase ends with Release-As 0.4.0-beta, the final
@@ -797,12 +797,28 @@ Decisions (the owner, 2026-10-08):
   picker checked with a made-up second face (no group photo here).
 - [ ] **S** · Owner: a group photo (small faces, the picker) on the Mac.
 
-### Pass 111 — Find by name · 5 pts
+### Pass 111 — Find by name · 5 pts ✅
 
-- [ ] **L** · A phrase box in the masks menu: `segmentConcept` with SAM 3
-      (on demand from Hugging Face, 1.75 GB; image encoder, embedding, drop,
-      then the text encoder) or EfficientSAM3 (385 MB), offered in the
-      "Model needed" popup; without either, SAM 2.1 on the user's box.
+- [x] **L** · A "Find by name" box at the top of the New mask menu
+      (Enter): `segmentConcept`, every instance in one mask (bilinear, the
+      roster's finding; the render's snap firms the edge), saved as
+      `{ phrase, text }` and found again by a look (an object by its name:
+      smart looks' `object` is ready with a phrase model, so looks that
+      name objects now run). One host call embeds, lets the image encoder
+      go, then finds the phrase; the embedding is kept for the photo, so the
+      next phrase skips it. Without a phrase model the box offers it;
+      declined, Objects takes over for a box. "Nothing found for “…”" when
+      nothing scores 0.5.
+- **SAM 3 is held (E58):** its image encoder brings the host down
+  (SIGTRAP) under Electron 44 (utility process and `ELECTRON_RUN_AS_NODE`
+  alike), not under Node 26; EfficientSAM3 runs fine, so it is the phrase
+  model meanwhile (`SAM3_PHRASE` in shared/ai.ts; on: SAM 3 offered first).
+- Measured (M2 Pro, CPU; CoreML compiled SAM 3's encoder for 10+ min and
+  was stopped): SAM 3 under Node 17.7 s an embedding, 2.3 s a phrase, 5.1
+  GB peak; EfficientSAM3 1.75 s and 1.8 s, 2.4 GB. In the app with
+  EfficientSAM3: "tree" 4.3 s, then 2.3 s a phrase. On the sky photo SAM 3
+  found trees (6), power lines and clouds; EfficientSAM3 only the tree.
+- [ ] **S** · Turn `SAM3_PHRASE` on once the engine answers E58.
 
 ### Pass 112 — Gemma: download and run · 4 pts
 
@@ -846,7 +862,27 @@ Decisions (the owner, 2026-10-08):
 - [ ] **S** · Star ratings a factor in the suggestion (a 3★+ photo is
       never culled), and thresholds learn from the user's flags and stars.
 
-### Pass 116 — Release · 3 pts
+### Pass 116 — UI performance: profile, then speed up · 5 pts
+
+The owner, 2026-10-08: the engine's own speed-ups come with its next
+update; before 0.4.0-beta ships, Playroom's side is profiled and made
+faster.
+
+- [ ] **M** · Flame graphs of the renderer and main process on the built
+      app (Chrome DevTools / CDP traces through Playwright, `--cpu-prof`
+      for main): opening a folder of a few hundred photos, scrolling the
+      library and filmstrip, opening a photo, dragging a slider (drafts →
+      settled), the 1:1 loupe pan, masks and the Masks pane, an export.
+      Long tasks, React commits (Profiler), IPC round trips and payload
+      sizes, frame times; numbers written here before any change.
+- [ ] **L** · The fixes the graphs point at (re-renders, store selectors,
+      work on the UI thread that belongs in a worker or main, IPC chatter,
+      image decode, layout thrash), each measured before and after; the
+      efficient UI (Pass 106) checked still to hold.
+- [ ] **S** · The same scenarios kept as a repeatable script (scratch or
+      `scripts/`), so later passes and engine updates can be compared.
+
+### Pass 117 — Release · 3 pts
 
 - [ ] **S** · What's new 0.4.0-beta final (0.18 and 0.19), the README, and
       the model mirrors checked. Release-As 0.4.0-beta and the PR to main,

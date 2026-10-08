@@ -18,6 +18,7 @@ import { openMasks } from '../../develop/tools'
 import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
 import { ensureModel, ensureModelId } from '../../lib/ensureModel'
+import { askModel } from '../../state/modelPrompt'
 import { useObjects } from '../../state/objects'
 import {
   DEPTH_MODEL,
@@ -26,6 +27,8 @@ import {
   isSceneTarget,
   PARTS_MODEL,
   PEOPLE_BY_CLICK,
+  OFFERED_PHRASE_MODEL,
+  PHRASE_MODELS,
   SCENE_MODEL,
   SEGMENT_LABEL,
   SKY_BY_CLICK,
@@ -397,6 +400,35 @@ export function startMaskTool(kind: MaskToolKind): void {
     madeComponent(comp.id)
     useDevelop.getState().setTool('range-picker')
   }
+}
+
+/**
+ * Find by name (engine 0.19): every instance of a phrase, by SAM 3 (or
+ * EfficientSAM3 when only it is here), into this mask with the pending mode
+ * or a new one. Without either model, SAM 3 is offered; declined, the
+ * Objects tool takes over for a box drawn around the thing.
+ */
+export function startPhrase(phrase: string): void {
+  const text = phrase.trim()
+  const d = useDevelop.getState()
+  if (!text || !d.recipe || !d.session) return
+  const key = d.session.key
+  const adding = d.addMode !== null && layerOf(d.recipe, d.layerId) !== undefined
+  const into = adding && d.layerId ? { layerId: d.layerId, mode: d.addMode ?? 'Add' } : undefined
+  openMasks()
+  void (async () => {
+    const models = await api.models.list()
+    const here = PHRASE_MODELS.some((id) => models.find((m) => m.id === id)?.installed)
+    if (!here && !(await askModel(OFFERED_PHRASE_MODEL, `Find “${text}”`))) {
+      useLibrary
+        .getState()
+        .say('Draw a box around it instead: Objects finds what is inside', 'info')
+      startMaskTool('objects')
+      return
+    }
+    useDevelop.getState().setAddMode(null)
+    await api.ai.start({ task: 'segment', key, target: 'phrase', phrase: text, into })
+  })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
 }
 
 export function duplicateMask(id: string): void {

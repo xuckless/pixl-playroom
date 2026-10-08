@@ -3,7 +3,15 @@ import { useDevelop } from '../../state/develop'
 import { useAiJobs } from '../../state/jobs'
 import { useModels } from '../../lib/models'
 import { keyHint } from '../../lib/commands'
-import { MASK_TOOL_GROUPS, startMaskTool, type MaskToolInfo, type MaskToolKind } from './model'
+import { useState } from 'react'
+import { PHRASE_MODELS } from '../../../../shared/ai'
+import {
+  MASK_TOOL_GROUPS,
+  startMaskTool,
+  startPhrase,
+  type MaskToolInfo,
+  type MaskToolKind
+} from './model'
 
 /**
  * Lightroom's "Create new mask" menu: every tool a mask can be made with.
@@ -21,6 +29,10 @@ export function ToolPicker({
   const addMode = useDevelop((s) => s.addMode)
   const caps = useAiJobs((s) => s.capabilities)
   const models = useModels()
+  const [phrase, setPhrase] = useState('')
+  // No phrase model yet: Enter offers SAM 3 (or a box with Objects).
+  const phraseGet =
+    models.length > 0 && !PHRASE_MODELS.some((id) => models.find((m) => m.id === id)?.installed)
   // A named mask's model not downloaded yet: the tool offers it when picked.
   const toGet = (t: MaskToolInfo): boolean =>
     !!t.model && models.length > 0 && models.find((m) => m.id === t.model)?.installed !== true
@@ -51,6 +63,27 @@ export function ToolPicker({
           the mask
         </div>
       )}
+      <form
+        className="tp-find"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!phrase.trim()) return
+          startPhrase(phrase)
+          setPhrase('')
+          onDone?.()
+        }}
+      >
+        <Icon name="search" />
+        <input
+          value={phrase}
+          onChange={(e) => setPhrase(e.target.value)}
+          placeholder="Find by name: red car, the dog…"
+          aria-label="Find by name"
+          maxLength={80}
+          spellCheck={false}
+        />
+        {phraseGet && <span className="tp-needs">get</span>}
+      </form>
       {MASK_TOOL_GROUPS.map((g) => (
         <div key={g.title} className="tp-group">
           <span className="micro">{g.title}</span>

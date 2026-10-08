@@ -174,6 +174,8 @@ export interface SmartBuild {
   partsModel?: boolean
   /** YuNet and Face Mesh v2 (a face's parts) are both installed. */
   faceModels?: boolean
+  /** A phrase model (SAM 3 or EfficientSAM3) is installed: an object found by its name. */
+  phraseModel?: boolean
   /**
    * What the engine has: SAM 2.1 came with 0.16; NAFNet denoise, the scene
    * planes (sky, vegetation, water) and people's parts with 0.19; the
@@ -187,6 +189,8 @@ export interface SmartBuild {
     nafnet: boolean
     /** Face parts (eyes, lips, teeth): YuNet and Face Mesh (Pass 110). */
     faces?: boolean
+    /** Objects by name: `segmentConcept` (SAM 3, EfficientSAM3). */
+    phrase?: boolean
   }
 }
 
@@ -213,7 +217,12 @@ export function smartReadiness(b: SmartBuild): SmartReadiness {
     person: b.engine.people ? model(b.partsModel === true) : 'needs-engine',
     personDetail: b.engine.faces ? model(b.faceModels === true) : 'needs-engine',
     body: 'needs-engine',
-    object: b.engine.detector ? sam : 'needs-engine',
+    // By its name: the detector and SAM 2.1 (still to come), or a phrase model.
+    object: b.engine.detector
+      ? sam
+      : b.engine.phrase
+        ? model(b.phraseModel === true)
+        : 'needs-engine',
     pick: sam,
     drunet: model(b.drunetModel),
     nafnet: b.engine.nafnet ? model(b.nafnetModel === true) : 'needs-engine',
@@ -822,6 +831,8 @@ function partOf(c: MaskComponentSetting): MaskPart | string {
           return `“${src.part}” is not a part we can find`
         return { target: { kind: 'person', part: src.part as PersonPart }, ...join }
       }
+      // Found by a phrase: the same words, as an object to find by its name.
+      if (src.kind === 'phrase') return { target: { kind: 'object', label: src.text }, ...join }
       // Pointed at as a class (shared/concepts.ts): that class, to find again.
       if (src.concept === 'sky') return { target: { kind: 'sky' }, ...join }
       if (src.concept) return { target: { kind: 'person', part: src.concept }, ...join }

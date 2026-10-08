@@ -50,6 +50,22 @@ export type SegmentTarget =
   | PartTarget
   /** A face part (YuNet and Face Mesh v2): lands as a lasso, not a plane. */
   | FacePart
+  /** Anything named by a phrase (`phrase`): SAM 3, or EfficientSAM3. */
+  | 'phrase'
+
+/** The phrase models (engine 0.19, on demand), best first: SAM 3, then the lighter EfficientSAM3. */
+export const PHRASE_MODELS = ['sam3', 'efficientsam3-ev-m'] as const
+
+/**
+ * SAM 3 is held back: its image encoder brings the engine host down under
+ * Electron (SIGTRAP in Electron 44's runtime, fine under Node;
+ * ENGINE-REQUESTS E58). While held, EfficientSAM3 is the phrase model, the
+ * one offered and run; turned on, SAM 3 is offered first again.
+ */
+export const SAM3_PHRASE = false
+
+/** The phrase model to offer when none is downloaded. */
+export const OFFERED_PHRASE_MODEL: string = SAM3_PHRASE ? PHRASE_MODELS[0] : PHRASE_MODELS[1]
 
 /** The scene model (engine 0.19): sky, vegetation and water. */
 export const SCENE_MODEL = 'dinov2-s-ade'
@@ -64,6 +80,7 @@ export const isPartTarget = (t: unknown): t is PartTarget => PART_TARGETS.includ
 export function segmentModel(target: SegmentTarget, fine = false): string {
   if (target === 'depth') return DEPTH_MODEL
   if (isFacePart(target)) return FACE_LANDMARKER
+  if (target === 'phrase') return OFFERED_PHRASE_MODEL
   if (isSceneTarget(target)) return SCENE_MODEL
   if (isPartTarget(target)) return PARTS_MODEL
   return fine ? FINE_SUBJECT_MODEL : 'u2netp'
@@ -144,6 +161,8 @@ export type AiStartRequest = (
       into?: { layerId: string; mode: MaskMode }
       /** The subject or background with BiRefNet lite (fine edges, ~5 s), not U²-Netp. */
       fine?: boolean
+      /** With target `phrase`: what to find ("red car", "the dog"). */
+      phrase?: string
     }
   | {
       /**
@@ -216,7 +235,8 @@ export const SEGMENT_LABEL: Record<SegmentTarget, string> = {
   hair: 'Hair',
   skin: 'Skin',
   clothes: 'Clothes',
-  ...FACE_PART_LABEL
+  ...FACE_PART_LABEL,
+  phrase: 'Find by name'
 }
 
 /** The whole job's progress with `stage` at `p` (0…1) of its own way. */
