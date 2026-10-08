@@ -10,7 +10,7 @@ import {
   type ViewGeometry
 } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
-import { isFrame, pictureBitmap as framePixels } from '../../lib/frames'
+import { isFrame, pictureBitmap as framePixels, readable } from '../../lib/frames'
 import { touchInteracting } from '../../lib/interacting'
 import { planePng, rememberPlane } from '../../lib/planes'
 import type { Affine, Dab } from '../../workers/brush.worker'
@@ -204,7 +204,7 @@ export const BrushLayer = memo(function BrushLayer({
       stroke.current = null
       return useLibrary.getState().say(errorText(err), 'error')
     }
-    const picture = set.autoMask ? (d.picture?.url ?? null) : null
+    const picture = set.autoMask && d.picture ? readable(d.picture) : null
     // A preview frame is no file the worker could fetch: its pixels go along.
     const pictureBitmap =
       picture && isFrame(picture) ? await framePixels(picture).catch(() => undefined) : undefined

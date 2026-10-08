@@ -589,6 +589,12 @@ export interface RenderEvent {
   rev?: number
   kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb' | 'headroom'
   url: string
+  /**
+   * Full HDR's settled picture: its SDR companion as a file, for what reads
+   * pixels (the eyedropper, scopes, overlays, a range's key, the brush's Auto
+   * Mask). Absent, `url` is read (a frame's own bitmap is its companion).
+   */
+  readUrl?: string
   /** A mask's (or mask thumbnail's) layer. */
   layerId?: string
   /** The view the render was made for: the crop tool's whole frame, or the framed picture. */

@@ -524,13 +524,19 @@ After: Pass 99.
 
 After: Pass 98.
 
-- [ ] **M** · The eyedropper (`lib/image.ts`, `Loupe.tsx`) and the scopes'
-      colours (`MetricsPanel.tsx`) read the SDR companion
-      (`report.companion`), not the canvas.
-- [ ] **M** · `ClippingOverlay`, `HeadroomOverlay`, `SpotsOverlay`,
-      `clipping.worker.ts` and the brush's Auto Mask read the companion,
-      through `pictureBitmap` (`lib/frames.ts`).
-- [ ] **S** · The headroom overlay's scale follows the display's H.
+- [x] **M** · In Full HDR a settled render's event carries `readUrl`, its
+      SDR companion as a Display P3 PNG (1024 px); a draft's frame bitmap is
+      its companion (512 px). `readable(e)` (`lib/frames.ts`) is what the
+      eyedropper and every `samplePatch` in `Loupe.tsx`, the scopes
+      (`ScopesExpanded`), a range's key (`MaskCanvas`), the brush's Auto
+      Mask, the Clipping and Spots overlays and the dialog backdrop read:
+      never the F16 canvas or a gain-map AVIF. Checked in the built app, both
+      arms: the companion decodes at 1024 × 682.
+- [x] **S** · In Full HDR the headroom overlay's 1 is the display's ceiling
+      (`log2(peak / white)`): what reaches it shows at the display's
+      brightest.
+- Cost (M2 Pro): settled 530–660 ms with the 1024 px companion (485–529
+  without), a draft 225–233 ms with its 512 px one.
 
 ### Pass 102 — Masks fixed in the left pane (was 83) · 4 pts
 

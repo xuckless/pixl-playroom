@@ -160,7 +160,8 @@ const LOOK_KEEP = 600
 function masterFor(
   display: { whiteNits: number; peakNits: number },
   /** The whole picture's figures, for a part of it (a region measures neither). */
-  stated?: HdrFigures
+  stated?: HdrFigures,
+  companionEdge = COMPANION_EDGE
 ): ColorPolicy {
   return {
     Master: {
@@ -170,7 +171,7 @@ function masterFor(
       reach: stated ? { Stated: stated.reach } : 'Measured',
       look: 'Colorimetric',
       float: 'ExtendedLinearDisplayP3',
-      companion: { longest_side: COMPANION_EDGE, resampler: 'Bilinear' }
+      companion: { longest_side: companionEdge, resampler: 'Bilinear' }
     }
   }
 }
@@ -220,8 +221,13 @@ interface HdrFigures {
   reach: number
 }
 
-/** The companion's longest side: enough for the eyedropper, scopes and overlays. */
-const COMPANION_EDGE = 512
+/**
+ * The companion's longest side: a settled picture's is what the eyedropper,
+ * scopes, overlays and a range's key read; a draft's only bridges a drag
+ * (half the size: 70 ms less a draft on the M2 Pro).
+ */
+const COMPANION_EDGE = 1024
+const DRAFT_COMPANION_EDGE = 512
 
 /** A report's companion as a frame carries it. */
 function companionOf(c: Companion): { width: number; height: number; data: Uint8Array } {
@@ -927,7 +933,13 @@ class Session {
                     }
                   },
           metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: display ? masterFor(display) : displayPolicy(this.info, 'DisplayP3'),
+          color: display
+            ? masterFor(
+                display,
+                undefined,
+                kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE
+              )
+            : displayPolicy(this.info, 'DisplayP3'),
           // The master reads a gain map itself, and refuses the field.
           ...(display ? { gain_map: null } : {}),
           grade: compiled.grade,
@@ -954,7 +966,8 @@ class Session {
       })
     const stats = statsOf(report)
     // Full HDR's settled picture, either arm: what measures it (inside a
-    // mask) reads its SDR companion, kept as a PNG.
+    // mask) and what reads its pixels take its SDR companion, kept as a PNG.
+    let readUrl: string | undefined
     if (kind === 'full' && display) {
       const m = report.color.master
       this.hdrFigures =
@@ -964,6 +977,7 @@ class Session {
         const file = this.nextFile('companion', 'png')
         await writeFile(file, encodePng8(c.data, c.width, c.height, 1, [CICP_DISPLAY_P3]))
         this.lastFull = file
+        readUrl = cacheUrl(file, seq)
       } else this.lastFull = ''
     } else if (kind === 'full' && out) {
       this.lastFull = out
@@ -981,6 +995,7 @@ class Session {
       kind,
       cropMode,
       url: frame ? `frame:${frame}` : cacheUrl(out, seq),
+      ...(readUrl ? { readUrl } : {}),
       width: report.width,
       height: report.height,
       stats,
@@ -1080,7 +1095,15 @@ class Session {
     const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true)
     // A plane has one channel, so a warp's transparent corners cannot be said.
     if (framingTransparent(compiled.framing)) return
-    const stops = Math.max(0.5, Math.log2(hdr.peak_nits / hdr.reference_white_nits))
+    // In Full HDR, 1 is the display's ceiling: what reaches it is what shows
+    // at its brightest; above that the master rolled it off.
+    const display = this.view.display ?? null
+    const stops = Math.max(
+      0.5,
+      Math.log2(
+        display ? display.peakNits / display.whiteNits : hdr.peak_nits / hdr.reference_white_nits
+      )
+    )
     const out = this.nextFile('headroom', 'png')
     try {
       const r = await this.owner.engine

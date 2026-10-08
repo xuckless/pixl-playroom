@@ -6,6 +6,7 @@
  * panel; the tab is the one it was opened from.
  */
 import { useState } from 'react'
+import { readable } from '../lib/frames'
 import { Modal, Tabs } from '../components/ui'
 import { HueChart } from '../components/charts'
 import { VISION_LABEL, type VisionKind } from '../../../shared/scopemetrics'
@@ -102,7 +103,7 @@ export function ScopesExpandedDialog(): React.JSX.Element {
           stats={stats}
           hdr={hdrStats}
           before={before?.stats ?? null}
-          pictureUrl={picture?.url ?? null}
+          pictureUrl={picture ? readable(picture) : null}
         />
       )}
     </Modal>

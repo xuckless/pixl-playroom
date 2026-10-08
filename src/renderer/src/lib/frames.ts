@@ -20,6 +20,11 @@ const waiting = new Map<string, ((b: ImageBitmap | null) => void)[]>()
 
 export const isFrame = (url: string): boolean => url.startsWith('frame:')
 
+/** What a reader of pixels takes of a render: its SDR companion in Full HDR, else the picture. */
+export function readable(e: { url: string; readUrl?: string }): string {
+  return e.readUrl ?? e.url
+}
+
 /** A Full HDR frame's F16 pixels, while it is kept (its `frameBitmap` is the SDR companion). */
 export function frameFloat(url: string): FloatFrame | undefined {
   return floats.get(url)

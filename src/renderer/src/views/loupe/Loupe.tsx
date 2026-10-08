@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { readable } from '../../lib/frames'
 import {
   MAX_POINT_COLORS,
   newId,
@@ -288,7 +289,7 @@ export function Loupe(): React.JSX.Element {
       moved: false
     }
     tat.current = t
-    const rgb = await samplePatch(picture.url, p.x, p.y)
+    const rgb = await samplePatch(readable(picture), p.x, p.y)
     const dev = useDevelop.getState()
     const say = useLibrary.getState().say
     if (dev.tatTarget === 'hsl') {
@@ -371,7 +372,11 @@ export function Loupe(): React.JSX.Element {
       } else if (tool === 'range-picker' && picture) {
         const layer = recipe.layers.find((l) => l.id === layerId)
         if (!layer) return useLibrary.getState().say('Select a mask first', 'error')
-        const { hue, saturation: sat, luma } = hsvOf(...(await samplePatch(picture.url, p.x, p.y)))
+        const {
+          hue,
+          saturation: sat,
+          luma
+        } = hsvOf(...(await samplePatch(readable(picture), p.x, p.y)))
         const next = structuredClone(recipe)
         const l = next.layers.find((x) => x.id === layerId)
         if (!l) return
@@ -420,7 +425,7 @@ export function Loupe(): React.JSX.Element {
         replace(next, 'Pick depth')
         setTool('none')
       } else if (tool === 'fringe-pick' && picture) {
-        const f = fringeFrom(hsvOf(...(await samplePatch(picture.url, p.x, p.y))))
+        const f = fringeFrom(hsvOf(...(await samplePatch(readable(picture), p.x, p.y))))
         if (!f) {
           useLibrary.getState().say('That is not a purple or green fringe', 'error')
         } else {
@@ -439,9 +444,9 @@ export function Loupe(): React.JSX.Element {
       } else if (tool === 'add-pick' && picture) {
         // The picture as shown, in its own Display P3: what the complement
         // has to turn white (or into the second colour).
-        pickAdd(await samplePatch(picture.url, p.x, p.y, 5, 'display-p3'))
+        pickAdd(await samplePatch(readable(picture), p.x, p.y, 5, 'display-p3'))
       } else if (tool === 'point-picker' && picture) {
-        const s = hsvOf(...(await samplePatch(picture.url, p.x, p.y)))
+        const s = hsvOf(...(await samplePatch(readable(picture), p.x, p.y)))
         const sample = {
           hue: Math.round(s.hue),
           saturation: Math.round(s.saturation * 100) / 100,
@@ -556,8 +561,8 @@ export function Loupe(): React.JSX.Element {
               </div>
             )}
             <MaskOverlay g={g ?? null} w={vrect.w} h={vrect.h} />
-            {clipping && picture && <ClippingOverlay url={picture.url} />}
-            {spots && picture && <SpotsOverlay url={picture.url} level={spotLevel} />}
+            {clipping && picture && <ClippingOverlay url={readable(picture)} />}
+            {spots && picture && <SpotsOverlay url={readable(picture)} level={spotLevel} />}
             {headroom && headroomPlane && compare !== 'before' && (
               <HeadroomOverlay url={headroomPlane.url} />
             )}
