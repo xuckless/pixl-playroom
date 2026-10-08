@@ -119,6 +119,9 @@ export function rawMaster(colour: RawColour): RawMode {
       highlights: 'InpaintOpposed',
       crop: 'Best',
       denoise: null,
+      // Engine 0.19's mosaic denoiser and demosaic: as 0.18 until Pass 108.
+      mosaic_denoise: null,
+      demosaic: 'Classic',
       resolution: 'Full',
       colour: cameraColourOf(colour),
       dng_opcodes: DNG_OPCODES

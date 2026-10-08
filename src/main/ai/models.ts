@@ -53,6 +53,16 @@ const BASE = (process.env.PLAYROOM_MODELS_URL ?? 'https://models.pixlfoundation.
 /** The models server (or its stand-in): the lens catalogue is served beside the models. */
 export const MODELS_BASE = BASE
 
+/**
+ * What every model session states since engine 0.19 beside its threads: no
+ * dimensions fixed (a model run with static shapes states its own), and the
+ * intra-op workers asleep between runs, so an idle Playroom costs nothing.
+ */
+export const IDLE_SESSION: Pick<SessionSpec, 'dimensions' | 'intra_op_spinning'> = {
+  dimensions: [],
+  intra_op_spinning: false
+}
+
 /** Which provider the performance test chose: the accelerator unless the CPU won. */
 const PROVIDER_KEY = 'ai.provider'
 /** What the performance test measured, per provider. */
@@ -472,7 +482,8 @@ export class ModelStore {
     const session: SessionSpec = {
       threads: heavyThreads(),
       optimisation: 'All',
-      deterministic: false
+      deterministic: false,
+      ...IDLE_SESSION
     }
     return {
       runtime_library: runtime.library,

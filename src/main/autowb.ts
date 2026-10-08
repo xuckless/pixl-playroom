@@ -57,7 +57,10 @@ export function analyzeRequest(
     lens: null,
     limits: READ_LIMITS,
     hdr: null,
-    gain_map: null
+    gain_map: null,
+    // Engine 0.19's perceptual hash and focus: asked by culling (Pass 114).
+    phash: false,
+    focus: null
   }
 }
 

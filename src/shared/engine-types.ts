@@ -120,7 +120,34 @@ export type DngCrop = 'None' | 'ActiveArea' | 'Best'
  * X-Trans), each colour the mean of its photosites, no demosaic. A quarter
  * (or a ninth) of the pixels, for previews.
  */
-export type RawResolution = 'Full' | 'Cell'
+/**
+ * `Binned` (0.19.0): one pixel per `factor × factor` photosites, a multiple
+ * of the cell, `1..=64`; for thumbnails and filmstrips only (HR-0.19-1:
+ * never judge noise on one).
+ */
+export type RawResolution = 'Full' | 'Cell' | { Binned: { factor: number } }
+
+/** A RAW denoiser ref (`@xuckless/pixl-models`' `ref('pmrid', host)`): PMRID's model and anchor. */
+export type RawDenoiserRef = Record<string, unknown>
+
+/**
+ * Scene's mosaic denoiser (0.19.0): PMRID on the Bayer mosaic, before the
+ * white balance; `noise` is the frame's `variance = k·x + σ²`. Bayer only.
+ */
+export interface MosaicDenoise {
+  model: RawDenoiserRef
+  noise: 'Measured' | 'DngNoiseProfile' | { Stated: { k: number; sigma2: number } }
+}
+
+/**
+ * Scene's demosaic (0.19.0): `Classic` (PPG / Markesteijn, 0.18's bytes),
+ * `Ahd` (Bayer, no model), or a learned one (`demosaicnet-bayer` /
+ * `-xtrans`, by `SourceInfo.raw_cfa`; `resolution` must be `Full`).
+ */
+export type SceneDemosaic = 'Classic' | 'Ahd' | { Model: Record<string, unknown> }
+
+/** A RAW's colour filter when PIXL demosaics it (0.19.0). */
+export type RawCfa = 'Bayer' | 'XTrans'
 
 /** What a RAW says about its colour. `Pixl` is refused on a body the version does not hold. */
 export type CameraColour = 'Container' | { Pixl: { version: number } } | { Stated: unknown }
@@ -151,9 +178,13 @@ export type RawMode =
   | {
       Scene: {
         white_balance: 'AsShot' | { Stated: { temperature_kelvin: number; tint: number } }
-        highlights: 'Clip' | 'Unclipped' | 'Blend' | 'InpaintOpposed'
+        highlights: 'Clip' | 'Unclipped' | 'Blend' | 'InpaintOpposed' | 'Diffused'
         crop: DngCrop
         denoise: Denoise | null
+        /** 0.19.0: `null` develops as 0.18 did. */
+        mosaic_denoise: MosaicDenoise | null
+        /** 0.19.0: `'Classic'` develops as 0.18 did. */
+        demosaic: SceneDemosaic
         resolution: RawResolution
         colour: CameraColour
         dng_opcodes: DngOpcodes
@@ -185,6 +216,13 @@ export interface SessionSpec {
   threads: number
   optimisation: GraphOptimisation
   deterministic: boolean
+  /**
+   * 0.19.0: the graph's free input dimensions fixed by name (the roster's
+   * `files[i].dimensions`), for CoreML static shapes; `[]` builds as 0.18.
+   */
+  dimensions: { name: string; value: number }[]
+  /** 0.19.0: ONNX Runtime's intra-op spinning; `false` lets an idle host sleep (Playroom). */
+  intra_op_spinning: boolean
 }
 
 /** A model file and the ONNX Runtime it runs on. One runtime per process. */
@@ -1279,7 +1317,35 @@ export interface ConvertRequest {
 export type AnalysisDomain = 'Encoded' | 'Linear'
 export type TransparentPixels = 'Include' | 'Exclude'
 
+/** A region `focus` measures: a normalised box, or a mask raster. */
+export type MeasureRegion =
+  { Box: { x: number; y: number; width: number; height: number } } | { Mask: RasterMask }
+
+/** 0.19.0: what `focus` measures, per region. */
+export interface FocusSpec {
+  regions: MeasureRegion[]
+  orientation_bins: number
+}
+
+export interface FocusRegionReport {
+  laplacian_variance: number
+  gradient_energy: number
+  coherence: number
+  angle: number
+  orientation: number[]
+  [k: string]: unknown
+}
+
+export interface FocusReport {
+  regions: FocusRegionReport[]
+  [k: string]: unknown
+}
+
 export interface AnalyzeRequest {
+  /** 0.19.0: report `ImageStats.phash`. */
+  phash: boolean
+  /** 0.19.0: report `ImageStats.focus`. */
+  focus: FocusSpec | null
   source: Source
   input: InputFormat
   raw: RawMode | null
@@ -1450,6 +1516,9 @@ export interface RegionReport {
 }
 
 export interface ConvertReport {
+  /** 0.19.0: the float pass's way in and out, both inside `color_ms`. */
+  ingest_ms?: number
+  egress_ms?: number
   input_bytes: number
   output_bytes: number
   width: number
@@ -1642,6 +1711,8 @@ export interface CameraColourInfo {
 
 /** What a source actually is. Returned by `probe`. */
 export interface SourceInfo {
+  /** 0.19.0: a RAW's colour filter (which learned demosaic fits); `null` for anything else. */
+  raw_cfa?: RawCfa | null
   format: string
   input: InputFormat
   width: number
@@ -1716,6 +1787,10 @@ export interface NoiseEstimate {
 
 /** What the pixels look like. Returned by `analyze`. */
 export interface ImageStats {
+  /** 0.19.0: a 64-bit perceptual hash, 16 hex digits, when `phash` was asked. */
+  phash?: string | null
+  /** 0.19.0: per region, sharpness and direction, when `focus` was asked. */
+  focus?: FocusReport | null
   /** What `AnalyzeRequest::lens` did; `null` without a lens. */
   lens?: LensReport | null
   width: number
@@ -1817,7 +1892,8 @@ export interface PlanePng {
 export interface SegmentPlane {
   name: string
   tensor: string
-  index: number
+  /** 0.19.0: the classes summed into this plane (was `index`). */
+  indices: number[]
   /** 16-bit grey PNG, plane_width × plane_height: a Buffer from the binding. */
   png: Uint8Array
   coverage: number

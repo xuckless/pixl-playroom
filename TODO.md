@@ -591,33 +591,166 @@ After: Passes 96–102.
 
 ---
 
-## Next: engine 0.19.0 (guide pending)
+## Next: Phase O, engine 0.19.1 (passes 104–116)
 
-0.19.0 is published. Its integration guide is still being written and
-tested; the owner sends it when it is ready, and this becomes passes then.
-**0.18 and 0.19 ship together**: this part ends with Release-As 0.4.0-beta,
-the final What's new, and the one PR from `feat/engine-0.18` to main.
+**After Phase N, before everything else.** Branch `feat/engine-0.18` (0.18 and
+0.19 ship together): this phase ends with Release-As 0.4.0-beta, the final
+What's new, and the one PR to main.
 
-Known so far (2026-10-08):
+Sources, at the engine's tag `v0.19.1`: `docs/migration-0.19.0.md`,
+`docs/integration.md` (§2, 4.6, 4.7, 6–7) and `docs/auto/playroom-0.19.md`
+(Playroom's Pixl Auto guide). Published: `@xuckless/pixl-engine` and
+`pixl-models` 0.19.1, and model packages `nafnet-sidd-w32`, `pmrid`,
+`demosaicnet-bayer`/`-xtrans`, `dinov2-s-ade`, `selfie-multiclass`,
+`yunet-2023mar`, `face-mesh-v2` (1.0.0). `@xuckless/pixl-auto` is not
+published (the engine's release workflow has no step for `bindings/auto`):
+installed from the repo's subfolder at `v0.19.1` until it is.
 
-- **The safe-shutdown advisory**: when Playroom is backgrounded, the engine
-  is shut down, and the UI goes efficient (flat colours, no glass, nothing
-  tacky).
-- **GPU work**: a caller-owned stage cache (engine Pass 104: a drag re-runs
-  from the changed op only) and a GPU preview path (Pass 105), with a host
-  of GPU performance work.
-- **A full pipeline of tested models**, and the prep for the updates after.
-- **Pixl Auto** (`@xuckless/pixl-auto`), only what the guide calls ready:
-  - Gemma names the targets and the subject, and Playroom's own code maps
-    those words to the shipped finders;
-  - culling uses the engine's measured signals, with Gemma only wording the
-    reason;
-  - the UX tips: how names, masks and cull reasons are shown, and what the
-    user confirms;
-  - the exact calls and fields for each part.
-- **Not to build yet** (rough, work in progress or not recommended): Gemma's
-  judge, its boxes, `auto()`'s full plan-and-edit path, the rephrase bug,
-  and speed on the M1.
+Not in 0.19: the GPU grade path and the stage cache (a 0.20.0 design; 0.20
+also brings PIXL's distilled models for everything but SAM 3 and
+EfficientSAM3). `Tone.base` waits for 0.20's local Laplacian (the owner,
+2026-10-08). Not built (rough or not recommended, `playroom-0.19.md` §3):
+Gemma's judge, its boxes and finder choice, `auto()`/`select()`,
+`rephrase()`, the cascade's bars, the "uncertain" flag, auto edits.
+
+Decisions (the owner, 2026-10-08):
+
+| Topic | Decision |
+|---|---|
+| RAW demosaic | DemosaicNet (Bayer; X-Trans's when an X-Trans RAW first opens) downloads on install or update and is recommended as the best quality; AHD (no model, faster, +6 dB over PPG) until it is here |
+| RAW denoise | PMRID on by default for Bayer RAWs (noise `Measured`), downloaded with DemosaicNet; RAWs are developed again once; the Noise reduction sliders stay |
+| AI denoise | NAFNet SIDD in SCUNet's place (CoreML static shapes, 512 tiles); SCUNet retired quietly, its files deleted; DRUNet stays |
+| Safe shutdown | engine hosts stop 60 s after the window is hidden or minimised, 120 s after Playroom goes inactive (a queued AI batch finishes first); restarted on the next need |
+| Flat UI | flat colours, no glass, animations paused whenever Playroom isn't focused, plus an "Always flat" setting |
+| Pixl Auto | naming chips → masks, and cull suggestions; Gemma downloaded on demand |
+| Naming runs | in the background on import, only idle and on power, then llama-server stops; a photo opened first is named first |
+| Name chips | at the top of the Masks pane: ★ the subject, a tap makes the mask, × dismisses, + types a name; kept in the library and the `.pixl` project |
+| Culling | in the Library: a "Suggested rejects" filter and a reason badge per thumbnail, one key accepts (flags reject); thresholds learn from the user's flags and stars |
+| Finders | DINOv2 sky, vegetation, water; Selfie Multiclass people parts; Face Mesh face parts (brows beta); Find by name with SAM 3 (on demand) or EfficientSAM3 |
+| Background activity | a non-blocking progress bar / spinner on the top bar whenever AI or Gemma works in the background (only work that can be backgrounded: naming, cull signals, AI denoise, enhance, a batch, model downloads) |
+| Compute | GPU / Metal wherever possible: CoreML static shapes (`CpuAndGpu`) for every model whose roster names its dimensions, `llama-server` with every layer on Metal; the CPU (threads ≤ P-cores) only where the GPU path is refused or slower |
+
+### Pass 104 — Run on 0.19.1 · 5 pts
+
+- [x] **M** · Both packages at 0.19.1; the new required fields: Scene's
+      `mosaic_denoise: null` and `demosaic: 'Classic'` (until Pass 108),
+      `analyze`'s `phash: false` and `focus: null`, `SegmentPlane.indices`,
+      `SessionSpec.dimensions: []` and `intra_op_spinning: false` on every
+      session (`IDLE_SESSION`). Types restated (`Binned`, `Diffused`,
+      `raw_cfa`, `ingest_ms`/`egress_ms`, `focus`, `phash`); notices
+      regenerated. Checked in the built app: a RAW in SDR and Full HDR.
+- [x] **S** · `@xuckless/pixl-auto` from the engine repo at `v0.19.1`
+      (`bindings/auto`, a git dependency); CI and the release workflow let
+      git read the repo with `PACKAGES_TOKEN`. ENGINE-REQUESTS: publish it.
+- [ ] **S** · Owner: give `PACKAGES_TOKEN` read access to pixl-engine's
+      contents (or publish pixl-auto), else CI's install fails on it.
+- [x] **S** · The enhance ×2 already has the guide's chain form (the ×4
+      ref, `resize` ½ in the same convert).
+- [ ] **M** · GPU / Metal wherever possible: every model session's
+      provider reviewed; CoreML with static shapes and `CpuAndGpu` for each
+      roster model that names its `dimensions` (tiles fixed to match),
+      measured against the CPU on the M2 Pro; the CPU path keeps threads ≤
+      P-cores. _Taken with each model's pass (107, 108, 109–111)._
+
+### Pass 105 — Safe shutdown · 4 pts
+
+- [ ] **M** · The engine hosts (interactive, background, SAM) stop 60 s
+      after the window is hidden or minimised and 120 s after the app goes
+      inactive; an export, AI denoise or queued AI batch finishes first.
+      They start again on the next request, invisibly.
+- [ ] **S** · HR-0.19-2: at start, engine temps (`.<name>.pixl-<pid>-<n>.tmp`)
+      whose pid is no live engine are swept from Playroom's folders; the
+      host's own temp-and-rename around engine writes goes (E5).
+
+### Pass 106 — The efficient UI and the activity indicator · 5 pts
+
+- [ ] **M** · A non-blocking indicator on the top bar while background AI
+      works (naming, cull signals, AI denoise, enhance, batches, model
+      downloads): a slim progress bar where progress is known, a spinner
+      where not; hover names what runs and how far; a click opens the
+      queue. Work that blocks the UI (a click-to-select) keeps its own
+      feedback.
+
+- [ ] **M** · Unfocused: glass is frost-free flat colour, animations and
+      the ambient background stop drawing; focused again, it all returns.
+      Settings → Interface: "Always flat".
+
+### Pass 107 — AI denoise on NAFNet SIDD · 4 pts
+
+- [ ] **M** · `nafnet-sidd-w32` through CoreML static shapes (512 tiles,
+      `dimensions` from the roster), CPU with threads ≤ P-cores elsewhere;
+      saved SCUNet settings map to it; SCUNet's files deleted; time guesses
+      and the model copy redone.
+
+### Pass 108 — RAW develop: DemosaicNet, AHD, PMRID, binned thumbnails · 5 pts
+
+- [ ] **L** · The RAW master's `demosaic`: DemosaicNet (CoreML static,
+      512/516 tiles) once downloaded, else AHD; downloaded on install or
+      update; recommended in Settings → AI models ("best quality"; AHD
+      "faster"). X-Trans's model when an X-Trans RAW first opens.
+- [ ] **M** · PMRID as `mosaic_denoise` (`Measured`) on Bayer RAWs by
+      default; `RAW_DEVELOP_REV` bumped; develop times measured.
+- [ ] **S** · Thumbnails and the filmstrip from `Binned` RAW proxies;
+      anything judged for noise stays Cell or Full (HR-0.19-1).
+
+### Pass 109 — Named masks: sky, vegetation, water, people · 4 pts
+
+- [ ] **M** · DINOv2-S+ADE's `sky` (Guided 0.02 / 0.001), `vegetation` and
+      `water` in the masks menu; Sky is one click.
+- [ ] **M** · Selfie Multiclass's `hair`, `face_skin`, `body_skin`,
+      `clothes` in place of the "soon" People entries.
+
+### Pass 110 — Face parts · 4 pts
+
+- [ ] **L** · `faces` (YuNet, Face Mesh v2): eyes, lips, brows (beta) as
+      polygon masks, a picker per face; small faces by a `region`; "left" is
+      the subject's left.
+
+### Pass 111 — Find by name · 5 pts
+
+- [ ] **L** · A phrase box in the masks menu: `segmentConcept` with SAM 3
+      (on demand from Hugging Face, 1.75 GB; image encoder, embedding, drop,
+      then the text encoder) or EfficientSAM3 (385 MB), offered in the
+      "Model needed" popup; without either, SAM 2.1 on the user's box.
+
+### Pass 112 — Gemma: download and run · 4 pts
+
+- [ ] **M** · Settings → AI models: Gemma 4 E2B (GGUFs and `llama-server`
+      from `brains.json`'s pins, checked by `verify()`), its size and
+      licence shown. `startLocalServer` with a random key per launch,
+      `LocalServerBrain` with `max_tokens.plan` ≥ 3000; stopped after a
+      batch and never held beside SAM 3.
+
+### Pass 113 — Naming and the chips · 5 pts
+
+- [ ] **L** · Background naming on import (idle, on power):
+      `planSchema()` with `edits.maxItems = 0`, `checkPlan()` drops flagged
+      targets; label, subject and intent kept; names in the library and the
+      `.pixl` project.
+- [ ] **M** · The chips atop the Masks pane, routed by Playroom's own map
+      (sky/vegetation/water → DINOv2; subject → U²-Netp; hair/skin/clothes →
+      Selfie; eyes/lips/brows → faces; a person among several → SAM 2.1 on
+      the user's click; anything else → Find by name).
+
+### Pass 114 — Cull signals · 4 pts
+
+- [ ] **M** · Per photo, cached: exposure (luma percentiles, clip
+      fractions), focus in the subject's region (`focus` with U²-Netp's
+      plane as a mask), motion blur (coherence), blink as a hint (Face
+      Mesh), duplicates (`phash`, Hamming distance).
+
+### Pass 115 — Cull suggestions in the Library · 4 pts
+
+- [ ] **M** · "Suggested rejects" filter and a reason badge per thumbnail,
+      written from templates ("Subject soft · focus 18% of the burst's
+      best"); one key accepts (reject flag); never deletes. Thresholds learn
+      from the user's flags and stars.
+
+### Pass 116 — Release · 3 pts
+
+- [ ] **S** · What's new 0.4.0-beta final (0.18 and 0.19), the README, and
+      the model mirrors checked. Release-As 0.4.0-beta and the PR to main,
+      on the owner's ask.
 
 ---
 

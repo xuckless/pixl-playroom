@@ -19,6 +19,7 @@
  * The host is put to sleep after a few idle minutes: SAM's two models are
  * hundreds of megabytes.
  */
+import { IDLE_SESSION } from '../ai/models'
 import log from 'electron-log/main'
 import type {
   LensCorrection,
@@ -179,12 +180,12 @@ export class SelectService {
       const threads = Math.max(2, interactiveThreads())
       ref.encoder.model = {
         ...ref.encoder.model,
-        session: { threads, optimisation: 'All', deterministic: false }
+        session: { threads, optimisation: 'All', deterministic: false, ...IDLE_SESSION }
       }
       // One prompt at a time, small: two threads answer as fast as eight.
       ref.decoder.model = {
         ...ref.decoder.model,
-        session: { threads: 2, optimisation: 'All', deterministic: false }
+        session: { threads: 2, optimisation: 'All', deterministic: false, ...IDLE_SESSION }
       }
       await this.engine.sam({ op: 'load', session: ENCODER, ref: ref.encoder.model })
       await this.engine.sam({ op: 'load', session: DECODER, ref: ref.decoder.model })

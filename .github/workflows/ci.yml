@@ -34,6 +34,14 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: '@xuckless'
 
+      - name: Let git read the engine repo
+        # @xuckless/pixl-auto installs from pixl-engine's bindings/auto at a
+        # tag until the engine publishes it; the repo is private, so the
+        # packages PAT must also read its contents.
+        run: git config --global url."https://x-access-token:${PACKAGES_TOKEN}@github.com/".insteadOf "https://github.com/"
+        env:
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+
       - name: Install
         run: pnpm install --frozen-lockfile
         env:
