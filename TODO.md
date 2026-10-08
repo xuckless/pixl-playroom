@@ -473,19 +473,33 @@ After: Pass 97.
 
 After: Pass 98.
 
-- [ ] **L** · A dev switch for the settled picture:
-      - (a) F16 pixels plus the companion over the preview port;
-      - (b) PQ JPEG XL (`JxlLossy` effort 5, 146 ms at 2560 px on the
-        engine's PC);
-      - (c) AVIF with the master's gain map.
-- [ ] **M** · Each measured on the M1 and the MacBook's XDR display:
-      - encode time;
-      - whether Electron shows it in HDR (Chromium issue 568825290);
-      - a shift when a drag ends;
-      - memory.
-      The results go here; the owner picks; the other arms go.
-- [ ] **S** · `measureMask` and the thumbnail made from the settled picture
-      read whichever the winner gives (the companion or an SDR file).
+- [x] **L** · A dev switch for Full HDR's settled picture, `PLAYROOM_SETTLED`
+      (`render.ts` `SETTLED_ARM`):
+      - (a) `frame` (the default): F16 pixels plus the companion over the
+        preview port, as the drafts;
+      - (b) PQ JPEG XL: **out**. This Chromium does not decode JXL (Pass 96's
+        spike; Chromium issue 568825290);
+      - (c) `avif`: an 8-bit AVIF (speed 9) whose SDR base carries the
+        master's gain map, shown by an `<img>`.
+- [x] **M** · Measured in the built app (M2 Pro, IMG_3198 RAW, display
+      203/812 nits), 2026-10-08:
+
+      | | settled 1920 px | per picture | draft → settled |
+      |---|---|---|---|
+      | (a) frame | 485–529 ms | 19.6 MB in memory (4 kept: ~80 MB) | the same pipeline and bytes as the draft |
+      | (c) avif | 679–692 ms | ~0.5 MB on disk | SDR base × a half-size map: an approximation of the draft |
+      | SDR (JPEG) | 307 ms | ~1 MB | — |
+
+      Recommendation: (a), for no shift when a drag ends and ~180 ms less;
+      (c) wins only on memory and on a picture that outlives the session.
+- [ ] **S** · Owner: compare (a) and (c) on the XDR (`PLAYROOM_SETTLED=avif
+      pnpm dev`): does the AVIF show in HDR, and does it shift when a drag
+      ends? Then the losing arm goes.
+- [x] **S** · Either arm keeps its SDR companion as a Display P3 PNG
+      (`encodePng8` with a `cICP` chunk, which the engine reads as Display
+      P3): `measureMask` reads it (by extension now, so a crop-mode PNG is
+      read as one too). The library thumbnail grades again on the
+      background engine, as with no settled picture to shrink.
 
 ### Pass 100 — Caches and the library (was 81) · 4 pts
 

@@ -112,6 +112,38 @@ export function encodePng16(
   ])
 }
 
+/** A PNG's `cICP` chunk saying Display P3 (P3 primaries, the sRGB curve, RGB, full range). */
+export const CICP_DISPLAY_P3 = chunk('cICP', Buffer.from([12, 13, 0, 1]))
+
+/**
+ * An 8-bit RGBA PNG of `w × h` pixels, unfiltered: Full HDR's SDR companion
+ * kept as a file for what measures the picture (so `level` is low).
+ */
+export function encodePng8(
+  rgba: Uint8Array,
+  w: number,
+  h: number,
+  level = 1,
+  colour: Buffer[] = []
+): Buffer {
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(w, 0)
+  ihdr.writeUInt32BE(h, 4)
+  ihdr[8] = 8
+  ihdr[9] = 6
+  const stride = w * 4
+  const raw = Buffer.alloc((stride + 1) * h)
+  for (let y = 0; y < h; y++)
+    raw.set(rgba.subarray(y * stride, (y + 1) * stride), y * (stride + 1) + 1)
+  return Buffer.concat([
+    SIGNATURE,
+    chunk('IHDR', ihdr),
+    ...colour,
+    chunk('IDAT', deflateSync(raw, { level })),
+    chunk('IEND', Buffer.alloc(0))
+  ])
+}
+
 /** A grey PNG (8 or 16-bit) as 8-bit samples, rounded: a model's plane as a painted one. */
 export function grey8(png: Buffer): { width: number; height: number; data: Uint8Array } {
   const s = pngSamples16(png)

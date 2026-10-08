@@ -14,7 +14,7 @@
  */
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import { mkdir, readdir, rm } from 'fs/promises'
+import { mkdir, readdir, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020 } from '../shared/auto'
 import {
@@ -43,6 +43,7 @@ import { ensureWorking, workingKey, type WorkingSet } from './pixels/working'
 import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
 import type {
   ColorPolicy,
+  Encode,
   Companion,
   HdrWorking,
   ConvertReport,
@@ -87,7 +88,7 @@ import type { PhotoRow } from './db'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import { keyOf, parseKey } from './keys'
 import type { Library, Picture } from './library'
-import { pngToFloats } from './pngio'
+import { CICP_DISPLAY_P3, encodePng8, pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
 import {
   ensureLensedProxies,
@@ -167,6 +168,30 @@ function masterFor(display: { whiteNits: number; peakNits: number }): ColorPolic
       float: 'ExtendedLinearDisplayP3',
       companion: { longest_side: COMPANION_EDGE, resampler: 'Bilinear' }
     }
+  }
+}
+
+/**
+ * Full HDR's settled picture, an A/B (Pass 99): `frame`, F16 pixels over the
+ * preview port as drafts are (the default); `avif`, an AVIF file whose SDR
+ * base carries the master's gain map, shown by an `<img>`. A dev switch
+ * (`PLAYROOM_SETTLED=avif`) until the owner has compared them on the XDR.
+ * PQ JPEG XL was the third arm: this Chromium does not decode JXL at all.
+ */
+const SETTLED_ARM: 'frame' | 'avif' = process.env['PLAYROOM_SETTLED'] === 'avif' ? 'avif' : 'frame'
+
+/** The AVIF arm's encoder: fast (speed 9), 8-bit, full chroma; the master adds the gain map. */
+const SETTLED_AVIF: Encode = {
+  Avif: {
+    quality: 90,
+    lossless: false,
+    bit_depth: 8,
+    chroma: 'Full',
+    speed: 9,
+    matrix: 'Bt601',
+    threads: 2,
+    tune: 'Ssim',
+    tiling: 'Single'
   }
 }
 
@@ -843,10 +868,13 @@ class Session {
     // the engine: no file written, served and decoded for a picture that is
     // replaced a moment later. The settled picture stays a file: the mask's
     // measuring and the thumbnail read it here.
-    // In Full HDR the settled picture is pixels too: F16 linear Display P3
-    // for the display, and an SDR companion for what reads the picture.
-    const frame = kind === 'draft' || display ? `${this.tag}-${seq}` : undefined
-    const out = frame ? '' : this.nextFile('view', alpha ? 'png' : 'jpg')
+    // In Full HDR the settled picture is pixels too (F16 linear Display P3
+    // for the display, an SDR companion for what reads the picture), or an
+    // AVIF with a gain map (the A/B's other arm; no alpha, so not a warp
+    // shown whole).
+    const avif = display !== null && kind === 'full' && !alpha && SETTLED_ARM === 'avif'
+    const frame = kind === 'draft' || (display && !avif) ? `${this.tag}-${seq}` : undefined
+    const out = frame ? '' : this.nextFile('view', avif ? 'avif' : alpha ? 'png' : 'jpg')
     const hdrStats =
       kind === 'full' ? this.measureHdr(cropMode, signal) : Promise.resolve(undefined)
     const report = await this.owner.engine
@@ -854,20 +882,25 @@ class Session {
         {
           ...blankRequest(src.path, out, src.input),
           ...(frame ? { sink: 'Bytes' as const } : {}),
-          pixel: { depth: display ? 'F32' : 'Eight', channels: alpha || frame ? 4 : 3 },
+          pixel: {
+            depth: display && frame ? 'F32' : 'Eight',
+            channels: alpha || frame ? 4 : 3
+          },
           encode: frame
             ? { Pixels: { sample: display ? 'F16' : 'U8' } }
-            : alpha
-              ? { Png: { compression: 'Fast', filter: 'Sub' } }
-              : {
-                  // A settled picture is a few MB less as 4:2:0, which a screen
-                  // shows the same; the draft keeps full chroma at its lower quality.
-                  Jpeg: {
-                    quality: kind === 'draft' ? 92 : 95,
-                    subsampling: kind === 'draft' ? 'None' : 'Quarter',
-                    optimize: false
-                  }
-                },
+            : avif
+              ? SETTLED_AVIF
+              : alpha
+                ? { Png: { compression: 'Fast', filter: 'Sub' } }
+                : {
+                    // A settled picture is a few MB less as 4:2:0, which a screen
+                    // shows the same; the draft keeps full chroma at its lower quality.
+                    Jpeg: {
+                      quality: kind === 'draft' ? 92 : 95,
+                      subsampling: kind === 'draft' ? 'None' : 'Quarter',
+                      optimize: false
+                    }
+                  },
           metadata: { exif: false, icc: true, xmp: false, iptc: false },
           color: display ? masterFor(display) : displayPolicy(this.info, 'DisplayP3'),
           // The master reads a gain map itself, and refuses the field.
@@ -895,10 +928,16 @@ class Session {
         ...(report.companion ? { companion: companionOf(report.companion) } : {})
       })
     const stats = statsOf(report)
-    // Full HDR's settled picture is a frame: no file for the mask to be
-    // measured on (Pass 99 settles what the settled picture leaves behind).
-    if (kind === 'full' && !out) this.lastFull = ''
-    if (kind === 'full' && out) {
+    // Full HDR's settled picture, either arm: what measures it (inside a
+    // mask) reads its SDR companion, kept as a PNG.
+    if (kind === 'full' && display) {
+      const c = report.companion
+      if (c) {
+        const file = this.nextFile('companion', 'png')
+        await writeFile(file, encodePng8(c.data, c.width, c.height, 1, [CICP_DISPLAY_P3]))
+        this.lastFull = file
+      } else this.lastFull = ''
+    } else if (kind === 'full' && out) {
       this.lastFull = out
       if (!preview)
         this.fullPicture = whole
@@ -1072,7 +1111,7 @@ class Session {
     try {
       return await this.owner.engine.analyze(
         {
-          ...analyzeRequest(this.lastFull, 'Jpeg', 1),
+          ...analyzeRequest(this.lastFull, this.lastFull.endsWith('.png') ? 'Png' : 'Jpeg', 1),
           weights: { source: { Png: plane }, resampler: 'Bilinear' }
         },
         { signal }

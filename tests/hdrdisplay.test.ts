@@ -63,3 +63,31 @@ test('Full HDR renders for the display while on; a Mac with headroom to reach as
   assert.ok(!canShowHdr(sdr))
   assert.equal(renderDisplay(true, sdr), null)
 })
+
+test('Full HDR keeps its SDR companion as a Display P3 PNG the engine reads', async () => {
+  const { encodePng8, decodePng, CICP_DISPLAY_P3 } = await import('../src/main/pngio')
+  const w = 3
+  const h = 2
+  const rgba = new Uint8Array(w * h * 4).map((_, i) => (i * 37) % 256)
+  const png = encodePng8(rgba, w, h, 1, [CICP_DISPLAY_P3])
+  const d = decodePng(png)
+  assert.equal(d.width, w)
+  assert.equal(d.colorType, 6)
+  // Unfiltered rows: each one's filter byte, then the pixels as given.
+  for (let y = 0; y < h; y++)
+    assert.deepEqual(
+      [...d.rows.subarray(y * w * 4, (y + 1) * w * 4)],
+      [...rgba.subarray(y * w * 4, (y + 1) * w * 4)]
+    )
+  const { createRequire } = await import('node:module')
+  const { mkdtempSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const engine = createRequire(import.meta.url)('@xuckless/pixl-engine') as {
+    probe(p: string): Promise<{ width: number; color_space?: unknown }>
+  }
+  const file = join(mkdtempSync(join(tmpdir(), 'companion-')), 'c.png')
+  writeFileSync(file, png)
+  const info = await engine.probe(file)
+  assert.equal(info.width, w)
+})
