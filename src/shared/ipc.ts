@@ -166,6 +166,8 @@ export const IPC = {
     /** Heal / clone: the best place to copy a spot from. */
     suggestHeal: 'develop:suggest-heal',
     bakeSpot: 'develop:bake-spot',
+    /** AI Remove on the object clicked (SAM 2.1's mask as a stroke, MI-GAN fills it), baked. */
+    removeObject: 'develop:remove-object',
     /** Where the open photo's AI denoise stands. */
     /** main → renderer: a render finished */
     rendered: 'develop:rendered',

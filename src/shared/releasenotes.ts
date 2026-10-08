@@ -46,6 +46,12 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
         ]
       },
       {
+        title: 'Heal',
+        items: [
+          'Remove: paint over something, or click it with Find object, and an AI model fills it with what was likely behind it — people, signs, wires. It is baked into the photo like your other heal strokes.'
+        ]
+      },
+      {
         title: 'Changes',
         items: [
           'Super Resolution has a Source choice: Clean stays closest to a sharp original, with a new, much faster model; Damaged repairs compression and noise as it enlarges; Keep texture leaves the grain.',

@@ -26,6 +26,7 @@ import {
   type RetouchSpot
 } from '../../shared/retouch'
 import { pngSamples16 } from '../pngio'
+import { inpainterRef } from '../ai/inpainter'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
 import type { FreezeContext } from './freeze'
 import { lensMap, moves } from './lensmap'
@@ -141,7 +142,11 @@ export async function bakeSpot(
     radius: spot.radius * k,
     radiusY: spot.radiusY ? spot.radiusY * k : spot.radiusY
   }
-  const retouch = compileRetouch([onPhoto], 'Normal', W, H)
+  // A Remove's model (MI-GAN): asked for only when one is baked.
+  const inpainter = spot.kind === 'remove' ? await inpainterRef() : null
+  if (spot.kind === 'remove' && !inpainter)
+    throw new Error('download the object remover (MI-GAN) in Settings → AI models first')
+  const retouch = compileRetouch([onPhoto], 'Normal', W, H, inpainter)
   if (!retouch) return null
   const region = spotBounds(onPhoto, W, H)
   const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)

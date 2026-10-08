@@ -1116,8 +1116,26 @@ export interface PetEye {
   catchlights: unknown[]
 }
 
+/**
+ * AI remove: the hole filled by an inpainting model shown a crop around it
+ * (`context`: the hole's box grown by this many times its longer side, 0…4).
+ * `model` is an inpainter's filled ref (`migan-512`).
+ */
+export interface AiRemove {
+  shape: SpotShape
+  feather: Feather
+  opacity: number
+  context: number
+  model: Record<string, unknown>
+}
+
 export type RetouchStep =
-  { Clone: Spot } | { Heal: Spot } | { Fill: ContentFill } | { RedEye: RedEye } | { PetEye: PetEye }
+  | { Clone: Spot }
+  | { Heal: Spot }
+  | { Fill: ContentFill }
+  | { Remove: AiRemove }
+  | { RedEye: RedEye }
+  | { PetEye: PetEye }
 
 /** Run after the lens correction, before a region, the grade and framing. */
 export interface Retouch {

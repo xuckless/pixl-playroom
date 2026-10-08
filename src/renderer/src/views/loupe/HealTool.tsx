@@ -2,7 +2,8 @@
  * The Heal tool on the photo: press on a flaw, hold and drag to where it
  * should copy from, let go — healed (or cloned), and the circles are gone.
  * A press that does not move heals from where the engine finds best. Fill,
- * red eye and pet eye are a click. Each spot is baked into the photo's pixels
+ * red eye and pet eye are a click; Remove is painted over what should go (or,
+ * with Find object, a click on it). Each spot is baked into the photo's pixels
  * (lib/heal.ts); Undo takes it away, and the next one works on what it healed.
  * With a mask selected, spots keep inside it.
  *
@@ -18,7 +19,16 @@ import {
   type Rect,
   type ViewGeometry
 } from '../../../../shared/view'
-import { beginSpot, cancelSpot, dragSource, endSpot } from '../../lib/heal'
+import {
+  beginSpot,
+  cancelSpot,
+  dragSource,
+  endSpot,
+  extendSpot,
+  removeObjectAt
+} from '../../lib/heal'
+import { ensureModelId } from '../../lib/ensureModel'
+import { useModels } from '../../lib/models'
 import { useDevelop } from '../../state/develop'
 import { useUi } from '../../state/ui'
 
@@ -28,6 +38,16 @@ const STILL_PX = 5
 interface Screen {
   x: number
   y: number
+}
+
+/** The object remover (engine 0.18). */
+const INPAINTER = 'migan-512'
+
+/** A Remove being painted: its spot, and the pointer's path on screen. */
+interface Painting {
+  id: string
+  path: P[]
+  pointer: number
 }
 
 /** A spot being placed: where it is, and where its source is being dragged. */
@@ -49,6 +69,9 @@ export const HealTool = memo(function HealTool({
   const tool = useDevelop((s) => s.tool)
   const heal = useUi((s) => s.heal)
   const [placing, setPlacing] = useState<Placing | null>(null)
+  const [painting, setPainting] = useState<Painting | null>(null)
+  const models = useModels()
+  const removerHere = models.find((m) => m.id === INPAINTER)?.installed === true
   const [hover, setHover] = useState<Screen | null>(null)
   const box = useRef<HTMLDivElement>(null)
 
@@ -66,12 +89,34 @@ export const HealTool = memo(function HealTool({
    * where the spot is made, so under an Upright warp it shows the shape that
    * will be healed (a circle without one).
    */
+  /** The brush's radius on screen about a display point (round on the base frame). */
+  const radiusPx = (p: P): number => {
+    const c = screenOf(p)
+    const pts = spotOutline(g, displayToBase(g, p), heal.size, 8)
+    return Math.max(...pts.map((q) => Math.hypot(q.x * rect.w - c.x, q.y * rect.h - c.y)))
+  }
+  const brushPx = painting ? radiusPx(painting.path[0]) : 0
   const outline = (p: P): string => {
     const pts = spotOutline(g, displayToBase(g, p), eyes ? heal.size / 2 : heal.size)
     return `M${pts.map((q) => `${q.x * rect.w} ${q.y * rect.h}`).join('L')}Z`
   }
 
   const release = (): void => {
+    if (painting) {
+      const p = painting
+      setPainting(null)
+      const a = screenOf(p.path[0])
+      const moved = p.path.some((q) => {
+        const b = screenOf(q)
+        return Math.hypot(a.x - b.x, a.y - b.y) >= STILL_PX
+      })
+      // A click with Find object: the object there, not a disc.
+      if (!moved && heal.findObject) {
+        cancelSpot(p.id)
+        removeObjectAt(displayToBase(g, p.path[0]))
+      } else void endSpot(p.id, null)
+      return
+    }
     if (!placing) return
     setPlacing(null)
     const a = screenOf(placing.at)
@@ -90,6 +135,20 @@ export const HealTool = memo(function HealTool({
         const p = at(e)
         if (p.x < 0 || p.y < 0 || p.x > 1 || p.y > 1) return
         const base = displayToBase(g, p)
+        if (heal.mode === 'remove') {
+          // Baked or nothing: an HDR photo keeps live spots, and a live Remove draws nothing.
+          if (useDevelop.getState().session?.isHdr) return
+          // MI-GAN first, offered there and then when it is not downloaded.
+          if (!removerHere) {
+            void ensureModelId(INPAINTER, false, 'Remove')
+            return
+          }
+          const id = beginSpot('remove', base)
+          if (!id) return
+          e.currentTarget.setPointerCapture(e.pointerId)
+          setPainting({ id, path: [p], pointer: e.pointerId })
+          return
+        }
         if (!copies) {
           // Fill and the eyes: a click.
           const r = heal.size / (eyes ? 2 : 1)
@@ -109,6 +168,11 @@ export const HealTool = memo(function HealTool({
       onPointerMove={(e) => {
         const p = at(e)
         setHover(screenOf(p))
+        if (painting && e.pointerId === painting.pointer) {
+          setPainting({ ...painting, path: [...painting.path, p] })
+          extendSpot(painting.id, displayToBase(g, p))
+          return
+        }
         if (!placing || e.pointerId !== placing.pointer) return
         setPlacing({ ...placing, source: p })
         dragSource(placing.id, displayToBase(g, p))
@@ -116,7 +180,9 @@ export const HealTool = memo(function HealTool({
       onPointerUp={release}
       onPointerCancel={() => {
         if (placing) cancelSpot(placing.id)
+        if (painting) cancelSpot(painting.id)
         setPlacing(null)
+        setPainting(null)
       }}
       onPointerLeave={() => setHover(null)}
     >
@@ -144,6 +210,14 @@ export const HealTool = memo(function HealTool({
               </g>
             )
           })()}
+        {/* A Remove being painted: what will be filled. */}
+        {painting && (
+          <path
+            d={`M${painting.path.map((q) => `${q.x * rect.w} ${q.y * rect.h}`).join('L')}`}
+            className="remove-stroke"
+            style={{ strokeWidth: brushPx * 2 }}
+          />
+        )}
         {/* The brush, following the pointer. */}
         {active && hover && !placing && (
           <path d={outline({ x: hover.x / rect.w, y: hover.y / rect.h })} className="heal-brush" />

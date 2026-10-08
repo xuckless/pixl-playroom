@@ -600,6 +600,12 @@
 .heal-layer.active.over-spot {
   cursor: move;
 }
+.heal-layer .remove-stroke {
+  fill: none;
+  stroke: rgba(255, 64, 96, 0.45);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .heal-layer .heal-brush {
   fill: none;
   stroke: rgba(255, 255, 255, 0.9);

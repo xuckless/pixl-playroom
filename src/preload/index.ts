@@ -201,6 +201,13 @@ const api = {
     measureCa: (key: string) => call<CaMeasurement>(IPC.develop.measureCa, key),
     bakeSpot: (key: string, spot: RetouchSpot, layerId: string | null, steps: PixelStep[]) =>
       call<PixelStep | null>(IPC.develop.bakeSpot, key, spot, layerId, steps),
+    removeObject: (
+      key: string,
+      at: SpotPoint,
+      feather: number,
+      layerId: string | null,
+      steps: PixelStep[]
+    ) => call<PixelStep | null>(IPC.develop.removeObject, key, at, feather, layerId, steps),
     suggestHeal: (
       key: string,
       points: SpotPoint[],

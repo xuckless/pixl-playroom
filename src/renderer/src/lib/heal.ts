@@ -82,6 +82,55 @@ export function beginSpot(
   return spot.id
 }
 
+/**
+ * A painted spot (a Remove) grown along the pointer: a point added once it
+ * has moved a quarter of the brush's radius on the base frame.
+ */
+export function extendSpot(id: string, at: P): void {
+  const s = useDevelop.getState().recipe?.retouch.find((x) => x.id === id)
+  const last = s?.points.at(-1)
+  if (!s || !last || s.points.length >= 4096) return
+  const session = useDevelop.getState().session
+  const short = session ? Math.min(session.frameWidth, session.frameHeight) : 1
+  const dx = (at.x - last.x) * (session?.frameWidth ?? 1)
+  const dy = (at.y - last.y) * (session?.frameHeight ?? 1)
+  if (Math.hypot(dx, dy) < (s.radius * short) / 4) return
+  useDevelop.getState().edit((r) => {
+    const x = r.retouch.find((q) => q.id === id)
+    if (x) x.points.push({ x: clamp01(at.x), y: clamp01(at.y) })
+  }, true)
+}
+
+/**
+ * AI Remove on the object at a base-frame point: SAM 2.1 finds it, MI-GAN
+ * fills it (main), and its step lands as a painted one does.
+ */
+export function removeObjectAt(at: P): void {
+  const session = useDevelop.getState().session
+  if (!session) return
+  const key = session.key
+  const layerId = scoped.layer()?.id ?? null
+  const feather = useUi.getState().heal.feather
+  const job = (queue = queue.then(async () => {
+    if (useDevelop.getState().session?.key !== key) return
+    const steps = useDevelop.getState().recipe?.pixels ?? []
+    let step: PixelStep | null = null
+    try {
+      step = await api.develop.removeObject(key, at, feather, layerId, steps)
+    } catch (err) {
+      useLibrary.getState().say(`Remove: ${errorText(err)}`, 'error')
+      return
+    }
+    if (useDevelop.getState().session?.key !== key) return
+    const dev = useDevelop.getState()
+    dev.edit((r: Recipe) => {
+      if (step) r.pixels.push(step)
+    })
+    dev.commit(step?.label ?? 'Remove: nothing to change')
+  }))
+  landingWork(job)
+}
+
 /** Move a spot's source while it is dragged (the picture follows). */
 export function dragSource(id: string, source: P): void {
   useDevelop.getState().edit((r) => {

@@ -18,6 +18,7 @@ import { AiJobs } from './ai/jobs'
 import { applyMaskResult } from './ai/apply'
 import { SegmentRunner } from './ai/segment'
 import { DenoiseRunner } from './ai/denoise'
+import { INPAINTER_MODEL, setInpainter } from './ai/inpainter'
 import { ModelStore } from './ai/models'
 import { EnhanceRunner } from './enhance'
 import { Exporter } from './exporter'
@@ -241,6 +242,10 @@ app.whenReady().then(() => {
     if (e.name === 'project') embedder.request(e.key)
   })
   const models = new ModelStore(index, () => bgEngine.getStatus())
+  // A Remove bakes with MI-GAN once it is downloaded (pixels/heal.ts).
+  setInpainter(async () =>
+    (await models.installed(INPAINTER_MODEL)) ? models.ref(INPAINTER_MODEL) : null
+  )
   // Off the launch's path: retired models' files off the disk, and the
   // thumbnails 0.3's before/after (the previous engine's) kept.
   setTimeout(() => {

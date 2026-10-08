@@ -56,7 +56,8 @@ import type { ProblemInput } from '../shared/crash'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
 import type { GuideLine } from '../shared/upright'
-import type { P as SpotPoint, RetouchSpot } from '../shared/retouch'
+import { removeSpot, strokeOver, type P as SpotPoint, type RetouchSpot } from '../shared/retouch'
+import { grey8 } from './pngio'
 import type { PixelStep } from '../shared/pixels'
 import { enhanceAvailability, enhanceRates } from './enhance'
 import { readWatermark } from './watermark'
@@ -441,6 +442,35 @@ export function registerIpc(s: Services): void {
     IPC.develop.bakeSpot,
     (key: string, spot: RetouchSpot, layerId: string | null, steps: PixelStep[]) =>
       s.sessions.bakeSpot(key, spot, layerId, steps)
+  )
+  // AI Remove by a click: the object SAM 2.1 finds there, as a stroke over
+  // it (the engine fills strokes, not planes), filled by MI-GAN and baked.
+  handle(
+    IPC.develop.removeObject,
+    async (
+      key: string,
+      at: SpotPoint,
+      feather: number,
+      layerId: string | null,
+      steps: PixelStep[]
+    ): Promise<PixelStep | null> => {
+      const found = await s.select.oneShot(
+        key,
+        { rect: null, points: [{ x: at.x, y: at.y, fg: true }] },
+        { via: 'click', label: 'Remove' },
+        new AbortController().signal
+      )
+      const png = await s.planes.get(found.ref)
+      if (png === undefined) throw new Error('the object’s mask went missing')
+      const stroke = strokeOver(grey8(Buffer.from(png, 'base64')))
+      if (!stroke) throw new Error('nothing was found there to remove')
+      return s.sessions.bakeSpot(
+        key,
+        removeSpot(stroke.points, stroke.radius, feather),
+        layerId,
+        steps
+      )
+    }
   )
   handle(
     IPC.develop.suggestHeal,

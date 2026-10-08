@@ -9,7 +9,10 @@ import { developMark } from '../../../shared/rawcolour'
 import { Icon } from '../components/icons'
 import { useState } from 'react'
 import { InfoTip, type Tip } from '../components/InfoTip'
-import { Section, Slider, Tabs, ToolPanel } from '../components/ui'
+import { Section, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
+import { ModelGet } from '../components/ModelGet'
+import { ensureModel } from '../lib/ensureModel'
+import { useModels } from '../lib/models'
 import { bakeLiveSpots, removeLiveSpots } from '../lib/heal'
 import { useScope } from '../state/scope'
 import { useDevelop } from '../state/develop'
@@ -19,6 +22,7 @@ const MODES: { value: SpotKind; label: string }[] = [
   { value: 'heal', label: 'Heal' },
   { value: 'clone', label: 'Clone' },
   { value: 'fill', label: 'Fill' },
+  { value: 'remove', label: 'Remove' },
   { value: 'redeye', label: 'Red eye' },
   { value: 'peteye', label: 'Pet eye' }
 ]
@@ -37,6 +41,12 @@ const HINT: Record<SpotKind, Tip> = {
   fill: {
     what: 'Click what should go: it is rebuilt from the rest of the photo.',
     expect: 'Best on small things against plain or repeating backgrounds.'
+  },
+  remove: {
+    what: 'Paint over what should go: an AI model fills it with what was likely behind it.',
+    expect:
+      'Works on people, signs, wires and larger things where Fill would repeat the background. With Find object, click something and it is found for you.',
+    tip: 'Paint a little past its edges, shadow included.'
   },
   redeye: {
     what: 'Click a red pupil to darken it to neutral.',
@@ -63,6 +73,7 @@ export function HealPanel(): React.JSX.Element | null {
   const setHeal = useUi((s) => s.setHeal)
   const { layer } = useScope()
   const [baking, setBaking] = useState(false)
+  const models = useModels()
   if (!recipe) return null
   const live = recipe.retouch.length
   const strokes = recipe.pixels.filter((p) => p.kind === 'retouch').length
@@ -81,6 +92,30 @@ export function HealPanel(): React.JSX.Element | null {
       }
     >
       {layer && !isHdr && <p className="scope-note small">Strokes keep inside {layer.name}.</p>}
+      {heal.mode === 'remove' &&
+        (isHdr ? (
+          <p className="scope-note small">
+            Remove bakes into the photo’s pixels, which an HDR photo cannot take yet.
+          </p>
+        ) : (
+          <div className="row heal-remove">
+            <Toggle
+              on={heal.findObject === true}
+              onChange={(on) =>
+                void (async () => {
+                  // SAM 2.1 finds the object: offered first when it is not here.
+                  if (on && !(await ensureModel('prompt', 'Find object'))) return
+                  setHeal({ findObject: on })
+                })()
+              }
+              title="Click something on the photo and it is found and removed (SAM 2.1, then MI-GAN)"
+            >
+              <Icon name="objects" />
+              Find object
+            </Toggle>
+            <ModelGet id="migan-512" models={models} />
+          </div>
+        ))}
       {stale > 0 && (
         <p className="pixel-step-stale">
           {stale === 1 ? 'One heal stroke was' : `${stale} heal strokes were`} made from the

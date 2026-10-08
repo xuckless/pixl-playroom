@@ -91,6 +91,8 @@ export interface HealSettings {
   opacity: number
   /** Visualise Spots: the picture as white specks on black, and how faint a speck still shows (0…100). */
   visualise?: boolean
+  /** Remove: a click (no drag) takes the object there (SAM 2.1), not a disc. */
+  findObject?: boolean
   spotLevel?: number
 }
 

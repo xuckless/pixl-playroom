@@ -258,14 +258,24 @@ After: Pass 85.
 
 After: Pass 85.
 
-- [ ] **L** · A Remove mode in the Heal tool beside Heal, Clone and Fill
-      (`panels/heal.tsx`, `shared/retouch.ts`):
-      - paint over it, or click an object and SAM 2.1 makes the mask,
-        dilated a little;
-      - a retouch step `{ Remove: { shape, feather, opacity, context, model } }`
-        with `migan-512`;
-      - it stays editable and is made again when the lens or crop changes.
-- [ ] **S** · "Model needed" offers MI-GAN; compile tests for the step.
+- [x] **L** · A Remove mode in the Heal tool, beside Heal, Clone and Fill:
+      - paint over what should go (a stroke on the base frame, its path drawn
+        as it goes); a click with Find object takes the object there:
+        SAM 2.1's mask (`oneShot`) becomes a serpentine stroke covering it
+        (`strokeOver`; the engine fills circles or strokes, not planes);
+      - the engine's `{ Remove: { shape, feather, opacity, context: 0.75,
+        model } }` with `migan-512`, **baked** at once as a heal stroke is
+        (`bakeSpot`), so MI-GAN runs once and the step lives on the photo's
+        own pixels (lens and crop changes keep it on its subject);
+      - live spots never carry one (`compileRetouch` leaves a Remove out
+        without an inpainter), so an HDR photo, whose spots stay live, says
+        Remove isn't available there yet;
+      - MI-GAN offered on the first stroke, and in the panel; SAM on Find
+        object.
+      _Checked on the real engine: the utility pole on jpeg_test removed in
+      1.3 s on the CPU (crop 2630² onto MI-GAN's 512² grid, model load 143 ms)._
+- [ ] **S** · Owner: MI-GAN on the model server (Pass 85's mirror line): it
+      has no public upstream.
 
 ### Pass 93 — BiRefNet "Fine" Subject · 3 pts
 
