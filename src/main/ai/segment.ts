@@ -9,21 +9,37 @@
  * to the picture's at render time (shared/refine.ts); Background is the same
  * plane inverted (and hardened that way round).
  *
- * Sky has no model yet (the roster ships salient-object models only): the
- * Sky tool asks the user to click it instead (SAM 2.1, `SKY_BY_CLICK`).
+ * Engine 0.19's named masks: the sky, vegetation and water are DINOv2-S+ADE's
+ * planes, soft and guided wide (the engine's stated upsample for its sky); a
+ * person's hair, face, skin and clothes are Selfie Multiclass's, found on
+ * the photo and again on a square around the person (the model reads
+ * 256 × 256: a half-body portrait's person is otherwise a few dozen of its
+ * pixels), each part kept where it beats the others.
  */
 import type { AiResult, AiStartRequest } from '../../shared/ai'
-import { DEPTH_MODEL, estimate, FINE_SUBJECT_MODEL, SEGMENT_LABEL } from '../../shared/ai'
+import {
+  estimate,
+  isPartTarget,
+  isSceneTarget,
+  segmentModel,
+  SEGMENT_LABEL,
+  type PartTarget
+} from '../../shared/ai'
+import type { LensCorrection } from '../../shared/engine-types'
 import { lensCorrection } from '../../shared/lens'
 import { hardenPlane } from '../../shared/refine'
+import { partPlane, pasted, personBox, squareAround } from './parts'
 import { planeRef } from '../planeref'
 import type { EngineClient } from '../engine/client'
 import type { Library } from '../library'
 import { encodeGreyPng, grey8 } from '../pngio'
 import type { PlaneStore } from '../planestore'
-import { ensureProxies } from '../proxy'
+import { unlink } from 'fs/promises'
+import { join } from 'path'
+import { paths } from '../paths'
+import { ensureProxies, type ProxyFile } from '../proxy'
 import type { DevelopSessions } from '../render'
-import { BACKGROUND_THREADS } from '../source'
+import { BACKGROUND_THREADS, blankRequest } from '../source'
 import { READ_LIMITS } from '../../shared/limits'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
 import { ModelMissing, type ModelStore } from './models'
@@ -45,6 +61,18 @@ const HARDEN = 4
  * leaves the uncertain rim (light wall along dark hair) rather than taking it.
  */
 const HARDEN_AT = 0.6
+
+/** The engine's stated upsample for DINOv2's sky (a stopgap), used for its other planes too. */
+const SCENE_UPSAMPLE = { Guided: { radius: 0.02, epsilon: 0.001 } }
+/** A scene plane covering less of the frame than this found nothing. */
+const NOTHING_FOUND = 0.002
+/** Selfie Multiclass's planes for each part (summed). */
+const PART_PLANES: Record<PartTarget, string[]> = {
+  face: ['face_skin'],
+  hair: ['hair'],
+  skin: ['face_skin', 'body_skin'],
+  clothes: ['clothes']
+}
 
 /** The subject models, best first. (U²-Net, retired by engine 0.17, went with 0.18.) */
 const SUBJECT_MODELS = ['u2netp']
@@ -83,11 +111,15 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
   }
 
   async run(ctx: AiContext, req: SegmentRequest): Promise<Extract<AiResult, { kind: 'mask' }>> {
-    if (req.target === 'sky') throw new Error('No sky model ships yet')
     ctx.stage('model', 0, 'Loading the model')
     const depth = req.target === 'depth'
-    // A model named by the ask (the depth map, the fine cut-out), else the subject model.
-    const named = depth ? DEPTH_MODEL : req.fine ? FINE_SUBJECT_MODEL : null
+    const scene = isSceneTarget(req.target)
+    // The model the ask names (the depth map, the fine cut-out, a scene's or
+    // a person's planes), else the subject model.
+    const named =
+      depth || scene || isPartTarget(req.target) || req.fine
+        ? segmentModel(req.target, req.fine)
+        : null
     const id = named ? ((await this.models.installed(named)) ? named : null) : await this.model()
     if (!id) throw new ModelMissing(this.models.entry(named ?? 'u2netp'))
     const row = await this.library.photoRow(req.key)
@@ -106,10 +138,19 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     ctx.stage('analyse', 0, `Finding the ${SEGMENT_LABEL[req.target].toLowerCase()}`)
     const t0 = Date.now()
     // BiRefNet: 13.5 s on the M2 Pro's CPU with a 24 MP decode, about 10 s from a
-    // proxy (its 1024² grid is fixed); U²-Netp a moment.
+    // proxy (its 1024² grid is fixed); DINOv2 about a second; U²-Netp and
+    // Selfie Multiclass a moment.
     const expected = req.fine ? 10000 : 2500
     const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 200)
     let report: Awaited<ReturnType<EngineClient['segment']>>
+    const lens = lensCorrection(recipe.lens)
+    if (isPartTarget(req.target)) {
+      try {
+        return await this.part(ctx, req, req.target, row.id, px.proxy, lens, segmenter)
+      } finally {
+        clearInterval(tick)
+      }
+    }
     const request = (model: Record<string, unknown>): Record<string, unknown> => ({
       source: { Path: px.proxy.path },
       input: px.proxy.input,
@@ -117,10 +158,10 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       gain_map: null,
       // The proxy is the base frame, upright: what masks are placed on.
       orientation: 'Normal',
-      lens: lensCorrection(recipe.lens),
+      lens,
       segmenter: { Classes: model },
       // A depth map's edges aren't the picture's: bilinear (engine 0.18).
-      upsample: depth ? DEPTH_UPSAMPLE : UPSAMPLE,
+      upsample: depth ? DEPTH_UPSAMPLE : scene ? SCENE_UPSAMPLE : UPSAMPLE,
       png: { compression: 'Fast', filter: 'Sub' },
       threads: BACKGROUND_THREADS,
       limits: READ_LIMITS,
@@ -136,8 +177,27 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     } finally {
       clearInterval(tick)
     }
-    const plane = report.planes[0]
+    const plane = scene ? report.planes.find((p) => p.name === req.target) : report.planes[0]
     if (!plane) throw new Error('the model returned no plane')
+    if (scene) {
+      const label = SEGMENT_LABEL[req.target]
+      if (plane.coverage < NOTHING_FOUND)
+        throw new Error(`No ${label.toLowerCase()} found in this photo`)
+      // The plane as it is: soft where the model is unsure (sky through branches).
+      const d = grey8(Buffer.from(plane.png))
+      const png = encodeGreyPng(d.data, d.width, d.height).toString('base64')
+      const ref = planeRef(png)
+      this.planes.put(ref, png)
+      return {
+        kind: 'mask',
+        ref,
+        width: d.width,
+        height: d.height,
+        label,
+        source: { kind: 'segment', target: req.target as 'sky' | 'vegetation' | 'water' },
+        ...(req.into ? { into: { ...req.into } } : {})
+      }
+    }
     if (req.target === 'depth') {
       // The map as it is (255 the nearest thing in the photo): the range is keyed on it.
       const d = grey8(Buffer.from(plane.png))
@@ -176,8 +236,110 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       width: d.width,
       height: d.height,
       label: req.fine ? `${SEGMENT_LABEL[req.target]} (fine)` : SEGMENT_LABEL[req.target],
-      source: { kind: 'segment', target: req.target, ...(req.fine ? { fine: true as const } : {}) },
+      source: {
+        kind: 'segment',
+        target: req.target as 'subject' | 'background',
+        ...(req.fine ? { fine: true as const } : {})
+      },
       // Into the mask it was asked for (Add to the selected mask, a smart look's), else a new one.
+      ...(req.into ? { into: { ...req.into } } : {})
+    }
+  }
+
+  /**
+   * A person's part: Selfie Multiclass on the photo, to find where the
+   * person is, then on a square around them, its planes laid back where the
+   * square came from. The part is kept where it beats the person's other
+   * parts (a dark jumper read as some hair stays clothes) and hardened a
+   * little: the model's edges are soft.
+   */
+  private async part(
+    ctx: AiContext,
+    req: SegmentRequest,
+    target: PartTarget,
+    photoId: number,
+    proxy: ProxyFile,
+    lens: LensCorrection | null,
+    segmenter: Record<string, unknown>
+  ): Promise<Extract<AiResult, { kind: 'mask' }>> {
+    const run = async (
+      path: string,
+      input: string,
+      withLens: LensCorrection | null
+    ): Promise<{ name: string; data: Uint8Array; width: number; height: number }[]> => {
+      try {
+        const r = await this.engine.segment(
+          {
+            source: { Path: path },
+            input,
+            raw: null,
+            gain_map: null,
+            orientation: 'Normal',
+            lens: withLens,
+            segmenter: { Classes: segmenter },
+            upsample: UPSAMPLE,
+            png: { compression: 'Fast', filter: 'Sub' },
+            threads: BACKGROUND_THREADS,
+            limits: READ_LIMITS,
+            plane_longest: null
+          },
+          { signal: ctx.signal }
+        )
+        return r.planes.map((p) => ({ name: p.name, ...grey8(Buffer.from(p.png)) }))
+      } catch (err) {
+        if (ctx.signal.aborted) throw new Cancelled()
+        throw err
+      }
+    }
+    const label = SEGMENT_LABEL[target]
+    const whole = await run(proxy.path, proxy.input, lens)
+    const { width: W, height: H } = whole[0]
+    const box = personBox(whole, W, H)
+    if (!box) throw new Error(`No person found in this photo for ${label}: try a brush`)
+    const sq = squareAround(box, W, H)
+    let planes = whole
+    // The person already fills the frame: the first answer is as good as it gets.
+    if (sq.side < 0.9 * Math.min(W, H)) {
+      const cropPath = join(paths.photoCache(photoId), `parts-${process.pid}-${Date.now()}.tiff`)
+      try {
+        await this.engine.convert({
+          ...blankRequest(proxy.path, cropPath, proxy.input),
+          lens,
+          pixel: { depth: proxy.float ? 'F32' : 'Sixteen', channels: 3 },
+          encode: { Tiff: { compression: 'None' } },
+          metadata: { exif: false, icc: true, xmp: false, iptc: false },
+          color: 'Preserve',
+          framing: {
+            orientation: 'Normal',
+            rotate_degrees: 0,
+            rotate_resampler: 'Lanczos3',
+            crop: { x: sq.x / W, y: sq.y / H, width: sq.side / W, height: sq.side / H }
+          },
+          threads: BACKGROUND_THREADS
+        })
+        const near = await run(cropPath, 'Tiff', null)
+        planes = near.map((p) => ({ ...p, data: pasted(p, sq, W, H), width: W, height: H }))
+      } finally {
+        await unlink(cropPath).catch(() => undefined)
+      }
+    }
+    ctx.stage('refine', 0, 'Refining the edges')
+    const grey = partPlane(planes, PART_PLANES[target], W * H)
+    let any = false
+    for (let i = 0; i < grey.length && !any; i++) any = grey[i] >= 128
+    if (!any) throw new Error(`No ${label.toLowerCase()} found in this photo`)
+    hardenPlane(grey, 0.5, 3)
+    ctx.progress(0.8)
+    const png = encodeGreyPng(grey, W, H).toString('base64')
+    const ref = planeRef(png)
+    this.planes.put(ref, png)
+    return {
+      kind: 'mask',
+      ref,
+      width: W,
+      height: H,
+      label,
+      source: { kind: 'person', part: target },
       ...(req.into ? { into: { ...req.into } } : {})
     }
   }

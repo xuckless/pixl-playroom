@@ -133,7 +133,9 @@ export class ModelStore {
   async installed(id: string): Promise<boolean> {
     const cached = this.installedCache.get(id)
     if (cached !== undefined) return cached
-    const e = this.entry(id)
+    // A model not offered (held back, or retired) is not here, whatever is on disk.
+    const e = this.roster().find((m) => m.id === id)
+    if (!e) return false
     let ok = true
     for (const f of e.files) {
       const s = await stat(join(this.dir(id), f.name)).catch(() => null)

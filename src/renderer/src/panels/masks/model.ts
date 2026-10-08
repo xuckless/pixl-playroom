@@ -22,8 +22,14 @@ import { useObjects } from '../../state/objects'
 import {
   DEPTH_MODEL,
   FINE_SUBJECT_MODEL,
+  isPartTarget,
+  isSceneTarget,
+  PARTS_MODEL,
   PEOPLE_BY_CLICK,
-  SKY_BY_CLICK
+  SCENE_MODEL,
+  SEGMENT_LABEL,
+  SKY_BY_CLICK,
+  type SegmentTarget
 } from '../../../../shared/ai'
 import { CONCEPTS, conceptOf, type ConceptId } from '../../../../shared/concepts'
 import type { PersonPart } from '../../../../shared/looks/smart'
@@ -36,6 +42,8 @@ export type MaskToolKind =
   | 'subject-fine'
   | 'objects'
   | 'sky'
+  | 'vegetation'
+  | 'water'
   | 'background'
   | 'brush'
   | 'linear'
@@ -58,11 +66,22 @@ export interface MaskToolInfo {
   needs?: string
   /** Found by a model: usable when the build has that task (its model offered when missing). */
   ai?: 'segment' | 'prompt'
+  /** Found by this model (engine 0.19's named masks): offered when missing, on the tool's first use. */
+  model?: string
   /** A word in the corner of its button ("click": the sky is pointed at, for now). */
   badge?: string
   /** What its button's tip says about it, past its name. */
   hint?: string
 }
+
+const PART_ICON: Partial<Record<PersonPart, IconName>> = {
+  body: 'subject',
+  face: 'face',
+  hair: 'hair',
+  skin: 'skin',
+  clothes: 'clothes'
+}
+const PART_HINT = 'found by a model; best when the person is a good part of the frame'
 
 /** The tools a mask can be made with, in Lightroom's order. */
 export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
@@ -90,10 +109,24 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
         needs: 'download SAM 2.1',
         ai: 'prompt'
       },
-      // No sky model yet (E28): the sky is clicked, and SAM 2.1 selects it.
+      // DINOv2's sky plane (engine 0.19): one click on the tool.
       SKY_BY_CLICK
         ? { kind: 'sky', label: 'Sky', icon: 'sky', ai: 'prompt', badge: 'click' }
-        : { kind: 'sky', label: 'Sky', icon: 'sky', needs: 'no sky model ships yet' },
+        : { kind: 'sky', label: 'Sky', icon: 'sky', model: SCENE_MODEL },
+      {
+        kind: 'vegetation',
+        label: 'Vegetation',
+        icon: 'vegetation',
+        model: SCENE_MODEL,
+        hint: 'trees, grass, plants and flowers'
+      },
+      {
+        kind: 'water',
+        label: 'Water',
+        icon: 'water',
+        model: SCENE_MODEL,
+        hint: 'the sea, lakes, rivers and waterfalls'
+      },
       {
         kind: 'background',
         label: 'Background',
@@ -104,17 +137,20 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
     ]
   },
   {
-    // Found by a click for now (SAM 2.1); by name once a parts model or
-    // SAM 3 ships (shared/concepts.ts finders). Coming soon until
-    // `PEOPLE_BY_CLICK` is on.
+    // Hair, face, skin and clothes by Selfie Multiclass (engine 0.19), one
+    // click on the tool; the rest by a click on the part (SAM 2.1) once
+    // `PEOPLE_BY_CLICK` is on, coming soon until then (eyes and lips: face
+    // parts, Pass 110).
     title: 'People',
     tools: CONCEPTS.filter((c) => c.group === 'people').map((c): MaskToolInfo => ({
       kind: `part:${c.id as PersonPart}`,
       label: c.label,
-      icon: c.id === 'body' ? 'subject' : 'objects',
-      ...(PEOPLE_BY_CLICK
-        ? { needs: 'download SAM 2.1', ai: 'prompt' as const, badge: 'click' }
-        : { needs: 'coming soon' })
+      icon: PART_ICON[c.id as PersonPart] ?? 'objects',
+      ...(isPartTarget(c.id)
+        ? { model: PARTS_MODEL, hint: PART_HINT }
+        : PEOPLE_BY_CLICK
+          ? { needs: 'download SAM 2.1', ai: 'prompt' as const, badge: 'click' }
+          : { needs: 'coming soon' })
     }))
   },
   {
@@ -213,10 +249,12 @@ export function madeComponent(id: string): void {
  * then wait on the canvas; a range is added at once and the picker asks for
  * the colour or tone to key on.
  */
-/** The class a tool asks a click for: the sky (until a sky model), or a person's part. */
+/** The class a tool asks a click for: the sky (without its model), or a person's part no model finds. */
 function askedConcept(kind: MaskToolKind): ConceptId | null {
   if (kind === 'sky') return SKY_BY_CLICK ? 'sky' : null
-  return kind.startsWith('part:') ? (kind.slice(5) as PersonPart) : null
+  // Hair, face, skin and clothes have their model: no click.
+  if (!kind.startsWith('part:') || isPartTarget(kind.slice(5))) return null
+  return kind.slice(5) as PersonPart
 }
 
 export function startMaskTool(kind: MaskToolKind): void {
@@ -262,6 +300,28 @@ export function startMaskTool(kind: MaskToolKind): void {
     })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
     return
   }
+  // A named mask (engine 0.19): the sky, vegetation, water, or a person's
+  // hair, face, skin or clothes, its model offered when not downloaded.
+  const named: SegmentTarget | null = isSceneTarget(kind)
+    ? kind
+    : kind.startsWith('part:') && isPartTarget(kind.slice(5))
+      ? (kind.slice(5) as SegmentTarget)
+      : null
+  if (named) {
+    if (!d.session) return
+    const key = d.session.key
+    const into = adding && d.layerId ? { layerId: d.layerId, mode: d.addMode ?? 'Add' } : undefined
+    const id = isSceneTarget(named) ? SCENE_MODEL : PARTS_MODEL
+    d.setAddMode(null)
+    openMasks()
+    void (async () => {
+      const models = await api.models.list()
+      const installed = models.find((m) => m.id === id)?.installed === true
+      if (!(await ensureModelId(id, installed, SEGMENT_LABEL[named]))) return
+      await api.ai.start({ task: 'segment', key, target: named, into })
+    })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
+    return
+  }
   // BiRefNet lite: offered (with its size) when not downloaded, then the subject job with it.
   if (kind === 'subject-fine') {
     if (!d.session) return
@@ -277,7 +337,7 @@ export function startMaskTool(kind: MaskToolKind): void {
     })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
     return
   }
-  if (kind === 'subject' || kind === 'sky' || kind === 'background') {
+  if (kind === 'subject' || kind === 'background') {
     if (!d.session) return
     const key = d.session.key
     const into = adding && d.layerId ? { layerId: d.layerId, mode: d.addMode ?? 'Add' } : undefined

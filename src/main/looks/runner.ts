@@ -9,7 +9,7 @@
  * What it needs from the app comes in as `RunnerDeps`, so it can be tested
  * without the engine or a window.
  */
-import { SKY_BY_CLICK, type AiJobEvent, type AiStartRequest } from '../../shared/ai'
+import { isPartTarget, SKY_BY_CLICK, type AiJobEvent, type AiStartRequest } from '../../shared/ai'
 import { DEFAULT_ENHANCE } from '../../shared/enhance'
 import type { MaskMode } from '../../shared/engine-types'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../../shared/looks/run'
@@ -197,6 +197,21 @@ export class LookRuns {
         return
       }
       case 'person': {
+        // Hair, face, skin and clothes: Selfie Multiclass (engine 0.19).
+        if (isPartTarget(op.part)) {
+          await this.job(
+            run,
+            this.deps.startJob({
+              task: 'segment',
+              key,
+              target: op.part,
+              into: { layerId: op.layerId, mode: op.mode },
+              group
+            })
+          )
+          if (op.invert) await this.invertLast(key, op.layerId)
+          return
+        }
         if (!this.deps.personJob) throw new Error(NOT_YET)
         await this.job(
           run,

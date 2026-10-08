@@ -73,6 +73,8 @@ export type MaskTarget =
   | { kind: 'subject' }
   | { kind: 'background' }
   | { kind: 'sky' }
+  | { kind: 'vegetation' }
+  | { kind: 'water' }
   | { kind: 'person'; part: PersonPart }
   /** Found by label ("car") by the detector, else pointed at by the user. */
   | { kind: 'object'; label: string }
@@ -132,7 +134,12 @@ export type SmartKey =
   | 'subject'
   | 'background'
   | 'sky'
+  | 'vegetation'
+  | 'water'
+  /** A person's hair, face, skin or clothes (Selfie Multiclass). */
   | 'person'
+  /** A person's eyes, lips, teeth or whole body: no finder yet. */
+  | 'personDetail'
   /** An object by label: the detector and SAM2. */
   | 'object'
   /** An object the user points at (a click or a box): SAM2 alone. */
@@ -157,18 +164,29 @@ export interface SmartBuild {
   samModel?: boolean
   /** Enhance (NAFNet deblur) is available. */
   enhance: boolean
+  /** DINOv2-S+ADE (sky, vegetation, water) is installed. */
+  sceneModel?: boolean
+  /** Selfie Multiclass (a person's parts) is installed. */
+  partsModel?: boolean
   /**
-   * What the engine has: SAM 2.1 came with 0.16, NAFNet denoise with 0.19;
-   * a sky model (E28), people's parts (E30) and the detector (E45) are still
-   * to come.
+   * What the engine has: SAM 2.1 came with 0.16; NAFNet denoise, the scene
+   * planes (sky, vegetation, water) and people's parts with 0.19; the
+   * detector (E45) is still to come.
    */
-  engine: { sky: boolean; people: boolean; sam2: boolean; detector: boolean; nafnet: boolean }
+  engine: {
+    sky: boolean
+    people: boolean
+    sam2: boolean
+    detector: boolean
+    nafnet: boolean
+    /** Face parts (eyes, lips, teeth): YuNet and Face Mesh (Pass 110). */
+    faces?: boolean
+  }
 }
 
 export function smartReadiness(b: SmartBuild): SmartReadiness {
   const model = (installed: boolean): Readiness =>
     !b.models ? 'needs-engine' : installed ? 'ready' : 'needs-model'
-  const engine = (has: boolean): Readiness => (b.models && has ? 'ready' : 'needs-engine')
   // SAM 2.1: the engine has it, then its model has to be here.
   const sam: Readiness = !(b.models && b.engine.sam2)
     ? 'needs-engine'
@@ -182,9 +200,12 @@ export function smartReadiness(b: SmartBuild): SmartReadiness {
     radial: 'ready',
     subject: model(b.subjectModel),
     background: model(b.subjectModel),
-    // Without a sky model the user clicks the sky, and SAM 2.1 selects it.
-    sky: b.engine.sky ? engine(true) : SKY_BY_CLICK ? sam : 'needs-engine',
-    person: engine(b.engine.people),
+    // The scene model finds it (engine 0.19); before, the user clicked the sky for SAM 2.1.
+    sky: SKY_BY_CLICK ? sam : b.engine.sky ? model(b.sceneModel === true) : 'needs-engine',
+    vegetation: b.engine.sky ? model(b.sceneModel === true) : 'needs-engine',
+    water: b.engine.sky ? model(b.sceneModel === true) : 'needs-engine',
+    person: b.engine.people ? model(b.partsModel === true) : 'needs-engine',
+    personDetail: b.models && b.engine.faces ? 'ready' : 'needs-engine',
     object: b.engine.detector ? sam : 'needs-engine',
     pick: sam,
     drunet: model(b.drunetModel),
@@ -208,8 +229,13 @@ function partNeed(t: MaskTarget, r: SmartReadiness): { key: SmartKey; ready: boo
     if (r.object === 'ready') return { key: 'object', ready: true }
     return { key: 'pick', ready: r.pick === 'ready' }
   }
+  if (t.kind === 'person' && !MODEL_PARTS.includes(t.part))
+    return { key: 'personDetail', ready: r.personDetail === 'ready' }
   return { key: t.kind, ready: r[t.kind] === 'ready' }
 }
+
+/** The parts Selfie Multiclass finds; the others wait for a finder. */
+const MODEL_PARTS: PersonPart[] = ['face', 'hair', 'skin', 'clothes']
 
 function denoiseModel(m: SmartDenoiseModel, r: SmartReadiness): 'drunet' | 'nafnet' | null {
   if (m === 'nafnet') return r.nafnet === 'ready' ? 'nafnet' : null
@@ -239,7 +265,7 @@ export type PlanOp =
       kind: 'segment'
       layerId: string
       mask: string
-      target: 'subject' | 'background' | 'sky'
+      target: 'subject' | 'background' | 'sky' | 'vegetation' | 'water'
       mode: MaskMode
       invert: boolean
     }
@@ -446,7 +472,13 @@ export function planSmart(smart: SmartPart, ready: SmartReadiness, photo: SmartP
         plan.ops.push({ kind: 'segment', ...at, target: t.kind })
         plan.etaMs += rates.sam2Ms
         plan.picks++
-      } else if (t.kind === 'subject' || t.kind === 'background' || t.kind === 'sky') {
+      } else if (
+        t.kind === 'subject' ||
+        t.kind === 'background' ||
+        t.kind === 'sky' ||
+        t.kind === 'vegetation' ||
+        t.kind === 'water'
+      ) {
         plan.ops.push({ kind: 'segment', ...at, target: t.kind })
         plan.etaMs += rates.segmentMs
       } else if (t.kind === 'person') {
@@ -599,6 +631,8 @@ function targetOf(v: unknown): MaskTarget | null {
     case 'subject':
     case 'background':
     case 'sky':
+    case 'vegetation':
+    case 'water':
       return { kind: v.kind }
     case 'person':
       return PERSON_PARTS.includes(v.part as PersonPart)
@@ -710,6 +744,8 @@ const PART_WORDS: Record<MaskTarget['kind'], (t: MaskTarget) => string> = {
   subject: () => 'the subject',
   background: () => 'the background',
   sky: () => 'the sky',
+  vegetation: () => 'the trees and plants',
+  water: () => 'the water',
   person: (t) => (t.kind === 'person' ? t.part : 'a person'),
   object: (t) => (t.kind === 'object' ? `the ${t.label}` : 'an object')
 }

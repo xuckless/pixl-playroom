@@ -749,12 +749,32 @@ Decisions (the owner, 2026-10-08):
 - [ ] **S** · Owner: an X-Trans RAW on the Mac (its CoreML static path is
       untimed in the engine too), and the models mirror (above).
 
-### Pass 109 — Named masks: sky, vegetation, water, people · 4 pts
+### Pass 109 — Named masks: sky, vegetation, water, people · 4 pts ✅
 
-- [ ] **M** · DINOv2-S+ADE's `sky` (Guided 0.02 / 0.001), `vegetation` and
-      `water` in the masks menu; Sky is one click.
-- [ ] **M** · Selfie Multiclass's `hair`, `face_skin`, `body_skin`,
-      `clothes` in place of the "soon" People entries.
+- [x] **M** · DINOv2-S+ADE's `sky` (Guided 0.02 / 0.001), `vegetation` and
+      `water` (the same upsample) in the masks menu, one click each (the
+      model offered when missing); a plane under 0.2 % of the frame is "No
+      water found". `SKY_BY_CLICK` off: smart looks' sky masks are the
+      model's too (no question to the user). Saved as
+      `{ segment, target }`; looks carry `vegetation` / `water` targets.
+- [x] **M** · Selfie Multiclass's `hair`, `face_skin`, `body_skin`,
+      `clothes` as Face, Hair, Skin (face + body) and Clothes, in place of
+      the "soon" People entries; Person, Eyes, Lips, Teeth stay soon (face
+      parts, Pass 110; `personDetail` readiness behind `engine.faces`).
+      Found on the proxy, then again on a square around the person (the
+      model reads 256²: on a half-body portrait clothes went from 2.9 % to
+      10.9 % of the frame), each part kept where it beats the other parts
+      (a dark jumper read as hair stays clothes), hardened at 0.5 × 3.
+      Smart looks' skin, hair, face and clothes run as segment jobs.
+- In the built app (M2 Pro, CPU): sky 1.5 s, vegetation 1.8 s, hair 1.2 s,
+  face 1.7 s, skin 1.6 s, clothes 2.0 s. The menu says "get" until each
+  model is here.
+- Fixed on the way (Pass 107's): `ai.capabilities` threw ("no model
+  nafnet-sidd-w32") while NAFNet is held, which broke every AI tool's
+  availability; a model not offered is now simply not installed.
+- [ ] **S** · Owner: DINOv2-S+ADE's head is trained on ADE20K, whose terms
+      the roster calls research-only (docs/ai/roster.md): confirm shipping
+      it in Playroom is fine, or hold Vegetation/Water/Sky back.
 
 ### Pass 110 — Face parts · 4 pts
 

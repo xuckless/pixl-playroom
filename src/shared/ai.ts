@@ -16,20 +16,43 @@ import type { PromptGeometry, PromptVia } from './prompt'
 export type AiTask = 'enhance' | 'segment' | 'denoise' | 'prompt'
 
 /**
- * Until a sky model ships (E28), the Sky tool and smart looks' sky masks
- * ask the user to click the sky, and SAM 2.1 selects it. Turn this off when
- * the roster has a sky model: Sky becomes one click again, found by the
- * model (ai/segment.ts).
+ * Before engine 0.19's sky plane (DINOv2-S+ADE), the Sky tool and smart
+ * looks' sky masks asked the user to click the sky, and SAM 2.1 selected
+ * it. Now the model finds it: one click on the tool (ai/segment.ts). Kept
+ * for a sky model that might be held back again.
  */
-export const SKY_BY_CLICK = true
+export const SKY_BY_CLICK = false
 /**
  * The masks' People tools (body, face, hair, skin…), each found by a click
  * on the part (SAM 2.1). Off until they are ready to release: the tools say
  * "soon" in the picker.
  */
 export const PEOPLE_BY_CLICK = false
+/** What DINOv2-S+ADE finds in a scene (engine 0.19): each one plane. */
+export type SceneTarget = 'sky' | 'vegetation' | 'water'
+export const SCENE_TARGETS: SceneTarget[] = ['sky', 'vegetation', 'water']
+/** A person's parts Selfie Multiclass finds (engine 0.19); the rest wait for face parts. */
+export type PartTarget = 'face' | 'hair' | 'skin' | 'clothes'
+export const PART_TARGETS: PartTarget[] = ['face', 'hair', 'skin', 'clothes']
 /** `depth`: a depth map (Depth Anything V2), landing as a Depth range. */
-export type SegmentTarget = 'subject' | 'sky' | 'background' | 'depth'
+export type SegmentTarget = 'subject' | 'background' | 'depth' | SceneTarget | PartTarget
+
+/** The scene model (engine 0.19): sky, vegetation and water. */
+export const SCENE_MODEL = 'dinov2-s-ade'
+/** The people-parts model (engine 0.19): hair, face and body skin, clothes. */
+export const PARTS_MODEL = 'selfie-multiclass'
+
+export const isSceneTarget = (t: unknown): t is SceneTarget =>
+  SCENE_TARGETS.includes(t as SceneTarget)
+export const isPartTarget = (t: unknown): t is PartTarget => PART_TARGETS.includes(t as PartTarget)
+
+/** The model a segment job runs. */
+export function segmentModel(target: SegmentTarget, fine = false): string {
+  if (target === 'depth') return DEPTH_MODEL
+  if (isSceneTarget(target)) return SCENE_MODEL
+  if (isPartTarget(target)) return PARTS_MODEL
+  return fine ? FINE_SUBJECT_MODEL : 'u2netp'
+}
 
 /** The fine subject model (engine 0.18, on demand): BiRefNet lite. */
 export const FINE_SUBJECT_MODEL = 'birefnet-lite'
@@ -168,8 +191,14 @@ export interface AiCapabilities {
 export const SEGMENT_LABEL: Record<SegmentTarget, string> = {
   subject: 'Subject',
   sky: 'Sky',
+  vegetation: 'Vegetation',
+  water: 'Water',
   background: 'Background',
-  depth: 'Depth range'
+  depth: 'Depth range',
+  face: 'Face',
+  hair: 'Hair',
+  skin: 'Skin',
+  clothes: 'Clothes'
 }
 
 /** The whole job's progress with `stage` at `p` (0…1) of its own way. */

@@ -136,6 +136,16 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     what: 'Fills in what you paint over (a stranger, a sign, a power line) with what was likely behind it.',
     where: 'Heal → Remove'
   },
+  'dinov2-s-ade': {
+    name: 'Scene finder',
+    what: 'Finds the sky (through branches too), trees and plants, and water in one click each. About a second a photo.',
+    where: 'Masks → New → Sky, Vegetation or Water'
+  },
+  'selfie-multiclass': {
+    name: 'People parts finder',
+    what: 'Finds a person’s hair, face, skin and clothes in one click each. Best when the person fills a good part of the frame; edges are soft.',
+    where: 'Masks → New → Face, Hair, Skin or Clothes'
+  },
   'depth-anything-v2-small': {
     name: 'Depth finder',
     what: 'Sees which parts of a photo are near and which are far, for the Depth range mask.',

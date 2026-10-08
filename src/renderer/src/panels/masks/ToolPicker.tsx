@@ -1,6 +1,7 @@
 import { Icon } from '../../components/icons'
 import { useDevelop } from '../../state/develop'
 import { useAiJobs } from '../../state/jobs'
+import { useModels } from '../../lib/models'
 import { keyHint } from '../../lib/commands'
 import { MASK_TOOL_GROUPS, startMaskTool, type MaskToolInfo, type MaskToolKind } from './model'
 
@@ -19,10 +20,20 @@ export function ToolPicker({
 }): React.JSX.Element {
   const addMode = useDevelop((s) => s.addMode)
   const caps = useAiJobs((s) => s.capabilities)
+  const models = useModels()
+  // A named mask's model not downloaded yet: the tool offers it when picked.
+  const toGet = (t: MaskToolInfo): boolean =>
+    !!t.model && models.length > 0 && models.find((m) => m.id === t.model)?.installed !== true
   // A model's tool is there when its model is downloaded; until then it
   // says why, and picking it offers the model.
   const needs = (t: MaskToolInfo): string | undefined =>
-    t.ai && caps?.[t.ai] ? undefined : ((t.ai && caps?.why[t.ai]) ?? t.needs)
+    t.model
+      ? caps?.denoise
+        ? undefined
+        : (caps?.why.denoise ?? 'this engine build runs no models')
+      : t.ai && caps?.[t.ai]
+        ? undefined
+        : ((t.ai && caps?.why[t.ai]) ?? t.needs)
   const downloadable = (t: MaskToolInfo): boolean => Boolean(t.ai && needs(t) && caps?.get?.[t.ai])
   const pick = (kind: MaskToolKind): void => {
     startMaskTool(kind)
@@ -62,7 +73,10 @@ export function ToolPicker({
                   <span className="kbd">{keyHint(t.command)}</span>
                 )}
                 {needs(t) && <span className="tp-needs">{downloadable(t) ? 'get' : 'soon'}</span>}
-                {t.ai && !needs(t) && <span className="tp-needs ai">{t.badge ?? 'AI'}</span>}
+                {!needs(t) && toGet(t) && <span className="tp-needs">get</span>}
+                {(t.ai || t.model) && !needs(t) && !toGet(t) && (
+                  <span className="tp-needs ai">{t.badge ?? 'AI'}</span>
+                )}
               </button>
             ))}
           </div>
