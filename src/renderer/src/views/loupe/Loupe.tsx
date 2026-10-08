@@ -561,7 +561,13 @@ export function Loupe(): React.JSX.Element {
               </div>
             )}
             <MaskOverlay g={g ?? null} w={vrect.w} h={vrect.h} />
-            {clipping && picture && <ClippingOverlay url={readable(picture)} />}
+            {clipping && picture && (
+              <ClippingOverlay
+                url={readable(picture)}
+                hdrUrl={picture.url}
+                ceiling={picture.ceiling}
+              />
+            )}
             {spots && picture && <SpotsOverlay url={readable(picture)} level={spotLevel} />}
             {headroom && headroomPlane && compare !== 'before' && (
               <HeadroomOverlay url={headroomPlane.url} />

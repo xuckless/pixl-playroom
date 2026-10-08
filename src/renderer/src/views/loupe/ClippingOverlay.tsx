@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from 'react'
-import { markClipping } from '../../lib/clipping'
-import { isFrame, pictureBitmap } from '../../lib/frames'
+import { CEILING_BLOWN, FLOAT_CRUSHED, markClipping, markClippingFloat } from '../../lib/clipping'
+import { frameFloat, isFrame, pictureBitmap } from '../../lib/frames'
+import type { FloatFrame } from '../../lib/floatcanvas'
 import { loadImage } from '../../lib/image'
 
 type Reply = { id: number; bitmap?: ImageBitmap; error?: string }
@@ -88,9 +89,54 @@ void main() {
   else o = vec4(0.0);
 }`
 
+/**
+ * A Full HDR frame's clipping (lib/clipping.ts `markClippingFloat`): its
+ * linear values against the display's ceiling, not 8-bit SDR white.
+ */
+const FS_FLOAT = `#version 300 es
+precision highp float;
+uniform sampler2D uPicture;
+uniform float uBlown;
+uniform float uCrushed;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec3 c = texelFetch(uPicture, ivec2(vUv.x * float(textureSize(uPicture, 0).x), (1.0 - vUv.y) * float(textureSize(uPicture, 0).y)), 0).rgb;
+  float hi = max(c.r, max(c.g, c.b));
+  float a = 220.0 / 255.0;
+  if (hi >= uBlown) o = vec4(vec3(255.0, 60.0, 90.0) / 255.0 * a, a);
+  else if (hi <= uCrushed) o = vec4(vec3(90.0, 120.0, 255.0) / 255.0 * a, a);
+  else o = vec4(0.0);
+}`
+
 interface Gl {
   gl: WebGL2RenderingContext
   tex: WebGLTexture
+  u8: WebGLProgram
+  f16: WebGLProgram
+  blown: WebGLUniformLocation | null
+  crushed: WebGLUniformLocation | null
+}
+
+function program(gl: WebGL2RenderingContext, fs: string): WebGLProgram | null {
+  const p = gl.createProgram() as WebGLProgram
+  let ok = true
+  for (const [type, src] of [
+    [gl.VERTEX_SHADER, VS],
+    [gl.FRAGMENT_SHADER, fs]
+  ] as const) {
+    const sh = gl.createShader(type) as WebGLShader
+    gl.shaderSource(sh, src)
+    gl.compileShader(sh)
+    ok &&= !!gl.getShaderParameter(sh, gl.COMPILE_STATUS)
+    gl.attachShader(p, sh)
+  }
+  gl.bindAttribLocation(p, 0, 'aPos')
+  gl.linkProgram(p)
+  if (!ok || !gl.getProgramParameter(p, gl.LINK_STATUS)) return null
+  gl.useProgram(p)
+  gl.uniform1i(gl.getUniformLocation(p, 'uPicture'), 0)
+  return p
 }
 const contexts = new WeakMap<HTMLCanvasElement, Gl | null>()
 
@@ -99,22 +145,9 @@ function glFor(c: HTMLCanvasElement): Gl | null {
   let out: Gl | null = null
   const gl = c.getContext('webgl2', { premultipliedAlpha: true, antialias: false })
   if (gl) {
-    const p = gl.createProgram() as WebGLProgram
-    let ok = true
-    for (const [type, src] of [
-      [gl.VERTEX_SHADER, VS],
-      [gl.FRAGMENT_SHADER, FS]
-    ] as const) {
-      const sh = gl.createShader(type) as WebGLShader
-      gl.shaderSource(sh, src)
-      gl.compileShader(sh)
-      ok &&= !!gl.getShaderParameter(sh, gl.COMPILE_STATUS)
-      gl.attachShader(p, sh)
-    }
-    gl.bindAttribLocation(p, 0, 'aPos')
-    gl.linkProgram(p)
-    if (ok && gl.getProgramParameter(p, gl.LINK_STATUS)) {
-      gl.useProgram(p)
+    const f16 = program(gl, FS_FLOAT)
+    const u8 = program(gl, FS)
+    if (u8 && f16) {
       gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer())
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW)
       gl.enableVertexAttribArray(0)
@@ -123,8 +156,14 @@ function glFor(c: HTMLCanvasElement): Gl | null {
       gl.bindTexture(gl.TEXTURE_2D, tex)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-      gl.uniform1i(gl.getUniformLocation(p, 'uPicture'), 0)
-      out = { gl, tex }
+      out = {
+        gl,
+        tex,
+        u8,
+        f16,
+        blown: gl.getUniformLocation(f16, 'uBlown'),
+        crushed: gl.getUniformLocation(f16, 'uCrushed')
+      }
     }
   }
   contexts.set(c, out)
@@ -151,6 +190,7 @@ async function drawOnGpu(c: HTMLCanvasElement, url: string, live: () => boolean)
   c.width = bmp.width
   c.height = bmp.height
   gl.viewport(0, 0, c.width, c.height)
+  gl.useProgram(g.u8)
   gl.bindTexture(gl.TEXTURE_2D, tex)
   // An ImageBitmap is not flipped on upload (Chromium ignores the flag for
   // one): its rows stay top first, and the shader reads them from the top.
@@ -163,20 +203,72 @@ async function drawOnGpu(c: HTMLCanvasElement, url: string, live: () => boolean)
   return true
 }
 
+/** A Full HDR frame's clipping against its ceiling, on the GPU; false where WebGL2 cannot. */
+function drawFloatOnGpu(c: HTMLCanvasElement, frame: FloatFrame, ceiling: number): boolean {
+  const g = glFor(c)
+  if (!g) return false
+  const { gl, tex } = g
+  c.width = frame.width
+  c.height = frame.height
+  gl.viewport(0, 0, c.width, c.height)
+  gl.useProgram(g.f16)
+  gl.uniform1f(g.blown, ceiling * CEILING_BLOWN)
+  gl.uniform1f(g.crushed, FLOAT_CRUSHED)
+  gl.bindTexture(gl.TEXTURE_2D, tex)
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA16F,
+    frame.width,
+    frame.height,
+    0,
+    gl.RGBA,
+    gl.HALF_FLOAT,
+    frame.data
+  )
+  gl.clearColor(0, 0, 0, 0)
+  gl.clear(gl.COLOR_BUFFER_BIT)
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+  return true
+}
+
+/** The same without WebGL2, on the main thread (a rare path: a frame is a few MB). */
+function drawFloatInPlace(c: HTMLCanvasElement, frame: FloatFrame, ceiling: number): void {
+  c.width = frame.width
+  c.height = frame.height
+  const ctx = c.getContext('2d') as CanvasRenderingContext2D
+  const data = ctx.createImageData(frame.width, frame.height)
+  markClippingFloat(frame.data, ceiling, data.data)
+  ctx.putImageData(data, 0, 0)
+}
+
 /**
  * Red over blown highlights, blue over crushed shadows: marked by a shader
  * over the picture on the GPU, or (without WebGL2) worked out in a worker.
+ * In Full HDR (`hdrUrl` a frame with F16 pixels, and its `ceiling`) blown is
+ * the display's ceiling, so light above white with detail in it stays clear;
+ * without them (the AVIF arm's settled picture) the SDR companion's.
  */
 export const ClippingOverlay = memo(function ClippingOverlay({
-  url
+  url,
+  hdrUrl,
+  ceiling
 }: {
   url: string
+  hdrUrl?: string
+  ceiling?: number
 }): React.JSX.Element {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     let live = true
     const c = ref.current
     if (!c) return
+    const float = hdrUrl && ceiling ? frameFloat(hdrUrl) : undefined
+    if (float && ceiling) {
+      if (!drawFloatOnGpu(c, float, ceiling)) drawFloatInPlace(c, float, ceiling)
+      return
+    }
     void drawOnGpu(c, url, () => live)
       .then(async (done) => {
         if (done) return
@@ -193,6 +285,6 @@ export const ClippingOverlay = memo(function ClippingOverlay({
     return () => {
       live = false
     }
-  }, [url])
+  }, [url, hdrUrl, ceiling])
   return <canvas ref={ref} className="overlay-canvas fill" />
 })

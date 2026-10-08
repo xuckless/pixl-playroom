@@ -613,6 +613,12 @@ export interface RenderEvent {
   hdrStats?: ImageStats
   /** A headroom plane: how many stops above white its full scale stands for. */
   stops?: number
+  /**
+   * A Full HDR render: the display's ceiling over SDR white (the master's
+   * `display.headroom`), where its light stops: what the clipping overlay
+   * marks as blown in its F16 pixels.
+   */
+  ceiling?: number
   report?: RenderReport
 }
 

@@ -1000,6 +1000,9 @@ class Session {
       height: report.height,
       stats,
       hdrStats: hdr,
+      ...(display && report.color.master?.display
+        ? { ceiling: report.color.master.display.headroom }
+        : {}),
       report: reportOf(
         report,
         Math.round(performance.now() - t0),
