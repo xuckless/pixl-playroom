@@ -100,6 +100,21 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     where: 'Enhance → Deblur',
     recommended: true
   },
+  'birefnet-lite': {
+    name: 'Fine subject finder',
+    what: 'Finds the main subject with a finer edge than the quick finder, keeping hair, fur and feathers. Larger, and about ten seconds a photo.',
+    where: 'Masks → New → Fine subject'
+  },
+  'migan-512': {
+    name: 'Object remover',
+    what: 'Fills in what you paint over (a stranger, a sign, a power line) with what was likely behind it.',
+    where: 'Heal → Remove'
+  },
+  'depth-anything-v2-small': {
+    name: 'Depth finder',
+    what: 'Sees which parts of a photo are near and which are far, for the Depth range mask.',
+    where: 'Masks → New → Depth range'
+  },
   'fbcnn-color-blind': {
     name: 'JPEG repair, automatic',
     what: 'Works out by itself how damaged the file is. Good for pictures saved from the web or sent through messaging apps.',

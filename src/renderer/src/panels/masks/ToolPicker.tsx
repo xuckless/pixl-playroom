@@ -52,7 +52,7 @@ export function ToolPicker({
                 title={
                   needs(t)
                     ? `${t.label} — ${needs(t)}`
-                    : `${t.label}${t.ai ? ' (found by a model)' : ''}${t.command && keyHint(t.command) ? ` (${keyHint(t.command)})` : ''}`
+                    : `${t.label}${t.hint ? `: ${t.hint}` : t.ai ? ' (found by a model)' : ''}${t.command && keyHint(t.command) ? ` (${keyHint(t.command)})` : ''}`
                 }
                 onClick={() => pick(t.kind)}
               >

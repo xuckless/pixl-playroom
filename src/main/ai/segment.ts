@@ -13,7 +13,7 @@
  * Sky tool asks the user to click it instead (SAM 2.1, `SKY_BY_CLICK`).
  */
 import type { AiResult, AiStartRequest } from '../../shared/ai'
-import { DEPTH_MODEL, estimate, SEGMENT_LABEL } from '../../shared/ai'
+import { DEPTH_MODEL, estimate, FINE_SUBJECT_MODEL, SEGMENT_LABEL } from '../../shared/ai'
 import { lensCorrection } from '../../shared/lens'
 import { hardenPlane } from '../../shared/refine'
 import { planeRef } from '../planeref'
@@ -86,12 +86,10 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     if (req.target === 'sky') throw new Error('No sky model ships yet')
     ctx.stage('model', 0, 'Loading the model')
     const depth = req.target === 'depth'
-    const id = depth
-      ? (await this.models.installed(DEPTH_MODEL))
-        ? DEPTH_MODEL
-        : null
-      : await this.model()
-    if (!id) throw new ModelMissing(this.models.entry(depth ? DEPTH_MODEL : 'u2netp'))
+    // A model named by the ask (the depth map, the fine cut-out), else the subject model.
+    const named = depth ? DEPTH_MODEL : req.fine ? FINE_SUBJECT_MODEL : null
+    const id = named ? ((await this.models.installed(named)) ? named : null) : await this.model()
+    if (!id) throw new ModelMissing(this.models.entry(named ?? 'u2netp'))
     const row = await this.library.photoRow(req.key)
     const info = await this.library.probe(row)
     if (this.engine.getStatus().status === 'starting') {
@@ -107,7 +105,10 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
 
     ctx.stage('analyse', 0, `Finding the ${SEGMENT_LABEL[req.target].toLowerCase()}`)
     const t0 = Date.now()
-    const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, 2500), true), 200)
+    // BiRefNet: 13.5 s on the M2 Pro's CPU with a 24 MP decode, about 10 s from a
+    // proxy (its 1024² grid is fixed); U²-Netp a moment.
+    const expected = req.fine ? 10000 : 2500
+    const tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 200)
     let report: Awaited<ReturnType<EngineClient['segment']>>
     const request = (model: Record<string, unknown>): Record<string, unknown> => ({
       source: { Path: px.proxy.path },
@@ -163,7 +164,8 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     if (req.target === 'background') for (let i = 0; i < grey.length; i++) grey[i] = 255 - grey[i]
     // Measured on a 24 MP portrait: the edge went from fading over 24–75 px
     // to 5–9 px, and to 11–13 px with the render's snap.
-    hardenPlane(grey, HARDEN_AT, HARDEN)
+    // BiRefNet's matte keeps hair and fur: hardening would cut them.
+    if (!req.fine) hardenPlane(grey, HARDEN_AT, HARDEN)
     ctx.progress(0.8)
     const png = encodeGreyPng(grey, d.width, d.height).toString('base64')
     const ref = planeRef(png)
@@ -173,8 +175,8 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       ref,
       width: d.width,
       height: d.height,
-      label: SEGMENT_LABEL[req.target],
-      source: { kind: 'segment', target: req.target },
+      label: req.fine ? `${SEGMENT_LABEL[req.target]} (fine)` : SEGMENT_LABEL[req.target],
+      source: { kind: 'segment', target: req.target, ...(req.fine ? { fine: true as const } : {}) },
       // Into the mask it was asked for (Add to the selected mask, a smart look's), else a new one.
       ...(req.into ? { into: { ...req.into } } : {})
     }

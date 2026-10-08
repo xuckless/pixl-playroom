@@ -31,6 +31,9 @@ export const PEOPLE_BY_CLICK = false
 /** `depth`: a depth map (Depth Anything V2), landing as a Depth range. */
 export type SegmentTarget = 'subject' | 'sky' | 'background' | 'depth'
 
+/** The fine subject model (engine 0.18, on demand): BiRefNet lite. */
+export const FINE_SUBJECT_MODEL = 'birefnet-lite'
+
 /** The depth model (engine 0.18): disparity, per photo. */
 export const DEPTH_MODEL = 'depth-anything-v2-small'
 
@@ -99,6 +102,8 @@ export type AiStartRequest = (
       key: string
       target: SegmentTarget
       into?: { layerId: string; mode: MaskMode }
+      /** The subject or background with BiRefNet lite (fine edges, ~5 s), not U²-Netp. */
+      fine?: boolean
     }
   | {
       /**

@@ -280,7 +280,8 @@ export interface BrushComponent extends ComponentBase {
 
 /** A model's mask, as what to ask for again (see `BrushComponent.source`). */
 export type BrushSource =
-  | { kind: 'segment'; target: 'subject' | 'background' | 'sky' }
+  /** `fine`: BiRefNet lite's cut-out (hair, fur), not U²-Netp's quick one. */
+  | { kind: 'segment'; target: 'subject' | 'background' | 'sky'; fine?: true }
   | { kind: 'person'; part: string }
   /**
    * SAM 2.1 from clicks, a box, strokes or a lasso, and the object's name
@@ -854,7 +855,7 @@ function brushSource(v: unknown): BrushSource | null {
     v.kind === 'segment' &&
     (v.target === 'subject' || v.target === 'background' || v.target === 'sky')
   )
-    return { kind: 'segment', target: v.target }
+    return { kind: 'segment', target: v.target, ...(v.fine === true ? { fine: true } : {}) }
   if (v.kind === 'person' && typeof v.part === 'string') return { kind: 'person', part: v.part }
   if (v.kind === 'prompt') {
     const prompt = normalisePrompt(v.prompt)

@@ -42,6 +42,7 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
         title: 'Masks',
         items: [
           'Depth range: select by distance. Playroom maps the photo’s depth once (a small model you download the first time); click the photo to take what is at that distance, then set Near, Far and Softness, with the depth map in the card.',
+          'Fine subject: a finer cut-out that keeps hair, fur and feathers (a larger model, downloaded when you first use it; about ten seconds a photo).',
           'Small objects picked with Objects keep their mask instead of fading out.'
         ]
       },

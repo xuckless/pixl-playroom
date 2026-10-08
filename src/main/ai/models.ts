@@ -18,7 +18,7 @@ import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { createHash } from 'crypto'
 import { createReadStream, createWriteStream } from 'fs'
-import { mkdir, rename, rm, stat } from 'fs/promises'
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
 import { fileURLToPath } from 'url'
 import { join } from 'path'
 import { pipeline } from 'stream/promises'
@@ -38,6 +38,12 @@ import * as pixlModels from '@xuckless/pixl-models'
 import type { ModelEntry as RosterEntry, ModelFile as RosterFile } from '@xuckless/pixl-models'
 
 export type { RosterEntry }
+
+/**
+ * The on-demand models Playroom offers (engine 0.18's `onDemand()`):
+ * BiRefNet lite, the Fine subject. SAM 3 and EfficientSAM3 wait for 0.19.
+ */
+const OFFERED_ON_DEMAND = ['birefnet-lite']
 
 const BASE = (process.env.PLAYROOM_MODELS_URL ?? 'https://models.pixlfoundation.com').replace(
   /\/+$/,
@@ -76,9 +82,20 @@ export class ModelStore {
     private readonly engineStatus: () => EngineStatus
   ) {}
 
-  /** Every model the app can use (the roster's shipped ones). */
+  /**
+   * Every model the app can use: the roster's shipped ones, and the
+   * on-demand ones Playroom offers (engine 0.18: downloads, never packages).
+   */
   roster(): RosterEntry[] {
-    return pixlModels.manifest().filter((m) => m.ship)
+    const offered = pixlModels
+      .onDemand()
+      .filter((m) => OFFERED_ON_DEMAND.includes(m.id)) as unknown as RosterEntry[]
+    return [...pixlModels.manifest().filter((m) => m.ship), ...offered]
+  }
+
+  /** An on-demand model: its licence texts and NOTICE are kept beside its files. */
+  private onDemand(id: string): pixlModels.OnDemandEntry | undefined {
+    return pixlModels.onDemand().find((m) => m.id === id && OFFERED_ON_DEMAND.includes(m.id))
   }
 
   entry(id: string): RosterEntry {
@@ -262,6 +279,13 @@ export class ModelStore {
             throw new Error(explain(err2, upstream, f.name))
           }
         }
+      }
+      // An on-demand model's terms travel with it (engine 0.18, integration guide §7).
+      const od = this.onDemand(id)
+      if (od) {
+        for (const t of od.licence_texts)
+          await writeFile(join(dir, t.name), await readFile(t.path, 'utf8'))
+        await writeFile(join(dir, 'NOTICE.md'), od.notice)
       }
       this.installedCache.set(id, true)
       log.info('model installed', id)

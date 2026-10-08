@@ -19,7 +19,12 @@ import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
 import { ensureModel, ensureModelId } from '../../lib/ensureModel'
 import { useObjects } from '../../state/objects'
-import { DEPTH_MODEL, PEOPLE_BY_CLICK, SKY_BY_CLICK } from '../../../../shared/ai'
+import {
+  DEPTH_MODEL,
+  FINE_SUBJECT_MODEL,
+  PEOPLE_BY_CLICK,
+  SKY_BY_CLICK
+} from '../../../../shared/ai'
 import { CONCEPTS, conceptOf, type ConceptId } from '../../../../shared/concepts'
 import type { PersonPart } from '../../../../shared/looks/smart'
 import { useLibrary } from '../../state/library'
@@ -27,6 +32,8 @@ import { useDevelop, type Tool } from '../../state/develop'
 
 export type MaskToolKind =
   | 'subject'
+  /** The subject with BiRefNet lite (on demand): hair and fur, a few seconds. */
+  | 'subject-fine'
   | 'objects'
   | 'sky'
   | 'background'
@@ -53,6 +60,8 @@ export interface MaskToolInfo {
   ai?: 'segment' | 'prompt'
   /** A word in the corner of its button ("click": the sky is pointed at, for now). */
   badge?: string
+  /** What its button's tip says about it, past its name. */
+  hint?: string
 }
 
 /** The tools a mask can be made with, in Lightroom's order. */
@@ -66,6 +75,12 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
         icon: 'subject',
         needs: 'download the subject model',
         ai: 'segment'
+      },
+      {
+        kind: 'subject-fine',
+        label: 'Fine subject',
+        icon: 'subject',
+        hint: 'a finer cut-out that keeps hair and fur (BiRefNet lite, 224 MB, about 10 seconds a photo)'
       },
       {
         kind: 'objects',
@@ -244,6 +259,21 @@ export function startMaskTool(kind: MaskToolKind): void {
       const installed = models.find((m) => m.id === DEPTH_MODEL)?.installed === true
       if (!(await ensureModelId(DEPTH_MODEL, installed, 'Depth range'))) return
       await api.ai.start({ task: 'segment', key, target: 'depth', into })
+    })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
+    return
+  }
+  // BiRefNet lite: offered (with its size) when not downloaded, then the subject job with it.
+  if (kind === 'subject-fine') {
+    if (!d.session) return
+    const key = d.session.key
+    const into = adding && d.layerId ? { layerId: d.layerId, mode: d.addMode ?? 'Add' } : undefined
+    d.setAddMode(null)
+    openMasks()
+    void (async () => {
+      const models = await api.models.list()
+      const installed = models.find((m) => m.id === FINE_SUBJECT_MODEL)?.installed === true
+      if (!(await ensureModelId(FINE_SUBJECT_MODEL, installed, 'Fine subject'))) return
+      await api.ai.start({ task: 'segment', key, target: 'subject', fine: true, into })
     })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
     return
   }

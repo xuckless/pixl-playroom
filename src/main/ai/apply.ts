@@ -59,7 +59,8 @@ export async function applyMaskResult(
     // A model's plane is snapped to the picture's edges at whatever resolution
     // the engine renders: a soft saliency map further than SAM's crisp one
     // (shared/refine.ts).
-    refine: modelRefine(),
+    // (Not BiRefNet's fine matte: snapping would cut the hair it keeps.)
+    ...(r.source?.kind === 'segment' && r.source.fine ? {} : { refine: modelRefine() }),
     ...(r.source ? { source: r.source } : {})
   }
   const comp = depth ?? brush

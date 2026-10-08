@@ -281,15 +281,23 @@ After: Pass 85.
 
 After: Pass 90.
 
-- [ ] **S** · Owner: mirror BiRefNet lite (MIT) to the model server; the
-      engine's `hosted` is null until its own storage exists.
-- [ ] **M** · ModelStore:
-      - reads `onDemand()` beside `manifest()`;
-      - shows `bytes` before downloading and checks each SHA-256;
-      - keeps the licence texts and `NOTICE.md` beside the files;
-      - resolves with `{ dir }`.
-- [ ] **S** · The Subject mask's "Fine" option (~7 s, 224 MB), with its time
-      said.
+- [x] **M** · ModelStore offers the on-demand models Playroom wants
+      (`OFFERED_ON_DEMAND`: BiRefNet lite; SAM 3 and EfficientSAM3 wait for
+      0.19) beside the shipped ones: listed in Settings with their size,
+      downloaded (the mirror, else the author's public release) and checked
+      by SHA-256 as any model, resolved with `{ dir }`; the licence texts and
+      `NOTICE.md` are written beside the files. The clean-up keeps them.
+- [x] **S** · Masks ▸ Fine subject: BiRefNet offered (224 MB) when missing,
+      then the subject job with `fine`: no hardening and no Snap to edges by
+      default (they would cut the hair it keeps); the mask's source remembers
+      `fine`.
+      _Checked on the real engine: jpeg_test, 13.5 s on the M2 Pro's CPU
+      (1.8 s load, a 24 MP decode); in the built app, Settings lists it
+      installed and the clean-up leaves it._
+- [x] **S** · Fixed: MI-GAN's and Depth Anything's Settings copy, lost in
+      Pass 90's clean-up of the retired models' copy, is back.
+- [ ] **S** · Owner (optional): mirror BiRefNet to the model server; it
+      downloads from the author's GitHub release meanwhile.
 
 ### Pass 94 — The RAW master as Scene float 1/2 · 5 pts
 
