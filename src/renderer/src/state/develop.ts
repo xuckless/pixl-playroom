@@ -37,6 +37,8 @@ export type Tool =
   | 'objects'
   | 'wb-picker'
   | 'range-picker'
+  /** A Depth range centred on the distance clicked (panels/masks/MaskTool.tsx). */
+  | 'depth-picker'
   | 'point-picker'
   | 'add-pick'
   | 'fringe-pick'

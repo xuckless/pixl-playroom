@@ -13,7 +13,7 @@
  * Sky tool asks the user to click it instead (SAM 2.1, `SKY_BY_CLICK`).
  */
 import type { AiResult, AiStartRequest } from '../../shared/ai'
-import { estimate, SEGMENT_LABEL } from '../../shared/ai'
+import { DEPTH_MODEL, estimate, SEGMENT_LABEL } from '../../shared/ai'
 import { lensCorrection } from '../../shared/lens'
 import { hardenPlane } from '../../shared/refine'
 import { planeRef } from '../planeref'
@@ -37,6 +37,7 @@ type SegmentRequest = Extract<AiStartRequest, { task: 'segment' }>
  * about 100 px wide on a 24 MP portrait against a plain wall).
  */
 const UPSAMPLE = { Guided: { radius: 0.004, epsilon: 0.001 } }
+const DEPTH_UPSAMPLE = { Resample: { kernel: 'Bilinear' } }
 /** The model's answer is soft over a few of its pixels: its middle is stretched this many times. */
 const HARDEN = 4
 /**
@@ -84,8 +85,13 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
   async run(ctx: AiContext, req: SegmentRequest): Promise<Extract<AiResult, { kind: 'mask' }>> {
     if (req.target === 'sky') throw new Error('No sky model ships yet')
     ctx.stage('model', 0, 'Loading the model')
-    const id = await this.model()
-    if (!id) throw new ModelMissing(this.models.entry('u2netp'))
+    const depth = req.target === 'depth'
+    const id = depth
+      ? (await this.models.installed(DEPTH_MODEL))
+        ? DEPTH_MODEL
+        : null
+      : await this.model()
+    if (!id) throw new ModelMissing(this.models.entry(depth ? DEPTH_MODEL : 'u2netp'))
     const row = await this.library.photoRow(req.key)
     const info = await this.library.probe(row)
     if (this.engine.getStatus().status === 'starting') {
@@ -112,7 +118,8 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       orientation: 'Normal',
       lens: lensCorrection(recipe.lens),
       segmenter: { Classes: model },
-      upsample: UPSAMPLE,
+      // A depth map's edges aren't the picture's: bilinear (engine 0.18).
+      upsample: depth ? DEPTH_UPSAMPLE : UPSAMPLE,
       png: { compression: 'Fast', filter: 'Sub' },
       threads: BACKGROUND_THREADS,
       limits: READ_LIMITS,
@@ -130,6 +137,22 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     }
     const plane = report.planes[0]
     if (!plane) throw new Error('the model returned no plane')
+    if (req.target === 'depth') {
+      // The map as it is (255 the nearest thing in the photo): the range is keyed on it.
+      const d = grey8(Buffer.from(plane.png))
+      const png = encodeGreyPng(d.data, d.width, d.height).toString('base64')
+      const ref = planeRef(png)
+      this.planes.put(ref, png)
+      return {
+        kind: 'mask',
+        ref,
+        width: d.width,
+        height: d.height,
+        label: SEGMENT_LABEL.depth,
+        depth: true,
+        ...(req.into ? { into: { ...req.into } } : {})
+      }
+    }
     if (plane.raw_max < NOTHING_SALIENT)
       throw new Error('No clear subject in this photo: try a brush or a range mask')
 

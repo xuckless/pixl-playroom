@@ -17,9 +17,9 @@ import type { IconName } from '../../components/icons'
 import { openMasks } from '../../develop/tools'
 import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
-import { ensureModel } from '../../lib/ensureModel'
+import { ensureModel, ensureModelId } from '../../lib/ensureModel'
 import { useObjects } from '../../state/objects'
-import { PEOPLE_BY_CLICK, SKY_BY_CLICK } from '../../../../shared/ai'
+import { DEPTH_MODEL, PEOPLE_BY_CLICK, SKY_BY_CLICK } from '../../../../shared/ai'
 import { CONCEPTS, conceptOf, type ConceptId } from '../../../../shared/concepts'
 import type { PersonPart } from '../../../../shared/looks/smart'
 import { useLibrary } from '../../state/library'
@@ -122,7 +122,8 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
     tools: [
       { kind: 'color', label: 'Colour range', icon: 'colourRange' },
       { kind: 'luminance', label: 'Luminance range', icon: 'lumRange' },
-      { kind: 'depth', label: 'Depth range', icon: 'depth', needs: 'needs a depth map' }
+      // Depth Anything V2 (engine 0.18) maps the photo's depth; the range is set on it.
+      { kind: 'depth', label: 'Depth range', icon: 'depth' }
     ]
   }
 ]
@@ -133,7 +134,8 @@ export const COMPONENT_LABEL: Record<MaskComponentSetting['kind'], string> = {
   range: 'Range',
   linear: 'Linear gradient',
   radial: 'Radial gradient',
-  bidirectional: 'Bidirectional gradient'
+  bidirectional: 'Bidirectional gradient',
+  depth: 'Depth range'
 }
 
 export function componentIcon(c: MaskComponentSetting): IconName {
@@ -229,6 +231,22 @@ export function startMaskTool(kind: MaskToolKind): void {
   }
   // A model finds these: a job on this photo, whose mask lands when it is done
   // (in this mask with the pending mode, else as a new one).
+  // A depth map first (the model offered when it is not downloaded), then a
+  // Depth range on it, in this mask with the pending mode, else a new one.
+  if (kind === 'depth') {
+    if (!d.session) return
+    const key = d.session.key
+    const into = adding && d.layerId ? { layerId: d.layerId, mode: d.addMode ?? 'Add' } : undefined
+    d.setAddMode(null)
+    openMasks()
+    void (async () => {
+      const models = await api.models.list()
+      const installed = models.find((m) => m.id === DEPTH_MODEL)?.installed === true
+      if (!(await ensureModelId(DEPTH_MODEL, installed, 'Depth range'))) return
+      await api.ai.start({ task: 'segment', key, target: 'depth', into })
+    })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
+    return
+  }
   if (kind === 'subject' || kind === 'sky' || kind === 'background') {
     if (!d.session) return
     const key = d.session.key
@@ -295,7 +313,8 @@ const MASK_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
   'radial',
   'bidirectional',
   'objects',
-  'range-picker'
+  'range-picker',
+  'depth-picker'
 ])
 
 function dropMaskTool(): void {
@@ -391,7 +410,7 @@ export function deleteComponent(compId: string): void {
   const d = useDevelop.getState()
   if (d.compId === compId) {
     // The picker keys the selected range: with it gone, it has nothing to key.
-    if (d.tool === 'range-picker') d.setTool('none')
+    if (d.tool === 'range-picker' || d.tool === 'depth-picker') d.setTool('none')
     d.setComp(null)
   }
 }

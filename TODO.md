@@ -232,17 +232,27 @@ After: Pass 85.
 
 After: Pass 85.
 
-- [ ] **S** · SAM masks: `Guided` only for an object of at least 128
-      SAM-grid px both ways, `Resample` bilinear below
-      (`select/service.ts`, the four `'guided'` sites). Small objects were
-      erased (IoU 0.00 at 32 px).
-- [ ] **L** · The Depth range mask:
-      - `depth-anything-v2-small`'s plane (bilinear, `Disparity`), cached
-        per photo;
-      - `DepthRange` with the plane's `quantity`;
-      - the masks menu's entry enabled: click to sample a depth, Near / Far
-        / Softness, a depth preview while adjusting;
-      - "Model needed" offers the model.
+- [x] **S** · A kept SAM mask is guided only for an object of 128 SAM-grid
+      px or more both ways (`main/select/size.ts`), bilinear below. A box
+      prompt says its size; otherwise an unkept 256 px answer measures it
+      first (the lane's state untouched), then the real decode.
+- [x] **L** · The Depth range mask:
+      - the masks menu's Depth range offers Depth Anything V2 (it has a
+        public upstream), then runs the `segment` job's `depth` target:
+        the map, bilinear, 8-bit (255 the nearest), lands as a
+        `DepthComponent` holding it as a brush holds its plane (by `ref`
+        across IPC, in the sidecar);
+      - compiled to `DepthRange` (`Disparity`, near ≥ far, bilinear);
+        Near / Far / Softness 0–100 of the photo's depth; starts at the
+        nearest third;
+      - the card: Pick (click the photo: the range centred on that depth,
+        as wide as it was), the depth map with the range tinted, the three
+        sliders; the overlay comes from the render (the GL preview steps
+        aside for a depth range);
+      - a smart look can't carry one yet (it is this photo's own depth).
+      _Checked on the real engine: jpeg_test (6000 × 4000), map 1024 × 683
+      Disparity in 2.2 s on the CPU, the nearest third covering 17% with +2 EV
+      on the near road and trees only._
 
 ### Pass 92 — AI Remove (MI-GAN) · 5 pts
 

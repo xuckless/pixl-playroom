@@ -39,6 +39,13 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
         ]
       },
       {
+        title: 'Masks',
+        items: [
+          'Depth range: select by distance. Playroom maps the photo’s depth once (a small model you download the first time); click the photo to take what is at that distance, then set Near, Far and Softness, with the depth map in the card.',
+          'Small objects picked with Objects keep their mask instead of fading out.'
+        ]
+      },
+      {
         title: 'Changes',
         items: [
           'Super Resolution has a Source choice: Clean stays closest to a sharp original, with a new, much faster model; Damaged repairs compression and noise as it enlarges; Keep texture leaves the grain.',

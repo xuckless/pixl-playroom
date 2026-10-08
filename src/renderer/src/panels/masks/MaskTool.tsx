@@ -15,6 +15,7 @@ import { changeLayer, layerOf, patchComponent } from './model'
 import { findObject } from '../../lib/objects'
 import { ensureModel } from '../../lib/ensureModel'
 import { BandBar } from './BandBar'
+import { DepthPreview } from './DepthPreview'
 
 const BLENDS: BlendMode[] = [
   'Normal',
@@ -209,6 +210,66 @@ export function ComponentCard({
             def={0}
             onChange={(v, live) => edit((x) => x.kind === 'range' && (x.smoothness = v), live)}
             onCommit={() => commit('Range smoothness')}
+          />
+        </>
+      )}
+      {show.depth && c.kind === 'depth' && (
+        <>
+          <div className="mf-card-row">
+            <Toggle
+              on={tool === 'depth-picker'}
+              onChange={(on) => setTool(on ? 'depth-picker' : 'none')}
+              title="Click the photo to centre the range on that distance"
+            >
+              <Icon name="picker" />
+              Pick
+            </Toggle>
+          </div>
+          <DepthPreview c={c} />
+          <Slider
+            label="Near"
+            adjusts={false}
+            value={c.near}
+            min={0}
+            max={100}
+            def={0}
+            title="The nearest distance the range takes: 0 is the nearest thing in the photo"
+            onChange={(v, live) =>
+              edit((x) => {
+                if (x.kind !== 'depth') return
+                x.near = v
+                if (x.far < v) x.far = v
+              }, live)
+            }
+            onCommit={() => commit('Depth near')}
+          />
+          <Slider
+            label="Far"
+            adjusts={false}
+            value={c.far}
+            min={0}
+            max={100}
+            def={33}
+            title="The farthest distance the range takes: 100 is the farthest thing in the photo"
+            onChange={(v, live) =>
+              edit((x) => {
+                if (x.kind !== 'depth') return
+                x.far = v
+                if (x.near > v) x.near = v
+              }, live)
+            }
+            onCommit={() => commit('Depth far')}
+          />
+          <Slider
+            label="Softness"
+            adjusts={false}
+            value={c.softness}
+            min={0}
+            max={100}
+            def={10}
+            title="How gradually the range fades past Near and Far"
+            onChange={(v, live) => edit((x) => x.kind === 'depth' && (x.softness = v), live)}
+            onCommit={() => commit('Depth softness')}
           />
         </>
       )}

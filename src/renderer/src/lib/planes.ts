@@ -1,4 +1,4 @@
-import type { BrushComponent } from '../../../shared/recipe'
+import type { PlaneComponent } from '../../../shared/recipe'
 import { api } from './api'
 
 /**
@@ -15,8 +15,8 @@ export function rememberPlane(ref: string, png: string): void {
   if (planes.size > KEEP) planes.delete(planes.keys().next().value as string)
 }
 
-/** A brush component's PNG (base64), from the component, this cache, or the main process. */
-export async function planePng(c: BrushComponent): Promise<string> {
+/** A plane component's PNG (base64), from the component, this cache, or the main process. */
+export async function planePng(c: PlaneComponent): Promise<string> {
   if (c.png) return c.png
   if (!c.ref) throw new Error('a painted mask has no plane')
   const hit = planes.get(c.ref)

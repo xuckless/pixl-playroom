@@ -5,7 +5,13 @@
  */
 import type { AiJobEvent } from '../../shared/ai'
 import { nextMaskName } from '../../shared/masks'
-import { newId, newLocalLayer, type BrushComponent, type Recipe } from '../../shared/recipe'
+import {
+  newId,
+  newLocalLayer,
+  type BrushComponent,
+  type DepthComponent,
+  type Recipe
+} from '../../shared/recipe'
 import { modelRefine } from '../../shared/refine'
 import { parseKey } from '../keys'
 import type { Library } from '../library'
@@ -22,7 +28,24 @@ export async function applyMaskResult(
   if (png === undefined) throw new Error('the mask went missing before it could be added')
   const live = deps.sessions.liveRecipe(e.key)
   const recipe: Recipe = structuredClone(live ?? (await deps.library.recipe(e.key)))
-  const comp: BrushComponent = {
+  const depth: DepthComponent | null = r.depth
+    ? {
+        id: newId(),
+        kind: 'depth',
+        mode: 'Add',
+        opacity: 100,
+        invert: false,
+        feather: 0,
+        width: r.width,
+        height: r.height,
+        png,
+        // The nearest third, softly: a start the user moves with a click or the sliders.
+        near: 0,
+        far: 33,
+        softness: 10
+      }
+    : null
+  const brush: BrushComponent = {
     id: newId(),
     name: r.label,
     kind: 'brush',
@@ -39,6 +62,7 @@ export async function applyMaskResult(
     refine: modelRefine(),
     ...(r.source ? { source: r.source } : {})
   }
+  const comp = depth ?? brush
   const into = r.into && recipe.layers.find((l) => l.id === r.into!.layerId)
   if (into) into.components.push({ ...comp, mode: into.components.length ? r.into!.mode : 'Add' })
   else {

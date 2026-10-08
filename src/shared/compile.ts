@@ -885,11 +885,35 @@ function maskComponent(
         }
       }
     }
+    case 'depth': {
+      // Its map, turned as a painted plane is (main/brushes.ts). Disparity:
+      // the engine's near is the larger value; 0 on the slider is the nearest.
+      const path = brushPaths[c.id]
+      if (!path) return null
+      const [a, b] = c.near <= c.far ? [c.near, c.far] : [c.far, c.near]
+      return {
+        ...base,
+        shape: {
+          DepthRange: {
+            depth: { Raster: { Png: path } },
+            quantity: 'Disparity',
+            near: round4(1 - a / 100),
+            far: round4(1 - b / 100),
+            softness: round4(clamp(c.softness / 100, 0, 1) * DEPTH_SOFTNESS_MAX),
+            // Depth edges aren't the picture's: bilinear, never guided (engine 0.18).
+            resampler: 'Bilinear'
+          }
+        }
+      }
+    }
     default:
       // A kind this version cannot draw never reaches the engine.
       return null
   }
 }
+
+/** Softness 100 fades over this much of the photo's depth past each end. */
+export const DEPTH_SOFTNESS_MAX = 0.25
 
 export function layerMask(
   l: LocalLayer,

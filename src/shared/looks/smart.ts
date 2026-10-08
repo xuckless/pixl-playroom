@@ -762,6 +762,8 @@ function partOf(c: MaskComponentSetting): MaskPart | string {
       }
     case 'polygon':
       return 'a drawn outline belongs to this photo'
+    case 'depth':
+      return 'a depth range is set on this photo’s own depth'
     case 'brush': {
       const src = c.source
       if (!src) return 'painted strokes belong to this photo'

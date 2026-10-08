@@ -28,7 +28,11 @@ export const SKY_BY_CLICK = true
  * "soon" in the picker.
  */
 export const PEOPLE_BY_CLICK = false
-export type SegmentTarget = 'subject' | 'sky' | 'background'
+/** `depth`: a depth map (Depth Anything V2), landing as a Depth range. */
+export type SegmentTarget = 'subject' | 'sky' | 'background' | 'depth'
+
+/** The depth model (engine 0.18): disparity, per photo. */
+export const DEPTH_MODEL = 'depth-anything-v2-small'
 
 /** One step a job goes through, in order (Model → Analyse → Refine). */
 export interface AiStage {
@@ -54,6 +58,8 @@ export type AiResult =
       into?: { layerId: string; mode: MaskMode }
       /** What made it, kept on the mask (`BrushComponent.source`). */
       source?: BrushSource
+      /** A depth map, not a selection: it lands as a Depth range (`DepthComponent`). */
+      depth?: true
     }
 
 export type AiPhase = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
@@ -157,7 +163,8 @@ export interface AiCapabilities {
 export const SEGMENT_LABEL: Record<SegmentTarget, string> = {
   subject: 'Subject',
   sky: 'Sky',
-  background: 'Background'
+  background: 'Background',
+  depth: 'Depth range'
 }
 
 /** The whole job's progress with `stage` at `p` (0…1) of its own way. */

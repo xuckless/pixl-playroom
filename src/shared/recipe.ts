@@ -363,6 +363,32 @@ export interface BidirectionalComponent extends ComponentBase {
 
 export type GradientComponent = LinearComponent | RadialComponent | BidirectionalComponent
 
+/**
+ * A depth range: the part of the photo between two distances, from a depth
+ * map a model made of it (Depth Anything V2: disparity, normalised per
+ * photo, so 255 is the nearest thing in it and 0 the farthest). The map is
+ * an 8-bit grey PNG in the base frame, held as a brush's plane is (`png`
+ * here, by `ref` across IPC). `near` and `far` are 0…100 of the photo's
+ * depth, 0 the nearest; `softness` 0…100 how far past them it fades.
+ */
+export interface DepthComponent extends ComponentBase {
+  kind: 'depth'
+  width: number
+  height: number
+  png: string
+  ref?: string
+  near: number
+  far: number
+  softness: number
+}
+
+/** A component that carries a grey plane of its own (a painted or model mask, a depth map). */
+export type PlaneComponent = BrushComponent | DepthComponent
+
+export function hasPlane(c: MaskComponentSetting): c is PlaneComponent {
+  return c.kind === 'brush' || c.kind === 'depth'
+}
+
 export type MaskComponentSetting =
   | BrushComponent
   | PolygonComponent
@@ -370,6 +396,7 @@ export type MaskComponentSetting =
   | LinearComponent
   | RadialComponent
   | BidirectionalComponent
+  | DepthComponent
 
 /**
  * A mask's sliders before version 2, when a mask had its own small set:
@@ -920,6 +947,21 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         width: num(c.width, 512, 1),
         height: num(c.height, 512, 1)
       }
+    case 'depth': {
+      if (typeof c.png !== 'string') return null
+      const near = num(c.near, 0, 0, 100)
+      return {
+        ...base,
+        kind: 'depth',
+        png: c.png,
+        ...(typeof c.ref === 'string' && c.ref ? { ref: c.ref } : {}),
+        width: num(c.width, 1),
+        height: num(c.height, 1),
+        near,
+        far: num(c.far, 33, near, 100),
+        softness: num(c.softness, 10, 0, 100)
+      }
+    }
     default:
       return null
   }
@@ -1234,13 +1276,13 @@ export function slimRecipe(
   refOf: (png: string) => string,
   known?: (ref: string, png: string) => void
 ): Recipe {
-  if (!r.layers.some((l) => l.components.some((c) => c.kind === 'brush' && c.png))) return r
+  if (!r.layers.some((l) => l.components.some((c) => hasPlane(c) && c.png))) return r
   return {
     ...r,
     layers: r.layers.map((l) => ({
       ...l,
       components: l.components.map((c) => {
-        if (c.kind !== 'brush' || !c.png) return c
+        if (!hasPlane(c) || !c.png) return c
         const ref = c.ref ?? refOf(c.png)
         known?.(ref, c.png)
         return { ...c, png: '', ref }
@@ -1255,14 +1297,13 @@ export function slimRecipe(
  * does not have stays a reference.
  */
 export function hydrateRecipe(r: Recipe, get: (ref: string) => string | undefined): Recipe {
-  if (!r.layers.some((l) => l.components.some((c) => c.kind === 'brush' && !c.png && c.ref)))
-    return r
+  if (!r.layers.some((l) => l.components.some((c) => hasPlane(c) && !c.png && c.ref))) return r
   return {
     ...r,
     layers: r.layers.map((l) => ({
       ...l,
       components: l.components.map((c) => {
-        if (c.kind !== 'brush' || c.png || !c.ref) return c
+        if (!hasPlane(c) || c.png || !c.ref) return c
         const png = get(c.ref)
         if (png === undefined) return c
         const out = { ...c, png }

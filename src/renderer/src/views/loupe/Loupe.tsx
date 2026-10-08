@@ -15,6 +15,7 @@ import {
 import {
   displaySize,
   displayToOriented,
+  displayToBase,
   fitRect,
   normalisedIn,
   panBy,
@@ -27,6 +28,7 @@ import {
   type ZoomView
 } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
+import { depthAt } from '../../lib/depth'
 import { touchInteracting } from '../../lib/interacting'
 import { emptyRange, hsvOf } from '../../lib/helpers'
 import { madeComponent, modeForNew } from '../../panels/masks/model'
@@ -395,6 +397,28 @@ export function Loupe(): React.JSX.Element {
         replace(next, 'Pick range')
         madeComponent(madeId)
         setTool('none')
+      } else if (tool === 'depth-picker') {
+        const layer = recipe.layers.find((l) => l.id === layerId)
+        const compId = useDevelop.getState().compId
+        const comp =
+          layer?.components.find((x) => x.id === compId && x.kind === 'depth') ??
+          [...(layer?.components ?? [])].reverse().find((x) => x.kind === 'depth')
+        if (!layer || !comp || comp.kind !== 'depth')
+          return useLibrary.getState().say('Select a Depth range first', 'error')
+        // Where the click is on the base frame, where the depth map lives.
+        const b = displayToBase(g, p)
+        const at = await depthAt(comp, b.x, b.y)
+        // Centred there, as wide as it was (a tenth of the photo's depth at least).
+        const half = Math.max(5, Math.round(Math.abs(comp.far - comp.near) / 2))
+        const next = structuredClone(recipe)
+        const c = next.layers
+          .find((l) => l.id === layerId)
+          ?.components.find((x) => x.id === comp.id)
+        if (c?.kind !== 'depth') return
+        c.near = Math.max(0, at - half)
+        c.far = Math.min(100, at + half)
+        replace(next, 'Pick depth')
+        setTool('none')
       } else if (tool === 'fringe-pick' && picture) {
         const f = fringeFrom(hsvOf(...(await samplePatch(picture.url, p.x, p.y))))
         if (!f) {
@@ -494,6 +518,7 @@ export function Loupe(): React.JSX.Element {
         if (
           tool === 'wb-picker' ||
           tool === 'range-picker' ||
+          tool === 'depth-picker' ||
           tool === 'point-picker' ||
           tool === 'add-pick' ||
           tool === 'fringe-pick'

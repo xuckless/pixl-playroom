@@ -63,6 +63,7 @@ test('each kind shows only what it needs', () => {
     shift: true,
     softness: false,
     range: false,
+    depth: false,
     snap: true
   })
   assert.equal(componentControls(radial).softness, true)
@@ -75,6 +76,7 @@ test('each kind shows only what it needs', () => {
     shift: false,
     softness: false,
     range: false,
+    depth: false,
     snap: true
   })
   assert.equal(componentControls({ ...brush, refine: { on: true, radius: 0.6 } }).shift, true)

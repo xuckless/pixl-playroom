@@ -309,7 +309,7 @@ export class MaskGl {
       gl.uniform1f(this.u(p, 'uSigma'), 0.001)
       this.run(p, t, bw, bh)
       gl.deleteTexture(src)
-    } else {
+    } else if (c.kind === 'range') {
       if (!this.picture) return null
       const p = this.programs.range
       gl.useProgram(p)

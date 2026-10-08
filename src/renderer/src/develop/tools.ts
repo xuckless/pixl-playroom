@@ -17,7 +17,8 @@ export const MASK_TOOLS: Tool[] = [
   'radial',
   'bidirectional',
   'objects',
-  'range-picker'
+  'range-picker',
+  'depth-picker'
 ]
 
 /** Pickers that belong to a card: put down when the column changes. */
