@@ -323,6 +323,22 @@ the mask's Smoothing to 0, and it is clean (the owner confirmed Smoothing 0).
       (c) Smoothing starts at 0 for masks (new photos keep 100).
 - [x] **S** · A test holds HslBands unsmoothed (`tests/smoothing.test.ts`);
       the Smoothing and Color Mixer tips no longer promise it.
+- [x] **M** · Second case (the owner, IMG_3198.CR2: Dehaze 100, Vibrance
+      100, Saturation +98): blocks of magenta and green on the Scene master
+      even with HslBands unsmoothed: smoothed Dehaze on the negatives that
+      PixlRGB's out-of-P3 colours become in the Encoded P3 look stage. Every
+      look stage now starts with `P3_FLOOR` (a 1D identity over 0…64:
+      negatives to 0, nothing else; the screen clips them anyway). IMG_3198:
+      224 455 → 39 garish pixels.
+- [x] **S** · Regression test `tests/e53.test.ts`: both edits' numbers as
+      fixtures (`tests/fixtures/e53/`, no image data: the owner, 2026-10-08,
+      no faces in the repository); the RAWs and IMG_2347's mask planes
+      (`IMG_2347.<component id>.png`) are the owner's, read from
+      `PIXL_E53_RAWS` (skipped without it). It checks
+      today's compile renders clean, and that smoothed HslBands still breaks
+      IMG_3198: when that check fails, E53 is fixed and the stopgap can go.
+      Run: `PIXL_E53_RAWS=<folder with the two CR2s and the planes> node
+      --import ./tests/register.mjs --experimental-strip-types --test tests/e53.test.ts`.
 
 ### Pass 94 — The RAW master as Scene float 1/2 · 5 pts
 

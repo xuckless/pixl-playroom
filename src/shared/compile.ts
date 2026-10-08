@@ -974,6 +974,30 @@ function stage(space: GradeSpace, ops: GradeOp[]): { space: GradeSpace; ops: Gra
   return ops.length > 0 ? [{ space, ops }] : []
 }
 
+/**
+ * Negatives floored at 0, nothing else touched (a 1D identity over 0…64): the
+ * look stage's first op. A RAW's Scene master is PixlRGB (engine 0.18), wider
+ * than Display P3, so its most saturated colours enter the look stage with a
+ * channel below 0, where smoothed ops break (E53: Dehaze at 30 already
+ * blotched IMG_3198). A Develop master never held them (it was linear sRGB),
+ * and the screen clips them, so the picture keeps its look.
+ */
+const P3_FLOOR = 'LUT_1D_SIZE 2\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 64 64 64\n0 0 0\n64 64 64\n'
+
+/** Whether an op is the look stage's floor (`P3_FLOOR`). */
+export function isP3Floor(op: GradeOp): boolean {
+  return 'Lut' in op && 'Cube' in op.Lut.lut && op.Lut.lut.Cube === P3_FLOOR
+}
+
+/** The look stage (display-referred, `LOOK_SPACE`), its negatives floored first. */
+function lookStage(ops: GradeOp[]): { space: GradeSpace; ops: GradeOp[] }[] {
+  if (ops.length === 0) return []
+  return stage(LOOK_SPACE, [
+    { Lut: { lut: { Cube: P3_FLOOR }, amount: 1, out_of_domain: 'Clamp' } },
+    ...ops
+  ])
+}
+
 function sharpenOp(
   amount: number,
   radius: number,
@@ -1367,7 +1391,7 @@ function settingsStages(
       }
     })
   }
-  return [...stage('LinearWorking', linear), ...stage(LOOK_SPACE, look)]
+  return [...stage('LinearWorking', linear), ...lookStage(look)]
 }
 
 /**
@@ -1444,7 +1468,7 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
       opacity: 1,
       mask: null,
       blend: { mode: 'Normal', space: 'LinearWorking' },
-      stages: stage(LOOK_SPACE, finish)
+      stages: lookStage(finish)
     })
   }
   for (const c of r.custom) {

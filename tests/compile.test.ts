@@ -5,6 +5,7 @@ import {
   calibrationMatrix,
   compile,
   cropFits,
+  isP3Floor,
   parametricCurve,
   shoulderCube,
   vignettePlacement,
@@ -25,7 +26,9 @@ const ctx: CompileContext = {
   applyCrop: true
 }
 
-const kinds = (ops: GradeOp[]): string[] => ops.map((o) => Object.keys(o)[0])
+// The look stage's floor (isP3Floor) is left out: what each test is about follows it.
+const kinds = (ops: GradeOp[]): string[] =>
+  ops.filter((o) => !isP3Floor(o)).map((o) => Object.keys(o)[0])
 
 test('an untouched JPEG compiles to nothing at all', () => {
   const c = compile(defaultRecipe(false), ctx)
@@ -462,4 +465,13 @@ test('a RAW’s Scene headroom rolls onto white for SDR, whatever the exposure; 
   assert.equal(shoulderOf(0, true), null)
   // Any other photo: only a positive exposure brings one, as before.
   assert.equal(shoulderOf(0, false, false), null)
+})
+
+test('every look stage starts by flooring the negatives Scene’s wide colours bring (E53)', () => {
+  const r = defaultRecipe(true)
+  r.presence.dehaze = 30
+  const look = compile(r, { ...ctx, isRaw: true, scale: 1 }).grade!.layers[0].stages.at(-1)!
+  assert.ok(isP3Floor(look.ops[0]))
+  // Nothing in the look stage, no floor either.
+  assert.equal(compile(defaultRecipe(false), ctx).grade, null)
 })
