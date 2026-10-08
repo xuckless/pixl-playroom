@@ -32,7 +32,7 @@ import { heavyThreads } from '../source'
 import { ENHANCE_MODEL, FIRST_GUESS_MS_PER_MP, type EnhanceStepKind } from '../../shared/enhance'
 import { modelSpeed, referenceOf, testFactor, type ModelSpeed } from '../../shared/modelSpeed'
 import { DENOISE_RATE_KEY, ENHANCE_RATE_KEY } from './rates'
-import { carryOver, retiredModelDirs } from './carryover'
+import { carryOver, keptBesides, retiredModelDirs } from './carryover'
 import { staticPlan } from '../../shared/modelshape'
 import { NAFNET_DENOISE } from '../../shared/recipe'
 import { SAM3_PHRASE } from '../../shared/ai'
@@ -242,7 +242,13 @@ export class ModelStore {
     const gone = await retiredModelDirs(
       root,
       new Map(roster.map((e) => [e.id, e.version])),
-      new Set(pixlModels.onDemand().map((e) => e.id))
+      keptBesides(
+        pixlModels.onDemand().map((e) => e.id),
+        pixlModels
+          .manifest()
+          .filter((m) => m.ship && held(m.id))
+          .map((m) => m.id)
+      )
     )
     for (const p of gone) await rm(join(root, p), { recursive: true, force: true })
     if (gone.length > 0) {
@@ -370,7 +376,8 @@ export class ModelStore {
    * One file: into `<dest>.part` (appending to what an earlier try left),
    * then checked against the roster and moved into place.
    */
-  private async fetchFile(
+  /** Shared with the brain store (ai/brain.ts): its pinned files come the same way. */
+  async fetchFile(
     url: string,
     dest: string,
     f: RosterFile,

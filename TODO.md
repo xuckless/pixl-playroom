@@ -820,19 +820,36 @@ Decisions (the owner, 2026-10-08):
   found trees (6), power lines and clouds; EfficientSAM3 only the tree.
 - [ ] **S** · Turn `SAM3_PHRASE` on once the engine answers E58.
 
-### Pass 112 — Gemma: download and run · 4 pts
+### Pass 112 — Gemma: download and run, the killswitch, the heavy gate · 5 pts ✅
 
-- Measured 2026-10-08 on the M2 Pro (ENGINE-REQUESTS "Measured on the
-  Mac"): Metal 11–17 s a photo for naming (72 tok/s, ~1000 tokens of
-  JSON), 3.4–4.0 GB resident, ready in 2 s; CPU 26–32 s and 4.8 GB. But the
-  names came back as worker names on 5 of 6 photos (E56): naming waits on
-  the engine's answer.
-
-- [ ] **M** · Settings → AI models: Gemma 4 E2B (GGUFs and `llama-server`
-      from `brains.json`'s pins, checked by `verify()`), its size and
-      licence shown. `startLocalServer` with a random key per launch,
-      `LocalServerBrain` with `max_tokens.plan` ≥ 3000; stopped after a
-      batch and never held beside SAM 3.
+- [x] **M** · Gemma 4 E2B (`main/ai/brain.ts`): the GGUFs and llama-server
+      from pixl-auto's `brains.json` pins (Hugging Face at a commit, the
+      GitHub release; sha-checked by the model store's resumable fetch),
+      the archive unpacked with `tar`; started on demand by
+      `startLocalServer` (127.0.0.1, a free port, a random key per launch,
+      Metal / Vulkan with every layer on the GPU), `max_tokens.plan` 3000;
+      stopped after 5 min idle, when Playroom rests, when AI or Gemma is
+      switched off, and killed synchronously on quit (checked: quitting
+      mid-benchmark leaves no server). Size and licences shown.
+- [x] **M** · The heavy models (the owner, 2026-10-08): Gemma and SAM 3 are
+      off by default and turn on only after a sustained-load benchmark
+      passes on this computer (`shared/heavy.ts`: the mean run, the slowdown
+      from the second run to the last, the model's memory against the
+      computer's, 8 GB at least); a failed or other-computer benchmark
+      keeps it off. Gemma: five naming runs of a drawn picture; SAM 3:
+      three fresh embeddings and a phrase each (not offered while held, E58).
+- [x] **M** · The killswitch: Settings → AI models → "Use AI models" (on by
+      default). Off: every AI job and click-to-select refused, the
+      capabilities say why (smart looks' `off`), Gemma stopped; a RAW's
+      develop keeps DemosaicNet and PMRID (the owner).
+- Fixed on the way: the startup clean-up of retired models would have
+  deleted Gemma's folder (and a held NAFNet SIDD's) on every launch
+  (`keptBesides`).
+- In the app (M2 Pro, idle): the benchmark passed, 10.8 s a photo, steady,
+  3.6 GB of 16, loaded in 8.1 s. The first try failed because a stray
+  CoreML compile was running beside it (since killed).
+- [ ] **S** · Owner: the benchmark on the M1 8 GB; an app-downloaded
+      llama-server under a signed build.
 
 ### Pass 113 — Naming and the chips · 5 pts
 

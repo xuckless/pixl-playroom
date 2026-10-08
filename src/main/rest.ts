@@ -35,8 +35,11 @@ function windowState(): { visible: boolean; focused: boolean } {
   }
 }
 
-/** Start watching. `wake` runs when Playroom is in use again (the interactive engine starts). */
-export function watchRest(engines: RestEngine[], wake: () => void): void {
+/**
+ * Start watching. `wake` runs when Playroom is in use again (the interactive
+ * engine starts); `rest`, when it goes to rest (Gemma's server stops).
+ */
+export function watchRest(engines: RestEngine[], wake: () => void, rest?: () => void): void {
   let timer: NodeJS.Timeout | undefined
   let recheck: NodeJS.Timeout | undefined
   let resting = false
@@ -71,6 +74,7 @@ export function watchRest(engines: RestEngine[], wake: () => void): void {
     timer = setTimeout(() => {
       timer = undefined
       resting = true
+      rest?.()
       letGo()
       recheck = setInterval(letGo, RECHECK_MS)
     }, delay)

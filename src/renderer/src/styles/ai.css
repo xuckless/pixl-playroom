@@ -322,3 +322,36 @@ button.bg-job-link {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Settings → AI models: the killswitch and the heavy models (views/HeavyModels.tsx). */
+.model-kill .check {
+  font-size: 13px;
+}
+.model-row.heavy .model-act {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.heavy-result {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--hair);
+  font-size: 12px;
+}
+.heavy-result.ok {
+  border-color: color-mix(in srgb, var(--ok, #4ade80) 50%, transparent);
+}
+.heavy-result.no {
+  border-color: color-mix(in srgb, var(--danger, #f87171) 50%, transparent);
+}
+.heavy-result ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+.heavy-bench {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

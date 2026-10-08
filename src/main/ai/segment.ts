@@ -23,6 +23,7 @@ import {
   isSceneTarget,
   OFFERED_PHRASE_MODEL,
   PHRASE_MODELS,
+  SAM3_PHRASE,
   segmentModel,
   SEGMENT_LABEL,
   type PartTarget
@@ -58,6 +59,7 @@ import type { SamResult } from '../../shared/engine-types'
 import log from 'electron-log/main'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
 import { ModelMissing, type ModelStore } from './models'
+import { heavyAllowedNow } from './switches'
 
 type SegmentRequest = Extract<AiStartRequest, { task: 'segment' }>
 
@@ -277,7 +279,11 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     const text = (req.phrase ?? '').trim().slice(0, 80)
     if (!text) throw new Error('Type what to find: “red car”, “the dog”')
     let id: string | null = null
-    for (const m of PHRASE_MODELS) if (!id && (await this.models.installed(m))) id = m
+    // SAM 3 only while it is on (a passing benchmark, shared/heavy.ts) and not held (E58).
+    for (const m of PHRASE_MODELS) {
+      if (id || (m === 'sam3' && !(SAM3_PHRASE && (await heavyAllowedNow('sam3'))))) continue
+      if (await this.models.installed(m)) id = m
+    }
     if (!id) throw new ModelMissing(this.models.entry(OFFERED_PHRASE_MODEL))
     const row = await this.library.photoRow(req.key)
     const info = await this.library.probe(row)

@@ -56,6 +56,17 @@ export async function carryOver(modelsRoot: string, m: CarriedModel): Promise<bo
  * each shipped id to its version; `keep` names other folders to leave
  * (on-demand models).
  */
+/** Where Gemma and its server live under the models folder (ai/brain.ts): never pruned. */
+export const BRAINS_DIR = 'brains'
+
+/**
+ * What the clean-up keeps besides the roster: on-demand models, shipped ones
+ * held back for now (back when turned on), and Gemma's folder.
+ */
+export function keptBesides(onDemand: string[], held: string[]): Set<string> {
+  return new Set([...onDemand, ...held, BRAINS_DIR])
+}
+
 export async function retiredModelDirs(
   modelsRoot: string,
   shipped: ReadonlyMap<string, string>,

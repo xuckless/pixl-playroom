@@ -1,4 +1,5 @@
 import type { ResolvedProfile } from './lens'
+import type { HeavyBenchmark } from './heavy'
 import type { ModelSpeed } from './modelSpeed'
 import type { RawColour } from './rawcolour'
 /** IPC channel names and the app-level types both sides of the bridge share. */
@@ -250,7 +251,26 @@ export const IPC = {
     list: 'ai:list',
     capabilities: 'ai:capabilities',
     /** main → renderer: a job's progress, its end and its result */
-    event: 'ai:event'
+    event: 'ai:event',
+    /** The killswitch and the heavy models' switches (shared/heavy.ts). */
+    switches: 'ai:switches',
+    setEnabled: 'ai:set-enabled',
+    setHeavy: 'ai:set-heavy',
+    /** A heavy model's sustained-load benchmark; resolves with its result. */
+    benchmark: 'ai:benchmark',
+    /** main → renderer: the switches changed. */
+    switchesEvent: 'ai:switches-event',
+    /** main → renderer: a benchmark's progress. */
+    benchmarkProgress: 'ai:benchmark-progress'
+  },
+  /** Gemma, the local assistant (main/ai/brain.ts). */
+  brain: {
+    status: 'brain:status',
+    download: 'brain:download',
+    cancel: 'brain:cancel',
+    remove: 'brain:remove',
+    /** main → renderer: its state changed. */
+    event: 'brain:event'
   },
   /** Select by clicks, a box or strokes (SAM 2.1): main/select/service.ts. */
   select: {
@@ -881,6 +901,25 @@ export interface ModelInfo {
   error?: string
   /** How long it takes on this computer, for one photo (see `modelSpeed.ts`). */
   speed: ModelSpeed | null
+}
+
+/** Gemma, the local assistant: its files, its server, its switch and benchmark. */
+export interface BrainStatus {
+  id: string
+  /** llama.cpp ships a server for this computer. */
+  supported: boolean
+  bytes: number
+  licence: string
+  installed: boolean
+  /** 0…1 while downloading. */
+  progress: number | null
+  error: string | null
+  running: boolean
+  benchmarking: boolean
+  on: boolean
+  benchmark: HeavyBenchmark | null
+  /** This computer, as a benchmark names it. */
+  machine: string
 }
 
 /** Which provider AI models run on, and what the performance test measured. */

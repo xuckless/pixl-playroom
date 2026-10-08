@@ -56,6 +56,10 @@ import {
   type AiStartRequest
 } from '../shared/ai'
 import { FACE_DETECTOR, FACE_LANDMARKER } from '../shared/faceparts'
+import type { HeavyModel } from '../shared/heavy'
+import type { AiSwitchStore } from './ai/switches'
+import type { BrainStore } from './ai/brain'
+import { benchmarkSam3 } from './ai/sam3bench'
 import { immediateLayers, previewLayers, smartReadiness } from '../shared/looks/smart'
 import type { LookRunRequest, PickAnswer } from '../shared/looks/run'
 import { LookRuns } from './looks/runner'
@@ -152,6 +156,32 @@ export interface Services {
   lenses: LensProfileStore
   /** Select by clicks, a box or strokes (SAM 2.1), on its own engine host. */
   select: SelectService
+  /** The killswitch and the heavy models' switches (shared/heavy.ts). */
+  switches: AiSwitchStore
+  /** Gemma, the local assistant. */
+  brain: BrainStore
+}
+
+/** What AI can do with the killswitch thrown: nothing a model does, and why. */
+function aiOff(): AiCapabilities {
+  const why = 'AI models are off: turn them on in Settings → AI models'
+  return {
+    enhance: false,
+    segment: false,
+    denoise: false,
+    prompt: false,
+    smart: smartReadiness({
+      models: true,
+      subjectModel: true,
+      drunetModel: true,
+      enhance: true,
+      off: true,
+      engine: { sky: true, people: true, sam2: true, detector: false, nafnet: false }
+    }),
+    finders: { click: false, text: false, parts: false, 'sky-model': false },
+    get: {},
+    why: { enhance: why, segment: why, denoise: why, prompt: why }
+  }
 }
 
 /** A photo's base frame (upright, before the user's turns): the open session's, else its proxies'. */
@@ -759,7 +789,27 @@ export function registerIpc(s: Services): void {
   handle(IPC.ai.start, (req: AiStartRequest) => s.ai.start(req))
   handle(IPC.ai.cancel, (jobId: string) => s.ai.cancel(jobId))
   handle(IPC.ai.list, () => s.ai.list())
+  handle(IPC.ai.switches, () => s.switches.get())
+  handle(IPC.ai.setEnabled, (on: boolean) => s.switches.setEnabled(on === true))
+  handle(IPC.ai.setHeavy, (model: HeavyModel, on: boolean) =>
+    s.switches.setHeavy(model, on === true)
+  )
+  handle(IPC.ai.benchmark, (model: HeavyModel) => {
+    const progress = (p: number, note: string): void => {
+      for (const w of BrowserWindow.getAllWindows())
+        w.webContents.send(IPC.ai.benchmarkProgress, { model, progress: p, note })
+    }
+    return model === 'gemma'
+      ? s.brain.benchmark(progress)
+      : benchmarkSam3(s.aiEngine, s.models, s.switches, progress)
+  })
+  handle(IPC.brain.status, () => s.brain.status())
+  handle(IPC.brain.download, () => void s.brain.download())
+  handle(IPC.brain.cancel, () => s.brain.cancel())
+  handle(IPC.brain.remove, () => s.brain.remove())
   handle(IPC.ai.capabilities, async (): Promise<AiCapabilities> => {
+    // AI switched off: every model's tool says so (a RAW's develop keeps its models).
+    if (!(await s.switches.enabled())) return aiOff()
     const enhance = enhanceAvailability(s.bgEngine.getStatus())
     const subject = await s.models.installed('u2netp')
     // Models run on the engine's bundled runtime; each denoise model is
@@ -830,7 +880,11 @@ export function registerIpc(s: Services): void {
   })
 
   // ── select by clicks, a box or strokes (SAM 2.1) ──
-  handle(IPC.select.open, (key: string) => s.select.open(key))
+  handle(IPC.select.open, async (key: string) => {
+    if (!(await s.switches.enabled()))
+      throw new Error('AI models are off: turn them on in Settings → AI models')
+    return s.select.open(key)
+  })
   handle(IPC.select.decode, (selId: string, req: SelectDecode) => s.select.decode(selId, req))
   handle(IPC.select.commit, (selId: string, source: PromptSourceAsk) =>
     s.select.commit(selId, source)

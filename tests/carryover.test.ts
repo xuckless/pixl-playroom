@@ -75,3 +75,14 @@ test('what no release uses goes: retired models and old versions; on-demand and 
   assert.deepEqual(gone.sort(), ['lama', 'real-esrgan-x2plus', 'sam2-1-hiera-tiny/1.0.0', 'u2net'])
   assert.deepEqual(await retiredModelDirs(join(r, 'missing'), new Map(), new Set()), [])
 })
+
+test('Gemma’s folder and models held back are never cleaned up', async () => {
+  const { keptBesides } = await import('../src/main/ai/carryover')
+  const r = root({
+    'brains/gemma-4-e2b-it/b4243c156154/m.gguf': 'g',
+    'nafnet-sidd-w32/1.0.0/n.onnx': 'n',
+    'scunet-color-real/1.0.0/s.onnx': 's'
+  })
+  const gone = await retiredModelDirs(r, new Map(), keptBesides([], ['nafnet-sidd-w32']))
+  assert.deepEqual(gone, ['scunet-color-real'])
+})

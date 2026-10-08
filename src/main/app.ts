@@ -22,6 +22,8 @@ import { DenoiseRunner } from './ai/denoise'
 import { DISPLAY_SETTING_KEY, watchDisplayHdr } from './hdrdisplay'
 import { INPAINTER_MODEL, setInpainter } from './ai/inpainter'
 import { DEMOSAIC_MODEL, setRawModels } from './ai/rawdevelop'
+import { AiSwitchStore, setSwitchStore } from './ai/switches'
+import { BrainStore } from './ai/brain'
 import { ModelStore } from './ai/models'
 import { EnhanceRunner } from './enhance'
 import { Exporter } from './exporter'
@@ -256,6 +258,10 @@ app.whenReady().then(() => {
     if (e.name === 'project') embedder.request(e.key)
   })
   const models = new ModelStore(index, () => bgEngine.getStatus())
+  // The killswitch and the heavy models' switches (shared/heavy.ts), and Gemma.
+  const switches = new AiSwitchStore(index)
+  setSwitchStore(switches)
+  const brain = new BrainStore(models, switches)
   // A Remove bakes with MI-GAN once it is downloaded (pixels/heal.ts).
   setInpainter(async () =>
     (await models.installed(INPAINTER_MODEL)) ? models.ref(INPAINTER_MODEL) : null
@@ -311,6 +317,8 @@ app.whenReady().then(() => {
     async (key) => (await library.photoRow(key)).name,
     (e) => applyMaskResult(e, { library, sessions: sessions!, planes })
   )
+  // AI switched off in Settings: no job starts (a RAW's develop keeps its models).
+  ai.gate = () => switches.enabled()
   // The engine's safe-shutdown advisory: hosts go while Playroom is out of
   // the way, an export or a queued AI batch finishing first.
   watchRest(
@@ -320,8 +328,12 @@ app.whenReady().then(() => {
       { engine: aiEngine, busy: () => ai.busy },
       { engine: selectEngine }
     ],
-    () => engine.ensureStarted()
+    () => engine.ensureStarted(),
+    () => void brain.stop()
   )
+  // Quitting: Gemma's server goes with Playroom, never left running.
+  app.on('will-quit', () => brain.killNow())
+  process.on('exit', () => brain.killNow())
   registerIpc({
     index,
     embedder,
@@ -335,7 +347,9 @@ app.whenReady().then(() => {
     aiEngine,
     models,
     lenses,
-    select
+    select,
+    switches,
+    brain
   })
   onOpenPaths((paths) => mainWindow?.webContents.send(IPC.app.openPaths, paths))
 

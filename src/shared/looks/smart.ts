@@ -125,7 +125,8 @@ export interface SmartPart {
 
 // ── What this build can do ──────────────────────────────────────────────────
 
-export type Readiness = 'ready' | 'needs-model' | 'needs-engine'
+/** `off`: AI models are switched off in Settings (the killswitch). */
+export type Readiness = 'ready' | 'needs-model' | 'needs-engine' | 'off'
 
 /** Everything a smart look can ask for, by what it needs. */
 export type SmartKey =
@@ -176,6 +177,8 @@ export interface SmartBuild {
   faceModels?: boolean
   /** A phrase model (SAM 3 or EfficientSAM3) is installed: an object found by its name. */
   phraseModel?: boolean
+  /** AI models are switched off in Settings: everything a model finds or makes is `off`. */
+  off?: boolean
   /**
    * What the engine has: SAM 2.1 came with 0.16; NAFNet denoise, the scene
    * planes (sky, vegetation, water) and people's parts with 0.19; the
@@ -195,6 +198,11 @@ export interface SmartBuild {
 }
 
 export function smartReadiness(b: SmartBuild): SmartReadiness {
+  if (b.off) {
+    const r = smartReadiness({ ...b, off: false })
+    for (const k of Object.keys(r) as SmartKey[]) if (!IMMEDIATE_KEYS.has(k)) r[k] = 'off'
+    return r
+  }
   const model = (installed: boolean): Readiness =>
     !b.models ? 'needs-engine' : installed ? 'ready' : 'needs-model'
   // SAM 2.1: the engine has it, then its model has to be here.
@@ -230,8 +238,12 @@ export function smartReadiness(b: SmartBuild): SmartReadiness {
   }
 }
 
+/** What needs no model: a range or a gradient. */
+const IMMEDIATE_KEYS = new Set<SmartKey>(['range', 'linear', 'bidirectional', 'radial'])
+
 /** Why something cannot run, for the browser and the Applied bar. */
 export function whyNot(r: Readiness): string {
+  if (r === 'off') return 'AI models are off: turn them on in Settings → AI models'
   return r === 'needs-model'
     ? 'needs a model: download it in Settings → AI models'
     : 'needs the next engine update'

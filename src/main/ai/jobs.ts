@@ -86,7 +86,12 @@ export class AiJobs {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.ai.event, e)
   }
 
+  /** The killswitch (Settings → AI models): false refuses every job. */
+  gate: (() => Promise<boolean>) | null = null
+
   async start(req: AiStartRequest): Promise<string> {
+    if (this.gate && !(await this.gate()))
+      throw new Error('AI models are off: turn them on in Settings → AI models')
     const runner = this.runners[req.task]
     if (!runner) throw new Error(`${req.task} is not available in this build`)
     const jobId = `ai-${nextId++}`

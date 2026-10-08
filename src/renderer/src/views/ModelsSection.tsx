@@ -12,6 +12,8 @@ import { GlassSelect } from '../components/GlassSelect'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
 import { copyOf, duration, pace, PURPOSES, purposeOf, type Purpose } from './modelCopy'
+import { AiKillswitch, HeavyModels } from './HeavyModels'
+import { useSwitches } from '../lib/switches'
 
 const mb = (bytes: number): string =>
   bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`
@@ -99,7 +101,9 @@ export function ModelsSection(): React.JSX.Element {
     void api.models.provider().then(setProvider, () => undefined)
     return api.models.onEvent(setModels)
   }, [say])
-  const all = models ?? []
+  const switches = useSwitches()
+  // SAM 3 is a heavy model: it has its own card below, behind its benchmark.
+  const all = (models ?? []).filter((m) => m.id !== 'sam3')
   const installed = all.filter((m) => m.installed)
   const used = installed.reduce((s, m) => s + m.bytes, 0)
   const purposes = PURPOSES.filter((p) => all.some((m) => purposeOf(m.role) === p.id))
@@ -116,6 +120,7 @@ export function ModelsSection(): React.JSX.Element {
         {installed.length ? ` (${mb(used)} in use)` : ''}. Pick what you want to do to see the
         models for it.
       </p>
+      <AiKillswitch s={switches} />
       <div className="models-filter">
         <GlassSelect
           label="Show models for"
@@ -142,6 +147,7 @@ export function ModelsSection(): React.JSX.Element {
           </ul>
         </section>
       ))}
+      <HeavyModels s={switches} models={models ?? []} />
       <section className="model-group model-device">
         <h4>This computer</h4>
         <p className="small">

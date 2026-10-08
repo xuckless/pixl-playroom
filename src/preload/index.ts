@@ -12,6 +12,7 @@ import type { LensProfile } from '../shared/lens'
 import {
   IPC,
   type AppError,
+  type BrainStatus,
   type AutoWbResult,
   type BasicSetting,
   type CaMeasurement,
@@ -63,6 +64,7 @@ import type { ReleaseNotes } from '../shared/releasenotes'
 import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
+import type { AiSwitches, HeavyBenchmark, HeavyModel } from '../shared/heavy'
 import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../shared/looks/run'
 import type { EnhanceRates } from '../shared/enhance'
@@ -320,7 +322,21 @@ const api = {
     cancel: (jobId: string) => call<void>(IPC.ai.cancel, jobId),
     list: () => call<AiJobEvent[]>(IPC.ai.list),
     capabilities: () => call<AiCapabilities>(IPC.ai.capabilities),
-    onEvent: (cb: (e: AiJobEvent) => void) => on(IPC.ai.event, cb)
+    onEvent: (cb: (e: AiJobEvent) => void) => on(IPC.ai.event, cb),
+    switches: () => call<AiSwitches>(IPC.ai.switches),
+    setEnabled: (on: boolean) => call<AiSwitches>(IPC.ai.setEnabled, on),
+    setHeavy: (model: HeavyModel, on: boolean) => call<AiSwitches>(IPC.ai.setHeavy, model, on),
+    benchmark: (model: HeavyModel) => call<HeavyBenchmark>(IPC.ai.benchmark, model),
+    onSwitches: (cb: (s: AiSwitches) => void) => on(IPC.ai.switchesEvent, cb),
+    onBenchmark: (cb: (p: { model: HeavyModel; progress: number; note: string }) => void) =>
+      on(IPC.ai.benchmarkProgress, cb)
+  },
+  brain: {
+    status: () => call<BrainStatus>(IPC.brain.status),
+    download: () => call<void>(IPC.brain.download),
+    cancel: () => call<void>(IPC.brain.cancel),
+    remove: () => call<void>(IPC.brain.remove),
+    onEvent: (cb: (s: BrainStatus) => void) => on(IPC.brain.event, cb)
   },
   /** Select by clicks, a box or strokes (SAM 2.1) on the open photo. */
   select: {
