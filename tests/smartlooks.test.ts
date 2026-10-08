@@ -45,6 +45,7 @@ const TODAY: SmartBuild = {
 const NEXT: SmartBuild = {
   ...TODAY,
   nafnetModel: true,
+  faceModels: true,
   engine: { sky: true, people: true, sam2: true, detector: true, nafnet: true, faces: true }
 }
 const photo = { frameWidth: 6000, frameHeight: 4000 }

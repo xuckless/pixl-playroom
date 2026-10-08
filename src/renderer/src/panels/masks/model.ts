@@ -32,6 +32,7 @@ import {
   type SegmentTarget
 } from '../../../../shared/ai'
 import { CONCEPTS, conceptOf, type ConceptId } from '../../../../shared/concepts'
+import { FACE_DETECTOR, FACE_LANDMARKER, isFacePart } from '../../../../shared/faceparts'
 import type { PersonPart } from '../../../../shared/looks/smart'
 import { useLibrary } from '../../state/library'
 import { useDevelop, type Tool } from '../../state/develop'
@@ -79,9 +80,20 @@ const PART_ICON: Partial<Record<PersonPart, IconName>> = {
   face: 'face',
   hair: 'hair',
   skin: 'skin',
-  clothes: 'clothes'
+  clothes: 'clothes',
+  eyes: 'eye',
+  brows: 'brows',
+  lips: 'lips',
+  teeth: 'teeth'
 }
 const PART_HINT = 'found by a model; best when the person is a good part of the frame'
+/** Face parts' tips: what each finds, every face at once. */
+const FACE_HINT: Partial<Record<PersonPart, string>> = {
+  eyes: 'both eyes of every face, found by a model; pick one face after',
+  brows: 'the eyebrows of every face (beta: their outlines are rough)',
+  lips: 'the lips of every face, the mouth inside left out',
+  teeth: 'the inside of every mouth: the closest outline to the teeth there is'
+}
 
 /** The tools a mask can be made with, in Lightroom's order. */
 export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
@@ -148,9 +160,11 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
       icon: PART_ICON[c.id as PersonPart] ?? 'objects',
       ...(isPartTarget(c.id)
         ? { model: PARTS_MODEL, hint: PART_HINT }
-        : PEOPLE_BY_CLICK
-          ? { needs: 'download SAM 2.1', ai: 'prompt' as const, badge: 'click' }
-          : { needs: 'coming soon' })
+        : isFacePart(c.id)
+          ? { model: FACE_LANDMARKER, hint: FACE_HINT[c.id as PersonPart] }
+          : PEOPLE_BY_CLICK
+            ? { needs: 'download SAM 2.1', ai: 'prompt' as const, badge: 'click' }
+            : { needs: 'coming soon' })
     }))
   },
   {
@@ -252,8 +266,9 @@ export function madeComponent(id: string): void {
 /** The class a tool asks a click for: the sky (without its model), or a person's part no model finds. */
 function askedConcept(kind: MaskToolKind): ConceptId | null {
   if (kind === 'sky') return SKY_BY_CLICK ? 'sky' : null
-  // Hair, face, skin and clothes have their model: no click.
-  if (!kind.startsWith('part:') || isPartTarget(kind.slice(5))) return null
+  // Hair, face, skin and clothes, and the face's parts, have their models: no click.
+  if (!kind.startsWith('part:') || isPartTarget(kind.slice(5)) || isFacePart(kind.slice(5)))
+    return null
   return kind.slice(5) as PersonPart
 }
 
@@ -302,22 +317,30 @@ export function startMaskTool(kind: MaskToolKind): void {
   }
   // A named mask (engine 0.19): the sky, vegetation, water, or a person's
   // hair, face, skin or clothes, its model offered when not downloaded.
+  const part = kind.startsWith('part:') ? kind.slice(5) : null
   const named: SegmentTarget | null = isSceneTarget(kind)
     ? kind
-    : kind.startsWith('part:') && isPartTarget(kind.slice(5))
-      ? (kind.slice(5) as SegmentTarget)
+    : part && (isPartTarget(part) || isFacePart(part))
+      ? (part as SegmentTarget)
       : null
   if (named) {
     if (!d.session) return
     const key = d.session.key
     const into = adding && d.layerId ? { layerId: d.layerId, mode: d.addMode ?? 'Add' } : undefined
-    const id = isSceneTarget(named) ? SCENE_MODEL : PARTS_MODEL
+    // A face part needs the face finder and the face outliner.
+    const ids = isSceneTarget(named)
+      ? [SCENE_MODEL]
+      : isFacePart(named)
+        ? [FACE_DETECTOR, FACE_LANDMARKER]
+        : [PARTS_MODEL]
     d.setAddMode(null)
     openMasks()
     void (async () => {
-      const models = await api.models.list()
-      const installed = models.find((m) => m.id === id)?.installed === true
-      if (!(await ensureModelId(id, installed, SEGMENT_LABEL[named]))) return
+      for (const id of ids) {
+        const models = await api.models.list()
+        const installed = models.find((m) => m.id === id)?.installed === true
+        if (!(await ensureModelId(id, installed, SEGMENT_LABEL[named]))) return
+      }
       await api.ai.start({ task: 'segment', key, target: named, into })
     })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
     return

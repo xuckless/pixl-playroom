@@ -49,6 +49,7 @@ import { autoWbBatch, setWbBatch } from './autowb'
 import { crashConsent, reportRendererError, sendProblemReport, setCrashConsent } from './crash'
 import { freeDevice, licence, refreshLicence, requireLicence, startTrial } from './licence'
 import { PARTS_MODEL, SCENE_MODEL, type AiCapabilities, type AiStartRequest } from '../shared/ai'
+import { FACE_DETECTOR, FACE_LANDMARKER } from '../shared/faceparts'
 import { immediateLayers, previewLayers, smartReadiness } from '../shared/looks/smart'
 import type { LookRunRequest, PickAnswer } from '../shared/looks/run'
 import { LookRuns } from './looks/runner'
@@ -772,10 +773,19 @@ export function registerIpc(s: Services): void {
       enhance: enhance.available,
       sceneModel: await s.models.installed(SCENE_MODEL),
       partsModel: await s.models.installed(PARTS_MODEL),
-      // The scene planes and people's parts came with 0.19 (models the engine
-      // runs); the detector (E45) is still to come. NAFNet denoise came with
-      // 0.19 too, held back until its fixed export (E55).
-      engine: { sky: models, people: models, sam2, detector: false, nafnet: NAFNET_DENOISE }
+      faceModels:
+        (await s.models.installed(FACE_DETECTOR)) && (await s.models.installed(FACE_LANDMARKER)),
+      // The scene planes, people's parts and face parts came with 0.19
+      // (models the engine runs); the detector (E45) is still to come. NAFNet
+      // denoise came with 0.19 too, held back until its fixed export (E55).
+      engine: {
+        sky: models,
+        people: models,
+        faces: models,
+        sam2,
+        detector: false,
+        nafnet: NAFNET_DENOISE
+      }
     })
     const drunet = await s.models.installed('drunet-color')
     return {

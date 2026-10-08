@@ -146,6 +146,16 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     what: 'Finds a person’s hair, face, skin and clothes in one click each. Best when the person fills a good part of the frame; edges are soft.',
     where: 'Masks → New → Face, Hair, Skin or Clothes'
   },
+  'yunet-2023mar': {
+    name: 'Face finder',
+    what: 'Finds every face in a photo, small ones in a group too, for the face part masks. Tiny and quick.',
+    where: 'Masks → New → Eyes, Brows, Lips or Teeth'
+  },
+  'face-mesh-v2': {
+    name: 'Face parts outliner',
+    what: 'Outlines each face’s eyes, brows, lips and mouth, so a mask takes exactly them. Brows are rough for now.',
+    where: 'Masks → New → Eyes, Brows, Lips or Teeth'
+  },
   'depth-anything-v2-small': {
     name: 'Depth finder',
     what: 'Sees which parts of a photo are near and which are far, for the Depth range mask.',

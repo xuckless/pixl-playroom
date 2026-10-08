@@ -28,13 +28,15 @@ import {
 } from '../recipe'
 import { rangeOf } from './ranges'
 
-export type PersonPart = 'skin' | 'face' | 'hair' | 'eyes' | 'lips' | 'teeth' | 'clothes' | 'body'
+export type PersonPart =
+  'skin' | 'face' | 'hair' | 'eyes' | 'brows' | 'lips' | 'teeth' | 'clothes' | 'body'
 
 export const PERSON_PARTS: PersonPart[] = [
   'skin',
   'face',
   'hair',
   'eyes',
+  'brows',
   'lips',
   'teeth',
   'clothes',
@@ -138,8 +140,10 @@ export type SmartKey =
   | 'water'
   /** A person's hair, face, skin or clothes (Selfie Multiclass). */
   | 'person'
-  /** A person's eyes, lips, teeth or whole body: no finder yet. */
+  /** A face's eyes, brows, lips or teeth: YuNet and Face Mesh v2. */
   | 'personDetail'
+  /** A whole person: no finder yet. */
+  | 'body'
   /** An object by label: the detector and SAM2. */
   | 'object'
   /** An object the user points at (a click or a box): SAM2 alone. */
@@ -168,6 +172,8 @@ export interface SmartBuild {
   sceneModel?: boolean
   /** Selfie Multiclass (a person's parts) is installed. */
   partsModel?: boolean
+  /** YuNet and Face Mesh v2 (a face's parts) are both installed. */
+  faceModels?: boolean
   /**
    * What the engine has: SAM 2.1 came with 0.16; NAFNet denoise, the scene
    * planes (sky, vegetation, water) and people's parts with 0.19; the
@@ -205,7 +211,8 @@ export function smartReadiness(b: SmartBuild): SmartReadiness {
     vegetation: b.engine.sky ? model(b.sceneModel === true) : 'needs-engine',
     water: b.engine.sky ? model(b.sceneModel === true) : 'needs-engine',
     person: b.engine.people ? model(b.partsModel === true) : 'needs-engine',
-    personDetail: b.models && b.engine.faces ? 'ready' : 'needs-engine',
+    personDetail: b.engine.faces ? model(b.faceModels === true) : 'needs-engine',
+    body: 'needs-engine',
     object: b.engine.detector ? sam : 'needs-engine',
     pick: sam,
     drunet: model(b.drunetModel),
@@ -229,6 +236,7 @@ function partNeed(t: MaskTarget, r: SmartReadiness): { key: SmartKey; ready: boo
     if (r.object === 'ready') return { key: 'object', ready: true }
     return { key: 'pick', ready: r.pick === 'ready' }
   }
+  if (t.kind === 'person' && t.part === 'body') return { key: 'body', ready: false }
   if (t.kind === 'person' && !MODEL_PARTS.includes(t.part))
     return { key: 'personDetail', ready: r.personDetail === 'ready' }
   return { key: t.kind, ready: r[t.kind] === 'ready' }
@@ -800,6 +808,8 @@ function partOf(c: MaskComponentSetting): MaskPart | string {
         ...join
       }
     case 'polygon':
+      // A face part found by its model is found again on another photo.
+      if (c.found) return { target: { kind: 'person', part: c.found.part }, ...join }
       return 'a drawn outline belongs to this photo'
     case 'depth':
       return 'a depth range is set on this photo’s own depth'

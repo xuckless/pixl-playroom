@@ -776,11 +776,26 @@ Decisions (the owner, 2026-10-08):
       the roster calls research-only (docs/ai/roster.md): confirm shipping
       it in Playroom is fine, or hold Vegetation/Water/Sky back.
 
-### Pass 110 — Face parts · 4 pts
+### Pass 110 — Face parts · 4 pts ✅
 
-- [ ] **L** · `faces` (YuNet, Face Mesh v2): eyes, lips, brows (beta) as
-      polygon masks, a picker per face; small faces by a `region`; "left" is
-      the subject's left.
+- [x] **L** · `faces` (YuNet, Face Mesh v2): Eyes, Brows (beta), Lips and
+      Teeth (the inside of the mouth) as lasso masks, one click each (both
+      models offered when missing). A part is one polygon component of
+      every face's rings, filled even-odd (`PolygonComponent.rings`: the
+      other eye, the mouth cut out of the lips), feathered 3 about the
+      line; each face's own outline is kept (`found`), and with several
+      faces the mask's card has a Faces picker (All / Face 1… left to
+      right) that narrows it without running anything. Small faces: the
+      four overlapping quarters (5/8 of each side) are looked at too, a face
+      found twice kept once (the whole frame's) and one a quarter cuts left
+      out. "Left" is the subject's left (the engine's `left_*`), nothing
+      mirrored. Smart looks: eyes, brows, lips and teeth run as segment
+      jobs (`personDetail` ready with both models); a face part saved in a
+      look is found again; Person (the whole body) stays soon.
+- In the built app (M2 Pro, CPU, the five `faces` calls): eyes 1.8 s,
+  brows 1.5 s, lips 1.8 s, teeth 1.5 s; one `faces` call 0.33 s. The
+  picker checked with a made-up second face (no group photo here).
+- [ ] **S** · Owner: a group photo (small faces, the picker) on the Mac.
 
 ### Pass 111 — Find by name · 5 pts
 
@@ -790,6 +805,12 @@ Decisions (the owner, 2026-10-08):
       "Model needed" popup; without either, SAM 2.1 on the user's box.
 
 ### Pass 112 — Gemma: download and run · 4 pts
+
+- Measured 2026-10-08 on the M2 Pro (ENGINE-REQUESTS "Measured on the
+  Mac"): Metal 11–17 s a photo for naming (72 tok/s, ~1000 tokens of
+  JSON), 3.4–4.0 GB resident, ready in 2 s; CPU 26–32 s and 4.8 GB. But the
+  names came back as worker names on 5 of 6 photos (E56): naming waits on
+  the engine's answer.
 
 - [ ] **M** · Settings → AI models: Gemma 4 E2B (GGUFs and `llama-server`
       from `brains.json`'s pins, checked by `verify()`), its size and

@@ -10,6 +10,7 @@
  * without the engine or a window.
  */
 import { isPartTarget, SKY_BY_CLICK, type AiJobEvent, type AiStartRequest } from '../../shared/ai'
+import { isFacePart } from '../../shared/faceparts'
 import { DEFAULT_ENHANCE } from '../../shared/enhance'
 import type { MaskMode } from '../../shared/engine-types'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../../shared/looks/run'
@@ -197,8 +198,9 @@ export class LookRuns {
         return
       }
       case 'person': {
-        // Hair, face, skin and clothes: Selfie Multiclass (engine 0.19).
-        if (isPartTarget(op.part)) {
+        // Hair, face, skin and clothes: Selfie Multiclass; eyes, brows, lips
+        // and teeth: the face's outlines (engine 0.19).
+        if (isPartTarget(op.part) || isFacePart(op.part)) {
           await this.job(
             run,
             this.deps.startJob({

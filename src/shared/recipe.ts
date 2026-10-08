@@ -17,6 +17,7 @@ import { normalisePixelStep, type PixelStep } from './pixels'
 import { normaliseEdge, type MaskEdge } from './maskedge'
 import { normalisePrompt, PROMPT_VIAS, type PromptGeometry, type PromptVia } from './prompt'
 import { conceptOf, type ConceptId } from './concepts'
+import { isFacePart, type FaceFound } from './faceparts'
 
 /**
  * 3 (engine 0.18): a RAW's untouched default sharpening takes the edge mask
@@ -330,6 +331,14 @@ export type BrushSource =
 export interface PolygonComponent extends ComponentBase {
   kind: 'polygon'
   points: { x: number; y: number }[]
+  /**
+   * More outlines beside `points`, all filled even-odd: a face part's other
+   * eye, the mouth cut out of the lips, other faces' (shared/faceparts.ts).
+   * A lasso drawn by hand has none.
+   */
+  rings?: { x: number; y: number }[][]
+  /** A face part (engine 0.19's `faces`): every face's outline, and which is shown. */
+  found?: FaceFound
 }
 
 /** A colour and/or luminance range (the engine's HSL key), keyed in Display P3. */
@@ -878,6 +887,33 @@ function point(v: unknown, def: { x: number; y: number }): { x: number; y: numbe
   return isObject(v) ? { x: num(v.x, def.x), y: num(v.y, def.y) } : def
 }
 
+function ringsOf(v: unknown): { x: number; y: number }[][] {
+  if (!Array.isArray(v)) return []
+  return v
+    .filter((r): r is unknown[] => Array.isArray(r) && r.length >= 3)
+    .map((r) => r.map((p) => point(p, { x: 0, y: 0 })))
+}
+
+function foundOf(v: unknown): FaceFound | null {
+  if (!isObject(v) || !isFacePart(v.part) || !Array.isArray(v.faces)) return null
+  const faces = (v.faces as unknown[])
+    .filter(isObject)
+    .map((f) => {
+      const b = Array.isArray(f.bounds) ? (f.bounds as unknown[]) : []
+      return {
+        bounds: [0, 1, 2, 3].map((i) => num(b[i], 0)) as [number, number, number, number],
+        rings: ringsOf(f.rings)
+      }
+    })
+    .filter((f) => f.rings.length > 0)
+  if (faces.length === 0) return null
+  const face =
+    typeof v.face === 'number' && Number.isInteger(v.face) && v.face >= 0 && v.face < faces.length
+      ? v.face
+      : null
+  return { part: v.part, faces, face }
+}
+
 const MASK_MODES = ['Add', 'Subtract', 'Intersect'] as const
 
 function brushSource(v: unknown): BrushSource | null {
@@ -936,13 +972,18 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         width: num(c.width, 1),
         height: num(c.height, 1)
       }
-    case 'polygon':
+    case 'polygon': {
       if (!Array.isArray(c.points)) return null
+      const rings = ringsOf(c.rings)
+      const found = foundOf(c.found)
       return {
         ...base,
         kind: 'polygon',
-        points: (c.points as unknown[]).map((p) => point(p, { x: 0, y: 0 }))
+        points: (c.points as unknown[]).map((p) => point(p, { x: 0, y: 0 })),
+        ...(rings.length ? { rings } : {}),
+        ...(found ? { found } : {})
       }
+    }
     case 'range':
       return {
         ...base,

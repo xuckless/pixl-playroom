@@ -10,8 +10,10 @@ import {
   newLocalLayer,
   type BrushComponent,
   type DepthComponent,
+  type PolygonComponent,
   type Recipe
 } from '../../shared/recipe'
+import { shownRings, type FaceFound } from '../../shared/faceparts'
 import { modelRefine } from '../../shared/refine'
 import { parseKey } from '../keys'
 import type { Library } from '../library'
@@ -24,6 +26,7 @@ export async function applyMaskResult(
 ): Promise<void> {
   const r = e.result
   if (r?.kind !== 'mask') return
+  if (r.polygon) return applyFacePart(e, r, r.polygon, deps)
   const png = await deps.planes.get(r.ref)
   if (png === undefined) throw new Error('the mask went missing before it could be added')
   const live = deps.sessions.liveRecipe(e.key)
@@ -64,6 +67,45 @@ export async function applyMaskResult(
     ...(r.source ? { source: r.source } : {})
   }
   const comp = depth ?? brush
+  const into = r.into && recipe.layers.find((l) => l.id === r.into!.layerId)
+  if (into) into.components.push({ ...comp, mode: into.components.length ? r.into!.mode : 'Add' })
+  else {
+    const layer = newLocalLayer(nextMaskName(recipe.layers.map((l) => l.name)))
+    layer.name = r.label
+    layer.components = [comp]
+    recipe.layers.push(layer)
+    r.into = { layerId: layer.id, mode: 'Add' }
+  }
+  await keepRecipe(e.key, recipe, live !== undefined, deps)
+}
+
+/**
+ * A face part (engine 0.19's `faces`): a lasso of every face's outline,
+ * feathered a little about the line (a face part is small: 0.3 % of the
+ * shorter side), each face's own kept so the mask can be narrowed to one.
+ */
+async function applyFacePart(
+  e: AiJobEvent,
+  r: Extract<NonNullable<AiJobEvent['result']>, { kind: 'mask' }>,
+  found: FaceFound,
+  deps: { library: Library; sessions: DevelopSessions; planes: PlaneStore }
+): Promise<void> {
+  const live = deps.sessions.liveRecipe(e.key)
+  const recipe: Recipe = structuredClone(live ?? (await deps.library.recipe(e.key)))
+  const [first, ...rings] = shownRings(found)
+  const comp: PolygonComponent = {
+    id: newId(),
+    name: r.label,
+    kind: 'polygon',
+    mode: 'Add',
+    opacity: 100,
+    invert: false,
+    feather: 3,
+    edge: { shift: 0, harden: 0, inside: false },
+    points: first,
+    ...(rings.length ? { rings } : {}),
+    found
+  }
   const into = r.into && recipe.layers.find((l) => l.id === r.into!.layerId)
   if (into) into.components.push({ ...comp, mode: into.components.length ? r.into!.mode : 'Add' })
   else {

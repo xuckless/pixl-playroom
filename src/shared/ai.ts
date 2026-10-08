@@ -12,6 +12,13 @@ import type { AiDenoiseModel, BrushSource } from './recipe'
 import type { SmartReadiness } from './looks/smart'
 import type { Finders } from './concepts'
 import type { PromptGeometry, PromptVia } from './prompt'
+import {
+  FACE_LANDMARKER,
+  FACE_PART_LABEL,
+  isFacePart,
+  type FaceFound,
+  type FacePart
+} from './faceparts'
 
 export type AiTask = 'enhance' | 'segment' | 'denoise' | 'prompt'
 
@@ -35,7 +42,14 @@ export const SCENE_TARGETS: SceneTarget[] = ['sky', 'vegetation', 'water']
 export type PartTarget = 'face' | 'hair' | 'skin' | 'clothes'
 export const PART_TARGETS: PartTarget[] = ['face', 'hair', 'skin', 'clothes']
 /** `depth`: a depth map (Depth Anything V2), landing as a Depth range. */
-export type SegmentTarget = 'subject' | 'background' | 'depth' | SceneTarget | PartTarget
+export type SegmentTarget =
+  | 'subject'
+  | 'background'
+  | 'depth'
+  | SceneTarget
+  | PartTarget
+  /** A face part (YuNet and Face Mesh v2): lands as a lasso, not a plane. */
+  | FacePart
 
 /** The scene model (engine 0.19): sky, vegetation and water. */
 export const SCENE_MODEL = 'dinov2-s-ade'
@@ -49,6 +63,7 @@ export const isPartTarget = (t: unknown): t is PartTarget => PART_TARGETS.includ
 /** The model a segment job runs. */
 export function segmentModel(target: SegmentTarget, fine = false): string {
   if (target === 'depth') return DEPTH_MODEL
+  if (isFacePart(target)) return FACE_LANDMARKER
   if (isSceneTarget(target)) return SCENE_MODEL
   if (isPartTarget(target)) return PARTS_MODEL
   return fine ? FINE_SUBJECT_MODEL : 'u2netp'
@@ -86,6 +101,8 @@ export type AiResult =
       source?: BrushSource
       /** A depth map, not a selection: it lands as a Depth range (`DepthComponent`). */
       depth?: true
+      /** A face part: a lasso of every face's outline (no plane; `ref` is empty). */
+      polygon?: FaceFound
     }
 
 export type AiPhase = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
@@ -198,7 +215,8 @@ export const SEGMENT_LABEL: Record<SegmentTarget, string> = {
   face: 'Face',
   hair: 'Hair',
   skin: 'Skin',
-  clothes: 'Clothes'
+  clothes: 'Clothes',
+  ...FACE_PART_LABEL
 }
 
 /** The whole job's progress with `stage` at `p` (0…1) of its own way. */

@@ -253,14 +253,14 @@ test('a part no model finds yet fails, saying it needs the next engine', async (
     runId: 'r6',
     look: 'X',
     ops: [
-      { kind: 'person', layerId: h.shell.id, mask: 's', part: 'eyes', mode: 'Add', invert: false }
+      { kind: 'person', layerId: h.shell.id, mask: 's', part: 'body', mode: 'Add', invert: false }
     ]
   })
   await h.tick()
   await h.tick()
   const end = h.events.at(-1)!
   assert.ok(end.kind === 'end')
-  assert.deepEqual(end.failed, [{ label: 'Finding eyes', why: 'needs the next engine update' }])
+  assert.deepEqual(end.failed, [{ label: 'Finding body', why: 'needs the next engine update' }])
   assert.equal(end.phase, 'error')
 })
 

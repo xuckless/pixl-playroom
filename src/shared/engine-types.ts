@@ -2037,6 +2037,8 @@ export interface PixlEngineModule {
   suggestLateralCa(request: Record<string, unknown>): Promise<Record<string, unknown>>
   suggestHealSource(request: Record<string, unknown>): Promise<Record<string, unknown>>
   segment(request: Record<string, unknown>, options?: ModelCallOptions): Promise<SegmentReport>
+  /** 0.19.0: faces (YuNet) and, with a landmarker, each one's outlines (Face Mesh v2). */
+  faces(request: Record<string, unknown>, options?: ModelCallOptions): Promise<unknown>
   benchmark(
     request: Record<string, unknown>,
     options?: { signal?: AbortSignal }

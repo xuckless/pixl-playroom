@@ -868,13 +868,27 @@ function maskComponent(
       // feather is to stay inside the line (the engine feathers about it).
       const by =
         ((c.edge?.shift ?? 0) / 100) * EDGE_SHIFT_SPAN - (c.edge?.inside ? base.feather.radius : 0)
-      const turned = c.points.map((p) => transformPoint(user, p))
-      const moved = offsetPolygon(turned, by, frame.width, frame.height)
-      const points = moved.map((q) => ({
-        x: round4(clamp(q.x, 0, 1)),
-        y: round4(clamp(q.y, 0, 1))
-      }))
-      return { ...base, shape: { Polygon: { contours: [{ points }], fill_rule: 'NonZero' } } }
+      const contour = (
+        ring: { x: number; y: number }[]
+      ): { points: { x: number; y: number }[] } => ({
+        points: offsetPolygon(
+          ring.map((p) => transformPoint(user, p)),
+          by,
+          frame.width,
+          frame.height
+        ).map((q) => ({ x: round4(clamp(q.x, 0, 1)), y: round4(clamp(q.y, 0, 1)) }))
+      })
+      // A face part's other outlines (the other eye, the mouth inside the lips): even-odd.
+      const rings = (c.rings ?? []).filter((r) => r.length >= 3)
+      return {
+        ...base,
+        shape: {
+          Polygon: {
+            contours: [contour(c.points), ...rings.map(contour)],
+            fill_rule: rings.length ? 'EvenOdd' : 'NonZero'
+          }
+        }
+      }
     }
     case 'range': {
       if (!c.hue && !c.saturation && !c.luma) return null

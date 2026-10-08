@@ -8,6 +8,7 @@ import {
 } from '../../../../shared/maskcontrols'
 import { defaultEdgeRadius, EDGE_RADIUS_MAX, EDGE_RADIUS_MIN } from '../../../../shared/refine'
 import type { MaskComponentSetting } from '../../../../shared/recipe'
+import { shownRings } from '../../../../shared/faceparts'
 import { Icon } from '../../components/icons'
 import { Section, Select, Slider, Toggle } from '../../components/ui'
 import { useDevelop } from '../../state/develop'
@@ -91,8 +92,34 @@ export function ComponentCard({
     })
     commit(on ? 'Snap to edges' : 'Snap to edges off')
   }
+  // A face part found on several faces: all of them, or one (left to right).
+  const faces = c.kind === 'polygon' ? (c.found?.faces.length ?? 0) : 0
+  const setFace = (v: string): void => {
+    const face = v === 'all' ? null : Number(v)
+    edit((x) => {
+      if (x.kind !== 'polygon' || !x.found) return
+      x.found = { ...x.found, face }
+      const [first, ...rings] = shownRings(x.found)
+      x.points = first
+      if (rings.length) x.rings = rings
+      else delete x.rings
+    })
+    commit(face === null ? 'Every face' : `Face ${face + 1}`)
+  }
   return (
     <div className="mf-card">
+      {c.kind === 'polygon' && c.found && faces > 1 && (
+        <Select
+          label="Faces"
+          value={c.found.face === null ? 'all' : String(c.found.face)}
+          title="Which face this mask takes: every face found, or one, numbered left to right"
+          options={[
+            { value: 'all', label: `All ${faces} faces` },
+            ...c.found.faces.map((_, i) => ({ value: String(i), label: `Face ${i + 1}` }))
+          ]}
+          onChange={setFace}
+        />
+      )}
       {show.snap && (
         <>
           <div className="mf-card-row">

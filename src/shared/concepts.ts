@@ -62,6 +62,7 @@ export const CONCEPTS: Concept[] = [
   person('hair', 'Hair', 'Click the hair'),
   person('skin', 'Skin', 'Click each patch of skin', true),
   person('eyes', 'Eyes', 'Click each eye', true),
+  person('brows', 'Brows', 'Click each brow', true),
   person('lips', 'Lips', 'Click the lips'),
   person('teeth', 'Teeth', 'Click the teeth'),
   person('clothes', 'Clothes', 'Click each piece of clothing', true)

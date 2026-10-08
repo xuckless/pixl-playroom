@@ -55,6 +55,7 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
           'Fine subject: a finer cut-out that keeps hair, fur and feathers (a larger model, downloaded when you first use it; about ten seconds a photo).',
           'Sky in one click, found by a model instead of a click on the sky, and two new ones beside it: Vegetation (trees, grass, plants) and Water (sea, lakes, rivers).',
           'People: Face, Hair, Skin and Clothes in one click each, found by a small model. They work best when the person fills a good part of the frame.',
+          'Eyes, Brows, Lips and Teeth in one click, outlined on every face in the photo, small faces in a group too. With several faces, pick one under the mask. Brows are rough for now.',
           'Small objects picked with Objects keep their mask instead of fading out.',
           'The masks panel sits in the left pane, beside your presets and history, instead of floating over the photo.'
         ]

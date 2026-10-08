@@ -124,6 +124,18 @@ export function lowerPriority(pid: number | undefined): void {
   }
 }
 
+/** What `faces` reports, as Playroom reads it. */
+export interface FaceReport {
+  faces: {
+    /** `[x, y, width, height]` in frame pixels. */
+    bounds: number[]
+    score: number
+    outlines: Record<string, { contours: { points: { x: number; y: number }[] }[] }> | null
+  }[]
+  frame_width: number
+  frame_height: number
+}
+
 export class EngineClient {
   private child: UtilityProcess | undefined
   private nextId = 1
@@ -337,6 +349,13 @@ export class EngineClient {
    */
   segment(request: Record<string, unknown>, opts: CallOptions = {}): Promise<SegmentReport> {
     return this.call('segment', [request], opts.signal) as Promise<SegmentReport>
+  }
+  /**
+   * Faces and their parts (engine 0.19, `faces`): YuNet's boxes, and with a
+   * landmarker each face's outlines as polygons (fractions of the frame).
+   */
+  faces(request: Record<string, unknown>, opts: CallOptions = {}): Promise<FaceReport> {
+    return this.call('faces', [request], opts.signal) as Promise<FaceReport>
   }
   /** Time models on providers (`benchmark`). */
   benchmark(

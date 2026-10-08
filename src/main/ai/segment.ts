@@ -26,11 +26,22 @@ import {
   type PartTarget
 } from '../../shared/ai'
 import type { LensCorrection } from '../../shared/engine-types'
+import {
+  FACE_DETECTOR,
+  FACE_LANDMARKER,
+  faceTiles,
+  isFacePart,
+  leftToRight,
+  mergeFaces,
+  partRings,
+  type FaceOutline,
+  type FacePart
+} from '../../shared/faceparts'
 import { lensCorrection } from '../../shared/lens'
 import { hardenPlane } from '../../shared/refine'
 import { partPlane, pasted, personBox, squareAround } from './parts'
 import { planeRef } from '../planeref'
-import type { EngineClient } from '../engine/client'
+import type { EngineClient, FaceReport } from '../engine/client'
 import type { Library } from '../library'
 import { encodeGreyPng, grey8 } from '../pngio'
 import type { PlaneStore } from '../planestore'
@@ -112,6 +123,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
 
   async run(ctx: AiContext, req: SegmentRequest): Promise<Extract<AiResult, { kind: 'mask' }>> {
     ctx.stage('model', 0, 'Loading the model')
+    if (isFacePart(req.target)) return this.faceParts(ctx, req, req.target)
     const depth = req.target === 'depth'
     const scene = isSceneTarget(req.target)
     // The model the ask names (the depth map, the fine cut-out, a scene's or
@@ -242,6 +254,93 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         ...(req.fine ? { fine: true as const } : {})
       },
       // Into the mask it was asked for (Add to the selected mask, a smart look's), else a new one.
+      ...(req.into ? { into: { ...req.into } } : {})
+    }
+  }
+
+  /**
+   * A face part (engine 0.19's `faces`): every face's outline of it, as a
+   * lasso. YuNet sees the frame fitted into 640² (reliable down to 1/8 of
+   * its long side), so the four overlapping quarters are looked at too, for
+   * a group's smaller faces; a face found twice is kept once.
+   */
+  private async faceParts(
+    ctx: AiContext,
+    req: SegmentRequest,
+    part: FacePart
+  ): Promise<Extract<AiResult, { kind: 'mask' }>> {
+    for (const id of [FACE_DETECTOR, FACE_LANDMARKER])
+      if (!(await this.models.installed(id))) throw new ModelMissing(this.models.entry(id))
+    const row = await this.library.photoRow(req.key)
+    const info = await this.library.probe(row)
+    if (this.engine.getStatus().status === 'starting') {
+      this.engine.start()
+      await this.engine.whenStarted()
+    }
+    const px = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
+    const recipe = this.sessions()?.liveRecipe(req.key) ?? (await this.library.recipe(req.key))
+    const detector = await this.models.ref(FACE_DETECTOR, 'Cpu')
+    const landmarks = await this.models.ref(FACE_LANDMARKER, 'Cpu')
+    if (ctx.signal.aborted) throw new Cancelled()
+    const label = SEGMENT_LABEL[part]
+    ctx.stage('analyse', 0, 'Finding faces')
+    const W = px.proxy.width
+    const H = px.proxy.height
+    const look = async (
+      region: { x: number; y: number; width: number; height: number } | null
+    ): Promise<FaceReport['faces']> => {
+      try {
+        const r = await this.engine.faces(
+          {
+            source: { Path: px.proxy.path },
+            input: px.proxy.input,
+            raw: null,
+            gain_map: null,
+            // The proxy is the base frame, upright, after the lens: what masks are placed on.
+            orientation: 'Normal',
+            lens: lensCorrection(recipe.lens),
+            region: region ? { ...region, margin: 0 } : null,
+            detector,
+            landmarks,
+            threads: BACKGROUND_THREADS,
+            limits: READ_LIMITS
+          },
+          { signal: ctx.signal }
+        )
+        return r.faces
+      } catch (err) {
+        if (ctx.signal.aborted) throw new Cancelled()
+        throw err
+      }
+    }
+    const whole = await look(null)
+    ctx.progress(0.4)
+    const tiles: { tile: ReturnType<typeof faceTiles>[number]; faces: FaceReport['faces'] }[] = []
+    for (const tile of faceTiles(W, H)) tiles.push({ tile, faces: await look(tile) })
+    const faces = mergeFaces(whole, tiles, W, H)
+    const outlines: FaceOutline[] = leftToRight(
+      faces
+        .filter((f) => f.outlines)
+        .map((f) => ({
+          bounds: [f.bounds[0] / W, f.bounds[1] / H, f.bounds[2] / W, f.bounds[3] / H] as [
+            number,
+            number,
+            number,
+            number
+          ],
+          rings: partRings(f.outlines!, part)
+        }))
+        .filter((f) => f.rings.length > 0)
+    )
+    if (outlines.length === 0) throw new Error(`No face found in this photo for ${label}`)
+    ctx.progress(0.9)
+    return {
+      kind: 'mask',
+      ref: '',
+      width: W,
+      height: H,
+      label,
+      polygon: { part, faces: outlines, face: null },
       ...(req.into ? { into: { ...req.into } } : {})
     }
   }
