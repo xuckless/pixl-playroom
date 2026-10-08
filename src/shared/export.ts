@@ -309,7 +309,10 @@ export function masterPolicy(s: ExportSettings, src: MasterSource): MasterPolicy
     ceiling: headroom ? ceiling : null,
     reach: 'Measured',
     // PIXL's look acts on a RAW developed in Scene; an HDR source here is never one.
-    look: 'Colorimetric'
+    look: 'Colorimetric',
+    // 0.17's bytes: a float sink gets linear PixlRGB, and no SDR companion.
+    float: 'LinearPixlRgb',
+    companion: null
   }
 }
 

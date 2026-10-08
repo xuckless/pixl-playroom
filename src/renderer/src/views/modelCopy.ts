@@ -38,6 +38,11 @@ export const PURPOSES: { id: Purpose; title: string; what: string }[] = [
     id: 'inpaint',
     title: 'Remove objects',
     what: 'Paints over things you want gone from a photo.'
+  },
+  {
+    id: 'depth',
+    title: 'Sense depth',
+    what: 'Works out what is near and what is far, so a mask can take the foreground or the background by distance.'
   }
 ]
 
@@ -73,10 +78,10 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     where: 'Masks → New → Subject or Background',
     recommended: true
   },
-  'real-esrgan-x2plus': {
-    name: 'Twice the size',
-    what: 'Makes a photo twice as wide and tall. The most natural-looking result, and the slowest.',
-    where: 'Enhance → Super resolution → ×2',
+  'span-x4-ch48': {
+    name: 'Bigger, clean',
+    what: 'Makes a clean photo twice or four times as wide and tall, staying closest to the original. Quick: a fraction of a second.',
+    where: 'Enhance → Super resolution → ×2 and ×4',
     recommended: true
   },
   'realesr-general-x4v3': {
@@ -105,6 +110,16 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     name: 'JPEG repair, exact',
     what: 'The JPEG repair that was told exactly how compressed the file is. It is being retired and no longer runs: the automatic JPEG repair does the same job. Remove it to free the space.',
     where: ''
+  },
+  'migan-512': {
+    name: 'Object remover',
+    what: 'Fills in what you paint over (a stranger, a sign, a power line) with what was likely behind it.',
+    where: 'Heal → Remove'
+  },
+  'depth-anything-v2-small': {
+    name: 'Depth finder',
+    what: 'Sees which parts of a photo are near and which are far, for the Depth range mask.',
+    where: 'Masks → New → Depth range'
   },
   'fbcnn-color-blind': {
     name: 'JPEG repair, automatic',

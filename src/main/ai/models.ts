@@ -417,7 +417,7 @@ export class ModelStore {
    * will not load the model, or is slower, gives way to the CPU.
    */
   async benchmark(engine: EngineClient): Promise<ProviderInfo> {
-    const order = ['u2netp', 'realesr-general-x4v3', 'real-esrgan-x2plus', 'u2net']
+    const order = ['u2netp', 'span-x4-ch48', 'realesr-general-x4v3', 'u2net']
     let id: string | null = null
     for (const m of order) if (await this.installed(m)) id = id ?? m
     if (!id) throw new Error('Download a model first: U²-Netp is the smallest')

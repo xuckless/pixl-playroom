@@ -66,6 +66,13 @@ export const LOOK_SPACE: GradeSpace = {
 /** 18% grey in the look space (sRGB transfer, shared by Display P3). */
 export const MID_GREY_ENCODED = 0.4613
 
+/**
+ * Denoise's coarsest reach, a fraction of the shorter side (engine 0.18,
+ * HR-0.18-3): one number for the preview, the 1:1 view and the export, so
+ * the same structures are denoised at every size.
+ */
+export const DENOISE_REACH = 0.03
+
 export const IDENTITY_PRIMARY: Primary = {
   exposure: 0,
   lift: { r: 0, g: 0, b: 0 },
@@ -678,6 +685,9 @@ export function withLutDomains(v: unknown): unknown {
   for (const [k, x] of Object.entries(v)) {
     if (k === 'Lut' && x && typeof x === 'object' && !Array.isArray(x)) {
       out[k] = { out_of_domain: 'Clamp', ...(x as Record<string, unknown>) }
+    } else if (k === 'Denoise' && x && typeof x === 'object' && !Array.isArray(x)) {
+      // Saved before engine 0.18, which requires a reach: the one Playroom sends everywhere.
+      out[k] = { reach: DENOISE_REACH, ...(x as Record<string, unknown>) }
     } else out[k] = withLutDomains(x)
   }
   return out
@@ -926,7 +936,7 @@ function hslOp(hsl: Recipe['hsl'], bwMix: Recipe['bwMix'] | null): GradeOp | nul
     const bands = Object.fromEntries(
       HSL_BANDS.map((b) => [b, { hue: 0, saturation: 0, luminance: round4(bwMix[b] * 0.006) }])
     ) as unknown as HslBands
-    return { HslBands: bands }
+    return { HslBands: { ...bands, smoothing: null } }
   }
   if (HSL_BANDS.every((b) => hsl[b].hue === 0 && hsl[b].saturation === 0 && hsl[b].luminance === 0))
     return null
@@ -940,7 +950,7 @@ function hslOp(hsl: Recipe['hsl'], bwMix: Recipe['bwMix'] | null): GradeOp | nul
       }
     ])
   ) as unknown as HslBands
-  return { HslBands: bands }
+  return { HslBands: { ...bands, smoothing: null } }
 }
 
 /** Point colours as `Masked` range masks instead of engine qualifiers. */
@@ -1012,7 +1022,7 @@ export function pointColorOps(
         space: LOOK_SPACE
       }
       ops.push({ Masked: { mask, opacity: 1, ops: [{ Primary: correction }] } })
-    } else ops.push({ Qualifier: { key, correction } })
+    } else ops.push({ Qualifier: { key, correction, smoothing: null } })
   }
   return ops
 }
@@ -1032,7 +1042,8 @@ function colorGradeOp(cg: Recipe['colorGrade']): GradeOp | null {
       highlights: wheel(cg.highlights),
       global: wheel(cg.global),
       blending: clamp(cg.blending / 100, 0, 1),
-      balance: clamp(cg.balance / 100, -1, 1)
+      balance: clamp(cg.balance / 100, -1, 1),
+      smoothing: null
     }
   }
 }
@@ -1076,7 +1087,8 @@ function settingsStages(
             luminance: clamp(d.noiseLuminance / 100, 0, 1),
             luminance_detail: clamp(d.noiseLuminanceDetail / 100, 0, 1),
             color: clamp(d.noiseColor / 100, 0, 1),
-            color_detail: clamp(d.noiseColorDetail / 100, 0, 1)
+            color_detail: clamp(d.noiseColorDetail / 100, 0, 1),
+            reach: DENOISE_REACH
           }
         } as GradeOp)
       : null
@@ -1112,19 +1124,21 @@ function settingsStages(
   // The engine's detail and effect constants are set for display-referred
   // values, so dehaze runs at the head of the look stage.
   if (r.presence.dehaze !== 0) {
-    look.push({ Dehaze: { amount: clamp(r.presence.dehaze / 100, -1, 1), radius: 0.01 } })
+    look.push({
+      Dehaze: { amount: clamp(r.presence.dehaze / 100, -1, 1), radius: 0.01, smoothing: null }
+    })
   }
   switch (base?.profile.kind ?? 'neutral') {
     case 'standard':
       // Vivid's curve and vibrance, and a little more saturation on top: a
       // RAW opens with colour that already pops.
       look.push(curvesOp({ master: tonal(VIVID_CURVE, hdr) }))
-      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7 } })
+      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7, smoothing: null } })
       look.push({ Primary: primary({ saturation: STANDARD_SATURATION }) })
       break
     case 'vivid':
       look.push(curvesOp({ master: tonal(VIVID_CURVE, hdr) }))
-      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7 } })
+      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7, smoothing: null } })
       break
     case 'monochrome':
       look.push(curvesOp({ master: tonal(STANDARD_CURVE, hdr) }))
@@ -1154,7 +1168,8 @@ function settingsStages(
         highlights: clamp(b.highlights / 100, -1, 1),
         shadows: clamp(b.shadows / 100, -1, 1),
         whites: clamp(b.whites / 100, -1, 1),
-        blacks: clamp(b.blacks / 100, -1, 1)
+        blacks: clamp(b.blacks / 100, -1, 1),
+        smoothing: null
       }
     })
   }
@@ -1198,7 +1213,9 @@ function settingsStages(
     tail.push(...pointColorOps(r.pointColors, keyScale))
   }
   if (!bw && p.vibrance !== 0) {
-    tail.push({ Vibrance: { amount: clamp(p.vibrance / 100, -1, 1), skin_protection: 0.6 } })
+    tail.push({
+      Vibrance: { amount: clamp(p.vibrance / 100, -1, 1), skin_protection: 0.6, smoothing: null }
+    })
   }
   if (bw) tail.push({ Primary: primary({ saturation: 0 }) })
   else if (p.saturation !== 0)

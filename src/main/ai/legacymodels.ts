@@ -78,6 +78,8 @@ export const LEGACY_MODELS: LegacyModel[] = [
           tensor: '1959',
           layout: 'Nchw',
           activation: 'MinMax',
+          // Required since engine 0.18: a subject mask is a class's coverage.
+          quantity: 'Coverage',
           planes: [{ index: 0, name: 'subject' }]
         }
       ]

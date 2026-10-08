@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import type { AiJobEvent } from '../../../shared/ai'
 import {
+  ENHANCE_MODEL,
   enhanceRefusal,
   estimateMs,
   jpegRestoreRefusal,
@@ -40,7 +41,7 @@ const JPEG_OPTIONS: { value: JpegRestore; label: string }[] = [
 
 const UPSCALE_OPTIONS: { value: UpscaleChoice; label: string }[] = [
   { value: 'off', label: 'Off' },
-  { value: 'x2', label: '×2 · photographic' },
+  { value: 'x2', label: '×2 · clean' },
   { value: 'x4', label: '×4 · general' },
   { value: 'x4-wdn', label: '×4 · keep texture' }
 ]
@@ -208,18 +209,7 @@ export function EnhancePanel(): React.JSX.Element | null {
           options={UPSCALE_OPTIONS}
           onChange={(upscale) => set({ upscale })}
         />
-        {s.upscale !== 'off' && (
-          <ModelGet
-            id={
-              s.upscale === 'x2'
-                ? 'real-esrgan-x2plus'
-                : s.upscale === 'x4'
-                  ? 'realesr-general-x4v3'
-                  : 'realesr-general-wdn-x4v3'
-            }
-            models={models}
-          />
-        )}
+        {s.upscale !== 'off' && <ModelGet id={ENHANCE_MODEL[s.upscale]} models={models} />}
       </Section>
 
       <Section id="enhance.run" title="Apply" tip={TIPS['enhance.apply']}>

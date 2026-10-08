@@ -57,6 +57,11 @@ test('nothing chosen, or an HDR photo, is refused', () => {
   assert.match(enhanceRefusal(all, { isJpeg: true, isHdr: true }) ?? '', /HDR/)
 })
 
+test('×2 is SPAN ×4 brought down: engine 0.18 retired its own ×2 model', () => {
+  assert.deepEqual(neededModels({ ...DEFAULT_ENHANCE, upscale: 'x2' }, false), ['span-x4-ch48'])
+  assert.ok(!neededModels(all, true).includes('real-esrgan-x2plus'))
+})
+
 test('scale follows the upscaler', () => {
   assert.equal(scaleOf({ ...all, upscale: 'off' }), 1)
   assert.equal(scaleOf({ ...all, upscale: 'x2' }), 2)

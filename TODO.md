@@ -29,10 +29,402 @@ from the old TODO and a full performance and bug sweep.
 
 ---
 
-## Top priority — Phase C: updates, the PIXL account and the beta (passes 23–26b)
+## Top priority — Phase N: engine 0.18.0 (passes 85–103)
 
-**Top priority (2026-10-01)**: this phase comes before everything else
-still open below. It is listed first, out of number order.
+**Top priority (2026-10-08)**: this phase comes before everything else still
+open, Phase C included. It is listed first, out of number order. Branch
+`feat/engine-0.18`, off main at 0.3.0-beta.
+
+Engine 0.18.0 is stabilisation: the HDR preview calibrated to the display,
+smoothed adjustments, Dehaze v2, HSL luminance in stops, Develop's highlight
+knee, Denoise that reaches as far in the export as in the preview, sanity
+checks between stages (`Invariant`), and new models (SPAN ×4, Depth Anything
+V2, MI-GAN; BiRefNet, EfficientSAM3 and SAM 3 on demand). The engine's
+migration notes are `docs/migration-0.18.0.md` and its integration guide
+`docs/integration.md` §4.5, 4.6, 6 and 7, at tag v0.18.0. The map from each
+change to Playroom's code is the doc "Playroom: adopting PIXL 0.18.0" (rows
+1–19). The plan, with every decision below, is
+`~/.claude/plans/a-big-integration-update-humming-adleman.md`.
+
+**Ships together with 0.19.0** (the owner, 2026-10-08): nothing is released
+after this phase alone. `feat/engine-0.18` carries on into "Next: engine
+0.19.0" below, and 0.4.0-beta goes out at the end of that, as one PR.
+
+Decided (2026-10-08):
+
+- **HDR preview, all of it**: Phase M (old passes 77–84) folds in here as
+  Passes 96–103. The display's white and peak come from a small native addon
+  on macOS. Windows gets a Preferences dialog for them, with an "Auto-fill
+  from this screen" stub.
+- **The settled picture is A/B tested** (F16 pixels, PQ JPEG XL, AVIF with a
+  gain map) before one is chosen. The owner's Chromium issue on JXL in
+  Electron: https://issues.chromium.org/issues/568825290.
+- **Smoothing is its own slider** under Dehaze, 0–100 → the engine's
+  `strength` (radius 0.02), on the seven ops that take it. It's applied on
+  release only. New photos start at 100, edits made before 0.18 at 0. Masks
+  have their own.
+- **Saved edits take the new maths**: Dehaze v2 and HSL in stops are
+  explained in What's new, and thumbnails are remade.
+- **RAW**: `RAW_DEVELOP_REV` is bumped and AI steps on RAWs re-run quietly.
+  The RAW master moves to `RawMode::Scene` in float.
+- **Enhance**: Scale ×2/×4 and Source Clean (SPAN) / Damaged (x4v3); ×2 is
+  SPAN ×4 brought down by half.
+- **New**: Depth range mask, AI Remove (MI-GAN), the guided/bilinear rule for
+  SAM masks, and a BiRefNet "Fine" Subject.
+- **Gone quietly**: the retired models (x2plus, LaMa, U²-Net, FBCNN at a
+  quality), with their files deleted from the user's disk, and the PixlRGB
+  before/after comparison with its kept thumbnails.
+- **Host rules**:
+  - an `Invariant` is shown on the named slider;
+  - Calibration's sliders are bounded so the mixer can't overflow;
+  - untouched RAW sharpening defaults move to masking 50;
+  - model threads ≤ P-cores on Apple Silicon.
+- **Not here** (0.19 or Pixl Auto, still being tested): SAM 3, EfficientSAM3
+  and `segmentConcept`; anything of Gemma's; the safe-shutdown advisory; the
+  GPU paths and the stage cache.
+
+### Pass 85 — Run on 0.18.0 · 5 pts
+
+- [x] **S** · `@xuckless/pixl-engine` and `@xuckless/pixl-models` 0.18.0.
+- [x] **M** · `shared/engine-types.ts` restated:
+      - `Master.float`/`companion`, `Ceiling.Display`, `LinearDisplayP3`;
+      - `Denoise.reach`;
+      - `smoothing` on Tone, Vibrance, Dehaze, ColorGrade, HslBands and
+        Qualifier;
+      - `SegmentPlane.quantity`;
+      - `ConvertReport.companion`/`checks`, `MasterReport.display`,
+        `non_finite`;
+      - `Invariant` named.
+- [x] **S** · `DENOISE_REACH` (0.03) from one constant for the preview, 1:1
+      and export (HR-0.18-3). A saved custom layer's `Denoise` gets it in
+      `withLutDomains`.
+- [x] **S** · `masterPolicy` sends `float: 'LinearPixlRgb', companion: null`
+      (0.17's bytes).
+- [x] **S** · The legacy U²-Net ref states `quantity: 'Coverage'` (until
+      Pass 90).
+- [x] **M** · ×2 is `span-x4-ch48` and the request brings it down by half
+      (`main/enhance.ts`). The remembered Enhance speeds moved to a new key
+      (the old ones timed Real-ESRGAN). The benchmark order no longer names
+      x2plus, which `entry()` would refuse.
+      _Checked on the real engine: 96×64 → ×4 → ½ = 192×128; a compiled
+      grade with every new field passes its 9 checks; x2plus is `UnknownModel`._
+- [x] **S** · Model copy for SPAN, MI-GAN and Depth Anything; a "Sense depth"
+      purpose.
+- [x] **S** · TODO.md and ENGINE-REQUESTS.md restructured: this phase first;
+      Phase M, Pass 52 and the duplicate waiting lines folded in; E12, E29,
+      E34 and E48–E52 removed.
+- [ ] **S** · Owner: mirror the new shipped models to the model server, since
+      the roster gives them no public upstream and their download fails until
+      then:
+      `node scripts/publish-models.mjs --only span-x4-ch48,migan-512,depth-anything-v2-small --bucket pixl-models`.
+
+### Pass 86 — Host rules and safety · 5 pts
+
+After: Pass 85.
+
+- [ ] **S** · HR-0.18-6: contrast never sends a negative factor
+      (`compile.ts` contrast, a mask's Amount at 200 with Contrast −100 sent −0.2).
+- [ ] **M** · HR-0.18-7: Calibration's hue and saturation sliders bounded so
+      the mixer's rows stay within ±16, and saved values clamped on load.
+      `calibrationMatrix` (`compile.ts:358–402`) asserts the bound.
+- [ ] **S** · HR-0.18-8: an HLG peak clamped to 100–10 000 cd/m²
+      (`main/exporter.ts:310`, `shared/export.ts:560`).
+- [ ] **L** · HR-0.18-9: catch `Invariant` around the preview's, the 1:1
+      view's and the export's convert:
+      - `describeInvariant` maps the field path to the layer and op;
+      - the named slider's row shows the error, or a toast when its panel
+        is hidden;
+      - the last good picture stays, and nothing is retried without the op.
+- [ ] **S** · Model sessions' threads ≤ the P-core count on Apple Silicon
+      (`main/ai/models.ts:464`; the M2 Pro ran fastest at 4, and 12 was 3.5×
+      slower); the same cap on `hdrsource.ts`'s `BACKGROUND_THREADS * 2`.
+
+### Pass 87 — Denoise and sharpening match the export · 4 pts
+
+After: Pass 85.
+
+- [ ] **S** · HR-0.18-2: RAW default sharpening masking 50 (`recipe.ts:567`).
+      Saved untouched defaults (40 / 1 / 25 / 0) move to 50 on load
+      (`RECIPE_VERSION`).
+- [ ] **M** · HR-0.18-1: a sharpening the preview leaves out at its scale
+      (`compile.ts:908–911`) says so in Detail ("shows at 100%"), not only in
+      the Engine Report. One path brings `Compiled.notes` to the panel that
+      owns the op.
+- [ ] **S** · HR-0.18-5 (QA): an export is judged against a 1:1 export from
+      the master, never the proxy enlarged.
+
+### Pass 88 — The Smoothing slider · 5 pts
+
+After: Pass 85.
+
+- [ ] **M** · `presence.smoothing` (0–100) on the base and each mask layer:
+      100 for new photos, 0 for edits made before (`RECIPE_VERSION`).
+- [ ] **M** · `CompileContext.smoothing`: `{ radius: 0.02, strength: v/100 }`
+      on Dehaze, Vibrance, Tone, the HSL bands and B&W mix, Point colour and
+      Color grading:
+      - on for the settled render, `region()` and the export;
+      - off for drafts and a mask's live drag (≤ 100 ms per op on the M1).
+- [ ] **S** · The slider under Dehaze in Presence and in the mask panel, with
+      its tip.
+
+### Pass 89 — New pixels, remade caches · 3 pts
+
+After: Passes 86–88.
+
+- [ ] **S** · `ENGINE_RENDER_REV` 2 → 3 and a new `RAW_DEVELOP_REV`
+      (`shared/pixels.ts`).
+- [ ] **M** · A RAW's AI steps flagged by `staleRawStep` re-run in the
+      background when the photo opens; the stale notes in `panels/heal.tsx`
+      and `panels/AiDenoise.tsx` go.
+- [ ] **S** · Dehaze's and the Color Mixer's tips rewritten; What's new
+      lines drafted (the doc's §4).
+
+### Pass 90 — Models: Enhance and quiet retirement · 5 pts
+
+After: Pass 85.
+
+- [ ] **M** · Enhance's Super resolution: Scale ×2/×4 and Source Clean
+      (SPAN) / Damaged (x4v3) / Keep texture (wdn). The time guesses are
+      redone, and saved settings map onto it.
+- [ ] **M** · Retired models go quietly:
+      - `legacymodels.ts` and the "being retired" rows go;
+      - their folders and old version folders under `userData/models` are
+        deleted at start (x2plus, lama, u2net, fbcnn-color-qf);
+      - a recipe that names one falls back (U²-Net → U²-Netp).
+- [ ] **M** · The PixlRGB before/after goes: `views/LegacyCompare.tsx`,
+      `state/legacy.ts`, `main/legacy.ts`, the `legacy:*` IPC, the
+      `view.legacy` command and `offerLegacy`. The kept thumbnails in
+      `cache/legacy-previews` are deleted.
+
+### Pass 91 — SAM's size rule and the Depth range mask · 5 pts
+
+After: Pass 85.
+
+- [ ] **S** · SAM masks: `Guided` only for an object of at least 128
+      SAM-grid px both ways, `Resample` bilinear below
+      (`select/service.ts`, the four `'guided'` sites). Small objects were
+      erased (IoU 0.00 at 32 px).
+- [ ] **L** · The Depth range mask:
+      - `depth-anything-v2-small`'s plane (bilinear, `Disparity`), cached
+        per photo;
+      - `DepthRange` with the plane's `quantity`;
+      - the masks menu's entry enabled: click to sample a depth, Near / Far
+        / Softness, a depth preview while adjusting;
+      - "Model needed" offers the model.
+
+### Pass 92 — AI Remove (MI-GAN) · 5 pts
+
+After: Pass 85.
+
+- [ ] **L** · A Remove mode in the Heal tool beside Heal, Clone and Fill
+      (`panels/heal.tsx`, `shared/retouch.ts`):
+      - paint over it, or click an object and SAM 2.1 makes the mask,
+        dilated a little;
+      - a retouch step `{ Remove: { shape, feather, opacity, context, model } }`
+        with `migan-512`;
+      - it stays editable and is made again when the lens or crop changes.
+- [ ] **S** · "Model needed" offers MI-GAN; compile tests for the step.
+
+### Pass 93 — BiRefNet "Fine" Subject · 3 pts
+
+After: Pass 90.
+
+- [ ] **S** · Owner: mirror BiRefNet lite (MIT) to the model server; the
+      engine's `hosted` is null until its own storage exists.
+- [ ] **M** · ModelStore:
+      - reads `onDemand()` beside `manifest()`;
+      - shows `bytes` before downloading and checks each SHA-256;
+      - keeps the licence texts and `NOTICE.md` beside the files;
+      - resolves with `{ dir }`.
+- [ ] **S** · The Subject mask's "Fine" option (~7 s, 224 MB), with its time
+      said.
+
+### Pass 94 — The RAW master as Scene float 1/2 · 5 pts
+
+After: Pass 89.
+
+- [ ] **L** · The RAW master is `RawMode::Scene` into float (an F32 TIFF or
+      the master cache), not Develop into a 16-bit TIFF that clips at 1.0
+      (`main/proxy.ts:401–421`, `main/source.ts:76–90`; 6% of IMG_2344
+      lost its headroom):
+      - camera colour `{ Pixl }` where PIXL holds the body;
+      - the denoise's `reach` (HR-0.18-4);
+      - the frame bookkeeping (probe ≠ develop size).
+- [ ] **M** · Proxies made from the float master.
+
+### Pass 95 — The RAW master as Scene float 2/2 · 4 pts
+
+After: Pass 94.
+
+- [ ] **M** · The 1:1 view and the noise measurement from the float master;
+      AI steps on RAWs on the new master.
+- [ ] **S** · A Linear DNG export from Scene into float (a Develop one
+      shoulders highlights twice).
+- [ ] **S** · Cache sizes and pruning looked at again; a RAW's develop time
+      on the M1 written here.
+
+### Pass 96 — The display's peak and white (was 77) · 5 pts
+
+After: Pass 85.
+
+- [ ] **S** · First, before anything else in this part: confirm in the
+      Electron that ships three things:
+      - a WebGPU canvas (`rgba16float`, `toneMapping: extended`) shows
+        pixels above white on macOS;
+      - a PQ JXL `<img>` over `pixl://` shows in HDR;
+      - an AVIF with a gain map shows in HDR.
+      Write down what was found here.
+- [ ] **L** · `src/native/display/`: a small N-API Objective-C addon:
+      - reads `maximumExtendedDynamicRangeColorComponentValue` for the
+        window's screen, and notices when the screen or brightness changes;
+      - built for Electron, unpacked from the asar and signed with the app.
+- [ ] **M** · `main/display.ts`: `{ whiteNits: 203, peakNits: 203·H, hdr,
+      source }`, published again when the display, its brightness or the
+      window's screen changes. `shared/ipc.ts` and preload get
+      `app.displayHdr` and `app.onDisplayHdr`.
+- [ ] **M** · Preferences, a Display section:
+      - Automatic or stated white and peak (cd/m²);
+      - on Windows, the dialog bar to state them, with an "Auto-fill from
+        this screen" button (`matchMedia('(dynamic-range: high)')` for now;
+        the native read is a follow-up at the end of Pass 103).
+      - Unit tests for the values and their overrides.
+
+### Pass 97 — The Full HDR toggle (was 78) · 3 pts
+
+After: Pass 96.
+
+- [ ] **M** · A toggle on the top bar (`shell/DevelopToolbar.tsx`), kept in
+      the `ui` store, with an "unavailable on this display" state. It isn't
+      the SDR | HDR "edit as" switch a gain-map photo already has, so its
+      name and tip must not read as the same thing.
+- [ ] **S** · `ViewState.display: { peakNits, whiteNits } | null`; a change
+      renders the draft and the settled picture again.
+- [ ] **S** · A `uiMigrate` test for the new `ui` field.
+
+### Pass 98 — Drafts in 16-bit float (was 79) · 5 pts
+
+After: Pass 97.
+
+- [ ] **M** · The draft (`render.ts:795–799`) with Full HDR on:
+      - `Master { headroom: true, ceiling: { Display }, float:
+        'ExtendedLinearDisplayP3', companion }` and `Pixels { sample: 'F16' }`,
+        in place of `displayPolicy`'s `ToneMap`;
+      - the sample type travels with the frame (`engine/host.ts`, preload,
+        main's relay).
+- [ ] **L** · A float presenter beside `FrameCanvas`
+      (`views/loupe/DecodedImage.tsx`):
+      - WebGPU, `display-p3`, extended tone mapping;
+      - the sign-preserving sRGB curve on RGB, never alpha;
+      - the 8-bit path when it can't be made, and the fade kept.
+- [ ] **M** · The draft's source an untagged float working-space file (a
+      P3-tagged 16-bit proxy costs 222 ms per op on the M2 Pro against 17
+      ms). Timing marks; a drag measured on the M1 against 100 ms, written
+      here.
+
+### Pass 99 — The settled picture: an A/B test (was 80) · 5 pts
+
+After: Pass 98.
+
+- [ ] **L** · A dev switch for the settled picture:
+      - (a) F16 pixels plus the companion over the preview port;
+      - (b) PQ JPEG XL (`JxlLossy` effort 5, 146 ms at 2560 px on the
+        engine's PC);
+      - (c) AVIF with the master's gain map.
+- [ ] **M** · Each measured on the M1 and the MacBook's XDR display:
+      - encode time;
+      - whether Electron shows it in HDR (Chromium issue 568825290);
+      - a shift when a drag ends;
+      - memory.
+      The results go here; the owner picks; the other arms go.
+- [ ] **S** · `measureMask` and the thumbnail made from the settled picture
+      read whichever the winner gives (the companion or an SDR file).
+
+### Pass 100 — Caches and the library (was 81) · 4 pts
+
+After: Pass 99. Can be taken beside Passes 101 and 102.
+
+- [ ] **M** · Library and filmstrip thumbnails, 1:1 tiles and the Before
+      picture in the chosen format, HDR where the photo is. JPEG thumbnails
+      already made stay good and are replaced as they are remade.
+- [ ] **S** · Mask thumbnails and look cards stay SDR; say so where they are
+      made. The disk cache's size and pruning checked again.
+
+### Pass 101 — What reads the picture (was 82) · 5 pts
+
+After: Pass 98.
+
+- [ ] **M** · The eyedropper (`lib/image.ts`, `Loupe.tsx`) and the scopes'
+      colours (`MetricsPanel.tsx`) read the SDR companion
+      (`report.companion`), not the canvas.
+- [ ] **M** · `ClippingOverlay`, `HeadroomOverlay`, `SpotsOverlay`,
+      `clipping.worker.ts` and the brush's Auto Mask read the companion,
+      through `pictureBitmap` (`lib/frames.ts`).
+- [ ] **S** · The headroom overlay's scale follows the display's H.
+
+### Pass 102 — Masks fixed in the left pane (was 83) · 4 pts
+
+Waits on nothing from the engine; can be taken at any time.
+
+- [ ] **L** · `panels/masks/MasksWindow.tsx` becomes a section of
+      `panels/left.tsx`. Floating, minimising and closing go
+      (`develop/tools.ts` `closeMasks`/`minimizeMasks`, the `ui` store's
+      fields, `uiMigrate`).
+- [ ] **S** · Every glass surface still over the photo looked at over an HDR
+      picture; frost only (`flat`) where the blur or saturation glares.
+
+### Pass 103 — HDR edges, and the 0.18 half of the notes (was 84) · 3 pts
+
+After: Passes 96–102.
+
+- [ ] **S** · With Full HDR on: the window moved between an HDR and an SDR
+      display, HDR turned off in the system, and Retina Performance mode.
+- [ ] **S** · From Pass 98's timings, decide whether anything is cut (the
+      draft's size, glass). Nothing is cut before then.
+- [ ] **S** · The 0.18 half of 0.4.0-beta's What's new
+      (`shared/releasenotes.ts`) and the README's preview, HDR and model
+      sections, drafted. No release here: see below.
+- [ ] **M** · Later, not needed for 0.4.0-beta: Windows reads the display's
+      SDR white (`DisplayConfigGetDeviceInfo`, `DISPLAYCONFIG_SDR_WHITE_LEVEL`
+      × 80/1000) and peak (DXGI `MaxLuminance`) for the Display dialog's
+      Auto-fill.
+
+---
+
+## Next: engine 0.19.0 (guide pending)
+
+0.19.0 is published. Its integration guide is still being written and
+tested; the owner sends it when it is ready, and this becomes passes then.
+**0.18 and 0.19 ship together**: this part ends with Release-As 0.4.0-beta,
+the final What's new, and the one PR from `feat/engine-0.18` to main.
+
+Known so far (2026-10-08):
+
+- **The safe-shutdown advisory**: when Playroom is backgrounded, the engine
+  is shut down, and the UI goes efficient (flat colours, no glass, nothing
+  tacky).
+- **GPU work**: a caller-owned stage cache (engine Pass 104: a drag re-runs
+  from the changed op only) and a GPU preview path (Pass 105), with a host
+  of GPU performance work.
+- **A full pipeline of tested models**, and the prep for the updates after.
+- **Pixl Auto** (`@xuckless/pixl-auto`), only what the guide calls ready:
+  - Gemma names the targets and the subject, and Playroom's own code maps
+    those words to the shipped finders;
+  - culling uses the engine's measured signals, with Gemma only wording the
+    reason;
+  - the UX tips: how names, masks and cull reasons are shown, and what the
+    user confirms;
+  - the exact calls and fields for each part.
+- **Not to build yet** (rough, work in progress or not recommended): Gemma's
+  judge, its boxes, `auto()`'s full plan-and-edit path, the rephrase bug,
+  and speed on the M1.
+
+---
+
+## Phase C: updates, the PIXL account and the beta (passes 23–26b)
+
+**Next after Phase N** (re-ordered 2026-10-08; top priority since
+2026-10-01): this phase comes before everything else still open below. It is
+listed out of number order.
 
 Next up, in order:
 
@@ -839,7 +1231,8 @@ Each release runs picture → mask → before → headroom → mask thumbnails
       (`render.ts:1017-1072`). Uncompressed TIFF where cICP isn't needed, a
       cheap encoder for the stats pass, JPEG tiles.
       _Done: the stats pass is an uncompressed TIFF, 1:1 tiles are JPEG.
-      Left for E34: the PQ/HLG proxies and the gain-map master need cICP._
+      The PQ/HLG proxies and the gain-map master stay PNG: engine 0.18
+      answered E34 "no" (a TIFF has no place for CICP; use `Pixels` or PNG)._
 - [x] **S** · **Pixel steps**: `layOn` runs proxy then draft in sequence
       (`working.ts:344-357`), and `stepImage`/`sized()` write full-resolution
       16-bit PNG caches (`working.ts:113-172`). `Promise.all`; TIFF.
@@ -1058,14 +1451,12 @@ After: Pass 36.
 
 ---
 
-## Phase F — Develop features and phase leftovers (passes 40–52)
+## Phase F — Develop features and phase leftovers (passes 40–51)
 
 ### Pass 40 — Tone and detail · 5 pts
 
 - [ ] **L** · Tone curve: per-channel parametric (the region sliders are
       master only).
-- [ ] **M** · Sharpening/NR previews at fit size (today sharpening shows only
-      when its radius is ≥ half a proxy pixel, i.e. at 1:1).
 
 ### Pass 41 — Denoise and Enhance limits · 5 pts
 
@@ -1144,13 +1535,6 @@ with ExifTool. Needs sample files (Owner tasks).
 
 - [ ] **L** · Soft proofing: preview through the output profile (the gamut
       warning waits on E22).
-
-### Pass 52 — HDR on HDR displays · 3 pts
-
-After: Pass 32.
-
-- [ ] **L** · Show HDR photos as HDR on HDR displays (render PQ AVIF / PNG
-      cICP to the loupe); today they are tone mapped for SDR.
 
 ---
 
@@ -1458,9 +1842,6 @@ Playroom work that starts once the engine request lands
       _Done 2026-10-02 (engine 0.16): native Linear/Radial gradients (`gradients.ts`
       `gradientShape`), and a bidirectional gradient tool; only a gradient
       an older version gave an edge still goes as a plane._
-- [ ] **M** · Depth range mask (its picker entry is disabled) (E12).
-      _0.16 has the `DepthRange` shape; it waits on a depth map: a depth
-      model in the roster, or iPhone/ProRAW auxiliary depth images._
 - [ ] **M** · Smoothed range masks and an edge-aware brush in the tools (E13).
       _Half done in 0.16: Snap to edges (the engine's refine) on brushes,
       lassos and AI masks. Left: offer it on a colour/luminance range._
@@ -1481,9 +1862,12 @@ Playroom work that starts once the engine request lands
 - [ ] **M** · The develop view of an HDR edit graded as its HDR export is,
       tone mapped after the grade (E40); compile it with `hdr` then.
 - [ ] **S** · Highlight recovery on RAW, in the develop (E15).
+      _0.18 rolls Develop's highlights off through a knee, and Pass 94 keeps a
+      RAW's headroom in a Scene float master; a highlight fill is engine 0.19
+      (its Pass 107)._
 - [ ] **S** · Raw-domain noise reduction controls (E16).
+      _Engine 0.19 plans PMRID as Scene's `mosaic_denoise`._
 - [ ] **S** · Pixel steps' image caches as uncompressed TIFF overlays (E33).
-- [ ] **S** · PQ/HLG proxies and the gain-map master as uncompressed TIFF (E34).
 - [ ] **S** · Engine frames in crash reports: feed the binding's published
       debug symbols to `scripts/upload-symbols.mjs` (E35).
 - [ ] **S** · ProRAW and DNG gain maps (E17).
@@ -1498,11 +1882,11 @@ Playroom work that starts once the engine request lands
 - [ ] **M** · Gamut warning in soft proofing (E22).
 - [ ] **XL** · Merge to HDR, panorama, HDR panorama, focus stacking (E23).
 - [ ] **S** · AI denoise (SCUNet) and Enhance (FBCNN) on the accelerator
-      (E26, E27).
+      (E26, E27). _Engine 0.19 plans a ≤ 4-D SCUNet export for CoreML, and
+      static shapes (`SessionSpec.dimensions`)._
 - [ ] **M** · Select Sky in one click (E28). _Since 0.16 the Sky tool asks
       for a click on the sky and SAM 2.1 selects it (`SKY_BY_CLICK` in
       `shared/ai.ts`); turn the flag off when a sky model ships._
-- [ ] **L** · AI Remove (generative remove) in the Heal tool (E29).
 - [ ] **L** · Select People: face, skin, hair, eyes, lips, teeth, clothes
       (E30). _Since 2026-10-02 they are classes (`shared/concepts.ts`): the
       masks menu's People group asks for a click on each and SAM 2.1 keeps
@@ -1663,7 +2047,7 @@ Kept for reference: what was built, and where.
       `hasEnhance()` true; Enhance runs on the engine's bundled ONNX Runtime.
 - [x] Red-eye / pet-eye correction: done in Phase 6 (dragged ellipses).
 - [x] Healing / clone / content-aware fill: done in Phase 6. Generative remove
-      waits on E29; visualise spots is Pass 38.
+      is Pass 92 (MI-GAN, engine 0.18); visualise spots is Pass 38.
 - [x] Lens corrections (profiles, manual, defringe): Phases 4 and 12. File
       corrections are Passes 47–49; fisheye waits on E18.
 - [x] Transform/Upright: Phase 5. Spots under a warp are Pass 39.

@@ -854,7 +854,7 @@ export interface CaMeasurement {
 export interface ModelInfo {
   id: string
   title: string
-  role: 'upscale' | 'denoise' | 'deblur' | 'restore' | 'segment' | 'inpaint'
+  role: 'upscale' | 'denoise' | 'deblur' | 'restore' | 'segment' | 'inpaint' | 'depth'
   bytes: number
   licence: string
   holder: string

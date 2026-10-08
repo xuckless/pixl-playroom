@@ -218,7 +218,16 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         encode: TIFF,
         metadata: ICC_ONLY,
         color: 'Preserve' as const,
-        threads: BACKGROUND_THREADS * 2
+        threads: BACKGROUND_THREADS * 2,
+        // ×2 is the ×4 model brought down by half on the enlarged frame
+        // (engine 0.18 retired its own ×2 model).
+        ...(k === 2
+          ? {
+              resize: { Scale: { factor: 0.5 } },
+              resampler: 'Lanczos3' as const,
+              linear_resample: true
+            }
+          : {})
       }
       if (restoresJpeg) {
         const orientation = sourceOrientation(info, null)

@@ -16,7 +16,7 @@
  */
 export type JpegRestore = 'off' | 'reconstruct' | 'fbcnn'
 
-/** Super-resolution: off, ×2 (Real-ESRGAN), ×4 (general), ×4 keeping texture (weak denoise). */
+/** Super-resolution: off, ×2 (SPAN ×4 brought down), ×4 (general), ×4 keeping texture (weak denoise). */
 export type UpscaleChoice = 'off' | 'x2' | 'x4' | 'x4-wdn'
 
 export interface EnhanceSettings {
@@ -47,7 +47,8 @@ export const DEFAULT_ENHANCE: EnhanceSettings = {
 export const ENHANCE_MODEL = {
   fbcnn: 'fbcnn-color-blind',
   deblur: 'nafnet-gopro-w32',
-  x2: 'real-esrgan-x2plus',
+  // A ×4 model; the request brings its output down by half (main/enhance.ts).
+  x2: 'span-x4-ch48',
   x4: 'realesr-general-x4v3',
   'x4-wdn': 'realesr-general-wdn-x4v3'
 } as const
@@ -137,7 +138,7 @@ export const FIRST_GUESS_MS_PER_MP: Record<EnhanceStepKind, number> = {
   fbcnn: 50000,
   deblur: 17000,
   off: 0,
-  x2: 36000,
+  x2: 6000,
   x4: 13000,
   'x4-wdn': 13000
 }

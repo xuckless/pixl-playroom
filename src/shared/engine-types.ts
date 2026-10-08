@@ -376,6 +376,8 @@ export type ColorSpaceRef =
   | 'Rec2100Hlg'
   | 'GenericGray22'
   | { Icc: number[] }
+  /** Linear Display P3 (CICP 12/8), built in (0.18). */
+  | 'LinearDisplayP3'
 
 export type RenderingIntent =
   'Perceptual' | 'RelativeColorimetric' | 'Saturation' | 'AbsoluteColorimetric'
@@ -389,9 +391,26 @@ export type ToneMapMode = 'PerChannel' | 'MaxRgb' | 'Luminance'
 
 /** `ColorPolicy::Master`: every field is required. */
 export type MasterPeak = 'Measured' | { Nits: number }
-export type MasterCeiling = 'Peak' | { Nits: number }
+/**
+ * `Display` (0.18) takes the display's SDR white and peak in cd/m², as
+ * Playroom reads them (the engine never probes a display), and resolves to
+ * `203 · peak / white`.
+ */
+export type MasterCeiling =
+  'Peak' | { Nits: number } | { Display: { white_nits: number; peak_nits: number } }
 export type MasterReach = 'Measured' | { Stated: number }
 export type MasterLook = 'Colorimetric' | { Pixl: { version: 1 | 2 } }
+/**
+ * What a float sink (an F32 TIFF, `Pixels` F16/F32) receives (0.18):
+ * `LinearPixlRgb` is 0.17's; `ExtendedLinearDisplayP3` is linear Display P3
+ * with 1.0 = SDR white, up to the ceiling over white with headroom on.
+ */
+export type MasterFloat = 'LinearPixlRgb' | 'ExtendedLinearDisplayP3'
+/** A second, small 8-bit Display P3 picture of the same render (0.18). */
+export interface SdrCompanion {
+  longest_side: number
+  resampler: 'Nearest' | 'Bilinear' | 'CatmullRom' | 'Lanczos3'
+}
 export interface MasterPolicy {
   headroom: boolean
   peak: MasterPeak
@@ -399,6 +418,8 @@ export interface MasterPolicy {
   ceiling: MasterCeiling | null
   reach: MasterReach
   look: MasterLook
+  float: MasterFloat
+  companion: SdrCompanion | null
 }
 
 /**
@@ -506,11 +527,23 @@ export interface HslKey {
   invert: boolean
 }
 
+/**
+ * `smoothing` on Tone, Vibrance, Dehaze, ColorGrade, HslBands and Qualifier
+ * (0.18): the op's change smoothed where the picture is flat. `radius` is
+ * 0.001–0.1 of the shorter side, `strength` 0–1; `null` is the op as it
+ * always ran. Sent on release, never while a slider drags.
+ */
+export interface AdjustmentSmoothing {
+  radius: number
+  strength: number
+}
+
 export interface Tone {
   highlights: number
   shadows: number
   whites: number
   blacks: number
+  smoothing: AdjustmentSmoothing | null
 }
 
 export interface WhiteBalance {
@@ -521,6 +554,7 @@ export interface WhiteBalance {
 export interface Vibrance {
   amount: number
   skin_protection: number
+  smoothing: AdjustmentSmoothing | null
 }
 
 export interface CurvePoint {
@@ -571,6 +605,7 @@ export interface HslBands {
   blue: BandAdjust
   purple: BandAdjust
   magenta: BandAdjust
+  smoothing: AdjustmentSmoothing | null
 }
 
 export interface Cdl {
@@ -585,6 +620,12 @@ export interface Denoise {
   luminance_detail: number
   color: number
   color_detail: number
+  /**
+   * The coarsest band's reach, a fraction of the shorter side, `0 < reach ≤
+   * 0.25` (0.18): the same number in the preview and the export denoises the
+   * same structures at any size.
+   */
+  reach: number
 }
 
 export interface Sharpen {
@@ -603,6 +644,7 @@ export interface LocalContrast {
 export interface Dehaze {
   amount: number
   radius: number
+  smoothing: AdjustmentSmoothing | null
 }
 
 export interface Point {
@@ -644,6 +686,7 @@ export interface ColorGrade {
   global: Wheel
   blending: number
   balance: number
+  smoothing: AdjustmentSmoothing | null
 }
 
 export interface ChannelMixer {
@@ -689,7 +732,7 @@ export interface Fill {
 export type GradeOp =
   | { Lut: { lut: LutRef; amount: number; out_of_domain: LutOutOfDomain } }
   | { Primary: Primary }
-  | { Qualifier: { key: HslKey; correction: Primary } }
+  | { Qualifier: { key: HslKey; correction: Primary; smoothing: AdjustmentSmoothing | null } }
   | { Tone: Tone }
   | { WhiteBalance: WhiteBalance }
   | { Vibrance: Vibrance }
@@ -1273,6 +1316,8 @@ export interface MasterReport {
   look: string
   look_pixels: number
   look_guarded_pixels: number
+  /** Under `Ceiling.Display` (0.18): the display it rendered for, `headroom` = peak / white. */
+  display: { white_nits: number; peak_nits: number; headroom: number } | null
   gamut: {
     reach: number
     reach_measured: boolean
@@ -1341,6 +1386,8 @@ export interface UpscaleReport {
   model_space: string
   input_clipped: number
   output_clamped: number
+  /** Output values that were NaN or ±∞ (0.18); not 0 says the model misbehaved. */
+  non_finite: number
   runtime_version: string
 }
 
@@ -1355,6 +1402,8 @@ export interface ModelStepReport {
   model_ms: number
   input_clipped: number
   output_clamped: number
+  /** Output values that were NaN or ±∞ (0.18). */
+  non_finite: number
   strength: number
   conditioning: string[]
   grey_as_rgb: boolean
@@ -1425,6 +1474,38 @@ export interface ConvertReport {
   raw: RawReport | null
   /** Present when a DNG was written (`Dng`, `LinearDng`): what it holds and left out. */
   dng: DngWritten | null
+  /** `Master.companion`'s SDR picture of the same render (0.18). */
+  companion: Companion | null
+  /**
+   * Every check of the pixels between stages that ran (0.18). A failed one
+   * is never here: it rejects with code `Invariant`.
+   */
+  checks: CheckReport[]
+}
+
+/** One check between stages; `op` is the grade field just checked, `check_us` in microseconds. */
+export interface CheckReport {
+  stage: string
+  op: string | null
+  samples: number
+  check_us: number
+}
+
+/** 8-bit Display P3 pixels of the same render at the asked longest side (never enlarged). */
+export interface Companion {
+  width: number
+  height: number
+  /** 3 RGB, 4 RGBA (the output's alpha, straight). */
+  channels: number
+  row_bytes: number
+  icc: number[]
+  cicp: { primaries: number; transfer: number; matrix: number; full_range: boolean } | null
+  quantisations: number
+  dither: unknown
+  rolloff: unknown | null
+  gamut: unknown | null
+  /** A Buffer from the binding. */
+  data: Uint8Array
 }
 
 /** What a `Scene` develop used (the parts Playroom reads). */
@@ -1660,7 +1741,8 @@ export interface EngineErrorShape {
   /**
    * A `PixlError` variant, `VersionMismatch` (the loaded addon is not the
    * installed package's release), `Model` (a model step failed; `Upscale`
-   * before 0.15), `Cancelled`, or one of the app's own: EngineUnavailable,
+   * before 0.15), `Cancelled`, `Invariant` (0.18: an op made pixels that are
+   * not numbers; the detail names its grade field), or one of the app's own: EngineUnavailable,
    * EngineCrashed, BadRequest, Unknown.
    */
   code: string
@@ -1726,7 +1808,12 @@ export interface SegmentPlane {
   clamped: number
   /** With `bounds_at`: the box around every sample at or above it, frame pixels. */
   bounds: MaskBounds | null
+  /** The output's `quantity`, echoed (0.18). */
+  quantity: PlaneQuantity
 }
+
+/** What a plane holds (0.18): a class's share, depth (larger farther) or disparity (larger nearer). */
+export type PlaneQuantity = 'Coverage' | 'Depth' | 'Disparity'
 
 export interface SegmentReport {
   planes: SegmentPlane[]

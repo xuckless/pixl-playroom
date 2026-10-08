@@ -380,6 +380,46 @@ test('a custom layer written before 0.16 gets each LUT its old domain rule', asy
   assert.equal(out.name, 'mine')
 })
 
+test('Denoise sends one reach at every size (engine 0.18, HR-0.18-3)', async () => {
+  const { DENOISE_REACH } = await import('../src/shared/compile')
+  const r = defaultRecipe(true)
+  r.detail.noiseLuminance = 40
+  const reachAt = (scale: number): unknown => {
+    const op = compile(r, { ...ctx, isRaw: true, scale })
+      .grade!.layers[0].stages.flatMap((s) => s.ops)
+      .find((o) => 'Denoise' in o) as { Denoise: { reach: number } }
+    return op.Denoise.reach
+  }
+  assert.equal(DENOISE_REACH, 0.03)
+  // The preview's proxy and the export's full size: the same fraction.
+  assert.equal(reachAt(0.4), DENOISE_REACH)
+  assert.equal(reachAt(1), DENOISE_REACH)
+})
+
+test('a custom layer’s Denoise saved before 0.18 gets the reach; a stated one is kept', async () => {
+  const { withLutDomains, DENOISE_REACH } = await import('../src/shared/compile')
+  const denoise = { luminance: 0.5, luminance_detail: 0.5, color: 0.5, color_detail: 0.5 }
+  const layer = {
+    stages: [
+      {
+        ops: [
+          { Denoise: denoise },
+          { Denoise: { ...denoise, reach: 0.1 } },
+          { Masked: { mask: null, opacity: 1, ops: [{ Denoise: denoise }] } }
+        ]
+      }
+    ]
+  }
+  const ops = (withLutDomains(layer) as typeof layer).stages[0].ops as Record<
+    string,
+    Record<string, unknown>
+  >[]
+  assert.equal(ops[0].Denoise.reach, DENOISE_REACH)
+  assert.equal(ops[1].Denoise.reach, 0.1)
+  const inner = (ops[2].Masked.ops as Record<string, Record<string, unknown>>[])[0]
+  assert.equal(inner.Denoise.reach, DENOISE_REACH)
+})
+
 test('a RAW the engine refuses by name is said plainly', async () => {
   const { unsupportedRaw } = await import('../src/shared/engine-types')
   assert.match(
