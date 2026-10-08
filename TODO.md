@@ -151,15 +151,17 @@ After: Pass 85.
 
 After: Pass 85.
 
-- [ ] **S** · HR-0.18-2: RAW default sharpening masking 50 (`recipe.ts:567`).
-      Saved untouched defaults (40 / 1 / 25 / 0) move to 50 on load
-      (`RECIPE_VERSION`).
-- [ ] **M** · HR-0.18-1: a sharpening the preview leaves out at its scale
-      (`compile.ts:908–911`) says so in Detail ("shows at 100%"), not only in
-      the Engine Report. One path brings `Compiled.notes` to the panel that
-      owns the op.
-- [ ] **S** · HR-0.18-5 (QA): an export is judged against a 1:1 export from
-      the master, never the proxy enlarged.
+- [x] **S** · HR-0.18-2: a RAW's default sharpening has masking 50 (0.8 /
+      1.0 / 0.25 / 0.5 to the engine). `RECIPE_VERSION` 3: a RAW's untouched
+      40 / 1 / 25 / 0 saved before it moves to 50; a set one stays.
+- [x] **M** · HR-0.18-1: a sharpening the preview leaves out says so under
+      Detail ▸ Sharpening ("Sharpening shows at 100% only…") until the view
+      is at 100%, where the 1:1 tiles render it from the master. The note is
+      `LEFT_OUT.sharpen` in `compile.ts`; any panel shows its own with
+      `<LeftOut note={…} />` from the last render's `notes`.
+- [x] **S** · HR-0.18-5 (QA, no code): judge an export against a 1:1 export
+      from the master, never the proxy enlarged. The 1:1 view (`region()`)
+      already renders from the full-size master.
 
 ### Pass 88 — The Smoothing slider · 5 pts
 

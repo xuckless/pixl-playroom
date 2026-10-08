@@ -73,6 +73,15 @@ export const MID_GREY_ENCODED = 0.4613
  */
 export const DENOISE_REACH = 0.03
 
+/**
+ * What the preview leaves out and the panel that owns the op says so
+ * (HR-0.18-1, engine 0.18: a preview never drops an op silently). The report
+ * carries them in `notes`; the 1:1 view renders them from the master.
+ */
+export const LEFT_OUT = {
+  sharpen: 'Sharpening shows at 100% only: at this zoom its radius is under half a pixel.'
+} as const
+
 export const IDENTITY_PRIMARY: Primary = {
   exposure: 0,
   lift: { r: 0, g: 0, b: 0 },
@@ -929,7 +938,7 @@ function sharpenOp(
   if (amount <= 0) return null
   const px = radius * scale
   if (px < 0.5) {
-    notes.push('Sharpening is shown at 1:1 only: at this zoom its radius is under half a pixel.')
+    notes.push(LEFT_OUT.sharpen)
     return null
   }
   return {

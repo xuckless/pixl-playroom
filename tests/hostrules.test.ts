@@ -166,3 +166,36 @@ test('a slider’s getter names the recipe field it reads', () => {
     'basic.exposure'
   )
 })
+
+test('HR-0.18-2: a RAW sharpens with the edge mask, 0.8 / 1.0 / 0.25 / 0.5', () => {
+  const c = compile(defaultRecipe(true), { ...ctx, isRaw: true, scale: 1 })
+  const op = c.grade!.layers[0].stages.flatMap((s) => s.ops).find((o) => 'Sharpen' in o) as {
+    Sharpen: Record<string, number>
+  }
+  assert.deepEqual(op.Sharpen, { amount: 0.8, radius: 1, detail: 0.25, masking: 0.5 })
+  assert.equal(defaultRecipe(false).detail.sharpenMasking, 0)
+})
+
+test('HR-0.18-2: an untouched RAW default from before version 3 takes masking 50; a set one stays', () => {
+  const old = (detail: Record<string, number>, version = 2): unknown => ({
+    version,
+    detail: { sharpenAmount: 40, sharpenRadius: 1, sharpenDetail: 25, sharpenMasking: 0, ...detail }
+  })
+  assert.equal(normaliseRecipe(old({}), true).detail.sharpenMasking, 50)
+  // Version 1 wrote no version at all.
+  assert.equal(normaliseRecipe({ detail: { sharpenMasking: 0 } }, true).detail.sharpenMasking, 50)
+  assert.equal(normaliseRecipe(old({ sharpenAmount: 60 }), true).detail.sharpenMasking, 0)
+  assert.equal(normaliseRecipe(old({ sharpenMasking: 20 }), true).detail.sharpenMasking, 20)
+  // A JPEG's default has no sharpening to move; a version-3 choice of 0 is the user's.
+  assert.equal(normaliseRecipe(old({ sharpenAmount: 0 }), false).detail.sharpenMasking, 0)
+  assert.equal(normaliseRecipe(old({}, 3), true).detail.sharpenMasking, 0)
+})
+
+test('HR-0.18-1: a sharpening the preview cannot show is said, by the note its panel shows', async () => {
+  const { LEFT_OUT } = await import('../src/shared/compile')
+  const r = defaultRecipe(true)
+  const fit = compile(r, { ...ctx, isRaw: true, scale: 0.4 })
+  assert.ok(fit.notes.includes(LEFT_OUT.sharpen))
+  assert.ok(!fit.grade!.layers[0].stages.some((s) => s.ops.some((o) => 'Sharpen' in o)))
+  assert.ok(!compile(r, { ...ctx, isRaw: true, scale: 1 }).notes.includes(LEFT_OUT.sharpen))
+})

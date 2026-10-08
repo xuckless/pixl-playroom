@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { absoluteWb, isIdentityCurve } from '../../../shared/compile'
+import { absoluteWb, isIdentityCurve, LEFT_OUT } from '../../../shared/compile'
 import type { LutProfile } from '../../../shared/ipc'
 import {
   HSL_BANDS,
@@ -108,6 +108,17 @@ function RS({
       }}
     />
   )
+}
+
+/**
+ * What the last render left out of the preview, said in the panel that owns
+ * it (HR-0.18-1), until the view is at 100%, where the 1:1 tiles show it.
+ */
+function LeftOut({ note }: { note: string }): React.JSX.Element | null {
+  const shown = useDevelop((s) => s.report?.notes.includes(note) ?? false)
+  const full = useDevelop((s) => typeof s.zoom.scale === 'number' && s.zoom.scale >= 1)
+  if (!shown || full) return null
+  return <p className="muted small left-out">{note}</p>
 }
 
 // ── Basic ────────────────────────────────────────────────────────────────────
@@ -1107,6 +1118,7 @@ export function DetailBody(): React.JSX.Element | null {
           min={0}
           max={100}
         />
+        <LeftOut note={LEFT_OUT.sharpen} />
       </Section>
       <Section id="detail.noise" title="Noise reduction">
         {/* Classic is a setting; AI makes pixel steps (both can apply, inside a mask too). */}

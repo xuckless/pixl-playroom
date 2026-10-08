@@ -18,7 +18,11 @@ import { normaliseEdge, type MaskEdge } from './maskedge'
 import { normalisePrompt, PROMPT_VIAS, type PromptGeometry, type PromptVia } from './prompt'
 import { conceptOf, type ConceptId } from './concepts'
 
-export const RECIPE_VERSION = 2
+/**
+ * 3 (engine 0.18): a RAW's untouched default sharpening takes the edge mask
+ * (masking 50, HR-0.18-2).
+ */
+export const RECIPE_VERSION = 3
 
 export const HSL_BANDS = [
   'red',
@@ -564,7 +568,8 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       sharpenAmount: isRaw ? 40 : 0,
       sharpenRadius: 1,
       sharpenDetail: 25,
-      sharpenMasking: 0,
+      // A RAW sharpens edges, not the denoised grain of flat areas (HR-0.18-2).
+      sharpenMasking: isRaw ? 50 : 0,
       noiseLuminance: 0,
       noiseLuminanceDetail: 50,
       noiseColor: isRaw ? 25 : 0,
@@ -631,6 +636,19 @@ function fill<T>(base: T, value: unknown): T {
 export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   const base = defaultRecipe(isRaw)
   const r = fill(base, value)
+  const saved = isObject(value) && typeof value.version === 'number' ? value.version : 1
+  // Before 3, a RAW's default sharpening had no edge mask: an untouched one
+  // takes the new default; one the user set is theirs.
+  const d = r.detail
+  if (
+    saved < 3 &&
+    isRaw &&
+    d.sharpenAmount === 40 &&
+    d.sharpenRadius === 1 &&
+    d.sharpenDetail === 25 &&
+    d.sharpenMasking === 0
+  )
+    d.sharpenMasking = 50
   r.version = RECIPE_VERSION
   if (r.gainMap !== 'hdr') r.gainMap = 'base'
   if (!isObject(value) || !isObject((value as Record<string, unknown>).profile)) {

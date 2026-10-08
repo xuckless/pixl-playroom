@@ -61,7 +61,7 @@ test('AI-denoised pixels get no classic noise reduction on top', () => {
 test('sharpening is left out where its radius falls under half a pixel', () => {
   const c = compile(defaultRecipe(true), { ...ctx, isRaw: true, scale: 0.3 })
   assert.ok(!kinds(c.grade!.layers[0].stages[1].ops).includes('Sharpen'))
-  assert.ok(c.notes.some((n) => n.includes('1:1')))
+  assert.ok(c.notes.some((n) => n.includes('100%')))
 })
 
 test('physics goes in linear light and the look in Display P3', () => {
