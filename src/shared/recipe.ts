@@ -637,6 +637,7 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     r.profile = base.profile
   }
   r.toneCurve = normaliseToneCurve(r.toneCurve)
+  r.calibration = normaliseCalibration(r.calibration)
   r.geometry.crop = normaliseCrop(r.geometry.crop)
   r.layers = (r.layers ?? []).filter(isObject).map(({ overlayHue, ...withOld }) => {
     // Version 1's sliders become settings (`layerSettingsOf`) and go.
@@ -644,6 +645,7 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     delete l.adjust
     const settings = layerSettingsOf(withOld as unknown as Record<string, unknown>)
     settings.toneCurve = normaliseToneCurve(settings.toneCurve)
+    settings.calibration = normaliseCalibration(settings.calibration)
     return {
       ...l,
       id: typeof l.id === 'string' && l.id ? l.id : newId(),
@@ -678,6 +680,17 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     .filter((p): p is PointColorSetting => p !== null)
     .slice(0, MAX_POINT_COLORS)
   return r
+}
+
+/**
+ * Calibration held to its sliders' ±100 (HR-0.18-7): past them the mixer's
+ * matrix degenerates into coefficients that overflow (engine 0.18 refuses
+ * the render as `Invariant`).
+ */
+function normaliseCalibration(c: CalibrationSetting): CalibrationSetting {
+  return Object.fromEntries(
+    Object.entries(c).map(([k, v]) => [k, num(v, 0, -100, 100)])
+  ) as unknown as CalibrationSetting
 }
 
 const BLEND_MODES: BlendMode[] = [

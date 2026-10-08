@@ -24,6 +24,7 @@ import { useLibrary } from './library'
 import { offerLegacy } from './legacy'
 import { useUi } from './ui'
 import type { GuideLine } from '../../../shared/upright'
+import type { InvariantPlace } from '../../../shared/invariant'
 
 export type Tool =
   | 'none'
@@ -104,6 +105,11 @@ interface DevelopState {
   /** For a PQ/HLG photo, the last settled render measured as HDR (see `RenderEvent.hdrStats`). */
   hdrStats: ImageStats | null
   error: string | null
+  /**
+   * The adjustment the last render failed on (engine 0.18's `Invariant`): its
+   * sliders are marked until a render goes through. The last good picture stays.
+   */
+  invariant: InvariantPlace | null
   rendering: boolean
   tool: Tool
   gesture: Gesture
@@ -193,7 +199,7 @@ interface DevelopState {
   setTargetEdge(n: number): void
   pushView(): void
   onRendered(e: RenderEvent): void
-  onError(message: string): void
+  onError(message: string, invariant?: InvariantPlace | null): void
   saveSnapshot(name: string): Promise<void>
   removeSnapshot(id: string): Promise<void>
   measureNoise(): Promise<void>
@@ -319,6 +325,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   stats: null,
   hdrStats: null,
   error: null,
+  invariant: null,
   rendering: false,
   tool: 'none',
   gesture: null,
@@ -356,6 +363,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       session: null,
       loading: true,
       error: null,
+      invariant: null,
       previewing: null,
       picture: null,
       pictures: { framed: null, crop: null },
@@ -732,13 +740,14 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         hdrStats: e.kind === 'full' ? (e.hdrStats ?? null) : get().hdrStats,
         report: e.report ?? null,
         error: null,
+        invariant: null,
         rendering: e.kind === 'draft'
       })
     }
   },
 
-  onError(message) {
-    set({ error: message, rendering: false })
+  onError(message, invariant = null) {
+    set({ error: message, invariant, rendering: false })
   },
 
   async saveSnapshot(name) {

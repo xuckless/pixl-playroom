@@ -357,16 +357,25 @@ export function absoluteWb(ctx: Pick<CompileContext, 'isRaw' | 'asShot'>): boole
 // ── Calibration ──────────────────────────────────────────────────────────────
 
 /**
+ * The largest mixer coefficient sent (HR-0.18-7, engine 0.18): a row past it
+ * overflows on a bright float pixel. Inside the sliders' ±100 the matrix
+ * stays under 2; only values past them (a mask's Amount at 200) degenerate.
+ */
+export const MIXER_ROW_MAX = 16
+
+/**
  * The calibration panel as a 3×3 matrix in linear Rec.2020: each primary's
  * chroma (its offset from its own mean) is turned about the grey axis by up to
  * ±20° and scaled by up to ±60%, then the three new primaries are rescaled so
- * white stays white.
+ * white stays white. Each value is held to its slider's ±100, as a mask's
+ * Amount at 200 would otherwise double it into a matrix that overflows.
  */
 export function calibrationMatrix(c: Recipe['calibration']): [Rgb, Rgb, Rgb] | null {
+  const v = (x: number): number => clamp(x, -100, 100)
   const shifts: [number, number][] = [
-    [c.redHue, c.redSaturation],
-    [c.greenHue, c.greenSaturation],
-    [c.blueHue, c.blueSaturation]
+    [v(c.redHue), v(c.redSaturation)],
+    [v(c.greenHue), v(c.greenSaturation)],
+    [v(c.blueHue), v(c.blueSaturation)]
   ]
   if (shifts.every(([h, s]) => h === 0 && s === 0)) return null
   const u = [1 / Math.sqrt(3), 1 / Math.sqrt(3), 1 / Math.sqrt(3)]
@@ -406,7 +415,11 @@ export function calibrationMatrix(c: Recipe['calibration']): [Rgb, Rgb, Rgb] | n
     g: round4(M[r][1] * w[1]),
     b: round4(M[r][2] * w[2])
   })
-  return [row(0), row(1), row(2)]
+  const rows: [Rgb, Rgb, Rgb] = [row(0), row(1), row(2)]
+  // Never reached inside the sliders' range; a guard, not a rule.
+  if (rows.some((x) => Math.max(Math.abs(x.r), Math.abs(x.g), Math.abs(x.b)) > MIXER_ROW_MAX))
+    return null
+  return rows
 }
 
 // ── Geometry ─────────────────────────────────────────────────────────────────
@@ -1174,7 +1187,11 @@ function settingsStages(
     })
   }
   if (b.contrast !== 0) {
-    look.push({ Primary: primary({ contrast: round4(1 + (b.contrast / 100) * 0.6) }) })
+    // Never below 0 (HR-0.18-6): a mask's Amount at 200 takes Contrast −100
+    // to −0.2, which would turn the picture inside out about the pivot.
+    look.push({
+      Primary: primary({ contrast: round4(Math.max(0, 1 + (b.contrast / 100) * 0.6)) })
+    })
   }
   const p = r.presence
   if (p.texture !== 0) {

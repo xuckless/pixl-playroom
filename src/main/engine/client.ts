@@ -32,13 +32,21 @@ import type {
   Transform,
   WhiteBalance
 } from '../../shared/engine-types'
-import { describeEngineError, unsupportedRaw } from '../../shared/engine-types'
+import { describeEngineError, unsupportedRaw, type Grade } from '../../shared/engine-types'
+import {
+  describeInvariant,
+  invariantDetail,
+  invariantPlace,
+  type InvariantPlace
+} from '../../shared/invariant'
 import { IPC, type EngineStatus } from '../../shared/ipc'
 import type { MainToHost } from '../../shared/engine-types'
 
 export class EngineError extends Error {
   code: string
   detail?: EngineErrorShape['detail']
+  /** For `Invariant`, once named against the request (`nameInvariant`): the layer and op. */
+  invariant?: InvariantPlace | null
   constructor(shape: EngineErrorShape) {
     super(shape.message)
     this.name = 'EngineError'
@@ -55,6 +63,23 @@ export class EngineError extends Error {
   get field(): string | undefined {
     const d = this.detail?.['InvalidRequest']
     return d && typeof d['field'] === 'string' ? (d['field'] as string) : undefined
+  }
+
+  /**
+   * For `Invariant` (engine 0.18, HR-0.18-9): name the adjustment against the
+   * request that was sent, in the message and in `invariant`. The caller keeps
+   * the edit and never renders again without the op.
+   */
+  nameInvariant(
+    grade: Grade | null,
+    sdrGrade: Grade | null,
+    layerIndex: Record<string, number>
+  ): this {
+    if (this.code !== 'Invariant') return this
+    const { stage, text } = invariantDetail(this.detail)
+    this.invariant = invariantPlace(text, grade, sdrGrade, layerIndex)
+    this.message = describeInvariant(this.invariant, stage)
+    return this
   }
 
   /** What to tell the user: the engine's words, or plainer ones where it has them. */

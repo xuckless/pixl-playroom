@@ -150,6 +150,18 @@ const LOOK_EDGE_MAX = 640
 const LOOK_KEEP = 600
 
 /**
+ * A convert's rejection, an `Invariant` named against the compiled request it
+ * came from (engine 0.18, HR-0.18-9): the window marks that adjustment, the
+ * edit stays, and nothing renders again without it.
+ */
+function named(compiled: Pick<Compiled, 'grade' | 'layerIndex'>): (err: unknown) => never {
+  return (err) => {
+    if (err instanceof EngineError) err.nameInvariant(compiled.grade, null, compiled.layerIndex)
+    throw err
+  }
+}
+
+/**
  * What the histogram, the hue chart and auto tone read, measured by the
  * engine on the pixels it hands the encoder: `analyze`'s numbers without
  * decoding the file again.
@@ -694,7 +706,8 @@ class Session {
         key: this.key,
         message: e.message,
         code: e.code ?? 'Unknown',
-        field: e instanceof EngineError ? e.field : undefined
+        field: e instanceof EngineError ? e.field : undefined,
+        invariant: e instanceof EngineError ? (e.invariant ?? undefined) : undefined
       })
     } finally {
       this.inflight = false
@@ -789,37 +802,39 @@ class Session {
     const out = frame ? '' : this.nextFile('view', alpha ? 'png' : 'jpg')
     const hdrStats =
       kind === 'full' ? this.measureHdr(cropMode, signal) : Promise.resolve(undefined)
-    const report = await this.owner.engine.convert(
-      {
-        ...blankRequest(src.path, out, src.input),
-        ...(frame ? { sink: 'Bytes' as const } : {}),
-        pixel: { depth: 'Eight', channels: alpha || frame ? 4 : 3 },
-        encode: frame
-          ? { Pixels: { sample: 'U8' } }
-          : alpha
-            ? { Png: { compression: 'Fast', filter: 'Sub' } }
-            : {
-                // A settled picture is a few MB less as 4:2:0, which a screen
-                // shows the same; the draft keeps full chroma at its lower quality.
-                Jpeg: {
-                  quality: kind === 'draft' ? 92 : 95,
-                  subsampling: kind === 'draft' ? 'None' : 'Quarter',
-                  optimize: false
-                }
-              },
-        metadata: { exif: false, icc: true, xmp: false, iptc: false },
-        color: displayPolicy(this.info, 'DisplayP3'),
-        grade: compiled.grade,
-        framing: compiled.framing,
-        lens: compiled.lens,
-        retouch: compiled.retouch,
-        threads: interactiveThreads(),
-        // A warp shown whole counts its empty corners (as black) rather than
-        // risk measuring nothing when little of the picture is left.
-        measure: measureOf(kind === 'draft' ? 2 : 1)
-      },
-      { signal, frame }
-    )
+    const report = await this.owner.engine
+      .convert(
+        {
+          ...blankRequest(src.path, out, src.input),
+          ...(frame ? { sink: 'Bytes' as const } : {}),
+          pixel: { depth: 'Eight', channels: alpha || frame ? 4 : 3 },
+          encode: frame
+            ? { Pixels: { sample: 'U8' } }
+            : alpha
+              ? { Png: { compression: 'Fast', filter: 'Sub' } }
+              : {
+                  // A settled picture is a few MB less as 4:2:0, which a screen
+                  // shows the same; the draft keeps full chroma at its lower quality.
+                  Jpeg: {
+                    quality: kind === 'draft' ? 92 : 95,
+                    subsampling: kind === 'draft' ? 'None' : 'Quarter',
+                    optimize: false
+                  }
+                },
+          metadata: { exif: false, icc: true, xmp: false, iptc: false },
+          color: displayPolicy(this.info, 'DisplayP3'),
+          grade: compiled.grade,
+          framing: compiled.framing,
+          lens: compiled.lens,
+          retouch: compiled.retouch,
+          threads: interactiveThreads(),
+          // A warp shown whole counts its empty corners (as black) rather than
+          // risk measuring nothing when little of the picture is left.
+          measure: measureOf(kind === 'draft' ? 2 : 1)
+        },
+        { signal, frame }
+      )
+      .catch(named(compiled))
     // The engine had no way to the window (it was reloading): main passes the frame on.
     if (frame && report.output)
       this.owner.send(IPC.develop.previewFrame, {
@@ -912,13 +927,15 @@ class Session {
         compiled.retouch !== null ||
         framingWarps(compiled.framing)
       if (floatWork) {
-        const r = await this.owner.engine.convert(
-          { ...request, hdr, measure: { ...measureOf(1), domain: 'Linear', bins } },
-          { signal }
-        )
+        const r = await this.owner.engine
+          .convert(
+            { ...request, hdr, measure: { ...measureOf(1), domain: 'Linear', bins } },
+            { signal }
+          )
+          .catch(named(compiled))
         return statsOf(r)
       }
-      await this.owner.engine.convert(request, { signal })
+      await this.owner.engine.convert(request, { signal }).catch(named(compiled))
       return await this.owner.engine.analyze(
         { ...analyzeRequest(out, 'Tiff', 1), domain: 'Linear', bins, hdr: hdrSignalOf(hdr) },
         { signal }
@@ -944,23 +961,25 @@ class Session {
     const stops = Math.max(0.5, Math.log2(hdr.peak_nits / hdr.reference_white_nits))
     const out = this.nextFile('headroom', 'png')
     try {
-      const r = await this.owner.engine.convert(
-        {
-          ...blankRequest(src.path, out, src.input),
-          pixel: { depth: 'Eight', channels: 1 },
-          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-          metadata: STRIP_ALL,
-          color: 'Preserve',
-          hdr,
-          grade: compiled.grade,
-          framing: compiled.framing,
-          lens: compiled.lens,
-          retouch: compiled.retouch,
-          inspect: { Headroom: { stops } },
-          threads: interactiveThreads()
-        },
-        { signal }
-      )
+      const r = await this.owner.engine
+        .convert(
+          {
+            ...blankRequest(src.path, out, src.input),
+            pixel: { depth: 'Eight', channels: 1 },
+            encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+            metadata: STRIP_ALL,
+            color: 'Preserve',
+            hdr,
+            grade: compiled.grade,
+            framing: compiled.framing,
+            lens: compiled.lens,
+            retouch: compiled.retouch,
+            inspect: { Headroom: { stops } },
+            threads: interactiveThreads()
+          },
+          { signal }
+        )
+        .catch(named(compiled))
       if (this.closed) return
       this.owner.send(IPC.develop.rendered, {
         key: this.key,
@@ -1065,22 +1084,24 @@ class Session {
       return
     }
     const out = this.nextFile('mask', 'png')
-    const report = await this.owner.engine.convert(
-      {
-        ...blankRequest(src.path, out, src.input),
-        pixel: { depth: 'Eight', channels: 1 },
-        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-        metadata: STRIP_ALL,
-        color: 'Preserve',
-        grade: compiled.grade,
-        framing: compiled.framing,
-        lens: compiled.lens,
-        retouch: compiled.retouch,
-        inspect: { LayerMask: { layer: index } },
-        hdr: this.hdrWorking
-      },
-      { signal }
-    )
+    const report = await this.owner.engine
+      .convert(
+        {
+          ...blankRequest(src.path, out, src.input),
+          pixel: { depth: 'Eight', channels: 1 },
+          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+          metadata: STRIP_ALL,
+          color: 'Preserve',
+          grade: compiled.grade,
+          framing: compiled.framing,
+          lens: compiled.lens,
+          retouch: compiled.retouch,
+          inspect: { LayerMask: { layer: index } },
+          hdr: this.hdrWorking
+        },
+        { signal }
+      )
+      .catch(named(compiled))
     const maskStats = measure ? await this.measureMask(out, signal) : undefined
     this.maskStatsFor = statsFor
     this.maskSig = sig
@@ -1149,24 +1170,26 @@ class Session {
       const out = join(this.dir, `mthumb-${layer.id}-${sig}.png`)
       // Made small, not at the draft's size (see MASK_THUMB_EDGE).
       const k = Math.min(1, MASK_THUMB_EDGE / Math.max(src.width, src.height))
-      const report = await this.owner.engine.convert(
-        {
-          ...blankRequest(src.path, out, src.input),
-          resize: k < 1 ? { Scale: { factor: k } } : 'None',
-          resampler: 'Bilinear',
-          pixel: { depth: 'Eight', channels: 1 },
-          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-          metadata: STRIP_ALL,
-          color: 'Preserve',
-          grade: compiled.grade,
-          framing: compiled.framing,
-          lens: compiled.lens,
-          retouch: compiled.retouch,
-          inspect: { LayerMask: { layer: index } },
-          hdr: this.hdrWorking
-        },
-        { signal }
-      )
+      const report = await this.owner.engine
+        .convert(
+          {
+            ...blankRequest(src.path, out, src.input),
+            resize: k < 1 ? { Scale: { factor: k } } : 'None',
+            resampler: 'Bilinear',
+            pixel: { depth: 'Eight', channels: 1 },
+            encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+            metadata: STRIP_ALL,
+            color: 'Preserve',
+            grade: compiled.grade,
+            framing: compiled.framing,
+            lens: compiled.lens,
+            retouch: compiled.retouch,
+            inspect: { LayerMask: { layer: index } },
+            hdr: this.hdrWorking
+          },
+          { signal }
+        )
+        .catch(named(compiled))
       this.thumbSig[layer.id] = sig
       if (this.closed) return
       this.owner.send(IPC.develop.rendered, {
@@ -1235,23 +1258,25 @@ class Session {
     // warp); else a JPEG, as the picture beside it is.
     const alpha = framingTransparent(compiled.framing)
     const out = join(this.dir, `before-${hash32(key).toString(16)}.${alpha ? 'png' : 'jpg'}`)
-    const report = await this.owner.engine.convert(
-      {
-        ...blankRequest(src.path, out, src.input),
-        pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
-        encode: alpha
-          ? { Png: { compression: 'Fast', filter: 'Sub' } }
-          : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
-        metadata: { exif: false, icc: true, xmp: false, iptc: false },
-        color: displayPolicy(this.info, 'DisplayP3'),
-        grade: compiled.grade,
-        framing: compiled.framing,
-        lens: compiled.lens,
-        retouch: compiled.retouch,
-        measure: measureOf(1)
-      },
-      { signal }
-    )
+    const report = await this.owner.engine
+      .convert(
+        {
+          ...blankRequest(src.path, out, src.input),
+          pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
+          encode: alpha
+            ? { Png: { compression: 'Fast', filter: 'Sub' } }
+            : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
+          metadata: { exif: false, icc: true, xmp: false, iptc: false },
+          color: displayPolicy(this.info, 'DisplayP3'),
+          grade: compiled.grade,
+          framing: compiled.framing,
+          lens: compiled.lens,
+          retouch: compiled.retouch,
+          measure: measureOf(1)
+        },
+        { signal }
+      )
+      .catch(named(compiled))
     const stats = statsOf(report)
     this.beforeKey = key
     if (this.closed) return
@@ -1324,23 +1349,25 @@ class Session {
     const out = join(this.dir, `region-${this.regionSlot}.jpg`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
-    await this.owner.engine.convert(
-      {
-        ...blankRequest(src.path, out, src.input, original),
-        raw: null,
-        resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
-        pixel: { depth: 'Eight', channels: 3 },
-        encode: { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
-        metadata: { exif: false, icc: true, xmp: false, iptc: false },
-        color: displayPolicy(this.info, 'DisplayP3'),
-        grade: compiled.grade,
-        framing: compiled.framing,
-        lens: compiled.lens,
-        retouch: compiled.retouch,
-        region: { x, y, width: w, height: h, margin: 96 }
-      },
-      { signal }
-    )
+    await this.owner.engine
+      .convert(
+        {
+          ...blankRequest(src.path, out, src.input, original),
+          raw: null,
+          resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
+          pixel: { depth: 'Eight', channels: 3 },
+          encode: { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
+          metadata: { exif: false, icc: true, xmp: false, iptc: false },
+          color: displayPolicy(this.info, 'DisplayP3'),
+          grade: compiled.grade,
+          framing: compiled.framing,
+          lens: compiled.lens,
+          retouch: compiled.retouch,
+          region: { x, y, width: w, height: h, margin: 96 }
+        },
+        { signal }
+      )
+      .catch(named(compiled))
     if (this.regionAbort === abort) this.regionAbort = null
     return {
       url: cacheUrl(out, `${Date.now()}`),
@@ -1498,18 +1525,20 @@ class Session {
     const src = this.viewPx().draft
     const compiled = await this.compileFor(flat, src, true)
     const out = join(this.dir, 'auto-tone.png')
-    const report = await this.owner.engine.convert({
-      ...blankRequest(src.path, out, src.input),
-      pixel: { depth: 'Eight', channels: 3 },
-      encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-      metadata: { exif: false, icc: true, xmp: false, iptc: false },
-      color: displayPolicy(this.info, 'DisplayP3'),
-      grade: compiled.grade,
-      framing: compiled.framing,
-      lens: compiled.lens,
-      retouch: compiled.retouch,
-      measure: measureOf(1)
-    })
+    const report = await this.owner.engine
+      .convert({
+        ...blankRequest(src.path, out, src.input),
+        pixel: { depth: 'Eight', channels: 3 },
+        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        color: displayPolicy(this.info, 'DisplayP3'),
+        grade: compiled.grade,
+        framing: compiled.framing,
+        lens: compiled.lens,
+        retouch: compiled.retouch,
+        measure: measureOf(1)
+      })
+      .catch(named(compiled))
     return autoTone(statsOf(report))
   }
 

@@ -16,6 +16,7 @@ import {
   buildColor,
   buildEncode,
   buildResize,
+  displayPeak,
   expandTemplate,
   FORMAT_EXT,
   gainMapEncode,
@@ -40,7 +41,7 @@ import { cacheUrl } from './protocol'
 import { brushPlanes } from './brushes'
 import { embedMetadata } from './exiftool'
 import { exists, sameFile } from './exists'
-import { isCancelled, type EngineClient } from './engine/client'
+import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import type { Library } from './library'
 import { ensureProxies, type ProxyFile } from './proxy'
 import { ensureBase, pixelDeps } from './pixels/base'
@@ -54,6 +55,7 @@ import type { Recipe } from '../shared/recipe'
 import type { DevelopSessions } from './render'
 import {
   BACKGROUND_THREADS,
+  heavyThreads,
   blankRequest,
   colourOf,
   rawDevelop,
@@ -277,7 +279,7 @@ export class Exporter {
     // An export runs behind the editing: the encoder takes the export's share too.
     // `Master` writes PQ into JXL and PNG, at 16 bits (8-bit PQ is refused).
     const pqOut = pixl?.headroom === true && (s.format === 'jxl' || s.format === 'png')
-    const { encode, depth } = buildEncode(s, BACKGROUND_THREADS * 2, hdrOut || pqOut)
+    const { encode, depth } = buildEncode(s, heavyThreads(), hdrOut || pqOut)
 
     let out: string
     if (preview) out = preview.out
@@ -307,7 +309,7 @@ export class Exporter {
       (s.hdr.mode === 'gainmap' && !gainMapOut && !pixl)
         ? { ...s, hdr: { ...s.hdr, mode: 'sdr' } }
         : s
-    const peak = info.peak_nits ?? s.hdr.peak
+    const peak = displayPeak(info.peak_nits ?? s.hdr.peak)
     const resize = preview ? previewResize(s, cw, ch) : buildResize(s, cw, ch)
     // The watermark, placed on the output as it will be: cropped, then resized.
     const wm = s.watermark
@@ -397,7 +399,7 @@ export class Exporter {
               limit: hdrLimit(s, peak)
             }
           : null,
-      threads: BACKGROUND_THREADS * 2
+      threads: heavyThreads()
     }
     // Only an SDR file is sharpened for output, after the resize, on the
     // values the file will hold.
@@ -405,17 +407,24 @@ export class Exporter {
       typeof color === 'object' &&
       ('ConvertTo' in color || 'ToneMap' in color || ('Master' in color && !color.Master.headroom))
     const sharpen = sdrOut ? outputSharpen(s) : null
-    const report = await this.engine.convert(
-      sharpen
-        ? {
-            ...request,
-            output_sharpen: outputSharpenRequest(s, sharpen),
-            // The sharpen is a float pass of its own, so dither always applies.
-            dither
-          }
-        : request,
-      { signal }
-    )
+    const report = await this.engine
+      .convert(
+        sharpen
+          ? {
+              ...request,
+              output_sharpen: outputSharpenRequest(s, sharpen),
+              // The sharpen is a float pass of its own, so dither always applies.
+              dither
+            }
+          : request,
+        { signal }
+      )
+      .catch((err: unknown) => {
+        // HR-0.18-9: the export says which adjustment broke the picture.
+        if (err instanceof EngineError)
+          err.nameInvariant(compiled.grade, request.sdr?.grade ?? null, compiled.layerIndex)
+        throw err
+      })
 
     // What the engine's own path did, in its words: for the log and the receipt.
     const m = report.color.master

@@ -230,6 +230,18 @@ export function interactiveThreads(): number {
 export const BACKGROUND_THREADS = Math.max(1, Math.min(4, Math.floor(cpus().length / 2)))
 
 /**
+ * Threads for a heavy job (a model session, Enhance, an export): twice the
+ * background share, but on Apple silicon never more than the performance
+ * cores. Engine 0.18 measured a session fastest at 4 threads on the M2 Pro's
+ * 6 P-cores, and 12 threads 3.5× slower: work handed to the efficiency cores
+ * waits on them.
+ */
+export function heavyThreads(): number {
+  const n = BACKGROUND_THREADS * 2
+  return process.platform === 'darwin' ? Math.min(n, interactiveThreads()) : n
+}
+
+/**
  * Which rendition of a gain-map file (an iPhone HEIC, an UltraHDR JPEG) to
  * read: the engine requires the choice exactly when the file carries one.
  * Playroom reads the SDR base.

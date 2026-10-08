@@ -28,7 +28,7 @@ import { IPC, type EngineStatus, type ModelInfo, type ProviderInfo } from '../..
 import type { EngineClient } from '../engine/client'
 import type { IndexClient } from '../indexer/client'
 import { paths } from '../paths'
-import { BACKGROUND_THREADS } from '../source'
+import { heavyThreads } from '../source'
 import { ENHANCE_MODEL, FIRST_GUESS_MS_PER_MP, type EnhanceStepKind } from '../../shared/enhance'
 import { modelSpeed, referenceOf, testFactor, type ModelSpeed } from '../../shared/modelSpeed'
 import { DENOISE_RATE_KEY, ENHANCE_RATE_KEY } from './rates'
@@ -461,7 +461,7 @@ export class ModelStore {
     const runtime = this.engineStatus().runtime
     if (!runtime) throw new Error('this build of the engine ships no ONNX Runtime')
     const session: SessionSpec = {
-      threads: BACKGROUND_THREADS * 2,
+      threads: heavyThreads(),
       optimisation: 'All',
       deterministic: false
     }

@@ -6,6 +6,7 @@ import type { PixelStep } from '../shared/pixels'
 import type { ExportSettings } from '../shared/export'
 import type { Guard } from '../shared/exportGuards'
 import type { RawColour } from '../shared/rawcolour'
+import type { InvariantPlace } from '../shared/invariant'
 import type { LensProfile } from '../shared/lens'
 import {
   IPC,
@@ -237,7 +238,14 @@ const api = {
       call<HistoryLog>(IPC.develop.historyDelete, key, seqs),
     onRendered: (cb: (e: RenderEvent) => void) => on(IPC.develop.rendered, cb),
     onRenderError: (
-      cb: (e: { key: string; message: string; code: string; field?: string }) => void
+      cb: (e: {
+        key: string
+        message: string
+        code: string
+        field?: string
+        /** For `Invariant`: the layer and op that made pixels that are not numbers. */
+        invariant?: InvariantPlace
+      }) => void
     ) => on(IPC.develop.renderError, cb),
     onFrame: (cb: (e: { key: string; frameWidth: number; frameHeight: number }) => void) =>
       on(IPC.develop.frame, cb)

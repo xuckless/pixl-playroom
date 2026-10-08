@@ -122,22 +122,30 @@ Decided (2026-10-08):
 
 After: Pass 85.
 
-- [ ] **S** · HR-0.18-6: contrast never sends a negative factor
-      (`compile.ts` contrast, a mask's Amount at 200 with Contrast −100 sent −0.2).
-- [ ] **M** · HR-0.18-7: Calibration's hue and saturation sliders bounded so
-      the mixer's rows stay within ±16, and saved values clamped on load.
-      `calibrationMatrix` (`compile.ts:358–402`) asserts the bound.
-- [ ] **S** · HR-0.18-8: an HLG peak clamped to 100–10 000 cd/m²
-      (`main/exporter.ts:310`, `shared/export.ts:560`).
-- [ ] **L** · HR-0.18-9: catch `Invariant` around the preview's, the 1:1
-      view's and the export's convert:
-      - `describeInvariant` maps the field path to the layer and op;
-      - the named slider's row shows the error, or a toast when its panel
-        is hidden;
-      - the last good picture stays, and nothing is retried without the op.
-- [ ] **S** · Model sessions' threads ≤ the P-core count on Apple Silicon
-      (`main/ai/models.ts:464`; the M2 Pro ran fastest at 4, and 12 was 3.5×
-      slower); the same cap on `hdrsource.ts`'s `BACKGROUND_THREADS * 2`.
+- [x] **S** · HR-0.18-6: contrast never sends a negative factor (a mask's
+      Amount at 200 with Contrast −100 sent −0.2).
+- [x] **M** · HR-0.18-7: Calibration is bounded at its sliders' ±100, in the
+      compiler and on load (photo and masks). `calibrationMatrix` refuses a
+      row past ±16 (`MIXER_ROW_MAX`) as a guard.
+      _Measured: inside ±100 the largest row is 1.8. Only values past the
+      sliders (a mask's Amount at 200 doubling them) degenerate, up to 533 009._
+- [x] **S** · HR-0.18-8: `displayPeak()` holds an HDR peak to 100–10 000
+      cd/m² (`main/exporter.ts`, `shared/export.ts`'s Expand).
+- [x] **L** · HR-0.18-9: `Invariant` named against the request it came from:
+      - `shared/invariant.ts` turns the field path into the layer and op;
+      - `EngineError.nameInvariant` is called on every graded convert in
+        `render.ts` (picture, 1:1, mask, Before, headroom) and on the export;
+      - the set sliders that feed that op, in that layer, turn red with the
+        message under them (`readPath` matches a row to its recipe field);
+      - the HUD says it too, the last good picture stays, and nothing is
+        retried without the op.
+      _Checked on the real engine: an overflowing mixer gives
+      `grade.layers[0].stages[0].ops[1]: +∞…`, named "Calibration in the
+      photo's settings made pixels that are not numbers."_
+- [x] **S** · `heavyThreads()`: model sessions, Enhance, export, the HDR
+      master and AI denoise use twice the background share, capped at the
+      P-core count on Apple Silicon (the M2 Pro ran fastest at 4; 12 was
+      3.5× slower).
 
 ### Pass 87 — Denoise and sharpening match the export · 4 pts
 

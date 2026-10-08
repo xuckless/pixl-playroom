@@ -22,7 +22,7 @@ import type { EngineClient } from './engine/client'
 import { exists } from './exists'
 import { paths } from './paths'
 import { DRAFT_EDGE, PROXY_EDGE, type Proxies, type ProxyFile } from './proxy'
-import { BACKGROUND_THREADS, blankRequest, sourceOrientation, versionStamp } from './source'
+import { blankRequest, heavyThreads, sourceOrientation, versionStamp } from './source'
 
 /** What the base's white stands for in the HDR rendition (BT.2408's graphics white). */
 export const GAIN_MAP_WHITE_NITS = 203
@@ -116,7 +116,7 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
       orientation === 'Normal'
         ? null
         : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null },
-    threads: BACKGROUND_THREADS * 2
+    threads: heavyThreads()
   })
   const master: ProxyFile = { path: masterPath, input: 'Png', width: m.width, height: m.height }
 
@@ -131,7 +131,7 @@ async function build(engine: EngineClient, photo: PhotoRow, info: SourceInfo): P
       encode: png,
       metadata: keepProfile,
       color: 'Preserve',
-      threads: BACKGROUND_THREADS * 2
+      threads: heavyThreads()
     })
     return { path, input: 'Png', width: r.width, height: r.height }
   }

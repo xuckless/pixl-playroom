@@ -36,7 +36,14 @@ import type { Library } from '../library'
 import { paths } from '../paths'
 import { ensureProxies, type ProxyFile } from '../proxy'
 import type { DevelopSessions } from '../render'
-import { BACKGROUND_THREADS, blankRequest, colourOf, seedOf, versionStamp } from '../source'
+import {
+  BACKGROUND_THREADS,
+  blankRequest,
+  colourOf,
+  heavyThreads,
+  seedOf,
+  versionStamp
+} from '../source'
 import { ensureBase, pixelDeps } from '../pixels/base'
 import { freezeMask } from '../pixels/freeze'
 import { addPixelStep, storesLossless } from '../pixels/steps'
@@ -238,15 +245,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         const t0 = Date.now()
         try {
           await guard(
-            denoise(
-              this.engine,
-              this.models,
-              req.model,
-              master,
-              result,
-              ctx.signal,
-              BACKGROUND_THREADS * 2
-            )
+            denoise(this.engine, this.models, req.model, master, result, ctx.signal, heavyThreads())
           )
         } finally {
           stop()
@@ -270,8 +269,8 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
           ...blankRequest(result, jxl, 'Tiff'),
           pixel: { depth: 'Sixteen', channels: 3 },
           encode: lossless
-            ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
-            : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
+            ? { JxlLossless: { effort: 3, threads: heavyThreads() } }
+            : { JxlLossy: { distance: 0.1, effort: 5, threads: heavyThreads() } },
           metadata: ICC_ONLY,
           color: 'Preserve'
         },

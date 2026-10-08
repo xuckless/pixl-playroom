@@ -34,6 +34,8 @@ import { scoped, scopedView, scopeLayer, useScope } from '../state/scope'
 import { useUi } from '../state/ui'
 import type { Tip } from '../components/InfoTip'
 import { TIPS } from './tips'
+import { invariantTouches } from '../../../shared/invariant'
+import { readPath } from '../lib/readpath'
 
 type Read = (r: Recipe) => number
 type Write = (r: Recipe, v: number) => void
@@ -72,6 +74,15 @@ function RS({
   const value = useDevelop((s) =>
     s.recipe ? read(scopedView(s.recipe, scopeLayer(s.recipe, s.layerId, open))) : null
   )
+  // The last render failed on the op this slider feeds (engine 0.18's
+  // Invariant), in this layer, and this slider is set: it shows why.
+  const problem = useDevelop((s) => {
+    const inv = s.invariant
+    if (!inv || !s.recipe) return undefined
+    const layer = scopeLayer(s.recipe, s.layerId, open)
+    if (inv.layer !== (layer ? layer.id : 'base')) return undefined
+    return invariantTouches(inv, readPath(read)) ? (s.error ?? undefined) : undefined
+  })
   const { edit, commit } = scoped
   if (value === null) return null
   return (
@@ -86,6 +97,7 @@ function RS({
       track={track}
       title={title}
       tip={tip}
+      problem={value !== def ? problem : undefined}
       onChange={(v, live) => {
         if (live) onGesture?.(true)
         edit((r) => write(r, v), live)

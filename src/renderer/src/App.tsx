@@ -435,7 +435,9 @@ export default function App(): React.JSX.Element {
       api.develop.onRenderError((e) => {
         // A failed save is said whichever photo is open: it may be the one just left.
         if (e.code === 'Save') return useLibrary.getState().say(e.message, 'error')
-        useDevelop.getState().onError(e.field ? `${e.message} (${e.field})` : e.message)
+        useDevelop
+          .getState()
+          .onError(e.field ? `${e.message} (${e.field})` : e.message, e.invariant ?? null)
       }),
       api.ai.onEvent((e) => {
         useAiJobs.getState().onEvent(e)

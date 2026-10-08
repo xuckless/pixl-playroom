@@ -44,6 +44,7 @@ import { ModelMissing, type ModelStore } from './ai/models'
 import type { Library } from './library'
 import {
   BACKGROUND_THREADS,
+  heavyThreads,
   blankRequest,
   colourOf,
   seedOf,
@@ -218,7 +219,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         encode: TIFF,
         metadata: ICC_ONLY,
         color: 'Preserve' as const,
-        threads: BACKGROUND_THREADS * 2,
+        threads: heavyThreads(),
         // ×2 is the ×4 model brought down by half on the enlarged frame
         // (engine 0.18 retired its own ×2 model).
         ...(k === 2
@@ -277,8 +278,8 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           ...blankRequest(out, jxl, 'Tiff'),
           pixel: { depth: 'Sixteen', channels: 3 },
           encode: lossless
-            ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
-            : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
+            ? { JxlLossless: { effort: 3, threads: heavyThreads() } }
+            : { JxlLossy: { distance: 0.1, effort: 5, threads: heavyThreads() } },
           metadata: ICC_ONLY,
           color: 'Preserve'
         },

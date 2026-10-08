@@ -216,6 +216,8 @@ export interface SliderProps {
    * steps aside while it moves; false for a slider that shapes a mask.
    */
   adjusts?: boolean
+  /** What is wrong with the picture this slider feeds: the row shows it in red, the text below. */
+  problem?: string
 }
 
 /** Where `v` sits along `min…max`, as a fraction. */
@@ -262,7 +264,8 @@ export function Slider({
   tip,
   scale = 'linear',
   ticks,
-  adjusts = true
+  adjusts = true,
+  problem
 }: SliderProps): React.JSX.Element {
   const log = scale === 'log'
   const [text, setText] = useState<string | null>(null)
@@ -303,10 +306,11 @@ export function Slider({
   const at = place(value)
   const rest = place(def)
   const showZero = !track && def > min && def < max
-  return (
+  const bar = (
     <div
-      className={`slider${disabled ? ' disabled' : ''}${value !== def ? ' changed' : ''}${dragging ? ' dragging' : ''}${track ? ' graded' : ''}`}
+      className={`slider${disabled ? ' disabled' : ''}${value !== def ? ' changed' : ''}${dragging ? ' dragging' : ''}${track ? ' graded' : ''}${problem ? ' problem' : ''}`}
       title={title}
+      aria-invalid={problem ? true : undefined}
       role="slider"
       tabIndex={disabled ? -1 : 0}
       aria-label={label}
@@ -435,6 +439,15 @@ export function Slider({
         )}
       </div>
     </div>
+  )
+  if (!problem) return bar
+  return (
+    <>
+      {bar}
+      <p className="sl-problem" role="alert">
+        {problem}
+      </p>
+    </>
   )
 }
 
