@@ -42,6 +42,8 @@ import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking, workingKey, type WorkingSet } from './pixels/working'
 import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
 import type {
+  ColorPolicy,
+  Companion,
   HdrWorking,
   ConvertReport,
   LateralCa,
@@ -148,6 +150,33 @@ const LOOK_EDGE_DEFAULT = 320
 const LOOK_EDGE_MIN = 96
 const LOOK_EDGE_MAX = 640
 const LOOK_KEEP = 600
+
+/**
+ * Full HDR's colour (engine 0.18, integration guide §4.5): the master for
+ * this display (`Ceiling::Display`), F16 linear Display P3 with 1.0 = SDR
+ * white, and an 8-bit SDR companion for what reads the picture.
+ */
+function masterFor(display: { whiteNits: number; peakNits: number }): ColorPolicy {
+  return {
+    Master: {
+      headroom: true,
+      peak: 'Measured',
+      ceiling: { Display: { white_nits: display.whiteNits, peak_nits: display.peakNits } },
+      reach: 'Measured',
+      look: 'Colorimetric',
+      float: 'ExtendedLinearDisplayP3',
+      companion: { longest_side: COMPANION_EDGE, resampler: 'Bilinear' }
+    }
+  }
+}
+
+/** The companion's longest side: enough for the eyedropper, scopes and overlays. */
+const COMPANION_EDGE = 512
+
+/** A report's companion as a frame carries it. */
+function companionOf(c: Companion): { width: number; height: number; data: Uint8Array } {
+  return { width: c.width, height: c.height, data: c.data }
+}
 
 /**
  * A convert's rejection, an `Invariant` named against the compiled request it
@@ -317,7 +346,9 @@ class Session {
     source: ProxyFile,
     applyCrop: boolean,
     headroom = false,
-    smoothing = true
+    smoothing = true,
+    /** Rendered for an HDR display (Full HDR, engine 0.18's Master): light above white kept. */
+    hdrOut = false
   ): Promise<Compiled> {
     const baked = this.isBaked(source)
     // The working pixels' frame: the photo's, or an upscale step's.
@@ -338,7 +369,7 @@ class Session {
       // picture for the screen is tone mapped to SDR first and graded after,
       // its values stopping at 1, so it compiles as SDR (a curve carried past
       // 1 there is refused).
-      hdr: headroom && this.info.is_hdr,
+      hdr: (headroom && this.info.is_hdr) || hdrOut,
       showTransform: !this.view.guides,
       smoothing
     })
@@ -761,16 +792,27 @@ class Session {
     const rev = this.rev
     const preview = this.previewing
     const recipe = preview ?? this.recipe
-    const compiled = await this.compileFor(recipe, src, !cropMode, false, kind !== 'draft')
+    // Full HDR (engine 0.18): the display it is shown on, or SDR as before.
+    const display = this.view.display ?? null
+    const compiled = await this.compileFor(
+      recipe,
+      src,
+      !cropMode,
+      false,
+      kind !== 'draft',
+      display !== null
+    )
     const seq = ++this.seq
     // A whole picture of this recipe (framed, no corners left empty): what
     // the library's thumbnail can be shrunk from. A preview is never that.
-    const whole = kind === 'full' && !cropMode && !preview && !framingTransparent(compiled.framing)
+    const whole =
+      kind === 'full' && !cropMode && !preview && !display && !framingTransparent(compiled.framing)
     const sig = String(
       hash32(
         gradeKey([
           src.path,
           cropMode,
+          display,
           compiled.grade,
           compiled.framing,
           compiled.lens,
@@ -801,7 +843,9 @@ class Session {
     // the engine: no file written, served and decoded for a picture that is
     // replaced a moment later. The settled picture stays a file: the mask's
     // measuring and the thumbnail read it here.
-    const frame = kind === 'draft' ? `${this.tag}-${seq}` : undefined
+    // In Full HDR the settled picture is pixels too: F16 linear Display P3
+    // for the display, and an SDR companion for what reads the picture.
+    const frame = kind === 'draft' || display ? `${this.tag}-${seq}` : undefined
     const out = frame ? '' : this.nextFile('view', alpha ? 'png' : 'jpg')
     const hdrStats =
       kind === 'full' ? this.measureHdr(cropMode, signal) : Promise.resolve(undefined)
@@ -810,9 +854,9 @@ class Session {
         {
           ...blankRequest(src.path, out, src.input),
           ...(frame ? { sink: 'Bytes' as const } : {}),
-          pixel: { depth: 'Eight', channels: alpha || frame ? 4 : 3 },
+          pixel: { depth: display ? 'F32' : 'Eight', channels: alpha || frame ? 4 : 3 },
           encode: frame
-            ? { Pixels: { sample: 'U8' } }
+            ? { Pixels: { sample: display ? 'F16' : 'U8' } }
             : alpha
               ? { Png: { compression: 'Fast', filter: 'Sub' } }
               : {
@@ -825,7 +869,9 @@ class Session {
                   }
                 },
           metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: displayPolicy(this.info, 'DisplayP3'),
+          color: display ? masterFor(display) : displayPolicy(this.info, 'DisplayP3'),
+          // The master reads a gain map itself, and refuses the field.
+          ...(display ? { gain_map: null } : {}),
           grade: compiled.grade,
           framing: compiled.framing,
           lens: compiled.lens,
@@ -844,10 +890,15 @@ class Session {
         frame,
         width: report.width,
         height: report.height,
-        data: report.output
+        data: report.output,
+        sample: display ? 'F16' : 'U8',
+        ...(report.companion ? { companion: companionOf(report.companion) } : {})
       })
     const stats = statsOf(report)
-    if (kind === 'full') {
+    // Full HDR's settled picture is a frame: no file for the mask to be
+    // measured on (Pass 99 settles what the settled picture leaves behind).
+    if (kind === 'full' && !out) this.lastFull = ''
+    if (kind === 'full' && out) {
       this.lastFull = out
       if (!preview)
         this.fullPicture = whole
@@ -877,7 +928,8 @@ class Session {
     this.lastSig[kind] = sig
     this.lastEvent[kind] = event
     this.lastOut[kind] = out
-    if (kind === 'full') {
+    // A frame is kept by the window only a moment: a file alone can be shown again.
+    if (kind === 'full' && out) {
       this.recentFull.delete(sig)
       this.recentFull.set(sig, { event, out })
       while (this.recentFull.size > RECENT_FULL)
@@ -1016,6 +1068,7 @@ class Session {
    * build: the overlay still shows without it.
    */
   private async measureMask(plane: string, signal: AbortSignal): Promise<ImageStats | undefined> {
+    if (!this.lastFull) return undefined
     try {
       return await this.owner.engine.analyze(
         {

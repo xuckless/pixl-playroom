@@ -1,3 +1,5 @@
+import type { FloatFrame } from './floatcanvas'
+
 /**
  * Preview frames: drafts the engine sends as pixels (RGBA, Display P3) over
  * their own port, not as files (main/render.ts). A render event names one as
@@ -12,9 +14,16 @@ const KEEP = 4
 const WAIT_MS = 2000
 
 const frames = new Map<string, ImageBitmap>()
+/** Full HDR frames' own pixels (F16), beside their SDR companion's bitmap in `frames`. */
+const floats = new Map<string, FloatFrame>()
 const waiting = new Map<string, ((b: ImageBitmap | null) => void)[]>()
 
 export const isFrame = (url: string): boolean => url.startsWith('frame:')
+
+/** A Full HDR frame's F16 pixels, while it is kept (its `frameBitmap` is the SDR companion). */
+export function frameFloat(url: string): FloatFrame | undefined {
+  return floats.get(url)
+}
 
 /** A frame's bitmap, while it is kept. */
 export function frameBitmap(url: string): ImageBitmap | undefined {
@@ -48,17 +57,44 @@ function keep(url: string, bmp: ImageBitmap): void {
   while (frames.size > KEEP) {
     const [old, b] = frames.entries().next().value as [string, ImageBitmap]
     frames.delete(old)
+    floats.delete(old)
     b.close()
   }
 }
 
 interface FrameMessage {
-  pixlFrame?: { frame: string; width: number; height: number; data: ArrayBuffer }
+  pixlFrame?: {
+    frame: string
+    width: number
+    height: number
+    data: ArrayBuffer
+    sample?: 'U8' | 'F16'
+    companion?: { width: number; height: number; data: ArrayBuffer }
+  }
 }
 
 window.addEventListener('message', (e: MessageEvent<FrameMessage>) => {
   const f = e.source === window ? e.data?.pixlFrame : undefined
   if (!f) return
+  // Full HDR: the F16 pixels for the float canvas; what reads the picture
+  // (the eyedropper, the scopes, the overlays) gets the SDR companion.
+  if (f.sample === 'F16') {
+    if (!f.companion) return
+    floats.set(`frame:${f.frame}`, {
+      width: f.width,
+      height: f.height,
+      data: new Uint16Array(f.data)
+    })
+    const c = f.companion
+    const sdr = new ImageData(new Uint8ClampedArray(c.data), c.width, c.height, {
+      colorSpace: 'display-p3'
+    })
+    void createImageBitmap(sdr).then(
+      (bmp) => keep(`frame:${f.frame}`, bmp),
+      () => floats.delete(`frame:${f.frame}`)
+    )
+    return
+  }
   const image = new ImageData(new Uint8ClampedArray(f.data), f.width, f.height, {
     colorSpace: 'display-p3'
   })

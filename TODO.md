@@ -447,21 +447,27 @@ After: Pass 96.
 
 After: Pass 97.
 
-- [ ] **M** · The draft (`render.ts:795–799`) with Full HDR on:
-      - `Master { headroom: true, ceiling: { Display }, float:
-        'ExtendedLinearDisplayP3', companion }` and `Pixels { sample: 'F16' }`,
-        in place of `displayPolicy`'s `ToneMap`;
-      - the sample type travels with the frame (`engine/host.ts`, preload,
-        main's relay).
-- [ ] **L** · A float presenter beside `FrameCanvas`
-      (`views/loupe/DecodedImage.tsx`):
-      - WebGPU, `display-p3`, extended tone mapping;
-      - the sign-preserving sRGB curve on RGB, never alpha;
-      - the 8-bit path when it can't be made, and the fade kept.
-- [ ] **M** · The draft's source an untagged float working-space file (a
-      P3-tagged 16-bit proxy costs 222 ms per op on the M2 Pro against 17
-      ms). Timing marks; a drag measured on the M1 against 100 ms, written
-      here.
+- [x] **M** · With Full HDR on (`ViewState.display`), drafts and the settled
+      picture render with `Master { headroom, ceiling: { Display },
+      float: 'ExtendedLinearDisplayP3', companion: 512 px }` into
+      `Pixels { sample: 'F16' }` (`render.ts` `masterFor`), `gain_map: null`,
+      the compile in HDR (no RAW shoulder). The sample type and the
+      companion travel with the frame (`engine/host.ts`, preload, main's
+      relay); `frames.ts` keeps the F16 pixels, and the companion as the
+      frame's bitmap for what reads the picture.
+- [x] **L** · `lib/floatcanvas.ts`: WebGPU `rgba16float`, `display-p3`,
+      extended tone mapping, the sign-preserving sRGB curve on RGB only;
+      `DecodedImage` draws an F16 frame with it, and the companion on a 2D
+      canvas where WebGPU won't.
+- [x] **M** · Measured in the built app (M2 Pro, IMG_3198, display 203/812):
+      settled 1920 px 490–514 ms (SDR JPEG 307 ms), a draft 1280 px 200 ms;
+      the frame peaks at 2.3, at +1 EV at the 4.0 ceiling with 2.5 % above
+      white. The RAW draft source is already the float proxy (Pass 94), so
+      no separate untagged source was needed at these times.
+- [ ] **S** · Owner: a drag on the M1 against 100 ms, and how the loupe looks
+      on the XDR (values above 1 visibly brighter than white).
+- Until Pass 99 decides it, Full HDR's settled picture is a frame (no file):
+  the mask's measurement and the library thumbnail skip it.
 
 ### Pass 99 — The settled picture: an A/B test (was 80) · 5 pts
 

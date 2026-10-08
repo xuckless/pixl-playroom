@@ -343,13 +343,27 @@ export type PlayroomApi = typeof api
  * (renderer/lib/frames.ts takes them).
  */
 function toPage(m: PreviewFrame): void {
-  const whole = m.data.byteOffset === 0 && m.data.byteLength === m.data.buffer.byteLength
-  const bytes = whole ? m.data : m.data.slice()
-  const buffer = bytes.buffer as ArrayBuffer
+  const own = (d: Uint8Array): ArrayBuffer => {
+    const whole = d.byteOffset === 0 && d.byteLength === d.buffer.byteLength
+    return (whole ? d : d.slice()).buffer as ArrayBuffer
+  }
+  const buffer = own(m.data)
+  const companion = m.companion
+    ? { width: m.companion.width, height: m.companion.height, data: own(m.companion.data) }
+    : undefined
   window.postMessage(
-    { pixlFrame: { frame: m.frame, width: m.width, height: m.height, data: buffer } },
+    {
+      pixlFrame: {
+        frame: m.frame,
+        width: m.width,
+        height: m.height,
+        data: buffer,
+        sample: m.sample ?? 'U8',
+        ...(companion ? { companion } : {})
+      }
+    },
     '*',
-    [buffer]
+    companion ? [buffer, companion.data] : [buffer]
   )
 }
 ipcRenderer.on(IPC.develop.previewPort, (e) => {

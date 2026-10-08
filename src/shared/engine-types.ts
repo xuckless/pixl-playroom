@@ -2012,6 +2012,13 @@ export interface PreviewFrame {
   width: number
   height: number
   data: Uint8Array
+  /**
+   * `F16`: half floats, linear Display P3 with 1.0 = SDR white (Full HDR,
+   * engine 0.18); `U8` (or absent): 8-bit Display P3, as drafts always were.
+   */
+  sample?: 'U8' | 'F16'
+  /** With an F16 frame: the same render's 8-bit SDR picture, RGBA, for what reads it. */
+  companion?: { width: number; height: number; data: Uint8Array }
 }
 
 /**
