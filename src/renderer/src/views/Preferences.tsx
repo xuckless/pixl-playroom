@@ -14,6 +14,7 @@ import { Modal, Select, Tabs } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { takeReportFocus } from '../lib/report'
 import { useLibrary } from '../state/library'
+import { useUi } from '../state/ui'
 import { KeyBindingsSection } from './KeyBindings'
 import { ModelsSection } from './ModelsSection'
 import { openReleaseNotes } from '../state/whatsNew'
@@ -556,6 +557,33 @@ function DisplaySection({ platform }: { platform: string | null }): React.JSX.El
   )
 }
 
+/** How the interface draws itself: the efficient UI always, or only while Playroom is behind. */
+function InterfaceSection(): React.JSX.Element {
+  const alwaysFlat = useUi((s) => s.alwaysFlat)
+  const setAlwaysFlat = useUi((s) => s.setAlwaysFlat)
+  return (
+    <fieldset>
+      <legend>Interface</legend>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={alwaysFlat}
+          onChange={(e) => setAlwaysFlat(e.target.checked)}
+        />
+        Always flat
+        <InfoTip
+          label="Always flat"
+          tip={{
+            what: 'Glass panels become flat colour, and nothing animates: no moving backgrounds, no transitions.',
+            expect:
+              'Playroom already does this while another app is in front. On, it stays that way when Playroom is in front too: lighter on the battery and the graphics chip.'
+          }}
+        />
+      </label>
+    </fieldset>
+  )
+}
+
 function GeneralSettings(): React.JSX.Element {
   const say = useLibrary((s) => s.say)
   const update = useUpdates()
@@ -620,6 +648,7 @@ function GeneralSettings(): React.JSX.Element {
       </fieldset>
 
       <ProjectsSection />
+      <InterfaceSection />
       <DisplaySection platform={prefs?.platform ?? null} />
 
       <ModelsSection />

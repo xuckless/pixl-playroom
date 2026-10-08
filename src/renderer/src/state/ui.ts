@@ -157,6 +157,12 @@ interface UiState {
    */
   fullHdr: boolean
   setFullHdr(on: boolean): void
+  /**
+   * The efficient UI always, not only while Playroom isn't the active app:
+   * flat colour for glass, no animations, no moving backgrounds (efficient.ts).
+   */
+  alwaysFlat: boolean
+  setAlwaysFlat(on: boolean): void
   setMasksWin(p: Partial<MasksWindow>): void
   /** AI denoise's model and strength for the next step (Detail → AI). */
   denoise: { model: AiDenoiseModel; strength: number }
@@ -255,6 +261,8 @@ export const useUi = create<UiState>()(
       heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100 },
       fullHdr: false,
       setFullHdr: (fullHdr) => set({ fullHdr }),
+      alwaysFlat: false,
+      setAlwaysFlat: (alwaysFlat) => set({ alwaysFlat }),
       setHeal: (p) => set((s) => ({ heal: { ...s.heal, ...p } })),
       enhance: DEFAULT_ENHANCE,
       setEnhance: (p) => set((s) => ({ enhance: { ...s.enhance, ...p } })),

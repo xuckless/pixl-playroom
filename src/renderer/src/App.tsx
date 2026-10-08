@@ -15,6 +15,7 @@ import { startDisplayUpkeep, useDisplay, renderDisplay } from './state/display'
 import { useUi } from './state/ui'
 import { startDenoiseUpkeep, startStaleUpkeep } from './lib/denoise'
 import { startHdrUpkeep } from './lib/hdr'
+import { setAlwaysFlat, startEfficientUpkeep, useEfficient } from './lib/efficient'
 import { DevelopToolbar } from './shell/DevelopToolbar'
 import { DevelopIdentity } from './shell/IdentityBar'
 import { LeftRail } from './shell/LeftRail'
@@ -396,6 +397,18 @@ export default function App(): React.JSX.Element {
   // it's shut, and the splash stays behind the gate meanwhile.
   const [booted, setBooted] = useState(false)
   if (!booted && gate?.kind === 'open') setBooted(true)
+  const efficient = useEfficient()
+  // The efficient UI, from the first frame: unfocused, or "Always flat".
+  useEffect(() => {
+    setAlwaysFlat(useUi.getState().alwaysFlat)
+    const offs = [
+      startEfficientUpkeep(),
+      useUi.subscribe((s, prev) => {
+        if (s.alwaysFlat !== prev.alwaysFlat) setAlwaysFlat(s.alwaysFlat)
+      })
+    ]
+    return () => offs.forEach((off) => off())
+  }, [])
   useEffect(() => {
     if (!booted) return
     const offs = [
@@ -497,7 +510,7 @@ export default function App(): React.JSX.Element {
     }
   }, [booted])
   return (
-    <MotionConfig reducedMotion="user">
+    <MotionConfig reducedMotion={efficient ? 'always' : 'user'}>
       <div className="app">
         <Screens />
         <DialogHost />

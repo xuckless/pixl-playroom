@@ -67,7 +67,9 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
           'Super Resolution has a Source choice: Clean stays closest to a sharp original, with a new, much faster model; Damaged repairs compression and noise as it enlarges; Keep texture leaves the grain.',
           'Retired AI models are removed from your disk, and so is the before-and-after with the previous engine from 0.3.',
           'If an adjustment ever breaks the picture, the slider responsible turns red and says so; your edit is kept.',
-          'AI work runs on your Mac’s performance cores, where it is fastest.'
+          'AI work runs on your Mac’s performance cores, where it is fastest.',
+          'Work running in the background (AI jobs, exports, model downloads) shows on the top bar with how far it has come; click it to see the queue, go to a photo or stop a job.',
+          'While Playroom is minimised or another app is in front, it lets its engine rest and draws flat, still panels, which is lighter on the battery. Settings → Interface → Always flat keeps the flat look all the time.'
         ]
       }
     ]

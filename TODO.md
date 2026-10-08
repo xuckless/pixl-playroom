@@ -672,18 +672,24 @@ Decisions (the owner, 2026-10-08):
 - [ ] **S** · Owner: the inactive path on a real Mac (another app in front
       for two minutes, then back): the log says `rest:` both ways.
 
-### Pass 106 — The efficient UI and the activity indicator · 5 pts
+### Pass 106 — The efficient UI and the activity indicator · 5 pts ✅
 
-- [ ] **M** · A non-blocking indicator on the top bar while background AI
+- [x] **M** · A non-blocking indicator on the top bar while background AI
       works (naming, cull signals, AI denoise, enhance, batches, model
       downloads): a slim progress bar where progress is known, a spinner
       where not; hover names what runs and how far; a click opens the
       queue. Work that blocks the UI (a click-to-select) keeps its own
       feedback.
 
-- [ ] **M** · Unfocused: glass is frost-free flat colour, animations and
+- [x] **M** · Unfocused: glass is frost-free flat colour, animations and
       the ambient background stop drawing; focused again, it all returns.
       Settings → Interface: "Always flat".
+      Done (2026-10-08): `lib/activity.ts` + `IdentityBar` queue popover;
+      `lib/efficient.ts` (`:root[data-efficient]`, 400 ms settle on blur),
+      scenes held via `useFrameLimit`, Motion `reducedMotion: 'always'`.
+      Playwright emulates focus, so the blur path was checked in a plain
+      Electron run. **Owner check:** switch apps on the Mac and watch the
+      glass go flat and come back.
 
 ### Pass 107 — AI denoise on NAFNet SIDD · 4 pts
 
