@@ -11,6 +11,7 @@ import {
   type HTMLAttributes,
   type ReactNode
 } from 'react'
+import { useHdrShown } from '../../state/display'
 import { cachedGlassMaps, glassMaps, type GlassMaps } from './maps'
 
 /** Sizes are measured in 4px steps, so a surface that grows by a pixel reuses its maps. */
@@ -86,7 +87,9 @@ export const LiquidGlass = forwardRef<HTMLElement, LiquidGlassProps>(function Li
     return () => ro.disconnect()
   }, [el])
 
-  const refract = !flat && !reduced && size.w > 0
+  // Over a photo shown in HDR, frost alone (useHdrShown).
+  const hdr = useHdrShown()
+  const refract = !flat && !hdr && !reduced && size.w > 0
   const shape = useMemo(
     () => ({ width: size.w, height: size.h, radius, bezel, strength, magnify }),
     [size.w, size.h, radius, bezel, strength, magnify]

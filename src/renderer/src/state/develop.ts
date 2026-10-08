@@ -682,9 +682,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       // the hue chart measures inside it.
       maskLayer: layerId,
       // Thumbnails of every mask while the masks window is unfolded, or all show.
-      maskThumbs:
-        (useUi.getState().masksWin.open && !useUi.getState().masksWin.minimized) ||
-        useUi.getState().maskOverlay.showAll,
+      maskThumbs: useUi.getState().masksWin.open || useUi.getState().maskOverlay.showAll,
       // With a range selected its mask comes with every draft: only the
       // engine knows exactly what the key selects in the graded picture.
       maskLive: rangeSelected(get()),

@@ -111,26 +111,15 @@ const DEFAULT_CARDS_OPEN: Partial<Record<CardId, boolean>> = {
 }
 
 /**
- * The masks window: open or not, floating over the photo (its top-left, in px
- * from the stage's) or docked as a column beside the left rail, and folded to
- * a pill or not. Masks are not a wheel tool: the window stays up whatever the
- * right column shows.
+ * The masks pane (a column of the left pane): shown while masks are being
+ * edited. Masks are not a wheel tool: it stays up whatever the right column
+ * shows.
  */
 export interface MasksWindow {
   open: boolean
-  docked: boolean
-  minimized: boolean
-  x: number
-  y: number
 }
 
-const DEFAULT_MASKS_WIN: MasksWindow = {
-  open: false,
-  docked: false,
-  minimized: false,
-  x: -1,
-  y: 14
-}
+const DEFAULT_MASKS_WIN: MasksWindow = { open: false }
 
 interface UiState {
   /** Which pane the left rail shows, and whether it is open or folded to its spine. */
@@ -315,7 +304,7 @@ export const useUi = create<UiState>()(
     {
       name: 'playroom.ui',
       storage,
-      version: 5,
+      version: 6,
       migrate: (persisted, version) => migrateUi(persisted, version),
       // Crop or Heal is never in hand when the app opens.
       partialize: (s) => {
@@ -330,7 +319,7 @@ export const useUi = create<UiState>()(
           ...p,
           // Settings saved before a field existed take its default.
           enhance: normaliseEnhance(p.enhance),
-          masksWin: { ...DEFAULT_MASKS_WIN, ...p.masksWin },
+          masksWin: { open: p.masksWin?.open === true },
           maskOverlay: withoutPins({ ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay }),
           denoise: { model: 'drunet-color', strength: 100, ...p.denoise },
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},

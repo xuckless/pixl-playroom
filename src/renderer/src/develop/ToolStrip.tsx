@@ -17,7 +17,7 @@ const SOLO_ICON = 'M4 4h16M4 8h16v12H4zM4 20'
  */
 export function ToolStrip(): React.JSX.Element {
   const drawer = useUi((s) => s.drawer)
-  const masksUp = useUi((s) => s.masksWin.open && !s.masksWin.minimized)
+  const masksUp = useUi((s) => s.masksWin.open)
   const focus = useUi((s) => s.focusCard)
   const solo = useUi((s) => s.cardSolo)
   const setSolo = useUi((s) => s.setCardSolo)

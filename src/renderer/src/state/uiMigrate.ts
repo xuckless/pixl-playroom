@@ -44,5 +44,9 @@ export function migrateUi(persisted: unknown, version: number): Saved {
   }
   // 5: Full HDR (engine 0.18) starts off, whatever a layout held under the name.
   if (version < 5) p.fullHdr = false
+  // 6: the masks window became a column of the left pane: no floating
+  // place, dock or fold to keep.
+  if (version < 6 && p.masksWin && typeof p.masksWin === 'object')
+    p.masksWin = { open: (p.masksWin as Saved).open === true }
   return p
 }

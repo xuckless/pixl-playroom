@@ -60,7 +60,7 @@ export function DevelopToolbar(): React.JSX.Element {
   const refresh = useLibrary((s) => s.refresh)
   const say = useLibrary((s) => s.say)
   const k = useKeyHint()
-  const masksUp = useUi((s) => s.masksWin.open && !s.masksWin.minimized)
+  const masksUp = useUi((s) => s.masksWin.open)
   const maskCount = useDevelop((s) => s.recipe?.layers.length ?? 0)
   const views: { label: string; k: string; on: boolean; toggle: () => void; title: string }[] = [
     {

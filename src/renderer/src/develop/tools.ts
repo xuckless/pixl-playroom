@@ -80,15 +80,15 @@ export function stepCard(dir: 1 | -1): void {
   jumpToCard(list[(Math.max(0, i) + dir + list.length) % list.length])
 }
 
-/** Open the masks window (unfolded), starting the mask thumbnails. */
+/** Show the masks pane, starting the mask thumbnails. */
 export function openMasks(): void {
   const ui = useUi.getState()
-  if (ui.masksWin.open && !ui.masksWin.minimized) return
-  ui.setMasksWin({ open: true, minimized: false })
+  if (ui.masksWin.open) return
+  ui.setMasksWin({ open: true })
   useDevelop.getState().pushView()
 }
 
-/** Close the masks window: any mask tool is put down and the thumbnails stop. */
+/** Leave the masks: any mask tool is put down and the thumbnails stop. */
 export function closeMasks(): void {
   useUi.getState().setMasksWin({ open: false })
   const dev = useDevelop.getState()
@@ -98,18 +98,11 @@ export function closeMasks(): void {
 }
 
 export function toggleMasks(): void {
-  const w = useUi.getState().masksWin
-  if (w.open && !w.minimized) closeMasks()
+  if (useUi.getState().masksWin.open) closeMasks()
   else openMasks()
 }
 
-/** Fold the masks window to its pill, or unfold it. */
-export function minimizeMasks(minimized: boolean): void {
-  useUi.getState().setMasksWin({ minimized })
-  useDevelop.getState().pushView()
-}
-
-/** Whether the masks window is up (folded to its pill counts: its masks still edit). */
+/** Whether the masks pane is up. */
 export function masksOpen(): boolean {
   return useUi.getState().masksWin.open
 }

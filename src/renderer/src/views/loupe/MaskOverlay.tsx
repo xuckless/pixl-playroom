@@ -19,7 +19,7 @@ const MASK_DRAWING: ReadonlySet<string> = new Set([
 
 /** Whether the masks window is up and unfolded (its overlay shows only then). */
 function useMasksShown(): boolean {
-  return useUi((s) => s.masksWin.open && !s.masksWin.minimized)
+  return useUi((s) => s.masksWin.open)
 }
 
 /** Golden-angle hues, so every mask in "show all" gets its own colour. */

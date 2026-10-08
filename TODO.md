@@ -542,12 +542,18 @@ After: Pass 98.
 
 Waits on nothing from the engine; can be taken at any time.
 
-- [ ] **L** · `panels/masks/MasksWindow.tsx` becomes a section of
-      `panels/left.tsx`. Floating, minimising and closing go
-      (`develop/tools.ts` `closeMasks`/`minimizeMasks`, the `ui` store's
-      fields, `uiMigrate`).
-- [ ] **S** · Every glass surface still over the photo looked at over an HDR
-      picture; frost only (`flat`) where the blur or saturation glares.
+- [x] **L** · `panels/masks/MasksPane.tsx` (was `MasksWindow.tsx`): a fixed
+      column of the left pane (`shell/LeftRail.tsx`), never over the photo.
+      Floating, docking, dragging, the pill and the header's close button
+      go, with `minimizeMasks`, the `ui` store's `docked`/`minimized`/`x`/`y`
+      (`uiMigrate` version 6) and their CSS. The top bar's Masks and its
+      shortcut still show and hide it: that is how masks are entered and
+      left (`openMasks`/`closeMasks` kept). Checked in the built app.
+- [x] **S** · Glass over a photo shown in HDR: frost only
+      (`useHdrShown` in `LiquidGlass`), since the rim's bend and saturation
+      lift act on light above white.
+- [ ] **S** · Owner: look at the glass over an HDR picture on the XDR; if
+      frost alone still glares, say where.
 
 ### Pass 103 — HDR edges, and the 0.18 half of the notes (was 84) · 3 pts
 

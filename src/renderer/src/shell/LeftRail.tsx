@@ -1,4 +1,5 @@
 import { Icon, type IconName } from '../components/icons'
+import { MasksPane } from '../panels/masks/MasksPane'
 import { HistoryPane, InfoPane, PresetsActions, PresetsPane, SnapshotsPane } from '../panels/left'
 import { useUi, type Rail } from '../state/ui'
 
@@ -60,6 +61,7 @@ export function LeftRail(): React.JSX.Element {
           </div>
         </div>
       </div>
+      <MasksPane />
     </aside>
   )
 }

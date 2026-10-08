@@ -1,34 +1,13 @@
-/* ── the masks window: floating over the photo, or docked ──────── */
+/* ── the masks pane: a column of the left pane ──────── */
 .masks-win {
   width: 300px;
   display: flex;
+  flex: none;
   flex-direction: column;
   min-height: 0;
-}
-.masks-win.floating {
-  position: absolute;
-  max-height: calc(100% - 28px);
-  z-index: 8;
-  animation: floatIn 0.55s var(--spring) both;
-}
-.masks-win.docked {
-  flex: none;
-  border-right: 1px solid transparent;
-  border-image: var(--hl-y) 1;
-  animation: none;
-}
-.masks-win.liquid,
-.masks-win.liquid.refracting {
-  background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.01) 50%),
-    rgba(8, 8, 12, 0.66);
-}
-.masks-win.docked.liquid,
-.masks-win.docked.liquid.refracting {
   background: var(--s1);
-}
-.masks-win::after {
-  display: none;
+  border-left: 1px solid transparent;
+  border-image: var(--hl-y) 1;
 }
 .mf-body {
   flex: 1;
@@ -52,50 +31,6 @@
   width: 26px;
   height: 26px;
 }
-/* Folded: a pill naming the selected mask; a click unfolds it, a drag moves it. */
-.mf-pill {
-  position: absolute;
-  z-index: 8;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  max-width: 260px;
-  padding: 0 12px;
-  color: var(--text);
-  cursor: grab;
-  animation: floatIn 0.45s var(--spring) both;
-}
-.mf-pill.liquid,
-.mf-pill.liquid.refracting {
-  background: rgba(8, 8, 12, 0.7);
-}
-.mf-pill-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mf-pill-count {
-  font-size: 10px;
-  color: var(--muted);
-  border: 1px solid var(--hair);
-  border-radius: var(--r);
-  padding: 0 5px;
-}
-/* Dragging the window to the photo's left edge: where it will dock. */
-.stage.dock-hint::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 300px;
-  z-index: 7;
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.22), rgba(157, 139, 234, 0.04));
-  border-right: 1px solid var(--acc);
-  box-shadow: 0 0 24px -6px var(--glow);
-  pointer-events: none;
-}
 .mf-head {
   display: flex;
   align-items: center;
@@ -106,7 +41,6 @@
   border-bottom: 1px solid transparent;
   border-image: var(--hl-x) 1;
   flex: none;
-  cursor: grab;
   user-select: none;
 }
 .mf-head:active {

@@ -25,7 +25,7 @@ test('a tool that is not a card (Crop, Heal, Enhance) leaves the cards be', () =
 
 test('a current layout passes through', () => {
   const saved = { focusCard: 'detail', cardsOpen: { detail: true } }
-  assert.deepEqual(migrateUi(saved, 5), saved)
+  assert.deepEqual(migrateUi(saved, 6), saved)
 })
 
 test('AI denoise left at the old default (SCUNet) moves to DRUNet, once', () => {
@@ -42,4 +42,10 @@ test('AI denoise left at the old default (SCUNet) moves to DRUNet, once', () => 
 test('version 5: Full HDR starts off', () => {
   assert.equal(migrateUi({ fullHdr: true }, 4).fullHdr, false)
   assert.equal(migrateUi({ fullHdr: true }, 5).fullHdr, true)
+})
+
+test('version 6: the masks window keeps only whether it is open', () => {
+  const old = { masksWin: { open: true, docked: false, minimized: true, x: 400, y: 20 } }
+  assert.deepEqual(migrateUi(old, 5).masksWin, { open: true })
+  assert.deepEqual(migrateUi({ masksWin: { minimized: true } }, 5).masksWin, { open: false })
 })
