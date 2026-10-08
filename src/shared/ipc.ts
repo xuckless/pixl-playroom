@@ -25,6 +25,12 @@ export const IPC = {
     setSetting: 'app:set-setting',
     reveal: 'app:reveal',
     renderScale: 'app:render-scale',
+    /** The window's display as an HDR target (shared/hdrdisplay.ts). */
+    displayHdr: 'app:display-hdr',
+    /** Preferences → Display: automatic, or a stated white and peak. */
+    setDisplayHdr: 'app:set-display-hdr',
+    /** main → renderer: the display's HDR numbers moved */
+    displayHdrChanged: 'app:display-hdr-changed',
     restart: 'app:restart',
     /** Paths the OS asked us to open (Open With, a second launch), taken once the renderer is up. */
     takeOpens: 'app:take-opens',

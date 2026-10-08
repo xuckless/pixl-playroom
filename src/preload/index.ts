@@ -7,6 +7,7 @@ import type { ExportSettings } from '../shared/export'
 import type { Guard } from '../shared/exportGuards'
 import type { RawColour } from '../shared/rawcolour'
 import type { InvariantPlace } from '../shared/invariant'
+import type { DisplayHdr, DisplayHdrSetting } from '../shared/hdrdisplay'
 import type { LensProfile } from '../shared/lens'
 import {
   IPC,
@@ -90,6 +91,9 @@ const api = {
     setSetting: (key: string, value: unknown) => call<void>(IPC.app.setSetting, key, value),
     reveal: (path: string) => call<void>(IPC.app.reveal, path),
     renderScale: () => call<RenderScale>(IPC.app.renderScale),
+    displayHdr: () => call<DisplayHdr>(IPC.app.displayHdr),
+    setDisplayHdr: (setting: DisplayHdrSetting) => call<DisplayHdr>(IPC.app.setDisplayHdr, setting),
+    onDisplayHdr: (cb: (d: DisplayHdr) => void) => on(IPC.app.displayHdrChanged, cb),
     restart: () => call<void>(IPC.app.restart),
     onRenderScale: (cb: (s: RenderScale) => void) => on(IPC.app.renderScaleChanged, cb),
     takeOpens: () => call<string[]>(IPC.app.takeOpens),

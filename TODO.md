@@ -394,27 +394,37 @@ After: Pass 94.
 
 After: Pass 85.
 
-- [ ] **S** · First, before anything else in this part: confirm in the
-      Electron that ships three things:
-      - a WebGPU canvas (`rgba16float`, `toneMapping: extended`) shows
-        pixels above white on macOS;
-      - a PQ JXL `<img>` over `pixl://` shows in HDR;
-      - an AVIF with a gain map shows in HDR.
-      Write down what was found here.
-- [ ] **L** · `src/native/display/`: a small N-API Objective-C addon:
-      - reads `maximumExtendedDynamicRangeColorComponentValue` for the
-        window's screen, and notices when the screen or brightness changes;
-      - built for Electron, unpacked from the asar and signed with the app.
-- [ ] **M** · `main/display.ts`: `{ whiteNits: 203, peakNits: 203·H, hdr,
-      source }`, published again when the display, its brightness or the
-      window's screen changes. `shared/ipc.ts` and preload get
-      `app.displayHdr` and `app.onDisplayHdr`.
-- [ ] **M** · Preferences, a Display section:
-      - Automatic or stated white and peak (cd/m²);
-      - on Windows, the dialog bar to state them, with an "Auto-fill from
-        this screen" button (`matchMedia('(dynamic-range: high)')` for now;
-        the native read is a follow-up at the end of Pass 103).
-      - Unit tests for the values and their overrides.
+- [x] **S** · The spike (`scripts/hdr-spike`: `node scripts/build-native.mjs &&
+      npx electron scripts/hdr-spike <files>`), in Electron 44.4.3 on the
+      MacBook, 2026-10-08:
+      - `matchMedia('(dynamic-range: high)')` is true;
+      - a WebGPU canvas configures `rgba16float`, `display-p3`,
+        `toneMapping: extended` (it needs `COPY_DST` usage to be written to);
+      - an AVIF with the master's gain map decodes in `<img>`; **a PQ JPEG XL
+        does not decode at all** (this Chromium has no JXL decoder): the
+        settled picture's JXL arm (Pass 99) is out unless Playroom decodes it;
+      - macOS's current EDR headroom read 1.0 before and while the canvas
+        showed values to 4× (potential 16×): inconclusive. It falls with
+        the screen's brightness, or Chromium may not ask for EDR there.
+- [ ] **S** · Owner: look at the spike's ramp. Is its right half brighter
+      than the white quarter on its left, at a lower screen brightness?
+- [x] **L** · `src/native/display/`: a small N-API Objective-C++ reader of a
+      screen's `maximumExtendedDynamicRangeColorComponentValue` (and the
+      potential and reference values), by Electron's display id. Built for
+      Electron by `scripts/build-native.mjs` (macOS only; part of
+      `pnpm build`) into `build/native/display.node`, packaged as
+      `Resources/native/display.node`. Missing, Playroom falls back to
+      stated values. Reads the built-in XDR at potential 16× and the 27N7U
+      at 4×.
+- [x] **M** · `main/hdrdisplay.ts` + `shared/hdrdisplay.ts`:
+      `{ hdr, whiteNits, peakNits, headroom, potential, source }` (white 203,
+      peak 203 · H on a Mac; stated values win; SDR otherwise), re-read when
+      the window moves or displays change and every 2 s on macOS; IPC
+      `app.displayHdr`, `app.setDisplayHdr`, `app.onDisplayHdr`. Unit tests.
+- [x] **M** · Preferences → Display: Automatic (the screen) or Stated (SDR
+      white 80–500, peak 100–10 000 cd/m²), what the screen reads now; on
+      Windows, "Auto-fill from this screen" (`matchMedia` and typical values
+      for now).
 
 ### Pass 97 — The Full HDR toggle (was 78) · 3 pts
 

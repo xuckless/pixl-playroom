@@ -17,6 +17,12 @@ import { useLibrary } from '../state/library'
 import { KeyBindingsSection } from './KeyBindings'
 import { ModelsSection } from './ModelsSection'
 import { openReleaseNotes } from '../state/whatsNew'
+import {
+  DEFAULT_DISPLAY_SETTING,
+  normaliseDisplaySetting,
+  type DisplayHdr,
+  type DisplayHdrSetting
+} from '../../../shared/hdrdisplay'
 
 const LEGAL = 'https://playroom.pixlfoundation.com/legal'
 
@@ -439,6 +445,117 @@ export function PreferencesDialog(): React.JSX.Element {
   )
 }
 
+/**
+ * The display the HDR preview renders for (engine 0.18 never reads one):
+ * on a Mac, Automatic reads the screen's headroom; anywhere, the SDR white
+ * and peak can be stated. On Windows, Auto-fill is a stand-in until
+ * Playroom reads the screen there too.
+ */
+function DisplaySection({ platform }: { platform: string | null }): React.JSX.Element {
+  const say = useLibrary((s) => s.say)
+  const [setting, setSetting] = useState<DisplayHdrSetting>(DEFAULT_DISPLAY_SETTING)
+  const [now, setNow] = useState<DisplayHdr | null>(null)
+  useEffect(() => {
+    void api.app
+      .getSetting<unknown>('display.hdr')
+      .then((v) => setSetting(normaliseDisplaySetting(v)))
+    void api.app.displayHdr().then(setNow)
+    return api.app.onDisplayHdr(setNow)
+  }, [])
+  const save = (next: DisplayHdrSetting): void => {
+    const n = normaliseDisplaySetting(next)
+    setSetting(n)
+    void api.app
+      .setDisplayHdr(n)
+      .then(setNow)
+      .catch((e) => say(errorText(e), 'error'))
+  }
+  const mac = platform === 'darwin'
+  // Until Playroom reads a Windows screen: whether Chromium sees HDR, and typical numbers.
+  const autoFill = (): void => {
+    const hdr = window.matchMedia('(dynamic-range: high)').matches
+    save({ mode: 'stated', whiteNits: 203, peakNits: hdr ? 1000 : 203 })
+    say(
+      hdr
+        ? 'This screen shows HDR: filled with typical values (white 203, peak 1000). Set your screen’s own if you know them.'
+        : 'This screen shows SDR now: the preview stays SDR.',
+      'info'
+    )
+  }
+  return (
+    <fieldset>
+      <legend>
+        Display
+        <InfoTip
+          label="Display"
+          tip={{
+            what: 'The screen Full HDR renders for: how bright its standard white is and how bright it can go.',
+            expect: mac
+              ? 'Automatic reads your Mac’s screen, and follows its brightness. State the numbers only to preview for another screen.'
+              : 'Set your screen’s SDR white and peak brightness (in Windows’ HDR settings, or its specifications).'
+          }}
+        />
+      </legend>
+      <Select
+        label="Brightness"
+        value={setting.mode}
+        options={[
+          {
+            value: 'auto',
+            label: mac ? 'Automatic (read the screen)' : 'Automatic (SDR until stated)'
+          },
+          { value: 'stated', label: 'Stated' }
+        ]}
+        onChange={(v) => save({ ...setting, mode: v as DisplayHdrSetting['mode'] })}
+      />
+      {setting.mode === 'stated' && (
+        <div className="prefs-row display-nits">
+          <label className="field">
+            <span>SDR white (cd/m²)</span>
+            <input
+              type="number"
+              min={80}
+              max={500}
+              defaultValue={setting.whiteNits}
+              key={`w${setting.whiteNits}`}
+              onBlur={(e) => save({ ...setting, whiteNits: Number(e.target.value) })}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+          </label>
+          <label className="field">
+            <span>Peak (cd/m²)</span>
+            <input
+              type="number"
+              min={100}
+              max={10000}
+              defaultValue={setting.peakNits}
+              key={`p${setting.peakNits}`}
+              onBlur={(e) => save({ ...setting, peakNits: Number(e.target.value) })}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+          </label>
+        </div>
+      )}
+      {!mac && (
+        <div className="prefs-row">
+          <button className="sm" onClick={autoFill}>
+            Auto-fill from this screen
+          </button>
+        </div>
+      )}
+      {now && (
+        <p className="muted small">
+          {now.hdr
+            ? `Now: ${now.headroom}× headroom (white ${now.whiteNits}, peak ${Math.round(now.peakNits)} cd/m²)${now.potential ? `, up to ${now.potential}× on this screen` : ''}.`
+            : now.potential && now.potential > 1
+              ? `Now: SDR. This screen reaches ${now.potential}× when it shows HDR.`
+              : 'Now: SDR.'}
+        </p>
+      )}
+    </fieldset>
+  )
+}
+
 function GeneralSettings(): React.JSX.Element {
   const say = useLibrary((s) => s.say)
   const update = useUpdates()
@@ -503,6 +620,7 @@ function GeneralSettings(): React.JSX.Element {
       </fieldset>
 
       <ProjectsSection />
+      <DisplaySection platform={prefs?.platform ?? null} />
 
       <ModelsSection />
 

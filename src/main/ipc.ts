@@ -1,4 +1,5 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
+import { DISPLAY_SETTING_KEY, displayHdr, setDisplaySetting } from './hdrdisplay'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import log from 'electron-log/main'
 import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
@@ -182,6 +183,11 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.setSetting, (key: string, value: unknown) => s.index.setSetting(key, value))
   handle(IPC.app.reveal, (path: string) => shell.showItemInFolder(path))
   handle(IPC.app.renderScale, () => renderScale())
+  handle(IPC.app.displayHdr, () => displayHdr())
+  handle(IPC.app.setDisplayHdr, async (v: unknown) => {
+    await s.index.setSetting(DISPLAY_SETTING_KEY, v)
+    return setDisplaySetting(v)
+  })
   handle(IPC.app.restart, () => restart())
 
   handle(IPC.app.reportError, (e: ErrorReport) => reportRendererError(e))

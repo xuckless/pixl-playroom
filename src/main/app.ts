@@ -18,6 +18,7 @@ import { AiJobs } from './ai/jobs'
 import { applyMaskResult } from './ai/apply'
 import { SegmentRunner } from './ai/segment'
 import { DenoiseRunner } from './ai/denoise'
+import { DISPLAY_SETTING_KEY, watchDisplayHdr } from './hdrdisplay'
 import { INPAINTER_MODEL, setInpainter } from './ai/inpainter'
 import { ModelStore } from './ai/models'
 import { EnhanceRunner } from './enhance'
@@ -190,6 +191,10 @@ function createWindow(): void {
     win.loadFile(join(MAIN_DIR, '../renderer/index.html'))
   }
   watchDisplay(win)
+  void index
+    .getSetting(DISPLAY_SETTING_KEY)
+    .catch(() => null)
+    .then((stored) => watchDisplayHdr(win, stored))
 }
 
 /** About Pixl Playroom: the app's version and the engine it runs on. */

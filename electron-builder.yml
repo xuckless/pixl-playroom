@@ -97,6 +97,12 @@ mac:
   # APPLE_TEAM_ID are set; the Developer ID certificate comes from CSC_LINK /
   # CSC_KEY_PASSWORD. Without them the build is unsigned.
   notarize: true
+  # Playroom's own display reader (scripts/build-native.mjs, built by
+  # `pnpm build` for this job's arch): a screen's EDR headroom for the HDR
+  # preview. Missing, Playroom uses the values stated in Preferences.
+  extraResources:
+    - from: build/native/display.node
+      to: native/display.node
   extendInfo:
     NSPhotoLibraryUsageDescription: Pixl Playroom opens the photos you choose to develop.
     NSDesktopFolderUsageDescription: Pixl Playroom opens folders of photos you choose.

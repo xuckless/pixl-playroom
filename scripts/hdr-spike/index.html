@@ -1,0 +1,91 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>HDR spike</title>
+<style>
+  body {
+    background: #000;
+    color: #ccc;
+    font: 13px system-ui;
+    margin: 12px;
+  }
+  canvas {
+    width: 512px;
+    height: 128px;
+    display: block;
+  }
+  img {
+    height: 140px;
+    margin-right: 8px;
+  }
+</style>
+<p>Left of the line: SDR white (1.0). Right: the ramp climbs to 4× white.</p>
+<canvas id="c" width="512" height="128"></canvas>
+<div id="imgs"></div>
+<pre id="out"></pre>
+<script type="module">
+  const report = { dynamicRangeHigh: matchMedia('(dynamic-range: high)').matches }
+  try {
+    const adapter = await navigator.gpu.requestAdapter()
+    const device = await adapter.requestDevice()
+    const ctx = document.getElementById('c').getContext('webgpu')
+    ctx.configure({
+      device,
+      format: 'rgba16float',
+      colorSpace: 'display-p3',
+      toneMapping: { mode: 'extended' },
+      alphaMode: 'opaque',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST
+    })
+    const conf = ctx.getConfiguration?.()
+    report.webgpu = { configured: true, toneMapping: conf?.toneMapping?.mode ?? 'unknown' }
+    // A ramp written straight into the texture: 1.0 on the left quarter, then 1 → 4.
+    const w = 512,
+      h = 128
+    const data = new Float32Array(w * h * 4)
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const v = x < w / 4 ? 1 : 1 + (3 * (x - w / 4)) / (w * 0.75)
+        const i = (y * w + x) * 4
+        data[i] = data[i + 1] = data[i + 2] = v
+        data[i + 3] = 1
+      }
+    const half = new Uint16Array(data.length)
+    const f2h = (f) => {
+      const b = new DataView(new ArrayBuffer(4))
+      b.setFloat32(0, f)
+      const x = b.getUint32(0)
+      const s = (x >> 16) & 0x8000
+      const e = ((x >> 23) & 0xff) - 112
+      const m = (x >> 13) & 0x3ff
+      return e <= 0 ? s : e >= 31 ? s | 0x7c00 : s | (e << 10) | m
+    }
+    for (let i = 0; i < data.length; i++) half[i] = f2h(data[i])
+    const tex = ctx.getCurrentTexture()
+    device.queue.writeTexture(
+      { texture: tex },
+      half,
+      { bytesPerRow: w * 8 },
+      { width: w, height: h }
+    )
+  } catch (e) {
+    report.webgpu = { configured: false, error: String(e) }
+  }
+  const files = JSON.parse(new URLSearchParams(location.search).get('files') ?? '[]')
+  report.images = {}
+  for (const f of files) {
+    const img = new Image()
+    img.src = 'file://' + f
+    document.getElementById('imgs').append(img)
+    try {
+      await img.decode()
+      report.images[f.split('/').pop()] = `decoded ${img.naturalWidth}×${img.naturalHeight}`
+    } catch (e) {
+      report.images[f.split('/').pop()] = 'not decoded'
+    }
+  }
+  await new Promise((r) => setTimeout(r, 2500))
+  report.headroomWhileShowing = await window.spike.headroom()
+  document.getElementById('out').textContent = JSON.stringify(report, null, 1)
+  await new Promise((r) => setTimeout(r, 1500))
+  window.spike.done(report)
+</script>
