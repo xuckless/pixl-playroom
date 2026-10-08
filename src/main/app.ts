@@ -8,6 +8,7 @@ import icon from '../../resources/icon.png?asset'
 import dockIcon from '../../resources/icon-dock.png?asset'
 import { startCrashReporting } from './crash'
 import { onRenderScale, settleScale, watchDisplay } from './display'
+import { sweepEngineTemps, watchRest } from './rest'
 import { EngineClient } from './engine/client'
 import { SelectService } from './select/service'
 import { setBrushSnapper } from './brushes'
@@ -230,6 +231,13 @@ app.whenReady().then(() => {
   // The background engine waits off the launch's path: it starts with the
   // first work for it (a thumbnail, a probe), or a few seconds in.
   setTimeout(() => bgEngine.ensureStarted(), 3000)
+  // Engine temps a killed host left behind (HR-0.19-2), off the launch's path.
+  setTimeout(() => {
+    void sweepEngineTemps(paths.cacheRoot()).then(
+      (n) => n > 0 && log.info(`swept ${n} stale engine temp file(s)`),
+      () => undefined
+    )
+  }, 30_000).unref()
   // Thumbnails nothing names any more, once the launch has settled.
   setTimeout(() => {
     void index
@@ -282,6 +290,17 @@ app.whenReady().then(() => {
     },
     async (key) => (await library.photoRow(key)).name,
     (e) => applyMaskResult(e, { library, sessions: sessions!, planes })
+  )
+  // The engine's safe-shutdown advisory: hosts go while Playroom is out of
+  // the way, an export or a queued AI batch finishing first.
+  watchRest(
+    [
+      { engine },
+      { engine: bgEngine, busy: () => exporter.busy },
+      { engine: aiEngine, busy: () => ai.busy },
+      { engine: selectEngine }
+    ],
+    () => engine.ensureStarted()
   )
   registerIpc({
     index,

@@ -127,6 +127,13 @@ export class AiJobs {
     return () => this.ended.delete(listener)
   }
 
+  /** Whether a job is queued or running. */
+  get busy(): boolean {
+    return [...this.jobs.values()].some(
+      (j) => j.event.phase === 'queued' || j.event.phase === 'running'
+    )
+  }
+
   list(): AiJobEvent[] {
     return [...this.jobs.values()].map((j) => j.event)
   }

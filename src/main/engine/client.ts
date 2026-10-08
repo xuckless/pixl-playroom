@@ -180,7 +180,8 @@ export class EngineClient {
     if (!child || this.running.size > 0 || this.inflight.size > 0) return false
     this.child = undefined
     this.spawned = false
-    this.status = { ...this.status, status: 'starting' }
+    // Its status stands (a resting engine is still ready): the next call
+    // starts a host, and that says 'starting' until it is up.
     child.kill()
     return true
   }

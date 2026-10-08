@@ -83,12 +83,18 @@ async function atomically<T>(out: string, build: (tmp: string) => Promise<T>): P
 const making = new Map<string, Promise<void>>()
 export async function makeOnce(
   out: string,
-  build: (tmp: string) => Promise<unknown>
+  build: (tmp: string) => Promise<unknown>,
+  /**
+   * The engine writes it: since 0.19 an engine write is whole or not at all
+   * (HR-0.19-2), so it goes straight to `out`. A worker's file still goes
+   * through a temporary file of its own.
+   */
+  byEngine = false
 ): Promise<void> {
   if (await exists(out)) return
   let p = making.get(out)
   if (!p) {
-    p = atomically(out, build)
+    p = (byEngine ? build(out) : atomically(out, build))
       .then(() => undefined)
       .finally(() => making.delete(out))
     making.set(out, p)
@@ -103,15 +109,18 @@ export async function stepImage(deps: PixelDeps, step: PixelStep): Promise<strin
   const jxl = await deps.blobFile(step.blob, 'jxl')
   if (!jxl) throw new Error(`${step.label}: its image is missing from the project`)
   await mkdir(join(deps.cacheDir, 'blobs'), { recursive: true })
-  await makeOnce(out, (tmp) =>
-    deps.engine.convert({
-      ...blankRequest(jxl, tmp, 'Jxl'),
-      pixel: { depth: 'Sixteen', channels: 3 },
-      encode: PNG,
-      metadata: ICC_ONLY,
-      color: 'Preserve',
-      threads: BACKGROUND_THREADS
-    })
+  await makeOnce(
+    out,
+    (tmp) =>
+      deps.engine.convert({
+        ...blankRequest(jxl, tmp, 'Jxl'),
+        pixel: { depth: 'Sixteen', channels: 3 },
+        encode: PNG,
+        metadata: ICC_ONLY,
+        color: 'Preserve',
+        threads: BACKGROUND_THREADS
+      }),
+    true
   )
   return out
 }
@@ -147,19 +156,22 @@ async function sized(
 ): Promise<string> {
   if (w === step.width && h === step.height) return src
   const out = src.replace(/\.png$/, `-${w}x${h}.png`)
-  await makeOnce(out, (tmp) =>
-    deps.engine.convert({
-      ...blankRequest(src, tmp, 'Png'),
-      resize: { Exact: { width: w, height: h } },
-      resampler: 'Lanczos3',
-      // Downscaled in linear light, as the proxies are; alpha (a mask) kept.
-      linear_resample: true,
-      pixel: { depth: 'Sixteen', channels: step.alpha ? 4 : 3 },
-      encode: PNG,
-      metadata: ICC_ONLY,
-      color: 'Preserve',
-      threads: BACKGROUND_THREADS
-    })
+  await makeOnce(
+    out,
+    (tmp) =>
+      deps.engine.convert({
+        ...blankRequest(src, tmp, 'Png'),
+        resize: { Exact: { width: w, height: h } },
+        resampler: 'Lanczos3',
+        // Downscaled in linear light, as the proxies are; alpha (a mask) kept.
+        linear_resample: true,
+        pixel: { depth: 'Sixteen', channels: step.alpha ? 4 : 3 },
+        encode: PNG,
+        metadata: ICC_ONLY,
+        color: 'Preserve',
+        threads: BACKGROUND_THREADS
+      }),
+    true
   )
   return out
 }
@@ -193,16 +205,19 @@ async function patchOverlay(
   let path = src
   if (pw !== r.w || ph !== r.h) {
     path = src.replace(/\.png$/, `-${pw}x${ph}.png`)
-    await makeOnce(path, (tmp) =>
-      deps.engine.convert({
-        ...blankRequest(src, tmp, 'Png'),
-        resize: { Exact: { width: pw, height: ph } },
-        resampler: 'Lanczos3',
-        pixel: { depth: 'Sixteen', channels: 4 },
-        encode: PNG,
-        metadata: ICC_ONLY,
-        color: 'Preserve'
-      })
+    await makeOnce(
+      path,
+      (tmp) =>
+        deps.engine.convert({
+          ...blankRequest(src, tmp, 'Png'),
+          resize: { Exact: { width: pw, height: ph } },
+          resampler: 'Lanczos3',
+          pixel: { depth: 'Sixteen', channels: 4 },
+          encode: PNG,
+          metadata: ICC_ONLY,
+          color: 'Preserve'
+        }),
+      true
     )
   }
   return {
@@ -238,20 +253,27 @@ async function guardOf(deps: PixelDeps, from: ProxyFile): Promise<string | null>
     `guard-${hash32(`${from.path}:${at.size}:${at.mtimeMs}`).toString(36)}.png`
   )
   await mkdir(join(deps.cacheDir, 'blobs'), { recursive: true })
-  await makeOnce(out, async (tmp) => {
-    const r = await deps.engine.convert({
-      ...blankRequest(from.path, '', from.input),
-      sink: 'Bytes',
-      pixel: { depth: 'F32', channels: 3 },
-      encode: { Pixels: { sample: 'F32' } },
-      metadata: ICC_ONLY,
-      color: 'Preserve',
-      threads: BACKGROUND_THREADS
-    })
-    const b = r.output!
-    const rgb = new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4)
-    await writeFile(tmp, encodeGreyPng(headroomGuard(rgb, r.width, r.height), r.width, r.height, 1))
-  })
+  await makeOnce(
+    out,
+    async (tmp) => {
+      const r = await deps.engine.convert({
+        ...blankRequest(from.path, '', from.input),
+        sink: 'Bytes',
+        pixel: { depth: 'F32', channels: 3 },
+        encode: { Pixels: { sample: 'F32' } },
+        metadata: ICC_ONLY,
+        color: 'Preserve',
+        threads: BACKGROUND_THREADS
+      })
+      const b = r.output!
+      const rgb = new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4)
+      await writeFile(
+        tmp,
+        encodeGreyPng(headroomGuard(rgb, r.width, r.height), r.width, r.height, 1)
+      )
+    },
+    true
+  )
   return out
 }
 
@@ -311,18 +333,17 @@ async function layOn(
 ): Promise<ProxyFile> {
   const guard = steps.some(guards) ? await guardOf(deps, from) : null
   const overlays = await overlaysOf(deps, steps, from.width, from.height, guard)
-  const r = await atomically(out, (tmp) =>
-    deps.engine.convert({
-      ...blankRequest(from.path, tmp, from.input),
-      pixel: { depth: from.float ? 'F32' : 'Sixteen', channels: 3 },
-      encode: TIFF,
-      metadata: ICC_ONLY,
-      color: 'Preserve',
-      // Every step at 0%: nothing to lay on (the engine refuses an empty list).
-      overlays: overlays.length > 0 ? overlays : null,
-      threads: BACKGROUND_THREADS
-    })
-  )
+  // Written whole by the engine (HR-0.19-2): no temporary file of ours.
+  const r = await deps.engine.convert({
+    ...blankRequest(from.path, out, from.input),
+    pixel: { depth: from.float ? 'F32' : 'Sixteen', channels: 3 },
+    encode: TIFF,
+    metadata: ICC_ONLY,
+    color: 'Preserve',
+    // Every step at 0%: nothing to lay on (the engine refuses an empty list).
+    overlays: overlays.length > 0 ? overlays : null,
+    threads: BACKGROUND_THREADS
+  })
   return {
     path: out,
     input: 'Tiff',
@@ -353,18 +374,16 @@ async function resized(
   w: number,
   h: number
 ): Promise<ProxyFile> {
-  await atomically(out, (tmp) =>
-    deps.engine.convert({
-      ...blankRequest(from.path, tmp, from.input),
-      resize: { Exact: { width: w, height: h } },
-      resampler: 'Lanczos3',
-      pixel: { depth: from.float ? 'F32' : 'Sixteen', channels: 3 },
-      encode: TIFF,
-      metadata: ICC_ONLY,
-      color: 'Preserve',
-      threads: BACKGROUND_THREADS
-    })
-  )
+  await deps.engine.convert({
+    ...blankRequest(from.path, out, from.input),
+    resize: { Exact: { width: w, height: h } },
+    resampler: 'Lanczos3',
+    pixel: { depth: from.float ? 'F32' : 'Sixteen', channels: 3 },
+    encode: TIFF,
+    metadata: ICC_ONLY,
+    color: 'Preserve',
+    threads: BACKGROUND_THREADS
+  })
   return { path: out, input: 'Tiff', width: w, height: h, ...(from.float ? { float: true } : {}) }
 }
 

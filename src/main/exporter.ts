@@ -111,6 +111,11 @@ export class Exporter {
     private readonly engine: EngineClient
   ) {}
 
+  /** Whether an export is running. */
+  get busy(): boolean {
+    return this.jobs.size > 0
+  }
+
   private send(p: ExportProgress): void {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.export.progress, p)
   }

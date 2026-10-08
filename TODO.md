@@ -617,15 +617,15 @@ Decisions (the owner, 2026-10-08):
 
 | Topic | Decision |
 |---|---|
-| RAW demosaic | DemosaicNet (Bayer; X-Trans's when an X-Trans RAW first opens) downloads on install or update and is recommended as the best quality; AHD (no model, faster, +6 dB over PPG) until it is here |
-| RAW denoise | PMRID on by default for Bayer RAWs (noise `Measured`), downloaded with DemosaicNet; RAWs are developed again once; the Noise reduction sliders stay |
-| AI denoise | NAFNet SIDD in SCUNet's place (CoreML static shapes, 512 tiles); SCUNet retired quietly, its files deleted; DRUNet stays |
+| RAW demosaic | DemosaicNet wherever a RAW is developed at full resolution (the master, 1:1, export; Bayer, and X-Trans's when an X-Trans RAW first opens), downloaded on install or update and recommended as the best quality; AHD (no model, faster, +6 dB over PPG) until it is here. Cell proxies have no demosaic |
+| RAW denoise | PMRID (on the mosaic, before the demosaic) an opt-in option for Bayer RAWs (noise `Measured`); off by default |
+| AI denoise | NAFNet SIDD in SCUNet's place (CoreML static shapes, 512 tiles); SCUNet deleted from every install on update; DRUNet stays |
 | Safe shutdown | engine hosts stop 60 s after the window is hidden or minimised, 120 s after Playroom goes inactive (a queued AI batch finishes first); restarted on the next need |
 | Flat UI | flat colours, no glass, animations paused whenever Playroom isn't focused, plus an "Always flat" setting |
 | Pixl Auto | naming chips → masks, and cull suggestions; Gemma downloaded on demand |
 | Naming runs | in the background on import, only idle and on power, then llama-server stops; a photo opened first is named first |
 | Name chips | at the top of the Masks pane: ★ the subject, a tap makes the mask, × dismisses, + types a name; kept in the library and the `.pixl` project |
-| Culling | in the Library: a "Suggested rejects" filter and a reason badge per thumbnail, one key accepts (flags reject); thresholds learn from the user's flags and stars |
+| Culling | in the Library: a culled photo's thumbnail is dimmed and grey, its colour back on hover (with the reason) and for good once the user overrides the cull; a "Suggested rejects" filter; one key accepts (flags reject). Star ratings are a factor, and thresholds learn from the user's flags and stars |
 | Finders | DINOv2 sky, vegetation, water; Selfie Multiclass people parts; Face Mesh face parts (brows beta); Find by name with SAM 3 (on demand) or EfficientSAM3 |
 | Background activity | a non-blocking progress bar / spinner on the top bar whenever AI or Gemma works in the background (only work that can be backgrounded: naming, cull signals, AI denoise, enhance, a batch, model downloads) |
 | Compute | GPU / Metal wherever possible: CoreML static shapes (`CpuAndGpu`) for every model whose roster names its dimensions, `llama-server` with every layer on Metal; the CPU (threads ≤ P-cores) only where the GPU path is refused or slower |
@@ -654,13 +654,23 @@ Decisions (the owner, 2026-10-08):
 
 ### Pass 105 — Safe shutdown · 4 pts
 
-- [ ] **M** · The engine hosts (interactive, background, SAM) stop 60 s
-      after the window is hidden or minimised and 120 s after the app goes
-      inactive; an export, AI denoise or queued AI batch finishes first.
-      They start again on the next request, invisibly.
-- [ ] **S** · HR-0.19-2: at start, engine temps (`.<name>.pixl-<pid>-<n>.tmp`)
-      whose pid is no live engine are swept from Playroom's folders; the
-      host's own temp-and-rename around engine writes goes (E5).
+- [x] **M** · `main/rest.ts`: the engine hosts (interactive, background, AI,
+      select) are let go 60 s after the window is hidden or minimised (or
+      no window is shown) and 120 s after Playroom goes inactive,
+      whichever deadline comes first. A host goes only while it runs
+      nothing; the background engine waits for an export and the AI engine
+      for a queued batch (`busy`); while resting the check repeats every
+      15 s. The next request starts a host invisibly (a slept engine keeps
+      its 'ready' status); coming back to Playroom starts the interactive
+      engine at once. Checked in the built app: minimised 72 s, two hosts
+      gone; restored, the next render started a new host and rendered.
+- [x] **S** · HR-0.19-2: engine temps whose process is gone are swept from
+      the cache 30 s after launch (`sweepEngineTemps`). The host's own
+      temp-and-rename around engine writes is gone (E5): the engine writes
+      the proxies, masters, lens maps and step images whole itself
+      (`makeOnce(…, byEngine)`); the worker's own files keep theirs.
+- [ ] **S** · Owner: the inactive path on a real Mac (another app in front
+      for two minutes, then back): the log says `rest:` both ways.
 
 ### Pass 106 — The efficient UI and the activity indicator · 5 pts
 
@@ -679,17 +689,20 @@ Decisions (the owner, 2026-10-08):
 
 - [ ] **M** · `nafnet-sidd-w32` through CoreML static shapes (512 tiles,
       `dimensions` from the roster), CPU with threads ≤ P-cores elsewhere;
-      saved SCUNet settings map to it; SCUNet's files deleted; time guesses
-      and the model copy redone.
+      saved SCUNet settings map to it; SCUNet's files deleted from every
+      install when the update first runs; time guesses and the model copy
+      redone.
 
 ### Pass 108 — RAW develop: DemosaicNet, AHD, PMRID, binned thumbnails · 5 pts
 
-- [ ] **L** · The RAW master's `demosaic`: DemosaicNet (CoreML static,
-      512/516 tiles) once downloaded, else AHD; downloaded on install or
+- [ ] **L** · DemosaicNet wherever a RAW is developed at full resolution
+      (the master, 1:1, export; CoreML static, 512/516 tiles) once
+      downloaded, else AHD; downloaded on install or
       update; recommended in Settings → AI models ("best quality"; AHD
       "faster"). X-Trans's model when an X-Trans RAW first opens.
-- [ ] **M** · PMRID as `mosaic_denoise` (`Measured`) on Bayer RAWs by
-      default; `RAW_DEVELOP_REV` bumped; develop times measured.
+- [ ] **M** · PMRID as `mosaic_denoise` (`Measured`): an opt-in option
+      for Bayer RAWs (Detail), off by default. `RAW_DEVELOP_REV` bumped for
+      DemosaicNet; develop times measured.
 - [ ] **S** · Thumbnails and the filmstrip from `Binned` RAW proxies;
       anything judged for noise stays Cell or Full (HR-0.19-1).
 
@@ -741,10 +754,13 @@ Decisions (the owner, 2026-10-08):
 
 ### Pass 115 — Cull suggestions in the Library · 4 pts
 
-- [ ] **M** · "Suggested rejects" filter and a reason badge per thumbnail,
-      written from templates ("Subject soft · focus 18% of the burst's
-      best"); one key accepts (reject flag); never deletes. Thresholds learn
-      from the user's flags and stars.
+- [ ] **M** · A culled photo's thumbnail dimmed and grey; on hover its
+      colour comes back with the reason, written from a template ("Subject
+      soft · focus 18% of the burst's best"); the user's override (a
+      rating, a pick, "Keep") restores it for good. A "Suggested rejects"
+      filter; one key accepts (reject flag); never deletes.
+- [ ] **S** · Star ratings a factor in the suggestion (a 3★+ photo is
+      never culled), and thresholds learn from the user's flags and stars.
 
 ### Pass 116 — Release · 3 pts
 
