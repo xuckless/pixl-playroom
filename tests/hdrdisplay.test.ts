@@ -58,7 +58,8 @@ test('Full HDR renders for the display while on; a Mac with headroom to reach as
   assert.deepEqual(renderDisplay(true, mac), { whiteNits: 203, peakNits: 406 })
   assert.equal(renderDisplay(false, mac), null)
   const raised = resolveDisplay(DEFAULT_DISPLAY_SETTING, { current: 5, potential: 16 })
-  assert.deepEqual(renderDisplay(true, raised), { whiteNits: 203, peakNits: 1015 })
+  // 5× in quarter stops, rounded down: 2^2.25 = 4.76×.
+  assert.deepEqual(renderDisplay(true, raised), { whiteNits: 203, peakNits: 966 })
   const sdr = resolveDisplay(DEFAULT_DISPLAY_SETTING, null)
   assert.ok(!canShowHdr(sdr))
   assert.equal(renderDisplay(true, sdr), null)
@@ -90,4 +91,21 @@ test('Full HDR keeps its SDR companion as a Display P3 PNG the engine reads', as
   writeFileSync(file, png)
   const info = await engine.probe(file)
   assert.equal(info.width, w)
+})
+
+test('a drifting headroom renders again only a quarter stop on', async () => {
+  const { renderDisplay, steppedHeadroom } = await import('../src/shared/hdrdisplay')
+  assert.equal(steppedHeadroom(4), 4)
+  assert.equal(steppedHeadroom(4.6), 4)
+  assert.equal(steppedHeadroom(1), 1)
+  const at = (current: number): ReturnType<typeof renderDisplay> =>
+    renderDisplay(true, resolveDisplay(DEFAULT_DISPLAY_SETTING, { current, potential: 16 }))
+  assert.deepEqual(at(3.5), at(3.6))
+  assert.notDeepEqual(at(3.5), at(4.1))
+  // A stated display is rendered for as stated.
+  const stated = resolveDisplay(
+    { mode: 'stated', whiteNits: 203, peakNits: 1000 },
+    { current: 3.3, potential: 16 }
+  )
+  assert.deepEqual(renderDisplay(true, stated), { whiteNits: 203, peakNits: 1000 })
 })

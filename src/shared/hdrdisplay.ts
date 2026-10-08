@@ -117,13 +117,32 @@ export function canShowHdr(display: DisplayHdr | null): boolean {
  */
 export const BOOTSTRAP_HEADROOM = 2
 
+/**
+ * A read headroom in quarter stops, rounded down (never past what the screen
+ * shows): macOS moves a MacBook's headroom with its brightness all the time,
+ * and a render is made again only when it moves a step.
+ */
+export const HEADROOM_STEP_STOPS = 0.25
+
+export function steppedHeadroom(h: number): number {
+  const steps = Math.floor(Math.log2(Math.max(1, h)) / HEADROOM_STEP_STOPS + 1e-9)
+  return 2 ** (steps * HEADROOM_STEP_STOPS)
+}
+
 /** What a render is made for: the display's numbers while Full HDR is on and it can show HDR. */
 export function renderDisplay(
   fullHdr: boolean,
   display: DisplayHdr | null
 ): { whiteNits: number; peakNits: number } | null {
   if (!fullHdr || !display || !canShowHdr(display)) return null
-  if (display.hdr) return { whiteNits: display.whiteNits, peakNits: display.peakNits }
+  // Stated numbers are the owner's, as given; a screen's reading in steps.
+  if (display.hdr && display.source === 'stated')
+    return { whiteNits: display.whiteNits, peakNits: display.peakNits }
+  if (display.hdr) {
+    const h = steppedHeadroom(display.headroom)
+    if (h >= MIN_HEADROOM)
+      return { whiteNits: display.whiteNits, peakNits: Math.round(display.whiteNits * h) }
+  }
   const h = Math.min(BOOTSTRAP_HEADROOM, display.potential ?? BOOTSTRAP_HEADROOM)
   return { whiteNits: display.whiteNits, peakNits: Math.round(display.whiteNits * h) }
 }

@@ -31,6 +31,11 @@ from the old TODO and a full performance and bug sweep.
 
 ## Top priority — Phase N: engine 0.18.0 (passes 85–103)
 
+**Status (2026-10-08)**: passes 85–103 are done and tested on the branch; what
+is left open below is the owner's to check (on the XDR and the M1), the
+model-server mirrors, and Windows' display read (later). Nothing is released:
+0.4.0-beta ships with engine 0.19's phase.
+
 **Top priority (2026-10-08)**: this phase comes before everything else still
 open, Phase C included. It is listed first, out of number order. Branch
 `feat/engine-0.18`, off main at 0.3.0-beta.
@@ -559,13 +564,26 @@ Waits on nothing from the engine; can be taken at any time.
 
 After: Passes 96–102.
 
-- [ ] **S** · With Full HDR on: the window moved between an HDR and an SDR
-      display, HDR turned off in the system, and Retina Performance mode.
-- [ ] **S** · From Pass 98's timings, decide whether anything is cut (the
-      draft's size, glass). Nothing is cut before then.
-- [ ] **S** · The 0.18 half of 0.4.0-beta's What's new
-      (`shared/releasenotes.ts`) and the README's preview, HDR and model
-      sections, drafted. No release here: see below.
+- [x] **S** · With Full HDR on:
+      - the window moved to an SDR display, or HDR turned off in the system:
+        the display reads no headroom, `renderDisplay` is null, the next
+        render is SDR and the toggle greys out (Full HDR stays chosen, and
+        comes back on an HDR display);
+      - a MacBook's headroom drifting with its brightness: the reading is
+        taken in quarter stops, rounded down (`steppedHeadroom`), so a render
+        is made again only a step on; stated numbers are used as given;
+      - a WebGPU device lost: the presenter makes a new one on the next
+        frame, and draws the SDR companion where it cannot.
+- [ ] **S** · Owner: Retina Performance mode (and the other display presets)
+      on the XDR: does Settings → Display follow, and does Full HDR look
+      right?
+- [x] **S** · Cuts: none. On the M2 Pro a Full HDR draft is 225–233 ms at
+      1280 px against SDR's ~200 ms, and the settled picture 530–660 ms;
+      whether the draft's size is cut waits on the owner's M1 drag (Pass 98).
+- [x] **S** · The 0.18 half of 0.4.0-beta's What's new
+      (`shared/releasenotes.ts`: HDR, dials, detail, masks, heal, changes)
+      and the README's masks, viewing, enhance, AI models and HDR sections,
+      drafted. No release here: see below.
 - [ ] **M** · Later, not needed for 0.4.0-beta: Windows reads the display's
       SDR white (`DisplayConfigGetDeviceInfo`, `DISPLAYCONFIG_SDR_WHITE_LEVEL`
       × 80/1000) and peak (DXGI `MaxLuminance`) for the Display dialog's

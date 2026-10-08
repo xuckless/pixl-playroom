@@ -24,6 +24,14 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
     headline: 'A cleaner Dehaze, smoother colour, and noise reduction that matches your export.',
     sections: [
       {
+        title: 'HDR',
+        items: [
+          'Full HDR, on the top bar: on a display with headroom, such as a MacBook Pro’s or an HDR monitor, the photo shows its highlights brighter than white while you edit, as an HDR export holds them. The eyedropper, scopes and overlays still read the SDR picture.',
+          'Settings → Display says what Playroom reads from your screen, or lets you state its white and peak yourself.',
+          'RAW files keep their highlights: blown areas are rebuilt from the channels that still hold detail, and the brightest parts roll softly into white instead of clipping. RAWs you edited before are developed again the first time you open them.'
+        ]
+      },
+      {
         title: 'Dials',
         items: [
           'Dehaze has been rebuilt. It brings back local contrast where the air is hazy and keeps each area’s brightness and colour, instead of darkening and tinting the whole picture. The same value looks gentler on brightness and colour and stronger on detail; for the old, denser result add some Contrast or a Tone Curve. Negative Dehaze is unchanged.',
@@ -43,7 +51,8 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
         items: [
           'Depth range: select by distance. Playroom maps the photo’s depth once (a small model you download the first time); click the photo to take what is at that distance, then set Near, Far and Softness, with the depth map in the card.',
           'Fine subject: a finer cut-out that keeps hair, fur and feathers (a larger model, downloaded when you first use it; about ten seconds a photo).',
-          'Small objects picked with Objects keep their mask instead of fading out.'
+          'Small objects picked with Objects keep their mask instead of fading out.',
+          'The masks panel sits in the left pane, beside your presets and history, instead of floating over the photo.'
         ]
       },
       {

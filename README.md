@@ -101,18 +101,19 @@ Heal, Masks).
 | Crop (strip, R)     | Crop tool with aspect presets and straighten; rotate left/right, flip and guides on its floating bar                                                                                                                                                                                                                                                                                                                                                                                              | `Framing`                                                                                                                                     |
 | Masks (strip, M)    | The masks window (below)                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `GradeLayer`, `Mask`, `LinearGradient`, `RadialGradient`, `BidirectionalGradient`, `Refine`, `segment`, `segmentPrompt`, `Inspect::LayerMask` |
 | Heal (strip, Q)     | Heal, clone and content-aware fill, Photoshop's way (click or paint, then drag from the spot to its source, live; or Alt-click a source first, later spots keep the offset), red eye and pet eye (drag over the pupil); outlines only while editing (hover or H shows them); a spot list; Q, H, ⌫, Enter, [ ]                                                                                                                                                                                     | `Retouch`, `suggestHealSource`                                                                                                                |
-| Enhance (last card) | JPEG restore (rebuilt from the file's coefficients, or FBCNN blind), deblur (NAFNet), super-resolution (×2 Real-ESRGAN, ×4 general or keep-texture) into a new 16-bit TIFF with the recipe                                                                                                                                                                                                                                                                                                        | `enhance` (JpegReconstruct, Model, Upscale)                                                                                                   |
+| Enhance (last card) | JPEG restore (rebuilt from the file's coefficients, or FBCNN blind), deblur (NAFNet), super-resolution (×2 or ×4: Clean SPAN, Damaged general-x4v3, or keep-texture) into a new 16-bit TIFF with the recipe                                                                                                                                                                                                                                                                                       | `enhance` (JpegReconstruct, Model, Upscale)                                                                                                   |
 | Engine report       | View ▸ Engine Report… (Ctrl+Alt+E) or the toolbar's `</>`: the last render's engine report line by line, the compiled grade JSON, and custom layers written directly in the engine's terms (any op, any stage space, CDL, qualifiers)                                                                                                                                                                                                                                                             | the whole `Grade` model                                                                                                                       |
 
 ### Masks
 
-A window that floats over the photo or docks beside it (M):
+A column of the left pane, shown with M (never over the photo):
 Lightroom's masks list (thumbnails; components joined by Add / Subtract /
 Intersect, each mask with its own overlay colour). A selected mask edits with
 every card but Optics and Geometry, plus Amount, blend and opacity. New masks
 come from:
 
-- **Automatic** — Subject and Background (U²-Netp); **Objects** (SAM 2.1, on
+- **Automatic** — Subject and Background (U²-Netp, or **Fine**: BiRefNet
+  lite, which keeps hair and fur, about seven seconds); **Objects** (SAM 2.1, on
   its own engine host): hover to see what lies under the pointer and click to
   take it, drag a box, or scribble over it; Shift-click adds a part, Alt-click
   takes one away, Enter keeps it, Esc drops it. **Sky** is one click on the
@@ -122,8 +123,10 @@ come from:
   linear, radial and bidirectional gradients with handles (drawn by the engine,
   exact at any size); an editable lasso, whose Find object puts the object
   inside it in its place.
-- **Range** — colour and luminance ranges with smoothness. Depth range is
-  marked "soon" (it needs a depth map).
+- **Range** — colour and luminance ranges with smoothness, and **Depth
+  range** (Depth Anything V2 maps the photo's depth once): click to take a
+  distance, then Near, Far and Softness, with the depth map shown while
+  adjusting.
 
 Snap to edges (with an Edge radius) holds a brush stroke, a lasso or an AI mask
 to the photo's edges: on a brush, to the object it was painted on (SAM 2.1). A
@@ -155,7 +158,9 @@ view rendered sharp by the engine from the full-resolution frame (on a
 straightened, cropped, Upright or lens-corrected photo too: the full render's
 own pixels there), crop with composition guides (thirds, grid, golden,
 diagonal) and drag-outside-to-straighten, a fine grid while straightening, clipping
-overlay, brush cursor, lasso and gradient handles.
+overlay, brush cursor, lasso and gradient handles. **Full HDR** (top bar) shows
+the photo with its light above white on a display with headroom (see HDR and
+gain maps).
 
 ### Interface
 
@@ -242,7 +247,10 @@ location" to strip GPS.
 The last card in the right column runs the engine's enhance
 chain over the photo's original, in its fixed order: a JPEG rebuilt from its
 DCT coefficients (no model) or FBCNN's JPEG restore, NAFNet's motion deblur,
-then Real-ESRGAN ×2 or ×4. The result is a new 16-bit TIFF beside the original
+then the upscale: Scale ×2 or ×4 with a Source, Clean (SPAN, the fastest and
+closest to a sharp original; ×2 is its ×4 brought down), Damaged
+(Real-ESRGAN general-x4v3, which repairs compression and noise) or Keep
+texture (its wdn variant). The result is a new 16-bit TIFF beside the original
 (`-Enhanced`, numbered when taken), which starts with the source's recipe. The
 panel shows the output size, the file size and a time estimate learned from
 earlier runs, offers each missing model, and runs a selection as a batch.
@@ -260,7 +268,11 @@ data and how long it takes for a photo on this computer (measured on earlier
 runs, else scaled by the speed test), marks the one Playroom recommends for
 each task, and removes it. A tool that needs a missing model offers it right
 there, in a "Model needed" popup, and goes on when it is here. Select Subject
-and Background (Masks) run U²-Netp; Objects, Sky and Find object run SAM 2.1.
+and Background (Masks) run U²-Netp, and Fine runs BiRefNet lite (offered
+when first wanted); Objects, Sky and Find object run SAM 2.1; Depth range
+runs Depth Anything V2; Heal's Remove runs MI-GAN. Models that retire are
+removed from the disk on their own. On Apple silicon, models run on the
+performance cores.
 
 ### Lens profiles
 
@@ -288,6 +300,17 @@ histogram. **Headroom** in the view bar colours where the picture rises
 above white, amber to magenta at its peak. On an HDR photo the grade keeps
 its highlights: positive exposure has no SDR shoulder, tone curves run on
 past white, and a LUT profile keeps the headroom.
+
+**Full HDR** (engine 0.18) shows any photo with its light above white while
+editing, on a display that has headroom: drafts and the settled picture are
+rendered for that display (its SDR white and peak; Settings → Display reads
+them on macOS, or takes them as stated) into 16-bit float and drawn on a
+WebGPU canvas; the Before and the 1:1 view come as AVIFs with a gain map.
+What reads the picture (the eyedropper, scopes, overlays, a range's key)
+reads an SDR companion of the same render. Off, or on an SDR display, the
+picture is SDR as before. A RAW is developed in floating point with its blown
+highlights rebuilt (engine 0.18's Scene master), and rolls softly into white
+when shown in SDR.
 
 ### AI denoise
 
