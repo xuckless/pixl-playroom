@@ -10,7 +10,8 @@ import type { Prefs, UpdateState } from '../../../shared/ipc'
 import { ACCOUNT_URL, BUY_URL, LICENCE_RULES, type LicenceStatus } from '../../../shared/licence'
 import { latestNotes } from '../../../shared/releasenotes'
 import { InfoTip } from '../components/InfoTip'
-import { Modal, Select, Tabs } from '../components/ui'
+import { Icon, type IconName } from '../components/icons'
+import { Modal, Select } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { takeReportFocus } from '../lib/report'
 import { useLibrary } from '../state/library'
@@ -423,25 +424,73 @@ function useUpdates(): UpdateState | null {
   return state
 }
 
+type SettingsSection = 'general' | 'library' | 'display' | 'ai' | 'keys' | 'privacy'
+
+/** Settings in sections, across the top as Export's steps are. */
+const SECTIONS: { id: SettingsSection; label: string; icon: IconName }[] = [
+  { id: 'general', label: 'General', icon: 'settings' },
+  { id: 'library', label: 'Projects & interface', icon: 'library' },
+  { id: 'display', label: 'Display', icon: 'overlay' },
+  { id: 'ai', label: 'AI models', icon: 'smart' },
+  { id: 'keys', label: 'Key bindings', icon: 'grip' },
+  { id: 'privacy', label: 'Privacy & about', icon: 'info' }
+]
+
+const SECTION_KEY = 'playroom.settings.section'
+
+function storedSection(): SettingsSection {
+  try {
+    const v = localStorage.getItem(SECTION_KEY)
+    if (SECTIONS.some((x) => x.id === v)) return v as SettingsSection
+  } catch {
+    // No storage here: the first section.
+  }
+  return 'general'
+}
+
 export function PreferencesDialog(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
-  const [tab, setTab] = useState<'general' | 'keys'>('general')
+  const [section, setSectionState] = useState<SettingsSection>(storedSection)
+  const setSection = (v: SettingsSection): void => {
+    setSectionState(v)
+    try {
+      localStorage.setItem(SECTION_KEY, v)
+    } catch {
+      // Remembered for this time only.
+    }
+  }
+  const [prefs, setPrefs] = useState<Prefs | null>(null)
+  useEffect(() => {
+    void api.prefs.get().then(setPrefs)
+  }, [])
   return (
-    <Modal
-      title="Settings"
-      onClose={() => setDialog(null)}
-      icon="settings"
-      className={`prefs${tab === 'keys' ? ' keys' : ''}`}
-    >
-      <Tabs
-        value={tab}
-        tabs={[
-          { value: 'general', label: 'General' },
-          { value: 'keys', label: 'Key bindings' }
-        ]}
-        onChange={setTab}
-      />
-      {tab === 'keys' ? <KeyBindingsSection /> : <GeneralSettings />}
+    <Modal title="Settings" onClose={() => setDialog(null)} wide icon="settings" className="prefs">
+      <nav className="ew-steps" aria-label="Settings sections">
+        {SECTIONS.map((x) => (
+          <button
+            key={x.id}
+            className={`ew-step${x.id === section ? ' on' : ''}`}
+            aria-current={x.id === section ? 'page' : undefined}
+            onClick={() => setSection(x.id)}
+          >
+            <Icon name={x.icon} />
+            {x.label}
+          </button>
+        ))}
+      </nav>
+      <div className={`ps-body ${section}`} key={section}>
+        {section === 'general' && <GeneralSettings prefs={prefs} />}
+        {section === 'library' && (
+          <>
+            <ProjectsSection />
+            <InterfaceSection />
+          </>
+        )}
+        {section === 'display' && <DisplaySection platform={prefs?.platform ?? null} />}
+        {section === 'ai' && <ModelsSection />}
+        {section === 'keys' && <KeyBindingsSection />}
+        {section === 'privacy' && <PrivacySettings prefs={prefs} setPrefs={setPrefs} />}
+      </div>
     </Modal>
   )
 }
@@ -584,13 +633,10 @@ function InterfaceSection(): React.JSX.Element {
   )
 }
 
-function GeneralSettings(): React.JSX.Element {
+/** General: the account, the licence and updates. */
+function GeneralSettings({ prefs }: { prefs: Prefs | null }): React.JSX.Element {
   const say = useLibrary((s) => s.say)
   const update = useUpdates()
-  const [prefs, setPrefs] = useState<Prefs | null>(null)
-  useEffect(() => {
-    void api.prefs.get().then(setPrefs)
-  }, [])
   const busy = update?.phase === 'checking' || update?.phase === 'downloading'
   return (
     <>
@@ -646,13 +692,21 @@ function GeneralSettings(): React.JSX.Element {
           </>
         )}
       </fieldset>
+    </>
+  )
+}
 
-      <ProjectsSection />
-      <InterfaceSection />
-      <DisplaySection platform={prefs?.platform ?? null} />
-
-      <ModelsSection />
-
+/** Privacy & about: crash reports, reporting a problem, the legal pages. */
+function PrivacySettings({
+  prefs,
+  setPrefs
+}: {
+  prefs: Prefs | null
+  setPrefs: React.Dispatch<React.SetStateAction<Prefs | null>>
+}): React.JSX.Element {
+  const say = useLibrary((s) => s.say)
+  return (
+    <>
       <fieldset>
         <legend>Privacy</legend>
         <label className="check">

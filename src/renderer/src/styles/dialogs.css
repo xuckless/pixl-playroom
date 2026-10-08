@@ -185,16 +185,85 @@ legend {
   margin: 2px 0 10px;
 }
 
-/* Settings: updates, privacy, about */
+/* Settings: sections across the top (as Export's steps), each group a card */
+.modal.prefs {
+  width: min(1060px, calc(100vw - 48px));
+}
 .modal.prefs .modal-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
 }
+.modal.prefs .ew-step .icon-svg {
+  width: 14px;
+  height: 14px;
+  color: var(--acc);
+  flex: none;
+}
+.modal.prefs .ew-step.on .icon-svg {
+  color: #fff;
+}
+/* One height for every section: switching doesn't make the dialog jump. */
+.modal.prefs .ps-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: min(620px, calc(100vh - 230px));
+  overflow-y: auto;
+  padding-right: 4px;
+  animation: bodyIn 0.35s var(--spring) both;
+}
+/* Short groups in two columns on the wide sheet, each stacked without gaps. */
+.modal.prefs .ps-body.general,
+.modal.prefs .ps-body.library,
+.modal.prefs .ps-body.privacy {
+  display: block;
+  columns: 2;
+  column-gap: 10px;
+}
+.modal.prefs .ps-body.general > *,
+.modal.prefs .ps-body.library > *,
+.modal.prefs .ps-body.privacy > * {
+  break-inside: avoid;
+  margin-bottom: 10px;
+}
+@media (max-width: 760px) {
+  .modal.prefs .ps-body.general,
+  .modal.prefs .ps-body.library,
+  .modal.prefs .ps-body.privacy {
+    columns: 1;
+  }
+}
+/* Each group as the editor's and Export's cards: a soft panel, its title inside. */
 .modal.prefs fieldset {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding: 0 14px 14px;
+  border: 1px solid var(--hair2);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: none;
+}
+.modal.prefs fieldset::before {
+  display: none;
+}
+.modal.prefs legend {
+  float: left;
+  width: 100%;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text);
+}
+.modal.prefs legend + * {
+  clear: both;
 }
 .modal.prefs fieldset p {
   margin: 0;
@@ -497,12 +566,7 @@ button.link:hover {
 }
 
 /* Settings → Key bindings */
-.modal.prefs.keys {
-  width: 680px;
-}
-.modal.prefs .tabs {
-  align-self: flex-start;
-}
+
 .keybinds {
   display: flex;
   flex-direction: column;
@@ -773,12 +837,14 @@ button.keybind-key.waiting {
 .modal.export-wizard {
   width: min(760px, calc(100vw - 48px));
 }
-.export-wizard .ew-steps {
+.export-wizard .ew-steps,
+.modal.prefs .ew-steps {
   display: flex;
   gap: 6px;
   margin: 0 0 14px;
 }
-.export-wizard .ew-step {
+.export-wizard .ew-step,
+.modal.prefs .ew-step {
   flex: 1 1 0;
   display: flex;
   align-items: center;
@@ -793,10 +859,12 @@ button.keybind-key.waiting {
   letter-spacing: 0.03em;
   white-space: nowrap;
 }
-.export-wizard .ew-step:hover {
+.export-wizard .ew-step:hover,
+.modal.prefs .ew-step:hover {
   color: var(--text2);
 }
-.export-wizard .ew-step.on {
+.export-wizard .ew-step.on,
+.modal.prefs .ew-step.on {
   color: #fff;
   border-color: var(--acc-a55);
   background: linear-gradient(180deg, rgba(157, 139, 234, 0.26), rgba(123, 104, 216, 0.1));
