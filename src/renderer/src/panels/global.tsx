@@ -827,7 +827,12 @@ export function MixerBody(): React.JSX.Element | null {
     >
       {tab === 'point' && <PointColorSection />}
       {axes.map((axis) => (
-        <Section key={axis} id={`hsl.${axis}`} title={axis}>
+        <Section
+          key={axis}
+          id={`hsl.${axis}`}
+          title={axis}
+          tip={axis === 'luminance' ? TIPS['hsl.luminance'] : undefined}
+        >
           {HSL_BANDS.map((b) => {
             const c = HSL_BAND_CENTRES[b]
             const track =

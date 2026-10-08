@@ -333,6 +333,8 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           scale: k,
           resizes: k > 1,
           lossless,
+          // Everything it was run with, so a later develop can make it again.
+          settings: JSON.stringify(settings),
           ...(row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {})
         }
       }

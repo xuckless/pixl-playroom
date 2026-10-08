@@ -215,7 +215,8 @@ export async function bakeSpot(
       width: W,
       height: H,
       rect: { x: region.x + placed.x, y: region.y + placed.y, w: placed.w, h: placed.h },
-      params: { spot: spot.kind }
+      // The spot itself too, so a later develop can bake it again.
+      params: { spot: spot.kind, geometry: JSON.stringify(spot) }
     }
   }
   // Its renders and patch are only on the way to the project: gone after.

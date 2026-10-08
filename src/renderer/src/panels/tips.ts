@@ -77,9 +77,16 @@ export const TIPS = {
     tip: 'Landscapes and architecture like +10 to +25; portraits rarely want more than +5.'
   },
   'presence.dehaze': {
-    what: 'Adds contrast that grows with distance, cutting through haze and fog.',
-    expect: 'Skies go deeper and colours denser; past +40, edges halo and blues get loud.',
-    tip: 'Go negative for a soft, misty look.'
+    what: 'Cuts through haze and fog by bringing back local contrast where the air is thick.',
+    expect:
+      'Hazy areas regain depth and detail and keep their own brightness and colour; it does not darken the whole picture.',
+    tip: 'For a denser, darker look add Contrast or a Tone Curve. Go negative for a soft, misty look.'
+  },
+  'hsl.luminance': {
+    what: 'Brightens or darkens one colour at a time.',
+    expect:
+      'Even in feel across the range: all the way down halves a colour’s brightness, so a sky deepens without going black.',
+    tip: 'With Smoothing up, grey clouds under a darkened blue stay grey.'
   },
   'presence.smoothing': {
     what: 'Keeps colour and tone changes smooth across flat areas such as sea, sky and skin, so they don’t go blotchy or show the file’s compression blocks.',

@@ -8,6 +8,7 @@ import {
   normalisePixelStep,
   placeStep,
   RAW_DEVELOP_REV,
+  replaceStep,
   stackSignature,
   staleRawStep,
   type PixelStep
@@ -631,6 +632,23 @@ test('a step made over earlier steps goes after them, under any added while it r
   // The step it followed is gone, or no base given: last.
   assert.deepEqual(ids(placeStep([heal], made, ['a'])), ['heal', 'denoise'])
   assert.deepEqual(ids(placeStep([a], made)), ['a', 'denoise'])
+})
+
+test('a step made again on a new develop keeps its place, mask and strength', () => {
+  const a = step({ id: 'a' })
+  const old = step({ id: 'd', alpha: 'mask', opacity: 60, params: { model: 'drunet-color' } })
+  const heal = step({ id: 'heal' })
+  const again = { ...old, blob: 'new', params: { ...old.params, develop: 'mp1' } }
+  const out = replaceStep([a, old, heal], again)
+  assert.deepEqual(
+    out.map((s) => s.id),
+    ['a', 'd', 'heal']
+  )
+  assert.equal(out[1].blob, 'new')
+  assert.equal(out[1].alpha, 'mask')
+  assert.equal(out[1].opacity, 60)
+  // Gone meanwhile (removed in History): nothing changes.
+  assert.deepEqual(replaceStep([a, heal], again), [a, heal])
 })
 
 test('a heal drawn on the corrected picture keeps its size on the photo', async () => {

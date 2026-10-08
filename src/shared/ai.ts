@@ -119,6 +119,12 @@ export type AiStartRequest = (
        * the old setting made, if still kept, is taken as is (no model runs).
        */
       legacy?: boolean
+      /**
+       * Make this denoise step again, in its place: on the steps before it,
+       * inside the mask it froze, at its strength (a RAW step from an older
+       * develop, `staleRawStep`). `model`, `strength` and `layerId` are its own.
+       */
+      redo?: string
     }
 ) & {
   /** A look run's id (`AiJobEvent.group`). */

@@ -46,7 +46,7 @@ import {
 } from '../source'
 import { ensureBase, pixelDeps } from '../pixels/base'
 import { freezeMask } from '../pixels/freeze'
-import { addPixelStep, storesLossless } from '../pixels/steps'
+import { addPixelStep, replacePixelStep, storesLossless } from '../pixels/steps'
 import { ensureWorking } from '../pixels/working'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
 import { ModelMissing, modelName, type ModelStore } from './models'
@@ -169,7 +169,10 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
   }
 
   title(req: DenoiseRequest): { title: string; subject: string } {
-    return { title: 'Denoising', subject: DENOISE_SHORT[req.model] ?? 'AI' }
+    return {
+      title: req.redo ? 'Remaking a denoise on the new RAW develop' : 'Denoising',
+      subject: DENOISE_SHORT[req.model] ?? 'AI'
+    }
   }
 
   async run(ctx: AiContext, req: DenoiseRequest): Promise<{ kind: 'step'; label: string }> {
@@ -178,8 +181,14 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
     const row = await this.library.photoRow(req.key)
     const info = await this.library.probe(row)
     const recipe: Recipe = sessions?.liveRecipe(req.key) ?? (await this.library.recipe(req.key))
-    const layer = req.layerId ? recipe.layers.find((l) => l.id === req.layerId) : undefined
-    if (req.layerId && !layer) throw new Error('the mask is gone')
+    // Made again: the step's own mask (frozen when it was made) and place.
+    const old = req.redo
+      ? recipe.pixels.find((p) => p.id === req.redo && p.kind === 'denoise')
+      : undefined
+    if (req.redo && !old) throw new Error('the step is gone')
+    const before = old ? recipe.pixels.slice(0, recipe.pixels.indexOf(old)) : recipe.pixels
+    const layer = req.layerId && !old ? recipe.layers.find((l) => l.id === req.layerId) : undefined
+    if (req.layerId && !old && !layer) throw new Error('the mask is gone')
     ctx.stage('model', 0, `Loading ${modelName(this.models.entry(req.model))}`)
     const refused = pixelStepRefusal(info)
     if (refused) throw new Error(refused)
@@ -204,7 +213,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
     const deps = pixelDeps(this.engine, this.library.index, row)
     const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const working = await guard(
-      ensureWorking(deps, versionStamp(row), plain, recipe.pixels, () =>
+      ensureWorking(deps, versionStamp(row), plain, before, () =>
         ensureBase(this.engine, row, info)
       )
     )
@@ -215,7 +224,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
     const files: string[] = []
     try {
       // A whole-photo denoise shows at once, from the draft.
-      if (!layer && sessions) {
+      if (!layer && !old && sessions) {
         ctx.stage('preview', 0, 'Denoising a preview')
         const draft = working.px.draft
         const stop = tick(Math.max(1500, ((draft.width * draft.height) / 1e6) * rate))
@@ -284,7 +293,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         height: master.height
       })
       ctx.progress(0.5)
-      let alpha: string | null = null
+      let alpha: string | null = old?.alpha ?? null
       if (layer) {
         const plane = await freezeMask(
           deps,
@@ -308,6 +317,23 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         })
       }
       const name = DENOISE_SHORT[req.model]
+      const develop: Record<string, string> =
+        row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {}
+      if (old) {
+        // Its place, mask, strength and name stay: only its pixels are today's.
+        const again: PixelStep = {
+          ...old,
+          blob,
+          width: master.width,
+          height: master.height,
+          params: { ...old.params, model: req.model, lossless, ...develop }
+        }
+        ctx.commit()
+        await replacePixelStep(this.library, sessions, req.key, again)
+        const { photoId, copyId } = parseKey(req.key)
+        this.library.queueThumb(photoId, copyId, true)
+        return { kind: 'step', label: again.label }
+      }
       const step: PixelStep = {
         id: newId(),
         kind: 'denoise',
@@ -320,11 +346,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         width: master.width,
         height: master.height,
         rect: null,
-        params: {
-          model: req.model,
-          lossless,
-          ...(row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {})
-        }
+        params: { model: req.model, lossless, ...develop }
       }
       // Computed on the steps there were when it began: it goes after them,
       // under any (a heal) added while it ran.

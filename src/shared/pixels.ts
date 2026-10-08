@@ -65,9 +65,11 @@ export const RAW_DEVELOP_REV = 'l'
  * 2 is engine 0.17: PixlRGB is the working space, and what acts on the
  * channels themselves (curves, per-channel gain, HSL bands, the channel
  * mixer) renders differently. (A RAW's develop is `Container`, 0.16.0's
- * pixels, so `RAW_DEVELOP_REV` and the steps laid on it stand.)
+ * pixels, so `RAW_DEVELOP_REV` and the steps laid on it stand.) 3 is engine
+ * 0.18: Dehaze v2, the Color Mixer's luminance in stops, Denoise's reach,
+ * the Smoothing slider.
  */
-export const ENGINE_RENDER_REV = 2
+export const ENGINE_RENDER_REV = 3
 
 /**
  * A step on a RAW made from another develop than the photo's now (rawler's,
@@ -148,6 +150,11 @@ export function pixelStepRefusal(info: { is_hdr: boolean }): string | null {
  * of it rather than under it. Without `basedOn`, or when the step it followed
  * is gone, it goes last.
  */
+/** `step` in the place of the step with its id (a step made again); unchanged when it is gone. */
+export function replaceStep(steps: PixelStep[], step: PixelStep): PixelStep[] {
+  return steps.map((s) => (s.id === step.id ? step : s))
+}
+
 export function placeStep(steps: PixelStep[], step: PixelStep, basedOn?: string[]): PixelStep[] {
   if (!basedOn) return [...steps, step]
   const after = basedOn.at(-1)

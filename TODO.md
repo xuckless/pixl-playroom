@@ -187,13 +187,21 @@ After: Pass 85.
 
 After: Passes 86–88.
 
-- [ ] **S** · `ENGINE_RENDER_REV` 2 → 3 and a new `RAW_DEVELOP_REV`
-      (`shared/pixels.ts`).
-- [ ] **M** · A RAW's AI steps flagged by `staleRawStep` re-run in the
-      background when the photo opens; the stale notes in `panels/heal.tsx`
-      and `panels/AiDenoise.tsx` go.
-- [ ] **S** · Dehaze's and the Color Mixer's tips rewritten; What's new
-      lines drafted (the doc's §4).
+- [x] **S** · `ENGINE_RENDER_REV` 2 → 3: edited photos' thumbnails are made
+      again (Dehaze v2, HSL in stops, Denoise's reach, Smoothing).
+      `RAW_DEVELOP_REV` waits for Pass 94 (the owner, 2026-10-08): one bump
+      for the knee and the Scene master.
+- [x] **M** · A RAW's stale AI steps (`staleRawStep`):
+      - DRUNet denoise steps are made again in place as the photo opens
+        (`startStaleUpkeep`; the denoise job's `redo`: the steps before it,
+        its frozen mask, strength and place);
+      - SCUNet steps (minutes each) say so in their row, with "Run it again
+        on the new develop";
+      - Enhance and heal steps keep a note (their inputs weren't kept). From
+        now on Enhance stores its settings (`params.settings`) and a heal its
+        spot (`params.geometry`), so a later develop can remake them.
+- [x] **S** · Dehaze's tip rewritten for v2; a Color Mixer Luminance tip;
+      0.4.0-beta's What's new drafted (the 0.18 half) in `shared/releasenotes.ts`.
 
 ### Pass 90 — Models: Enhance and quiet retirement · 5 pts
 
@@ -258,6 +266,10 @@ After: Pass 90.
 ### Pass 94 — The RAW master as Scene float 1/2 · 5 pts
 
 After: Pass 89.
+
+- [ ] **S** · `RAW_DEVELOP_REV` bumped here (moved from Pass 89): RAW proxies
+      and master caches are made again, and Pass 89's upkeep remakes the DRUNet
+      steps on them.
 
 - [ ] **L** · The RAW master is `RawMode::Scene` into float (an F32 TIFF or
       the master cache), not Develop into a 16-bit TIFF that clips at 1.0

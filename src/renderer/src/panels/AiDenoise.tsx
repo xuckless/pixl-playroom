@@ -16,7 +16,7 @@ import { InfoTip } from '../components/InfoTip'
 import { TIPS } from './tips'
 import { Select, Slider } from '../components/ui'
 import { api, errorText } from '../lib/api'
-import { applyDenoise } from '../lib/denoise'
+import { applyDenoise, redoDenoise, redoesQuietly } from '../lib/denoise'
 import { useDevelop } from '../state/develop'
 import { useAiJobs } from '../state/jobs'
 import { useLibrary } from '../state/library'
@@ -71,11 +71,26 @@ function StepRow({ step, stale }: { step: PixelStep; stale: boolean }): React.JS
           <Icon name="trash" />
         </button>
       </div>
-      {stale && (
-        <p className="pixel-step-stale">
-          Made from the previous RAW develop: remove it and denoise again to match this one.
-        </p>
-      )}
+      {stale &&
+        (redoesQuietly(step) ? (
+          <p className="pixel-step-stale">Made from the previous RAW develop: being made again.</p>
+        ) : (
+          <p className="pixel-step-stale">
+            Made from the previous RAW develop.{' '}
+            <button
+              className="link"
+              onClick={() => {
+                const key = useDevelop.getState().session?.key
+                if (key)
+                  void redoDenoise(key, step).catch((e) =>
+                    useLibrary.getState().say(errorText(e), 'error')
+                  )
+              }}
+            >
+              Run it again on the new develop
+            </button>
+          </p>
+        ))}
       <Slider
         label="Strength"
         value={opacity}

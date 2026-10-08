@@ -17,6 +17,37 @@ export interface ReleaseNotes {
 }
 
 export const RELEASE_NOTES: ReleaseNotes[] = [
+  // Draft (engine 0.18's half): 0.4.0-beta ships with engine 0.19 as well,
+  // whose notes join these before it is cut (TODO.md, Phase N and after).
+  {
+    version: '0.4.0-beta',
+    headline: 'A cleaner Dehaze, smoother colour, and noise reduction that matches your export.',
+    sections: [
+      {
+        title: 'Dials',
+        items: [
+          'Dehaze has been rebuilt. It brings back local contrast where the air is hazy and keeps each area’s brightness and colour, instead of darkening and tinting the whole picture. The same value looks gentler on brightness and colour and stronger on detail; for the old, denser result add some Contrast or a Tone Curve. Negative Dehaze is unchanged.',
+          'The Color Mixer’s Luminance sliders feel even across their range: all the way down darkens a colour strongly but no longer turns it black, so skies keep their tone.',
+          'A new Smoothing slider, under Dehaze, keeps colour and tone changes smooth across sea, sky and skin, so they don’t go blotchy or show a JPEG’s blocks. It shows when you let go of a slider. Photos you edited before start with it off, so they look as they did.'
+        ]
+      },
+      {
+        title: 'Detail',
+        items: [
+          'Noise Reduction looks the same in the preview, at 100% and in the exported file. Exports of noisy photos are cleaner than before at the same settings, most in bright, even areas such as walls and skies.',
+          'RAW sharpening now sharpens edges and leaves flat areas alone. When sharpening is too fine to show at the current zoom, the Sharpening panel says so.'
+        ]
+      },
+      {
+        title: 'Changes',
+        items: [
+          'Super Resolution ×2 uses a new, much faster model that stays closer to the original.',
+          'If an adjustment ever breaks the picture, the slider responsible turns red and says so; your edit is kept.',
+          'AI work runs on your Mac’s performance cores, where it is fastest.'
+        ]
+      }
+    ]
+  },
   {
     version: '0.3.0-beta',
     headline: 'PIXL’s own colour, a clearer way to export, and scopes at full size.',

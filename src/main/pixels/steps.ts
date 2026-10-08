@@ -3,7 +3,7 @@
  * recipe when the photo is open (the renderer then records it in History),
  * else the photo's saved recipe.
  */
-import { placeStep, type PixelStep } from '../../shared/pixels'
+import { placeStep, replaceStep, type PixelStep } from '../../shared/pixels'
 import type { Library } from '../library'
 import type { DevelopSessions } from '../render'
 
@@ -29,6 +29,27 @@ export async function addPixelStep(
   }
   const saved = await library.recipe(key)
   await library.saveRecipe(key, { ...saved, pixels: placeStep(saved.pixels, step, basedOn) })
+}
+
+/**
+ * A step made again (the same id, mask and strength, new pixels) in its own
+ * place, in the open session's recipe or the saved one.
+ */
+export async function replacePixelStep(
+  library: Library,
+  sessions: DevelopSessions | undefined,
+  key: string,
+  step: PixelStep
+): Promise<void> {
+  const live = sessions?.liveRecipe(key)
+  if (live && sessions) {
+    sessions.update(key, { ...live, pixels: replaceStep(live.pixels, step) }, false)
+    await sessions.flush(key)
+    await sessions.workingReady(key)
+    return
+  }
+  const saved = await library.recipe(key)
+  await library.saveRecipe(key, { ...saved, pixels: replaceStep(saved.pixels, step) })
 }
 
 /** Whether a photo's steps are stored losslessly: a RAW's always, else as the setting says. */

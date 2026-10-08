@@ -11,7 +11,7 @@ import { Scopes } from './develop/Scopes'
 import { AdjustStack } from './develop/AdjustStack'
 import { ToolStrip } from './develop/ToolStrip'
 import { startDrawerSync } from './develop/tools'
-import { startDenoiseUpkeep } from './lib/denoise'
+import { startDenoiseUpkeep, startStaleUpkeep } from './lib/denoise'
 import { startHdrUpkeep } from './lib/hdr'
 import { DevelopToolbar } from './shell/DevelopToolbar'
 import { DevelopIdentity } from './shell/IdentityBar'
@@ -421,6 +421,7 @@ export default function App(): React.JSX.Element {
       }),
       startDrawerSync(),
       startDenoiseUpkeep(),
+      startStaleUpkeep(),
       startHdrUpkeep(),
       api.app.onRenderScale(onRenderScale),
       api.app.onOpenPaths((paths) => void openPaths(paths)),

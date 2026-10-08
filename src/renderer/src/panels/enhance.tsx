@@ -23,6 +23,8 @@ import {
   type UpscaleChoice
 } from '../../../shared/enhance'
 import { ModelGet } from '../components/ModelGet'
+import { staleRawStep } from '../../../shared/pixels'
+import { developMark } from '../../../shared/rawcolour'
 import { allInstalled, useModels } from '../lib/models'
 import { Section, Select, Slider, Toggle, ToolPanel } from '../components/ui'
 import { TIPS } from './tips'
@@ -72,6 +74,12 @@ let batch: string[] = []
 export function EnhancePanel(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
   const stepsBefore = useDevelop((s) => s.recipe?.pixels.length ?? 0)
+  // Enhance steps made from an older RAW develop (`staleRawStep`).
+  const stale = useDevelop((d) => {
+    if (!d.session?.isRaw || !d.recipe) return 0
+    const mark = developMark(d.session.rawColour ?? 'container')
+    return d.recipe.pixels.filter((p) => p.kind === 'enhance' && staleRawStep(p, true, mark)).length
+  })
   const { layer } = useScope()
   const s = useUi((u) => u.enhance)
   const set = useUi((u) => u.setEnhance)
@@ -135,6 +143,12 @@ export function EnhancePanel(): React.JSX.Element | null {
 
   return (
     <ToolPanel>
+      {stale > 0 && (
+        <p className="pixel-step-stale">
+          {stale === 1 ? 'One Enhance step was' : `${stale} Enhance steps were`} made from the
+          previous RAW develop. Undo it in History and run Enhance again to match this one.
+        </p>
+      )}
       <Section id="enhance.jpeg" title="JPEG restore" tip={TIPS['enhance.jpeg']}>
         <Select
           label="Method"
