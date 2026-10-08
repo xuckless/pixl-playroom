@@ -21,6 +21,7 @@ import { SegmentRunner } from './ai/segment'
 import { DenoiseRunner } from './ai/denoise'
 import { DISPLAY_SETTING_KEY, watchDisplayHdr } from './hdrdisplay'
 import { INPAINTER_MODEL, setInpainter } from './ai/inpainter'
+import { DEMOSAIC_MODEL, setRawModels } from './ai/rawdevelop'
 import { ModelStore } from './ai/models'
 import { EnhanceRunner } from './enhance'
 import { Exporter } from './exporter'
@@ -259,10 +260,29 @@ app.whenReady().then(() => {
   setInpainter(async () =>
     (await models.installed(INPAINTER_MODEL)) ? models.ref(INPAINTER_MODEL) : null
   )
-  // Off the launch's path: retired models' files off the disk, and the
-  // thumbnails 0.3's before/after (the previous engine's) kept.
+  // A RAW's full-size develop: DemosaicNet once it is here, PMRID when asked.
+  setRawModels({
+    installed: (id) => models.installed(id),
+    ref: (id, provider) => models.ref(id, provider),
+    withCpuFallback: (ids, make, signal) => models.withCpuFallback(ids, make, signal),
+    canRun: async () => {
+      // What the engine can do is known once it has started.
+      if (bgEngine.getStatus().status === 'starting') {
+        bgEngine.start()
+        await bgEngine.whenStarted()
+      }
+      return bgEngine.getStatus().enhance === true
+    },
+    fetch: (id) => void models.autoFetch([id])
+  })
+  // Off the launch's path: retired models' files off the disk, the
+  // thumbnails 0.3's before/after (the previous engine's) kept, and the
+  // Bayer DemosaicNet (2 MB) fetched for RAWs.
   setTimeout(() => {
-    void models.prune().catch((err) => log.warn('model clean-up failed', (err as Error).message))
+    void models
+      .prune()
+      .catch((err) => log.warn('model clean-up failed', (err as Error).message))
+      .then(() => models.autoFetch([DEMOSAIC_MODEL.Bayer]))
     void rm(paths.legacyPreviews(), { recursive: true, force: true }).catch(() => undefined)
   }, 20_000).unref()
   const lenses = new LensProfileStore()

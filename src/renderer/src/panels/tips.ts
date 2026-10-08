@@ -207,6 +207,11 @@ export const TIPS = {
       'The result is kept losslessly, so pushing it later shows no compression; undo, redo and Strength never run the model again.',
     tip: 'Run it once the exposure is roughly right, before fine colour work.'
   },
+  'detail.rawDenoise': {
+    what: 'Takes the grain out of the camera’s raw sensor data before it becomes a picture, with an AI model (PMRID) that reads how noisy this photo is by itself.',
+    expect:
+      'Best on high-ISO shots. Fine texture such as bark or fabric can look a little crisper or flatter. It works on the full-size picture, so judge it at 100%; the export has it too. Most cameras only: not Fujifilm X-Trans.'
+  },
   'detail.ai.lossless': {
     what: 'Keeps each AI result exactly, at about six times the size of near-lossless.',
     expect:

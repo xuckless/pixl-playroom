@@ -43,7 +43,9 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
         title: 'Detail',
         items: [
           'Noise Reduction looks the same in the preview, at 100% and in the exported file. Exports of noisy photos are cleaner than before at the same settings, most in bright, even areas such as walls and skies.',
-          'RAW sharpening now sharpens edges and leaves flat areas alone. When sharpening is too fine to show at the current zoom, the Sharpening panel says so.'
+          'RAW sharpening now sharpens edges and leaves flat areas alone. When sharpening is too fine to show at the current zoom, the Sharpening panel says so.',
+          'RAWs are developed at full size with an AI model for crisper fine detail and fewer colour fringes, at 100%, for AI tools and in the export. The model (2 MB) downloads by itself; without it, a better classic method than before is used. Fujifilm X-Trans gets its own the first time you open one.',
+          'Denoise the RAW data, under Noise reduction → AI: an AI model takes the grain out of a RAW’s sensor data before it becomes a picture, measuring each photo’s noise by itself. Off unless you turn it on; it shows at 100% and in the export.'
         ]
       },
       {

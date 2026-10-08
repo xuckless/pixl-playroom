@@ -27,12 +27,14 @@ import { Icon, PathIcon } from '../components/icons'
 import { Popover } from '../components/Popover'
 import { CurvePresets } from './CurvePresets'
 import { AiDenoise } from './AiDenoise'
+import { useModels } from '../lib/models'
+import { askModel } from '../state/modelPrompt'
 import { applyUpright, startGuides } from '../lib/upright'
 import type { UprightMode } from '../../../shared/upright'
 import { withKey } from '../lib/commands'
 import { scoped, scopedView, scopeLayer, useScope } from '../state/scope'
 import { useUi } from '../state/ui'
-import type { Tip } from '../components/InfoTip'
+import { InfoTip, type Tip } from '../components/InfoTip'
 import { TIPS } from './tips'
 import { invariantTouches } from '../../../shared/invariant'
 import { readPath } from '../lib/readpath'
@@ -1148,7 +1150,10 @@ export function DetailBody(): React.JSX.Element | null {
           <NoiseAnalysis />
         </div>
         {noiseTab === 'ai' ? (
-          <AiDenoise />
+          <>
+            <RawDenoise />
+            <AiDenoise />
+          </>
         ) : (
           <>
             <RS
@@ -1185,6 +1190,42 @@ export function DetailBody(): React.JSX.Element | null {
         )}
       </Section>
     </ToolPanel>
+  )
+}
+
+/**
+ * PMRID on a Bayer RAW's sensor data (engine 0.19's `mosaic_denoise`): an
+ * option of the whole photo, off unless chosen; asks for the model the first
+ * time. Developed at full size only, so it shows at 100% and in the export.
+ */
+function RawDenoise(): React.JSX.Element | null {
+  const { recipe, edit, commit, layer } = useScope()
+  const bayer = useDevelop((s) => s.session?.isRaw === true && s.session.info.raw_cfa === 'Bayer')
+  const installed = useModels().find((m) => m.id === 'pmrid')?.installed === true
+  if (!recipe || !bayer || layer) return null
+  const set = (on: boolean): void => {
+    edit((r) => (r.detail.rawDenoise = on))
+    commit(on ? 'RAW data denoise on' : 'RAW data denoise off')
+  }
+  return (
+    <div className="row raw-denoise">
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={recipe.detail.rawDenoise}
+          onChange={(e) => {
+            const on = e.target.checked
+            if (!on || installed) return set(on)
+            void askModel('pmrid', 'Denoise the RAW data').then((ok) => ok && set(true))
+          }}
+        />
+        Denoise the RAW data
+      </label>
+      <InfoTip tip={TIPS['detail.rawDenoise']} label="Denoise the RAW data" />
+      {recipe.detail.rawDenoise && (
+        <span className="muted micro">Shows at 100% and in the export</span>
+      )}
+    </div>
   )
 }
 

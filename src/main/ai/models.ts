@@ -74,6 +74,8 @@ export const IDLE_SESSION: Pick<SessionSpec, 'dimensions' | 'intra_op_spinning'>
 const PROVIDER_KEY = 'ai.provider'
 /** What the performance test measured, per provider. */
 const MEASURED_KEY = 'ai.providerTimes'
+/** Models fetched by themselves that the user removed: not fetched again unasked. */
+const DECLINED_KEY = 'ai.declined'
 /** How long the models' speeds are kept before the remembered rates are read again. */
 const SPEED_CACHE_MS = 5000
 
@@ -249,6 +251,7 @@ export class ModelStore {
     // Only what the roster ships is fetched (a retired id is never).
     if (!this.roster().some((m) => m.id === id)) return
     if (this.downloads.has(id) || (await this.installed(id))) return
+    void this.decline(id, false).catch(() => undefined)
     const e = this.entry(id)
     const dir = this.dir(id)
     await mkdir(dir, { recursive: true })
@@ -322,7 +325,30 @@ export class ModelStore {
     this.downloads.get(id)?.abort.abort()
   }
 
+  /**
+   * Models fetched without being asked (DemosaicNet for RAWs, once the app
+   * is up after an install or update): each unless it is here, or the user
+   * removed it (then it waits to be downloaded by hand).
+   */
+  async autoFetch(ids: string[]): Promise<void> {
+    const declined = await this.declined()
+    for (const id of ids)
+      if (!declined.includes(id) && this.roster().some((m) => m.id === id)) await this.download(id)
+  }
+
+  private async declined(): Promise<string[]> {
+    const v: unknown = await this.settings.getSetting(DECLINED_KEY).catch(() => null)
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  }
+
+  private async decline(id: string, on: boolean): Promise<void> {
+    const was = await this.declined()
+    if (was.includes(id) === on) return
+    await this.settings.setSetting(DECLINED_KEY, on ? [...was, id] : was.filter((x) => x !== id))
+  }
+
   async remove(id: string): Promise<void> {
+    void this.decline(id, true).catch(() => undefined)
     this.cancel(id)
     await rm(join(paths.models(), id), { recursive: true, force: true })
     this.installedCache.set(id, false)

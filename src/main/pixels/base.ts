@@ -13,6 +13,7 @@ import type { IndexClient } from '../indexer/client'
 import { keyOf } from '../keys'
 import { paths } from '../paths'
 import { ensureMaster, type ProxyFile } from '../proxy'
+import type { RawDevelopAsk } from '../ai/rawdevelop'
 import { BACKGROUND_THREADS, blankRequest, sourceOrientation, versionStamp } from '../source'
 import { pixels } from '../workers/pool'
 import type { PixelDeps } from './working'
@@ -27,9 +28,11 @@ const making = new Map<string, Promise<ProxyFile>>()
 export function ensureBase(
   engine: EngineClient,
   row: PhotoRow,
-  info: SourceInfo
+  info: SourceInfo,
+  /** A RAW's develop as the edit asks (PMRID). */
+  ask?: RawDevelopAsk
 ): Promise<ProxyFile> {
-  if (info.input === 'Raw') return ensureMaster(engine, row)
+  if (info.input === 'Raw') return ensureMaster(engine, row, info, ask)
   const stamp = versionStamp(row)
   const key = `${row.id}:${stamp}`
   let p = making.get(key)

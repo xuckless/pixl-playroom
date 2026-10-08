@@ -18,7 +18,12 @@ export interface StaticTile {
 /** The models Playroom runs with static shapes, and their tiles. */
 export const STATIC_TILE: Readonly<Record<string, StaticTile>> = {
   'nafnet-sidd-w32': { size: 512, overlap: 32 },
-  'nafnet-gopro-w32': { size: 512, overlap: 32 }
+  'nafnet-gopro-w32': { size: 512, overlap: 32 },
+  // A tile starts on the filter's period (the roster's `Fixed`): 2 × 2 Bayer, 6 × 6 X-Trans.
+  'demosaicnet-bayer': { size: 512, overlap: 32 },
+  'demosaicnet-xtrans': { size: 516, overlap: 36 },
+  // A multiple of its 32 (the roster's Dynamic tiling): 0.56 s for a 24 MP mosaic, 3.3 s on the CPU.
+  pmrid: { size: 512, overlap: 32 }
 }
 
 /** The dimension names a static tile fixes; a graph with any other free one keeps its dynamic shape. */

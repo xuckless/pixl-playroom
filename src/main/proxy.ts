@@ -21,7 +21,8 @@
  * HDR sources keep their PQ/HLG signal in a 16-bit PNG (which carries CICP);
  * everything else is an uncompressed 16-bit TIFF, the fastest to decode.
  */
-import { readFile, readdir, unlink, writeFile } from 'fs/promises'
+import log from 'electron-log/main'
+import { mkdir, readFile, readdir, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import type {
   HdrWorking,
@@ -32,17 +33,20 @@ import type {
   SourceInfo
 } from '../shared/engine-types'
 import type { EngineClient } from './engine/client'
+import { PLAIN_DEVELOP, scenePlan, withScene, type RawDevelopAsk } from './ai/rawdevelop'
 import { exists } from './exists'
 import type { PhotoRow } from './db'
 import { paths } from './paths'
 import {
   BACKGROUND_THREADS,
+  binFactor,
   blankRequest,
   cellFactor,
   interactiveThreads,
   proxyByCell,
   colourOf,
   rawMaster,
+  rawBinnedMaster,
   rawProxyMaster,
   sourceOrientation,
   versionStamp
@@ -100,6 +104,76 @@ export function ensureProxies(
   return p
 }
 
+const thumbing = new Map<string, Promise<Proxies>>()
+
+/**
+ * What a library thumbnail is graded from. A RAW not yet opened (or whose
+ * proxies went with an update's new develop) needn't wait for its proxies:
+ * a binned develop (engine 0.19) of about the draft's size is made instead,
+ * one file standing for both, in a fraction of the time. Everything else,
+ * and a RAW whose proxies are there, uses its proxies.
+ */
+export async function ensureThumbSource(
+  engine: EngineClient,
+  photo: PhotoRow,
+  info: SourceInfo,
+  threads: number
+): Promise<Proxies> {
+  const s = stamp(photo)
+  const dir = paths.photoCache(photo.id)
+  if (info.input !== 'Raw' || info.is_hdr || (await exists(join(dir, `proxies-${s}.json`))))
+    return ensureProxies(engine, photo, info, threads)
+  const cell = cellFactor(photo)
+  const long = Math.max(info.width, info.height)
+  const factor = binFactor(long, cell, DRAFT_EDGE)
+  // No smaller than the proxy's own half size: the proxies, then.
+  if (factor <= cell) return ensureProxies(engine, photo, info, threads)
+  const key = `${photo.id}:${s}`
+  let p = thumbing.get(key)
+  if (!p) {
+    p = (async (): Promise<Proxies> => {
+      const path = join(dir, `thumbsrc-${s}.tiff`)
+      const meta = `${path}.json`
+      if ((await exists(path)) && (await exists(meta)))
+        return JSON.parse(await readFile(meta, 'utf8')) as Proxies
+      await mkdir(dir, { recursive: true })
+      const raw = rawBinnedMaster(colourOf(photo), factor)
+      const orientation = sourceOrientation(info, raw)
+      const report = await engine.convert({
+        ...blankRequest(photo.path, path, info.input, info),
+        raw,
+        pixel: { depth: 'F32', channels: 3 },
+        encode: { Tiff: { compression: 'None' } },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        color: 'Preserve',
+        framing:
+          orientation === 'Normal'
+            ? null
+            : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null },
+        threads
+      })
+      const file: ProxyFile = {
+        path,
+        input: 'Tiff',
+        width: report.width,
+        height: report.height,
+        float: true
+      }
+      const out: Proxies = {
+        proxy: file,
+        draft: file,
+        // The bins' frame times their width: the full develop's, to a pixel or two.
+        frameWidth: report.frame_width * factor,
+        frameHeight: report.frame_height * factor
+      }
+      await writeFile(meta, JSON.stringify(out))
+      return out
+    })().finally(() => thumbing.delete(key))
+    thumbing.set(key, p)
+  }
+  return p
+}
+
 async function build(
   engine: EngineClient,
   photo: PhotoRow,
@@ -133,6 +207,7 @@ async function build(
       f.startsWith('draft-') ||
       f.startsWith('mid-') ||
       f.startsWith('master-') ||
+      f.startsWith('thumbsrc-') ||
       f.startsWith('lens-')
     ) {
       try {
@@ -421,28 +496,45 @@ export async function pruneLensed(
 const mastering = new Map<string, Promise<ProxyFile>>()
 
 /**
- * A RAW's full-resolution developed frame, for region renders. Other formats
- * decode fast enough to read the original each time.
+ * A RAW's full-resolution developed frame, for region renders, the noise
+ * read and the pixel steps. Other formats decode fast enough to read the
+ * original each time. Its demosaic is the best there is now (DemosaicNet once
+ * downloaded, else AHD) and PMRID goes first when the edit asks
+ * (`ai/rawdevelop.ts`); each names the file, so a model downloaded later
+ * makes it again, and the one it replaces goes.
  */
-export function ensureMaster(engine: EngineClient, photo: PhotoRow): Promise<ProxyFile> {
-  const key = `${photo.id}:${stamp(photo)}`
+export async function ensureMaster(
+  engine: EngineClient,
+  photo: PhotoRow,
+  info: Pick<SourceInfo, 'raw_cfa'>,
+  ask: RawDevelopAsk = PLAIN_DEVELOP
+): Promise<ProxyFile> {
+  const plan = await scenePlan(info.raw_cfa, ask)
+  const s = stamp(photo)
+  const key = `${photo.id}:${s}:${plan.tag}`
   let p = mastering.get(key)
   if (!p) {
     p = (async (): Promise<ProxyFile> => {
       // F32 (engine 0.18: a RAW's master is Scene in float): twice a 16-bit
       // TIFF's size, nothing clipped at 1.0.
-      const path = join(paths.photoCache(photo.id), `master-${stamp(photo)}.tiff`)
+      const dir = paths.photoCache(photo.id)
+      const name = `master-${s}-${plan.tag}`
+      const path = join(dir, `${name}.tiff`)
       const meta = `${path}.json`
       if ((await exists(path)) && (await exists(meta)))
         return JSON.parse(await readFile(meta, 'utf8')) as ProxyFile
-      const report = await engine.convert({
-        ...blankRequest(photo.path, path, 'Raw'),
-        raw: rawMaster(colourOf(photo)),
-        pixel: { depth: 'F32', channels: 3 },
-        encode: { Tiff: { compression: 'None' } },
-        metadata: { exif: false, icc: true, xmp: false, iptc: false },
-        color: 'Preserve'
-      })
+      const t0 = Date.now()
+      const { value: report, classic } = await withScene(plan, (scene) =>
+        engine.convert({
+          ...blankRequest(photo.path, path, 'Raw'),
+          raw: rawMaster(colourOf(photo), scene),
+          pixel: { depth: 'F32', channels: 3 },
+          encode: { Tiff: { compression: 'None' } },
+          metadata: { exif: false, icc: true, xmp: false, iptc: false },
+          color: 'Preserve'
+        })
+      )
+      log.info('RAW master developed', plan.tag, classic ? '(classic)' : '', Date.now() - t0, 'ms')
       const out: ProxyFile = {
         path,
         input: 'Tiff',
@@ -450,7 +542,15 @@ export function ensureMaster(engine: EngineClient, photo: PhotoRow): Promise<Pro
         height: report.height,
         float: true
       }
-      await writeFile(meta, JSON.stringify(out))
+      // Kept only when it is the plan's: a classic stand-in is made again next time.
+      if (!classic) await writeFile(meta, JSON.stringify(out))
+      // Masters of another demosaic (the model since downloaded, or removed)
+      // and the untagged ones from before: off the disk. With and without
+      // PMRID are both kept, for edits that differ.
+      const same = `master-${s}-${plan.tag.replace(/-pm$/, '')}`
+      for (const f of await readdir(dir).catch(() => [] as string[]))
+        if (f.startsWith('master-') && !f.startsWith(`${same}.`) && !f.startsWith(`${same}-pm.`))
+          await unlink(join(dir, f)).catch(() => undefined)
       return out
     })().finally(() => mastering.delete(key))
     mastering.set(key, p)

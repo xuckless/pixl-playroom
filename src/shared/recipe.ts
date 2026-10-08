@@ -175,6 +175,12 @@ export interface DetailSetting {
   noiseColor: number
   noiseColorDetail: number
   /**
+   * A Bayer RAW's noise taken out of its sensor data before the demosaic
+   * (engine 0.19's `mosaic_denoise`, PMRID, once downloaded): seen at 100%
+   * and in the export, which are developed at full size. Off unless chosen.
+   */
+  rawDenoise: boolean
+  /**
    * AI noise reduction as it was before it became a pixel step (`pixels`):
    * a photo whose recipe still has it on is given the step it described when
    * it opens (renderer lib/denoise.ts), and it goes off. Nothing else reads it.
@@ -637,6 +643,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       noiseLuminanceDetail: 50,
       noiseColor: isRaw ? 25 : 0,
       noiseColorDetail: 50,
+      rawDenoise: false,
       ai: { enabled: false, model: aiDenoiseModel(RETIRED_DENOISE), strength: 100 }
     },
     lens: defaultLens(),
@@ -1083,6 +1090,7 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.detail.noiseLuminanceDetail = f.detail.noiseLuminanceDetail
         r.detail.noiseColor = f.detail.noiseColor
         r.detail.noiseColorDetail = f.detail.noiseColorDetail
+        r.detail.rawDenoise = f.detail.rawDenoise
         r.detail.ai = f.detail.ai
         break
       case 'lens':

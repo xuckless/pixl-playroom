@@ -714,18 +714,40 @@ Decisions (the owner, 2026-10-08):
       --bucket pixl-models`): the server has none of them yet (404), and
       their roster entries have no upstream link.
 
-### Pass 108 — RAW develop: DemosaicNet, AHD, PMRID, binned thumbnails · 5 pts
+### Pass 108 — RAW develop: DemosaicNet, AHD, PMRID, binned thumbnails · 5 pts ✅
 
-- [ ] **L** · DemosaicNet wherever a RAW is developed at full resolution
-      (the master, 1:1, export; CoreML static, 512/516 tiles) once
-      downloaded, else AHD; downloaded on install or
-      update; recommended in Settings → AI models ("best quality"; AHD
-      "faster"). X-Trans's model when an X-Trans RAW first opens.
-- [ ] **M** · PMRID as `mosaic_denoise` (`Measured`): an opt-in option
-      for Bayer RAWs (Detail), off by default. `RAW_DEVELOP_REV` bumped for
-      DemosaicNet; develop times measured.
-- [ ] **S** · Thumbnails and the filmstrip from `Binned` RAW proxies;
-      anything judged for noise stays Cell or Full (HR-0.19-1).
+- [x] **L** · DemosaicNet wherever a RAW is developed at full resolution:
+      the master (1:1, the noise read, the pixel steps' base) and the
+      export from the file (`main/ai/rawdevelop.ts`: `scenePlan`,
+      `withScene`). Once downloaded, else AHD on Bayer, the classic on
+      anything else; a model the accelerator won't load runs on the CPU, a
+      develop the engine refuses with a model runs classic (not kept). The
+      choice names the master (`master-<stamp>-dn|ahd|ppg[-pm]`), so a model
+      downloaded later makes it again and the old one goes; pixel-step sets
+      record the base they were laid on (`masterOf`) and are laid again on
+      a new one. Proxies, thumbnails and the stamp are untouched (no
+      library-wide remake; 0.4.0's `RAW_DEVELOP_REV` 's' already remakes
+      everything once), so no further bump. CoreML static (512/32 Bayer,
+      516/36 X-Trans); Bayer fetched by itself 20 s after launch unless the
+      user removed it (`ai.declined`); X-Trans fetched when an X-Trans RAW
+      first develops. Settings → AI models: "Develop RAW files", Recommended.
+- [x] **M** · PMRID as `mosaic_denoise` (`Measured`): Detail → Noise
+      reduction → AI → "Denoise the RAW data" (`detail.rawDenoise`, base
+      only, Bayer only, off by default; asks for the model; travels with
+      the Noise reduction group). CoreML static 512/32.
+- [x] **S** · Edited RAWs' library thumbnails (and so the filmstrip) from
+      a `Binned` develop of about the draft's size when the proxies aren't
+      made yet (`ensureThumbSource`: 1 s, no proxies); with pixel steps, or
+      for the editor, the Cell proxies as before (HR-0.19-1).
+- Measured on the M2 Pro (IMG_2347 / IMG_1826, 24 MP CR2, F32 Scene):
+  Classic 1.2 s, AHD 3.2 s, DemosaicNet CPU 35.0 s, CoreML static 5.3 s
+  (the model 3.2 s; CPU = CoreML to 146 dB); PMRID CPU 3.3 s, static
+  0.56 s (CPU = static to 90 dB). In the built app: master `dn` 5.8 s,
+  `dn-pm` 6.6 s; export with both 9 s. Shadows: DemosaicNet against PPG
+  over 9.2 M pixels under 0.03, mean shift 6e-5, largest rise 0.017, none
+  blown up (E55's test: clean). Binned (×4) 0.62 s against Cell 0.71 s.
+- [ ] **S** · Owner: an X-Trans RAW on the Mac (its CoreML static path is
+      untimed in the engine too), and the models mirror (above).
 
 ### Pass 109 — Named masks: sky, vegetation, water, people · 4 pts
 

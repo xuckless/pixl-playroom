@@ -44,6 +44,12 @@ export interface WorkingSet {
   px: Proxies
   /** The full-resolution frame with the steps laid on; null until one is asked for. */
   master: ProxyFile | null
+  /**
+   * The base `master` was laid on: a RAW's names its demosaic and denoiser
+   * (`ensureMaster`), so a model downloaded since, or PMRID turned on, lays
+   * the steps again on the new one.
+   */
+  masterOf?: string
 }
 
 const TIFF = { Tiff: { compression: 'None' } } as const
@@ -528,20 +534,20 @@ async function makeMaster(
   base: () => Promise<ProxyFile>,
   set: WorkingSet
 ): Promise<WorkingSet> {
-  if (set.master) return set
   if (steps.length === 0) return { ...set, master: await base() }
+  const from = await base()
+  if (set.master && set.masterOf === from.path) return set
   const dir = dirOf(deps, key)
   await mkdir(dir, { recursive: true })
   const prev = await previousSet(deps, version, steps)
   const last = steps[steps.length - 1]
   let master: ProxyFile
-  if (prev?.master) {
+  if (prev?.master && prev.masterOf === from.path) {
     master = await layOn(deps, prev.master, join(dir, 'master.tiff'), [last])
   } else {
     // At full size the frame is the steps' own: an upscale's, when one made
     // it larger; else the full-size base's own (a proxy's frame can be a
     // half-size develop's, to a pixel or two: never resampled to that).
-    const from = await base()
     const frame = frameOf(steps, from.width, from.height)
     const start =
       from.width === frame.width && from.height === frame.height
@@ -549,7 +555,7 @@ async function makeMaster(
         : await resized(deps, from, join(dir, 'base.tiff'), frame.width, frame.height)
     master = await layOn(deps, start, join(dir, 'master.tiff'), steps)
   }
-  const next = { ...set, master }
+  const next = { ...set, master, masterOf: from.path }
   await writeSet(deps, next)
   return next
 }

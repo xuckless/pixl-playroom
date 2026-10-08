@@ -51,6 +51,7 @@ import {
   seedOf,
   versionStamp
 } from '../source'
+import { askOf } from './rawdevelop'
 import { ensureBase, pixelDeps } from '../pixels/base'
 import { freezeMask } from '../pixels/freeze'
 import { addPixelStep, replacePixelStep, storesLossless } from '../pixels/steps'
@@ -226,7 +227,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
     const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const working = await guard(
       ensureWorking(deps, versionStamp(row), plain, before, () =>
-        ensureBase(this.engine, row, info)
+        ensureBase(this.engine, row, info, askOf(recipe))
       )
     )
     const master = working.master!

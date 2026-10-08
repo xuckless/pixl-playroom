@@ -11,8 +11,10 @@ import type {
   Framing,
   GainMapMode,
   InputFormat,
+  MosaicDenoise,
   Orientation,
   RawMode,
+  SceneDemosaic,
   SourceInfo
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
@@ -111,17 +113,24 @@ export function rawProxyDevelop(colour: RawColour): RawMode {
  * white on the owner's CR2s, which the 1:1 view, the export and (with Full
  * HDR) the preview keep; an SDR picture rolls it onto white (compile's RAW
  * shoulder). Denoise stays in the grade (`DENOISE_REACH` there, HR-0.18-4).
+ * Engine 0.19's demosaic and mosaic denoiser: the classic and none unless
+ * stated (at full size, `main/ai/rawdevelop.ts` chooses them).
  */
-export function rawMaster(colour: RawColour): RawMode {
+export function rawMaster(
+  colour: RawColour,
+  scene: { demosaic: SceneDemosaic; mosaic_denoise: MosaicDenoise | null } = {
+    demosaic: 'Classic',
+    mosaic_denoise: null
+  }
+): RawMode {
   return {
     Scene: {
       white_balance: 'AsShot',
       highlights: 'InpaintOpposed',
       crop: 'Best',
       denoise: null,
-      // Engine 0.19's mosaic denoiser and demosaic: as 0.18 until Pass 108.
-      mosaic_denoise: null,
-      demosaic: 'Classic',
+      mosaic_denoise: scene.mosaic_denoise,
+      demosaic: scene.demosaic,
       resolution: 'Full',
       colour: cameraColourOf(colour),
       dng_opcodes: DNG_OPCODES
@@ -133,6 +142,27 @@ export function rawMaster(colour: RawColour): RawMode {
 export function rawProxyMaster(colour: RawColour): RawMode {
   const full = rawMaster(colour) as { Scene: Record<string, unknown> }
   return { Scene: { ...full.Scene, resolution: 'Cell' } } as RawMode
+}
+
+/**
+ * The master binned (engine 0.19, `Binned`): one pixel per `factor ×
+ * factor` photosites, each colour their mean, no demosaic. For a thumbnail
+ * only: a binned frame's grain isn't the export's, so nothing noise is judged
+ * on comes from one (HR-0.19-1).
+ */
+export function rawBinnedMaster(colour: RawColour, factor: number): RawMode {
+  const full = rawMaster(colour) as { Scene: Record<string, unknown> }
+  return { Scene: { ...full.Scene, resolution: { Binned: { factor } } } } as RawMode
+}
+
+/**
+ * The bin for a frame of at least `edge` on its long side: the largest
+ * multiple of the sensor's cell that leaves that much (a little margin for
+ * the crop), within the engine's 1…64; never less than the cell itself.
+ */
+export function binFactor(probeLong: number, cell: number, edge: number): number {
+  const f = Math.floor(probeLong / (edge * 1.02) / cell) * cell
+  return Math.min(Math.floor(64 / cell) * cell, Math.max(cell, f))
 }
 
 /** The file's own colour: what a RAW was developed with before engine 0.17 named one. */

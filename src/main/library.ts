@@ -45,7 +45,7 @@ import { paths } from './paths'
 import { pixelDeps } from './pixels/base'
 import { ensureWorking } from './pixels/working'
 import { editsHdr, ensureHdrSource } from './hdrsource'
-import { ensureProxies } from './proxy'
+import { ensureProxies, ensureThumbSource } from './proxy'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
 import {
@@ -610,7 +610,13 @@ export class Library {
     if (hdr) base = { ...base, color: displayPolicy(info, 'Srgb') }
     // Pixel steps (an AI denoise) laid on: made from what the project keeps,
     // never by running a model.
-    const plain = hdr?.px ?? (await ensureProxies(this.engine, row, info, BACKGROUND_THREADS))
+    // A RAW without proxies yet: a binned develop (proxy.ts). Its pixel steps,
+    // though, are laid on the proxies, which the editor then finds made.
+    const plain =
+      hdr?.px ??
+      (recipe.pixels.length > 0
+        ? await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
+        : await ensureThumbSource(this.engine, row, info, BACKGROUND_THREADS))
     const px =
       !hdr && recipe.pixels.length > 0
         ? (

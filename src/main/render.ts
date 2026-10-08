@@ -38,6 +38,7 @@ import { stackSignature, type PixelStep } from '../shared/pixels'
 import { developMark, pixlSupported, resolveRawColour } from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
+import { askOf } from './ai/rawdevelop'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking, workingKey, type WorkingSet } from './pixels/working'
 import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
@@ -521,7 +522,7 @@ class Session {
       versionStamp(this.row),
       this.px,
       this.recipe.pixels,
-      () => ensureBase(this.owner.bgEngine, this.row, this.file)
+      () => ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
     )
     return set.master
   }
@@ -1492,7 +1493,7 @@ class Session {
       : this.hdrMaster
         ? this.hdrMaster
         : raw
-          ? await ensureMaster(this.owner.bgEngine, this.row)
+          ? await ensureMaster(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
           : {
               path: this.row.path,
               input: this.info.input,
@@ -1879,7 +1880,7 @@ class Session {
   ): Promise<PixelStep | null> {
     const deps = pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row)
     const set = await ensureWorking(deps, versionStamp(this.row), this.px, steps, () =>
-      ensureBase(this.owner.bgEngine, this.row, this.file)
+      ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
     )
     const key = keyOf(this.row.id, null)
     const step = await bakeSpot(
@@ -1916,7 +1917,7 @@ class Session {
     // the moment the step lands, and it is the last one plus a small patch.
     if (step)
       void ensureWorking(deps, versionStamp(this.row), this.px, [...steps, step], () =>
-        ensureBase(this.owner.bgEngine, this.row, this.file)
+        ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
       ).catch(() => undefined)
     return step
   }
@@ -1924,7 +1925,7 @@ class Session {
   /** The noise the denoiser would measure, on the full-resolution frame. */
   async noise(): Promise<NoiseEstimate | null> {
     const src: ProxyFile = this.isRaw
-      ? await ensureMaster(this.owner.bgEngine, this.row)
+      ? await ensureMaster(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
       : { path: this.row.path, input: this.file.input, width: 0, height: 0 }
     const s = await this.owner.bgEngine.analyze({
       ...analyzeRequest(src.path, 'Png', 1),

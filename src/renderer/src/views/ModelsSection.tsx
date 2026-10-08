@@ -11,7 +11,7 @@ import { TYPICAL_MP } from '../../../shared/modelSpeed'
 import { GlassSelect } from '../components/GlassSelect'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
-import { copyOf, duration, pace, PURPOSES, type Purpose } from './modelCopy'
+import { copyOf, duration, pace, PURPOSES, purposeOf, type Purpose } from './modelCopy'
 
 const mb = (bytes: number): string =>
   bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`
@@ -102,7 +102,7 @@ export function ModelsSection(): React.JSX.Element {
   const all = models ?? []
   const installed = all.filter((m) => m.installed)
   const used = installed.reduce((s, m) => s + m.bytes, 0)
-  const purposes = PURPOSES.filter((p) => all.some((m) => m.role === p.id))
+  const purposes = PURPOSES.filter((p) => all.some((m) => purposeOf(m.role) === p.id))
   const shown = show === 'all' ? purposes : purposes.filter((p) => p.id === show)
   const chip = provider?.accelerator ? (CHIP[provider.accelerator] ?? 'the graphics chip') : null
   const onChip = provider?.choice === 'accelerated' && chip
@@ -134,7 +134,7 @@ export function ModelsSection(): React.JSX.Element {
           <p className="muted small">{p.what}</p>
           <ul>
             {all
-              .filter((m) => m.role === p.id)
+              .filter((m) => purposeOf(m.role) === p.id)
               .sort((a, b) => Number(!!copyOf(b).recommended) - Number(!!copyOf(a).recommended))
               .map((m) => (
                 <ModelRow key={m.id} m={m} />

@@ -5,10 +5,20 @@
  */
 import type { ModelInfo } from '../../../shared/ipc'
 
-export type Purpose = ModelInfo['role']
+export type Purpose = Exclude<ModelInfo['role'], 'raw-denoise'>
+
+/** The group a model is listed under: a RAW's sensor denoiser with the other grain removers. */
+export function purposeOf(role: ModelInfo['role']): Purpose {
+  return role === 'raw-denoise' ? 'denoise' : role
+}
 
 /** The purposes in the order the list shows them. */
 export const PURPOSES: { id: Purpose; title: string; what: string }[] = [
+  {
+    id: 'demosaic',
+    title: 'Develop RAW files',
+    what: 'Turns a camera’s raw sensor data into the full-size picture, with crisper edges and fewer colour fringes on fine detail. Without it, Playroom uses a faster classic method.'
+  },
   {
     id: 'denoise',
     title: 'Remove grain',
@@ -55,6 +65,22 @@ export interface ModelCopy {
 }
 
 export const MODEL_COPY: Record<string, ModelCopy> = {
+  'demosaicnet-bayer': {
+    name: 'Best quality RAW develop',
+    what: 'Builds the full-size picture from your RAW’s sensor data with fine detail and clean edges. Downloaded by itself; used at 100%, for AI tools and in the export. On a Mac it runs on the graphics chip: about 5 seconds for a 24 MP RAW, where the faster classic method takes 3.',
+    where: 'Every RAW, at full size',
+    recommended: true
+  },
+  'demosaicnet-xtrans': {
+    name: 'Best quality RAW develop, Fujifilm',
+    what: 'The same for Fujifilm’s X-Trans sensors. Downloaded by itself the first time you open one.',
+    where: 'Fujifilm X-Trans RAWs, at full size'
+  },
+  pmrid: {
+    name: 'RAW sensor denoise',
+    what: 'Takes grain out of a RAW’s sensor data before it becomes a picture, measuring how noisy each photo is by itself. Best on high-ISO shots; can look a little crisp on fine texture. Under a second on a Mac.',
+    where: 'Detail → Noise reduction → AI → Denoise the RAW data'
+  },
   'drunet-color': {
     name: 'Clean and detailed',
     what: 'Playroom measures how grainy your photo is first, then removes just that much, so hair, fabric and skin keep their texture.',

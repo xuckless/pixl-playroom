@@ -44,6 +44,7 @@ import { exists, sameFile } from './exists'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import type { Library } from './library'
 import { ensureProxies, type ProxyFile } from './proxy'
+import { askOf, scenePlan, withScene } from './ai/rawdevelop'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking } from './pixels/working'
 import { editsHdr, ensureHdrSource } from './hdrsource'
@@ -185,7 +186,7 @@ export class Exporter {
       versionStamp(row),
       plain,
       recipe.pixels,
-      () => ensureBase(this.engine, row, info)
+      () => ensureBase(this.engine, row, info, askOf(recipe))
     )
     return set.master
   }
@@ -412,24 +413,39 @@ export class Exporter {
       typeof color === 'object' &&
       ('ConvertTo' in color || 'ToneMap' in color || ('Master' in color && !color.Master.headroom))
     const sharpen = sdrOut ? outputSharpen(s) : null
-    const report = await this.engine
-      .convert(
-        sharpen
-          ? {
-              ...request,
-              output_sharpen: outputSharpenRequest(s, sharpen),
-              // The sharpen is a float pass of its own, so dither always applies.
-              dither
-            }
-          : request,
-        { signal }
+    const convert = (r: ConvertRequest): Promise<ConvertReport> =>
+      this.engine
+        .convert(
+          sharpen
+            ? {
+                ...r,
+                output_sharpen: outputSharpenRequest(s, sharpen),
+                // The sharpen is a float pass of its own, so dither always applies.
+                dither
+              }
+            : r,
+          { signal }
+        )
+        .catch((err: unknown) => {
+          // HR-0.18-9: the export says which adjustment broke the picture.
+          if (err instanceof EngineError)
+            err.nameInvariant(compiled.grade, r.sdr?.grade ?? null, compiled.layerIndex)
+          throw err
+        })
+    // A RAW exported from the file at full size: its best demosaic, and PMRID
+    // when the edit asks (ai/rawdevelop.ts). A preview is too small to show
+    // either, and stays classic.
+    let report: ConvertReport
+    if (raw && !preview) {
+      const plan = await scenePlan(info.raw_cfa, askOf(recipe))
+      const done = await withScene(
+        plan,
+        (scene) => convert({ ...request, raw: rawMaster(colourOf(row), scene) }),
+        signal
       )
-      .catch((err: unknown) => {
-        // HR-0.18-9: the export says which adjustment broke the picture.
-        if (err instanceof EngineError)
-          err.nameInvariant(compiled.grade, request.sdr?.grade ?? null, compiled.layerIndex)
-        throw err
-      })
+      log.info('export RAW develop', key, done.classic ? 'classic' : plan.tag)
+      report = done.value
+    } else report = await convert(request)
 
     // What the engine's own path did, in its words: for the log and the receipt.
     const m = report.color.master

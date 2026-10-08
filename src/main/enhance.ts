@@ -57,6 +57,7 @@ import { keyOf, parseKey } from './keys'
 import { paths } from './paths'
 import { ensureProxies } from './proxy'
 import type { DevelopSessions } from './render'
+import { askOf } from './ai/rawdevelop'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { freezeMask } from './pixels/freeze'
 import { addPixelStep, storesLossless } from './pixels/steps'
@@ -204,7 +205,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const restoresJpeg = steps.some((p) => p.kind === 'reconstruct' || p.kind.startsWith('fbcnn'))
     const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const working = await ensureWorking(deps, versionStamp(row), plain, recipe.pixels, () =>
-      ensureBase(this.engine, row, info)
+      ensureBase(this.engine, row, info, askOf(recipe))
     )
     const master = working.master!
     const dir = paths.photoCache(row.id)
