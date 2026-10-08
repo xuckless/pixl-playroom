@@ -157,13 +157,17 @@ const LOOK_KEEP = 600
  * this display (`Ceiling::Display`), F16 linear Display P3 with 1.0 = SDR
  * white, and an 8-bit SDR companion for what reads the picture.
  */
-function masterFor(display: { whiteNits: number; peakNits: number }): ColorPolicy {
+function masterFor(
+  display: { whiteNits: number; peakNits: number },
+  /** The whole picture's figures, for a part of it (a region measures neither). */
+  stated?: HdrFigures
+): ColorPolicy {
   return {
     Master: {
       headroom: true,
-      peak: 'Measured',
+      peak: stated ? { Nits: stated.peakNits } : 'Measured',
       ceiling: { Display: { white_nits: display.whiteNits, peak_nits: display.peakNits } },
-      reach: 'Measured',
+      reach: stated ? { Stated: stated.reach } : 'Measured',
       look: 'Colorimetric',
       float: 'ExtendedLinearDisplayP3',
       companion: { longest_side: COMPANION_EDGE, resampler: 'Bilinear' }
@@ -193,6 +197,27 @@ const SETTLED_AVIF: Encode = {
     tune: 'Ssim',
     tiling: 'Single'
   }
+}
+
+/**
+ * A Full HDR picture that must be a file (the Before, a 1:1 tile, the AVIF
+ * arm's settled picture): an AVIF whose SDR base carries the master's gain
+ * map to this display's headroom, shown by an `<img>`.
+ */
+function hdrFile(
+  display: { whiteNits: number; peakNits: number },
+  stated?: HdrFigures
+): {
+  color: ColorPolicy
+  encode: Encode
+} {
+  return { color: masterFor(display, stated), encode: SETTLED_AVIF }
+}
+
+/** What the master measured of the whole picture: a 1:1 tile states them, to match it. */
+interface HdrFigures {
+  peakNits: number
+  reach: number
 }
 
 /** The companion's longest side: enough for the eyedropper, scopes and overlays. */
@@ -931,6 +956,9 @@ class Session {
     // Full HDR's settled picture, either arm: what measures it (inside a
     // mask) reads its SDR companion, kept as a PNG.
     if (kind === 'full' && display) {
+      const m = report.color.master
+      this.hdrFigures =
+        m && m.gamut ? { peakNits: m.peak_nits, reach: m.gamut.reach } : this.hdrFigures
       const c = report.companion
       if (c) {
         const file = this.nextFile('companion', 'png')
@@ -1220,7 +1248,8 @@ class Session {
    * Every local layer's mask, small, from the draft proxy: the masks panel's
    * thumbnails and the "show all" overlay. A thumbnail is redrawn only when
    * what shapes its mask changed (not its sliders), and the loop yields to a
-   * newer edit waiting behind it.
+   * newer edit waiting behind it. Always SDR, Full HDR or not: a mask is
+   * shown by its shape, not its light.
    */
   private async renderMaskThumbs(signal: AbortSignal): Promise<void> {
     const src = this.viewPx().draft
@@ -1324,6 +1353,8 @@ class Session {
 
   /** The most recent full render's file: what the masked hue chart measures. */
   private lastFull = ''
+  /** The last settled Full HDR picture's peak and reach (`HdrFigures`). */
+  private hdrFigures: HdrFigures | null = null
   /** The last few settled pictures by signature, newest last (see RECENT_FULL). */
   private recentFull = new Map<string, { event: RenderEvent; out: string }>()
   /** A recipe shown instead of the photo's, not saved (see `previewRecipe`). */
@@ -1344,7 +1375,17 @@ class Session {
     const view = this.source('full')
     const src =
       this.isPlain(view) || (this.isBaked(view) && this.basePx() === this.px) ? view : this.px.proxy
-    const compiled = await this.compileFor(before, src, !this.view.cropMode)
+    // Full HDR: the before in HDR too, as an AVIF with the master's gain map
+    // (a file: a frame would be let go as the drafts stream past it).
+    const display = this.view.display ?? null
+    const compiled = await this.compileFor(
+      before,
+      src,
+      !this.view.cropMode,
+      false,
+      true,
+      display !== null
+    )
     // Keyed on what the engine is asked for, not on the raw geometry: a
     // straighten in the crop tool changes the recipe but not this picture.
     const key = JSON.stringify([
@@ -1352,23 +1393,29 @@ class Session {
       compiled.lens,
       compiled.retouch,
       src.path,
-      this.view.cropMode
+      this.view.cropMode,
+      display
     ])
     if (key === this.beforeKey) return
     // PNG only where it has transparent corners to keep (the crop tool's
     // warp); else a JPEG, as the picture beside it is.
     const alpha = framingTransparent(compiled.framing)
-    const out = join(this.dir, `before-${hash32(key).toString(16)}.${alpha ? 'png' : 'jpg'}`)
+    const hdr = display && !alpha ? hdrFile(display) : null
+    const ext = hdr ? 'avif' : alpha ? 'png' : 'jpg'
+    const out = join(this.dir, `before-${hash32(key).toString(16)}.${ext}`)
     const report = await this.owner.engine
       .convert(
         {
           ...blankRequest(src.path, out, src.input),
           pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
-          encode: alpha
-            ? { Png: { compression: 'Fast', filter: 'Sub' } }
-            : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
+          encode: hdr
+            ? hdr.encode
+            : alpha
+              ? { Png: { compression: 'Fast', filter: 'Sub' } }
+              : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
           metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: displayPolicy(this.info, 'DisplayP3'),
+          color: hdr ? hdr.color : displayPolicy(this.info, 'DisplayP3'),
+          ...(hdr ? { gain_map: null } : {}),
           grade: compiled.grade,
           framing: compiled.framing,
           lens: compiled.lens,
@@ -1419,6 +1466,12 @@ class Session {
     // The source's own size: the frame its full-size render is of.
     const { user, width, height } = orientedFrame(this.recipe, src.width, src.height)
     const zoom = Math.min(1, req.zoom)
+    // Full HDR: the tile in HDR too (an AVIF with the master's gain map),
+    // stating the settled picture's peak and reach, which a part cannot
+    // measure. Before the first settled HDR picture, an SDR tile.
+    const figures = this.hdrFigures
+    const display = figures ? (this.view.display ?? null) : null
+    const hdr = display && figures ? hdrFile(display, figures) : null
     // Framed as the picture on screen is (straightened, cropped, warped, the
     // crop tool's whole frame): since engine 0.16 a region of it is the full
     // render's own pixels there, so 1:1 is sharp on any photo.
@@ -1434,8 +1487,9 @@ class Session {
       brushPaths: await brushPlanes(this.row.id, this.recipe, user),
       applyCrop: !this.view.cropMode,
       showTransform: !this.view.guides,
-      // Tone mapped to SDR for the screen, as the picture is (see compileFor).
-      hdr: false
+      // Tone mapped to SDR for the screen, as the picture is (see compileFor);
+      // kept HDR for a Full HDR display.
+      hdr: display !== null
     })
     const framed = await this.framedSize(compiled, width, height)
     // The request is a part of the picture as shown (fractions): in the
@@ -1447,7 +1501,7 @@ class Session {
     this.regionSlot = (this.regionSlot + 1) % 4
     // A JPEG at full chroma: as sharp at 1:1 as the PNG it was, a fraction
     // of the time to write and decode at the screen's size.
-    const out = join(this.dir, `region-${this.regionSlot}.jpg`)
+    const out = join(this.dir, `region-${this.regionSlot}.${hdr ? 'avif' : 'jpg'}`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
     await this.owner.engine
@@ -1457,9 +1511,13 @@ class Session {
           raw: null,
           resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
           pixel: { depth: 'Eight', channels: 3 },
-          encode: { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
+          encode: hdr
+            ? hdr.encode
+            : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
           metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: displayPolicy(this.info, 'DisplayP3'),
+          color: hdr ? hdr.color : displayPolicy(this.info, 'DisplayP3'),
+          // The master reads a gain map itself, and refuses the field.
+          ...(hdr ? { gain_map: null } : {}),
           grade: compiled.grade,
           framing: compiled.framing,
           lens: compiled.lens,
@@ -1853,7 +1911,11 @@ class Session {
   private lookFiles = new Map<string, string>()
   private lookEdge = LOOK_EDGE_DEFAULT
 
-  /** The cards wanted now, in order (see `LookThumbQueue.request`). */
+  /**
+   * The cards wanted now, in order (see `LookThumbQueue.request`). Always
+   * SDR, Full HDR or not: small cards side by side compare looks, and a
+   * strip of them glowing would outshine the photo.
+   */
   lookThumbs(token: number, jobs: ThumbJob<Recipe>[], edge: number): void {
     if (this.closed) return
     this.lookEdge = Math.round(Math.max(LOOK_EDGE_MIN, Math.min(LOOK_EDGE_MAX, edge)))

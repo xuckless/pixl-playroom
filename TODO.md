@@ -503,13 +503,22 @@ After: Pass 98.
 
 ### Pass 100 — Caches and the library (was 81) · 4 pts
 
-After: Pass 99. Can be taken beside Passes 101 and 102.
+After: Pass 99.
 
-- [ ] **M** · Library and filmstrip thumbnails, 1:1 tiles and the Before
-      picture in the chosen format, HDR where the photo is. JPEG thumbnails
-      already made stay good and are replaced as they are remade.
-- [ ] **S** · Mask thumbnails and look cards stay SDR; say so where they are
-      made. The disk cache's size and pruning checked again.
+- [x] **M** · In Full HDR the Before picture and the 1:1 tiles are HDR:
+      AVIFs whose SDR base carries the master's gain map (`hdrFile`); files,
+      since a frame is let go as the drafts stream past. A tile states the
+      settled picture's peak and gamut reach (the engine refuses `Measured`
+      on a region; an SDR tile until the first settled HDR picture).
+      `SharpTile` asks again when Full HDR or the display changes. Measured
+      (M2 Pro, IMG_3198): a warm HDR tile 558–588 ms against SDR 526–618 ms;
+      the first, which develops the RAW's full-size master, ~2.4 s; both
+      decode in the window.
+- [x] **S** · Mask thumbnails and look cards stay SDR (said where they are
+      made). **Library and filmstrip thumbnails stay SDR JPEGs**: Full HDR is
+      a Develop view, and a grid of glowing thumbnails would outshine the
+      photo being chosen. Files rotate as before (the view and companion
+      stems pruned together; four region slots, either extension).
 
 ### Pass 101 — What reads the picture (was 82) · 5 pts
 

@@ -5,6 +5,8 @@ import { visiblePart, type Rect, type ViewGeometry } from '../../../../shared/vi
 import { api } from '../../lib/api'
 import { isInteracting } from '../../lib/interacting'
 import { useDevelop } from '../../state/develop'
+import { useUi } from '../../state/ui'
+import { renderDisplay, useDisplay } from '../../state/display'
 
 /** How long the view and the recipe must rest before a tile is asked for. */
 const SETTLE_MS = 180
@@ -15,6 +17,8 @@ interface Tile extends RegionResult {
   recipe: Recipe
   /** Made for the crop tool's whole frame (its fractions are of that picture). */
   whole: boolean
+  /** The display it was made for (Full HDR), as `hdrKey`. */
+  hdr: string
 }
 
 /**
@@ -45,6 +49,13 @@ export const SharpTile = memo(function SharpTile({
   const session = useDevelop((s) => s.session)
   const recipe = useDevelop((s) => s.recipe)
   const [tile, setTile] = useState<Tile | null>(null)
+  // Full HDR on or off, or another display: the tile is made again for it.
+  const hdr = JSON.stringify(
+    renderDisplay(
+      useUi((s) => s.fullHdr),
+      useDisplay((s) => s.display)
+    )
+  )
   const request = useRef(0)
   const shownWidth = g.crop && !g.whole ? g.crop.width * g.width : g.width
   // The preview is enough while it has a pixel for every device pixel.
@@ -75,7 +86,7 @@ export const SharpTile = memo(function SharpTile({
           zoom: Math.min(1, scale)
         })
         .then((r) => {
-          if (id === request.current) setTile({ ...r, recipe, whole: g.whole === true })
+          if (id === request.current) setTile({ ...r, recipe, whole: g.whole === true, hdr })
         })
         .catch(() => undefined)
     }
@@ -83,9 +94,16 @@ export const SharpTile = memo(function SharpTile({
     return () => clearTimeout(timer)
     // The rect follows the box and the view; the geometry follows the recipe.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wanted, session, recipe, rect.x, rect.y, rect.w, rect.h, box.w, box.h, scale, g.whole])
+  }, [wanted, session, recipe, rect.x, rect.y, rect.w, rect.h, box.w, box.h, scale, g.whole, hdr])
 
-  if (!wanted || !tile || tile.recipe !== recipe || tile.whole !== (g.whole === true)) return null
+  if (
+    !wanted ||
+    !tile ||
+    tile.recipe !== recipe ||
+    tile.whole !== (g.whole === true) ||
+    tile.hdr !== hdr
+  )
+    return null
   const a = { x: tile.x, y: tile.y }
   const b = { x: tile.x + tile.width, y: tile.y + tile.height }
   return (
