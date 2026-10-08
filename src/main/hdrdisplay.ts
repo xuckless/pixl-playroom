@@ -31,15 +31,25 @@ function nativeReader(): Reader | null {
   if (reader !== undefined) return reader
   reader = null
   if (process.platform !== 'darwin') return reader
-  const file = app.isPackaged
-    ? join(process.resourcesPath, 'native', 'display.node')
-    : join(app.getAppPath(), 'build', 'native', 'display.node')
-  try {
-    // A native addon: required at run time from beside the app, never bundled.
-    reader = createRequire(__filename)(file) as Reader
-  } catch (err) {
-    log.warn('display reader not loaded (stated values only)', file, (err as Error).message)
+  // Packaged: beside the app's resources. A checkout: build/native, found
+  // from the app's path, the bundle, or where the app was started.
+  const files = app.isPackaged
+    ? [join(process.resourcesPath, 'native', 'display.node')]
+    : [
+        join(app.getAppPath(), 'build', 'native', 'display.node'),
+        join(__dirname, '..', '..', 'build', 'native', 'display.node'),
+        join(process.cwd(), 'build', 'native', 'display.node')
+      ]
+  for (const file of files) {
+    try {
+      // A native addon: required at run time from beside the app, never bundled.
+      reader = createRequire(__filename)(file) as Reader
+      return reader
+    } catch {
+      // the next place
+    }
   }
+  log.warn('display reader not loaded (stated values only)', files.join(', '))
   return reader
 }
 

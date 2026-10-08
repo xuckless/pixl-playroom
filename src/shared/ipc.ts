@@ -561,6 +561,11 @@ export interface ViewState {
   guides?: boolean
   /** An HDR photo: also render where the picture rises above white (the headroom overlay). */
   headroom?: boolean
+  /**
+   * Full HDR (engine 0.18): render for this display (its SDR white and peak,
+   * `Ceiling::Display`); null renders SDR, as before.
+   */
+  display?: { whiteNits: number; peakNits: number } | null
 }
 
 export interface RenderReport {

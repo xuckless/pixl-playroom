@@ -765,3 +765,12 @@ aside.right .panels.scoped {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* Full HDR (engine 0.18): lit while the photo shows its light above white */
+.tool-bar .full-hdr.on {
+  color: var(--acc);
+  box-shadow: inset 0 0 0 1px var(--acc-a55);
+}
+.tool-bar .full-hdr:disabled {
+  opacity: 0.45;
+}

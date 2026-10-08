@@ -50,3 +50,16 @@ test('a reading renders again only when it moves enough', () => {
     displayChanged(a, resolveDisplay(DEFAULT_DISPLAY_SETTING, { current: 3.2, potential: 16 }))
   )
 })
+
+test('Full HDR renders for the display while on; a Mac with headroom to reach asks for it first', async () => {
+  const { renderDisplay, canShowHdr } = await import('../src/shared/hdrdisplay')
+  const mac = resolveDisplay(DEFAULT_DISPLAY_SETTING, { current: 1, potential: 16 })
+  assert.ok(canShowHdr(mac))
+  assert.deepEqual(renderDisplay(true, mac), { whiteNits: 203, peakNits: 406 })
+  assert.equal(renderDisplay(false, mac), null)
+  const raised = resolveDisplay(DEFAULT_DISPLAY_SETTING, { current: 5, potential: 16 })
+  assert.deepEqual(renderDisplay(true, raised), { whiteNits: 203, peakNits: 1015 })
+  const sdr = resolveDisplay(DEFAULT_DISPLAY_SETTING, null)
+  assert.ok(!canShowHdr(sdr))
+  assert.equal(renderDisplay(true, sdr), null)
+})

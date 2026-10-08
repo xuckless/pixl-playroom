@@ -22,6 +22,7 @@ import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
 import { useLibrary } from './library'
 import { useUi } from './ui'
+import { renderDisplay, useDisplay } from './display'
 import type { GuideLine } from '../../../shared/upright'
 import type { InvariantPlace } from '../../../shared/invariant'
 
@@ -688,6 +689,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       // engine knows exactly what the key selects in the graded picture.
       maskLive: rangeSelected(get()),
       headroom: get().headroom && session.isHdr,
+      display: renderDisplay(useUi.getState().fullHdr, useDisplay.getState().display),
       targetEdge
     }
     set({ rendering: true })

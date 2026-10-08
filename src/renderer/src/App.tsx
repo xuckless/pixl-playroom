@@ -11,6 +11,8 @@ import { Scopes } from './develop/Scopes'
 import { AdjustStack } from './develop/AdjustStack'
 import { ToolStrip } from './develop/ToolStrip'
 import { startDrawerSync } from './develop/tools'
+import { startDisplayUpkeep, useDisplay, renderDisplay } from './state/display'
+import { useUi } from './state/ui'
 import { startDenoiseUpkeep, startStaleUpkeep } from './lib/denoise'
 import { startHdrUpkeep } from './lib/hdr'
 import { DevelopToolbar } from './shell/DevelopToolbar'
@@ -420,6 +422,17 @@ export default function App(): React.JSX.Element {
       startDrawerSync(),
       startDenoiseUpkeep(),
       startStaleUpkeep(),
+      startDisplayUpkeep(),
+      // Full HDR toggled, or the display's numbers moved: render for it again.
+      useUi.subscribe((s, prev) => {
+        if (s.fullHdr !== prev.fullHdr) useDevelop.getState().pushView()
+      }),
+      useDisplay.subscribe((s, prev) => {
+        const ui = useUi.getState()
+        const a = renderDisplay(ui.fullHdr, prev.display)
+        const b = renderDisplay(ui.fullHdr, s.display)
+        if (JSON.stringify(a) !== JSON.stringify(b)) useDevelop.getState().pushView()
+      }),
       startHdrUpkeep(),
       api.app.onRenderScale(onRenderScale),
       api.app.onOpenPaths((paths) => void openPaths(paths)),

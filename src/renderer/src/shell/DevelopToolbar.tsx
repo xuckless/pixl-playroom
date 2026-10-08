@@ -6,7 +6,37 @@ import { useLibrary } from '../state/library'
 import { loupeZoom } from '../views/loupe/zoom'
 import { toggleMasks } from '../develop/tools'
 import { useUi } from '../state/ui'
+import { canShowHdr, useDisplay } from '../state/display'
 import { useKeyHint, withKey } from '../lib/commands'
+
+/**
+ * Full HDR (engine 0.18): the photo shown with its light above white, for
+ * this display. How it is viewed, not how it is edited (a gain-map photo's
+ * SDR | HDR switch is that), so it says "show" and lives with the view.
+ */
+function FullHdrToggle(): React.JSX.Element {
+  const on = useUi((s) => s.fullHdr)
+  const set = useUi((s) => s.setFullHdr)
+  const display = useDisplay((s) => s.display)
+  const able = canShowHdr(display)
+  return (
+    <button
+      className={`ghost lg full-hdr${on && able ? ' on' : ''}`}
+      aria-pressed={on && able}
+      disabled={!able}
+      onClick={() => set(!on)}
+      title={
+        able
+          ? on
+            ? 'Showing the photo in HDR, for this display: click to show it in SDR'
+            : 'Show the photo in HDR, with the light above white this display can show'
+          : 'This display shows SDR: Full HDR needs one with headroom (Settings → Display)'
+      }
+    >
+      Full HDR
+    </button>
+  )
+}
 
 /** The second tier in Develop: back to the library, history, how to look, and what to do with the photo. */
 export function DevelopToolbar(): React.JSX.Element {
@@ -101,6 +131,7 @@ export function DevelopToolbar(): React.JSX.Element {
         <Icon name="redo" />
       </button>
       <span className="vsep" />
+      <FullHdrToggle />
       <div className="seg lg" role="group" aria-label="View">
         {views.map((v) => (
           <button

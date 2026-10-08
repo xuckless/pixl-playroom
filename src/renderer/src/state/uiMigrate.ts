@@ -42,5 +42,7 @@ export function migrateUi(persisted: unknown, version: number): Saved {
     const denoise = p.denoise as Saved | undefined
     if (denoise?.model === 'scunet-color-real') p.denoise = { ...denoise, model: 'drunet-color' }
   }
+  // 5: Full HDR (engine 0.18) starts off, whatever a layout held under the name.
+  if (version < 5) p.fullHdr = false
   return p
 }

@@ -103,3 +103,27 @@ export function displayChanged(a: DisplayHdr | null, b: DisplayHdr): boolean {
     a.whiteNits !== b.whiteNits
   )
 }
+
+/** Whether this display can show Full HDR at all: headroom now, or (a Mac) headroom it can reach. */
+export function canShowHdr(display: DisplayHdr | null): boolean {
+  return !!display && (display.hdr || (display.potential ?? 0) >= MIN_HEADROOM)
+}
+
+/**
+ * Asked for while macOS has not raised the headroom yet: it does only while
+ * a window shows extended-range content, so the first HDR frame asks for
+ * this much (or the screen's potential, if less), and the next reading
+ * (main/hdrdisplay.ts, every 2 s) brings the real number.
+ */
+export const BOOTSTRAP_HEADROOM = 2
+
+/** What a render is made for: the display's numbers while Full HDR is on and it can show HDR. */
+export function renderDisplay(
+  fullHdr: boolean,
+  display: DisplayHdr | null
+): { whiteNits: number; peakNits: number } | null {
+  if (!fullHdr || !display || !canShowHdr(display)) return null
+  if (display.hdr) return { whiteNits: display.whiteNits, peakNits: display.peakNits }
+  const h = Math.min(BOOTSTRAP_HEADROOM, display.potential ?? BOOTSTRAP_HEADROOM)
+  return { whiteNits: display.whiteNits, peakNits: Math.round(display.whiteNits * h) }
+}

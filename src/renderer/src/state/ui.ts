@@ -161,6 +161,13 @@ interface UiState {
   /** Change the current brush's settings. */
   setBrush(p: Partial<BrushSettings>): void
   masksWin: MasksWindow
+  /**
+   * Full HDR: the photo shown with its light above white on a display that
+   * has headroom (engine 0.18). How the photo is viewed, not part of its
+   * recipe; not the SDR | HDR "edit as" switch a gain-map photo has.
+   */
+  fullHdr: boolean
+  setFullHdr(on: boolean): void
   setMasksWin(p: Partial<MasksWindow>): void
   /** AI denoise's model and strength for the next step (Detail → AI). */
   denoise: { model: AiDenoiseModel; strength: number }
@@ -257,6 +264,8 @@ export const useUi = create<UiState>()(
       brushSlot: 'A',
       setBrushSlot: (brushSlot) => set({ brushSlot }),
       heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100 },
+      fullHdr: false,
+      setFullHdr: (fullHdr) => set({ fullHdr }),
       setHeal: (p) => set((s) => ({ heal: { ...s.heal, ...p } })),
       enhance: DEFAULT_ENHANCE,
       setEnhance: (p) => set((s) => ({ enhance: { ...s.enhance, ...p } })),
@@ -306,7 +315,7 @@ export const useUi = create<UiState>()(
     {
       name: 'playroom.ui',
       storage,
-      version: 4,
+      version: 5,
       migrate: (persisted, version) => migrateUi(persisted, version),
       // Crop or Heal is never in hand when the app opens.
       partialize: (s) => {

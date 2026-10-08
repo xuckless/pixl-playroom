@@ -430,13 +430,18 @@ After: Pass 85.
 
 After: Pass 96.
 
-- [ ] **M** · A toggle on the top bar (`shell/DevelopToolbar.tsx`), kept in
-      the `ui` store, with an "unavailable on this display" state. It isn't
-      the SDR | HDR "edit as" switch a gain-map photo already has, so its
-      name and tip must not read as the same thing.
-- [ ] **S** · `ViewState.display: { peakNits, whiteNits } | null`; a change
-      renders the draft and the settled picture again.
-- [ ] **S** · A `uiMigrate` test for the new `ui` field.
+- [x] **M** · "Full HDR" on the top bar (`shell/DevelopToolbar.tsx`), kept in
+      the `ui` store (`fullHdr`, how the photo is viewed, not its recipe),
+      disabled with "This display shows SDR" where it can't show HDR. It says
+      "show", apart from a gain-map photo's SDR | HDR edit-as switch.
+- [x] **S** · `ViewState.display: { whiteNits, peakNits } | null`
+      (`renderDisplay`, `shared/hdrdisplay.ts`): a toggle or a display change
+      renders again. On a Mac whose headroom macOS has not raised yet (it
+      reads 1.0 at idle, potential 16×), the first HDR frame asks for 2×;
+      the 2-s reading brings the real number.
+- [x] **S** · `uiMigrate` version 5 (Full HDR starts off) and its test; the
+      display reader is found from the app path, the bundle or the working
+      directory in a checkout (the built app read the XDR's potential 16×).
 
 ### Pass 98 — Drafts in 16-bit float (was 79) · 5 pts
 
