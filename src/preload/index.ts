@@ -246,6 +246,8 @@ const api = {
     historyDelete: (key: string, seqs: number[]) =>
       call<HistoryLog>(IPC.develop.historyDelete, key, seqs),
     onRendered: (cb: (e: RenderEvent) => void) => on(IPC.develop.rendered, cb),
+    /** The 1:1 tile's source got better (the plan's RAW master after the quick one): ask again. */
+    onTileStale: (cb: (e: { key: string }) => void) => on(IPC.develop.tileStale, cb),
     onRenderError: (
       cb: (e: {
         key: string

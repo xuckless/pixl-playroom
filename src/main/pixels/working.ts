@@ -26,6 +26,7 @@ import type { Proxies, ProxyFile } from '../proxy'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
 import type { PixelsJob } from '../workers/pool'
 import { encodeGreyPng } from '../pngio'
+import { traceRegion } from '../trace'
 import { headroomGuard } from './ops'
 
 /** What the working pixels need from outside: the engine, the project's blobs, a worker. */
@@ -550,7 +551,11 @@ async function makeMaster(
 ): Promise<WorkingSet> {
   if (steps.length === 0) return { ...set, master: await base() }
   const from = await base()
-  if (set.master && set.masterOf === from.path) return set
+  if (set.master && set.masterOf === from.path) {
+    traceRegion({ step: 'working master', reused: true, steps: steps.length })
+    return set
+  }
+  const t0 = Date.now()
   const dir = dirOf(deps, key)
   await mkdir(dir, { recursive: true })
   const prev = await previousSet(deps, version, steps)
@@ -571,6 +576,7 @@ async function makeMaster(
   }
   const next = { ...set, master, masterOf: from.path }
   await writeSet(deps, next)
+  traceRegion({ step: 'working master', reused: false, steps: steps.length, ms: Date.now() - t0 })
   return next
 }
 

@@ -3,6 +3,8 @@ import type { RegionResult } from '../../../../shared/ipc'
 import type { Recipe } from '../../../../shared/recipe'
 import { visiblePart, type Rect, type ViewGeometry } from '../../../../shared/view'
 import { api } from '../../lib/api'
+import { isFrame, whenFrame } from '../../lib/frames'
+import { Picture } from './DecodedImage'
 import { isInteracting } from '../../lib/interacting'
 import { useDevelop } from '../../state/develop'
 import { useUi } from '../../state/ui'
@@ -49,6 +51,19 @@ export const SharpTile = memo(function SharpTile({
   const session = useDevelop((s) => s.session)
   const recipe = useDevelop((s) => s.recipe)
   const [tile, setTile] = useState<Tile | null>(null)
+  /** The tile a better one replaces, kept under it while it fades in. */
+  const [under, setUnder] = useState<Tile | null>(null)
+  /** Bumped when main says the tile's source got better: the same view is asked for again. */
+  const [better, setBetter] = useState(0)
+  useEffect(
+    () =>
+      api.develop.onTileStale((e) => {
+        if (e.key !== useDevelop.getState().session?.key) return
+        asked.current = null
+        setBetter((n) => n + 1)
+      }),
+    []
+  )
   // Full HDR on or off, or another display: the tile is made again for it.
   const hdr = JSON.stringify(
     renderDisplay(
@@ -88,8 +103,16 @@ export const SharpTile = memo(function SharpTile({
       asked.current = what
       void api.develop
         .region(part)
-        .then((r) => {
-          if (id === request.current) setTile({ ...r, recipe, whole: g.whole === true, hdr })
+        .then(async (r) => {
+          // A Full HDR tile is a frame: here once its pixels are (their own port).
+          if (isFrame(r.url) && !(await whenFrame(r.url))) throw new Error('frame gone')
+          if (id !== request.current) return
+          setTile((was) => {
+            const next = { ...r, recipe, whole: g.whole === true, hdr }
+            // The same view made better: the old one stays under it while it fades in.
+            setUnder(was && was.recipe === recipe && was.hdr === hdr ? was : null)
+            return next
+          })
         })
         .catch(() => {
           // Cancelled or failed: the next rest may ask again.
@@ -100,7 +123,21 @@ export const SharpTile = memo(function SharpTile({
     return () => clearTimeout(timer)
     // The rect follows the box and the view; the geometry follows the recipe.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wanted, session, recipe, rect.x, rect.y, rect.w, rect.h, box.w, box.h, scale, g.whole, hdr])
+  }, [
+    wanted,
+    session,
+    recipe,
+    rect.x,
+    rect.y,
+    rect.w,
+    rect.h,
+    box.w,
+    box.h,
+    scale,
+    g.whole,
+    hdr,
+    better
+  ])
 
   if (
     !wanted ||
@@ -110,22 +147,26 @@ export const SharpTile = memo(function SharpTile({
     tile.hdr !== hdr
   )
     return null
-  const a = { x: tile.x, y: tile.y }
-  const b = { x: tile.x + tile.width, y: tile.y + tile.height }
+  const place = (t: Tile): React.CSSProperties => ({
+    left: t.x * rect.w,
+    top: t.y * rect.h,
+    width: t.width * rect.w,
+    height: t.height * rect.h,
+    // Past 200%, each photo pixel shows as a crisp square.
+    imageRendering: scale >= 2 ? 'pixelated' : 'auto'
+  })
   return (
-    <img
-      className="sharp-tile"
-      src={tile.url}
-      draggable={false}
-      alt=""
-      style={{
-        left: a.x * rect.w,
-        top: a.y * rect.h,
-        width: (b.x - a.x) * rect.w,
-        height: (b.y - a.y) * rect.h,
-        // Past 200%, each photo pixel shows as a crisp square.
-        imageRendering: scale >= 2 ? 'pixelated' : 'auto'
-      }}
-    />
+    <>
+      {under && under.url !== tile.url && (
+        <Picture key={under.url} src={under.url} className="sharp-tile" style={place(under)} />
+      )}
+      <Picture
+        key={tile.url}
+        src={tile.url}
+        className={`sharp-tile${under ? ' fresh' : ''}`}
+        style={place(tile)}
+        onAnimationEnd={() => setUnder(null)}
+      />
+    </>
   )
 })

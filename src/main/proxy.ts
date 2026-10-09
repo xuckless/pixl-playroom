@@ -497,6 +497,71 @@ export async function pruneLensed(
 const mastering = new Map<string, Promise<ProxyFile>>()
 
 /**
+ * Whether a RAW's full-size master for this develop is made already (its
+ * file and its record there): what the 1:1 view asks before it decides to
+ * show a quick master first.
+ */
+export async function masterCached(
+  photo: PhotoRow,
+  info: Pick<SourceInfo, 'raw_cfa'>,
+  ask: RawDevelopAsk = PLAIN_DEVELOP
+): Promise<boolean> {
+  const plan = await scenePlan(info.raw_cfa, ask)
+  const path = join(paths.photoCachePath(photo.id), `master-${stamp(photo)}-${plan.tag}.tiff`)
+  return (await exists(path)) && (await exists(`${path}.json`))
+}
+
+/**
+ * The quick master for a first 1:1 look (the engine's viewing guide,
+ * 2026-10-09): the same Scene develop with the classic demosaic (PPG on a
+ * Bayer sensor, about 1.2 s for 24 MP on an M2 Pro, against DemosaicNet's
+ * 5 s), shown while the plan's master is made; cached apart as `-ppg`, and
+ * gone when the plan's master is made (its clean-up takes it). It never
+ * removes another master itself: the plan's may be being written beside it.
+ */
+export function ensureQuickMaster(engine: EngineClient, photo: PhotoRow): Promise<ProxyFile> {
+  const s = stamp(photo)
+  const key = `${photo.id}:${s}:quick`
+  let p = mastering.get(key)
+  if (!p) {
+    p = (async (): Promise<ProxyFile> => {
+      const dir = paths.photoCache(photo.id)
+      const path = join(dir, `master-${s}-ppg.tiff`)
+      const meta = `${path}.json`
+      if ((await exists(path)) && (await exists(meta)))
+        return JSON.parse(await readFile(meta, 'utf8')) as ProxyFile
+      const t0 = Date.now()
+      const report = await engine.convert({
+        ...blankRequest(photo.path, path, 'Raw'),
+        raw: rawMaster(colourOf(photo), { demosaic: 'Classic', mosaic_denoise: null }),
+        pixel: { depth: 'F32', channels: 3 },
+        encode: { Tiff: { compression: 'None' } },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        color: 'Preserve'
+      })
+      traceRegion({
+        step: 'quick master',
+        photoId: photo.id,
+        ms: Date.now() - t0,
+        width: report.width,
+        height: report.height
+      })
+      const out: ProxyFile = {
+        path,
+        input: 'Tiff',
+        width: report.width,
+        height: report.height,
+        float: true
+      }
+      await writeFile(meta, JSON.stringify(out))
+      return out
+    })().finally(() => mastering.delete(key))
+    mastering.set(key, p)
+  }
+  return p
+}
+
+/**
  * A RAW's full-resolution developed frame, for region renders, the noise
  * read and the pixel steps. Other formats decode fast enough to read the
  * original each time. Its demosaic is the best there is now (DemosaicNet once

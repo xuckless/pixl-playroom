@@ -38,7 +38,7 @@ import { stackSignature, type PixelStep } from '../shared/pixels'
 import { developMark, pixlSupported, resolveRawColour } from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
-import { askOf } from './ai/rawdevelop'
+import { askOf, scenePlan } from './ai/rawdevelop'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking, workingKey, type WorkingSet } from './pixels/working'
 import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
@@ -98,6 +98,8 @@ import {
   ensureLensedProxies,
   ensureMaster,
   ensureProxies,
+  ensureQuickMaster,
+  masterCached,
   pruneLensed,
   type Proxies,
   type ProxyFile
@@ -232,6 +234,8 @@ interface HdrFigures {
  */
 const COMPANION_EDGE = 1024
 const DRAFT_COMPANION_EDGE = 512
+/** A 1:1 tile's companion: only a frame's SDR stand-in (nothing measures a tile), kept small. */
+const TILE_COMPANION_EDGE = 256
 
 /** A report's companion as a frame carries it. */
 function companionOf(c: Companion): { width: number; height: number; data: Uint8Array } {
@@ -344,6 +348,8 @@ class Session {
   private lastOut: Record<Kind, string> = { draft: '', full: '' }
   private lastMaskOut = ''
   private regionSlot = 0
+  /** Full HDR 1:1 tiles sent as frames, numbered: each its own frame id. */
+  private tileSeq = 0
   private beforeKey = ''
   /**
    * What each kind of picture was last rendered from, and the event sent for
@@ -1480,6 +1486,29 @@ class Session {
     } satisfies RenderEvent)
   }
 
+  /**
+   * The RAW master a 1:1 view reads: the plan's (DemosaicNet) once it is
+   * made; until then a quick classic one (PPG, about 1.2 s) at once, the
+   * plan's made in the background, and the window told to ask again when it
+   * is (the engine's viewing guide, 2026-10-09).
+   */
+  private async rawMasterForView(): Promise<ProxyFile> {
+    const ask = askOf(this.recipe)
+    const plan = await scenePlan(this.file.raw_cfa, ask)
+    const plain = (): Promise<ProxyFile> =>
+      ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+    if (plan.demosaic === 'classic' || (await masterCached(this.row, this.file, ask)))
+      return plain()
+    const key = this.key
+    void plain().then(
+      () => {
+        if (!this.closed) this.owner.send(IPC.develop.tileStale, { key })
+      },
+      (err: unknown) => log.warn('RAW master for 1:1 not made', (err as Error).message)
+    )
+    return ensureQuickMaster(this.owner.bgEngine, this.row)
+  }
+
   /** A 1:1 (or smaller) render of part of the full-resolution frame. */
   async region(req: RegionRequest): Promise<RegionResult> {
     const t0 = performance.now()
@@ -1499,7 +1528,7 @@ class Session {
       : this.hdrMaster
         ? this.hdrMaster
         : raw
-          ? await ensureMaster(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
+          ? await this.rawMasterForView()
           : {
               path: this.row.path,
               input: this.info.input,
@@ -1518,7 +1547,10 @@ class Session {
     // measure. Before the first settled HDR picture, an SDR tile.
     const figures = this.hdrFigures
     const display = figures ? (this.view.display ?? null) : null
-    const hdr = display && figures ? hdrFile(display, figures) : null
+    // Full HDR: F16 pixels over the preview port, as drafts are, not an AVIF
+    // with a gain map read back (an export's format: 0.4–1.3 s a tile; the
+    // engine's viewing guide, 2026-10-09). The whole picture's figures stated.
+    const hdr = display !== null && figures !== null
     // Framed as the picture on screen is (straightened, cropped, warped, the
     // crop tool's whole frame): since engine 0.16 a region of it is the full
     // render's own pixels there, so 1:1 is sharp on any photo.
@@ -1548,17 +1580,24 @@ class Session {
     this.regionSlot = (this.regionSlot + 1) % 4
     // A JPEG at full chroma: as sharp at 1:1 as the PNG it was, a fraction
     // of the time to write and decode at the screen's size.
-    const out = join(this.dir, `region-${this.regionSlot}.${hdr ? 'avif' : 'jpg'}`)
+    const frame = hdr ? `${this.tag}-tile${++this.tileSeq}` : undefined
+    const out = frame ? '' : join(this.dir, `region-${this.regionSlot}.jpg`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
     const request: ConvertRequest = {
       ...blankRequest(src.path, out, src.input, original),
       raw: null,
+      ...(frame ? { sink: 'Bytes' as const } : {}),
       resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
-      pixel: { depth: 'Eight', channels: 3 },
-      encode: hdr ? hdr.encode : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
+      pixel: frame ? { depth: 'F32', channels: 4 } : { depth: 'Eight', channels: 3 },
+      encode: frame
+        ? { Pixels: { sample: 'F16' } }
+        : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
       metadata: { exif: false, icc: true, xmp: false, iptc: false },
-      color: hdr ? hdr.color : displayPolicy(this.info, 'DisplayP3'),
+      color:
+        frame && display && figures
+          ? masterFor(display, figures, TILE_COMPANION_EDGE)
+          : displayPolicy(this.info, 'DisplayP3'),
       // The master reads a gain map itself, and refuses the field.
       ...(hdr ? { gain_map: null } : {}),
       grade: compiled.grade,
@@ -1571,7 +1610,19 @@ class Session {
       ...(hdr && zoom < 1 ? { linear_resample: true } : {})
     }
     const tConvert = performance.now()
-    const report = await this.owner.engine.convert(request, { signal }).catch(named(compiled))
+    const report = await this.owner.engine
+      .convert(request, { signal, frame })
+      .catch(named(compiled))
+    // The engine had no way to the window (it was reloading): main passes the frame on.
+    if (frame && report.output)
+      this.owner.send(IPC.develop.previewFrame, {
+        frame,
+        width: report.width,
+        height: report.height,
+        data: report.output,
+        sample: 'F16',
+        ...(report.companion ? { companion: companionOf(report.companion) } : {})
+      })
     traceRegion({
       step: 'region',
       key: this.key,
@@ -1587,7 +1638,7 @@ class Session {
       masterMs,
       src,
       zoom: req.zoom,
-      fullHdr: hdr !== null,
+      fullHdr: hdr,
       convertMs: Math.round(performance.now() - tConvert),
       totalMs: Math.round(performance.now() - t0),
       request,
@@ -1609,7 +1660,7 @@ class Session {
     })
     if (this.regionAbort === abort) this.regionAbort = null
     return {
-      url: cacheUrl(out, `${Date.now()}`),
+      url: frame ? `frame:${frame}` : cacheUrl(out, `${Date.now()}`),
       x: x / framed.width,
       y: y / framed.height,
       width: w / framed.width,

@@ -1031,6 +1031,18 @@ Full HDR on, on the M2 Pro.
       working out how they fit), and what is coming: our own language
       models, MCP, more Photoshop- and Lightroom-like tools, more speed, and
       a cookie.
+- [x] **M** · The engine's viewing guide (`viewing-0.19.md`, 2026-10-09),
+      after Playroom's 1:1 trace: Full HDR 1:1 tiles as F16 frames over the
+      preview port (no AVIF and gain map: encode 0.3–0.5 s → 0.02 s); a
+      quick PPG master shown first while DemosaicNet's is made, then
+      cross-faded in (first 1:1 of a RAW 6.9 s → 2.4 s); the laid working
+      copy cached with its master (an edited photo's first 1:1 after
+      reopening 16.6 s → 4.0 s). Also fixed by the trace: a 0.9999… zoom
+      refused in Full HDR, repeated tile asks cancelling each other, and a
+      stale denoise remake asking for a model that isn't there. Left: laying
+      pixel steps only over a tile's region (the first ever 1:1 of an edited
+      photo still lays the whole frame, ~8 s), and the thumbnail path (48 s
+      for 259 RAWs).
 - [ ] **S** · Release-As 0.4.0-beta and the PR to main, on the owner's ask.
 
 ---
