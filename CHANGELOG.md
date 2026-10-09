@@ -1,5 +1,68 @@
 # Changelog
 
+## [0.4.0-beta](https://github.com/xuckless/pixl-playroom/compare/v0.3.0-beta...v0.4.0-beta) (2026-10-09)
+
+
+### Features
+
+* added multi language support ([67b25f5](https://github.com/xuckless/pixl-playroom/commit/67b25f56b5cbc8d0871f47b617dd48c624ad9bef))
+* **ai:** Gemma download and run, the AI killswitch, heavy models behind a benchmark (0.19) ([34f129c](https://github.com/xuckless/pixl-playroom/commit/34f129cddbadfb483be137b7d2df0c516a33816b))
+* **ai:** Gemma names what is in a photo: chips atop Masks, searchable in the Library (0.19) ([e9cc1a4](https://github.com/xuckless/pixl-playroom/commit/e9cc1a4d2b576aab37b4032aa0949c9fa1d19621))
+* **ai:** NAFNet on CoreML with static shapes, SCUNet retired, RAW model input bounded (0.19) ([c13279a](https://github.com/xuckless/pixl-playroom/commit/c13279a173fffc3bf67dbf88d72c3adf206245bd))
+* **cull:** cull signals per photo: exposure, focus in the subject, blur, blink hint, picture hash (0.19) ([3d336c1](https://github.com/xuckless/pixl-playroom/commit/3d336c18f02993570f6de15078f9458813336adb))
+* **cull:** suggested rejects in the Library: dimmed with the reason, Keep or Reject, learnt thresholds (0.19) ([78ef358](https://github.com/xuckless/pixl-playroom/commit/78ef35851a36309f549b015d7ff3d3308113a1f7))
+* **detail:** RAW sharpening with the edge mask, and sharpening the ([7d7bc50](https://github.com/xuckless/pixl-playroom/commit/7d7bc50ab20367ac1b03a480ed07f0855a9fb6bd))
+* **develop:** remake a RAW's stale DRUNet denoise in place, thumbnails ([c5d25ff](https://github.com/xuckless/pixl-playroom/commit/c5d25ff9da1eb7d0cc56d051a675dba321b29df0))
+* **develop:** the Smoothing slider (engine 0.18 adjustment smoothing), ([e7fc1c6](https://github.com/xuckless/pixl-playroom/commit/e7fc1c682d1378b882bcca49461c0b72800fefbc))
+* **display:** Full HDR renders in 16-bit float, drawn on a WebGPU canvas ([64fbaad](https://github.com/xuckless/pixl-playroom/commit/64fbaad133146936a6a5b24ba528a9f26d4a3c57))
+* **display:** Full HDR's Before and 1:1 tiles in HDR ([87796b2](https://github.com/xuckless/pixl-playroom/commit/87796b2bc39d731dfa1ad6a88f5e0346f127d18f))
+* **display:** Full HDR's settled picture as an A/B (F16 frame or AVIF with a gain map) ([ceb2910](https://github.com/xuckless/pixl-playroom/commit/ceb291045500d5321753a93d0507602d32877243))
+* **display:** HDR edges, and the 0.18 half of 0.4.0-beta's notes and README ([d5cadea](https://github.com/xuckless/pixl-playroom/commit/d5cadeadc5aec14ba657edcc74c6b0922ab2f6a2))
+* **display:** read the screen's HDR headroom (a native macOS reader), state it in Preferences, and the HDR preview spike ([1c4b05f](https://github.com/xuckless/pixl-playroom/commit/1c4b05f8a2e2c1a7fa81b287075bcd0b54f70575))
+* **display:** the Full HDR toggle, and the view says which display to render for ([97fc8c1](https://github.com/xuckless/pixl-playroom/commit/97fc8c1becec2d283eb04e8b789c94af6e669505))
+* **display:** what reads the picture in Full HDR reads its SDR companion ([47c1e20](https://github.com/xuckless/pixl-playroom/commit/47c1e20a62b8629190ed3f017fc60aac7c2f6f90))
+* **engine:** engine 0.18's host rules — contrast, calibration bound, ([f6abfc6](https://github.com/xuckless/pixl-playroom/commit/f6abfc6d12a514d40273ebd2aa1a0ec89d65e250))
+* **engine:** run on pixl-engine 0.19.1, and plan Phase O ([5f681d8](https://github.com/xuckless/pixl-playroom/commit/5f681d869089ac64006c2c8df04d6f48b12575cf))
+* **engine:** the safe shutdown, and engine writes trusted to be whole (0.19) ([43192c6](https://github.com/xuckless/pixl-playroom/commit/43192c6ba0df4482f3e2ecea3d82eece42a9e99d))
+* finalizing translation and quality of life changes ([db055c1](https://github.com/xuckless/pixl-playroom/commit/db055c1609124ce4096d2f9747d80e0f851badc7))
+* **heal:** AI Remove with MI-GAN — painted, or the object clicked found ([97829ff](https://github.com/xuckless/pixl-playroom/commit/97829ff7ac04cac167b51a7cdc340d17fdec095a))
+* **library:** in Full HDR the thumbnail is a JPEG of the picture as shown ([c011b99](https://github.com/xuckless/pixl-playroom/commit/c011b998fe004541366d8fda9c974f4878ae2032))
+* **masks:** Depth range on Depth Anything V2, and SAM's guided edge ([653dd6e](https://github.com/xuckless/pixl-playroom/commit/653dd6e481816294032e7d7670855dd0814b5a96))
+* **masks:** Eyes, Brows, Lips and Teeth from the face outlines, a picker per face (0.19) ([e461c03](https://github.com/xuckless/pixl-playroom/commit/e461c0385e88132653c9a6926dd4804f6458b787))
+* **masks:** Find by name with EfficientSAM3, SAM 3 held back (0.19) ([0f60bbe](https://github.com/xuckless/pixl-playroom/commit/0f60bbecdd7e0fb4c962c15eb571287c88596e5b))
+* **masks:** Fine subject on BiRefNet lite, offered on demand; MI-GAN's ([93a6354](https://github.com/xuckless/pixl-playroom/commit/93a6354b26ef60d60338bee7f60cd62bd3df0d74))
+* **masks:** Sky, Vegetation and Water, and Face, Hair, Skin and Clothes in one click (0.19) ([ce9408c](https://github.com/xuckless/pixl-playroom/commit/ce9408cdf330b7297bdd56494aee1af05c1392a9))
+* **masks:** the masks pane fixed in the left pane; glass is frost alone over HDR ([56782cd](https://github.com/xuckless/pixl-playroom/commit/56782cd728c09e0ea06d3963ca267de1acf92c2f))
+* **models:** Enhance's Scale and Source, retired models and the PixlRGB ([2c7e407](https://github.com/xuckless/pixl-playroom/commit/2c7e40797be6bf1908792056501c10d44a365d7e))
+* **raw:** DemosaicNet and PMRID at full size, AHD fallback, binned thumbnails (0.19) ([c810fb2](https://github.com/xuckless/pixl-playroom/commit/c810fb23954e9171de244bdf1c942b14f97485d3))
+* **raw:** the RAW master in Scene float (InpaintOpposed), float ([962b0ec](https://github.com/xuckless/pixl-playroom/commit/962b0ec1b90564ac682194db128602a900675bcb))
+* readme update and engine bump. ([51f96d5](https://github.com/xuckless/pixl-playroom/commit/51f96d550f1567ec115a4638bdf91876eca9c372))
+* **ui:** background work on the top bar, and the efficient UI while Playroom is behind (0.19) ([bd309f3](https://github.com/xuckless/pixl-playroom/commit/bd309f39e1fd2aefa2c8e9574435ee7ae4fcbf05))
+* **ui:** Settings as a wide sheet in sections, styled like Export ([5dfe9dd](https://github.com/xuckless/pixl-playroom/commit/5dfe9dd1963e5762e06dae8b2497eec1dd510a69))
+* **updates:** "Update available!" with the new version's notes; honest 0.4.0-beta notes; on-demand models mirrored ([ccd10f8](https://github.com/xuckless/pixl-playroom/commit/ccd10f83bc8737bcf62f08037ecd5fc81d88087c))
+* window and quality of life changes built ([34d2c28](https://github.com/xuckless/pixl-playroom/commit/34d2c28be8db7127b7b11a69eefd2029ed12972f))
+
+
+### Bug Fixes
+
+* **ci:** pixl-auto loaded only where installed, not a dependency of 0.4.0-beta ([5e942f2](https://github.com/xuckless/pixl-playroom/commit/5e942f26cbd7a0d0a3424660fe2f7c3fdd7d2bd0))
+* **develop:** a floor before every smoothed op (E53's colour blobs on IMG_1826) ([52aaaa2](https://github.com/xuckless/pixl-playroom/commit/52aaaa20649a7018ae4f557fa595f7b2add13395))
+* **develop:** floor the look stage's negatives (E53's Dehaze blotches on a Scene master), and a regression test from the owner's two edits ([135d7f4](https://github.com/xuckless/pixl-playroom/commit/135d7f412761ba2f5d5c95a5d0049abb4a3bc5b3))
+* **develop:** the Color Mixer unsmoothed until E53; feat(raw): AI steps ([a465bd1](https://github.com/xuckless/pixl-playroom/commit/a465bd1f590ab8342154b5b30c1513d835680ff7))
+* **display:** the clipping overlay in Full HDR marks blown at the display's ceiling ([19c2617](https://github.com/xuckless/pixl-playroom/commit/19c26178e1925ac88c9a7aad60347012d6b42a6e))
+* **loupe:** 1:1 renders at once: exact zoom, no repeated asks, no blocking remake; region trace for the engine ([c5f9305](https://github.com/xuckless/pixl-playroom/commit/c5f93052ac7fd073ab02ecfaec908ba0b0b043dc))
+
+
+### Performance
+
+* **loupe:** the engine's viewing guide: F16 1:1 tiles, a quick PPG master first, the working copy reused ([04b27b2](https://github.com/xuckless/pixl-playroom/commit/04b27b2a13a3e217b2e9da8519a1b0669418423b))
+* main-thread pixel work into the worker, a sound safe-shutdown rest, "Engine offline" while resting ([1664049](https://github.com/xuckless/pixl-playroom/commit/1664049f29bed1e04593bf6a46205e5f22af0ec3))
+
+
+### Maintenance
+
+* **release:** 0.4.0-beta ([b62f262](https://github.com/xuckless/pixl-playroom/commit/b62f2622c7c58efd0dc94d7b8d66182d9c3d8fa5))
+
 ## [0.3.0-beta](https://github.com/xuckless/pixl-playroom/compare/v0.2.0-beta...v0.3.0-beta) (2026-10-04)
 
 
