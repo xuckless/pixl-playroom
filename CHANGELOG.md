@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.1-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.0-beta...v0.4.1-beta) (2026-10-09)
+
+
+### Features
+
+* quick fixes, UI update ([c2fe3ef](https://github.com/xuckless/pixl-playroom/commit/c2fe3ef87b54f70b09c3208337324bd054e8bfd2))
+
+
+### Bug Fixes
+
+* "Amount" reads as strength in zh/fr/vi; no build output in the repo ([2ff516b](https://github.com/xuckless/pixl-playroom/commit/2ff516b331b03dea1feffde5ebff0476bcce4550))
+* language related fixes. ([c2fe3ef](https://github.com/xuckless/pixl-playroom/commit/c2fe3ef87b54f70b09c3208337324bd054e8bfd2))
+* **release:** the Mac feed merge keeps the release notes ([0fe93fa](https://github.com/xuckless/pixl-playroom/commit/0fe93facd6e8fc8509d367e157b7b5ca3c02721f))
+* **release:** the Mac feed merge keeps the release notes ([75f3c88](https://github.com/xuckless/pixl-playroom/commit/75f3c88c7571da574542e2dea2d4e4a42bfce075))
+
 ## [0.4.0-beta](https://github.com/xuckless/pixl-playroom/compare/v0.3.0-beta...v0.4.0-beta) (2026-10-09)
 
 
