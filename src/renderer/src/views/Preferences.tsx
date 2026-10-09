@@ -26,12 +26,7 @@ import {
   type DisplayHdr,
   type DisplayHdrSetting
 } from '../../../shared/hdrdisplay'
-import {
-  isBetaTranslation,
-  LANGUAGES,
-  pickLanguage,
-  type LanguageSetting
-} from '../../../shared/i18n'
+import { isBetaTranslation, LANGUAGES, type LanguageSetting } from '../../../shared/i18n'
 
 const LEGAL = 'https://playroom.pixlfoundation.com/legal'
 
@@ -743,7 +738,8 @@ function InterfaceSection(): React.JSX.Element {
 function LanguageSection({ onReport }: { onReport: () => void }): React.JSX.Element {
   const setting = useLanguage((s) => s.setting)
   const language = useLanguage((s) => s.language)
-  const system = setting === 'system' ? language : pickLanguage(navigator.languages)
+  // What choosing System gives, as main reads the OS (the same reading it switches by).
+  const system = useLanguage((s) => s.system)
   const systemName = LANGUAGES.find((l) => l.code === system)?.name ?? system
   return (
     <fieldset style={{ paddingTop: 14 }}>

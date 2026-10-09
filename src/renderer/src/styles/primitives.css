@@ -1099,9 +1099,10 @@ input[type='checkbox']:disabled {
 
 /* ── the efficient UI ─────────────────────────────────────────────
    Playroom not the active app, or Settings → Interface → "Always flat"
-   (lib/efficient.ts): glass is flat colour (no lens, no frost, no glint),
-   and nothing moves. Animations run at no length rather than pausing, so
-   whatever appears meanwhile shows at its end state, not its first frame. */
+   (lib/efficient.ts): glass is flat colour (no lens, no frost, no glint).
+   And while Playroom isn't the active app (data-still), nothing moves:
+   animations run at no length rather than pausing, so whatever appears
+   meanwhile shows at its end state, not its first frame. */
 :root[data-efficient] .glass,
 :root[data-efficient] .liquid.refracting {
   background: rgba(15, 15, 18, 0.97) !important;
@@ -1111,9 +1112,9 @@ input[type='checkbox']:disabled {
 :root[data-efficient] .liquid::after {
   display: none;
 }
-:root[data-efficient] *,
-:root[data-efficient] *::before,
-:root[data-efficient] *::after {
+:root[data-still] *,
+:root[data-still] *::before,
+:root[data-still] *::after {
   animation-duration: 0s !important;
   animation-delay: 0s !important;
   animation-iteration-count: 1 !important;

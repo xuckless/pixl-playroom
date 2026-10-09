@@ -17,4 +17,5 @@
 @import './splash.css' layer(views);
 @import './ai.css' layer(views);
 @import './fx.css' layer(fx);
+@import './aperture.css' layer(fx);
 @import './motion.css' layer(motion);

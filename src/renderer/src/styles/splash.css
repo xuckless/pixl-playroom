@@ -25,9 +25,6 @@
 .splash-mark {
   animation: splashIn 0.9s var(--spring) both;
 }
-.splash-breathe {
-  animation: breathe 3.8s ease-in-out infinite;
-}
 .splash-word {
   font-size: 30px;
   /* the tracking hangs off the last letter; pad the first to keep it centred */

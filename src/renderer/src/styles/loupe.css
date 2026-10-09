@@ -151,16 +151,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.hud-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--acc);
-  box-shadow: 0 0 8px var(--acc);
-}
-.hud-dot.busy {
-  animation: pulseDot 1s ease-in-out infinite;
-}
 .loupe-status {
   left: 14px;
   bottom: 14px;

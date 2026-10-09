@@ -17,3 +17,6 @@ ENGINE-REQUESTS.md
 # Playroom's own native addons, built by scripts/build-native.mjs
 build/native/
 src/native/*/build/
+
+# local verification builds (never the user's dev out/)
+out-verify/

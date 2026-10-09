@@ -66,8 +66,8 @@ function stop(a: Activity): void {
 }
 
 /**
- * A slim bar where the progress is known; where it isn't, a spinner in the
- * top bar and a sweeping bar in the queue.
+ * In the top bar, the aperture: spinning while how far is unknown, its ring
+ * filling once known. In the queue, a slim bar (sweeping while unknown).
  */
 function ActivityMeter({
   progress,
@@ -76,7 +76,7 @@ function ActivityMeter({
   progress: number | null
   inList?: boolean
 }): React.JSX.Element {
-  if (progress === null && !inList) return <Spinner size={14} />
+  if (!inList) return <Spinner size={16} progress={progress} />
   return (
     <span className={`activity-track${progress === null ? ' sweep' : ''}`} aria-hidden>
       <i style={progress === null ? undefined : { width: `${Math.round(progress * 100)}%` }} />
@@ -86,7 +86,7 @@ function ActivityMeter({
 
 /**
  * Work running in the background (lib/activity.ts), never in the way: the
- * slim bar (or the spinner) and what runs first; hover names everything that
+ * aperture and what runs first; hover names everything that
  * runs and how far, and a click opens the queue, where each piece goes to its
  * photo or stops.
  */

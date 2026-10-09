@@ -89,6 +89,7 @@ export function HealPanel(): React.JSX.Element | null {
       actions={
         <>
           <Tabs
+            className="heal-modes"
             value={heal.mode}
             onChange={(m) => setHeal({ mode: m })}
             tabs={MODES.map((m) => ({ ...m, label: t(m.label) }))}

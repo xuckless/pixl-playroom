@@ -1,0 +1,80 @@
+/* <pixl-aperture> (fx/apertureElement.ts): the loader is the mark doing its job.
+   The spin and the breathing live here, so the still UI (Playroom behind
+   another app: primitives.css) and reduced motion hold them. */
+
+pixl-aperture {
+  display: inline-block;
+  line-height: 0;
+  flex: none;
+  --ap-gap: #0b0816;
+}
+pixl-aperture[mode='overlay'] {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  --ap-gap: #000;
+}
+pixl-aperture .ap-svg {
+  display: block;
+  overflow: visible;
+}
+pixl-aperture .ap-rot {
+  transform-box: view-box;
+  transform-origin: 120px 120px;
+}
+pixl-aperture .ap-blade {
+  transform-box: view-box;
+  will-change: transform;
+}
+
+/* indeterminate: 60° a tick, 6 ticks a 1.2 s */
+@keyframes ap-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+pixl-aperture .ap-svg[data-state='spin'] .ap-rot {
+  animation: ap-spin 1.2s steps(6, end) infinite;
+}
+
+/* the core breathes while anything runs */
+@keyframes ap-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+pixl-aperture .ap-core {
+  transform-box: view-box;
+  transform-origin: 120px 120px;
+}
+pixl-aperture .ap-svg[data-state='spin'] .ap-core,
+pixl-aperture .ap-svg[data-state='progress'] .ap-core {
+  animation: ap-breathe 3.8s ease-in-out infinite;
+}
+
+/* splash and the panel loader */
+pixl-aperture[glow] .ap-svg {
+  filter: drop-shadow(0 0 24px rgba(157, 139, 234, 0.45));
+}
+
+/* the shutter the splash leaves through (shell/Splash.tsx): over everything,
+   blades in the splash's dark with lilac seams (the motion kit's app launch).
+   Here, in the aperture's own layer, so it outranks the overlay's defaults. */
+pixl-aperture[mode='overlay'].splash-shutter {
+  position: fixed;
+  z-index: 1001;
+  --ap-blade: #0d0a1f;
+  --ap-gap: #9d8bea;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  pixl-aperture .ap-rot,
+  pixl-aperture .ap-core {
+    animation: none !important;
+  }
+}
