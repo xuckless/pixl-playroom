@@ -69,6 +69,14 @@ virtual copies, copy/paste/sync settings to a selection, batch export, Enhance.
 - **Duplicates** — exact copies (size and SHA-1) and near ones (a 64-bit
   difference hash of the thumbnail, with an adjustable distance), in a folder
   or the whole library.
+- **Suggested rejects** — measured on this computer while it is idle and
+  plugged in (exposure, focus in the subject's region, motion blur, a blink
+  hint, picture hashes for bursts): a photo that looks like a reject shows
+  dimmed and grey, with why on hover ("Subject soft · focus 18% of the
+  burst's best") and Keep or Reject. Filters → Suggested rejects only lists
+  them; Reject all (Shift+X) flags them. A star, a pick or Keep means never
+  suggested, the thresholds learn from what you keep and reject, and nothing
+  is ever deleted.
 - **Auto white balance per photo** across a selection (Ctrl+Shift+U, the
   toolbar's Auto WB, or "Auto per photo" in Sync), each photo measured on its
   own, with a history step each and one Undo for the batch.
@@ -116,9 +124,12 @@ come from:
   lite, which keeps hair and fur, about seven seconds); **Objects** (SAM 2.1, on
   its own engine host): hover to see what lies under the pointer and click to
   take it, drag a box, or scribble over it; Shift-click adds a part, Alt-click
-  takes one away, Enter keeps it, Esc drops it. **Sky** is one click on the
-  sky (SAM 2.1) until a sky model ships. The People tools (body, face, hair,
-  skin…) are marked "soon".
+  takes one away, Enter keeps it, Esc drops it. **Sky**, **Vegetation** and
+  **Water** in one click (DINOv2's scene planes); **People**: Face, Hair,
+  Skin and Clothes (Selfie Multiclass), and Eyes, Brows, Lips and Teeth
+  outlined on every face (YuNet and Face Mesh), with a picker per face.
+  **Find by name** at the top of the menu: type "red car" and every one is
+  found (EfficientSAM3).
 - **Draw** — brush A/B/erase with flow, density, pressure and Auto Mask;
   linear, radial and bidirectional gradients with handles (drawn by the engine,
   exact at any size); an editable lasso, whose Find object puts the object
@@ -181,6 +192,12 @@ loupe until its glass chip is clicked. Liquid glass (an SVG refraction filter
 as the backdrop filter) on the loupe's badges and bars, dialogs, pins and
 popovers; a three.js processing sphere over long operations and a shader
 gradient behind empty views, with CSS fallbacks and reduced-motion stills.
+Minimised, or another app in front for two minutes, Playroom lets its engine
+hosts go once their queued work is done (thumbnails, an export, an AI batch),
+draws flat, still panels, and the top bar says **Engine offline** in yellow;
+the engine is back the moment you are. Settings → Interface → Always flat
+keeps the flat look. `scripts/perf.mjs` profiles the UI on a folder you name
+(flame graphs of both processes, frame times, IPC, and this rest).
 
 ### Workflow
 
@@ -269,10 +286,15 @@ runs, else scaled by the speed test), marks the one Playroom recommends for
 each task, and removes it. A tool that needs a missing model offers it right
 there, in a "Model needed" popup, and goes on when it is here. Select Subject
 and Background (Masks) run U²-Netp, and Fine runs BiRefNet lite (offered
-when first wanted); Objects, Sky and Find object run SAM 2.1; Depth range
-runs Depth Anything V2; Heal's Remove runs MI-GAN. Models that retire are
-removed from the disk on their own. On Apple silicon, models run on the
-performance cores.
+when first wanted); Objects and Find object run SAM 2.1; Sky, Vegetation and
+Water run DINOv2; the People parts run Selfie Multiclass, and the face parts
+YuNet and Face Mesh; Find by name runs EfficientSAM3; Depth range runs Depth
+Anything V2; Heal's Remove runs MI-GAN. RAWs develop at full size with
+DemosaicNet (2 MB, fetched by itself; AHD without it), and PMRID can take the
+grain out of the sensor data first. **Use AI models** turns every model off at
+once (RAWs still develop with theirs). Models that retire are removed from
+the disk on their own. On Apple silicon, models run on the performance
+cores.
 
 ### Lens profiles
 

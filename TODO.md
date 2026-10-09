@@ -991,12 +991,23 @@ Full HDR on, on the M2 Pro.
 
 ### Pass 117 — Release · 3 pts
 
-- [ ] **S** · Check the packaged build: no Gemma card, no llama-server
-      download, no SAM 3 anywhere (`GEMMA_SHIPS`, `SAM3_PHRASE` false).
-
-- [ ] **S** · What's new 0.4.0-beta final (0.18 and 0.19), the README, and
-      the model mirrors checked. Release-As 0.4.0-beta and the PR to main,
-      on the owner's ask.
+- [x] **S** · The packaged build checked (2026-10-09, an unsigned `--dir`
+      package, ad-hoc signed to run): `gemmaInBuild` compiles to
+      `return !packaged` and the model store's `held("sam3")` to `true`; run
+      40 s on a fresh profile, no llama-server, no Gemma folder, no SAM 3;
+      only DemosaicNet (Bayer) fetched. The package also carried the repo's
+      `docs/`, `site/`, `supabase/` and, from a local checkout, `.claude/`
+      (the agents' worktrees) and the gitignored `ENGINE-REQUESTS.md`:
+      excluded in `electron-builder.yml` (1.1 GB → 401 MB locally).
+- [x] **S** · What's new 0.4.0-beta final (both engines; Gemma and SAM 3
+      out), and the README (Suggested rejects, the 0.19 masks, the models,
+      the rest and "Engine offline", `scripts/perf.mjs`).
+- [ ] **S** · Owner: the model mirror serves 26 of 28 files the release
+      offers; missing (404) `birefnet-lite/1.0.0/birefnet_lite.onnx` (Fine
+      subject) and `efficientsam3-ev-m/1.0.0/bpe_simple_vocab_16e6.txt.gz`
+      (Find by name's vocabulary): `node scripts/publish-models.mjs --only
+      birefnet-lite,efficientsam3-ev-m` before the release.
+- [ ] **S** · Release-As 0.4.0-beta and the PR to main, on the owner's ask.
 
 ---
 

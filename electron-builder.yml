@@ -26,6 +26,14 @@ files:
   - '!{.github,release-please-config.json,.release-please-manifest.json}'
   - '!resources/ai/**'
   - '!resources/lens-profiles/**'
+  # Not the app's: the repo's docs, the website's and the backend's sources,
+  # and what a local checkout holds beside them (the agents' worktrees, the
+  # engine requests, both gitignored but on disk). Found inside a local
+  # package (Pass 117).
+  - '!{docs,site,supabase}/**'
+  - '!.claude/**'
+  - '!{ENGINE-REQUESTS.md,ENGINE-REQUESTS.*.md}'
+  - '!{out-verify,out-before,perf-out}/**'
 
 # The third-party notices (scripts/third-party-notices.mjs, run after the
 # build), opened from Settings and Help. Every platform's own extraResources

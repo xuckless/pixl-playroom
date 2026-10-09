@@ -17,11 +17,12 @@ export interface ReleaseNotes {
 }
 
 export const RELEASE_NOTES: ReleaseNotes[] = [
-  // Draft (engine 0.18's half): 0.4.0-beta ships with engine 0.19 as well,
-  // whose notes join these before it is cut (TODO.md, Phase N and after).
+  // Engines 0.18 and 0.19 together (TODO.md Phases N and O). Gemma, its
+  // llama.cpp server and SAM 3 are held out of this release (the owner).
   {
     version: '0.4.0-beta',
-    headline: 'A cleaner Dehaze, smoother colour, and noise reduction that matches your export.',
+    headline:
+      'HDR while you edit, masks you can ask for by name, suggested rejects, and noise reduction that matches your export.',
     sections: [
       {
         title: 'HDR',
@@ -82,7 +83,9 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
           'AI work runs on your Mac’s performance cores, where it is fastest.',
           'Work running in the background (AI jobs, exports, model downloads) shows on the top bar with how far it has come; click it to see the queue, go to a photo or stop a job.',
           'Settings → AI models → Use AI models turns every AI model off at once (RAW files still develop with theirs).',
-          'While Playroom is minimised or another app is in front, it lets its engine rest and draws flat, still panels, which is lighter on the battery. Settings → Interface → Always flat keeps the flat look all the time.'
+          'While Playroom is minimised or another app is in front, it lets its engine rest and draws flat, still panels, which is lighter on the battery and frees memory; the top bar says Engine offline, in yellow, until you come back. Settings → Interface → Always flat keeps the flat look all the time.',
+          'Settings opens wide, in sections across the top like Export: General, Projects & interface, Display, AI models, Key bindings, and Privacy & about.',
+          'Work in the background no longer slows the app: opening a large folder, masks and the HDR preview keep their pixel work off the window’s thread.'
         ]
       }
     ]
