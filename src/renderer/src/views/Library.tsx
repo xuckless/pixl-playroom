@@ -19,6 +19,17 @@ import { useUi } from '../state/ui'
 import { DuplicateControls, FilterButton, OrganiseMenu } from './library/ToolbarMenus'
 import { keyHint, rejectSuggested, withKey } from '../lib/commands'
 import { useEntering } from '../lib/hooks'
+import { photoContextMenu } from '../lib/menus'
+import { t, tk, tp } from '../lib/i18n'
+
+/** A colour label's name, to show (the label itself is the key). */
+const LABEL_NAME: Record<string, string> = {
+  red: tk('Red'),
+  yellow: tk('Yellow'),
+  green: tk('Green'),
+  blue: tk('Blue'),
+  purple: tk('Purple')
+}
 
 /** A tile's part in a stack: the cover (collapsed or open), or a member of an open one. */
 interface StackRole {
@@ -89,13 +100,14 @@ const Thumb = memo(function Thumb({
         select(item.key, e.shiftKey ? 'range' : e.metaKey || e.ctrlKey ? 'toggle' : 'only')
       }
       onDoubleClick={() => onOpen(item.key)}
+      onContextMenu={(e) => photoContextMenu(e, item.key)}
     >
       <div className="thumb-img" style={{ height: size * 0.72 }}>
         {item.thumbUrl ? (
           <img src={item.thumbUrl} loading="lazy" decoding="async" draggable={false} alt="" />
         ) : item.unreadable ? (
-          <div className="thumb-wait unreadable" title="This file cannot be read">
-            Can’t read
+          <div className="thumb-wait unreadable" title={t('This file cannot be read')}>
+            {t('Can’t read')}
           </div>
         ) : item.offline ? (
           <div className="thumb-wait unreadable">{item.ext.toUpperCase()}</div>
@@ -105,21 +117,23 @@ const Thumb = memo(function Thumb({
         {item.label && (
           <span
             className="label-dot"
-            title={`Label: ${item.label}`}
+            title={t('Label: {{label}}', {
+              label: LABEL_NAME[item.label] ? t(LABEL_NAME[item.label]) : item.label
+            })}
             style={{ background: LABEL_COLOURS[item.label], color: LABEL_COLOURS[item.label] }}
           />
         )}
-        {item.flag === 'pick' && <span className="flag pick">PICK</span>}
+        {item.flag === 'pick' && <span className="flag pick">{t('PICK')}</span>}
         {item.flag === 'reject' && <span className="flag reject">✕</span>}
         {item.offline && (
-          <span className="offline-badge" title={`Not found at ${item.path}`}>
-            Offline
+          <span className="offline-badge" title={t('Not found at {{path}}', { path: item.path })}>
+            {t('Offline')}
           </span>
         )}
-        {item.edited && <span className="edited" title="Edited" />}
+        {item.edited && <span className="edited" title={t('Edited')} />}
         {cull && (
           <div className="cull-why" onDoubleClick={(e) => e.stopPropagation()}>
-            <span className="cull-label micro">Suggested reject</span>
+            <span className="cull-label micro">{t('Suggested reject')}</span>
             {cull.map((r) => (
               <span key={r.kind} className="cull-reason">
                 {r.text}
@@ -128,23 +142,23 @@ const Thumb = memo(function Thumb({
             <span className="cull-acts">
               <button
                 className="sm"
-                title="Keep it: never suggested again"
+                title={t('Keep it: never suggested again')}
                 onClick={(e) => {
                   e.stopPropagation()
                   void useCull.getState().keep([item.key])
                 }}
               >
-                Keep
+                {t('Keep')}
               </button>
               <button
                 className="sm ghost"
-                title="Reject it (X): nothing is deleted"
+                title={t('Reject it (X): nothing is deleted')}
                 onClick={(e) => {
                   e.stopPropagation()
                   void setMeta({ flag: 'reject' }, [item.key])
                 }}
               >
-                Reject
+                {t('Reject')}
               </button>
             </span>
           </div>
@@ -152,7 +166,9 @@ const Thumb = memo(function Thumb({
         {item.project && (
           <button
             className="project-badge"
-            title={`Its edits and history are in ${item.project} — click to show it`}
+            title={t('Its edits and history are in {{project}} — click to show it', {
+              project: item.project
+            })}
             onClick={(e) => {
               e.stopPropagation()
               void api.app.reveal(item.project!).catch(() => undefined)
@@ -168,7 +184,7 @@ const Thumb = memo(function Thumb({
             className="hdr-badge"
             title={
               item.hdr === 'gainmap'
-                ? 'HDR: an SDR picture with a gain map (edit it as HDR in Develop)'
+                ? t('HDR: an SDR picture with a gain map (edit it as HDR in Develop)')
                 : `HDR: ${item.hdr === 'pq' ? 'PQ' : 'HLG'}`
             }
           >
@@ -178,7 +194,11 @@ const Thumb = memo(function Thumb({
         {stackId && stackCover && (
           <button
             className={`stack-badge t-num${stackOpen ? ' open' : ''}`}
-            title={`${stackOpen ? 'Collapse' : 'Expand'} this stack of ${stackSize} (S)`}
+            title={
+              stackOpen
+                ? t('Collapse this stack of {{size}} (S)', { size: stackSize })
+                : t('Expand this stack of {{size}} (S)', { size: stackSize })
+            }
             aria-expanded={stackOpen}
             onClick={(e) => {
               e.stopPropagation()
@@ -219,7 +239,8 @@ export function LibraryIdentity(): React.JSX.Element {
       facts={
         source ? (
           <>
-            {total} photo{total === 1 ? '' : 's'} · {edited} edited
+            {tp('{{count}} photo', '{{count}} photos', total)} ·{' '}
+            {t('{{count}} edited', { count: edited })}
           </>
         ) : undefined
       }
@@ -229,27 +250,27 @@ export function LibraryIdentity(): React.JSX.Element {
           className="t-body file-name trail"
           title={source.kind === 'folder' ? source.path : trail.join(' › ')}
         >
-          {trail.map((t, i) => (
+          {trail.map((part, i) => (
             <span key={i} className={i === trail.length - 1 ? 'here' : 'muted'}>
               {i > 0 && <span className="sep">›</span>}
-              {t}
+              {part}
             </span>
           ))}
         </span>
       ) : (
-        <span className="t-body muted">Nothing open</span>
+        <span className="t-body muted">{t('Nothing open')}</span>
       )}
     </IdentityBar>
   )
 }
 
 const SORTS: { value: SortKey; label: string }[] = [
-  { value: 'name', label: 'Name' },
-  { value: 'captured', label: 'Capture time' },
-  { value: 'added', label: 'Date added' },
-  { value: 'rating', label: 'Rating' },
-  { value: 'size', label: 'File size' },
-  { value: 'edited', label: 'Edited first' }
+  { value: 'name', label: tk('Name') },
+  { value: 'captured', label: tk('Capture time') },
+  { value: 'added', label: tk('Date added') },
+  { value: 'rating', label: tk('Rating') },
+  { value: 'size', label: tk('File size') },
+  { value: 'edited', label: tk('Edited first') }
 ]
 
 export function Toolbar(): React.JSX.Element {
@@ -280,8 +301,8 @@ export function Toolbar(): React.JSX.Element {
     <nav className={`toolbar tool-bar library-bar${dupes ? ' dupes' : ''}`}>
       <button
         className={`icon lg${sidebar ? ' on' : ''}`}
-        title={withKey('Sources', 'library.sidebar')}
-        aria-label="Show the sources"
+        title={withKey(t('Sources'), 'library.sidebar')}
+        aria-label={t('Show the sources')}
         aria-pressed={sidebar}
         onClick={() => setSidebar(!sidebar)}
       >
@@ -289,8 +310,8 @@ export function Toolbar(): React.JSX.Element {
       </button>
       <button
         className="icon lg"
-        title="Open folder…"
-        aria-label="Open folder"
+        title={t('Open folder…')}
+        aria-label={t('Open folder')}
         onClick={() => void chooseFolder()}
       >
         <Icon name="folder" />
@@ -301,8 +322,8 @@ export function Toolbar(): React.JSX.Element {
           aria-pressed={!!source.deep}
           title={
             source.deep
-              ? 'Showing the photos in its subfolders too: show this folder’s own'
-              : 'Show the photos in its subfolders too'
+              ? t('Showing the photos in its subfolders too: show this folder’s own')
+              : t('Show the photos in its subfolders too')
           }
           onClick={() => {
             const deep = !source.deep
@@ -312,7 +333,7 @@ export function Toolbar(): React.JSX.Element {
           }}
         >
           <Icon name="stack" />
-          Subfolders
+          {t('Subfolders')}
         </button>
       )}
       <span className="vsep" />
@@ -320,7 +341,7 @@ export function Toolbar(): React.JSX.Element {
         <Icon name="search" />
         <input
           className="search"
-          placeholder="Search names, titles, keywords, camera"
+          placeholder={t('Search names, titles, keywords, camera')}
           value={filter.text}
           onChange={(e) => setFilter({ text: e.target.value })}
           onKeyDown={(e) => e.stopPropagation()}
@@ -330,10 +351,10 @@ export function Toolbar(): React.JSX.Element {
       {!dupes && (
         <GlassSelect<SortKey>
           className="lg sort-select"
-          label="Sort by"
-          prefix="Sort"
+          label={t('Sort by')}
+          prefix={t('Sort')}
           value={sort}
-          options={SORTS}
+          options={SORTS.map((o) => ({ ...o, label: t(o.label) }))}
           onChange={setSort}
         />
       )}
@@ -341,7 +362,7 @@ export function Toolbar(): React.JSX.Element {
       {dupes ? (
         <DuplicateControls />
       ) : (
-        <label className="bar-range size-range" title="Thumbnail size">
+        <label className="bar-range size-range" title={t('Thumbnail size')}>
           <Icon name="library" />
           <span className="bar-track">
             <span className="bar-fill" style={{ width: `${pct}%` }} />
@@ -365,38 +386,38 @@ export function Toolbar(): React.JSX.Element {
       <button
         className="lg"
         disabled={targets.length === 0}
-        title={withKey('Auto white balance on each selected photo', 'autoWbBatch')}
+        title={withKey(t('Auto white balance on each selected photo'), 'autoWbBatch')}
         onClick={() => void autoWbBatch(targets)}
       >
         <Icon name="picker" />
-        <span className="lbl">Auto WB</span>
+        <span className="lbl">{t('Auto WB')}</span>
       </button>
       <button
         className="lg"
         disabled={!focus}
-        title={withKey('Develop the focused photo', 'library.develop')}
+        title={withKey(t('Develop the focused photo'), 'library.develop')}
         onClick={() => {
           if (!focus) return
           setView('develop')
           void open(focus)
         }}
       >
-        Develop <span className="kbd">D</span>
+        {t('Develop')} <span className="kbd">D</span>
       </button>
       <LiquidGlass
         as="button"
         className="primary lg"
         flat
         onClick={() => setDialog('export')}
-        title={withKey('Export selected', 'export')}
+        title={withKey(t('Export selected'), 'export')}
       >
         <Icon name="export" />
-        Export
+        {t('Export')}
       </LiquidGlass>
       <button
         className={`icon lg${info ? ' on' : ''}`}
-        title={withKey('Info and metadata', 'library.info')}
-        aria-label="Show info"
+        title={withKey(t('Info and metadata'), 'library.info')}
+        aria-label={t('Show info')}
         aria-pressed={info}
         onClick={() => setInfo(!info)}
       >
@@ -414,19 +435,19 @@ function EmptyLibrary(): React.JSX.Element {
     <div className="empty-library">
       <Ambient />
       <LiquidGlass className="empty-card" radius={2} bezel={14} strength={0.8}>
-        <span className="micro accent">Library</span>
-        <h1>Open a folder of photographs.</h1>
-        <p>There is no import step: your photos stay where they are.</p>
+        <span className="micro accent">{t('Library')}</span>
+        <h1>{t('Open a folder of photographs.')}</h1>
+        <p>{t('There is no import step: your photos stay where they are.')}</p>
         <div className="row">
           <button className="primary lg" onClick={() => void chooseFolder()}>
             <Icon name="folder" />
-            Choose folder…
+            {t('Choose folder…')}
           </button>
         </div>
         {recent.length > 0 && (
           <>
             <div className="rule" />
-            <span className="micro">Recent</span>
+            <span className="micro">{t('Recent')}</span>
             <div className="stagger recent-list">
               {recent.slice(0, 6).map((r) => (
                 <div
@@ -614,7 +635,9 @@ export function LibraryView(): React.JSX.Element {
     return (
       <div className="grid-wait">
         <Spinner size={22} />
-        <p>Looking for duplicates… the first look reads every picture, so it takes a while.</p>
+        <p>
+          {t('Looking for duplicates… the first look reads every picture, so it takes a while.')}
+        </p>
       </div>
     )
   const roles = stackRoles(items, expanded)
@@ -653,13 +676,14 @@ export function LibraryView(): React.JSX.Element {
                 style={{ transform: `translateY(${v.start}px)` }}
               >
                 <span className={`badge${row.group.kind === 'exact' ? '' : ' ghost'}`}>
-                  {row.group.kind === 'exact' ? 'Exact' : 'Similar'}
+                  {row.group.kind === 'exact' ? t('Exact') : t('Similar')}
                 </span>
                 <span className="t-num">
-                  {row.count} photos
+                  {tp('{{count}} photo', '{{count}} photos', row.count)}
+                  {' · '}
                   {row.group.kind === 'near' && row.group.distance !== undefined
-                    ? ` · distance ≤ ${row.group.distance}`
-                    : ' · same file contents'}
+                    ? t('distance ≤ {{distance}}', { distance: row.group.distance })
+                    : t('same file contents')}
                 </span>
                 <span className="line" />
               </header>
@@ -684,11 +708,11 @@ export function LibraryView(): React.JSX.Element {
         <p className="grid-empty">
           {groups
             ? groups.length === 0
-              ? 'No duplicates here. Raise “Similar” to find looser matches.'
-              : 'No duplicates match the filters.'
+              ? t('No duplicates here. Raise “Similar” to find looser matches.')
+              : t('No duplicates match the filters.')
             : source?.kind === 'collection' && total === 0
-              ? 'This collection is empty. Drag photos onto it in the sidebar to add them.'
-              : 'No photos match the filters.'}
+              ? t('This collection is empty. Drag photos onto it in the sidebar to add them.')
+              : t('No photos match the filters.')}
         </p>
       )}
     </div>
@@ -710,9 +734,14 @@ export function CullBar(): React.JSX.Element | null {
     <div className="cull-bar" role="status">
       <span>
         {count === 0
-          ? 'No suggested rejects here.'
-          : `${count} suggested reject${count === 1 ? '' : 's'}: hover one for why.`}{' '}
-        {measuring && `Measuring ${measuring.done} of ${measuring.total}…`}
+          ? t('No suggested rejects here.')
+          : tp(
+              '{{count}} suggested reject: hover one for why.',
+              '{{count}} suggested rejects: hover one for why.',
+              count
+            )}{' '}
+        {measuring &&
+          t('Measuring {{done}} of {{total}}…', { done: measuring.done, total: measuring.total })}
       </span>
       <span className="grow" />
       {count > 0 && (
@@ -721,11 +750,11 @@ export function CullBar(): React.JSX.Element | null {
           onClick={() => void rejectSuggested()}
           title={keyHint('cull.rejectAll')}
         >
-          Reject all {count}
+          {t('Reject all {{count}}', { count })}
         </button>
       )}
       <button className="sm ghost" onClick={() => setFilter({ suggested: false })}>
-        Show all
+        {t('Show all')}
       </button>
     </div>
   )
@@ -740,19 +769,19 @@ export function LibraryStatus(): React.JSX.Element | null {
   return (
     <footer className="status-bar">
       <span className="t-num">
-        {count} of {total} shown
-        {selected > 1 ? ` · ${selected} selected` : ''}
+        {t('{{count}} of {{total}} shown', { count, total })}
+        {selected > 1 ? ` · ${t('{{count}} selected', { count: selected })}` : ''}
       </span>
       <span className="spacer" />
       <span className="keys">
-        <span className="kbd">0–5</span> rate <span className="kbd">6–9</span> label{' '}
+        <span className="kbd">0–5</span> {t('rate')} <span className="kbd">6–9</span> {t('label')}{' '}
         <span className="kbd">{keyHint('flag.pick')}</span>{' '}
         <span className="kbd">{keyHint('flag.reject')}</span>{' '}
-        <span className="kbd">{keyHint('flag.clear')}</span> flag{' '}
-        <span className="kbd">{keyHint('library.stack')}</span> stack{' '}
-        <span className="kbd">{keyHint('library.info')}</span> info{' '}
-        <span className="kbd">{keyHint('library.develop')}</span> develop{' '}
-        <span className="kbd">{keyHint('sync')}</span> sync
+        <span className="kbd">{keyHint('flag.clear')}</span> {t('flag')}{' '}
+        <span className="kbd">{keyHint('library.stack')}</span> {t('stack')}{' '}
+        <span className="kbd">{keyHint('library.info')}</span> {t('info')}{' '}
+        <span className="kbd">{keyHint('library.develop')}</span> {t('develop')}{' '}
+        <span className="kbd">{keyHint('sync')}</span> {t('sync')}
       </span>
     </footer>
   )

@@ -13,6 +13,8 @@
  * Pure, for tests/heavy.test.ts.
  */
 
+import { t, tk } from './i18n'
+
 /**
  * Gemma (and the llama.cpp server it runs in) is not shipped in 0.4.0-beta
  * (the owner, 2026-10-09): a packaged build offers no download, no switch,
@@ -30,8 +32,8 @@ export type HeavyModel = 'gemma' | 'sam3'
 export const HEAVY_MODELS: HeavyModel[] = ['gemma', 'sam3']
 
 export const HEAVY_LABEL: Record<HeavyModel, string> = {
-  gemma: 'Gemma, the local assistant',
-  sam3: 'SAM 3, Find by name at its best'
+  gemma: tk('Gemma, the local assistant'),
+  sam3: tk('SAM 3, Find by name at its best')
 }
 
 /** One run of the benchmark's repeated work. */
@@ -80,10 +82,16 @@ export const HEAVY_BARS: Record<
     slowdown: 1.35,
     memoryShare: 0.6,
     minTotalMb: 8192,
-    unit: 'photo named'
+    unit: tk('photo named')
   },
   // SAM 3: 17.7 s an embedding on the M2 Pro's CPU, 5.1 GB at its peak.
-  sam3: { meanMs: 40_000, slowdown: 1.35, memoryShare: 0.6, minTotalMb: 8192, unit: 'photo read' }
+  sam3: {
+    meanMs: 40_000,
+    slowdown: 1.35,
+    memoryShare: 0.6,
+    minTotalMb: 8192,
+    unit: tk('photo read')
+  }
 }
 
 const secs = (ms: number): string => `${(ms / 1000).toFixed(1)} s`
@@ -98,31 +106,55 @@ export function judgeSustained(
 ): { passed: boolean; reasons: string[] } {
   const bar = HEAVY_BARS[model]
   const fails: string[] = []
-  if (runs.length < 2) return { passed: false, reasons: ['The benchmark did not finish'] }
+  if (runs.length < 2) return { passed: false, reasons: [t('The benchmark did not finish')] }
   const mean = runs.reduce((s, r) => s + r.ms, 0) / runs.length
   // The first run warms caches: its slowdown is read from the second.
   const first = runs[1]?.ms ?? runs[0].ms
   const last = runs[runs.length - 1].ms
   const slowdown = last / Math.max(1, first)
   if (totalMb < bar.minTotalMb)
-    fails.push(`This computer has ${gb(totalMb)} of memory; it needs ${gb(bar.minTotalMb)} or more`)
+    fails.push(
+      t('This computer has {{memory}} of memory; it needs {{needed}} or more', {
+        memory: gb(totalMb),
+        needed: gb(bar.minTotalMb)
+      })
+    )
   if (peakMb > bar.memoryShare * totalMb)
     fails.push(
-      `It used ${gb(peakMb)}, more than ${Math.round(bar.memoryShare * 100)} % of this computer’s ${gb(totalMb)}`
+      t('It used {{peak}}, more than {{share}} % of this computer’s {{memory}}', {
+        peak: gb(peakMb),
+        share: Math.round(bar.memoryShare * 100),
+        memory: gb(totalMb)
+      })
     )
   if (mean > bar.meanMs)
     fails.push(
-      `Each ${bar.unit} took ${secs(mean)} on average; it has to be under ${secs(bar.meanMs)}`
+      t('Each {{unit}} took {{mean}} on average; it has to be under {{bar}}', {
+        unit: t(bar.unit),
+        mean: secs(mean),
+        bar: secs(bar.meanMs)
+      })
     )
   if (slowdown > bar.slowdown)
     fails.push(
-      `It slowed down by ${Math.round((slowdown - 1) * 100)} % as it kept working (too hot, or too little room)`
+      t('It slowed down by {{share}} % as it kept working (too hot, or too little room)', {
+        share: Math.round((slowdown - 1) * 100)
+      })
     )
   if (fails.length) return { passed: false, reasons: fails }
   return {
     passed: true,
     reasons: [
-      `${secs(mean)} a ${bar.unit}, ${slowdown <= 1.05 ? 'steady' : `${Math.round((slowdown - 1) * 100)} % slower by the end`}, ${gb(peakMb)} of ${gb(totalMb)}`
+      t('{{mean}} a {{unit}}, {{pace}}, {{peak}} of {{memory}}', {
+        mean: secs(mean),
+        unit: t(bar.unit),
+        pace:
+          slowdown <= 1.05
+            ? t('steady')
+            : t('{{share}} % slower by the end', { share: Math.round((slowdown - 1) * 100) }),
+        peak: gb(peakMb),
+        memory: gb(totalMb)
+      })
     ]
   }
 }

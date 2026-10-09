@@ -18,6 +18,7 @@ import { normaliseEdge, type MaskEdge } from './maskedge'
 import { normalisePrompt, PROMPT_VIAS, type PromptGeometry, type PromptVia } from './prompt'
 import { conceptOf, type ConceptId } from './concepts'
 import { isFacePart, type FaceFound } from './faceparts'
+import { tk } from './i18n'
 
 /**
  * 3 (engine 0.18): a RAW's untouched default sharpening takes the edge mask
@@ -1080,26 +1081,26 @@ export const RECIPE_GROUPS = [
 export type RecipeGroup = (typeof RECIPE_GROUPS)[number]
 
 export const GROUP_LABELS: Record<RecipeGroup, string> = {
-  profile: 'Profile',
-  whiteBalance: 'White balance',
-  basicTone: 'Exposure & tone',
-  presence: 'Presence',
-  toneCurve: 'Tone curve',
-  hsl: 'HSL / B&W mix',
-  colorGrade: 'Colour grading',
-  detailSharpen: 'Sharpening',
-  detailNoise: 'Noise reduction',
-  lens: 'Lens corrections',
-  effects: 'Effects',
-  calibration: 'Calibration',
-  treatment: 'Treatment (colour / B&W)',
-  crop: 'Crop & straighten',
-  upright: 'Upright (perspective)',
-  orientation: 'Rotation & flip',
-  retouch: 'Spot removal & eyes',
-  localAdjustments: 'Masks & local adjustments',
-  custom: 'Advanced layers',
-  hdr: 'HDR editing (gain map)'
+  profile: tk('Profile'),
+  whiteBalance: tk('White balance'),
+  basicTone: tk('Exposure & tone'),
+  presence: tk('Presence'),
+  toneCurve: tk('Tone curve'),
+  hsl: tk('HSL / B&W mix'),
+  colorGrade: tk('Colour grading'),
+  detailSharpen: tk('Sharpening'),
+  detailNoise: tk('Noise reduction'),
+  lens: tk('Lens corrections'),
+  effects: tk('Effects'),
+  calibration: tk('Calibration'),
+  treatment: tk('Treatment (colour / B&W)'),
+  crop: tk('Crop & straighten'),
+  upright: tk('Upright (perspective)'),
+  orientation: tk('Rotation & flip'),
+  retouch: tk('Spot removal & eyes'),
+  localAdjustments: tk('Masks & local adjustments'),
+  custom: tk('Advanced layers'),
+  hdr: tk('HDR editing (gain map)')
 }
 
 /** Copy the chosen groups of `from` onto `to`, returning a new recipe. */

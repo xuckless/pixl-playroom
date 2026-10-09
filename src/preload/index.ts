@@ -70,6 +70,13 @@ import type { CullReason } from '../shared/cullsuggest'
 import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../shared/looks/run'
 import type { EnhanceRates } from '../shared/enhance'
+import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
+import type { Language, LanguageSetting } from '../shared/i18n'
+
+interface LanguageState {
+  setting: LanguageSetting
+  language: Language
+}
 
 async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
   const r = (await ipcRenderer.invoke(channel, ...args)) as
@@ -88,6 +95,11 @@ function on<T>(channel: string, cb: (payload: T) => void): () => void {
 }
 
 const api = {
+  menu: {
+    set: (spec: MenuBarSpec) => call<void>(IPC.menu.set, spec),
+    popup: (items: MenuNode[]) => call<void>(IPC.menu.popup, items),
+    onRun: (cb: (id: string) => void) => on(IPC.menu.run, cb)
+  },
   app: {
     cpus: () => call<number>(IPC.app.cpus),
     engineStatus: () => call<EngineStatus>(IPC.app.engineStatus),
@@ -103,6 +115,9 @@ const api = {
     takeOpens: () => call<string[]>(IPC.app.takeOpens),
     onOpenPaths: (cb: (paths: string[]) => void) => on(IPC.app.openPaths, cb),
     pathOf: (file: File) => webUtils.getPathForFile(file),
+    language: () => call<LanguageState>(IPC.app.language),
+    setLanguage: (setting: LanguageSetting) => call<LanguageState>(IPC.app.setLanguage, setting),
+    onLanguageChanged: (cb: (s: LanguageState) => void) => on(IPC.app.languageChanged, cb),
     onOpenPreferences: (cb: () => void) => on(IPC.app.openPreferences, cb),
     onOpenEngineReport: (cb: () => void) => on(IPC.app.openEngineReport, cb),
     onOpenReport: (cb: () => void) => on(IPC.app.openReport, cb),

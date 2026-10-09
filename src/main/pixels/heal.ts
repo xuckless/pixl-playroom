@@ -12,6 +12,7 @@
  * pixels: the stroke's region rendered with it and without it, and the patch
  * is where the two differ (times the selected mask, frozen, when one clips it).
  */
+import { t } from '../../shared/i18n'
 import { existsSync, readFileSync } from 'fs'
 import { rm } from 'fs/promises'
 import { join } from 'path'
@@ -131,8 +132,8 @@ export async function bakeSpot(
   // Its size too: drawn on the corrected picture, the correction stretches it
   // on the photo (the feather is a share of the size, and follows).
   const centre = {
-    x: spot.points.reduce((t, p) => t + p.x, 0) / Math.max(1, spot.points.length),
-    y: spot.points.reduce((t, p) => t + p.y, 0) / Math.max(1, spot.points.length)
+    x: spot.points.reduce((sum, p) => sum + p.x, 0) / Math.max(1, spot.points.length),
+    y: spot.points.reduce((sum, p) => sum + p.y, 0) / Math.max(1, spot.points.length)
   }
   const k = moves(ctx.lens) ? localScale(map, centre, W, H) : 1
   const onPhoto: RetouchSpot = {
@@ -145,7 +146,7 @@ export async function bakeSpot(
   // A Remove's model (MI-GAN): asked for only when one is baked.
   const inpainter = spot.kind === 'remove' ? await inpainterRef() : null
   if (spot.kind === 'remove' && !inpainter)
-    throw new Error('download the object remover (MI-GAN) in Settings → AI models first')
+    throw new Error(t('download the object remover (MI-GAN) in Settings → AI models first'))
   const retouch = compileRetouch([onPhoto], 'Normal', W, H, inpainter)
   if (!retouch) return null
   const region = spotBounds(onPhoto, W, H)

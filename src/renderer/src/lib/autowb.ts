@@ -9,14 +9,13 @@ import { useBusy } from '../state/busy'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { api, errorText } from './api'
+import { t, tp } from './i18n'
 
 /** Keys per request: the background engine measures this many side by side. */
 const CHUNK = 4
 const JOB = 'auto-wb-batch'
 
 let running = false
-
-const photos = (n: number): string => `${n} photo${n === 1 ? '' : 's'}`
 
 /**
  * If the photo open in Develop was among `keys`, show what the batch wrote:
@@ -38,7 +37,13 @@ async function restore(previous: AutoWbResult['previous']): Promise<void> {
   try {
     lib.patchItems(await api.library.setWb(pairs))
     await refreshDevelop(pairs.map((p) => p.key))
-    lib.say(`White balance restored on ${photos(pairs.length)}`)
+    lib.say(
+      tp(
+        'White balance restored on {{count}} photo',
+        'White balance restored on {{count}} photos',
+        pairs.length
+      )
+    )
   } catch (err) {
     lib.say(errorText(err), 'error')
   }
@@ -53,13 +58,15 @@ export async function autoWbBatch(keys: string[]): Promise<void> {
   const busy = useBusy.getState()
   busy.begin({
     id: JOB,
-    title: 'Auto white balance',
-    detail: `0 of ${photos(keys.length)}`,
+    title: t('Auto white balance'),
+    detail: tp('{{done}} of {{count}} photo', '{{done}} of {{count}} photos', keys.length, {
+      done: 0
+    }),
     progress: 0,
     scope: 'global',
     cancel: () => {
       stopped = true
-      busy.update(JOB, { title: 'Stopping auto white balance', cancel: undefined })
+      busy.update(JOB, { title: t('Stopping auto white balance'), cancel: undefined })
     }
   })
   const previous: Record<string, Recipe['wb']> = {}
@@ -75,7 +82,9 @@ export async function autoWbBatch(keys: string[]): Promise<void> {
       done += chunk.length
       busy.update(JOB, {
         progress: done / keys.length,
-        detail: `${done} of ${photos(keys.length)}`
+        detail: tp('{{done}} of {{count}} photo', '{{done}} of {{count}} photos', keys.length, {
+          done
+        })
       })
     }
   } catch (err) {
@@ -87,14 +96,29 @@ export async function autoWbBatch(keys: string[]): Promise<void> {
   const changed = Object.keys(previous)
   await refreshDevelop(changed).catch((err) => lib.say(errorText(err), 'error'))
   if (changed.length === 0) {
-    if (failed.length > 0) lib.say(`Auto white balance: ${failed[0].message}`, 'error')
+    if (failed.length > 0)
+      lib.say(t('Auto white balance: {{error}}', { error: failed[0].message }), 'error')
     return
   }
-  const parts = [`Auto white balance on ${photos(changed.length)}`]
-  if (failed.length > 0) parts.push(`${failed.length} failed (${failed[0].message})`)
-  if (stopped && done < keys.length) parts.push(`stopped before ${keys.length - done} more`)
+  const parts = [
+    tp(
+      'Auto white balance on {{count}} photo',
+      'Auto white balance on {{count}} photos',
+      changed.length
+    )
+  ]
+  if (failed.length > 0)
+    parts.push(
+      tp('{{count}} failed ({{error}})', '{{count}} failed ({{error}})', failed.length, {
+        error: failed[0].message
+      })
+    )
+  if (stopped && done < keys.length)
+    parts.push(
+      tp('stopped before {{count}} more', 'stopped before {{count}} more', keys.length - done)
+    )
   useLibrary.getState().say(parts.join(', '), failed.length > 0 ? 'error' : 'info', {
-    label: 'Undo',
+    label: t('Undo'),
     run: () => void restore(previous)
   })
 }

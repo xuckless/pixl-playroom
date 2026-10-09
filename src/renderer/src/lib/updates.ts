@@ -10,6 +10,7 @@ import type { UpdateState } from '../../../shared/ipc'
 import { versionLabel } from '../../../shared/releasenotes'
 import { useLibrary } from '../state/library'
 import { api } from './api'
+import { t } from './i18n'
 
 let latest: UpdateState | null = null
 const listeners = new Set<(s: UpdateState) => void>()
@@ -59,14 +60,24 @@ export function startUpdateNotice(): () => void {
     const lib = useLibrary.getState()
     // The dialog open says it already (and a toast would sit over its buttons).
     if (lib.dialog === 'update') return
-    const open = { label: 'What’s new', run: () => lib.setDialog('update') }
+    const open = { label: t('What’s new'), run: () => lib.setDialog('update') }
     if (stage === 'available')
-      lib.say(`Update available! Playroom ${versionLabel(s.version)} is downloading`, 'info', open)
+      lib.say(
+        t('Update available! Playroom {{version}} is downloading', {
+          version: versionLabel(s.version)
+        }),
+        'info',
+        open
+      )
     else
-      lib.say(`Playroom ${versionLabel(s.version)} is ready: restart to update`, 'info', {
-        label: 'Restart',
-        run: () => void api.updates.install()
-      })
+      lib.say(
+        t('Playroom {{version}} is ready: restart to update', { version: versionLabel(s.version) }),
+        'info',
+        {
+          label: t('Restart'),
+          run: () => void api.updates.install()
+        }
+      )
   }
   void api.updates.getState().then(seen, () => undefined)
   return api.updates.onState(seen)

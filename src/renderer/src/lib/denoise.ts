@@ -11,6 +11,7 @@ import { useLibrary } from '../state/library'
 import { scoped } from '../state/scope'
 import { useUi } from '../state/ui'
 import { errorText } from './api'
+import { tk } from './i18n'
 import { staleRawStep, type PixelStep } from '../../../shared/pixels'
 import { developMark } from '../../../shared/rawcolour'
 import { aiDenoiseModel, RETIRED_DENOISE } from '../../../shared/recipe'
@@ -43,7 +44,7 @@ export function startDenoiseUpkeep(): () => void {
         const d = useDevelop.getState()
         if (d.session?.key !== key) return
         d.edit((r) => (r.detail.ai.enabled = false))
-        d.commit('AI Denoise becomes a step')
+        d.commit(tk('AI Denoise becomes a step'))
       })
       .catch((err) => useLibrary.getState().say(errorText(err), 'error'))
   })

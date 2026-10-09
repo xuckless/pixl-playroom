@@ -21,6 +21,15 @@ import type { SmartPart } from './looks/smart'
 import type { ReleaseNotes } from './releasenotes'
 
 export const IPC = {
+  /** The native menus (shared/appmenu.ts). */
+  menu: {
+    /** renderer → main: the menu bar's menus, as they apply now */
+    set: 'menu:set',
+    /** renderer → main: a right-click menu, at the pointer */
+    popup: 'menu:popup',
+    /** main → renderer: the item chosen, by id */
+    run: 'menu:run'
+  },
   app: {
     cpus: 'app:cpus',
     engineStatus: 'app:engine-status',
@@ -42,6 +51,11 @@ export const IPC = {
     /** main → renderer: the display or the rendering mode changed */
     renderScaleChanged: 'app:render-scale-changed',
     /** main → renderer: the menu's Settings… was chosen */
+    /** The language in force and the setting it comes from; Settings sets it. */
+    language: 'app:language',
+    setLanguage: 'app:set-language',
+    /** main → renderer: the language changed */
+    languageChanged: 'app:language-changed',
     openPreferences: 'app:open-preferences',
     /** main → renderer: the menu's Engine Report… was chosen */
     openEngineReport: 'app:open-engine-report',

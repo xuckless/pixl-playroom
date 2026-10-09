@@ -17,6 +17,7 @@
  * Pure, for tests/cullsuggest.test.ts.
  */
 import { phashDistance, phashGroups, type CullSignals } from './cull'
+import { t } from './i18n'
 
 export type CullReasonKind = 'soft' | 'motion' | 'dark' | 'bright' | 'eyes' | 'duplicate'
 
@@ -100,7 +101,7 @@ const pct = (x: number): string => `${Math.round(x * 100)}%`
  */
 export function suggestRejects(
   inputs: CullInput[],
-  t: CullThresholds = DEFAULT_THRESHOLDS
+  th: CullThresholds = DEFAULT_THRESHOLDS
 ): Map<number, CullReason[]> {
   const out = new Map<number, CullReason[]>()
   const add = (id: number, r: CullReason): void => {
@@ -124,17 +125,21 @@ export function suggestRejects(
       if (i === best || decided(i)) continue
       const s = i.signals!
       const share = top > 0 ? focusScore(s) / top : 1
-      const where = s.focus.subject ? 'Subject soft' : 'Soft'
-      if (share < t.burstSoft)
-        add(i.photoId, { kind: 'soft', text: `${where} · focus ${pct(share)} of the burst’s best` })
-      else if (s.focus.whole.coherence >= t.motionCoherence && share < t.burstMotion)
+      if (share < th.burstSoft)
+        add(i.photoId, {
+          kind: 'soft',
+          text: s.focus.subject
+            ? t('Subject soft · focus {{share}} of the burst’s best', { share: pct(share) })
+            : t('Soft · focus {{share}} of the burst’s best', { share: pct(share) })
+        })
+      else if (s.focus.whole.coherence >= th.motionCoherence && share < th.burstMotion)
         add(i.photoId, {
           kind: 'motion',
-          text: `Motion blur · focus ${pct(share)} of the burst’s best`
+          text: t('Motion blur · focus {{share}} of the burst’s best', { share: pct(share) })
         })
       const d = phashDistance(s.phash, best.signals!.phash)
-      if (d !== null && d <= t.duplicateBits && share >= 0.9)
-        add(i.photoId, { kind: 'duplicate', text: `Duplicate of ${best.name}` })
+      if (d !== null && d <= th.duplicateBits && share >= 0.9)
+        add(i.photoId, { kind: 'duplicate', text: t('Duplicate of {{name}}', { name: best.name }) })
     }
   }
   for (const i of measured) {
@@ -144,18 +149,27 @@ export function suggestRejects(
     if (
       sub &&
       s.focus.whole.laplacian > 0 &&
-      sub.laplacian / s.focus.whole.laplacian < t.subjectSoft
+      sub.laplacian / s.focus.whole.laplacian < th.subjectSoft
     )
-      add(i.photoId, { kind: 'soft', text: 'Subject soft · the background is sharper' })
+      add(i.photoId, { kind: 'soft', text: t('Subject soft · the background is sharper') })
     const e = s.exposure
-    if (e.p50 < t.darkMedian || e.clipLow > t.darkCrushed)
-      add(i.photoId, { kind: 'dark', text: `Too dark · ${pct(e.clipLow)} crushed` })
-    else if (e.clipHigh > t.brightBlown)
-      add(i.photoId, { kind: 'bright', text: `Too bright · ${pct(e.clipHigh)} blown` })
+    if (e.p50 < th.darkMedian || e.clipLow > th.darkCrushed)
+      add(i.photoId, {
+        kind: 'dark',
+        text: t('Too dark · {{share}} crushed', { share: pct(e.clipLow) })
+      })
+    else if (e.clipHigh > th.brightBlown)
+      add(i.photoId, {
+        kind: 'bright',
+        text: t('Too bright · {{share}} blown', { share: pct(e.clipHigh) })
+      })
     for (const f of s.faces ?? []) {
       const closed = Math.min(f.blinkLeft ?? 0, f.blinkRight ?? 0)
-      if (closed >= t.blink) {
-        add(i.photoId, { kind: 'eyes', text: `Eyes closed? (${closed.toFixed(2)})` })
+      if (closed >= th.blink) {
+        add(i.photoId, {
+          kind: 'eyes',
+          text: t('Eyes closed? ({{score}})', { score: closed.toFixed(2) })
+        })
         break
       }
     }

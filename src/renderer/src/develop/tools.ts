@@ -113,8 +113,8 @@ export function masksOpen(): boolean {
  * a mask tool) brings the cards back. Call once, from the app shell.
  */
 export function startDrawerSync(): () => void {
-  const of = (t: Tool): 'crop' | 'heal' | null =>
-    t === 'crop' || t === 'upright-guide' ? 'crop' : t === 'heal' ? 'heal' : null
+  const of = (tool: Tool): 'crop' | 'heal' | null =>
+    tool === 'crop' || tool === 'upright-guide' ? 'crop' : tool === 'heal' ? 'heal' : null
   return useDevelop.subscribe((s, prev) => {
     if (s.tool === prev.tool) return
     const ui = useUi.getState()

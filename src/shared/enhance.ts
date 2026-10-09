@@ -9,6 +9,8 @@
  * from it.
  */
 
+import { t, tk } from './i18n'
+
 /**
  * JPEG restore: off; rebuilt from the file's DCT coefficients (no model);
  * FBCNN judging the compression itself. (FBCNN told a quality left with
@@ -74,25 +76,28 @@ export interface PlannedStep {
 }
 
 const SOURCE_LABEL: Record<UpscaleSource, string> = {
-  clean: 'clean',
-  damaged: 'damaged',
-  texture: 'keep texture'
+  clean: tk('clean'),
+  damaged: tk('damaged'),
+  texture: tk('keep texture')
 }
 
 /** The steps the settings ask for on a source, in the engine's order. */
 export function planSteps(s: EnhanceSettings, isJpeg: boolean): PlannedStep[] {
   const steps: PlannedStep[] = []
   if (isJpeg && s.jpeg === 'reconstruct')
-    steps.push({ kind: 'reconstruct', model: null, label: 'JPEG rebuild' })
+    steps.push({ kind: 'reconstruct', model: null, label: t('JPEG rebuild') })
   if (isJpeg && s.jpeg === 'fbcnn')
-    steps.push({ kind: 'fbcnn', model: ENHANCE_MODEL.fbcnn, label: 'JPEG restore' })
-  if (s.deblur) steps.push({ kind: 'deblur', model: ENHANCE_MODEL.deblur, label: 'Deblur' })
+    steps.push({ kind: 'fbcnn', model: ENHANCE_MODEL.fbcnn, label: t('JPEG restore') })
+  if (s.deblur) steps.push({ kind: 'deblur', model: ENHANCE_MODEL.deblur, label: t('Deblur') })
   if (s.upscale !== 'off') {
     const scale = s.upscale === 'x2' ? 2 : 4
     steps.push({
       kind: s.upscaleSource,
       model: ENHANCE_MODEL[s.upscaleSource],
-      label: `Super Resolution ×${scale} (${SOURCE_LABEL[s.upscaleSource]})`,
+      label: t('Super Resolution ×{{scale}} ({{source}})', {
+        scale,
+        source: t(SOURCE_LABEL[s.upscaleSource])
+      }),
       scale
     })
   }
@@ -113,11 +118,11 @@ export function enhanceRefusal(
   s: EnhanceSettings,
   src: { isJpeg: boolean; isHdr: boolean }
 ): string | null {
-  if (src.isHdr) return 'Enhance needs an SDR photo; this one is HDR'
+  if (src.isHdr) return t('Enhance needs an SDR photo; this one is HDR')
   if (planSteps(s, src.isJpeg).length === 0)
     return s.jpeg !== 'off' && !src.isJpeg
-      ? 'JPEG restore is for JPEG files; choose another step'
-      : 'Choose at least one step'
+      ? t('JPEG restore is for JPEG files; choose another step')
+      : t('Choose at least one step')
   return null
 }
 
@@ -232,6 +237,8 @@ export function jpegRestoreRefusal(
 ): string | null {
   const restores = planSteps(s, isJpeg).some((p) => p.kind === 'reconstruct' || p.kind === 'fbcnn')
   return restores && stepsBefore > 0
-    ? 'JPEG restore reads the file itself, so it must come first: undo the other pixel steps, or leave it off'
+    ? t(
+        'JPEG restore reads the file itself, so it must come first: undo the other pixel steps, or leave it off'
+      )
     : null
 }

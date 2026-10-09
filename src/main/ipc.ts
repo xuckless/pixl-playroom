@@ -85,6 +85,10 @@ import type { Library } from './library'
 import { MAIN_DIR } from './dirs'
 import { appPage } from './guard'
 import { gate, gateRefuses } from './gate'
+import { popupMenu, setMenuSpec } from './menu'
+import { languageState, setLanguage } from './i18n'
+import { isLanguageSetting, t, type LanguageSetting } from '../shared/i18n'
+import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
 import { accountStatus, cancelSignIn, signIn, signOut } from './account'
 import { AccountError } from './account/api'
 import { OAuthError } from './account/oauth'
@@ -152,13 +156,16 @@ async function answer<A extends unknown[], R>(
 ): Promise<unknown> {
   if (!isAppPage(e.senderFrame?.url)) {
     log.warn(`ipc: refused ${channel} from ${e.senderFrame?.url ?? 'a closed frame'}`)
-    return { ok: false, error: { message: 'Not allowed.', code: 'Forbidden' } }
+    return { ok: false, error: { message: t('Not allowed.'), code: 'Forbidden' } }
   }
   // The beta gate holds everything but signing in, access, updates and settings.
   if (gateRefuses(channel)) {
     return {
       ok: false,
-      error: { message: 'Pixl Playroom is locked until beta access is confirmed.', code: 'Gated' }
+      error: {
+        message: t('Pixl Playroom is locked until beta access is confirmed.'),
+        code: 'Gated'
+      }
     }
   }
   try {
@@ -205,7 +212,7 @@ export interface Services {
 
 /** What AI can do with the killswitch thrown: nothing a model does, and why. */
 function aiOff(): AiCapabilities {
-  const why = 'AI models are off: turn them on in Settings → AI models'
+  const why = t('AI models are off: turn them on in Settings → AI models')
   return {
     enhance: false,
     segment: false,
@@ -260,6 +267,13 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.getSetting, (key: string) => s.index.getSetting(key))
   handle(IPC.app.setSetting, (key: string, value: unknown) => s.index.setSetting(key, value))
   handle(IPC.app.reveal, (path: string) => shell.showItemInFolder(path))
+  handle(IPC.menu.set, (spec: MenuBarSpec) => setMenuSpec(spec))
+  handle(IPC.app.language, () => languageState())
+  handle(IPC.app.setLanguage, (setting: LanguageSetting) => {
+    if (!isLanguageSetting(setting)) throw new Error(t('Not a language Playroom has.'))
+    return setLanguage(setting)
+  })
+  handle(IPC.menu.popup, (items: MenuNode[]) => popupMenu(items))
   handle(IPC.app.renderScale, () => renderScale())
   handle(IPC.app.displayHdr, () => displayHdr())
   handle(IPC.app.setDisplayHdr, async (v: unknown) => {
@@ -274,11 +288,11 @@ export function registerIpc(s: Services): void {
   )
   handle(IPC.app.openNotices, async () => {
     const err = await shell.openPath(paths.notices())
-    if (err) throw new Error(`Couldn't open the third-party notices: ${err}`)
+    if (err) throw new Error(t("Couldn't open the third-party notices: {{reason}}", { reason: err }))
   })
   handle(IPC.app.openBetaTerms, async () => {
     const err = await shell.openPath(paths.betaTerms())
-    if (err) throw new Error(`Couldn't open the beta terms: ${err}`)
+    if (err) throw new Error(t("Couldn't open the beta terms: {{reason}}", { reason: err }))
   })
 
   // ── the account, updates and preferences ──
@@ -308,7 +322,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.licence.refresh, () => refreshLicence())
   handle(IPC.licence.startTrial, () => startTrial())
   handle(IPC.licence.freeDevice, (id: string) => {
-    if (typeof id !== 'string' || !id) throw new Error('No device to free.')
+    if (typeof id !== 'string' || !id) throw new Error(t('No device to free.'))
     return freeDevice(id)
   })
 
@@ -435,10 +449,10 @@ export function registerIpc(s: Services): void {
   )
   handle(IPC.library.exportCollections, async (ids: string[]): Promise<string | null> => {
     const file = await s.index.exportCollections(ids)
-    const only = file.collections.length === 1 ? file.collections[0].name : 'Collections'
+    const only = file.collections.length === 1 ? file.collections[0].name : t('Collections')
     const opts = {
       defaultPath: `${only.replace(/[/\\:*?"<>|]/g, '-')}.json`,
-      filters: [{ name: 'Collections', extensions: ['json'] }]
+      filters: [{ name: t('Collections'), extensions: ['json'] }]
     }
     const w = win()
     const r = w ? await dialog.showSaveDialog(w, opts) : await dialog.showSaveDialog(opts)
@@ -449,7 +463,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.library.importCollections, async (): Promise<Collection[]> => {
     const opts = {
       properties: ['openFile'] as 'openFile'[],
-      filters: [{ name: 'Collections', extensions: ['json'] }]
+      filters: [{ name: t('Collections'), extensions: ['json'] }]
     }
     const w = win()
     const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
@@ -458,7 +472,9 @@ export function registerIpc(s: Services): void {
     try {
       parsed = JSON.parse(await readFile(r.filePaths[0], 'utf8'))
     } catch {
-      throw new Error(`${basename(r.filePaths[0])} is not a collections file`)
+      throw new Error(
+        t('{{name}} is not a collections file', { name: basename(r.filePaths[0]) })
+      )
     }
     return s.index.importCollections(parsed)
   })
@@ -545,9 +561,9 @@ export function registerIpc(s: Services): void {
         new AbortController().signal
       )
       const png = await s.planes.get(found.ref)
-      if (png === undefined) throw new Error('the object’s mask went missing')
+      if (png === undefined) throw new Error(t('the object’s mask went missing'))
       const stroke = strokeOver(grey8(Buffer.from(png, 'base64')))
-      if (!stroke) throw new Error('nothing was found there to remove')
+      if (!stroke) throw new Error(t('nothing was found there to remove'))
       return s.sessions.bakeSpot(
         key,
         removeSpot(stroke.points, stroke.radius, feather),
@@ -709,12 +725,12 @@ export function registerIpc(s: Services): void {
     // not given.
     promptJob: (r) => {
       if (r.prompt.kind === 'label')
-        throw new Error('finding an object by name needs the next engine update')
+        throw new Error(t('finding an object by name needs the next engine update'))
       const prompt =
         r.prompt.kind === 'point'
           ? { rect: null, points: [{ ...r.prompt.point, fg: true }] }
           : { rect: boxAround([r.prompt.from, r.prompt.to]), points: [] }
-      if (!prompt.rect && prompt.points.length === 0) throw new Error('nothing was pointed at')
+      if (!prompt.rect && prompt.points.length === 0) throw new Error(t('nothing was pointed at'))
       return s.ai.start({
         task: 'prompt',
         key: r.key,
@@ -748,7 +764,7 @@ export function registerIpc(s: Services): void {
     const w = win()
     const opts = {
       properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[],
-      filters: [{ name: 'Lens profile', extensions: ['json'] }]
+      filters: [{ name: t('Lens profile'), extensions: ['json'] }]
     }
     const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
     if (r.canceled) return []
@@ -785,7 +801,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.export.chooseWatermark, async () => {
     const w = win()
     const opts = {
-      title: 'Choose a watermark',
+      title: t('Choose a watermark'),
       properties: ['openFile'] as 'openFile'[],
       filters: [{ name: 'PNG', extensions: ['png'] }]
     }
@@ -917,14 +933,14 @@ export function registerIpc(s: Services): void {
       },
       why: {
         ...(enhance.available ? {} : { enhance: enhance.reason }),
-        ...(segment ? {} : { segment: `download ${modelName(s.models.entry('u2netp'))}` }),
-        ...(models ? {} : { denoise: 'this engine build runs no models' }),
+        ...(segment ? {} : { segment: t('download {{model}}', { model: modelName(s.models.entry('u2netp')) }) }),
+        ...(models ? {} : { denoise: t('this engine build runs no models') }),
         ...(sam2 && samModel
           ? {}
           : {
               prompt: sam2
-                ? `download ${modelName(s.models.entry(SAM_MODEL))}`
-                : 'this engine build has no prompted segmentation'
+                ? t('download {{model}}', { model: modelName(s.models.entry(SAM_MODEL)) })
+                : t('this engine build has no prompted segmentation')
             })
       }
     }
@@ -933,7 +949,7 @@ export function registerIpc(s: Services): void {
   // ── select by clicks, a box or strokes (SAM 2.1) ──
   handle(IPC.select.open, async (key: string) => {
     if (!(await s.switches.enabled()))
-      throw new Error('AI models are off: turn them on in Settings → AI models')
+      throw new Error(t('AI models are off: turn them on in Settings → AI models'))
     return s.select.open(key)
   })
   handle(IPC.select.decode, (selId: string, req: SelectDecode) => s.select.decode(selId, req))

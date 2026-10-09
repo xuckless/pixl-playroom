@@ -18,14 +18,15 @@ import {
   vignette,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 export const ESSENTIALS = collection('essentials', [
   look(
     'bw-contrast',
-    'High-contrast B&W',
+    tk('High-contrast B&W'),
     {
       tags: ['bw', 'mono', 'contrast', 'punchy'],
-      description: 'Deep blacks, bright skies held back.'
+      description: tk('Deep blacks, bright skies held back.')
     },
     raw((r) => {
       r.treatment = 'bw'
@@ -47,8 +48,11 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'bw-soft',
-    'Soft B&W',
-    { tags: ['bw', 'mono', 'soft', 'gentle'], description: 'Open shadows and quiet highlights.' },
+    tk('Soft B&W'),
+    {
+      tags: ['bw', 'mono', 'soft', 'gentle'],
+      description: tk('Open shadows and quiet highlights.')
+    },
     raw((r) => {
       r.treatment = 'bw'
       r.basic.contrast = -15
@@ -59,10 +63,10 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'warm-film',
-    'Warm film',
+    tk('Warm film'),
     {
       tags: ['film', 'warm', 'grain', 'analog'],
-      description: 'A warm print with soft blacks and fine grain.'
+      description: tk('A warm print with soft blacks and fine grain.')
     },
     raw((r) => {
       r.toneCurve.master = [
@@ -81,10 +85,10 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'cool-matte',
-    'Cool matte',
+    tk('Cool matte'),
     {
       tags: ['film', 'cool', 'matte', 'faded'],
-      description: 'Lifted blacks and cool, quiet colour.'
+      description: tk('Lifted blacks and cool, quiet colour.')
     },
     raw((r) => {
       r.toneCurve.master = [
@@ -100,10 +104,10 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'vivid',
-    'Vivid',
+    tk('Vivid'),
     {
       tags: ['colour', 'vivid', 'saturated', 'punchy'],
-      description: 'More contrast and colour, skin kept in check.'
+      description: tk('More contrast and colour, skin kept in check.')
     },
     raw((r) => {
       r.basic.contrast = 20
@@ -114,10 +118,10 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'teal-orange',
-    'Teal & orange',
+    tk('Teal & orange'),
     {
       tags: ['colour', 'cinematic', 'teal', 'orange', 'blockbuster'],
-      description: 'Teal shadows against warm skin.'
+      description: tk('Teal shadows against warm skin.')
     },
     raw((r) => {
       r.colorGrade.shadows = { hue: 190, saturation: 30, luminance: -5 }
@@ -130,10 +134,10 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'landscape',
-    'Landscape pop',
+    tk('Landscape pop'),
     {
       tags: ['landscape', 'nature', 'sky', 'clarity'],
-      description: 'Held highlights, open shadows, deeper skies.'
+      description: tk('Held highlights, open shadows, deeper skies.')
     },
     raw((r) => {
       r.basic.highlights = -40
@@ -147,10 +151,10 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'portrait',
-    'Soft portrait',
+    tk('Soft portrait'),
     {
       tags: ['portrait', 'skin', 'soft', 'people'],
-      description: 'Smoother skin and lifted shadows.'
+      description: tk('Smoother skin and lifted shadows.')
     },
     raw((r) => {
       r.presence.texture = -20
@@ -162,10 +166,10 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'vignette',
-    'Classic vignette',
+    tk('Classic vignette'),
     {
       tags: ['vignette', 'frame', 'effect'],
-      description: 'Darkened corners that draw the eye in.'
+      description: tk('Darkened corners that draw the eye in.')
     },
     raw((r) => {
       r.effects.vignetteAmount = -30
@@ -174,10 +178,10 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'clean-pop',
-    'Clean pop',
+    tk('Clean pop'),
     {
       tags: ['colour', 'clean', 'bright', 'everyday'],
-      description: 'A gentle S-curve and clean colour.'
+      description: tk('A gentle S-curve and clean colour.')
     },
     sCurve(30),
     tone({ highlights: -15, shadows: 10 }),
@@ -186,8 +190,11 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'matte-fade',
-    'Matte fade',
-    { tags: ['matte', 'faded', 'soft', 'film'], description: 'Faded blacks and softened whites.' },
+    tk('Matte fade'),
+    {
+      tags: ['matte', 'faded', 'soft', 'film'],
+      description: tk('Faded blacks and softened whites.')
+    },
     sCurve(15),
     fade(0.07),
     rolloff(0.04),
@@ -195,10 +202,10 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'golden-hour',
-    'Golden hour',
+    tk('Golden hour'),
     {
       tags: ['warm', 'sunset', 'golden', 'glow'],
-      description: 'Low sun warmth, honeyed highlights.'
+      description: tk('Low sun warmth, honeyed highlights.')
     },
     split(30, 8, 42, 22),
     wheel('global', 38, 6),
@@ -208,8 +215,8 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'moody-blue',
-    'Moody blue',
-    { tags: ['moody', 'cool', 'dark', 'blue'], description: 'Cool, dark and quiet.' },
+    tk('Moody blue'),
+    { tags: ['moody', 'cool', 'dark', 'blue'], description: tk('Cool, dark and quiet.') },
     sCurve(25),
     fade(0.03),
     tone({ highlights: -20, whites: -10 }),
@@ -220,18 +227,21 @@ export const ESSENTIALS = collection('essentials', [
   ),
   look(
     'crisp-detail',
-    'Crisp detail',
+    tk('Crisp detail'),
     {
       tags: ['detail', 'sharp', 'texture', 'architecture'],
-      description: 'Texture and clarity without crunch.'
+      description: tk('Texture and clarity without crunch.')
     },
     tone({ contrast: 10, whites: 6, blacks: -6 }),
     presence({ texture: 30, clarity: 20, dehaze: 8 })
   ),
   look(
     'soft-pastel',
-    'Soft pastel',
-    { tags: ['pastel', 'airy', 'soft', 'bright'], description: 'Bright, low-contrast and pastel.' },
+    tk('Soft pastel'),
+    {
+      tags: ['pastel', 'airy', 'soft', 'bright'],
+      description: tk('Bright, low-contrast and pastel.')
+    },
     tone({ contrast: -20, shadows: 25, highlights: -10 }),
     fade(0.05),
     presence({ saturation: -12, clarity: -8 }),

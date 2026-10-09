@@ -37,6 +37,7 @@ import { flashHud } from '../views/loupe/hudNote'
 import { loupeZoom, setSpace } from '../views/loupe/zoom'
 import { api, errorText } from './api'
 import { autoWbBatch } from './autowb'
+import { t, tk, tp } from './i18n'
 import {
   allConflicts,
   chordLabel,
@@ -64,15 +65,15 @@ export interface KeyCommand {
 }
 
 export const GROUPS = [
-  'Rating & flags',
-  'Navigation',
-  'Library',
-  'Edit',
-  'View',
-  'Tools',
-  'Masks',
-  'Heal',
-  'Crop'
+  tk('Rating & flags'),
+  tk('Navigation'),
+  tk('Library'),
+  tk('Edit'),
+  tk('View'),
+  tk('Tools'),
+  tk('Masks'),
+  tk('Heal'),
+  tk('Crop')
 ] as const
 
 const lib = (): ReturnType<typeof useLibrary.getState> => useLibrary.getState()
@@ -92,13 +93,13 @@ function stop(e: KeyboardEvent): void {
 }
 
 /** Into the selected mask, or (as in Lightroom) a new one. */
-function maskTool(t: 'brush' | 'polygon' | 'linear' | 'radial' | 'bidirectional'): void {
+function maskTool(tool: 'brush' | 'polygon' | 'linear' | 'radial' | 'bidirectional'): void {
   const d = dev()
-  if (d.tool === t) return d.setTool('none')
-  if (!d.layerId) return void startMaskTool(t)
+  if (d.tool === tool) return d.setTool('none')
+  if (!d.layerId) return void startMaskTool(tool)
   openMasks()
   // A mask tool takes the canvas from Heal (whose panel stays up).
-  d.setTool(t)
+  d.setTool(tool)
 }
 
 /** The suggested rejects shown, flagged rejected at once (one key: never deleted). */
@@ -108,17 +109,37 @@ export async function rejectSuggested(): Promise<void> {
     .visible()
     .filter((i) => suggestedReasons(i, reasons))
     .map((i) => i.key)
-  if (keys.length === 0) return lib().say('No suggested rejects here', 'info')
+  if (keys.length === 0) return lib().say(t('No suggested rejects here'), 'info')
   await lib().setMeta({ flag: 'reject' }, keys)
   lib().say(
-    `${keys.length} photo${keys.length === 1 ? '' : 's'} flagged rejected: nothing deleted`,
+    tp(
+      '{{count}} photo flagged rejected: nothing deleted',
+      '{{count}} photos flagged rejected: nothing deleted',
+      keys.length
+    ),
     'info'
   )
 }
 
+const RATING_LABELS = [
+  tk('Clear rating'),
+  tk('Rate 1 star'),
+  tk('Rate 2 stars'),
+  tk('Rate 3 stars'),
+  tk('Rate 4 stars'),
+  tk('Rate 5 stars')
+]
+
+const COLOUR_LABELS = {
+  red: tk('Colour label: red'),
+  yellow: tk('Colour label: yellow'),
+  green: tk('Colour label: green'),
+  blue: tk('Colour label: blue')
+}
+
 const rating = [0, 1, 2, 3, 4, 5].map<KeyCommand>((n) => ({
   id: `rate.${n}`,
-  label: n === 0 ? 'Clear rating' : `Rate ${n} star${n === 1 ? '' : 's'}`,
+  label: RATING_LABELS[n],
   group: 'Rating & flags',
   context: 'global',
   keys: [String(n)],
@@ -127,7 +148,7 @@ const rating = [0, 1, 2, 3, 4, 5].map<KeyCommand>((n) => ({
 
 const labels = (['red', 'yellow', 'green', 'blue'] as const).map<KeyCommand>((label, i) => ({
   id: `label.${label}`,
-  label: `Colour label: ${label}`,
+  label: COLOUR_LABELS[label],
   group: 'Rating & flags',
   context: 'global',
   keys: [String(6 + i)],
@@ -139,7 +160,10 @@ const labels = (['red', 'yellow', 'green', 'blue'] as const).map<KeyCommand>((la
 
 const cards = CARDS.map<KeyCommand>((c, i) => ({
   id: `card.${c.id}`,
-  label: `Show ${c.title}`,
+  // Made when read, in the language in force (`t()` of it where it is shown changes nothing).
+  get label() {
+    return t('Show {{card}}', { card: t(c.title) })
+  },
   group: 'Tools',
   context: 'develop',
   keys: i < 9 ? [`Mod+${i + 1}`] : [],
@@ -155,7 +179,7 @@ export const COMMANDS: KeyCommand[] = [
   ...labels,
   {
     id: 'flag.pick',
-    label: 'Flag as pick',
+    label: tk('Flag as pick'),
     group: 'Rating & flags',
     context: 'global',
     keys: ['P'],
@@ -163,7 +187,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'flag.reject',
-    label: 'Flag as reject',
+    label: tk('Flag as reject'),
     group: 'Rating & flags',
     context: 'global',
     keys: ['X'],
@@ -171,7 +195,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'cull.rejectAll',
-    label: 'Reject every suggested reject shown',
+    label: tk('Reject every suggested reject shown'),
     group: 'Rating & flags',
     context: 'library',
     keys: ['Shift+X'],
@@ -179,7 +203,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'cull.keep',
-    label: 'Keep: not a suggested reject',
+    label: tk('Keep: not a suggested reject'),
     group: 'Rating & flags',
     context: 'library',
     keys: ['Shift+K'],
@@ -190,7 +214,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'flag.clear',
-    label: 'Remove flag',
+    label: tk('Remove flag'),
     group: 'Rating & flags',
     context: 'global',
     keys: ['U'],
@@ -198,15 +222,26 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'export',
-    label: 'Export…',
+    label: tk('Export…'),
     group: 'Library',
     context: 'global',
     keys: ['Mod+Shift+E'],
     run: () => lib().setDialog('export')
   },
   {
+    id: 'library.chooseFolder',
+    label: tk('Open a folder…'),
+    group: 'Library',
+    context: 'global',
+    keys: ['Mod+O'],
+    run: (e) => {
+      void lib().chooseFolder()
+      stop(e)
+    }
+  },
+  {
     id: 'sync',
-    label: 'Sync settings…',
+    label: tk('Sync settings…'),
     group: 'Library',
     context: 'global',
     keys: ['Mod+Shift+S'],
@@ -214,7 +249,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'autoWbBatch',
-    label: 'Auto white balance on the selection',
+    label: tk('Auto white balance on the selection'),
     group: 'Library',
     context: 'global',
     keys: ['Mod+Shift+U'],
@@ -222,7 +257,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'nav.next',
-    label: 'Next photo',
+    label: tk('Next photo'),
     group: 'Navigation',
     context: 'global',
     keys: ['ArrowRight'],
@@ -230,7 +265,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'nav.prev',
-    label: 'Previous photo',
+    label: tk('Previous photo'),
     group: 'Navigation',
     context: 'global',
     keys: ['ArrowLeft'],
@@ -240,7 +275,7 @@ export const COMMANDS: KeyCommand[] = [
   // ── library ──
   {
     id: 'library.develop',
-    label: 'Develop the focused photo',
+    label: tk('Develop the focused photo'),
     group: 'Navigation',
     context: 'library',
     keys: ['Enter', 'D', 'E'],
@@ -254,7 +289,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'library.selectAll',
-    label: 'Select all',
+    label: tk('Select all'),
     group: 'Library',
     context: 'library',
     keys: ['Mod+A'],
@@ -265,7 +300,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'library.paste',
-    label: 'Paste settings onto the selection…',
+    label: tk('Paste settings onto the selection…'),
     group: 'Library',
     context: 'library',
     keys: ['Mod+V'],
@@ -273,7 +308,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'library.stack',
-    label: 'Stack the selection',
+    label: tk('Stack the selection'),
     group: 'Library',
     context: 'library',
     keys: ['Mod+G'],
@@ -284,7 +319,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'library.unstack',
-    label: 'Unstack',
+    label: tk('Unstack'),
     group: 'Library',
     context: 'library',
     keys: ['Mod+Shift+G'],
@@ -295,7 +330,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'library.toggleStack',
-    label: 'Open or close the focused stack',
+    label: tk('Open or close the focused stack'),
     group: 'Library',
     context: 'library',
     keys: ['S'],
@@ -307,7 +342,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'library.makeCover',
-    label: "Make the focused photo its stack's cover",
+    label: tk("Make the focused photo its stack's cover"),
     group: 'Library',
     context: 'library',
     keys: ['Shift+S'],
@@ -319,7 +354,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'library.info',
-    label: 'Show or hide the info drawer',
+    label: tk('Show or hide the info drawer'),
     group: 'View',
     context: 'library',
     keys: ['I'],
@@ -327,7 +362,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'library.sidebar',
-    label: 'Show or hide the sources',
+    label: tk('Show or hide the sources'),
     group: 'View',
     context: 'library',
     keys: ['Backslash', 'Mod+Shift+L'],
@@ -340,7 +375,7 @@ export const COMMANDS: KeyCommand[] = [
   // ── develop ──
   {
     id: 'develop.escape',
-    label: 'Put the tool down, edit the whole photo, fit, or back to the library',
+    label: tk('Put the tool down, edit the whole photo, fit, or back to the library'),
     group: 'Navigation',
     context: 'develop',
     keys: ['Escape'],
@@ -361,7 +396,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'develop.library',
-    label: 'Back to the library',
+    label: tk('Back to the library'),
     group: 'Navigation',
     context: 'develop',
     keys: ['G'],
@@ -369,7 +404,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'zoom.in',
-    label: 'Zoom in',
+    label: tk('Zoom in'),
     group: 'View',
     context: 'develop',
     keys: ['Mod+Equal', 'Mod+Shift+Equal', 'Mod+NumpadAdd'],
@@ -380,7 +415,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'zoom.out',
-    label: 'Zoom out',
+    label: tk('Zoom out'),
     group: 'View',
     context: 'develop',
     keys: ['Mod+Minus', 'Mod+Shift+Minus', 'Mod+NumpadSubtract'],
@@ -391,7 +426,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'zoom.fit',
-    label: 'Fit to the window',
+    label: tk('Fit to the window'),
     group: 'View',
     context: 'develop',
     keys: ['Mod+0'],
@@ -402,7 +437,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'undo',
-    label: 'Undo',
+    label: tk('Undo'),
     group: 'Edit',
     context: 'develop',
     keys: ['Mod+Z'],
@@ -410,7 +445,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'redo',
-    label: 'Redo',
+    label: tk('Redo'),
     group: 'Edit',
     context: 'develop',
     keys: ['Mod+Shift+Z'],
@@ -419,7 +454,7 @@ export const COMMANDS: KeyCommand[] = [
   ...cards,
   {
     id: 'tool.prev',
-    label: 'Previous panel',
+    label: tk('Previous panel'),
     group: 'Tools',
     context: 'develop',
     keys: ['Mod+ArrowUp'],
@@ -430,7 +465,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'tool.next',
-    label: 'Next panel',
+    label: tk('Next panel'),
     group: 'Tools',
     context: 'develop',
     keys: ['Mod+ArrowDown'],
@@ -441,11 +476,12 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'settings.copy',
-    label: 'Copy settings',
+    label: tk('Copy settings'),
     group: 'Edit',
     context: 'develop',
     keys: ['Mod+C'],
-    when: () => !!dev().recipe,
+    // Text selected (the info pane's): ⌘C copies that.
+    when: () => !!dev().recipe && !document.getSelection()?.toString(),
     run: () => {
       const d = dev()
       if (!d.recipe) return
@@ -463,13 +499,16 @@ export const COMMANDS: KeyCommand[] = [
         source: d.session?.key ?? null
       })
       lib().say(
-        `Settings copied (${keyHint('settings.paste')} to paste, ${keyHint('sync')} to choose)`
+        t('Settings copied ({{paste}} to paste, {{choose}} to choose)', {
+          paste: keyHint('settings.paste'),
+          choose: keyHint('sync')
+        })
       )
     }
   },
   {
     id: 'settings.paste',
-    label: 'Paste settings',
+    label: tk('Paste settings'),
     group: 'Edit',
     context: 'develop',
     keys: ['Mod+V'],
@@ -492,16 +531,18 @@ export const COMMANDS: KeyCommand[] = [
           // The open photo's paste is a step of its history, undone on its own.
           if (targets.includes(key) && dev().session?.key === key) {
             const s = await api.develop.open(key)
-            if (dev().session?.key === key) dev().replace(s.recipe, 'Paste settings')
+            if (dev().session?.key === key) dev().replace(s.recipe, tk('Paste settings'))
           }
-          lib().say(`Pasted onto ${targets.length} photo${targets.length === 1 ? '' : 's'}`)
+          lib().say(
+            tp('Pasted onto {{count}} photo', 'Pasted onto {{count}} photos', targets.length)
+          )
         })
         .catch((err) => lib().say(errorText(err), 'error'))
     }
   },
   {
     id: 'virtualCopy',
-    label: 'Make a virtual copy',
+    label: tk('Make a virtual copy'),
     group: 'Edit',
     context: 'develop',
     keys: ['Mod+Quote'],
@@ -512,7 +553,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'mask.duplicate',
-    label: 'Duplicate the selected mask or component',
+    label: tk('Duplicate the selected mask or component'),
     group: 'Masks',
     context: 'develop.masks',
     keys: ['Mod+D'],
@@ -526,7 +567,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'mask.invert',
-    label: 'Invert the selected component, or the mask',
+    label: tk('Invert the selected component, or the mask'),
     group: 'Masks',
     context: 'develop.masks',
     keys: ['Quote'],
@@ -534,13 +575,13 @@ export const COMMANDS: KeyCommand[] = [
     run: (e) => {
       stop(e)
       const d = dev()
-      if (d.compId) patchComponent(d.compId, 'Invert component', (c) => (c.invert = !c.invert))
-      else if (d.layerId) patchMask(d.layerId, 'Invert mask', (l) => (l.invert = !l.invert))
+      if (d.compId) patchComponent(d.compId, tk('Invert component'), (c) => (c.invert = !c.invert))
+      else if (d.layerId) patchMask(d.layerId, tk('Invert mask'), (l) => (l.invert = !l.invert))
     }
   },
   {
     id: 'tool.heal',
-    label: 'Heal tool',
+    label: tk('Heal tool'),
     group: 'Tools',
     context: 'develop',
     keys: ['Q'],
@@ -548,7 +589,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'mask.delete',
-    label: 'Delete the selected mask or component',
+    label: tk('Delete the selected mask or component'),
     group: 'Masks',
     context: 'develop.masks',
     keys: ['Delete', 'Backspace'],
@@ -561,12 +602,17 @@ export const COMMANDS: KeyCommand[] = [
       const comp = layer.components.find((c) => c.id === d.compId)
       if (comp) deleteComponent(comp.id)
       else deleteMask(layer.id)
-      lib().say(`Deleted ${comp ? componentLabel(comp) : layer.name} — ${keyHint('undo')} to undo`)
+      lib().say(
+        t('Deleted {{name}} — {{key}} to undo', {
+          name: comp ? componentLabel(comp) : layer.name,
+          key: keyHint('undo')
+        })
+      )
     }
   },
   {
     id: 'view.before',
-    label: 'Before / after',
+    label: tk('Before / after'),
     group: 'View',
     context: 'develop',
     keys: ['Backslash'],
@@ -574,7 +620,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'view.split',
-    label: 'Before / after split',
+    label: tk('Before / after split'),
     group: 'View',
     context: 'develop',
     keys: ['Y'],
@@ -582,7 +628,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'view.clipping',
-    label: 'Show clipping',
+    label: tk('Show clipping'),
     group: 'View',
     context: 'develop',
     keys: ['J'],
@@ -590,7 +636,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'zoom.toggle',
-    label: 'Fit ↔ 100%',
+    label: tk('Fit ↔ 100%'),
     group: 'View',
     context: 'develop',
     keys: ['Z'],
@@ -598,7 +644,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'view.pan',
-    label: 'Pan (hold and drag)',
+    label: tk('Pan (hold and drag)'),
     group: 'View',
     context: 'develop',
     keys: ['Space'],
@@ -610,7 +656,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'tool.crop',
-    label: 'Crop tool',
+    label: tk('Crop tool'),
     group: 'Tools',
     context: 'develop',
     keys: ['R'],
@@ -618,7 +664,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'mask.brush',
-    label: 'Brush mask',
+    label: tk('Brush mask'),
     group: 'Masks',
     context: 'develop',
     keys: ['B', 'K'],
@@ -626,7 +672,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'mask.lasso',
-    label: 'Lasso mask',
+    label: tk('Lasso mask'),
     group: 'Masks',
     context: 'develop',
     keys: ['L'],
@@ -634,7 +680,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'masks.toggle',
-    label: 'Show or hide the masks window',
+    label: tk('Show or hide the masks window'),
     group: 'Masks',
     context: 'develop',
     keys: ['M'],
@@ -642,7 +688,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'mask.linear',
-    label: 'Linear gradient mask',
+    label: tk('Linear gradient mask'),
     group: 'Masks',
     context: 'develop',
     keys: ['Shift+M'],
@@ -650,7 +696,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'mask.radial',
-    label: 'Radial gradient mask',
+    label: tk('Radial gradient mask'),
     group: 'Masks',
     context: 'develop',
     keys: ['Alt+M'],
@@ -658,7 +704,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'mask.objects',
-    label: 'Objects mask (select by pointing)',
+    label: tk('Objects mask (select by pointing)'),
     group: 'Masks',
     context: 'develop',
     keys: [],
@@ -666,7 +712,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'mask.bidirectional',
-    label: 'Bidirectional gradient mask',
+    label: tk('Bidirectional gradient mask'),
     group: 'Masks',
     context: 'develop',
     keys: [],
@@ -674,7 +720,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'mask.hide',
-    label: 'Hide or show the selected mask',
+    label: tk('Hide or show the selected mask'),
     group: 'Masks',
     context: 'develop.masks',
     keys: ['H'],
@@ -683,14 +729,14 @@ export const COMMANDS: KeyCommand[] = [
       const d = dev()
       const layer = d.recipe?.layers.find((l) => l.id === d.layerId)
       if (!layer) return
-      patchMask(layer.id, layer.enabled ? 'Hide mask' : 'Show mask', (l) => {
+      patchMask(layer.id, layer.enabled ? tk('Hide mask') : tk('Show mask'), (l) => {
         l.enabled = !l.enabled
       })
     }
   },
   {
     id: 'tool.wb',
-    label: 'White balance picker',
+    label: tk('White balance picker'),
     group: 'Tools',
     context: 'develop',
     keys: ['W'],
@@ -698,7 +744,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'tool.tat',
-    label: 'Targeted adjustment (HSL or Tone Curve)',
+    label: tk('Targeted adjustment (HSL or Tone Curve)'),
     group: 'Tools',
     context: 'develop.curve',
     keys: ['T'],
@@ -715,7 +761,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'crop.guides',
-    label: 'Cycle the crop guides',
+    label: tk('Cycle the crop guides'),
     group: 'Crop',
     context: 'develop.crop',
     keys: ['O', 'Shift+O'],
@@ -724,7 +770,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'mask.overlayMode',
-    label: 'Cycle how the mask overlay shows',
+    label: tk('Cycle how the mask overlay shows'),
     group: 'Masks',
     context: 'develop',
     keys: ['Shift+O'],
@@ -736,12 +782,12 @@ export const COMMANDS: KeyCommand[] = [
       )
       u.setMaskOverlay({ mode })
       dev().setOverlay(true)
-      flashHud(OVERLAY_MODES.find((m) => m.value === mode)?.label ?? mode)
+      flashHud(t(OVERLAY_MODES.find((m) => m.value === mode)?.label ?? mode))
     }
   },
   {
     id: 'mask.overlay',
-    label: 'Show or hide the mask overlay',
+    label: tk('Show or hide the mask overlay'),
     group: 'Masks',
     context: 'develop',
     keys: ['O'],
@@ -749,7 +795,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'heal.smaller',
-    label: 'Smaller heal brush',
+    label: tk('Smaller heal brush'),
     group: 'Heal',
     context: 'develop.heal',
     keys: ['BracketLeft'],
@@ -758,7 +804,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'heal.larger',
-    label: 'Larger heal brush',
+    label: tk('Larger heal brush'),
     group: 'Heal',
     context: 'develop.heal',
     keys: ['BracketRight'],
@@ -767,7 +813,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'brush.smaller',
-    label: 'Smaller mask brush',
+    label: tk('Smaller mask brush'),
     group: 'Masks',
     context: 'develop',
     keys: ['BracketLeft'],
@@ -778,7 +824,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'brush.larger',
-    label: 'Larger mask brush',
+    label: tk('Larger mask brush'),
     group: 'Masks',
     context: 'develop',
     keys: ['BracketRight'],
@@ -789,7 +835,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'autoTone',
-    label: 'Auto tone',
+    label: tk('Auto tone'),
     group: 'Edit',
     context: 'develop',
     keys: ['Shift+A'],
@@ -798,10 +844,10 @@ export const COMMANDS: KeyCommand[] = [
       const s = dev().session
       if (!s) return
       const key = s.key
-      void runJob('Auto tone', () => api.develop.autoTone(key))
+      void runJob(t('Auto tone'), () => api.develop.autoTone(key))
         .then((basic) => {
           const r = dev().recipe
-          if (r) dev().replace({ ...r, basic }, 'Auto tone')
+          if (r) dev().replace({ ...r, basic }, tk('Auto tone'))
         })
         .catch((err) => lib().say(errorText(err), 'error'))
     }
@@ -891,7 +937,8 @@ export function useKeyHint(): (id: string) => string {
   return keyHint
 }
 
-function listening(context: KeyContext, inDevelop: boolean): boolean {
+/** Whether a command's context is listening in this view. */
+export function listening(context: KeyContext, inDevelop: boolean): boolean {
   if (context === 'global') return true
   if (context === 'library') return !inDevelop
   return inDevelop

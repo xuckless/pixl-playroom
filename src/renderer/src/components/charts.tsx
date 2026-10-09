@@ -9,18 +9,38 @@ import { bandOfHue } from '../lib/helpers'
 import { Icon } from './icons'
 import { InfoTip, type Tip } from './InfoTip'
 import { TechInfo } from './TechInfo'
+import { t, tk } from '../lib/i18n'
 
 const HISTOGRAM_TIP = (log: boolean): Tip => ({
-  what: 'How much of the photo sits at each brightness, shadows on the left, highlights on the right.',
-  expect:
-    'The corner triangles light up when shadows or highlights clip; click one to see where on the photo.',
-  tip: `Double-click to switch to a ${log ? 'linear' : 'log'} scale (now ${log ? 'log' : 'linear'}).`
+  what: tk(
+    'How much of the photo sits at each brightness, shadows on the left, highlights on the right.'
+  ),
+  expect: tk(
+    'The corner triangles light up when shadows or highlights clip; click one to see where on the photo.'
+  ),
+  tip: log
+    ? tk('Double-click to switch to a linear scale (now log).')
+    : tk('Double-click to switch to a log scale (now linear).')
 })
 
 const HUE_TIP: Tip = {
-  what: 'How much of each colour the photo holds; the faint bars are the photo before your edits.',
-  expect: 'Click a bar to open that colour in the Colour mixer.',
-  tip: 'Shift-click a bar to make a mask of that colour.'
+  what: tk(
+    'How much of each colour the photo holds; the faint bars are the photo before your edits.'
+  ),
+  expect: tk('Click a bar to open that colour in the Colour mixer.'),
+  tip: tk('Shift-click a bar to make a mask of that colour.')
+}
+
+/** The hue bands' names, as the colour chart's readout says them. */
+const BAND_NAME: Record<HslBand, string> = {
+  red: tk('red'),
+  orange: tk('orange'),
+  yellow: tk('yellow'),
+  green: tk('green'),
+  aqua: tk('aqua'),
+  blue: tk('blue'),
+  purple: tk('purple'),
+  magenta: tk('magenta')
 }
 
 /**
@@ -103,7 +123,7 @@ export function Histogram({
       <button
         className={`clip-marker low ${lowClip > 0.001 ? 'hot' : ''} ${clipping ? 'on' : ''}`}
         title={withKey(
-          `Shadows clipped: ${(lowClip * 100).toFixed(2)}% — click to show`,
+          t('Shadows clipped: {{pct}}% — click to show', { pct: (lowClip * 100).toFixed(2) }),
           'view.clipping'
         )}
         onClick={() => onClipping(!clipping)}
@@ -115,11 +135,16 @@ export function Histogram({
         title={
           showHdr
             ? withKey(
-                `Above the ${peak.toFixed(1)}× peak: ${(highClip * 100).toFixed(2)}% — click to show`,
+                t('Above the {{peak}}× peak: {{pct}}% — click to show', {
+                  peak: peak.toFixed(1),
+                  pct: (highClip * 100).toFixed(2)
+                }),
                 'view.clipping'
               )
             : withKey(
-                `Highlights clipped: ${(highClip * 100).toFixed(2)}% — click to show`,
+                t('Highlights clipped: {{pct}}% — click to show', {
+                  pct: (highClip * 100).toFixed(2)
+                }),
                 'view.clipping'
               )
         }
@@ -130,16 +155,22 @@ export function Histogram({
       {shown && (
         <div className="histogram-foot">
           {showHdr ? (
-            <span title="Headroom above reference white (203 nits) up to the photo's peak">
-              +{Math.log2(peak).toFixed(1)} EV headroom
+            <span title={t("Headroom above reference white (203 nits) up to the photo's peak")}>
+              {t('+{{ev}} EV headroom', { ev: Math.log2(peak).toFixed(1) })}
             </span>
           ) : (
-            <TechInfo title="Histogram numbers" align="left">
+            <TechInfo title={t('Histogram numbers')} align="left">
               <p>
-                Mean brightness {shown.luma_mean.toFixed(3)} · spread {shown.luma_stddev.toFixed(3)}{' '}
-                · mean saturation {shown.mean_saturation.toFixed(2)}
+                {t(
+                  'Mean brightness {{mean}} · spread {{spread}} · mean saturation {{saturation}}',
+                  {
+                    mean: shown.luma_mean.toFixed(3),
+                    spread: shown.luma_stddev.toFixed(3),
+                    saturation: shown.mean_saturation.toFixed(2)
+                  }
+                )}
               </p>
-              <p className="muted">On encoded values, 0 to 1.</p>
+              <p className="muted">{t('On encoded values, 0 to 1.')}</p>
             </TechInfo>
           )}
           {hdr && (
@@ -148,8 +179,10 @@ export function Histogram({
               aria-pressed={showHdr}
               title={
                 showHdr
-                  ? 'HDR: the graded photo as an HDR export holds it, in stops. Click for the screen (SDR) view.'
-                  : 'Show the HDR histogram'
+                  ? t(
+                      'HDR: the graded photo as an HDR export holds it, in stops. Click for the screen (SDR) view.'
+                    )
+                  : t('Show the HDR histogram')
               }
               onClick={() => setWantHdr(!showHdr)}
             >
@@ -157,8 +190,8 @@ export function Histogram({
             </button>
           )}
           <span className="spacer" />
-          <InfoTip tip={HISTOGRAM_TIP(log)} label="Histogram" />
-          {onExpand && <ExpandButton label="Expand the histogram" onClick={onExpand} />}
+          <InfoTip tip={HISTOGRAM_TIP(log)} label={t('Histogram')} />
+          {onExpand && <ExpandButton label={t('Expand the histogram')} onClick={onExpand} />}
         </div>
       )}
     </div>
@@ -213,7 +246,7 @@ export function HueChart({
   const now = shares(useMask ? masked : stats)
   const then = shares(before)
   const [hover, setHover] = useState<number | null>(null)
-  if (!now) return <div className="hue-chart empty">No colour measured yet.</div>
+  if (!now) return <div className="hue-chart empty">{t('No colour measured yet.')}</div>
   const max = Math.max(
     0.0001,
     ...now.bins.map((b) => b.share),
@@ -248,7 +281,10 @@ export function HueChart({
             </div>
           )
         })}
-        <div className="hue-bar neutral" title={`neutral ${(now.neutral * 100).toFixed(1)}%`}>
+        <div
+          className="hue-bar neutral"
+          title={t('neutral {{pct}}%', { pct: (now.neutral * 100).toFixed(1) })}
+        >
           <div
             className="fill"
             style={{ height: `${Math.min(100, (now.neutral / max) * 100)}%` }}
@@ -260,17 +296,18 @@ export function HueChart({
         {h ? (
           <span>
             {h.bin.hue_start.toFixed(0)}–{h.bin.hue_end.toFixed(0)}° · {(h.share * 100).toFixed(1)}%
-            {hb ? ` (was ${(hb.share * 100).toFixed(1)}%)` : ''} · sat{' '}
-            {(h.bin.mean_saturation * 100).toFixed(0)}%
-            {` · ${bandOfHue((h.bin.hue_start + h.bin.hue_end) / 2)}`}
+            {hb ? ` ${t('(was {{pct}}%)', { pct: (hb.share * 100).toFixed(1) })}` : ''}
+            {' · '}
+            {t('sat {{pct}}%', { pct: (h.bin.mean_saturation * 100).toFixed(0) })}
+            {` · ${t(BAND_NAME[bandOfHue((h.bin.hue_start + h.bin.hue_end) / 2)])}`}
           </span>
         ) : (
-          <InfoTip tip={HUE_TIP} label="Colours in the photo" />
+          <InfoTip tip={HUE_TIP} label={t('Colours in the photo')} />
         )}
         <span className="hue-toggles">
           <label>
             <input type="checkbox" checked={ghost} onChange={(e) => setGhost(e.target.checked)} />{' '}
-            before
+            {t('before')}
           </label>
           {masked && (
             <label>
@@ -279,10 +316,10 @@ export function HueChart({
                 checked={inside}
                 onChange={(e) => setInside(e.target.checked)}
               />{' '}
-              in mask
+              {t('in mask')}
             </label>
           )}
-          {onExpand && <ExpandButton label="Expand the colour chart" onClick={onExpand} />}
+          {onExpand && <ExpandButton label={t('Expand the colour chart')} onClick={onExpand} />}
         </span>
       </div>
     </div>

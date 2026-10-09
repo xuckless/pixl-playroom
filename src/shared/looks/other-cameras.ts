@@ -12,6 +12,7 @@ import {
   tone,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 const om = (name: string): string => `OM System / Olympus ${name}`
 const px = (name: string): string => `Pentax Custom Image ${name}`
@@ -20,11 +21,11 @@ const ph = (name: string): string => `iPhone Photographic Style ${name}`
 export const OTHER_CAMERAS = collection('camera/other', [
   look(
     'vintage-one',
-    'Vintage One',
+    tk('Vintage One'),
     {
       tags: ['vintage', 'warm', 'faded', 'om', 'olympus'],
       inspiredBy: om('Vintage I'),
-      description: 'Faded with a warm, gentle cast.'
+      description: tk('Faded with a warm, gentle cast.')
     },
     tone({ contrast: -5 }),
     fade(0.04),
@@ -33,11 +34,11 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'vintage-olive',
-    'Vintage Olive',
+    tk('Vintage Olive'),
     {
       tags: ['vintage', 'olive', 'faded', 'om', 'olympus'],
       inspiredBy: om('Vintage II'),
-      description: 'Faded with an olive tint.'
+      description: tk('Faded with an olive tint.')
     },
     tone({ contrast: -10 }),
     fade(0.05),
@@ -46,11 +47,11 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'vintage-rose',
-    'Vintage Rose',
+    tk('Vintage Rose'),
     {
       tags: ['vintage', 'rose', 'magenta', 'om', 'olympus'],
       inspiredBy: om('Vintage III'),
-      description: 'Faded with a rosy cast.'
+      description: tk('Faded with a rosy cast.')
     },
     fade(0.04),
     presence({ saturation: -10 }),
@@ -58,22 +59,22 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'colour-creator-teal',
-    'Colour Creator Teal',
+    tk('Colour Creator Teal'),
     {
       tags: ['teal', 'tinted', 'creative', 'om', 'olympus'],
       inspiredBy: om('Color Creator'),
-      description: 'One hue for the whole picture: teal.'
+      description: tk('One hue for the whole picture: teal.')
     },
     presence({ saturation: -20 }),
     wheel('global', 185, 20)
   ),
   look(
     'pale-and-light',
-    'Pale & Light',
+    tk('Pale & Light'),
     {
       tags: ['pale', 'airy', 'bright', 'pastel', 'om', 'olympus'],
       inspiredBy: om('Art Filter Pale & Light Color'),
-      description: 'Bright, pale and faintly blue.'
+      description: tk('Bright, pale and faintly blue.')
     },
     tone({ contrast: -25, shadows: 25, whites: 15 }),
     fade(0.06),
@@ -82,11 +83,11 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'grainy-film',
-    'Grainy Film',
+    tk('Grainy Film'),
     {
       tags: ['bw', 'mono', 'grain', 'gritty', 'om', 'olympus'],
       inspiredBy: om('Art Filter Grainy Film'),
-      description: 'Hard mono with coarse grain.'
+      description: tk('Hard mono with coarse grain.')
     },
     mono({ blue: 10, red: -10 }),
     tone({ contrast: 60, highlights: 10, shadows: 10 }),
@@ -95,11 +96,11 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'reversal-slide',
-    'Reversal Slide',
+    tk('Reversal Slide'),
     {
       tags: ['slide', 'reversal', 'saturated', 'pentax'],
       inspiredBy: px('Reversal Film'),
-      description: 'Saturated slide colour with deep blues.'
+      description: tk('Saturated slide colour with deep blues.')
     },
     tone({ contrast: 25, blacks: -10 }),
     presence({ saturation: 15 }),
@@ -108,33 +109,33 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'silver-bleach',
-    'Silver Bleach',
+    tk('Silver Bleach'),
     {
       tags: ['bleach bypass', 'desaturated', 'contrast', 'pentax'],
       inspiredBy: px('Bleach Bypass'),
-      description: 'Hard contrast with most colour gone.'
+      description: tk('Hard contrast with most colour gone.')
     },
     tone({ contrast: 40 }),
     presence({ saturation: -55 })
   ),
   look(
     'muted-colour',
-    'Muted Colour',
+    tk('Muted Colour'),
     {
       tags: ['muted', 'calm', 'pentax'],
       inspiredBy: px('Muted'),
-      description: 'Calm, quiet colour.'
+      description: tk('Calm, quiet colour.')
     },
     tone({ contrast: -5 }),
     presence({ saturation: -30 })
   ),
   look(
     'radiant',
-    'Radiant',
+    tk('Radiant'),
     {
       tags: ['radiant', 'bright', 'warm', 'pentax'],
       inspiredBy: px('Radiant'),
-      description: 'Bright and glowing with warmth.'
+      description: tk('Bright and glowing with warmth.')
     },
     tone({ whites: 10 }),
     presence({ saturation: 15 }),
@@ -142,11 +143,11 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'amber-style',
-    'Amber Style',
+    tk('Amber Style'),
     {
       tags: ['amber', 'warm', 'phone', 'iphone'],
       inspiredBy: ph('Amber'),
-      description: 'Amber warmth through the whole picture.'
+      description: tk('Amber warmth through the whole picture.')
     },
     wheel('global', 35, 20),
     wheel('shadows', 25, 10),
@@ -154,11 +155,11 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'gold-style',
-    'Gold Style',
+    tk('Gold Style'),
     {
       tags: ['gold', 'warm', 'phone', 'iphone'],
       inspiredBy: ph('Gold'),
-      description: 'Golden light, colour lifted a touch.'
+      description: tk('Golden light, colour lifted a touch.')
     },
     wheel('global', 52, 18),
     wheel('highlights', 55, 12),
@@ -167,42 +168,42 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'rose-gold',
-    'Rose Gold',
+    tk('Rose Gold'),
     {
       tags: ['rose', 'pink', 'warm', 'phone', 'iphone'],
       inspiredBy: ph('Rose Gold'),
-      description: 'A warm pink glow.'
+      description: tk('A warm pink glow.')
     },
     wheel('global', 15, 14)
   ),
   look(
     'cool-rose',
-    'Cool Rose',
+    tk('Cool Rose'),
     {
       tags: ['rose', 'cool', 'pink', 'phone', 'iphone'],
       inspiredBy: ph('Cool Rose'),
-      description: 'Cool with a rosy tint.'
+      description: tk('Cool with a rosy tint.')
     },
     wheel('global', 290, 12)
   ),
   look(
     'vibrant-style',
-    'Vibrant Style',
+    tk('Vibrant Style'),
     {
       tags: ['vibrant', 'saturated', 'phone', 'iphone'],
       inspiredBy: ph('Vibrant'),
-      description: 'Brighter, more vibrant colour.'
+      description: tk('Brighter, more vibrant colour.')
     },
     tone({ shadows: 8, whites: 6 }),
     presence({ saturation: 18, vibrance: 25 })
   ),
   look(
     'natural-style',
-    'Natural Style',
+    tk('Natural Style'),
     {
       tags: ['natural', 'subtle', 'phone', 'iphone'],
       inspiredBy: ph('Natural'),
-      description: 'Less processed, softer colour.'
+      description: tk('Less processed, softer colour.')
     },
     tone({ contrast: -10, highlights: -15, shadows: 12 }),
     presence({ saturation: -12, clarity: -5 }),
@@ -210,11 +211,11 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'luminous',
-    'Luminous',
+    tk('Luminous'),
     {
       tags: ['luminous', 'bright', 'airy', 'phone', 'iphone'],
       inspiredBy: ph('Luminous'),
-      description: 'Bright shadows and gentle glow.'
+      description: tk('Bright shadows and gentle glow.')
     },
     tone({ contrast: -10, shadows: 30, whites: 15, highlights: -10 }),
     presence({ vibrance: 15, clarity: -8 }),
@@ -222,22 +223,22 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'dramatic-style',
-    'Dramatic Style',
+    tk('Dramatic Style'),
     {
       tags: ['dramatic', 'contrast', 'dark', 'phone', 'iphone'],
       inspiredBy: ph('Dramatic'),
-      description: 'Deep shadows and strong contrast.'
+      description: tk('Deep shadows and strong contrast.')
     },
     tone({ contrast: 25, shadows: -20 }),
     presence({ saturation: 5 })
   ),
   look(
     'quiet',
-    'Quiet',
+    tk('Quiet'),
     {
       tags: ['quiet', 'faded', 'muted', 'phone', 'iphone'],
       inspiredBy: ph('Quiet'),
-      description: 'Faded, muted and warm.'
+      description: tk('Faded, muted and warm.')
     },
     tone({ contrast: -15 }),
     fade(0.05),
@@ -246,22 +247,22 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'cozy',
-    'Cozy',
+    tk('Cozy'),
     {
       tags: ['cozy', 'warm', 'dim', 'phone', 'iphone'],
       inspiredBy: ph('Cozy'),
-      description: 'Dim, warm and close.'
+      description: tk('Dim, warm and close.')
     },
     tone({ whites: -10, highlights: -10 }),
     wheel('global', 35, 15)
   ),
   look(
     'ethereal',
-    'Ethereal',
+    tk('Ethereal'),
     {
       tags: ['ethereal', 'dreamy', 'pastel', 'phone', 'iphone'],
       inspiredBy: ph('Ethereal'),
-      description: 'Soft, light and faintly violet.'
+      description: tk('Soft, light and faintly violet.')
     },
     tone({ contrast: -20, whites: 10 }),
     fade(0.04),
@@ -269,11 +270,11 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'muted-bw',
-    'Muted B&W',
+    tk('Muted B&W'),
     {
       tags: ['bw', 'mono', 'soft', 'phone', 'iphone'],
       inspiredBy: ph('Muted B&W'),
-      description: 'A soft, faded black and white.'
+      description: tk('A soft, faded black and white.')
     },
     mono({ yellow: 6, blue: 6 }),
     tone({ contrast: -15, whites: -12, highlights: -10 }),
@@ -282,22 +283,22 @@ export const OTHER_CAMERAS = collection('camera/other', [
   ),
   look(
     'stark-bw',
-    'Stark B&W',
+    tk('Stark B&W'),
     {
       tags: ['bw', 'mono', 'stark', 'contrast', 'phone', 'iphone'],
       inspiredBy: ph('Stark B&W'),
-      description: 'A hard, deep black and white.'
+      description: tk('A hard, deep black and white.')
     },
     mono({ red: 8, orange: 8 }),
     tone({ contrast: 45, blacks: -25, shadows: -15, whites: 10 })
   ),
   look(
     'polar-split',
-    'Polar Split',
+    tk('Polar Split'),
     {
       tags: ['cool', 'split', 'clean', 'phone', 'iphone'],
       inspiredBy: ph('Cool'),
-      description: 'Cool shadows and clean whites.'
+      description: tk('Cool shadows and clean whites.')
     },
     split(210, 25, 200, 8),
     tone({ contrast: 10, whites: 10 }),

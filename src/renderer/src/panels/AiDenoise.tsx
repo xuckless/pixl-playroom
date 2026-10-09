@@ -23,17 +23,18 @@ import { useLibrary } from '../state/library'
 import { askConfirm } from '../state/confirm'
 import { useScope } from '../state/scope'
 import { useUi } from '../state/ui'
+import { t, tk } from '../lib/i18n'
 
 const ALL_MODELS: { value: AiDenoiseModel; label: string; hint: string }[] = [
   {
     value: 'drunet-color',
-    label: 'DRUNet · measured',
-    hint: 'Told the noise it measures on the photo; gentler, keeps fine texture.'
+    label: tk('DRUNet · measured'),
+    hint: tk('Told the noise it measures on the photo; gentler, keeps fine texture.')
   },
   {
     value: 'nafnet-sidd-w32',
-    label: 'NAFNet · real noise',
-    hint: 'Trained on real camera noise; judges it by itself. Best on high-ISO shots, and quick on a Mac’s graphics chip.'
+    label: tk('NAFNet · real noise'),
+    hint: tk('Trained on real camera noise; judges it by itself. Best on high-ISO shots, and quick on a Mac’s graphics chip.')
   }
 ]
 
@@ -63,8 +64,8 @@ function StepRow({ step, stale }: { step: PixelStep; stale: boolean }): React.JS
         </span>
         <button
           className="icon sm ghost"
-          title="Remove this step (undo brings it back)"
-          aria-label={`Remove ${step.label}`}
+          title={t('Remove this step (undo brings it back)')}
+          aria-label={t('Remove {{step}}', { step: step.label })}
           onClick={() => {
             const d = useDevelop.getState()
             d.edit((r) => (r.pixels = r.pixels.filter((x) => x.id !== step.id)))
@@ -76,10 +77,12 @@ function StepRow({ step, stale }: { step: PixelStep; stale: boolean }): React.JS
       </div>
       {stale &&
         (redoesQuietly(step) ? (
-          <p className="pixel-step-stale">Made from the previous RAW develop: being made again.</p>
+          <p className="pixel-step-stale">
+            {t('Made from the previous RAW develop: being made again.')}
+          </p>
         ) : (
           <p className="pixel-step-stale">
-            Made from the previous RAW develop.{' '}
+            {t('Made from the previous RAW develop.')}{' '}
             <button
               className="link"
               onClick={() => {
@@ -90,12 +93,12 @@ function StepRow({ step, stale }: { step: PixelStep; stale: boolean }): React.JS
                   )
               }}
             >
-              Run it again on the new develop
+              {t('Run it again on the new develop')}
             </button>
           </p>
         ))}
       <Slider
-        label="Strength"
+        label={t('Strength')}
         value={opacity}
         min={0}
         max={100}
@@ -137,26 +140,30 @@ export function AiDenoise(): React.JSX.Element | null {
   if (!key) return null
   const steps = (pixels ?? []).filter((p) => p.kind === 'denoise')
   const model = models.find((m) => m.id === prefs.model)
+  const modelHint = MODELS.find((m) => m.value === prefs.model)?.hint
   const running = job?.phase === 'running' || job?.phase === 'queued'
   const pct = job?.progress == null ? null : Math.round(job.progress * 100)
 
   let status: string | null = null
-  if (isHdr) status = 'HDR photos cannot take AI pixel steps yet'
+  if (isHdr) status = t('HDR photos cannot take AI pixel steps yet')
   else if (running)
     status =
       job.phase === 'queued'
-        ? 'Waiting for another AI job…'
-        : `${job.stage === 'full' ? 'Full resolution' : job.stage === 'save' ? 'Keeping it' : job.stage === 'preview' ? 'Preview' : 'Starting'}${pct !== null ? ` · ${job.estimated ? '~' : ''}${pct}%` : ''}`
-  else if (model && !model.installed) status = 'The model is not downloaded yet'
-  else if (job?.phase === 'error') status = job.message ?? 'Failed'
+        ? t('Waiting for another AI job…')
+        : `${job.stage === 'full' ? t('Full resolution') : job.stage === 'save' ? t('Keeping it') : job.stage === 'preview' ? t('Preview') : t('Starting')}${pct !== null ? ` · ${job.estimated ? '~' : ''}${pct}%` : ''}`
+  else if (model && !model.installed) status = t('The model is not downloaded yet')
+  else if (job?.phase === 'error') status = job.message ?? t('Failed')
 
   const setStorage = async (on: boolean): Promise<void> => {
     if (on) {
       const mb = (x: number): string => `${Math.max(1, Math.round(x))} MB`
       const yes = await askConfirm({
-        title: 'Store AI results losslessly?',
-        body: `Each denoise step of a photo this size would take about ${mb(frame * 2.3)} in its project, instead of about ${mb(frame * 0.4)} near-losslessly.\n\nLossless keeps the most room for editing afterwards: pushing exposure or shadows far shows nothing of compression. Steps already made keep how they were stored. RAW photos are always stored losslessly.`,
-        confirm: 'Store losslessly'
+        title: t('Store AI results losslessly?'),
+        body: t(
+          'Each denoise step of a photo this size would take about {{lossless}} in its project, instead of about {{near}} near-losslessly.\n\nLossless keeps the most room for editing afterwards: pushing exposure or shadows far shows nothing of compression. Steps already made keep how they were stored. RAW photos are always stored losslessly.',
+          { lossless: mb(frame * 2.3), near: mb(frame * 0.4) }
+        ),
+        confirm: t('Store losslessly')
       })
       if (!yes) return
     }
@@ -167,14 +174,14 @@ export function AiDenoise(): React.JSX.Element | null {
   return (
     <div className="ai-denoise">
       <Select
-        label="Model"
+        label={t('Model')}
         value={prefs.model}
-        options={MODELS.map((m) => ({ value: m.value, label: m.label }))}
+        options={MODELS.map((m) => ({ value: m.value, label: t(m.label) }))}
         onChange={(v) => setPrefs({ model: v })}
-        title={MODELS.find((m) => m.value === prefs.model)?.hint}
+        title={modelHint && t(modelHint)}
       />
       <Slider
-        label="Strength"
+        label={t('Strength')}
         value={prefs.strength}
         min={1}
         max={100}
@@ -191,7 +198,7 @@ export function AiDenoise(): React.JSX.Element | null {
         {!isHdr &&
           (running ? (
             <button className="sm ghost" onClick={() => void api.ai.cancel(job.jobId)}>
-              Cancel
+              {t('Cancel')}
             </button>
           ) : (
             <button
@@ -199,13 +206,13 @@ export function AiDenoise(): React.JSX.Element | null {
               onClick={() =>
                 void (async () => {
                   // Its model first, offered there and then when it is not here yet.
-                  if (!(await ensureModelId(prefs.model, model?.installed === true, 'AI denoise')))
+                  if (!(await ensureModelId(prefs.model, model?.installed === true, t('AI denoise'))))
                     return
                   await applyDenoise()
                 })().catch((e) => say(errorText(e), 'error'))
               }
             >
-              {layer ? `Denoise inside ${layer.name}` : 'Denoise the photo'}
+              {layer ? t('Denoise inside {{layer}}', { layer: layer.name }) : t('Denoise the photo')}
             </button>
           ))}
       </div>
@@ -225,9 +232,9 @@ export function AiDenoise(): React.JSX.Element | null {
               checked={lossless}
               onChange={(e) => void setStorage(e.target.checked)}
             />
-            Store results losslessly
+            {t('Store results losslessly')}
           </label>
-          <InfoTip tip={TIPS['detail.ai.lossless']} label="Store results losslessly" />
+          <InfoTip tip={TIPS['detail.ai.lossless']} label={t('Store results losslessly')} />
         </div>
       )}
     </div>

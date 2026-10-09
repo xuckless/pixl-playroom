@@ -14,6 +14,7 @@ import {
   type GradeOp,
   type GradeOpKind
 } from './engine-types'
+import { t, tk } from './i18n'
 
 /** Where an Invariant points, in Playroom's terms. */
 export interface InvariantPlace {
@@ -29,25 +30,25 @@ export interface InvariantPlace {
 
 /** Each op in the user's words. */
 const OP_LABEL: Partial<Record<GradeOpKind, string>> = {
-  Primary: 'Exposure, Contrast or Saturation',
-  Tone: 'Highlights, Shadows, Whites or Blacks',
-  ChannelMixer: 'Calibration',
-  WhiteBalance: 'White balance',
-  Dehaze: 'Dehaze',
-  HslBands: 'Color mixer',
-  Qualifier: 'Point color',
-  ColorGrade: 'Color grading',
-  Curves: 'Tone curve',
-  ParametricCurve: 'Tone curve',
-  Lut: 'Profile',
-  Denoise: 'Noise reduction',
-  Sharpen: 'Sharpening',
-  Vibrance: 'Vibrance',
-  LocalContrast: 'Texture or Clarity',
-  Vignette: 'Vignette',
-  Grain: 'Grain',
-  AddColor: 'Add color',
-  Defringe: 'Defringe'
+  Primary: tk('Exposure, Contrast or Saturation'),
+  Tone: tk('Highlights, Shadows, Whites or Blacks'),
+  ChannelMixer: tk('Calibration'),
+  WhiteBalance: tk('White balance'),
+  Dehaze: tk('Dehaze'),
+  HslBands: tk('Color mixer'),
+  Qualifier: tk('Point color'),
+  ColorGrade: tk('Color grading'),
+  Curves: tk('Tone curve'),
+  ParametricCurve: tk('Tone curve'),
+  Lut: tk('Profile'),
+  Denoise: tk('Noise reduction'),
+  Sharpen: tk('Sharpening'),
+  Vibrance: tk('Vibrance'),
+  LocalContrast: tk('Texture or Clarity'),
+  Vignette: tk('Vignette'),
+  Grain: tk('Grain'),
+  AddColor: tk('Add color'),
+  Defringe: tk('Defringe')
 }
 
 /**
@@ -99,7 +100,7 @@ export function invariantDetail(detail: EngineErrorShape['detail']): {
 } {
   const d = detail?.['Invariant']
   return {
-    stage: d && typeof d['stage'] === 'string' ? (d['stage'] as string) : 'a stage',
+    stage: d && typeof d['stage'] === 'string' ? (d['stage'] as string) : t('a stage'),
     text: d && typeof d['detail'] === 'string' ? (d['detail'] as string) : ''
   }
 }
@@ -137,11 +138,18 @@ export function invariantPlace(
 
 /** What to tell the user. */
 export function describeInvariant(place: InvariantPlace | null, stage: string): string {
-  if (!place) return `The picture could not be rendered after ${stage}. Undo the last change.`
+  if (!place)
+    return t('The picture could not be rendered after {{stage}}. Undo the last change.', { stage })
   const where =
-    place.layer === 'base' ? 'the photo’s settings' : `“${place.layerName ?? 'a layer'}”`
-  const what = place.op ? (OP_LABEL[place.op] ?? place.op) : 'The layer’s blend'
-  return `${what} in ${where} made pixels that are not numbers. Lower it, or undo.`
+    place.layer === 'base'
+      ? t('the photo’s settings')
+      : t('“{{name}}”', { name: place.layerName ?? t('a layer') })
+  const label = place.op ? OP_LABEL[place.op] : undefined
+  const what = place.op ? (label ? t(label) : place.op) : t('The layer’s blend')
+  return t('{{what}} in {{where}} made pixels that are not numbers. Lower it, or undo.', {
+    what,
+    where
+  })
 }
 
 /** Whether a slider reading `path` (a dotted recipe path) feeds the op an Invariant named. */

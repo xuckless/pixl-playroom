@@ -19,6 +19,7 @@
  * fifteen hundred lenses. `PLAYROOM_LENS_PROFILES_URL` points the online
  * catalogue somewhere else (`file://` works).
  */
+import { t } from '../shared/i18n'
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { createHash } from 'crypto'
@@ -174,7 +175,7 @@ export async function importProfiles(files: string[]): Promise<LensProfile[]> {
     try {
       parsed = JSON.parse(await readFile(f, 'utf8'))
     } catch {
-      throw new Error(`${basename(f)} is not JSON`)
+      throw new Error(t('{{file}} is not JSON', { file: basename(f) }))
     }
     const p = validateProfile(parsed, id)
     if (typeof p === 'string') throw new Error(`${basename(f)}: ${p}`)
@@ -276,7 +277,7 @@ export class LensProfileStore {
     try {
       const raw = await fetchBytes(`${BASE}/index.json`)
       const index = readIndex(JSON.parse(raw.toString('utf8')))
-      if (!index) throw new Error('the online catalogue is in a format this version does not read')
+      if (!index) throw new Error(t('the online catalogue is in a format this version does not read'))
       this.checkedAt = new Date().toISOString()
       this.error = null
       const current = this.catalog
@@ -309,7 +310,7 @@ export class LensProfileStore {
       }
       await writeFile(join(staging, 'index.json'), raw)
       const staged = await readCatalog(staging, 'online')
-      if (!staged) throw new Error('the downloaded catalogue does not read')
+      if (!staged) throw new Error(t('the downloaded catalogue does not read'))
       await rm(target, { recursive: true, force: true })
       await rename(staging, target)
       this.catalog = { ...staged, dir: target }

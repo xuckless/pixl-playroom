@@ -12,6 +12,8 @@
  * is the photo with every step laid on (main/pixels/working.ts).
  */
 
+import { t, tk } from './i18n'
+
 export type PixelStepKind = 'denoise' | 'enhance' | 'retouch'
 
 export interface PixelStep {
@@ -47,9 +49,9 @@ export interface PixelStep {
 }
 
 export const PIXEL_LABEL: Record<PixelStepKind, string> = {
-  denoise: 'AI Denoise',
-  enhance: 'Enhance',
-  retouch: 'Heal'
+  denoise: tk('AI Denoise'),
+  enhance: tk('Enhance'),
+  retouch: tk('Heal')
 }
 
 /**
@@ -143,7 +145,7 @@ export function resizes(s: PixelStep): boolean {
 
 /** Why a photo cannot take pixel steps, or null. */
 export function pixelStepRefusal(info: { is_hdr: boolean }): string | null {
-  return info.is_hdr ? 'HDR photos cannot take AI pixel steps yet' : null
+  return info.is_hdr ? t('HDR photos cannot take AI pixel steps yet') : null
 }
 
 /**

@@ -16,17 +16,18 @@ import {
   tone,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 const insp = (name: string): string => `Leica ${name}`
 
 export const LEICA = collection('camera/leica', [
   look(
     'quiet-natural',
-    'Quiet Natural',
+    tk('Quiet Natural'),
     {
       tags: ['natural', 'accurate', 'subtle', 'leica'],
       inspiredBy: insp('Looks: Natural'),
-      description: 'Accurate colour with a long, quiet highlight roll-off.'
+      description: tk('Accurate colour with a long, quiet highlight roll-off.')
     },
     sCurve(12),
     tone({ highlights: -22, shadows: 6 }),
@@ -36,11 +37,11 @@ export const LEICA = collection('camera/leica', [
   ),
   look(
     'contemporary-clean',
-    'Contemporary Clean',
+    tk('Contemporary Clean'),
     {
       tags: ['contemporary', 'clean', 'modern', 'leica'],
       inspiredBy: insp('Looks: Contemporary'),
-      description: 'Clean modern contrast with smooth mid-to-highlight transitions.'
+      description: tk('Clean modern contrast with smooth mid-to-highlight transitions.')
     },
     sCurve(25),
     tone({ highlights: -10, blacks: -6 }),
@@ -50,11 +51,11 @@ export const LEICA = collection('camera/leica', [
   ),
   look(
     'analog-cinema',
-    'Analog Cinema',
+    tk('Analog Cinema'),
     {
       tags: ['classic', 'analog', 'film', 'cinema', 'leica'],
       inspiredBy: insp('Looks: Classic'),
-      description: 'Soft, faded film character with teal shadows and warm highlights.'
+      description: tk('Soft, faded film character with teal shadows and warm highlights.')
     },
     tone({ contrast: -5, highlights: -10 }),
     fade(0.03),
@@ -64,11 +65,11 @@ export const LEICA = collection('camera/leica', [
   ),
   look(
     'eternal-punch',
-    'Eternal Punch',
+    tk('Eternal Punch'),
     {
       tags: ['punchy', 'saturated', 'contrast', 'bold', 'leica'],
       inspiredBy: insp('Looks: Eternal'),
-      description: 'Bold contrast and colour; lovely at half strength.'
+      description: tk('Bold contrast and colour; lovely at half strength.')
     },
     tone({ contrast: 30, blacks: -5 }),
     presence({ saturation: 25 }),
@@ -76,11 +77,11 @@ export const LEICA = collection('camera/leica', [
   ),
   look(
     'muted-slide',
-    'Muted Slide',
+    tk('Muted Slide'),
     {
       tags: ['chrome', 'slide', 'muted', 'restrained', 'leica'],
       inspiredBy: insp('Looks: Chrome'),
-      description: 'Slide-like restraint: firm contrast, quiet colour.'
+      description: tk('Slide-like restraint: firm contrast, quiet colour.')
     },
     tone({ contrast: 18 }),
     presence({ saturation: -25 }),
@@ -89,11 +90,11 @@ export const LEICA = collection('camera/leica', [
   ),
   look(
     'teal-tone',
-    'Teal Tone',
+    tk('Teal Tone'),
     {
       tags: ['teal', 'cool', 'cinematic', 'leica'],
       inspiredBy: insp('Looks: Teal'),
-      description: 'Teal shadows with skin protected.'
+      description: tk('Teal shadows with skin protected.')
     },
     tone({ contrast: 10 }),
     split(185, 25, 35, 10),
@@ -101,11 +102,11 @@ export const LEICA = collection('camera/leica', [
   ),
   look(
     'brass-tone',
-    'Brass Tone',
+    tk('Brass Tone'),
     {
       tags: ['brass', 'warm', 'gold', 'vintage', 'leica'],
       inspiredBy: insp('Looks: Brass'),
-      description: 'Golden midtones and soft blacks, blues pulled back.'
+      description: tk('Golden midtones and soft blacks, blues pulled back.')
     },
     tone({ contrast: 5 }),
     fade(0.02),
@@ -115,11 +116,11 @@ export const LEICA = collection('camera/leica', [
   ),
   look(
     'blue-tone',
-    'Blue Tone',
+    tk('Blue Tone'),
     {
       tags: ['blue', 'cool', 'monochromatic', 'mood', 'leica'],
       inspiredBy: insp('Looks: Blue'),
-      description: 'A cool blue cast over muted colour.'
+      description: tk('A cool blue cast over muted colour.')
     },
     tone({ contrast: 10 }),
     presence({ saturation: -30 }),
@@ -128,11 +129,11 @@ export const LEICA = collection('camera/leica', [
   ),
   look(
     'selenium-mono',
-    'Selenium Mono',
+    tk('Selenium Mono'),
     {
       tags: ['bw', 'mono', 'selenium', 'toned', 'leica'],
       inspiredBy: insp('Looks: Selenium'),
-      description: 'Deep blacks with a cool purple-brown selenium tone.'
+      description: tk('Deep blacks with a cool purple-brown selenium tone.')
     },
     mono(),
     tone({ contrast: 20 }),
@@ -140,11 +141,11 @@ export const LEICA = collection('camera/leica', [
   ),
   look(
     'sensor-mono',
-    'Sensor Mono',
+    tk('Sensor Mono'),
     {
       tags: ['bw', 'mono', 'panchromatic', 'tonal', 'leica', 'monochrom'],
       inspiredBy: insp('M Monochrom'),
-      description: 'A long, even tonal scale from a sensor that sees only light.'
+      description: tk('A long, even tonal scale from a sensor that sees only light.')
     },
     mono({ red: 10, orange: 8, yellow: 4 }),
     sCurve(15),

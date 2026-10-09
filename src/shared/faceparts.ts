@@ -16,6 +16,8 @@
  * Pure, for tests/faceparts.test.ts.
  */
 
+import { tk } from './i18n'
+
 export type FacePart = 'eyes' | 'brows' | 'lips' | 'teeth'
 export const FACE_PARTS: FacePart[] = ['eyes', 'brows', 'lips', 'teeth']
 
@@ -25,10 +27,10 @@ export const FACE_LANDMARKER = 'face-mesh-v2'
 export const isFacePart = (v: unknown): v is FacePart => FACE_PARTS.includes(v as FacePart)
 
 export const FACE_PART_LABEL: Record<FacePart, string> = {
-  eyes: 'Eyes',
-  brows: 'Brows',
-  lips: 'Lips',
-  teeth: 'Teeth'
+  eyes: tk('Eyes'),
+  brows: tk('Brows'),
+  lips: tk('Lips'),
+  teeth: tk('Teeth')
 }
 
 export interface Pt {

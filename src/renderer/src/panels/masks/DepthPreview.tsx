@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { DEPTH_SOFTNESS_MAX } from '../../../../shared/compile'
 import type { DepthComponent } from '../../../../shared/recipe'
 import { coverage, depthMap, depthOf, type DepthMap } from '../../lib/depth'
+import { t } from '../../lib/i18n'
 
 /** The tint of what the range takes (the masks' own red). */
 const TINT = [255, 64, 96]
@@ -50,12 +51,12 @@ export function DepthPreview({ c }: { c: DepthComponent }): React.JSX.Element | 
     }
     ctx.putImageData(img, 0, 0)
   }, [map, c.near, c.far, c.softness, c.invert])
-  if (failed) return <p className="muted small">The depth map could not be read.</p>
+  if (failed) return <p className="muted small">{t('The depth map could not be read.')}</p>
   return (
     <canvas
       ref={canvas}
       className="depth-preview"
-      aria-label="The photo's depth, the range tinted"
+      aria-label={t("The photo's depth, the range tinted")}
     />
   )
 }

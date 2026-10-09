@@ -5,6 +5,7 @@
  * Worker refuses (401) is refreshed once and the call tried again. Free of
  * Electron (fetch and the tokens are passed in), for tests/licence.test.ts.
  */
+import { t, tk } from '../../shared/i18n'
 import type {
   AccountApiError,
   AccountDevice,
@@ -35,15 +36,15 @@ export class AccountError extends Error {
 }
 
 const MESSAGES: Record<AccountApiError, string> = {
-  auth: 'Sign in again to continue.',
-  device_limit: 'Your licence is already in use on the most devices it allows.',
-  trial_used_account: 'This account has already had its free trial.',
-  trial_used_device: 'This device has already had a free trial, under another account.',
-  no_beta: 'This account isn’t in the beta yet.',
-  beta_ended: 'The beta has ended. Update to the released Pixl Playroom to keep going.',
-  wrong_client: 'Sign-in isn’t set up for this build of Pixl Playroom.',
-  bad_request: 'Pixl Playroom sent something the account server didn’t understand.',
-  too_many: 'Too many tries. Wait a little, then try again.'
+  auth: tk('Sign in again to continue.'),
+  device_limit: tk('Your licence is already in use on the most devices it allows.'),
+  trial_used_account: tk('This account has already had its free trial.'),
+  trial_used_device: tk('This device has already had a free trial, under another account.'),
+  no_beta: tk('This account isn’t in the beta yet.'),
+  beta_ended: tk('The beta has ended. Update to the released Pixl Playroom to keep going.'),
+  wrong_client: tk('Sign-in isn’t set up for this build of Pixl Playroom.'),
+  bad_request: tk('Pixl Playroom sent something the account server didn’t understand.'),
+  too_many: tk('Too many tries. Wait a little, then try again.')
 }
 
 export interface AccountApiDeps {
@@ -98,19 +99,22 @@ export class AccountApi {
         method !== 'DELETE' &&
         (typeof json.token !== 'string' || typeof json.keyset !== 'string')
       )
-        throw new AccountError('The account server sent an answer without a token.', 'network')
+        throw new AccountError(t('The account server sent an answer without a token.'), 'network')
       return json
     }
     const code = typeof json.error === 'string' ? json.error : ''
     if (code in MESSAGES) {
       const c = code as AccountApiError
       const retry = Number(res.headers.get('Retry-After'))
-      throw new AccountError(MESSAGES[c], c, {
+      throw new AccountError(t(MESSAGES[c]), c, {
         devices: Array.isArray(json.devices) ? (json.devices as AccountDevice[]) : undefined,
         retryAfter: Number.isFinite(retry) && retry > 0 ? retry : undefined
       })
     }
-    throw new AccountError(`The account server answered HTTP ${res.status}.`, 'network')
+    throw new AccountError(
+      t('The account server answered HTTP {{status}}.', { status: res.status }),
+      'network'
+    )
   }
 
   private async send(
@@ -132,7 +136,9 @@ export class AccountApi {
       })
     } catch (err) {
       throw new AccountError(
-        `Couldn't reach the PIXL account: ${err instanceof Error ? err.message : String(err)}`,
+        t("Couldn't reach the PIXL account: {{reason}}", {
+          reason: err instanceof Error ? err.message : String(err)
+        }),
         'network'
       )
     }

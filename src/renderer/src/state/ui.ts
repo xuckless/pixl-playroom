@@ -9,16 +9,17 @@ import type { SpotKind } from '../../../shared/retouch'
 import { aiDenoiseModel, type AiDenoiseModel } from '../../../shared/recipe'
 import { isCardId, type CardId } from '../../../shared/cards'
 import { migrateUi } from './uiMigrate'
+import { tk } from '../lib/i18n'
 import type { Bindings, Chord } from '../lib/keys'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 export type CropGuide = 'thirds' | 'grid' | 'golden' | 'diagonal' | 'none'
 export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
-  { value: 'thirds', label: 'Thirds' },
-  { value: 'grid', label: 'Grid' },
-  { value: 'golden', label: 'Golden' },
-  { value: 'diagonal', label: 'Diagonal' },
-  { value: 'none', label: 'None' }
+  { value: 'thirds', label: tk('Thirds') },
+  { value: 'grid', label: tk('Grid') },
+  { value: 'golden', label: tk('Golden') },
+  { value: 'diagonal', label: tk('Diagonal') },
+  { value: 'none', label: tk('None') }
 ]
 
 export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
@@ -27,13 +28,13 @@ export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
 export type OverlayMode =
   'glass' | 'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
 export const OVERLAY_MODES: { value: OverlayMode; label: string }[] = [
-  { value: 'glass', label: 'Glass' },
-  { value: 'color', label: 'Colour overlay' },
-  { value: 'color-bw', label: 'Colour overlay on B&W' },
-  { value: 'image-black', label: 'Image on black' },
-  { value: 'image-white', label: 'Image on white' },
-  { value: 'white-black', label: 'White on black' },
-  { value: 'outline', label: 'Outline' }
+  { value: 'glass', label: tk('Glass') },
+  { value: 'color', label: tk('Colour overlay') },
+  { value: 'color-bw', label: tk('Colour overlay on B&W') },
+  { value: 'image-black', label: tk('Image on black') },
+  { value: 'image-white', label: tk('Image on white') },
+  { value: 'white-black', label: tk('White on black') },
+  { value: 'outline', label: tk('Outline') }
 ]
 
 export interface BrushSettings {
@@ -264,7 +265,7 @@ export const useUi = create<UiState>()(
       heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100 },
       fullHdr: false,
       setFullHdr: (fullHdr) => set({ fullHdr }),
-      alwaysFlat: false,
+      alwaysFlat: true,
       setAlwaysFlat: (alwaysFlat) => set({ alwaysFlat }),
       cullSuggest: true,
       setCullSuggest: (cullSuggest) => set({ cullSuggest }),
@@ -317,7 +318,7 @@ export const useUi = create<UiState>()(
     {
       name: 'playroom.ui',
       storage,
-      version: 6,
+      version: 7,
       migrate: (persisted, version) => migrateUi(persisted, version),
       // Crop or Heal is never in hand when the app opens.
       partialize: (s) => {

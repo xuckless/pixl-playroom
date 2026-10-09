@@ -15,6 +15,7 @@
  * per photo version and per steps (`stackSignature`), so undo, redo and hide
  * find what they need already made; nothing ever runs a model again.
  */
+import { t } from '../../shared/i18n'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
 import { join } from 'path'
 import type { Overlay } from '../../shared/engine-types'
@@ -114,7 +115,7 @@ export async function stepImage(deps: PixelDeps, step: PixelStep): Promise<strin
   const out = join(deps.cacheDir, 'blobs', `${step.blob}.png`)
   if (await exists(out)) return out
   const jxl = await deps.blobFile(step.blob, 'jxl')
-  if (!jxl) throw new Error(`${step.label}: its image is missing from the project`)
+  if (!jxl) throw new Error(t('{{step}}: its image is missing from the project', { step: step.label }))
   await mkdir(join(deps.cacheDir, 'blobs'), { recursive: true })
   await makeOnce(
     out,
@@ -143,7 +144,7 @@ async function overlaySource(deps: PixelDeps, step: PixelStep): Promise<string> 
   )
   if (await exists(out)) return out
   const mask = await deps.blobFile(step.alpha, 'png')
-  if (!mask) throw new Error(`${step.label}: its mask is missing from the project`)
+  if (!mask) throw new Error(t('{{step}}: its mask is missing from the project', { step: step.label }))
   await deps.work({ op: 'compose', image, mask, out })
   return out
 }
@@ -208,7 +209,7 @@ async function patchOverlay(
   const ph = y1 - y0
   if (pw < 1 || ph < 1) return null
   const src = await deps.blobFile(step.blob, 'png')
-  if (!src) throw new Error(`${step.label}: its pixels are missing from the project`)
+  if (!src) throw new Error(t('{{step}}: its pixels are missing from the project', { step: step.label }))
   let path = src
   if (pw !== r.w || ph !== r.h) {
     path = src.replace(/\.png$/, `-${pw}x${ph}.png`)

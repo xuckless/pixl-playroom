@@ -32,18 +32,19 @@ import {
 } from '../../../shared/exportGuards'
 import type { ExportPreset, ExportPreview, ExportProgress } from '../../../shared/ipc'
 import { BUY_URL } from '../../../shared/licence'
-import { InfoTip } from '../components/InfoTip'
+import { InfoTip, type Tip } from '../components/InfoTip'
 import { Card, Modal, Slider, StepSlider } from '../components/ui'
 import { Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
 import { useLibrary, useTargets } from '../state/library'
 import { WatermarkSection } from './WatermarkSection'
+import { t, tk, tp } from '../lib/i18n'
 
 const STEPS: { id: ExportStep; label: string }[] = [
-  { id: 'format', label: 'Format' },
-  { id: 'size', label: 'Size & colour' },
-  { id: 'delivery', label: 'Metadata & HDR' },
-  { id: 'review', label: 'Review' }
+  { id: 'format', label: tk('Format') },
+  { id: 'size', label: tk('Size & colour') },
+  { id: 'delivery', label: tk('Metadata & HDR') },
+  { id: 'review', label: tk('Review') }
 ]
 
 const FORMATS: { value: ExportFormat; label: string }[] = (
@@ -68,26 +69,31 @@ const AVIF_CHROMA: { value: ExportSettings['chroma']; label: string }[] = [
   { value: 'Full', label: '4:4:4' }
 ]
 const PNG_COMPRESSION: { value: ExportSettings['pngCompression']; label: string }[] = [
-  { value: 'Fast', label: 'Fast' },
-  { value: 'Balanced', label: 'Balanced' },
-  { value: 'Best', label: 'Best' }
+  { value: 'Fast', label: tk('Fast') },
+  { value: 'Balanced', label: tk('Balanced') },
+  { value: 'Best', label: tk('Best') }
 ]
 const TIFF_COMPRESSION: { value: ExportSettings['tiffCompression']; label: string }[] = [
-  { value: 'None', label: 'None' },
+  { value: 'None', label: tk('None') },
   { value: 'Lzw', label: 'LZW' },
   { value: 'Deflate', label: 'Deflate' }
 ]
 
 const RESIZE_MODES: { value: ResizeMode; label: string }[] = [
-  { value: 'none', label: 'Full size' },
-  { value: 'long', label: 'Long edge' },
-  { value: 'short', label: 'Short edge' },
-  { value: 'width', label: 'Width' },
-  { value: 'height', label: 'Height' },
-  { value: 'box', label: 'Fit inside width × height' },
-  { value: 'megapixels', label: 'Megapixels' },
-  { value: 'percent', label: 'Percent' }
+  { value: 'none', label: tk('Full size') },
+  { value: 'long', label: tk('Long edge') },
+  { value: 'short', label: tk('Short edge') },
+  { value: 'width', label: tk('Width') },
+  { value: 'height', label: tk('Height') },
+  { value: 'box', label: tk('Fit inside width × height') },
+  { value: 'megapixels', label: tk('Megapixels') },
+  { value: 'percent', label: tk('Percent') }
 ]
+
+/** A list of options, its labels translated. */
+function translated<T>(options: { value: T; label: string }[]): { value: T; label: string }[] {
+  return options.map((o) => ({ ...o, label: t(o.label) }))
+}
 
 function Field({
   label,
@@ -154,11 +160,11 @@ function Check({
   )
 }
 
-const INTENT_TIP = {
-  what: 'How colours that do not fit the new colour space are brought into it.',
-  expect: INTENT_INFO.map((i) => `${i.name}: ${i.what}`).join('\n'),
-  tip: 'Relative colorimetric with black point compensation is the usual choice for photographs.'
-}
+const intentTip = (): Tip => ({
+  what: t('How colours that do not fit the new colour space are brought into it.'),
+  expect: INTENT_INFO.map((i) => `${t(i.name)}: ${t(i.what)}`).join('\n'),
+  tip: t('Relative colorimetric with black point compensation is the usual choice for photographs.')
+})
 
 export function ExportDialog(): React.JSX.Element {
   const targets = useTargets()
@@ -229,13 +235,13 @@ export function ExportDialog(): React.JSX.Element {
   const asked = useRef(0)
   useEffect(() => {
     const id = ++asked.current
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       void api.export
         .check(targets, s)
         .then((g) => id === asked.current && setRemote(g))
         .catch(() => id === asked.current && setRemote([]))
     }, 350)
-    return () => clearTimeout(t)
+    return () => clearTimeout(timer)
   }, [s, targets])
   const guards = useMemo(() => {
     const seen = new Set(local.map((g) => g.id))
@@ -282,7 +288,7 @@ export function ExportDialog(): React.JSX.Element {
 
   return (
     <Modal
-      title={`Export ${targets.length} photo${targets.length === 1 ? '' : 's'}`}
+      title={tp('Export {{count}} photo', 'Export {{count}} photos', targets.length)}
       onClose={() => setDialog(null)}
       wide
       icon="export"
@@ -300,11 +306,19 @@ export function ExportDialog(): React.JSX.Element {
               </span>
               <span>
                 {progress.done}/{progress.total}{' '}
-                {progress.current ? `· ${progress.current}` : progress.finished ? '· done' : ''}
+                {progress.current
+                  ? `· ${progress.current}`
+                  : progress.finished
+                    ? `· ${t('done')}`
+                    : ''}
                 {failed.length > 0 && (
                   <span className="error">
                     {' '}
-                    · {failed.length} failed: {failed[0].message}
+                    ·{' '}
+                    {t('{{count}} failed: {{message}}', {
+                      count: failed.length,
+                      message: failed[0].message
+                    })}
                   </span>
                 )}
               </span>
@@ -314,30 +328,34 @@ export function ExportDialog(): React.JSX.Element {
             <button
               className={`ew-chip ${stop ? 'block' : 'warn'}`}
               onClick={() => setStep('review')}
-              title="Show on the last step"
+              title={t('Show on the last step')}
             >
               {stop
-                ? `${guards.filter((g) => g.severity === 'block').length} to fix`
-                : `${guards.filter((g) => g.severity === 'warn').length} to know`}
+                ? t('{{count}} to fix', {
+                    count: guards.filter((g) => g.severity === 'block').length
+                  })
+                : t('{{count}} to know', {
+                    count: guards.filter((g) => g.severity === 'warn').length
+                  })}
             </button>
           )}
-          {!running && at > 0 && <button onClick={() => setStep(STEPS[at - 1].id)}>Back</button>}
+          {!running && at > 0 && <button onClick={() => setStep(STEPS[at - 1].id)}>{t('Back')}</button>}
           {running ? (
             <button onClick={() => void api.export.cancel(progress.jobId)}>
-              Cancel after this file
+              {t('Cancel after this file')}
             </button>
           ) : last ? (
             <button
               className="primary"
               disabled={targets.length === 0 || locked !== null || stop}
-              title={stop ? 'Fix what is marked first' : undefined}
+              title={stop ? t('Fix what is marked first') : undefined}
               onClick={() => void start()}
             >
-              Export
+              {t('Export')}
             </button>
           ) : (
             <button className="primary" onClick={() => setStep(STEPS[at + 1].id)}>
-              Next
+              {t('Next')}
             </button>
           )}
         </>
@@ -347,14 +365,14 @@ export function ExportDialog(): React.JSX.Element {
         <div className="licence-lock" role="alert">
           <p>{locked}</p>
           <div className="prefs-row">
-            <button onClick={() => setDialog('preferences')}>Open Settings…</button>
+            <button onClick={() => setDialog('preferences')}>{t('Open Settings…')}</button>
             <a href={BUY_URL} target="_blank" rel="noreferrer">
-              Buy a licence
+              {t('Buy a licence')}
             </a>
           </div>
         </div>
       )}
-      <nav className="ew-steps" aria-label="Export steps">
+      <nav className="ew-steps" aria-label={t('Export steps')}>
         {STEPS.map((x, i) => {
           const bad = issues(x.id).some((g) => g.severity === 'block')
           return (
@@ -365,7 +383,7 @@ export function ExportDialog(): React.JSX.Element {
               onClick={() => setStep(x.id)}
             >
               <span className="ew-n">{bad ? '!' : i + 1}</span>
-              {x.label}
+              {t(x.label)}
             </button>
           )
         })}
@@ -375,14 +393,14 @@ export function ExportDialog(): React.JSX.Element {
         <div className="ew-body">
           <Card
             id="export.format"
-            title="Format"
-            tip={FORMAT_TIP}
+            title={t('Format')}
+            tip={formatTip()}
             defaultOpen
             changed={differs('format', 'bitDepth', 'dither')}
             onReset={reset('format', 'bitDepth', 'dither')}
           >
             <StepSlider
-              label="Format"
+              label={t('Format')}
               value={s.format}
               options={FORMATS}
               onChange={(f) =>
@@ -392,25 +410,25 @@ export function ExportDialog(): React.JSX.Element {
                   bitDepth: depthsFor(f).includes(x.bitDepth) ? x.bitDepth : depthsFor(f)[0]
                 }))
               }
-              title={`Written as .${FORMAT_EXT[s.format]}`}
+              title={t('Written as .{{ext}}', { ext: FORMAT_EXT[s.format] })}
             />
             {depths.length > 1 && (
               <StepSlider
-                label="Bit depth"
+                label={t('Bit depth')}
                 value={s.bitDepth}
                 options={depths.map((v) => ({ value: v, label: `${v}-bit` }))}
                 onChange={(v) => up('bitDepth', v)}
               />
             )}
             <Check on={s.dither} onChange={(v) => up('dither', v)}>
-              Dither 8-bit output
+              {t('Dither 8-bit output')}
             </Check>
           </Card>
           <Card
             id="export.quality"
-            title="Quality & detail"
+            title={t('Quality & detail')}
             defaultOpen
-            tip={QUALITY_TIP}
+            tip={qualityTip()}
             changed={differs(
               'quality',
               'jpegSubsampling',
@@ -444,7 +462,7 @@ export function ExportDialog(): React.JSX.Element {
               !(s.format === 'avif' && s.lossless) &&
               !(s.format === 'webp' && s.webpLossless) && (
                 <Slider
-                  label="Quality"
+                  label={t('Quality')}
                   value={s.quality}
                   min={1}
                   max={100}
@@ -457,29 +475,29 @@ export function ExportDialog(): React.JSX.Element {
               )}
             {s.format === 'jpeg' && (
               <StepSlider
-                label="Chroma"
+                label={t('Chroma')}
                 value={s.jpegSubsampling}
                 options={JPEG_CHROMA}
                 onChange={(v) => up('jpegSubsampling', v)}
-                tip={CHROMA_TIP}
+                tip={chromaTip()}
               />
             )}
             {s.format === 'avif' && (
               <>
                 <Check on={s.lossless} onChange={(v) => up('lossless', v)}>
-                  Lossless
+                  {t('Lossless')}
                 </Check>
                 {!s.lossless && (
                   <StepSlider
-                    label="Chroma"
+                    label={t('Chroma')}
                     value={s.chroma}
                     options={AVIF_CHROMA}
                     onChange={(v) => up('chroma', v)}
-                    tip={CHROMA_TIP}
+                    tip={chromaTip()}
                   />
                 )}
                 <Slider
-                  label="Speed"
+                  label={t('Speed')}
                   value={s.avifSpeed}
                   min={0}
                   max={9}
@@ -488,18 +506,18 @@ export function ExportDialog(): React.JSX.Element {
                   onChange={(v) => up('avifSpeed', Math.round(v))}
                   onCommit={() => undefined}
                   adjusts={false}
-                  title="Slower is smaller for the same quality"
+                  title={t('Slower is smaller for the same quality')}
                 />
               </>
             )}
             {s.format === 'jxl' && (
               <>
                 <Check on={s.jxlLossless} onChange={(v) => up('jxlLossless', v)}>
-                  Lossless
+                  {t('Lossless')}
                 </Check>
                 {!s.jxlLossless && (
                   <Slider
-                    label="Distance"
+                    label={t('Distance')}
                     value={s.jxlDistance}
                     min={0.1}
                     max={25}
@@ -509,11 +527,11 @@ export function ExportDialog(): React.JSX.Element {
                     onCommit={() => undefined}
                     adjusts={false}
                     format={(v) => v.toFixed(1)}
-                    title="How far from the original: 1 is visually lossless, higher is smaller"
+                    title={t('How far from the original: 1 is visually lossless, higher is smaller')}
                   />
                 )}
                 <Slider
-                  label="Effort"
+                  label={t('Effort')}
                   value={s.jxlEffort}
                   min={1}
                   max={9}
@@ -528,10 +546,10 @@ export function ExportDialog(): React.JSX.Element {
             {s.format === 'webp' && (
               <>
                 <Check on={s.webpLossless} onChange={(v) => up('webpLossless', v)}>
-                  Lossless
+                  {t('Lossless')}
                 </Check>
                 <Slider
-                  label="Method"
+                  label={t('Method')}
                   value={s.webpMethod}
                   min={0}
                   max={6}
@@ -545,22 +563,22 @@ export function ExportDialog(): React.JSX.Element {
             )}
             {s.format === 'png' && (
               <StepSlider
-                label="Compression"
+                label={t('Compression')}
                 value={s.pngCompression}
-                options={PNG_COMPRESSION}
+                options={translated(PNG_COMPRESSION)}
                 onChange={(v) => up('pngCompression', v)}
               />
             )}
             {s.format === 'tiff' && (
               <StepSlider
-                label="Compression"
+                label={t('Compression')}
                 value={s.tiffCompression}
-                options={TIFF_COMPRESSION}
+                options={translated(TIFF_COMPRESSION)}
                 onChange={(v) => up('tiffCompression', v)}
               />
             )}
             {s.format === 'png' || s.format === 'tiff' ? (
-              <p className="muted small">Lossless: the picture is kept exactly.</p>
+              <p className="muted small">{t('Lossless: the picture is kept exactly.')}</p>
             ) : null}
           </Card>
           {notes('format')}
@@ -571,27 +589,27 @@ export function ExportDialog(): React.JSX.Element {
         <div className="ew-body">
           <Card
             id="export.size"
-            title="Size"
+            title={t('Size')}
             defaultOpen
-            tip={SIZE_TIP}
+            tip={sizeTip()}
             changed={differs('resize')}
             onReset={reset('resize')}
           >
-            <Field label="Resize">
+            <Field label={t('Resize')}>
               <select
                 value={s.resize.mode}
                 onChange={(e) => up('resize', { ...s.resize, mode: e.target.value as ResizeMode })}
               >
                 {RESIZE_MODES.map((m) => (
                   <option key={m.value} value={m.value}>
-                    {m.label}
+                    {t(m.label)}
                   </option>
                 ))}
               </select>
             </Field>
             {s.resize.mode === 'box' ? (
               <div className="ew-box">
-                <Field label="Width">
+                <Field label={t('Width')}>
                   <Num
                     value={s.resize.value}
                     min={1}
@@ -601,7 +619,7 @@ export function ExportDialog(): React.JSX.Element {
                 <span className="ew-x" aria-hidden>
                   ×
                 </span>
-                <Field label="Height">
+                <Field label={t('Height')}>
                   <Num
                     value={s.resize.valueH}
                     min={1}
@@ -617,7 +635,7 @@ export function ExportDialog(): React.JSX.Element {
                       ? 'MP'
                       : s.resize.mode === 'percent'
                         ? '%'
-                        : 'Pixels'
+                        : t('Pixels')
                   }
                 >
                   <Num
@@ -630,7 +648,7 @@ export function ExportDialog(): React.JSX.Element {
             )}
             {s.resize.mode === 'box' && (
               <p className="muted small">
-                Each picture is made as large as fits inside the box, its shape kept.
+                {t('Each picture is made as large as fits inside the box, its shape kept.')}
               </p>
             )}
             {s.resize.mode !== 'none' && (
@@ -638,51 +656,54 @@ export function ExportDialog(): React.JSX.Element {
                 on={s.resize.enlarge}
                 onChange={(v) => up('resize', { ...s.resize, enlarge: v })}
               >
-                Allow enlarging
+                {t('Allow enlarging')}
               </Check>
             )}
           </Card>
           <Card
             id="export.colour"
-            title="Colour"
+            title={t('Colour')}
             defaultOpen
-            tip={COLOUR_TIP}
+            tip={colourTip()}
             changed={differs('colorSpace', 'intent', 'blackPointCompensation')}
             onReset={reset('colorSpace', 'intent', 'blackPointCompensation')}
           >
             <StepSlider
-              label="Colour space"
+              label={t('Colour space')}
               value={s.colorSpace}
               options={COLOUR_SPACES}
               onChange={(v) => up('colorSpace', v)}
             />
             <div className="ew-intent">
-              <Field label="Intent">
+              <Field label={t('Intent')}>
                 <select
                   value={s.intent}
                   onChange={(e) => up('intent', e.target.value as ExportSettings['intent'])}
                 >
                   {INTENT_INFO.map((i) => (
                     <option key={i.value} value={i.value}>
-                      {i.name}
+                      {t(i.name)}
                     </option>
                   ))}
                 </select>
               </Field>
-              <InfoTip tip={INTENT_TIP} label="Intent" />
+              <InfoTip tip={intentTip()} label={t('Intent')} />
             </div>
-            <p className="muted small">{INTENT_INFO.find((i) => i.value === s.intent)?.what}</p>
+            <p className="muted small">
+              {t(INTENT_INFO.find((i) => i.value === s.intent)?.what ?? '')}
+            </p>
             <Check on={s.blackPointCompensation} onChange={(v) => up('blackPointCompensation', v)}>
-              Black point compensation
+              {t('Black point compensation')}
             </Check>
             <p className="muted small">
-              Keeps the darkest shadows from being lifted or crushed when the new space’s black
-              differs.
+              {t(
+                'Keeps the darkest shadows from being lifted or crushed when the new space’s black differs.'
+              )}
             </p>
           </Card>
           <Card
             id="export.sharpen"
-            title="Output sharpening"
+            title={t('Output sharpening')}
             defaultOpen={false}
             changed={differs('outputSharpen')}
             onReset={reset('outputSharpen')}
@@ -692,9 +713,9 @@ export function ExportDialog(): React.JSX.Element {
               disabled={hdrOut}
               onChange={(v) => up('outputSharpen', { ...s.outputSharpen, enabled: v })}
             >
-              Sharpen for output
+              {t('Sharpen for output')}
             </Check>
-            <Field label="Media">
+            <Field label={t('Media')}>
               <select
                 value={s.outputSharpen.media}
                 disabled={hdrOut || !s.outputSharpen.enabled}
@@ -705,26 +726,26 @@ export function ExportDialog(): React.JSX.Element {
                   })
                 }
               >
-                <option value="screen">Screen</option>
-                <option value="matte">Matte paper</option>
-                <option value="glossy">Glossy paper</option>
+                <option value="screen">{t('Screen')}</option>
+                <option value="matte">{t('Matte paper')}</option>
+                <option value="glossy">{t('Glossy paper')}</option>
               </select>
             </Field>
             <StepSlider
-              label="Amount"
+              label={t('Amount')}
               value={s.outputSharpen.amount}
               disabled={hdrOut || !s.outputSharpen.enabled}
               options={[
-                { value: 'low', label: 'Low' },
-                { value: 'standard', label: 'Standard' },
-                { value: 'high', label: 'High' }
+                { value: 'low', label: t('Low') },
+                { value: 'standard', label: t('Standard') },
+                { value: 'high', label: t('High') }
               ]}
               onChange={(v) => up('outputSharpen', { ...s.outputSharpen, amount: v })}
             />
             <p className="muted small">
               {hdrOut
-                ? 'Not applied to HDR output.'
-                : 'Applied after the resize, at the size the picture will be seen.'}
+                ? t('Not applied to HDR output.')
+                : t('Applied after the resize, at the size the picture will be seen.')}
             </p>
           </Card>
           <WatermarkSection
@@ -740,23 +761,24 @@ export function ExportDialog(): React.JSX.Element {
         <div className="ew-body">
           <Card
             id="export.metadata"
-            title="Metadata"
+            title={t('Metadata')}
             defaultOpen
             tip={{
-              what: 'Which blocks of the original’s metadata the export keeps.',
-              expect:
+              what: t('Which blocks of the original’s metadata the export keeps.'),
+              expect: t(
                 'Each block is copied whole or left out; the title, caption, keywords and copyright are then written into the ones kept.'
+              )
             }}
             changed={differs('metaMode', 'metadata', 'removeLocation', 'copyright')}
             onReset={reset('metaMode', 'metadata', 'removeLocation', 'copyright')}
           >
-            <Field label="Include">
+            <Field label={t('Include')}>
               <select
                 value={s.metaMode}
                 onChange={(e) => up('metaMode', e.target.value as ExportSettings['metaMode'])}
               >
-                <option value="all">All</option>
-                <option value="copyrightOnly">Copyright only</option>
+                <option value="all">{t('All')}</option>
+                <option value="copyrightOnly">{t('Copyright only')}</option>
               </select>
             </Field>
             <div className="ew-checks">
@@ -773,12 +795,12 @@ export function ExportDialog(): React.JSX.Element {
               ))}
             </div>
             <Check on={s.removeLocation} onChange={(v) => up('removeLocation', v)}>
-              Remove location
+              {t('Remove location')}
             </Check>
-            <Field label="Copyright">
+            <Field label={t('Copyright')}>
               <input
                 value={s.copyright}
-                placeholder="Used when a photo has none"
+                placeholder={t('Used when a photo has none')}
                 onChange={(e) => up('copyright', e.target.value)}
                 onKeyDown={(e) => e.stopPropagation()}
               />
@@ -788,47 +810,47 @@ export function ExportDialog(): React.JSX.Element {
             id="export.hdr"
             title="HDR"
             defaultOpen
-            tip={HDR_TIP}
+            tip={hdrTip()}
             changed={differs('hdr')}
             onReset={reset('hdr')}
           >
-            <Field label="Mode">
+            <Field label={t('Mode')}>
               <select
                 value={s.hdr.mode}
                 onChange={(e) =>
                   up('hdr', { ...s.hdr, mode: e.target.value as ExportSettings['hdr']['mode'] })
                 }
               >
-                <option value="sdr">SDR (tone map HDR sources)</option>
+                <option value="sdr">{t('SDR (tone map HDR sources)')}</option>
                 <option value="keep" disabled={!supportsHdr(s.format)}>
-                  Keep HDR sources HDR
+                  {t('Keep HDR sources HDR')}
                 </option>
                 <option value="expand" disabled={!supportsHdr(s.format)}>
-                  Expand SDR to HDR
+                  {t('Expand SDR to HDR')}
                 </option>
                 <option value="gainmap" disabled={!supportsGainMap(s.format)}>
-                  SDR + gain map (HDR sources)
+                  {t('SDR + gain map (HDR sources)')}
                 </option>
               </select>
             </Field>
             {s.hdr.mode === 'gainmap' && (
               <p className="muted small">
-                An HDR photo is written as its SDR picture with a gain map (UltraHDR in a JPEG): an
-                HDR display lifts it back, any other shows the SDR picture. SDR photos are written
-                as plain SDR.
+                {t(
+                  'An HDR photo is written as its SDR picture with a gain map (UltraHDR in a JPEG): an HDR display lifts it back, any other shows the SDR picture. SDR photos are written as plain SDR.'
+                )}
               </p>
             )}
             <Check on={s.hdr.pixl} onChange={(v) => up('hdr', { ...s.hdr, pixl: v })}>
-              PIXL’s own tone mapping and gamut compression
+              {t('PIXL’s own tone mapping and gamut compression')}
             </Check>
             <p className="muted small">
-              The engine’s built-in path for an HDR photo’s HDR, gain-map and Display P3 files: it
-              keeps highlight hues, eases colours into the output’s gamut and builds the gain map
-              itself. Off: the operator below.
+              {t(
+                'The engine’s built-in path for an HDR photo’s HDR, gain-map and Display P3 files: it keeps highlight hues, eases colours into the output’s gamut and builds the gain map itself. Off: the operator below.'
+              )}
             </p>
             {s.hdr.pixl && s.hdr.mode !== 'sdr' && (
               <Slider
-                label="Ceiling"
+                label={t('Ceiling')}
                 value={s.hdr.ceiling ?? CEILING_MAX}
                 min={CEILING_MIN}
                 max={CEILING_MAX}
@@ -837,7 +859,7 @@ export function ExportDialog(): React.JSX.Element {
                 scale="log"
                 format={(v) =>
                   s.hdr.ceiling === null && v >= CEILING_MAX
-                    ? 'Photo’s peak'
+                    ? t('Photo’s peak')
                     : `${Math.round(v)} nits`
                 }
                 onChange={(v) =>
@@ -845,12 +867,14 @@ export function ExportDialog(): React.JSX.Element {
                 }
                 onCommit={() => undefined}
                 adjusts={false}
-                title="The brightest the HDR output goes; the far right holds it to the photo’s own peak"
+                title={t(
+                  'The brightest the HDR output goes; the far right holds it to the photo’s own peak'
+                )}
               />
             )}
             {!s.hdr.pixl && (s.hdr.mode === 'sdr' || s.hdr.mode === 'gainmap') && (
               <>
-                <Field label="Operator">
+                <Field label={t('Operator')}>
                   <select
                     value={s.hdr.operator}
                     onChange={(e) =>
@@ -866,7 +890,7 @@ export function ExportDialog(): React.JSX.Element {
                     <option value="Clip">Clip</option>
                   </select>
                 </Field>
-                <Field label="Target white (nits)">
+                <Field label={t('Target white (nits)')}>
                   <Num
                     value={s.hdr.targetPeak}
                     min={50}
@@ -878,7 +902,7 @@ export function ExportDialog(): React.JSX.Element {
             )}
             {s.hdr.mode === 'gainmap' && (
               <Slider
-                label="Map quality"
+                label={t('Map quality')}
                 value={s.hdr.gainMapQuality}
                 min={1}
                 max={100}
@@ -891,7 +915,7 @@ export function ExportDialog(): React.JSX.Element {
             )}
             {s.hdr.mode !== 'sdr' && !s.hdr.pixl && (
               <>
-                <Field label="Highlights">
+                <Field label={t('Highlights')}>
                   <select
                     value={s.hdr.limit}
                     onChange={(e) =>
@@ -900,15 +924,15 @@ export function ExportDialog(): React.JSX.Element {
                         limit: e.target.value as ExportSettings['hdr']['limit']
                       })
                     }
-                    title="What happens to highlights an edit pushes above the peak"
+                    title={t('What happens to highlights an edit pushes above the peak')}
                   >
-                    <option value="clip">Clip at the peak</option>
-                    <option value="rolloff">Roll off (BT.2390)</option>
+                    <option value="clip">{t('Clip at the peak')}</option>
+                    <option value="rolloff">{t('Roll off (BT.2390)')}</option>
                   </select>
                 </Field>
                 {s.hdr.limit === 'rolloff' && (
                   <Slider
-                    label="Knee"
+                    label={t('Knee')}
                     value={s.hdr.knee}
                     min={10}
                     max={100}
@@ -925,7 +949,7 @@ export function ExportDialog(): React.JSX.Element {
             {s.hdr.mode === 'expand' && (
               <>
                 <StepSlider
-                  label="To"
+                  label={t('To')}
                   value={s.hdr.to}
                   options={[
                     { value: 'Rec2100Pq', label: 'PQ' },
@@ -933,7 +957,7 @@ export function ExportDialog(): React.JSX.Element {
                   ]}
                   onChange={(v) => up('hdr', { ...s.hdr, to: v })}
                 />
-                <Field label="SDR white (nits)">
+                <Field label={t('SDR white (nits)')}>
                   <Num
                     value={s.hdr.sdrWhite}
                     min={50}
@@ -941,7 +965,7 @@ export function ExportDialog(): React.JSX.Element {
                     onChange={(v) => up('hdr', { ...s.hdr, sdrWhite: v })}
                   />
                 </Field>
-                <Field label="Peak (nits)">
+                <Field label={t('Peak (nits)')}>
                   <Num
                     value={s.hdr.peak}
                     min={100}
@@ -960,32 +984,32 @@ export function ExportDialog(): React.JSX.Element {
         <div className="ew-body">
           <Card
             id="export.location"
-            title="Location & name"
+            title={t('Location & name')}
             defaultOpen
             changed={differs('folder', 'subfolder', 'template', 'collision', 'reveal')}
             onReset={reset('folder', 'subfolder', 'template', 'collision', 'reveal')}
           >
             <Check on={s.folder === null} onChange={(v) => up('folder', v ? null : '')}>
-              Beside each original
+              {t('Beside each original')}
             </Check>
             {s.folder !== null && (
               <div className="row">
-                <input value={s.folder} readOnly placeholder="Choose a folder" />
+                <input value={s.folder} readOnly placeholder={t('Choose a folder')} />
                 <button
                   onClick={() => void api.export.chooseFolder().then((f) => f && up('folder', f))}
                 >
-                  Choose…
+                  {t('Choose…')}
                 </button>
               </div>
             )}
-            <Field label="Subfolder">
+            <Field label={t('Subfolder')}>
               <input
                 value={s.subfolder}
                 onChange={(e) => up('subfolder', e.target.value)}
                 onKeyDown={(e) => e.stopPropagation()}
               />
             </Field>
-            <Field label="File name">
+            <Field label={t('File name')}>
               <input
                 value={s.template}
                 onChange={(e) => up('template', e.target.value)}
@@ -993,21 +1017,21 @@ export function ExportDialog(): React.JSX.Element {
                 title="{name} {seq} {date} {rating} {copy} {ext}"
               />
             </Field>
-            <Field label="If it exists">
+            <Field label={t('If it exists')}>
               <select
                 value={s.collision}
                 onChange={(e) => up('collision', e.target.value as ExportSettings['collision'])}
               >
-                <option value="suffix">Add a number</option>
-                <option value="skip">Skip</option>
-                <option value="overwrite">Overwrite</option>
+                <option value="suffix">{t('Add a number')}</option>
+                <option value="skip">{t('Skip')}</option>
+                <option value="overwrite">{t('Overwrite')}</option>
               </select>
             </Field>
             <Check on={s.reveal} onChange={(v) => up('reveal', v)}>
-              Show in folder when done
+              {t('Show in folder when done')}
             </Check>
           </Card>
-          <Card id="export.presets" title="Presets" defaultOpen={false}>
+          <Card id="export.presets" title={t('Presets')} defaultOpen={false}>
             <select
               value=""
               onChange={(e) => {
@@ -1015,7 +1039,7 @@ export function ExportDialog(): React.JSX.Element {
                 if (p) setS(normaliseExportSettings(p.settings))
               }}
             >
-              <option value="">Load preset…</option>
+              <option value="">{t('Load preset…')}</option>
               {presets.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -1024,7 +1048,7 @@ export function ExportDialog(): React.JSX.Element {
             </select>
             <div className="row">
               <input
-                placeholder="Preset name"
+                placeholder={t('Preset name')}
                 value={presetName}
                 onChange={(e) => setPresetName(e.target.value)}
                 onKeyDown={(e) => e.stopPropagation()}
@@ -1038,42 +1062,46 @@ export function ExportDialog(): React.JSX.Element {
                   })
                 }
               >
-                Save
+                {t('Save')}
               </button>
             </div>
           </Card>
-          <Card id="export.summary" title="Before you export" defaultOpen>
+          <Card id="export.summary" title={t('Before you export')} defaultOpen>
             <p className="ew-summary">{summary(s, targets.length)}</p>
             {guards.length === 0 ? (
-              <p className="muted small">Nothing to flag.</p>
+              <p className="muted small">{t('Nothing to flag.')}</p>
             ) : (
               <GuardList guards={guards} onGo={setStep} here="review" />
             )}
           </Card>
-          <Card id="export.preview" title="Preview" defaultOpen>
+          <Card id="export.preview" title={t('Preview')} defaultOpen>
             <div className="ew-preview-bar">
               <button
                 disabled={targets.length === 0 || shown.state === 'busy' || stop}
                 title={
-                  stop ? 'Fix what is marked first' : 'Render the first photo as it will be written'
+                  stop
+                    ? t('Fix what is marked first')
+                    : t('Render the first photo as it will be written')
                 }
                 onClick={() => void makePreview()}
               >
-                {shown.state === 'ready' ? 'Preview again' : 'Preview the first photo'}
+                {shown.state === 'ready' ? t('Preview again') : t('Preview the first photo')}
               </button>
               {shown.state === 'busy' && <Spinner size={22} progress={null} />}
               {shown.state === 'ready' && shown.of !== settingsKey && (
-                <span className="muted small">Settings changed since: preview again.</span>
+                <span className="muted small">{t('Settings changed since: preview again.')}</span>
               )}
             </div>
             {shown.state === 'error' && <p className="error small">{shown.error}</p>}
             {shown.state === 'ready' && shown.preview && (
               <figure className="ew-preview">
-                <img src={shown.preview.url} alt="The first photo as it will be exported" />
+                <img src={shown.preview.url} alt={t('The first photo as it will be exported')} />
                 <figcaption>
                   {shown.preview.width} × {shown.preview.height} px ·{' '}
                   {FORMAT_NAME[shown.preview.format as ExportFormat] ?? shown.preview.format} ·{' '}
-                  {Math.max(1, Math.round(shown.preview.bytes / 1024))} KB at this size
+                  {t('{{size}} KB at this size', {
+                    size: Math.max(1, Math.round(shown.preview.bytes / 1024))
+                  })}
                   {shown.preview.notes.map((n) => (
                     <span key={n} className="muted small">
                       {' '}
@@ -1085,10 +1113,14 @@ export function ExportDialog(): React.JSX.Element {
             )}
           </Card>
           {progress?.finished && (
-            <Card id="export.receipt" title="Receipt" defaultOpen>
+            <Card id="export.receipt" title={t('Receipt')} defaultOpen>
               <p className="ew-summary">
-                {progress.outputs.length} written
-                {failed.length > 0 ? `, ${failed.length} failed` : ''}.
+                {failed.length > 0
+                  ? t('{{count}} written, {{failed}} failed.', {
+                      count: progress.outputs.length,
+                      failed: failed.length
+                    })
+                  : t('{{count}} written.', { count: progress.outputs.length })}
               </p>
               {failed.map((e, i) => (
                 <p key={`f${i}`} className="error small">
@@ -1131,7 +1163,7 @@ function GuardList({
               <>
                 {' '}
                 <button type="button" className="link" onClick={() => onGo(g.step)}>
-                  {STEPS.find((x) => x.id === g.step)?.label}
+                  {t(STEPS.find((x) => x.id === g.step)?.label ?? '')}
                 </button>
               </>
             )}
@@ -1144,56 +1176,83 @@ function GuardList({
 
 /** The settings in a sentence: what the person is about to do. */
 function summary(s: ExportSettings, photos: number): string {
-  const q =
+  const name = FORMAT_NAME[s.format]
+  const format =
     s.format === 'jpeg' || s.format === 'webp' || s.format === 'avif'
       ? s.lossless || s.webpLossless
-        ? ' lossless'
-        : ` quality ${s.quality}`
-      : ''
+        ? t('{{format}} lossless', { format: name })
+        : t('{{format}} quality {{quality}}', { format: name, quality: s.quality })
+      : name
+  const value = s.resize.value
   const size =
     s.resize.mode === 'none'
-      ? 'full size'
+      ? t('full size')
       : s.resize.mode === 'box'
-        ? `inside ${s.resize.value} × ${s.resize.valueH} px`
+        ? t('inside {{width}} × {{height}} px', { width: value, height: s.resize.valueH })
         : s.resize.mode === 'megapixels'
-          ? `${s.resize.value} MP`
+          ? `${value} MP`
           : s.resize.mode === 'percent'
-            ? `${s.resize.value}%`
-            : `${s.resize.mode === 'long' ? 'long edge' : s.resize.mode} ${s.resize.value} px`
+            ? `${value}%`
+            : s.resize.mode === 'long'
+              ? t('long edge {{value}} px', { value })
+              : s.resize.mode === 'short'
+                ? t('short {{value}} px', { value })
+                : s.resize.mode === 'width'
+                  ? t('width {{value}} px', { value })
+                  : t('height {{value}} px', { value })
   const space = COLOUR_SPACES.find((c) => c.value === s.colorSpace)?.label ?? s.colorSpace
-  return `${photos} photo${photos === 1 ? '' : 's'} as ${FORMAT_NAME[s.format]}${q}, ${s.bitDepth}-bit, ${size}, in ${space}${
-    s.hdr.mode === 'sdr' ? '' : `, HDR: ${s.hdr.mode}`
-  }.`
+  const values = { format, depth: s.bitDepth, size, space, hdr: s.hdr.mode }
+  return s.hdr.mode === 'sdr'
+    ? tp(
+        '{{count}} photo as {{format}}, {{depth}}-bit, {{size}}, in {{space}}.',
+        '{{count}} photos as {{format}}, {{depth}}-bit, {{size}}, in {{space}}.',
+        photos,
+        values
+      )
+    : tp(
+        '{{count}} photo as {{format}}, {{depth}}-bit, {{size}}, in {{space}}, HDR: {{hdr}}.',
+        '{{count}} photos as {{format}}, {{depth}}-bit, {{size}}, in {{space}}, HDR: {{hdr}}.',
+        photos,
+        values
+      )
 }
 
-const FORMAT_TIP = {
-  what: 'The file type each photo is written as.',
-  expect:
-    'JPEG is the most widely read. PNG and TIFF keep every pixel. WebP, AVIF and JPEG XL are smaller for the same quality; AVIF and JPEG XL can also hold HDR.',
-  tip: 'JPEG XL is not shown by every program yet.'
-}
-const QUALITY_TIP = {
-  what: 'How much detail the encoder keeps against how big the file is.',
-  expect:
+const formatTip = (): Tip => ({
+  what: t('The file type each photo is written as.'),
+  expect: t(
+    'JPEG is the most widely read. PNG and TIFF keep every pixel. WebP, AVIF and JPEG XL are smaller for the same quality; AVIF and JPEG XL can also hold HDR.'
+  ),
+  tip: t('JPEG XL is not shown by every program yet.')
+})
+const qualityTip = (): Tip => ({
+  what: t('How much detail the encoder keeps against how big the file is.'),
+  expect: t(
     'Higher is closer to the picture and larger. Chroma is how much of the colour detail is kept: 4:4:4 keeps all of it, 4:2:0 keeps a quarter.'
-}
-const CHROMA_TIP = {
-  what: 'How finely colour is stored beside brightness.',
-  expect:
+  )
+})
+const chromaTip = (): Tip => ({
+  what: t('How finely colour is stored beside brightness.'),
+  expect: t(
     '4:4:4 keeps all the colour detail. 4:2:2 halves it across, 4:2:0 quarters it: smaller files, with fine coloured edges (red text, thin lines) a little softer.'
-}
-const SIZE_TIP = {
-  what: 'How big the written picture is.',
-  expect:
+  )
+})
+const sizeTip = (): Tip => ({
+  what: t('How big the written picture is.'),
+  expect: t(
     'Long or short edge, width or height set one side and the other follows. Fit inside width × height makes each picture as large as fits the box. Without Allow enlarging, a picture already smaller is left alone.'
-}
-const COLOUR_TIP = {
-  what: 'The colour space the pixels are written in, and how colours that do not fit it are handled.',
-  expect:
+  )
+})
+const colourTip = (): Tip => ({
+  what: t(
+    'The colour space the pixels are written in, and how colours that do not fit it are handled.'
+  ),
+  expect: t(
     'sRGB is read the same everywhere. Display P3 and Adobe RGB hold more saturated colour; Rec.2020 more still, for HDR and wide-gamut screens.'
-}
-const HDR_TIP = {
-  what: 'What an HDR photo (or an SDR one) becomes.',
-  expect:
+  )
+})
+const hdrTip = (): Tip => ({
+  what: t('What an HDR photo (or an SDR one) becomes.'),
+  expect: t(
     'SDR tone maps HDR photos to an ordinary picture. Keep HDR writes PQ. A gain map writes an SDR picture that HDR displays lift back. Expand makes an SDR photo HDR.'
-}
+  )
+})

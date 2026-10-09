@@ -8,6 +8,8 @@
 import type { AiJobEvent } from '../../../shared/ai'
 import type { ModelInfo } from '../../../shared/ipc'
 import type { Job } from '../state/busy'
+// Straight from shared (not ./i18n): tested in Node, without the preload's bridge.
+import { t } from '../../../shared/i18n'
 
 export interface Activity {
   id: string
@@ -49,7 +51,7 @@ export function activities(ai: AiJobEvent[], jobs: Job[], models: ModelInfo[]): 
       .filter((m) => m.progress !== null)
       .map((m): Activity => ({
         id: `model:${m.id}`,
-        title: `Downloading ${m.title}`,
+        title: t('Downloading {{model}}', { model: m.title }),
         progress: m.progress,
         queued: false,
         stop: null
@@ -73,9 +75,9 @@ export function activitySummary(list: Activity[]): string {
   return list
     .map((a) => {
       const how = a.queued
-        ? 'queued'
+        ? t('queued')
         : a.progress === null
-          ? 'working'
+          ? t('working')
           : `${Math.round(a.progress * 100)}%`
       return `${a.title}${a.name ? ` · ${a.name}` : ''}: ${how}`
     })

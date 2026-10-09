@@ -18,6 +18,7 @@
  * pixels). Small parts (eyes, lips, teeth) answer on close-ups only.
  */
 import type { PersonPart } from './looks/smart'
+import { tk } from './i18n'
 
 export type ConceptId = 'sky' | PersonPart
 
@@ -50,22 +51,22 @@ const person = (
 export const CONCEPTS: Concept[] = [
   {
     id: 'sky',
-    label: 'Sky',
-    ask: 'Click the sky',
+    label: tk('Sky'),
+    ask: tk('Click the sky'),
     many: false,
     size: 'best',
     finders: ['sky-model', 'text', 'click'],
     group: 'scene'
   },
-  person('body', 'Person', 'Click the person', false, 'large'),
-  person('face', 'Face', 'Click the face'),
-  person('hair', 'Hair', 'Click the hair'),
-  person('skin', 'Skin', 'Click each patch of skin', true),
-  person('eyes', 'Eyes', 'Click each eye', true),
-  person('brows', 'Brows', 'Click each brow', true),
-  person('lips', 'Lips', 'Click the lips'),
-  person('teeth', 'Teeth', 'Click the teeth'),
-  person('clothes', 'Clothes', 'Click each piece of clothing', true)
+  person('body', tk('Person'), tk('Click the person'), false, 'large'),
+  person('face', tk('Face'), tk('Click the face')),
+  person('hair', tk('Hair'), tk('Click the hair')),
+  person('skin', tk('Skin'), tk('Click each patch of skin'), true),
+  person('eyes', tk('Eyes'), tk('Click each eye'), true),
+  person('brows', tk('Brows'), tk('Click each brow'), true),
+  person('lips', tk('Lips'), tk('Click the lips')),
+  person('teeth', tk('Teeth'), tk('Click the teeth')),
+  person('clothes', tk('Clothes'), tk('Click each piece of clothing'), true)
 ]
 
 const BY_ID = new Map(CONCEPTS.map((c) => [c.id, c]))

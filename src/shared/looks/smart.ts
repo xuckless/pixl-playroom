@@ -27,6 +27,7 @@ import {
   type LayerSettings
 } from '../recipe'
 import { rangeOf } from './ranges'
+import { t, tp } from '../i18n'
 
 export type PersonPart =
   'skin' | 'face' | 'hair' | 'eyes' | 'brows' | 'lips' | 'teeth' | 'clothes' | 'body'
@@ -243,24 +244,24 @@ const IMMEDIATE_KEYS = new Set<SmartKey>(['range', 'linear', 'bidirectional', 'r
 
 /** Why something cannot run, for the browser and the Applied bar. */
 export function whyNot(r: Readiness): string {
-  if (r === 'off') return 'AI models are off: turn them on in Settings → AI models'
+  if (r === 'off') return t('AI models are off: turn them on in Settings → AI models')
   return r === 'needs-model'
-    ? 'needs a model: download it in Settings → AI models'
-    : 'needs the next engine update'
+    ? t('needs a model: download it in Settings → AI models')
+    : t('needs the next engine update')
 }
 
 const IMMEDIATE = new Set<MaskTarget['kind']>(['range', 'linear', 'bidirectional', 'radial'])
 
 /** A part's own need; an object falls back to the user pointing at it. */
-function partNeed(t: MaskTarget, r: SmartReadiness): { key: SmartKey; ready: boolean } {
-  if (t.kind === 'object') {
+function partNeed(tg: MaskTarget, r: SmartReadiness): { key: SmartKey; ready: boolean } {
+  if (tg.kind === 'object') {
     if (r.object === 'ready') return { key: 'object', ready: true }
     return { key: 'pick', ready: r.pick === 'ready' }
   }
-  if (t.kind === 'person' && t.part === 'body') return { key: 'body', ready: false }
-  if (t.kind === 'person' && !MODEL_PARTS.includes(t.part))
+  if (tg.kind === 'person' && tg.part === 'body') return { key: 'body', ready: false }
+  if (tg.kind === 'person' && !MODEL_PARTS.includes(tg.part))
     return { key: 'personDetail', ready: r.personDetail === 'ready' }
-  return { key: t.kind, ready: r[t.kind] === 'ready' }
+  return { key: tg.kind, ready: r[tg.kind] === 'ready' }
 }
 
 /** The parts Selfie Multiclass finds; the others wait for a finder. */
@@ -279,7 +280,8 @@ export function smartBlockers(s: SmartPart, r: SmartReadiness): string[] {
     if (!m.required) continue
     for (const p of m.parts) {
       const need = partNeed(p.target, r)
-      if (!need.ready) out.push(`${m.name}: ${whyNot(r[need.key])}`)
+      if (!need.ready)
+        out.push(t('{{name}}: {{why}}', { name: t(m.name), why: whyNot(r[need.key]) }))
     }
   }
   return out
@@ -408,39 +410,39 @@ function componentOf(
     invert: part.invert ?? false,
     feather
   }
-  const t = part.target
-  if (t.kind === 'range')
+  const tg = part.target
+  if (tg.kind === 'range')
     return {
       ...base,
       kind: 'range',
-      hue: t.hue ?? null,
-      saturation: t.saturation ?? null,
-      luma: t.luma ?? null,
-      smoothness: t.smoothness ?? 0
+      hue: tg.hue ?? null,
+      saturation: tg.saturation ?? null,
+      luma: tg.luma ?? null,
+      smoothness: tg.smoothness ?? 0
     }
-  if (t.kind === 'linear')
-    return { ...base, kind: 'linear', start: { ...t.start }, end: { ...t.end }, ...plane }
-  if (t.kind === 'bidirectional')
+  if (tg.kind === 'linear')
+    return { ...base, kind: 'linear', start: { ...tg.start }, end: { ...tg.end }, ...plane }
+  if (tg.kind === 'bidirectional')
     return {
       ...base,
       kind: 'bidirectional',
-      start: { ...t.start },
-      end: { ...t.end },
-      centre: t.centre ?? 0.5,
+      start: { ...tg.start },
+      end: { ...tg.end },
+      centre: tg.centre ?? 0.5,
       ...plane
     }
-  if (t.kind === 'radial')
+  if (tg.kind === 'radial')
     return {
       ...base,
       kind: 'radial',
-      centre: { ...t.centre },
-      radiusX: t.radiusX,
-      radiusY: t.radiusY,
-      angle: t.angle ?? 0,
-      softness: t.softness ?? 50,
+      centre: { ...tg.centre },
+      radiusX: tg.radiusX,
+      radiusY: tg.radiusY,
+      angle: tg.angle ?? 0,
+      softness: tg.softness ?? 50,
       ...plane
     }
-  throw new Error(`not a component: ${t.kind}`)
+  throw new Error(`not a component: ${tg.kind}`)
 }
 
 const DENOISE_NAME = { drunet: 'DRUNet', nafnet: 'NAFNet' }
@@ -468,16 +470,16 @@ export function planSmart(smart: SmartPart, ready: SmartReadiness, photo: SmartP
       .filter((n) => !n.ready)
       .map((n) => whyNot(ready[n.key]))
     if (missing.length > 0) {
-      plan.skipped.push({ name: m.name, why: missing[0] })
+      plan.skipped.push({ name: t(m.name), why: missing[0] })
       if (m.required) plan.complete = false
       continue
     }
-    const layer = newLocalLayer(m.name)
+    const layer = newLocalLayer(t(m.name))
     applyAdjust(layer.settings, m.adjust)
     layer.amount = Math.min(200, Math.max(0, m.amount ?? 100))
     const feather = m.feather ?? 5
     made.set(m.id, layer.id)
-    plan.summary.push(`${m.name} mask`)
+    plan.summary.push(t('{{name}} mask', { name: t(m.name) }))
     if (m.parts.every((p) => IMMEDIATE.has(p.target.kind))) {
       layer.components = m.parts.map((p) => componentOf(p, feather, plane))
       plan.layers.push(layer)
@@ -487,35 +489,35 @@ export function planSmart(smart: SmartPart, ready: SmartReadiness, photo: SmartP
     layer.enabled = false
     plan.layers.push(layer)
     for (const p of m.parts) {
-      const t = p.target
+      const tg = p.target
       const at = { layerId: layer.id, mask: m.id, mode: p.mode, invert: p.invert ?? false }
-      if (IMMEDIATE.has(t.kind)) {
+      if (IMMEDIATE.has(tg.kind)) {
         plan.ops.push({
           kind: 'component',
           layerId: layer.id,
           mask: m.id,
           component: componentOf(p, feather, plane)
         })
-      } else if (t.kind === 'sky' && SKY_BY_CLICK) {
+      } else if (tg.kind === 'sky' && SKY_BY_CLICK) {
         // No sky model yet: the user is asked to click it, and SAM 2.1 selects it.
-        plan.ops.push({ kind: 'segment', ...at, target: t.kind })
+        plan.ops.push({ kind: 'segment', ...at, target: tg.kind })
         plan.etaMs += rates.sam2Ms
         plan.picks++
       } else if (
-        t.kind === 'subject' ||
-        t.kind === 'background' ||
-        t.kind === 'sky' ||
-        t.kind === 'vegetation' ||
-        t.kind === 'water'
+        tg.kind === 'subject' ||
+        tg.kind === 'background' ||
+        tg.kind === 'sky' ||
+        tg.kind === 'vegetation' ||
+        tg.kind === 'water'
       ) {
-        plan.ops.push({ kind: 'segment', ...at, target: t.kind })
+        plan.ops.push({ kind: 'segment', ...at, target: tg.kind })
         plan.etaMs += rates.segmentMs
-      } else if (t.kind === 'person') {
-        plan.ops.push({ kind: 'person', ...at, part: t.part })
+      } else if (tg.kind === 'person') {
+        plan.ops.push({ kind: 'person', ...at, part: tg.part })
         plan.etaMs += rates.personMs
-      } else if (t.kind === 'object') {
+      } else if (tg.kind === 'object') {
         const detect = ready.object === 'ready'
-        plan.ops.push({ kind: 'object', ...at, label: t.label, detect })
+        plan.ops.push({ kind: 'object', ...at, label: tg.label, detect })
         plan.etaMs += (detect ? rates.detectMs : 0) + rates.sam2Ms
         if (!detect) plan.picks++
       }
@@ -525,12 +527,12 @@ export function planSmart(smart: SmartPart, ready: SmartReadiness, photo: SmartP
 
   // Steps after every mask: one scoped to a mask freezes it when it starts.
   for (const s of smart.steps) {
-    const name = s.kind === 'denoise' ? 'AI denoise' : 'AI deblur'
+    const name = s.kind === 'denoise' ? t('AI denoise') : t('AI deblur')
     let layerId: string | null = null
     if (s.scope !== undefined) {
       const id = made.get(s.scope)
       if (!id) {
-        plan.skipped.push({ name, why: 'its mask could not be made' })
+        plan.skipped.push({ name, why: t('its mask could not be made') })
         continue
       }
       layerId = id
@@ -545,7 +547,7 @@ export function planSmart(smart: SmartPart, ready: SmartReadiness, photo: SmartP
       }
       plan.ops.push({ kind: 'denoise', model, strength, layerId })
       plan.etaMs += mp * (model === 'nafnet' ? rates.nafnetMsPerMp : rates.drunetMsPerMp)
-      plan.summary.push(`AI denoise (${DENOISE_NAME[model]})`)
+      plan.summary.push(t('AI denoise ({{model}})', { model: DENOISE_NAME[model] }))
     } else {
       if (ready.deblur !== 'ready') {
         plan.skipped.push({ name, why: whyNot(ready.deblur) })
@@ -553,7 +555,7 @@ export function planSmart(smart: SmartPart, ready: SmartReadiness, photo: SmartP
       }
       plan.ops.push({ kind: 'deblur', strength, layerId })
       plan.etaMs += mp * rates.deblurMsPerMp
-      plan.summary.push('AI deblur (NAFNet)')
+      plan.summary.push(t('AI deblur (NAFNet)'))
     }
   }
   plan.etaMs = Math.round(plan.etaMs)
@@ -618,16 +620,16 @@ function targetOf(v: unknown): MaskTarget | null {
   if (!isObj(v)) return null
   switch (v.kind) {
     case 'range': {
-      const t: MaskTarget = { kind: 'range' }
+      const tg: MaskTarget = { kind: 'range' }
       const h = band(v.hue, true)
       const s = band(v.saturation, false)
       const l = band(v.luma, false)
-      if (h) t.hue = h
-      if (s) t.saturation = s
-      if (l) t.luma = l
+      if (h) tg.hue = h
+      if (s) tg.saturation = s
+      if (l) tg.luma = l
       if (!h && !s && !l) return null
-      if (num(v.smoothness)) t.smoothness = clamp(v.smoothness, 0, 100)
-      return t
+      if (num(v.smoothness)) tg.smoothness = clamp(v.smoothness, 0, 100)
+      return tg
     }
     case 'linear': {
       const start = point(v.start)
@@ -765,30 +767,31 @@ export interface Converted {
   warnings: string[]
 }
 
-const PART_WORDS: Record<MaskTarget['kind'], (t: MaskTarget) => string> = {
-  range: (t) => (t.kind === 'range' && t.hue ? 'a colour range' : 'a brightness range'),
-  linear: () => 'a linear gradient',
-  bidirectional: () => 'a bidirectional gradient',
-  radial: () => 'a radial gradient',
-  subject: () => 'the subject',
-  background: () => 'the background',
-  sky: () => 'the sky',
-  vegetation: () => 'the trees and plants',
-  water: () => 'the water',
-  person: (t) => (t.kind === 'person' ? t.part : 'a person'),
-  object: (t) => (t.kind === 'object' ? `the ${t.label}` : 'an object')
+const PART_WORDS: Record<MaskTarget['kind'], (tg: MaskTarget) => string> = {
+  range: (tg) => (tg.kind === 'range' && tg.hue ? t('a colour range') : t('a brightness range')),
+  linear: () => t('a linear gradient'),
+  bidirectional: () => t('a bidirectional gradient'),
+  radial: () => t('a radial gradient'),
+  subject: () => t('the subject'),
+  background: () => t('the background'),
+  sky: () => t('the sky'),
+  vegetation: () => t('the trees and plants'),
+  water: () => t('the water'),
+  person: (tg) => (tg.kind === 'person' ? tg.part : t('a person')),
+  object: (tg) => (tg.kind === 'object' ? t('the {{label}}', { label: tg.label }) : t('an object'))
 }
 
 function partWords(parts: MaskPart[]): string {
   return parts
     .map((p, i) => {
-      const w = (p.invert ? 'all but ' : '') + PART_WORDS[p.target.kind](p.target)
+      const what = PART_WORDS[p.target.kind](p.target)
+      const w = p.invert ? t('all but {{part}}', { part: what }) : what
       if (i === 0) return w
       return p.mode === 'Subtract'
-        ? `minus ${w}`
+        ? t('minus {{part}}', { part: w })
         : p.mode === 'Intersect'
-          ? `within ${w}`
-          : `plus ${w}`
+          ? t('within {{part}}', { part: w })
+          : t('plus {{part}}', { part: w })
     })
     .join(' ')
 }
@@ -831,16 +834,16 @@ function partOf(c: MaskComponentSetting): MaskPart | string {
     case 'polygon':
       // A face part found by its model is found again on another photo.
       if (c.found) return { target: { kind: 'person', part: c.found.part }, ...join }
-      return 'a drawn outline belongs to this photo'
+      return t('a drawn outline belongs to this photo')
     case 'depth':
-      return 'a depth range is set on this photo’s own depth'
+      return t('a depth range is set on this photo’s own depth')
     case 'brush': {
       const src = c.source
-      if (!src) return 'painted strokes belong to this photo'
+      if (!src) return t('painted strokes belong to this photo')
       if (src.kind === 'segment') return { target: { kind: src.target }, ...join }
       if (src.kind === 'person') {
         if (!PERSON_PARTS.includes(src.part as PersonPart))
-          return `“${src.part}” is not a part we can find`
+          return t('“{{part}}” is not a part we can find', { part: src.part })
         return { target: { kind: 'person', part: src.part as PersonPart }, ...join }
       }
       // Found by a phrase: the same words, as an object to find by its name.
@@ -850,7 +853,7 @@ function partOf(c: MaskComponentSetting): MaskPart | string {
       if (src.concept) return { target: { kind: 'person', part: src.concept }, ...join }
       // The sky clicked by hand before classes (SKY_BY_CLICK) is still the sky to ask for.
       if (src.via === 'sky') return { target: { kind: 'sky' }, ...join }
-      if (!src.label) return 'an object pointed at by hand has no name to look for'
+      if (!src.label) return t('an object pointed at by hand has no name to look for')
       return { target: { kind: 'object', label: src.label }, ...join }
     }
   }
@@ -901,14 +904,17 @@ export function toInstructions(layers: LocalLayer[], pixels: PixelStep[]): Conve
     const parts: MaskPart[] = []
     for (const c of l.components) {
       const p = partOf(c)
-      if (typeof p === 'string') warnings.push(`${l.name}: ${p}, left out`)
+      if (typeof p === 'string')
+        warnings.push(t('{{name}}: {{why}}, left out', { name: l.name, why: p }))
       else parts.push(parts.length === 0 ? { ...p, mode: 'Add' } : p)
     }
     if (parts.length === 0) continue
     if (l.invert) {
       // A whole mask inverted is one part turned round; several cannot be.
       if (parts.length > 1) {
-        warnings.push(`${l.name}: an inverted mask of several parts cannot be kept`)
+        warnings.push(
+          t('{{name}}: an inverted mask of several parts cannot be kept', { name: l.name })
+        )
         continue
       }
       parts[0] = { ...parts[0], invert: !parts[0].invert }
@@ -916,7 +922,12 @@ export function toInstructions(layers: LocalLayer[], pixels: PixelStep[]): Conve
     const { adjust, left } = adjustOf(l.settings)
     if (left > 0)
       warnings.push(
-        `${l.name}: ${left} setting${left === 1 ? '' : 's'} a preset cannot carry in a mask (noise reduction, point colours, curves) left out`
+        tp(
+          '{{name}}: {{count}} setting a preset cannot carry in a mask (noise reduction, point colours, curves) left out',
+          '{{name}}: {{count}} settings a preset cannot carry in a mask (noise reduction, point colours, curves) left out',
+          left,
+          { name: l.name }
+        )
       )
     const feather = l.components.find(
       (c) =>
@@ -934,36 +945,51 @@ export function toInstructions(layers: LocalLayer[], pixels: PixelStep[]): Conve
       ...(feather !== undefined ? { feather } : {}),
       ...(l.amount !== 100 ? { amount: l.amount } : {})
     })
-    kept.push(`${l.name}: ${partWords(parts)}`)
+    kept.push(t('{{name}}: {{parts}}', { name: l.name, parts: partWords(parts) }))
   }
   const steps: StepInstruction[] = []
   for (const p of pixels) {
-    const name = p.kind === 'denoise' ? 'AI denoise' : p.kind === 'enhance' ? 'Enhance' : 'Heal'
+    const name =
+      p.kind === 'denoise' ? t('AI denoise') : p.kind === 'enhance' ? t('Enhance') : t('Heal')
     let scope: string | undefined
     if (p.scope !== null) {
       scope = masks.find((m) => m.name === p.scope)?.id
       if (!scope) {
-        warnings.push(`${name} in ${p.scope}: its mask is not kept, so neither is it`)
+        warnings.push(
+          t('{{name}} in {{mask}}: its mask is not kept, so neither is it', { name, mask: p.scope })
+        )
         continue
       }
     }
     const scoped = scope ? { scope } : {}
-    const where = p.scope ? ` in ${p.scope}` : ''
     if (p.kind === 'denoise') {
       const model = p.params.model === 'drunet-color' ? 'drunet' : 'auto'
       if (p.params.model !== 'drunet-color')
-        warnings.push(`${name}${where}: saved as the quickest denoise model there is`)
+        warnings.push(
+          p.scope
+            ? t('{{name}} in {{mask}}: saved as the quickest denoise model there is', {
+                name,
+                mask: p.scope
+              })
+            : t('{{name}}: saved as the quickest denoise model there is', { name })
+        )
       steps.push({ kind: 'denoise', model, strength: Math.max(1, p.opacity), ...scoped })
-      kept.push(`${name}${where} at ${p.opacity}%`)
+      kept.push(
+        p.scope
+          ? t('{{name}} in {{mask}} at {{opacity}}%', { name, mask: p.scope, opacity: p.opacity })
+          : t('{{name}} at {{opacity}}%', { name, opacity: p.opacity })
+      )
     } else if (p.kind === 'enhance' && p.params.chain === 'Deblur') {
       steps.push({ kind: 'deblur', strength: Math.max(1, p.opacity), ...scoped })
-      kept.push(`AI deblur${where}`)
+      kept.push(p.scope ? t('AI deblur in {{mask}}', { mask: p.scope }) : t('AI deblur'))
     } else if (p.kind === 'enhance') {
       warnings.push(
-        `${p.label}: only a deblur can be kept (an upscale or a JPEG restore is the file's)`
+        t("{{name}}: only a deblur can be kept (an upscale or a JPEG restore is the file's)", {
+          name: p.label
+        })
       )
     } else {
-      warnings.push(`${p.label}: heals belong to this photo, left out`)
+      warnings.push(t('{{name}}: heals belong to this photo, left out', { name: p.label }))
     }
   }
   return {

@@ -107,6 +107,7 @@ import {
 import { editsHdr, ensureHdrSource } from './hdrsource'
 import { READ_LIMITS } from '../shared/limits'
 import type { LensShot } from './lensprofiles'
+import { t } from '../shared/i18n'
 import {
   blankRequest,
   BACKGROUND_THREADS,
@@ -705,7 +706,10 @@ class Session {
         log.error('saving recipe failed', err)
         this.owner.send(IPC.develop.renderError, {
           key: this.key,
-          message: `Edits to ${this.row.name} were not saved: ${(err as Error).message}`,
+          message: t('Edits to {{name}} were not saved: {{reason}}', {
+            name: this.row.name,
+            reason: (err as Error).message
+          }),
           code: 'Save'
         })
       }
@@ -1913,11 +1917,11 @@ class Session {
    * frame must remain; otherwise it fails by name and Auto tries a lesser
    * mode.
    */
-  private usableUpright(t: Transform, w: number, h: number): void {
+  private usableUpright(tf: Transform, w: number, h: number): void {
     const { width, height } = orientedFrame(this.recipe, w, h)
-    const tooSteep = new Error('the lines ask for too strong a correction')
-    if (Math.abs(t.vertical) > 40 || Math.abs(t.horizontal) > 40) throw tooSteep
-    const centred = uprightTransform({ ...defaultUpright(), suggested: t }, width, height)
+    const tooSteep = new Error(t('the lines ask for too strong a correction'))
+    if (Math.abs(tf.vertical) > 40 || Math.abs(tf.horizontal) > 40) throw tooSteep
+    const centred = uprightTransform({ ...defaultUpright(), suggested: tf }, width, height)
     if (!centred) return
     const kept = fitCrop({ x: 0, y: 0, width: 1, height: 1 }, 0, width, height, centred)
     if (kept.width * kept.height < 0.25) throw tooSteep
@@ -1926,9 +1930,9 @@ class Session {
   /** Guided Upright: the transform that makes the guides (frame fractions) upright or level. */
   async uprightFromLines(lines: GuideLine[], focal: number): Promise<Transform> {
     const { width, height } = orientedFrame(this.recipe, this.px.frameWidth, this.px.frameHeight)
-    const t = await this.owner.engine.uprightFromLines(lines, width, height, focal)
-    this.usableUpright(t, this.px.frameWidth, this.px.frameHeight)
-    return t
+    const tf = await this.owner.engine.uprightFromLines(lines, width, height, focal)
+    this.usableUpright(tf, this.px.frameWidth, this.px.frameHeight)
+    return tf
   }
 
   /**
@@ -2052,10 +2056,10 @@ class Session {
     this.lookEdge = Math.round(Math.max(LOOK_EDGE_MIN, Math.min(LOOK_EDGE_MAX, edge)))
     this.lookQueue ??= new LookThumbQueue<Recipe>(
       (job, signal) => this.makeLookThumb(job.recipe, signal),
-      (t, id, thumb) =>
+      (tok, id, thumb) =>
         this.owner.send(IPC.looks.thumb, {
           key: this.key,
-          token: t,
+          token: tok,
           id,
           ...thumb
         } satisfies LookThumbEvent),

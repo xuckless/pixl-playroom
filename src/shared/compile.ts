@@ -56,6 +56,7 @@ import {
   type Recipe
 } from './recipe'
 import { opFromAbsolute, opFromRelative, type OpWhite } from './wb'
+import { tk } from './i18n'
 
 // ── Spaces ───────────────────────────────────────────────────────────────────
 
@@ -95,7 +96,7 @@ export function smoothingOf(value: number, ctx: CompileContext): AdjustmentSmoot
 }
 
 export const LEFT_OUT = {
-  sharpen: 'Sharpening shows at 100% only: at this zoom its radius is under half a pixel.'
+  sharpen: tk('Sharpening shows at 100% only: at this zoom its radius is under half a pixel.')
 } as const
 
 export const IDENTITY_PRIMARY: Primary = {
@@ -1444,7 +1445,7 @@ function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vig
   const exposure = { Exposure: { highlights: clamp(e.vignetteHighlights / 100, 0, 1) } }
   if (e.vignetteStyle !== 'paint') return exposure
   if (hdr) {
-    notes.push('Paint overlay needs an SDR picture; this HDR photo keeps highlight priority')
+    notes.push(tk('Paint overlay needs an SDR picture; this HDR photo keeps highlight priority'))
     return exposure
   }
   return 'PaintOverlay'

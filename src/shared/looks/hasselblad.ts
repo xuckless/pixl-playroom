@@ -13,15 +13,16 @@ import {
   tone,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 export const HASSELBLAD = collection('camera/hasselblad', [
   look(
     'natural-colour',
-    'Natural Colour',
+    tk('Natural Colour'),
     {
       tags: ['natural', 'accurate', 'medium format', 'hncs', 'hasselblad'],
       inspiredBy: 'Hasselblad Natural Colour Solution',
-      description: 'True hues, a gentle film curve and very long highlights.'
+      description: tk('True hues, a gentle film curve and very long highlights.')
     },
     sCurve(22),
     rolloff(0.03),
@@ -32,11 +33,11 @@ export const HASSELBLAD = collection('camera/hasselblad', [
   ),
   look(
     'natural-portrait',
-    'Natural Portrait',
+    tk('Natural Portrait'),
     {
       tags: ['portrait', 'skin', 'natural', 'medium format', 'hasselblad'],
       inspiredBy: 'Hasselblad Natural Colour Solution (portrait)',
-      description: 'Natural colour tuned for even, creamy skin.'
+      description: tk('Natural colour tuned for even, creamy skin.')
     },
     sCurve(12),
     rolloff(0.03),
@@ -47,11 +48,11 @@ export const HASSELBLAD = collection('camera/hasselblad', [
   ),
   look(
     'panoramic-travel',
-    'Panoramic Travel',
+    tk('Panoramic Travel'),
     {
       tags: ['travel', 'landscape', 'warm', 'film', 'xpan', 'hasselblad'],
       inspiredBy: 'Hasselblad XPan travel film',
-      description: 'A warm, slightly faded travel film look for wide frames.'
+      description: tk('A warm, slightly faded travel film look for wide frames.')
     },
     sCurve(22),
     fade(0.03),

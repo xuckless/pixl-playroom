@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { loupeContextMenu } from '../../lib/menus'
 import { readable } from '../../lib/frames'
 import {
   MAX_POINT_COLORS,
   newId,
+  type HslBand,
   type MaskComponentSetting,
   type Recipe
 } from '../../../../shared/recipe'
@@ -37,7 +39,7 @@ import { samplePatch } from '../../lib/image'
 import { pickAdd } from '../../lib/addpick'
 import { scoped } from '../../state/scope'
 import { fringeFrom } from '../../lib/helpers'
-import { useDevelop, wholeFrameTool } from '../../state/develop'
+import { useDevelop, wholeFrameTool, type CurveChannel } from '../../state/develop'
 import { useUi } from '../../state/ui'
 import { UprightGuides } from './UprightGuides'
 import { HealTool } from './HealTool'
@@ -61,6 +63,7 @@ import { SharpTile } from './SharpTile'
 import { useSize } from './useSize'
 import { loupeZoom, setLoupeElement, setPointer, setViewport, spaceHeld } from './zoom'
 import { Ambient } from '../../fx'
+import { t, tk } from '../../lib/i18n'
 
 /** How long the loupe must keep a size before the renderer is asked for that many pixels. */
 const EDGE_SETTLE_MS = 250
@@ -83,6 +86,60 @@ function isMouseWheel(e: WheelEvent): boolean {
     (e.deltaX === 0 && notch !== 0 && notch % 120 === 0 && Math.abs(e.deltaY) >= 50)
   if (!mouse) trackpadUntil = now + 250
   return mouse && now > trackpadUntil
+}
+
+/** History labels of the targeted tool, a whole phrase for each band and axis. */
+const TAT_HSL: Record<HslBand, Record<'hue' | 'saturation' | 'luminance', string>> = {
+  red: {
+    hue: tk('Targeted: Red hue'),
+    saturation: tk('Targeted: Red saturation'),
+    luminance: tk('Targeted: Red luminance')
+  },
+  orange: {
+    hue: tk('Targeted: Orange hue'),
+    saturation: tk('Targeted: Orange saturation'),
+    luminance: tk('Targeted: Orange luminance')
+  },
+  yellow: {
+    hue: tk('Targeted: Yellow hue'),
+    saturation: tk('Targeted: Yellow saturation'),
+    luminance: tk('Targeted: Yellow luminance')
+  },
+  green: {
+    hue: tk('Targeted: Green hue'),
+    saturation: tk('Targeted: Green saturation'),
+    luminance: tk('Targeted: Green luminance')
+  },
+  aqua: {
+    hue: tk('Targeted: Aqua hue'),
+    saturation: tk('Targeted: Aqua saturation'),
+    luminance: tk('Targeted: Aqua luminance')
+  },
+  blue: {
+    hue: tk('Targeted: Blue hue'),
+    saturation: tk('Targeted: Blue saturation'),
+    luminance: tk('Targeted: Blue luminance')
+  },
+  purple: {
+    hue: tk('Targeted: Purple hue'),
+    saturation: tk('Targeted: Purple saturation'),
+    luminance: tk('Targeted: Purple luminance')
+  },
+  magenta: {
+    hue: tk('Targeted: Magenta hue'),
+    saturation: tk('Targeted: Magenta saturation'),
+    luminance: tk('Targeted: Magenta luminance')
+  }
+}
+const TAT_CURVE: Record<CurveChannel, string> = {
+  master: tk('Targeted: curve (master)'),
+  red: tk('Targeted: curve (red)'),
+  green: tk('Targeted: curve (green)'),
+  blue: tk('Targeted: curve (blue)')
+}
+const PICK_FRINGE: Record<'purple' | 'green', string> = {
+  purple: tk('Lens: pick purple fringe'),
+  green: tk('Lens: pick green fringe')
 }
 
 /** A targeted-adjustment drag in progress. */
@@ -126,11 +183,11 @@ export function Loupe(): React.JSX.Element {
   // for new pixels once it has settled, not on every frame of the change.
   useEffect(() => {
     if (size.w <= 0) return
-    const t = setTimeout(
+    const timer = setTimeout(
       () => setTargetEdge(Math.round(Math.max(size.w, size.h) * (window.devicePixelRatio || 1))),
       EDGE_SETTLE_MS
     )
-    return () => clearTimeout(t)
+    return () => clearTimeout(timer)
   }, [size.w, size.h, setTargetEdge])
 
   const drawer = useUi((s) => s.drawer)
@@ -255,8 +312,8 @@ export function Loupe(): React.JSX.Element {
   const pan = useRef<{ x: number; y: number; from: ZoomView; moved: boolean } | null>(null)
   const startPan = (e: React.PointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0 || zoom.scale === 'fit' || tool === 'crop') return
-    const t = e.target as HTMLElement
-    const onPicture = t.closest('.picture') !== null || t === layer.current
+    const el = e.target as HTMLElement
+    const onPicture = el.closest('.picture') !== null || el === layer.current
     if (!spaceHeld() && !(tool === 'none' && onPicture)) return
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -278,7 +335,7 @@ export function Loupe(): React.JSX.Element {
     if (p.x < 0 || p.y < 0 || p.x > 1 || p.y > 1) return
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
-    const t: TatDrag = {
+    const drag: TatDrag = {
       id: e.pointerId,
       startY: e.clientY,
       // In a mask the drag moves the mask's curve or bands (see scope.ts).
@@ -288,53 +345,52 @@ export function Loupe(): React.JSX.Element {
       lastY: e.clientY,
       moved: false
     }
-    tat.current = t
+    tat.current = drag
     const rgb = await samplePatch(readable(picture), p.x, p.y)
     const dev = useDevelop.getState()
     const say = useLibrary.getState().say
     if (dev.tatTarget === 'hsl') {
       if (dev.hslTab === 'point') {
         tat.current = null
-        return say('The targeted tool moves the H, S and L tabs, not Point')
+        return say(t('The targeted tool moves the H, S and L tabs, not Point'))
       }
       const s = hsvOf(...rgb)
       if (s.saturation < 0.05) {
         tat.current = null
-        return say('That pixel is grey: there is no colour to adjust')
+        return say(t('That pixel is grey: there is no colour to adjust'))
       }
       const w = bandWeights(s.hue)
       const axis = dev.hslTab
       const band = mainBand(w)
-      const name = axis === 'all' ? 'saturation' : axis
-      t.label = `Targeted: ${band[0].toUpperCase()}${band.slice(1)} ${name}`
-      t.apply = (r, delta) => (r.hsl = applyHslDelta(t.base.hsl, w, axis, delta))
+      drag.label = TAT_HSL[band][axis === 'all' ? 'saturation' : axis]
+      drag.apply = (r, delta) => (r.hsl = applyHslDelta(drag.base.hsl, w, axis, delta))
     } else {
       const channel = dev.curveChannel
       const level =
         channel === 'master' ? hsvOf(...rgb).luma : rgb[{ red: 0, green: 1, blue: 2 }[channel]]
       // Where the pixel sat on the curve's input, before the curve moved it.
-      const x = curveInput(t.base.toneCurve[channel], level)
-      t.label = `Targeted: curve (${channel})`
-      t.apply = (r, delta) =>
-        (r.toneCurve[channel] = nudgeCurve(t.base.toneCurve[channel], x, delta / 300))
+      const x = curveInput(drag.base.toneCurve[channel], level)
+      drag.label = TAT_CURVE[channel]
+      drag.apply = (r, delta) =>
+        (r.toneCurve[channel] = nudgeCurve(drag.base.toneCurve[channel], x, delta / 300))
     }
     // A drag that went ahead of the sample catches up.
-    if (tat.current === t && t.lastY !== t.startY) moveTat(t.lastY)
+    if (tat.current === drag && drag.lastY !== drag.startY) moveTat(drag.lastY)
   }
   const moveTat = (y: number): void => {
-    const t = tat.current
-    if (!t) return
-    t.lastY = y
-    if (!t.apply || y === t.startY) return
-    const delta = (t.startY - y) * 0.4
-    const apply = t.apply
-    t.moved = true
+    const drag = tat.current
+    if (!drag) return
+    drag.lastY = y
+    if (!drag.apply || y === drag.startY) return
+    const delta = (drag.startY - y) * 0.4
+    const apply = drag.apply
+    drag.moved = true
     scoped.edit((r) => apply(r, delta), true)
   }
   const endTat = (): void => {
-    const t = tat.current
+    const drag = tat.current
     tat.current = null
-    if (t?.moved) scoped.commit(t.label)
+    if (drag?.moved) scoped.commit(drag.label)
   }
 
   const pick = useCallback(
@@ -355,23 +411,23 @@ export function Loupe(): React.JSX.Element {
           if (!s.wb)
             return useLibrary
               .getState()
-              .say('That pixel cannot be made neutral (a channel is black)', 'error')
+              .say(t('That pixel cannot be made neutral (a channel is black)'), 'error')
           replace(
             {
               ...recipe,
               wb: { mode: 'custom', temperature: s.wb.temperature, tint: s.wb.tint, preset: null }
             },
-            'White balance: picker'
+            tk('White balance: picker')
           )
           if (s.wb.clamped)
-            useLibrary.getState().say('The picked white reached the end of the range')
+            useLibrary.getState().say(t('The picked white reached the end of the range'))
         } catch (err) {
           useLibrary.getState().say(errorText(err), 'error')
         }
         setTool('none')
       } else if (tool === 'range-picker' && picture) {
         const layer = recipe.layers.find((l) => l.id === layerId)
-        if (!layer) return useLibrary.getState().say('Select a mask first', 'error')
+        if (!layer) return useLibrary.getState().say(t('Select a mask first'), 'error')
         const {
           hue,
           saturation: sat,
@@ -399,7 +455,7 @@ export function Loupe(): React.JSX.Element {
           if (comp.luma || sat <= 0.15)
             comp.luma = { centre: Math.round(luma * 100) / 100, width: 0.25, softness: 0.12 }
         }
-        replace(next, 'Pick range')
+        replace(next, tk('Pick range'))
         madeComponent(madeId)
         setTool('none')
       } else if (tool === 'depth-picker') {
@@ -409,7 +465,7 @@ export function Loupe(): React.JSX.Element {
           layer?.components.find((x) => x.id === compId && x.kind === 'depth') ??
           [...(layer?.components ?? [])].reverse().find((x) => x.kind === 'depth')
         if (!layer || !comp || comp.kind !== 'depth')
-          return useLibrary.getState().say('Select a Depth range first', 'error')
+          return useLibrary.getState().say(t('Select a Depth range first'), 'error')
         // Where the click is on the base frame, where the depth map lives.
         const b = displayToBase(g, p)
         const at = await depthAt(comp, b.x, b.y)
@@ -422,12 +478,12 @@ export function Loupe(): React.JSX.Element {
         if (c?.kind !== 'depth') return
         c.near = Math.max(0, at - half)
         c.far = Math.min(100, at + half)
-        replace(next, 'Pick depth')
+        replace(next, tk('Pick depth'))
         setTool('none')
       } else if (tool === 'fringe-pick' && picture) {
         const f = fringeFrom(hsvOf(...(await samplePatch(readable(picture), p.x, p.y))))
         if (!f) {
-          useLibrary.getState().say('That is not a purple or green fringe', 'error')
+          useLibrary.getState().say(t('That is not a purple or green fringe'), 'error')
         } else {
           const next = structuredClone(recipe)
           const d = next.lens.defringe
@@ -438,7 +494,7 @@ export function Loupe(): React.JSX.Element {
             d.greenHue = f.hue
             if (d.greenAmount === 0) d.greenAmount = 50
           }
-          replace(next, `Lens: pick ${f.band} fringe`)
+          replace(next, PICK_FRINGE[f.band])
         }
         setTool('none')
       } else if (tool === 'add-pick' && picture) {
@@ -460,11 +516,11 @@ export function Loupe(): React.JSX.Element {
           const id = newId()
           points.push({ id, ...sample, shiftHue: 0, shiftSat: 0, shiftLum: 0, range: 50 })
           dev.setPointId(id)
-          scoped.replace(next, 'Point colour: add')
+          scoped.replace(next, tk('Point colour: add'))
         } else {
           const sel = points.find((x) => x.id === dev.pointId) ?? points[points.length - 1]
           Object.assign(sel, sample)
-          scoped.replace(next, 'Point colour: re-sample')
+          scoped.replace(next, tk('Point colour: re-sample'))
         }
         setTool('none')
       }
@@ -479,9 +535,9 @@ export function Loupe(): React.JSX.Element {
       <div className="loupe-idle">
         <Ambient intensity={0.8} />
         <div className="idle-card">
-          <span className="micro">Develop</span>
-          <h2>{error ? 'The photo could not be opened' : 'Choose a photo'}</h2>
-          <p>{error ?? 'Pick one in the library or the filmstrip.'}</p>
+          <span className="micro">{t('Develop')}</span>
+          <h2>{error ? t('The photo could not be opened') : t('Choose a photo')}</h2>
+          <p>{error ?? t('Pick one in the library or the filmstrip.')}</p>
         </div>
       </div>
     )
@@ -495,6 +551,7 @@ export function Loupe(): React.JSX.Element {
     <div
       ref={boxRef}
       className={`loupe tool-${tool}${scale ? ' zoomed' : ''}`}
+      onContextMenu={loupeContextMenu}
       onPointerDownCapture={(e) => {
         if (spaceHeld()) startPan(e)
       }}

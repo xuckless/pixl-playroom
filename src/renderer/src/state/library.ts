@@ -17,6 +17,7 @@ import type { Recipe, RecipeGroup } from '../../../shared/recipe'
 import type { SmartGroup } from '../../../shared/smart'
 import { collapseStacks } from '../../../shared/stacks'
 import { api, errorText } from '../lib/api'
+import { t, tp } from '../lib/i18n'
 import { folderName, isUnder } from '../lib/sources'
 import { useBusy } from './busy'
 import { useUi } from './ui'
@@ -130,8 +131,6 @@ interface LibraryState {
   targets(): string[]
 }
 
-const photos = (n: number): string => `${n} photo${n === 1 ? '' : 's'}`
-
 /** Bumped by every open: a listing that lands after a newer open is dropped. */
 let openSeq = 0
 
@@ -167,8 +166,8 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     if (src.kind === 'duplicates')
       useBusy.getState().begin({
         id: job,
-        title: 'Finding duplicates',
-        detail: src.folder ? folderName(src.folder) : 'Whole library',
+        title: t('Finding duplicates'),
+        detail: src.folder ? folderName(src.folder) : t('Whole library'),
         scope: 'global'
       })
     try {
@@ -278,7 +277,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       await api.library.forgetFolder(folder)
       if (get().pinned.includes(folder)) get().togglePin(folder)
       set({ recent: await api.library.recentFolders() })
-      get().say(`Removed ${folderName(folder)} from the list`)
+      get().say(t('Removed {{name}} from the list', { name: folderName(folder) }))
     } catch (err) {
       get().say(errorText(err), 'error')
     }
@@ -397,7 +396,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     const focus = get().focus
     const cover = focus && keys.includes(focus) ? focus : keys[0]
     const photoIds = new Set(keys.map((k) => byKey.get(k)?.photoId))
-    if (!cover || photoIds.size < 2) return get().say('Select two or more photos to stack')
+    if (!cover || photoIds.size < 2) return get().say(t('Select two or more photos to stack'))
     const folder = byKey.get(cover)?.folder
     const elsewhere = keys.filter((k) => byKey.get(k)?.folder !== folder).length
     try {
@@ -407,9 +406,14 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       if (id) get().toggleStack(id, false)
       set({ selection: [cover], focus: cover })
       const made = changed.filter((i) => i && i.copyId === null && i.stack?.id === id).length
+      const stacked = tp('Stacked {{count}} photo', 'Stacked {{count}} photos', made)
       get().say(
-        `Stacked ${photos(made)}` +
-          (elsewhere ? ` (${photos(elsewhere)} from other folders left out)` : '')
+        elsewhere
+          ? t('{{stacked}} ({{photos}} from other folders left out)', {
+              stacked,
+              photos: tp('{{count}} photo', '{{count}} photos', elsewhere)
+            })
+          : stacked
       )
     } catch (err) {
       get().say(errorText(err), 'error')
@@ -441,7 +445,9 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     try {
       const n = await api.library.autoStack(folder, seconds)
       get().say(
-        n === 0 ? 'No bursts to stack' : `Made ${n} stack${n === 1 ? '' : 's'} by capture time`
+        n === 0
+          ? t('No bursts to stack')
+          : tp('Made {{count}} stack by capture time', 'Made {{count}} stacks by capture time', n)
       )
     } catch (err) {
       get().say(errorText(err), 'error')
@@ -453,7 +459,11 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     if (!c || keys.length === 0) return
     try {
       await api.library.collectionItems(id, keys, 'add')
-      get().say(`Added ${photos(keys.length)} to ${c.name}`)
+      get().say(
+        tp('Added {{count}} photo to {{name}}', 'Added {{count}} photos to {{name}}', keys.length, {
+          name: c.name
+        })
+      )
     } catch (err) {
       get().say(errorText(err), 'error')
     }
@@ -464,7 +474,16 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     if (!c || keys.length === 0) return
     try {
       await api.library.collectionItems(id, keys, 'remove')
-      get().say(`Removed ${photos(keys.length)} from ${c.name}`)
+      get().say(
+        tp(
+          'Removed {{count}} photo from {{name}}',
+          'Removed {{count}} photos from {{name}}',
+          keys.length,
+          {
+            name: c.name
+          }
+        )
+      )
     } catch (err) {
       get().say(errorText(err), 'error')
     }

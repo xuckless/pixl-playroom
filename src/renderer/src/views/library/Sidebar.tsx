@@ -4,6 +4,7 @@ import { Icon, type IconName } from '../../components/icons'
 import { Menu, type MenuItem } from '../../components/Popover'
 import { Section } from '../../components/ui'
 import { api, errorText } from '../../lib/api'
+import { t, tp } from '../../lib/i18n'
 import { askConfirm } from '../../state/confirm'
 import {
   collectionTree,
@@ -143,8 +144,8 @@ function SourceRow({
         <span className="src-menu">
           <button
             className="icon src-more"
-            title="More"
-            aria-label={`${label}: more`}
+            title={t('More')}
+            aria-label={t('{{name}}: more', { name: label })}
             tabIndex={-1}
             onClick={(e) => {
               e.stopPropagation()
@@ -237,7 +238,7 @@ function FolderTree({
         menu={() => [
           ...(menu ?? []),
           {
-            label: 'Show in folder',
+            label: t('Show in folder'),
             onSelect: () =>
               void api.app
                 .reveal(path)
@@ -279,8 +280,8 @@ function Folders(): React.JSX.Element {
         <>
           <button
             className="icon src-forget"
-            title="Remove from the list (the folder and its photos stay on disk)"
-            aria-label={`Remove ${folderName(path)} from the list`}
+            title={t('Remove from the list (the folder and its photos stay on disk)')}
+            aria-label={t('Remove {{name}} from the list', { name: folderName(path) })}
             onClick={(e) => {
               e.stopPropagation()
               void forget(path)
@@ -290,8 +291,12 @@ function Folders(): React.JSX.Element {
           </button>
           <button
             className={`icon src-pin${isPinned ? ' pinned' : ''}`}
-            title={isPinned ? 'Unpin' : 'Pin to the top'}
-            aria-label={isPinned ? `Unpin ${folderName(path)}` : `Pin ${folderName(path)}`}
+            title={isPinned ? t('Unpin') : t('Pin to the top')}
+            aria-label={
+              isPinned
+                ? t('Unpin {{name}}', { name: folderName(path) })
+                : t('Pin {{name}}', { name: folderName(path) })
+            }
             aria-pressed={isPinned}
             onClick={(e) => {
               e.stopPropagation()
@@ -303,20 +308,20 @@ function Folders(): React.JSX.Element {
         </>
       }
       menu={[
-        { label: isPinned ? 'Unpin' : 'Pin to the top', onSelect: () => togglePin(path) },
-        { label: 'Remove from the list', onSelect: () => void forget(path) }
+        { label: isPinned ? t('Unpin') : t('Pin to the top'), onSelect: () => togglePin(path) },
+        { label: t('Remove from the list'), onSelect: () => void forget(path) }
       ]}
     />
   )
   return (
     <Section
       id="lib-folders"
-      title="Folders"
+      title={t('Folders')}
       right={
         <button
           className="icon sm"
-          title="Open folder…"
-          aria-label="Open folder"
+          title={t('Open folder…')}
+          aria-label={t('Open folder')}
           onClick={() => void chooseFolder()}
         >
           <Icon name="plus" />
@@ -330,7 +335,7 @@ function Folders(): React.JSX.Element {
         {pinned.length === 0 && rest.length === 0 && (
           <button className="sm ghost src-empty" onClick={() => void chooseFolder()}>
             <Icon name="folder" />
-            Open folder…
+            {t('Open folder…')}
           </button>
         )}
       </div>
@@ -350,24 +355,29 @@ function collectionsMenu(): (MenuItem | 'sep')[] {
       sort: 0
     })
   return [
-    { label: 'New collection…', onSelect: () => draft('manual', 'New collection') },
-    { label: 'New smart collection…', onSelect: () => draft('smart', 'New smart collection') },
-    { label: 'New set…', onSelect: () => draft('set', 'New set') },
+    { label: t('New collection…'), onSelect: () => draft('manual', t('New collection')) },
+    {
+      label: t('New smart collection…'),
+      onSelect: () => draft('smart', t('New smart collection'))
+    },
+    { label: t('New set…'), onSelect: () => draft('set', t('New set')) },
     'sep',
     {
-      label: 'Import…',
+      label: t('Import…'),
       onSelect: () =>
         void api.library
           .importCollections()
           .then((added) => {
             if (added.length === 0) return
             void lib.loadSources()
-            lib.say(`Imported ${added.length} collection${added.length === 1 ? '' : 's'}`)
+            lib.say(
+              tp('Imported {{count}} collection', 'Imported {{count}} collections', added.length)
+            )
           })
           .catch((e) => lib.say(errorText(e), 'error'))
     },
     {
-      label: 'Export all…',
+      label: t('Export all…'),
       disabled: lib.collections.length === 0,
       onSelect: () => void exportCollections(lib.collections.map((c) => c.id))
     }
@@ -379,8 +389,8 @@ async function exportCollections(ids: string[]): Promise<void> {
   try {
     const path = await api.library.exportCollections(ids)
     if (path)
-      lib.say(`Exported to ${folderName(path)}`, 'info', {
-        label: 'Show',
+      lib.say(t('Exported to {{name}}', { name: folderName(path) }), 'info', {
+        label: t('Show'),
         run: () => void api.app.reveal(path)
       })
   } catch (e) {
@@ -413,14 +423,17 @@ function CollectionRows({
           ...(c.kind === 'manual'
             ? [
                 {
-                  label: `Add ${targets.length > 1 ? `${targets.length} selected` : 'selection'}`,
+                  label:
+                    targets.length > 1
+                      ? t('Add {{n}} selected', { n: targets.length })
+                      : t('Add selection'),
                   disabled: targets.length === 0,
                   onSelect: () => void lib().addToCollection(c.id, targets)
                 },
                 ...(showing
                   ? [
                       {
-                        label: 'Remove selection from it',
+                        label: t('Remove selection from it'),
                         disabled: targets.length === 0,
                         onSelect: () => void lib().removeFromCollection(c.id, targets)
                       }
@@ -430,7 +443,7 @@ function CollectionRows({
               ]
             : []),
           {
-            label: c.kind === 'smart' ? 'Edit rules…' : 'Rename…',
+            label: c.kind === 'smart' ? t('Edit rules…') : t('Rename…'),
             onSelect: () =>
               lib().editCollection({
                 id: c.id,
@@ -441,18 +454,20 @@ function CollectionRows({
                 sort: c.sort
               })
           },
-          { label: 'Export…', onSelect: () => void exportCollections([c.id]) },
+          { label: t('Export…'), onSelect: () => void exportCollections([c.id]) },
           'sep',
           {
-            label: isSet ? 'Delete set' : 'Delete',
+            label: isSet ? t('Delete set') : t('Delete'),
             danger: true,
             onSelect: () =>
               void askConfirm({
-                title: isSet ? 'Delete set' : 'Delete collection',
+                title: isSet ? t('Delete set') : t('Delete collection'),
                 body: isSet
-                  ? `Delete the set “${c.name}”? The collections in it move to the top level.`
-                  : `Delete “${c.name}”? The photos stay where they are.`,
-                confirm: 'Delete',
+                  ? t('Delete the set “{{name}}”? The collections in it move to the top level.', {
+                      name: c.name
+                    })
+                  : t('Delete “{{name}}”? The photos stay where they are.', { name: c.name }),
+                confirm: t('Delete'),
                 danger: true
               }).then((yes) => {
                 if (yes)
@@ -508,14 +523,16 @@ function Collections(): React.JSX.Element {
   return (
     <Section
       id="lib-collections"
-      title="Collections"
-      right={<AddMenu title="New collection" items={collectionsMenu} />}
+      title={t('Collections')}
+      right={<AddMenu title={t('New collection')} items={collectionsMenu} />}
     >
       <div className="src-list">
         <CollectionRows nodes={tree} depth={0} open={open} toggle={toggle} />
         {tree.length === 0 && (
           <p className="src-hint">
-            Gather photos from any folder: make a collection with +, then drag photos onto it.
+            {t(
+              'Gather photos from any folder: make a collection with +, then drag photos onto it.'
+            )}
           </p>
         )}
       </div>
@@ -571,11 +588,11 @@ function Keywords(): React.JSX.Element {
   const keywords = useLibrary((s) => s.keywords)
   const [open, toggle] = useOpenSet()
   return (
-    <Section id="lib-keywords" title="Keywords">
+    <Section id="lib-keywords" title={t('Keywords')}>
       <div className="src-list">
         <KeywordRows nodes={keywords} depth={0} open={open} toggle={toggle} />
         {keywords.length === 0 && (
-          <p className="src-hint">Keywords added in the Info panel (I) gather here.</p>
+          <p className="src-hint">{t('Keywords added in the Info panel (I) gather here.')}</p>
         )}
       </div>
     </Section>
@@ -587,12 +604,12 @@ function Duplicates(): React.JSX.Element {
   const lastFolder = useLibrary((s) => s.lastFolder)
   const openSource = useLibrary((s) => s.openSource)
   return (
-    <Section id="lib-duplicates" title="Duplicates">
+    <Section id="lib-duplicates" title={t('Duplicates')}>
       <div className="src-list">
         <SourceRow
           icon="duplicate"
-          label="Exact and similar photos"
-          title="Find copies of the same picture, in this folder or the whole library"
+          label={t('Exact and similar photos')}
+          title={t('Find copies of the same picture, in this folder or the whole library')}
           active={source?.kind === 'duplicates'}
           onOpen={() =>
             void openSource({
@@ -615,7 +632,7 @@ function Duplicates(): React.JSX.Element {
 export function Sidebar(): React.JSX.Element {
   const open = useUi((s) => s.librarySidebar)
   return (
-    <aside className={`lib-sidebar${open ? ' open' : ''}`} aria-label="Sources" inert={!open}>
+    <aside className={`lib-sidebar${open ? ' open' : ''}`} aria-label={t('Sources')} inert={!open}>
       <div className="lib-sidebar-inner">
         <Folders />
         <Collections />

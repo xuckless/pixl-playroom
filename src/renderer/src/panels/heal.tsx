@@ -17,51 +17,52 @@ import { bakeLiveSpots, removeLiveSpots } from '../lib/heal'
 import { useScope } from '../state/scope'
 import { useDevelop } from '../state/develop'
 import { useUi } from '../state/ui'
+import { t, tk, tp } from '../lib/i18n'
 
 const MODES: { value: SpotKind; label: string }[] = [
-  { value: 'heal', label: 'Heal' },
-  { value: 'clone', label: 'Clone' },
-  { value: 'fill', label: 'Fill' },
-  { value: 'remove', label: 'Remove' },
-  { value: 'redeye', label: 'Red eye' },
-  { value: 'peteye', label: 'Pet eye' }
+  { value: 'heal', label: tk('Heal') },
+  { value: 'clone', label: tk('Clone') },
+  { value: 'fill', label: tk('Fill') },
+  { value: 'remove', label: tk('Remove') },
+  { value: 'redeye', label: tk('Red eye') },
+  { value: 'peteye', label: tk('Pet eye') }
 ]
 
 /** How each mode is used, behind the (i) beside the modes. */
 const HINT: Record<SpotKind, Tip> = {
   heal: {
-    what: 'Press on the flaw, hold and drag to where it should copy from, and let go.',
-    expect: 'The texture comes from the source, the tone from around the spot.',
-    tip: 'Let go without dragging and it picks a source itself.'
+    what: tk('Press on the flaw, hold and drag to where it should copy from, and let go.'),
+    expect: tk('The texture comes from the source, the tone from around the spot.'),
+    tip: tk('Let go without dragging and it picks a source itself.')
   },
   clone: {
-    what: 'Press on what should go, hold and drag to what should replace it, and let go.',
-    expect: 'The pixels come exactly as they are, tone and all.'
+    what: tk('Press on what should go, hold and drag to what should replace it, and let go.'),
+    expect: tk('The pixels come exactly as they are, tone and all.')
   },
   fill: {
-    what: 'Click what should go: it is rebuilt from the rest of the photo.',
-    expect: 'Best on small things against plain or repeating backgrounds.'
+    what: tk('Click what should go: it is rebuilt from the rest of the photo.'),
+    expect: tk('Best on small things against plain or repeating backgrounds.')
   },
   remove: {
-    what: 'Paint over what should go: an AI model fills it with what was likely behind it.',
+    what: tk('Paint over what should go: an AI model fills it with what was likely behind it.'),
     expect:
-      'Works on people, signs, wires and larger things where Fill would repeat the background. With Find object, click something and it is found for you.',
-    tip: 'Paint a little past its edges, shadow included.'
+      tk('Works on people, signs, wires and larger things where Fill would repeat the background. With Find object, click something and it is found for you.'),
+    tip: tk('Paint a little past its edges, shadow included.')
   },
   redeye: {
-    what: 'Click a red pupil to darken it to neutral.',
-    expect: 'Size sets how big the pupil is.'
+    what: tk('Click a red pupil to darken it to neutral.'),
+    expect: tk('Size sets how big the pupil is.')
   },
   peteye: {
-    what: 'Click a glowing pet pupil to bring it to dark.',
-    expect: 'Size sets how big the pupil is.'
+    what: tk('Click a glowing pet pupil to bring it to dark.'),
+    expect: tk('Size sets how big the pupil is.')
   }
 }
 
 /** What becomes of a spot, behind the (i) on the Brush section. */
 const BAKED: Tip = {
-  what: 'Each spot is baked into the photo’s pixels and kept in its project.',
-  expect: 'Undo takes it away; the next spot works on what the last one healed.'
+  what: tk('Each spot is baked into the photo’s pixels and kept in its project.'),
+  expect: tk('Undo takes it away; the next spot works on what the last one healed.')
 }
 
 export function HealPanel(): React.JSX.Element | null {
@@ -86,16 +87,18 @@ export function HealPanel(): React.JSX.Element | null {
     <ToolPanel
       actions={
         <>
-          <Tabs value={heal.mode} onChange={(m) => setHeal({ mode: m })} tabs={MODES} />
-          <InfoTip tip={HINT[heal.mode]} label={MODES.find((m) => m.value === heal.mode)!.label} />
+          <Tabs value={heal.mode} onChange={(m) => setHeal({ mode: m })} tabs={MODES.map((m) => ({ ...m, label: t(m.label) }))} />
+          <InfoTip tip={HINT[heal.mode]} label={t(MODES.find((m) => m.value === heal.mode)!.label)} />
         </>
       }
     >
-      {layer && !isHdr && <p className="scope-note small">Strokes keep inside {layer.name}.</p>}
+      {layer && !isHdr && <p className="scope-note small">
+          {t('Strokes keep inside {{layer}}.', { layer: layer.name })}
+        </p>}
       {heal.mode === 'remove' &&
         (isHdr ? (
           <p className="scope-note small">
-            Remove bakes into the photo’s pixels, which an HDR photo cannot take yet.
+            {t('Remove bakes into the photo’s pixels, which an HDR photo cannot take yet.')}
           </p>
         ) : (
           <div className="row heal-remove">
@@ -104,40 +107,44 @@ export function HealPanel(): React.JSX.Element | null {
               onChange={(on) =>
                 void (async () => {
                   // SAM 2.1 finds the object: offered first when it is not here.
-                  if (on && !(await ensureModel('prompt', 'Find object'))) return
+                  if (on && !(await ensureModel('prompt', t('Find object')))) return
                   setHeal({ findObject: on })
                 })()
               }
-              title="Click something on the photo and it is found and removed (SAM 2.1, then MI-GAN)"
+              title={t(
+                'Click something on the photo and it is found and removed (SAM 2.1, then MI-GAN)'
+              )}
             >
               <Icon name="objects" />
-              Find object
+              {t('Find object')}
             </Toggle>
             <ModelGet id="migan-512" models={models} />
           </div>
         ))}
       {stale > 0 && (
         <p className="pixel-step-stale">
-          {stale === 1 ? 'One heal stroke was' : `${stale} heal strokes were`} made from the
-          previous RAW develop: its patch can show a seam. Undo it in History and heal again to
-          match this one.
+          {tp(
+            'One heal stroke was made from the previous RAW develop: its patch can show a seam. Undo it in History and heal again to match this one.',
+            '{{count}} heal strokes were made from the previous RAW develop: its patch can show a seam. Undo it in History and heal again to match this one.',
+            stale
+          )}
         </p>
       )}
       <Section
         id="heal.brush"
-        title="Brush"
+        title={t('Brush')}
         tip={BAKED}
         right={
           strokes > 0 ? (
             <span className="muted micro">
-              {strokes} spot{strokes === 1 ? '' : 's'} baked
+              {tp('{{count}} spot baked', '{{count}} spots baked', strokes)}
             </span>
           ) : undefined
         }
       >
         {
           <Slider
-            label="Size"
+            label={t('Size')}
             value={Math.round(heal.size * 10000) / 100}
             min={0.2}
             max={25}
@@ -150,7 +157,7 @@ export function HealPanel(): React.JSX.Element | null {
           />
         }
         <Slider
-          label="Feather"
+          label={t('Feather')}
           value={heal.feather}
           min={0}
           max={100}
@@ -160,7 +167,7 @@ export function HealPanel(): React.JSX.Element | null {
         />
         {!eye && (
           <Slider
-            label="Opacity"
+            label={t('Opacity')}
             value={heal.opacity}
             min={0}
             max={100}
@@ -170,33 +177,42 @@ export function HealPanel(): React.JSX.Element | null {
           />
         )}
       </Section>
-      <Section id="heal.spots" title="Visualise spots">
-        <label className="check" title="Show the picture as specks on black, where dust stands out">
+      <Section id="heal.spots" title={t('Visualise spots')}>
+        <label className="check" title={t('Show the picture as specks on black, where dust stands out')}>
           <input
             type="checkbox"
             checked={!!heal.visualise}
             onChange={(e) => setHeal({ visualise: e.target.checked })}
           />
-          Show dust and spots
+          {t('Show dust and spots')}
         </label>
         {heal.visualise && (
           <Slider
-            label="Level"
+            label={t('Level')}
             value={heal.spotLevel ?? 50}
             min={0}
             max={100}
             def={50}
-            title="Higher shows fainter specks"
+            title={t('Higher shows fainter specks')}
             onChange={(v) => setHeal({ spotLevel: v })}
             onCommit={() => undefined}
           />
         )}
       </Section>
       {live > 0 && (
-        <Section id="heal.live" title="Earlier spots">
+        <Section id="heal.live" title={t('Earlier spots')}>
           <p className="muted small">
-            {live} spot{live === 1 ? '' : 's'} drawn live
-            {isHdr ? ' (HDR photos cannot be baked yet).' : ', from before spots were baked.'}
+            {isHdr
+              ? tp(
+                  '{{count}} spot drawn live (HDR photos cannot be baked yet).',
+                  '{{count}} spots drawn live (HDR photos cannot be baked yet).',
+                  live
+                )
+              : tp(
+                  '{{count}} spot drawn live, from before spots were baked.',
+                  '{{count}} spots drawn live, from before spots were baked.',
+                  live
+                )}
           </p>
           <div className="row">
             {!isHdr && (
@@ -208,12 +224,12 @@ export function HealPanel(): React.JSX.Element | null {
                   void bakeLiveSpots().finally(() => setBaking(false))
                 }}
               >
-                {baking ? 'Baking…' : 'Bake into pixels'}
+                {baking ? t('Baking…') : t('Bake into pixels')}
               </button>
             )}
             <button className="sm ghost" onClick={removeLiveSpots}>
               <Icon name="trash" />
-              Remove
+              {t('Remove')}
             </button>
           </div>
         </Section>

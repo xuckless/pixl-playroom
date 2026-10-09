@@ -1,6 +1,7 @@
 import { AnimatePresence } from 'motion/react'
 import { useConfirm } from '../state/confirm'
 import { Modal } from './ui'
+import { t } from '../lib/i18n'
 
 /** Where `askConfirm`'s questions show (mounted once, beside the other dialogs). */
 export function ConfirmHost(): React.JSX.Element {
@@ -16,7 +17,7 @@ export function ConfirmHost(): React.JSX.Element {
           onClose={() => open.answer(false)}
           footer={
             <>
-              <button onClick={() => open.answer(false)}>{open.cancel ?? 'Cancel'}</button>
+              <button onClick={() => open.answer(false)}>{open.cancel ?? t('Cancel')}</button>
               <button
                 className={open.danger ? 'danger' : 'primary'}
                 autoFocus

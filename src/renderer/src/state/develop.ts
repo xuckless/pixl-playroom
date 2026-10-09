@@ -1,5 +1,6 @@
 import { produce, setAutoFreeze } from 'immer'
 import { create } from 'zustand'
+import { t, tk } from '../lib/i18n'
 import type { ImageStats, MaskMode, NoiseEstimate } from '../../../shared/engine-types'
 import type {
   DevelopSession,
@@ -55,8 +56,8 @@ export type Compare = 'off' | 'before' | 'split'
  * Crop (the warped canvas, before its crop) and Upright's guides (the frame
  * before the warp). They share the whole-frame render.
  */
-export function wholeFrameTool(t: Tool): boolean {
-  return t === 'crop' || t === 'upright-guide'
+export function wholeFrameTool(tool: Tool): boolean {
+  return tool === 'crop' || tool === 'upright-guide'
 }
 
 /** Where an added colour lives: Colour grading, the Effects wash, or a mask. */
@@ -191,7 +192,7 @@ interface DevelopState {
   setClipping(on: boolean): void
   setZoom(z: ZoomView): void
   setHslFocus(b: HslBand | null): void
-  setHslTab(t: DevelopState['hslTab']): void
+  setHslTab(tab: DevelopState['hslTab']): void
   setPointId(id: string | null): void
   setGuides(g: GuideLine[]): void
   /** Start (or, with null, stop) the additive-colour picker. */
@@ -396,12 +397,12 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       const { head, ...rest } = listed
       let history: HistoryLog = rest
       if (!history.base) {
-        const opened = await api.develop.historyAppend(key, 'Opened', session.recipe)
+        const opened = await api.develop.historyAppend(key, tk('Opened'), session.recipe)
         history = appendToLog(history, opened)
       } else if (!sameValue(head ?? replay(history.base.recipe, history.steps), session.recipe)) {
         // Changed where no history is written (a paste or sync in the
         // library, an older version's undo): record where it stands now.
-        const saved = await api.develop.historyAppend(key, 'Opened as saved', session.recipe)
+        const saved = await api.develop.historyAppend(key, tk('Opened as saved'), session.recipe)
         history = appendToLog(history, saved)
       }
       if (stale()) return
@@ -772,7 +773,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     try {
       set({ noise: await api.develop.noise(session.key) })
     } catch (err) {
-      useLibrary.getState().say(`Noise measurement: ${errorText(err)}`, 'error')
+      useLibrary
+        .getState()
+        .say(t('Noise measurement: {{error}}', { error: errorText(err) }), 'error')
     }
   }
 }))

@@ -6,6 +6,7 @@
  * by it; the Worker hashes it again with its own secret before storing.
  * The server uses it for one trial per device and the device limit.
  */
+import { t } from '../../shared/i18n'
 import { execFile } from 'node:child_process'
 import { createHmac } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -54,7 +55,7 @@ export async function machineId(platform: NodeJS.Platform = process.platform): P
       if (id) break
     }
   }
-  if (!id) throw new Error("Couldn't identify this device")
+  if (!id) throw new Error(t("Couldn't identify this device"))
   return id
 }
 

@@ -11,6 +11,17 @@ import { useBusy } from '../state/busy'
 import { liveJobs, useAiJobs } from '../state/jobs'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
+import { t, tk } from '../lib/i18n'
+import type { EngineStatus as EngineState } from '../../../shared/ipc'
+
+/** The engine's state, as the top bar says it ("offline" while resting). */
+const ENGINE_SAYS: Record<EngineState['status'], string> = {
+  starting: tk('Engine starting'),
+  ready: tk('Engine ready'),
+  resting: tk('Engine offline'),
+  unavailable: tk('Engine unavailable'),
+  crashed: tk('Engine crashed')
+}
 
 /** The engine's state as a breathing dot; the last render's time on hover. */
 export function EngineStatus(): React.JSX.Element {
@@ -27,12 +38,14 @@ export function EngineStatus(): React.JSX.Element {
       className={`engine-status micro ${tone}`}
       title={
         resting
-          ? 'Resting while Playroom is in the background, to spare the battery and memory. It starts again with the next thing you do.'
-          : (engine?.reason ?? (ok && ms !== null ? `Last render ${ms} ms` : ''))
+          ? t(
+              'Resting while Playroom is in the background, to spare the battery and memory. It starts again with the next thing you do.'
+            )
+          : (engine?.reason ?? (ok && ms !== null ? t('Last render {{ms}} ms', { ms }) : ''))
       }
     >
       <i className={`status-dot${rendering ? ' busy' : ''}${ok ? '' : ` ${tone}`}`} />
-      {resting ? 'Engine offline' : `Engine ${status}`}
+      {t(ENGINE_SAYS[status])}
     </span>
   )
 }
@@ -116,7 +129,7 @@ export function BackgroundJobs(): React.JSX.Element | null {
                   {a.key ? (
                     <button
                       className="bg-job-link"
-                      title={a.key === shownKey ? a.name : `Go to ${a.name}`}
+                      title={a.key === shownKey ? a.name : t('Go to {{name}}', { name: a.name })}
                       onClick={() => {
                         setOpen(false)
                         goTo(a.key as string)
@@ -133,13 +146,13 @@ export function BackgroundJobs(): React.JSX.Element | null {
                   )}
                   <span className="t-num muted">
                     {a.queued
-                      ? 'Queued'
+                      ? t('Queued')
                       : a.progress === null
                         ? ''
                         : `${Math.round(a.progress * 100)}%`}
                   </span>
                   {a.stop && (
-                    <button className="icon sm" title="Stop" onClick={() => stop(a)}>
+                    <button className="icon sm" title={t('Stop')} onClick={() => stop(a)}>
                       <Icon name="close" />
                     </button>
                   )}
@@ -151,6 +164,22 @@ export function BackgroundJobs(): React.JSX.Element | null {
         </Popover>
       )}
     </span>
+  )
+}
+
+/** Settings, in reach on every platform (Windows has no app menu to hold it). */
+function SettingsButton(): React.JSX.Element {
+  const setDialog = useLibrary((s) => s.setDialog)
+  const mac = /Mac/.test(navigator.platform)
+  return (
+    <button
+      className="icon ghost settings-button"
+      title={t('Settings ({{key}})', { key: mac ? '⌘,' : 'Ctrl+,' })}
+      aria-label={t('Settings')}
+      onClick={() => setDialog('preferences')}
+    >
+      <Icon name="settings" />
+    </button>
   )
 }
 
@@ -181,6 +210,7 @@ export function IdentityBar({
       )}
       <BackgroundJobs />
       <EngineStatus />
+      <SettingsButton />
     </header>
   )
 }
@@ -211,12 +241,12 @@ export function DevelopIdentity(): React.JSX.Element {
           title={
             info.gain_map
               ? session.isHdr
-                ? 'Edited as HDR: the rendition its gain map lifts it to'
-                : 'An SDR picture with a gain map: edit it as HDR from the toolbar'
-              : 'An HDR (PQ/HLG) photo'
+                ? t('Edited as HDR: the rendition its gain map lifts it to')
+                : t('An SDR picture with a gain map: edit it as HDR from the toolbar')
+              : t('An HDR (PQ/HLG) photo')
           }
         >
-          HDR{info.gain_map ? (session.isHdr ? '' : ' · map') : ''}
+          HDR{info.gain_map ? (session.isHdr ? '' : ` · ${t('map')}`) : ''}
         </span>
       )}
       {item.copyName && <span className="badge ghost">{item.copyName}</span>}

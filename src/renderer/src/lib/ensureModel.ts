@@ -7,14 +7,19 @@ import type { AiTask } from '../../../shared/ai'
 import { useAiJobs } from '../state/jobs'
 import { askModel } from '../state/modelPrompt'
 import { useLibrary } from '../state/library'
+import { t, tk } from './i18n'
 
 const PURPOSE: Partial<Record<AiTask, string>> = {
-  segment: 'Find the subject',
-  prompt: 'Select objects and the sky',
-  denoise: 'AI denoise'
+  segment: tk('Find the subject'),
+  prompt: tk('Select objects and the sky'),
+  denoise: tk('AI denoise')
 }
 
-export async function ensureModel(task: AiTask, purpose = PURPOSE[task] ?? task): Promise<boolean> {
+/** `purpose` as the user reads it (translated); the task's own when not given. */
+export async function ensureModel(
+  task: AiTask,
+  purpose = PURPOSE[task] ? t(PURPOSE[task]) : task
+): Promise<boolean> {
   const jobs = useAiJobs.getState()
   const caps = jobs.capabilities ?? (await jobs.refresh().catch(() => null))
   if (!caps) return false
@@ -22,7 +27,9 @@ export async function ensureModel(task: AiTask, purpose = PURPOSE[task] ?? task)
   const id = caps.get?.[task]
   if (!id) {
     const why = caps.why[task]
-    useLibrary.getState().say(why ? `${purpose}: ${why}` : `${purpose} is not available`, 'error')
+    useLibrary
+      .getState()
+      .say(why ? `${purpose}: ${why}` : t('{{purpose}} is not available', { purpose }), 'error')
     return false
   }
   if (!(await askModel(id, purpose))) return false

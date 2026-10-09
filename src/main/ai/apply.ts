@@ -3,6 +3,7 @@
  * open by then: into the develop session's recipe when the photo is open
  * (the loupe re-reads it), else into its saved recipe.
  */
+import { t } from '../../shared/i18n'
 import type { AiJobEvent } from '../../shared/ai'
 import { nextMaskName } from '../../shared/masks'
 import {
@@ -28,7 +29,7 @@ export async function applyMaskResult(
   if (r?.kind !== 'mask') return
   if (r.polygon) return applyFacePart(e, r, r.polygon, deps)
   const png = await deps.planes.get(r.ref)
-  if (png === undefined) throw new Error('the mask went missing before it could be added')
+  if (png === undefined) throw new Error(t('the mask went missing before it could be added'))
   const live = deps.sessions.liveRecipe(e.key)
   const recipe: Recipe = structuredClone(live ?? (await deps.library.recipe(e.key)))
   const depth: DepthComponent | null = r.depth

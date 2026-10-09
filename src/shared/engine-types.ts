@@ -12,6 +12,8 @@
  * grade).
  */
 
+import { t, tp } from './i18n'
+
 // ── Sources and sinks ────────────────────────────────────────────────────────
 
 export type Source = { Path: string } | { Bytes: number[] }
@@ -1856,9 +1858,13 @@ export function unsupportedRaw(detail: EngineErrorShape['detail']): string | nul
   const d = detail?.['Unsupported']
   const op = d && typeof d['operation'] === 'string' ? d['operation'] : null
   if (op === 'raw frames')
-    return 'This RAW holds several frames (dual pixel, pixel shift or a burst), which Playroom cannot develop yet.'
+    return t(
+      'This RAW holds several frames (dual pixel, pixel shift or a burst), which Playroom cannot develop yet.'
+    )
   if (op === 'raw decode')
-    return `This RAW format isn't supported${typeof d?.['detail'] === 'string' && d['detail'] ? ` (${d['detail']})` : ''}.`
+    return typeof d?.['detail'] === 'string' && d['detail']
+      ? t("This RAW format isn't supported ({{detail}}).", { detail: d['detail'] })
+      : t("This RAW format isn't supported.")
   return null
 }
 
@@ -1875,10 +1881,19 @@ export function describeEngineError(
     const d = detail?.['TooLarge']
     const px = d && typeof d['pixels'] === 'number' ? (d['pixels'] as number) : null
     const side = d && typeof d['side'] === 'number' ? (d['side'] as number) : null
-    const size = px !== null ? `${Math.round(px / 1e6)} megapixels` : 'too large'
-    return `This picture is ${size}${side !== null ? ` (${side} px on its longest side)` : ''}, more than Playroom opens.`
+    const size =
+      px !== null
+        ? tp('{{count}} megapixel', '{{count}} megapixels', Math.round(px / 1e6))
+        : t('too large')
+    return side !== null
+      ? t('This picture is {{size}} ({{side}} px on its longest side), more than Playroom opens.', {
+          size,
+          side
+        })
+      : t('This picture is {{size}}, more than Playroom opens.', { size })
   }
-  if (code === 'StaleCache') return 'A saved render was made by another engine and is made again.'
+  if (code === 'StaleCache')
+    return t('A saved render was made by another engine and is made again.')
   return null
 }
 

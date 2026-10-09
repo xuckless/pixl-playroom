@@ -1,3 +1,4 @@
+import { t } from '../shared/i18n'
 import { app, BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
 import { rm } from 'fs/promises'
@@ -39,6 +40,7 @@ import { startGate } from './gate'
 import { Library } from './library'
 import { OriginalEmbedder } from './project/embed'
 import { buildMenu } from './menu'
+import { onLanguage, startLanguage } from './i18n'
 import {
   handOffOpens,
   onOpenPaths,
@@ -148,7 +150,11 @@ function createWindow(): void {
     show: false,
     // The launch splash's black, so the window never flashes another colour first.
     backgroundColor: '#000000',
-    autoHideMenuBar: true,
+    // macOS: no title bar; the window's buttons sit in the top bar (its
+    // drag region), centred in its 36 px.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 14, y: 11 } }
+      : {}),
     title: 'Pixl Playroom',
     // macOS takes the bundle's .icns; elsewhere the window carries the mark.
     ...(process.platform !== 'darwin' ? { icon } : {}),
@@ -209,7 +215,9 @@ function setAbout(engineVersion?: string): void {
   app.setAboutPanelOptions({
     applicationName: 'Pixl Playroom',
     applicationVersion: app.getVersion(),
-    credits: engineVersion ? `Powered by PIXL Engine ${engineVersion}` : 'Powered by PIXL Engine',
+    credits: engineVersion
+      ? t('Powered by PIXL Engine {{version}}', { version: engineVersion })
+      : t('Powered by PIXL Engine'),
     copyright: 'Copyright © 2026 Syed Ali (PIXL Foundation)',
     iconPath: icon
   })
@@ -252,6 +260,7 @@ app.whenReady().then(() => {
       .catch((err) => log.warn('pruning thumbnails failed', err))
   }, 20_000)
   void engine.whenStarted().then(() => setAbout(engine.getStatus().version))
+  onLanguage(() => setAbout(engine.getStatus().version))
   const planes = new PlaneStore(index)
   const library = new Library(index, bgEngine, planes)
   sessions = new DevelopSessions(library, engine, bgEngine)
@@ -374,8 +383,10 @@ app.whenReady().then(() => {
   })
   onOpenPaths((paths) => mainWindow?.webContents.send(IPC.app.openPaths, paths))
 
+  startLanguage()
   buildMenu()
   onRenderScale(buildMenu)
+  onLanguage(buildMenu)
   createWindow()
   startPolicy()
   void setupUpdater().catch((err) => log.warn('updater setup failed', err))

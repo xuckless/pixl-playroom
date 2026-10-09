@@ -27,6 +27,7 @@ import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { createMask, madeComponent, modeForNew } from '../../panels/masks/model'
 import { useDevelop } from '../../state/develop'
 import { useUi } from '../../state/ui'
+import { t, tk } from '../../lib/i18n'
 
 type Gradient = GradientComponent
 type Handle = 'create' | 'move' | 'start' | 'end' | 'centre' | 'rx' | 'ry' | 'rotate' | 'feather'
@@ -44,10 +45,21 @@ const DOUBLE_MS = 400
 const isGradient = (c: MaskComponentSetting | undefined): c is Gradient =>
   c?.kind === 'linear' || c?.kind === 'radial' || c?.kind === 'bidirectional'
 
-const KIND_WORD: Record<Gradient['kind'], string> = {
-  linear: 'linear',
-  radial: 'radial',
-  bidirectional: 'bidirectional'
+/** History labels and the pin's title, a whole phrase for each kind. */
+const MADE: Record<Gradient['kind'], string> = {
+  linear: tk('Linear gradient'),
+  radial: tk('Radial gradient'),
+  bidirectional: tk('Bidirectional gradient')
+}
+const MOVED: Record<Gradient['kind'], string> = {
+  linear: tk('Move linear gradient'),
+  radial: tk('Move radial gradient'),
+  bidirectional: tk('Move bidirectional gradient')
+}
+const SELECT_THIS: Record<Gradient['kind'], string> = {
+  linear: tk('Select this linear gradient'),
+  radial: tk('Select this radial gradient'),
+  bidirectional: tk('Select this bidirectional gradient')
 }
 
 /** Put a changed gradient back into the recipe, wherever it lives. */
@@ -225,10 +237,10 @@ export const GradientTools = memo(function GradientTools({
       } else if (dr.handle === 'rotate') {
         const a0 = Math.atan2(dr.from.y - c.y, dr.from.x - c.x)
         const a1 = Math.atan2(p.y - c.y, p.x - c.x)
-        const t = a1 - a0
+        const turn = a1 - a0
         const rot = (q: Pt): Pt => ({
-          x: c.x + (q.x - c.x) * Math.cos(t) - (q.y - c.y) * Math.sin(t),
-          y: c.y + (q.x - c.x) * Math.sin(t) + (q.y - c.y) * Math.cos(t)
+          x: c.x + (q.x - c.x) * Math.cos(turn) - (q.y - c.y) * Math.sin(turn),
+          y: c.y + (q.x - c.x) * Math.sin(turn) + (q.y - c.y) * Math.cos(turn)
         })
         write({ ...o, start: norm(rot(s)), end: norm(rot(en)) }, true)
       }
@@ -266,10 +278,10 @@ export const GradientTools = memo(function GradientTools({
         const m = { x: (s.x + en.x) / 2, y: (s.y + en.y) / 2 }
         const a0 = Math.atan2(dr.from.y - m.y, dr.from.x - m.x)
         const a1 = Math.atan2(p.y - m.y, p.x - m.x)
-        const t = a1 - a0
+        const turn = a1 - a0
         const rot = (q: Pt): Pt => ({
-          x: m.x + (q.x - m.x) * Math.cos(t) - (q.y - m.y) * Math.sin(t),
-          y: m.y + (q.x - m.x) * Math.sin(t) + (q.y - m.y) * Math.cos(t)
+          x: m.x + (q.x - m.x) * Math.cos(turn) - (q.y - m.y) * Math.sin(turn),
+          y: m.y + (q.x - m.x) * Math.sin(turn) + (q.y - m.y) * Math.cos(turn)
         })
         write({ ...o, start: norm(rot(s)), end: norm(rot(en)) }, true)
       }
@@ -341,17 +353,16 @@ export const GradientTools = memo(function GradientTools({
           } else write({ ...now, radiusX: 0.2, radiusY: 0.2 }, false)
         }
       }
-      const name = KIND_WORD[dr.orig.kind]
-      d.commit(`${name[0].toUpperCase()}${name.slice(1)} gradient`)
+      d.commit(MADE[dr.orig.kind])
       madeComponent(dr.id)
       return
     }
     d.commit(
       dr.handle === 'feather'
-        ? 'Radial feather'
+        ? tk('Radial feather')
         : dr.handle === 'centre'
-          ? 'Bidirectional gradient: full line'
-          : `Move ${KIND_WORD[dr.orig.kind]} gradient`
+          ? tk('Bidirectional gradient: full line')
+          : MOVED[dr.orig.kind]
     )
   }
 
@@ -368,7 +379,7 @@ export const GradientTools = memo(function GradientTools({
       },
       false
     )
-    useDevelop.getState().commit('Radial gradient: fill the frame')
+    useDevelop.getState().commit(tk('Radial gradient: fill the frame'))
   }
 
   /** Where a gradient's pin sits on screen: a radial's centre, a linear's middle, a bidirectional's full line. */
@@ -418,19 +429,19 @@ export const GradientTools = memo(function GradientTools({
         <span
           className="grad-handle"
           style={{ left: s.x, top: s.y }}
-          title="Full effect from here"
+          title={t('Full effect from here')}
           onPointerDown={(e) => begin(e, 'start', shown)}
         />
         <span
           className="grad-handle"
           style={{ left: en.x, top: en.y }}
-          title="No effect past here"
+          title={t('No effect past here')}
           onPointerDown={(e) => begin(e, 'end', shown)}
         />
         <span
           className="grad-knob"
           style={{ left: knob.x, top: knob.y }}
-          title="Turn"
+          title={t('Turn')}
           onPointerDown={(e) => begin(e, 'rotate', shown)}
         />
         <LiquidGlass
@@ -441,7 +452,7 @@ export const GradientTools = memo(function GradientTools({
           frost={0.5}
           magnify
           style={{ left: m.x, top: m.y }}
-          title="Move"
+          title={t('Move')}
           onPointerDown={(e) => begin(e, 'move', shown)}
         >
           <i />
@@ -469,25 +480,25 @@ export const GradientTools = memo(function GradientTools({
         <span
           className="grad-handle"
           style={{ left: s.x, top: s.y }}
-          title="No effect past here (this side)"
+          title={t('No effect past here (this side)')}
           onPointerDown={(e) => begin(e, 'start', shown)}
         />
         <span
           className="grad-handle"
           style={{ left: en.x, top: en.y }}
-          title="No effect past here (this side)"
+          title={t('No effect past here (this side)')}
           onPointerDown={(e) => begin(e, 'end', shown)}
         />
         <span
           className="grad-feather"
           style={{ left: slide.x, top: slide.y }}
-          title="Slide the full line between the two"
+          title={t('Slide the full line between the two')}
           onPointerDown={(e) => begin(e, 'centre', shown)}
         />
         <span
           className="grad-knob"
           style={{ left: knob.x, top: knob.y }}
-          title="Turn"
+          title={t('Turn')}
           onPointerDown={(e) => begin(e, 'rotate', shown)}
         />
         <LiquidGlass
@@ -498,7 +509,7 @@ export const GradientTools = memo(function GradientTools({
           frost={0.5}
           magnify
           style={{ left: c.x, top: c.y }}
-          title="Move"
+          title={t('Move')}
           onPointerDown={(e) => begin(e, 'move', shown)}
         >
           <i />
@@ -514,9 +525,9 @@ export const GradientTools = memo(function GradientTools({
     const knob = { x: top.x + Math.cos(up) * 22, y: top.y + Math.sin(up) * 22 }
     // The feather handle: on the ring, up and to the right (−45° in the ellipse's frame).
     const inner = Math.max(0.01, 1 - shown.softness / 100)
-    const t = -Math.PI / 4
-    const fx = Math.cos(t) * geo.rx * inner
-    const fy = Math.sin(t) * geo.ry * inner
+    const turn = -Math.PI / 4
+    const fx = Math.cos(turn) * geo.rx * inner
+    const fy = Math.sin(turn) * geo.ry * inner
     const feather = toScreen(shown, {
       x: geo.cx + fx * Math.cos(geo.angle) - fy * Math.sin(geo.angle),
       y: geo.cy + fx * Math.sin(geo.angle) + fy * Math.cos(geo.angle)
@@ -538,20 +549,22 @@ export const GradientTools = memo(function GradientTools({
             key={i}
             className="grad-handle"
             style={{ left: h.x, top: h.y }}
-            title="Shape (Shift: circle)"
+            title={t('Shape (Shift: circle)')}
             onPointerDown={(e) => begin(e, i % 2 === 0 ? 'rx' : 'ry', shown)}
           />
         ))}
         <span
           className="grad-knob"
           style={{ left: knob.x, top: knob.y }}
-          title="Turn (Shift: 15° steps)"
+          title={t('Turn (Shift: 15° steps)')}
           onPointerDown={(e) => begin(e, 'rotate', shown)}
         />
         <span
           className="grad-feather"
           style={{ left: feather.x, top: feather.y }}
-          title={`Feather ${Math.round(shown.softness)} · drag in to soften, out to harden`}
+          title={t('Feather {{value}} · drag in to soften, out to harden', {
+            value: Math.round(shown.softness)
+          })}
           onPointerDown={(e) => begin(e, 'feather', shown)}
         />
         <LiquidGlass
@@ -562,7 +575,7 @@ export const GradientTools = memo(function GradientTools({
           frost={0.5}
           magnify
           style={{ left: c.x, top: c.y }}
-          title="Move · double-click to fill the frame"
+          title={t('Move · double-click to fill the frame')}
           onPointerDown={(e) => {
             const was = lastPin.current
             const now = performance.now()
@@ -600,8 +613,8 @@ export const GradientTools = memo(function GradientTools({
               key={c.id}
               className="grad-other"
               style={{ left: at.x, top: at.y }}
-              title={`Select this ${KIND_WORD[c.kind]} gradient`}
-              aria-label="Select gradient"
+              title={t(SELECT_THIS[c.kind])}
+              aria-label={t('Select gradient')}
               onPointerDown={(e) => {
                 e.stopPropagation()
                 setComp(c.id)

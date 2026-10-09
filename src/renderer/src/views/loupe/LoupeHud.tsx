@@ -1,5 +1,6 @@
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { useDevelop } from '../../state/develop'
+import { t } from '../../lib/i18n'
 import { useHudNote } from './hudNote'
 
 /**
@@ -20,18 +21,18 @@ export function LoupeHud({ scale }: { scale: number | null }): React.JSX.Element
       {scale !== null && (
         <span
           className="hud-item accent t-num"
-          title={straightened ? 'Straightened: the zoom shows the preview, enlarged' : undefined}
+          title={straightened ? t('Straightened: the zoom shows the preview, enlarged') : undefined}
         >
-          {Math.round(scale * 100)}%{straightened ? ' · preview' : ''}
+          {Math.round(scale * 100)}%{straightened ? ` · ${t('preview')}` : ''}
         </span>
       )}
       {rendering && (
         <span className="hud-item">
           <i className="hud-dot busy" />
-          Rendering
+          {t('Rendering')}
         </span>
       )}
-      {compare === 'before' && <span className="hud-item accent">Before</span>}
+      {compare === 'before' && <span className="hud-item accent">{t('Before')}</span>}
       {note && (
         <span key={n} className="hud-item accent hud-note">
           {note}

@@ -20,6 +20,7 @@
  * result decoded, never the model's output itself: what the photo shows now
  * is what it shows after a reload, on another machine, from the project alone.
  */
+import { t } from '../../shared/i18n'
 import { readFile, rm } from 'fs/promises'
 import { dirname, join } from 'path'
 import type { AiStartRequest } from '../../shared/ai'
@@ -172,16 +173,16 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
 
   stages(): { id: string; label: string; weight: number }[] {
     return [
-      { id: 'model', label: 'Model', weight: 0.05 },
-      { id: 'preview', label: 'Preview', weight: 0.15 },
-      { id: 'full', label: 'Full resolution', weight: 0.7 },
-      { id: 'save', label: 'Save', weight: 0.1 }
+      { id: 'model', label: t('Model'), weight: 0.05 },
+      { id: 'preview', label: t('Preview'), weight: 0.15 },
+      { id: 'full', label: t('Full resolution'), weight: 0.7 },
+      { id: 'save', label: t('Save'), weight: 0.1 }
     ]
   }
 
   title(req: DenoiseRequest): { title: string; subject: string } {
     return {
-      title: req.redo ? 'Remaking a denoise on the new RAW develop' : 'Denoising',
+      title: req.redo ? t('Remaking a denoise on the new RAW develop') : t('Denoising'),
       subject: DENOISE_SHORT[aiDenoiseModel(req.model)]
     }
   }
@@ -198,11 +199,11 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
     const old = req.redo
       ? recipe.pixels.find((p) => p.id === req.redo && p.kind === 'denoise')
       : undefined
-    if (req.redo && !old) throw new Error('the step is gone')
+    if (req.redo && !old) throw new Error(t('the step is gone'))
     const before = old ? recipe.pixels.slice(0, recipe.pixels.indexOf(old)) : recipe.pixels
     const layer = req.layerId && !old ? recipe.layers.find((l) => l.id === req.layerId) : undefined
-    if (req.layerId && !old && !layer) throw new Error('the mask is gone')
-    ctx.stage('model', 0, `Loading ${modelName(this.models.entry(req.model))}`)
+    if (req.layerId && !old && !layer) throw new Error(t('the mask is gone'))
+    ctx.stage('model', 0, t('Loading {{model}}', { model: modelName(this.models.entry(req.model)) }))
     const refused = pixelStepRefusal(info)
     if (refused) throw new Error(refused)
     if (!(await this.models.installed(req.model)))
@@ -218,8 +219,8 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       })
     const tick = (expected: number): (() => void) => {
       const t0 = Date.now()
-      const t = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 250)
-      return () => clearInterval(t)
+      const timer = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 250)
+      return () => clearInterval(timer)
     }
 
     // The pixels it runs on: the photo with the steps it already has.
@@ -238,7 +239,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
     try {
       // A whole-photo denoise shows at once, from the draft.
       if (!layer && !old && sessions) {
-        ctx.stage('preview', 0, 'Denoising a preview')
+        ctx.stage('preview', 0, t('Denoising a preview'))
         const draft = working.px.draft
         const stop = tick(Math.max(1500, ((draft.width * draft.height) / 1e6) * rate))
         try {
@@ -253,7 +254,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         }
       }
 
-      ctx.stage('full', 0, 'Denoising at full resolution')
+      ctx.stage('full', 0, t('Denoising at full resolution'))
       const mp = (master.width * master.height) / 1e6
       // What the old setting made, when a photo from before steps still has it.
       const kept =
@@ -281,7 +282,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         )
       }
 
-      ctx.stage('save', 0, 'Keeping it in the project')
+      ctx.stage('save', 0, t('Keeping it in the project'))
       // A RAW's result is its developed, linear pixels: kept losslessly, so
       // exposure and white balance pushed later show nothing of compression.
       const lossless = await storesLossless(row.is_raw === 1, () =>
@@ -323,7 +324,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
           recipe,
           layer.id
         )
-        if (!plane) throw new Error(`${layer.name} selects nothing`)
+        if (!plane) throw new Error(t('{{name}} selects nothing', { name: layer.name }))
         files.push(plane)
         alpha = await this.library.index.putBlob(key, plane, {
           kind: 'mask',
@@ -353,7 +354,9 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       const step: PixelStep = {
         id: newId(),
         kind: 'denoise',
-        label: layer ? `AI Denoise · ${name} in ${layer.name}` : `AI Denoise · ${name}`,
+        label: layer
+          ? t('AI Denoise · {{model}} in {{mask}}', { model: name, mask: layer.name })
+          : t('AI Denoise · {{model}}', { model: name }),
         blob,
         alpha,
         scope: layer?.name ?? null,

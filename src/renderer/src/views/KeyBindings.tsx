@@ -25,6 +25,7 @@ import {
   type Chord
 } from '../lib/keys'
 import { useUi } from '../state/ui'
+import { rich, t } from '../lib/i18n'
 
 /** Which key is waiting for a press: one of a command's, or a new one (`index` = its count). */
 interface Capture {
@@ -109,6 +110,8 @@ export function KeyBindingsSection(): React.JSX.Element {
   const q = query.trim().toLowerCase()
   const shown = (c: KeyCommand): boolean =>
     !q ||
+    t(c.label).toLowerCase().includes(q) ||
+    t(c.group).toLowerCase().includes(q) ||
     c.label.toLowerCase().includes(q) ||
     c.group.toLowerCase().includes(q) ||
     (bindings[c.id] ?? []).some((k) => label(k).toLowerCase().includes(q))
@@ -120,8 +123,8 @@ export function KeyBindingsSection(): React.JSX.Element {
           <Icon name="search" />
           <input
             value={query}
-            placeholder="Search commands or keys"
-            aria-label="Search commands or keys"
+            placeholder={t('Search commands or keys')}
+            aria-label={t('Search commands or keys')}
             spellCheck={false}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.stopPropagation()}
@@ -134,24 +137,29 @@ export function KeyBindingsSection(): React.JSX.Element {
             setPending(null)
           }}
         >
-          Reset all
+          {t('Reset all')}
         </button>
       </div>
       <p className="muted small">
-        Click a key to change it, then press the new one. Esc cancels; Backspace removes it.
+        {t(
+          'Click a key to change it, then press the new one. Esc cancels; Backspace removes it.'
+        )}
       </p>
 
       {pending && (
         <div className="keybinds-conflict" role="alert">
           <span>
-            <span className="kbd">{label(pending.chord)}</span> already does “
-            {byId.get(pending.other)?.label}”.
+            {rich(
+              '{{key}} already does “{{command}}”.',
+              { key: <span className="kbd">{label(pending.chord)}</span> },
+              { command: t(byId.get(pending.other)?.label ?? '') }
+            )}
           </span>
           <div className="prefs-row">
             <button className="primary" onClick={() => takeOver(pending)}>
-              Use it for “{byId.get(pending.id)?.label}”
+              {t('Use it for “{{command}}”', { command: t(byId.get(pending.id)?.label ?? '') })}
             </button>
-            <button onClick={() => setPending(null)}>Cancel</button>
+            <button onClick={() => setPending(null)}>{t('Cancel')}</button>
           </div>
         </div>
       )}
@@ -161,13 +169,13 @@ export function KeyBindingsSection(): React.JSX.Element {
         if (!rows.length) return null
         return (
           <section key={group} className="keybinds-group">
-            <h3>{group}</h3>
+            <h3>{t(group)}</h3>
             {rows.map((c) => {
               const keys = bindings[c.id] ?? []
               const changed = c.id in overrides
               return (
                 <div key={c.id} className={`keybind${changed ? ' changed' : ''}`}>
-                  <span className="keybind-label">{c.label}</span>
+                  <span className="keybind-label">{t(c.label)}</span>
                   <span className="keybind-keys">
                     {keys.map((k, i) => {
                       const waiting = capture?.id === c.id && capture.index === i
@@ -175,25 +183,25 @@ export function KeyBindingsSection(): React.JSX.Element {
                         <button
                           key={i}
                           className={`kbd keybind-key${waiting ? ' waiting' : ''}`}
-                          title="Click, then press a new key"
+                          title={t('Click, then press a new key')}
                           onClick={() => {
                             setPending(null)
                             setCapture(waiting ? null : { id: c.id, index: i })
                           }}
                         >
-                          {waiting ? 'Press a key…' : label(k)}
+                          {waiting ? t('Press a key…') : label(k)}
                         </button>
                       )
                     })}
                     {capture?.id === c.id && capture.index === keys.length ? (
                       <button className="kbd keybind-key waiting" onClick={() => setCapture(null)}>
-                        Press a key…
+                        {t('Press a key…')}
                       </button>
                     ) : (
                       <button
                         className="icon ghost keybind-add"
-                        title="Add a key"
-                        aria-label={`Add a key for ${c.label}`}
+                        title={t('Add a key')}
+                        aria-label={t('Add a key for {{command}}', { command: t(c.label) })}
                         onClick={() => {
                           setPending(null)
                           setCapture({ id: c.id, index: keys.length })
@@ -204,8 +212,8 @@ export function KeyBindingsSection(): React.JSX.Element {
                     )}
                     <button
                       className="icon ghost keybind-reset"
-                      title="Back to the default"
-                      aria-label={`Reset ${c.label}`}
+                      title={t('Back to the default')}
+                      aria-label={t('Reset {{command}}', { command: t(c.label) })}
                       disabled={!changed}
                       onClick={() => setKeyBinding(c.id, null)}
                     >

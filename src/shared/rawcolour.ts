@@ -16,6 +16,7 @@
  */
 import type { CameraColour, SourceInfo, WhitePoint } from './engine-types'
 import { RAW_DEVELOP_REV } from './pixels'
+import { t } from './i18n'
 
 export type RawColour = 'container' | 'pixl:1'
 
@@ -89,13 +90,13 @@ export function effectiveInfo<T extends Pick<SourceInfo, 'as_shot_white' | 'came
 export function rawColourLabel(info: Colourable | null | undefined, c: RawColour): string {
   const cc = info?.camera_colour
   if (c === 'pixl:1') return `PIXL${cc?.pixl_camera ? ` · ${cc.pixl_camera}` : ''}`
-  return 'Container (the file’s own)'
+  return t('Container (the file’s own)')
 }
 
 /** Why a photo has no PIXL colour to offer, or null when it has. */
 export function rawColourReason(info: Colourable | null | undefined): string | null {
   if (pixlSupported(info)) return null
   return info?.camera_colour
-    ? 'This camera is not in PIXL’s database yet: the file’s own colour is used.'
-    : 'Only camera RAW files and DNGs have a camera colour.'
+    ? t('This camera is not in PIXL’s database yet: the file’s own colour is used.')
+    : t('Only camera RAW files and DNGs have a camera colour.')
 }

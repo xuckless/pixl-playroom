@@ -3,6 +3,7 @@
  * the heavy models' switches, each heavy one on only with a passing
  * benchmark made on this computer. Kept in the index's settings.
  */
+import { t } from '../../shared/i18n'
 import { BrowserWindow } from 'electron'
 import { cpus, totalmem } from 'os'
 import type { IndexClient } from '../indexer/client'
@@ -65,7 +66,7 @@ export class AiSwitchStore {
     const s = await this.get()
     const h = s.heavy[model]
     if (on && !benchmarkHolds(h.benchmark, this.machine))
-      throw new Error('Run the benchmark first: it has to pass on this computer')
+      throw new Error(t('Run the benchmark first: it has to pass on this computer'))
     return this.save({ ...s, heavy: { ...s.heavy, [model]: { ...h, on } } })
   }
 

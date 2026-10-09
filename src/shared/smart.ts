@@ -4,6 +4,7 @@
  * renderer's filter bar, so both agree on what a rule means.
  */
 import type { LibraryItem } from './ipc'
+import { tk } from './i18n'
 
 export type SmartField =
   | 'rating'
@@ -93,79 +94,79 @@ const TEXT_OPS: SmartOp[] = [
 const NUMBER_OPS: SmartOp[] = ['is', 'isNot', 'gte', 'lte', 'between', 'isEmpty', 'isNotEmpty']
 
 export const SMART_FIELDS: Record<SmartField, SmartFieldInfo> = {
-  rating: { label: 'Rating', type: 'rating', ops: ['gte', 'lte', 'is', 'isNot', 'between'] },
+  rating: { label: tk('Rating'), type: 'rating', ops: ['gte', 'lte', 'is', 'isNot', 'between'] },
   flag: {
-    label: 'Flag',
+    label: tk('Flag'),
     type: 'enum',
     ops: ['is', 'isNot'],
     options: [
-      { value: 'pick', label: 'Picked' },
-      { value: 'reject', label: 'Rejected' },
-      { value: 'none', label: 'Unflagged' }
+      { value: 'pick', label: tk('Picked') },
+      { value: 'reject', label: tk('Rejected') },
+      { value: 'none', label: tk('Unflagged') }
     ]
   },
   label: {
-    label: 'Colour label',
+    label: tk('Colour label'),
     type: 'enum',
     ops: ['is', 'isNot', 'isEmpty', 'isNotEmpty'],
     options: [
-      { value: 'red', label: 'Red' },
-      { value: 'yellow', label: 'Yellow' },
-      { value: 'green', label: 'Green' },
-      { value: 'blue', label: 'Blue' },
-      { value: 'purple', label: 'Purple' },
-      { value: 'none', label: 'None' }
+      { value: 'red', label: tk('Red') },
+      { value: 'yellow', label: tk('Yellow') },
+      { value: 'green', label: tk('Green') },
+      { value: 'blue', label: tk('Blue') },
+      { value: 'purple', label: tk('Purple') },
+      { value: 'none', label: tk('None') }
     ]
   },
-  edited: { label: 'Edited', type: 'boolean', ops: ['is'] },
+  edited: { label: tk('Edited'), type: 'boolean', ops: ['is'] },
   kind: {
-    label: 'File kind',
+    label: tk('File kind'),
     type: 'enum',
     ops: ['is', 'isNot'],
     options: [
       { value: 'raw', label: 'RAW' },
-      { value: 'nonraw', label: 'Not RAW' }
+      { value: 'nonraw', label: tk('Not RAW') }
     ]
   },
-  ext: { label: 'Extension', type: 'text', ops: ['is', 'isNot'] },
-  name: { label: 'File name', type: 'text', ops: TEXT_OPS },
-  folder: { label: 'Folder', type: 'text', ops: TEXT_OPS },
-  title: { label: 'Title', type: 'text', ops: TEXT_OPS },
-  caption: { label: 'Caption', type: 'text', ops: TEXT_OPS },
+  ext: { label: tk('Extension'), type: 'text', ops: ['is', 'isNot'] },
+  name: { label: tk('File name'), type: 'text', ops: TEXT_OPS },
+  folder: { label: tk('Folder'), type: 'text', ops: TEXT_OPS },
+  title: { label: tk('Title'), type: 'text', ops: TEXT_OPS },
+  caption: { label: tk('Caption'), type: 'text', ops: TEXT_OPS },
   keyword: {
-    label: 'Keyword',
+    label: tk('Keyword'),
     type: 'text',
     ops: ['is', 'isNot', 'contains', 'notContains', 'startsWith', 'isEmpty', 'isNotEmpty']
   },
-  text: { label: 'Any text', type: 'text', ops: ['contains', 'notContains'] },
-  camera: { label: 'Camera', type: 'text', ops: TEXT_OPS },
-  lens: { label: 'Lens', type: 'text', ops: TEXT_OPS },
+  text: { label: tk('Any text'), type: 'text', ops: ['contains', 'notContains'] },
+  camera: { label: tk('Camera'), type: 'text', ops: TEXT_OPS },
+  lens: { label: tk('Lens'), type: 'text', ops: TEXT_OPS },
   iso: { label: 'ISO', type: 'number', ops: NUMBER_OPS },
-  focal: { label: 'Focal length', type: 'number', ops: NUMBER_OPS, unit: 'mm' },
-  aperture: { label: 'Aperture', type: 'number', ops: NUMBER_OPS, unit: 'f/' },
-  shutter: { label: 'Shutter speed', type: 'number', ops: NUMBER_OPS, unit: 's' },
+  focal: { label: tk('Focal length'), type: 'number', ops: NUMBER_OPS, unit: 'mm' },
+  aperture: { label: tk('Aperture'), type: 'number', ops: NUMBER_OPS, unit: 'f/' },
+  shutter: { label: tk('Shutter speed'), type: 'number', ops: NUMBER_OPS, unit: 's' },
   captured: {
-    label: 'Capture date',
+    label: tk('Capture date'),
     type: 'date',
     ops: ['inLast', 'before', 'after', 'between', 'isEmpty', 'isNotEmpty']
   },
-  collection: { label: 'Collection', type: 'collection', ops: ['is', 'isNot'] }
+  collection: { label: tk('Collection'), type: 'collection', ops: ['is', 'isNot'] }
 }
 
 export const SMART_OPS: Record<SmartOp, string> = {
-  is: 'is',
-  isNot: 'is not',
-  contains: 'contains',
-  notContains: 'does not contain',
-  startsWith: 'starts with',
-  gte: 'is at least',
-  lte: 'is at most',
-  between: 'is between',
-  before: 'is before',
-  after: 'is after',
-  inLast: 'is in the last',
-  isEmpty: 'is empty',
-  isNotEmpty: 'is not empty'
+  is: tk('is'),
+  isNot: tk('is not'),
+  contains: tk('contains'),
+  notContains: tk('does not contain'),
+  startsWith: tk('starts with'),
+  gte: tk('is at least'),
+  lte: tk('is at most'),
+  between: tk('is between'),
+  before: tk('is before'),
+  after: tk('is after'),
+  inLast: tk('is in the last'),
+  isEmpty: tk('is empty'),
+  isNotEmpty: tk('is not empty')
 }
 
 /** Operators that take no value. */

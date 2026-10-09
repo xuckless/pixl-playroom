@@ -26,6 +26,10 @@
   -webkit-app-region: drag;
   user-select: none;
 }
+/* macOS: the window's own buttons sit at the bar's left (main/app.ts). */
+:root[data-platform='mac']:not([data-fullscreen]) .identity-bar {
+  padding-left: 84px;
+}
 .identity-bar button,
 .identity-bar select,
 .identity-bar input {
@@ -67,6 +71,13 @@
   color: var(--text2);
   letter-spacing: 0.14em;
   white-space: nowrap;
+}
+.identity-bar .settings-button {
+  margin-right: -8px;
+  color: var(--text2);
+}
+.identity-bar .settings-button:hover {
+  color: var(--text);
 }
 .engine-status.bad {
   color: var(--danger);

@@ -48,5 +48,8 @@ export function migrateUi(persisted: unknown, version: number): Saved {
   // place, dock or fold to keep.
   if (version < 6 && p.masksWin && typeof p.masksWin === 'object')
     p.masksWin = { open: (p.masksWin as Saved).open === true }
+  // 7: the flat UI became the default (the owner: it looks better); every
+  // layout takes it once, and Settings can turn the glass back on.
+  if (version < 7) p.alwaysFlat = true
   return p
 }

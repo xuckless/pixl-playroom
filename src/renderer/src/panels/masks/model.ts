@@ -17,6 +17,7 @@ import type { IconName } from '../../components/icons'
 import { openMasks } from '../../develop/tools'
 import { api, errorText } from '../../lib/api'
 import { emptyRange } from '../../lib/helpers'
+import { t, tk, tp } from '../../lib/i18n'
 import { ensureModel, ensureModelId } from '../../lib/ensureModel'
 import { askModel } from '../../state/modelPrompt'
 import { useObjects } from '../../state/objects'
@@ -89,64 +90,66 @@ const PART_ICON: Partial<Record<PersonPart, IconName>> = {
   lips: 'lips',
   teeth: 'teeth'
 }
-const PART_HINT = 'found by a model; best when the person is a good part of the frame'
+const PART_HINT = tk('found by a model; best when the person is a good part of the frame')
 /** Face parts' tips: what each finds, every face at once. */
 const FACE_HINT: Partial<Record<PersonPart, string>> = {
-  eyes: 'both eyes of every face, found by a model; pick one face after',
-  brows: 'the eyebrows of every face (beta: their outlines are rough)',
-  lips: 'the lips of every face, the mouth inside left out',
-  teeth: 'the inside of every mouth: the closest outline to the teeth there is'
+  eyes: tk('both eyes of every face, found by a model; pick one face after'),
+  brows: tk('the eyebrows of every face (beta: their outlines are rough)'),
+  lips: tk('the lips of every face, the mouth inside left out'),
+  teeth: tk('the inside of every mouth: the closest outline to the teeth there is')
 }
 
 /** The tools a mask can be made with, in Lightroom's order. */
 export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
   {
-    title: 'Automatic',
+    title: tk('Automatic'),
     tools: [
       {
         kind: 'subject',
-        label: 'Subject',
+        label: tk('Subject'),
         icon: 'subject',
-        needs: 'download the subject model',
+        needs: tk('download the subject model'),
         ai: 'segment'
       },
       {
         kind: 'subject-fine',
-        label: 'Fine subject',
+        label: tk('Fine subject'),
         icon: 'subject',
-        hint: 'a finer cut-out that keeps hair and fur (BiRefNet lite, 224 MB, about 10 seconds a photo)'
+        hint: tk(
+          'a finer cut-out that keeps hair and fur (BiRefNet lite, 224 MB, about 10 seconds a photo)'
+        )
       },
       {
         kind: 'objects',
-        label: 'Objects',
+        label: tk('Objects'),
         icon: 'objects',
         command: 'mask.objects',
-        needs: 'download SAM 2.1',
+        needs: tk('download SAM 2.1'),
         ai: 'prompt'
       },
       // DINOv2's sky plane (engine 0.19): one click on the tool.
       SKY_BY_CLICK
-        ? { kind: 'sky', label: 'Sky', icon: 'sky', ai: 'prompt', badge: 'click' }
-        : { kind: 'sky', label: 'Sky', icon: 'sky', model: SCENE_MODEL },
+        ? { kind: 'sky', label: tk('Sky'), icon: 'sky', ai: 'prompt', badge: tk('click') }
+        : { kind: 'sky', label: tk('Sky'), icon: 'sky', model: SCENE_MODEL },
       {
         kind: 'vegetation',
-        label: 'Vegetation',
+        label: tk('Vegetation'),
         icon: 'vegetation',
         model: SCENE_MODEL,
-        hint: 'trees, grass, plants and flowers'
+        hint: tk('trees, grass, plants and flowers')
       },
       {
         kind: 'water',
-        label: 'Water',
+        label: tk('Water'),
         icon: 'water',
         model: SCENE_MODEL,
-        hint: 'the sea, lakes, rivers and waterfalls'
+        hint: tk('the sea, lakes, rivers and waterfalls')
       },
       {
         kind: 'background',
-        label: 'Background',
+        label: tk('Background'),
         icon: 'background',
-        needs: 'download the subject model',
+        needs: tk('download the subject model'),
         ai: 'segment'
       }
     ]
@@ -156,7 +159,7 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
     // click on the tool; the rest by a click on the part (SAM 2.1) once
     // `PEOPLE_BY_CLICK` is on, coming soon until then (eyes and lips: face
     // parts, Pass 110).
-    title: 'People',
+    title: tk('People'),
     tools: CONCEPTS.filter((c) => c.group === 'people').map((c): MaskToolInfo => ({
       kind: `part:${c.id as PersonPart}`,
       label: c.label,
@@ -166,44 +169,44 @@ export const MASK_TOOL_GROUPS: { title: string; tools: MaskToolInfo[] }[] = [
         : isFacePart(c.id)
           ? { model: FACE_LANDMARKER, hint: FACE_HINT[c.id as PersonPart] }
           : PEOPLE_BY_CLICK
-            ? { needs: 'download SAM 2.1', ai: 'prompt' as const, badge: 'click' }
-            : { needs: 'coming soon' })
+            ? { needs: tk('download SAM 2.1'), ai: 'prompt' as const, badge: tk('click') }
+            : { needs: tk('coming soon') })
     }))
   },
   {
-    title: 'Draw',
+    title: tk('Draw'),
     tools: [
-      { kind: 'brush', label: 'Brush', icon: 'brush', command: 'mask.brush' },
-      { kind: 'linear', label: 'Linear gradient', icon: 'linear', command: 'mask.linear' },
-      { kind: 'radial', label: 'Radial gradient', icon: 'radial', command: 'mask.radial' },
+      { kind: 'brush', label: tk('Brush'), icon: 'brush', command: 'mask.brush' },
+      { kind: 'linear', label: tk('Linear gradient'), icon: 'linear', command: 'mask.linear' },
+      { kind: 'radial', label: tk('Radial gradient'), icon: 'radial', command: 'mask.radial' },
       {
         kind: 'bidirectional',
-        label: 'Bidirectional gradient',
+        label: tk('Bidirectional gradient'),
         icon: 'bidirectional',
         command: 'mask.bidirectional'
       },
-      { kind: 'polygon', label: 'Lasso', icon: 'lasso', command: 'mask.lasso' }
+      { kind: 'polygon', label: tk('Lasso'), icon: 'lasso', command: 'mask.lasso' }
     ]
   },
   {
-    title: 'Range',
+    title: tk('Range'),
     tools: [
-      { kind: 'color', label: 'Colour range', icon: 'colourRange' },
-      { kind: 'luminance', label: 'Luminance range', icon: 'lumRange' },
+      { kind: 'color', label: tk('Colour range'), icon: 'colourRange' },
+      { kind: 'luminance', label: tk('Luminance range'), icon: 'lumRange' },
       // Depth Anything V2 (engine 0.18) maps the photo's depth; the range is set on it.
-      { kind: 'depth', label: 'Depth range', icon: 'depth' }
+      { kind: 'depth', label: tk('Depth range'), icon: 'depth' }
     ]
   }
 ]
 
 export const COMPONENT_LABEL: Record<MaskComponentSetting['kind'], string> = {
-  brush: 'Brush',
-  polygon: 'Lasso',
-  range: 'Range',
-  linear: 'Linear gradient',
-  radial: 'Radial gradient',
-  bidirectional: 'Bidirectional gradient',
-  depth: 'Depth range'
+  brush: tk('Brush'),
+  polygon: tk('Lasso'),
+  range: tk('Range'),
+  linear: tk('Linear gradient'),
+  radial: tk('Radial gradient'),
+  bidirectional: tk('Bidirectional gradient'),
+  depth: tk('Depth range')
 }
 
 export function componentIcon(c: MaskComponentSetting): IconName {
@@ -214,9 +217,10 @@ export function componentIcon(c: MaskComponentSetting): IconName {
 
 export function componentLabel(c: MaskComponentSetting): string {
   if (c.name) return c.name
-  if (c.kind === 'range') return c.hue ? 'Colour range' : 'Luminance range'
-  if (c.kind === 'polygon') return `Lasso · ${c.points.length} points`
-  return COMPONENT_LABEL[c.kind]
+  if (c.kind === 'range') return c.hue ? t('Colour range') : t('Luminance range')
+  if (c.kind === 'polygon')
+    return tp('Lasso · {{count}} point', 'Lasso · {{count}} points', c.points.length)
+  return t(COMPONENT_LABEL[c.kind])
 }
 
 export const MODE_MARK: Record<MaskMode, string> = { Add: '+', Subtract: '−', Intersect: '∩' }
@@ -240,7 +244,7 @@ export function createMask(): LocalLayer | null {
   const d = useDevelop.getState()
   if (!d.recipe) return null
   const l = newLocalLayer(nextMaskName(d.recipe.layers.map((x) => x.name)))
-  d.replace({ ...d.recipe, layers: [...d.recipe.layers, l] }, 'New mask')
+  d.replace({ ...d.recipe, layers: [...d.recipe.layers, l] }, tk('New mask'))
   d.setLayer(l.id)
   return l
 }
@@ -288,8 +292,9 @@ export function startMaskTool(kind: MaskToolKind): void {
     if (!d.session) return
     const mode = d.addMode
     openMasks()
+    const askedLabel = asked ? conceptOf(asked)?.label : undefined
     void (async () => {
-      if (!(await ensureModel('prompt', asked ? conceptOf(asked)?.label : undefined))) return
+      if (!(await ensureModel('prompt', askedLabel ? t(askedLabel) : undefined))) return
       const now = useDevelop.getState()
       if (!now.recipe || !now.session) return
       if (!(adding && layerOf(now.recipe, now.layerId))) {
@@ -313,7 +318,7 @@ export function startMaskTool(kind: MaskToolKind): void {
     void (async () => {
       const models = await api.models.list()
       const installed = models.find((m) => m.id === DEPTH_MODEL)?.installed === true
-      if (!(await ensureModelId(DEPTH_MODEL, installed, 'Depth range'))) return
+      if (!(await ensureModelId(DEPTH_MODEL, installed, t('Depth range')))) return
       await api.ai.start({ task: 'segment', key, target: 'depth', into })
     })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
     return
@@ -342,7 +347,7 @@ export function startMaskTool(kind: MaskToolKind): void {
       for (const id of ids) {
         const models = await api.models.list()
         const installed = models.find((m) => m.id === id)?.installed === true
-        if (!(await ensureModelId(id, installed, SEGMENT_LABEL[named]))) return
+        if (!(await ensureModelId(id, installed, t(SEGMENT_LABEL[named])))) return
       }
       await api.ai.start({ task: 'segment', key, target: named, into })
     })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
@@ -358,7 +363,7 @@ export function startMaskTool(kind: MaskToolKind): void {
     void (async () => {
       const models = await api.models.list()
       const installed = models.find((m) => m.id === FINE_SUBJECT_MODEL)?.installed === true
-      if (!(await ensureModelId(FINE_SUBJECT_MODEL, installed, 'Fine subject'))) return
+      if (!(await ensureModelId(FINE_SUBJECT_MODEL, installed, t('Fine subject')))) return
       await api.ai.start({ task: 'segment', key, target: 'subject', fine: true, into })
     })().catch((err) => useLibrary.getState().say(errorText(err), 'error'))
     return
@@ -386,9 +391,9 @@ export function startMaskTool(kind: MaskToolKind): void {
     bidirectional: 'bidirectional',
     polygon: 'polygon'
   }
-  const t = tools[kind]
-  if (t) {
-    useDevelop.getState().setTool(t)
+  const tool = tools[kind]
+  if (tool) {
+    useDevelop.getState().setTool(tool)
     return
   }
   if (kind === 'color' || kind === 'luminance') {
@@ -396,7 +401,9 @@ export function startMaskTool(kind: MaskToolKind): void {
     const comp = emptyRange(kind)
     comp.mode = modeForNew(layer)
     changeLayer((l) => l.components.push(comp))
-    useDevelop.getState().commit(kind === 'color' ? 'Add colour range' : 'Add luminance range')
+    useDevelop
+      .getState()
+      .commit(kind === 'color' ? tk('Add colour range') : tk('Add luminance range'))
     madeComponent(comp.id)
     useDevelop.getState().setTool('range-picker')
   }
@@ -419,10 +426,10 @@ export function startPhrase(phrase: string): void {
   void (async () => {
     const models = await api.models.list()
     const here = PHRASE_MODELS.some((id) => models.find((m) => m.id === id)?.installed)
-    if (!here && !(await askModel(OFFERED_PHRASE_MODEL, `Find “${text}”`))) {
+    if (!here && !(await askModel(OFFERED_PHRASE_MODEL, t('Find “{{text}}”', { text })))) {
       useLibrary
         .getState()
-        .say('Draw a box around it instead: Objects finds what is inside', 'info')
+        .say(t('Draw a box around it instead: Objects finds what is inside'), 'info')
       startMaskTool('objects')
       return
     }
@@ -446,7 +453,7 @@ export function duplicateMask(id: string): void {
   const i = d.recipe.layers.indexOf(src)
   const layers = [...d.recipe.layers]
   layers.splice(i + 1, 0, copy)
-  d.replace({ ...d.recipe, layers }, 'Duplicate mask')
+  d.replace({ ...d.recipe, layers }, tk('Duplicate mask'))
   d.setLayer(copy.id)
 }
 
@@ -478,7 +485,7 @@ export function deleteMask(id: string): void {
   const i = layers.findIndex((x) => x.id === id)
   if (i < 0) return
   const next = layers[i + 1] ?? layers[i - 1] ?? null
-  d.replace({ ...d.recipe, layers: layers.filter((x) => x.id !== id) }, 'Delete mask')
+  d.replace({ ...d.recipe, layers: layers.filter((x) => x.id !== id) }, tk('Delete mask'))
   if (d.layerId === id) {
     dropMaskTool()
     d.setLayer(next?.id ?? null)
@@ -491,7 +498,7 @@ export function moveMask(id: string, to: number): void {
   if (!d.recipe) return
   const from = d.recipe.layers.findIndex((x) => x.id === id)
   if (from < 0 || from === to) return
-  d.replace({ ...d.recipe, layers: moveItem(d.recipe.layers, from, to) }, 'Reorder masks')
+  d.replace({ ...d.recipe, layers: moveItem(d.recipe.layers, from, to) }, tk('Reorder masks'))
 }
 
 /** Move a component to index `to` of its mask's components. */
@@ -505,7 +512,7 @@ export function moveComponent(compId: string, to: number): void {
     const x = layerOf(r, l.id)
     if (x) x.components = moveItem(x.components, from, to)
   })
-  d.commit('Reorder mask components')
+  d.commit(tk('Reorder mask components'))
 }
 
 export function patchMask(id: string, label: string, fn: (l: LocalLayer) => void): void {
@@ -544,12 +551,12 @@ export function duplicateComponent(compId: string): void {
       made = copy.id
     }
   })
-  d.commit('Duplicate component')
+  d.commit(tk('Duplicate component'))
   if (made) madeComponent(made)
 }
 
 export function deleteComponent(compId: string): void {
-  patchComponent(compId, 'Delete component', (_, l) => {
+  patchComponent(compId, tk('Delete component'), (_, l) => {
     l.components = l.components.filter((x) => x.id !== compId)
   })
   const d = useDevelop.getState()

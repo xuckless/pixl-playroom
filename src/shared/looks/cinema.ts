@@ -19,15 +19,18 @@ import {
   vignette,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 export const CINEMA = collection('cinema', [
   look(
     'classic-cine-camera',
-    'Classic Cine Camera',
+    tk('Classic Cine Camera'),
     {
       tags: ['cinema', 'cine camera', 'skin', 'highlight rolloff', 'arri', 'alexa', 'k1s1'],
       inspiredBy: 'ARRI ALEXA LogC to Rec.709 (K1S1)',
-      description: 'A moderate S with a very long, desaturating highlight shoulder and kind skin.'
+      description: tk(
+        'A moderate S with a very long, desaturating highlight shoulder and kind skin.'
+      )
     },
     sCurve(25),
     rolloff(0.03),
@@ -38,11 +41,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'modern-cine-camera',
-    'Modern Cine Camera',
+    tk('Modern Cine Camera'),
     {
       tags: ['cinema', 'cine camera', 'accurate', 'arri', 'reveal'],
       inspiredBy: 'ARRI REVEAL colour science',
-      description: 'The classic cine curve with cleaner, truer hues.'
+      description: tk('The classic cine curve with cleaner, truer hues.')
     },
     sCurve(25),
     rolloff(0.02),
@@ -53,11 +56,13 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'cine-print-look',
-    'Cine Print Look',
+    tk('Cine Print Look'),
     {
       tags: ['cinema', 'print', 'film look', 'arri', 'look library'],
       inspiredBy: 'ARRI Look Library film-print styles',
-      description: 'A cine camera printed to film: teal shadows, warm highlights, a little grain.'
+      description: tk(
+        'A cine camera printed to film: teal shadows, warm highlights, a little grain.'
+      )
     },
     sCurve(30),
     fade(0.01),
@@ -68,11 +73,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'digital-cine-neutral',
-    'Digital Cine Neutral',
+    tk('Digital Cine Neutral'),
     {
       tags: ['cinema', 'neutral', 'soft', 'red', 'ipp2'],
       inspiredBy: 'RED IPP2 (medium contrast, soft roll-off)',
-      description: 'Neutral, slightly cool, with a very soft highlight roll-off.'
+      description: tk('Neutral, slightly cool, with a very soft highlight roll-off.')
     },
     sCurve(12),
     rolloff(0.04),
@@ -82,11 +87,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'full-frame-cine',
-    'Full Frame Cine',
+    tk('Full Frame Cine'),
     {
       tags: ['cinema', 'warm skin', 'sony', 'venice'],
       inspiredBy: 'Sony VENICE Rec.709',
-      description: 'Rich reds, cyan skies and warm skin.'
+      description: tk('Rich reds, cyan skies and warm skin.')
     },
     tone({ contrast: 15 }),
     presence({ saturation: 5 }),
@@ -95,11 +100,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'indie-cine',
-    'Indie Cine',
+    tk('Indie Cine'),
     {
       tags: ['cinema', 'indie', 'warm', 'blackmagic', 'gen5'],
       inspiredBy: 'Blackmagic Design Gen 5 colour science',
-      description: 'Warm reds and a faint magenta lean.'
+      description: tk('Warm reds and a faint magenta lean.')
     },
     tone({ contrast: 10 }),
     presence({ saturation: 5 }),
@@ -108,11 +113,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'creamy-cine',
-    'Creamy Cine',
+    tk('Creamy Cine'),
     {
       tags: ['cinema', 'creamy', 'skin', 'soft', 'panavision', 'light iron'],
       inspiredBy: 'Panavision / Light Iron colour',
-      description: 'Creamy skin and soft highlights over a gentle split.'
+      description: tk('Creamy skin and soft highlights over a gentle split.')
     },
     tone({ contrast: 5, highlights: -18 }),
     rolloff(0.03),
@@ -123,11 +128,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'warm-theatre-print',
-    'Warm Theatre Print',
+    tk('Warm Theatre Print'),
     {
       tags: ['print film', 'cinema', 'warm', 'dense', 'kodak', '2383'],
       inspiredBy: 'Kodak Vision Color Print Film 2383',
-      description: 'Dense blacks, a strong shoulder and the warm-teal split of a theatre print.'
+      description: tk('Dense blacks, a strong shoulder and the warm-teal split of a theatre print.')
     },
     sCurve(45),
     rolloff(0.03),
@@ -138,11 +143,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'cool-theatre-print',
-    'Cool Theatre Print',
+    tk('Cool Theatre Print'),
     {
       tags: ['print film', 'cinema', 'cool', 'fuji', '3513'],
       inspiredBy: 'Fujifilm Eterna-CP 3513 print film',
-      description: 'A cooler, greener print with more neutral skin.'
+      description: tk('A cooler, greener print with more neutral skin.')
     },
     sCurve(35),
     split(170, 12, 50, 6),
@@ -150,11 +155,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'silver-retention-print',
-    'Silver Retention Print',
+    tk('Silver Retention Print'),
     {
       tags: ['bleach bypass', 'enr', 'cinema', 'gritty', 'technicolor'],
       inspiredBy: 'Technicolor ENR / bleach-bypass print processing',
-      description: 'Silver left in the print: heavy contrast, deep blacks, muted colour.'
+      description: tk('Silver left in the print: heavy contrast, deep blacks, muted colour.')
     },
     sCurve(50),
     tone({ contrast: 20, blacks: -10 }),
@@ -163,11 +168,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'three-strip-glory',
-    'Three-Strip Glory',
+    tk('Three-Strip Glory'),
     {
       tags: ['technicolor', 'dye transfer', 'saturated', 'classic hollywood'],
       inspiredBy: 'Three-strip Technicolor dye-transfer prints',
-      description: 'Rich primaries and inky blacks of classic dye-transfer prints.'
+      description: tk('Rich primaries and inky blacks of classic dye-transfer prints.')
     },
     sCurve(30),
     tone({ blacks: -8 }),
@@ -176,11 +181,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'two-strip-colour',
-    'Two-Strip Colour',
+    tk('Two-Strip Colour'),
     {
       tags: ['technicolor', 'two strip', 'vintage', 'red cyan'],
       inspiredBy: 'Two-colour Technicolor (1920s)',
-      description: 'Only reds and cyans: greens and blues fold into teal, yellows into peach.'
+      description: tk('Only reds and cyans: greens and blues fold into teal, yellows into peach.')
     },
     presence({ saturation: -10 }),
     hsl({
@@ -194,11 +199,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'day-for-night',
-    'Day for Night',
+    tk('Day for Night'),
     {
       tags: ['day for night', 'night', 'blue', 'dark', 'cinema'],
       inspiredBy: 'The classic day-for-night film technique',
-      description: 'Daylight made to read as moonlight: dark, blue and drained.'
+      description: tk('Daylight made to read as moonlight: dark, blue and drained.')
     },
     tone({ contrast: 15, highlights: -50, whites: -40, shadows: -20 }),
     presence({ saturation: -50 }),
@@ -207,11 +212,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'tungsten-cine-neg-500',
-    'Tungsten Cine Neg 500',
+    tk('Tungsten Cine Neg 500'),
     {
       tags: ['cinema', 'negative', 'tungsten', 'night', 'grain', 'kodak', 'vision3', '500t'],
       inspiredBy: 'Kodak Vision3 500T 5219, printed',
-      description: 'Fast tungsten negative: soft blacks, teal shadows, visible grain.'
+      description: tk('Fast tungsten negative: soft blacks, teal shadows, visible grain.')
     },
     sCurve(18),
     fade(0.03),
@@ -223,11 +228,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'tungsten-cine-neg-200',
-    'Tungsten Cine Neg 200',
+    tk('Tungsten Cine Neg 200'),
     {
       tags: ['cinema', 'negative', 'tungsten', 'kodak', 'vision3', '200t'],
       inspiredBy: 'Kodak Vision3 200T 5213, printed',
-      description: 'Tungsten negative with finer grain and the same teal-warm split.'
+      description: tk('Tungsten negative with finer grain and the same teal-warm split.')
     },
     sCurve(28),
     fade(0.015),
@@ -239,11 +244,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'daylight-cine-neg-250',
-    'Daylight Cine Neg 250',
+    tk('Daylight Cine Neg 250'),
     {
       tags: ['cinema', 'negative', 'daylight', 'kodak', 'vision3', '250d'],
       inspiredBy: 'Kodak Vision3 250D 5207, printed',
-      description: 'Daylight negative with a very long highlight range.'
+      description: tk('Daylight negative with a very long highlight range.')
     },
     sCurve(20),
     rolloff(0.03),
@@ -255,11 +260,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'fine-daylight-cine-neg',
-    'Fine Daylight Cine Neg',
+    tk('Fine Daylight Cine Neg'),
     {
       tags: ['cinema', 'negative', 'daylight', 'fine grain', 'kodak', 'vision3', '50d'],
       inspiredBy: 'Kodak Vision3 50D 5203, printed',
-      description: 'Crisp, clean, fine-grained daylight negative.'
+      description: tk('Crisp, clean, fine-grained daylight negative.')
     },
     sCurve(30),
     presence({ saturation: 10 }),
@@ -268,11 +273,11 @@ export const CINEMA = collection('cinema', [
   ),
   look(
     'cine-bw-neg',
-    'Cine B&W Neg',
+    tk('Cine B&W Neg'),
     {
       tags: ['bw', 'mono', 'cinema', 'grain', 'kodak', 'double-x', '5222'],
       inspiredBy: 'Kodak Double-X 5222',
-      description: 'Classic motion-picture black and white: punchy with real grain.'
+      description: tk('Classic motion-picture black and white: punchy with real grain.')
     },
     mono({ red: 10, orange: 10, blue: -10 }),
     sCurve(40),

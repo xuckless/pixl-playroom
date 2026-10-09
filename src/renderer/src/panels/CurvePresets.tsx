@@ -10,6 +10,7 @@ import { Select } from '../components/ui'
 import { api } from '../lib/api'
 import { scoped, useScope } from '../state/scope'
 import { useLibrary } from '../state/library'
+import { t } from '../lib/i18n'
 
 /** A whole tone curve the user saved under a name. */
 interface SavedCurve {
@@ -51,7 +52,7 @@ export function CurvePresets(): React.JSX.Element {
     if (!recipe) return
     const entry: SavedCurve = { name, curve: structuredClone(recipe.toneCurve) }
     await store([...saved.filter((p) => p.name !== name), entry])
-    useLibrary.getState().say(`Saved curve preset "${name}"`)
+    useLibrary.getState().say(t('Saved curve preset "{{name}}"', { name }))
   }
   const choose = (v: string): void => {
     if (v === 'save') return setNaming('')
@@ -81,16 +82,16 @@ export function CurvePresets(): React.JSX.Element {
     <>
       <div className="row">
         <Select
-          label="Preset"
+          label={t('Preset')}
           value={current}
           onChange={choose}
           options={[
             // Only a curve no preset makes lands here; choosing a preset never does.
-            ...(current === '' ? [{ value: '', label: 'Custom curve' }] : []),
-            ...BUILTIN_CURVES.map((p) => ({ value: `builtin:${p.name}`, label: p.name })),
+            ...(current === '' ? [{ value: '', label: t('Custom curve') }] : []),
+            ...BUILTIN_CURVES.map((p) => ({ value: `builtin:${p.name}`, label: t(p.name) })),
             ...saved.map((p) => ({ value: `use:${p.name}`, label: `★ ${p.name}` })),
-            { value: 'save', label: 'Save this curve as a preset…' },
-            ...saved.map((p) => ({ value: `del:${p.name}`, label: `Delete "${p.name}"` }))
+            { value: 'save', label: t('Save this curve as a preset…') },
+            ...saved.map((p) => ({ value: `del:${p.name}`, label: t('Delete "{{name}}"', { name: p.name }) }))
           ]}
         />
       </div>
@@ -99,7 +100,7 @@ export function CurvePresets(): React.JSX.Element {
           <input
             className="name"
             autoFocus
-            placeholder="Preset name"
+            placeholder={t('Preset name')}
             value={naming}
             onChange={(e) => setNaming(e.target.value)}
             onKeyDown={(e) => {
@@ -109,7 +110,7 @@ export function CurvePresets(): React.JSX.Element {
             }}
           />
           <button disabled={!naming.trim()} onClick={finish}>
-            Save
+            {t('Save')}
           </button>
         </div>
       )}

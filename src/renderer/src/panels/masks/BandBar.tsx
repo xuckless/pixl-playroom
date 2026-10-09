@@ -8,6 +8,7 @@ import {
   inPlateau,
   type BandPart
 } from '../../../../shared/keyband'
+import { t } from '../../lib/i18n'
 
 /** How near a handle a press must land to take it (px). */
 const REACH_PX = 7
@@ -117,7 +118,7 @@ export function BandBar({
         ref={strip}
         className="band-strip"
         style={{ background: STRIP[axis], cursor: band && hover ? CURSOR[hover] : undefined }}
-        title={band ? 'Drag to move · its edges widen · its slopes soften' : undefined}
+        title={band ? t('Drag to move · its edges widen · its slopes soften') : undefined}
         onPointerDown={down}
         onPointerMove={(e) => {
           if (!band || e.buttons) return

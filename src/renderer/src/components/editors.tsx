@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { monotone } from '../../../shared/curves'
 import type { CurvePointSetting, WheelSetting } from '../../../shared/recipe'
+import { t } from '../lib/i18n'
 
 /**
  * A point curve: click to add, drag to move, double-click a point (or drag it
@@ -202,7 +203,7 @@ export function ColorWheel({
           min={-100}
           max={100}
           value={value.luminance}
-          title="Luminance"
+          title={t('Luminance')}
           onChange={(e) => onChange({ ...value, luminance: Number(e.target.value) }, true)}
           onPointerUp={onCommit}
           onDoubleClick={() => {

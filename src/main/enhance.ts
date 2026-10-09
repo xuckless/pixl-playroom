@@ -9,6 +9,7 @@
  * on. Deblur and restore can keep to a mask (frozen as it is when made).
  * The steps and their numbers are `shared/enhance.ts`'s.
  */
+import { t } from '../shared/i18n'
 import log from 'electron-log/main'
 import { rm } from 'fs/promises'
 import { join } from 'path'
@@ -79,9 +80,9 @@ export interface EnhanceAvailability {
  */
 export function enhanceAvailability(status: EngineStatus): EnhanceAvailability {
   if (status.enhance !== true)
-    return { available: false, reason: 'this build of the engine runs no models' }
+    return { available: false, reason: t('this build of the engine runs no models') }
   if (!status.runtime)
-    return { available: false, reason: 'this build of the engine ships no ONNX Runtime' }
+    return { available: false, reason: t('this build of the engine ships no ONNX Runtime') }
   return { available: true }
 }
 
@@ -158,21 +159,21 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
 
   stages(): { id: string; label: string; weight: number }[] {
     return [
-      { id: 'model', label: 'Model', weight: 0.06 },
-      { id: 'enhance', label: 'Enhance', weight: 0.88 },
-      { id: 'save', label: 'Save', weight: 0.06 }
+      { id: 'model', label: t('Model'), weight: 0.06 },
+      { id: 'enhance', label: t('Enhance'), weight: 0.88 },
+      { id: 'save', label: t('Save'), weight: 0.06 }
     ]
   }
 
   title(req: EnhanceRequest): { title: string; subject: string } {
-    return { title: 'Enhancing', subject: chainSubject(planSteps(req.settings, true)) }
+    return { title: t('Enhancing'), subject: chainSubject(planSteps(req.settings, true)) }
   }
 
   async run(ctx: AiContext, req: EnhanceRequest): Promise<{ kind: 'step'; label: string }> {
     const { key, settings } = req
-    ctx.stage('model', 0, 'Checking the models')
+    ctx.stage('model', 0, t('Checking the models'))
     const avail = enhanceAvailability(this.status())
-    if (!avail.available) throw new Error(avail.reason ?? 'unavailable')
+    if (!avail.available) throw new Error(avail.reason ?? t('unavailable'))
     const sessions = this.sessions()
     // The probe first: it records a RAW's camera colour and moves its saved white with it.
     const row = await this.library.photoRow(key)
@@ -191,7 +192,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     // An upscale is the whole photo; deblur and restore can keep to a mask.
     const layer =
       req.layerId && k === 1 ? recipe.layers.find((l) => l.id === req.layerId) : undefined
-    if (req.layerId && k === 1 && !layer) throw new Error('the mask is gone')
+    if (req.layerId && k === 1 && !layer) throw new Error(t('the mask is gone'))
     if (this.engine.getStatus().status === 'starting') {
       this.engine.start()
       await this.engine.whenStarted()
@@ -270,7 +271,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         .setSetting(RATE_KEY, learnRates(steps, rates, Date.now() - t0, expected))
         .catch(() => {})
 
-      ctx.stage('save', 0.1, 'Keeping it in the project')
+      ctx.stage('save', 0.1, t('Keeping it in the project'))
       const lossless = await storesLossless(row.is_raw === 1, () =>
         this.settings.getSetting(LOSSLESS_KEY)
       )
@@ -310,7 +311,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           recipe,
           layer.id
         )
-        if (!plane) throw new Error(`${layer.name} selects nothing`)
+        if (!plane) throw new Error(t('{{name}} selects nothing', { name: layer.name }))
         files.push(plane)
         alpha = await this.library.index.putBlob(photoKey, plane, {
           kind: 'mask',
@@ -323,7 +324,9 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
       const step: PixelStep = {
         id: newId(),
         kind: 'enhance',
-        label: layer ? `Enhance · ${subject} in ${layer.name}` : `Enhance · ${subject}`,
+        label: layer
+          ? t('Enhance · {{subject}} in {{mask}}', { subject, mask: layer.name })
+          : t('Enhance · {{subject}}', { subject }),
         blob,
         alpha,
         scope: layer?.name ?? null,

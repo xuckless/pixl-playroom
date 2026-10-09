@@ -3,6 +3,7 @@ import { useDevelop } from '../../state/develop'
 import { useAiJobs } from '../../state/jobs'
 import { useModels } from '../../lib/models'
 import { keyHint } from '../../lib/commands'
+import { t } from '../../lib/i18n'
 import { useState } from 'react'
 import { PHRASE_MODELS } from '../../../../shared/ai'
 import {
@@ -34,19 +35,20 @@ export function ToolPicker({
   const phraseGet =
     models.length > 0 && !PHRASE_MODELS.some((id) => models.find((m) => m.id === id)?.installed)
   // A named mask's model not downloaded yet: the tool offers it when picked.
-  const toGet = (t: MaskToolInfo): boolean =>
-    !!t.model && models.length > 0 && models.find((m) => m.id === t.model)?.installed !== true
+  const toGet = (tool: MaskToolInfo): boolean =>
+    !!tool.model && models.length > 0 && models.find((m) => m.id === tool.model)?.installed !== true
   // A model's tool is there when its model is downloaded; until then it
   // says why, and picking it offers the model.
-  const needs = (t: MaskToolInfo): string | undefined =>
-    t.model
+  const needs = (tool: MaskToolInfo): string | undefined =>
+    tool.model
       ? caps?.denoise
         ? undefined
-        : (caps?.why.denoise ?? 'this engine build runs no models')
-      : t.ai && caps?.[t.ai]
+        : (caps?.why.denoise ?? t('this engine build runs no models'))
+      : tool.ai && caps?.[tool.ai]
         ? undefined
-        : ((t.ai && caps?.why[t.ai]) ?? t.needs)
-  const downloadable = (t: MaskToolInfo): boolean => Boolean(t.ai && needs(t) && caps?.get?.[t.ai])
+        : ((tool.ai && caps?.why[tool.ai]) ?? (tool.needs ? t(tool.needs) : undefined))
+  const downloadable = (tool: MaskToolInfo): boolean =>
+    Boolean(tool.ai && needs(tool) && caps?.get?.[tool.ai])
   const pick = (kind: MaskToolKind): void => {
     startMaskTool(kind)
     onDone?.()
@@ -56,11 +58,10 @@ export function ToolPicker({
       {addMode && (
         <div className="tp-mode micro">
           {addMode === 'Add'
-            ? 'Add to'
+            ? t('Add to the mask')
             : addMode === 'Subtract'
-              ? 'Subtract from'
-              : 'Intersect with'}{' '}
-          the mask
+              ? t('Subtract from the mask')
+              : t('Intersect with the mask')}
         </div>
       )}
       <form
@@ -77,38 +78,40 @@ export function ToolPicker({
         <input
           value={phrase}
           onChange={(e) => setPhrase(e.target.value)}
-          placeholder="Find by name: red car, the dog…"
-          aria-label="Find by name"
+          placeholder={t('Find by name: red car, the dog…')}
+          aria-label={t('Find by name')}
           maxLength={80}
           spellCheck={false}
         />
-        {phraseGet && <span className="tp-needs">get</span>}
+        {phraseGet && <span className="tp-needs">{t('get')}</span>}
       </form>
       {MASK_TOOL_GROUPS.map((g) => (
         <div key={g.title} className="tp-group">
-          <span className="micro">{g.title}</span>
+          <span className="micro">{t(g.title)}</span>
           <div className="tp-grid">
-            {g.tools.map((t) => (
+            {g.tools.map((tool) => (
               <button
-                key={t.kind}
+                key={tool.kind}
                 className="tp-tool"
-                disabled={Boolean(needs(t)) && !downloadable(t)}
+                disabled={Boolean(needs(tool)) && !downloadable(tool)}
                 title={
-                  needs(t)
-                    ? `${t.label} — ${needs(t)}`
-                    : `${t.label}${t.hint ? `: ${t.hint}` : t.ai ? ' (found by a model)' : ''}${t.command && keyHint(t.command) ? ` (${keyHint(t.command)})` : ''}`
+                  needs(tool)
+                    ? `${t(tool.label)} — ${needs(tool)}`
+                    : `${t(tool.label)}${tool.hint ? `: ${t(tool.hint)}` : tool.ai ? ` (${t('found by a model')})` : ''}${tool.command && keyHint(tool.command) ? ` (${keyHint(tool.command)})` : ''}`
                 }
-                onClick={() => pick(t.kind)}
+                onClick={() => pick(tool.kind)}
               >
-                <Icon name={t.icon} />
-                <span className="tp-label">{t.label}</span>
-                {t.command && keyHint(t.command) && (
-                  <span className="kbd">{keyHint(t.command)}</span>
+                <Icon name={tool.icon} />
+                <span className="tp-label">{t(tool.label)}</span>
+                {tool.command && keyHint(tool.command) && (
+                  <span className="kbd">{keyHint(tool.command)}</span>
                 )}
-                {needs(t) && <span className="tp-needs">{downloadable(t) ? 'get' : 'soon'}</span>}
-                {!needs(t) && toGet(t) && <span className="tp-needs">get</span>}
-                {(t.ai || t.model) && !needs(t) && !toGet(t) && (
-                  <span className="tp-needs ai">{t.badge ?? 'AI'}</span>
+                {needs(tool) && (
+                  <span className="tp-needs">{downloadable(tool) ? t('get') : t('soon')}</span>
+                )}
+                {!needs(tool) && toGet(tool) && <span className="tp-needs">{t('get')}</span>}
+                {(tool.ai || tool.model) && !needs(tool) && !toGet(tool) && (
+                  <span className="tp-needs ai">{tool.badge ? t(tool.badge) : t('AI')}</span>
                 )}
               </button>
             ))}

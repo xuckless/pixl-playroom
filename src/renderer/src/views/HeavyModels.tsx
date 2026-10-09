@@ -10,6 +10,7 @@ import type { BrainStatus, ModelInfo } from '../../../shared/ipc'
 import type { AiSwitches, HeavyBenchmark, HeavyModel } from '../../../shared/heavy'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
+import { t, tp } from '../lib/i18n'
 
 const mb = (bytes: number): string =>
   bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`
@@ -29,12 +30,16 @@ export function AiKillswitch({ s }: { s: AiSwitches | null }): React.JSX.Element
             void api.ai.setEnabled(e.target.checked).catch((err) => say(errorText(err), 'error'))
           }
         />
-        <strong>Use AI models</strong>
+        <strong>{t('Use AI models')}</strong>
       </label>
       <p className="muted small">
         {on
-          ? 'Off stops every AI model at once: masks found by a model, AI denoise, Enhance, Find by name and Gemma. RAW files still develop with their model.'
-          : 'AI models are off. Nothing below runs until you turn them back on; RAW files still develop with their model.'}
+          ? t(
+              'Off stops every AI model at once: masks found by a model, AI denoise, Enhance, Find by name and Gemma. RAW files still develop with their model.'
+            )
+          : t(
+              'AI models are off. Nothing below runs until you turn them back on; RAW files still develop with their model.'
+            )}
       </p>
     </section>
   )
@@ -46,10 +51,10 @@ function BenchResult({ b, machine }: { b: HeavyBenchmark; machine: string }): Re
     <div className={`heavy-result ${b.passed && here ? 'ok' : 'no'}`}>
       <strong>
         {!here
-          ? 'Benchmarked on another computer: run it again here'
+          ? t('Benchmarked on another computer: run it again here')
           : b.passed
-            ? 'Passed: this computer can keep it up'
-            : 'Not passed: this computer can’t keep it up'}
+            ? t('Passed: this computer can keep it up')
+            : t('Not passed: this computer can’t keep it up')}
       </strong>
       <ul>
         {b.reasons.map((r) => (
@@ -57,8 +62,8 @@ function BenchResult({ b, machine }: { b: HeavyBenchmark; machine: string }): Re
         ))}
       </ul>
       <span className="muted micro">
-        {new Date(b.at).toLocaleString()} · {b.runs.length} runs · loaded in{' '}
-        {(b.readyMs / 1000).toFixed(1)} s
+        {new Date(b.at).toLocaleString()} · {tp('{{count}} run', '{{count}} runs', b.runs.length)}{' '}
+        · {t('loaded in {{seconds}} s', { seconds: (b.readyMs / 1000).toFixed(1) })}
       </span>
     </div>
   )
@@ -107,7 +112,7 @@ function HeavyCard({
   const passed = !!h?.benchmark?.passed && h.benchmark.machine === machine
   const aiOn = s?.enabled !== false
   const run = (): void => {
-    setBench({ progress: 0, note: 'Starting' })
+    setBench({ progress: 0, note: t('Starting') })
     void api.ai
       .benchmark(model)
       .catch((err) => say(errorText(err), 'error'))
@@ -118,7 +123,9 @@ function HeavyCard({
       <div className="model-main">
         <div className="model-name">
           {name}
-          <span className="model-rec">{h?.on ? 'On' : 'Off until benchmarked and turned on'}</span>
+          <span className="model-rec">
+            {h?.on ? t('On') : t('Off until benchmarked and turned on')}
+          </span>
         </div>
         <p className="model-what">{what}</p>
         <div className="model-tech muted">
@@ -128,11 +135,13 @@ function HeavyCard({
         {h?.benchmark && <BenchResult b={h.benchmark} machine={machine} />}
         {bench && (
           <div className="heavy-bench">
-            <div className="model-bar" aria-label="Benchmarking">
+            <div className="model-bar" aria-label={t('Benchmarking')}>
               <span style={{ width: `${Math.round(bench.progress * 100)}%` }} />
             </div>
             <span className="muted micro">
-              Benchmark: {bench.note}. It works at full load for about a minute.
+              {t('Benchmark: {{note}}. It works at full load for about a minute.', {
+                note: bench.note
+              })}
             </span>
           </div>
         )}
@@ -140,22 +149,22 @@ function HeavyCard({
       <div className="model-act">
         {progress !== null ? (
           <>
-            <div className="model-bar" aria-label="Downloading">
+            <div className="model-bar" aria-label={t('Downloading')}>
               <span style={{ width: `${Math.round(progress * 100)}%` }} />
             </div>
             <button className="sm ghost" onClick={cancel}>
-              Cancel
+              {t('Cancel')}
             </button>
           </>
         ) : !installed ? (
           <button className="sm" onClick={download}>
-            Download · {mb(bytes)}
+            {t('Download')} · {mb(bytes)}
           </button>
         ) : (
           <>
             <label
               className="check"
-              title={passed ? '' : 'Run the benchmark first: it has to pass on this computer'}
+              title={passed ? '' : t('Run the benchmark first: it has to pass on this computer')}
             >
               <input
                 type="checkbox"
@@ -167,13 +176,13 @@ function HeavyCard({
                     .catch((err) => say(errorText(err), 'error'))
                 }
               />
-              On
+              {t('On')}
             </label>
             <button className="sm" disabled={!!bench || !aiOn} onClick={run}>
-              {h?.benchmark ? 'Benchmark again' : 'Run the benchmark'}
+              {h?.benchmark ? t('Benchmark again') : t('Run the benchmark')}
             </button>
             <button className="sm ghost" disabled={!!bench} onClick={remove}>
-              Remove
+              {t('Remove')}
             </button>
           </>
         )}
@@ -200,17 +209,20 @@ export function HeavyModels({
   if (!brain?.supported && !(SAM3_PHRASE && sam3)) return null
   return (
     <section className="model-group">
-      <h4>Heavy models</h4>
+      <h4>{t('Heavy models')}</h4>
       <p className="muted small">
-        Large models that work your computer hard. Each stays off until a benchmark shows this
-        computer can keep it up, and you turn it on.
+        {t(
+          'Large models that work your computer hard. Each stays off until a benchmark shows this computer can keep it up, and you turn it on.'
+        )}
       </p>
       <ul>
         {brain?.supported && (
           <HeavyCard
             model="gemma"
-            name="Gemma, the local assistant"
-            what="A small language model that looks at your photos on this computer, nothing sent anywhere: it will name what is in each one, so masks are a tap away. It will work in the background only while the computer is idle and plugged in."
+            name={t('Gemma, the local assistant')}
+            what={t(
+              'A small language model that looks at your photos on this computer, nothing sent anywhere: it will name what is in each one, so masks are a tap away. It will work in the background only while the computer is idle and plugged in.'
+            )}
             installed={brain.installed}
             bytes={brain.bytes}
             progress={brain.progress}
@@ -226,8 +238,10 @@ export function HeavyModels({
         {SAM3_PHRASE && sam3 && brain && (
           <HeavyCard
             model="sam3"
-            name="SAM 3, Find by name at its best"
-            what="The larger, surer model behind Find by name: it finds more, and says “nothing” rather than guess. It needs a lot of memory while it reads a photo."
+            name={t('SAM 3, Find by name at its best')}
+            what={t(
+              'The larger, surer model behind Find by name: it finds more, and says “nothing” rather than guess. It needs a lot of memory while it reads a photo.'
+            )}
             installed={sam3.installed}
             bytes={sam3.bytes}
             progress={sam3.progress}

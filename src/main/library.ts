@@ -9,6 +9,7 @@
  * until it has been edited, the photo's own pixels otherwise, and the graded
  * picture (from its proxy) once it has a recipe.
  */
+import { t } from '../shared/i18n'
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { existsSync } from 'fs'
@@ -180,7 +181,7 @@ export class Library {
         photoId,
         { isRaw: true, asShot: asShotFor(info, 'container') },
         { isRaw: true, asShot: asShotFor(info, colour) },
-        `Camera colour: ${rawColourLabel(info, colour)}`
+        t('Camera colour: {{colour}}', { colour: rawColourLabel(info, colour) })
       )
     return colour
   }
@@ -194,7 +195,7 @@ export class Library {
    */
   async setRawColour(key: string, colour: RawColour): Promise<RawColour> {
     const row = await this.photoRow(key)
-    if (row.is_raw !== 1) throw new Error('only a RAW has a camera colour')
+    if (row.is_raw !== 1) throw new Error(t('only a RAW has a camera colour'))
     const info = await this.engineProbe(row, this.engine)
     const to = resolveRawColour(colour, info)
     const from = resolveRawColour(row.raw_colour, info)
@@ -204,7 +205,7 @@ export class Library {
       row.id,
       { isRaw: true, asShot: asShotFor(info, from) },
       { isRaw: true, asShot: asShotFor(info, to) },
-      `Camera colour: ${rawColourLabel(info, to)}`
+      t('Camera colour: {{colour}}', { colour: rawColourLabel(info, to) })
     )
     // Its thumbnail's stamp names the colour: made again.
     this.queueThumb(row.id, null, true)
@@ -406,7 +407,9 @@ export class Library {
     const e = row.embedded
     if (e === undefined) return row
     if (e === null)
-      throw new Error(`${row.name} is missing, and its project does not carry a copy of it yet`)
+      throw new Error(
+        t('{{name}} is missing, and its project does not carry a copy of it yet', { name: row.name })
+      )
     if (e.codec !== 'jxl-jpeg') return { ...row, path: e.path }
     const jpg = e.path.replace(/\.jxl$/i, '.jpg')
     if (!existsSync(jpg)) {

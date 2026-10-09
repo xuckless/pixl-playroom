@@ -17,14 +17,15 @@ import {
 } from '../../../../shared/naming'
 import { Icon } from '../../components/icons'
 import { api, errorText } from '../../lib/api'
+import { t } from '../../lib/i18n'
 import { useSwitches } from '../../lib/switches'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { startMaskTool, startPhrase } from './model'
 
 /** Mask what a chip names, with Playroom's own tool for it. */
-function maskFor(t: NamedThing, people: number): void {
-  const r = routeName(t, people)
+function maskFor(thing: NamedThing, people: number): void {
+  const r = routeName(thing, people)
   switch (r.kind) {
     case 'scene':
       return startMaskTool(r.target)
@@ -34,7 +35,7 @@ function maskFor(t: NamedThing, people: number): void {
     case 'face':
       return startMaskTool(`part:${r.part}`)
     case 'person':
-      useLibrary.getState().say(`Click ${t.label} on the photo`, 'info')
+      useLibrary.getState().say(t('Click {{name}} on the photo', { name: thing.label }), 'info')
       return startMaskTool('objects')
     case 'phrase':
       return startPhrase(r.text)
@@ -96,7 +97,7 @@ function Chips({
       .name(key)
       .then((n) => {
         if (n) setNames(n)
-        else say('Gemma gave no usable names for this photo', 'info')
+        else say(t('Gemma gave no usable names for this photo'), 'info')
       })
       .catch((err) => say(errorText(err), 'error'))
       .finally(() => setNaming(false))
@@ -108,29 +109,29 @@ function Chips({
     const n = withAdded(names, text, new Date().toISOString())
     if (!n) return
     save(n)
-    const t = n.things.find((x) => x.label === cleanLabel(text))
-    if (t) maskFor(t, peopleIn(n.things))
+    const thing = n.things.find((x) => x.label === cleanLabel(text))
+    if (thing) maskFor(thing, peopleIn(n.things))
   }
   const things = names?.things ?? []
   const people = peopleIn(things)
 
   return (
-    <div className="name-chips" aria-label="Things in this photo">
-      {things.map((t) => (
-        <span key={t.label} className={`name-chip${t.subject ? ' subject' : ''}`}>
+    <div className="name-chips" aria-label={t('Things in this photo')}>
+      {things.map((thing) => (
+        <span key={thing.label} className={`name-chip${thing.subject ? ' subject' : ''}`}>
           <button
             className="nc-mask"
-            title={`Mask ${t.label}${t.intent ? `: ${t.intent}` : ''}${t.user ? '' : ' (named by Gemma)'}`}
-            onClick={() => maskFor(t, people)}
+            title={`${t('Mask {{name}}', { name: thing.label })}${thing.intent ? `: ${thing.intent}` : ''}${thing.user ? '' : ` (${t('named by Gemma')})`}`}
+            onClick={() => maskFor(thing, people)}
           >
-            {t.label}
-            {t.subject && <span className="nc-star"> ★</span>}
+            {thing.label}
+            {thing.subject && <span className="nc-star"> ★</span>}
           </button>
           <button
             className="nc-off"
-            aria-label={`Take ${t.label} off`}
-            title="Take it off the list"
-            onClick={() => names && save(withRemoved(names, t.label))}
+            aria-label={t('Take {{name}} off', { name: thing.label })}
+            title={t('Take it off the list')}
+            onClick={() => names && save(withRemoved(names, thing.label))}
           >
             <Icon name="close" />
           </button>
@@ -140,8 +141,8 @@ function Chips({
         <input
           className="nc-type"
           autoFocus
-          aria-label="Name a thing to mask"
-          placeholder="Name a thing…"
+          aria-label={t('Name a thing to mask')}
+          placeholder={t('Name a thing…')}
           maxLength={40}
           spellCheck={false}
           value={typing}
@@ -154,13 +155,13 @@ function Chips({
           }}
         />
       ) : (
-        <button className="nc-add" title="Name a thing to mask" onClick={() => setTyping('')}>
+        <button className="nc-add" title={t('Name a thing to mask')} onClick={() => setTyping('')}>
           <Icon name="plus" />
         </button>
       )}
       {!names && gemma && (
         <button className="nc-name" disabled={naming} onClick={nameNow}>
-          {naming ? 'Gemma is looking…' : 'Name what’s in it'}
+          {naming ? t('Gemma is looking…') : t('Name what’s in it')}
         </button>
       )}
     </div>

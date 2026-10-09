@@ -13,6 +13,7 @@
  */
 import type { Ellipse, Feather, Orientation, Retouch, RetouchStep, SpotShape } from './engine-types'
 import { transformPoint } from './orientation'
+import { tk } from './i18n'
 
 /** `remove`: an inpainting model fills it (MI-GAN, engine 0.18); baked at once, never live. */
 export type SpotKind = 'heal' | 'clone' | 'fill' | 'remove' | 'redeye' | 'peteye'
@@ -51,12 +52,12 @@ export interface RetouchSpot {
 }
 
 export const SPOT_LABEL: Record<SpotKind, string> = {
-  heal: 'Heal',
-  clone: 'Clone',
-  fill: 'Fill',
-  remove: 'Remove',
-  redeye: 'Red eye',
-  peteye: 'Pet eye'
+  heal: tk('Heal'),
+  clone: tk('Clone'),
+  fill: tk('Fill'),
+  remove: tk('Remove'),
+  redeye: tk('Red eye'),
+  peteye: tk('Pet eye')
 }
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))

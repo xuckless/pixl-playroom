@@ -19,6 +19,7 @@
  * The host is put to sleep after a few idle minutes: SAM's two models are
  * hundreds of megabytes.
  */
+import { t } from '../../shared/i18n'
 import { IDLE_SESSION } from '../ai/models'
 import log from 'electron-log/main'
 import type {
@@ -383,7 +384,7 @@ export class SelectService {
    */
   async decode(selId: string, req: SelectDecode): Promise<SelectPlane | null> {
     const sel = this.selections.get(selId)
-    if (!sel) throw new Error('this selection is closed')
+    if (!sel) throw new Error(t('this selection is closed'))
     this.awake()
     const t0 = Date.now()
     if (req.mode === 'probe') {
@@ -464,7 +465,7 @@ export class SelectService {
   /** The selection as a mask: its last answer, at the frame's size, in the plane store. */
   async commit(selId: string, source: PromptSourceAsk): Promise<SelectCommit> {
     const sel = this.selections.get(selId)
-    if (!sel?.last || !sel.prompt) throw new Error('nothing is selected yet')
+    if (!sel?.last || !sel.prompt) throw new Error(t('nothing is selected yet'))
     return this.keep(sel.last.png, sel.prompt, source)
   }
 
@@ -516,7 +517,7 @@ export class SelectService {
       onStage?.('decode')
       const r = await this.replay(lane, embKey, prompt, 'guided', FRAME_SIZE, signal)
       const plane = r.planes[0]
-      if (!plane) throw new Error('the model found nothing there')
+      if (!plane) throw new Error(t('the model found nothing there'))
       return this.keep(plane.png, prompt, source)
     } finally {
       this.busy--

@@ -5,6 +5,7 @@ import { mb, useModels } from '../lib/models'
 import { useModelPrompt, type ModelAsk } from '../state/modelPrompt'
 import { copyOf } from '../views/modelCopy'
 import { Modal } from './ui'
+import { rich, t } from '../lib/i18n'
 
 /**
  * Where `askModel`'s questions show (mounted once, beside the other
@@ -48,31 +49,33 @@ function ModelPrompt({ ask }: { ask: ModelAsk }): React.JSX.Element {
 
   return (
     <Modal
-      title={copy?.name ?? 'A model is needed'}
+      title={copy?.name ?? t('A model is needed')}
       icon="smart"
       className="confirm model-prompt"
       onClose={close}
       footer={
         <>
-          <button onClick={close}>{downloading ? 'Cancel download' : 'Not now'}</button>
+          <button onClick={close}>{downloading ? t('Cancel download') : t('Not now')}</button>
           {!downloading && (
             <button className="primary" autoFocus disabled={!m} onClick={start}>
-              {m ? `Download · ${mb(m.bytes)}` : 'Download'}
+              {m ? t('Download · {{size}}', { size: mb(m.bytes) }) : t('Download')}
             </button>
           )}
         </>
       }
     >
       <p>
-        <strong>{ask.purpose}</strong> needs this model, a one-time download.
+        {rich('{{purpose}} needs this model, a one-time download.', {
+          purpose: <strong>{ask.purpose}</strong>
+        })}
       </p>
       {copy && <p>{copy.what}</p>}
       <p className="muted">
-        It downloads once and stays on this Mac or PC; everything it does runs here, offline.
-        {copy?.where ? ` You'll find it later in ${copy.where}.` : ''}
+        {t('It downloads once and stays on this Mac or PC; everything it does runs here, offline.')}
+        {copy?.where ? ` ${t("You'll find it later in {{where}}.", { where: copy.where })}` : ''}
       </p>
       {downloading && (
-        <div className="model-prompt-progress" aria-label="Downloading">
+        <div className="model-prompt-progress" aria-label={t('Downloading')}>
           <span className="model-bar">
             <span style={{ width: `${pct}%` }} />
           </span>

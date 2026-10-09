@@ -16,12 +16,13 @@ import {
   type Shared,
   type TextField
 } from '../../lib/metadata'
+import { t, tk, tp } from '../../lib/i18n'
 import { useLibrary } from '../../state/library'
 
 const LABELS: Record<TextField, string> = {
-  title: 'Title',
-  caption: 'Caption',
-  copyright: 'Copyright'
+  title: tk('Title'),
+  caption: tk('Caption'),
+  copyright: tk('Copyright')
 }
 
 /**
@@ -44,7 +45,7 @@ function TextMeta({
   const common = {
     id: `meta-${field}`,
     value: text,
-    placeholder: shared.mixed ? 'Mixed' : field === 'copyright' ? '© ' : '',
+    placeholder: shared.mixed ? t('Mixed') : field === 'copyright' ? '© ' : '',
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setText(e.target.value),
     onBlur: () => {
@@ -66,7 +67,7 @@ function TextMeta({
   }
   return (
     <div className={`meta-field${shared.mixed ? ' mixed' : ''}`}>
-      <label htmlFor={common.id}>{LABELS[field]}</label>
+      <label htmlFor={common.id}>{t(LABELS[field])}</label>
       {multiline ? <textarea rows={3} {...common} /> : <input {...common} />}
     </div>
   )
@@ -102,7 +103,7 @@ function KeywordTokens({
   }
   return (
     <div className="meta-field">
-      <label htmlFor="meta-keywords">Keywords</label>
+      <label htmlFor="meta-keywords">{t('Keywords')}</label>
       <div className="kw-tokens">
         {present.map((k) => (
           <span
@@ -111,15 +112,17 @@ function KeywordTokens({
             title={
               k.all
                 ? k.path.split('|').join(' › ')
-                : `${keywordLabel(k.path)} — only some of the selection; click to add it to all`
+                : t('{{keyword}} — only some of the selection; click to add it to all', {
+                    keyword: keywordLabel(k.path)
+                  })
             }
             onClick={k.all ? undefined : () => onPatch({ addKeywords: [k.path] })}
           >
             {keywordLabel(k.path)}
             <button
               className="icon"
-              aria-label={`Remove ${keywordLabel(k.path)}`}
-              title="Remove"
+              aria-label={t('Remove {{keyword}}', { keyword: keywordLabel(k.path) })}
+              title={t('Remove')}
               onClick={(e) => {
                 e.stopPropagation()
                 onPatch({ removeKeywords: [k.path] })
@@ -133,8 +136,8 @@ function KeywordTokens({
           <input
             id="meta-keywords"
             value={text}
-            placeholder={present.length ? 'Add…' : 'Add a keyword…'}
-            title="Levels with > (Places > Canada), several with commas; Enter adds"
+            placeholder={present.length ? t('Add…') : t('Add a keyword…')}
+            title={t('Levels with > (Places > Canada), several with commas; Enter adds')}
             autoComplete="off"
             role="combobox"
             aria-expanded={offers.length > 0}
@@ -189,32 +192,32 @@ function KeywordTokens({
   )
 }
 
-const fmtShutter = (t: number | null): string =>
-  t === null ? '—' : t >= 1 ? `${t} s` : `1/${Math.round(1 / t)} s`
+const fmtShutter = (time: number | null): string =>
+  time === null ? '—' : time >= 1 ? `${time} s` : `1/${Math.round(1 / time)} s`
 
 /** What the camera said, for one photo. */
 function CameraFacts({ item }: { item: LibraryItem }): React.JSX.Element {
   const c = item.camera
   return (
     <dl className="kv">
-      <dt>File</dt>
+      <dt>{t('File')}</dt>
       <dd>{item.copyName ? `${item.name} · ${item.copyName}` : item.name}</dd>
-      <dt>Folder</dt>
+      <dt>{t('Folder')}</dt>
       <dd title={item.folder}>{item.folder.split(/[\\/]/).filter(Boolean).pop() ?? item.folder}</dd>
-      <dt>Camera</dt>
+      <dt>{t('Camera')}</dt>
       <dd>{cameraName(item) || '—'}</dd>
-      <dt>Lens</dt>
+      <dt>{t('Lens')}</dt>
       <dd>{c.lens ?? '—'}</dd>
-      <dt>Exposure</dt>
+      <dt>{t('Exposure')}</dt>
       <dd>
         {fmtShutter(c.exposureTime)} · f/{c.fNumber ?? '—'} · ISO {c.iso ?? '—'} ·{' '}
         {c.focalLength ? `${c.focalLength} mm` : '—'}
       </dd>
-      <dt>Taken</dt>
+      <dt>{t('Taken')}</dt>
       <dd>{c.capturedAt ? new Date(c.capturedAt).toLocaleString() : '—'}</dd>
-      <dt>Size</dt>
+      <dt>{t('Size')}</dt>
       <dd>
-        {(item.size / 1e6).toFixed(1)} MB{item.offline ? ' · offline' : ''}
+        {(item.size / 1e6).toFixed(1)} MB{item.offline ? ` · ${t('offline')}` : ''}
       </dd>
     </dl>
   )
@@ -238,14 +241,20 @@ export function MetadataEditor({
   const items = useLibrary(useShallow((s) => s.items.filter((i) => want.has(i.key))))
   const setMetadata = useLibrary((s) => s.setMetadata)
   if (items.length === 0)
-    return <p className="rail-empty">Select a photo to see and edit its details.</p>
+    return <p className="rail-empty">{t('Select a photo to see and edit its details.')}</p>
   const shown = items.map((i) => i.key)
   // A new selection (or new values from the file) starts each field afresh.
   const sig = (s: Shared): string => `${shown.join(',')}|${s.mixed}|${s.value}`
   return (
     <div className="meta-editor">
       {items.length > 1 && (
-        <p className="meta-count micro">{items.length} photos · edits apply to all</p>
+        <p className="meta-count micro">
+          {tp(
+            '{{count}} photo · edits apply to all',
+            '{{count}} photos · edits apply to all',
+            items.length
+          )}
+        </p>
       )}
       {(['title', 'caption', 'copyright'] as const).map((f) => {
         const shared = sharedText(items, f)

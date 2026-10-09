@@ -6,6 +6,7 @@
  * twice, so refreshing is single-flight and the new token is saved before
  * anything else uses it. Free of Electron, for tests/account.test.ts.
  */
+import { t } from '../../shared/i18n'
 import type { AuthConfig } from '../../shared/account'
 import {
   jwtPayload,
@@ -39,9 +40,9 @@ export interface Identity {
 /** Refresh this long before the access token expires. */
 const EARLY_MS = 60_000
 
-function identityOf(t: TokenSet): Identity {
-  const access = jwtPayload(t.accessToken)
-  const id = t.idToken ? jwtPayload(t.idToken) : {}
+function identityOf(tokens: TokenSet): Identity {
+  const access = jwtPayload(tokens.accessToken)
+  const id = tokens.idToken ? jwtPayload(tokens.idToken) : {}
   const str = (v: unknown): string | undefined =>
     typeof v === 'string' && v.trim() ? v.trim() : undefined
   return {
@@ -83,18 +84,18 @@ export class Session {
     return s ? { sub: s.sub, email: s.email, name: s.name } : null
   }
 
-  private keep(t: TokenSet, who: Identity): void {
-    this.stored = { refreshToken: t.refreshToken, ...who }
+  private keep(tokens: TokenSet, who: Identity): void {
+    this.stored = { refreshToken: tokens.refreshToken, ...who }
     this.store.save(this.stored)
-    this.access = { token: t.accessToken, expiresAt: t.expiresAt }
+    this.access = { token: tokens.accessToken, expiresAt: tokens.expiresAt }
   }
 
   async signIn(deps: Omit<SignInDeps, 'fetch' | 'now'>): Promise<Identity> {
-    const t = await signInWithBrowser(this.cfg, { ...deps, fetch: this.fetchFn, now: this.now })
-    const who = identityOf(t)
+    const tokens = await signInWithBrowser(this.cfg, { ...deps, fetch: this.fetchFn, now: this.now })
+    const who = identityOf(tokens)
     // Wait out a refresh of the old session, so it can't save over this one.
     await this.refreshing?.catch(() => {})
-    this.keep(t, who)
+    this.keep(tokens, who)
     this.onChange()
     return who
   }
@@ -123,19 +124,19 @@ export class Session {
   refresh(): Promise<string> {
     if (this.refreshing) return this.refreshing
     const stored = this.stored
-    if (!stored) return Promise.reject(new OAuthError('Not signed in.', 'signed-out'))
+    if (!stored) return Promise.reject(new OAuthError(t('Not signed in.'), 'signed-out'))
     this.refreshing = (async () => {
       try {
-        const t = await refreshTokens(this.cfg, stored.refreshToken, this.fetchFn, this.now)
+        const tokens = await refreshTokens(this.cfg, stored.refreshToken, this.fetchFn, this.now)
         // Signed out (or in as someone else) while this was in flight: drop it.
-        if (this.stored !== stored) throw new OAuthError('Signed out.', 'signed-out')
-        const who = identityOf(t)
-        this.keep(t, {
+        if (this.stored !== stored) throw new OAuthError(t('Signed out.'), 'signed-out')
+        const who = identityOf(tokens)
+        this.keep(tokens, {
           sub: who.sub || stored.sub,
           email: who.email ?? stored.email,
           name: who.name ?? stored.name
         })
-        return t.accessToken
+        return tokens.accessToken
       } catch (err) {
         if (err instanceof OAuthError && err.code === 'signed-out' && this.stored === stored)
           this.signOut()

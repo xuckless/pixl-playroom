@@ -8,6 +8,7 @@ import { Modal } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { useUpdateState } from '../lib/updates'
 import { useLibrary } from '../state/library'
+import { t } from '../lib/i18n'
 import { NotesBody } from './WhatsNew'
 
 export function UpdateDialog(): React.JSX.Element | null {
@@ -18,15 +19,17 @@ export function UpdateDialog(): React.JSX.Element | null {
   const ready = u.phase === 'downloaded'
   const pct = u.progress ? Math.round(u.progress.percent) : null
   const status = ready
-    ? 'Downloaded: it installs when Playroom restarts.'
+    ? t('Downloaded: it installs when Playroom restarts.')
     : u.phase === 'downloading'
-      ? `Downloading${pct !== null ? ` · ${pct}%` : ''}…`
+      ? pct !== null
+        ? t('Downloading · {{percent}}%…', { percent: pct })
+        : t('Downloading…')
       : u.phase === 'error'
-        ? `The download stopped: ${u.error ?? 'try again later'}.`
-        : 'Downloading in the background…'
+        ? t('The download stopped: {{reason}}.', { reason: u.error ?? t('try again later') })
+        : t('Downloading in the background…')
   return (
     <Modal
-      title={`Update available: Playroom ${versionLabel(u.version)}`}
+      title={t('Update available: Playroom {{version}}', { version: versionLabel(u.version) })}
       onClose={() => setDialog(null)}
       icon="smart"
       className="whats-new update-available"
@@ -34,7 +37,7 @@ export function UpdateDialog(): React.JSX.Element | null {
         <>
           <span className="muted small update-status">{status}</span>
           <button className="ghost" onClick={() => setDialog(null)}>
-            Later
+            {t('Later')}
           </button>
           <button
             className="primary"
@@ -42,7 +45,7 @@ export function UpdateDialog(): React.JSX.Element | null {
             autoFocus
             onClick={() => void api.updates.install().catch((err) => say(errorText(err), 'error'))}
           >
-            Restart to update
+            {t('Restart to update')}
           </button>
         </>
       }
@@ -51,7 +54,9 @@ export function UpdateDialog(): React.JSX.Element | null {
         <NotesBody notes={[u.notes]} next={u.notes.next} />
       ) : (
         <p className="wn-headline">
-          Playroom {versionLabel(u.version)} is on its way. Its notes show once it is installed.
+          {t('Playroom {{version}} is on its way. Its notes show once it is installed.', {
+            version: versionLabel(u.version)
+          })}
         </p>
       )}
     </Modal>

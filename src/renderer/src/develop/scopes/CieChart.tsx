@@ -21,6 +21,7 @@ import {
   type Gamut,
   type Uv
 } from '../../../../shared/cie'
+import { t } from '../../lib/i18n'
 
 const SIZE = 560
 const B = chartBounds()
@@ -93,9 +94,9 @@ export function CieChart(): React.JSX.Element {
     if (canvas.current) paintHorseshoe(canvas.current)
   }, [])
   const grid: number[] = []
-  for (let t = Math.ceil(B.u0 * 10) / 10; t <= B.u1; t += 0.1) grid.push(Math.round(t * 10) / 10)
+  for (let g = Math.ceil(B.u0 * 10) / 10; g <= B.u1; g += 0.1) grid.push(Math.round(g * 10) / 10)
   const gridV: number[] = []
-  for (let t = Math.ceil(B.v0 * 10) / 10; t <= B.v1; t += 0.1) gridV.push(Math.round(t * 10) / 10)
+  for (let g = Math.ceil(B.v0 * 10) / 10; g <= B.v1; g += 0.1) gridV.push(Math.round(g * 10) / 10)
   const white = px(WHITE_POINT)
   const toggle = (id: Gamut['id']): void =>
     setShown((s) => {
@@ -108,12 +109,12 @@ export function CieChart(): React.JSX.Element {
   return (
     <div className="cie">
       <div className="cie-side">
-        <div className="seg" role="group" aria-label="Chart contents">
+        <div className="seg" role="group" aria-label={t('Chart contents')}>
           <button className={sub === 'image' ? 'on' : ''} onClick={() => setSub('image')}>
-            Image
+            {t('Image')}
           </button>
           <button className={sub === 'reference' ? 'on' : ''} onClick={() => setSub('reference')}>
-            Reference
+            {t('Reference')}
           </button>
         </div>
         {sub === 'image' ? (
@@ -121,29 +122,29 @@ export function CieChart(): React.JSX.Element {
             <div
               className="seg cie-ba"
               role="group"
-              aria-label="Before or after"
-              title="Waiting for the engine"
+              aria-label={t('Before or after')}
+              title={t('Waiting for the engine')}
             >
-              <button disabled>Before</button>
+              <button disabled>{t('Before')}</button>
               <button disabled className="on">
-                After
+                {t('After')}
               </button>
             </div>
             <label className="check">
-              <input type="checkbox" disabled /> Before as a ghost
+              <input type="checkbox" disabled /> {t('Before as a ghost')}
             </label>
             <label className="check">
-              <input type="checkbox" disabled /> The photo’s hull
+              <input type="checkbox" disabled /> {t('The photo’s hull')}
             </label>
             <p className="cie-note">
-              The photo’s own colours will plot here once the engine reports them in u′v′. Playroom
-              has asked for that, and for how much of the photo each gamut covers; nothing is
-              estimated in the meantime.
+              {t(
+                'The photo’s own colours will plot here once the engine reports them in u′v′. Playroom has asked for that, and for how much of the photo each gamut covers; nothing is estimated in the meantime.'
+              )}
             </p>
           </>
         ) : (
           <>
-            <p className="micro">Lay over the chart</p>
+            <p className="micro">{t('Lay over the chart')}</p>
             {REFERENCE_GAMUTS.map((g) => (
               <label key={g.id} className="check">
                 <input type="checkbox" checked={shown.has(g.id)} onChange={() => toggle(g.id)} />{' '}
@@ -152,9 +153,9 @@ export function CieChart(): React.JSX.Element {
               </label>
             ))}
             <p className="cie-note">
-              PixlRGB is always drawn: its primaries enclose the whole visible range, so it is the
-              chart’s frame. Rec.2020 and Display P3 reach beyond sRGB; the horseshoe is every
-              colour the eye sees.
+              {t(
+                'PixlRGB is always drawn: its primaries enclose the whole visible range, so it is the chart’s frame. Rec.2020 and Display P3 reach beyond sRGB; the horseshoe is every colour the eye sees.'
+              )}
             </p>
           </>
         )}
@@ -164,7 +165,7 @@ export function CieChart(): React.JSX.Element {
         <svg
           viewBox={`0 0 ${SIZE} ${SIZE}`}
           role="img"
-          aria-label="CIE 1976 u′v′ chromaticity chart"
+          aria-label={t('CIE 1976 u′v′ chromaticity chart')}
         >
           {grid.map((u) => (
             <g key={`u${u}`}>
@@ -230,7 +231,7 @@ export function CieChart(): React.JSX.Element {
             </text>
           </g>
           <text x={SIZE - 8} y={18} textAnchor="end" className="cie-axis">
-            u′ → v′ ↑ · PixlRGB frame
+            u′ → v′ ↑ · {t('PixlRGB frame')}
           </text>
         </svg>
       </figure>

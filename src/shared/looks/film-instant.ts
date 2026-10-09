@@ -12,15 +12,16 @@ import {
   vignette,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 export const FILM_INSTANT = collection('film/instant', [
   look(
     'instant-colour',
-    'Instant Colour',
+    tk('Instant Colour'),
     {
       tags: ['instant', 'polaroid', 'faded', 'square'],
       inspiredBy: 'Polaroid 600 film',
-      description: 'Milky blacks, cyan shadows and soft, warm highlights.'
+      description: tk('Milky blacks, cyan shadows and soft, warm highlights.')
     },
     tone({ contrast: -15 }),
     fade(0.08),
@@ -31,11 +32,11 @@ export const FILM_INSTANT = collection('film/instant', [
   ),
   look(
     'faded-instant',
-    'Faded Instant',
+    tk('Faded Instant'),
     {
       tags: ['instant', 'polaroid', 'faded', 'vintage', 'sx-70'],
       inspiredBy: 'Aged Polaroid SX-70 prints',
-      description: 'An old, sun-faded instant print.'
+      description: tk('An old, sun-faded instant print.')
     },
     tone({ contrast: -25 }),
     fade(0.1),
@@ -45,11 +46,11 @@ export const FILM_INSTANT = collection('film/instant', [
   ),
   look(
     'instant-mono',
-    'Instant Mono',
+    tk('Instant Mono'),
     {
       tags: ['bw', 'mono', 'instant', 'polaroid'],
       inspiredBy: 'Polaroid black-and-white film',
-      description: 'A soft, slightly warm instant mono.'
+      description: tk('A soft, slightly warm instant mono.')
     },
     mono(),
     tone({ contrast: -10 }),
@@ -58,11 +59,11 @@ export const FILM_INSTANT = collection('film/instant', [
   ),
   look(
     'bright-instant',
-    'Bright Instant',
+    tk('Bright Instant'),
     {
       tags: ['instant', 'bright', 'party', 'instax'],
       inspiredBy: 'Fujifilm Instax film',
-      description: 'Bright, clean and colourful, with cool shadows.'
+      description: tk('Bright, clean and colourful, with cool shadows.')
     },
     tone({ contrast: 10, whites: 15, shadows: 10 }),
     presence({ saturation: 10 }),

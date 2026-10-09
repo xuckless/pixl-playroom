@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useBusy } from '../state/busy'
 import { useDevelop } from '../state/develop'
 import { ProgressRing, Sphere } from './index'
+import { t } from '../lib/i18n'
 
 /** Work shorter than this never shows the sphere at all. */
 const SHOW_AFTER_MS = 250
@@ -19,15 +20,15 @@ export function ProcessingOverlay(): React.JSX.Element | null {
   const [shown, setShown] = useState(false)
   useEffect(() => {
     if (!busy) {
-      const t = setTimeout(() => setShown(false), 0)
-      return () => clearTimeout(t)
+      const timer = setTimeout(() => setShown(false), 0)
+      return () => clearTimeout(timer)
     }
-    const t = setTimeout(() => setShown(true), loading ? 0 : SHOW_AFTER_MS)
-    return () => clearTimeout(t)
+    const timer = setTimeout(() => setShown(true), loading ? 0 : SHOW_AFTER_MS)
+    return () => clearTimeout(timer)
   }, [busy, loading])
   if (!busy || !shown) return null
-  const title = job?.title ?? 'Developing'
-  const detail = job?.detail ?? (loading ? 'Reading the file and building proxies' : name)
+  const title = job?.title ?? t('Developing')
+  const detail = job?.detail ?? (loading ? t('Reading the file and building proxies') : name)
   const progress = job?.progress ?? null
   return (
     <div className="proc" role="status" aria-live="polite">

@@ -2,12 +2,13 @@ import { Icon, type IconName } from '../components/icons'
 import { MasksPane } from '../panels/masks/MasksPane'
 import { HistoryPane, InfoPane, PresetsActions, PresetsPane, SnapshotsPane } from '../panels/left'
 import { useUi, type Rail } from '../state/ui'
+import { t, tk } from '../lib/i18n'
 
 const RAILS: { id: Rail; label: string; icon: IconName }[] = [
-  { id: 'presets', label: 'Presets', icon: 'presets' },
-  { id: 'snapshots', label: 'Snapshots', icon: 'snapshots' },
-  { id: 'history', label: 'History', icon: 'history' },
-  { id: 'info', label: 'Info', icon: 'info' }
+  { id: 'presets', label: tk('Presets'), icon: 'presets' },
+  { id: 'snapshots', label: tk('Snapshots'), icon: 'snapshots' },
+  { id: 'history', label: tk('History'), icon: 'history' },
+  { id: 'info', label: tk('Info'), icon: 'info' }
 ]
 
 /**
@@ -30,8 +31,8 @@ export function LeftRail(): React.JSX.Element {
             role="tab"
             aria-selected={open && rail === r.id}
             className={open && rail === r.id ? 'on' : ''}
-            title={r.label}
-            aria-label={r.label}
+            title={t(r.label)}
+            aria-label={t(r.label)}
             onClick={() => pick(r.id)}
           >
             <Icon name={r.icon} />
@@ -40,8 +41,8 @@ export function LeftRail(): React.JSX.Element {
         <span className="gap" />
         <button
           className="fold"
-          title={open ? 'Fold the panel' : 'Unfold the panel'}
-          aria-label={open ? 'Fold the panel' : 'Unfold the panel'}
+          title={open ? t('Fold the panel') : t('Unfold the panel')}
+          aria-label={open ? t('Fold the panel') : t('Unfold the panel')}
           onClick={() => setOpen(!open)}
         >
           <Icon name="chevronLeft" />
@@ -50,7 +51,7 @@ export function LeftRail(): React.JSX.Element {
       <div className="rail-pane" aria-hidden={!open}>
         <div className="rail-inner">
           <div className="rail-head">
-            <span className="micro">{current.label}</span>
+            <span className="micro">{t(current.label)}</span>
             {rail === 'presets' && <PresetsActions />}
           </div>
           <div className="rail-body" key={rail}>

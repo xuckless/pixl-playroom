@@ -6,6 +6,7 @@
  * main last said (`suggested`).
  */
 import { create } from 'zustand'
+import { t, tp } from '../lib/i18n'
 import type { CullReason } from '../../../shared/cullsuggest'
 import type { LibraryItem } from '../../../shared/ipc'
 import { api, errorText } from '../lib/api'
@@ -102,9 +103,14 @@ export function startCullUpkeep(): () => void {
       // The indicator atop the window while culling runs (asked for, or in the background).
       const busy = useBusy.getState()
       if (!on) return busy.end(CULL_JOB)
-      const patch = { detail: `${p.done} of ${p.total} photos`, progress: p.done / p.total }
+      const patch = {
+        detail: tp('{{done}} of {{count}} photo', '{{done}} of {{count}} photos', p.total, {
+          done: p.done
+        }),
+        progress: p.done / p.total
+      }
       if (busy.jobs.some((j) => j.id === CULL_JOB)) busy.update(CULL_JOB, patch)
-      else busy.begin({ id: CULL_JOB, title: 'Culling', scope: 'global', ...patch })
+      else busy.begin({ id: CULL_JOB, title: t('Culling'), scope: 'global', ...patch })
     })
   ]
   soon()

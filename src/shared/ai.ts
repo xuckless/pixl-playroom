@@ -19,6 +19,7 @@ import {
   type FaceFound,
   type FacePart
 } from './faceparts'
+import { tk } from './i18n'
 
 export type AiTask = 'enhance' | 'segment' | 'denoise' | 'prompt'
 
@@ -225,18 +226,18 @@ export interface AiCapabilities {
 }
 
 export const SEGMENT_LABEL: Record<SegmentTarget, string> = {
-  subject: 'Subject',
-  sky: 'Sky',
-  vegetation: 'Vegetation',
-  water: 'Water',
-  background: 'Background',
-  depth: 'Depth range',
-  face: 'Face',
-  hair: 'Hair',
-  skin: 'Skin',
-  clothes: 'Clothes',
+  subject: tk('Subject'),
+  sky: tk('Sky'),
+  vegetation: tk('Vegetation'),
+  water: tk('Water'),
+  background: tk('Background'),
+  depth: tk('Depth range'),
+  face: tk('Face'),
+  hair: tk('Hair'),
+  skin: tk('Skin'),
+  clothes: tk('Clothes'),
   ...FACE_PART_LABEL,
-  phrase: 'Find by name'
+  phrase: tk('Find by name')
 }
 
 /** The whole job's progress with `stage` at `p` (0…1) of its own way. */

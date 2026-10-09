@@ -3,6 +3,7 @@ import type { Recipe } from '../../../shared/recipe'
 import { flipGeometry, turnGeometry } from '../../../shared/reframe'
 import { useDevelop } from '../state/develop'
 import { ASPECTS } from './aspects'
+import { t, tk } from './i18n'
 
 /** Framing actions shared by the Crop & rotate panel and the crop tool's bar; each records a history step. */
 function change(label: string, f: (g: Recipe['geometry']) => Recipe['geometry']): void {
@@ -12,11 +13,11 @@ function change(label: string, f: (g: Recipe['geometry']) => Recipe['geometry'])
 }
 
 // The crop, straighten, aspect and Upright turn and mirror with the picture.
-export const rotateLeft = (): void => change('Rotate left', (g) => turnGeometry(g, -1))
-export const rotateRight = (): void => change('Rotate right', (g) => turnGeometry(g, 1))
-export const flip = (): void => change('Flip', flipGeometry)
+export const rotateLeft = (): void => change(tk('Rotate left'), (g) => turnGeometry(g, -1))
+export const rotateRight = (): void => change(tk('Rotate right'), (g) => turnGeometry(g, 1))
+export const flip = (): void => change(tk('Flip'), flipGeometry)
 export const resetCrop = (): void =>
-  change('Reset crop', (g) => ({ ...g, crop: null, straighten: 0 }))
+  change(tk('Reset crop'), (g) => ({ ...g, crop: null, straighten: 0 }))
 
 export function setAspect(value: string): void {
   const { recipe, session } = useDevelop.getState()
@@ -25,5 +26,9 @@ export function setAspect(value: string): void {
   // "Original" is the frame as the user has turned it, not the file's.
   const o = orientedFrame(recipe, session.frameWidth, session.frameHeight)
   const ratio = a?.ratio === -1 ? o.width / o.height : (a?.ratio ?? null)
-  change(`Aspect ${a?.label}`, (g) => ({ ...g, aspect: ratio, crop: null }))
+  change(t('Aspect {{aspect}}', { aspect: a ? t(a.label) : undefined }), (g) => ({
+    ...g,
+    aspect: ratio,
+    crop: null
+  }))
 }

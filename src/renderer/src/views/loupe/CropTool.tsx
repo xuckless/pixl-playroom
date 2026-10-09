@@ -6,6 +6,7 @@ import { normalisedIn, type P, type Rect, type ViewGeometry } from '../../../../
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { useDevelop } from '../../state/develop'
 import { useUi } from '../../state/ui'
+import { t, tk } from '../../lib/i18n'
 import { Guides } from './Guides'
 
 const FULL: CropRect = { x: 0, y: 0, width: 1, height: 1 }
@@ -102,7 +103,7 @@ export const CropTool = memo(function CropTool({
     setGesture(null)
     if (!d) return setDraft(null)
     if (d.kind === 'rotate') {
-      if (g.straighten !== d.orig) commit('Straighten')
+      if (g.straighten !== d.orig) commit(tk('Straighten'))
       return
     }
     const same =
@@ -115,7 +116,7 @@ export const CropTool = memo(function CropTool({
     if (!draft || same) return setDraft(null)
     const fitted = fitCrop(draft, g.straighten, g.width, g.height, g.transform)
     edit((r) => (r.geometry.crop = fitted))
-    commit('Crop')
+    commit(tk('Crop'))
     setDraft(null)
   }
 
@@ -134,7 +135,7 @@ export const CropTool = memo(function CropTool({
       onPointerUp={end}
       onPointerCancel={end}
       onLostPointerCapture={end}
-      title="Drag outside the crop to straighten"
+      title={t('Drag outside the crop to straighten')}
     >
       <div
         ref={frame}

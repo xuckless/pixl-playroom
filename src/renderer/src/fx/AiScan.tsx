@@ -7,6 +7,7 @@ import { api } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { jobFor, useAiJobs } from '../state/jobs'
 import { useFxMode } from './mode'
+import { t } from '../lib/i18n'
 
 /** Loose pixels lighting up over the photo while a model looks at it (x, y, delay). */
 const SPARKS: [number, number, number][] = [
@@ -69,13 +70,13 @@ function AiCard({ job, ended }: { job: AiJobEvent; ended: boolean }): React.JSX.
   const pct = job.progress === null ? null : Math.round(job.progress * 100)
   const word =
     job.phase === 'queued'
-      ? 'Waiting its turn'
+      ? t('Waiting its turn')
       : job.phase === 'done'
-        ? 'Done'
+        ? t('Done')
         : job.phase === 'cancelled'
-          ? 'Cancelled'
+          ? t('Cancelled')
           : job.phase === 'error'
-            ? (job.message ?? 'Failed')
+            ? (job.message ?? t('Failed'))
             : (job.message ?? job.stages.find((s) => s.id === job.stage)?.label)
   return (
     <LiquidGlass
@@ -111,7 +112,7 @@ function AiCard({ job, ended }: { job: AiJobEvent; ended: boolean }): React.JSX.
           {pct !== null && !ended && (
             <span
               className="t-num"
-              title={job.estimated ? 'Estimated from earlier runs' : undefined}
+              title={job.estimated ? t('Estimated from earlier runs') : undefined}
             >
               {job.estimated ? '~' : ''}
               {pct}%
@@ -121,7 +122,7 @@ function AiCard({ job, ended }: { job: AiJobEvent; ended: boolean }): React.JSX.
       </div>
       {!ended && (
         <button className="sm ghost ai-cancel" onClick={() => void api.ai.cancel(job.jobId)}>
-          Cancel
+          {t('Cancel')}
         </button>
       )}
     </LiquidGlass>

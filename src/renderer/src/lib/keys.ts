@@ -236,3 +236,54 @@ export function onLayout(
     })
   return out
 }
+
+/** Electron's names for the keys whose accelerator isn't their character. */
+const ACCEL: Record<string, string> = {
+  Backslash: '\\',
+  BracketLeft: '[',
+  BracketRight: ']',
+  Quote: "'",
+  Equal: '=',
+  Minus: '-',
+  Comma: ',',
+  Period: '.',
+  Slash: '/',
+  Semicolon: ';',
+  Backquote: '`',
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right',
+  Escape: 'Esc',
+  Enter: 'Enter',
+  Space: 'Space',
+  Tab: 'Tab',
+  Delete: 'Delete',
+  Backspace: 'Backspace',
+  NumpadAdd: 'numadd',
+  NumpadSubtract: 'numsub',
+  Home: 'Home',
+  End: 'End',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown'
+}
+
+/**
+ * A chord as an Electron accelerator, for a menu to show beside its item
+ * ("CmdOrCtrl+Shift+C"): the layout's own letter where it is known, as the
+ * label does. Null for a key a menu can't show.
+ */
+export function chordAccelerator(
+  c: Chord,
+  layout?: (code: string) => string | undefined
+): string | null {
+  let key: string | undefined
+  const fromLayout = /^Key[A-Z]$/.test(c.code) ? layout?.(c.code) : undefined
+  if (fromLayout && /^[a-z]$/i.test(fromLayout)) key = fromLayout.toUpperCase()
+  else if (/^Key[A-Z]$/.test(c.code)) key = c.code.slice(3)
+  else if (/^Digit[0-9]$/.test(c.code)) key = c.code.slice(5)
+  else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(c.code)) key = c.code
+  else key = ACCEL[c.code]
+  if (!key) return null
+  return [c.mod && 'CmdOrCtrl', c.alt && 'Alt', c.shift && 'Shift', key].filter(Boolean).join('+')
+}

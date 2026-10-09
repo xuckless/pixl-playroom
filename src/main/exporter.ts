@@ -54,6 +54,7 @@ import type { PhotoRow } from './db'
 import type { SourceInfo } from '../shared/engine-types'
 import type { Recipe } from '../shared/recipe'
 import type { DevelopSessions } from './render'
+import { t, tp } from '../shared/i18n'
 import {
   BACKGROUND_THREADS,
   heavyThreads,
@@ -304,7 +305,7 @@ export class Exporter {
         }
       }
       // By the file, not the name: IMG_1.jpg is IMG_1.JPG on a case-insensitive disk.
-      if (await sameFile(out, row.path)) throw new Error('the export would overwrite the original')
+      if (await sameFile(out, row.path)) throw new Error(t('the export would overwrite the original'))
     }
 
     // An HDR source stays HDR only where the settings ask and the format can
@@ -465,7 +466,7 @@ export class Exporter {
       })
     } catch (err) {
       log.warn('export metadata failed', out, err)
-      warn(`metadata not written: ${(err as Error).message}`)
+      warn(t('metadata not written: {{reason}}', { reason: (err as Error).message }))
     }
     return { out, report }
   }
@@ -518,9 +519,12 @@ export class Exporter {
       const shownAs: string[] = []
       if (shown.format !== s.format)
         shownAs.push(
-          `Shown as ${FORMAT_NAME[shown.format]}: the window cannot show ${FORMAT_NAME[s.format]}.`
+          t('Shown as {{shown}}: the window cannot show {{format}}.', {
+            shown: FORMAT_NAME[shown.format],
+            format: FORMAT_NAME[s.format]
+          })
         )
-      if (shown.hdr.mode !== s.hdr.mode) shownAs.push('Shown as its SDR picture.')
+      if (shown.hdr.mode !== s.hdr.mode) shownAs.push(t('Shown as its SDR picture.'))
       return {
         url: cacheUrl(out, Date.now()),
         width: report.width,
@@ -581,8 +585,9 @@ export class Exporter {
         id: 'overwrite-original',
         severity: 'block',
         step: 'review',
-        message:
+        message: t(
           'A file would be written over its original: change the name, the folder or the format.'
+        )
       })
     for (const dir of folders) {
       const there = await nearestExisting(dir)
@@ -595,7 +600,7 @@ export class Exporter {
           id: 'folder-unwritable',
           severity: 'block',
           step: 'review',
-          message: `Playroom cannot write to ${there}: choose another folder.`
+          message: t('Playroom cannot write to {{folder}}: choose another folder.', { folder: there })
         })
         continue
       }
@@ -605,38 +610,55 @@ export class Exporter {
           id: 'disk-full',
           severity: 'block',
           step: 'review',
-          message: `Only ${formatBytes(free)} is free where ${there} is.`
+          message: t('Only {{free}} is free where {{folder}} is.', {
+            free: formatBytes(free),
+            folder: there
+          })
         })
       else if (free !== null && free < need + MIN_FREE)
         out.push({
           id: 'disk-low',
           severity: 'warn',
           step: 'review',
-          message: `${formatBytes(free)} is free where ${there} is; this export may need about ${formatBytes(need)}.`
+          message: t(
+            '{{free}} is free where {{folder}} is; this export may need about {{need}}.',
+            { free: formatBytes(free), folder: there, need: formatBytes(need) }
+          )
         })
     }
     if (existing > 0) {
-      const many = existing === 1 ? '1 file already exists' : `${existing} files already exist`
       out.push(
         s.collision === 'overwrite'
           ? {
               id: 'collide',
               severity: 'warn',
               step: 'review',
-              message: `${many} and will be replaced.`
+              message: tp(
+                '{{count}} file already exists and will be replaced.',
+                '{{count}} files already exist and will be replaced.',
+                existing
+              )
             }
           : s.collision === 'skip'
             ? {
                 id: 'collide',
                 severity: 'warn',
                 step: 'review',
-                message: `${many} and will be skipped.`
+                message: tp(
+                  '{{count}} file already exists and will be skipped.',
+                  '{{count}} files already exist and will be skipped.',
+                  existing
+                )
               }
             : {
                 id: 'collide',
                 severity: 'minor',
                 step: 'review',
-                message: `${many}: the new ones get a number.`
+                message: tp(
+                  '{{count}} file already exists: the new ones get a number.',
+                  '{{count}} files already exist: the new ones get a number.',
+                  existing
+                )
               }
       )
     }
@@ -645,7 +667,18 @@ export class Exporter {
         id: 'too-large',
         severity: 'warn',
         step: 'format',
-        message: `${big[0]}${big.length > 1 ? ` and ${big.length - 1} more are` : ' is'} larger than Playroom opens (${READ_LIMITS.max_pixels / 1e6} megapixels) and will fail.`
+        message:
+          big.length > 1
+            ? tp(
+                '{{name}} and {{count}} more are larger than Playroom opens ({{megapixels}} megapixels) and will fail.',
+                '{{name}} and {{count}} more are larger than Playroom opens ({{megapixels}} megapixels) and will fail.',
+                big.length - 1,
+                { name: big[0], megapixels: READ_LIMITS.max_pixels / 1e6 }
+              )
+            : t(
+                '{{name}} is larger than Playroom opens ({{megapixels}} megapixels) and will fail.',
+                { name: big[0], megapixels: READ_LIMITS.max_pixels / 1e6 }
+              )
       })
     return out
   }

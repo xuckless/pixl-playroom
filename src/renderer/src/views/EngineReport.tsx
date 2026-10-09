@@ -15,6 +15,7 @@ import { Icon } from '../components/icons'
 import { Modal, Section } from '../components/ui'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
+import { rich, t, tk, tp } from '../lib/i18n'
 
 const TEMPLATE: GradeLayer = {
   name: 'custom',
@@ -51,9 +52,10 @@ function CustomLayers(): React.JSX.Element | null {
   return (
     <div className="custom-layers">
       <p className="muted small">
-        Layers in the engine&apos;s own terms (a <code>GradeLayer</code> as JSON: stages in any
-        space, any op — CDL, qualifiers, LUTs, blend modes). They run after the panels and masks.
-        The engine names the field when one is wrong.
+        {rich(
+          "Layers in the engine's own terms (a {{type}} as JSON: stages in any space, any op — CDL, qualifiers, LUTs, blend modes). They run after the panels and masks. The engine names the field when one is wrong.",
+          { type: <code>GradeLayer</code> }
+        )}
       </p>
       {recipe.custom.map((c, i) => {
         const text = draft[c.id] ?? JSON.stringify(c.layer, null, 2)
@@ -66,7 +68,7 @@ function CustomLayers(): React.JSX.Element | null {
                   checked={c.enabled}
                   onChange={(e) => {
                     edit((r) => (r.custom[i].enabled = e.target.checked))
-                    commit('Toggle custom layer')
+                    commit(tk('Toggle custom layer'))
                   }}
                 />
                 {c.name}
@@ -80,7 +82,7 @@ function CustomLayers(): React.JSX.Element | null {
                         r.custom[i].layer = layer
                         r.custom[i].name = layer.name || c.name
                       })
-                      commit('Edit custom layer')
+                      commit(tk('Edit custom layer'))
                       setBad((b) => ({ ...b, [c.id]: '' }))
                       setDraft((d) => {
                         const n = { ...d }
@@ -92,15 +94,15 @@ function CustomLayers(): React.JSX.Element | null {
                     }
                   }}
                 >
-                  Apply
+                  {t('Apply')}
                 </button>
                 <button
                   className="icon"
-                  title="Remove this layer"
-                  aria-label="Remove this layer"
+                  title={t('Remove this layer')}
+                  aria-label={t('Remove this layer')}
                   onClick={() => {
                     edit((r) => r.custom.splice(i, 1))
-                    commit('Remove custom layer')
+                    commit(tk('Remove custom layer'))
                   }}
                 >
                   <Icon name="trash" />
@@ -128,10 +130,10 @@ function CustomLayers(): React.JSX.Element | null {
               layer: structuredClone(TEMPLATE)
             })
           )
-          commit('Add custom layer')
+          commit(tk('Add custom layer'))
         }}
       >
-        + Custom layer
+        + {t('Custom layer')}
       </button>
     </div>
   )
@@ -175,14 +177,14 @@ export function EngineReportDialog(): React.JSX.Element | null {
   if (!session || !recipe) return null
   return (
     <Modal
-      title="Engine report"
+      title={t('Engine report')}
       icon="engine"
       wide
       className="engine-report"
       onClose={() => setDialog(null)}
     >
       <p className="muted small engine-line">
-        PIXL engine {engine?.version ?? '—'}
+        {t('PIXL engine {{version}}', { version: engine?.version ?? '—' })}
         {engine?.runtime
           ? ` · ONNX Runtime ${engine.runtime.version} (${engine.runtime.providers.join(', ')})`
           : ''}
@@ -191,19 +193,41 @@ export function EngineReportDialog(): React.JSX.Element | null {
       </p>
       <div className="engine-cols">
         <div>
-          <Section id="engine.report" title="Last render">
+          <Section id="engine.report" title={t('Last render')}>
             {report ? (
               <>
                 <div className="muted small">
-                  {report.totalMs} ms · decode {report.decodeMs} · colour {report.colorMs} · encode{' '}
-                  {report.encodeMs}
+                  {t('{{total}} ms · decode {{decode}} · colour {{color}} · encode {{encode}}', {
+                    total: report.totalMs,
+                    decode: report.decodeMs,
+                    color: report.colorMs,
+                    encode: report.encodeMs
+                  })}
                 </div>
                 <div className="muted small">
-                  out: {report.colorSpace} · {report.loss.source_bits}→{report.loss.output_bits}{' '}
-                  bits · {report.loss.quantisations} rounding
-                  {report.loss.quantisations === 1 ? '' : 's'}
-                  {report.loss.single_float_pass ? ', one float pass' : ''}
-                  {report.clampedSamples > 0 ? ` · ${report.clampedSamples} samples clamped` : ''}
+                  {t('out: {{space}} · {{from}}→{{to}} bits', {
+                    space: report.colorSpace,
+                    from: report.loss.source_bits,
+                    to: report.loss.output_bits
+                  })}
+                  {' · '}
+                  {report.loss.single_float_pass
+                    ? tp(
+                        '{{count}} rounding, one float pass',
+                        '{{count}} roundings, one float pass',
+                        report.loss.quantisations
+                      )
+                    : tp('{{count}} rounding', '{{count}} roundings', report.loss.quantisations)}
+                  {report.clampedSamples > 0 && (
+                    <>
+                      {' · '}
+                      {tp(
+                        '{{count}} sample clamped',
+                        '{{count}} samples clamped',
+                        report.clampedSamples
+                      )}
+                    </>
+                  )}
                 </div>
                 {report.notes.map((n) => (
                   <p key={n} className="note small">
@@ -211,23 +235,25 @@ export function EngineReportDialog(): React.JSX.Element | null {
                   </p>
                 ))}
                 <pre className="report-lines">
-                  {report.gradeLines.join('\n') || 'no grade — the fast path'}
+                  {report.gradeLines.join('\n') || t('no grade — the fast path')}
                 </pre>
               </>
             ) : (
-              <p className="muted small">Nothing rendered yet.</p>
+              <p className="muted small">{t('Nothing rendered yet.')}</p>
             )}
           </Section>
           <Section
             id="engine.compiled"
-            title="Compiled grade"
+            title={t('Compiled grade')}
             right={
               <button className="sm" onClick={() => setShow(!show)}>
-                {show ? 'Hide' : 'Show'}
+                {show ? t('Hide') : t('Show')}
               </button>
             }
           >
-            <p className="muted small">What an export at full resolution sends to the engine.</p>
+            <p className="muted small">
+              {t('What an export at full resolution sends to the engine.')}
+            </p>
             {compiled && (
               <>
                 <pre className="json">
@@ -238,14 +264,14 @@ export function EngineReportDialog(): React.JSX.Element | null {
                     void navigator.clipboard.writeText(JSON.stringify(compiled.grade, null, 2))
                   }
                 >
-                  Copy grade JSON
+                  {t('Copy grade JSON')}
                 </button>
               </>
             )}
           </Section>
         </div>
         <div>
-          <Section id="engine.custom" title="Custom layers">
+          <Section id="engine.custom" title={t('Custom layers')}>
             <CustomLayers />
           </Section>
         </div>

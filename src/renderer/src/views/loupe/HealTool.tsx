@@ -31,6 +31,7 @@ import { ensureModelId } from '../../lib/ensureModel'
 import { useModels } from '../../lib/models'
 import { useDevelop } from '../../state/develop'
 import { useUi } from '../../state/ui'
+import { t } from '../../lib/i18n'
 
 /** A press that moves less than this (screen px) picks its own source. */
 const STILL_PX = 5
@@ -140,7 +141,7 @@ export const HealTool = memo(function HealTool({
           if (useDevelop.getState().session?.isHdr) return
           // MI-GAN first, offered there and then when it is not downloaded.
           if (!removerHere) {
-            void ensureModelId(INPAINTER, false, 'Remove')
+            void ensureModelId(INPAINTER, false, t('Remove'))
             return
           }
           const id = beginSpot('remove', base)
@@ -226,8 +227,8 @@ export const HealTool = memo(function HealTool({
       {placing && (
         <div className="tool-hint">
           {heal.mode === 'clone'
-            ? 'Drag to where it copies from · let go to clone'
-            : 'Drag to where it copies from, or let go to heal'}
+            ? t('Drag to where it copies from · let go to clone')
+            : t('Drag to where it copies from, or let go to heal')}
         </div>
       )}
     </div>

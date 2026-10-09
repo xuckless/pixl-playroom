@@ -18,15 +18,16 @@ import {
   vignette,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 export const FILM_COLOUR = collection('film/colour', [
   look(
     'fine-portrait-160',
-    'Fine Portrait 160',
+    tk('Fine Portrait 160'),
     {
       tags: ['film', 'portrait', 'skin', 'soft', 'kodak', 'portra', '160'],
       inspiredBy: 'Kodak Portra 160',
-      description: 'Low contrast, gentle saturation and creamy skin; fine grain.'
+      description: tk('Low contrast, gentle saturation and creamy skin; fine grain.')
     },
     tone({ contrast: -10, highlights: -15 }),
     fade(0.02),
@@ -39,11 +40,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'warm-portrait-400',
-    'Warm Portrait 400',
+    tk('Warm Portrait 400'),
     {
       tags: ['film', 'portrait', 'warm', 'wedding', 'kodak', 'portra', '400'],
       inspiredBy: 'Kodak Portra 400',
-      description: 'The classic portrait negative: warm skin, soft greens, long highlights.'
+      description: tk('The classic portrait negative: warm skin, soft greens, long highlights.')
     },
     tone({ contrast: -5, highlights: -15 }),
     fade(0.03),
@@ -56,11 +57,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'warm-portrait-800',
-    'Warm Portrait 800',
+    tk('Warm Portrait 800'),
     {
       tags: ['film', 'portrait', 'warm', 'low light', 'kodak', 'portra', '800'],
       inspiredBy: 'Kodak Portra 800',
-      description: 'Richer, warmer and grainier, with a green lean in the shadows.'
+      description: tk('Richer, warmer and grainier, with a green lean in the shadows.')
     },
     tone({ contrast: 8, highlights: -12 }),
     fade(0.03),
@@ -71,11 +72,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'vivid-landscape-100',
-    'Vivid Landscape 100',
+    tk('Vivid Landscape 100'),
     {
       tags: ['film', 'landscape', 'saturated', 'fine grain', 'kodak', 'ektar', '100'],
       inspiredBy: 'Kodak Ektar 100',
-      description: 'Saturated, fine-grained landscape negative; skin runs red.'
+      description: tk('Saturated, fine-grained landscape negative; skin runs red.')
     },
     tone({ contrast: 20 }),
     presence({ saturation: 25 }),
@@ -84,11 +85,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'golden-consumer-200',
-    'Golden Consumer 200',
+    tk('Golden Consumer 200'),
     {
       tags: ['film', 'warm', 'golden', 'nostalgic', 'kodak', 'gold', '200'],
       inspiredBy: 'Kodak Gold 200',
-      description: 'Golden, sunny consumer film with yellowed greens.'
+      description: tk('Golden, sunny consumer film with yellowed greens.')
     },
     tone({ contrast: 10 }),
     presence({ saturation: 10 }),
@@ -100,11 +101,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'punchy-consumer-400',
-    'Punchy Consumer 400',
+    tk('Punchy Consumer 400'),
     {
       tags: ['film', 'punchy', 'saturated', 'everyday', 'kodak', 'ultramax', '400'],
       inspiredBy: 'Kodak UltraMax 400',
-      description: 'Punchy everyday colour with strong reds.'
+      description: tk('Punchy everyday colour with strong reds.')
     },
     tone({ contrast: 15 }),
     presence({ saturation: 15 }),
@@ -114,11 +115,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'budget-warm-200',
-    'Budget Warm 200',
+    tk('Budget Warm 200'),
     {
       tags: ['film', 'warm', 'budget', 'soft', 'kodak', 'colorplus', '200'],
       inspiredBy: 'Kodak ColorPlus 200',
-      description: 'Warm, soft and a little grainy, with muted blues.'
+      description: tk('Warm, soft and a little grainy, with muted blues.')
     },
     tone({ contrast: 5 }),
     presence({ saturation: 5, texture: -10 }),
@@ -128,11 +129,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'clean-slide-100',
-    'Clean Slide 100',
+    tk('Clean Slide 100'),
     {
       tags: ['slide', 'film', 'clean', 'cool', 'kodak', 'ektachrome', 'e100'],
       inspiredBy: 'Kodak Ektachrome E100',
-      description: 'Clean, slightly cool slide film with crisp blues.'
+      description: tk('Clean, slightly cool slide film with crisp blues.')
     },
     tone({ contrast: 20, blacks: -5 }),
     presence({ saturation: 10 }),
@@ -142,11 +143,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'classic-slide-64',
-    'Classic Slide 64',
+    tk('Classic Slide 64'),
     {
       tags: ['slide', 'film', 'vintage', 'rich', 'kodak', 'kodachrome', '64'],
       inspiredBy: 'Kodak Kodachrome 64',
-      description: 'Rich reds and yellows, deep blue skies and dense blacks.'
+      description: tk('Rich reds and yellows, deep blue skies and dense blacks.')
     },
     sCurve(40),
     tone({ blacks: -5 }),
@@ -162,11 +163,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'saturated-slide-50',
-    'Saturated Slide 50',
+    tk('Saturated Slide 50'),
     {
       tags: ['slide', 'film', 'saturated', 'landscape', 'fuji', 'velvia', '50'],
       inspiredBy: 'Fujifilm Velvia 50 (film)',
-      description: 'Maximum saturation, magenta shadows and dark skies.'
+      description: tk('Maximum saturation, magenta shadows and dark skies.')
     },
     sCurve(40),
     tone({ contrast: 10 }),
@@ -178,11 +179,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'neutral-slide-100',
-    'Neutral Slide 100',
+    tk('Neutral Slide 100'),
     {
       tags: ['slide', 'film', 'neutral', 'fuji', 'provia', '100f'],
       inspiredBy: 'Fujifilm Provia 100F (film)',
-      description: 'An honest, neutral slide film.'
+      description: tk('An honest, neutral slide film.')
     },
     sCurve(30),
     tone({ blacks: -10 }),
@@ -193,11 +194,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'green-cast-consumer-400',
-    'Green-Cast Consumer 400',
+    tk('Green-Cast Consumer 400'),
     {
       tags: ['film', 'green', 'consumer', 'fuji', 'superia', '400'],
       inspiredBy: 'Fujifilm Superia X-TRA 400',
-      description: 'Everyday film with green shadows and vivid greens.'
+      description: tk('Everyday film with green shadows and vivid greens.')
     },
     tone({ contrast: 10 }),
     presence({ saturation: 10 }),
@@ -208,11 +209,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'airy-pastel-400',
-    'Airy Pastel 400',
+    tk('Airy Pastel 400'),
     {
       tags: ['film', 'pastel', 'airy', 'wedding', 'mint', 'fuji', '400h'],
       inspiredBy: 'Fujifilm Pro 400H',
-      description: 'Bright, airy pastels with mint greens.'
+      description: tk('Bright, airy pastels with mint greens.')
     },
     tone({ contrast: -20, shadows: 15, whites: 10 }),
     fade(0.04),
@@ -224,11 +225,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'cool-portrait-160',
-    'Cool Portrait 160',
+    tk('Cool Portrait 160'),
     {
       tags: ['film', 'portrait', 'cool', 'fuji', 'pro 160ns'],
       inspiredBy: 'Fujifilm Pro 160NS',
-      description: 'Cool, low-contrast portrait negative.'
+      description: tk('Cool, low-contrast portrait negative.')
     },
     tone({ contrast: -15, highlights: -10 }),
     fade(0.02),
@@ -240,11 +241,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'budget-cool-200',
-    'Budget Cool 200',
+    tk('Budget Cool 200'),
     {
       tags: ['film', 'cool', 'green', 'budget', 'fuji', 'c200'],
       inspiredBy: 'Fujicolor C200',
-      description: 'Cool, green-leaning budget film.'
+      description: tk('Cool, green-leaning budget film.')
     },
     sCurve(15),
     presence({ saturation: 5 }),
@@ -255,11 +256,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'low-light-soft-1600',
-    'Low-Light Soft 1600',
+    tk('Low-Light Soft 1600'),
     {
       tags: ['film', 'low light', 'soft', 'grain', 'fuji', 'natura', '1600'],
       inspiredBy: 'Fujifilm Natura 1600',
-      description: 'Soft, natural low-light colour with generous grain.'
+      description: tk('Soft, natural low-light colour with generous grain.')
     },
     tone({ contrast: -10, shadows: 12 }),
     fade(0.04),
@@ -269,11 +270,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'red-bias-consumer-200',
-    'Red-Bias Consumer 200',
+    tk('Red-Bias Consumer 200'),
     {
       tags: ['film', 'red', 'consumer', 'agfa', 'vista', '200'],
       inspiredBy: 'Agfa Vista 200',
-      description: 'Punchy reds and deep blue skies.'
+      description: tk('Punchy reds and deep blue skies.')
     },
     tone({ contrast: 15 }),
     presence({ saturation: 15 }),
@@ -283,11 +284,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'tungsten-night-800',
-    'Tungsten Night 800',
+    tk('Tungsten Night 800'),
     {
       tags: ['film', 'night', 'tungsten', 'neon', 'halation', 'cinestill', '800t'],
       inspiredBy: 'CineStill 800T',
-      description: 'Tungsten night film: cool light, teal shadows and red-glowing highlights.'
+      description: tk('Tungsten night film: cool light, teal shadows and red-glowing highlights.')
     },
     tone({ contrast: 12 }),
     presence({ saturation: -5 }),
@@ -299,11 +300,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'clean-daylight-50',
-    'Clean Daylight 50',
+    tk('Clean Daylight 50'),
     {
       tags: ['film', 'daylight', 'clean', 'fine grain', 'cinestill', '50d'],
       inspiredBy: 'CineStill 50D',
-      description: 'Clean, saturated, very fine-grained daylight film.'
+      description: tk('Clean, saturated, very fine-grained daylight film.')
     },
     sCurve(28),
     presence({ saturation: 15 }),
@@ -314,11 +315,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'warm-daylight-400',
-    'Warm Daylight 400',
+    tk('Warm Daylight 400'),
     {
       tags: ['film', 'daylight', 'warm', 'cinestill', '400d'],
       inspiredBy: 'CineStill 400D',
-      description: 'Warm daylight film with a soft glow.'
+      description: tk('Warm daylight film with a soft glow.')
     },
     sCurve(20),
     presence({ saturation: 6 }),
@@ -329,11 +330,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'toy-colour-800',
-    'Toy Colour 800',
+    tk('Toy Colour 800'),
     {
       tags: ['film', 'lomo', 'saturated', 'vignette', 'lomography', '800'],
       inspiredBy: 'Lomography Color Negative 800',
-      description: 'Loud, warm colour, dark corners and plenty of grain.'
+      description: tk('Loud, warm colour, dark corners and plenty of grain.')
     },
     tone({ contrast: 20 }),
     presence({ saturation: 20 }),
@@ -343,12 +344,13 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'purple-swap',
-    'Purple Swap',
+    tk('Purple Swap'),
     {
       tags: ['film', 'creative', 'purple', 'false colour', 'lomochrome'],
       inspiredBy: 'LomoChrome Purple',
-      description:
+      description: tk(
         'Greens pushed toward purple and blues toward green: an approximation of the full swap.'
+      )
     },
     fade(0.03),
     calib({ greenHue: 100, blueHue: -80 }),
@@ -358,11 +360,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'metro-desat',
-    'Metro Desat',
+    tk('Metro Desat'),
     {
       tags: ['film', 'desaturated', 'urban', 'contrast', 'lomochrome', 'metropolis'],
       inspiredBy: 'LomoChrome Metropolis',
-      description: 'Drained urban colour with warm tones kept.'
+      description: tk('Drained urban colour with warm tones kept.')
     },
     tone({ contrast: 25 }),
     presence({ saturation: -50 }),
@@ -371,11 +373,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'ir-false-colour',
-    'IR False Colour',
+    tk('IR False Colour'),
     {
       tags: ['film', 'infrared', 'false colour', 'creative', 'kodak', 'aerochrome'],
       inspiredBy: 'Kodak Aerochrome infrared film',
-      description: 'Foliage turned red-magenta: an approximation of infrared colour.'
+      description: tk('Foliage turned red-magenta: an approximation of infrared colour.')
     },
     calib({ redHue: -60, greenHue: -100, greenSaturation: 40 }),
     hsl({ green: [-100, 50, 10], yellow: [-100, 30, 0], blue: [-30, 10, 0] }),
@@ -383,11 +385,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'cross-processed-slide',
-    'Cross-Processed Slide',
+    tk('Cross-Processed Slide'),
     {
       tags: ['film', 'cross process', 'creative', 'saturated'],
       inspiredBy: 'Slide film cross-processed in C-41',
-      description: 'Blown contrast, cyan shadows and yellow highlights.'
+      description: tk('Blown contrast, cyan shadows and yellow highlights.')
     },
     tone({ contrast: 35 }),
     presence({ saturation: 25 }),
@@ -407,11 +409,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'expired-film',
-    'Expired Film',
+    tk('Expired Film'),
     {
       tags: ['film', 'expired', 'faded', 'vintage', 'magenta'],
       inspiredBy: 'Expired colour negative film',
-      description: 'Fogged blacks, shifted colour and heavy grain.'
+      description: tk('Fogged blacks, shifted colour and heavy grain.')
     },
     tone({ contrast: -15 }),
     fade(0.08),
@@ -422,11 +424,11 @@ export const FILM_COLOUR = collection('film/colour', [
   ),
   look(
     'drugstore-print',
-    'Drugstore Print',
+    tk('Drugstore Print'),
     {
       tags: ['film', 'print', 'nostalgic', '90s', 'warm'],
       inspiredBy: 'One-hour lab prints from the 1990s',
-      description: 'Bright, warm, slightly green-shadowed prints from the minilab.'
+      description: tk('Bright, warm, slightly green-shadowed prints from the minilab.')
     },
     sCurve(25),
     tone({ whites: 10 }),

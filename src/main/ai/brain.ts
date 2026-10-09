@@ -14,6 +14,7 @@
  * guide's corrected call (§1a, 2026-10-09), and nothing else; it never
  * judges a mask and never plans an edit.
  */
+import { t } from '../../shared/i18n'
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { execFile } from 'child_process'
@@ -142,10 +143,10 @@ function benchPicture(): Buffer {
       const i = (y * w + x) * 4
       let r: number, g: number, b: number
       if (y < h * 0.62) {
-        const t = y / (h * 0.62)
-        r = 90 + 80 * t
-        g = 150 + 60 * t
-        b = 230 - 20 * t
+        const k = y / (h * 0.62)
+        r = 90 + 80 * k
+        g = 150 + 60 * k
+        b = 230 - 20 * k
       } else {
         r = 60
         g = 140 - (y - h * 0.62) * 0.2
@@ -327,10 +328,10 @@ export class BrainStore {
    * starts it for the benchmark, before it may be on.
    */
   async open(bench = false): Promise<auto.LocalServerBrain> {
-    if (!this.key) throw new Error('Gemma isn’t part of this version of Playroom')
+    if (!this.key) throw new Error(t('Gemma isn’t part of this version of Playroom'))
     if (!bench && !(await this.switches.allowed('gemma')))
-      throw new Error('Gemma is off: turn it on in Settings → AI models')
-    if (!(await this.switches.enabled())) throw new Error('AI models are off in Settings')
+      throw new Error(t('Gemma is off: turn it on in Settings → AI models'))
+    if (!(await this.switches.enabled())) throw new Error(t('AI models are off in Settings'))
     this.touch()
     if (this.brainObj && this.server) return this.brainObj
     this.starting ??= this.launch().finally(() => (this.starting = null))
@@ -339,7 +340,7 @@ export class BrainStore {
 
   private async launch(): Promise<auto.LocalServerBrain> {
     const binary = await this.binary()
-    if (!binary || !(await this.installed())) throw new Error('Gemma is not downloaded yet')
+    if (!binary || !(await this.installed())) throw new Error(t('Gemma is not downloaded yet'))
     const api_key = randomBytes(32).toString('hex')
     const port = await freePort()
     const t0 = Date.now()
@@ -469,8 +470,8 @@ export class BrainStore {
    * stops after unless Gemma was already on and running.
    */
   async benchmark(progress: (p: number, note: string) => void): Promise<HeavyBenchmark> {
-    if (this.benching) throw new Error('The benchmark is already running')
-    if (!(await this.installed())) throw new Error('Download Gemma first')
+    if (this.benching) throw new Error(t('The benchmark is already running'))
+    if (!(await this.installed())) throw new Error(t('Download Gemma first'))
     this.benching = true
     this.emit()
     const wasRunning = this.server !== null
@@ -479,7 +480,7 @@ export class BrainStore {
     const runs: SustainedRun[] = []
     let readyMs = 0
     try {
-      progress(0, 'Starting Gemma')
+      progress(0, t('Starting Gemma'))
       const t0 = Date.now()
       const brain = await this.open(true)
       readyMs = Date.now() - t0
@@ -491,10 +492,10 @@ export class BrainStore {
       sampler = setInterval(() => void sample(), 1000)
       const image = benchPicture()
       for (let i = 0; i < BENCH_RUNS; i++) {
-        progress((i + 0.5) / BENCH_RUNS, `Run ${i + 1} of ${BENCH_RUNS}`)
-        const t = Date.now()
+        progress((i + 0.5) / BENCH_RUNS, t('Run {{run}} of {{runs}}', { run: i + 1, runs: BENCH_RUNS }))
+        const t0 = Date.now()
         await this.ask(brain, image, 'image/png')
-        runs.push({ ms: Date.now() - t })
+        runs.push({ ms: Date.now() - t0 })
         this.touch()
       }
       await sample()
@@ -520,7 +521,7 @@ export class BrainStore {
     }
     log.info('brain benchmark', JSON.stringify(b))
     await this.switches.recordBenchmark(b)
-    progress(1, b.passed ? 'Passed' : 'Did not pass')
+    progress(1, b.passed ? t('Passed') : t('Did not pass'))
     this.emit()
     return b
   }

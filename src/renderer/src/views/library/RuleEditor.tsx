@@ -12,6 +12,7 @@ import {
 } from '../../../../shared/smart'
 import { Icon } from '../../components/icons'
 import { Stars } from '../../components/ui'
+import { t } from '../../lib/i18n'
 import { newRule, withOp } from '../../lib/rules'
 
 const FIELDS = Object.entries(SMART_FIELDS) as [SmartField, (typeof SMART_FIELDS)[SmartField]][]
@@ -79,7 +80,7 @@ function ValueEditor({
   const set = (value: SmartRule['value'], extra: Partial<SmartRule> = {}): void =>
     onChange({ ...rule, value, ...extra })
   const pair = Array.isArray(rule.value) ? rule.value : [rule.value, rule.value]
-  const and = <span className="rule-and">and</span>
+  const and = <span className="rule-and">{t('and')}</span>
   switch (info.type) {
     case 'rating':
       if (rule.op === 'between')
@@ -102,19 +103,19 @@ function ValueEditor({
           {rule.op === 'between' ? (
             <>
               <NumberInput
-                label="From"
+                label={t('From')}
                 value={pair[0]}
                 onChange={(n) => set([n, Number(pair[1]) || 0])}
               />
               {and}
               <NumberInput
-                label="To"
+                label={t('To')}
                 value={pair[1]}
                 onChange={(n) => set([Number(pair[0]) || 0, n])}
               />
             </>
           ) : (
-            <NumberInput label="Value" value={rule.value} onChange={(n) => set(n)} />
+            <NumberInput label={t('Value')} value={rule.value} onChange={(n) => set(n)} />
           )}
           {info.unit && <span className="muted">{info.unit}</span>}
         </span>
@@ -123,13 +124,13 @@ function ValueEditor({
       return (
         <select
           className="rule-value"
-          aria-label="Value"
+          aria-label={t('Value')}
           value={String(rule.value ?? '')}
           onChange={(e) => set(e.target.value)}
         >
           {info.options?.map((o) => (
             <option key={o.value} value={o.value}>
-              {o.label}
+              {t(o.label)}
             </option>
           ))}
         </select>
@@ -138,23 +139,23 @@ function ValueEditor({
       return (
         <select
           className="rule-value"
-          aria-label="Value"
+          aria-label={t('Value')}
           value={rule.value ? 'yes' : 'no'}
           onChange={(e) => set(e.target.value === 'yes')}
         >
-          <option value="yes">Yes</option>
-          <option value="no">No</option>
+          <option value="yes">{t('Yes')}</option>
+          <option value="no">{t('No')}</option>
         </select>
       )
     case 'collection':
       return (
         <select
           className="rule-value"
-          aria-label="Collection"
+          aria-label={t('Collection')}
           value={String(rule.value ?? '')}
           onChange={(e) => set(e.target.value)}
         >
-          <option value="">Choose…</option>
+          <option value="">{t('Choose…')}</option>
           {collections.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -166,33 +167,41 @@ function ValueEditor({
       if (rule.op === 'inLast')
         return (
           <span className="rule-value">
-            <NumberInput label="How many" value={rule.value} onChange={(n) => set(n)} />
+            <NumberInput label={t('How many')} value={rule.value} onChange={(n) => set(n)} />
             <select
-              aria-label="Unit"
+              aria-label={t('Unit')}
               value={rule.unit ?? 'days'}
               onChange={(e) => set(rule.value, { unit: e.target.value as SmartRule['unit'] })}
             >
-              <option value="days">days</option>
-              <option value="weeks">weeks</option>
-              <option value="months">months</option>
-              <option value="years">years</option>
+              <option value="days">{t('days')}</option>
+              <option value="weeks">{t('weeks')}</option>
+              <option value="months">{t('months')}</option>
+              <option value="years">{t('years')}</option>
             </select>
           </span>
         )
       if (rule.op === 'between')
         return (
           <span className="rule-value">
-            <DateInput label="From" value={pair[0]} onChange={(d) => set([d, String(pair[1])])} />
+            <DateInput
+              label={t('From')}
+              value={pair[0]}
+              onChange={(d) => set([d, String(pair[1])])}
+            />
             {and}
-            <DateInput label="To" value={pair[1]} onChange={(d) => set([String(pair[0]), d])} />
+            <DateInput
+              label={t('To')}
+              value={pair[1]}
+              onChange={(d) => set([String(pair[0]), d])}
+            />
           </span>
         )
-      return <DateInput label="Day" value={rule.value} onChange={(d) => set(d)} />
+      return <DateInput label={t('Day')} value={rule.value} onChange={(d) => set(d)} />
     default:
       return (
         <input
           className="rule-value rule-text"
-          aria-label="Value"
+          aria-label={t('Value')}
           value={String(rule.value ?? '')}
           placeholder={rule.field === 'keyword' ? 'Places > Canada' : ''}
           onChange={(e) =>
@@ -220,25 +229,25 @@ function RuleRow({
     <div className="rule-row">
       <select
         className="rule-field"
-        aria-label="Field"
+        aria-label={t('Field')}
         value={rule.field}
         onChange={(e) => onChange(defaultRule(e.target.value as SmartField))}
       >
         {FIELDS.map(([f, i]) => (
           <option key={f} value={f}>
-            {i.label}
+            {t(i.label)}
           </option>
         ))}
       </select>
       <select
         className="rule-op"
-        aria-label="Operator"
+        aria-label={t('Operator')}
         value={rule.op}
         onChange={(e) => onChange(withOp(rule, e.target.value as SmartOp))}
       >
         {info.ops.map((op) => (
           <option key={op} value={op}>
-            {SMART_OPS[op]}
+            {t(SMART_OPS[op])}
           </option>
         ))}
       </select>
@@ -246,8 +255,8 @@ function RuleRow({
       <span className="spacer" />
       <button
         className="icon sm"
-        title="Remove this rule"
-        aria-label="Remove rule"
+        title={t('Remove this rule')}
+        aria-label={t('Remove rule')}
         onClick={onRemove}
       >
         <Icon name="minus" />
@@ -283,29 +292,29 @@ export function GroupEditor({
   return (
     <div className={`rule-group${depth > 0 ? ' nested' : ''}`}>
       <div className="rule-group-head">
-        <span>Match</span>
+        <span>{t('Match')}</span>
         <select
-          aria-label="Match"
+          aria-label={t('Match')}
           value={group.match}
           onChange={(e) => onChange({ ...group, match: e.target.value as SmartGroup['match'] })}
         >
-          <option value="all">all</option>
-          <option value="any">any</option>
-          <option value="none">none</option>
+          <option value="all">{t('all')}</option>
+          <option value="any">{t('any')}</option>
+          <option value="none">{t('none')}</option>
         </select>
-        <span>of the following {depth > 0 ? '' : 'rules'}</span>
+        <span>{depth > 0 ? t('of the following') : t('of the following rules')}</span>
         <span className="spacer" />
         <button
           className="sm"
           onClick={() => onChange({ ...group, rules: [...group.rules, newRule()] })}
         >
           <Icon name="plus" />
-          Rule
+          {t('Rule')}
         </button>
         {depth < MAX_DEPTH && (
           <button
             className="sm"
-            title="A group of rules with its own all / any / none"
+            title={t('A group of rules with its own all / any / none')}
             onClick={() =>
               onChange({
                 ...group,
@@ -314,21 +323,23 @@ export function GroupEditor({
             }
           >
             <Icon name="plus" />
-            Group
+            {t('Group')}
           </button>
         )}
         {onRemove && (
           <button
             className="icon sm"
-            title="Remove this group"
-            aria-label="Remove group"
+            title={t('Remove this group')}
+            aria-label={t('Remove group')}
             onClick={onRemove}
           >
             <Icon name="close" />
           </button>
         )}
       </div>
-      {group.rules.length === 0 && <p className="rule-empty">No rules yet: every photo matches.</p>}
+      {group.rules.length === 0 && (
+        <p className="rule-empty">{t('No rules yet: every photo matches.')}</p>
+      )}
       {group.rules.map((r, i) =>
         isGroup(r) ? (
           <GroupEditor

@@ -16,6 +16,7 @@
  * 256 × 256: a half-body portrait's person is otherwise a few dozen of its
  * pixels), each part kept where it beats the others.
  */
+import { t } from '../../shared/i18n'
 import type { AiResult, AiStartRequest } from '../../shared/ai'
 import {
   estimate,
@@ -111,14 +112,14 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
 
   stages(): { id: string; label: string; weight: number }[] {
     return [
-      { id: 'model', label: 'Model', weight: 0.15 },
-      { id: 'analyse', label: 'Analyse', weight: 0.6 },
-      { id: 'refine', label: 'Refine', weight: 0.25 }
+      { id: 'model', label: t('Model'), weight: 0.15 },
+      { id: 'analyse', label: t('Analyse'), weight: 0.6 },
+      { id: 'refine', label: t('Refine'), weight: 0.25 }
     ]
   }
 
   title(req: SegmentRequest): { title: string; subject: string } {
-    return { title: 'Segmenting', subject: SEGMENT_LABEL[req.target] }
+    return { title: t('Segmenting'), subject: t(SEGMENT_LABEL[req.target]) }
   }
 
   /** The subject model to use: the best one downloaded, or null. */
@@ -128,7 +129,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
   }
 
   async run(ctx: AiContext, req: SegmentRequest): Promise<Extract<AiResult, { kind: 'mask' }>> {
-    ctx.stage('model', 0, 'Loading the model')
+    ctx.stage('model', 0, t('Loading the model'))
     if (isFacePart(req.target)) return this.faceParts(ctx, req, req.target)
     if (req.target === 'phrase') return this.phrase(ctx, req)
     const depth = req.target === 'depth'
@@ -154,7 +155,11 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     const segmenter = await this.models.ref(id, 'Cpu')
     if (ctx.signal.aborted) throw new Cancelled()
 
-    ctx.stage('analyse', 0, `Finding the ${SEGMENT_LABEL[req.target].toLowerCase()}`)
+    ctx.stage(
+      'analyse',
+      0,
+      t('Finding the {{subject}}', { subject: t(SEGMENT_LABEL[req.target]).toLowerCase() })
+    )
     const t0 = Date.now()
     // BiRefNet: 13.5 s on the M2 Pro's CPU with a 24 MP decode, about 10 s from a
     // proxy (its 1024² grid is fixed); DINOv2 about a second; U²-Netp and
@@ -199,9 +204,9 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     const plane = scene ? report.planes.find((p) => p.name === req.target) : report.planes[0]
     if (!plane) throw new Error('the model returned no plane')
     if (scene) {
-      const label = SEGMENT_LABEL[req.target]
+      const label = t(SEGMENT_LABEL[req.target])
       if (plane.coverage < NOTHING_FOUND)
-        throw new Error(`No ${label.toLowerCase()} found in this photo`)
+        throw new Error(t('No {{label}} found in this photo', { label: label.toLowerCase() }))
       // The plane as it is: soft where the model is unsure (sky through branches).
       const d = grey8(Buffer.from(plane.png))
       const png = encodeGreyPng(d.data, d.width, d.height).toString('base64')
@@ -228,15 +233,15 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         ref,
         width: d.width,
         height: d.height,
-        label: SEGMENT_LABEL.depth,
+        label: t(SEGMENT_LABEL.depth),
         depth: true,
         ...(req.into ? { into: { ...req.into } } : {})
       }
     }
     if (plane.raw_max < NOTHING_SALIENT)
-      throw new Error('No clear subject in this photo: try a brush or a range mask')
+      throw new Error(t('No clear subject in this photo: try a brush or a range mask'))
 
-    ctx.stage('refine', 0, 'Refining the edges')
+    ctx.stage('refine', 0, t('Refining the edges'))
     // The 16-bit plane as a painted plane's 8 bits.
     const d = grey8(Buffer.from(plane.png))
     const grey = d.data
@@ -254,7 +259,9 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       ref,
       width: d.width,
       height: d.height,
-      label: req.fine ? `${SEGMENT_LABEL[req.target]} (fine)` : SEGMENT_LABEL[req.target],
+      label: req.fine
+        ? t('{{label}} (fine)', { label: t(SEGMENT_LABEL[req.target]) })
+        : t(SEGMENT_LABEL[req.target]),
       source: {
         kind: 'segment',
         target: req.target as 'subject' | 'background',
@@ -277,7 +284,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     req: SegmentRequest
   ): Promise<Extract<AiResult, { kind: 'mask' }>> {
     const text = (req.phrase ?? '').trim().slice(0, 80)
-    if (!text) throw new Error('Type what to find: “red car”, “the dog”')
+    if (!text) throw new Error(t('Type what to find: “red car”, “the dog”'))
     let id: string | null = null
     // SAM 3 only while it is on (a passing benchmark, shared/heavy.ts) and not held (E58).
     for (const m of PHRASE_MODELS) {
@@ -301,7 +308,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     }
     if (ctx.signal.aborted) throw new Cancelled()
     const lens = lensCorrection(recipe.lens)
-    ctx.stage('analyse', 0, `Finding “${text}”`)
+    ctx.stage('analyse', 0, t('Finding “{{text}}”', { text }))
     // SAM 3: about 9 s for the photo, then a second a phrase (8 CPU threads,
     // the roster); EfficientSAM3 1.4 s and half a second.
     const expected = id === 'sam3' ? 10_000 : 2_000
@@ -356,8 +363,10 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       `phrase ${r.conceptMs} ms`
     )
     if (r.instances.length === 0)
-      throw new Error(`Nothing found for “${text}”: try other words, or Objects to draw a box`)
-    ctx.stage('refine', 0, 'Joining what was found')
+      throw new Error(
+        t('Nothing found for “{{text}}”: try other words, or Objects to draw a box', { text })
+      )
+    ctx.stage('refine', 0, t('Joining what was found'))
     // Every instance in the one mask: the most of them at each pixel.
     let plane: { data: Uint8Array; width: number; height: number } | null = null
     for (const i of r.instances) {
@@ -405,8 +414,8 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     const detector = await this.models.ref(FACE_DETECTOR, 'Cpu')
     const landmarks = await this.models.ref(FACE_LANDMARKER, 'Cpu')
     if (ctx.signal.aborted) throw new Cancelled()
-    const label = SEGMENT_LABEL[part]
-    ctx.stage('analyse', 0, 'Finding faces')
+    const label = t(SEGMENT_LABEL[part])
+    ctx.stage('analyse', 0, t('Finding faces'))
     const W = px.proxy.width
     const H = px.proxy.height
     const look = async (
@@ -455,7 +464,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         }))
         .filter((f) => f.rings.length > 0)
     )
-    if (outlines.length === 0) throw new Error(`No face found in this photo for ${label}`)
+    if (outlines.length === 0) throw new Error(t('No face found in this photo for {{label}}', { label }))
     ctx.progress(0.9)
     return {
       kind: 'mask',
@@ -513,11 +522,11 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         throw err
       }
     }
-    const label = SEGMENT_LABEL[target]
+    const label = t(SEGMENT_LABEL[target])
     const whole = await run(proxy.path, proxy.input, lens)
     const { width: W, height: H } = whole[0]
     const box = personBox(whole, W, H)
-    if (!box) throw new Error(`No person found in this photo for ${label}: try a brush`)
+    if (!box) throw new Error(t('No person found in this photo for {{label}}: try a brush', { label }))
     const sq = squareAround(box, W, H)
     let planes = whole
     // The person already fills the frame: the first answer is as good as it gets.
@@ -545,11 +554,12 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         await unlink(cropPath).catch(() => undefined)
       }
     }
-    ctx.stage('refine', 0, 'Refining the edges')
+    ctx.stage('refine', 0, t('Refining the edges'))
     const grey = partPlane(planes, PART_PLANES[target], W * H)
     let any = false
     for (let i = 0; i < grey.length && !any; i++) any = grey[i] >= 128
-    if (!any) throw new Error(`No ${label.toLowerCase()} found in this photo`)
+    if (!any)
+      throw new Error(t('No {{label}} found in this photo', { label: label.toLowerCase() }))
     hardenPlane(grey, 0.5, 3)
     ctx.progress(0.8)
     const png = encodeGreyPng(grey, W, H).toString('base64')

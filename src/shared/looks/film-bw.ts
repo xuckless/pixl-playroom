@@ -1,14 +1,15 @@
 /** Press, fine-grain and night black-and-white stocks. */
 import { collection, fade, grain, look, mono, presence, rolloff, sCurve, tone, wheel } from './dsl'
+import { tk } from '../i18n'
 
 export const FILM_BW = collection('film/bw', [
   look(
     'gritty-press-400',
-    'Gritty Press 400',
+    tk('Gritty Press 400'),
     {
       tags: ['bw', 'mono', 'film', 'press', 'grain', 'kodak', 'tri-x', '400'],
       inspiredBy: 'Kodak Tri-X 400',
-      description: 'The reportage classic: mid-tone bite and rough grain.'
+      description: tk('The reportage classic: mid-tone bite and rough grain.')
     },
     mono({ red: -8, orange: -6, blue: 10, aqua: 5 }),
     sCurve(38),
@@ -17,11 +18,11 @@ export const FILM_BW = collection('film/bw', [
   ),
   look(
     'pushed-press-1600',
-    'Pushed Press 1600',
+    tk('Pushed Press 1600'),
     {
       tags: ['bw', 'mono', 'film', 'pushed', 'night', 'grain', 'kodak', 'tri-x'],
       inspiredBy: 'Kodak Tri-X pushed to 1600',
-      description: 'Pushed hard: inky shadows and big grain.'
+      description: tk('Pushed hard: inky shadows and big grain.')
     },
     mono({ red: -5, blue: 8 }),
     sCurve(50),
@@ -30,11 +31,11 @@ export const FILM_BW = collection('film/bw', [
   ),
   look(
     'smooth-mono-100',
-    'Smooth Mono 100',
+    tk('Smooth Mono 100'),
     {
       tags: ['bw', 'mono', 'film', 'fine grain', 'kodak', 't-max', '100'],
       inspiredBy: 'Kodak T-MAX 100',
-      description: 'Smooth, modern and nearly grainless.'
+      description: tk('Smooth, modern and nearly grainless.')
     },
     mono({ red: 14, orange: 10, blue: -4 }),
     tone({ contrast: 6, highlights: -10, shadows: 6 }),
@@ -43,11 +44,11 @@ export const FILM_BW = collection('film/bw', [
   ),
   look(
     'smooth-mono-400',
-    'Smooth Mono 400',
+    tk('Smooth Mono 400'),
     {
       tags: ['bw', 'mono', 'film', 'kodak', 't-max', '400'],
       inspiredBy: 'Kodak T-MAX 400',
-      description: 'Clean modern mono with a little more grain.'
+      description: tk('Clean modern mono with a little more grain.')
     },
     mono({ red: 10, orange: 8 }),
     sCurve(22),
@@ -56,11 +57,11 @@ export const FILM_BW = collection('film/bw', [
   ),
   look(
     'night-mono-3200',
-    'Night Mono 3200',
+    tk('Night Mono 3200'),
     {
       tags: ['bw', 'mono', 'film', 'night', 'grain', 'kodak', 't-max', 'p3200'],
       inspiredBy: 'Kodak T-MAX P3200',
-      description: 'Low-light mono with soft blacks and large grain.'
+      description: tk('Low-light mono with soft blacks and large grain.')
     },
     mono({ red: 8, orange: 6 }),
     tone({ contrast: 22, shadows: -12 }),
@@ -69,11 +70,11 @@ export const FILM_BW = collection('film/bw', [
   ),
   look(
     'classic-press-400',
-    'Classic Press 400',
+    tk('Classic Press 400'),
     {
       tags: ['bw', 'mono', 'film', 'press', 'ilford', 'hp5', '400'],
       inspiredBy: 'Ilford HP5 Plus',
-      description: 'Forgiving, classic mono with medium grain.'
+      description: tk('Forgiving, classic mono with medium grain.')
     },
     mono({ orange: 4, blue: 4 }),
     sCurve(15),
@@ -82,11 +83,11 @@ export const FILM_BW = collection('film/bw', [
   ),
   look(
     'fine-classic-125',
-    'Fine Classic 125',
+    tk('Fine Classic 125'),
     {
       tags: ['bw', 'mono', 'film', 'fine grain', 'ilford', 'fp4', '125'],
       inspiredBy: 'Ilford FP4 Plus',
-      description: 'Traditional, fine-grained mono.'
+      description: tk('Traditional, fine-grained mono.')
     },
     mono({ yellow: 10, orange: 8, red: 4, blue: -4 }),
     sCurve(18),
@@ -95,11 +96,11 @@ export const FILM_BW = collection('film/bw', [
   ),
   look(
     'ultra-fine-50',
-    'Ultra-Fine 50',
+    tk('Ultra-Fine 50'),
     {
       tags: ['bw', 'mono', 'film', 'fine grain', 'contrast', 'ilford', 'pan f', '50'],
       inspiredBy: 'Ilford Pan F Plus 50',
-      description: 'Contrasty, deep and almost grainless.'
+      description: tk('Contrasty, deep and almost grainless.')
     },
     mono({ red: -15, orange: -10, blue: 6 }),
     sCurve(40),
@@ -108,11 +109,11 @@ export const FILM_BW = collection('film/bw', [
   ),
   look(
     'modern-fine-100',
-    'Modern Fine 100',
+    tk('Modern Fine 100'),
     {
       tags: ['bw', 'mono', 'film', 'fine grain', 'ilford', 'delta', '100'],
       inspiredBy: 'Ilford Delta 100',
-      description: 'Crisp modern tabular-grain mono.'
+      description: tk('Crisp modern tabular-grain mono.')
     },
     mono({ yellow: 5, green: 5, blue: -6 }),
     sCurve(18),
@@ -122,11 +123,11 @@ export const FILM_BW = collection('film/bw', [
   ),
   look(
     'night-grain-3200',
-    'Night Grain 3200',
+    tk('Night Grain 3200'),
     {
       tags: ['bw', 'mono', 'film', 'night', 'grain', 'ilford', 'delta', '3200'],
       inspiredBy: 'Ilford Delta 3200',
-      description: 'Soft, grainy and atmospheric.'
+      description: tk('Soft, grainy and atmospheric.')
     },
     mono({ orange: 6 }),
     tone({ contrast: -8, shadows: 12, highlights: -12 }),
@@ -135,11 +136,11 @@ export const FILM_BW = collection('film/bw', [
   ),
   look(
     'chromogenic-mono',
-    'Chromogenic Mono',
+    tk('Chromogenic Mono'),
     {
       tags: ['bw', 'mono', 'film', 'c41', 'smooth', 'ilford', 'xp2'],
       inspiredBy: 'Ilford XP2 Super',
-      description: 'Smooth, faintly warm mono from colour chemistry.'
+      description: tk('Smooth, faintly warm mono from colour chemistry.')
     },
     mono({ orange: 8, yellow: 4 }),
     tone({ contrast: -12, highlights: -18, shadows: 8 }),
@@ -149,11 +150,11 @@ export const FILM_BW = collection('film/bw', [
   ),
   look(
     'budget-classic-100',
-    'Budget Classic 100',
+    tk('Budget Classic 100'),
     {
       tags: ['bw', 'mono', 'film', 'vintage', 'foma', 'fomapan', '100'],
       inspiredBy: 'Fomapan 100 Classic',
-      description: 'Old-fashioned tonality with soft highlights.'
+      description: tk('Old-fashioned tonality with soft highlights.')
     },
     mono({ red: -18, orange: -10, blue: 14, aqua: 8 }),
     tone({ contrast: 15, highlights: -15 }),
@@ -162,11 +163,11 @@ export const FILM_BW = collection('film/bw', [
   ),
   look(
     'smooth-sky-100',
-    'Smooth Sky 100',
+    tk('Smooth Sky 100'),
     {
       tags: ['bw', 'mono', 'film', 'fine grain', 'sky', 'fuji', 'acros ii', '100'],
       inspiredBy: 'Fujifilm Neopan Acros II 100',
-      description: 'Fine grain and gently deepened skies.'
+      description: tk('Fine grain and gently deepened skies.')
     },
     mono({ blue: -32, aqua: -18, yellow: 8 }),
     sCurve(30),

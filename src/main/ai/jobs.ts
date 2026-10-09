@@ -8,6 +8,7 @@
  * signal, which the runner answers by stopping its model (killing the
  * process it runs in, where that is the only way).
  */
+import { t } from '../../shared/i18n'
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import {
@@ -91,9 +92,9 @@ export class AiJobs {
 
   async start(req: AiStartRequest): Promise<string> {
     if (this.gate && !(await this.gate()))
-      throw new Error('AI models are off: turn them on in Settings → AI models')
+      throw new Error(t('AI models are off: turn them on in Settings → AI models'))
     const runner = this.runners[req.task]
-    if (!runner) throw new Error(`${req.task} is not available in this build`)
+    if (!runner) throw new Error(t('{{task}} is not available in this build', { task: req.task }))
     const jobId = `ai-${nextId++}`
     const stages = runner.stages(req as never)
     const { title, subject } = runner.title(req as never)
@@ -120,7 +121,7 @@ export class AiJobs {
     const job = this.jobs.get(jobId)
     if (!job) return
     if (job.event.phase === 'queued') {
-      this.finish(job, { phase: 'cancelled', message: 'Cancelled' })
+      this.finish(job, { phase: 'cancelled', message: t('Cancelled') })
       return
     }
     if (job.event.phase === 'running') job.control.abort()
@@ -216,7 +217,7 @@ export class AiJobs {
       this.finish(job, { phase: 'done' })
     } catch (err) {
       if (!committed && (job.control.signal.aborted || err instanceof Cancelled)) {
-        this.finish(job, { phase: 'cancelled', message: 'Cancelled' })
+        this.finish(job, { phase: 'cancelled', message: t('Cancelled') })
         return
       }
       log.warn(`ai ${job.req.task} failed`, err)
@@ -229,12 +230,12 @@ export class AiJobs {
 export function pause(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) return reject(new Cancelled())
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       signal.removeEventListener('abort', stop)
       resolve()
     }, ms)
     const stop = (): void => {
-      clearTimeout(t)
+      clearTimeout(timer)
       reject(new Cancelled())
     }
     signal.addEventListener('abort', stop, { once: true })

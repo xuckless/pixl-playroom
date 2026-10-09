@@ -3,6 +3,7 @@ import { Modal } from '../components/ui'
 import { api } from '../lib/api'
 import { useLibrary } from '../state/library'
 import { useWhatsNew } from '../state/whatsNew'
+import { t } from '../lib/i18n'
 
 /** What a release brings, and what is on its way. */
 export function WhatsNewDialog(): React.JSX.Element | null {
@@ -17,13 +18,13 @@ export function WhatsNewDialog(): React.JSX.Element | null {
   const next = notes.find((n) => n.next?.length)?.next
   return (
     <Modal
-      title={`What’s new in Playroom ${versionLabel(newest.version)}`}
+      title={t('What’s new in Playroom {{version}}', { version: versionLabel(newest.version) })}
       onClose={close}
       icon="smart"
       className="whats-new"
       footer={
         <button className="primary" autoFocus onClick={close}>
-          Let’s go
+          {t('Let’s go')}
         </button>
       }
     >
@@ -45,13 +46,13 @@ export function NotesBody({
       {notes.map((n) => (
         <section key={n.version} className="wn-release">
           {notes.length > 1 && <h3 className="wn-version">{versionLabel(n.version)}</h3>}
-          <p className="wn-headline">{n.headline}</p>
+          <p className="wn-headline">{t(n.headline)}</p>
           {n.sections.map((s) => (
             <div key={s.title} className="wn-section">
-              <span className="micro">{s.title}</span>
+              <span className="micro">{t(s.title)}</span>
               <ul>
                 {s.items.map((item) => (
-                  <li key={item}>{item}</li>
+                  <li key={item}>{t(item)}</li>
                 ))}
               </ul>
             </div>
@@ -60,12 +61,12 @@ export function NotesBody({
       ))}
       {next && (
         <div className="wn-next">
-          <span className="micro">Coming soon</span>
+          <span className="micro">{t('Coming soon')}</span>
           <div className="wn-next-grid">
             {next.map((x) => (
               <div key={x.title} className="wn-next-card">
-                <strong>{x.title}</strong>
-                <span>{x.text}</span>
+                <strong>{t(x.title)}</strong>
+                <span>{t(x.text)}</span>
               </div>
             ))}
           </div>

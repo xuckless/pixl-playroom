@@ -19,6 +19,7 @@ import {
 } from '../../../shared/retouch'
 import type { PixelStep } from '../../../shared/pixels'
 import { api, errorText } from './api'
+import { t, tk, tp } from './i18n'
 import { landingWork, useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { scoped } from '../state/scope'
@@ -118,7 +119,7 @@ export function removeObjectAt(at: P): void {
     try {
       step = await api.develop.removeObject(key, at, feather, layerId, steps)
     } catch (err) {
-      useLibrary.getState().say(`Remove: ${errorText(err)}`, 'error')
+      useLibrary.getState().say(t('Remove: {{error}}', { error: errorText(err) }), 'error')
       return
     }
     if (useDevelop.getState().session?.key !== key) return
@@ -126,7 +127,7 @@ export function removeObjectAt(at: P): void {
     dev.edit((r: Recipe) => {
       if (step) r.pixels.push(step)
     })
-    dev.commit(step?.label ?? 'Remove: nothing to change')
+    dev.commit(step?.label ?? tk('Remove: nothing to change'))
   }))
   landingWork(job)
 }
@@ -219,7 +220,7 @@ export async function bakeLiveSpots(): Promise<void> {
       r.retouch = []
       r.pixels.push(...made)
     })
-    d.commit(`Bake ${spots.length} spot${spots.length === 1 ? '' : 's'}`)
+    d.commit(tp('Bake {{count}} spot', 'Bake {{count}} spots', spots.length))
   }))
   landingWork(job)
   await job
@@ -231,5 +232,5 @@ export function removeLiveSpots(): void {
   const n = dev.recipe?.retouch.length ?? 0
   if (!n) return
   dev.edit((r) => (r.retouch = []))
-  dev.commit(`Remove ${n} spot${n === 1 ? '' : 's'}`)
+  dev.commit(tp('Remove {{count}} spot', 'Remove {{count}} spots', n))
 }

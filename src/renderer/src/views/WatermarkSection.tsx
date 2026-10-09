@@ -16,17 +16,18 @@ import {
 import { InfoTip } from '../components/InfoTip'
 import { Card, Slider } from '../components/ui'
 import { api, errorText } from '../lib/api'
+import { t, tk } from '../lib/i18n'
 
 const ANCHOR_TITLE: Record<WatermarkAnchor, string> = {
-  tl: 'Top left',
-  t: 'Top',
-  tr: 'Top right',
-  l: 'Left',
-  c: 'Centre',
-  r: 'Right',
-  bl: 'Bottom left',
-  b: 'Bottom',
-  br: 'Bottom right'
+  tl: tk('Top left'),
+  t: tk('Top'),
+  tr: tk('Top right'),
+  l: tk('Left'),
+  c: tk('Centre'),
+  r: tk('Right'),
+  bl: tk('Bottom left'),
+  b: tk('Bottom'),
+  br: tk('Bottom right')
 }
 
 const BLEND_CSS: Record<WatermarkBlend, React.CSSProperties['mixBlendMode']> = {
@@ -85,7 +86,7 @@ export function WatermarkSection({
   const mark = file && thumb ? placeMark(w, thumb.w, thumb.h, file.width, file.height) : null
 
   return (
-    <Card id="export.watermark" title="Watermark" defaultOpen={w.enabled || !!w.path}>
+    <Card id="export.watermark" title={t('Watermark')} defaultOpen={w.enabled || !!w.path}>
       <label className="check">
         <input
           type="checkbox"
@@ -93,28 +94,28 @@ export function WatermarkSection({
           disabled={!w.path}
           onChange={(e) => set({ enabled: e.target.checked })}
         />{' '}
-        Add a watermark
+        {t('Add a watermark')}
       </label>
       <div className="wm-file">
         <span className="muted small" title={w.path ?? undefined}>
-          {w.path ? w.path.split(/[\\/]/).pop() : 'No PNG chosen'}
+          {w.path ? w.path.split(/[\\/]/).pop() : t('No PNG chosen')}
         </span>
         <button className="sm" onClick={() => void choose()}>
-          {w.path ? 'Change…' : 'Choose PNG…'}
+          {w.path ? t('Change…') : t('Choose PNG…')}
         </button>
         {w.path && (
           <button
             className="sm ghost"
             onClick={() => onChange({ ...w, path: null, enabled: false })}
           >
-            Remove
+            {t('Remove')}
           </button>
         )}
       </div>
       {error && <p className="error small">{error}</p>}
       {w.path && (
         <div className="wm-body">
-          <div className="wm-preview" aria-label="Preview">
+          <div className="wm-preview" aria-label={t('Preview')}>
             {thumbUrl ? (
               <img
                 src={thumbUrl}
@@ -144,14 +145,14 @@ export function WatermarkSection({
             )}
           </div>
           <div className="wm-controls">
-            <div className="wm-anchors" role="radiogroup" aria-label="Position">
+            <div className="wm-anchors" role="radiogroup" aria-label={t('Position')}>
               {WATERMARK_ANCHORS.map((a) => (
                 <button
                   key={a}
                   role="radio"
                   aria-checked={w.anchor === a}
                   className={w.anchor === a ? 'on' : ''}
-                  title={ANCHOR_TITLE[a]}
+                  title={t(ANCHOR_TITLE[a])}
                   onClick={() => set({ anchor: a })}
                 >
                   <i />
@@ -159,30 +160,30 @@ export function WatermarkSection({
               ))}
             </div>
             <Slider
-              label="Size"
+              label={t('Size')}
               value={w.size}
               min={2}
               max={100}
               def={20}
               format={(v) => `${Math.round(v)}%`}
-              title="The mark's width, as a share of the picture's shorter edge"
+              title={t("The mark's width, as a share of the picture's shorter edge")}
               onChange={(size) => set({ size })}
               onCommit={() => undefined}
             />
             <Slider
-              label="Inset"
+              label={t('Inset')}
               value={w.inset}
               min={0}
               max={25}
               step={0.5}
               def={3}
               format={(v) => `${v.toFixed(1)}%`}
-              title="From the nearest edges, as a share of the picture's shorter edge"
+              title={t("From the nearest edges, as a share of the picture's shorter edge")}
               onChange={(inset) => set({ inset })}
               onCommit={() => undefined}
             />
             <Slider
-              label="Opacity"
+              label={t('Opacity')}
               value={w.opacity}
               min={0}
               max={100}
@@ -193,16 +194,16 @@ export function WatermarkSection({
             />
             <label
               className="field wm-blend"
-              title="Multiply suits a dark mark on light pictures, Screen a light one on dark"
+              title={t('Multiply suits a dark mark on light pictures, Screen a light one on dark')}
             >
-              <span>Blend</span>
+              <span>{t('Blend')}</span>
               <select
                 value={w.blend}
                 onChange={(e) => set({ blend: e.target.value as WatermarkBlend })}
               >
-                <option value="Normal">Normal</option>
-                <option value="Multiply">Multiply · darkens</option>
-                <option value="Screen">Screen · lightens</option>
+                <option value="Normal">{t('Normal')}</option>
+                <option value="Multiply">{t('Multiply · darkens')}</option>
+                <option value="Screen">{t('Screen · lightens')}</option>
               </select>
             </label>
           </div>
@@ -212,10 +213,10 @@ export function WatermarkSection({
         <p className="muted small">
           {file.width} × {file.height} PNG
           <InfoTip
-            label="Watermark"
+            label={t('Watermark')}
             tip={{
-              what: 'Laid on after the crop and resize, at the size the picture is exported.',
-              expect: 'It stays sharp at any size and is never graded with the photo.'
+              what: t('Laid on after the crop and resize, at the size the picture is exported.'),
+              expect: t('It stays sharp at any size and is never graded with the photo.')
             }}
           />
         </p>

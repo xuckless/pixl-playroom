@@ -14,6 +14,7 @@
  * accelerator (CoreML on a Mac, DirectML on Windows) unless the performance
  * test found the CPU faster, or the accelerator refused.
  */
+import { t } from '../../shared/i18n'
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { createHash } from 'crypto'
@@ -89,7 +90,7 @@ export function modelName(e: Pick<RosterEntry, 'title'>): string {
 export class ModelMissing extends Error {
   code = 'ModelNotInstalled'
   constructor(readonly entry: RosterEntry) {
-    super(`${modelName(entry)} is not downloaded yet: Settings → AI models`)
+    super(t('{{model}} is not downloaded yet: Settings → AI models', { model: modelName(entry) }))
   }
 }
 
@@ -319,8 +320,8 @@ export class ModelStore {
       // An on-demand model's terms travel with it (engine 0.18, integration guide §7).
       const od = this.onDemand(id)
       if (od) {
-        for (const t of od.licence_texts)
-          await writeFile(join(dir, t.name), await readFile(t.path, 'utf8'))
+        for (const text of od.licence_texts)
+          await writeFile(join(dir, text.name), await readFile(text.path, 'utf8'))
         await writeFile(join(dir, 'NOTICE.md'), od.notice)
       }
       this.installedCache.set(id, true)
@@ -433,7 +434,7 @@ export class ModelStore {
     const got = await sha256(part)
     if (got !== f.sha256) {
       await rm(part, { force: true })
-      throw new Error(`${f.name} arrived damaged (checksum mismatch); try again`)
+      throw new Error(t('{{file}} arrived damaged (checksum mismatch); try again', { file: f.name }))
     }
     await rename(part, dest)
   }
@@ -489,7 +490,7 @@ export class ModelStore {
     const order = ['u2netp', 'span-x4-ch48', 'realesr-general-x4v3']
     let id: string | null = null
     for (const m of order) if (await this.installed(m)) id = id ?? m
-    if (!id) throw new Error('Download a model first: U²-Netp is the smallest')
+    if (!id) throw new Error(t('Download a model first: U²-Netp is the smallest'))
     if (engine.getStatus().status === 'starting') {
       engine.start()
       await engine.whenStarted()
@@ -529,7 +530,7 @@ export class ModelStore {
     dimensions: SessionSpec['dimensions'] = []
   ): Promise<Record<string, unknown>> {
     const runtime = this.engineStatus().runtime
-    if (!runtime) throw new Error('this build of the engine ships no ONNX Runtime')
+    if (!runtime) throw new Error(t('this build of the engine ships no ONNX Runtime'))
     const session: SessionSpec = {
       threads: heavyThreads(),
       optimisation: 'All',
@@ -617,25 +618,25 @@ function explain(err: unknown, url: string, file: string, only = false): string 
   const e = err as Error & { cause?: { code?: string } }
   const host = (() => {
     try {
-      return new URL(url).host || 'the model folder'
+      return new URL(url).host || t('the model folder')
     } catch {
       return url
     }
   })()
   const code = e.cause?.code ?? (e as { code?: string }).code
   let why: string
-  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') why = `${host} could not be found`
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') why = t('{{host}} could not be found', { host })
   else if (
     code === 'ECONNREFUSED' ||
     code === 'ECONNRESET' ||
     code === 'ETIMEDOUT' ||
     code === 'UND_ERR_CONNECT_TIMEOUT'
   )
-    why = `${host} did not answer`
-  else if (code === 'ENOENT') why = `${file} is not in ${url.replace(/[^/]*$/, '')}`
-  else if (/HTTP 40[34]/.test(e.message)) why = `${host} does not have ${file} yet`
+    why = t('{{host}} did not answer', { host })
+  else if (code === 'ENOENT') why = t('{{file}} is not in {{folder}}', { file, folder: url.replace(/[^/]*$/, '') })
+  else if (/HTTP 40[34]/.test(e.message)) why = t('{{host}} does not have {{file}} yet', { host, file })
   else why = e.message
-  return only ? `${why} — this model is only on Playroom's model server` : why
+  return only ? t("{{reason}} — this model is only on Playroom's model server", { reason: why }) : why
 }
 
 async function sha256(file: string): Promise<string> {

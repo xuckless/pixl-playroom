@@ -41,6 +41,8 @@ import { BetaGate, UpdateRequiredGate } from './views/Gate'
 import { useGate } from './lib/gate'
 import { isFrame, whenFrame } from './lib/frames'
 import { openReport } from './lib/report'
+import { startMenuUpkeep } from './lib/menus'
+import { t, useLanguage } from './lib/i18n'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
 import { LibraryIdentity, LibraryStatus, CullBar, LibraryView, Toolbar } from './views/Library'
 import { CollectionDialog } from './views/library/CollectionDialog'
@@ -151,11 +153,16 @@ function EngineBanner(): React.JSX.Element | null {
   const engine = useLibrary((s) => s.engine)
   // Resting (Playroom behind) is no trouble: the top bar says so, quietly.
   if (!engine || engine.status === 'ready' || engine.status === 'resting') return null
+  const said = {
+    starting: t('Engine starting'),
+    ready: t('Engine ready'),
+    resting: t('Engine offline'),
+    unavailable: t('Engine unavailable'),
+    crashed: t('Engine crashed')
+  }[engine.status]
   return (
     <div className="engine-banner" role="alert">
-      {engine.code === 'VersionMismatch'
-        ? 'Engine version mismatch: reinstall the app'
-        : `Engine ${engine.status}`}
+      {engine.code === 'VersionMismatch' ? t('Engine version mismatch: reinstall the app') : said}
       {engine.reason ? `: ${engine.reason}` : ''}
     </div>
   )
@@ -176,12 +183,17 @@ function onRenderScale(s: RenderScale): void {
     return
   }
   const times = (n: number): string => `${Number(n.toFixed(2))}×`
-  const name = s.target === null ? 'Native' : s.mode === 'ultra' ? 'Ultra' : 'Performance'
+  const name = s.target === null ? t('Native') : s.mode === 'ultra' ? t('Ultra') : t('Performance')
   const scale = s.target ?? s.native
-  const text = `${name} rendering${scale ? ` (${times(scale)})` : ''} starts after a restart`
+  const text = scale
+    ? t('{{mode}} rendering ({{scale}}) starts after a restart', {
+        mode: name,
+        scale: times(scale)
+      })
+    : t('{{mode}} rendering starts after a restart', { mode: name })
   if (text === restartText && lib.toast?.text === text) return
   restartText = text
-  lib.say(text, 'info', { label: 'Restart', run: () => void api.app.restart() })
+  lib.say(text, 'info', { label: t('Restart'), run: () => void api.app.restart() })
 }
 
 /** Poll the engine's status, storing it only when it changed, so nothing re-renders every tick. */
@@ -265,18 +277,20 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
   const lib = useLibrary.getState()
   // A smart look's own jobs: its run records them in the look's history step (lib/applyLook.ts).
   if (e.group) return
-  if (e.phase === 'error') return lib.say(`${e.title}: ${e.message ?? 'failed'}`, 'error')
+  if (e.phase === 'error') return lib.say(`${e.title}: ${e.message ?? t('failed')}`, 'error')
   if (e.phase !== 'done') return
   const r = e.result
   if (r?.kind === 'applied') {
     // The photo's renders switched over already; say so only when it is not in view.
-    if (useDevelop.getState().session?.key !== e.key) lib.say(`${r.label} made for ${e.name}`)
+    if (useDevelop.getState().session?.key !== e.key)
+      lib.say(t('{{what}} made for {{name}}', { what: r.label, name: e.name }))
     return
   }
   if (r?.kind === 'step') {
     // Main added the step to the photo's recipe: History records it here.
     const dev = useDevelop.getState()
-    if (dev.session?.key !== e.key) return lib.say(`${r.label} added to ${e.name}`)
+    if (dev.session?.key !== e.key)
+      return lib.say(t('{{what}} added to {{name}}', { what: r.label, name: e.name }))
     const s = await api.develop.open(e.key)
     if (useDevelop.getState().session?.key !== e.key) return
     useDevelop.getState().replace(s.recipe, r.label)
@@ -285,8 +299,8 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
   if (r?.kind !== 'mask') return
   const dev = useDevelop.getState()
   if (dev.session?.key !== e.key) {
-    return lib.say(`${r.label} mask added to ${e.name}`, 'info', {
-      label: 'Show',
+    return lib.say(t('{{what}} mask added to {{name}}', { what: r.label, name: e.name }), 'info', {
+      label: t('Show'),
       run: () => {
         lib.setFocus(e.key)
         void useDevelop.getState().open(e.key)
@@ -295,7 +309,7 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
   }
   const s = await api.develop.open(e.key)
   if (useDevelop.getState().session?.key !== e.key) return
-  useDevelop.getState().replace(s.recipe, `AI: ${r.label}`)
+  useDevelop.getState().replace(s.recipe, t('AI: {{what}}', { what: r.label }))
   if (r.into) {
     useDevelop.getState().setLayer(r.into.layerId)
     // Shown: what the model found is the point.
@@ -318,13 +332,13 @@ function flushThumbs(): void {
   thumbFrame = 0
   const patch: LibraryItem[] = []
   for (const it of useLibrary.getState().items) {
-    const t = thumbsWaiting.get(it.key)
+    const thumb = thumbsWaiting.get(it.key)
     const hdr = hdrWaiting.get(it.photoId)
     const hdrChanged = hdrWaiting.has(it.photoId) && it.hdr !== hdr
-    if (!t && !hdrChanged) continue
+    if (!thumb && !hdrChanged) continue
     patch.push({
       ...it,
-      ...(t ? { thumbUrl: t.url ?? it.thumbUrl, unreadable: !!t.unreadable } : {}),
+      ...(thumb ? { thumbUrl: thumb.url ?? it.thumbUrl, unreadable: !!thumb.unreadable } : {}),
       ...(hdrChanged ? { hdr } : {})
     })
   }
@@ -337,7 +351,7 @@ function flushThumbs(): void {
 function openEngineReport(): void {
   const lib = useLibrary.getState()
   if (lib.view === 'develop' && useDevelop.getState().session) lib.setDialog('engine')
-  else lib.say('Open a photo in Develop to see its engine report')
+  else lib.say(t('Open a photo in Develop to see its engine report'))
 }
 
 /** Uncaught errors and rejections go to main: the log, and a crash report when opted in. */
@@ -371,21 +385,24 @@ async function askCrashConsent(): Promise<void> {
 function useShortcuts(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      const t = e.target as HTMLElement
+      const el = e.target as HTMLElement
       if (
-        t.tagName === 'INPUT' &&
-        (t as HTMLInputElement).type !== 'range' &&
-        (t as HTMLInputElement).type !== 'checkbox'
+        el.tagName === 'INPUT' &&
+        (el as HTMLInputElement).type !== 'range' &&
+        (el as HTMLInputElement).type !== 'checkbox'
       )
         return
-      if (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return
       // A focused slider owns its arrow keys.
-      if (t.tagName === 'INPUT' && e.key.startsWith('Arrow')) return
+      if (el.tagName === 'INPUT' && e.key.startsWith('Arrow')) return
       const lib = useLibrary.getState()
       // An open dialog, or a confirm, has the keyboard (it closes itself on Escape).
       if (lib.dialog || useConfirm.getState().open) return
       const cmd = commandFor(e, lib.view === 'develop')
-      if (cmd) cmd.run(e)
+      if (!cmd) return
+      cmd.run(e)
+      // Taken: the menu bar (macOS) doesn't answer the key as well.
+      e.preventDefault()
     }
     const onKeyUp = (e: KeyboardEvent): void => {
       // A held command lets go when its key does, whatever else is still down.
@@ -408,6 +425,7 @@ function useShortcuts(): void {
 
 export default function App(): React.JSX.Element {
   useShortcuts()
+  const language = useLanguage((s) => s.language)
   const gate = useGate()
   // The launch (the index, the last folder, the listeners) waits until the
   // beta gate first opens, then runs once: main refuses those calls while
@@ -454,6 +472,7 @@ export default function App(): React.JSX.Element {
       startDisplayUpkeep(),
       startCullUpkeep(),
       startUpdateNotice(),
+      startMenuUpkeep(),
       // Full HDR toggled, or the display's numbers moved: render for it again.
       useUi.subscribe((s, prev) => {
         if (s.fullHdr !== prev.fullHdr) useDevelop.getState().pushView()
@@ -524,15 +543,16 @@ export default function App(): React.JSX.Element {
       // After an update, what it brought; the crash-report question waits for a launch without it.
       void showWhatsNew().then(askCrashConsent)
     })
-    const t = setInterval(() => void refreshEngine(), 5000)
+    const poll = setInterval(() => void refreshEngine(), 5000)
     return () => {
       offs.forEach((off) => off())
-      clearInterval(t)
+      clearInterval(poll)
     }
   }, [booted])
   return (
     <MotionConfig reducedMotion={efficient ? 'always' : 'user'}>
-      <div className="app">
+      {/* Drawn again, whole, in a newly chosen language. */}
+      <div className="app" key={language}>
         <Screens />
         <DialogHost />
         <ConfirmHost />

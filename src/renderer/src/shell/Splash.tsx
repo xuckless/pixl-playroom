@@ -3,6 +3,7 @@ import { Mark } from '../components/Mark'
 import { CssAmbient } from '../fx/CssFallbacks'
 import { BOOT_STEPS, useBoot } from '../state/boot'
 import { useLibrary } from '../state/library'
+import { t } from '../lib/i18n'
 
 /** However quick the launch, the splash stays this long, so it never just flickers. */
 const MIN_SHOWN_MS = 1500
@@ -32,9 +33,9 @@ export function Splash(): React.JSX.Element | null {
     }
   }, [ended, shownAt])
   if (phase === 'gone') return null
-  const status = ended
-    ? 'Ready'
-    : (BOOT_STEPS.find((s) => !finished.includes(s.id))?.label ?? 'Ready')
+  const status = t(
+    ended ? 'Ready' : (BOOT_STEPS.find((s) => !finished.includes(s.id))?.label ?? 'Ready')
+  )
   const share = ended ? 1 : finished.length / (BOOT_STEPS.length + 1)
   return (
     <div className={`splash${phase === 'out' ? ' out' : ''}`} role="status" aria-live="polite">

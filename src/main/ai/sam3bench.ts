@@ -4,6 +4,7 @@
  * a phrase found on each, the AI engine's memory watched. Judged and kept
  * like Gemma's. While SAM 3 is held (E58) it is not offered.
  */
+import { t } from '../../shared/i18n'
 import { app } from 'electron'
 import log from 'electron-log/main'
 import { writeFile, rm } from 'fs/promises'
@@ -56,8 +57,8 @@ export async function benchmarkSam3(
   switches: AiSwitchStore,
   progress: (p: number, note: string) => void
 ): Promise<HeavyBenchmark> {
-  if (!SAM3_PHRASE) throw new Error('SAM 3 is held back for now (it brings the engine down: E58)')
-  if (!(await models.installed('sam3'))) throw new Error('Download SAM 3 first')
+  if (!SAM3_PHRASE) throw new Error(t('SAM 3 is held back for now (it brings the engine down: E58)'))
+  if (!(await models.installed('sam3'))) throw new Error(t('Download SAM 3 first'))
   const ref = (await models.ref('sam3', 'Cpu')) as {
     encoder: Record<string, unknown>
     text_encoder: Record<string, unknown>
@@ -76,8 +77,8 @@ export async function benchmarkSam3(
       await engine.whenStarted()
     }
     for (let i = 0; i < RUNS; i++) {
-      progress((i + 0.5) / RUNS, `Run ${i + 1} of ${RUNS}`)
-      const t = Date.now()
+      progress((i + 0.5) / RUNS, t('Run {{run}} of {{runs}}', { run: i + 1, runs: RUNS }))
+      const t0 = Date.now()
       const r = (await engine.sam({
         op: 'concept',
         // A key of its own each run: a fresh embedding, the load being measured.
@@ -108,7 +109,7 @@ export async function benchmarkSam3(
         }
       })) as Extract<SamResult, { op: 'concept' }>
       if (i === 0) readyMs = r.embedMs
-      runs.push({ ms: Date.now() - t })
+      runs.push({ ms: Date.now() - t0 })
       peak = Math.max(peak, aiHostMb())
     }
   } catch (err) {
@@ -132,6 +133,6 @@ export async function benchmarkSam3(
   }
   log.info('sam3 benchmark', JSON.stringify(b))
   await switches.recordBenchmark(b)
-  progress(1, b.passed ? 'Passed' : 'Did not pass')
+  progress(1, b.passed ? t('Passed') : t('Did not pass'))
   return b
 }

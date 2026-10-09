@@ -16,6 +16,7 @@ import { useObjects } from '../state/objects'
 import { useMaskDraft } from '../views/loupe/maskgl/state'
 import { api, errorText } from './api'
 import { ensureModel } from './ensureModel'
+import { t, tk } from './i18n'
 
 /** Bytes as base64, in chunks (a plane is hundreds of kilobytes). */
 function base64(bytes: Uint8Array): string {
@@ -74,7 +75,7 @@ export async function commitObjects(): Promise<void> {
     const comp: BrushComponent = {
       id: newId(),
       kind: 'brush',
-      name: label ?? 'Object',
+      name: label ? t(label) : t('Object'),
       // Every one of several is added: what one click takes, the next does not take away.
       mode: concept?.many && layer.components.length > 0 ? 'Add' : modeForNew(layer),
       opacity: 100,
@@ -92,10 +93,12 @@ export async function commitObjects(): Promise<void> {
       const l = layerOf(r, layerId)
       if (!l) return
       // A new mask that is only the sky (the hair…) is called that.
-      if (label && l.components.length === 0) l.name = label
+      if (label && l.components.length === 0) l.name = t(label)
       l.components.push(comp)
     })
-    d.commit(label ? `Select ${label.toLowerCase()}` : 'Select object')
+    // "Select sky" in English; a translated name keeps its own case (German nouns).
+    const what = label ? (t(label) === label ? label.toLowerCase() : t(label)) : null
+    d.commit(what ? t('Select {{what}}', { what }) : tk('Select object'))
     madeComponent(comp.id)
     showDraft(null)
     useObjects.setState({ plane: null })
@@ -126,15 +129,16 @@ export async function findObject(compId: string): Promise<void> {
   const lasso = layer?.components.find((c) => c.id === compId)
   if (!session || !layer || lasso?.kind !== 'polygon') return
   const say = useLibrary.getState().say
-  if (!(await ensureModel('prompt', 'Find object'))) return
+  if (!(await ensureModel('prompt', t('Find object')))) return
   const prompt = lassoPrompt(lasso.points, session.frameWidth / session.frameHeight)
-  if (!prompt) return say('Draw a larger outline around the object first', 'error')
-  say('Finding the object in the outline…')
+  if (!prompt) return say(t('Draw a larger outline around the object first'), 'error')
+  say(t('Finding the object in the outline…'))
   let selId: string | null = null
   try {
     selId = (await api.select.open(session.key)).selId
     const plane = await api.select.decode(selId, { seq: 1, mode: 'replace', prompt })
-    if (!plane || plane.coverage < 0.0005) throw new Error('Nothing stands out inside this outline')
+    if (!plane || plane.coverage < 0.0005)
+      throw new Error(t('Nothing stands out inside this outline'))
     const made = await api.select.commit(selId, { via: 'lasso' })
     const now = useDevelop.getState()
     if (now.session?.key !== session.key) return
@@ -147,7 +151,7 @@ export async function findObject(compId: string): Promise<void> {
         l.components[i] = {
           id,
           kind: 'brush',
-          name: 'Object',
+          name: t('Object'),
           mode: was.mode,
           opacity: was.opacity,
           invert: was.invert,
@@ -161,7 +165,7 @@ export async function findObject(compId: string): Promise<void> {
         }
       }
     })
-    now.commit('Find object')
+    now.commit(tk('Find object'))
     now.setComp(id)
   } catch (err) {
     say(errorText(err), 'error')
