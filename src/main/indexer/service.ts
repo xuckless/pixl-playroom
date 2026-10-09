@@ -49,6 +49,7 @@ import { ENGINE_RENDER_REV } from '../../shared/pixels'
 import { groupNear } from '../../shared/dupes'
 import { parseRawColour } from '../../shared/rawcolour'
 import { readNames, searchWords } from '../../shared/naming'
+import { CULL_VERSION, cullKey, type CullModels } from '../../shared/cull'
 import { convertAsShot, type WbContext } from '../../shared/wbconvert'
 import { keywordPrefixes, normaliseKeyword } from '../../shared/keywords'
 import {
@@ -2175,6 +2176,32 @@ export class IndexService {
   /** Naming gave no usable answer: not tried again by itself. */
   namingFailed(photoId: number): void {
     this.store.setNamesTried(photoId, new Date().toISOString())
+  }
+
+  /** Photos whose cull signals are missing or stale (another file version, an older measure), newest first. */
+  unmeasured(limit: number, models: CullModels): number[] {
+    const out: number[] = []
+    for (const r of this.store.cullState()) {
+      if (r.cull_key === cullKey(r.mtime, r.size, models)) continue
+      out.push(r.id)
+      if (out.length >= limit) break
+    }
+    return out
+  }
+
+  /** A photo's cull signals measured: kept with the file version they were measured on. */
+  setCull(photoId: number, json: string, models: CullModels): void {
+    const row = this.store.photo(photoId)
+    if (row) this.store.setCull(photoId, json, cullKey(row.mtime, row.size, models))
+  }
+
+  /** The signals of these photos measured on their current file (whatever the models then), by photo id. */
+  cullSignals(photoIds: number[]): Record<number, string> {
+    const out: Record<number, string> = {}
+    for (const c of this.store.culls(photoIds))
+      if (c.cull && c.cull_key?.startsWith(`${c.mtime}:${c.size}:v${CULL_VERSION}:`))
+        out[c.id] = c.cull
+    return out
   }
 
   /** Photos to name next, newest arrivals first. */

@@ -67,6 +67,9 @@ export interface PhotoRow {
   names?: string | null
   /** When naming it last gave no usable answer (ISO). */
   names_tried?: string | null
+  /** Cull signals (shared/cull.ts `CullSignals`, JSON), and what they were measured for (`cullKey`). */
+  cull?: string | null
+  cull_key?: string | null
   /** The photo's `.pixl` project (the truth about its edits once it has one), and its mtime as mirrored. */
   project_path: string | null
   project_mtime: number | null
@@ -338,7 +341,11 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   // 14. What Gemma named in the photo (shared/naming.ts), as JSON, for the
   // Masks pane's chips and the Library's search; and when it last tried and
   // gave no usable answer (not tried again by itself).
-  (db) => addColumns(db, 'photos', { names: 'TEXT', names_tried: 'TEXT' })
+  (db) => addColumns(db, 'photos', { names: 'TEXT', names_tried: 'TEXT' }),
+  // 15. Cull signals (shared/cull.ts): exposure, focus in the subject, blur,
+  // blink hints and the picture hash, as JSON, and the file version and
+  // signal version they were measured for.
+  (db) => addColumns(db, 'photos', { cull: 'TEXT', cull_key: 'TEXT' })
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -812,6 +819,40 @@ export class Store {
          ORDER BY COALESCE(added, mtime) DESC LIMIT ?`
       ).all(limit) as { id: number }[]
     ).map((r) => r.id)
+  }
+
+  setCull(photoId: number, cull: string, key: string): void {
+    this.prepare('UPDATE photos SET cull = ?, cull_key = ? WHERE id = ?').run(cull, key, photoId)
+  }
+
+  /** Each readable photo's file version and the key its signals were measured for. */
+  cullState(): {
+    id: number
+    mtime: number
+    size: number
+    cull_key: string | null
+    added: number
+  }[] {
+    return this.prepare(
+      `SELECT id, mtime, size, cull_key, COALESCE(added, mtime) AS added FROM photos
+       WHERE failed_key IS NULL ORDER BY COALESCE(added, mtime) DESC`
+    ).all() as { id: number; mtime: number; size: number; cull_key: string | null; added: number }[]
+  }
+
+  /** Signals of these photos, as kept. */
+  culls(
+    ids: number[]
+  ): { id: number; mtime: number; size: number; cull: string | null; cull_key: string | null }[] {
+    if (ids.length === 0) return []
+    return this.prepare(
+      `SELECT id, mtime, size, cull, cull_key FROM photos WHERE id IN (${ids.map(() => '?').join(',')})`
+    ).all(...ids) as {
+      id: number
+      mtime: number
+      size: number
+      cull: string | null
+      cull_key: string | null
+    }[]
   }
 
   setRawColour(photoId: number, colour: string | null): void {

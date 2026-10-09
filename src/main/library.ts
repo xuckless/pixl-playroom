@@ -567,44 +567,53 @@ export class Library {
 
   /**
    * The photo as Gemma is shown it (shared/naming.ts): unedited (names are
-   * of what is in it, not of an edit), upright, sRGB, its long side
-   * NAMING_EDGE: a RAW's embedded preview, anything else its own pixels. A
-   * RAW with no usable preview is developed plainly at thumbnail size.
+   * of what is in it, not of an edit), NAMING_EDGE on its long side.
    */
   async namingPicture(photoId: number): Promise<Buffer> {
+    const out = join(paths.cacheRoot(), `naming-${process.pid}-${photoId}.jpg`)
+    try {
+      await this.writeUnedited(photoId, NAMING_EDGE, out)
+      return await readFile(out)
+    } finally {
+      await rm(out, { force: true })
+    }
+  }
+
+  /**
+   * The photo unedited, upright and sRGB, at most `edge` on its long side,
+   * as a JPEG at `out`: what is measured or named of it (Gemma's names, the
+   * cull signals), never an edit. A RAW's embedded preview, anything else
+   * its own pixels; a RAW with no usable preview is developed plainly at
+   * thumbnail size.
+   */
+  async writeUnedited(photoId: number, edge: number, out: string): Promise<void> {
     const row = await this.readable(await this.index.row(keyOf(photoId, null)))
     const info = await this.probe(row)
     const raw = row.is_raw === 1
-    const out = join(paths.cacheRoot(), `naming-${process.pid}-${photoId}.jpg`)
     const base = {
-      encode: { Jpeg: { quality: 88, subsampling: 'Quarter' as const, optimize: false } },
+      encode: { Jpeg: { quality: 90, subsampling: 'Quarter' as const, optimize: false } },
       pixel: { depth: 'Eight' as const, channels: 3 },
       metadata: { exif: false, icc: true, xmp: false, iptc: false },
       threads: BACKGROUND_THREADS,
       color: displayPolicy(info, 'Srgb')
     }
+    const rawMode = raw ? ('EmbeddedPreview' as const) : null
+    const orientation = sourceOrientation(info, rawMode)
+    const factor = Math.min(1, edge / Math.max(info.width, info.height))
     try {
-      const rawMode = raw ? ('EmbeddedPreview' as const) : null
-      const orientation = sourceOrientation(info, rawMode)
-      const factor = Math.min(1, NAMING_EDGE / Math.max(info.width, info.height))
-      try {
-        await this.engine.convert({
-          ...blankRequest(row.path, out, info.input, info),
-          ...base,
-          raw: rawMode,
-          resize: factor < 1 ? { Scale: { factor } } : 'None',
-          framing:
-            orientation === 'Normal'
-              ? null
-              : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
-        })
-      } catch (err) {
-        if (!raw) throw err
-        await this.graded(row, info, defaultRecipe(true), out, base)
-      }
-      return await readFile(out)
-    } finally {
-      await rm(out, { force: true })
+      await this.engine.convert({
+        ...blankRequest(row.path, out, info.input, info),
+        ...base,
+        raw: rawMode,
+        resize: factor < 1 ? { Scale: { factor } } : 'None',
+        framing:
+          orientation === 'Normal'
+            ? null
+            : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
+      })
+    } catch (err) {
+      if (!raw) throw err
+      await this.graded(row, info, defaultRecipe(true), out, base)
     }
   }
 

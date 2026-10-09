@@ -894,12 +894,25 @@ signed-build checks of Pass 112).
   field syntax into its labels without the space it expects after a colon;
   the speed has to come from `brain.name()`'s shorter answer (engine 0.20).
 
-### Pass 114 — Cull signals · 4 pts
+### Pass 114 — Cull signals · 4 pts ✅
 
-- [ ] **M** · Per photo, cached: exposure (luma percentiles, clip
-      fractions), focus in the subject's region (`focus` with U²-Netp's
-      plane as a mask), motion blur (coherence), blink as a hint (Face
-      Mesh), duplicates (`phash`, Hamming distance).
+- [x] **M** · Per photo, cached (`main/cull.ts`, `shared/cull.ts`, index
+      migration 15): one unedited picture (2048 px, a RAW's embedded
+      preview) read once by `analyze` for exposure (luma percentiles 1/5/50/
+      95/99, the worst channel's crushed and blown fractions), the 64-bit
+      `phash`, and `focus` over the whole frame and inside U²-Netp's subject
+      plane (Laplacian variance, gradient energy, coherence and angle: blur
+      runs perpendicular); Face Mesh's `eyeBlinkLeft`/`Right` per face as a
+      hint only. Duplicates: `phashGroups` (Hamming ≤ 10 bits the same
+      picture, the guide's measure). The models run only with AI on and
+      their files here (nothing downloaded for this); the key names the
+      file version and the models used, so a model arriving later measures
+      again. In the background on Gemma's terms (mains power, a minute
+      idle), newest first.
+- In the app (M2 Pro): 0.3–0.6 s a photo with both models; a re-encoded
+  1600 px copy hashed the same as its original; the portrait's face found
+  with eyes open (0.10/0.06); landscapes without a salient subject keep the
+  whole-frame focus only.
 
 ### Pass 115 — Cull suggestions in the Library · 4 pts
 

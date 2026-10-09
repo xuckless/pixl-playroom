@@ -1330,9 +1330,13 @@ export interface FocusSpec {
 export interface FocusRegionReport {
   laplacian_variance: number
   gradient_energy: number
+  /** The structure tensor's coherence, 0..1. */
   coherence: number
-  angle: number
-  orientation: number[]
+  /** The dominant gradient's angle, degrees (blur runs perpendicular to it). */
+  gradient_angle_deg: number
+  orientation_histogram: number[]
+  /** Pixels the region weighed. */
+  pixels: number
   [k: string]: unknown
 }
 

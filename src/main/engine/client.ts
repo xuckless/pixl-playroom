@@ -131,6 +131,8 @@ export interface FaceReport {
     bounds: number[]
     score: number
     outlines: Record<string, { contours: { points: { x: number; y: number }[] }[] }> | null
+    /** Face Mesh's 52 blendshape scores (`eyeBlinkLeft`, …), when the landmarker reads them. */
+    blendshapes?: { name: string; score: number }[] | null
   }[]
   frame_width: number
   frame_height: number

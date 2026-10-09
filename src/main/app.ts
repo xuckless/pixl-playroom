@@ -10,6 +10,7 @@ import { startCrashReporting } from './crash'
 import { onRenderScale, settleScale, watchDisplay } from './display'
 import { sweepEngineTemps, watchRest } from './rest'
 import { Namer } from './ai/namer'
+import { CullMeasurer } from './cull'
 import { gemmaInBuild } from '../shared/heavy'
 import { EngineClient } from './engine/client'
 import { SelectService } from './select/service'
@@ -339,9 +340,13 @@ app.whenReady().then(() => {
   // Gemma names the library's photos while nobody is at the computer, on mains power.
   const namer = new Namer(index, library, brain, switches)
   if (gemmaInBuild(app.isPackaged)) namer.start()
+  // The cull signals, measured on the same terms (Pass 115 suggests from them).
+  const cull = new CullMeasurer(index, library, bgEngine, aiEngine, models, switches)
+  cull.start()
   // Quitting: Gemma's server goes with Playroom, never left running.
   app.on('will-quit', () => {
     namer.stop()
+    cull.stop()
     brain.killNow()
   })
   process.on('exit', () => brain.killNow())

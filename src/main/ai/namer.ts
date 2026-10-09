@@ -10,7 +10,7 @@
  * The open photo can also be named at once from its Masks pane (`nameNow`),
  * idle or not.
  */
-import { BrowserWindow, powerMonitor } from 'electron'
+import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { IPC, type LibraryItem } from '../../shared/ipc'
 import { readNames, type PhotoNames } from '../../shared/naming'
@@ -18,6 +18,7 @@ import type { IndexClient } from '../indexer/client'
 import type { Library } from '../library'
 import { NamingAnswerError, type BrainStore } from './brain'
 import type { AiSwitchStore } from './switches'
+import { idleOnPower } from './idle'
 
 /** How long nobody touched the computer before naming starts, seconds (a test run may say less). */
 const IDLE_S = Number(process.env.PLAYROOM_NAMING_IDLE_S ?? 60)
@@ -48,9 +49,7 @@ export class Namer {
 
   /** May it name in the background now? */
   private async mayRun(): Promise<boolean> {
-    if (powerMonitor.isOnBatteryPower()) return false
-    if (powerMonitor.getSystemIdleTime() < IDLE_S) return false
-    return this.switches.allowed('gemma')
+    return idleOnPower(IDLE_S) && this.switches.allowed('gemma')
   }
 
   private async tick(): Promise<void> {
