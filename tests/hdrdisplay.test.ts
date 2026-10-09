@@ -1,6 +1,10 @@
 // The display the HDR preview renders for (engine 0.18: Ceiling::Display).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   DEFAULT_DISPLAY_SETTING,
   displayChanged,
@@ -65,12 +69,33 @@ test('Full HDR renders for the display while on; a Mac with headroom to reach as
   assert.equal(renderDisplay(true, sdr), null)
 })
 
-test('Full HDR keeps its SDR companion as a Display P3 PNG the engine reads', async () => {
-  const { encodePng8, decodePng, CICP_DISPLAY_P3 } = await import('../src/main/pngio')
+/** The native engine, where it is built (not in CI: those checks skip). */
+const engine = (() => {
+  try {
+    return createRequire(import.meta.url)('@xuckless/pixl-engine') as {
+      probe(p: string): Promise<{ width: number; color_space?: unknown }>
+    }
+  } catch {
+    return null
+  }
+})()
+
+async function companionPng(): Promise<{
+  png: Uint8Array
+  w: number
+  h: number
+  rgba: Uint8Array
+}> {
+  const { encodePng8, CICP_DISPLAY_P3 } = await import('../src/main/pngio')
   const w = 3
   const h = 2
   const rgba = new Uint8Array(w * h * 4).map((_, i) => (i * 37) % 256)
-  const png = encodePng8(rgba, w, h, 1, [CICP_DISPLAY_P3])
+  return { png: encodePng8(rgba, w, h, 1, [CICP_DISPLAY_P3]), w, h, rgba }
+}
+
+test('Full HDR keeps its SDR companion as a Display P3 PNG', async () => {
+  const { decodePng } = await import('../src/main/pngio')
+  const { png, w, h, rgba } = await companionPng()
   const d = decodePng(png)
   assert.equal(d.width, w)
   assert.equal(d.colorType, 6)
@@ -80,18 +105,19 @@ test('Full HDR keeps its SDR companion as a Display P3 PNG the engine reads', as
       [...d.rows.subarray(y * w * 4, (y + 1) * w * 4)],
       [...rgba.subarray(y * w * 4, (y + 1) * w * 4)]
     )
-  const { createRequire } = await import('node:module')
-  const { mkdtempSync, writeFileSync } = await import('node:fs')
-  const { tmpdir } = await import('node:os')
-  const { join } = await import('node:path')
-  const engine = createRequire(import.meta.url)('@xuckless/pixl-engine') as {
-    probe(p: string): Promise<{ width: number; color_space?: unknown }>
-  }
-  const file = join(mkdtempSync(join(tmpdir(), 'companion-')), 'c.png')
-  writeFileSync(file, png)
-  const info = await engine.probe(file)
-  assert.equal(info.width, w)
 })
+
+test(
+  'the engine reads the SDR companion',
+  { skip: engine === null ? 'the engine is not built for this platform' : false },
+  async () => {
+    const { png, w } = await companionPng()
+    const file = join(mkdtempSync(join(tmpdir(), 'companion-')), 'c.png')
+    writeFileSync(file, png)
+    const info = await engine!.probe(file)
+    assert.equal(info.width, w)
+  }
+)
 
 test('a drifting headroom renders again only a quarter stop on', async () => {
   const { renderDisplay, steppedHeadroom } = await import('../src/shared/hdrdisplay')
