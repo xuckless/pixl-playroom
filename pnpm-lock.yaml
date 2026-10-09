@@ -172,9 +172,6 @@ importers:
       '@electron-toolkit/utils':
         specifier: ^4.0.0
         version: 4.0.0(electron@44.4.3(supports-color@7.2.0))
-      '@xuckless/pixl-auto':
-        specifier: github:xuckless/pixl-engine#v0.19.1&path:/bindings/auto
-        version: git+https://github.com/xuckless/pixl-engine.git#1843a4bc04091eb55e2729881c72d40d4d19c357&path:/bindings/auto(@xuckless/pixl-engine@0.19.1)(@xuckless/pixl-models@0.19.1)
       '@xuckless/pixl-engine':
         specifier: 0.19.1
         version: 0.19.1
@@ -1237,14 +1234,6 @@ packages:
   '@xmldom/xmldom@0.8.15':
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
     engines: {node: '>=10.0.0'}
-
-  '@xuckless/pixl-auto@git+https://github.com/xuckless/pixl-engine.git#1843a4bc04091eb55e2729881c72d40d4d19c357&path:/bindings/auto':
-    resolution: {commit: 1843a4bc04091eb55e2729881c72d40d4d19c357, path: /bindings/auto, repo: https://github.com/xuckless/pixl-engine.git, type: git}
-    version: 0.19.1
-    engines: {node: '>= 20'}
-    peerDependencies:
-      '@xuckless/pixl-engine': 0.19.1
-      '@xuckless/pixl-models': 0.19.1
 
   '@xuckless/pixl-engine-darwin-arm64@0.19.1':
     resolution: {integrity: sha512-egNgjEBBI4eYdT0pBs1/ib4sq6mOX0Epl8dngYDoBi3Y2S+WlWngMPVr0oitgyTVMOC0dDZhYTIw4XCmfW9TQw==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-darwin-arm64/0.19.1/34721e18cfb3673abb08d830bc70171a9f050aa7}
@@ -4001,11 +3990,6 @@ snapshots:
   '@webgpu/types@0.1.74': {}
 
   '@xmldom/xmldom@0.8.15': {}
-
-  '@xuckless/pixl-auto@git+https://github.com/xuckless/pixl-engine.git#1843a4bc04091eb55e2729881c72d40d4d19c357&path:/bindings/auto(@xuckless/pixl-engine@0.19.1)(@xuckless/pixl-models@0.19.1)':
-    dependencies:
-      '@xuckless/pixl-engine': 0.19.1
-      '@xuckless/pixl-models': 0.19.1
 
   '@xuckless/pixl-engine-darwin-arm64@0.19.1':
     optional: true

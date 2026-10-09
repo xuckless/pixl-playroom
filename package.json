@@ -35,7 +35,6 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
-    "@xuckless/pixl-auto": "github:xuckless/pixl-engine#v0.19.1&path:/bindings/auto",
     "@xuckless/pixl-engine": "0.19.1",
     "@xuckless/pixl-models": "0.19.1",
     "electron-log": "^5.4.4",

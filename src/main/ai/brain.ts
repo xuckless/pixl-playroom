@@ -24,9 +24,13 @@ import { createServer } from 'net'
 import { cpus, totalmem } from 'os'
 import { join } from 'path'
 import { promisify } from 'util'
-import * as auto from '@xuckless/pixl-auto'
-// SYSTEM isn't exported from the package's root in 0.19 (the guide §1a).
-import { SYSTEM } from '@xuckless/pixl-auto/brain/local-server'
+import {
+  pixlAuto,
+  type LocalServer,
+  type LocalServerBrain,
+  type Pin,
+  type PixlAuto
+} from './pixlauto'
 import { IPC, type BrainStatus } from '../../shared/ipc'
 import {
   gemmaInBuild,
@@ -59,23 +63,29 @@ const IDLE_MS = 5 * 60_000
 /** The benchmark's runs: the same picture, back to back (about a minute on an M2 Pro). */
 const BENCH_RUNS = 5
 
-type Pin = { name: string; bytes: number; sha256: string }
-interface Pins {
-  brains: {
-    id: string
-    licence: string
-    source: { repo: string; commit: string }
-    files: { model: Pin; mmproj: Pin }
-  }[]
-  runtimes: {
-    id: string
-    licence: string
-    source: { repo: string; tag: string }
-    binary: Record<string, string>
-    platforms: Record<string, Pin>
-  }[]
+/** pixl-auto, where it is installed (not in 0.4.0-beta: ai/pixlauto.ts). */
+const AUTO = pixlAuto()
+const NO_PIN: Pin = { name: '', bytes: 0, sha256: '' }
+/** Where pixl-auto isn't installed: pins that name nothing (Gemma reads as unsupported). */
+const NO_BRAIN = {
+  id: BRAIN_ID,
+  licence: '',
+  source: { repo: '', commit: '' },
+  files: { model: NO_PIN, mmproj: NO_PIN }
 }
-const PINS = (auto as unknown as { pins: Pins }).pins
+const NO_RUNTIME = {
+  id: RUNTIME_ID,
+  licence: '',
+  source: { repo: '', tag: '' },
+  binary: {} as Record<string, string>,
+  platforms: {} as Record<string, Pin>
+}
+
+/** pixl-auto, where Gemma is used (only once `key` says this build has it). */
+function auto(): PixlAuto {
+  if (!AUTO) throw new Error(t('Gemma isn’t part of this version of Playroom'))
+  return AUTO
+}
 
 /** pixl-auto's internals the guide's naming call uses until `brain.name()` exists (0.20). */
 interface BrainInternals {
@@ -86,7 +96,7 @@ interface BrainInternals {
 
 /** brains.json's archive for this computer: Metal on Apple silicon, Vulkan on Windows; none where Gemma isn't in this build. */
 function platformKey(): string | null {
-  if (!gemmaInBuild(app.isPackaged)) return null
+  if (!AUTO || !gemmaInBuild(app.isPackaged)) return null
   if (process.platform === 'darwin') return process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64'
   if (process.platform === 'win32' && process.arch === 'x64') return 'win32-x64-vulkan'
   if (process.platform === 'linux' && process.arch === 'x64') return 'linux-x64'
@@ -167,14 +177,14 @@ function benchPicture(): Buffer {
 }
 
 export class BrainStore {
-  private readonly brain = PINS.brains.find((b) => b.id === BRAIN_ID)!
-  private readonly runtime = PINS.runtimes.find((r) => r.id === RUNTIME_ID)!
+  private readonly brain = AUTO?.pins.brains.find((b) => b.id === BRAIN_ID) ?? NO_BRAIN
+  private readonly runtime = AUTO?.pins.runtimes.find((r) => r.id === RUNTIME_ID) ?? NO_RUNTIME
   private readonly key = platformKey()
   private download_: { abort: AbortController; done: number; total: number } | null = null
   private failed: string | null = null
-  private server: { url: string; pid: number; close(): Promise<unknown> } | null = null
-  private starting: Promise<auto.LocalServerBrain> | null = null
-  private brainObj: auto.LocalServerBrain | null = null
+  private server: LocalServer | null = null
+  private starting: Promise<LocalServerBrain> | null = null
+  private brainObj: LocalServerBrain | null = null
   private idle: NodeJS.Timeout | undefined
   private benching = false
   /** Naming calls in flight. */
@@ -204,17 +214,17 @@ export class BrainStore {
     return [
       {
         pin: this.brain.files.model,
-        url: auto.brainUrl(BRAIN_ID, 'model'),
+        url: auto().brainUrl(BRAIN_ID, 'model'),
         dest: join(this.dir(), this.brain.files.model.name)
       },
       {
         pin: this.brain.files.mmproj,
-        url: auto.brainUrl(BRAIN_ID, 'mmproj'),
+        url: auto().brainUrl(BRAIN_ID, 'mmproj'),
         dest: join(this.dir(), this.brain.files.mmproj.name)
       },
       {
         pin: archive,
-        url: auto.runtimeUrl(RUNTIME_ID, this.key),
+        url: auto().runtimeUrl(RUNTIME_ID, this.key),
         dest: join(this.runtimeDir(), archive.name)
       }
     ]
@@ -327,7 +337,7 @@ export class BrainStore {
    * The assistant, its server started if it isn't (Gemma on, AI on). `bench`
    * starts it for the benchmark, before it may be on.
    */
-  async open(bench = false): Promise<auto.LocalServerBrain> {
+  async open(bench = false): Promise<LocalServerBrain> {
     if (!this.key) throw new Error(t('Gemma isn’t part of this version of Playroom'))
     if (!bench && !(await this.switches.allowed('gemma')))
       throw new Error(t('Gemma is off: turn it on in Settings → AI models'))
@@ -338,13 +348,13 @@ export class BrainStore {
     return this.starting
   }
 
-  private async launch(): Promise<auto.LocalServerBrain> {
+  private async launch(): Promise<LocalServerBrain> {
     const binary = await this.binary()
     if (!binary || !(await this.installed())) throw new Error(t('Gemma is not downloaded yet'))
     const api_key = randomBytes(32).toString('hex')
     const port = await freePort()
     const t0 = Date.now()
-    this.server = await auto.startLocalServer({
+    this.server = await auto().startLocalServer({
       binary,
       model: join(this.dir(), this.brain.files.model.name),
       mmproj: join(this.dir(), this.brain.files.mmproj.name),
@@ -358,19 +368,19 @@ export class BrainStore {
       api_key
     })
     log.info('brain started', BRAIN_ID, `${Date.now() - t0} ms`, `port ${port}`)
-    this.brainObj = new auto.LocalServerBrain({
+    this.brainObj = new (auto().LocalServerBrain)({
       url: this.server.url,
       brain: BRAIN_ID,
       seed: 1,
       // Gemma pretty-prints its JSON: under 3000 a plan is cut off (the guide).
       max_tokens: { plan: 3000, rephrase: 40, describe: 300 },
       timeout_ms: 180_000,
-      workers: auto.workersForPrompt(),
+      workers: auto().workersForPrompt(),
       api_key
     })
     // Naming only: the first line of its system text and the finders, no workers.
     const inner = this.brainObj as unknown as BrainInternals
-    inner._system = namingSystem(SYSTEM, auto.workersForPrompt())
+    inner._system = namingSystem(auto().SYSTEM, auto().workersForPrompt())
     this.emit()
     return this.brainObj
   }
@@ -414,7 +424,7 @@ export class BrainStore {
 
   /** Naming only: the plan's schema with no edits (the guide §1a). */
   private namingSchema(): Record<string, unknown> {
-    const schema = auto.planSchema({ auto: true }) as {
+    const schema = auto().planSchema({ auto: true }) as {
       properties: { edits: Record<string, unknown> }
     }
     schema.properties.edits = { ...schema.properties.edits, maxItems: 0 }
@@ -422,11 +432,7 @@ export class BrainStore {
   }
 
   /** One naming call on an open brain: Gemma's answer, as names (flagged targets dropped). */
-  private async ask(
-    brain: auto.LocalServerBrain,
-    image: Buffer,
-    mime: string
-  ): Promise<PhotoNames> {
+  private async ask(brain: LocalServerBrain, image: Buffer, mime: string): Promise<PhotoNames> {
     const inner = brain as unknown as BrainInternals
     const choice = await inner._chat('plan', {
       messages: inner._messages(NAME_PROMPT, image, mime),
@@ -442,7 +448,7 @@ export class BrainStore {
     } catch {
       throw new NamingAnswerError('Gemma’s answer was not JSON')
     }
-    const problems = auto.checkPlan(plan) as { path: string }[]
+    const problems = auto().checkPlan(plan) as { path: string }[]
     return namesFromPlan(plan as object, problems, BRAIN_ID, new Date().toISOString())
   }
 
