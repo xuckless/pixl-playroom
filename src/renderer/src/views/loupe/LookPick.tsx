@@ -11,6 +11,7 @@ import { boxAround } from '../../../../shared/prompt'
 import { answerPick } from '../../lib/applyLook'
 import { useDevelop } from '../../state/develop'
 import { useLooks } from '../../state/looks'
+import { rich, t } from '../../lib/i18n'
 
 /** A drag shorter than this (px) is a click. */
 const CLICK_PX = 6
@@ -108,10 +109,14 @@ export const LookPick = memo(function LookPick({
       {box && box.width + box.height >= CLICK_PX && <div className="look-pick-box" style={box} />}
       <div className="look-pick-note" onPointerDown={(e) => e.stopPropagation()}>
         <span>
-          Click the <strong>{pick.label}</strong> for {pick.look} · drag for a box
+          {rich(
+            'Click the {{object}} for {{look}} · drag for a box',
+            { object: <strong>{pick.label}</strong> },
+            { look: pick.look }
+          )}
         </span>
         <button className="sm ghost" onClick={() => answerPick({ kind: 'skip' })}>
-          Skip
+          {t('Skip')}
         </button>
       </div>
     </div>

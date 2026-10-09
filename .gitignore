@@ -14,3 +14,6 @@ out
 resources/ai/
 CLAUDE.md
 ENGINE-REQUESTS.md
+# Playroom's own native addons, built by scripts/build-native.mjs
+build/native/
+src/native/*/build/

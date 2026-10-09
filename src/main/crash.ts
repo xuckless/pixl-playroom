@@ -23,6 +23,7 @@ import {
 } from '../shared/crash'
 import type { CrashConsent, ErrorReport } from '../shared/ipc'
 import { readSettings, writeSettings } from './settings'
+import { t } from '../shared/i18n'
 
 /** Automation runs never report. */
 const hidden = process.env['PLAYROOM_HIDDEN'] === '1'
@@ -92,7 +93,7 @@ export async function sendProblemReport(
   input: ProblemInput,
   engineVersion?: string
 ): Promise<string> {
-  if (!input.message?.trim()) throw new Error('Describe the problem first.')
+  if (!input.message?.trim()) throw new Error(t('Describe the problem first.'))
   const body = problemPayload(
     input,
     {
@@ -115,12 +116,14 @@ export async function sendProblemReport(
     })
   } catch (err) {
     log.warn('problem report not sent', err)
-    throw new Error("Couldn't send the report. Check your connection and try again.")
+    throw new Error(t("Couldn't send the report. Check your connection and try again."))
   }
-  if (res.status === 429) throw new Error('Too many reports just now. Try again in a minute.')
+  if (res.status === 429) throw new Error(t('Too many reports just now. Try again in a minute.'))
   const answer = (await res.json().catch(() => null)) as { reference?: string } | null
   if (!res.ok || !answer?.reference) {
-    throw new Error(`The report server answered ${res.status}. Try again later.`)
+    throw new Error(
+      t('The report server answered {{status}}. Try again later.', { status: res.status })
+    )
   }
   log.info(`problem report sent: ${answer.reference}`)
   return answer.reference
@@ -155,7 +158,7 @@ export function startCrashReporting(): void {
     // What Electron shows without a handler, so a fault is still visible.
     if (!hidden)
       dialog.showErrorBox(
-        'A JavaScript error occurred in the main process',
+        t('A JavaScript error occurred in the main process'),
         err.stack ?? err.message
       )
   })

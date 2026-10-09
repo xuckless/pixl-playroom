@@ -39,6 +39,7 @@ import type {
   ShotLens,
   Vignetting
 } from './engine-types'
+import { t } from './i18n'
 
 // ── Profiles ─────────────────────────────────────────────────────────────────
 
@@ -170,23 +171,23 @@ const TCA_ARITY = { linear: 1, poly3: 3 } as const
 
 /** Check a profile read from a file; returns it, or why it is refused. */
 export function validateProfile(v: unknown, id: string): LensProfile | string {
-  if (typeof v !== 'object' || v === null) return 'not a JSON object'
+  if (typeof v !== 'object' || v === null) return t('not a JSON object')
   const p = v as Record<string, unknown>
   if (typeof p.maker !== 'string' || typeof p.model !== 'string')
-    return '`maker` and `model` must be strings'
+    return t('`maker` and `model` must be strings')
   if (!['HalfShorterSide', 'HalfDiagonal', 'FarthestCorner', 'Lensfun'].includes(p.unit as string))
-    return '`unit` must be HalfShorterSide, HalfDiagonal, FarthestCorner or Lensfun'
+    return t('`unit` must be HalfShorterSide, HalfDiagonal, FarthestCorner or Lensfun')
   const cal = p.calibration as Record<string, unknown> | undefined
   if (
     p.unit === 'Lensfun' &&
     !(cal && isNum(cal.crop) && cal.crop > 0 && isNum(cal.aspect) && cal.aspect > 0)
   )
-    return 'a `Lensfun` profile needs `calibration`: its camera’s `crop` and `aspect`'
+    return t('a `Lensfun` profile needs `calibration`: its camera’s `crop` and `aspect`')
   const list = (key: string): Record<string, unknown>[] | string => {
     const x = p[key]
     if (x === undefined) return []
     if (!Array.isArray(x) || !x.every((e) => typeof e === 'object' && e !== null))
-      return `\`${key}\` must be a list of samples`
+      return t('`{{key}}` must be a list of samples', { key })
     return x as Record<string, unknown>[]
   }
   const dist = list('distortion')
@@ -197,24 +198,26 @@ export function validateProfile(v: unknown, id: string): LensProfile | string {
   for (const s of fish as Record<string, unknown>[]) {
     const n = s.model === 'none' ? 0 : DIST_ARITY[s.model as keyof typeof DIST_ARITY]
     if (!isNum(s.focal) || n === undefined || !nums(s.k, n))
-      return 'each fisheye sample needs `focal`, `model` (none, poly3, poly5, ptlens) and its `k`'
+      return t(
+        'each fisheye sample needs `focal`, `model` (none, poly3, poly5, ptlens) and its `k`'
+      )
     if (s.realFocal !== undefined && !(isNum(s.realFocal) && s.realFocal > 0))
-      return 'a fisheye sample’s `realFocal` must be a positive number'
+      return t('a fisheye sample’s `realFocal` must be a positive number')
   }
   for (const s of dist as Record<string, unknown>[]) {
     const n = DIST_ARITY[s.model as keyof typeof DIST_ARITY]
     if (!isNum(s.focal) || !n || !nums(s.k, n))
-      return 'each distortion sample needs `focal`, `model` (poly3, poly5, ptlens) and its `k`'
+      return t('each distortion sample needs `focal`, `model` (poly3, poly5, ptlens) and its `k`')
   }
   for (const s of tca as Record<string, unknown>[]) {
     const n = TCA_ARITY[s.model as keyof typeof TCA_ARITY]
     if (!isNum(s.focal) || !n || !nums(s.red, n) || !nums(s.blue, n))
-      return 'each tca sample needs `focal`, `model` (linear, poly3), `red` and `blue`'
+      return t('each tca sample needs `focal`, `model` (linear, poly3), `red` and `blue`')
   }
   for (const s of vig as Record<string, unknown>[]) {
     if (!isNum(s.focal) || !isNum(s.aperture) || !nums(s.k) || (s.k as number[]).length < 1)
-      return 'each vignetting sample needs `focal`, `aperture` and `k`'
-    if ((s.k as number[]).length > 3) return 'vignetting takes at most three coefficients'
+      return t('each vignetting sample needs `focal`, `aperture` and `k`')
+    if ((s.k as number[]).length > 3) return t('vignetting takes at most three coefficients')
   }
   const fisheyeLens = isFisheye(typeof p.type === 'string' ? p.type : undefined)
   if (
@@ -223,7 +226,7 @@ export function validateProfile(v: unknown, id: string): LensProfile | string {
     !(vig as unknown[]).length &&
     !fisheyeLens
   )
-    return 'the profile corrects nothing'
+    return t('the profile corrects nothing')
   return {
     id,
     maker: p.maker,

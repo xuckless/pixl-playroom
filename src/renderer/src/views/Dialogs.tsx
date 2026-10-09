@@ -15,6 +15,7 @@ import { presetsChanged } from '../lib/hooks'
 import { useDevelop } from '../state/develop'
 import { useLibrary, useTargets } from '../state/library'
 import { keyHint, withKey } from '../lib/commands'
+import { t, tk, tp } from '../lib/i18n'
 
 function Field({
   label,
@@ -61,7 +62,11 @@ export function SyncDialog(): React.JSX.Element {
   const copied = [...groups].filter((g) => !(autoWb && g === 'whiteBalance'))
   return (
     <Modal
-      title={`Apply settings to ${keys.length} photo${keys.length === 1 ? '' : 's'}`}
+      title={tp(
+        'Apply settings to {{count}} photo',
+        'Apply settings to {{count}} photos',
+        keys.length
+      )}
       onClose={() => setDialog(null)}
       icon="copy"
       footer={
@@ -83,41 +88,44 @@ export function SyncDialog(): React.JSX.Element {
                 const dev = useDevelop.getState
                 if (developKey && keys.includes(developKey) && dev().session?.key === developKey) {
                   const s = await api.develop.open(developKey)
-                  if (dev().session?.key === developKey) dev().replace(s.recipe, 'Sync settings')
+                  if (dev().session?.key === developKey)
+                    dev().replace(s.recipe, tk('Sync settings'))
                 }
               }
               setDialog(null)
               // The batch shows its own progress and ends with an Undo.
               if (autoWb) void autoWbBatch(keys)
-              else say(`Applied to ${keys.length} photo${keys.length === 1 ? '' : 's'}`)
+              else say(tp('Applied to {{count}} photo', 'Applied to {{count}} photos', keys.length))
             } catch (err) {
               say(errorText(err), 'error')
             }
           }}
         >
-          Apply
+          {t('Apply')}
         </button>
       }
     >
       {!source && (
         <p>
-          Copy settings from a photo first ({keyHint('settings.copy') || 'Copy settings'} in
-          Develop).
+          {t('Copy settings from a photo first ({{key}} in Develop).', {
+            key: keyHint('settings.copy') || t('Copy settings')
+          })}
         </p>
       )}
       <p>
-        Chosen groups overwrite the same groups on each target. Everything else on the targets is
-        kept.
+        {t(
+          'Chosen groups overwrite the same groups on each target. Everything else on the targets is kept.'
+        )}
       </p>
       <div className="quick-row">
         <button className="chip" onClick={() => setGroups(new Set(RECIPE_GROUPS))}>
-          All
+          {t('All')}
         </button>
         <button className="chip" onClick={() => setGroups(new Set())}>
-          None
+          {t('None')}
         </button>
         <button className="chip" onClick={() => setGroups(new Set(['whiteBalance']))}>
-          White balance only
+          {t('White balance only')}
         </button>
       </div>
       <div className="rule" />
@@ -134,34 +142,34 @@ export function SyncDialog(): React.JSX.Element {
                 setGroups(n)
               }}
             />
-            {GROUP_LABELS[g]}
+            {t(GROUP_LABELS[g])}
           </label>
         ))}
       </div>
       {groups.has('whiteBalance') && (
         <>
           <div className="rule" />
-          <div className="quick-row" role="radiogroup" aria-label="White balance">
+          <div className="quick-row" role="radiogroup" aria-label={t('White balance')}>
             <span className="micro" style={{ alignSelf: 'center' }}>
-              White balance
+              {t('White balance')}
             </span>
             <button
               className={`chip${wbMode === 'copy' ? ' on' : ''}`}
               role="radio"
               aria-checked={wbMode === 'copy'}
               onClick={() => setWbMode('copy')}
-              title="The same white on every photo, converted between RAW and other files"
+              title={t('The same white on every photo, converted between RAW and other files')}
             >
-              Copy (converted per photo)
+              {t('Copy (converted per photo)')}
             </button>
             <button
               className={`chip${wbMode === 'auto' ? ' on' : ''}`}
               role="radio"
               aria-checked={wbMode === 'auto'}
               onClick={() => setWbMode('auto')}
-              title={withKey("Measure each photo's own white", 'autoWbBatch')}
+              title={withKey(t("Measure each photo's own white"), 'autoWbBatch')}
             >
-              Auto per photo
+              {t('Auto per photo')}
             </button>
           </div>
         </>
@@ -176,7 +184,7 @@ export function SavePresetDialog(): React.JSX.Element {
   const recipe = useDevelop((s) => s.recipe)
   const session = useDevelop((s) => s.session)
   const [name, setName] = useState('')
-  const [group, setGroup] = useState('User presets')
+  const [group, setGroup] = useState(() => t('User presets'))
   const [withSteps, setWithSteps] = useState(true)
   const [groups, setGroups] = useState<Set<RecipeGroup>>(
     new Set(
@@ -205,7 +213,7 @@ export function SavePresetDialog(): React.JSX.Element {
   )
   return (
     <Modal
-      title="Save preset"
+      title={t('Save preset')}
       onClose={() => setDialog(null)}
       icon="presets"
       footer={
@@ -226,25 +234,29 @@ export function SavePresetDialog(): React.JSX.Element {
               const kept = [...groups].filter((g) => g !== 'localAdjustments')
               await api.presets.save({
                 name: name.trim(),
-                group: group.trim() || 'User presets',
+                // The default group is kept in English (shown in the language of the day).
+                group:
+                  !group.trim() || group.trim() === t('User presets')
+                    ? 'User presets'
+                    : group.trim(),
                 groups: kept,
                 recipe: { ...recipe, layers: [], pixels: [] },
                 ...(wbOp ? { wbOp } : {}),
                 ...(converted.smart ? { smart: converted.smart } : {})
               })
               presetsChanged()
-              say(`Saved preset ${name.trim()}`)
+              say(t('Saved preset {{name}}', { name: name.trim() }))
               setDialog(null)
             } catch (err) {
               say(errorText(err), 'error')
             }
           }}
         >
-          Save
+          {t('Save')}
         </button>
       }
     >
-      <Field label="Name">
+      <Field label={t('Name')}>
         <input
           autoFocus
           value={name}
@@ -252,14 +264,14 @@ export function SavePresetDialog(): React.JSX.Element {
           onKeyDown={(e) => e.stopPropagation()}
         />
       </Field>
-      <Field label="Group">
+      <Field label={t('Group')}>
         <input
           value={group}
           onChange={(e) => setGroup(e.target.value)}
           onKeyDown={(e) => e.stopPropagation()}
         />
       </Field>
-      <p className="muted small">The preset carries only the checked groups:</p>
+      <p className="muted small">{t('The preset carries only the checked groups:')}</p>
       <div className="group-checks">
         {RECIPE_GROUPS.map((g) => (
           <label key={g} className="check">
@@ -273,7 +285,7 @@ export function SavePresetDialog(): React.JSX.Element {
                 setGroups(n)
               }}
             />
-            {GROUP_LABELS[g]}
+            {t(GROUP_LABELS[g])}
           </label>
         ))}
         {(recipe?.pixels.length ?? 0) > 0 && (
@@ -283,7 +295,7 @@ export function SavePresetDialog(): React.JSX.Element {
               checked={withSteps}
               onChange={(e) => setWithSteps(e.target.checked)}
             />
-            AI denoise &amp; deblur
+            {t('AI denoise & deblur')}
           </label>
         )}
       </div>
@@ -292,7 +304,9 @@ export function SavePresetDialog(): React.JSX.Element {
           <div className="smart-convert">
             {converted.kept.length > 0 && (
               <>
-                <p className="muted small">Saved as instructions, made again on each photo:</p>
+                <p className="muted small">
+                  {t('Saved as instructions, made again on each photo:')}
+                </p>
                 <ul>
                   {converted.kept.map((k) => (
                     <li key={k}>{k}</li>

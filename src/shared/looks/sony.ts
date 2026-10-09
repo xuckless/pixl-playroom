@@ -12,17 +12,18 @@ import {
   tone,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 const cl = (name: string): string => `Sony Creative Look ${name}`
 
 export const SONY = collection('camera/sony', [
   look(
     'clean-standard',
-    'Clean Standard',
+    tk('Clean Standard'),
     {
       tags: ['standard', 'everyday', 'st', 'sony'],
       inspiredBy: cl('ST'),
-      description: 'A clean, lightly lifted standard.'
+      description: tk('A clean, lightly lifted standard.')
     },
     tone({ contrast: 10, whites: 10, blacks: -5 }),
     presence({ saturation: 8, vibrance: 6, clarity: 6 }),
@@ -31,11 +32,11 @@ export const SONY = collection('camera/sony', [
   ),
   look(
     'soft-skin',
-    'Soft Skin',
+    tk('Soft Skin'),
     {
       tags: ['portrait', 'skin', 'soft', 'pt', 'sony'],
       inspiredBy: cl('PT'),
-      description: 'Soft contrast and bright, smooth skin.'
+      description: tk('Soft contrast and bright, smooth skin.')
     },
     tone({ contrast: -12, highlights: -10, shadows: 12 }),
     presence({ texture: -18, clarity: -5 }),
@@ -44,11 +45,11 @@ export const SONY = collection('camera/sony', [
   ),
   look(
     'muted-neutral',
-    'Muted Neutral',
+    tk('Muted Neutral'),
     {
       tags: ['neutral', 'muted', 'calm', 'nt', 'sony'],
       inspiredBy: cl('NT'),
-      description: 'Quiet colour and softened detail.'
+      description: tk('Quiet colour and softened detail.')
     },
     tone({ contrast: -15, highlights: -10 }),
     presence({ saturation: -25, texture: -15 }),
@@ -56,11 +57,11 @@ export const SONY = collection('camera/sony', [
   ),
   look(
     'saturated-vivid',
-    'Saturated Vivid',
+    tk('Saturated Vivid'),
     {
       tags: ['vivid', 'saturated', 'vv', 'sony'],
       inspiredBy: cl('VV'),
-      description: 'Saturated colour and firm contrast.'
+      description: tk('Saturated colour and firm contrast.')
     },
     tone({ contrast: 15 }),
     presence({ saturation: 22 }),
@@ -69,22 +70,22 @@ export const SONY = collection('camera/sony', [
   ),
   look(
     'vivid-clear',
-    'Vivid Clear',
+    tk('Vivid Clear'),
     {
       tags: ['vivid', 'clear', 'bright', 'vv2', 'sony'],
       inspiredBy: cl('VV2'),
-      description: 'Bright, clear and colourful.'
+      description: tk('Bright, clear and colourful.')
     },
     tone({ whites: 10, shadows: 5 }),
     presence({ saturation: 20, clarity: 15 })
   ),
   look(
     'film-mood',
-    'Film Mood',
+    tk('Film Mood'),
     {
       tags: ['film', 'mood', 'faded', 'teal', 'fl', 'sony'],
       inspiredBy: cl('FL'),
-      description: 'Moody film contrast with faded blacks and teal skies.'
+      description: tk('Moody film contrast with faded blacks and teal skies.')
     },
     tone({ contrast: 20 }),
     fade(0.03),
@@ -95,11 +96,11 @@ export const SONY = collection('camera/sony', [
   ),
   look(
     'instant-matte',
-    'Instant Matte',
+    tk('Instant Matte'),
     {
       tags: ['matte', 'faded', 'instant', 'in', 'sony'],
       inspiredBy: cl('IN'),
-      description: 'Flat, matte and warm, like an instant print.'
+      description: tk('Flat, matte and warm, like an instant print.')
     },
     tone({ contrast: -25 }),
     fade(0.06),
@@ -108,11 +109,11 @@ export const SONY = collection('camera/sony', [
   ),
   look(
     'soft-high-key',
-    'Soft High-Key',
+    tk('Soft High-Key'),
     {
       tags: ['high key', 'bright', 'airy', 'sh', 'sony'],
       inspiredBy: cl('SH'),
-      description: 'Bright, soft and a little cool.'
+      description: tk('Bright, soft and a little cool.')
     },
     tone({ contrast: -15, shadows: 20, whites: 20, highlights: 10 }),
     presence({ vibrance: 15 }),
@@ -120,11 +121,11 @@ export const SONY = collection('camera/sony', [
   ),
   look(
     'studio-mono',
-    'Studio Mono',
+    tk('Studio Mono'),
     {
       tags: ['bw', 'mono', 'sony'],
       inspiredBy: cl('BW'),
-      description: 'A crisp, punchy black and white.'
+      description: tk('A crisp, punchy black and white.')
     },
     mono({ blue: -10, aqua: -5 }),
     tone({ contrast: 22, whites: 12, blacks: -12 }),
@@ -132,22 +133,22 @@ export const SONY = collection('camera/sony', [
   ),
   look(
     'warm-sepia',
-    'Warm Sepia',
+    tk('Warm Sepia'),
     {
       tags: ['bw', 'sepia', 'toned', 'se', 'sony'],
       inspiredBy: cl('SE'),
-      description: 'A warm sepia-toned mono.'
+      description: tk('A warm sepia-toned mono.')
     },
     mono(),
     wheel('global', 35, 30)
   ),
   look(
     'cine-skin-tone',
-    'Cine Skin Tone',
+    tk('Cine Skin Tone'),
     {
       tags: ['cinema', 'skin', 'video', 's-cinetone', 'sony'],
       inspiredBy: 'Sony S-Cinetone',
-      description: 'Soft highlights and warm, cinematic skin.'
+      description: tk('Soft highlights and warm, cinematic skin.')
     },
     tone({ contrast: 5, whites: -20, highlights: -18, shadows: 6 }),
     rolloff(0.03),

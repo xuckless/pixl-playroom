@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { frameBitmap, isFrame } from '../../lib/frames'
+import { frameBitmap, frameFloat, isFrame } from '../../lib/frames'
+import { drawFloat, type FloatFrame } from '../../lib/floatcanvas'
 import { isInteracting } from '../../lib/interacting'
 
 /**
@@ -122,17 +123,74 @@ function FrameCanvas({
   onAnimationEnd?: () => void
 }): React.JSX.Element {
   const ref = useRef<HTMLCanvasElement>(null)
+  const float = frameFloat(src)
   // Drawn before the frame is painted, so the canvas never shows blank.
   useLayoutEffect(() => {
     const c = ref.current
     const bmp = frameBitmap(src)
-    if (!c || !bmp) return
+    if (!c || !bmp || float) return
     c.width = bmp.width
     c.height = bmp.height
     c.getContext('2d', { colorSpace: 'display-p3' })?.drawImage(bmp, 0, 0)
-  }, [src])
+  }, [src, float])
+  if (float)
+    return (
+      <FloatFrameCanvas
+        src={src}
+        frame={float}
+        className={className}
+        style={style}
+        onAnimationEnd={onAnimationEnd}
+      />
+    )
   return (
     <canvas
+      ref={ref}
+      className={`frame ${className}`}
+      style={style}
+      onAnimationEnd={onAnimationEnd}
+    />
+  )
+}
+
+/**
+ * A Full HDR frame on a WebGPU canvas (lib/floatcanvas.ts). Where WebGPU
+ * will not draw it, its SDR companion is drawn instead, on a 2D canvas.
+ */
+function FloatFrameCanvas({
+  src,
+  frame,
+  className,
+  style,
+  onAnimationEnd
+}: {
+  src: string
+  frame: FloatFrame
+  className: string
+  style?: React.CSSProperties
+  onAnimationEnd?: () => void
+}): React.JSX.Element {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const [fallback, setFallback] = useState(false)
+  useLayoutEffect(() => {
+    const c = ref.current
+    if (!c) return
+    if (fallback) {
+      const bmp = frameBitmap(src)
+      if (!bmp) return
+      c.width = bmp.width
+      c.height = bmp.height
+      c.getContext('2d', { colorSpace: 'display-p3' })?.drawImage(bmp, 0, 0)
+      return
+    }
+    // Sized at once, so the layout never sees a blank 300 × 150 canvas.
+    c.width = frame.width
+    c.height = frame.height
+    void drawFloat(c, frame).then((ok) => !ok && setFallback(true))
+  }, [src, frame, fallback])
+  return (
+    <canvas
+      key={fallback ? 'sdr' : 'hdr'}
       ref={ref}
       className={`frame ${className}`}
       style={style}

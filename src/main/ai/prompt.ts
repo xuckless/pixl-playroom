@@ -6,6 +6,7 @@
  * The Objects tool on the open photo does not come here: it commits its
  * selection straight into the recipe.
  */
+import { midSentence, t } from '../../shared/i18n'
 import type { AiResult, AiStartRequest } from '../../shared/ai'
 import { estimate } from '../../shared/ai'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
@@ -29,18 +30,18 @@ export class PromptRunner implements AiRunner<PromptRequest> {
 
   stages(): { id: string; label: string; weight: number }[] {
     return [
-      { id: 'model', label: 'Model', weight: 0.1 },
-      { id: 'analyse', label: 'Analyse', weight: 0.75 },
-      { id: 'refine', label: 'Refine', weight: 0.15 }
+      { id: 'model', label: t('Model'), weight: 0.1 },
+      { id: 'analyse', label: t('Analyse'), weight: 0.75 },
+      { id: 'refine', label: t('Refine'), weight: 0.15 }
     ]
   }
 
   title(req: PromptRequest): { title: string; subject: string } {
-    return { title: 'Selecting', subject: req.label ?? 'Object' }
+    return { title: t('Selecting'), subject: req.label ? t(req.label) : t('Object') }
   }
 
   async run(ctx: AiContext, req: PromptRequest): Promise<Extract<AiResult, { kind: 'mask' }>> {
-    ctx.stage('model', 0, 'Loading the model')
+    ctx.stage('model', 0, t('Loading the model'))
     if (!(await this.models.installed(SAM_MODEL)))
       throw new ModelMissing(this.models.entry(SAM_MODEL))
     let tick: ReturnType<typeof setInterval> | null = null
@@ -53,10 +54,16 @@ export class PromptRunner implements AiRunner<PromptRequest> {
         (stage) => {
           if (tick) clearInterval(tick)
           if (stage === 'embed') {
-            ctx.stage('analyse', 0, `Finding the ${(req.label ?? 'object').toLowerCase()}`)
+            ctx.stage(
+              'analyse',
+              0,
+              t('Finding the {{subject}}', {
+                subject: midSentence(req.label ?? 'object')
+              })
+            )
             const t0 = Date.now()
             tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, EMBED_MS), true), 200)
-          } else ctx.stage('refine', 0, 'Refining the edges')
+          } else ctx.stage('refine', 0, t('Refining the edges'))
         }
       )
       return {
@@ -64,7 +71,7 @@ export class PromptRunner implements AiRunner<PromptRequest> {
         ref: made.ref,
         width: made.width,
         height: made.height,
-        label: req.label ?? 'Object',
+        label: req.label ? t(req.label) : t('Object'),
         source: made.source,
         ...(req.into ? { into: { ...req.into } } : {})
       }

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { compile, type CompileContext } from '../src/shared/compile'
+import { compile, isP3Floor, type CompileContext } from '../src/shared/compile'
 import type { Curves, GradeOp, SourceInfo } from '../src/shared/engine-types'
 import {
   defaultExportSettings,
@@ -132,10 +132,10 @@ test('HEIF working copies made before the fix are made again', () => {
   assert.equal(versionStamp({ ...v, ext: 'HEIC' }), '1000-42-u')
 })
 
-test("a RAW's developments are made again on LibRaw, its embedded preview is not", () => {
+test("a RAW's developments are made again on the Scene master, its embedded preview is not", () => {
   const v = { mtime: 1000.4, size: 42 }
-  assert.equal(versionStamp({ ...v, ext: 'CR2' }), '1000-42-l')
-  assert.equal(versionStamp({ ...v, ext: 'raf' }), '1000-42-l')
+  assert.equal(versionStamp({ ...v, ext: 'CR2' }), '1000-42-s')
+  assert.equal(versionStamp({ ...v, ext: 'raf' }), '1000-42-s')
   // What no develop made keeps its name: thumbnails from the embedded JPEG.
   assert.equal(versionStamp({ ...v, ext: 'cr2' }, false), '1000-42')
   assert.equal(versionStamp({ ...v, ext: 'jpg' }, true), '1000-42')
@@ -144,10 +144,10 @@ test("a RAW's developments are made again on LibRaw, its embedded preview is not
 test("a RAW's camera colour names what is made from it; the file's own keeps every name it had", () => {
   const v = { mtime: 1000.4, size: 42, ext: 'cr3' }
   // Nothing recorded, or the file's own: the stamp from before the colour was named.
-  assert.equal(versionStamp({ ...v, raw_colour: null }), '1000-42-l')
-  assert.equal(versionStamp({ ...v, raw_colour: 'container' }), '1000-42-l')
+  assert.equal(versionStamp({ ...v, raw_colour: null }), '1000-42-s')
+  assert.equal(versionStamp({ ...v, raw_colour: 'container' }), '1000-42-s')
   // PIXL's colour is another develop: another name, so the proxies are made again.
-  assert.equal(versionStamp({ ...v, raw_colour: 'pixl:1' }), '1000-42-lp1')
+  assert.equal(versionStamp({ ...v, raw_colour: 'pixl:1' }), '1000-42-sp1')
   // Not a develop: no colour in the name; nor does a JPEG have one.
   assert.equal(versionStamp({ ...v, raw_colour: 'pixl:1' }, false), '1000-42')
   assert.equal(
@@ -161,7 +161,7 @@ test("a LUT profile keeps an HDR photo's headroom and clamps an SDR one as befor
   r.profile = { kind: 'lut', name: 'Film', path: '/luts/film.cube' }
   r.profileAmount = 80
   const lut = (c: ReturnType<typeof compile>): Extract<GradeOp, { Lut: unknown }>['Lut'] =>
-    (ops(c).find((o) => 'Lut' in o) as Extract<GradeOp, { Lut: unknown }>).Lut
+    (ops(c).find((o) => 'Lut' in o && !isP3Floor(o)) as Extract<GradeOp, { Lut: unknown }>).Lut
   assert.equal(lut(compile(r, ctx)).out_of_domain, 'Clamp')
   assert.equal(lut(compile(r, { ...ctx, hdr: true })).out_of_domain, 'ScaleHeadroom')
   // The SDR shoulder is a table on 0…1, clamped as it always was.

@@ -9,6 +9,7 @@
  * from it). Folder scans and the exif fill are the only long work; they run
  * in chunks and give other requests a turn between them.
  */
+import { tk } from '../../shared/i18n'
 import { createHash } from 'crypto'
 import {
   createReadStream,
@@ -48,6 +49,8 @@ import type {
 import { ENGINE_RENDER_REV } from '../../shared/pixels'
 import { groupNear } from '../../shared/dupes'
 import { parseRawColour } from '../../shared/rawcolour'
+import { readNames, searchWords } from '../../shared/naming'
+import { CULL_VERSION, cullKey, type CullModels } from '../../shared/cull'
 import { convertAsShot, type WbContext } from '../../shared/wbconvert'
 import { keywordPrefixes, normaliseKeyword } from '../../shared/keywords'
 import {
@@ -139,11 +142,6 @@ export interface ThumbWork {
   recipe: Recipe
   edited: boolean
   stamp: string
-  /**
-   * The thumbnail on disk that an earlier engine made of this edited photo,
-   * about to be replaced: the library keeps it as the legacy preview.
-   */
-  legacy: string | null
 }
 
 /** What opening a photo in develop needs from the index, in one trip. */
@@ -1023,6 +1021,8 @@ export class IndexService {
     this.store.setStack(row.id, sidecar.stack?.id ?? null, sidecar.stack?.position ?? null)
     // The truth where one is written; a photo with none keeps what the index recorded.
     if (sidecar.rawColour) this.store.setRawColour(row.id, sidecar.rawColour)
+    if (sidecar.names) this.store.setNames(row.id, JSON.stringify(sidecar.names))
+    if (sidecar.cullKeep) this.store.setCullKeep(row.id, true)
     if (from === 'project') {
       this.store.setProject(row.id, row.project_path, mtime)
       row.project_mtime = mtime
@@ -1291,7 +1291,8 @@ export class IndexService {
           }
         : null,
       offline: folderGone,
-      project: row.project_path ?? null
+      project: row.project_path ?? null,
+      ...(row.names ? { names: searchWords(readNames(row.names)) } : {})
     }
   }
 
@@ -1480,17 +1481,17 @@ export class IndexService {
     if (!['manual', 'smart', 'set'].includes(c.kind))
       throw new Error(`bad collection kind ${c.kind}`)
     const name = String(c.name ?? '').trim()
-    if (!name) throw new Error('a collection needs a name')
+    if (!name) throw new Error(tk('a collection needs a name'))
     const existing = c.id ? this.store.collection(c.id) : undefined
     if (existing && existing.kind !== c.kind) throw new Error('a collection cannot change kind')
     const id = existing?.id ?? c.id ?? newId()
     const parent = c.parent ?? null
     if (parent !== null) {
       const p = this.store.collection(parent)
-      if (!p || p.kind !== 'set') throw new Error('a collection can only sit in a set')
+      if (!p || p.kind !== 'set') throw new Error(tk('a collection can only sit in a set'))
       // Walk up from the new parent: meeting this collection would make a loop.
       for (let at: CollectionRow | undefined = p; at;) {
-        if (at.id === id) throw new Error('a set cannot sit inside itself')
+        if (at.id === id) throw new Error(tk('a set cannot sit inside itself'))
         at = at.parent ? this.store.collection(at.parent) : undefined
       }
     }
@@ -1588,7 +1589,7 @@ export class IndexService {
       f.kind !== 'collections' ||
       !Array.isArray(f.collections)
     )
-      throw new Error('not a Pixl Playroom collections file')
+      throw new Error(tk('not a Pixl Playroom collections file'))
     type Def = CollectionsFile['collections'][number]
     const defs = f.collections.filter(
       (c): c is Def =>
@@ -1957,9 +1958,13 @@ export class IndexService {
     const project = this.projectOf(row)
     // A sidecar or project made now keeps the camera colour the index recorded.
     const colour = raw ? parseRawColour(row.raw_colour) : null
+    // …and the names the index holds.
+    const names = readNames(row.names)
     const apply = (s: Sidecar): void => {
       change(s)
       if (colour && !s.rawColour) s.rawColour = colour
+      if (names && !s.names) s.names = names
+      if (row.cull_keep === 1 && !s.cullKeep) s.cullKeep = true
     }
     if (project) {
       const truth = this.projects.write(project, (p) => {
@@ -2103,12 +2108,7 @@ export class IndexService {
     const stamp = `${versionStamp(row, !raw || edited)}${edited ? `-e${ENGINE_RENDER_REV}` : ''}-${recipeKey}`
     const have = existing.thumb_path && existsSync(existing.thumb_path)
     if (existing.thumb_key === stamp && have) return null
-    // Made by an earlier engine: no `-e<rev>` in its stamp.
-    const legacy =
-      edited && have && !(existing.thumb_key ?? '').includes(`-e${ENGINE_RENDER_REV}-`)
-        ? existing.thumb_path
-        : null
-    return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp, legacy }
+    return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp }
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, stamp: string): void {
@@ -2149,6 +2149,106 @@ export class IndexService {
       this.updateRow(row, (s) => {
         s.rawColour = c
       })
+  }
+
+  /**
+   * What Gemma named in a photo (shared/naming.ts), or the user's changes to
+   * it: in the index always, and in its project or sidecar when it has one
+   * (naming makes no sidecar of its own). Returns the photo's items, their
+   * search words changed.
+   */
+  setNames(photoId: number, json: string | null): LibraryItem[] {
+    const row = this.store.photo(photoId)
+    if (!row) return []
+    const names = readNames(json)
+    const kept = names ? JSON.stringify(names) : null
+    this.store.setNames(photoId, kept)
+    const now = { ...row, names: kept }
+    if (this.projectOf(row) || existsSync(sidecarPath(row.path)))
+      this.updateRow(now, (s) => {
+        s.names = names
+      })
+    return this.itemsOf([now])
+  }
+
+  /** A photo's names as kept, or null. */
+  namesOf(photoId: number): string | null {
+    return this.store.photo(photoId)?.names ?? null
+  }
+
+  /** Naming gave no usable answer: not tried again by itself. */
+  namingFailed(photoId: number): void {
+    this.store.setNamesTried(photoId, new Date().toISOString())
+  }
+
+  /** Photos whose cull signals are missing or stale (another file version, an older measure), newest first. */
+  unmeasured(limit: number, models: CullModels): number[] {
+    const out: number[] = []
+    for (const r of this.store.cullState()) {
+      if (r.cull_key === cullKey(r.mtime, r.size, models)) continue
+      out.push(r.id)
+      if (out.length >= limit) break
+    }
+    return out
+  }
+
+  /** A photo's cull signals measured: kept with the file version they were measured on. */
+  setCull(photoId: number, json: string, models: CullModels): void {
+    const row = this.store.photo(photoId)
+    if (row) this.store.setCull(photoId, json, cullKey(row.mtime, row.size, models))
+  }
+
+  /** The signals of these photos measured on their current file (whatever the models then), by photo id. */
+  cullSignals(photoIds: number[]): Record<number, string> {
+    const out: Record<number, string> = {}
+    for (const c of this.store.culls(photoIds))
+      if (c.cull && c.cull_key?.startsWith(`${c.mtime}:${c.size}:v${CULL_VERSION}:`))
+        out[c.id] = c.cull
+    return out
+  }
+
+  /**
+   * The user's Keep on suggested rejects: in the index always, and in each
+   * photo's project or sidecar when it has one.
+   */
+  setCullKeep(photoIds: number[], keep: boolean): void {
+    for (const id of photoIds) {
+      const row = this.store.photo(id)
+      if (!row) continue
+      this.store.setCullKeep(id, keep)
+      if (this.projectOf(row) || existsSync(sidecarPath(row.path)))
+        this.updateRow({ ...row, cull_keep: keep ? 1 : 0 }, (s) => {
+          s.cullKeep = keep
+        })
+    }
+  }
+
+  /**
+   * What suggesting needs: these photos (or every measured one, null), with
+   * their signals where measured on the current file.
+   */
+  cullInputs(photoIds: number[] | null): {
+    photoId: number
+    name: string
+    rating: number
+    flag: 'pick' | 'reject' | null
+    keep: boolean
+    signals: string | null
+  }[] {
+    return this.store.cullInputs(photoIds).map((r) => ({
+      photoId: r.id,
+      name: r.name,
+      rating: r.rating,
+      flag: r.flag === 'pick' || r.flag === 'reject' ? r.flag : null,
+      keep: r.cull_keep === 1,
+      signals:
+        r.cull && r.cull_key?.startsWith(`${r.mtime}:${r.size}:v${CULL_VERSION}:`) ? r.cull : null
+    }))
+  }
+
+  /** Photos to name next, newest arrivals first. */
+  unnamed(limit: number): number[] {
+    return this.store.unnamed(limit)
   }
 
   /**

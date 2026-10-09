@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { compile, pointColorOps, type CompileContext } from '../src/shared/compile'
+import { compile, isP3Floor, pointColorOps, type CompileContext } from '../src/shared/compile'
 import type { GradeOp, HslKey, Primary } from '../src/shared/engine-types'
 import { applyPatch, diffRecipe } from '../src/shared/history'
 import {
@@ -22,7 +22,8 @@ const ctx: CompileContext = {
   applyCrop: true
 }
 
-const kinds = (ops: GradeOp[]): string[] => ops.map((o) => Object.keys(o)[0])
+const kinds = (ops: GradeOp[]): string[] =>
+  ops.filter((o) => !isP3Floor(o)).map((o) => Object.keys(o)[0])
 
 const point = (id: string, p: Partial<PointColorSetting> = {}): PointColorSetting => ({
   id,
@@ -36,9 +37,10 @@ const point = (id: string, p: Partial<PointColorSetting> = {}): PointColorSettin
   ...p
 })
 
+/** The look stage's ops past its floor (isP3Floor). */
 const lookOps = (r: ReturnType<typeof defaultRecipe>): GradeOp[] => {
   const stages = compile(r, ctx).grade!.layers[0].stages
-  return stages[stages.length - 1].ops
+  return stages[stages.length - 1].ops.filter((o) => !isP3Floor(o))
 }
 
 test('each point colour is a qualifier after the HSL bands and before vibrance', () => {

@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Popover } from './Popover'
+import { t } from '../lib/i18n'
 
-/** What a control does, what the picture does when it moves, and a habit worth having. */
+/**
+ * What a control does, what the picture does when it moves, and a habit worth
+ * having. English, marked with tk() where it is written: the note translates it.
+ */
 export interface Tip {
   what: string
   expect?: string
@@ -38,6 +42,9 @@ export function InfoTip({ tip, label }: { tip: Tip; label: string }): React.JSX.
   }
   // Pressed inside a slider or a card's header: the press is the note's alone.
   const keep = (e: React.SyntheticEvent): void => e.stopPropagation()
+  // Tips (and labels) are written in English and marked with tk(); a label
+  // already translated where it was passed comes back from t() as it is.
+  const name = t(label)
 
   return (
     <>
@@ -45,7 +52,7 @@ export function InfoTip({ tip, label }: { tip: Tip; label: string }): React.JSX.
         ref={btn}
         type="button"
         className={`info-tip${open ? ' on' : ''}`}
-        aria-label={`About ${label}`}
+        aria-label={t('About {{name}}', { name })}
         aria-expanded={open}
         onPointerEnter={() => later(() => setOpen(true), HOVER_MS)}
         onPointerLeave={leave}
@@ -72,18 +79,18 @@ export function InfoTip({ tip, label }: { tip: Tip; label: string }): React.JSX.
             onPointerLeave={leave}
             role="note"
           >
-            <div className="tip-title">{label}</div>
-            <p>{tip.what}</p>
+            <div className="tip-title">{name}</div>
+            <p>{t(tip.what)}</p>
             {tip.expect && (
               <p>
-                <span className="tip-k">Expect</span>
-                {tip.expect}
+                <span className="tip-k">{t('Expect')}</span>
+                {t(tip.expect)}
               </p>
             )}
             {tip.tip && (
               <p>
-                <span className="tip-k">Try</span>
-                {tip.tip}
+                <span className="tip-k">{t('Try')}</span>
+                {t(tip.tip)}
               </p>
             )}
           </div>

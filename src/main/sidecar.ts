@@ -12,6 +12,7 @@ import { existsSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSy
 import type { ColorLabel, Flag, Snapshot } from '../shared/ipc'
 import { normaliseRecipe, type Recipe } from '../shared/recipe'
 import { parseRawColour, type RawColour } from '../shared/rawcolour'
+import { readNames, type PhotoNames } from '../shared/naming'
 
 export const SIDECAR_SUFFIX = '.playroom.json'
 
@@ -44,6 +45,10 @@ export interface Sidecar {
   stack: SidecarStack | null
   /** A RAW's camera colour, where the photo has a sidecar (shared/rawcolour.ts); absent is null. */
   rawColour?: RawColour | null
+  /** What Gemma named in the photo (shared/naming.ts), where the photo has a sidecar; absent is null. */
+  names?: PhotoNames | null
+  /** The user said Keep to a suggested reject (shared/cullsuggest.ts); absent is false. */
+  cullKeep?: boolean
 }
 
 export function sidecarPath(photoPath: string): string {
@@ -57,7 +62,8 @@ export function emptySidecar(): Sidecar {
     photo: { rating: 0, flag: null, label: null, recipe: null, snapshots: [] },
     copies: [],
     stack: null,
-    rawColour: null
+    rawColour: null,
+    names: null
   }
 }
 
@@ -105,7 +111,9 @@ export function readSidecar(
         photo: item(raw.photo, isRaw),
         copies,
         stack: stackOf(raw.stack),
-        rawColour: parseRawColour(raw.rawColour)
+        rawColour: parseRawColour(raw.rawColour),
+        names: readNames(raw.names),
+        cullKeep: raw.cullKeep === true
       },
       mtime: statSync(file).mtimeMs
     }
@@ -126,6 +134,8 @@ function saysNothing(s: Sidecar): boolean {
     s.copies.length === 0 &&
     s.stack === null &&
     !s.rawColour &&
+    !s.names &&
+    !s.cullKeep &&
     p.rating === 0 &&
     p.flag === null &&
     p.label === null &&
@@ -142,12 +152,18 @@ export function writeSidecar(photoPath: string, sidecar: Sidecar): number | null
     return null
   }
   const tmp = `${file}.tmp-${process.pid}`
-  // No stack and no colour, no keys: a sidecar stays what older builds wrote.
-  const { stack, rawColour, ...rest } = sidecar
+  // No stack, colour or names, no keys: a sidecar stays what older builds wrote.
+  const { stack, rawColour, names, cullKeep, ...rest } = sidecar
   writeFileSync(
     tmp,
     JSON.stringify(
-      { ...rest, ...(stack ? { stack } : {}), ...(rawColour ? { rawColour } : {}) },
+      {
+        ...rest,
+        ...(stack ? { stack } : {}),
+        ...(rawColour ? { rawColour } : {}),
+        ...(names ? { names } : {}),
+        ...(cullKeep ? { cullKeep } : {})
+      },
       null,
       2
     )

@@ -12,6 +12,8 @@
  * grade).
  */
 
+import { t, tp } from './i18n'
+
 // ── Sources and sinks ────────────────────────────────────────────────────────
 
 export type Source = { Path: string } | { Bytes: number[] }
@@ -120,7 +122,34 @@ export type DngCrop = 'None' | 'ActiveArea' | 'Best'
  * X-Trans), each colour the mean of its photosites, no demosaic. A quarter
  * (or a ninth) of the pixels, for previews.
  */
-export type RawResolution = 'Full' | 'Cell'
+/**
+ * `Binned` (0.19.0): one pixel per `factor × factor` photosites, a multiple
+ * of the cell, `1..=64`; for thumbnails and filmstrips only (HR-0.19-1:
+ * never judge noise on one).
+ */
+export type RawResolution = 'Full' | 'Cell' | { Binned: { factor: number } }
+
+/** A RAW denoiser ref (`@xuckless/pixl-models`' `ref('pmrid', host)`): PMRID's model and anchor. */
+export type RawDenoiserRef = Record<string, unknown>
+
+/**
+ * Scene's mosaic denoiser (0.19.0): PMRID on the Bayer mosaic, before the
+ * white balance; `noise` is the frame's `variance = k·x + σ²`. Bayer only.
+ */
+export interface MosaicDenoise {
+  model: RawDenoiserRef
+  noise: 'Measured' | 'DngNoiseProfile' | { Stated: { k: number; sigma2: number } }
+}
+
+/**
+ * Scene's demosaic (0.19.0): `Classic` (PPG / Markesteijn, 0.18's bytes),
+ * `Ahd` (Bayer, no model), or a learned one (`demosaicnet-bayer` /
+ * `-xtrans`, by `SourceInfo.raw_cfa`; `resolution` must be `Full`).
+ */
+export type SceneDemosaic = 'Classic' | 'Ahd' | { Model: Record<string, unknown> }
+
+/** A RAW's colour filter when PIXL demosaics it (0.19.0). */
+export type RawCfa = 'Bayer' | 'XTrans'
 
 /** What a RAW says about its colour. `Pixl` is refused on a body the version does not hold. */
 export type CameraColour = 'Container' | { Pixl: { version: number } } | { Stated: unknown }
@@ -151,9 +180,13 @@ export type RawMode =
   | {
       Scene: {
         white_balance: 'AsShot' | { Stated: { temperature_kelvin: number; tint: number } }
-        highlights: 'Clip' | 'Unclipped' | 'Blend' | 'InpaintOpposed'
+        highlights: 'Clip' | 'Unclipped' | 'Blend' | 'InpaintOpposed' | 'Diffused'
         crop: DngCrop
         denoise: Denoise | null
+        /** 0.19.0: `null` develops as 0.18 did. */
+        mosaic_denoise: MosaicDenoise | null
+        /** 0.19.0: `'Classic'` develops as 0.18 did. */
+        demosaic: SceneDemosaic
         resolution: RawResolution
         colour: CameraColour
         dng_opcodes: DngOpcodes
@@ -185,6 +218,13 @@ export interface SessionSpec {
   threads: number
   optimisation: GraphOptimisation
   deterministic: boolean
+  /**
+   * 0.19.0: the graph's free input dimensions fixed by name (the roster's
+   * `files[i].dimensions`), for CoreML static shapes; `[]` builds as 0.18.
+   */
+  dimensions: { name: string; value: number }[]
+  /** 0.19.0: ONNX Runtime's intra-op spinning; `false` lets an idle host sleep (Playroom). */
+  intra_op_spinning: boolean
 }
 
 /** A model file and the ONNX Runtime it runs on. One runtime per process. */
@@ -376,6 +416,8 @@ export type ColorSpaceRef =
   | 'Rec2100Hlg'
   | 'GenericGray22'
   | { Icc: number[] }
+  /** Linear Display P3 (CICP 12/8), built in (0.18). */
+  | 'LinearDisplayP3'
 
 export type RenderingIntent =
   'Perceptual' | 'RelativeColorimetric' | 'Saturation' | 'AbsoluteColorimetric'
@@ -389,9 +431,26 @@ export type ToneMapMode = 'PerChannel' | 'MaxRgb' | 'Luminance'
 
 /** `ColorPolicy::Master`: every field is required. */
 export type MasterPeak = 'Measured' | { Nits: number }
-export type MasterCeiling = 'Peak' | { Nits: number }
+/**
+ * `Display` (0.18) takes the display's SDR white and peak in cd/m², as
+ * Playroom reads them (the engine never probes a display), and resolves to
+ * `203 · peak / white`.
+ */
+export type MasterCeiling =
+  'Peak' | { Nits: number } | { Display: { white_nits: number; peak_nits: number } }
 export type MasterReach = 'Measured' | { Stated: number }
 export type MasterLook = 'Colorimetric' | { Pixl: { version: 1 | 2 } }
+/**
+ * What a float sink (an F32 TIFF, `Pixels` F16/F32) receives (0.18):
+ * `LinearPixlRgb` is 0.17's; `ExtendedLinearDisplayP3` is linear Display P3
+ * with 1.0 = SDR white, up to the ceiling over white with headroom on.
+ */
+export type MasterFloat = 'LinearPixlRgb' | 'ExtendedLinearDisplayP3'
+/** A second, small 8-bit Display P3 picture of the same render (0.18). */
+export interface SdrCompanion {
+  longest_side: number
+  resampler: 'Nearest' | 'Bilinear' | 'CatmullRom' | 'Lanczos3'
+}
 export interface MasterPolicy {
   headroom: boolean
   peak: MasterPeak
@@ -399,6 +458,8 @@ export interface MasterPolicy {
   ceiling: MasterCeiling | null
   reach: MasterReach
   look: MasterLook
+  float: MasterFloat
+  companion: SdrCompanion | null
 }
 
 /**
@@ -506,11 +567,23 @@ export interface HslKey {
   invert: boolean
 }
 
+/**
+ * `smoothing` on Tone, Vibrance, Dehaze, ColorGrade, HslBands and Qualifier
+ * (0.18): the op's change smoothed where the picture is flat. `radius` is
+ * 0.001–0.1 of the shorter side, `strength` 0–1; `null` is the op as it
+ * always ran. Sent on release, never while a slider drags.
+ */
+export interface AdjustmentSmoothing {
+  radius: number
+  strength: number
+}
+
 export interface Tone {
   highlights: number
   shadows: number
   whites: number
   blacks: number
+  smoothing: AdjustmentSmoothing | null
 }
 
 export interface WhiteBalance {
@@ -521,6 +594,7 @@ export interface WhiteBalance {
 export interface Vibrance {
   amount: number
   skin_protection: number
+  smoothing: AdjustmentSmoothing | null
 }
 
 export interface CurvePoint {
@@ -571,6 +645,7 @@ export interface HslBands {
   blue: BandAdjust
   purple: BandAdjust
   magenta: BandAdjust
+  smoothing: AdjustmentSmoothing | null
 }
 
 export interface Cdl {
@@ -585,6 +660,12 @@ export interface Denoise {
   luminance_detail: number
   color: number
   color_detail: number
+  /**
+   * The coarsest band's reach, a fraction of the shorter side, `0 < reach ≤
+   * 0.25` (0.18): the same number in the preview and the export denoises the
+   * same structures at any size.
+   */
+  reach: number
 }
 
 export interface Sharpen {
@@ -603,6 +684,7 @@ export interface LocalContrast {
 export interface Dehaze {
   amount: number
   radius: number
+  smoothing: AdjustmentSmoothing | null
 }
 
 export interface Point {
@@ -644,6 +726,7 @@ export interface ColorGrade {
   global: Wheel
   blending: number
   balance: number
+  smoothing: AdjustmentSmoothing | null
 }
 
 export interface ChannelMixer {
@@ -689,7 +772,7 @@ export interface Fill {
 export type GradeOp =
   | { Lut: { lut: LutRef; amount: number; out_of_domain: LutOutOfDomain } }
   | { Primary: Primary }
-  | { Qualifier: { key: HslKey; correction: Primary } }
+  | { Qualifier: { key: HslKey; correction: Primary; smoothing: AdjustmentSmoothing | null } }
   | { Tone: Tone }
   | { WhiteBalance: WhiteBalance }
   | { Vibrance: Vibrance }
@@ -1073,8 +1156,26 @@ export interface PetEye {
   catchlights: unknown[]
 }
 
+/**
+ * AI remove: the hole filled by an inpainting model shown a crop around it
+ * (`context`: the hole's box grown by this many times its longer side, 0…4).
+ * `model` is an inpainter's filled ref (`migan-512`).
+ */
+export interface AiRemove {
+  shape: SpotShape
+  feather: Feather
+  opacity: number
+  context: number
+  model: Record<string, unknown>
+}
+
 export type RetouchStep =
-  { Clone: Spot } | { Heal: Spot } | { Fill: ContentFill } | { RedEye: RedEye } | { PetEye: PetEye }
+  | { Clone: Spot }
+  | { Heal: Spot }
+  | { Fill: ContentFill }
+  | { Remove: AiRemove }
+  | { RedEye: RedEye }
+  | { PetEye: PetEye }
 
 /** Run after the lens correction, before a region, the grade and framing. */
 export interface Retouch {
@@ -1218,7 +1319,39 @@ export interface ConvertRequest {
 export type AnalysisDomain = 'Encoded' | 'Linear'
 export type TransparentPixels = 'Include' | 'Exclude'
 
+/** A region `focus` measures: a normalised box, or a mask raster. */
+export type MeasureRegion =
+  { Box: { x: number; y: number; width: number; height: number } } | { Mask: RasterMask }
+
+/** 0.19.0: what `focus` measures, per region. */
+export interface FocusSpec {
+  regions: MeasureRegion[]
+  orientation_bins: number
+}
+
+export interface FocusRegionReport {
+  laplacian_variance: number
+  gradient_energy: number
+  /** The structure tensor's coherence, 0..1. */
+  coherence: number
+  /** The dominant gradient's angle, degrees (blur runs perpendicular to it). */
+  gradient_angle_deg: number
+  orientation_histogram: number[]
+  /** Pixels the region weighed. */
+  pixels: number
+  [k: string]: unknown
+}
+
+export interface FocusReport {
+  regions: FocusRegionReport[]
+  [k: string]: unknown
+}
+
 export interface AnalyzeRequest {
+  /** 0.19.0: report `ImageStats.phash`. */
+  phash: boolean
+  /** 0.19.0: report `ImageStats.focus`. */
+  focus: FocusSpec | null
   source: Source
   input: InputFormat
   raw: RawMode | null
@@ -1273,6 +1406,8 @@ export interface MasterReport {
   look: string
   look_pixels: number
   look_guarded_pixels: number
+  /** Under `Ceiling.Display` (0.18): the display it rendered for, `headroom` = peak / white. */
+  display: { white_nits: number; peak_nits: number; headroom: number } | null
   gamut: {
     reach: number
     reach_measured: boolean
@@ -1341,6 +1476,8 @@ export interface UpscaleReport {
   model_space: string
   input_clipped: number
   output_clamped: number
+  /** Output values that were NaN or ±∞ (0.18); not 0 says the model misbehaved. */
+  non_finite: number
   runtime_version: string
 }
 
@@ -1355,6 +1492,8 @@ export interface ModelStepReport {
   model_ms: number
   input_clipped: number
   output_clamped: number
+  /** Output values that were NaN or ±∞ (0.18). */
+  non_finite: number
   strength: number
   conditioning: string[]
   grey_as_rgb: boolean
@@ -1383,6 +1522,9 @@ export interface RegionReport {
 }
 
 export interface ConvertReport {
+  /** 0.19.0: the float pass's way in and out, both inside `color_ms`. */
+  ingest_ms?: number
+  egress_ms?: number
   input_bytes: number
   output_bytes: number
   width: number
@@ -1425,6 +1567,38 @@ export interface ConvertReport {
   raw: RawReport | null
   /** Present when a DNG was written (`Dng`, `LinearDng`): what it holds and left out. */
   dng: DngWritten | null
+  /** `Master.companion`'s SDR picture of the same render (0.18). */
+  companion: Companion | null
+  /**
+   * Every check of the pixels between stages that ran (0.18). A failed one
+   * is never here: it rejects with code `Invariant`.
+   */
+  checks: CheckReport[]
+}
+
+/** One check between stages; `op` is the grade field just checked, `check_us` in microseconds. */
+export interface CheckReport {
+  stage: string
+  op: string | null
+  samples: number
+  check_us: number
+}
+
+/** 8-bit Display P3 pixels of the same render at the asked longest side (never enlarged). */
+export interface Companion {
+  width: number
+  height: number
+  /** 3 RGB, 4 RGBA (the output's alpha, straight). */
+  channels: number
+  row_bytes: number
+  icc: number[]
+  cicp: { primaries: number; transfer: number; matrix: number; full_range: boolean } | null
+  quantisations: number
+  dither: unknown
+  rolloff: unknown | null
+  gamut: unknown | null
+  /** A Buffer from the binding. */
+  data: Uint8Array
 }
 
 /** What a `Scene` develop used (the parts Playroom reads). */
@@ -1543,6 +1717,8 @@ export interface CameraColourInfo {
 
 /** What a source actually is. Returned by `probe`. */
 export interface SourceInfo {
+  /** 0.19.0: a RAW's colour filter (which learned demosaic fits); `null` for anything else. */
+  raw_cfa?: RawCfa | null
   format: string
   input: InputFormat
   width: number
@@ -1617,6 +1793,10 @@ export interface NoiseEstimate {
 
 /** What the pixels look like. Returned by `analyze`. */
 export interface ImageStats {
+  /** 0.19.0: a 64-bit perceptual hash, 16 hex digits, when `phash` was asked. */
+  phash?: string | null
+  /** 0.19.0: per region, sharpness and direction, when `focus` was asked. */
+  focus?: FocusReport | null
   /** What `AnalyzeRequest::lens` did; `null` without a lens. */
   lens?: LensReport | null
   width: number
@@ -1660,7 +1840,8 @@ export interface EngineErrorShape {
   /**
    * A `PixlError` variant, `VersionMismatch` (the loaded addon is not the
    * installed package's release), `Model` (a model step failed; `Upscale`
-   * before 0.15), `Cancelled`, or one of the app's own: EngineUnavailable,
+   * before 0.15), `Cancelled`, `Invariant` (0.18: an op made pixels that are
+   * not numbers; the detail names its grade field), or one of the app's own: EngineUnavailable,
    * EngineCrashed, BadRequest, Unknown.
    */
   code: string
@@ -1677,9 +1858,13 @@ export function unsupportedRaw(detail: EngineErrorShape['detail']): string | nul
   const d = detail?.['Unsupported']
   const op = d && typeof d['operation'] === 'string' ? d['operation'] : null
   if (op === 'raw frames')
-    return 'This RAW holds several frames (dual pixel, pixel shift or a burst), which Playroom cannot develop yet.'
+    return t(
+      'This RAW holds several frames (dual pixel, pixel shift or a burst), which Playroom cannot develop yet.'
+    )
   if (op === 'raw decode')
-    return `This RAW format isn't supported${typeof d?.['detail'] === 'string' && d['detail'] ? ` (${d['detail']})` : ''}.`
+    return typeof d?.['detail'] === 'string' && d['detail']
+      ? t("This RAW format isn't supported ({{detail}}).", { detail: d['detail'] })
+      : t("This RAW format isn't supported.")
   return null
 }
 
@@ -1696,10 +1881,19 @@ export function describeEngineError(
     const d = detail?.['TooLarge']
     const px = d && typeof d['pixels'] === 'number' ? (d['pixels'] as number) : null
     const side = d && typeof d['side'] === 'number' ? (d['side'] as number) : null
-    const size = px !== null ? `${Math.round(px / 1e6)} megapixels` : 'too large'
-    return `This picture is ${size}${side !== null ? ` (${side} px on its longest side)` : ''}, more than Playroom opens.`
+    const size =
+      px !== null
+        ? tp('{{count}} megapixel', '{{count}} megapixels', Math.round(px / 1e6))
+        : t('too large')
+    return side !== null
+      ? t('This picture is {{size}} ({{side}} px on its longest side), more than Playroom opens.', {
+          size,
+          side
+        })
+      : t('This picture is {{size}}, more than Playroom opens.', { size })
   }
-  if (code === 'StaleCache') return 'A saved render was made by another engine and is made again.'
+  if (code === 'StaleCache')
+    return t('A saved render was made by another engine and is made again.')
   return null
 }
 
@@ -1717,7 +1911,8 @@ export interface PlanePng {
 export interface SegmentPlane {
   name: string
   tensor: string
-  index: number
+  /** 0.19.0: the classes summed into this plane (was `index`). */
+  indices: number[]
   /** 16-bit grey PNG, plane_width × plane_height: a Buffer from the binding. */
   png: Uint8Array
   coverage: number
@@ -1726,7 +1921,12 @@ export interface SegmentPlane {
   clamped: number
   /** With `bounds_at`: the box around every sample at or above it, frame pixels. */
   bounds: MaskBounds | null
+  /** The output's `quantity`, echoed (0.18). */
+  quantity: PlaneQuantity
 }
+
+/** What a plane holds (0.18): a class's share, depth (larger farther) or disparity (larger nearer). */
+export type PlaneQuantity = 'Coverage' | 'Depth' | 'Disparity'
 
 export interface SegmentReport {
   planes: SegmentPlane[]
@@ -1856,6 +2056,21 @@ export interface PixlEngineModule {
   suggestLateralCa(request: Record<string, unknown>): Promise<Record<string, unknown>>
   suggestHealSource(request: Record<string, unknown>): Promise<Record<string, unknown>>
   segment(request: Record<string, unknown>, options?: ModelCallOptions): Promise<SegmentReport>
+  /** 0.19.0: every instance of a phrase on an embedding's frame (SAM 3). */
+  segmentConcept?(
+    request: Record<string, unknown>,
+    options?: { embedding?: PromptEmbedding; signal?: AbortSignal }
+  ): Promise<{
+    instances: {
+      png: Uint8Array
+      score: number
+      coverage: number
+      rect: { x: number; y: number; width: number; height: number }
+    }[]
+    presence: number
+  }>
+  /** 0.19.0: faces (YuNet) and, with a landmarker, each one's outlines (Face Mesh v2). */
+  faces(request: Record<string, unknown>, options?: ModelCallOptions): Promise<unknown>
   benchmark(
     request: Record<string, unknown>,
     options?: { signal?: AbortSignal }
@@ -1907,6 +2122,13 @@ export interface PreviewFrame {
   width: number
   height: number
   data: Uint8Array
+  /**
+   * `F16`: half floats, linear Display P3 with 1.0 = SDR white (Full HDR,
+   * engine 0.18); `U8` (or absent): 8-bit Display P3, as drafts always were.
+   */
+  sample?: 'U8' | 'F16'
+  /** With an F16 frame: the same render's 8-bit SDR picture, RGBA, for what reads it. */
+  companion?: { width: number; height: number; data: Uint8Array }
 }
 
 /**
@@ -1941,6 +2163,19 @@ export type SamOp =
       pick?: 'small' | 'large' | 'best'
     }
   | { op: 'release'; embeddings?: string[]; lanes?: string[]; sessions?: string[] }
+  /**
+   * SAM 3 (or EfficientSAM3) on a phrase (engine 0.19's `segmentConcept`):
+   * the image encoder makes the frame's embedding (kept as `key`, the one
+   * most recent, so the next phrase on the same frame skips it) and is let
+   * go before the text encoder loads; then every instance of `request`'s
+   * phrase.
+   */
+  | {
+      op: 'concept'
+      key: string
+      embed: PromptEmbeddingRequest
+      request: Record<string, unknown>
+    }
 
 /** What a `sam` call answers. */
 export type SamResult =
@@ -1959,6 +2194,20 @@ export type SamResult =
       model_ms: number
     }
   | { op: 'release' }
+  | {
+      op: 'concept'
+      instances: {
+        png: Uint8Array
+        score: number
+        coverage: number
+        rect: { x: number; y: number; width: number; height: number }
+      }[]
+      presence: number
+      /** The embedding came from before (the same frame, another phrase). */
+      reused: boolean
+      embedMs: number
+      conceptMs: number
+    }
 
 export interface EngineSamMessage {
   kind: 'sam'

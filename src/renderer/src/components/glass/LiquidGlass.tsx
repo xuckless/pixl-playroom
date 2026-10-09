@@ -11,6 +11,8 @@ import {
   type HTMLAttributes,
   type ReactNode
 } from 'react'
+import { useEfficient } from '../../lib/efficient'
+import { useHdrShown } from '../../state/display'
 import { cachedGlassMaps, glassMaps, type GlassMaps } from './maps'
 
 /** Sizes are measured in 4px steps, so a surface that grows by a pixel reuses its maps. */
@@ -86,7 +88,11 @@ export const LiquidGlass = forwardRef<HTMLElement, LiquidGlassProps>(function Li
     return () => ro.disconnect()
   }, [el])
 
-  const refract = !flat && !reduced && size.w > 0
+  // Over a photo shown in HDR, frost alone (useHdrShown); in the efficient
+  // UI, flat colour (primitives.css), so no lens is made at all.
+  const hdr = useHdrShown()
+  const efficient = useEfficient()
+  const refract = !flat && !hdr && !efficient && !reduced && size.w > 0
   const shape = useMemo(
     () => ({ width: size.w, height: size.h, radius, bezel, strength, magnify }),
     [size.w, size.h, radius, bezel, strength, magnify]

@@ -9,10 +9,11 @@
  * until it has been edited, the photo's own pixels otherwise, and the graded
  * picture (from its proxy) once it has a recipe.
  */
+import { t } from '../shared/i18n'
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { existsSync } from 'fs'
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { compile } from '../shared/compile'
 import { dhashFromGrey } from '../shared/dupes'
@@ -25,7 +26,7 @@ import {
   type SourceListing
 } from '../shared/ipc'
 import { orientedFrame } from '../shared/compile'
-import { hash32, type Recipe } from '../shared/recipe'
+import { defaultRecipe, hash32, type Recipe } from '../shared/recipe'
 import {
   asShotFor,
   defaultRawColour,
@@ -40,13 +41,12 @@ import type { PhotoRow } from './db'
 import type { IndexClient } from './indexer/client'
 import type { PlaneStore } from './planestore'
 import { brushPlanes } from './brushes'
-import { keyOf, parseKey } from './keys'
+import { keyOf } from './keys'
 import { paths } from './paths'
-import { LegacyPreviews } from './legacy'
 import { pixelDeps } from './pixels/base'
 import { ensureWorking } from './pixels/working'
 import { editsHdr, ensureHdrSource } from './hdrsource'
-import { ensureProxies } from './proxy'
+import { ensureProxies, ensureThumbSource } from './proxy'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
 import {
@@ -61,6 +61,8 @@ import {
 export { keyOf, parseKey } from './keys'
 
 export const THUMB_EDGE = 400
+/** The picture Gemma names: the guide's "Playroom's 1024 px JPEG". */
+export const NAMING_EDGE = 1024
 /** The most photos whose proxies are made ahead at once (see `warm`). */
 const WARM_MAX = 3
 
@@ -108,7 +110,6 @@ export class Library {
   private dupes: AbortController | null = null
 
   /** What edited photos looked like before engine 0.17: the first-open comparison. */
-  readonly legacy = new LegacyPreviews(paths.legacyPreviews(), app.getVersion())
 
   constructor(
     readonly index: IndexClient,
@@ -120,6 +121,17 @@ export class Library {
       if (e.name === 'changed') this.broadcast(IPC.library.changed, { folder: e.folder })
       else if (e.name === 'sources') this.broadcast(IPC.library.sourcesChanged, null)
     })
+  }
+
+  /**
+   * Thumbnails still to make: the safe-shutdown rest keeps the background
+   * engine for them (rest.ts), as for an export, so a folder opened just
+   * before Playroom goes behind finishes once, rather than the host being
+   * let go between two thumbnails and started again for the next (Pass 116:
+   * that churn made a 259-RAW folder take minutes instead of a minute).
+   */
+  get busy(): boolean {
+    return this.running > 0 || this.queue.length > 0
   }
 
   private broadcast(channel: string, payload: unknown): void {
@@ -169,7 +181,7 @@ export class Library {
         photoId,
         { isRaw: true, asShot: asShotFor(info, 'container') },
         { isRaw: true, asShot: asShotFor(info, colour) },
-        `Camera colour: ${rawColourLabel(info, colour)}`
+        t('Camera colour: {{colour}}', { colour: rawColourLabel(info, colour) })
       )
     return colour
   }
@@ -183,7 +195,7 @@ export class Library {
    */
   async setRawColour(key: string, colour: RawColour): Promise<RawColour> {
     const row = await this.photoRow(key)
-    if (row.is_raw !== 1) throw new Error('only a RAW has a camera colour')
+    if (row.is_raw !== 1) throw new Error(t('only a RAW has a camera colour'))
     const info = await this.engineProbe(row, this.engine)
     const to = resolveRawColour(colour, info)
     const from = resolveRawColour(row.raw_colour, info)
@@ -193,7 +205,7 @@ export class Library {
       row.id,
       { isRaw: true, asShot: asShotFor(info, from) },
       { isRaw: true, asShot: asShotFor(info, to) },
-      `Camera colour: ${rawColourLabel(info, to)}`
+      t('Camera colour: {{colour}}', { colour: rawColourLabel(info, to) })
     )
     // Its thumbnail's stamp names the colour: made again.
     this.queueThumb(row.id, null, true)
@@ -215,7 +227,7 @@ export class Library {
   private async probeOnce(photo: PhotoRow, k: string, engine: EngineClient): Promise<SourceInfo> {
     // Per app version too: the engine ships with it, and a newer one may say more.
     const file = join(
-      paths.photoCache(photo.id),
+      paths.photoCachePath(photo.id),
       `probe-${hash32(`${k}:${app.getVersion()}`).toString(16)}.json`
     )
     let info: SourceInfo | null = null
@@ -223,7 +235,7 @@ export class Library {
       info = JSON.parse(await readFile(file, 'utf8')) as SourceInfo
     } catch {
       info = await engine.probe(photo.path)
-      await mkdir(paths.photoCache(photo.id), { recursive: true })
+      await mkdir(paths.photoCachePath(photo.id), { recursive: true })
       await writeFile(file, JSON.stringify(info)).catch(() => undefined)
     }
     this.probes.set(k, info)
@@ -395,7 +407,11 @@ export class Library {
     const e = row.embedded
     if (e === undefined) return row
     if (e === null)
-      throw new Error(`${row.name} is missing, and its project does not carry a copy of it yet`)
+      throw new Error(
+        t('{{name}} is missing, and its project does not carry a copy of it yet', {
+          name: row.name
+        })
+      )
     if (e.codec !== 'jxl-jpeg') return { ...row, path: e.path }
     const jpg = e.path.replace(/\.jxl$/i, '.jpg')
     if (!existsSync(jpg)) {
@@ -461,18 +477,6 @@ export class Library {
   }
 
   /** Move these keys' waiting thumbnails to the front of the queue. */
-  /**
-   * A photo's legacy preview, taken now if its old thumbnail is still the
-   * one on disk (a photo opened before its thumbnail was made again), and
-   * whether the new engine's thumbnail is ready to compare it with.
-   */
-  async legacyFor(key: string): Promise<{ fresh: boolean }> {
-    const { photoId, copyId } = parseKey(key)
-    const work = await this.index.thumbJob(photoId, copyId)
-    if (work?.legacy) this.legacy.capture(key, work.legacy)
-    if (work) this.prioritize([key])
-    return { fresh: work === null }
-  }
 
   prioritize(keys: string[]): void {
     const want = new Set(keys)
@@ -529,8 +533,6 @@ export class Library {
       work = await this.index.thumbJob(job.photoId, job.copyId)
       if (!work) return
     }
-    // What an earlier engine made of this edit, before the new one replaces it.
-    if (work.legacy) this.legacy.capture(keyOf(job.photoId, job.copyId), work.legacy)
     const { edited, stamp } = work
     const recipe = await this.planes.hydrate(work.recipe)
     const row = await this.readable(work.row)
@@ -580,8 +582,61 @@ export class Library {
   }
 
   /**
+   * The photo as Gemma is shown it (shared/naming.ts): unedited (names are
+   * of what is in it, not of an edit), NAMING_EDGE on its long side.
+   */
+  async namingPicture(photoId: number): Promise<Buffer> {
+    const out = join(paths.cacheRoot(), `naming-${process.pid}-${photoId}.jpg`)
+    try {
+      await this.writeUnedited(photoId, NAMING_EDGE, out)
+      return await readFile(out)
+    } finally {
+      await rm(out, { force: true })
+    }
+  }
+
+  /**
+   * The photo unedited, upright and sRGB, at most `edge` on its long side,
+   * as a JPEG at `out`: what is measured or named of it (Gemma's names, the
+   * cull signals), never an edit. A RAW's embedded preview, anything else
+   * its own pixels; a RAW with no usable preview is developed plainly at
+   * thumbnail size.
+   */
+  async writeUnedited(photoId: number, edge: number, out: string): Promise<void> {
+    const row = await this.readable(await this.index.row(keyOf(photoId, null)))
+    const info = await this.probe(row)
+    const raw = row.is_raw === 1
+    const base = {
+      encode: { Jpeg: { quality: 90, subsampling: 'Quarter' as const, optimize: false } },
+      pixel: { depth: 'Eight' as const, channels: 3 },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      threads: BACKGROUND_THREADS,
+      color: displayPolicy(info, 'Srgb')
+    }
+    const rawMode = raw ? ('EmbeddedPreview' as const) : null
+    const orientation = sourceOrientation(info, rawMode)
+    const factor = Math.min(1, edge / Math.max(info.width, info.height))
+    try {
+      await this.engine.convert({
+        ...blankRequest(row.path, out, info.input, info),
+        ...base,
+        raw: rawMode,
+        resize: factor < 1 ? { Scale: { factor } } : 'None',
+        framing:
+          orientation === 'Normal'
+            ? null
+            : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
+      })
+    } catch (err) {
+      if (!raw) throw err
+      await this.graded(row, info, defaultRecipe(true), out, base)
+    }
+  }
+
+  /**
    * A thumbnail shrunk from a picture Develop rendered (Display P3, so turned
-   * into sRGB on the way). False when it could not be (the picture already
+   * into sRGB on the way): its settled JPEG, or in Full HDR its SDR companion
+   * (a PNG), so the thumbnail is the picture as it was shown. False when it could not be (the picture already
    * replaced by a newer one): the caller grades the photo instead.
    */
   private async shrunk(
@@ -593,7 +648,7 @@ export class Library {
     const factor = Math.min(1, THUMB_EDGE / Math.max(picture.width, picture.height, 1))
     try {
       await this.engine.convert({
-        ...blankRequest(picture.path, out, 'Jpeg'),
+        ...blankRequest(picture.path, out, picture.path.endsWith('.png') ? 'Png' : 'Jpeg'),
         ...base,
         color: {
           ConvertTo: { to: 'Srgb', intent: 'RelativeColorimetric', black_point_compensation: false }
@@ -625,7 +680,13 @@ export class Library {
     if (hdr) base = { ...base, color: displayPolicy(info, 'Srgb') }
     // Pixel steps (an AI denoise) laid on: made from what the project keeps,
     // never by running a model.
-    const plain = hdr?.px ?? (await ensureProxies(this.engine, row, info, BACKGROUND_THREADS))
+    // A RAW without proxies yet: a binned develop (proxy.ts). Its pixel steps,
+    // though, are laid on the proxies, which the editor then finds made.
+    const plain =
+      hdr?.px ??
+      (recipe.pixels.length > 0
+        ? await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
+        : await ensureThumbSource(this.engine, row, info, BACKGROUND_THREADS))
     const px =
       !hdr && recipe.pixels.length > 0
         ? (

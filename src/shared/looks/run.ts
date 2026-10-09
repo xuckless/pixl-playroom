@@ -10,6 +10,7 @@
 import type { FramePoint, PlanOp, SmartRates } from './smart'
 import { SMART_RATES } from './smart'
 import { SKY_BY_CLICK } from '../ai'
+import { t } from '../i18n'
 
 export interface LookRunRequest {
   key: string
@@ -53,20 +54,22 @@ export type LookRunEvent =
 export function opLabel(op: PlanOp): string {
   switch (op.kind) {
     case 'component':
-      return 'Shaping mask'
+      return t('Shaping mask')
     case 'enable':
-      return 'Mask ready'
+      return t('Mask ready')
     case 'segment':
-      if (op.target !== 'sky') return 'Finding the subject'
-      return SKY_BY_CLICK ? 'Pointing at the sky' : 'Finding the sky'
+      if (op.target !== 'sky') return t('Finding the subject')
+      return SKY_BY_CLICK ? t('Pointing at the sky') : t('Finding the sky')
     case 'person':
-      return `Finding ${op.part}`
+      return t('Finding {{part}}', { part: op.part })
     case 'object':
-      return op.detect ? `Finding the ${op.label}` : `Pointing at the ${op.label}`
+      return op.detect
+        ? t('Finding the {{label}}', { label: op.label })
+        : t('Pointing at the {{label}}', { label: op.label })
     case 'denoise':
-      return op.model === 'nafnet' ? 'AI denoise (NAFNet)' : 'AI denoise (DRUNet)'
+      return op.model === 'nafnet' ? t('AI denoise (NAFNet)') : t('AI denoise (DRUNet)')
     case 'deblur':
-      return 'AI deblur'
+      return t('AI deblur')
   }
 }
 
@@ -111,7 +114,7 @@ export function runRemaining(parts: { ms: number }[], index: number, p: number):
 
 /** A time estimate in words: "~40 s", "~3 min". */
 export function formatEta(ms: number): string {
-  if (ms < 1500) return 'a moment'
+  if (ms < 1500) return t('a moment')
   const s = Math.round(ms / 1000)
   if (s < 90) return `~${s} s`
   return `~${Math.round(s / 60)} min`

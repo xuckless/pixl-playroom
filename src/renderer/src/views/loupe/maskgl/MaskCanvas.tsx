@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { readable } from '../../../lib/frames'
 import { maskJoins } from '../../../../../shared/maskpreview'
 import type { LocalLayer } from '../../../../../shared/recipe'
 import { displayToBase, type P, type ViewGeometry } from '../../../../../shared/view'
@@ -155,7 +156,7 @@ export function MaskCanvas({
   // The picture a range keys on: the settled one (a draft per tick would be
   // decoded per tick), its last one kept while drafts come and go.
   const pictureUrl = useDevelop((s) =>
-    s.picture && s.picture.kind !== 'draft' ? s.picture.url : null
+    s.picture && s.picture.kind !== 'draft' ? readable(s.picture) : null
   )
   const overlayOn = useDevelop((s) => s.overlay)
   // The Objects tool's selection being made (what a hover, a box or a click

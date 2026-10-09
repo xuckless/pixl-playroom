@@ -5,9 +5,12 @@ import { keywordLabel, keywordPaths } from '../../../../shared/keywords'
 import { cameraName } from '../../../../shared/smart'
 import { Icon } from '../../components/icons'
 import { Menu, Popover, type MenuItem } from '../../components/Popover'
+import { useCull } from '../../state/cull'
+import { useUi } from '../../state/ui'
 import { LABEL_COLOURS } from '../../lib/helpers'
 import { useLibrary, useTargets } from '../../state/library'
 import { keyHint } from '../../lib/commands'
+import { t, tk, tp } from '../../lib/i18n'
 
 const stop = (e: React.KeyboardEvent): void => e.stopPropagation()
 
@@ -46,8 +49,8 @@ function Range({
       <span className="range-pair">
         <input
           type="number"
-          aria-label={`${label} from`}
-          placeholder="min"
+          aria-label={t('{{label}} from', { label })}
+          placeholder={t('min')}
           value={lo}
           onChange={(e) => commit(e.target.value, hi)}
           onKeyDown={stop}
@@ -55,8 +58,8 @@ function Range({
         <span className="muted">–</span>
         <input
           type="number"
-          aria-label={`${label} to`}
-          placeholder="max"
+          aria-label={t('{{label}} to', { label })}
+          placeholder={t('max')}
           value={hi}
           onChange={(e) => commit(lo, e.target.value)}
           onKeyDown={stop}
@@ -68,14 +71,23 @@ function Range({
 }
 
 const FLAGS: [FlagFilter, string][] = [
-  ['notRejected', 'Hide rejected'],
-  ['all', 'All photos'],
-  ['pick', 'Picks'],
-  ['unflagged', 'Unflagged'],
-  ['reject', 'Rejected only']
+  ['notRejected', tk('Hide rejected')],
+  ['all', tk('All photos')],
+  ['pick', tk('Picks')],
+  ['unflagged', tk('Unflagged')],
+  ['reject', tk('Rejected only')]
 ]
 
+const LABEL_NAME: Record<string, string> = {
+  red: tk('Red'),
+  yellow: tk('Yellow'),
+  green: tk('Green'),
+  blue: tk('Blue'),
+  purple: tk('Purple')
+}
+
 const cap = (s: string): string => s[0].toUpperCase() + s.slice(1)
+const labelName = (l: string): string => (LABEL_NAME[l] ? t(LABEL_NAME[l]) : cap(l))
 
 /**
  * Every filter but the search: rating, flag, colour label and edits first
@@ -90,13 +102,15 @@ export function FilterButton(): React.JSX.Element {
     <span className="menu-anchor">
       <button
         className={`lg${n ? ' on' : ''}`}
-        title="Filter by rating, flag, label, edits, camera, lens, kind, ISO, focal length, date or keyword"
-        aria-label={n ? `Filters, ${n} on` : 'Filters'}
+        title={t(
+          'Filter by rating, flag, label, edits, camera, lens, kind, ISO, focal length, date or keyword'
+        )}
+        aria-label={n ? tp('Filters, {{count}} on', 'Filters, {{count}} on', n) : t('Filters')}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         <Icon name="filter" />
-        Filters
+        {t('Filters')}
         {n > 0 && <span className="filter-count t-num">{n}</span>}
       </button>
       {open && <FilterForm onClose={() => setOpen(false)} />}
@@ -112,23 +126,28 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
   const cameras = useMemo(() => distinct(items.map((i) => cameraName(i))), [items])
   const lenses = useMemo(() => distinct(items.map((i) => i.camera.lens)), [items])
   const keywords = useMemo(() => keywordPaths(tree), [tree])
+  const cullSuggest = useUi((s) => s.cullSuggest)
   const withCurrent = (list: string[], v: string): string[] =>
     v && !list.includes(v) ? [v, ...list] : list
   return (
     <Popover onClose={onClose} className="filter-pop">
       <div className="field">
-        <span>Rating</span>
-        <div className="seg rating-seg" role="group" aria-label="Minimum rating">
+        <span>{t('Rating')}</span>
+        <div className="seg rating-seg" role="group" aria-label={t('Minimum rating')}>
           {[0, 1, 2, 3, 4, 5].map((r) => (
             <button
               key={r}
               className={filter.minRating === r ? 'on' : ''}
               aria-pressed={filter.minRating === r}
-              title={r === 0 ? 'Any rating' : `${r} star${r === 1 ? '' : 's'} or more`}
+              title={
+                r === 0
+                  ? t('Any rating')
+                  : tp('{{count}} star or more', '{{count}} stars or more', r)
+              }
               onClick={() => setFilter({ minRating: r })}
             >
               {r === 0 ? (
-                'Any'
+                t('Any')
               ) : (
                 <>
                   {r}
@@ -140,36 +159,53 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
         </div>
       </div>
       <div className="field">
-        <span>Flag</span>
+        <span>{t('Flag')}</span>
         <select
           value={filter.flag}
           onChange={(e) => setFilter({ flag: e.target.value as FlagFilter })}
-          aria-label="Flag"
+          aria-label={t('Flag')}
         >
           {FLAGS.map(([v, label]) => (
             <option key={v} value={v}>
-              {label}
+              {t(label)}
             </option>
           ))}
         </select>
       </div>
+      {cullSuggest && (
+        <label
+          className="check field"
+          title={t('Photos that look like rejects, with why: nothing is deleted')}
+        >
+          <input
+            type="checkbox"
+            checked={filter.suggested === true}
+            onChange={(e) => {
+              setFilter({ suggested: e.target.checked })
+              // Photos not measured yet are measured now.
+              if (e.target.checked) void useCull.getState().measure()
+            }}
+          />
+          {t('Suggested rejects only')}
+        </label>
+      )}
       <div className="field">
-        <span>Label</span>
-        <div className="label-pick" role="group" aria-label="Colour label">
+        <span>{t('Label')}</span>
+        <div className="label-pick" role="group" aria-label={t('Colour label')}>
           <button
             className={`sm${filter.label === 'all' ? ' on' : ''}`}
             aria-pressed={filter.label === 'all'}
             onClick={() => setFilter({ label: 'all' })}
           >
-            Any
+            {t('Any')}
           </button>
           {Object.keys(LABEL_COLOURS).map((l) => (
             <button
               key={l}
               className={`swatch${filter.label === l ? ' on' : ''}`}
               aria-pressed={filter.label === l}
-              aria-label={cap(l)}
-              title={cap(l)}
+              aria-label={labelName(l)}
+              title={labelName(l)}
               style={{ color: LABEL_COLOURS[l] }}
               onClick={() => setFilter({ label: filter.label === l ? 'all' : (l as ColorLabel) })}
             >
@@ -179,13 +215,13 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
         </div>
       </div>
       <div className="field">
-        <span>Edits</span>
-        <div className="seg" role="group" aria-label="Edited">
+        <span>{t('Edits')}</span>
+        <div className="seg" role="group" aria-label={t('Edited')}>
           {(
             [
-              ['all', 'Any'],
-              ['edited', 'Edited'],
-              ['unedited', 'Unedited']
+              ['all', tk('Any')],
+              ['edited', tk('Edited')],
+              ['unedited', tk('Unedited')]
             ] as const
           ).map(([v, label]) => (
             <button
@@ -194,16 +230,16 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
               aria-pressed={filter.edited === v}
               onClick={() => setFilter({ edited: v })}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
       </div>
       <div className="pop-rule" />
       <div className="field">
-        <span>Camera</span>
+        <span>{t('Camera')}</span>
         <select value={filter.camera} onChange={(e) => setFilter({ camera: e.target.value })}>
-          <option value="">Any camera</option>
+          <option value="">{t('Any camera')}</option>
           {withCurrent(cameras, filter.camera).map((c) => (
             <option key={c} value={c}>
               {c}
@@ -212,9 +248,9 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
         </select>
       </div>
       <div className="field">
-        <span>Lens</span>
+        <span>{t('Lens')}</span>
         <select value={filter.lens} onChange={(e) => setFilter({ lens: e.target.value })}>
-          <option value="">Any lens</option>
+          <option value="">{t('Any lens')}</option>
           {withCurrent(lenses, filter.lens).map((c) => (
             <option key={c} value={c}>
               {c}
@@ -223,13 +259,13 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
         </select>
       </div>
       <div className="field">
-        <span>Kind</span>
+        <span>{t('Kind')}</span>
         <div className="seg">
           {(
             [
-              ['all', 'All'],
+              ['all', tk('All')],
               ['raw', 'RAW'],
-              ['nonraw', 'Not RAW']
+              ['nonraw', tk('Not RAW')]
             ] as const
           ).map(([v, label]) => (
             <button
@@ -237,24 +273,24 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
               className={filter.kind === v ? 'on' : ''}
               onClick={() => setFilter({ kind: v })}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
       </div>
       <Range label="ISO" value={filter.iso} onChange={(iso) => setFilter({ iso })} />
       <Range
-        label="Focal length"
+        label={t('Focal length')}
         unit="mm"
         value={filter.focal}
         onChange={(focal) => setFilter({ focal })}
       />
       <div className="field">
-        <span>Taken</span>
+        <span>{t('Taken')}</span>
         <span className="range-pair">
           <input
             type="date"
-            aria-label="Taken from"
+            aria-label={t('Taken from')}
             value={filter.from}
             onChange={(e) => setFilter({ from: e.target.value })}
             onKeyDown={stop}
@@ -262,7 +298,7 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
           <span className="muted">–</span>
           <input
             type="date"
-            aria-label="Taken to"
+            aria-label={t('Taken to')}
             value={filter.to}
             onChange={(e) => setFilter({ to: e.target.value })}
             onKeyDown={stop}
@@ -270,9 +306,9 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
         </span>
       </div>
       <div className="field">
-        <span>Keyword</span>
+        <span>{t('Keyword')}</span>
         <select value={filter.keyword} onChange={(e) => setFilter({ keyword: e.target.value })}>
-          <option value="">Any keyword</option>
+          <option value="">{t('Any keyword')}</option>
           {withCurrent(keywords, filter.keyword).map((k) => (
             <option key={k} value={k}>
               {keywordLabel(k)}
@@ -281,9 +317,9 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
         </select>
       </div>
       <div className="row between pop-foot">
-        <span className="muted small">Search also finds titles, captions and keywords.</span>
+        <span className="muted small">{t('Search also finds titles, captions and keywords.')}</span>
         <button className="sm" onClick={() => setFilter(clearedFilters())}>
-          Clear
+          {t('Clear')}
         </button>
       </div>
     </Popover>
@@ -300,10 +336,11 @@ function AutoStackForm({ onClose }: { onClose: () => void }): React.JSX.Element 
   }
   return (
     <Popover onClose={onClose} className="autostack-pop" align="right">
-      <span className="micro">Auto-stack by capture time</span>
+      <span className="micro">{t('Auto-stack by capture time')}</span>
       <p className="small muted">
-        Photos in this folder taken no more than this far apart become one stack, the first on top.
-        Photos already in a stack are left as they are.
+        {t(
+          'Photos in this folder taken no more than this far apart become one stack, the first on top. Photos already in a stack are left as they are.'
+        )}
       </p>
       <div className="row">
         <input
@@ -311,7 +348,7 @@ function AutoStackForm({ onClose }: { onClose: () => void }): React.JSX.Element 
           min={0.5}
           max={600}
           step={0.5}
-          aria-label="Seconds between shots"
+          aria-label={t('Seconds between shots')}
           value={seconds}
           onChange={(e) => setSeconds(Math.max(0, Number(e.target.value)))}
           onKeyDown={(e) => {
@@ -319,10 +356,10 @@ function AutoStackForm({ onClose }: { onClose: () => void }): React.JSX.Element 
             if (e.key === 'Enter') run()
           }}
         />
-        <span className="muted">seconds</span>
+        <span className="muted">{t('seconds')}</span>
         <span className="spacer" />
         <button className="primary sm" onClick={run}>
-          Stack
+          {t('Stack')}
         </button>
       </div>
     </Popover>
@@ -351,44 +388,44 @@ export function OrganiseMenu(): React.JSX.Element {
   const stackId = focusItem?.stack?.id
   const items: (MenuItem | 'sep')[] = [
     {
-      label: 'Stack selection',
+      label: t('Stack selection'),
       hint: keyHint('library.stack'),
       disabled: targets.length < 2,
       onSelect: () => void lib().stackTargets()
     },
     {
-      label: 'Unstack',
+      label: t('Unstack'),
       hint: keyHint('library.unstack'),
       disabled: !inStack,
       onSelect: () => void lib().unstackTargets()
     },
     {
-      label: stackId && expanded.has(stackId) ? 'Collapse stack' : 'Expand stack',
+      label: stackId && expanded.has(stackId) ? t('Collapse stack') : t('Expand stack'),
       hint: 'S',
       disabled: !stackId,
       onSelect: () => stackId && lib().toggleStack(stackId)
     },
     {
-      label: 'Make cover',
+      label: t('Make cover'),
       hint: keyHint('library.makeCover'),
       disabled: !stackId || focusItem?.stack?.position === 0,
       onSelect: () => focusItem && void lib().makeCover(focusItem.key)
     },
     {
-      label: 'Auto-stack by capture time…',
+      label: t('Auto-stack by capture time…'),
       disabled: !folder,
       onSelect: () => setOpen('autostack')
     },
     'sep',
     {
-      label: 'Add selection to collection…',
+      label: t('Add selection to collection…'),
       disabled: targets.length === 0 || manual.length === 0,
       onSelect: () => setOpen('collections')
     },
     ...(current?.kind === 'manual'
       ? [
           {
-            label: `Remove from ${current.name}`,
+            label: t('Remove from {{name}}', { name: current.name }),
             disabled: targets.length === 0,
             danger: true,
             onSelect: () => void lib().removeFromCollection(current.id, targets)
@@ -400,12 +437,12 @@ export function OrganiseMenu(): React.JSX.Element {
     <span className="menu-anchor">
       <button
         className="lg"
-        title="Stacks and collections"
+        title={t('Stacks and collections')}
         aria-expanded={open !== null}
         onClick={() => setOpen(open ? null : 'menu')}
       >
         <Icon name="stack" />
-        <span className="lbl">Organise</span>
+        <span className="lbl">{t('Organise')}</span>
       </button>
       {open === 'menu' && <Menu items={items} onClose={() => setOpen(null)} align="right" />}
       {open === 'collections' && (
@@ -434,24 +471,26 @@ export function DuplicateControls(): React.JSX.Element | null {
   const [threshold, setThreshold] = useState<number | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   if (shown?.kind !== 'duplicates') return null
-  const t = threshold ?? shown.threshold
+  const level = threshold ?? shown.threshold
   const reopen = (patch: { folder?: string | null; threshold?: number }): void =>
     void openSource({ ...shown, ...patch })
   return (
     <>
       <label
         className="bar-range dup-range"
-        title="How different two pictures may be and still count as similar (0: only identical pictures)"
+        title={t(
+          'How different two pictures may be and still count as similar (0: only identical pictures)'
+        )}
       >
-        <span className="micro">Similar</span>
+        <span className="micro">{t('Similar')}</span>
         <span className="bar-track">
-          <span className="bar-fill" style={{ width: `${(t / 16) * 100}%` }} />
+          <span className="bar-fill" style={{ width: `${(level / 16) * 100}%` }} />
           <input
             type="range"
             min={0}
             max={16}
-            value={t}
-            aria-label="Similarity threshold"
+            value={level}
+            aria-label={t('Similarity threshold')}
             onChange={(e) => {
               const v = Number(e.target.value)
               setThreshold(v)
@@ -464,22 +503,22 @@ export function DuplicateControls(): React.JSX.Element | null {
             onKeyDown={(e) => e.stopPropagation()}
           />
         </span>
-        <span className="bar-value t-num">{t}</span>
+        <span className="bar-value t-num">{level}</span>
       </label>
-      <div className="seg" role="group" aria-label="Where to look">
+      <div className="seg" role="group" aria-label={t('Where to look')}>
         <button
           className={shown.folder !== null ? 'on' : ''}
           disabled={!lastFolder}
-          title={lastFolder ?? 'Open a folder first'}
+          title={lastFolder ?? t('Open a folder first')}
           onClick={() => reopen({ folder: lastFolder })}
         >
-          This folder
+          {t('This folder')}
         </button>
         <button
           className={shown.folder === null ? 'on' : ''}
           onClick={() => reopen({ folder: null })}
         >
-          Whole library
+          {t('Whole library')}
         </button>
       </div>
     </>

@@ -11,6 +11,7 @@
  * effects) — physics where it belongs, the look where Lightroom puts it.
  */
 import type {
+  AdjustmentSmoothing,
   Blend,
   BlendMode,
   ColorGrade,
@@ -55,6 +56,7 @@ import {
   type Recipe
 } from './recipe'
 import { opFromAbsolute, opFromRelative, type OpWhite } from './wb'
+import { tk } from './i18n'
 
 // ── Spaces ───────────────────────────────────────────────────────────────────
 
@@ -65,6 +67,37 @@ export const LOOK_SPACE: GradeSpace = {
 
 /** 18% grey in the look space (sRGB transfer, shared by Display P3). */
 export const MID_GREY_ENCODED = 0.4613
+
+/**
+ * Denoise's coarsest reach, a fraction of the shorter side (engine 0.18,
+ * HR-0.18-3): one number for the preview, the 1:1 view and the export, so
+ * the same structures are denoised at every size.
+ */
+export const DENOISE_REACH = 0.03
+
+/**
+ * What the preview leaves out and the panel that owns the op says so
+ * (HR-0.18-1, engine 0.18: a preview never drops an op silently). The report
+ * carries them in `notes`; the 1:1 view renders them from the master.
+ */
+/**
+ * How far over white a RAW's Scene master reaches, in stops: up to 1.65 on
+ * the owner's CR2s (InpaintOpposed), so its SDR shoulder spans 2.
+ */
+export const RAW_SCENE_STOPS = 2
+
+/** The smoothing's reach, a fraction of the shorter side: the engine's calibration point. */
+export const SMOOTHING_RADIUS = 0.02
+
+/** The Smoothing slider (0–100) as the engine's field, or none for a draft or at 0. */
+export function smoothingOf(value: number, ctx: CompileContext): AdjustmentSmoothing | null {
+  if (ctx.smoothing === false || !(value > 0)) return null
+  return { radius: SMOOTHING_RADIUS, strength: round4(clamp(value / 100, 0, 1)) }
+}
+
+export const LEFT_OUT = {
+  sharpen: tk('Sharpening shows at 100% only: at this zoom its radius is under half a pixel.')
+} as const
 
 export const IDENTITY_PRIMARY: Primary = {
   exposure: 0,
@@ -116,6 +149,12 @@ export interface CompileContext {
   aiDenoised?: boolean
   /** False while Upright's guides are drawn: the frame as it is before the warp. */
   showTransform?: boolean
+  /**
+   * False for a draft (a slider moving): the Smoothing slider's work is left
+   * out, as it costs 2.6–3.3× the op (engine 0.18: on release, never while
+   * dragging). Missing or true: smoothed as set.
+   */
+  smoothing?: boolean
 }
 
 export interface Compiled {
@@ -350,16 +389,25 @@ export function absoluteWb(ctx: Pick<CompileContext, 'isRaw' | 'asShot'>): boole
 // ── Calibration ──────────────────────────────────────────────────────────────
 
 /**
+ * The largest mixer coefficient sent (HR-0.18-7, engine 0.18): a row past it
+ * overflows on a bright float pixel. Inside the sliders' ±100 the matrix
+ * stays under 2; only values past them (a mask's Amount at 200) degenerate.
+ */
+export const MIXER_ROW_MAX = 16
+
+/**
  * The calibration panel as a 3×3 matrix in linear Rec.2020: each primary's
  * chroma (its offset from its own mean) is turned about the grey axis by up to
  * ±20° and scaled by up to ±60%, then the three new primaries are rescaled so
- * white stays white.
+ * white stays white. Each value is held to its slider's ±100, as a mask's
+ * Amount at 200 would otherwise double it into a matrix that overflows.
  */
 export function calibrationMatrix(c: Recipe['calibration']): [Rgb, Rgb, Rgb] | null {
+  const v = (x: number): number => clamp(x, -100, 100)
   const shifts: [number, number][] = [
-    [c.redHue, c.redSaturation],
-    [c.greenHue, c.greenSaturation],
-    [c.blueHue, c.blueSaturation]
+    [v(c.redHue), v(c.redSaturation)],
+    [v(c.greenHue), v(c.greenSaturation)],
+    [v(c.blueHue), v(c.blueSaturation)]
   ]
   if (shifts.every(([h, s]) => h === 0 && s === 0)) return null
   const u = [1 / Math.sqrt(3), 1 / Math.sqrt(3), 1 / Math.sqrt(3)]
@@ -399,7 +447,11 @@ export function calibrationMatrix(c: Recipe['calibration']): [Rgb, Rgb, Rgb] | n
     g: round4(M[r][1] * w[1]),
     b: round4(M[r][2] * w[2])
   })
-  return [row(0), row(1), row(2)]
+  const rows: [Rgb, Rgb, Rgb] = [row(0), row(1), row(2)]
+  // Never reached inside the sliders' range; a guard, not a rule.
+  if (rows.some((x) => Math.max(Math.abs(x.r), Math.abs(x.g), Math.abs(x.b)) > MIXER_ROW_MAX))
+    return null
+  return rows
 }
 
 // ── Geometry ─────────────────────────────────────────────────────────────────
@@ -678,6 +730,9 @@ export function withLutDomains(v: unknown): unknown {
   for (const [k, x] of Object.entries(v)) {
     if (k === 'Lut' && x && typeof x === 'object' && !Array.isArray(x)) {
       out[k] = { out_of_domain: 'Clamp', ...(x as Record<string, unknown>) }
+    } else if (k === 'Denoise' && x && typeof x === 'object' && !Array.isArray(x)) {
+      // Saved before engine 0.18, which requires a reach: the one Playroom sends everywhere.
+      out[k] = { reach: DENOISE_REACH, ...(x as Record<string, unknown>) }
     } else out[k] = withLutDomains(x)
   }
   return out
@@ -717,8 +772,9 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
     basic: Object.fromEntries(
       Object.entries(s.basic).map(([key, v]) => [key, m(v)])
     ) as unknown as LayerSettings['basic'],
+    // Smoothing is how, not how much: Amount leaves it as set.
     presence: Object.fromEntries(
-      Object.entries(s.presence).map(([key, v]) => [key, m(v)])
+      Object.entries(s.presence).map(([key, v]) => [key, key === 'smoothing' ? v : m(v)])
     ) as unknown as LayerSettings['presence'],
     toneCurve: {
       ...tc,
@@ -813,13 +869,27 @@ function maskComponent(
       // feather is to stay inside the line (the engine feathers about it).
       const by =
         ((c.edge?.shift ?? 0) / 100) * EDGE_SHIFT_SPAN - (c.edge?.inside ? base.feather.radius : 0)
-      const turned = c.points.map((p) => transformPoint(user, p))
-      const moved = offsetPolygon(turned, by, frame.width, frame.height)
-      const points = moved.map((q) => ({
-        x: round4(clamp(q.x, 0, 1)),
-        y: round4(clamp(q.y, 0, 1))
-      }))
-      return { ...base, shape: { Polygon: { contours: [{ points }], fill_rule: 'NonZero' } } }
+      const contour = (
+        ring: { x: number; y: number }[]
+      ): { points: { x: number; y: number }[] } => ({
+        points: offsetPolygon(
+          ring.map((p) => transformPoint(user, p)),
+          by,
+          frame.width,
+          frame.height
+        ).map((q) => ({ x: round4(clamp(q.x, 0, 1)), y: round4(clamp(q.y, 0, 1)) }))
+      })
+      // A face part's other outlines (the other eye, the mouth inside the lips): even-odd.
+      const rings = (c.rings ?? []).filter((r) => r.length >= 3)
+      return {
+        ...base,
+        shape: {
+          Polygon: {
+            contours: [contour(c.points), ...rings.map(contour)],
+            fill_rule: rings.length ? 'EvenOdd' : 'NonZero'
+          }
+        }
+      }
     }
     case 'range': {
       if (!c.hue && !c.saturation && !c.luma) return null
@@ -836,11 +906,35 @@ function maskComponent(
         }
       }
     }
+    case 'depth': {
+      // Its map, turned as a painted plane is (main/brushes.ts). Disparity:
+      // the engine's near is the larger value; 0 on the slider is the nearest.
+      const path = brushPaths[c.id]
+      if (!path) return null
+      const [a, b] = c.near <= c.far ? [c.near, c.far] : [c.far, c.near]
+      return {
+        ...base,
+        shape: {
+          DepthRange: {
+            depth: { Raster: { Png: path } },
+            quantity: 'Disparity',
+            near: round4(1 - a / 100),
+            far: round4(1 - b / 100),
+            softness: round4(clamp(c.softness / 100, 0, 1) * DEPTH_SOFTNESS_MAX),
+            // Depth edges aren't the picture's: bilinear, never guided (engine 0.18).
+            resampler: 'Bilinear'
+          }
+        }
+      }
+    }
     default:
       // A kind this version cannot draw never reaches the engine.
       return null
   }
 }
+
+/** Softness 100 fades over this much of the photo's depth past each end. */
+export const DEPTH_SOFTNESS_MAX = 0.25
 
 export function layerMask(
   l: LocalLayer,
@@ -895,6 +989,57 @@ function stage(space: GradeSpace, ops: GradeOp[]): { space: GradeSpace; ops: Gra
   return ops.length > 0 ? [{ space, ops }] : []
 }
 
+/**
+ * Negatives floored at 0, nothing else touched (a 1D identity over 0…64): the
+ * look stage's first op. A RAW's Scene master is PixlRGB (engine 0.18), wider
+ * than Display P3, so its most saturated colours enter the look stage with a
+ * channel below 0, where smoothed ops break (E53: Dehaze at 30 already
+ * blotched IMG_3198). A Develop master never held them (it was linear sRGB),
+ * and the screen clips them, so the picture keeps its look.
+ */
+const P3_FLOOR = 'LUT_1D_SIZE 2\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 64 64 64\n0 0 0\n64 64 64\n'
+
+/** Whether an op is the look stage's floor (`P3_FLOOR`). */
+export function isP3Floor(op: GradeOp): boolean {
+  return 'Lut' in op && 'Cube' in op.Lut.lut && op.Lut.lut.Cube === P3_FLOOR
+}
+
+const floorOp = (): GradeOp => ({
+  Lut: { lut: { Cube: P3_FLOOR }, amount: 1, out_of_domain: 'Clamp' }
+})
+
+/** Whether an op carries adjustment smoothing (engine 0.18). */
+function smoothed(op: GradeOp): boolean {
+  const v = Object.values(op)[0] as { smoothing?: unknown } | undefined
+  return !!v && typeof v === 'object' && v.smoothing != null
+}
+
+/**
+ * A floor before every smoothed op too (E53 again, 2026-10-08): ops after the
+ * stage's first floor make negatives of their own (Saturation, Vibrance, a
+ * profile's curve on a saturated colour), and a smoothed op spills colour
+ * from them in blobs (IMG_1826: Shadows +26 and Saturation at Exposure +4).
+ * Only where smoothing is on, so a draft is never touched; a floor already
+ * in place is not doubled. Into masked groups too.
+ */
+function withFloors(ops: GradeOp[]): GradeOp[] {
+  const out: GradeOp[] = []
+  for (const op of ops) {
+    const o: GradeOp =
+      'Masked' in op ? { Masked: { ...op.Masked, ops: withFloors(op.Masked.ops) } } : op
+    const last = out[out.length - 1]
+    if (smoothed(o) && !(last && isP3Floor(last))) out.push(floorOp())
+    out.push(o)
+  }
+  return out
+}
+
+/** The look stage (display-referred, `LOOK_SPACE`), its negatives floored first and before each smoothed op. */
+function lookStage(ops: GradeOp[]): { space: GradeSpace; ops: GradeOp[] }[] {
+  if (ops.length === 0) return []
+  return stage(LOOK_SPACE, withFloors([floorOp(), ...ops]))
+}
+
 function sharpenOp(
   amount: number,
   radius: number,
@@ -906,7 +1051,7 @@ function sharpenOp(
   if (amount <= 0) return null
   const px = radius * scale
   if (px < 0.5) {
-    notes.push('Sharpening is shown at 1:1 only: at this zoom its radius is under half a pixel.')
+    notes.push(LEFT_OUT.sharpen)
     return null
   }
   return {
@@ -920,13 +1065,17 @@ function sharpenOp(
 }
 
 /** The HSL bands, or with `bwMix` the black-and-white mix's luminance bands. */
-function hslOp(hsl: Recipe['hsl'], bwMix: Recipe['bwMix'] | null): GradeOp | null {
+function hslOp(
+  hsl: Recipe['hsl'],
+  bwMix: Recipe['bwMix'] | null,
+  smoothing: AdjustmentSmoothing | null
+): GradeOp | null {
   if (bwMix) {
     if (HSL_BANDS.every((b) => bwMix[b] === 0)) return null
     const bands = Object.fromEntries(
       HSL_BANDS.map((b) => [b, { hue: 0, saturation: 0, luminance: round4(bwMix[b] * 0.006) }])
     ) as unknown as HslBands
-    return { HslBands: bands }
+    return { HslBands: { ...bands, smoothing } }
   }
   if (HSL_BANDS.every((b) => hsl[b].hue === 0 && hsl[b].saturation === 0 && hsl[b].luminance === 0))
     return null
@@ -940,7 +1089,7 @@ function hslOp(hsl: Recipe['hsl'], bwMix: Recipe['bwMix'] | null): GradeOp | nul
       }
     ])
   ) as unknown as HslBands
-  return { HslBands: bands }
+  return { HslBands: { ...bands, smoothing } }
 }
 
 /** Point colours as `Masked` range masks instead of engine qualifiers. */
@@ -960,7 +1109,8 @@ const POINT_COLOR_SMOOTHNESS = 15
  */
 export function pointColorOps(
   points: PointColorSetting[],
-  keyScale: KeyScale = { width: 1, height: 1, scale: 0 }
+  keyScale: KeyScale = { width: 1, height: 1, scale: 0 },
+  smoothing: AdjustmentSmoothing | null = null
 ): GradeOp[] {
   const ops: GradeOp[] = []
   const blur = smoothnessRadius(POINT_COLOR_SMOOTHNESS, keyScale)
@@ -1012,12 +1162,15 @@ export function pointColorOps(
         space: LOOK_SPACE
       }
       ops.push({ Masked: { mask, opacity: 1, ops: [{ Primary: correction }] } })
-    } else ops.push({ Qualifier: { key, correction } })
+    } else ops.push({ Qualifier: { key, correction, smoothing } })
   }
   return ops
 }
 
-function colorGradeOp(cg: Recipe['colorGrade']): GradeOp | null {
+function colorGradeOp(
+  cg: Recipe['colorGrade'],
+  smoothing: AdjustmentSmoothing | null
+): GradeOp | null {
   const wheels = [cg.shadows, cg.midtones, cg.highlights, cg.global]
   if (wheels.every((w) => w.saturation === 0 && w.luminance === 0)) return null
   const wheel = (w: Recipe['colorGrade']['shadows']): ColorGrade['shadows'] => ({
@@ -1032,7 +1185,8 @@ function colorGradeOp(cg: Recipe['colorGrade']): GradeOp | null {
       highlights: wheel(cg.highlights),
       global: wheel(cg.global),
       blending: clamp(cg.blending / 100, 0, 1),
-      balance: clamp(cg.balance / 100, -1, 1)
+      balance: clamp(cg.balance / 100, -1, 1),
+      smoothing
     }
   }
 }
@@ -1068,6 +1222,9 @@ function settingsStages(
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
   const hdr = ctx.hdr === true
+  // One value for every op that takes it (Tone, Vibrance, Dehaze, Point
+  // colour, Color grading; HSL waits for E53); null in a draft.
+  const smoothing = smoothingOf(r.presence.smoothing, ctx)
   const d = r.detail
   const denoise =
     !(base && ctx.aiDenoised) && (d.noiseLuminance > 0 || d.noiseColor > 0)
@@ -1076,7 +1233,8 @@ function settingsStages(
             luminance: clamp(d.noiseLuminance / 100, 0, 1),
             luminance_detail: clamp(d.noiseLuminanceDetail / 100, 0, 1),
             color: clamp(d.noiseColor / 100, 0, 1),
-            color_detail: clamp(d.noiseColorDetail / 100, 0, 1)
+            color_detail: clamp(d.noiseColorDetail / 100, 0, 1),
+            reach: DENOISE_REACH
           }
         } as GradeOp)
       : null
@@ -1090,15 +1248,18 @@ function settingsStages(
     linear.push({ WhiteBalance: { temperature_kelvin: round4(wb.kelvin), tint: round4(wb.tint) } })
   const mix = calibrationMatrix(r.calibration)
   if (mix) linear.push({ ChannelMixer: { red: mix[0], green: mix[1], blue: mix[2] } })
-  if (r.basic.exposure !== 0) {
+  if (r.basic.exposure !== 0)
     linear.push({ Primary: primary({ exposure: round4(r.basic.exposure), contrast_pivot: 0.18 }) })
-    // An SDR picture's highlights are rolled onto white; an HDR one has
-    // room above white for them (and a shoulder there would flatten it).
-    if (base && r.basic.exposure > 0 && !ctx.hdr) {
-      linear.push({
-        Lut: { lut: { Cube: shoulderCube(r.basic.exposure) }, amount: 1, out_of_domain: 'Clamp' }
-      })
-    }
+  // An SDR picture's highlights are rolled onto white; an HDR one has room
+  // above white for them (and a shoulder there would flatten it). A RAW's
+  // Scene master (engine 0.18) is over white before any exposure, by up to
+  // RAW_SCENE_STOPS: its shoulder is always there and reaches that far.
+  const room = base && ctx.isRaw ? RAW_SCENE_STOPS : 0
+  if (base && !ctx.hdr && (r.basic.exposure > 0 || room > 0)) {
+    const stops = round4(Math.max(0, r.basic.exposure) + room)
+    linear.push({
+      Lut: { lut: { Cube: shoulderCube(stops) }, amount: 1, out_of_domain: 'Clamp' }
+    })
   }
   // Coloured light on the scene, after the exposure it is lit at.
   const light = addColorOp(r.colorGrade.add, 'light')
@@ -1112,19 +1273,21 @@ function settingsStages(
   // The engine's detail and effect constants are set for display-referred
   // values, so dehaze runs at the head of the look stage.
   if (r.presence.dehaze !== 0) {
-    look.push({ Dehaze: { amount: clamp(r.presence.dehaze / 100, -1, 1), radius: 0.01 } })
+    look.push({
+      Dehaze: { amount: clamp(r.presence.dehaze / 100, -1, 1), radius: 0.01, smoothing }
+    })
   }
   switch (base?.profile.kind ?? 'neutral') {
     case 'standard':
       // Vivid's curve and vibrance, and a little more saturation on top: a
       // RAW opens with colour that already pops.
       look.push(curvesOp({ master: tonal(VIVID_CURVE, hdr) }))
-      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7 } })
+      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7, smoothing } })
       look.push({ Primary: primary({ saturation: STANDARD_SATURATION }) })
       break
     case 'vivid':
       look.push(curvesOp({ master: tonal(VIVID_CURVE, hdr) }))
-      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7 } })
+      look.push({ Vibrance: { amount: 0.15, skin_protection: 0.7, smoothing } })
       break
     case 'monochrome':
       look.push(curvesOp({ master: tonal(STANDARD_CURVE, hdr) }))
@@ -1154,12 +1317,17 @@ function settingsStages(
         highlights: clamp(b.highlights / 100, -1, 1),
         shadows: clamp(b.shadows / 100, -1, 1),
         whites: clamp(b.whites / 100, -1, 1),
-        blacks: clamp(b.blacks / 100, -1, 1)
+        blacks: clamp(b.blacks / 100, -1, 1),
+        smoothing
       }
     })
   }
   if (b.contrast !== 0) {
-    look.push({ Primary: primary({ contrast: round4(1 + (b.contrast / 100) * 0.6) }) })
+    // Never below 0 (HR-0.18-6): a mask's Amount at 200 takes Contrast −100
+    // to −0.2, which would turn the picture inside out about the pivot.
+    look.push({
+      Primary: primary({ contrast: round4(Math.max(0, 1 + (b.contrast / 100) * 0.6)) })
+    })
   }
   const p = r.presence
   if (p.texture !== 0) {
@@ -1191,14 +1359,19 @@ function settingsStages(
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
   const bw = !!base && (base.treatment === 'bw' || base.profile.kind === 'monochrome')
   const tail = bw && finish ? finish : look
-  const hsl = hslOp(r.hsl, bw ? base.bwMix : null)
+  // Unsmoothed until E53 (engine 0.18): a smoothed HslBands specks deep
+  // shadows cyan and, under a mask's smoothed Tone past white, blotches red
+  // and blue. The owner's stopgap, 2026-10-08: the other ops keep Smoothing.
+  const hsl = hslOp(r.hsl, bw ? base.bwMix : null, null)
   if (hsl) tail.push(hsl)
   if (!bw) {
     const keyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }
-    tail.push(...pointColorOps(r.pointColors, keyScale))
+    tail.push(...pointColorOps(r.pointColors, keyScale, smoothing))
   }
   if (!bw && p.vibrance !== 0) {
-    tail.push({ Vibrance: { amount: clamp(p.vibrance / 100, -1, 1), skin_protection: 0.6 } })
+    tail.push({
+      Vibrance: { amount: clamp(p.vibrance / 100, -1, 1), skin_protection: 0.6, smoothing }
+    })
   }
   if (bw) tail.push({ Primary: primary({ saturation: 0 }) })
   else if (p.saturation !== 0)
@@ -1206,7 +1379,7 @@ function settingsStages(
   // Hue turns every colour (a mask's Hue slider).
   if (!bw && p.hue)
     tail.push({ Primary: primary({ hue_shift: round4(clamp(p.hue, -100, 100) * 0.6) }) })
-  const cg = colorGradeOp(r.colorGrade)
+  const cg = colorGradeOp(r.colorGrade, smoothing)
   if (cg) tail.push(cg)
   if (r.calibration.shadowsTint !== 0) {
     const a = round4((r.calibration.shadowsTint / 100) * 0.02)
@@ -1260,7 +1433,7 @@ function settingsStages(
       }
     })
   }
-  return [...stage('LinearWorking', linear), ...stage(LOOK_SPACE, look)]
+  return [...stage('LinearWorking', linear), ...lookStage(look)]
 }
 
 /**
@@ -1272,7 +1445,7 @@ function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vig
   const exposure = { Exposure: { highlights: clamp(e.vignetteHighlights / 100, 0, 1) } }
   if (e.vignetteStyle !== 'paint') return exposure
   if (hdr) {
-    notes.push('Paint overlay needs an SDR picture; this HDR photo keeps highlight priority')
+    notes.push(tk('Paint overlay needs an SDR picture; this HDR photo keeps highlight priority'))
     return exposure
   }
   return 'PaintOverlay'
@@ -1337,7 +1510,7 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
       opacity: 1,
       mask: null,
       blend: { mode: 'Normal', space: 'LinearWorking' },
-      stages: stage(LOOK_SPACE, finish)
+      stages: lookStage(finish)
     })
   }
   for (const c of r.custom) {

@@ -135,6 +135,68 @@
 .thumb.rejected .thumb-img img {
   opacity: 0.35;
 }
+/* A suggested reject (Pass 115): dimmed and grey; on hover its colour and reason come back. */
+.thumb.culled .thumb-img img {
+  filter: grayscale(1) brightness(0.55);
+  transition:
+    filter 0.25s var(--ease),
+    transform 0.7s var(--ease);
+}
+.thumb.culled:hover .thumb-img img,
+.thumb.culled:focus-within .thumb-img img {
+  filter: none;
+}
+.cull-why {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 18px 10px 8px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0));
+  color: #fff;
+  font-size: 11.5px;
+  line-height: 1.35;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.2s var(--ease),
+    transform 0.2s var(--ease);
+  pointer-events: none;
+}
+.thumb.culled:hover .cull-why,
+.thumb.culled:focus-within .cull-why {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.cull-why .cull-label {
+  color: var(--danger);
+  letter-spacing: 0.1em;
+}
+.cull-why .cull-acts {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cull-why .cull-acts button {
+  height: 22px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+/* Suggested rejects shown: the line above the grid. */
+.cull-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--hair);
+  font-size: 12px;
+  color: var(--text2);
+}
+.cull-bar .grow {
+  flex: 1;
+}
 .thumb-img {
   position: relative;
   display: flex;

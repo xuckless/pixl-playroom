@@ -7,13 +7,14 @@
  */
 import type { ImageStats } from './engine-types'
 import { chromaDiff, hslToRgb, linearToSrgb, rgbToLab, srgbToLinear, type Rgb8 } from './palette'
+import { t, tk } from './i18n'
 
 export type VisionKind = 'protan' | 'deutan' | 'tritan'
 
 export const VISION_LABEL: Record<VisionKind, string> = {
-  protan: 'Protanopia (no red)',
-  deutan: 'Deuteranopia (no green)',
-  tritan: 'Tritanopia (no blue)'
+  protan: tk('Protanopia (no red)'),
+  deutan: tk('Deuteranopia (no green)'),
+  tritan: tk('Tritanopia (no blue)')
 }
 
 /** Machado, Oliveira & Fernandes (2009), full severity, on linear RGB. */
@@ -171,8 +172,8 @@ export function scopeMetrics(stats: ImageStats): ScopeMetrics {
 
 /** What a contrast ratio means for reading detail: WCAG's own thresholds. */
 export function contrastVerdict(ratio: number): string {
-  if (ratio >= 7) return 'Strong'
-  if (ratio >= 4.5) return 'Good'
-  if (ratio >= 3) return 'Moderate'
-  return 'Flat'
+  if (ratio >= 7) return t('Strong')
+  if (ratio >= 4.5) return t('Good')
+  if (ratio >= 3) return t('Moderate')
+  return t('Flat')
 }

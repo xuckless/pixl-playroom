@@ -48,3 +48,42 @@ export async function carryOver(modelsRoot: string, m: CarriedModel): Promise<bo
   }
   return false
 }
+
+/**
+ * What under `<models>` no release uses any more, as `id` (a retired model)
+ * or `id/version` (a version a shipped model has moved on from): for the
+ * store to delete, after it has carried over what it could. `shipped` maps
+ * each shipped id to its version; `keep` names other folders to leave
+ * (on-demand models).
+ */
+/** Where Gemma and its server live under the models folder (ai/brain.ts): never pruned. */
+export const BRAINS_DIR = 'brains'
+
+/**
+ * What the clean-up keeps besides the roster: on-demand models, shipped ones
+ * held back for now (back when turned on), and Gemma's folder.
+ */
+export function keptBesides(onDemand: string[], held: string[]): Set<string> {
+  return new Set([...onDemand, ...held, BRAINS_DIR])
+}
+
+export async function retiredModelDirs(
+  modelsRoot: string,
+  shipped: ReadonlyMap<string, string>,
+  keep: ReadonlySet<string>
+): Promise<string[]> {
+  const out: string[] = []
+  for (const d of await readdir(modelsRoot, { withFileTypes: true }).catch(() => [])) {
+    if (!d.isDirectory() || d.name.startsWith('.') || keep.has(d.name)) continue
+    const version = shipped.get(d.name)
+    if (!version) {
+      out.push(d.name)
+      continue
+    }
+    for (const v of await readdir(join(modelsRoot, d.name), { withFileTypes: true }).catch(
+      () => []
+    ))
+      if (v.isDirectory() && v.name !== version) out.push(`${d.name}/${v.name}`)
+  }
+  return out
+}

@@ -15,14 +15,15 @@ import {
   vignette,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 export const BW = collection('bw', [
   look(
     'film-noir',
-    'Film Noir',
+    tk('Film Noir'),
     {
       tags: ['bw', 'mono', 'noir', 'dark', 'dramatic'],
-      description: 'Hard key light and deep, falling-off shadows.'
+      description: tk('Hard key light and deep, falling-off shadows.')
     },
     mono({ red: 10, orange: 10 }),
     sCurve(50),
@@ -32,24 +33,30 @@ export const BW = collection('bw', [
   ),
   look(
     'high-key-mono',
-    'High-Key Mono',
-    { tags: ['bw', 'mono', 'high key', 'bright', 'airy'], description: 'Bright, light and soft.' },
+    tk('High-Key Mono'),
+    {
+      tags: ['bw', 'mono', 'high key', 'bright', 'airy'],
+      description: tk('Bright, light and soft.')
+    },
     mono({ orange: 15, red: 10 }),
     tone({ contrast: -15, whites: 25, shadows: 30, highlights: 10 })
   ),
   look(
     'low-key-mono',
-    'Low-Key Mono',
-    { tags: ['bw', 'mono', 'low key', 'dark', 'moody'], description: 'Dark, brooding and heavy.' },
+    tk('Low-Key Mono'),
+    {
+      tags: ['bw', 'mono', 'low key', 'dark', 'moody'],
+      description: tk('Dark, brooding and heavy.')
+    },
     mono(),
     tone({ contrast: 20, whites: -20, highlights: -20, shadows: -25, blacks: -10 })
   ),
   look(
     'red-filter-drama',
-    'Red Filter Drama',
+    tk('Red Filter Drama'),
     {
       tags: ['bw', 'mono', 'red filter', 'sky', 'landscape'],
-      description: 'Black skies and bright clouds, as through a red filter.'
+      description: tk('Black skies and bright clouds, as through a red filter.')
     },
     mono({ red: 55, orange: 40, yellow: 15, green: -25, aqua: -50, blue: -75 }),
     tone({ contrast: 30, whites: 10 }),
@@ -57,10 +64,10 @@ export const BW = collection('bw', [
   ),
   look(
     'yellow-filter-classic',
-    'Yellow Filter Classic',
+    tk('Yellow Filter Classic'),
     {
       tags: ['bw', 'mono', 'yellow filter', 'classic'],
-      description: 'The everyday yellow filter: slightly deeper skies.'
+      description: tk('The everyday yellow filter: slightly deeper skies.')
     },
     mono({ yellow: 25, orange: 18, red: 8, blue: -30, aqua: -10 }),
     tone({ contrast: 10, shadows: 10, whites: 10 }),
@@ -68,10 +75,10 @@ export const BW = collection('bw', [
   ),
   look(
     'green-filter-portrait',
-    'Green Filter Portrait',
+    tk('Green Filter Portrait'),
     {
       tags: ['bw', 'mono', 'green filter', 'portrait', 'skin'],
-      description: 'Fuller skin tones and bright foliage.'
+      description: tk('Fuller skin tones and bright foliage.')
     },
     mono({ green: 40, yellow: 20, red: -28, orange: -18 }),
     tone({ contrast: 8, highlights: -10, shadows: 10 }),
@@ -79,10 +86,10 @@ export const BW = collection('bw', [
   ),
   look(
     'infrared-mono',
-    'Infrared Mono',
+    tk('Infrared Mono'),
     {
       tags: ['bw', 'mono', 'infrared', 'surreal', 'landscape'],
-      description: 'White foliage, black skies and a faint glow.'
+      description: tk('White foliage, black skies and a faint glow.')
     },
     mono({ green: 90, yellow: 70, aqua: -40, blue: -80 }),
     tone({ contrast: 30 }),
@@ -91,10 +98,10 @@ export const BW = collection('bw', [
   ),
   look(
     'matte-mono',
-    'Matte Mono',
+    tk('Matte Mono'),
     {
       tags: ['bw', 'mono', 'matte', 'faded', 'soft'],
-      description: 'Faded blacks and a soft, printed top end.'
+      description: tk('Faded blacks and a soft, printed top end.')
     },
     mono(),
     sCurve(30),
@@ -103,10 +110,10 @@ export const BW = collection('bw', [
   ),
   look(
     'silver-gelatin',
-    'Silver Gelatin',
+    tk('Silver Gelatin'),
     {
       tags: ['bw', 'mono', 'darkroom', 'print', 'classic'],
-      description: 'A rich darkroom print with a hint of warmth.'
+      description: tk('A rich darkroom print with a hint of warmth.')
     },
     mono({ orange: 8, red: 4 }),
     sCurve(36),
@@ -116,10 +123,10 @@ export const BW = collection('bw', [
   ),
   look(
     'cyanotype',
-    'Cyanotype',
+    tk('Cyanotype'),
     {
       tags: ['bw', 'cyanotype', 'blue', 'alternative process', 'toned'],
-      description: 'Prussian-blue alternative print.'
+      description: tk('Prussian-blue alternative print.')
     },
     mono(),
     tone({ contrast: 10 }),
@@ -128,10 +135,10 @@ export const BW = collection('bw', [
   ),
   look(
     'platinum-print',
-    'Platinum Print',
+    tk('Platinum Print'),
     {
       tags: ['bw', 'platinum', 'warm', 'alternative process', 'toned'],
-      description: 'Long, soft scale with warm, neutral-brown tones.'
+      description: tk('Long, soft scale with warm, neutral-brown tones.')
     },
     mono(),
     tone({ contrast: -10, highlights: -10 }),
@@ -140,10 +147,10 @@ export const BW = collection('bw', [
   ),
   look(
     'split-tone-mono',
-    'Split-Tone Mono',
+    tk('Split-Tone Mono'),
     {
       tags: ['bw', 'split tone', 'toned', 'cool', 'warm'],
-      description: 'Cool shadows, warm highlights.'
+      description: tk('Cool shadows, warm highlights.')
     },
     mono(),
     tone({ contrast: 15 }),
@@ -151,10 +158,10 @@ export const BW = collection('bw', [
   ),
   look(
     'lith-print',
-    'Lith Print',
+    tk('Lith Print'),
     {
       tags: ['bw', 'lith', 'grain', 'warm', 'alternative process'],
-      description: 'Hard, gritty shadows and creamy, peach highlights.'
+      description: tk('Hard, gritty shadows and creamy, peach highlights.')
     },
     mono(),
     curve('master', [
@@ -168,10 +175,10 @@ export const BW = collection('bw', [
   ),
   look(
     'tintype',
-    'Tintype',
+    tk('Tintype'),
     {
       tags: ['bw', 'tintype', 'vintage', 'wet plate', 'portrait'],
-      description: 'Wet-plate feel: dark edges, cool metal tone, dark reds.'
+      description: tk('Wet-plate feel: dark edges, cool metal tone, dark reds.')
     },
     mono({ red: -40, orange: -25, blue: 30, aqua: 20 }),
     tone({ contrast: 25 }),

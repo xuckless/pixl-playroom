@@ -245,7 +245,7 @@ test('an object with no detector asks the user; skipping it drops its mask', asy
   assert.equal(h2.recipe.layers.length, 0)
 })
 
-test('without SAM2 or the people model the part fails, saying it needs the next engine', async () => {
+test('a part no model finds yet fails, saying it needs the next engine', async () => {
   const h = harness()
   const runs = new LookRuns(h.deps)
   runs.start({
@@ -253,15 +253,33 @@ test('without SAM2 or the people model the part fails, saying it needs the next 
     runId: 'r6',
     look: 'X',
     ops: [
-      { kind: 'person', layerId: h.shell.id, mask: 's', part: 'skin', mode: 'Add', invert: false }
+      { kind: 'person', layerId: h.shell.id, mask: 's', part: 'body', mode: 'Add', invert: false }
     ]
   })
   await h.tick()
   await h.tick()
   const end = h.events.at(-1)!
   assert.ok(end.kind === 'end')
-  assert.deepEqual(end.failed, [{ label: 'Finding skin', why: 'needs the next engine update' }])
+  assert.deepEqual(end.failed, [{ label: 'Finding body', why: 'needs the next engine update' }])
   assert.equal(end.phase, 'error')
+})
+
+test('skin, hair, face and clothes are Selfie Multiclass’s: a segment job into the mask', async () => {
+  const h = harness()
+  const runs = new LookRuns(h.deps)
+  runs.start({
+    key: 'k',
+    runId: 'r6b',
+    look: 'X',
+    ops: [
+      { kind: 'person', layerId: h.shell.id, mask: 's', part: 'skin', mode: 'Add', invert: false }
+    ]
+  })
+  await h.tick()
+  const job = h.started[0] as { task: string; target: string; into: { layerId: string } }
+  assert.equal(job.task, 'segment')
+  assert.equal(job.target, 'skin')
+  assert.equal(job.into.layerId, h.shell.id)
 })
 
 test('progress and time left follow the parts’ expected times', () => {

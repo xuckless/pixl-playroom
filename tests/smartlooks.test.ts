@@ -34,15 +34,19 @@ const BEFORE: SmartBuild = {
   enhance: true,
   engine: { sky: false, people: false, sam2: false, detector: false, nafnet: false }
 }
-/** Today's (engine 0.16): SAM 2.1 and its model too; the sky is clicked (SKY_BY_CLICK). */
+/** Today's (engine 0.19): SAM 2.1, and the scene and people-parts models with theirs. */
 const TODAY: SmartBuild = {
   ...BEFORE,
   samModel: true,
-  engine: { ...BEFORE.engine, sam2: true }
+  sceneModel: true,
+  partsModel: true,
+  engine: { ...BEFORE.engine, sam2: true, sky: true, people: true }
 }
 const NEXT: SmartBuild = {
   ...TODAY,
-  engine: { sky: true, people: true, sam2: true, detector: true, nafnet: true }
+  nafnetModel: true,
+  faceModels: true,
+  engine: { sky: true, people: true, sam2: true, detector: true, nafnet: true, faces: true }
 }
 const photo = { frameWidth: 6000, frameHeight: 4000 }
 
@@ -90,16 +94,19 @@ test('before SAM2: what needs the next engine is skipped and said; the rest is p
   assert.deepEqual(smartBlockers(moody(), smartReadiness(NEXT)), [])
 })
 
-test('today the sky is clicked: planned, and counted as a question to the user', () => {
+test('today the scene model finds the sky: planned, no question to the user', () => {
   const plan = planSmart(moody(), smartReadiness(TODAY), photo)
   assert.equal(plan.complete, true)
   assert.deepEqual(plan.skipped, [])
-  assert.equal(plan.picks, 1)
+  assert.equal(plan.picks, 0)
   assert.equal(plan.ops[0].kind === 'segment' && plan.ops[0].target, 'sky')
-  // Without SAM 2.1's model, the sky says what to download.
-  const missing = smartReadiness({ ...TODAY, samModel: false })
+  // Without its model, the sky says what to download; vegetation and water too.
+  const missing = smartReadiness({ ...TODAY, sceneModel: false })
   assert.equal(missing.sky, 'needs-model')
-  assert.equal(missing.pick, 'needs-model')
+  assert.equal(missing.vegetation, 'needs-model')
+  assert.equal(missing.water, 'needs-model')
+  // Pointing at an object still needs SAM 2.1's.
+  assert.equal(smartReadiness({ ...TODAY, samModel: false }).pick, 'needs-model')
 })
 
 test('every model part lands before a step scoped to its mask; parts keep their order and joins', () => {
@@ -167,10 +174,10 @@ test('an object is found by its label, or pointed at without a detector, or skip
 })
 
 test('without its mask a scoped step is skipped; without a model a step says which', () => {
-  const s = smartOf(mask('skin', 'Skin', [part.person('skin')], {}), denoise(50, { scope: 'skin' }))
+  const s = smartOf(mask('eyes', 'Eyes', [part.person('eyes')], {}), denoise(50, { scope: 'eyes' }))
   const plan = planSmart(s, smartReadiness(TODAY), photo)
   assert.deepEqual(plan.skipped, [
-    { name: 'Skin', why: 'needs the next engine update' },
+    { name: 'Eyes', why: 'needs the next engine update' },
     { name: 'AI denoise', why: 'its mask could not be made' }
   ])
   const noModel = planSmart(
@@ -297,13 +304,15 @@ test('readiness follows the build: no models, a missing model, the next engine',
   assert.equal(today.sky, 'ready')
   assert.equal(today.pick, 'ready')
   assert.equal(today.object, 'needs-engine')
-  assert.equal(today.person, 'needs-engine')
+  assert.equal(today.person, 'ready')
+  assert.equal(today.personDetail, 'needs-engine')
+  assert.equal(smartReadiness({ ...TODAY, partsModel: false }).person, 'needs-model')
   const next = smartReadiness(NEXT)
   for (const k of ['sky', 'person', 'object', 'pick', 'nafnet'] as const)
     assert.equal(next[k], 'ready')
 })
 
-test('the smart catalog: every look reads back whole, and today only people wait', async () => {
+test('the smart catalog: every look reads back whole, and today only the eyes wait', async () => {
   const { LOOKS } = await import('../src/shared/looks/catalog')
   const smart = LOOKS.filter((l) => l.smart)
   assert.ok(smart.length >= 15, `${smart.length} smart looks`)
@@ -314,18 +323,19 @@ test('the smart catalog: every look reads back whole, and today only people wait
   }
   const today = smartReadiness(TODAY)
   const waiting = smart.filter((l) => smartBlockers(l.smart!, today).length > 0).map((l) => l.name)
-  // People's parts (faces, skin, eyes) wait for their model (E30).
-  assert.deepEqual(waiting.sort(), [
-    'Bright Eyes',
-    'Golden Hour Skin',
-    'Portrait Polish',
-    'Rain City Noir Lift'
-  ])
+  // Eyes, lips and teeth wait for face parts (Pass 110); skin, hair and clothes are found today.
+  assert.deepEqual(waiting.sort(), ['Bright Eyes'])
   // Everything else plans whole today, and nothing waits once the next engine is here.
   for (const l of smart) {
     if (waiting.includes(l.name)) continue
     const plan = planSmart(l.smart!, today, photo)
-    assert.deepEqual(plan.skipped, [], l.name)
+    // An optional mask of the eyes is left out until face parts; nothing required is.
+    const optional = new Set(l.smart!.masks.filter((m) => !m.required).map((m) => m.name))
+    assert.deepEqual(
+      plan.skipped.filter((x) => !optional.has(x.name)),
+      [],
+      l.name
+    )
   }
   for (const l of smart) assert.deepEqual(smartBlockers(l.smart!, smartReadiness(NEXT)), [], l.name)
 })

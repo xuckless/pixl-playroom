@@ -6,6 +6,7 @@
  */
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
+import { t } from './i18n'
 
 export function startHdrUpkeep(): () => void {
   let busy = false
@@ -31,7 +32,7 @@ export function startHdrUpkeep(): () => void {
         .then(() => {
           const now = useDevelop.getState()
           if (now.session && (now.recipe?.gainMap === 'hdr') !== now.session.isHdr)
-            useLibrary.getState().say('The HDR rendition could not be opened', 'error')
+            useLibrary.getState().say(t('The HDR rendition could not be opened'), 'error')
         })
         .finally(() => {
           busy = false

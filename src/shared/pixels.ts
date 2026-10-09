@@ -12,6 +12,8 @@
  * is the photo with every step laid on (main/pixels/working.ts).
  */
 
+import { t, tk } from './i18n'
+
 export type PixelStepKind = 'denoise' | 'enhance' | 'retouch'
 
 export interface PixelStep {
@@ -47,17 +49,19 @@ export interface PixelStep {
 }
 
 export const PIXEL_LABEL: Record<PixelStepKind, string> = {
-  denoise: 'AI Denoise',
-  enhance: 'Enhance',
-  retouch: 'Heal'
+  denoise: tk('AI Denoise'),
+  enhance: tk('Enhance'),
+  retouch: tk('Heal')
 }
 
 /**
  * Which RAW develop made a RAW's pixels: names its caches (`versionStamp`)
  * and, as `params.develop`, the steps laid on them. `l` is LibRaw's decode
- * under PIXL's own develop (engine 0.16); before it, rawler's (no mark).
+ * under PIXL's own develop (engine 0.16); `s` its scene-linear master in
+ * float (engine 0.18: `RawMode::Scene`, InpaintOpposed, nothing clipped at
+ * 1.0); before both, rawler's (no mark).
  */
-export const RAW_DEVELOP_REV = 'l'
+export const RAW_DEVELOP_REV = 's'
 
 /**
  * Which engine's grade made a graded render: it names the library thumbnails
@@ -65,9 +69,11 @@ export const RAW_DEVELOP_REV = 'l'
  * 2 is engine 0.17: PixlRGB is the working space, and what acts on the
  * channels themselves (curves, per-channel gain, HSL bands, the channel
  * mixer) renders differently. (A RAW's develop is `Container`, 0.16.0's
- * pixels, so `RAW_DEVELOP_REV` and the steps laid on it stand.)
+ * pixels, so `RAW_DEVELOP_REV` and the steps laid on it stand.) 3 is engine
+ * 0.18: Dehaze v2, the Color Mixer's luminance in stops, Denoise's reach,
+ * the Smoothing slider.
  */
-export const ENGINE_RENDER_REV = 2
+export const ENGINE_RENDER_REV = 3
 
 /**
  * A step on a RAW made from another develop than the photo's now (rawler's,
@@ -139,7 +145,7 @@ export function resizes(s: PixelStep): boolean {
 
 /** Why a photo cannot take pixel steps, or null. */
 export function pixelStepRefusal(info: { is_hdr: boolean }): string | null {
-  return info.is_hdr ? 'HDR photos cannot take AI pixel steps yet' : null
+  return info.is_hdr ? t('HDR photos cannot take AI pixel steps yet') : null
 }
 
 /**
@@ -148,6 +154,11 @@ export function pixelStepRefusal(info: { is_hdr: boolean }): string | null {
  * of it rather than under it. Without `basedOn`, or when the step it followed
  * is gone, it goes last.
  */
+/** `step` in the place of the step with its id (a step made again); unchanged when it is gone. */
+export function replaceStep(steps: PixelStep[], step: PixelStep): PixelStep[] {
+  return steps.map((s) => (s.id === step.id ? step : s))
+}
+
 export function placeStep(steps: PixelStep[], step: PixelStep, basedOn?: string[]): PixelStep[] {
   if (!basedOn) return [...steps, step]
   const after = basedOn.at(-1)

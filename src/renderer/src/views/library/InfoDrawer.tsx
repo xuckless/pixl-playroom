@@ -3,6 +3,7 @@ import { useTargets } from '../../state/library'
 import { useUi } from '../../state/ui'
 import { MetadataEditor } from './MetadataEditor'
 import { withKey } from '../../lib/commands'
+import { t } from '../../lib/i18n'
 
 /** The library's right-hand drawer: the selection's details and metadata (I). */
 export function InfoDrawer(): React.JSX.Element {
@@ -10,14 +11,14 @@ export function InfoDrawer(): React.JSX.Element {
   const setOpen = useUi((s) => s.setLibraryInfo)
   const targets = useTargets()
   return (
-    <aside className={`lib-info${open ? ' open' : ''}`} aria-label="Info" inert={!open}>
+    <aside className={`lib-info${open ? ' open' : ''}`} aria-label={t('Info')} inert={!open}>
       <div className="lib-info-inner">
         <header className="rail-head">
-          <span className="micro">Info</span>
+          <span className="micro">{t('Info')}</span>
           <button
             className="icon"
-            title={withKey('Close', 'library.info')}
-            aria-label="Close info"
+            title={withKey(t('Close'), 'library.info')}
+            aria-label={t('Close info')}
             onClick={() => setOpen(false)}
           >
             <Icon name="close" />

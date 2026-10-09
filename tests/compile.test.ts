@@ -5,6 +5,7 @@ import {
   calibrationMatrix,
   compile,
   cropFits,
+  isP3Floor,
   parametricCurve,
   shoulderCube,
   vignettePlacement,
@@ -25,7 +26,9 @@ const ctx: CompileContext = {
   applyCrop: true
 }
 
-const kinds = (ops: GradeOp[]): string[] => ops.map((o) => Object.keys(o)[0])
+// The look stage's floor (isP3Floor) is left out: what each test is about follows it.
+const kinds = (ops: GradeOp[]): string[] =>
+  ops.filter((o) => !isP3Floor(o)).map((o) => Object.keys(o)[0])
 
 test('an untouched JPEG compiles to nothing at all', () => {
   const c = compile(defaultRecipe(false), ctx)
@@ -40,10 +43,11 @@ test('a straighten too small to say is none: no outside the engine would refuse'
   assert.ok(!f || (f.rotate_degrees === 0 && f.outside === undefined))
 })
 
-test('a RAW starts with its profile look, capture sharpening and colour noise reduction', () => {
+test('a RAW starts with its profile look, capture sharpening, colour noise reduction and its shoulder', () => {
   const c = compile(defaultRecipe(true), { ...ctx, isRaw: true, scale: 1 })
   const stages = c.grade!.layers[0].stages
-  assert.deepEqual(kinds(stages[0].ops), ['Denoise'])
+  // The Scene master's headroom rolled onto white for SDR (engine 0.18).
+  assert.deepEqual(kinds(stages[0].ops), ['Denoise', 'Lut'])
   assert.equal(stages[0].space, 'LinearWorking')
   // Playroom Standard: Vivid's curve and vibrance, and a little more saturation.
   assert.deepEqual(kinds(stages[1].ops), ['Curves', 'Vibrance', 'Primary', 'Sharpen'])
@@ -61,7 +65,7 @@ test('AI-denoised pixels get no classic noise reduction on top', () => {
 test('sharpening is left out where its radius falls under half a pixel', () => {
   const c = compile(defaultRecipe(true), { ...ctx, isRaw: true, scale: 0.3 })
   assert.ok(!kinds(c.grade!.layers[0].stages[1].ops).includes('Sharpen'))
-  assert.ok(c.notes.some((n) => n.includes('1:1')))
+  assert.ok(c.notes.some((n) => n.includes('100%')))
 })
 
 test('physics goes in linear light and the look in Display P3', () => {
@@ -380,6 +384,46 @@ test('a custom layer written before 0.16 gets each LUT its old domain rule', asy
   assert.equal(out.name, 'mine')
 })
 
+test('Denoise sends one reach at every size (engine 0.18, HR-0.18-3)', async () => {
+  const { DENOISE_REACH } = await import('../src/shared/compile')
+  const r = defaultRecipe(true)
+  r.detail.noiseLuminance = 40
+  const reachAt = (scale: number): unknown => {
+    const op = compile(r, { ...ctx, isRaw: true, scale })
+      .grade!.layers[0].stages.flatMap((s) => s.ops)
+      .find((o) => 'Denoise' in o) as { Denoise: { reach: number } }
+    return op.Denoise.reach
+  }
+  assert.equal(DENOISE_REACH, 0.03)
+  // The preview's proxy and the export's full size: the same fraction.
+  assert.equal(reachAt(0.4), DENOISE_REACH)
+  assert.equal(reachAt(1), DENOISE_REACH)
+})
+
+test('a custom layer’s Denoise saved before 0.18 gets the reach; a stated one is kept', async () => {
+  const { withLutDomains, DENOISE_REACH } = await import('../src/shared/compile')
+  const denoise = { luminance: 0.5, luminance_detail: 0.5, color: 0.5, color_detail: 0.5 }
+  const layer = {
+    stages: [
+      {
+        ops: [
+          { Denoise: denoise },
+          { Denoise: { ...denoise, reach: 0.1 } },
+          { Masked: { mask: null, opacity: 1, ops: [{ Denoise: denoise }] } }
+        ]
+      }
+    ]
+  }
+  const ops = (withLutDomains(layer) as typeof layer).stages[0].ops as Record<
+    string,
+    Record<string, unknown>
+  >[]
+  assert.equal(ops[0].Denoise.reach, DENOISE_REACH)
+  assert.equal(ops[1].Denoise.reach, 0.1)
+  const inner = (ops[2].Masked.ops as Record<string, Record<string, unknown>>[])[0]
+  assert.equal(inner.Denoise.reach, DENOISE_REACH)
+})
+
 test('a RAW the engine refuses by name is said plainly', async () => {
   const { unsupportedRaw } = await import('../src/shared/engine-types')
   assert.match(
@@ -402,4 +446,32 @@ test('a picture past the limits, and a stale cache, are said plainly', async () 
   )
   assert.match(describeEngineError('StaleCache', undefined)!, /another engine/)
   assert.equal(describeEngineError('Decode', undefined), null)
+})
+
+test('a RAW’s Scene headroom rolls onto white for SDR, whatever the exposure; HDR keeps it', async () => {
+  const { RAW_SCENE_STOPS, gradeKey } = await import('../src/shared/compile')
+  const shoulderOf = (exposure: number, hdr: boolean, isRaw = true): string | null => {
+    const r = defaultRecipe(isRaw)
+    r.basic.exposure = exposure
+    const ops = compile(r, { ...ctx, isRaw, scale: 1, hdr }).grade?.layers[0].stages[0].ops ?? []
+    const lut = ops.find((o) => 'Lut' in o)
+    return lut
+      ? (JSON.parse(gradeKey(lut)) as { Lut: { lut: { Cube: string } } }).Lut.lut.Cube
+      : null
+  }
+  assert.equal(shoulderOf(0, false), `shoulder:${RAW_SCENE_STOPS}:1024`)
+  assert.equal(shoulderOf(-1, false), `shoulder:${RAW_SCENE_STOPS}:1024`)
+  assert.equal(shoulderOf(1, false), `shoulder:${1 + RAW_SCENE_STOPS}:1024`)
+  assert.equal(shoulderOf(0, true), null)
+  // Any other photo: only a positive exposure brings one, as before.
+  assert.equal(shoulderOf(0, false, false), null)
+})
+
+test('every look stage starts by flooring the negatives Scene’s wide colours bring (E53)', () => {
+  const r = defaultRecipe(true)
+  r.presence.dehaze = 30
+  const look = compile(r, { ...ctx, isRaw: true, scale: 1 }).grade!.layers[0].stages.at(-1)!
+  assert.ok(isP3Floor(look.ops[0]))
+  // Nothing in the look stage, no floor either.
+  assert.equal(compile(defaultRecipe(false), ctx).grade, null)
 })

@@ -9,6 +9,8 @@ import { useDevelop } from '../state/develop'
 import { selectionSet, useLibrary, useVisible } from '../state/library'
 import { useUi } from '../state/ui'
 import { AiChip } from '../fx/AiScan'
+import { photoContextMenu } from '../lib/menus'
+import { t } from '../lib/i18n'
 
 /** A film tile's width and the gap after it (`.film`, `.filmstrip`). */
 const FILM_STEP = 104 + 8
@@ -119,6 +121,7 @@ const FilmTile = memo(function FilmTile({
       className={`film${focus ? ' focus' : ''}${selected ? ' selected' : ''}`}
       style={{ animationDelay: `${Math.min(index, 14) * 25}ms` }}
       onClick={(e) => onPick(item.key, e)}
+      onContextMenu={(e) => photoContextMenu(e, item.key)}
       title={item.name}
     >
       {load && item.thumbUrl ? (
@@ -144,11 +147,11 @@ export function FilmToggle(): React.JSX.Element {
       radius={2}
       bezel={8}
       aria-expanded={shown}
-      title={shown ? 'Hide the filmstrip' : 'Show the filmstrip'}
+      title={shown ? t('Hide the filmstrip') : t('Show the filmstrip')}
       onClick={() => setShown(!shown)}
     >
       <Icon name="chevronUp" />
-      <span>Filmstrip</span>
+      <span>{t('Filmstrip')}</span>
       <span className="t-num count">{count}</span>
     </LiquidGlass>
   )

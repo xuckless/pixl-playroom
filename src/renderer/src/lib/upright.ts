@@ -9,16 +9,17 @@ import { api, errorText } from './api'
 import { runJob } from '../state/busy'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
+import { t, tk } from './i18n'
 
 const ENGINE_MODE = { level: 'Level', vertical: 'Vertical', full: 'Full' } as const
 
 const LABEL: Record<UprightMode, string> = {
-  off: 'Off',
-  auto: 'Auto',
-  level: 'Level',
-  vertical: 'Vertical',
-  full: 'Full',
-  guided: 'Guided'
+  off: tk('Off'),
+  auto: tk('Auto'),
+  level: tk('Level'),
+  vertical: tk('Vertical'),
+  full: tk('Full'),
+  guided: tk('Guided')
 }
 
 function keep(
@@ -33,7 +34,7 @@ function keep(
   r.geometry.upright = { ...r.geometry.upright, mode, suggested, focal, guides }
   // The old crop was drawn for the old picture: the new one fits itself.
   r.geometry.crop = null
-  dev.replace(r, `Upright: ${LABEL[mode]}`)
+  dev.replace(r, t('Upright: {{mode}}', { mode: t(LABEL[mode]) }))
 }
 
 /**
@@ -50,7 +51,7 @@ export async function applyUpright(mode: UprightMode): Promise<void> {
   if (mode === 'off') return keep('off', null, focal, dev.recipe.geometry.upright.guides)
   const tries = mode === 'auto' ? (['full', 'vertical', 'level'] as const) : [mode]
   let why = ''
-  const t = await runJob('Finding the lines', async () => {
+  const found = await runJob(t('Finding the lines'), async () => {
     for (const m of tries) {
       try {
         return await api.develop.suggestUpright(session.key, ENGINE_MODE[m], focal)
@@ -60,13 +61,19 @@ export async function applyUpright(mode: UprightMode): Promise<void> {
     }
     return null
   })
-  if (!t) {
+  if (!found) {
+    const name = t(LABEL[mode])
     useLibrary
       .getState()
-      .say(`Not enough straight lines for ${LABEL[mode]}${why ? ` (${why})` : ''}`, 'error')
+      .say(
+        why
+          ? t('Not enough straight lines for {{mode}} ({{why}})', { mode: name, why })
+          : t('Not enough straight lines for {{mode}}', { mode: name }),
+        'error'
+      )
     return
   }
-  keep(mode, t, focal, dev.recipe.geometry.upright.guides)
+  keep(mode, found, focal, dev.recipe.geometry.upright.guides)
 }
 
 /** Guided: show the frame before the warp, with the guides drawn so far. */
@@ -84,12 +91,12 @@ export async function applyGuides(): Promise<void> {
   if (!session || !dev.recipe) return
   const lines = dev.guides
   if (lines.length < 2)
-    return useLibrary.getState().say('Draw at least two guides along edges', 'error')
+    return useLibrary.getState().say(t('Draw at least two guides along edges'), 'error')
   const focal = focalOf(session.focal35 ?? session.info.lens?.focal_35mm)
   try {
-    const t = await api.develop.uprightFromLines(session.key, lines, focal)
+    const tr = await api.develop.uprightFromLines(session.key, lines, focal)
     dev.setTool('none')
-    keep('guided', t, focal, lines)
+    keep('guided', tr, focal, lines)
   } catch (err) {
     useLibrary.getState().say(errorText(err), 'error')
   }

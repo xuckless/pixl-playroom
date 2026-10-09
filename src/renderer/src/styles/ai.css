@@ -233,3 +233,125 @@ button.bg-job-link:hover:not(:disabled) {
   background: none;
   color: var(--text);
 }
+button.bg-job-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.bg-job-title {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The slim bar beside the top bar's background work, and in its queue. */
+.activity-track {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 44px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--hair2);
+  overflow: hidden;
+}
+.activity-track i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--acc);
+  box-shadow: 0 0 6px var(--glow-soft);
+  transition: width 0.4s var(--ease);
+}
+
+/* The queue: everything working in the background. */
+.popover.activity-pop {
+  width: 340px;
+  padding: 8px 10px;
+}
+.activity-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.activity-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hair);
+  font-size: 11.5px;
+  color: var(--text2);
+}
+.activity-list li:last-child {
+  border-bottom: none;
+}
+.activity-list li.queued {
+  color: var(--muted);
+}
+.activity-what {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.activity-what > :first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-list .activity-track {
+  width: 100%;
+}
+.activity-track.sweep i {
+  width: 30%;
+  animation: activitySweep 1.4s var(--ease) infinite;
+}
+@keyframes activitySweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+.activity-what button.bg-job-link {
+  justify-content: flex-start;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Settings → AI models: the killswitch and the heavy models (views/HeavyModels.tsx). */
+.model-kill .check {
+  font-size: 13px;
+}
+.model-row.heavy .model-act {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.heavy-result {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--hair);
+  font-size: 12px;
+}
+.heavy-result.ok {
+  border-color: color-mix(in srgb, var(--ok, #4ade80) 50%, transparent);
+}
+.heavy-result.no {
+  border-color: color-mix(in srgb, var(--danger, #f87171) 50%, transparent);
+}
+.heavy-result ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+.heavy-bench {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

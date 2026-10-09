@@ -34,7 +34,31 @@ textarea {
   outline: 1px solid var(--acc);
   outline-offset: 1px;
 }
-img {
+/*
+ * An app, not a page: nothing is selected or dragged with the pointer (the
+ * mark, the labels, the menus, the buttons), bar text fields and the info
+ * panes, whose facts can be copied: the photo's info and metadata, the (i)
+ * tips and tech popovers, and the engine report.
+ */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+input,
+textarea,
+[contenteditable='true'],
+.lib-info-body,
+.rail-body .kv,
+.tip-pop,
+.tech-pop,
+.engine-report .engine-cols,
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+img,
+svg,
+a {
   -webkit-user-drag: none;
 }
 

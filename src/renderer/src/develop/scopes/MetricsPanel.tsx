@@ -21,11 +21,28 @@ import {
   type VisionKind
 } from '../../../../shared/scopemetrics'
 import { bandOfHue } from '../../lib/helpers'
+import { t, tk } from '../../lib/i18n'
+import type { HslBand } from '../../../../shared/recipe'
 
 const KINDS: VisionKind[] = ['protan', 'deutan', 'tritan']
 
+/** A hue band's name in a sentence. */
+const BAND_NAME: Record<HslBand, string> = {
+  red: tk('red'),
+  orange: tk('orange'),
+  yellow: tk('yellow'),
+  green: tk('green'),
+  aqua: tk('aqua'),
+  blue: tk('blue'),
+  purple: tk('purple'),
+  magenta: tk('magenta')
+}
+
+const CHANNEL_MEAN = [tk('Red mean'), tk('Green mean'), tk('Blue mean')]
+
 const pct = (v: number): string => `${(v * 100).toFixed(v > 0 && v < 0.0005 ? 3 : 2)}%`
-const stops = (v: number | null): string => (v === null ? '—' : `${v.toFixed(1)} stops`)
+const stops = (v: number | null): string =>
+  v === null ? '—' : t('{{value}} stops', { value: v.toFixed(1) })
 const ratio = (v: number | null): string => (v === null ? '—' : `${v.toFixed(1)}:1`)
 
 /** One row of the before/after table. */
@@ -70,30 +87,30 @@ export function MetricsPanel({
     [hues]
   )
   const palette = usePalette(pictureUrl)
-  if (!now) return <p className="muted">Nothing measured yet.</p>
+  if (!now) return <p className="muted">{t('Nothing measured yet.')}</p>
   const b = then !== null
-  const name = (h: number): string => bandOfHue(h)
+  const name = (h: number): string => t(BAND_NAME[bandOfHue(h)])
 
   return (
     <div className="metrics">
       <section className="metrics-card">
-        <h4>Tone &amp; contrast</h4>
+        <h4>{t('Tone & contrast')}</h4>
         <table>
           <thead>
             <tr>
               <th />
-              <th>Now</th>
-              {b && <th>Before</th>}
+              <th>{t('Now')}</th>
+              {b && <th>{t('Before')}</th>}
             </tr>
           </thead>
           <tbody>
             <Row
-              label="Dynamic range"
+              label={t('Dynamic range')}
               now={stops(now.rangeStops)}
               then={b ? stops(then.rangeStops) : undefined}
             />
             <Row
-              label="Contrast (shadows to highlights)"
+              label={t('Contrast (shadows to highlights)')}
               now={
                 now.contrast === null
                   ? '—'
@@ -108,61 +125,62 @@ export function MetricsPanel({
               }
             />
             <Row
-              label="Mean brightness"
+              label={t('Mean brightness')}
               now={now.meanLuma.toFixed(3)}
               then={b ? then.meanLuma.toFixed(3) : undefined}
             />
             <Row
-              label="Spread"
+              label={t('Spread')}
               now={now.spread.toFixed(3)}
               then={b ? then.spread.toFixed(3) : undefined}
             />
             <Row
-              label="Shadows clipped"
+              label={t('Shadows clipped')}
               now={pct(now.lowClip)}
               then={b ? pct(then.lowClip) : undefined}
             />
             <Row
-              label="Highlights clipped"
+              label={t('Highlights clipped')}
               now={pct(now.highClip)}
               then={b ? pct(then.highClip) : undefined}
             />
             {hdr && (
               <Row
-                label="HDR headroom"
+                label={t('HDR headroom')}
                 now={`+${Math.log2(Math.max(1, hdr.range_max)).toFixed(1)} EV`}
               />
             )}
           </tbody>
         </table>
         <p className="muted small">
-          Contrast is the WCAG ratio between the 10% and 90% points of brightness; 4.5:1 and up
-          reads as clearly separated.
+          {t(
+            'Contrast is the WCAG ratio between the 10% and 90% points of brightness; 4.5:1 and up reads as clearly separated.'
+          )}
         </p>
       </section>
 
       <div className="metrics-col">
         <section className="metrics-card">
-          <h4>Colour</h4>
+          <h4>{t('Colour')}</h4>
           <table>
             <thead>
               <tr>
                 <th />
-                <th>Now</th>
-                {b && <th>Before</th>}
+                <th>{t('Now')}</th>
+                {b && <th>{t('Before')}</th>}
               </tr>
             </thead>
             <tbody>
               <Row
-                label="Mean saturation"
+                label={t('Mean saturation')}
                 now={now.meanSaturation.toFixed(2)}
                 then={b ? then.meanSaturation.toFixed(2) : undefined}
               />
-              <Row label="Cast" now={castText(now)} then={b ? castText(then) : undefined} />
-              {['Red', 'Green', 'Blue'].map((c, i) => (
+              <Row label={t('Cast')} now={castText(now)} then={b ? castText(then) : undefined} />
+              {CHANNEL_MEAN.map((c, i) => (
                 <Row
                   key={c}
-                  label={`${c} mean`}
+                  label={t(c)}
                   now={now.channelMeans[i]?.toFixed(3) ?? '—'}
                   then={b ? (then.channelMeans[i]?.toFixed(3) ?? '—') : undefined}
                 />
@@ -172,37 +190,38 @@ export function MetricsPanel({
         </section>
 
         <section className="metrics-card wait">
-          <h4>Gamut coverage</h4>
+          <h4>{t('Gamut coverage')}</h4>
           <table>
             <tbody>
-              {['sRGB', 'Display P3', 'Rec.2020', 'PixlRGB', 'Outside the visible range'].map(
+              {['sRGB', 'Display P3', 'Rec.2020', 'PixlRGB', tk('Outside the visible range')].map(
                 (g) => (
-                  <Row key={g} label={g} now="—" />
+                  <Row key={g} label={t(g)} now="—" />
                 )
               )}
             </tbody>
           </table>
           <p className="muted small">
-            Waiting for the engine: how much of the photo each space holds needs its own
-            measurement, which Playroom has asked for.
+            {t(
+              'Waiting for the engine: how much of the photo each space holds needs its own measurement, which Playroom has asked for.'
+            )}
           </p>
         </section>
       </div>
 
       <section className="metrics-card wide">
-        <h4>Colour vision</h4>
-        <div className="seg" role="group" aria-label="How it looks to">
+        <h4>{t('Colour vision')}</h4>
+        <div className="seg" role="group" aria-label={t('How it looks to')}>
           <button className={vision === null ? 'on' : ''} onClick={() => setVision(null)}>
-            Normal
+            {t('Normal')}
           </button>
           {KINDS.map((k) => (
             <button
               key={k}
               className={vision === k ? 'on' : ''}
               onClick={() => setVision(k)}
-              title={VISION_LABEL[k]}
+              title={t(VISION_LABEL[k])}
             >
-              {k === 'protan' ? 'Protan' : k === 'deutan' ? 'Deutan' : 'Tritan'}
+              {k === 'protan' ? t('Protan') : k === 'deutan' ? t('Deutan') : t('Tritan')}
             </button>
           ))}
         </div>
@@ -218,24 +237,28 @@ export function MetricsPanel({
             <img
               className="cvd-picture"
               src={pictureUrl}
-              alt={vision ? `The photo as ${VISION_LABEL[vision]} sees it` : 'The photo'}
+              alt={
+                vision
+                  ? t('The photo as {{vision}} sees it', { vision: t(VISION_LABEL[vision]) })
+                  : t('The photo')
+              }
               style={vision ? { filter: `url(#cvd-${vision})` } : undefined}
               draggable={false}
             />
           ) : (
-            <p className="muted small">No picture yet.</p>
+            <p className="muted small">{t('No picture yet.')}</p>
           )}
           <div className="cvd-notes">
             {collisions.every((c) => c.pairs.length === 0) ? (
               <p className="small">
-                No hues in this photo fall together for protan, deutan or tritan viewers.
+                {t('No hues in this photo fall together for protan, deutan or tritan viewers.')}
               </p>
             ) : (
               collisions
                 .filter((c) => c.pairs.length > 0)
                 .map((c) => (
                   <div key={c.kind}>
-                    <span className="micro">{VISION_LABEL[c.kind]}</span>
+                    <span className="micro">{t(VISION_LABEL[c.kind])}</span>
                     <ul>
                       {c.pairs.map((p, i) => (
                         <li key={i}>
@@ -243,9 +266,14 @@ export function MetricsPanel({
                             <i style={{ background: `rgb(${p.a.rgb.join(' ')})` }} />
                             <i style={{ background: `rgb(${p.b.rgb.join(' ')})` }} />
                           </span>
-                          {name((p.a.start + p.a.end) / 2)} ({Math.round(p.a.start)}–
-                          {Math.round(p.a.end)}°) and {name((p.b.start + p.b.end) / 2)} (
-                          {Math.round(p.b.start)}–{Math.round(p.b.end)}°) look alike
+                          {t('{{a}} ({{a0}}–{{a1}}°) and {{b}} ({{b0}}–{{b1}}°) look alike', {
+                            a: name((p.a.start + p.a.end) / 2),
+                            a0: Math.round(p.a.start),
+                            a1: Math.round(p.a.end),
+                            b: name((p.b.start + p.b.end) / 2),
+                            b0: Math.round(p.b.start),
+                            b1: Math.round(p.b.end)
+                          })}
                         </li>
                       ))}
                     </ul>
@@ -253,17 +281,20 @@ export function MetricsPanel({
                 ))
             )}
             <p className="muted small">
-              Simulated with Machado et al. (2009) at full severity. Where two hues fall together,
-              keep the difference in brightness or add a label.
+              {t(
+                'Simulated with Machado et al. (2009) at full severity. Where two hues fall together, keep the difference in brightness or add a label.'
+              )}
             </p>
           </div>
         </div>
       </section>
 
       <section className="metrics-card wide">
-        <h4>Dominant colours</h4>
+        <h4>{t('Dominant colours')}</h4>
         {palette.length === 0 ? (
-          <p className="muted small">{pictureUrl ? 'Reading the photo…' : 'No picture yet.'}</p>
+          <p className="muted small">
+            {pictureUrl ? t('Reading the photo…') : t('No picture yet.')}
+          </p>
         ) : (
           <>
             <ul className="palette">
@@ -284,9 +315,9 @@ export function MetricsPanel({
                   )
                 }
               >
-                Copy all
+                {t('Copy all')}
               </button>
-              <span className="muted small">Click a swatch to copy its hex.</span>
+              <span className="muted small">{t('Click a swatch to copy its hex.')}</span>
             </div>
           </>
         )}
@@ -296,7 +327,10 @@ export function MetricsPanel({
 }
 
 function castText(m: ScopeMetrics): string {
-  return m.cast.label === 'neutral' ? 'Neutral' : `${m.cast.amount}% ${m.cast.label}`
+  if (m.cast.label === 'neutral') return t('Neutral')
+  return m.cast.label === 'warm'
+    ? t('{{amount}}% warm', { amount: m.cast.amount })
+    : t('{{amount}}% cool', { amount: m.cast.amount })
 }
 
 function Swatch({ s, vision }: { s: SwatchData; vision: VisionKind | null }): React.JSX.Element {
@@ -306,7 +340,7 @@ function Swatch({ s, vision }: { s: SwatchData; vision: VisionKind | null }): Re
     <li>
       <button
         className="swatch"
-        title={`Copy ${s.hex}`}
+        title={t('Copy {{hex}}', { hex: s.hex })}
         onClick={() => {
           void navigator.clipboard?.writeText(s.hex)
           setCopied(true)
@@ -315,10 +349,13 @@ function Swatch({ s, vision }: { s: SwatchData; vision: VisionKind | null }): Re
       >
         <span className="swatch-chip" style={{ background: s.hex }}>
           {seen && (
-            <i style={{ background: `rgb(${seen.join(' ')})` }} title="As this viewer sees it" />
+            <i
+              style={{ background: `rgb(${seen.join(' ')})` }}
+              title={t('As this viewer sees it')}
+            />
           )}
         </span>
-        <span className="swatch-hex">{copied ? 'Copied' : s.hex}</span>
+        <span className="swatch-hex">{copied ? t('Copied') : s.hex}</span>
         <span className="muted small">
           L {s.lab[0].toFixed(0)} a {s.lab[1].toFixed(0)} b {s.lab[2].toFixed(0)}
         </span>

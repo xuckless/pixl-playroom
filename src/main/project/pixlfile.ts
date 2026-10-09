@@ -12,6 +12,7 @@
  * up, and must never leave `-wal`/`-shm` files beside it. Only the index
  * process opens projects; see `ProjectPool` for how it keeps them.
  */
+import { t } from '../../shared/i18n'
 import { createHash } from 'crypto'
 import { createReadStream } from 'fs'
 import { open as openFile } from 'fs/promises'
@@ -31,6 +32,7 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { dirname } from 'path'
 import type { ColorLabel, Flag, Snapshot } from '../../shared/ipc'
 import { parseRawColour } from '../../shared/rawcolour'
+import { readNames } from '../../shared/naming'
 import { hydrateRecipe, normaliseRecipe, slimRecipe, type Recipe } from '../../shared/recipe'
 import { HISTORY_SCHEMA, HistoryTable, type HistoryRow } from '../historytable'
 import { planeRef, pngSize, renameRefs } from '../planeref'
@@ -264,7 +266,7 @@ export function refsIn(json: string): string[] {
 
 class NotAProject extends Error {
   constructor(path: string) {
-    super(`${path} is not a Pixl project`)
+    super(t('{{path}} is not a Pixl project', { path }))
     this.name = 'NotAProject'
   }
 }
@@ -302,7 +304,7 @@ export class PixlFile {
    * project. Fails if `path` exists.
    */
   static create(path: string, origin: Origin, fill?: (p: PixlFile) => void): PixlFile {
-    if (existsSync(path)) throw new Error(`${path} already exists`)
+    if (existsSync(path)) throw new Error(t('{{path}} already exists', { path }))
     const tmp = `${path}.creating-${process.pid}`
     if (existsSync(tmp)) unlinkSync(tmp)
     const db = new DatabaseSync(tmp)
@@ -348,7 +350,9 @@ export class PixlFile {
       if (id !== PIXL_APPLICATION_ID) throw new NotAProject(path)
       const v = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
       if (v > PIXL_FORMAT_VERSION)
-        throw new Error(`${path} was made by a newer Pixl Playroom (format ${v})`)
+        throw new Error(
+          t('{{path}} was made by a newer Pixl Playroom (format {{format}})', { path, format: v })
+        )
       // Tables a later minor version adds are made on open.
       db.exec(SCHEMA)
       const file = new PixlFile(path, db)
@@ -631,7 +635,9 @@ export class PixlFile {
         .filter((r) => r.item_id !== PHOTO)
         .map((r) => ({ ...itemOf(r), id: r.item_id, name: r.name })),
       stack: stack ? (JSON.parse(stack) as SidecarStack) : null,
-      rawColour: parseRawColour(this.meta('rawColour'))
+      rawColour: parseRawColour(this.meta('rawColour')),
+      names: readNames(this.meta('names')),
+      cullKeep: this.meta('cullKeep') === '1'
     }
   }
 
@@ -707,6 +713,8 @@ export class PixlFile {
       }
       this.setMeta('stack', s.stack ? JSON.stringify(s.stack) : null)
       this.setMeta('rawColour', s.rawColour ?? null)
+      this.setMeta('names', s.names ? JSON.stringify(s.names) : null)
+      this.setMeta('cullKeep', s.cullKeep ? '1' : null)
     })
   }
 
@@ -1079,9 +1087,9 @@ export class ProjectPool {
   }
 
   private idleTimer(path: string): ReturnType<typeof setTimeout> {
-    const t = setTimeout(() => this.drop(path), this.idleMs)
-    t.unref?.()
-    return t
+    const timer = setTimeout(() => this.drop(path), this.idleMs)
+    timer.unref?.()
+    return timer
   }
 
   /** Keep a project open while idle (`on`), or let it close after its idle time again. */

@@ -1,7 +1,7 @@
 import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect, useState } from 'react'
 import type { AiJobEvent } from '../../shared/ai'
-import type { LibraryItem, LibrarySource, RenderScale } from '../../shared/ipc'
+import type { HdrKind, LibraryItem, LibrarySource, RenderScale } from '../../shared/ipc'
 import { api, errorText } from './lib/api'
 import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
@@ -11,8 +11,11 @@ import { Scopes } from './develop/Scopes'
 import { AdjustStack } from './develop/AdjustStack'
 import { ToolStrip } from './develop/ToolStrip'
 import { startDrawerSync } from './develop/tools'
-import { startDenoiseUpkeep } from './lib/denoise'
+import { startDisplayUpkeep, useDisplay, renderDisplay } from './state/display'
+import { useUi } from './state/ui'
+import { startDenoiseUpkeep, startStaleUpkeep } from './lib/denoise'
 import { startHdrUpkeep } from './lib/hdr'
+import { setAlwaysFlat, startEfficientUpkeep, useEfficient } from './lib/efficient'
 import { DevelopToolbar } from './shell/DevelopToolbar'
 import { DevelopIdentity } from './shell/IdentityBar'
 import { LeftRail } from './shell/LeftRail'
@@ -20,6 +23,9 @@ import { Splash } from './shell/Splash'
 import { LooksBrowser } from './views/looks/LooksBrowser'
 import { useDevelop } from './state/develop'
 import { useBoot } from './state/boot'
+import { startCullUpkeep } from './state/cull'
+import { startUpdateNotice } from './lib/updates'
+import { UpdateDialog } from './views/UpdateDialog'
 import { useLibrary } from './state/library'
 import { useConfirm } from './state/confirm'
 import { commandFor, COMMANDS, currentBindings } from './lib/commands'
@@ -29,20 +35,20 @@ import { ExportDialog } from './views/ExportDialog'
 import { EngineReportDialog } from './views/EngineReport'
 import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
 import { WhatsNewDialog } from './views/WhatsNew'
-import { LegacyCompareDialog } from './views/LegacyCompare'
 import { ScopesExpandedDialog } from './develop/ScopesExpanded'
 import { showWhatsNew } from './state/whatsNew'
 import { BetaGate, UpdateRequiredGate } from './views/Gate'
 import { useGate } from './lib/gate'
 import { isFrame, whenFrame } from './lib/frames'
 import { openReport } from './lib/report'
+import { startMenuUpkeep } from './lib/menus'
+import { t, useLanguage } from './lib/i18n'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
-import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
+import { LibraryIdentity, LibraryStatus, CullBar, LibraryView, Toolbar } from './views/Library'
 import { CollectionDialog } from './views/library/CollectionDialog'
 import { InfoDrawer } from './views/library/InfoDrawer'
 import { Sidebar } from './views/library/Sidebar'
 import { FloatingToolbar } from './views/loupe/FloatingToolbar'
-import { MasksWindow } from './panels/masks/MasksWindow'
 import { Loupe } from './views/loupe/Loupe'
 import { setSpace } from './views/loupe/zoom'
 
@@ -58,12 +64,10 @@ const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
       <DevelopToolbar />
       <div className="develop-body">
         <LeftRail />
-        <MasksWindow place="dock" />
         <main className="centre">
           <div className="stage">
             <Loupe />
             <FloatingToolbar />
-            <MasksWindow place="stage" />
             <ProcessingOverlay />
             <FilmToggle />
           </div>
@@ -87,6 +91,7 @@ const LibraryScreen = memo(function LibraryScreen(): React.JSX.Element {
       <div className="library-body">
         <Sidebar />
         <main className="library-main">
+          <CullBar />
           <LibraryView />
         </main>
         <InfoDrawer />
@@ -117,7 +122,7 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'crash-consent' && <CrashConsentDialog key="crash-consent" />}
       {dialog === 'engine' && <EngineReportDialog key="engine" />}
       {dialog === 'whats-new' && <WhatsNewDialog key="whats-new" />}
-      {dialog === 'legacy' && <LegacyCompareDialog key="legacy" />}
+      {dialog === 'update' && <UpdateDialog key="update" />}
       {dialog === 'scopes' && <ScopesExpandedDialog key="scopes" />}
     </AnimatePresence>
   )
@@ -146,12 +151,18 @@ function Toast(): React.JSX.Element | null {
 
 function EngineBanner(): React.JSX.Element | null {
   const engine = useLibrary((s) => s.engine)
-  if (!engine || engine.status === 'ready') return null
+  // Resting (Playroom behind) is no trouble: the top bar says so, quietly.
+  if (!engine || engine.status === 'ready' || engine.status === 'resting') return null
+  const said = {
+    starting: t('Engine starting'),
+    ready: t('Engine ready'),
+    resting: t('Engine offline'),
+    unavailable: t('Engine unavailable'),
+    crashed: t('Engine crashed')
+  }[engine.status]
   return (
     <div className="engine-banner" role="alert">
-      {engine.code === 'VersionMismatch'
-        ? 'Engine version mismatch: reinstall the app'
-        : `Engine ${engine.status}`}
+      {engine.code === 'VersionMismatch' ? t('Engine version mismatch: reinstall the app') : said}
       {engine.reason ? `: ${engine.reason}` : ''}
     </div>
   )
@@ -172,12 +183,17 @@ function onRenderScale(s: RenderScale): void {
     return
   }
   const times = (n: number): string => `${Number(n.toFixed(2))}×`
-  const name = s.target === null ? 'Native' : s.mode === 'ultra' ? 'Ultra' : 'Performance'
+  const name = s.target === null ? t('Native') : s.mode === 'ultra' ? t('Ultra') : t('Performance')
   const scale = s.target ?? s.native
-  const text = `${name} rendering${scale ? ` (${times(scale)})` : ''} starts after a restart`
+  const text = scale
+    ? t('{{mode}} rendering ({{scale}}) starts after a restart', {
+        mode: name,
+        scale: times(scale)
+      })
+    : t('{{mode}} rendering starts after a restart', { mode: name })
   if (text === restartText && lib.toast?.text === text) return
   restartText = text
-  lib.say(text, 'info', { label: 'Restart', run: () => void api.app.restart() })
+  lib.say(text, 'info', { label: t('Restart'), run: () => void api.app.restart() })
 }
 
 /** Poll the engine's status, storing it only when it changed, so nothing re-renders every tick. */
@@ -261,18 +277,20 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
   const lib = useLibrary.getState()
   // A smart look's own jobs: its run records them in the look's history step (lib/applyLook.ts).
   if (e.group) return
-  if (e.phase === 'error') return lib.say(`${e.title}: ${e.message ?? 'failed'}`, 'error')
+  if (e.phase === 'error') return lib.say(`${e.title}: ${e.message ?? t('failed')}`, 'error')
   if (e.phase !== 'done') return
   const r = e.result
   if (r?.kind === 'applied') {
     // The photo's renders switched over already; say so only when it is not in view.
-    if (useDevelop.getState().session?.key !== e.key) lib.say(`${r.label} made for ${e.name}`)
+    if (useDevelop.getState().session?.key !== e.key)
+      lib.say(t('{{what}} made for {{name}}', { what: r.label, name: e.name }))
     return
   }
   if (r?.kind === 'step') {
     // Main added the step to the photo's recipe: History records it here.
     const dev = useDevelop.getState()
-    if (dev.session?.key !== e.key) return lib.say(`${r.label} added to ${e.name}`)
+    if (dev.session?.key !== e.key)
+      return lib.say(t('{{what}} added to {{name}}', { what: r.label, name: e.name }))
     const s = await api.develop.open(e.key)
     if (useDevelop.getState().session?.key !== e.key) return
     useDevelop.getState().replace(s.recipe, r.label)
@@ -281,8 +299,8 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
   if (r?.kind !== 'mask') return
   const dev = useDevelop.getState()
   if (dev.session?.key !== e.key) {
-    return lib.say(`${r.label} mask added to ${e.name}`, 'info', {
-      label: 'Show',
+    return lib.say(t('{{what}} mask added to {{name}}', { what: r.label, name: e.name }), 'info', {
+      label: t('Show'),
       run: () => {
         lib.setFocus(e.key)
         void useDevelop.getState().open(e.key)
@@ -291,7 +309,7 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
   }
   const s = await api.develop.open(e.key)
   if (useDevelop.getState().session?.key !== e.key) return
-  useDevelop.getState().replace(s.recipe, `AI: ${r.label}`)
+  useDevelop.getState().replace(s.recipe, t('AI: {{what}}', { what: r.label }))
   if (r.into) {
     useDevelop.getState().setLayer(r.into.layerId)
     // Shown: what the model found is the point.
@@ -306,15 +324,26 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
  * per thumbnail.
  */
 const thumbsWaiting = new Map<string, { url: string | null; unreadable?: boolean }>()
+/** Photos' HDR kinds learnt since the last frame (a folder opening sends one per photo). */
+const hdrWaiting = new Map<number, HdrKind | null>()
 let thumbFrame = 0
+/** Thumbnails and HDR badges, laid on once a frame: one change to the items, not one per photo. */
 function flushThumbs(): void {
   thumbFrame = 0
   const patch: LibraryItem[] = []
   for (const it of useLibrary.getState().items) {
-    const t = thumbsWaiting.get(it.key)
-    if (t) patch.push({ ...it, thumbUrl: t.url ?? it.thumbUrl, unreadable: !!t.unreadable })
+    const thumb = thumbsWaiting.get(it.key)
+    const hdr = hdrWaiting.get(it.photoId)
+    const hdrChanged = hdrWaiting.has(it.photoId) && it.hdr !== hdr
+    if (!thumb && !hdrChanged) continue
+    patch.push({
+      ...it,
+      ...(thumb ? { thumbUrl: thumb.url ?? it.thumbUrl, unreadable: !!thumb.unreadable } : {}),
+      ...(hdrChanged ? { hdr } : {})
+    })
   }
   thumbsWaiting.clear()
+  hdrWaiting.clear()
   if (patch.length) useLibrary.getState().patchItems(patch)
 }
 
@@ -322,7 +351,7 @@ function flushThumbs(): void {
 function openEngineReport(): void {
   const lib = useLibrary.getState()
   if (lib.view === 'develop' && useDevelop.getState().session) lib.setDialog('engine')
-  else lib.say('Open a photo in Develop to see its engine report')
+  else lib.say(t('Open a photo in Develop to see its engine report'))
 }
 
 /** Uncaught errors and rejections go to main: the log, and a crash report when opted in. */
@@ -356,21 +385,24 @@ async function askCrashConsent(): Promise<void> {
 function useShortcuts(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      const t = e.target as HTMLElement
+      const el = e.target as HTMLElement
       if (
-        t.tagName === 'INPUT' &&
-        (t as HTMLInputElement).type !== 'range' &&
-        (t as HTMLInputElement).type !== 'checkbox'
+        el.tagName === 'INPUT' &&
+        (el as HTMLInputElement).type !== 'range' &&
+        (el as HTMLInputElement).type !== 'checkbox'
       )
         return
-      if (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return
       // A focused slider owns its arrow keys.
-      if (t.tagName === 'INPUT' && e.key.startsWith('Arrow')) return
+      if (el.tagName === 'INPUT' && e.key.startsWith('Arrow')) return
       const lib = useLibrary.getState()
       // An open dialog, or a confirm, has the keyboard (it closes itself on Escape).
       if (lib.dialog || useConfirm.getState().open) return
       const cmd = commandFor(e, lib.view === 'develop')
-      if (cmd) cmd.run(e)
+      if (!cmd) return
+      cmd.run(e)
+      // Taken: the menu bar (macOS) doesn't answer the key as well.
+      e.preventDefault()
     }
     const onKeyUp = (e: KeyboardEvent): void => {
       // A held command lets go when its key does, whatever else is still down.
@@ -393,12 +425,25 @@ function useShortcuts(): void {
 
 export default function App(): React.JSX.Element {
   useShortcuts()
+  const language = useLanguage((s) => s.language)
   const gate = useGate()
   // The launch (the index, the last folder, the listeners) waits until the
   // beta gate first opens, then runs once: main refuses those calls while
   // it's shut, and the splash stays behind the gate meanwhile.
   const [booted, setBooted] = useState(false)
   if (!booted && gate?.kind === 'open') setBooted(true)
+  const efficient = useEfficient()
+  // The efficient UI, from the first frame: unfocused, or "Always flat".
+  useEffect(() => {
+    setAlwaysFlat(useUi.getState().alwaysFlat)
+    const offs = [
+      startEfficientUpkeep(),
+      useUi.subscribe((s, prev) => {
+        if (s.alwaysFlat !== prev.alwaysFlat) setAlwaysFlat(s.alwaysFlat)
+      })
+    ]
+    return () => offs.forEach((off) => off())
+  }, [])
   useEffect(() => {
     if (!booted) return
     const offs = [
@@ -407,10 +452,12 @@ export default function App(): React.JSX.Element {
         thumbFrame ||= requestAnimationFrame(flushThumbs)
       }),
       api.library.onHdr(({ photoId, hdr }) => {
-        const mine = useLibrary
-          .getState()
-          .items.filter((i) => i.photoId === photoId && i.hdr !== hdr)
-        if (mine.length) useLibrary.getState().patchItems(mine.map((i) => ({ ...i, hdr })))
+        hdrWaiting.set(photoId, hdr)
+        thumbFrame ||= requestAnimationFrame(flushThumbs)
+      }),
+      api.library.onNames(({ photoId, words }) => {
+        const mine = useLibrary.getState().items.filter((i) => i.photoId === photoId)
+        if (mine.length) useLibrary.getState().patchItems(mine.map((i) => ({ ...i, names: words })))
       }),
       api.library.onChanged(({ folder }) => useLibrary.getState().onChanged(folder)),
       api.library.onSourcesChanged(() => void useLibrary.getState().onSourcesChanged()),
@@ -421,6 +468,21 @@ export default function App(): React.JSX.Element {
       }),
       startDrawerSync(),
       startDenoiseUpkeep(),
+      startStaleUpkeep(),
+      startDisplayUpkeep(),
+      startCullUpkeep(),
+      startUpdateNotice(),
+      startMenuUpkeep(),
+      // Full HDR toggled, or the display's numbers moved: render for it again.
+      useUi.subscribe((s, prev) => {
+        if (s.fullHdr !== prev.fullHdr) useDevelop.getState().pushView()
+      }),
+      useDisplay.subscribe((s, prev) => {
+        const ui = useUi.getState()
+        const a = renderDisplay(ui.fullHdr, prev.display)
+        const b = renderDisplay(ui.fullHdr, s.display)
+        if (JSON.stringify(a) !== JSON.stringify(b)) useDevelop.getState().pushView()
+      }),
       startHdrUpkeep(),
       api.app.onRenderScale(onRenderScale),
       api.app.onOpenPaths((paths) => void openPaths(paths)),
@@ -435,7 +497,9 @@ export default function App(): React.JSX.Element {
       api.develop.onRenderError((e) => {
         // A failed save is said whichever photo is open: it may be the one just left.
         if (e.code === 'Save') return useLibrary.getState().say(e.message, 'error')
-        useDevelop.getState().onError(e.field ? `${e.message} (${e.field})` : e.message)
+        useDevelop
+          .getState()
+          .onError(e.field ? `${e.message} (${e.field})` : e.message, e.invariant ?? null)
       }),
       api.ai.onEvent((e) => {
         useAiJobs.getState().onEvent(e)
@@ -479,15 +543,16 @@ export default function App(): React.JSX.Element {
       // After an update, what it brought; the crash-report question waits for a launch without it.
       void showWhatsNew().then(askCrashConsent)
     })
-    const t = setInterval(() => void refreshEngine(), 5000)
+    const poll = setInterval(() => void refreshEngine(), 5000)
     return () => {
       offs.forEach((off) => off())
-      clearInterval(t)
+      clearInterval(poll)
     }
   }, [booted])
   return (
-    <MotionConfig reducedMotion="user">
-      <div className="app">
+    <MotionConfig reducedMotion={efficient ? 'always' : 'user'}>
+      {/* Drawn again, whole, in a newly chosen language. */}
+      <div className="app" key={language}>
         <Screens />
         <DialogHost />
         <ConfirmHost />

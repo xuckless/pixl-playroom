@@ -6,12 +6,13 @@ import { api, errorText } from '../../lib/api'
 import { ruleCount } from '../../lib/rules'
 import { setsFor, sourceTrail } from '../../lib/sources'
 import { useLibrary, type CollectionDraft } from '../../state/library'
+import { t, tk, tp } from '../../lib/i18n'
 import { GroupEditor } from './RuleEditor'
 
-const KIND_NAME: Record<Collection['kind'], string> = {
-  manual: 'collection',
-  smart: 'smart collection',
-  set: 'set'
+const TITLE: Record<Collection['kind'], { add: string; edit: string }> = {
+  manual: { add: tk('New collection'), edit: tk('Edit collection') },
+  smart: { add: tk('New smart collection'), edit: tk('Edit smart collection') },
+  set: { add: tk('New set'), edit: tk('Edit set') }
 }
 
 /**
@@ -73,12 +74,13 @@ export function CollectionDialog({ initial }: { initial: CollectionDraft }): Rea
       if (!draft.id && saved.kind !== 'set')
         await lib.openSource({ kind: 'collection', id: saved.id })
       lib.say(
-        `Saved ${saved.name}` +
-          (saved.kind === 'smart' && count !== undefined
-            ? ` · ${count} photo${count === 1 ? '' : 's'}`
-            : saved.kind === 'manual' && !draft.id
-              ? ' · drag photos onto it to add them'
-              : '')
+        saved.kind === 'smart' && count !== undefined
+          ? tp('Saved {{name}} · {{count}} photo', 'Saved {{name}} · {{count}} photos', count, {
+              name: saved.name
+            })
+          : saved.kind === 'manual' && !draft.id
+            ? t('Saved {{name}} · drag photos onto it to add them', { name: saved.name })
+            : t('Saved {{name}}', { name: saved.name })
       )
     } catch (err) {
       setSaving(false)
@@ -88,7 +90,7 @@ export function CollectionDialog({ initial }: { initial: CollectionDraft }): Rea
 
   return (
     <Modal
-      title={draft.id ? `Edit ${KIND_NAME[draft.kind]}` : `New ${KIND_NAME[draft.kind]}`}
+      title={t(draft.id ? TITLE[draft.kind].edit : TITLE[draft.kind].add)}
       icon={draft.kind === 'manual' ? 'collection' : draft.kind}
       onClose={close}
       className={smart ? 'smart-dialog' : undefined}
@@ -98,24 +100,38 @@ export function CollectionDialog({ initial }: { initial: CollectionDraft }): Rea
             <span className="progress rule-preview t-num">
               <span className="big">{preview.matched}</span>
               <span>
-                of the {preview.of} photos in {where ?? 'view'} match
-                <span className="muted"> · saved, it looks through the whole library</span>
+                {where
+                  ? tp(
+                      'of the {{count}} photo in {{place}} match',
+                      'of the {{count}} photos in {{place}} match',
+                      preview.of,
+                      { place: where }
+                    )
+                  : tp(
+                      'of the {{count}} photo in view match',
+                      'of the {{count}} photos in view match',
+                      preview.of
+                    )}
+                <span className="muted">
+                  {' · '}
+                  {t('saved, it looks through the whole library')}
+                </span>
               </span>
             </span>
           )}
-          <button onClick={close}>Cancel</button>
+          <button onClick={close}>{t('Cancel')}</button>
           <button
             className="primary"
             disabled={!draft.name.trim() || saving}
             onClick={() => void save()}
           >
-            {draft.id ? 'Save' : 'Create'}
+            {draft.id ? t('Save') : t('Create')}
           </button>
         </>
       }
     >
       <label className="field">
-        <span>Name</span>
+        <span>{t('Name')}</span>
         <input
           autoFocus
           value={draft.name}
@@ -129,12 +145,12 @@ export function CollectionDialog({ initial }: { initial: CollectionDraft }): Rea
         />
       </label>
       <label className="field">
-        <span>In set</span>
+        <span>{t('In set')}</span>
         <select
           value={draft.parent ?? ''}
           onChange={(e) => setDraft({ ...draft, parent: e.target.value || null })}
         >
-          <option value="">None (top level)</option>
+          <option value="">{t('None (top level)')}</option>
           {sets.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
@@ -144,7 +160,9 @@ export function CollectionDialog({ initial }: { initial: CollectionDraft }): Rea
       </label>
       {smart && draft.rules && (
         <fieldset className="rules-fieldset">
-          <legend>Rules · {ruleCount(draft.rules)}</legend>
+          <legend>
+            {t('Rules')} · {ruleCount(draft.rules)}
+          </legend>
           <GroupEditor
             group={draft.rules}
             collections={collections.filter((c) => c.id !== draft.id)}

@@ -29,6 +29,37 @@ import { MetadataEditor } from '../views/library/MetadataEditor'
 import { useMaskPresets, useSelectedMask } from './masks/presets'
 import { TechInfo } from '../components/TechInfo'
 import { useReorder } from './masks/useReorder'
+import { t, tk, tp } from '../lib/i18n'
+
+/**
+ * The words before a History label's colon, where the label carries a name
+ * or a value after it ("White balance: Auto", "Sky: Exposure").
+ */
+const STEP_HEADS = [
+  tk('White balance'),
+  tk('Curve preset'),
+  tk('Profile'),
+  tk('Colour grade'),
+  tk('Snapshot'),
+  tk('Mask mode'),
+  tk('Camera colour'),
+  tk('Look'),
+  tk('Upright'),
+  tk('Targeted')
+]
+void STEP_HEADS
+
+/**
+ * A History label in the language shown now. Labels are stored in English
+ * (a history outlives a change of language); one made of a name and a
+ * setting ("Sky: Exposure") is translated a side at a time.
+ */
+function stepLabel(label: string): string {
+  const whole = t(label)
+  if (whole !== label) return whole
+  const i = label.indexOf(': ')
+  return i > 0 ? `${t(label.slice(0, i))}: ${t(label.slice(i + 2))}` : whole
+}
 
 /**
  * The left rail's panes. Each shows one list at a time under the rail's
@@ -44,14 +75,14 @@ export function PresetsActions(): React.JSX.Element {
         className="sm ghost"
         disabled={!hasPhoto}
         onClick={() => openLooks()}
-        title="Browse every look, on this photo"
+        title={t('Browse every look, on this photo')}
       >
         <Icon name="search" />
-        Browse
+        {t('Browse')}
       </button>
-      <button className="sm ghost" onClick={() => setDialog('preset')} title="Save a preset">
+      <button className="sm ghost" onClick={() => setDialog('preset')} title={t('Save a preset')}>
         <Icon name="plus" />
-        Save
+        {t('Save')}
       </button>
     </span>
   )
@@ -75,7 +106,7 @@ export function PresetsPane(): React.JSX.Element | null {
   useLookHoverCleanup()
   const myLooks = (mine ?? []).flatMap((id) => LOOK_BY_ID.get(id) ?? [])
   const reorder = useReorder((from, to) => useLooks.getState().move(myLooks[from].id, to))
-  if (!recipe) return <p className="rail-empty">Open a photo to use presets.</p>
+  if (!recipe) return <p className="rail-empty">{t('Open a photo to use presets.')}</p>
   // Alt (Option) puts a look on top of the applied one instead of in its place.
   const apply = (p: Preset, stack: boolean): void => {
     leaveLook(true)
@@ -121,7 +152,7 @@ export function PresetsPane(): React.JSX.Element | null {
           {order ? (
             <span
               className="rail-grip"
-              title="Drag to reorder"
+              title={t('Drag to reorder')}
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => {
                 leaveLook(true)
@@ -133,7 +164,7 @@ export function PresetsPane(): React.JSX.Element | null {
           ) : (
             <i className="dot" />
           )}
-          {p.name}
+          <span className="rail-name">{p.builtin ? t(p.name) : p.name}</span>
         </span>
         {action}
       </div>
@@ -146,7 +177,7 @@ export function PresetsPane(): React.JSX.Element | null {
         <Icon name="search" />
         <input
           className="search"
-          placeholder="Search looks · Enter to browse"
+          placeholder={t('Search looks · Enter to browse')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -159,13 +190,13 @@ export function PresetsPane(): React.JSX.Element | null {
       {applied && <AppliedLookBar />}
       <MaskPresetsGroup />
       {shownMine.length > 0 && (
-        <Group label="My Looks">
+        <Group label={t('My Looks')}>
           {shownMine.map((p, i) =>
             row(
               p,
               <button
                 className="icon sm"
-                title="Remove from My Looks"
+                title={t('Remove from My Looks')}
                 onClick={(e) => {
                   e.stopPropagation()
                   useLooks.getState().remove(p.id)
@@ -180,7 +211,7 @@ export function PresetsPane(): React.JSX.Element | null {
         </Group>
       )}
       {userGroups.map((g) => (
-        <Group key={g} label={g}>
+        <Group key={g} label={t(g)}>
           {shownUser
             .filter((p) => p.group === g)
             .map((p) =>
@@ -188,7 +219,7 @@ export function PresetsPane(): React.JSX.Element | null {
                 p,
                 <button
                   className="icon sm"
-                  title="Delete preset"
+                  title={t('Delete preset')}
                   onClick={(e) => {
                     e.stopPropagation()
                     void api.presets.remove(p.id).then(presetsChanged)
@@ -201,13 +232,13 @@ export function PresetsPane(): React.JSX.Element | null {
         </Group>
       ))}
       {found.length > 0 && (
-        <Group label="From the catalog">
+        <Group label={t('From the catalog')}>
           {found.map((p) =>
             row(
               p,
               <button
                 className="icon sm"
-                title="Add to My Looks"
+                title={t('Add to My Looks')}
                 onClick={(e) => {
                   e.stopPropagation()
                   useLooks.getState().add(p.id)
@@ -219,10 +250,10 @@ export function PresetsPane(): React.JSX.Element | null {
           )}
         </Group>
       )}
-      {nothing && <p className="rail-empty">No look matches “{q}”.</p>}
+      {nothing && <p className="rail-empty">{t('No look matches “{{query}}”.', { query: q })}</p>}
       {!q && mine !== null && myLooks.length === 0 && user.length === 0 && (
         <p className="rail-empty">
-          No looks kept yet. Search above to find one in the catalog and add it.
+          {t('No looks kept yet. Search above to find one in the catalog and add it.')}
         </p>
       )}
     </div>
@@ -240,20 +271,20 @@ function AppliedLookBar(): React.JSX.Element | null {
   return (
     <div className="applied-look">
       <div className="applied-look-head">
-        <strong title={`Applied: ${applied.label}`}>{applied.name}</strong>
-        <button className="icon sm" title="Take the look off" onClick={removeLook}>
+        <strong title={t('Applied: {{look}}', { look: applied.label })}>{applied.name}</strong>
+        <button className="icon sm" title={t('Take the look off')} onClick={removeLook}>
           <Icon name="reset" />
         </button>
         <button
           className="icon sm"
-          title="Keep it as it is: the next look goes on top"
+          title={t('Keep it as it is: the next look goes on top')}
           onClick={() => useLooks.setState({ applied: null })}
         >
           <Icon name="check" />
         </button>
       </div>
       <Slider
-        label="Amount"
+        label={t('Amount')}
         value={applied.amount}
         min={0}
         max={100}
@@ -278,6 +309,8 @@ function LookRunProgress({ runId }: { runId: string }): React.JSX.Element | null
   const p = run.phase === 'running' ? (job?.progress ?? 0) : 0
   const done = runProgress(run.parts, run.index, p)
   const left = runRemaining(run.parts, run.index, p)
+  // The English label names what to point at; another language's shows as it is.
+  const target = run.label.match(/^Pointing at the (.+)$/)?.[1]
   return (
     <div className="look-run" title={run.parts.map((x) => x.label).join(' → ')}>
       <div className="look-run-bar">
@@ -285,13 +318,13 @@ function LookRunProgress({ runId }: { runId: string }): React.JSX.Element | null
       </div>
       <div className="look-run-text">
         <span>
-          {run.phase === 'pick'
-            ? `Point at the ${run.label.replace(/^Pointing at the /, '')} on the photo`
+          {run.phase === 'pick' && target
+            ? t('Point at the {{target}} on the photo', { target })
             : run.label}
         </span>
         {run.phase === 'running' && <span className="t">{formatEta(left)}</span>}
-        <button className="sm ghost" onClick={cancelLookRun} title="Stop the look's AI work">
-          Cancel
+        <button className="sm ghost" onClick={cancelLookRun} title={t("Stop the look's AI work")}>
+          {t('Cancel')}
         </button>
       </div>
     </div>
@@ -306,18 +339,23 @@ function describe(p: Preset): string {
   if (!p.meta) {
     const makes = p.smart
       ? [
-          ...p.smart.masks.map((m) => `${m.name} mask`),
-          ...p.smart.steps.map((x) => (x.kind === 'denoise' ? 'AI denoise' : 'AI deblur'))
+          ...p.smart.masks.map((m) => t('{{name}} mask', { name: m.name })),
+          ...p.smart.steps.map((x) => (x.kind === 'denoise' ? t('AI denoise') : t('AI deblur')))
         ]
       : []
     return [
-      p.groups.length ? `Carries: ${p.groups.map((g) => GROUP_LABELS[g]).join(', ')}` : '',
-      makes.length ? `Makes on each photo: ${makes.join(', ')}` : ''
+      p.groups.length
+        ? t('Carries: {{groups}}', { groups: p.groups.map((g) => t(GROUP_LABELS[g])).join(', ') })
+        : '',
+      makes.length ? t('Makes on each photo: {{makes}}', { makes: makes.join(', ') }) : ''
     ]
       .filter(Boolean)
       .join('\n')
   }
-  return [p.meta.description, p.meta.inspiredBy && `Inspired by ${p.meta.inspiredBy}`]
+  return [
+    p.meta.description && (p.builtin ? t(p.meta.description) : p.meta.description),
+    p.meta.inspiredBy && t('Inspired by {{who}}', { who: p.meta.inspiredBy })
+  ]
     .filter(Boolean)
     .join('\n')
 }
@@ -357,7 +395,9 @@ function MaskPresetsGroup(): React.JSX.Element | null {
   return (
     <div className="preset-group">
       <div className="rail-group">
-        <span className="micro">Mask · {layer.name}</span>
+        <span className="micro">
+          {t('Mask')} · {layer.name}
+        </span>
         <span className="line" />
       </div>
       <div className="stagger">
@@ -371,7 +411,7 @@ function MaskPresetsGroup(): React.JSX.Element | null {
             onKeyDown={(e) => {
               if (e.key === 'Enter') apply(layer, p)
             }}
-            title={`Apply to ${layer.name}`}
+            title={t('Apply to {{mask}}', { mask: layer.name })}
           >
             <span className="rail-label">
               <i className="dot" />
@@ -379,7 +419,7 @@ function MaskPresetsGroup(): React.JSX.Element | null {
             </span>
             <button
               className="icon sm"
-              title="Delete mask preset"
+              title={t('Delete mask preset')}
               onClick={(e) => {
                 e.stopPropagation()
                 void remove(p.name)
@@ -401,7 +441,7 @@ function MaskPresetsGroup(): React.JSX.Element | null {
           >
             <span className="rail-label">
               <Icon name="plus" />
-              Save this mask&apos;s settings…
+              {t("Save this mask's settings…")}
             </span>
           </div>
         ) : (
@@ -409,7 +449,7 @@ function MaskPresetsGroup(): React.JSX.Element | null {
             <input
               className="name"
               autoFocus
-              placeholder="Mask preset name"
+              placeholder={t('Mask preset name')}
               value={naming}
               onChange={(e) => setNaming(e.target.value)}
               onBlur={finish}
@@ -442,7 +482,7 @@ export function SnapshotsPane(): React.JSX.Element {
       <div className="rail-form">
         <input
           className="name"
-          placeholder="Snapshot name"
+          placeholder={t('Snapshot name')}
           value={name}
           disabled={!session}
           onChange={(e) => setName(e.target.value)}
@@ -451,13 +491,15 @@ export function SnapshotsPane(): React.JSX.Element {
             if (e.key === 'Enter') add()
           }}
         />
-        <button className="sm" disabled={!session} onClick={add} title="Save a snapshot">
+        <button className="sm" disabled={!session} onClick={add} title={t('Save a snapshot')}>
           <Icon name="plus" />
-          Save
+          {t('Save')}
         </button>
       </div>
       {snapshots.length === 0 && (
-        <p className="rail-empty">A snapshot keeps the recipe as it is now, to come back to.</p>
+        <p className="rail-empty">
+          {t('A snapshot keeps the recipe as it is now, to come back to.')}
+        </p>
       )}
       <div className="stagger">
         {snapshots.map((s) => (
@@ -475,7 +517,7 @@ export function SnapshotsPane(): React.JSX.Element {
             </span>
             <button
               className="icon sm"
-              title="Delete snapshot"
+              title={t('Delete snapshot')}
               onClick={(e) => {
                 e.stopPropagation()
                 void remove(s.id)
@@ -514,8 +556,11 @@ export function HistoryPane(): React.JSX.Element {
   const [selected, setSelected] = useState<number | null>(null)
   const [ask, setAsk] = useState<Cascade | null>(null)
   const { base, steps } = history
-  if (!base) return <p className="rail-empty">Nothing has happened yet.</p>
-  const labelOf = (seq: number): string => steps.find((s) => s.seq === seq)?.label ?? ''
+  if (!base) return <p className="rail-empty">{t('Nothing has happened yet.')}</p>
+  const labelOf = (seq: number): string => {
+    const label = steps.find((s) => s.seq === seq)?.label
+    return label ? stepLabel(label) : ''
+  }
   const toggle = (step: Step): void => {
     setAsk(null)
     if (step.hidden) {
@@ -541,11 +586,21 @@ export function HistoryPane(): React.JSX.Element {
   return (
     <div className="rail-list history">
       {ask && (
-        <div className="history-ask" role="alertdialog" aria-label="Confirm">
+        <div className="history-ask" role="alertdialog" aria-label={t('Confirm')}>
           <p>
-            {ask.kind === 'hide' ? 'Hiding' : 'Deleting'} “{labelOf(ask.seq)}” also{' '}
-            {ask.kind === 'hide' ? 'hides' : 'deletes'} {ask.seqs.length - 1} later{' '}
-            {ask.seqs.length === 2 ? 'step that uses' : 'steps that use'} what it made:
+            {ask.kind === 'hide'
+              ? tp(
+                  'Hiding “{{step}}” also hides {{count}} later step that uses what it made:',
+                  'Hiding “{{step}}” also hides {{count}} later steps that use what it made:',
+                  ask.seqs.length - 1,
+                  { step: labelOf(ask.seq) }
+                )
+              : tp(
+                  'Deleting “{{step}}” also deletes {{count}} later step that uses what it made:',
+                  'Deleting “{{step}}” also deletes {{count}} later steps that use what it made:',
+                  ask.seqs.length - 1,
+                  { step: labelOf(ask.seq) }
+                )}
           </p>
           <ul>
             {ask.seqs.slice(1).map((seq) => (
@@ -554,10 +609,12 @@ export function HistoryPane(): React.JSX.Element {
           </ul>
           <div className="row">
             <button className={ask.kind === 'delete' ? 'danger' : 'primary'} onClick={confirm}>
-              {ask.kind === 'hide' ? 'Hide' : 'Delete'} {ask.seqs.length} steps
+              {ask.kind === 'hide'
+                ? tp('Hide {{count}} step', 'Hide {{count}} steps', ask.seqs.length)
+                : tp('Delete {{count}} step', 'Delete {{count}} steps', ask.seqs.length)}
             </button>
             <button className="ghost" onClick={() => setAsk(null)}>
-              Cancel
+              {t('Cancel')}
             </button>
           </div>
         </div>
@@ -583,12 +640,12 @@ export function HistoryPane(): React.JSX.Element {
             >
               <span className="rail-label">
                 <i className="dot" />
-                {step.label}
+                {stepLabel(step.label)}
               </span>
               <span className="t">{clock(step.at)}</span>
               <button
                 className="icon sm eye"
-                title={step.hidden ? 'Show this step' : 'Hide this step'}
+                title={step.hidden ? t('Show this step') : t('Hide this step')}
                 aria-pressed={!step.hidden}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -599,7 +656,7 @@ export function HistoryPane(): React.JSX.Element {
               </button>
               <button
                 className="icon sm"
-                title="Delete this step"
+                title={t('Delete this step')}
                 onClick={(e) => {
                   e.stopPropagation()
                   remove(step)
@@ -610,17 +667,17 @@ export function HistoryPane(): React.JSX.Element {
             </div>
             {on && (
               <p className="history-changed">
-                {patchSummary(step.patch).join(' · ') || 'No visible change'}
-                {step.hidden ? ' — hidden' : ''}
+                {patchSummary(step.patch).join(' · ') || t('No visible change')}
+                {step.hidden ? ` — ${t('hidden')}` : ''}
               </p>
             )}
           </div>
         )
       })}
-      <div className="history-row rail-item base" title="Where the history starts">
+      <div className="history-row rail-item base" title={t('Where the history starts')}>
         <span className="rail-label">
           <i className="dot" />
-          {base.label}
+          {stepLabel(base.label)}
         </span>
         <span className="t">{clock(base.at)}</span>
       </div>
@@ -628,16 +685,16 @@ export function HistoryPane(): React.JSX.Element {
   )
 }
 
-function fmtShutter(t: number | null): string {
-  if (!t) return '—'
-  return t >= 1 ? `${t}s` : `1/${Math.round(1 / t)}s`
+function fmtShutter(secs: number | null): string {
+  if (!secs) return '—'
+  return secs >= 1 ? `${secs}s` : `1/${Math.round(1 / secs)}s`
 }
 
 const ORIGINAL_KIND: Record<string, string> = {
-  dng: 'lossless DNG',
-  'jxl-jpeg': 'JPEG repacked in JPEG XL (bit-exact)',
-  'jxl-lossless': 'lossless JPEG XL',
-  verbatim: 'as it is'
+  dng: tk('lossless DNG'),
+  'jxl-jpeg': tk('JPEG repacked in JPEG XL (bit-exact)'),
+  'jxl-lossless': tk('lossless JPEG XL'),
+  verbatim: tk('as it is')
 }
 
 /** The photo's project, and the copy of its original it carries. */
@@ -647,7 +704,7 @@ function ProjectRows({ sessionKey }: { sessionKey: string }): React.JSX.Element 
   const steps = useDevelop((s) => s.history.steps.length)
   useEffect(() => {
     let live = true
-    let t: ReturnType<typeof setTimeout> | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
     const load = (): void =>
       void api.library
         .projectInfo(sessionKey)
@@ -655,27 +712,28 @@ function ProjectRows({ sessionKey }: { sessionKey: string }): React.JSX.Element 
           if (!live) return
           setInfo(i)
           // The original is embedded in the background: look again only while it is.
-          if (i.project && i.state !== 'ready' && i.state !== 'failed') t = setTimeout(load, 4000)
+          if (i.project && i.state !== 'ready' && i.state !== 'failed')
+            timer = setTimeout(load, 4000)
         })
         .catch(() => undefined)
     load()
     return () => {
       live = false
-      clearTimeout(t)
+      clearTimeout(timer)
     }
   }, [sessionKey, steps])
   if (!info?.project) return null
   const original =
     info.state === 'ready'
-      ? `${ORIGINAL_KIND[info.kind ?? ''] ?? info.kind}${
+      ? `${ORIGINAL_KIND[info.kind ?? ''] ? t(ORIGINAL_KIND[info.kind ?? '']) : info.kind}${
           info.bytes ? ` · ${(info.bytes / 1024 / 1024).toFixed(1)} MB` : ''
         }`
       : info.state === 'failed'
-        ? 'could not be embedded'
-        : 'being embedded…'
+        ? t('could not be embedded')
+        : t('being embedded…')
   return (
     <>
-      <dt>Project</dt>
+      <dt>{t('Project')}</dt>
       <dd title={info.project}>
         <button
           className="link"
@@ -684,7 +742,7 @@ function ProjectRows({ sessionKey }: { sessionKey: string }): React.JSX.Element 
           {info.project.split(/[\\/]/).pop()}
         </button>
       </dd>
-      <dt>Original</dt>
+      <dt>{t('Original')}</dt>
       <dd>{original}</dd>
     </>
   )
@@ -692,56 +750,58 @@ function ProjectRows({ sessionKey }: { sessionKey: string }): React.JSX.Element 
 
 export function InfoPane(): React.JSX.Element {
   const session = useDevelop((s) => s.shown)
-  if (!session) return <p className="rail-empty">Open a photo to see its details.</p>
+  if (!session) return <p className="rail-empty">{t('Open a photo to see its details.')}</p>
   const { info, item } = session
   const c = item.camera
   return (
     <div className="rail-list">
       <dl className="kv">
-        <dt>File</dt>
+        <dt>{t('File')}</dt>
         <dd>{item.name}</dd>
-        <dt>Format</dt>
+        <dt>{t('Format')}</dt>
         <dd>
-          {info.format.toUpperCase()} · {info.bits}-bit
+          {info.format.toUpperCase()} · {t('{{bits}}-bit', { bits: info.bits })}
         </dd>
-        <dt>Pixels</dt>
+        <dt>{t('Pixels')}</dt>
         <dd>
           {session.frameWidth} × {session.frameHeight} (
           {((session.frameWidth * session.frameHeight) / 1e6).toFixed(1)} MP)
         </dd>
-        <dt>Colour</dt>
+        <dt>{t('Colour')}</dt>
         <dd>
           {info.color}
           {info.is_hdr ? ` · HDR${info.peak_nits ? ` ${info.peak_nits} nits` : ''}` : ''}
         </dd>
         {session.asShot && (
           <>
-            <dt>As shot</dt>
+            <dt>{t('As shot')}</dt>
             <dd>
-              {Math.round(session.asShot.temperature_kelvin)} K, tint{' '}
-              {(session.asShot.tint * 3000).toFixed(0)}
+              {t('{{kelvin}} K, tint {{tint}}', {
+                kelvin: Math.round(session.asShot.temperature_kelvin),
+                tint: (session.asShot.tint * 3000).toFixed(0)
+              })}
             </dd>
           </>
         )}
-        <dt>Camera</dt>
+        <dt>{t('Camera')}</dt>
         <dd>{[c.make, c.model].filter(Boolean).join(' ') || '—'}</dd>
         {session.rawColour && (
           <>
-            <dt>Camera colour</dt>
+            <dt>{t('Camera colour')}</dt>
             <dd title={rawColourReason(info) ?? undefined}>
               {rawColourLabel(info, session.rawColour)}
               {session.rawColour === 'container' && rawColourReason(info) ? ' *' : ''}
             </dd>
           </>
         )}
-        <dt>Lens</dt>
+        <dt>{t('Lens')}</dt>
         <dd>{c.lens ?? '—'}</dd>
-        <dt>Exposure</dt>
+        <dt>{t('Exposure')}</dt>
         <dd>
           {fmtShutter(c.exposureTime)} · f/{c.fNumber ?? '—'} · ISO {c.iso ?? '—'} ·{' '}
           {c.focalLength ? `${c.focalLength} mm` : '—'}
         </dd>
-        <dt>Taken</dt>
+        <dt>{t('Taken')}</dt>
         <dd>{c.capturedAt ? new Date(c.capturedAt).toLocaleString() : '—'}</dd>
         <ProjectRows sessionKey={session.key} />
       </dl>
@@ -755,20 +815,30 @@ export function InfoPane(): React.JSX.Element {
           }
         >
           <Icon name="folder" />
-          Show in folder
+          {t('Show in folder')}
         </button>
         <span className="spacer" />
-        <TechInfo title="File details">
+        <TechInfo title={t('File details')}>
           <p>
-            {info.channels} channels · colour from {info.color_source}
+            {tp(
+              '{{count}} channel · colour from {{source}}',
+              '{{count}} channels · colour from {{source}}',
+              info.channels,
+              {
+                source: info.color_source
+              }
+            )}
           </p>
           <p>
-            Working copy {session.proxyWidth} × {session.proxyHeight}
+            {t('Working copy {{width}} × {{height}}', {
+              width: session.proxyWidth,
+              height: session.proxyHeight
+            })}
           </p>
         </TechInfo>
       </div>
       <div className="rail-group">
-        <span className="micro">Metadata</span>
+        <span className="micro">{t('Metadata')}</span>
         <span className="line" />
       </div>
       <MetadataEditor keys={[session.key]} facts={false} />

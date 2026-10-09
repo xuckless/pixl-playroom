@@ -130,6 +130,14 @@ export async function brushPlanes(
         out[c.id] = file
         continue
       }
+      if (c.kind === 'depth') {
+        // A depth map: turned as a painted plane is; the band is keyed by the engine.
+        if (!c.png) continue
+        const file = join(dir, `depth-${c.ref ?? planeRef(c.png)}-${user}.png`)
+        work.push(ensure(file, { op: 'brush', file, png: c.png, user }))
+        out[c.id] = file
+        continue
+      }
       if (c.kind !== 'brush' || !c.png) continue
       // Named by its plane's reference (its content hash), reused when it has
       // one: hashing megabytes of PNG on every compile is what it saves. A

@@ -18,6 +18,8 @@
  *   which op white would neutralise it.
  */
 
+import { tk } from './i18n'
+
 export type Vec3 = [number, number, number]
 export type Mat3 = [Vec3, Vec3, Vec3]
 export type Xy = [number, number]
@@ -325,10 +327,10 @@ export function opNeutralising(linearRec2020: Vec3): OpWhite | null {
 
 /** Standard light sources for the white-balance preset menu (RAW only). */
 export const WB_PRESETS: { name: string; kelvin: number; tintUnits: number }[] = [
-  { name: 'Daylight', kelvin: 5500, tintUnits: 10 },
-  { name: 'Cloudy', kelvin: 6500, tintUnits: 10 },
-  { name: 'Shade', kelvin: 7500, tintUnits: 10 },
-  { name: 'Tungsten', kelvin: 2850, tintUnits: 0 },
-  { name: 'Fluorescent', kelvin: 3800, tintUnits: 21 },
-  { name: 'Flash', kelvin: 5500, tintUnits: 0 }
+  { name: tk('Daylight'), kelvin: 5500, tintUnits: 10 },
+  { name: tk('Cloudy'), kelvin: 6500, tintUnits: 10 },
+  { name: tk('Shade'), kelvin: 7500, tintUnits: 10 },
+  { name: tk('Tungsten'), kelvin: 2850, tintUnits: 0 },
+  { name: tk('Fluorescent'), kelvin: 3800, tintUnits: 21 },
+  { name: tk('Flash'), kelvin: 5500, tintUnits: 0 }
 ]

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { maskContextMenu } from '../../lib/menus'
 import type { MaskMode } from '../../../../shared/engine-types'
 import { effectiveMode, nextMaskMode } from '../../../../shared/masks'
 import { hasControls, hiddenAdjusted } from '../../../../shared/maskcontrols'
@@ -8,7 +9,6 @@ import {
   type LocalLayer,
   type MaskComponentSetting
 } from '../../../../shared/recipe'
-import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { Icon, type IconName } from '../../components/icons'
 import { Menu, Popover } from '../../components/Popover'
 import { useDevelop } from '../../state/develop'
@@ -28,12 +28,12 @@ import {
   startMaskTool,
   type MaskToolKind
 } from './model'
-import { closeMasks, minimizeMasks } from '../../develop/tools'
 import { ComponentCard, SelectedMask } from './MaskTool'
 import { ToolPicker } from './ToolPicker'
+import { NameChips } from './NameChips'
 import { useReorder } from './useReorder'
 import { keyHint, withKey } from '../../lib/commands'
-import { touchInteracting } from '../../lib/interacting'
+import { t, tk } from '../../lib/i18n'
 
 /**
  * The tools one click from the selected mask's add bar: the drawing tools
@@ -41,17 +41,40 @@ import { touchInteracting } from '../../lib/interacting'
  * luminance ranges are in the "…" picker with the rest.
  */
 const ADD_TOOLS: { kind: MaskToolKind; icon: IconName; label: string }[] = [
-  { kind: 'brush', icon: 'brush', label: 'Brush' },
-  { kind: 'linear', icon: 'linear', label: 'Linear gradient' },
-  { kind: 'radial', icon: 'radial', label: 'Radial gradient' },
-  { kind: 'polygon', icon: 'lasso', label: 'Lasso' },
-  { kind: 'objects', icon: 'objects', label: 'Object detection' }
+  { kind: 'brush', icon: 'brush', label: tk('Brush') },
+  { kind: 'linear', icon: 'linear', label: tk('Linear gradient') },
+  { kind: 'radial', icon: 'radial', label: tk('Radial gradient') },
+  { kind: 'polygon', icon: 'lasso', label: tk('Lasso') },
+  { kind: 'objects', icon: 'objects', label: tk('Object detection') }
 ]
 
-const JOIN_VERB: Record<MaskMode, string> = {
-  Add: 'Add to',
-  Subtract: 'Subtract from',
-  Intersect: 'Intersect with'
+/** A mode's name, shown (the value itself is the engine's). */
+const MODE_LABEL: Record<MaskMode, string> = {
+  Add: tk('Add'),
+  Subtract: tk('Subtract'),
+  Intersect: tk('Intersect')
+}
+
+/** The add bar's tips, a sentence for each mode. */
+const JOIN_TITLE: Record<MaskMode, string> = {
+  Add: tk('Add to this mask'),
+  Subtract: tk('Subtract from this mask'),
+  Intersect: tk('Intersect with this mask')
+}
+const JOIN_WITH: Record<MaskMode, string> = {
+  Add: tk('Add to this mask with'),
+  Subtract: tk('Subtract from this mask with'),
+  Intersect: tk('Intersect with this mask with')
+}
+const JOIN_TOOL: Record<MaskMode, string> = {
+  Add: tk('Add to this mask: {{tool}}'),
+  Subtract: tk('Subtract from this mask: {{tool}}'),
+  Intersect: tk('Intersect with this mask: {{tool}}')
+}
+const JOIN_EVERY: Record<MaskMode, string> = {
+  Add: tk('Add to this mask: every tool'),
+  Subtract: tk('Subtract from this mask: every tool'),
+  Intersect: tk('Intersect with this mask: every tool')
 }
 
 /**
@@ -142,7 +165,7 @@ function ComponentRow({
     setRename(null)
     if (name === (c.name ?? '')) return
     // An empty name goes back to the kind's own label.
-    patchComponent(c.id, name ? 'Rename component' : 'Clear component name', (x) => {
+    patchComponent(c.id, name ? tk('Rename component') : tk('Clear component name'), (x) => {
       if (name) x.name = name
       else delete x.name
     })
@@ -156,7 +179,7 @@ function ComponentRow({
     >
       <div className={`mf-comp${on ? ' on' : ''}${dragging ? ' dragging' : ''}`}>
         {count > 1 && (
-          <span className="mf-grip" title="Drag to reorder" onPointerDown={onGrip}>
+          <span className="mf-grip" title={t('Drag to reorder')} onPointerDown={onGrip}>
             <Icon name="grip" />
           </span>
         )}
@@ -165,8 +188,11 @@ function ComponentRow({
           disabled={index === 0}
           title={
             index === 0
-              ? 'The first component always adds'
-              : `${mode} — click for ${nextMaskMode(mode)}`
+              ? t('The first component always adds')
+              : t('{{mode}} — click for {{next}}', {
+                  mode: t(MODE_LABEL[mode]),
+                  next: t(MODE_LABEL[nextMaskMode(mode)])
+                })
           }
           onClick={() => {
             const m = nextMaskMode(c.mode)
@@ -179,7 +205,7 @@ function ComponentRow({
           <input
             className="mf-rename"
             autoFocus
-            aria-label="Component name"
+            aria-label={t('Component name')}
             placeholder={componentLabel({ ...c, name: undefined })}
             value={rename}
             onChange={(e) => setRename(e.target.value)}
@@ -194,7 +220,7 @@ function ComponentRow({
           <button
             className="mf-select"
             aria-pressed={on}
-            title="Double-click to rename · Alt+↑↓ to move"
+            title={t('Double-click to rename · Alt+↑↓ to move')}
             onClick={() => setComp(on ? null : c.id)}
             onDoubleClick={() => setRename(c.name ?? '')}
             onKeyDown={(e) => moveByKey(e, index, count, (to) => moveComponent(c.id, to))}
@@ -206,16 +232,18 @@ function ComponentRow({
         <span className="mf-acts">
           <button
             className={`icon sm${c.invert ? ' on' : ''}`}
-            title={c.invert ? 'Inverted — click to un-invert' : 'Invert this component'}
+            title={c.invert ? t('Inverted — click to un-invert') : t('Invert this component')}
             aria-pressed={c.invert}
-            onClick={() => patchComponent(c.id, 'Invert component', (x) => (x.invert = !x.invert))}
+            onClick={() =>
+              patchComponent(c.id, tk('Invert component'), (x) => (x.invert = !x.invert))
+            }
           >
             <Icon name="invert" />
           </button>
           <span className="mf-menu-anchor">
             <button
               className="icon sm"
-              title="Component options"
+              title={t('Component options')}
               aria-expanded={menu}
               onClick={() => setMenu(!menu)}
             >
@@ -229,25 +257,25 @@ function ComponentRow({
                   ...(index === 0
                     ? []
                     : (['Add', 'Subtract', 'Intersect'] as MaskMode[]).map((m) => ({
-                        label: m,
+                        label: t(MODE_LABEL[m]),
                         checked: c.mode === m,
                         onSelect: () => patchComponent(c.id, `Mask mode: ${m}`, (x) => (x.mode = m))
                       }))),
                   {
-                    label: 'Invert',
+                    label: t('Invert'),
                     checked: c.invert,
                     onSelect: () =>
-                      patchComponent(c.id, 'Invert component', (x) => (x.invert = !x.invert))
+                      patchComponent(c.id, tk('Invert component'), (x) => (x.invert = !x.invert))
                   },
-                  { label: 'Rename', onSelect: () => setRename(c.name ?? '') },
+                  { label: t('Rename'), onSelect: () => setRename(c.name ?? '') },
                   {
-                    label: 'Duplicate',
+                    label: t('Duplicate'),
                     hint: on ? keyHint('mask.duplicate') : undefined,
                     onSelect: () => duplicateComponent(c.id)
                   },
                   'sep',
                   {
-                    label: 'Delete component',
+                    label: t('Delete component'),
                     hint: on ? '⌫' : undefined,
                     danger: true,
                     onSelect: () => deleteComponent(c.id)
@@ -272,36 +300,32 @@ function AddBar({ onMore }: { onMore: (mode: MaskMode) => void }): React.JSX.Ele
   }
   return (
     <div className="mf-add">
-      <div className="seg" role="group" aria-label="How a new component joins this mask">
+      <div className="seg" role="group" aria-label={t('How a new component joins this mask')}>
         {(['Add', 'Subtract', 'Intersect'] as MaskMode[]).map((m) => (
           <button
             key={m}
             className={join === m ? 'on' : ''}
             aria-pressed={join === m}
-            aria-label={m}
-            title={`${JOIN_VERB[m]} this mask`}
+            aria-label={t(MODE_LABEL[m])}
+            title={t(JOIN_TITLE[m])}
             onClick={() => setJoin(m)}
           >
             <span className={`mf-join m-${m.toLowerCase()}`}>{MODE_MARK[m]}</span>
           </button>
         ))}
       </div>
-      <div className="mf-add-tools" role="group" aria-label={`${JOIN_VERB[join]} this mask with`}>
-        {ADD_TOOLS.map((t) => (
+      <div className="mf-add-tools" role="group" aria-label={t(JOIN_WITH[join])}>
+        {ADD_TOOLS.map((tool) => (
           <button
-            key={t.kind}
+            key={tool.kind}
             className="icon sm"
-            title={`${JOIN_VERB[join]} this mask: ${t.label}`}
-            onClick={() => add(t.kind)}
+            title={t(JOIN_TOOL[join], { tool: t(tool.label) })}
+            onClick={() => add(tool.kind)}
           >
-            <Icon name={t.icon} />
+            <Icon name={tool.icon} />
           </button>
         ))}
-        <button
-          className="icon sm"
-          title={`${JOIN_VERB[join]} this mask: every tool`}
-          onClick={() => onMore(join)}
-        >
+        <button className="icon sm" title={t(JOIN_EVERY[join])} onClick={() => onMore(join)}>
           <Icon name="more" />
         </button>
       </div>
@@ -337,10 +361,10 @@ function MaskRow({
   const coverage = !measured
     ? undefined
     : !measured.applied
-      ? 'Not applied'
+      ? t('Not applied')
       : measured.coverage === null
         ? undefined
-        : `Covers ${(measured.coverage * 100).toFixed(1)}% of the photo`
+        : t('Covers {{pct}}% of the photo', { pct: (measured.coverage * 100).toFixed(1) })
   const [renaming, setRenaming] = useState<string | null>(null)
   const [menu, setMenu] = useState(false)
   const [colour, setColour] = useState(false)
@@ -348,14 +372,14 @@ function MaskRow({
   const rename = (): void => {
     const name = renaming?.trim()
     setRenaming(null)
-    if (name && name !== layer.name) patchMask(layer.id, 'Rename mask', (l) => (l.name = name))
+    if (name && name !== layer.name) patchMask(layer.id, tk('Rename mask'), (l) => (l.name = name))
   }
   const toggleHidden = (): void =>
-    patchMask(layer.id, layer.enabled ? 'Hide mask' : 'Show mask', (l) => {
+    patchMask(layer.id, layer.enabled ? tk('Hide mask') : tk('Show mask'), (l) => {
       l.enabled = !l.enabled
     })
   const invert = (): void =>
-    patchMask(layer.id, 'Invert mask', (l) => {
+    patchMask(layer.id, tk('Invert mask'), (l) => {
       l.invert = !l.invert
     })
   return (
@@ -367,11 +391,12 @@ function MaskRow({
     >
       <div
         className="mf-row"
+        onContextMenu={(e) => maskContextMenu(e, layer.id)}
         onPointerEnter={() => setHover(layer.id)}
         onPointerLeave={() => setHover(null)}
       >
         {count > 1 && (
-          <span className="mf-grip" title="Drag to reorder" onPointerDown={onGrip}>
+          <span className="mf-grip" title={t('Drag to reorder')} onPointerDown={onGrip}>
             <Icon name="grip" />
           </span>
         )}
@@ -381,7 +406,7 @@ function MaskRow({
             <input
               className="mf-rename"
               autoFocus
-              aria-label="Mask name"
+              aria-label={t('Mask name')}
               value={renaming}
               onChange={(e) => setRenaming(e.target.value)}
               onBlur={rename}
@@ -396,7 +421,7 @@ function MaskRow({
           <button
             className="mf-select"
             aria-pressed={selected}
-            title="Double-click to rename · Alt+↑↓ to move"
+            title={t('Double-click to rename · Alt+↑↓ to move')}
             onClick={() => setLayer(selected ? null : layer.id)}
             onDoubleClick={() => setRenaming(layer.name)}
             onFocus={() => setHover(layer.id)}
@@ -405,7 +430,7 @@ function MaskRow({
           >
             <span className="mf-thumb" title={coverage}>
               {thumb ? <img src={thumb} alt="" draggable={false} /> : <i />}
-              {layer.invert && <span className="mf-inv" title="Inverted" />}
+              {layer.invert && <span className="mf-inv" title={t('Inverted')} />}
             </span>
             <span className="mf-name">{layer.name}</span>
           </button>
@@ -414,8 +439,8 @@ function MaskRow({
           <span className="mf-menu-anchor">
             <button
               className="mf-swatch-btn"
-              title="This mask's overlay colour"
-              aria-label="Overlay colour"
+              title={t("This mask's overlay colour")}
+              aria-label={t('Overlay colour')}
               aria-expanded={colour}
               onClick={() => setColour(!colour)}
             >
@@ -428,9 +453,9 @@ function MaskRow({
                 side="top"
                 className="overlay-pop"
               >
-                <span className="micro">Overlay colour</span>
+                <span className="micro">{t('Overlay colour')}</span>
                 <HueSlider
-                  label="Overlay colour"
+                  label={t('Overlay colour')}
                   value={hue}
                   onLive={(v) =>
                     useDevelop.getState().edit((r) => {
@@ -449,7 +474,7 @@ function MaskRow({
                       })
                     }
                   >
-                    Use the overlay&apos;s colour
+                    {t("Use the overlay's colour")}
                   </button>
                 )}
               </Popover>
@@ -457,7 +482,7 @@ function MaskRow({
           </span>
           <button
             className={`icon sm mf-act${layer.invert ? ' on' : ''}`}
-            title={layer.invert ? 'Inverted — click to un-invert' : 'Invert this mask'}
+            title={layer.invert ? t('Inverted — click to un-invert') : t('Invert this mask')}
             aria-pressed={layer.invert}
             onClick={invert}
           >
@@ -465,7 +490,7 @@ function MaskRow({
           </button>
           <button
             className="icon sm mf-act mf-eye"
-            title={withKey(layer.enabled ? 'Hide this mask' : 'Show this mask', 'mask.hide')}
+            title={withKey(layer.enabled ? t('Hide this mask') : t('Show this mask'), 'mask.hide')}
             aria-pressed={!layer.enabled}
             onClick={toggleHidden}
           >
@@ -474,7 +499,7 @@ function MaskRow({
           <span className="mf-menu-anchor mf-act">
             <button
               className="icon sm"
-              title="Mask options"
+              title={t('Mask options')}
               aria-expanded={menu}
               onClick={() => setMenu(!menu)}
             >
@@ -485,15 +510,15 @@ function MaskRow({
                 align="right"
                 onClose={() => setMenu(false)}
                 items={[
-                  { label: 'Rename', onSelect: () => setRenaming(layer.name) },
+                  { label: t('Rename'), onSelect: () => setRenaming(layer.name) },
                   {
-                    label: 'Duplicate',
+                    label: t('Duplicate'),
                     hint: selected && !compId ? keyHint('mask.duplicate') : undefined,
                     onSelect: () => duplicateMask(layer.id)
                   },
-                  { label: 'Invert', checked: layer.invert, onSelect: invert },
+                  { label: t('Invert'), checked: layer.invert, onSelect: invert },
                   {
-                    label: 'Reset adjustments',
+                    label: t('Reset adjustments'),
                     disabled: isNeutral(layer.settings),
                     onSelect: () =>
                       patchMask(layer.id, `${layer.name}: reset`, (l) => {
@@ -501,7 +526,7 @@ function MaskRow({
                       })
                   },
                   {
-                    label: layer.enabled ? 'Hide' : 'Show',
+                    label: layer.enabled ? t('Hide') : t('Show'),
                     hint: selected ? 'H' : undefined,
                     onSelect: toggleHidden
                   },
@@ -509,13 +534,13 @@ function MaskRow({
                     ? [
                         'sep' as const,
                         {
-                          label: 'Move up',
+                          label: t('Move up'),
                           hint: 'Alt+↑',
                           disabled: index === 0,
                           onSelect: () => moveMask(layer.id, index - 1)
                         },
                         {
-                          label: 'Move down',
+                          label: t('Move down'),
                           hint: 'Alt+↓',
                           disabled: index === count - 1,
                           onSelect: () => moveMask(layer.id, index + 1)
@@ -524,7 +549,7 @@ function MaskRow({
                     : []),
                   'sep',
                   {
-                    label: 'Delete mask',
+                    label: t('Delete mask'),
                     hint: selected && !compId ? '⌫' : undefined,
                     danger: true,
                     onSelect: () => deleteMask(layer.id)
@@ -538,7 +563,7 @@ function MaskRow({
       {selected && (
         <div className={`mf-comps${comps.drag ? ' sorting' : ''}`}>
           {layer.components.length === 0 && (
-            <p className="mf-hint">Pick a tool below to shape this mask.</p>
+            <p className="mf-hint">{t('Pick a tool below to shape this mask.')}</p>
           )}
           {layer.components.map((c, i) => (
             <ComponentRow
@@ -565,38 +590,40 @@ function OverlayControls(): React.JSX.Element {
   const o = useUi((s) => s.maskOverlay)
   const set = useUi((s) => s.setMaskOverlay)
   const [open, setOpen] = useState(false)
-  const modeLabel = OVERLAY_MODES.find((m) => m.value === o.mode)?.label ?? o.mode
+  const modeLabel = t(OVERLAY_MODES.find((m) => m.value === o.mode)?.label ?? o.mode)
   return (
     <div className="mf-foot">
       <span className="mf-menu-anchor">
         <button
           className={`mf-overlay-btn${overlay ? '' : ' off'}`}
-          title="Overlay options"
+          title={t('Overlay options')}
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
           <span className="mf-swatch" style={{ background: `hsl(${o.hue} 90% 58%)` }} />
-          <span>Overlay</span>
-          <span className="mf-overlay-mode">{overlay ? modeLabel : 'Off'}</span>
+          <span>{t('Overlay')}</span>
+          <span className="mf-overlay-mode">{overlay ? modeLabel : t('Off')}</span>
         </button>
         {open && (
           <Popover onClose={() => setOpen(false)} align="left" side="top" className="overlay-pop">
             <span className="micro">
-              Overlay{keyHint('mask.overlayMode') && ` · ${keyHint('mask.overlayMode')} cycles`}
+              {t('Overlay')}
+              {keyHint('mask.overlayMode') &&
+                ` · ${t('{{key}} cycles', { key: keyHint('mask.overlayMode') })}`}
             </span>
             <select
               value={o.mode}
               onChange={(e) => set({ mode: e.target.value as OverlayMode })}
-              aria-label="Overlay mode"
+              aria-label={t('Overlay mode')}
             >
               {OVERLAY_MODES.map((m) => (
                 <option key={m.value} value={m.value}>
-                  {m.label}
+                  {t(m.label)}
                 </option>
               ))}
             </select>
             <label className="op-row">
-              <span>Colour</span>
+              <span>{t('Colour')}</span>
               <input
                 type="range"
                 className="hue-range"
@@ -606,16 +633,17 @@ function OverlayControls(): React.JSX.Element {
                 onChange={(e) => set({ hue: Number(e.target.value) })}
               />
             </label>
-            <label className="check" title={withKey('Show the overlay', 'mask.overlay')}>
+            <label className="check" title={withKey(t('Show the overlay'), 'mask.overlay')}>
               <input
                 type="checkbox"
                 checked={overlay}
                 onChange={(e) => setOverlay(e.target.checked)}
               />
-              Show the overlay{keyHint('mask.overlay') && ` (${keyHint('mask.overlay')})`}
+              {t('Show the overlay')}
+              {keyHint('mask.overlay') && ` (${keyHint('mask.overlay')})`}
             </label>
             <label className="op-row">
-              <span>Opacity</span>
+              <span>{t('Opacity')}</span>
               <input
                 type="range"
                 min={10}
@@ -634,11 +662,13 @@ function OverlayControls(): React.JSX.Element {
                   useDevelop.getState().pushView()
                 }}
               />
-              Show all masks
+              {t('Show all masks')}
             </label>
             <label
               className="check"
-              title="Each component of the selected mask in a colour of its own (a subtracting one hatched)"
+              title={t(
+                'Each component of the selected mask in a colour of its own (a subtracting one hatched)'
+              )}
             >
               <input
                 type="checkbox"
@@ -646,18 +676,20 @@ function OverlayControls(): React.JSX.Element {
                 disabled={o.mode !== 'color' && o.mode !== 'color-bw'}
                 onChange={(e) => set({ byComponent: e.target.checked })}
               />
-              Colour each component
+              {t('Colour each component')}
             </label>
             <label
               className="check"
-              title="The overlay steps aside while a slider that changes the photo moves (Lightroom's auto toggle)"
+              title={t(
+                "The overlay steps aside while a slider that changes the photo moves (Lightroom's auto toggle)"
+              )}
             >
               <input
                 type="checkbox"
                 checked={o.autoToggle}
                 onChange={(e) => set({ autoToggle: e.target.checked })}
               />
-              Hide while adjusting
+              {t('Hide while adjusting')}
             </label>
           </Popover>
         )}
@@ -666,186 +698,53 @@ function OverlayControls(): React.JSX.Element {
   )
 }
 
-/** The window's width, floating or docked (px). */
-const WIDTH = 300
-/** How close to the stage's left edge a drag docks the window (px). */
-const DOCK_SNAP = 32
-/** How far a docked window's header is pulled before it floats (px). */
-const UNDOCK_PULL = 36
-const MARGIN = 8
-
-/** A folded or headed window keeps this much of itself on the stage (px). */
-const KEEP_H = 56
-
-/** The stage beside a window, whether that window floats on it or is docked next to it. */
-const stageOf = (el: HTMLElement): HTMLElement | null =>
-  el.closest('.develop-body')?.querySelector<HTMLElement>('.stage') ?? null
-
-/** Keep a dragged window's top-left inside a stage of `w`×`h`. */
-function clampTo(x: number, y: number, w: number, h: number): { x: number; y: number } {
-  return {
-    x: Math.min(Math.max(MARGIN, w - WIDTH - MARGIN), Math.max(MARGIN, x)),
-    y: Math.min(Math.max(MARGIN, h - KEEP_H), Math.max(MARGIN, y))
-  }
-}
-
 /**
- * Where a floating window sits, kept on the stage by the stage itself (CSS
- * against its containing block), so a stage that grows or shrinks never
- * needs measuring. x < 0 is the default: the top right.
- */
-function placeOnStage(x: number, y: number, width: number): React.CSSProperties {
-  const top = `max(${MARGIN}px, min(${y}px, calc(100% - ${KEEP_H}px)))`
-  if (x < 0) return { right: 14, top }
-  return { left: `max(${MARGIN}px, min(${x}px, calc(100% - ${width + MARGIN}px)))`, top }
-}
-
-/**
- * Drag the window by its header (or its pill): float it anywhere on the
- * stage, drop it at the stage's left edge to dock it, pull a docked one out to
- * float it again. Listens on the window, so the drag survives the window
- * moving between the dock and the stage. A press that never moves is `onTap`.
- */
-function startDrag(e: React.PointerEvent, onTap?: () => void): void {
-  if (e.button !== 0) return
-  if ((e.target as HTMLElement).closest('button:not(.mf-pill), input, select, .mf-menu-anchor'))
-    return
-  const win = (e.currentTarget as HTMLElement).closest('.masks-win, .mf-pill') as HTMLElement
-  if (!win) return
-  const stage = stageOf(win)
-  if (!stage) return
-  e.preventDefault()
-  const r = win.getBoundingClientRect()
-  let grab = { dx: e.clientX - r.left, dy: e.clientY - r.top }
-  const from = { x: e.clientX, y: e.clientY }
-  let moved = false
-  let near = false
-  // Where it is going: moved by a transform while dragged, kept (and
-  // saved) once, on release, not stored at every pointer move.
-  let to: { x: number; y: number } | null = null
-  const shown = (): HTMLElement | null => stage.querySelector('.masks-win, .mf-pill')
-  const move = (ev: PointerEvent): void => {
-    if (!moved && Math.hypot(ev.clientX - from.x, ev.clientY - from.y) < 4) return
-    moved = true
-    touchInteracting()
-    const ui = useUi.getState()
-    // A docked window's pill floats once it is dragged.
-    if (ui.masksWin.docked && ui.masksWin.minimized) ui.setMasksWin({ docked: false })
-    else if (ui.masksWin.docked) {
-      if (Math.hypot(ev.clientX - from.x, ev.clientY - from.y) < UNDOCK_PULL) return
-      // Out of the dock: it floats under the pointer from here.
-      grab = { dx: Math.min(grab.dx, 120), dy: Math.min(grab.dy, 20) }
-      ui.setMasksWin({ docked: false })
-      return
-    }
-    const b = stage.getBoundingClientRect()
-    near = ev.clientX - b.left < DOCK_SNAP
-    stage.classList.toggle('dock-hint', near)
-    to = clampTo(ev.clientX - grab.dx - b.left, ev.clientY - grab.dy - b.top, b.width, b.height)
-    const el = shown()
-    if (el) el.style.transform = `translate(${to.x - ui.masksWin.x}px, ${to.y - ui.masksWin.y}px)`
-  }
-  const up = (): void => {
-    window.removeEventListener('pointermove', move, true)
-    window.removeEventListener('pointerup', up, true)
-    window.removeEventListener('pointercancel', up, true)
-    stage.classList.remove('dock-hint')
-    const el = shown()
-    if (el) el.style.transform = ''
-    if (!moved) return onTap?.()
-    if (near) useUi.getState().setMasksWin({ docked: true, minimized: false })
-    else if (to) useUi.getState().setMasksWin(to)
-  }
-  // In the capture phase: the loupe's own tools (pins, the gradient and lasso
-  // editors) stop the pointer's events over the photo, and the drag must
-  // still hear every one of them, wherever the pointer goes.
-  window.addEventListener('pointermove', move, true)
-  window.addEventListener('pointerup', up, true)
-  window.addEventListener('pointercancel', up, true)
-}
-
-/**
- * The masks window, as in Lightroom's masks panel but free of the wheel: each
+ * The masks pane, as in Lightroom's masks panel but free of the wheel: each
  * mask with its thumbnail, its components with how they combine, Create new
  * mask, and Add / Subtract / Intersect for the selected one; under the list,
  * the selected mask's own settings; the overlay's settings at the foot. Rows
  * reorder by their grip (or Alt+↑↓), show their actions under the pointer,
  * and preview their mask on the photo while hovered.
  *
- * It floats over the photo (drag it by its header), docks as a column beside
- * the left rail (drop it at the photo's left edge), folds to a pill naming
- * the selected mask, and stays up whichever tool the right column shows.
- * `place` is where this instance lives: the dock column, or the stage.
+ * A column of the left pane, never over the photo: shown while masks are
+ * being edited (the top bar's Masks, its shortcut), whichever tool the right
+ * column shows.
  */
-export function MasksWindow({ place }: { place: 'dock' | 'stage' }): React.JSX.Element | null {
+export function MasksPane(): React.JSX.Element | null {
   const layers = useDevelop((s) => s.recipe?.layers ?? null)
   const layerId = useDevelop((s) => s.layerId)
   const setAddMode = useDevelop((s) => s.setAddMode)
   const addMode = useDevelop((s) => s.addMode)
-  const win = useUi((s) => s.masksWin)
+  const open = useUi((s) => s.masksWin.open)
   const [picker, setPicker] = useState(false)
   const masks = useReorder((from, to) => {
     const l = useDevelop.getState().recipe?.layers[from]
     if (l) moveMask(l.id, to)
   })
-  const up = win.open && layers !== null
-  const docked = win.docked && !win.minimized
-  const here = place === 'dock' ? docked : !docked
-  // A hover preview never outlives the window.
+  const up = open && layers !== null
+  // A hover preview never outlives the pane.
   useEffect(() => {
-    if (!up || win.minimized) useDevelop.getState().setHoverLayer(null)
-  }, [up, win.minimized])
-  if (!up || !here) return null
-  const style =
-    place === 'stage'
-      ? win.docked
-        ? { left: MARGIN, top: MARGIN }
-        : placeOnStage(win.x, win.y, win.minimized ? 180 : WIDTH)
-      : undefined
-
-  if (win.minimized) {
-    const sel = layers.find((l) => l.id === layerId)
-    return (
-      <LiquidGlass
-        as="button"
-        className="mf-pill"
-        radius={2}
-        bezel={10}
-        strength={0.8}
-        frost={6}
-        style={style}
-        title="Show the masks window (drag to move)"
-        onPointerDown={(e: React.PointerEvent) => startDrag(e, () => minimizeMasks(false))}
-        // The keyboard's Enter or Space (a pointer's press is the drag's tap).
-        onClick={(e: React.MouseEvent) => e.detail === 0 && minimizeMasks(false)}
-      >
-        <Icon name="overlay" />
-        <span className="mf-pill-name">{sel ? sel.name : 'Masks'}</span>
-        {layers.length > 0 && <span className="mf-pill-count">{layers.length}</span>}
-      </LiquidGlass>
-    )
-  }
+    if (!up) useDevelop.getState().setHoverLayer(null)
+  }, [up])
+  if (!up) return null
 
   const openPicker = (mode: MaskMode | null): void => {
     setAddMode(mode)
     setPicker(true)
   }
   return (
-    <LiquidGlass
-      className={`masks-win ${place === 'dock' ? 'docked' : 'floating'}`}
-      radius={2}
-      bezel={12}
-      strength={0.8}
-      frost={6}
-      style={style}
-    >
-      <div className="mf-head" onPointerDown={(e) => startDrag(e)}>
-        <span className="micro">Masks</span>
+    <section className="masks-win docked" aria-label={t('Masks')}>
+      <div className="mf-head">
+        <span className="micro">{t('Masks')}</span>
         <span className="mf-head-tools">
           <span className="mf-menu-anchor">
-            <button className="primary sm" onClick={() => openPicker(null)} title="Create new mask">
+            <button
+              className="primary sm"
+              onClick={() => openPicker(null)}
+              title={t('Create new mask')}
+            >
               <Icon name="plus" />
-              New
+              {t('New')}
             </button>
             {picker && (
               <Popover
@@ -861,36 +760,13 @@ export function MasksWindow({ place }: { place: 'dock' | 'stage' }): React.JSX.E
               </Popover>
             )}
           </span>
-          <button
-            className="icon sm ghost"
-            title={win.docked ? 'Float over the photo' : 'Dock beside the left rail'}
-            aria-label={win.docked ? 'Float the masks window' : 'Dock the masks window'}
-            onClick={() => useUi.getState().setMasksWin({ docked: !win.docked })}
-          >
-            <Icon name="sidebar" />
-          </button>
-          <button
-            className="icon sm ghost"
-            title="Fold to a pill"
-            aria-label="Minimise the masks window"
-            onClick={() => minimizeMasks(true)}
-          >
-            <Icon name="minus" />
-          </button>
-          <button
-            className="icon sm ghost"
-            title={withKey('Close', 'masks.toggle')}
-            aria-label="Close the masks window"
-            onClick={closeMasks}
-          >
-            <Icon name="close" />
-          </button>
         </span>
       </div>
+      <NameChips />
       <div className="mf-body">
         <div className={`mf-list${masks.drag ? ' sorting' : ''}`}>
           {layers.length === 0 && (
-            <p className="mf-hint">No masks yet. New limits edits to part of the photo.</p>
+            <p className="mf-hint">{t('No masks yet. New limits edits to part of the photo.')}</p>
           )}
           {layers.map((l, i) => (
             <MaskRow
@@ -909,6 +785,6 @@ export function MasksWindow({ place }: { place: 'dock' | 'stage' }): React.JSX.E
         <SelectedMask />
       </div>
       <OverlayControls />
-    </LiquidGlass>
+    </section>
   )
 }

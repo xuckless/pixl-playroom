@@ -173,11 +173,11 @@ importers:
         specifier: ^4.0.0
         version: 4.0.0(electron@44.4.3(supports-color@7.2.0))
       '@xuckless/pixl-engine':
-        specifier: 0.17.0
-        version: 0.17.0
+        specifier: 0.19.1
+        version: 0.19.1
       '@xuckless/pixl-models':
-        specifier: 0.17.0
-        version: 0.17.0
+        specifier: 0.19.1
+        version: 0.19.1
       electron-log:
         specifier: ^5.4.4
         version: 5.4.4
@@ -190,9 +190,15 @@ importers:
       exiftool-vendored:
         specifier: ^38.2.0
         version: 38.2.0
+      i18next:
+        specifier: ^26.4.2
+        version: 26.4.2(typescript@5.9.3)
       immer:
         specifier: ^11.1.18
         version: 11.1.18
+      react-i18next:
+        specifier: ^17.0.16
+        version: 17.0.16(i18next@26.4.2(typescript@5.9.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)
     devDependencies:
       '@electron-toolkit/eslint-config-prettier':
         specifier: ^3.0.0
@@ -233,6 +239,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5.1.1
         version: 5.2.0(supports-color@7.2.0)(vite@7.3.6(@types/node@22.20.4)(jiti@2.7.0))
+      '@webgpu/types':
+        specifier: ^0.1.74
+        version: 0.1.74
       electron:
         specifier: ^44.4.3
         version: 44.4.3(supports-color@7.2.0)
@@ -1219,34 +1228,37 @@ packages:
     peerDependencies:
       vite: ^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0
 
+  '@webgpu/types@0.1.74':
+    resolution: {integrity: sha512-lgiI4hbuLcI9unnm2cL/tvCaQU45dp0xcLWJh5uB/9MBGvIA4F8XIk7nSiBeg+K4xWGYwgZKn80LmERI5CxoTA==}
+
   '@xmldom/xmldom@0.8.15':
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
     engines: {node: '>=10.0.0'}
 
-  '@xuckless/pixl-engine-darwin-arm64@0.17.0':
-    resolution: {integrity: sha512-xNewGPIRdhEABHp9P5p7DrUDGRk/nsaYOfBkgK5KuXBtIq4q+ZAnwJiK/MhxbH5hO4PkztyAUTC1h28ZpYfRiA==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-darwin-arm64/0.17.0/09af77b92773f2c072a1d460c9bd6ea80d08cd3f}
+  '@xuckless/pixl-engine-darwin-arm64@0.19.1':
+    resolution: {integrity: sha512-egNgjEBBI4eYdT0pBs1/ib4sq6mOX0Epl8dngYDoBi3Y2S+WlWngMPVr0oitgyTVMOC0dDZhYTIw4XCmfW9TQw==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-darwin-arm64/0.19.1/34721e18cfb3673abb08d830bc70171a9f050aa7}
     engines: {node: '>= 20'}
     cpu: [arm64]
     os: [darwin]
 
-  '@xuckless/pixl-engine-darwin-x64@0.17.0':
-    resolution: {integrity: sha512-m9RejPsYLm+ZTzqJLMWNWItmbw/88x+EWWu9gKix5IRTpkViMCecIjMnWTbnx29kQ2S9PjkVDbKiBm++weSwmg==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-darwin-x64/0.17.0/3e83c8f5fd8ce090d8a167fb4389ae8d857c0e95}
+  '@xuckless/pixl-engine-darwin-x64@0.19.1':
+    resolution: {integrity: sha512-YmGCadR/Wg6raAFVgXLe06CKh3/EuadeuZ4GnYd1SKCqg2GHGpdNTwNu6tTM49056kfBNX19lA95xe0wL/EIWA==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-darwin-x64/0.19.1/ef98af8cfd517a632130068d442761dc9251e41c}
     engines: {node: '>= 20'}
     cpu: [x64]
     os: [darwin]
 
-  '@xuckless/pixl-engine-win32-x64-msvc@0.17.0':
-    resolution: {integrity: sha512-g5UkWW2uGgbw36k5nSWHrq/k5/9ZvdJA7ldiqwwTg5Qm/YyGrt7z0aphgFK9Xnf4zuRLdIpISKzNujRRhBjjmA==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-win32-x64-msvc/0.17.0/0089db4147f2fb5d0a14653e7b155fbeec851c93}
+  '@xuckless/pixl-engine-win32-x64-msvc@0.19.1':
+    resolution: {integrity: sha512-MXCrs8ptCy/c0TJYRoKUDVw5h6wDcbW3Ow+YKWDti5lIE17byev71ZgGIP/PWBqRG6f9fozJONd2GXmqK/m+1g==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine-win32-x64-msvc/0.19.1/549abe9482d2a323ec30b1a61913d55f66d47f58}
     engines: {node: '>= 20'}
     cpu: [x64]
     os: [win32]
 
-  '@xuckless/pixl-engine@0.17.0':
-    resolution: {integrity: sha512-yC98PFXCKGeNl+baPoJXFuWLVucXk6Sd7C+14CAMeBVKBtmuTJCs9+LGuVB7CZbUIyLIpPAGhXN6GXvfmNqUqw==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine/0.17.0/4cf3145a37e9e81486027dae6cbf643fcfda08d1}
+  '@xuckless/pixl-engine@0.19.1':
+    resolution: {integrity: sha512-uhz7qBLM8E4vn6uPBgN1Iq9AdZtZf3OPe5alPIlEOKrkHv0TpPOu2gyCpdWzUjZxbtfd8vXqLyqmBLilEdAtLg==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-engine/0.19.1/c1af41d96128eb8be657e5dcd5c832dde062a60f}
     engines: {node: '>= 20'}
 
-  '@xuckless/pixl-models@0.17.0':
-    resolution: {integrity: sha512-YKHh1gASeguamU8g8SpfXcVfWHkfoegVGtDeSjhz9ahPPaicihmjEJ+f26kkEKkHJb6gGZU1+1BEeeXidZYOlw==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-models/0.17.0/d47ac524f02b1cd7418f368fe0c9af78dd123939}
+  '@xuckless/pixl-models@0.19.1':
+    resolution: {integrity: sha512-zoWrrKgc3kMrs0UR0vCidBnqiDcDHH9Xrvn16oH/L7n3CXR3d3EUbng4Exacgw8SN26ag+xYpfIbqZTy01zoUw==, tarball: https://npm.pkg.github.com/download/@xuckless/pixl-models/0.19.1/35125eda10a6c9d1802862d3e432a3508e06ea07}
     engines: {node: '>= 20'}
 
   abbrev@4.0.0:
@@ -2011,6 +2023,9 @@ packages:
     resolution: {integrity: sha512-kyCuEOWjJqZuDbRHzL8V93NzQhwIB71oFWSyzVo+KPZI+pnQPPxucdkrOZvkLRnrf5URsQM+IJ09Dw29cRALIA==}
     engines: {node: '>=10'}
 
+  html-parse-stringify@4.0.1:
+    resolution: {integrity: sha512-0zHsZJrK7S3K2aucXWL6ycoYJ/iNtIcFHC/nYQgFklPtrv5LpJctIiSCroWZWeuoXvuyFdzp6KzjJQ+OT5MfFw==}
+
   http-cache-semantics@4.2.0:
     resolution: {integrity: sha512-dTxcvPXqPvXBQpq5dUr6mEMJX4oIEFv6bwom3FDwKRDsuIjjJGANqhBuoAn9c1RQJIdAKav33ED65E2ys+87QQ==}
 
@@ -2025,6 +2040,14 @@ packages:
   https-proxy-agent@7.0.6:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
+
+  i18next@26.4.2:
+    resolution: {integrity: sha512-RX+R0VLg13IbvRuJSxnqykUFS9vQZTl8wYpWPCIUDWVrSGjsQywB5Y+pjzrkboxGAuYfJZVH1InFTdgBdxq6ug==}
+    peerDependencies:
+      typescript: ^5 || ^6 || ^7
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   ieee754@1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
@@ -2582,6 +2605,22 @@ packages:
     resolution: {integrity: sha512-JDk8dgif51OjFoDE70+OT9ICyYr+69HlmihNwp1+Nsfbna3t5sIiCa9ZJktDmQ4/1b/rn26hIAR2uYXDMr5r0Q==}
     peerDependencies:
       react: ^19.3.0
+
+  react-i18next@17.0.16:
+    resolution: {integrity: sha512-7uImVD9hG5yUOaP5KHVied1x0A004Di/KU031ULR35Ma+9e9H5GdnNZHgQEIByyAz+IAXBkRDTedNVzjPUH8ZA==}
+    peerDependencies:
+      i18next: '>= 26.2.0'
+      react: '>= 16.8.0'
+      react-dom: '*'
+      react-native: '*'
+      typescript: ^5 || ^6 || ^7
+    peerDependenciesMeta:
+      react-dom:
+        optional: true
+      react-native:
+        optional: true
+      typescript:
+        optional: true
 
   react-is@16.13.1:
     resolution: {integrity: sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==}
@@ -3948,24 +3987,26 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@webgpu/types@0.1.74': {}
+
   '@xmldom/xmldom@0.8.15': {}
 
-  '@xuckless/pixl-engine-darwin-arm64@0.17.0':
+  '@xuckless/pixl-engine-darwin-arm64@0.19.1':
     optional: true
 
-  '@xuckless/pixl-engine-darwin-x64@0.17.0':
+  '@xuckless/pixl-engine-darwin-x64@0.19.1':
     optional: true
 
-  '@xuckless/pixl-engine-win32-x64-msvc@0.17.0':
+  '@xuckless/pixl-engine-win32-x64-msvc@0.19.1':
     optional: true
 
-  '@xuckless/pixl-engine@0.17.0':
+  '@xuckless/pixl-engine@0.19.1':
     optionalDependencies:
-      '@xuckless/pixl-engine-darwin-arm64': 0.17.0
-      '@xuckless/pixl-engine-darwin-x64': 0.17.0
-      '@xuckless/pixl-engine-win32-x64-msvc': 0.17.0
+      '@xuckless/pixl-engine-darwin-arm64': 0.19.1
+      '@xuckless/pixl-engine-darwin-x64': 0.19.1
+      '@xuckless/pixl-engine-win32-x64-msvc': 0.19.1
 
-  '@xuckless/pixl-models@0.17.0': {}
+  '@xuckless/pixl-models@0.19.1': {}
 
   abbrev@4.0.0: {}
 
@@ -5027,6 +5068,8 @@ snapshots:
     dependencies:
       lru-cache: 6.0.0
 
+  html-parse-stringify@4.0.1: {}
+
   http-cache-semantics@4.2.0: {}
 
   http-proxy-agent@7.0.2(supports-color@7.2.0):
@@ -5047,6 +5090,10 @@ snapshots:
       debug: 4.4.3(supports-color@7.2.0)
     transitivePeerDependencies:
       - supports-color
+
+  i18next@26.4.2(typescript@5.9.3):
+    optionalDependencies:
+      typescript: 5.9.3
 
   ieee754@1.2.1: {}
 
@@ -5578,6 +5625,17 @@ snapshots:
     dependencies:
       react: 19.3.0
       scheduler: 0.28.0
+
+  react-i18next@17.0.16(i18next@26.4.2(typescript@5.9.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3):
+    dependencies:
+      '@babel/runtime': 7.29.7
+      html-parse-stringify: 4.0.1
+      i18next: 26.4.2(typescript@5.9.3)
+      react: 19.3.0
+      use-sync-external-store: 1.7.0(react@19.3.0)
+    optionalDependencies:
+      react-dom: 19.3.0(react@19.3.0)
+      typescript: 5.9.3
 
   react-is@16.13.1: {}
 

@@ -275,7 +275,10 @@ test('Master takes an HDR photo’s gain map, PQ and Display P3 SDR; nothing els
     peak: 'Measured',
     ceiling: 'Peak',
     reach: 'Measured',
-    look: 'Colorimetric'
+    look: 'Colorimetric',
+    // Engine 0.18's two required fields, at 0.17's bytes.
+    float: 'LinearPixlRgb',
+    companion: null
   })
   assert.equal(masterPolicy(withHdr('avif', 'gainmap'), mapPhoto)?.headroom, true)
   assert.equal(masterPolicy(withHdr('jxl', 'keep'), hdrPhoto)?.headroom, true)

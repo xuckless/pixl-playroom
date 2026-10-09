@@ -1,4 +1,5 @@
 import type { ResolvedProfile } from './lens'
+import type { HeavyBenchmark } from './heavy'
 import type { ModelSpeed } from './modelSpeed'
 import type { RawColour } from './rawcolour'
 /** IPC channel names and the app-level types both sides of the bridge share. */
@@ -17,7 +18,23 @@ import type { SmartGroup } from './smart'
 import type { LookMeta } from './looks/types'
 import type { SmartPart } from './looks/smart'
 
+import type { ReleaseNotes } from './releasenotes'
+
 export const IPC = {
+  /** The native menus (shared/appmenu.ts). */
+  menu: {
+    /** renderer → main: the menu bar's menus, as they apply now */
+    set: 'menu:set',
+    /** renderer → main: a right-click menu, at the pointer */
+    popup: 'menu:popup',
+    /** main → renderer: the item chosen, by id */
+    run: 'menu:run',
+    /** Windows: the menu bar's names, and one opened under its name in the top bar */
+    top: 'menu:top',
+    openTop: 'menu:open-top',
+    /** main → renderer: the menu bar was made again (Windows reads its names again) */
+    changed: 'menu:changed'
+  },
   app: {
     cpus: 'app:cpus',
     engineStatus: 'app:engine-status',
@@ -25,6 +42,12 @@ export const IPC = {
     setSetting: 'app:set-setting',
     reveal: 'app:reveal',
     renderScale: 'app:render-scale',
+    /** The window's display as an HDR target (shared/hdrdisplay.ts). */
+    displayHdr: 'app:display-hdr',
+    /** Preferences → Display: automatic, or a stated white and peak. */
+    setDisplayHdr: 'app:set-display-hdr',
+    /** main → renderer: the display's HDR numbers moved */
+    displayHdrChanged: 'app:display-hdr-changed',
     restart: 'app:restart',
     /** Paths the OS asked us to open (Open With, a second launch), taken once the renderer is up. */
     takeOpens: 'app:take-opens',
@@ -33,6 +56,11 @@ export const IPC = {
     /** main → renderer: the display or the rendering mode changed */
     renderScaleChanged: 'app:render-scale-changed',
     /** main → renderer: the menu's Settings… was chosen */
+    /** The language in force and the setting it comes from; Settings sets it. */
+    language: 'app:language',
+    setLanguage: 'app:set-language',
+    /** main → renderer: the language changed */
+    languageChanged: 'app:language-changed',
     openPreferences: 'app:open-preferences',
     /** main → renderer: the menu's Engine Report… was chosen */
     openEngineReport: 'app:open-engine-report',
@@ -61,14 +89,6 @@ export const IPC = {
     setChannel: 'updates:set-channel',
     /** main → renderer: the update state changed */
     event: 'updates:event'
-  },
-  /** Legacy previews: an edited photo as the engine before 0.17 showed it (main/legacy.ts). */
-  legacy: {
-    get: 'legacy:get',
-    seen: 'legacy:seen',
-    remove: 'legacy:remove',
-    removeAll: 'legacy:remove-all',
-    count: 'legacy:count'
   },
   prefs: {
     get: 'prefs:get',
@@ -110,6 +130,8 @@ export const IPC = {
     /** main → renderer: a thumbnail (re)rendered */
     thumb: 'library:thumb',
     hdr: 'library:hdr',
+    /** main → renderer: a photo's search words from its names (every copy shares them). */
+    names: 'library:names',
     /** main → renderer: the folder's items changed (new file, new copy) */
     changed: 'library:changed',
     /** The items of any source: a folder, a collection, a keyword, the duplicates. */
@@ -163,6 +185,8 @@ export const IPC = {
     previewPort: 'develop:preview-port',
     /** main → renderer: a preview frame main relays (when the engine had no port) */
     previewFrame: 'develop:preview-frame',
+    /** main → renderer: the 1:1 tile's source got better (the plan's RAW master after the quick one): ask again. */
+    tileStale: 'develop:tile-stale',
     historySetHidden: 'develop:history-set-hidden',
     historyDelete: 'develop:history-delete',
     noise: 'develop:noise',
@@ -174,6 +198,8 @@ export const IPC = {
     /** Heal / clone: the best place to copy a spot from. */
     suggestHeal: 'develop:suggest-heal',
     bakeSpot: 'develop:bake-spot',
+    /** AI Remove on the object clicked (SAM 2.1's mask as a stroke, MI-GAN fills it), baked. */
+    removeObject: 'develop:remove-object',
     /** Where the open photo's AI denoise stands. */
     /** main → renderer: a render finished */
     rendered: 'develop:rendered',
@@ -250,7 +276,47 @@ export const IPC = {
     list: 'ai:list',
     capabilities: 'ai:capabilities',
     /** main → renderer: a job's progress, its end and its result */
-    event: 'ai:event'
+    event: 'ai:event',
+    /** The killswitch and the heavy models' switches (shared/heavy.ts). */
+    switches: 'ai:switches',
+    setEnabled: 'ai:set-enabled',
+    setHeavy: 'ai:set-heavy',
+    /** A heavy model's sustained-load benchmark; resolves with its result. */
+    benchmark: 'ai:benchmark',
+    /** main → renderer: the switches changed. */
+    switchesEvent: 'ai:switches-event',
+    /** main → renderer: a benchmark's progress. */
+    benchmarkProgress: 'ai:benchmark-progress'
+  },
+  /** Gemma, the local assistant (main/ai/brain.ts). */
+  brain: {
+    status: 'brain:status',
+    download: 'brain:download',
+    cancel: 'brain:cancel',
+    remove: 'brain:remove',
+    /** main → renderer: its state changed. */
+    event: 'brain:event'
+  },
+  /** Cull suggestions (shared/cullsuggest.ts): the Library's suggested rejects. */
+  cull: {
+    suggestions: 'cull:suggestions',
+    keep: 'cull:keep',
+    /** Measure now what isn't yet (Suggested rejects shown). */
+    measure: 'cull:measure',
+    /** main → renderer: signals or decisions changed. */
+    event: 'cull:event',
+    /** main → renderer: `{ done, total }` of a measure-now. */
+    progress: 'cull:progress'
+  },
+  /** What Gemma named in a photo (shared/naming.ts): the Masks pane's chips. */
+  names: {
+    get: 'names:get',
+    /** Name the photo now (its Masks pane), idle or not. */
+    name: 'names:name',
+    /** The user's own list: a chip taken off, a name typed. */
+    edit: 'names:edit',
+    /** main → renderer: a photo's names changed. */
+    event: 'names:event'
   },
   /** Select by clicks, a box or strokes (SAM 2.1): main/select/service.ts. */
   select: {
@@ -271,7 +337,11 @@ export interface AppError {
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: AppError }
 
 export interface EngineStatus {
-  status: 'starting' | 'ready' | 'unavailable' | 'crashed'
+  /**
+   * `resting`: let go while Playroom is behind (the safe-shutdown rest,
+   * rest.ts); the next call starts it again, through `starting`.
+   */
+  status: 'starting' | 'ready' | 'resting' | 'unavailable' | 'crashed'
   version?: string
   enhance?: boolean
   /** The ONNX Runtime bundled with the engine: what model steps run on. */
@@ -360,6 +430,8 @@ export interface LibraryItem {
   hdr?: HdrKind | null
   /** Its `.pixl` project, once it has one (the truth about its edits and history). */
   project?: string | null
+  /** What the search finds it by from Gemma's names (shared/naming.ts `searchWords`); absent until named. */
+  names?: string[]
 }
 
 /** A gain map over an SDR base (iPhone, UltraHDR), or a PQ / HLG signal. */
@@ -561,6 +633,11 @@ export interface ViewState {
   guides?: boolean
   /** An HDR photo: also render where the picture rises above white (the headroom overlay). */
   headroom?: boolean
+  /**
+   * Full HDR (engine 0.18): render for this display (its SDR white and peak,
+   * `Ceiling::Display`); null renders SDR, as before.
+   */
+  display?: { whiteNits: number; peakNits: number } | null
 }
 
 export interface RenderReport {
@@ -584,6 +661,12 @@ export interface RenderEvent {
   rev?: number
   kind: 'draft' | 'full' | 'before' | 'mask' | 'mask-thumb' | 'headroom'
   url: string
+  /**
+   * Full HDR's settled picture: its SDR companion as a file, for what reads
+   * pixels (the eyedropper, scopes, overlays, a range's key, the brush's Auto
+   * Mask). Absent, `url` is read (a frame's own bitmap is its companion).
+   */
+  readUrl?: string
   /** A mask's (or mask thumbnail's) layer. */
   layerId?: string
   /** The view the render was made for: the crop tool's whole frame, or the framed picture. */
@@ -602,6 +685,12 @@ export interface RenderEvent {
   hdrStats?: ImageStats
   /** A headroom plane: how many stops above white its full scale stands for. */
   stops?: number
+  /**
+   * A Full HDR render: the display's ceiling over SDR white (the master's
+   * `display.headroom`), where its light stops: what the clipping overlay
+   * marks as blown in its F16 pixels.
+   */
+  ceiling?: number
   report?: RenderReport
 }
 
@@ -808,22 +897,13 @@ export interface UpdateState {
   lastCheckedAt?: string
   /** This version is below the release policy's floor: it must update before it goes on. */
   required?: { minVersion: string; message?: string }
+  /** What the offered version brings, from the feed (shared/releasenotes.ts `parseReleaseNotes`). */
+  notes?: ReleaseNotes | null
 }
 
 // ── Preferences ──────────────────────────────────────────────────────────────
 
 /** Crash reports leave the machine only once the user says yes; `unset` asks once. */
-/** A photo's legacy preview: the picture and what it is of. */
-export interface LegacyPreview {
-  url: string
-  /** The engine that made it ("0.16"). */
-  engine: string
-  /** The first-open comparison was already shown. */
-  seen: boolean
-  /** The new engine's thumbnail is made: until it is, there is nothing to compare with. */
-  fresh: boolean
-}
-
 export type CrashConsent = 'unset' | 'on' | 'off'
 
 export interface Prefs {
@@ -854,7 +934,16 @@ export interface CaMeasurement {
 export interface ModelInfo {
   id: string
   title: string
-  role: 'upscale' | 'denoise' | 'deblur' | 'restore' | 'segment' | 'inpaint'
+  role:
+    | 'upscale'
+    | 'denoise'
+    | 'deblur'
+    | 'restore'
+    | 'segment'
+    | 'inpaint'
+    | 'depth'
+    | 'demosaic'
+    | 'raw-denoise'
   bytes: number
   licence: string
   holder: string
@@ -866,10 +955,25 @@ export interface ModelInfo {
   error?: string
   /** How long it takes on this computer, for one photo (see `modelSpeed.ts`). */
   speed: ModelSpeed | null
-  /** Retired by engine 0.17 and kept this release for who has it: Remove only, gone next update. */
-  retiring?: boolean
-  /** The model that takes its place. */
-  replacedBy?: string
+}
+
+/** Gemma, the local assistant: its files, its server, its switch and benchmark. */
+export interface BrainStatus {
+  id: string
+  /** llama.cpp ships a server for this computer. */
+  supported: boolean
+  bytes: number
+  licence: string
+  installed: boolean
+  /** 0…1 while downloading. */
+  progress: number | null
+  error: string | null
+  running: boolean
+  benchmarking: boolean
+  on: boolean
+  benchmark: HeavyBenchmark | null
+  /** This computer, as a benchmark names it. */
+  machine: string
 }
 
 /** Which provider AI models run on, and what the performance test measured. */

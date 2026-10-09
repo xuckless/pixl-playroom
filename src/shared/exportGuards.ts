@@ -19,6 +19,7 @@ import {
   type ExportFormat,
   type ExportSettings
 } from './export'
+import { t, tk } from './i18n'
 
 /** The wizard's steps; a guard says which one holds the setting to change. */
 export type ExportStep = 'format' | 'size' | 'delivery' | 'review'
@@ -69,28 +70,33 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[]): Guard[
       id: 'avif-speed',
       severity: 'block',
       step: 'format',
-      message: 'AVIF speed 10 is not available: use 9 or lower.'
+      message: t('AVIF speed 10 is not available: use 9 or lower.')
     })
   if ((mode === 'keep' || mode === 'expand') && !supportsHdr(s.format))
     add({
       id: 'hdr-format',
       severity: 'block',
       step: 'delivery',
-      message: `${name} cannot hold HDR. Choose AVIF, JPEG XL or PNG, or set HDR to SDR.`
+      message: t('{{format}} cannot hold HDR. Choose AVIF, JPEG XL or PNG, or set HDR to SDR.', {
+        format: name
+      })
     })
   if (mode === 'gainmap' && !supportsGainMap(s.format))
     add({
       id: 'gainmap-format',
       severity: 'block',
       step: 'delivery',
-      message: `${name} has no place for a gain map. Choose JPEG or AVIF, or set HDR to SDR.`
+      message: t(
+        '{{format}} has no place for a gain map. Choose JPEG or AVIF, or set HDR to SDR.',
+        { format: name }
+      )
     })
   if (s.format === 'avif' && s.lossless && s.chroma !== 'Full')
     add({
       id: 'avif-lossless-chroma',
       severity: 'block',
       step: 'format',
-      message: 'Lossless AVIF keeps full colour: set Chroma to 4:4:4 or turn Lossless off.'
+      message: t('Lossless AVIF keeps full colour: set Chroma to 4:4:4 or turn Lossless off.')
     })
   // The engine's HDR path and a gain map's base reach the linear light through the profile.
   const needsIcc =
@@ -104,7 +110,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[]): Guard[
       id: 'icc-needed',
       severity: 'block',
       step: 'delivery',
-      message: 'This HDR output describes its colour with the ICC profile: turn ICC on.'
+      message: t('This HDR output describes its colour with the ICC profile: turn ICC on.')
     })
   const r = s.resize
   if (r.mode !== 'none') {
@@ -113,14 +119,14 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[]): Guard[
         id: 'size-empty',
         severity: 'block',
         step: 'size',
-        message: 'Enter a size above zero.'
+        message: t('Enter a size above zero.')
       })
     else if (r.mode === 'percent' && r.value > 1000)
       add({
         id: 'size-percent',
         severity: 'block',
         step: 'size',
-        message: 'A scale past 1000% is not allowed.'
+        message: t('A scale past 1000% is not allowed.')
       })
   }
   if (s.folder === '')
@@ -128,14 +134,14 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[]): Guard[
       id: 'folder-empty',
       severity: 'block',
       step: 'review',
-      message: 'Choose a folder, or export beside each original.'
+      message: t('Choose a folder, or export beside each original.')
     })
   if (!s.template.trim())
     add({
       id: 'name-empty',
       severity: 'block',
       step: 'review',
-      message: 'The file name is empty.'
+      message: t('The file name is empty.')
     })
   // The same name beside the original would write over it.
   const ext = FORMAT_EXT[s.format]
@@ -153,8 +159,9 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[]): Guard[
       id: 'overwrite-original',
       severity: 'block',
       step: 'review',
-      message:
+      message: t(
         'This name, beside the original and in its format, would write over the original: change the name or the folder.'
+      )
     })
 
   // ── What is lost, said once ──
@@ -163,64 +170,77 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[]): Guard[
       id: 'hdr-to-sdr',
       severity: 'warn',
       step: 'delivery',
-      message: 'HDR photos are tone mapped to SDR: the highlights above white are compressed.'
+      message: t('HDR photos are tone mapped to SDR: the highlights above white are compressed.')
     })
   if (s.colorSpace === 'Srgb' && any(wide))
     add({
       id: 'gamut-narrow',
       severity: 'warn',
       step: 'size',
-      message:
+      message: t(
         'Colours beyond sRGB (RAW files and HDR photos have them) are compressed into sRGB. Display P3 or Adobe RGB keep more.'
+      )
     })
   if (s.bitDepth === 8 && !s.dither && any((p) => p.isRaw || p.isHdr))
     add({
       id: 'banding',
       severity: 'warn',
       step: 'format',
-      message: '8-bit output of a RAW or HDR photo can band in smooth skies: turn Dither on.'
+      message: t('8-bit output of a RAW or HDR photo can band in smooth skies: turn Dither on.')
     })
   if (s.metadata.iptc && NO_IPTC.includes(s.format) && s.metaMode === 'all')
     add({
       id: 'iptc',
       severity: 'warn',
       step: 'delivery',
-      message: `${name} has no place for IPTC: it will not be written.`
+      message: t('{{format}} has no place for IPTC: it will not be written.', { format: name })
     })
   if (s.format === 'jpeg' || s.format === 'webp' || s.format === 'avif')
     add({
       id: 'alpha',
       severity: 'minor',
       step: 'format',
-      message: `${name} is written without transparency; a photo that has some is flattened.`
+      message: t(
+        '{{format}} is written without transparency; a photo that has some is flattened.',
+        { format: name }
+      )
     })
   if (s.format === 'jpeg' && s.jpegSubsampling !== 'None')
     add({
       id: 'chroma-jpeg',
       severity: 'minor',
       step: 'format',
-      message: `Colour is stored at ${s.jpegSubsampling === 'Half' ? 'half' : 'quarter'} resolution (${s.jpegSubsampling === 'Half' ? '4:2:2' : '4:2:0'}). 4:4:4 keeps it whole.`
+      message:
+        s.jpegSubsampling === 'Half'
+          ? t('Colour is stored at half resolution (4:2:2). 4:4:4 keeps it whole.')
+          : t('Colour is stored at quarter resolution (4:2:0). 4:4:4 keeps it whole.')
     })
   if (s.format === 'avif' && !s.lossless && s.chroma !== 'Full')
     add({
       id: 'chroma-avif',
       severity: 'minor',
       step: 'format',
-      message: `Colour is stored at ${s.chroma === 'Wide' ? 'half width' : 'quarter'} resolution. 4:4:4 keeps it whole.`
+      message:
+        s.chroma === 'Wide'
+          ? t('Colour is stored at half width resolution. 4:4:4 keeps it whole.')
+          : t('Colour is stored at quarter resolution. 4:4:4 keeps it whole.')
     })
   if (r.mode !== 'none' && r.enlarge)
     add({
       id: 'enlarge',
       severity: 'minor',
       step: 'size',
-      message: 'Enlarging makes a bigger picture, not a sharper one.'
+      message: t('Enlarging makes a bigger picture, not a sharper one.')
     })
   if (s.colorSpace === 'Rec2020' && (s.format === 'jpeg' || s.format === 'webp'))
     add({
       id: 'rec2020-8bit',
       severity: 'warn',
       step: 'size',
-      message: `Rec.2020 in an 8-bit ${name} is a very wide space for 256 steps: many viewers will show it dull.`
+      message: t(
+        'Rec.2020 in an 8-bit {{format}} is a very wide space for 256 steps: many viewers will show it dull.',
+        { format: name }
+      )
     })
 
   const rank = { block: 0, warn: 1, minor: 2 }
@@ -240,23 +260,31 @@ export function outputSize(s: ExportSettings, w: number, h: number): { w: number
 export const INTENT_INFO: { value: ExportSettings['intent']; name: string; what: string }[] = [
   {
     value: 'RelativeColorimetric',
-    name: 'Relative colorimetric',
-    what: 'Colours inside the new space stay exact; those outside are moved to its nearest edge. White maps to white. The usual choice for photographs.'
+    name: tk('Relative colorimetric'),
+    what: tk(
+      'Colours inside the new space stay exact; those outside are moved to its nearest edge. White maps to white. The usual choice for photographs.'
+    )
   },
   {
     value: 'Perceptual',
-    name: 'Perceptual',
-    what: 'Squeezes all the colours together so their relationships look natural, which shifts colours that would have fitted. Best when much of the picture is outside the new space.'
+    name: tk('Perceptual'),
+    what: tk(
+      'Squeezes all the colours together so their relationships look natural, which shifts colours that would have fitted. Best when much of the picture is outside the new space.'
+    )
   },
   {
     value: 'Saturation',
-    name: 'Saturation',
-    what: 'Keeps colours vivid rather than accurate. For graphics and charts, rarely for photographs.'
+    name: tk('Saturation'),
+    what: tk(
+      'Keeps colours vivid rather than accurate. For graphics and charts, rarely for photographs.'
+    )
   },
   {
     value: 'AbsoluteColorimetric',
-    name: 'Absolute colorimetric',
-    what: 'Keeps colours exact, white included, with no adaptation to the new white. For soft-proofing a print on screen.'
+    name: tk('Absolute colorimetric'),
+    what: tk(
+      'Keeps colours exact, white included, with no adaptation to the new white. For soft-proofing a print on screen.'
+    )
   }
 ]
 
@@ -274,7 +302,9 @@ export function receiptNotes(
   for (const k of ['exif', 'icc', 'xmp', 'iptc'] as const)
     if (asked[k] && !written[k])
       out.push(
-        `${k.toUpperCase()} was not written (the original has none, or the format has no place for it)`
+        t('{{name}} was not written (the original has none, or the format has no place for it)', {
+          name: k.toUpperCase()
+        })
       )
   out.push(...masterNotes)
   return out

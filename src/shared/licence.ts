@@ -15,6 +15,7 @@
  * (shared/gate.ts) instead.
  */
 import type { AccountDevice, EntitlementClaims } from './account'
+import { t, tp } from './i18n'
 
 /**
  * Whether this version enforces licences: a release from 1.0.0 on. Betas
@@ -144,24 +145,38 @@ export function allows(state: LicenceState, what: Licensed, enforced = LICENCE_E
 /** Why exporting is refused in `state`, or null when it isn't. */
 export function lockedReason(state: LicenceState, enforced = LICENCE_ENFORCED): string | null {
   if (allows(state, 'export', enforced)) return null
-  const editing = 'Editing still works.'
   switch (state.kind) {
     case 'signed-out':
-      return `Sign in with your PIXL account to start your free trial, or to use your licence. ${editing}`
+      return t(
+        'Sign in with your PIXL account to start your free trial, or to use your licence. Editing still works.'
+      )
     case 'checking':
-      return 'Playroom needs to check your account before it exports. Connect to the internet, then choose Check now in Settings.'
+      return t(
+        'Playroom needs to check your account before it exports. Connect to the internet, then choose Check now in Settings.'
+      )
     case 'no-trial':
-      return `Start your free ${LICENCE_RULES.trialDays}-day trial in Settings, or buy a licence, to export. ${editing}`
+      return t(
+        'Start your free {{days}}-day trial in Settings, or buy a licence, to export. Editing still works.',
+        { days: LICENCE_RULES.trialDays }
+      )
     case 'trial-ended':
-      return `Your free trial has ended. Buy a licence to export again. ${editing}`
+      return t('Your free trial has ended. Buy a licence to export again. Editing still works.')
     case 'revalidate':
-      return 'Playroom needs to confirm your licence before it exports again. Connect to the internet, then choose Check now in Settings.'
+      return t(
+        'Playroom needs to confirm your licence before it exports again. Connect to the internet, then choose Check now in Settings.'
+      )
     case 'device-limit':
-      return `Your licence is already on ${LICENCE_RULES.deviceLimit} devices. Free one in Settings to use it here. ${editing}`
+      return tp(
+        'Your licence is already on {{count}} device. Free one in Settings to use it here. Editing still works.',
+        'Your licence is already on {{count}} devices. Free one in Settings to use it here. Editing still works.',
+        LICENCE_RULES.deviceLimit
+      )
     case 'no-beta':
-      return 'This account isn’t in the beta. Join it on the beta page, or use the released Pixl Playroom.'
+      return t(
+        'This account isn’t in the beta. Join it on the beta page, or use the released Pixl Playroom.'
+      )
     case 'beta-ended':
-      return 'The beta has ended. Update to the released Pixl Playroom to keep going.'
+      return t('The beta has ended. Update to the released Pixl Playroom to keep going.')
     default:
       return null
   }

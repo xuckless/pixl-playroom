@@ -14,11 +14,12 @@
  * accelerator (CoreML on a Mac, DirectML on Windows) unless the performance
  * test found the CPU faster, or the accelerator refused.
  */
+import { t } from '../../shared/i18n'
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { createHash } from 'crypto'
 import { createReadStream, createWriteStream } from 'fs'
-import { mkdir, rename, rm, stat } from 'fs/promises'
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
 import { fileURLToPath } from 'url'
 import { join } from 'path'
 import { pipeline } from 'stream/promises'
@@ -28,17 +29,31 @@ import { IPC, type EngineStatus, type ModelInfo, type ProviderInfo } from '../..
 import type { EngineClient } from '../engine/client'
 import type { IndexClient } from '../indexer/client'
 import { paths } from '../paths'
-import { BACKGROUND_THREADS } from '../source'
+import { heavyThreads } from '../source'
 import { ENHANCE_MODEL, FIRST_GUESS_MS_PER_MP, type EnhanceStepKind } from '../../shared/enhance'
 import { modelSpeed, referenceOf, testFactor, type ModelSpeed } from '../../shared/modelSpeed'
 import { DENOISE_RATE_KEY, ENHANCE_RATE_KEY } from './rates'
-import { LEGACY_MODELS, fillRef, legacyInstalledDir, legacyModel } from './legacymodels'
-import { carryOver } from './carryover'
+import { carryOver, keptBesides, retiredModelDirs } from './carryover'
+import { staticPlan } from '../../shared/modelshape'
+import { NAFNET_DENOISE } from '../../shared/recipe'
+import { SAM3_PHRASE } from '../../shared/ai'
 
 import * as pixlModels from '@xuckless/pixl-models'
 import type { ModelEntry as RosterEntry, ModelFile as RosterFile } from '@xuckless/pixl-models'
 
 export type { RosterEntry }
+
+/**
+ * The on-demand models Playroom offers (engine 0.18's `onDemand()`):
+ * BiRefNet lite, the Fine subject; SAM 3 and EfficientSAM3 (0.19), Find
+ * by name.
+ */
+const OFFERED_ON_DEMAND = ['birefnet-lite', 'sam3', 'efficientsam3-ev-m']
+
+/** A shipped model Playroom holds back for now: not listed, offered or downloaded (NAFNET_DENOISE). */
+function held(id: string): boolean {
+  return (id === 'nafnet-sidd-w32' && !NAFNET_DENOISE) || (id === 'sam3' && !SAM3_PHRASE)
+}
 
 const BASE = (process.env.PLAYROOM_MODELS_URL ?? 'https://models.pixlfoundation.com').replace(
   /\/+$/,
@@ -48,10 +63,22 @@ const BASE = (process.env.PLAYROOM_MODELS_URL ?? 'https://models.pixlfoundation.
 /** The models server (or its stand-in): the lens catalogue is served beside the models. */
 export const MODELS_BASE = BASE
 
+/**
+ * What every model session states since engine 0.19 beside its threads: no
+ * dimensions fixed (a model run with static shapes states its own), and the
+ * intra-op workers asleep between runs, so an idle Playroom costs nothing.
+ */
+export const IDLE_SESSION: Pick<SessionSpec, 'dimensions' | 'intra_op_spinning'> = {
+  dimensions: [],
+  intra_op_spinning: false
+}
+
 /** Which provider the performance test chose: the accelerator unless the CPU won. */
 const PROVIDER_KEY = 'ai.provider'
 /** What the performance test measured, per provider. */
 const MEASURED_KEY = 'ai.providerTimes'
+/** Models fetched by themselves that the user removed: not fetched again unasked. */
+const DECLINED_KEY = 'ai.declined'
 /** How long the models' speeds are kept before the remembered rates are read again. */
 const SPEED_CACHE_MS = 5000
 
@@ -63,7 +90,7 @@ export function modelName(e: Pick<RosterEntry, 'title'>): string {
 export class ModelMissing extends Error {
   code = 'ModelNotInstalled'
   constructor(readonly entry: RosterEntry) {
-    super(`${modelName(entry)} is not downloaded yet: Settings → AI models`)
+    super(t('{{model}} is not downloaded yet: Settings → AI models', { model: modelName(entry) }))
   }
 }
 
@@ -71,17 +98,29 @@ export class ModelStore {
   private downloads = new Map<string, { abort: AbortController; done: number; total: number }>()
   private failed = new Map<string, string>()
   private installedCache = new Map<string, boolean>()
-  /** Where each installed legacy model (see `legacymodels.ts`) is on this machine. */
-  private legacyDirs = new Map<string, string>()
 
   constructor(
     private readonly settings: IndexClient,
     private readonly engineStatus: () => EngineStatus
   ) {}
 
-  /** Every model the app can use (the roster's shipped ones). */
+  /**
+   * Every model the app can use: the roster's shipped ones, and the
+   * on-demand ones Playroom offers (engine 0.18: downloads, never packages).
+   */
   roster(): RosterEntry[] {
-    return pixlModels.manifest().filter((m) => m.ship)
+    const offered = pixlModels
+      .onDemand()
+      .filter((m) => OFFERED_ON_DEMAND.includes(m.id)) as unknown as RosterEntry[]
+    return [
+      ...pixlModels.manifest().filter((m) => m.ship && !held(m.id)),
+      ...offered.filter((m) => !held(m.id))
+    ]
+  }
+
+  /** An on-demand model: its licence texts and NOTICE are kept beside its files. */
+  private onDemand(id: string): pixlModels.OnDemandEntry | undefined {
+    return pixlModels.onDemand().find((m) => m.id === id && OFFERED_ON_DEMAND.includes(m.id))
   }
 
   entry(id: string): RosterEntry {
@@ -90,18 +129,8 @@ export class ModelStore {
     return e
   }
 
-  /**
-   * A model engine 0.17 retired that this release still honours (U²-Net,
-   * FBCNN at a quality): not in the roster, so `entry()` cannot name it.
-   */
-  private legacy(id: string): ReturnType<typeof legacyModel> {
-    return this.roster().some((m) => m.id === id) ? undefined : legacyModel(id)
-  }
-
   /** Where a model's files live on this machine. */
   dir(id: string): string {
-    const l = this.legacy(id)
-    if (l) return this.legacyDirs.get(id) ?? join(paths.models(), l.id, l.version)
     const e = this.entry(id)
     return join(paths.models(), e.id, e.version)
   }
@@ -110,14 +139,9 @@ export class ModelStore {
   async installed(id: string): Promise<boolean> {
     const cached = this.installedCache.get(id)
     if (cached !== undefined) return cached
-    const l = this.legacy(id)
-    if (l) {
-      const dir = await legacyInstalledDir(paths.models(), l)
-      if (dir) this.legacyDirs.set(id, dir)
-      this.installedCache.set(id, dir !== null)
-      return dir !== null
-    }
-    const e = this.entry(id)
+    // A model not offered (held back, or retired) is not here, whatever is on disk.
+    const e = this.roster().find((m) => m.id === id)
+    if (!e) return false
     let ok = true
     for (const f of e.files) {
       const s = await stat(join(this.dir(id), f.name)).catch(() => null)
@@ -134,26 +158,7 @@ export class ModelStore {
 
   async list(): Promise<ModelInfo[]> {
     const speeds = await this.speeds()
-    // The retired ones people already have: listed to be removed, never offered.
-    const retiring: ModelInfo[] = []
-    for (const l of LEGACY_MODELS) {
-      if (this.legacy(l.id) && (await this.installed(l.id)))
-        retiring.push({
-          speed: null,
-          id: l.id,
-          title: l.title,
-          role: l.role,
-          bytes: l.files.reduce((s, f) => s + f.bytes, 0),
-          licence: l.licence.spdx,
-          holder: l.licence.holder,
-          caveat: l.caveat,
-          installed: true,
-          progress: null,
-          retiring: true,
-          replacedBy: l.replacedBy
-        })
-    }
-    const shipped = await Promise.all(
+    return Promise.all(
       this.roster().map(async (e) => {
         const d = this.downloads.get(e.id)
         return {
@@ -171,7 +176,6 @@ export class ModelStore {
         }
       })
     )
-    return [...shipped, ...retiring]
   }
 
   private speedCache: { at: number; speeds: Map<string, ModelSpeed | null> } | null = null
@@ -224,11 +228,44 @@ export class ModelStore {
     })
   }
 
+  /**
+   * Retired models, and versions a model has moved on from, off the user's
+   * disk (engine 0.18 retired Real-ESRGAN ×2 and LaMa; U²-Net and FBCNN at a
+   * quality went with 0.17): quietly, once the app is up. A shipped model's
+   * older version is carried over first (`installed`) when its files are the
+   * same, so nothing is downloaded again. On-demand models are kept.
+   * Returns what went, as `id` or `id/version`.
+   */
+  async prune(root: string = paths.models()): Promise<string[]> {
+    const roster = this.roster()
+    // An older version holding the same files becomes the current one first.
+    for (const e of roster) await this.installed(e.id).catch(() => false)
+    const gone = await retiredModelDirs(
+      root,
+      new Map(roster.map((e) => [e.id, e.version])),
+      keptBesides(
+        pixlModels.onDemand().map((e) => e.id),
+        pixlModels
+          .manifest()
+          .filter((m) => m.ship && held(m.id))
+          .map((m) => m.id)
+      )
+    )
+    for (const p of gone) await rm(join(root, p), { recursive: true, force: true })
+    if (gone.length > 0) {
+      this.installedCache.clear()
+      log.info('models retired from disk', ...gone)
+      this.emit()
+    }
+    return gone
+  }
+
   /** Download a model's files, resuming what an earlier try left, and check each. */
   async download(id: string): Promise<void> {
-    // A retired model is kept for who has it, never fetched again.
-    if (this.legacy(id)) return
+    // Only what the roster ships is fetched (a retired id is never).
+    if (!this.roster().some((m) => m.id === id)) return
     if (this.downloads.has(id) || (await this.installed(id))) return
+    void this.decline(id, false).catch(() => undefined)
     const e = this.entry(id)
     const dir = this.dir(id)
     await mkdir(dir, { recursive: true })
@@ -258,7 +295,10 @@ export class ModelStore {
           state.done += n
           tick()
         }
-        const mirror = `${BASE}/${e.id}/${e.version}/${f.name}`
+        // An on-demand file PIXL hosts itself (SAM 3's on Hugging Face) comes
+        // from there; everything else from Playroom's mirror.
+        const hosted = (f as RosterFile & { hosted?: string | null }).hosted
+        const mirror = hosted ?? `${BASE}/${e.id}/${e.version}/${f.name}`
         try {
           await this.fetchFile(mirror, dest, f, abort.signal, onBytes)
         } catch (err) {
@@ -276,6 +316,13 @@ export class ModelStore {
             throw new Error(explain(err2, upstream, f.name))
           }
         }
+      }
+      // An on-demand model's terms travel with it (engine 0.18, integration guide §7).
+      const od = this.onDemand(id)
+      if (od) {
+        for (const text of od.licence_texts)
+          await writeFile(join(dir, text.name), await readFile(text.path, 'utf8'))
+        await writeFile(join(dir, 'NOTICE.md'), od.notice)
       }
       this.installedCache.set(id, true)
       log.info('model installed', id)
@@ -295,10 +342,32 @@ export class ModelStore {
     this.downloads.get(id)?.abort.abort()
   }
 
+  /**
+   * Models fetched without being asked (DemosaicNet for RAWs, once the app
+   * is up after an install or update): each unless it is here, or the user
+   * removed it (then it waits to be downloaded by hand).
+   */
+  async autoFetch(ids: string[]): Promise<void> {
+    const declined = await this.declined()
+    for (const id of ids)
+      if (!declined.includes(id) && this.roster().some((m) => m.id === id)) await this.download(id)
+  }
+
+  private async declined(): Promise<string[]> {
+    const v: unknown = await this.settings.getSetting(DECLINED_KEY).catch(() => null)
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  }
+
+  private async decline(id: string, on: boolean): Promise<void> {
+    const was = await this.declined()
+    if (was.includes(id) === on) return
+    await this.settings.setSetting(DECLINED_KEY, on ? [...was, id] : was.filter((x) => x !== id))
+  }
+
   async remove(id: string): Promise<void> {
+    void this.decline(id, true).catch(() => undefined)
     this.cancel(id)
     await rm(join(paths.models(), id), { recursive: true, force: true })
-    this.legacyDirs.delete(id)
     this.installedCache.set(id, false)
     this.failed.delete(id)
     this.emit()
@@ -308,7 +377,8 @@ export class ModelStore {
    * One file: into `<dest>.part` (appending to what an earlier try left),
    * then checked against the roster and moved into place.
    */
-  private async fetchFile(
+  /** Shared with the brain store (ai/brain.ts): its pinned files come the same way. */
+  async fetchFile(
     url: string,
     dest: string,
     f: RosterFile,
@@ -364,7 +434,9 @@ export class ModelStore {
     const got = await sha256(part)
     if (got !== f.sha256) {
       await rm(part, { force: true })
-      throw new Error(`${f.name} arrived damaged (checksum mismatch); try again`)
+      throw new Error(
+        t('{{file}} arrived damaged (checksum mismatch); try again', { file: f.name })
+      )
     }
     await rename(part, dest)
   }
@@ -417,16 +489,16 @@ export class ModelStore {
    * will not load the model, or is slower, gives way to the CPU.
    */
   async benchmark(engine: EngineClient): Promise<ProviderInfo> {
-    const order = ['u2netp', 'realesr-general-x4v3', 'real-esrgan-x2plus', 'u2net']
+    const order = ['u2netp', 'span-x4-ch48', 'realesr-general-x4v3']
     let id: string | null = null
     for (const m of order) if (await this.installed(m)) id = id ?? m
-    if (!id) throw new Error('Download a model first: U²-Netp is the smallest')
+    if (!id) throw new Error(t('Download a model first: U²-Netp is the smallest'))
     if (engine.getStatus().status === 'starting') {
       engine.start()
       await engine.whenStarted()
     }
     const base = (await this.ref(id, 'Cpu')) as { model: Record<string, unknown>; input: unknown }
-    const size = (legacyModel(id) ?? this.entry(id)).kind === 'segmenter' ? 320 : 256
+    const size = this.entry(id).kind === 'segmenter' ? 320 : 256
     const feed = { Image: { input: base.input, width: size, height: size, conditioning: [] } }
     const accel = this.accelerated()
     const cases = [{ name: 'cpu', model: base.model, feed }]
@@ -456,14 +528,17 @@ export class ModelStore {
   /** What `ref()` needs from the host besides the model's own numbers. */
   async host(
     provider?: ExecutionProvider,
-    extra: Record<string, unknown> = {}
+    extra: Record<string, unknown> = {},
+    dimensions: SessionSpec['dimensions'] = []
   ): Promise<Record<string, unknown>> {
     const runtime = this.engineStatus().runtime
-    if (!runtime) throw new Error('this build of the engine ships no ONNX Runtime')
+    if (!runtime) throw new Error(t('this build of the engine ships no ONNX Runtime'))
     const session: SessionSpec = {
-      threads: BACKGROUND_THREADS * 2,
+      threads: heavyThreads(),
       optimisation: 'All',
-      deterministic: false
+      deterministic: false,
+      ...IDLE_SESSION,
+      dimensions
     }
     return {
       runtime_library: runtime.library,
@@ -473,23 +548,23 @@ export class ModelStore {
     }
   }
 
-  /** A model's engine request type, its files and the host's values filled in. */
+  /**
+   * A model's engine request type, its files and the host's values filled
+   * in. On CoreML, a model Playroom runs with static shapes (modelshape.ts)
+   * gets its H × W fixed to its tile and the GPU; elsewhere it runs as it is.
+   */
   async ref(
     id: string,
     provider?: ExecutionProvider,
     extra: Record<string, unknown> = {}
   ): Promise<Record<string, unknown>> {
-    const l = this.legacy(id)
-    if (l) {
-      if (!(await this.installed(id))) throw new Error(`${l.title} is not downloaded`)
-      return fillRef(l.ref, this.dir(id), await this.host(provider, extra))
-    }
     const e = this.entry(id)
     if (!(await this.installed(id))) throw new ModelMissing(e)
-    return pixlModels.ref(id, await this.host(provider, extra), { dir: this.dir(id) }) as Record<
-      string,
-      unknown
-    >
+    const chosen = provider ?? (await this.provider())
+    const plan = staticPlan(id, e.files[0]?.dimensions ?? [], chosen)
+    const host = await this.host(plan?.provider ?? chosen, extra, plan?.dimensions)
+    const ref = pixlModels.ref(id, host, { dir: this.dir(id) }) as Record<string, unknown>
+    return plan ? { ...ref, tiling: plan.tiling } : ref
   }
 
   /** Models the accelerator would not load this session: they run on the CPU. */
@@ -497,8 +572,8 @@ export class ModelStore {
 
   /**
    * Run `make` with each of `ids` on the chosen provider, moving a model to
-   * the CPU when the accelerator cannot load it (SCUNet and FBCNN under
-   * CoreML: ONNX Runtime refuses them) — the one the error names, or all of
+   * the CPU when the accelerator cannot load it (FBCNN under CoreML: ONNX
+   * Runtime refuses it; a static-shaped model CoreML refuses) — the one the error names, or all of
    * them when it names none (a provider that cannot be registered). Never
    * silently: each move is logged, and the model stays on the CPU for the
    * session. `make` is told which models to put on the CPU.
@@ -545,25 +620,29 @@ function explain(err: unknown, url: string, file: string, only = false): string 
   const e = err as Error & { cause?: { code?: string } }
   const host = (() => {
     try {
-      return new URL(url).host || 'the model folder'
+      return new URL(url).host || t('the model folder')
     } catch {
       return url
     }
   })()
   const code = e.cause?.code ?? (e as { code?: string }).code
   let why: string
-  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') why = `${host} could not be found`
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') why = t('{{host}} could not be found', { host })
   else if (
     code === 'ECONNREFUSED' ||
     code === 'ECONNRESET' ||
     code === 'ETIMEDOUT' ||
     code === 'UND_ERR_CONNECT_TIMEOUT'
   )
-    why = `${host} did not answer`
-  else if (code === 'ENOENT') why = `${file} is not in ${url.replace(/[^/]*$/, '')}`
-  else if (/HTTP 40[34]/.test(e.message)) why = `${host} does not have ${file} yet`
+    why = t('{{host}} did not answer', { host })
+  else if (code === 'ENOENT')
+    why = t('{{file}} is not in {{folder}}', { file, folder: url.replace(/[^/]*$/, '') })
+  else if (/HTTP 40[34]/.test(e.message))
+    why = t('{{host}} does not have {{file}} yet', { host, file })
   else why = e.message
-  return only ? `${why} — this model is only on Playroom's model server` : why
+  return only
+    ? t("{{reason}} — this model is only on Playroom's model server", { reason: why })
+    : why
 }
 
 async function sha256(file: string): Promise<string> {

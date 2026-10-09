@@ -288,11 +288,16 @@ export class MaskGl {
       ctx.beginPath()
       const by =
         ((c.edge?.shift ?? 0) / 100) * EDGE_SHIFT_SPAN - (c.edge?.inside ? featherRadius(c) : 0)
-      const points = offsetPolygon(c.points, by, f.baseW, f.baseH)
-      points.forEach((q, i) => (i === 0 ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y)))
-      ctx.closePath()
+      // A face part's other outlines too, even-odd as the compiler sends them.
+      const rings = [c.points, ...(c.rings ?? [])].filter((r) => r.length >= 3)
+      for (const ring of rings) {
+        offsetPolygon(ring, by, f.baseW, f.baseH).forEach((q, i) =>
+          i === 0 ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y)
+        )
+        ctx.closePath()
+      }
       ctx.fillStyle = '#fff'
-      ctx.fill('nonzero')
+      ctx.fill(rings.length > 1 ? 'evenodd' : 'nonzero')
       gl.bindTexture(gl.TEXTURE_2D, t.tex)
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, gl.RED, gl.UNSIGNED_BYTE, oc)
     } else if (c.kind === 'brush') {
@@ -309,7 +314,7 @@ export class MaskGl {
       gl.uniform1f(this.u(p, 'uSigma'), 0.001)
       this.run(p, t, bw, bh)
       gl.deleteTexture(src)
-    } else {
+    } else if (c.kind === 'range') {
       if (!this.picture) return null
       const p = this.programs.range
       gl.useProgram(p)

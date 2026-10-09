@@ -8,6 +8,7 @@
  * restarting after a crash) wait for it rather than fail. Calls are sent in
  * the order they are made, and the host answers them in that order.
  */
+import { t } from '../../shared/i18n'
 import { app, utilityProcess, type UtilityProcess } from 'electron'
 import log from 'electron-log/main'
 import { join } from 'path'
@@ -88,13 +89,13 @@ class Connection implements IndexControl {
     clearTimeout(timer)
     this.child = undefined
     child?.kill()
-    this.failAll(new IndexError('the index has stopped', 'IndexUnavailable'), () => true)
+    this.failAll(new IndexError(t('the index has stopped'), 'IndexUnavailable'), () => true)
   }
 
   request(method: string, args: unknown[]): Promise<unknown> {
     if (this.stopped || this.gaveUp !== null) {
       return Promise.reject(
-        new IndexError(this.gaveUp ?? 'the index has stopped', 'IndexUnavailable')
+        new IndexError(this.gaveUp ?? t('the index has stopped'), 'IndexUnavailable')
       )
     }
     const id = this.nextId++
@@ -185,7 +186,8 @@ class Connection implements IndexControl {
     if (!p) return
     this.pending.delete(msg.id)
     if (msg.ok) p.resolve(msg.result)
-    else p.reject(new IndexError(msg.error.message, msg.error.code))
+    // The host has no translator: its messages for the user (tk() there) are translated here.
+    else p.reject(new IndexError(t(msg.error.message), msg.error.code))
   }
 }
 

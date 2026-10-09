@@ -14,7 +14,7 @@
  */
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import { mkdir, readdir, rm } from 'fs/promises'
+import { mkdir, readdir, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { AUTO_PERCENTILES, autoTone, linearSrgbToRec2020 } from '../shared/auto'
 import {
@@ -38,10 +38,15 @@ import { stackSignature, type PixelStep } from '../shared/pixels'
 import { developMark, pixlSupported, resolveRawColour } from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
+import { askOf, scenePlan } from './ai/rawdevelop'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking, workingKey, type WorkingSet } from './pixels/working'
 import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
 import type {
+  ColorPolicy,
+  ConvertRequest,
+  Encode,
+  Companion,
   HdrWorking,
   ConvertReport,
   LateralCa,
@@ -85,12 +90,16 @@ import type { PhotoRow } from './db'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import { keyOf, parseKey } from './keys'
 import type { Library, Picture } from './library'
-import { pngToFloats } from './pngio'
+import { CICP_DISPLAY_P3, encodePng8, pngToFloats } from './pngio'
+import { pixels } from './workers/pool'
+import { traceRegion } from './trace'
 import { cacheUrl } from './protocol'
 import {
   ensureLensedProxies,
   ensureMaster,
   ensureProxies,
+  ensureQuickMaster,
+  masterCached,
   pruneLensed,
   type Proxies,
   type ProxyFile
@@ -98,6 +107,7 @@ import {
 import { editsHdr, ensureHdrSource } from './hdrsource'
 import { READ_LIMITS } from '../shared/limits'
 import type { LensShot } from './lensprofiles'
+import { t } from '../shared/i18n'
 import {
   blankRequest,
   BACKGROUND_THREADS,
@@ -148,6 +158,102 @@ const LOOK_EDGE_DEFAULT = 320
 const LOOK_EDGE_MIN = 96
 const LOOK_EDGE_MAX = 640
 const LOOK_KEEP = 600
+
+/**
+ * Full HDR's colour (engine 0.18, integration guide §4.5): the master for
+ * this display (`Ceiling::Display`), F16 linear Display P3 with 1.0 = SDR
+ * white, and an 8-bit SDR companion for what reads the picture.
+ */
+function masterFor(
+  display: { whiteNits: number; peakNits: number },
+  /** The whole picture's figures, for a part of it (a region measures neither). */
+  stated?: HdrFigures,
+  companionEdge = COMPANION_EDGE
+): ColorPolicy {
+  return {
+    Master: {
+      headroom: true,
+      peak: stated ? { Nits: stated.peakNits } : 'Measured',
+      ceiling: { Display: { white_nits: display.whiteNits, peak_nits: display.peakNits } },
+      reach: stated ? { Stated: stated.reach } : 'Measured',
+      look: 'Colorimetric',
+      float: 'ExtendedLinearDisplayP3',
+      companion: { longest_side: companionEdge, resampler: 'Bilinear' }
+    }
+  }
+}
+
+/**
+ * Full HDR's settled picture, an A/B (Pass 99): `frame`, F16 pixels over the
+ * preview port as drafts are (the default); `avif`, an AVIF file whose SDR
+ * base carries the master's gain map, shown by an `<img>`. A dev switch
+ * (`PLAYROOM_SETTLED=avif`) until the owner has compared them on the XDR.
+ * PQ JPEG XL was the third arm: this Chromium does not decode JXL at all.
+ */
+const SETTLED_ARM: 'frame' | 'avif' = process.env['PLAYROOM_SETTLED'] === 'avif' ? 'avif' : 'frame'
+
+/** The AVIF arm's encoder: fast (speed 9), 8-bit, full chroma; the master adds the gain map. */
+const SETTLED_AVIF: Encode = {
+  Avif: {
+    quality: 90,
+    lossless: false,
+    bit_depth: 8,
+    chroma: 'Full',
+    speed: 9,
+    matrix: 'Bt601',
+    threads: 2,
+    tune: 'Ssim',
+    tiling: 'Single'
+  }
+}
+
+/**
+ * A Full HDR picture that must be a file (the Before, a 1:1 tile, the AVIF
+ * arm's settled picture): an AVIF whose SDR base carries the master's gain
+ * map to this display's headroom, shown by an `<img>`.
+ */
+function hdrFile(
+  display: { whiteNits: number; peakNits: number },
+  stated?: HdrFigures
+): {
+  color: ColorPolicy
+  encode: Encode
+} {
+  return { color: masterFor(display, stated), encode: SETTLED_AVIF }
+}
+
+/** What the master measured of the whole picture: a 1:1 tile states them, to match it. */
+interface HdrFigures {
+  peakNits: number
+  reach: number
+}
+
+/**
+ * The companion's longest side: a settled picture's is what the eyedropper,
+ * scopes, overlays and a range's key read; a draft's only bridges a drag
+ * (half the size: 70 ms less a draft on the M2 Pro).
+ */
+const COMPANION_EDGE = 1024
+const DRAFT_COMPANION_EDGE = 512
+/** A 1:1 tile's companion: only a frame's SDR stand-in (nothing measures a tile), kept small. */
+const TILE_COMPANION_EDGE = 256
+
+/** A report's companion as a frame carries it. */
+function companionOf(c: Companion): { width: number; height: number; data: Uint8Array } {
+  return { width: c.width, height: c.height, data: c.data }
+}
+
+/**
+ * A convert's rejection, an `Invariant` named against the compiled request it
+ * came from (engine 0.18, HR-0.18-9): the window marks that adjustment, the
+ * edit stays, and nothing renders again without it.
+ */
+function named(compiled: Pick<Compiled, 'grade' | 'layerIndex'>): (err: unknown) => never {
+  return (err) => {
+    if (err instanceof EngineError) err.nameInvariant(compiled.grade, null, compiled.layerIndex)
+    throw err
+  }
+}
 
 /**
  * What the histogram, the hue chart and auto tone read, measured by the
@@ -243,6 +349,8 @@ class Session {
   private lastOut: Record<Kind, string> = { draft: '', full: '' }
   private lastMaskOut = ''
   private regionSlot = 0
+  /** Full HDR 1:1 tiles sent as frames, numbered: each its own frame id. */
+  private tileSeq = 0
   private beforeKey = ''
   /**
    * What each kind of picture was last rendered from, and the event sent for
@@ -297,13 +405,17 @@ class Session {
   /**
    * Compile a recipe for a source. A source from the prepared set already
    * carries the lens correction and the spots: the engine is not asked to do
-   * those again.
+   * those again. `smoothing` false for a draft: the Smoothing slider's work
+   * waits for the settled render (engine 0.18: on release, not while dragging).
    */
   async compileFor(
     recipe: Recipe,
     source: ProxyFile,
     applyCrop: boolean,
-    headroom = false
+    headroom = false,
+    smoothing = true,
+    /** Rendered for an HDR display (Full HDR, engine 0.18's Master): light above white kept. */
+    hdrOut = false
   ): Promise<Compiled> {
     const baked = this.isBaked(source)
     // The working pixels' frame: the photo's, or an upscale step's.
@@ -324,8 +436,9 @@ class Session {
       // picture for the screen is tone mapped to SDR first and graded after,
       // its values stopping at 1, so it compiles as SDR (a curve carried past
       // 1 there is refused).
-      hdr: headroom && this.info.is_hdr,
-      showTransform: !this.view.guides
+      hdr: (headroom && this.info.is_hdr) || hdrOut,
+      showTransform: !this.view.guides,
+      smoothing
     })
     return baked ? { ...compiled, lens: null, retouch: null } : compiled
   }
@@ -419,7 +532,7 @@ class Session {
       versionStamp(this.row),
       this.px,
       this.recipe.pixels,
-      () => ensureBase(this.owner.bgEngine, this.row, this.file)
+      () => ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
     )
     return set.master
   }
@@ -593,7 +706,10 @@ class Session {
         log.error('saving recipe failed', err)
         this.owner.send(IPC.develop.renderError, {
           key: this.key,
-          message: `Edits to ${this.row.name} were not saved: ${(err as Error).message}`,
+          message: t('Edits to {{name}} were not saved: {{reason}}', {
+            name: this.row.name,
+            reason: (err as Error).message
+          }),
           code: 'Save'
         })
       }
@@ -694,7 +810,8 @@ class Session {
         key: this.key,
         message: e.message,
         code: e.code ?? 'Unknown',
-        field: e instanceof EngineError ? e.field : undefined
+        field: e instanceof EngineError ? e.field : undefined,
+        invariant: e instanceof EngineError ? (e.invariant ?? undefined) : undefined
       })
     } finally {
       this.inflight = false
@@ -745,7 +862,16 @@ class Session {
     const rev = this.rev
     const preview = this.previewing
     const recipe = preview ?? this.recipe
-    const compiled = await this.compileFor(recipe, src, !cropMode)
+    // Full HDR (engine 0.18): the display it is shown on, or SDR as before.
+    const display = this.view.display ?? null
+    const compiled = await this.compileFor(
+      recipe,
+      src,
+      !cropMode,
+      false,
+      kind !== 'draft',
+      display !== null
+    )
     const seq = ++this.seq
     // A whole picture of this recipe (framed, no corners left empty): what
     // the library's thumbnail can be shrunk from. A preview is never that.
@@ -755,6 +881,7 @@ class Session {
         gradeKey([
           src.path,
           cropMode,
+          display,
           compiled.grade,
           compiled.framing,
           compiled.lens,
@@ -771,11 +898,12 @@ class Session {
         this.lastEvent.full = known.event
         this.lastOut.full = known.out
       }
-      if (whole)
-        this.fullPicture = {
-          recipe,
-          picture: { path: this.lastFull, width: last.width, height: last.height }
-        }
+      // In Full HDR the picture a thumbnail shrinks from is the companion,
+      // whose size is its own.
+      const shown = display
+        ? this.lastCompanion
+        : { path: this.lastFull, width: last.width, height: last.height }
+      if (whole && shown) this.fullPicture = { recipe, picture: shown }
       if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq, rev })
       return
     }
@@ -785,51 +913,94 @@ class Session {
     // the engine: no file written, served and decoded for a picture that is
     // replaced a moment later. The settled picture stays a file: the mask's
     // measuring and the thumbnail read it here.
-    const frame = kind === 'draft' ? `${this.tag}-${seq}` : undefined
-    const out = frame ? '' : this.nextFile('view', alpha ? 'png' : 'jpg')
+    // In Full HDR the settled picture is pixels too (F16 linear Display P3
+    // for the display, an SDR companion for what reads the picture), or an
+    // AVIF with a gain map (the A/B's other arm; no alpha, so not a warp
+    // shown whole).
+    const avif = display !== null && kind === 'full' && !alpha && SETTLED_ARM === 'avif'
+    const frame = kind === 'draft' || (display && !avif) ? `${this.tag}-${seq}` : undefined
+    const out = frame ? '' : this.nextFile('view', avif ? 'avif' : alpha ? 'png' : 'jpg')
     const hdrStats =
       kind === 'full' ? this.measureHdr(cropMode, signal) : Promise.resolve(undefined)
-    const report = await this.owner.engine.convert(
-      {
-        ...blankRequest(src.path, out, src.input),
-        ...(frame ? { sink: 'Bytes' as const } : {}),
-        pixel: { depth: 'Eight', channels: alpha || frame ? 4 : 3 },
-        encode: frame
-          ? { Pixels: { sample: 'U8' } }
-          : alpha
-            ? { Png: { compression: 'Fast', filter: 'Sub' } }
-            : {
-                // A settled picture is a few MB less as 4:2:0, which a screen
-                // shows the same; the draft keeps full chroma at its lower quality.
-                Jpeg: {
-                  quality: kind === 'draft' ? 92 : 95,
-                  subsampling: kind === 'draft' ? 'None' : 'Quarter',
-                  optimize: false
-                }
-              },
-        metadata: { exif: false, icc: true, xmp: false, iptc: false },
-        color: displayPolicy(this.info, 'DisplayP3'),
-        grade: compiled.grade,
-        framing: compiled.framing,
-        lens: compiled.lens,
-        retouch: compiled.retouch,
-        threads: interactiveThreads(),
-        // A warp shown whole counts its empty corners (as black) rather than
-        // risk measuring nothing when little of the picture is left.
-        measure: measureOf(kind === 'draft' ? 2 : 1)
-      },
-      { signal, frame }
-    )
+    const report = await this.owner.engine
+      .convert(
+        {
+          ...blankRequest(src.path, out, src.input),
+          ...(frame ? { sink: 'Bytes' as const } : {}),
+          pixel: {
+            depth: display && frame ? 'F32' : 'Eight',
+            channels: alpha || frame ? 4 : 3
+          },
+          encode: frame
+            ? { Pixels: { sample: display ? 'F16' : 'U8' } }
+            : avif
+              ? SETTLED_AVIF
+              : alpha
+                ? { Png: { compression: 'Fast', filter: 'Sub' } }
+                : {
+                    // A settled picture is a few MB less as 4:2:0, which a screen
+                    // shows the same; the draft keeps full chroma at its lower quality.
+                    Jpeg: {
+                      quality: kind === 'draft' ? 92 : 95,
+                      subsampling: kind === 'draft' ? 'None' : 'Quarter',
+                      optimize: false
+                    }
+                  },
+          metadata: { exif: false, icc: true, xmp: false, iptc: false },
+          color: display
+            ? masterFor(
+                display,
+                undefined,
+                kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE
+              )
+            : displayPolicy(this.info, 'DisplayP3'),
+          // The master reads a gain map itself, and refuses the field.
+          ...(display ? { gain_map: null } : {}),
+          grade: compiled.grade,
+          framing: compiled.framing,
+          lens: compiled.lens,
+          retouch: compiled.retouch,
+          threads: interactiveThreads(),
+          // A warp shown whole counts its empty corners (as black) rather than
+          // risk measuring nothing when little of the picture is left.
+          measure: measureOf(kind === 'draft' ? 2 : 1)
+        },
+        { signal, frame }
+      )
+      .catch(named(compiled))
     // The engine had no way to the window (it was reloading): main passes the frame on.
     if (frame && report.output)
       this.owner.send(IPC.develop.previewFrame, {
         frame,
         width: report.width,
         height: report.height,
-        data: report.output
+        data: report.output,
+        sample: display ? 'F16' : 'U8',
+        ...(report.companion ? { companion: companionOf(report.companion) } : {})
       })
     const stats = statsOf(report)
-    if (kind === 'full') {
+    // Full HDR's settled picture, either arm: what measures it (inside a
+    // mask) and what reads its pixels take its SDR companion, kept as a PNG.
+    let readUrl: string | undefined
+    if (kind === 'full' && display) {
+      const m = report.color.master
+      this.hdrFigures =
+        m && m.gamut ? { peakNits: m.peak_nits, reach: m.gamut.reach } : this.hdrFigures
+      const c = report.companion
+      if (c) {
+        const file = this.nextFile('companion', 'png')
+        await writeCompanion(file, c.data, c.width, c.height)
+        this.lastFull = file
+        readUrl = cacheUrl(file, seq)
+        // The library's thumbnail is a JPEG of the picture as shown: in
+        // Full HDR the master's SDR rendition of it, not a second SDR grade.
+        this.lastCompanion = { path: file, width: c.width, height: c.height }
+        if (!preview) this.fullPicture = whole ? { recipe, picture: this.lastCompanion } : null
+      } else {
+        this.lastFull = ''
+        this.lastCompanion = null
+      }
+    } else if (kind === 'full' && out) {
       this.lastFull = out
       if (!preview)
         this.fullPicture = whole
@@ -845,10 +1016,14 @@ class Session {
       kind,
       cropMode,
       url: frame ? `frame:${frame}` : cacheUrl(out, seq),
+      ...(readUrl ? { readUrl } : {}),
       width: report.width,
       height: report.height,
       stats,
       hdrStats: hdr,
+      ...(display && report.color.master?.display
+        ? { ceiling: report.color.master.display.headroom }
+        : {}),
       report: reportOf(
         report,
         Math.round(performance.now() - t0),
@@ -859,7 +1034,9 @@ class Session {
     this.lastSig[kind] = sig
     this.lastEvent[kind] = event
     this.lastOut[kind] = out
-    if (kind === 'full') {
+    // A frame is kept by the window only a moment: a file alone can be shown
+    // again (and Full HDR's AVIF arm, which stays a dev switch, is not kept).
+    if (kind === 'full' && out && !display) {
       this.recentFull.delete(sig)
       this.recentFull.set(sig, { event, out })
       while (this.recentFull.size > RECENT_FULL)
@@ -912,13 +1089,15 @@ class Session {
         compiled.retouch !== null ||
         framingWarps(compiled.framing)
       if (floatWork) {
-        const r = await this.owner.engine.convert(
-          { ...request, hdr, measure: { ...measureOf(1), domain: 'Linear', bins } },
-          { signal }
-        )
+        const r = await this.owner.engine
+          .convert(
+            { ...request, hdr, measure: { ...measureOf(1), domain: 'Linear', bins } },
+            { signal }
+          )
+          .catch(named(compiled))
         return statsOf(r)
       }
-      await this.owner.engine.convert(request, { signal })
+      await this.owner.engine.convert(request, { signal }).catch(named(compiled))
       return await this.owner.engine.analyze(
         { ...analyzeRequest(out, 'Tiff', 1), domain: 'Linear', bins, hdr: hdrSignalOf(hdr) },
         { signal }
@@ -941,26 +1120,36 @@ class Session {
     const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true)
     // A plane has one channel, so a warp's transparent corners cannot be said.
     if (framingTransparent(compiled.framing)) return
-    const stops = Math.max(0.5, Math.log2(hdr.peak_nits / hdr.reference_white_nits))
+    // In Full HDR, 1 is the display's ceiling: what reaches it is what shows
+    // at its brightest; above that the master rolled it off.
+    const display = this.view.display ?? null
+    const stops = Math.max(
+      0.5,
+      Math.log2(
+        display ? display.peakNits / display.whiteNits : hdr.peak_nits / hdr.reference_white_nits
+      )
+    )
     const out = this.nextFile('headroom', 'png')
     try {
-      const r = await this.owner.engine.convert(
-        {
-          ...blankRequest(src.path, out, src.input),
-          pixel: { depth: 'Eight', channels: 1 },
-          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-          metadata: STRIP_ALL,
-          color: 'Preserve',
-          hdr,
-          grade: compiled.grade,
-          framing: compiled.framing,
-          lens: compiled.lens,
-          retouch: compiled.retouch,
-          inspect: { Headroom: { stops } },
-          threads: interactiveThreads()
-        },
-        { signal }
-      )
+      const r = await this.owner.engine
+        .convert(
+          {
+            ...blankRequest(src.path, out, src.input),
+            pixel: { depth: 'Eight', channels: 1 },
+            encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+            metadata: STRIP_ALL,
+            color: 'Preserve',
+            hdr,
+            grade: compiled.grade,
+            framing: compiled.framing,
+            lens: compiled.lens,
+            retouch: compiled.retouch,
+            inspect: { Headroom: { stops } },
+            threads: interactiveThreads()
+          },
+          { signal }
+        )
+        .catch(named(compiled))
       if (this.closed) return
       this.owner.send(IPC.develop.rendered, {
         key: this.key,
@@ -994,10 +1183,11 @@ class Session {
    * build: the overlay still shows without it.
    */
   private async measureMask(plane: string, signal: AbortSignal): Promise<ImageStats | undefined> {
+    if (!this.lastFull) return undefined
     try {
       return await this.owner.engine.analyze(
         {
-          ...analyzeRequest(this.lastFull, 'Jpeg', 1),
+          ...analyzeRequest(this.lastFull, this.lastFull.endsWith('.png') ? 'Png' : 'Jpeg', 1),
           weights: { source: { Png: plane }, resampler: 'Bilinear' }
         },
         { signal }
@@ -1012,7 +1202,13 @@ class Session {
   private async renderMask(kind: Kind, signal: AbortSignal): Promise<void> {
     const src = kind === 'draft' ? this.viewPx().draft : this.source('full')
     const rev = this.rev
-    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true)
+    const compiled = await this.compileFor(
+      this.recipe,
+      src,
+      !this.view.cropMode,
+      true,
+      kind !== 'draft'
+    )
     const layerId = this.view.maskLayer ?? undefined
     const index = layerId ? compiled.layerIndex[layerId] : undefined
     const send = (e: Omit<RenderEvent, 'key' | 'seq' | 'rev' | 'kind' | 'layerId'>): void => {
@@ -1065,22 +1261,24 @@ class Session {
       return
     }
     const out = this.nextFile('mask', 'png')
-    const report = await this.owner.engine.convert(
-      {
-        ...blankRequest(src.path, out, src.input),
-        pixel: { depth: 'Eight', channels: 1 },
-        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-        metadata: STRIP_ALL,
-        color: 'Preserve',
-        grade: compiled.grade,
-        framing: compiled.framing,
-        lens: compiled.lens,
-        retouch: compiled.retouch,
-        inspect: { LayerMask: { layer: index } },
-        hdr: this.hdrWorking
-      },
-      { signal }
-    )
+    const report = await this.owner.engine
+      .convert(
+        {
+          ...blankRequest(src.path, out, src.input),
+          pixel: { depth: 'Eight', channels: 1 },
+          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+          metadata: STRIP_ALL,
+          color: 'Preserve',
+          grade: compiled.grade,
+          framing: compiled.framing,
+          lens: compiled.lens,
+          retouch: compiled.retouch,
+          inspect: { LayerMask: { layer: index } },
+          hdr: this.hdrWorking
+        },
+        { signal }
+      )
+      .catch(named(compiled))
     const maskStats = measure ? await this.measureMask(out, signal) : undefined
     this.maskStatsFor = statsFor
     this.maskSig = sig
@@ -1098,7 +1296,8 @@ class Session {
    * Every local layer's mask, small, from the draft proxy: the masks panel's
    * thumbnails and the "show all" overlay. A thumbnail is redrawn only when
    * what shapes its mask changed (not its sliders), and the loop yields to a
-   * newer edit waiting behind it.
+   * newer edit waiting behind it. Always SDR, Full HDR or not: a mask is
+   * shown by its shape, not its light.
    */
   private async renderMaskThumbs(signal: AbortSignal): Promise<void> {
     const src = this.viewPx().draft
@@ -1149,24 +1348,26 @@ class Session {
       const out = join(this.dir, `mthumb-${layer.id}-${sig}.png`)
       // Made small, not at the draft's size (see MASK_THUMB_EDGE).
       const k = Math.min(1, MASK_THUMB_EDGE / Math.max(src.width, src.height))
-      const report = await this.owner.engine.convert(
-        {
-          ...blankRequest(src.path, out, src.input),
-          resize: k < 1 ? { Scale: { factor: k } } : 'None',
-          resampler: 'Bilinear',
-          pixel: { depth: 'Eight', channels: 1 },
-          encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-          metadata: STRIP_ALL,
-          color: 'Preserve',
-          grade: compiled.grade,
-          framing: compiled.framing,
-          lens: compiled.lens,
-          retouch: compiled.retouch,
-          inspect: { LayerMask: { layer: index } },
-          hdr: this.hdrWorking
-        },
-        { signal }
-      )
+      const report = await this.owner.engine
+        .convert(
+          {
+            ...blankRequest(src.path, out, src.input),
+            resize: k < 1 ? { Scale: { factor: k } } : 'None',
+            resampler: 'Bilinear',
+            pixel: { depth: 'Eight', channels: 1 },
+            encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+            metadata: STRIP_ALL,
+            color: 'Preserve',
+            grade: compiled.grade,
+            framing: compiled.framing,
+            lens: compiled.lens,
+            retouch: compiled.retouch,
+            inspect: { LayerMask: { layer: index } },
+            hdr: this.hdrWorking
+          },
+          { signal }
+        )
+        .catch(named(compiled))
       this.thumbSig[layer.id] = sig
       if (this.closed) return
       this.owner.send(IPC.develop.rendered, {
@@ -1200,6 +1401,10 @@ class Session {
 
   /** The most recent full render's file: what the masked hue chart measures. */
   private lastFull = ''
+  /** The last settled Full HDR picture's SDR companion, as a file. */
+  private lastCompanion: Picture | null = null
+  /** The last settled Full HDR picture's peak and reach (`HdrFigures`). */
+  private hdrFigures: HdrFigures | null = null
   /** The last few settled pictures by signature, newest last (see RECENT_FULL). */
   private recentFull = new Map<string, { event: RenderEvent; out: string }>()
   /** A recipe shown instead of the photo's, not saved (see `previewRecipe`). */
@@ -1220,7 +1425,17 @@ class Session {
     const view = this.source('full')
     const src =
       this.isPlain(view) || (this.isBaked(view) && this.basePx() === this.px) ? view : this.px.proxy
-    const compiled = await this.compileFor(before, src, !this.view.cropMode)
+    // Full HDR: the before in HDR too, as an AVIF with the master's gain map
+    // (a file: a frame would be let go as the drafts stream past it).
+    const display = this.view.display ?? null
+    const compiled = await this.compileFor(
+      before,
+      src,
+      !this.view.cropMode,
+      false,
+      true,
+      display !== null
+    )
     // Keyed on what the engine is asked for, not on the raw geometry: a
     // straighten in the crop tool changes the recipe but not this picture.
     const key = JSON.stringify([
@@ -1228,30 +1443,38 @@ class Session {
       compiled.lens,
       compiled.retouch,
       src.path,
-      this.view.cropMode
+      this.view.cropMode,
+      display
     ])
     if (key === this.beforeKey) return
     // PNG only where it has transparent corners to keep (the crop tool's
     // warp); else a JPEG, as the picture beside it is.
     const alpha = framingTransparent(compiled.framing)
-    const out = join(this.dir, `before-${hash32(key).toString(16)}.${alpha ? 'png' : 'jpg'}`)
-    const report = await this.owner.engine.convert(
-      {
-        ...blankRequest(src.path, out, src.input),
-        pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
-        encode: alpha
-          ? { Png: { compression: 'Fast', filter: 'Sub' } }
-          : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
-        metadata: { exif: false, icc: true, xmp: false, iptc: false },
-        color: displayPolicy(this.info, 'DisplayP3'),
-        grade: compiled.grade,
-        framing: compiled.framing,
-        lens: compiled.lens,
-        retouch: compiled.retouch,
-        measure: measureOf(1)
-      },
-      { signal }
-    )
+    const hdr = display && !alpha ? hdrFile(display) : null
+    const ext = hdr ? 'avif' : alpha ? 'png' : 'jpg'
+    const out = join(this.dir, `before-${hash32(key).toString(16)}.${ext}`)
+    const report = await this.owner.engine
+      .convert(
+        {
+          ...blankRequest(src.path, out, src.input),
+          pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
+          encode: hdr
+            ? hdr.encode
+            : alpha
+              ? { Png: { compression: 'Fast', filter: 'Sub' } }
+              : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
+          metadata: { exif: false, icc: true, xmp: false, iptc: false },
+          color: hdr ? hdr.color : displayPolicy(this.info, 'DisplayP3'),
+          ...(hdr ? { gain_map: null } : {}),
+          grade: compiled.grade,
+          framing: compiled.framing,
+          lens: compiled.lens,
+          retouch: compiled.retouch,
+          measure: measureOf(1)
+        },
+        { signal }
+      )
+      .catch(named(compiled))
     const stats = statsOf(report)
     this.beforeKey = key
     if (this.closed) return
@@ -1267,6 +1490,29 @@ class Session {
     } satisfies RenderEvent)
   }
 
+  /**
+   * The RAW master a 1:1 view reads: the plan's (DemosaicNet) once it is
+   * made; until then a quick classic one (PPG, about 1.2 s) at once, the
+   * plan's made in the background, and the window told to ask again when it
+   * is (the engine's viewing guide, 2026-10-09).
+   */
+  private async rawMasterForView(): Promise<ProxyFile> {
+    const ask = askOf(this.recipe)
+    const plan = await scenePlan(this.file.raw_cfa, ask)
+    const plain = (): Promise<ProxyFile> =>
+      ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+    if (plan.demosaic === 'classic' || (await masterCached(this.row, this.file, ask)))
+      return plain()
+    const key = this.key
+    void plain().then(
+      () => {
+        if (!this.closed) this.owner.send(IPC.develop.tileStale, { key })
+      },
+      (err: unknown) => log.warn('RAW master for 1:1 not made', (err as Error).message)
+    )
+    return ensureQuickMaster(this.owner.bgEngine, this.row)
+  }
+
   /** A 1:1 (or smaller) render of part of the full-resolution frame. */
   async region(req: RegionRequest): Promise<RegionResult> {
     const t0 = performance.now()
@@ -1275,6 +1521,9 @@ class Session {
     const abort = new AbortController()
     this.regionAbort = abort
     const { signal } = abort
+    // What the region is cut from, timed for the trace: the working copy
+    // (pixel steps at full size) or the RAW master, made or found.
+    const tMaster = performance.now()
     // The pixel steps laid on at full size: the same pixels an export uses.
     const stepsMaster = await this.workingMaster()
     const raw = this.isRaw
@@ -1283,16 +1532,29 @@ class Session {
       : this.hdrMaster
         ? this.hdrMaster
         : raw
-          ? await ensureMaster(this.owner.bgEngine, this.row)
+          ? await this.rawMasterForView()
           : {
               path: this.row.path,
               input: this.info.input,
               width: this.px.frameWidth,
               height: this.px.frameHeight
             }
+    const masterMs = Math.round(performance.now() - tMaster)
     // The source's own size: the frame its full-size render is of.
     const { user, width, height } = orientedFrame(this.recipe, src.width, src.height)
-    const zoom = Math.min(1, req.zoom)
+    // 1:1 is 1: the loupe's arithmetic can send 0.9999999999999999, which
+    // would ask for a resize that changes nothing (and, in Full HDR, one the
+    // engine refuses without a linear resample: Pass 117's trace).
+    const zoom = req.zoom >= 0.9999 ? 1 : Math.min(1, req.zoom)
+    // Full HDR: the tile in HDR too (an AVIF with the master's gain map),
+    // stating the settled picture's peak and reach, which a part cannot
+    // measure. Before the first settled HDR picture, an SDR tile.
+    const figures = this.hdrFigures
+    const display = figures ? (this.view.display ?? null) : null
+    // Full HDR: F16 pixels over the preview port, as drafts are, not an AVIF
+    // with a gain map read back (an export's format: 0.4–1.3 s a tile; the
+    // engine's viewing guide, 2026-10-09). The whole picture's figures stated.
+    const hdr = display !== null && figures !== null
     // Framed as the picture on screen is (straightened, cropped, warped, the
     // crop tool's whole frame): since engine 0.16 a region of it is the full
     // render's own pixels there, so 1:1 is sharp on any photo.
@@ -1308,8 +1570,9 @@ class Session {
       brushPaths: await brushPlanes(this.row.id, this.recipe, user),
       applyCrop: !this.view.cropMode,
       showTransform: !this.view.guides,
-      // Tone mapped to SDR for the screen, as the picture is (see compileFor).
-      hdr: false
+      // Tone mapped to SDR for the screen, as the picture is (see compileFor);
+      // kept HDR for a Full HDR display.
+      hdr: display !== null
     })
     const framed = await this.framedSize(compiled, width, height)
     // The request is a part of the picture as shown (fractions): in the
@@ -1321,29 +1584,87 @@ class Session {
     this.regionSlot = (this.regionSlot + 1) % 4
     // A JPEG at full chroma: as sharp at 1:1 as the PNG it was, a fraction
     // of the time to write and decode at the screen's size.
-    const out = join(this.dir, `region-${this.regionSlot}.jpg`)
+    const frame = hdr ? `${this.tag}-tile${++this.tileSeq}` : undefined
+    const out = frame ? '' : join(this.dir, `region-${this.regionSlot}.jpg`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
-    await this.owner.engine.convert(
-      {
-        ...blankRequest(src.path, out, src.input, original),
-        raw: null,
-        resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
-        pixel: { depth: 'Eight', channels: 3 },
-        encode: { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
-        metadata: { exif: false, icc: true, xmp: false, iptc: false },
-        color: displayPolicy(this.info, 'DisplayP3'),
-        grade: compiled.grade,
-        framing: compiled.framing,
-        lens: compiled.lens,
-        retouch: compiled.retouch,
-        region: { x, y, width: w, height: h, margin: 96 }
-      },
-      { signal }
-    )
+    const request: ConvertRequest = {
+      ...blankRequest(src.path, out, src.input, original),
+      raw: null,
+      ...(frame ? { sink: 'Bytes' as const } : {}),
+      resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
+      pixel: frame ? { depth: 'F32', channels: 4 } : { depth: 'Eight', channels: 3 },
+      encode: frame
+        ? { Pixels: { sample: 'F16' } }
+        : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      color:
+        frame && display && figures
+          ? masterFor(display, figures, TILE_COMPANION_EDGE)
+          : displayPolicy(this.info, 'DisplayP3'),
+      // The master reads a gain map itself, and refuses the field.
+      ...(hdr ? { gain_map: null } : {}),
+      grade: compiled.grade,
+      framing: compiled.framing,
+      lens: compiled.lens,
+      retouch: compiled.retouch,
+      region: { x, y, width: w, height: h, margin: 96 },
+      // A Full HDR tile is resized inside the master's float pass, which the
+      // engine allows only as a linear resample.
+      ...(hdr && zoom < 1 ? { linear_resample: true } : {})
+    }
+    const tConvert = performance.now()
+    const report = await this.owner.engine
+      .convert(request, { signal, frame })
+      .catch(named(compiled))
+    // The engine had no way to the window (it was reloading): main passes the frame on.
+    if (frame && report.output)
+      this.owner.send(IPC.develop.previewFrame, {
+        frame,
+        width: report.width,
+        height: report.height,
+        data: report.output,
+        sample: 'F16',
+        ...(report.companion ? { companion: companionOf(report.companion) } : {})
+      })
+    traceRegion({
+      step: 'region',
+      key: this.key,
+      asked: req,
+      // Where the region's pixels come from, and how long getting it took.
+      source: stepsMaster
+        ? 'working master (pixel steps)'
+        : this.hdrMaster
+          ? 'HDR master'
+          : raw
+            ? 'RAW master'
+            : 'the original',
+      masterMs,
+      src,
+      zoom: req.zoom,
+      fullHdr: hdr,
+      convertMs: Math.round(performance.now() - tConvert),
+      totalMs: Math.round(performance.now() - t0),
+      request,
+      report: {
+        width: report.width,
+        height: report.height,
+        input_bytes: report.input_bytes,
+        output_bytes: report.output_bytes,
+        decode_ms: report.decode_ms,
+        resize_ms: report.resize_ms,
+        color_ms: report.color_ms,
+        ingest_ms: report.ingest_ms,
+        egress_ms: report.egress_ms,
+        encode_ms: report.encode_ms,
+        region: report.region,
+        frame_width: report.frame_width,
+        frame_height: report.frame_height
+      }
+    })
     if (this.regionAbort === abort) this.regionAbort = null
     return {
-      url: cacheUrl(out, `${Date.now()}`),
+      url: frame ? `frame:${frame}` : cacheUrl(out, `${Date.now()}`),
       x: x / framed.width,
       y: y / framed.height,
       width: w / framed.width,
@@ -1498,18 +1819,20 @@ class Session {
     const src = this.viewPx().draft
     const compiled = await this.compileFor(flat, src, true)
     const out = join(this.dir, 'auto-tone.png')
-    const report = await this.owner.engine.convert({
-      ...blankRequest(src.path, out, src.input),
-      pixel: { depth: 'Eight', channels: 3 },
-      encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-      metadata: { exif: false, icc: true, xmp: false, iptc: false },
-      color: displayPolicy(this.info, 'DisplayP3'),
-      grade: compiled.grade,
-      framing: compiled.framing,
-      lens: compiled.lens,
-      retouch: compiled.retouch,
-      measure: measureOf(1)
-    })
+    const report = await this.owner.engine
+      .convert({
+        ...blankRequest(src.path, out, src.input),
+        pixel: { depth: 'Eight', channels: 3 },
+        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        color: displayPolicy(this.info, 'DisplayP3'),
+        grade: compiled.grade,
+        framing: compiled.framing,
+        lens: compiled.lens,
+        retouch: compiled.retouch,
+        measure: measureOf(1)
+      })
+      .catch(named(compiled))
     return autoTone(statsOf(report))
   }
 
@@ -1594,11 +1917,11 @@ class Session {
    * frame must remain; otherwise it fails by name and Auto tries a lesser
    * mode.
    */
-  private usableUpright(t: Transform, w: number, h: number): void {
+  private usableUpright(tf: Transform, w: number, h: number): void {
     const { width, height } = orientedFrame(this.recipe, w, h)
-    const tooSteep = new Error('the lines ask for too strong a correction')
-    if (Math.abs(t.vertical) > 40 || Math.abs(t.horizontal) > 40) throw tooSteep
-    const centred = uprightTransform({ ...defaultUpright(), suggested: t }, width, height)
+    const tooSteep = new Error(t('the lines ask for too strong a correction'))
+    if (Math.abs(tf.vertical) > 40 || Math.abs(tf.horizontal) > 40) throw tooSteep
+    const centred = uprightTransform({ ...defaultUpright(), suggested: tf }, width, height)
     if (!centred) return
     const kept = fitCrop({ x: 0, y: 0, width: 1, height: 1 }, 0, width, height, centred)
     if (kept.width * kept.height < 0.25) throw tooSteep
@@ -1607,9 +1930,9 @@ class Session {
   /** Guided Upright: the transform that makes the guides (frame fractions) upright or level. */
   async uprightFromLines(lines: GuideLine[], focal: number): Promise<Transform> {
     const { width, height } = orientedFrame(this.recipe, this.px.frameWidth, this.px.frameHeight)
-    const t = await this.owner.engine.uprightFromLines(lines, width, height, focal)
-    this.usableUpright(t, this.px.frameWidth, this.px.frameHeight)
-    return t
+    const tf = await this.owner.engine.uprightFromLines(lines, width, height, focal)
+    this.usableUpright(tf, this.px.frameWidth, this.px.frameHeight)
+    return tf
   }
 
   /**
@@ -1655,7 +1978,7 @@ class Session {
   ): Promise<PixelStep | null> {
     const deps = pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row)
     const set = await ensureWorking(deps, versionStamp(this.row), this.px, steps, () =>
-      ensureBase(this.owner.bgEngine, this.row, this.file)
+      ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
     )
     const key = keyOf(this.row.id, null)
     const step = await bakeSpot(
@@ -1692,7 +2015,7 @@ class Session {
     // the moment the step lands, and it is the last one plus a small patch.
     if (step)
       void ensureWorking(deps, versionStamp(this.row), this.px, [...steps, step], () =>
-        ensureBase(this.owner.bgEngine, this.row, this.file)
+        ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
       ).catch(() => undefined)
     return step
   }
@@ -1700,7 +2023,7 @@ class Session {
   /** The noise the denoiser would measure, on the full-resolution frame. */
   async noise(): Promise<NoiseEstimate | null> {
     const src: ProxyFile = this.isRaw
-      ? await ensureMaster(this.owner.bgEngine, this.row)
+      ? await ensureMaster(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
       : { path: this.row.path, input: this.file.input, width: 0, height: 0 }
     const s = await this.owner.bgEngine.analyze({
       ...analyzeRequest(src.path, 'Png', 1),
@@ -1723,16 +2046,20 @@ class Session {
   private lookFiles = new Map<string, string>()
   private lookEdge = LOOK_EDGE_DEFAULT
 
-  /** The cards wanted now, in order (see `LookThumbQueue.request`). */
+  /**
+   * The cards wanted now, in order (see `LookThumbQueue.request`). Always
+   * SDR, Full HDR or not: small cards side by side compare looks, and a
+   * strip of them glowing would outshine the photo.
+   */
   lookThumbs(token: number, jobs: ThumbJob<Recipe>[], edge: number): void {
     if (this.closed) return
     this.lookEdge = Math.round(Math.max(LOOK_EDGE_MIN, Math.min(LOOK_EDGE_MAX, edge)))
     this.lookQueue ??= new LookThumbQueue<Recipe>(
       (job, signal) => this.makeLookThumb(job.recipe, signal),
-      (t, id, thumb) =>
+      (tok, id, thumb) =>
         this.owner.send(IPC.looks.thumb, {
           key: this.key,
-          token: t,
+          token: tok,
           id,
           ...thumb
         } satisfies LookThumbEvent),
@@ -1807,6 +2134,23 @@ class Session {
     return saved.then(() =>
       this.owner.library.index.holdOpen(this.key, false).catch(() => undefined)
     )
+  }
+}
+
+/**
+ * Full HDR's SDR companion written as a Display P3 PNG by the pixels worker:
+ * its deflate held main up about 36 ms per settled render (Pass 116). The
+ * samples are handed over when they own their buffer (nothing reads them
+ * after); the worker gone, it is written here.
+ */
+async function writeCompanion(file: string, data: Uint8Array, w: number, h: number): Promise<void> {
+  const own = data.byteOffset === 0 && data.byteLength === data.buffer.byteLength
+  const px = own ? data : data.slice()
+  try {
+    await pixels.run({ op: 'png8', data: px, w, h, out: file }, [px.buffer as ArrayBuffer])
+  } catch (err) {
+    if (px.byteLength === 0) throw err
+    await writeFile(file, encodePng8(px, w, h, 1, [CICP_DISPLAY_P3]))
   }
 }
 
@@ -1960,7 +2304,20 @@ export class DevelopSessions {
   }
 
   region(req: RegionRequest): Promise<RegionResult> {
-    return this.get(req.key).region(req)
+    const t0 = performance.now()
+    return this.get(req.key)
+      .region(req)
+      .catch((err: unknown) => {
+        traceRegion({
+          step: 'region failed',
+          key: req.key,
+          asked: req,
+          zoom: req.zoom,
+          ms: Math.round(performance.now() - t0),
+          message: (err as Error)?.message ?? String(err)
+        })
+        throw err
+      })
   }
 
   sample(key: string, x: number, y: number): Promise<SampleResult> {

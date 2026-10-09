@@ -22,6 +22,7 @@ import { ColorWheel } from './editors'
 import { InfoTip, type Tip } from './InfoTip'
 import { Popover } from './Popover'
 import { Slider, Toggle } from './ui'
+import { t } from '../lib/i18n'
 
 /** The last target colour chosen, offered again next time (sRGB code values). */
 let lastGoal: Vec3 = [0.36, 0.62, 0.66]
@@ -53,9 +54,9 @@ function MatchTarget({
   }
   return (
     <Popover onClose={onClose} anchor={anchor} className="match-pop">
-      <div className="micro muted">Match to a colour</div>
+      <div className="micro muted">{t('Match to a colour')}</div>
       <ColorWheel
-        label="Target"
+        label={t('Target')}
         size={132}
         luminance={false}
         value={{
@@ -67,7 +68,7 @@ function MatchTarget({
         onCommit={() => undefined}
       />
       <Slider
-        label="Brightness"
+        label={t('Brightness')}
         value={Math.round(hsv.value * 100)}
         min={0}
         max={100}
@@ -81,7 +82,7 @@ function MatchTarget({
         <input
           className="hex"
           spellCheck={false}
-          aria-label="Target colour as a hex"
+          aria-label={t('Target colour as a hex')}
           value={typing ? text : hex}
           onChange={(e) => {
             setTyping(true)
@@ -100,10 +101,10 @@ function MatchTarget({
           onPickOne(srgbToP3(rgb), hex)
         }}
       >
-        ⌖ Pick the colour to change
+        ⌖ {t('Pick the colour to change')}
       </button>
       <button className="sm ghost" onClick={onPickBoth}>
-        Pick both in the photo
+        {t('Pick both in the photo')}
       </button>
     </Popover>
   )
@@ -167,25 +168,27 @@ export function AddColourControl({
         <span
           className="add-swatch"
           style={{ background: swatchCss(value), opacity: value.amount > 0 ? 1 : 0.35 }}
-          title="The colour added"
+          title={t('The colour added')}
         />
         <Toggle
           on={picking('white')}
           onChange={toggle('white')}
-          title="Click a colour in the photo: add its complement, so it turns neutral"
+          title={t('Click a colour in the photo: add its complement, so it turns neutral')}
         >
-          ⌖ Neutralise
+          ⌖ {t('Neutralise')}
         </Toggle>
         <button
           ref={matchButton}
           className={`toggle ${picking('match') || matching ? 'on' : ''}`}
-          title="Turn one colour into another: choose the target on a wheel or as a hex, or pick it in the photo"
+          title={t(
+            'Turn one colour into another: choose the target on a wheel or as a hex, or pick it in the photo'
+          )}
           onClick={() => {
             if (picking('match')) return setAddPick(null)
             setMatching(!matching)
           }}
         >
-          ⌖ Match
+          ⌖ {t('Match')}
         </button>
         {matching && (
           <MatchTarget
@@ -204,18 +207,18 @@ export function AddColourControl({
         {hint && (
           <>
             <span className="spacer" />
-            <InfoTip tip={hint} label="Add colour" />
+            <InfoTip tip={hint} label={t('Add colour')} />
           </>
         )}
       </div>
-      {slider('hue', 'Hue', 360, HUE_TRACK)}
+      {slider('hue', t('Hue'), 360, HUE_TRACK)}
       {slider(
         'saturation',
-        'Saturation',
+        t('Saturation'),
         100,
         `linear-gradient(90deg,#fff,${swatchCss({ hue: value.hue, saturation: 100 })})`
       )}
-      {slider('amount', 'Amount', 100, undefined, 0.1)}
+      {slider('amount', t('Amount'), 100, undefined, 0.1)}
     </div>
   )
 }

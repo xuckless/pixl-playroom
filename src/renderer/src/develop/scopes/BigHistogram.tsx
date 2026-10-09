@@ -8,20 +8,21 @@
 import { useMemo, useState } from 'react'
 import type { ImageStats } from '../../../../shared/engine-types'
 import { HDR_FLOOR_STOPS, areaPath, stopsBins, stopsX } from '../../../../shared/scopes'
+import { t, tk } from '../../lib/i18n'
 
 type Mode = 'overlay' | 'parade' | 'red' | 'green' | 'blue' | 'luma'
 
 const MODES: { value: Mode; label: string }[] = [
-  { value: 'overlay', label: 'Overlay' },
-  { value: 'parade', label: 'Parade' },
+  { value: 'overlay', label: tk('Overlay') },
+  { value: 'parade', label: tk('Parade') },
   { value: 'red', label: 'R' },
   { value: 'green', label: 'G' },
   { value: 'blue', label: 'B' },
-  { value: 'luma', label: 'Luma' }
+  { value: 'luma', label: tk('Luma') }
 ]
 
 const COLOURS = ['#ff5a6e', '#5ee08a', '#6d8cff']
-const NAMES = ['Red', 'Green', 'Blue']
+const NAMES = [tk('Red'), tk('Green'), tk('Blue')]
 const W = 900
 const H = 300
 
@@ -82,7 +83,7 @@ export function BigHistogram({
     return { a, b, max }
   }, [now, then])
 
-  if (!now || !chart) return <p className="muted">Nothing measured yet.</p>
+  if (!now || !chart) return <p className="muted">{t('Nothing measured yet.')}</p>
   const { stats: shown } = now
   const { a, b, max } = chart
   const top = Math.log2(Math.max(shown.range_max, 1))
@@ -185,7 +186,7 @@ export function BigHistogram({
   return (
     <div className="big-histogram">
       <div className="bh-bar">
-        <div className="seg" role="group" aria-label="Channels">
+        <div className="seg" role="group" aria-label={t('Channels')}>
           {MODES.map((m) => (
             <button
               key={m.value}
@@ -193,27 +194,31 @@ export function BigHistogram({
               aria-pressed={mode === m.value}
               onClick={() => setMode(m.value)}
             >
-              {m.label}
+              {t(m.label)}
             </button>
           ))}
         </div>
         <label className="check">
-          <input type="checkbox" checked={log} onChange={(e) => setLog(e.target.checked)} /> Log
+          <input type="checkbox" checked={log} onChange={(e) => setLog(e.target.checked)} />{' '}
+          {t('Log')}
         </label>
         {before && !showHdr && (
           <label className="check">
             <input type="checkbox" checked={ghost} onChange={(e) => setGhost(e.target.checked)} />{' '}
-            Before
+            {t('Before')}
           </label>
         )}
         {hdr && (
-          <label className="check" title="The graded photo as an HDR export holds it, in stops">
+          <label
+            className="check"
+            title={t('The graded photo as an HDR export holds it, in stops')}
+          >
             <input
               type="checkbox"
               checked={wantHdr}
               onChange={(e) => setWantHdr(e.target.checked)}
             />{' '}
-            HDR (stops)
+            {t('HDR (stops)')}
           </label>
         )}
         <label className="check">
@@ -222,11 +227,16 @@ export function BigHistogram({
             checked={clipping}
             onChange={(e) => onClipping(e.target.checked)}
           />{' '}
-          Show clipping on the photo
+          {t('Show clipping on the photo')}
         </label>
       </div>
       <div className="bh-chart">
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Histogram">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label={t('Histogram')}
+        >
           {whiteX !== null && (
             <rect className="hdr-headroom" x={whiteX * W} y={0} width={W - whiteX * W} height={H} />
           )}
@@ -239,7 +249,7 @@ export function BigHistogram({
           <div className="bh-parade-names" aria-hidden>
             {NAMES.map((n, i) => (
               <span key={n} style={{ color: COLOURS[i] }}>
-                {n}
+                {t(n)}
               </span>
             ))}
           </div>
@@ -247,32 +257,34 @@ export function BigHistogram({
         <div className="bh-scale" aria-hidden>
           {mode === 'parade'
             ? null
-            : ticks.map((t) => (
-                <span key={t.label} style={{ left: `${t.x}%` }}>
-                  {t.label}
+            : ticks.map((tick) => (
+                <span key={tick.label} style={{ left: `${tick.x}%` }}>
+                  {tick.label}
                 </span>
               ))}
         </div>
       </div>
       {now.hdr && (
         <p className="muted small">
-          Stops from reference white (203 nits); everything right of the line is headroom, up to the
-          photo’s peak (+{top.toFixed(1)} EV).
+          {t(
+            'Stops from reference white (203 nits); everything right of the line is headroom, up to the photo’s peak (+{{ev}} EV).',
+            { ev: top.toFixed(1) }
+          )}
         </p>
       )}
       <table className="bh-table">
         <thead>
           <tr>
             <th />
-            <th>Mean</th>
-            <th>Clipped low</th>
-            <th>Clipped high</th>
+            <th>{t('Mean')}</th>
+            <th>{t('Clipped low')}</th>
+            <th>{t('Clipped high')}</th>
           </tr>
         </thead>
         <tbody>
           {shown.histograms.slice(0, 3).map((_, i) => (
             <tr key={i}>
-              <th style={{ color: COLOURS[i] }}>{NAMES[i]}</th>
+              <th style={{ color: COLOURS[i] }}>{t(NAMES[i])}</th>
               <td>{shown.channel_mean[i]?.toFixed(3)}</td>
               <td className={shown.clipped_low[i] > 0.001 ? 'hot' : ''}>
                 {pct(shown.clipped_low[i] ?? 0)}
@@ -283,17 +295,17 @@ export function BigHistogram({
             </tr>
           ))}
           <tr>
-            <th>Luma</th>
+            <th>{t('Luma')}</th>
             <td>{shown.luma_mean.toFixed(3)}</td>
             <td colSpan={2} className="muted">
-              spread {shown.luma_stddev.toFixed(3)}
+              {t('spread {{value}}', { value: shown.luma_stddev.toFixed(3) })}
             </td>
           </tr>
         </tbody>
       </table>
       {shown.luma_percentiles.length > 0 && (
         <div className="bh-percentiles">
-          <span className="micro">Luma percentiles</span>
+          <span className="micro">{t('Luma percentiles')}</span>
           {[...shown.luma_percentiles]
             .sort((x, y) => x.percentile - y.percentile)
             .map((p) => (

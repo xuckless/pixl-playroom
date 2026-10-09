@@ -26,6 +26,39 @@
   -webkit-app-region: drag;
   user-select: none;
 }
+/*
+ * Windows: the window's buttons are drawn over the bar's right end (main/app.ts,
+ * the window controls overlay); the bar ends before them.
+ */
+:root[data-platform='win'] .identity-bar {
+  padding-right: calc(
+    100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 12px
+  );
+}
+.window-menus {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: -6px;
+  -webkit-app-region: no-drag;
+}
+.window-menus button {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text2);
+  font-size: 12.5px;
+}
+.window-menus button:hover,
+.window-menus button:focus-visible {
+  color: var(--text);
+  border-color: var(--hair2);
+}
+/* macOS: the window's own buttons sit at the bar's left (main/app.ts). */
+:root[data-platform='mac']:not([data-fullscreen]) .identity-bar {
+  padding-left: 84px;
+}
 .identity-bar button,
 .identity-bar select,
 .identity-bar input {
@@ -68,6 +101,13 @@
   letter-spacing: 0.14em;
   white-space: nowrap;
 }
+.identity-bar .settings-button {
+  margin-right: -8px;
+  color: var(--text2);
+}
+.identity-bar .settings-button:hover {
+  color: var(--text);
+}
 .engine-status.bad {
   color: var(--danger);
 }
@@ -89,6 +129,14 @@
 .status-dot.bad {
   background: var(--danger);
   box-shadow: 0 0 10px var(--danger);
+}
+/* Resting while Playroom is behind: yellow, not an error. */
+.engine-status.rest {
+  color: var(--warn);
+}
+.status-dot.rest {
+  background: var(--warn);
+  box-shadow: 0 0 10px var(--warn);
 }
 .tool-bar,
 .toolbar {
@@ -313,6 +361,12 @@ aside.right .panels {
 }
 .rail-item.future {
   opacity: 0.4;
+}
+/* A long name (a translated look's) ends in an ellipsis, not at the pane's edge. */
+.rail-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .rail-label {
   display: inline-flex;
@@ -764,4 +818,13 @@ aside.right .panels.scoped {
 .look-run-text .t {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* Full HDR (engine 0.18): lit while the photo shows its light above white */
+.tool-bar .full-hdr.on {
+  color: var(--acc);
+  box-shadow: inset 0 0 0 1px var(--acc-a55);
+}
+.tool-bar .full-hdr:disabled {
+  opacity: 0.45;
 }

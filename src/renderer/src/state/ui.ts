@@ -6,19 +6,20 @@
 import { create } from 'zustand'
 import { DEFAULT_ENHANCE, normaliseEnhance, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind } from '../../../shared/retouch'
-import type { AiDenoiseModel } from '../../../shared/recipe'
+import { aiDenoiseModel, type AiDenoiseModel } from '../../../shared/recipe'
 import { isCardId, type CardId } from '../../../shared/cards'
 import { migrateUi } from './uiMigrate'
+import { tk } from '../lib/i18n'
 import type { Bindings, Chord } from '../lib/keys'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 export type CropGuide = 'thirds' | 'grid' | 'golden' | 'diagonal' | 'none'
 export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
-  { value: 'thirds', label: 'Thirds' },
-  { value: 'grid', label: 'Grid' },
-  { value: 'golden', label: 'Golden' },
-  { value: 'diagonal', label: 'Diagonal' },
-  { value: 'none', label: 'None' }
+  { value: 'thirds', label: tk('Thirds') },
+  { value: 'grid', label: tk('Grid') },
+  { value: 'golden', label: tk('Golden') },
+  { value: 'diagonal', label: tk('Diagonal') },
+  { value: 'none', label: tk('None') }
 ]
 
 export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
@@ -27,13 +28,13 @@ export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
 export type OverlayMode =
   'glass' | 'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
 export const OVERLAY_MODES: { value: OverlayMode; label: string }[] = [
-  { value: 'glass', label: 'Glass' },
-  { value: 'color', label: 'Colour overlay' },
-  { value: 'color-bw', label: 'Colour overlay on B&W' },
-  { value: 'image-black', label: 'Image on black' },
-  { value: 'image-white', label: 'Image on white' },
-  { value: 'white-black', label: 'White on black' },
-  { value: 'outline', label: 'Outline' }
+  { value: 'glass', label: tk('Glass') },
+  { value: 'color', label: tk('Colour overlay') },
+  { value: 'color-bw', label: tk('Colour overlay on B&W') },
+  { value: 'image-black', label: tk('Image on black') },
+  { value: 'image-white', label: tk('Image on white') },
+  { value: 'white-black', label: tk('White on black') },
+  { value: 'outline', label: tk('Outline') }
 ]
 
 export interface BrushSettings {
@@ -91,6 +92,8 @@ export interface HealSettings {
   opacity: number
   /** Visualise Spots: the picture as white specks on black, and how faint a speck still shows (0…100). */
   visualise?: boolean
+  /** Remove: a click (no drag) takes the object there (SAM 2.1), not a disc. */
+  findObject?: boolean
   spotLevel?: number
 }
 
@@ -109,26 +112,15 @@ const DEFAULT_CARDS_OPEN: Partial<Record<CardId, boolean>> = {
 }
 
 /**
- * The masks window: open or not, floating over the photo (its top-left, in px
- * from the stage's) or docked as a column beside the left rail, and folded to
- * a pill or not. Masks are not a wheel tool: the window stays up whatever the
- * right column shows.
+ * The masks pane (a column of the left pane): shown while masks are being
+ * edited. Masks are not a wheel tool: it stays up whatever the right column
+ * shows.
  */
 export interface MasksWindow {
   open: boolean
-  docked: boolean
-  minimized: boolean
-  x: number
-  y: number
 }
 
-const DEFAULT_MASKS_WIN: MasksWindow = {
-  open: false,
-  docked: false,
-  minimized: false,
-  x: -1,
-  y: 14
-}
+const DEFAULT_MASKS_WIN: MasksWindow = { open: false }
 
 interface UiState {
   /** Which pane the left rail shows, and whether it is open or folded to its spine. */
@@ -159,6 +151,22 @@ interface UiState {
   /** Change the current brush's settings. */
   setBrush(p: Partial<BrushSettings>): void
   masksWin: MasksWindow
+  /**
+   * Full HDR: the photo shown with its light above white on a display that
+   * has headroom (engine 0.18). How the photo is viewed, not part of its
+   * recipe; not the SDR | HDR "edit as" switch a gain-map photo has.
+   */
+  fullHdr: boolean
+  setFullHdr(on: boolean): void
+  /**
+   * The efficient UI always, not only while Playroom isn't the active app:
+   * flat colour for glass, no animations, no moving backgrounds (efficient.ts).
+   */
+  alwaysFlat: boolean
+  setAlwaysFlat(on: boolean): void
+  /** The Library suggests rejects (dimmed, with the reason on hover): Pass 115. */
+  cullSuggest: boolean
+  setCullSuggest(on: boolean): void
   setMasksWin(p: Partial<MasksWindow>): void
   /** AI denoise's model and strength for the next step (Detail → AI). */
   denoise: { model: AiDenoiseModel; strength: number }
@@ -255,6 +263,12 @@ export const useUi = create<UiState>()(
       brushSlot: 'A',
       setBrushSlot: (brushSlot) => set({ brushSlot }),
       heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100 },
+      fullHdr: false,
+      setFullHdr: (fullHdr) => set({ fullHdr }),
+      alwaysFlat: true,
+      setAlwaysFlat: (alwaysFlat) => set({ alwaysFlat }),
+      cullSuggest: true,
+      setCullSuggest: (cullSuggest) => set({ cullSuggest }),
       setHeal: (p) => set((s) => ({ heal: { ...s.heal, ...p } })),
       enhance: DEFAULT_ENHANCE,
       setEnhance: (p) => set((s) => ({ enhance: { ...s.enhance, ...p } })),
@@ -304,7 +318,7 @@ export const useUi = create<UiState>()(
     {
       name: 'playroom.ui',
       storage,
-      version: 4,
+      version: 7,
       migrate: (persisted, version) => migrateUi(persisted, version),
       // Crop or Heal is never in hand when the app opens.
       partialize: (s) => {
@@ -319,9 +333,14 @@ export const useUi = create<UiState>()(
           ...p,
           // Settings saved before a field existed take its default.
           enhance: normaliseEnhance(p.enhance),
-          masksWin: { ...DEFAULT_MASKS_WIN, ...p.masksWin },
+          masksWin: { open: p.masksWin?.open === true },
           maskOverlay: withoutPins({ ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay }),
-          denoise: { model: 'drunet-color', strength: 100, ...p.denoise },
+          // SCUNet, retired with engine 0.19, is NAFNet SIDD now.
+          denoise: {
+            strength: 100,
+            ...p.denoise,
+            model: p.denoise ? aiDenoiseModel(p.denoise.model) : 'drunet-color'
+          },
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
           cardsOpen:
             p.cardsOpen && typeof p.cardsOpen === 'object' ? p.cardsOpen : current.cardsOpen,

@@ -54,16 +54,19 @@ export async function lensMap(
   const ramp = join(dir, `ramp-${w}x${h}.png`)
   // Each written whole, once: a map read half made would misplace the mask.
   await makeOnce(ramp, (tmp) => deps.work({ op: 'ramp', file: tmp, w, h }))
-  await makeOnce(out, (tmp) =>
-    deps.engine.convert({
-      ...blankRequest(ramp, tmp, 'Png'),
-      pixel: { depth: 'Sixteen', channels: 3 },
-      encode: { Png: { compression: 'Fast', filter: 'Sub' } },
-      // Numbers, not colours: nothing may touch them.
-      metadata: { exif: false, icc: false, xmp: false, iptc: false },
-      color: 'Preserve',
-      lens: geometry
-    })
+  await makeOnce(
+    out,
+    (tmp) =>
+      deps.engine.convert({
+        ...blankRequest(ramp, tmp, 'Png'),
+        pixel: { depth: 'Sixteen', channels: 3 },
+        encode: { Png: { compression: 'Fast', filter: 'Sub' } },
+        // Numbers, not colours: nothing may touch them.
+        metadata: { exif: false, icc: false, xmp: false, iptc: false },
+        color: 'Preserve',
+        lens: geometry
+      }),
+    true
   )
   return out
 }

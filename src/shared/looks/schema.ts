@@ -21,6 +21,7 @@ import { groupsOf } from './dsl'
 import { allowedPath, CURVE_PATHS, rangeOf } from './ranges'
 import { readSmart, type SmartPart } from './smart'
 import { LOOK_SCHEMA, type LookApproximation, type LookAuthor, type LookMeta } from './types'
+import { t } from '../i18n'
 
 export const LOOK_FILE_FORMAT = 'pixl-look'
 
@@ -141,13 +142,13 @@ export function lookFromFile(
   raw: unknown,
   opts: { trusted?: boolean; newId?: () => string } = {}
 ): ReadLook {
-  if (!isObj(raw) || raw.format !== LOOK_FILE_FORMAT) throw new LookFileError('Not a PIXL look.')
+  if (!isObj(raw) || raw.format !== LOOK_FILE_FORMAT) throw new LookFileError(t('Not a PIXL look.'))
   if (typeof raw.schema !== 'number' || raw.schema > LOOK_SCHEMA)
-    throw new LookFileError('This look was made by a newer PIXL. Update to use it.')
+    throw new LookFileError(t('This look was made by a newer PIXL. Update to use it.'))
   const l = raw.look
-  if (!isObj(l) || !isObj(l.values)) throw new LookFileError('The look file is damaged.')
+  if (!isObj(l) || !isObj(l.values)) throw new LookFileError(t('The look file is damaged.'))
   const name = text(l.name, MAX_NAME)
-  if (!name) throw new LookFileError('The look has no name.')
+  if (!name) throw new LookFileError(t('The look has no name.'))
 
   const recipe: Recipe = defaultRecipe(false)
   const fields: string[][] = []

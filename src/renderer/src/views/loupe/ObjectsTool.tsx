@@ -29,6 +29,7 @@ import { cancelObjects, commitObjects, showDraft } from '../../lib/objects'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { useObjects } from '../../state/objects'
+import { t } from '../../lib/i18n'
 
 /** A press that moves less than this (px) is a click. */
 const CLICK_PX = 6
@@ -278,18 +279,18 @@ export const ObjectsTool = memo(function ObjectsTool({
     press && mode === 'brush' && !asked && press.stroke.length > 1 ? press.stroke : null
   const note =
     status === 'loading'
-      ? 'Analysing the photo…'
+      ? t('Analysing the photo…')
       : concept
         ? concept.many
-          ? `${concept.ask} · Esc when done`
-          : concept.ask
+          ? `${t(concept.ask)} · ${t('Esc when done')}`
+          : t(concept.ask)
         : selected
-          ? 'Shift-click adds a part · Alt-click removes one · Enter keeps it'
+          ? t('Shift-click adds a part · Alt-click removes one · Enter keeps it')
           : mode === 'auto'
-            ? 'Hover to see an object · click to take it · or drag a box'
+            ? t('Hover to see an object · click to take it · or drag a box')
             : mode === 'box'
-              ? 'Drag a box around the object'
-              : 'Brush over the object · Alt-brush what is not part of it'
+              ? t('Drag a box around the object')
+              : t('Brush over the object · Alt-brush what is not part of it')
   return (
     <div
       ref={layer}

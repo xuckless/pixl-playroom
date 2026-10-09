@@ -94,14 +94,15 @@ export const MAX_PREVIEW_COMPONENTS = 8
 /** Whether the loupe can draw this mask itself. */
 export function previewable(l: LocalLayer): boolean {
   const n = maskJoins(l.components).length
-  return n > 0 && n <= MAX_PREVIEW_COMPONENTS
+  // A depth range is keyed on its map by the engine: its overlay comes from the render.
+  return n > 0 && n <= MAX_PREVIEW_COMPONENTS && !l.components.some((c) => c.kind === 'depth')
 }
 
 /** Components the engine will draw (a lasso needs three points, a range a band). */
 export function drawable(c: MaskComponentSetting): boolean {
   if (c.kind === 'polygon') return c.points.length >= 3
   if (c.kind === 'range') return Boolean(c.hue || c.saturation || c.luma)
-  if (c.kind === 'brush') return Boolean(c.png || c.ref)
+  if (c.kind === 'brush' || c.kind === 'depth') return Boolean(c.png || c.ref)
   return true
 }
 

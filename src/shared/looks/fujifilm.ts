@@ -18,17 +18,18 @@ import {
   tone,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 const insp = (sim: string): string => `Fujifilm ${sim} film simulation`
 
 export const FUJIFILM = collection('camera/fujifilm', [
   look(
     'standard-slide',
-    'Standard Slide',
+    tk('Standard Slide'),
     {
       tags: ['slide', 'standard', 'everyday', 'provia', 'fujifilm'],
       inspiredBy: insp('PROVIA/Standard'),
-      description: 'Balanced slide-film colour with a firm, clean curve.'
+      description: tk('Balanced slide-film colour with a firm, clean curve.')
     },
     sCurve(22),
     tone({ contrast: 6, blacks: -6 }),
@@ -38,11 +39,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'vivid-slide',
-    'Vivid Slide',
+    tk('Vivid Slide'),
     {
       tags: ['slide', 'vivid', 'saturated', 'landscape', 'velvia', 'fujifilm'],
       inspiredBy: insp('Velvia/Vivid'),
-      description: 'Dense, saturated slide colour for landscapes; skin is held back.'
+      description: tk('Dense, saturated slide colour for landscapes; skin is held back.')
     },
     sCurve(35),
     tone({ contrast: 15, blacks: -8 }),
@@ -59,11 +60,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'soft-slide',
-    'Soft Slide',
+    tk('Soft Slide'),
     {
       tags: ['slide', 'soft', 'portrait', 'astia', 'fujifilm'],
       inspiredBy: insp('ASTIA/Soft'),
-      description: 'Slide colour with gentle highlights and kind skin.'
+      description: tk('Slide colour with gentle highlights and kind skin.')
     },
     sCurve(15),
     tone({ highlights: -22, shadows: 8 }),
@@ -74,11 +75,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'documentary-chrome',
-    'Documentary Chrome',
+    tk('Documentary Chrome'),
     {
       tags: ['chrome', 'documentary', 'muted', 'street', 'classic chrome', 'fujifilm'],
       inspiredBy: insp('Classic Chrome'),
-      description: 'Muted, hard-shadowed reportage colour with olive greens.'
+      description: tk('Muted, hard-shadowed reportage colour with olive greens.')
     },
     tone({ contrast: 15, shadows: -10, highlights: -8 }),
     presence({ saturation: -20 }),
@@ -93,11 +94,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'classic-negative',
-    'Classic Negative',
+    tk('Classic Negative'),
     {
       tags: ['negative', 'film', 'street', 'nostalgic', 'classic neg', 'fujifilm'],
       inspiredBy: insp('Classic Neg.'),
-      description: 'Hard tonality and a crossover cast: teal shadows, warm highlights.'
+      description: tk('Hard tonality and a crossover cast: teal shadows, warm highlights.')
     },
     sCurve(40),
     fade(0.02),
@@ -128,11 +129,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'amber-nostalgia',
-    'Amber Nostalgia',
+    tk('Amber Nostalgia'),
     {
       tags: ['negative', 'amber', 'warm', 'nostalgic', 'nostalgic neg', 'fujifilm'],
       inspiredBy: insp('Nostalgic Neg.'),
-      description: 'Amber highlights, open shadows and rosy skin, like an old print.'
+      description: tk('Amber highlights, open shadows and rosy skin, like an old print.')
     },
     tone({ contrast: -5, shadows: 15 }),
     fade(0.03),
@@ -146,11 +147,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'natural-negative',
-    'Natural Negative',
+    tk('Natural Negative'),
     {
       tags: ['negative', 'natural', 'true colour', 'reala', 'fujifilm'],
       inspiredBy: insp('REALA ACE'),
-      description: 'Faithful colour with a crisp top and soft shadows.'
+      description: tk('Faithful colour with a crisp top and soft shadows.')
     },
     sCurve(15),
     tone({ highlights: 6, shadows: 14 }),
@@ -161,11 +162,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'studio-portrait-hi',
-    'Studio Portrait Hi',
+    tk('Studio Portrait Hi'),
     {
       tags: ['portrait', 'studio', 'skin', 'pro neg', 'fujifilm'],
       inspiredBy: insp('PRO Neg. Hi'),
-      description: 'Portrait negative with a little more bite for flat light.'
+      description: tk('Portrait negative with a little more bite for flat light.')
     },
     sCurve(25),
     tone({ highlights: -14 }),
@@ -175,11 +176,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'studio-portrait-soft',
-    'Studio Portrait Soft',
+    tk('Studio Portrait Soft'),
     {
       tags: ['portrait', 'studio', 'soft', 'skin', 'pro neg', 'fujifilm'],
       inspiredBy: insp('PRO Neg. Std'),
-      description: 'Low-contrast portrait negative with quiet greens and blues.'
+      description: tk('Low-contrast portrait negative with quiet greens and blues.')
     },
     tone({ contrast: -20, shadows: 10 }),
     presence({ saturation: -15 }),
@@ -188,11 +189,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'cinema-flat',
-    'Cinema Flat',
+    tk('Cinema Flat'),
     {
       tags: ['cinema', 'flat', 'muted', 'film', 'eterna', 'fujifilm'],
       inspiredBy: insp('ETERNA/Cinema'),
-      description: 'Low contrast, low saturation cinema stock with teal shadows.'
+      description: tk('Low contrast, low saturation cinema stock with teal shadows.')
     },
     tone({ contrast: -30, highlights: -15 }),
     fade(0.03),
@@ -204,11 +205,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'cinema-bleach',
-    'Cinema Bleach',
+    tk('Cinema Bleach'),
     {
       tags: ['bleach bypass', 'gritty', 'desaturated', 'cinema', 'eterna', 'fujifilm'],
       inspiredBy: insp('ETERNA Bleach Bypass'),
-      description: 'Silver-retained contrast with the colour drained out.'
+      description: tk('Silver-retained contrast with the colour drained out.')
     },
     sCurve(45),
     tone({ contrast: 25 }),
@@ -217,11 +218,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'fine-grain-mono',
-    'Fine-Grain Mono',
+    tk('Fine-Grain Mono'),
     {
       tags: ['bw', 'mono', 'fine grain', 'acros', 'fujifilm'],
       inspiredBy: insp('ACROS'),
-      description: 'Rich blacks, smooth highlights and a fine, tight grain.'
+      description: tk('Rich blacks, smooth highlights and a fine, tight grain.')
     },
     mono({ red: 4, blue: -4 }),
     sCurve(32),
@@ -231,11 +232,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'fine-grain-mono-yellow',
-    'Fine-Grain Mono Yellow',
+    tk('Fine-Grain Mono Yellow'),
     {
       tags: ['bw', 'mono', 'yellow filter', 'acros', 'fujifilm'],
       inspiredBy: insp('ACROS + Ye filter'),
-      description: 'A yellow filter: skies a touch deeper, skin a touch lighter.'
+      description: tk('A yellow filter: skies a touch deeper, skin a touch lighter.')
     },
     mono({ yellow: 20, orange: 15, blue: -20 }),
     sCurve(32),
@@ -245,11 +246,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'fine-grain-mono-red',
-    'Fine-Grain Mono Red',
+    tk('Fine-Grain Mono Red'),
     {
       tags: ['bw', 'mono', 'red filter', 'dramatic sky', 'acros', 'fujifilm'],
       inspiredBy: insp('ACROS + R filter'),
-      description: 'A red filter: dark, dramatic skies and glowing skin.'
+      description: tk('A red filter: dark, dramatic skies and glowing skin.')
     },
     mono({ red: 40, orange: 30, blue: -45, aqua: -20 }),
     sCurve(32),
@@ -259,11 +260,11 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'fine-grain-mono-green',
-    'Fine-Grain Mono Green',
+    tk('Fine-Grain Mono Green'),
     {
       tags: ['bw', 'mono', 'green filter', 'foliage', 'acros', 'fujifilm'],
       inspiredBy: insp('ACROS + G filter'),
-      description: 'A green filter: bright foliage, deeper lips and skin.'
+      description: tk('A green filter: bright foliage, deeper lips and skin.')
     },
     mono({ green: 30, yellow: 10, red: -15 }),
     sCurve(32),
@@ -273,22 +274,22 @@ export const FUJIFILM = collection('camera/fujifilm', [
   ),
   look(
     'clean-mono',
-    'Clean Mono',
+    tk('Clean Mono'),
     {
       tags: ['bw', 'mono', 'clean', 'monochrome', 'fujifilm'],
       inspiredBy: insp('Monochrome'),
-      description: 'A plain, grainless black and white.'
+      description: tk('A plain, grainless black and white.')
     },
     mono({ green: 8, yellow: 6, red: -4 }),
     tone({ contrast: -6, highlights: -8, shadows: 10 })
   ),
   look(
     'sepia-print',
-    'Sepia Print',
+    tk('Sepia Print'),
     {
       tags: ['bw', 'sepia', 'toned', 'vintage', 'fujifilm'],
       inspiredBy: insp('Sepia'),
-      description: 'A warm brown-toned print.'
+      description: tk('A warm brown-toned print.')
     },
     mono(),
     tone({ contrast: -5 }),

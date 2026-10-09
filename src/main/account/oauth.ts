@@ -6,6 +6,7 @@
  * Electron (fetch and opening the browser are passed in), so
  * tests/account.test.ts runs it against a fake server.
  */
+import { t } from '../../shared/i18n'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { REDIRECT_PATH, type AuthConfig } from '../../shared/account'
@@ -82,14 +83,14 @@ function sameState(a: string | null, b: string): boolean {
 export function readCallback(url: URL, state: string): string {
   const q = url.searchParams
   if (!sameState(q.get('state'), state))
-    throw new OAuthError("That sign-in answer wasn't for this sign-in.", 'state')
+    throw new OAuthError(t("That sign-in answer wasn't for this sign-in."), 'state')
   const error = q.get('error')
   if (error) {
     const why = q.get('error_description') || error
-    throw new OAuthError(`Sign-in was refused: ${why}`, 'denied')
+    throw new OAuthError(t('Sign-in was refused: {{reason}}', { reason: why }), 'denied')
   }
   const code = q.get('code')
-  if (!code) throw new OAuthError('The sign-in answer carried no code.', 'denied')
+  if (!code) throw new OAuthError(t('The sign-in answer carried no code.'), 'denied')
   return code
 }
 
@@ -153,11 +154,15 @@ export function listenForCallback(opts: {
       }
       try {
         const got = readCallback(url, opts.state)
-        send(200, 'Signed in to Pixl Playroom', 'You can close this tab and go back to the app.')
+        send(
+          200,
+          t('Signed in to Pixl Playroom'),
+          t('You can close this tab and go back to the app.')
+        )
         finish(() => settle.resolve(got))
       } catch (err) {
         const e = err as OAuthError
-        send(400, 'Sign-in didn’t finish', escapeHtml(e.message))
+        send(400, t('Sign-in didn’t finish'), escapeHtml(e.message))
         if (e.code !== 'state') finish(() => settle.reject(e))
       }
     })
@@ -165,16 +170,16 @@ export function listenForCallback(opts: {
       () =>
         finish(() =>
           settle.reject(
-            new OAuthError('Sign-in timed out. Try again when you’re ready.', 'timeout')
+            new OAuthError(t('Sign-in timed out. Try again when you’re ready.'), 'timeout')
           )
         ),
       opts.timeoutMs
     )
     const onAbort = (): void =>
-      finish(() => settle.reject(new OAuthError('Sign-in was cancelled.', 'cancelled')))
+      finish(() => settle.reject(new OAuthError(t('Sign-in was cancelled.'), 'cancelled')))
     if (opts.signal?.aborted) {
       clearTimeout(timer)
-      rejectServer(new OAuthError('Sign-in was cancelled.', 'cancelled'))
+      rejectServer(new OAuthError(t('Sign-in was cancelled.'), 'cancelled'))
       return
     }
     opts.signal?.addEventListener('abort', onAbort)
@@ -184,10 +189,15 @@ export function listenForCallback(opts: {
       rejectServer(
         err.code === 'EADDRINUSE'
           ? new OAuthError(
-              'Another sign-in is already waiting in the browser. Finish or close it, then try again.',
+              t(
+                'Another sign-in is already waiting in the browser. Finish or close it, then try again.'
+              ),
               'port-in-use'
             )
-          : new OAuthError(`Couldn't start the sign-in: ${err.message}`, 'network')
+          : new OAuthError(
+              t("Couldn't start the sign-in: {{reason}}", { reason: err.message }),
+              'network'
+            )
       )
     })
     server.listen(opts.port, '127.0.0.1', () => {
@@ -197,7 +207,7 @@ export function listenForCallback(opts: {
         redirectUri: `http://127.0.0.1:${port}${REDIRECT_PATH}`,
         code,
         close: () =>
-          finish(() => settle.reject(new OAuthError('Sign-in was cancelled.', 'cancelled')))
+          finish(() => settle.reject(new OAuthError(t('Sign-in was cancelled.'), 'cancelled')))
       })
     })
   })
@@ -234,7 +244,9 @@ async function tokenRequest(
     })
   } catch (err) {
     throw new OAuthError(
-      `Couldn't reach the PIXL account: ${err instanceof Error ? err.message : String(err)}`,
+      t("Couldn't reach the PIXL account: {{reason}}", {
+        reason: err instanceof Error ? err.message : String(err)
+      }),
       'network'
     )
   }
@@ -252,10 +264,13 @@ async function tokenRequest(
     // session for the next try.
     const refused = res.status === 400 || res.status === 401
     if (!refused && !res.ok)
-      throw new OAuthError(`The PIXL account is unavailable (${why}).`, 'network')
+      throw new OAuthError(
+        t('The PIXL account is unavailable ({{reason}}).', { reason: why }),
+        'network'
+      )
     if (body.grant_type === 'refresh_token')
-      throw new OAuthError(`Signed out: ${why}`, 'signed-out')
-    throw new OAuthError(`Sign-in was refused: ${why}`, 'rejected')
+      throw new OAuthError(t('Signed out: {{reason}}', { reason: why }), 'signed-out')
+    throw new OAuthError(t('Sign-in was refused: {{reason}}', { reason: why }), 'rejected')
   }
   return {
     accessToken: json.access_token,

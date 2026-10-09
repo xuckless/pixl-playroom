@@ -15,6 +15,7 @@
  * per photo version and per steps (`stackSignature`), so undo, redo and hide
  * find what they need already made; nothing ever runs a model again.
  */
+import { t } from '../../shared/i18n'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
 import { join } from 'path'
 import type { Overlay } from '../../shared/engine-types'
@@ -25,6 +26,9 @@ import { exists } from '../exists'
 import type { Proxies, ProxyFile } from '../proxy'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
 import type { PixelsJob } from '../workers/pool'
+import { encodeGreyPng } from '../pngio'
+import { traceRegion } from '../trace'
+import { headroomGuard } from './ops'
 
 /** What the working pixels need from outside: the engine, the project's blobs, a worker. */
 export interface PixelDeps {
@@ -33,8 +37,8 @@ export interface PixelDeps {
   cacheDir: string
   /** A blob of the photo's project written out to a file (null when it has none). */
   blobFile(hash: string, ext: string): Promise<string | null>
-  /** Per-pixel work, off the main thread. */
-  work(job: PixelsJob): Promise<unknown>
+  /** Per-pixel work, off the main thread; `transfer` hands buffers over (gone here after). */
+  work(job: PixelsJob, transfer?: ArrayBuffer[]): Promise<unknown>
 }
 
 export interface WorkingSet {
@@ -42,6 +46,12 @@ export interface WorkingSet {
   px: Proxies
   /** The full-resolution frame with the steps laid on; null until one is asked for. */
   master: ProxyFile | null
+  /**
+   * The base `master` was laid on: a RAW's names its demosaic and denoiser
+   * (`ensureMaster`), so a model downloaded since, or PMRID turned on, lays
+   * the steps again on the new one.
+   */
+  masterOf?: string
 }
 
 const TIFF = { Tiff: { compression: 'None' } } as const
@@ -81,12 +91,18 @@ async function atomically<T>(out: string, build: (tmp: string) => Promise<T>): P
 const making = new Map<string, Promise<void>>()
 export async function makeOnce(
   out: string,
-  build: (tmp: string) => Promise<unknown>
+  build: (tmp: string) => Promise<unknown>,
+  /**
+   * The engine writes it: since 0.19 an engine write is whole or not at all
+   * (HR-0.19-2), so it goes straight to `out`. A worker's file still goes
+   * through a temporary file of its own.
+   */
+  byEngine = false
 ): Promise<void> {
   if (await exists(out)) return
   let p = making.get(out)
   if (!p) {
-    p = atomically(out, build)
+    p = (byEngine ? build(out) : atomically(out, build))
       .then(() => undefined)
       .finally(() => making.delete(out))
     making.set(out, p)
@@ -99,17 +115,21 @@ export async function stepImage(deps: PixelDeps, step: PixelStep): Promise<strin
   const out = join(deps.cacheDir, 'blobs', `${step.blob}.png`)
   if (await exists(out)) return out
   const jxl = await deps.blobFile(step.blob, 'jxl')
-  if (!jxl) throw new Error(`${step.label}: its image is missing from the project`)
+  if (!jxl)
+    throw new Error(t('{{step}}: its image is missing from the project', { step: step.label }))
   await mkdir(join(deps.cacheDir, 'blobs'), { recursive: true })
-  await makeOnce(out, (tmp) =>
-    deps.engine.convert({
-      ...blankRequest(jxl, tmp, 'Jxl'),
-      pixel: { depth: 'Sixteen', channels: 3 },
-      encode: PNG,
-      metadata: ICC_ONLY,
-      color: 'Preserve',
-      threads: BACKGROUND_THREADS
-    })
+  await makeOnce(
+    out,
+    (tmp) =>
+      deps.engine.convert({
+        ...blankRequest(jxl, tmp, 'Jxl'),
+        pixel: { depth: 'Sixteen', channels: 3 },
+        encode: PNG,
+        metadata: ICC_ONLY,
+        color: 'Preserve',
+        threads: BACKGROUND_THREADS
+      }),
+    true
   )
   return out
 }
@@ -125,7 +145,8 @@ async function overlaySource(deps: PixelDeps, step: PixelStep): Promise<string> 
   )
   if (await exists(out)) return out
   const mask = await deps.blobFile(step.alpha, 'png')
-  if (!mask) throw new Error(`${step.label}: its mask is missing from the project`)
+  if (!mask)
+    throw new Error(t('{{step}}: its mask is missing from the project', { step: step.label }))
   await deps.work({ op: 'compose', image, mask, out })
   return out
 }
@@ -145,19 +166,22 @@ async function sized(
 ): Promise<string> {
   if (w === step.width && h === step.height) return src
   const out = src.replace(/\.png$/, `-${w}x${h}.png`)
-  await makeOnce(out, (tmp) =>
-    deps.engine.convert({
-      ...blankRequest(src, tmp, 'Png'),
-      resize: { Exact: { width: w, height: h } },
-      resampler: 'Lanczos3',
-      // Downscaled in linear light, as the proxies are; alpha (a mask) kept.
-      linear_resample: true,
-      pixel: { depth: 'Sixteen', channels: step.alpha ? 4 : 3 },
-      encode: PNG,
-      metadata: ICC_ONLY,
-      color: 'Preserve',
-      threads: BACKGROUND_THREADS
-    })
+  await makeOnce(
+    out,
+    (tmp) =>
+      deps.engine.convert({
+        ...blankRequest(src, tmp, 'Png'),
+        resize: { Exact: { width: w, height: h } },
+        resampler: 'Lanczos3',
+        // Downscaled in linear light, as the proxies are; alpha (a mask) kept.
+        linear_resample: true,
+        pixel: { depth: 'Sixteen', channels: step.alpha ? 4 : 3 },
+        encode: PNG,
+        metadata: ICC_ONLY,
+        color: 'Preserve',
+        threads: BACKGROUND_THREADS
+      }),
+    true
   )
   return out
 }
@@ -187,20 +211,24 @@ async function patchOverlay(
   const ph = y1 - y0
   if (pw < 1 || ph < 1) return null
   const src = await deps.blobFile(step.blob, 'png')
-  if (!src) throw new Error(`${step.label}: its pixels are missing from the project`)
+  if (!src)
+    throw new Error(t('{{step}}: its pixels are missing from the project', { step: step.label }))
   let path = src
   if (pw !== r.w || ph !== r.h) {
     path = src.replace(/\.png$/, `-${pw}x${ph}.png`)
-    await makeOnce(path, (tmp) =>
-      deps.engine.convert({
-        ...blankRequest(src, tmp, 'Png'),
-        resize: { Exact: { width: pw, height: ph } },
-        resampler: 'Lanczos3',
-        pixel: { depth: 'Sixteen', channels: 4 },
-        encode: PNG,
-        metadata: ICC_ONLY,
-        color: 'Preserve'
-      })
+    await makeOnce(
+      path,
+      (tmp) =>
+        deps.engine.convert({
+          ...blankRequest(src, tmp, 'Png'),
+          resize: { Exact: { width: pw, height: ph } },
+          resampler: 'Lanczos3',
+          pixel: { depth: 'Sixteen', channels: 4 },
+          encode: PNG,
+          metadata: ICC_ONLY,
+          color: 'Preserve'
+        }),
+      true
     )
   }
   return {
@@ -212,12 +240,126 @@ async function patchOverlay(
   }
 }
 
+/**
+ * What a step's model clipped: an AI denoise or Enhance saw a float frame
+ * clipped at 1.0, so where the frame is over it its own value stays (the
+ * owner, 2026-10-08, until PIXL's own models take values over 1.0). A heal,
+ * fill or remove is a replacement, made by the engine in float: never guarded.
+ */
+function guards(step: PixelStep): boolean {
+  return step.kind === 'denoise' || step.kind === 'enhance'
+}
+
+/**
+ * A float frame's headroom guard (pixels/ops.ts `headroomGuard`), an 8-bit
+ * grey PNG at its size, made once per frame file; null for a 16-bit frame,
+ * which holds no headroom to keep.
+ */
+async function guardOf(deps: PixelDeps, from: ProxyFile): Promise<string | null> {
+  if (!from.float) return null
+  const at = await stat(from.path)
+  const out = join(
+    deps.cacheDir,
+    'blobs',
+    `guard-${hash32(`${from.path}:${at.size}:${at.mtimeMs}`).toString(36)}.png`
+  )
+  await mkdir(join(deps.cacheDir, 'blobs'), { recursive: true })
+  await makeOnce(
+    out,
+    async (tmp) => {
+      const r = await deps.engine.convert({
+        ...blankRequest(from.path, '', from.input),
+        sink: 'Bytes',
+        pixel: { depth: 'F32', channels: 3 },
+        encode: { Pixels: { sample: 'F32' } },
+        metadata: ICC_ONLY,
+        color: 'Preserve',
+        threads: BACKGROUND_THREADS
+      })
+      const b = r.output!
+      // The pixel loop and the encode in the pixels worker: tens of
+      // milliseconds of main's time per frame otherwise (Pass 116). The
+      // samples are handed over, not copied, when they own their buffer.
+      const own =
+        b.byteOffset === 0 && b.byteLength === b.buffer.byteLength && b.byteOffset % 4 === 0
+      const buf = own
+        ? (b.buffer as ArrayBuffer)
+        : (b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer)
+      const rgb = new Float32Array(buf)
+      try {
+        await deps.work({ op: 'headroom', rgb, w: r.width, h: r.height, out: tmp }, [buf])
+      } catch (err) {
+        // The worker is gone before it took the samples: here rather than not at all.
+        if (buf.byteLength === 0) throw err
+        await writeFile(
+          tmp,
+          encodeGreyPng(headroomGuard(rgb, r.width, r.height), r.width, r.height, 1)
+        )
+      }
+    },
+    true
+  )
+  return out
+}
+
+/**
+ * What a model reads of a frame: a float frame (a RAW's Scene master, engine
+ * 0.18) as a 16-bit copy, its values clipped to 0..1, since the engine
+ * refuses an enhance chain on unbounded samples; the step's result is laid
+ * back under the headroom guard (`guards`), so the frame's light over white
+ * stays its own. A 16-bit frame is read as it is. Made once per frame file.
+ */
+export async function modelInput(
+  engine: EngineClient,
+  cacheDir: string,
+  from: ProxyFile,
+  threads = BACKGROUND_THREADS
+): Promise<ProxyFile> {
+  if (!from.float) return from
+  const at = await stat(from.path)
+  const out = join(
+    cacheDir,
+    'blobs',
+    `bounded-${hash32(`${from.path}:${at.size}:${at.mtimeMs}`).toString(36)}.tiff`
+  )
+  await mkdir(join(cacheDir, 'blobs'), { recursive: true })
+  await makeOnce(
+    out,
+    (to) =>
+      engine.convert({
+        ...blankRequest(from.path, to, from.input),
+        pixel: { depth: 'Sixteen', channels: 3 },
+        encode: { Tiff: { compression: 'None' } },
+        metadata: ICC_ONLY,
+        color: 'Preserve',
+        threads
+      }),
+    true
+  )
+  return { path: out, input: 'Tiff', width: from.width, height: from.height }
+}
+
+/** An overlay source kept off the guard's clipped pixels, its top left at `at` on the frame. */
+async function guarded(
+  deps: PixelDeps,
+  src: string,
+  guard: string,
+  at: { x: number; y: number }
+): Promise<string> {
+  const g = guard.match(/guard-([0-9a-z]+)\.png$/)?.[1] ?? 'g'
+  const out = src.replace(/\.png$/, `-g${g}-${at.x}-${at.y}.png`)
+  await makeOnce(out, (tmp) => deps.work({ op: 'guard', src, guard, out: tmp, at }))
+  return out
+}
+
 /** The engine overlays for a list of steps over a `w × h` frame, in order. */
 export async function overlaysOf(
   deps: PixelDeps,
   steps: PixelStep[],
   w: number,
-  h: number
+  h: number,
+  /** The frame's headroom guard, for a float frame (`guardOf`). */
+  guard: string | null = null
 ): Promise<Overlay[]> {
   const out: Overlay[] = []
   for (const s of steps) {
@@ -227,8 +369,9 @@ export async function overlaysOf(
       if (o) out.push(o)
       continue
     }
+    const src = await sized(deps, await overlaySource(deps, s), s, w, h)
     out.push({
-      source: { Png: await sized(deps, await overlaySource(deps, s), s, w, h) },
+      source: { Png: guard && guards(s) ? await guarded(deps, src, guard, { x: 0, y: 0 }) : src },
       rect: { x: 0, y: 0, width: 1 },
       opacity: Math.min(1, s.opacity / 100),
       // In linear light, as light mixes; a step at 100% replaces exactly.
@@ -239,27 +382,37 @@ export async function overlaysOf(
   return out
 }
 
-/** `from` with the steps laid on (each sized to it), as a 16-bit TIFF at `out`. */
+/**
+ * `from` with the steps laid on (each sized to it), as a TIFF at `out`: F32
+ * from a float frame (its headroom kept under AI steps by the guard), else
+ * 16-bit.
+ */
 async function layOn(
   deps: PixelDeps,
   from: ProxyFile,
   out: string,
   steps: PixelStep[]
 ): Promise<ProxyFile> {
-  const overlays = await overlaysOf(deps, steps, from.width, from.height)
-  const r = await atomically(out, (tmp) =>
-    deps.engine.convert({
-      ...blankRequest(from.path, tmp, from.input),
-      pixel: { depth: 'Sixteen', channels: 3 },
-      encode: TIFF,
-      metadata: ICC_ONLY,
-      color: 'Preserve',
-      // Every step at 0%: nothing to lay on (the engine refuses an empty list).
-      overlays: overlays.length > 0 ? overlays : null,
-      threads: BACKGROUND_THREADS
-    })
-  )
-  return { path: out, input: 'Tiff', width: r.width, height: r.height }
+  const guard = steps.some(guards) ? await guardOf(deps, from) : null
+  const overlays = await overlaysOf(deps, steps, from.width, from.height, guard)
+  // Written whole by the engine (HR-0.19-2): no temporary file of ours.
+  const r = await deps.engine.convert({
+    ...blankRequest(from.path, out, from.input),
+    pixel: { depth: from.float ? 'F32' : 'Sixteen', channels: 3 },
+    encode: TIFF,
+    metadata: ICC_ONLY,
+    color: 'Preserve',
+    // Every step at 0%: nothing to lay on (the engine refuses an empty list).
+    overlays: overlays.length > 0 ? overlays : null,
+    threads: BACKGROUND_THREADS
+  })
+  return {
+    path: out,
+    input: 'Tiff',
+    width: r.width,
+    height: r.height,
+    ...(from.float ? { float: true } : {})
+  }
 }
 
 /**
@@ -283,19 +436,17 @@ async function resized(
   w: number,
   h: number
 ): Promise<ProxyFile> {
-  await atomically(out, (tmp) =>
-    deps.engine.convert({
-      ...blankRequest(from.path, tmp, from.input),
-      resize: { Exact: { width: w, height: h } },
-      resampler: 'Lanczos3',
-      pixel: { depth: 'Sixteen', channels: 3 },
-      encode: TIFF,
-      metadata: ICC_ONLY,
-      color: 'Preserve',
-      threads: BACKGROUND_THREADS
-    })
-  )
-  return { path: out, input: 'Tiff', width: w, height: h }
+  await deps.engine.convert({
+    ...blankRequest(from.path, out, from.input),
+    resize: { Exact: { width: w, height: h } },
+    resampler: 'Lanczos3',
+    pixel: { depth: from.float ? 'F32' : 'Sixteen', channels: 3 },
+    encode: TIFF,
+    metadata: ICC_ONLY,
+    color: 'Preserve',
+    threads: BACKGROUND_THREADS
+  })
+  return { path: out, input: 'Tiff', width: w, height: h, ...(from.float ? { float: true } : {}) }
 }
 
 /**
@@ -389,7 +540,7 @@ async function makeProxies(
     }
   }
   await writeSet(deps, set)
-  await prune(deps, key)
+  await prune(deps, key, plain.proxy.float === true)
   return set
 }
 
@@ -402,20 +553,24 @@ async function makeMaster(
   base: () => Promise<ProxyFile>,
   set: WorkingSet
 ): Promise<WorkingSet> {
-  if (set.master) return set
   if (steps.length === 0) return { ...set, master: await base() }
+  const from = await base()
+  if (set.master && set.masterOf === from.path) {
+    traceRegion({ step: 'working master', reused: true, steps: steps.length })
+    return set
+  }
+  const t0 = Date.now()
   const dir = dirOf(deps, key)
   await mkdir(dir, { recursive: true })
   const prev = await previousSet(deps, version, steps)
   const last = steps[steps.length - 1]
   let master: ProxyFile
-  if (prev?.master) {
+  if (prev?.master && prev.masterOf === from.path) {
     master = await layOn(deps, prev.master, join(dir, 'master.tiff'), [last])
   } else {
     // At full size the frame is the steps' own: an upscale's, when one made
     // it larger; else the full-size base's own (a proxy's frame can be a
     // half-size develop's, to a pixel or two: never resampled to that).
-    const from = await base()
     const frame = frameOf(steps, from.width, from.height)
     const start =
       from.width === frame.width && from.height === frame.height
@@ -423,8 +578,9 @@ async function makeMaster(
         : await resized(deps, from, join(dir, 'base.tiff'), frame.width, frame.height)
     master = await layOn(deps, start, join(dir, 'master.tiff'), steps)
   }
-  const next = { ...set, master }
+  const next = { ...set, master, masterOf: from.path }
   await writeSet(deps, next)
+  traceRegion({ step: 'working master', reused: false, steps: steps.length, ms: Date.now() - t0 })
   return next
 }
 
@@ -448,10 +604,14 @@ async function filesThere(set: WorkingSet): Promise<boolean> {
   return true
 }
 
-/** Sets kept per photo besides the newest: a 24 MP master is about 150 MB. */
+/**
+ * Sets kept per photo besides the newest: a 24 MP master is about 150 MB at
+ * 16 bits, 290 MB in float (a RAW's, engine 0.18), whose sets keep fewer.
+ */
 const KEEP = 4
+const KEEP_FLOAT = 2
 
-async function prune(deps: PixelDeps, keepKey: string): Promise<void> {
+async function prune(deps: PixelDeps, keepKey: string, float = false): Promise<void> {
   const others = (await readdir(deps.cacheDir).catch(() => [] as string[])).filter(
     (d) => d.startsWith('work-') && d !== `work-${keepKey}`
   )
@@ -462,6 +622,6 @@ async function prune(deps: PixelDeps, keepKey: string): Promise<void> {
     }))
   )
   dated.sort((a, b) => b.t - a.t)
-  for (const { d } of dated.slice(KEEP))
+  for (const { d } of dated.slice(float ? KEEP_FLOAT : KEEP))
     await rm(join(deps.cacheDir, d), { recursive: true, force: true })
 }

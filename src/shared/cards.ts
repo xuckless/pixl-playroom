@@ -7,6 +7,7 @@
  * mask's settings (`scopedView`), against neutral ones.
  */
 import { defaultRecipe, neutralSettings, sameValue, SETTINGS_KEYS, type Recipe } from './recipe'
+import { tk } from './i18n'
 
 export const CARD_IDS = [
   'wb',
@@ -34,11 +35,11 @@ export interface CardSpec {
 }
 
 export const CARDS: CardSpec[] = [
-  { id: 'wb', title: 'White balance', fields: [['wb']], inMask: true },
-  { id: 'light', title: 'Light', fields: [['basic']], inMask: true },
+  { id: 'wb', title: tk('White balance'), fields: [['wb']], inMask: true },
+  { id: 'light', title: tk('Light'), fields: [['basic']], inMask: true },
   {
     id: 'presence',
-    title: 'Presence',
+    title: tk('Presence'),
     fields: [
       ['presence', 'texture'],
       ['presence', 'clarity'],
@@ -48,7 +49,7 @@ export const CARDS: CardSpec[] = [
   },
   {
     id: 'colour',
-    title: 'Colour',
+    title: tk('Colour'),
     fields: [
       ['presence', 'vibrance'],
       ['presence', 'saturation'],
@@ -58,17 +59,17 @@ export const CARDS: CardSpec[] = [
   },
   {
     id: 'mixer',
-    title: 'Colour mixer',
+    title: tk('Colour mixer'),
     fields: [['hsl'], ['bwMix'], ['pointColors']],
     inMask: true
   },
-  { id: 'grading', title: 'Colour grading', fields: [['colorGrade']], inMask: true },
-  { id: 'curve', title: 'Tone curve', fields: [['toneCurve']], inMask: true },
-  { id: 'detail', title: 'Detail', fields: [['detail']], inMask: true },
-  { id: 'effects', title: 'Effects', fields: [['effects']], inMask: true },
-  { id: 'optics', title: 'Optics', fields: [['lens']], inMask: false },
-  { id: 'geometry', title: 'Geometry', fields: [['geometry', 'upright']], inMask: false },
-  { id: 'calibration', title: 'Calibration', fields: [['calibration']], inMask: true }
+  { id: 'grading', title: tk('Colour grading'), fields: [['colorGrade']], inMask: true },
+  { id: 'curve', title: tk('Tone curve'), fields: [['toneCurve']], inMask: true },
+  { id: 'detail', title: tk('Detail'), fields: [['detail']], inMask: true },
+  { id: 'effects', title: tk('Effects'), fields: [['effects']], inMask: true },
+  { id: 'optics', title: tk('Optics'), fields: [['lens']], inMask: false },
+  { id: 'geometry', title: tk('Geometry'), fields: [['geometry', 'upright']], inMask: false },
+  { id: 'calibration', title: tk('Calibration'), fields: [['calibration']], inMask: true }
 ]
 
 export const cardSpec = (id: CardId): CardSpec => CARDS.find((c) => c.id === id) ?? CARDS[0]

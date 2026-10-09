@@ -14,6 +14,7 @@ import { useDevelop } from '../../state/develop'
 import { useUi } from '../../state/ui'
 import { createMask, madeComponent, modeForNew } from '../../panels/masks/model'
 import { useMaskDraft, useMaskGlBroken } from './maskgl/state'
+import { t, tk } from '../../lib/i18n'
 
 // ── Lasso ────────────────────────────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ export const PolygonLayer = memo(function PolygonLayer({
     d.edit((r) => {
       r.layers.find((x) => x.id === d.layerId)?.components.push(c)
     })
-    d.commit(c.mode === 'Subtract' ? 'Lasso subtract' : 'Lasso')
+    d.commit(c.mode === 'Subtract' ? tk('Lasso subtract') : tk('Lasso'))
     madeComponent(c.id)
   }
 
@@ -148,11 +149,11 @@ export const PolygonLayer = memo(function PolygonLayer({
   // Backspace is the last point here, not the selected component.
   useEffect(() => {
     const typing = (e: KeyboardEvent): boolean => {
-      const t = e.target as HTMLElement | null
+      const el = e.target as HTMLElement | null
       return (
-        !!t &&
-        (t.tagName === 'TEXTAREA' ||
-          (t.tagName === 'INPUT' && (t as HTMLInputElement).type === 'text'))
+        !!el &&
+        (el.tagName === 'TEXTAREA' ||
+          (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'text'))
       )
     }
     const down = (e: KeyboardEvent): void => {
@@ -318,7 +319,7 @@ export const LassoEditor = memo(function LassoEditor({
       onPointerUp={() => {
         const d = drag.current
         drag.current = null
-        if (d?.moved) commit('Move lasso point')
+        if (d?.moved) commit(tk('Move lasso point'))
       }}
     >
       {pts.map((p, i) => {
@@ -335,10 +336,10 @@ export const LassoEditor = memo(function LassoEditor({
               e.stopPropagation()
               const at = toBase(e)
               setPoints((list) => [...list.slice(0, i + 1), at, ...list.slice(i + 1)], false)
-              commit('Add lasso point')
+              commit(tk('Add lasso point'))
             }}
           >
-            <title>Double-click to add a point</title>
+            <title>{t('Double-click to add a point')}</title>
           </line>
         )
       })}
@@ -354,7 +355,7 @@ export const LassoEditor = memo(function LassoEditor({
             if (e.altKey) {
               if (pts.length > 3) {
                 setPoints((list) => list.filter((_, j) => j !== i), false)
-                commit('Remove lasso point')
+                commit(tk('Remove lasso point'))
               }
               return
             }
@@ -362,7 +363,7 @@ export const LassoEditor = memo(function LassoEditor({
             drag.current = { i, moved: false }
           }}
         >
-          <title>Drag to move · Alt-click to remove</title>
+          <title>{t('Drag to move · Alt-click to remove')}</title>
         </circle>
       ))}
     </svg>

@@ -16,6 +16,7 @@ import {
   buildColor,
   buildEncode,
   buildResize,
+  displayPeak,
   expandTemplate,
   FORMAT_EXT,
   gainMapEncode,
@@ -40,9 +41,10 @@ import { cacheUrl } from './protocol'
 import { brushPlanes } from './brushes'
 import { embedMetadata } from './exiftool'
 import { exists, sameFile } from './exists'
-import { isCancelled, type EngineClient } from './engine/client'
+import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import type { Library } from './library'
 import { ensureProxies, type ProxyFile } from './proxy'
+import { askOf, scenePlan, withScene } from './ai/rawdevelop'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking } from './pixels/working'
 import { editsHdr, ensureHdrSource } from './hdrsource'
@@ -52,11 +54,13 @@ import type { PhotoRow } from './db'
 import type { SourceInfo } from '../shared/engine-types'
 import type { Recipe } from '../shared/recipe'
 import type { DevelopSessions } from './render'
+import { t, tp } from '../shared/i18n'
 import {
   BACKGROUND_THREADS,
+  heavyThreads,
   blankRequest,
   colourOf,
-  rawDevelop,
+  rawMaster,
   sourceOrientation,
   uprightFraming,
   seedOf,
@@ -108,6 +112,11 @@ export class Exporter {
     private readonly sessions: DevelopSessions,
     private readonly engine: EngineClient
   ) {}
+
+  /** Whether an export is running. */
+  get busy(): boolean {
+    return this.jobs.size > 0
+  }
 
   private send(p: ExportProgress): void {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.export.progress, p)
@@ -178,7 +187,7 @@ export class Exporter {
       versionStamp(row),
       plain,
       recipe.pixels,
-      () => ensureBase(this.engine, row, info)
+      () => ensureBase(this.engine, row, info, askOf(recipe))
     )
     return set.master
   }
@@ -234,7 +243,7 @@ export class Exporter {
     const info = hdrSource?.info ?? file
     // Pixel steps (an AI denoise): the photo at full size with them laid on is the source.
     const master = hdrSource?.master ?? (await this.stepsMaster(row, info, recipe))
-    const raw = master ? null : info.input === 'Raw' ? rawDevelop(colourOf(row)) : null
+    const raw = master ? null : info.input === 'Raw' ? rawMaster(colourOf(row)) : null
     const srcOrientation = master ? 'Normal' : sourceOrientation(info, raw)
     // The full-resolution frame, upright. A RAW's developed frame is smaller
     // than its mosaic and not always the same shape (a Canon's masked borders
@@ -277,7 +286,7 @@ export class Exporter {
     // An export runs behind the editing: the encoder takes the export's share too.
     // `Master` writes PQ into JXL and PNG, at 16 bits (8-bit PQ is refused).
     const pqOut = pixl?.headroom === true && (s.format === 'jxl' || s.format === 'png')
-    const { encode, depth } = buildEncode(s, BACKGROUND_THREADS * 2, hdrOut || pqOut)
+    const { encode, depth } = buildEncode(s, heavyThreads(), hdrOut || pqOut)
 
     let out: string
     if (preview) out = preview.out
@@ -296,7 +305,8 @@ export class Exporter {
         }
       }
       // By the file, not the name: IMG_1.jpg is IMG_1.JPG on a case-insensitive disk.
-      if (await sameFile(out, row.path)) throw new Error('the export would overwrite the original')
+      if (await sameFile(out, row.path))
+        throw new Error(t('the export would overwrite the original'))
     }
 
     // An HDR source stays HDR only where the settings ask and the format can
@@ -307,7 +317,7 @@ export class Exporter {
       (s.hdr.mode === 'gainmap' && !gainMapOut && !pixl)
         ? { ...s, hdr: { ...s.hdr, mode: 'sdr' } }
         : s
-    const peak = info.peak_nits ?? s.hdr.peak
+    const peak = displayPeak(info.peak_nits ?? s.hdr.peak)
     const resize = preview ? previewResize(s, cw, ch) : buildResize(s, cw, ch)
     // The watermark, placed on the output as it will be: cropped, then resized.
     const wm = s.watermark
@@ -397,7 +407,7 @@ export class Exporter {
               limit: hdrLimit(s, peak)
             }
           : null,
-      threads: BACKGROUND_THREADS * 2
+      threads: heavyThreads()
     }
     // Only an SDR file is sharpened for output, after the resize, on the
     // values the file will hold.
@@ -405,17 +415,39 @@ export class Exporter {
       typeof color === 'object' &&
       ('ConvertTo' in color || 'ToneMap' in color || ('Master' in color && !color.Master.headroom))
     const sharpen = sdrOut ? outputSharpen(s) : null
-    const report = await this.engine.convert(
-      sharpen
-        ? {
-            ...request,
-            output_sharpen: outputSharpenRequest(s, sharpen),
-            // The sharpen is a float pass of its own, so dither always applies.
-            dither
-          }
-        : request,
-      { signal }
-    )
+    const convert = (r: ConvertRequest): Promise<ConvertReport> =>
+      this.engine
+        .convert(
+          sharpen
+            ? {
+                ...r,
+                output_sharpen: outputSharpenRequest(s, sharpen),
+                // The sharpen is a float pass of its own, so dither always applies.
+                dither
+              }
+            : r,
+          { signal }
+        )
+        .catch((err: unknown) => {
+          // HR-0.18-9: the export says which adjustment broke the picture.
+          if (err instanceof EngineError)
+            err.nameInvariant(compiled.grade, r.sdr?.grade ?? null, compiled.layerIndex)
+          throw err
+        })
+    // A RAW exported from the file at full size: its best demosaic, and PMRID
+    // when the edit asks (ai/rawdevelop.ts). A preview is too small to show
+    // either, and stays classic.
+    let report: ConvertReport
+    if (raw && !preview) {
+      const plan = await scenePlan(info.raw_cfa, askOf(recipe))
+      const done = await withScene(
+        plan,
+        (scene) => convert({ ...request, raw: rawMaster(colourOf(row), scene) }),
+        signal
+      )
+      log.info('export RAW develop', key, done.classic ? 'classic' : plan.tag)
+      report = done.value
+    } else report = await convert(request)
 
     // What the engine's own path did, in its words: for the log and the receipt.
     const m = report.color.master
@@ -435,7 +467,7 @@ export class Exporter {
       })
     } catch (err) {
       log.warn('export metadata failed', out, err)
-      warn(`metadata not written: ${(err as Error).message}`)
+      warn(t('metadata not written: {{reason}}', { reason: (err as Error).message }))
     }
     return { out, report }
   }
@@ -488,9 +520,12 @@ export class Exporter {
       const shownAs: string[] = []
       if (shown.format !== s.format)
         shownAs.push(
-          `Shown as ${FORMAT_NAME[shown.format]}: the window cannot show ${FORMAT_NAME[s.format]}.`
+          t('Shown as {{shown}}: the window cannot show {{format}}.', {
+            shown: FORMAT_NAME[shown.format],
+            format: FORMAT_NAME[s.format]
+          })
         )
-      if (shown.hdr.mode !== s.hdr.mode) shownAs.push('Shown as its SDR picture.')
+      if (shown.hdr.mode !== s.hdr.mode) shownAs.push(t('Shown as its SDR picture.'))
       return {
         url: cacheUrl(out, Date.now()),
         width: report.width,
@@ -551,8 +586,9 @@ export class Exporter {
         id: 'overwrite-original',
         severity: 'block',
         step: 'review',
-        message:
+        message: t(
           'A file would be written over its original: change the name, the folder or the format.'
+        )
       })
     for (const dir of folders) {
       const there = await nearestExisting(dir)
@@ -565,7 +601,9 @@ export class Exporter {
           id: 'folder-unwritable',
           severity: 'block',
           step: 'review',
-          message: `Playroom cannot write to ${there}: choose another folder.`
+          message: t('Playroom cannot write to {{folder}}: choose another folder.', {
+            folder: there
+          })
         })
         continue
       }
@@ -575,38 +613,56 @@ export class Exporter {
           id: 'disk-full',
           severity: 'block',
           step: 'review',
-          message: `Only ${formatBytes(free)} is free where ${there} is.`
+          message: t('Only {{free}} is free where {{folder}} is.', {
+            free: formatBytes(free),
+            folder: there
+          })
         })
       else if (free !== null && free < need + MIN_FREE)
         out.push({
           id: 'disk-low',
           severity: 'warn',
           step: 'review',
-          message: `${formatBytes(free)} is free where ${there} is; this export may need about ${formatBytes(need)}.`
+          message: t('{{free}} is free where {{folder}} is; this export may need about {{need}}.', {
+            free: formatBytes(free),
+            folder: there,
+            need: formatBytes(need)
+          })
         })
     }
     if (existing > 0) {
-      const many = existing === 1 ? '1 file already exists' : `${existing} files already exist`
       out.push(
         s.collision === 'overwrite'
           ? {
               id: 'collide',
               severity: 'warn',
               step: 'review',
-              message: `${many} and will be replaced.`
+              message: tp(
+                '{{count}} file already exists and will be replaced.',
+                '{{count}} files already exist and will be replaced.',
+                existing
+              )
             }
           : s.collision === 'skip'
             ? {
                 id: 'collide',
                 severity: 'warn',
                 step: 'review',
-                message: `${many} and will be skipped.`
+                message: tp(
+                  '{{count}} file already exists and will be skipped.',
+                  '{{count}} files already exist and will be skipped.',
+                  existing
+                )
               }
             : {
                 id: 'collide',
                 severity: 'minor',
                 step: 'review',
-                message: `${many}: the new ones get a number.`
+                message: tp(
+                  '{{count}} file already exists: the new ones get a number.',
+                  '{{count}} files already exist: the new ones get a number.',
+                  existing
+                )
               }
       )
     }
@@ -615,7 +671,18 @@ export class Exporter {
         id: 'too-large',
         severity: 'warn',
         step: 'format',
-        message: `${big[0]}${big.length > 1 ? ` and ${big.length - 1} more are` : ' is'} larger than Playroom opens (${READ_LIMITS.max_pixels / 1e6} megapixels) and will fail.`
+        message:
+          big.length > 1
+            ? tp(
+                '{{name}} and {{count}} more are larger than Playroom opens ({{megapixels}} megapixels) and will fail.',
+                '{{name}} and {{count}} more are larger than Playroom opens ({{megapixels}} megapixels) and will fail.',
+                big.length - 1,
+                { name: big[0], megapixels: READ_LIMITS.max_pixels / 1e6 }
+              )
+            : t(
+                '{{name}} is larger than Playroom opens ({{megapixels}} megapixels) and will fail.',
+                { name: big[0], megapixels: READ_LIMITS.max_pixels / 1e6 }
+              )
       })
     return out
   }

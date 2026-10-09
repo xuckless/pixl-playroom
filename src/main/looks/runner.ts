@@ -9,7 +9,9 @@
  * What it needs from the app comes in as `RunnerDeps`, so it can be tested
  * without the engine or a window.
  */
-import { SKY_BY_CLICK, type AiJobEvent, type AiStartRequest } from '../../shared/ai'
+import { t, tk } from '../../shared/i18n'
+import { isPartTarget, SKY_BY_CLICK, type AiJobEvent, type AiStartRequest } from '../../shared/ai'
+import { isFacePart } from '../../shared/faceparts'
 import { DEFAULT_ENHANCE } from '../../shared/enhance'
 import type { MaskMode } from '../../shared/engine-types'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../../shared/looks/run'
@@ -51,7 +53,7 @@ export interface RunnerDeps {
   }): Promise<string>
 }
 
-const NOT_YET = 'needs the next engine update'
+const NOT_YET = tk('needs the next engine update')
 
 interface Run {
   req: LookRunRequest
@@ -117,7 +119,7 @@ export class LookRuns {
         this.deps.send({ kind: 'landed', key, runId, index, label: parts[index].label })
       } catch (err) {
         if (run.cancelled) break
-        const why = (err as Error).message || 'failed'
+        const why = (err as Error).message || t('failed')
         failed.push({ label: parts[index].label, why })
         // A mask part failed: the mask is taken off (it is off and incomplete).
         if (op.kind !== 'denoise' && op.kind !== 'deblur' && layerId) {
@@ -127,7 +129,7 @@ export class LookRuns {
               r.layers = r.layers.filter((l) => l.id !== layerId)
             })
             .catch(() => undefined)
-          this.deps.send({ kind: 'landed', key, runId, index, label: 'Mask removed' })
+          this.deps.send({ kind: 'landed', key, runId, index, label: t('Mask removed') })
         }
       }
     }
@@ -152,7 +154,7 @@ export class LookRuns {
       case 'component':
         return this.deps.edit(key, (r) => {
           const l = r.layers.find((x) => x.id === op.layerId)
-          if (!l) throw new Error('its mask is gone')
+          if (!l) throw new Error(t('its mask is gone'))
           const c = structuredClone(op.component)
           if (l.components.length === 0) c.mode = 'Add'
           l.components.push(c)
@@ -160,15 +162,15 @@ export class LookRuns {
       case 'enable':
         return this.deps.edit(key, (r) => {
           const l = r.layers.find((x) => x.id === op.layerId)
-          if (!l) throw new Error('its mask is gone')
+          if (!l) throw new Error(t('its mask is gone'))
           l.enabled = true
         })
       case 'segment': {
         // No sky model yet (E28): the user clicks the sky, and SAM 2.1 selects it.
         if (op.target === 'sky' && SKY_BY_CLICK) {
-          if (!this.deps.promptJob) throw new Error(NOT_YET)
+          if (!this.deps.promptJob) throw new Error(t(NOT_YET))
           const a = await this.ask(run, index, 'sky', look)
-          if (a.kind === 'skip') throw new Error('skipped')
+          if (a.kind === 'skip') throw new Error(t('skipped'))
           await this.job(
             run,
             this.deps.promptJob({
@@ -197,7 +199,23 @@ export class LookRuns {
         return
       }
       case 'person': {
-        if (!this.deps.personJob) throw new Error(NOT_YET)
+        // Hair, face, skin and clothes: Selfie Multiclass; eyes, brows, lips
+        // and teeth: the face's outlines (engine 0.19).
+        if (isPartTarget(op.part) || isFacePart(op.part)) {
+          await this.job(
+            run,
+            this.deps.startJob({
+              task: 'segment',
+              key,
+              target: op.part,
+              into: { layerId: op.layerId, mode: op.mode },
+              group
+            })
+          )
+          if (op.invert) await this.invertLast(key, op.layerId)
+          return
+        }
+        if (!this.deps.personJob) throw new Error(t(NOT_YET))
         await this.job(
           run,
           this.deps.personJob({ key, group, layerId: op.layerId, mode: op.mode, part: op.part })
@@ -206,13 +224,29 @@ export class LookRuns {
         return
       }
       case 'object': {
-        if (!this.deps.promptJob) throw new Error(NOT_YET)
+        // Found by its name: a phrase model (engine 0.19).
+        if (op.detect) {
+          await this.job(
+            run,
+            this.deps.startJob({
+              task: 'segment',
+              key,
+              target: 'phrase',
+              phrase: op.label,
+              into: { layerId: op.layerId, mode: op.mode },
+              group
+            })
+          )
+          if (op.invert) await this.invertLast(key, op.layerId)
+          return
+        }
+        if (!this.deps.promptJob) throw new Error(t(NOT_YET))
         let prompt: Parameters<NonNullable<RunnerDeps['promptJob']>>[0]['prompt'] = {
           kind: 'label'
         }
         if (!op.detect) {
           const a = await this.ask(run, index, op.label, look)
-          if (a.kind === 'skip') throw new Error('skipped')
+          if (a.kind === 'skip') throw new Error(t('skipped'))
           prompt = a.kind === 'point' ? { kind: 'point', point: a.point } : a
         }
         await this.job(
@@ -230,14 +264,12 @@ export class LookRuns {
         return
       }
       case 'denoise': {
-        // NAFNet's denoise comes with the next engine; the plan only asks for it once it is there.
-        if (op.model !== 'drunet') throw new Error(NOT_YET)
         await this.job(
           run,
           this.deps.startJob({
             task: 'denoise',
             key,
-            model: 'drunet-color',
+            model: op.model === 'nafnet' ? 'nafnet-sidd-w32' : 'drunet-color',
             strength: op.strength,
             layerId: op.layerId,
             group
@@ -251,7 +283,13 @@ export class LookRuns {
           this.deps.startJob({
             task: 'enhance',
             key,
-            settings: { ...DEFAULT_ENHANCE, deblur: true, deblurStrength: op.strength },
+            // Deblur alone: the default's ×2 would enlarge the whole photo past the mask.
+            settings: {
+              ...DEFAULT_ENHANCE,
+              deblur: true,
+              deblurStrength: op.strength,
+              upscale: 'off'
+            },
             layerId: op.layerId,
             group
           })
@@ -278,8 +316,8 @@ export class LookRuns {
       if (seen) resolve(seen)
       if (run.cancelled) this.deps.cancelJob(id)
       const e = await ended
-      if (e.phase === 'cancelled') throw new Error('cancelled')
-      if (e.phase !== 'done') throw new Error(e.message ?? 'failed')
+      if (e.phase === 'cancelled') throw new Error(t('cancelled'))
+      if (e.phase !== 'done') throw new Error(e.message ?? t('failed'))
     } finally {
       off()
       run.jobId = null

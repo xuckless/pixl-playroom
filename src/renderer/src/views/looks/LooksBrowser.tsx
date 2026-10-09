@@ -23,6 +23,7 @@ import { useAiJobs } from '../../state/jobs'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { useLooks } from '../../state/looks'
+import { t } from '../../lib/i18n'
 import { useLookThumbs, useThumbs } from './useLookThumbs'
 
 type Shelf =
@@ -36,6 +37,9 @@ type Shelf =
 const CURRENT = 'current'
 /** The cards' long edge in CSS pixels (the grid's widest card), for their thumbnails. */
 const CARD_EDGE = 260
+
+/** A look's name in the language shown (a preset the user saved keeps theirs). */
+const nameOf = (p: Preset): string => (p.builtin ? t(p.name) : p.name)
 
 const familyOf = (p: Preset): LookFamily | null =>
   p.meta ? (COLLECTION_BY_ID.get(p.meta.collection)?.family ?? null) : null
@@ -100,7 +104,7 @@ export function LooksBrowser(): React.JSX.Element | null {
     }
     return [...by].map(([id, looks]) => ({
       id,
-      label: COLLECTION_BY_ID.get(id)?.label ?? 'My presets',
+      label: t(COLLECTION_BY_ID.get(id)?.label ?? 'My presets'),
       looks
     }))
   }, [shown, q, shelf])
@@ -153,7 +157,7 @@ export function LooksBrowser(): React.JSX.Element | null {
   }
 
   const card = (p: Preset): React.JSX.Element => {
-    const t = thumbs[p.id]
+    const thumb = thumbs[p.id]
     const on = focus === p.id
     const isApplied = applied?.lookId === p.id
     return (
@@ -165,32 +169,38 @@ export function LooksBrowser(): React.JSX.Element | null {
         tabIndex={-1}
         onClick={() => setFocus(p.id)}
         onDoubleClick={(e) => apply(p, { stack: e.altKey, done: true })}
-        title={p.meta?.inspiredBy ? `Inspired by ${p.meta.inspiredBy}` : p.name}
+        title={
+          p.meta?.inspiredBy ? t('Inspired by {{name}}', { name: p.meta.inspiredBy }) : nameOf(p)
+        }
       >
         <div className="look-thumb" style={{ aspectRatio: String(aspect) }}>
-          {t ? <img src={t.url} alt="" draggable={false} /> : <span className="look-skeleton" />}
+          {thumb ? (
+            <img src={thumb.url} alt="" draggable={false} />
+          ) : (
+            <span className="look-skeleton" />
+          )}
         </div>
         <div className="look-meta">
-          <span className="look-name">{p.name}</span>
+          <span className="look-name">{nameOf(p)}</span>
           {p.smart && (
             <span
               className={`look-badge smart${blockers(p).length ? ' blocked' : ''}`}
               title={
                 blockers(p).length
-                  ? `Smart look. ${blockers(p).join('; ')}`
-                  : 'Smart look: makes masks or runs AI as it is applied'
+                  ? t('Smart look. {{reasons}}', { reasons: blockers(p).join('; ') })
+                  : t('Smart look: makes masks or runs AI as it is applied')
               }
             >
-              Smart
+              {t('Smart')}
             </span>
           )}
           {isApplied && (
-            <span className="look-badge applied" title="Applied to the photo">
+            <span className="look-badge applied" title={t('Applied to the photo')}>
               <Icon name="check" />
             </span>
           )}
           {p.meta?.approximates && (
-            <span className="look-badge" title="Approximated with the sliders we have">
+            <span className="look-badge" title={t('Approximated with the sliders we have')}>
               ≈
             </span>
           )}
@@ -198,7 +208,7 @@ export function LooksBrowser(): React.JSX.Element | null {
         {p.builtin && (
           <button
             className={`icon sm look-keep${kept(p.id) ? ' kept' : ''}`}
-            title={kept(p.id) ? 'In My Looks: remove' : 'Add to My Looks'}
+            title={kept(p.id) ? t('In My Looks: remove') : t('Add to My Looks')}
             onClick={(e) => {
               e.stopPropagation()
               toggleKeep(p)
@@ -229,6 +239,11 @@ export function LooksBrowser(): React.JSX.Element | null {
   }
 
   const current = thumbs[CURRENT]
+  const appliedName = !applied
+    ? ''
+    : LOOKS.some((l) => l.id === applied.lookId)
+      ? t(applied.name)
+      : applied.name
   const currentCard = (
     <div
       ref={observe(CURRENT)}
@@ -243,13 +258,13 @@ export function LooksBrowser(): React.JSX.Element | null {
         )}
       </div>
       <div className="look-meta">
-        <span className="look-name">{applied ? 'Without look' : 'Current'}</span>
+        <span className="look-name">{applied ? t('Without look') : t('Current')}</span>
       </div>
     </div>
   )
   return (
     <Modal
-      title="Looks"
+      title={t('Looks')}
       icon="presets"
       wide
       className="looks-browser"
@@ -258,10 +273,12 @@ export function LooksBrowser(): React.JSX.Element | null {
         focused ? (
           <div className="looks-detail">
             <div className="looks-detail-text">
-              <strong>{focused.name}</strong>
-              {focused.meta?.inspiredBy && <span>Inspired by {focused.meta.inspiredBy}</span>}
+              <strong>{nameOf(focused)}</strong>
+              {focused.meta?.inspiredBy && (
+                <span>{t('Inspired by {{name}}', { name: focused.meta.inspiredBy })}</span>
+              )}
               {focused.meta?.description && (
-                <span className="muted">{focused.meta.description}</span>
+                <span className="muted">{t(focused.meta.description)}</span>
               )}
               {focused.smart && session && (
                 <SmartDetail
@@ -273,66 +290,74 @@ export function LooksBrowser(): React.JSX.Element | null {
               )}
               {focused.meta?.approximates && (
                 <span className="muted">
-                  ≈ Approximates {focused.meta.approximates.join(', ')} with the sliders we have.
+                  {t('≈ Approximates {{list}} with the sliders we have.', {
+                    list: focused.meta.approximates.join(', ')
+                  })}
                 </span>
               )}
             </div>
             {focused.builtin && (
               <button className="ghost" onClick={() => toggleKeep(focused)}>
                 <Icon name={kept(focused.id) ? 'check' : 'plus'} />
-                {kept(focused.id) ? 'In My Looks' : 'Add to My Looks'}
+                {kept(focused.id) ? t('In My Looks') : t('Add to My Looks')}
               </button>
             )}
             <button
               className="primary"
               disabled={applied?.lookId === focused.id}
               onClick={(e) => apply(focused, { stack: e.altKey })}
-              title={applied ? `Takes the place of ${applied.name} (Alt: on top of it)` : undefined}
+              title={
+                applied
+                  ? t('Takes the place of {{name}} (Alt: on top of it)', { name: appliedName })
+                  : undefined
+              }
             >
-              {applied?.lookId === focused.id ? 'Applied' : 'Apply'}
+              {applied?.lookId === focused.id ? t('Applied') : t('Apply')}
             </button>
           </div>
         ) : applied ? (
           <div className="looks-detail">
             <div className="looks-detail-text">
-              <strong>{applied.name}</strong>
+              <strong>{appliedName}</strong>
               <span className="muted">
-                Applied at {applied.amount}%. Pick another look to swap it, or take it off.
+                {t('Applied at {{amount}}%. Pick another look to swap it, or take it off.', {
+                  amount: applied.amount
+                })}
               </span>
             </div>
             <button className="ghost" onClick={removeLook}>
               <Icon name="reset" />
-              Take off
+              {t('Take off')}
             </button>
             <button className="primary" onClick={close}>
-              Done
+              {t('Done')}
             </button>
           </div>
         ) : (
           <p className="looks-disclaimer">
-            PIXL&apos;s own looks, made with Playroom&apos;s sliders. Cameras, film stocks and films
-            are named only as what inspired a look; PIXL is not affiliated with or endorsed by their
-            owners.
+            {t(
+              "PIXL's own looks, made with Playroom's sliders. Cameras, film stocks and films are named only as what inspired a look; PIXL is not affiliated with or endorsed by their owners."
+            )}
           </p>
         )
       }
     >
       <div className="looks-layout">
-        <nav className="looks-shelves" aria-label="Collections">
-          {shelfButton({ kind: 'all' }, 'All looks', LOOKS.length + user.length)}
-          {shelfButton({ kind: 'mine' }, 'My Looks', mineIds.length)}
-          {user.length > 0 && shelfButton({ kind: 'user' }, 'My presets', user.length)}
+        <nav className="looks-shelves" aria-label={t('Collections')}>
+          {shelfButton({ kind: 'all' }, t('All looks'), LOOKS.length + user.length)}
+          {shelfButton({ kind: 'mine' }, t('My Looks'), mineIds.length)}
+          {user.length > 0 && shelfButton({ kind: 'user' }, t('My presets'), user.length)}
           {FAMILIES.map((f) => {
             const cols = COLLECTIONS.filter((c) => c.family === f.id)
             return (
               <div key={f.id} className="looks-family">
                 {shelfButton(
                   { kind: 'family', id: f.id },
-                  f.label,
+                  t(f.label),
                   LOOKS.filter((l) => familyOf(l) === f.id).length
                 )}
                 {cols.length > 1 &&
-                  cols.map((c) => shelfButton({ kind: 'collection', id: c.id }, c.label))}
+                  cols.map((c) => shelfButton({ kind: 'collection', id: c.id }, t(c.label)))}
               </div>
             )
           })}
@@ -343,7 +368,7 @@ export function LooksBrowser(): React.JSX.Element | null {
             <input
               className="search"
               autoFocus
-              placeholder="Search by name, camera, film stock, movie or mood"
+              placeholder={t('Search by name, camera, film stock, movie or mood')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -366,14 +391,14 @@ export function LooksBrowser(): React.JSX.Element | null {
           </label>
           <label
             className="looks-worksnow"
-            title="Hide the smart looks that need something this build does not have yet"
+            title={t('Hide the smart looks that need something this build does not have yet')}
           >
             <input
               type="checkbox"
               checked={worksNow}
               onChange={(e) => useLooks.setState({ worksNow: e.target.checked })}
             />
-            Works now
+            {t('Works now')}
           </label>
           <div className="looks-grid" ref={grid} tabIndex={0} onKeyDown={onKey}>
             {sections.map((s, i) => (
@@ -383,7 +408,11 @@ export function LooksBrowser(): React.JSX.Element | null {
                 {s.looks.map(card)}
               </SectionCards>
             ))}
-            {shown.length === 0 && <p className="rail-empty looks-none">No look matches “{q}”.</p>}
+            {shown.length === 0 && (
+              <p className="rail-empty looks-none">
+                {t('No look matches “{{query}}”.', { query: q })}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -418,9 +447,9 @@ function SmartDetail({ plan }: { plan: ReturnType<typeof planSmart> }): React.JS
     <>
       {makes && (
         <span className="muted">
-          Makes: {makes}
+          {t('Makes: {{list}}', { list: makes })}
           {plan.etaMs > 0 && ` · ${formatEta(plan.etaMs)}`}
-          {plan.picks > 0 && ' · asks you to point at an object'}
+          {plan.picks > 0 && ` · ${t('asks you to point at an object')}`}
         </span>
       )}
       {plan.skipped.length > 0 && (

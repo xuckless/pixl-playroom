@@ -28,6 +28,7 @@ import {
   WhiteBalanceBody
 } from '../panels/global'
 import { HealPanel } from '../panels/heal'
+import { rich, t, tk } from '../lib/i18n'
 import { LensPanel } from '../panels/lens'
 import { TIPS } from '../panels/tips'
 import { useDevelop } from '../state/develop'
@@ -67,13 +68,11 @@ function ScopeChip(): React.JSX.Element | null {
       style={{ ['--scope-hue' as string]: layer.overlayHue ?? overlayHue }}
     >
       <span className="scope-dot" />
-      <span className="scope-text">
-        Editing <b>{layer.name}</b>
-      </span>
+      <span className="scope-text">{rich('Editing {{name}}', { name: <b>{layer.name}</b> })}</span>
       <button
         className="icon sm ghost"
-        title="Edit the whole photo (Esc)"
-        aria-label="Edit the whole photo"
+        title={t('Edit the whole photo (Esc)')}
+        aria-label={t('Edit the whole photo')}
         onClick={() => useDevelop.getState().setLayer(null)}
       >
         <Icon name="close" />
@@ -105,7 +104,7 @@ function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
   return (
     <Card
       id={spec.id}
-      title={spec.title}
+      title={t(spec.title)}
       tip={TIPS[spec.id]}
       changed={changed}
       open={open}
@@ -119,8 +118,8 @@ function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
 }
 
 const DRAWERS: Record<Exclude<Drawer, 'adjust'>, { title: string; Body: ComponentType }> = {
-  crop: { title: 'Crop & straighten', Body: CropDrawer },
-  heal: { title: 'Heal', Body: HealPanel }
+  crop: { title: tk('Crop & straighten'), Body: CropDrawer },
+  heal: { title: tk('Heal'), Body: HealPanel }
 }
 
 /** Crop's or Heal's panel, in place of the cards while its tool is in hand. */
@@ -129,13 +128,13 @@ function DrawerPanel({ drawer }: { drawer: Exclude<Drawer, 'adjust'> }): React.J
   return (
     <div className="drawer">
       <div className="drawer-head">
-        <span className="drawer-title">{title}</span>
+        <span className="drawer-title">{t(title)}</span>
         <button
           className="sm"
-          title="Back to the adjustments (Esc)"
+          title={t('Back to the adjustments (Esc)')}
           onClick={() => openDrawer('adjust')}
         >
-          Done
+          {t('Done')}
         </button>
       </div>
       <Body />
@@ -168,10 +167,10 @@ export function AdjustStack(): React.JSX.Element {
           ))}
           <Card
             id="enhance"
-            title="Enhance"
+            title={t('Enhance')}
             tip={TIPS.enhance}
             defaultOpen={false}
-            right={<span className="ai-badge">AI</span>}
+            right={<span className="ai-badge">{t('AI')}</span>}
           >
             <EnhancePanel />
           </Card>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { absoluteWb, isIdentityCurve } from '../../../shared/compile'
+import { absoluteWb, isIdentityCurve, LEFT_OUT } from '../../../shared/compile'
 import type { LutProfile } from '../../../shared/ipc'
 import {
   HSL_BANDS,
@@ -27,18 +27,23 @@ import { Icon, PathIcon } from '../components/icons'
 import { Popover } from '../components/Popover'
 import { CurvePresets } from './CurvePresets'
 import { AiDenoise } from './AiDenoise'
+import { useModels } from '../lib/models'
+import { askModel } from '../state/modelPrompt'
 import { applyUpright, startGuides } from '../lib/upright'
 import type { UprightMode } from '../../../shared/upright'
 import { withKey } from '../lib/commands'
 import { scoped, scopedView, scopeLayer, useScope } from '../state/scope'
 import { useUi } from '../state/ui'
-import type { Tip } from '../components/InfoTip'
+import { InfoTip, type Tip } from '../components/InfoTip'
 import { TIPS } from './tips'
+import { invariantTouches } from '../../../shared/invariant'
+import { readPath } from '../lib/readpath'
+import { t, tk } from '../lib/i18n'
 
 type Read = (r: Recipe) => number
 type Write = (r: Recipe, v: number) => void
 
-/** A slider bound to one number in the recipe. */
+/** A slider bound to one number in the recipe; `label` in English (`tk`), shown translated, the History step's label. */
 function RS({
   label,
   read,
@@ -72,11 +77,20 @@ function RS({
   const value = useDevelop((s) =>
     s.recipe ? read(scopedView(s.recipe, scopeLayer(s.recipe, s.layerId, open))) : null
   )
+  // The last render failed on the op this slider feeds (engine 0.18's
+  // Invariant), in this layer, and this slider is set: it shows why.
+  const problem = useDevelop((s) => {
+    const inv = s.invariant
+    if (!inv || !s.recipe) return undefined
+    const layer = scopeLayer(s.recipe, s.layerId, open)
+    if (inv.layer !== (layer ? layer.id : 'base')) return undefined
+    return invariantTouches(inv, readPath(read)) ? (s.error ?? undefined) : undefined
+  })
   const { edit, commit } = scoped
   if (value === null) return null
   return (
     <Slider
-      label={label}
+      label={t(label)}
       value={value}
       min={min}
       max={max}
@@ -86,6 +100,7 @@ function RS({
       track={track}
       title={title}
       tip={tip}
+      problem={value !== def ? problem : undefined}
       onChange={(v, live) => {
         if (live) onGesture?.(true)
         edit((r) => write(r, v), live)
@@ -96,6 +111,17 @@ function RS({
       }}
     />
   )
+}
+
+/**
+ * What the last render left out of the preview, said in the panel that owns
+ * it (HR-0.18-1), until the view is at 100%, where the 1:1 tiles show it.
+ */
+function LeftOut({ note }: { note: string }): React.JSX.Element | null {
+  const shown = useDevelop((s) => s.report?.notes.includes(note) ?? false)
+  const full = useDevelop((s) => typeof s.zoom.scale === 'number' && s.zoom.scale >= 1)
+  if (!shown || full) return null
+  return <p className="muted small left-out">{t(note)}</p>
 }
 
 // ── Basic ────────────────────────────────────────────────────────────────────
@@ -118,10 +144,10 @@ interface SavedWb {
 const WB_PRESETS_KEY = 'wb.presets'
 
 const PROFILE_LABELS: Record<string, string> = {
-  neutral: 'Neutral',
-  standard: 'Playroom Standard',
-  vivid: 'Vivid',
-  monochrome: 'Monochrome'
+  neutral: tk('Neutral'),
+  standard: tk('Playroom Standard'),
+  vivid: tk('Vivid'),
+  monochrome: tk('Monochrome')
 }
 
 function ProfileRow(): React.JSX.Element | null {
@@ -158,18 +184,18 @@ function ProfileRow(): React.JSX.Element | null {
   return (
     <>
       <Select
-        label="Profile"
+        label={t('Profile')}
         value={current}
         onChange={(v) => void choose(v)}
         options={[
-          ...Object.entries(PROFILE_LABELS).map(([value, label]) => ({ value, label })),
+          ...Object.entries(PROFILE_LABELS).map(([value, label]) => ({ value, label: t(label) })),
           ...luts.map((l) => ({ value: `lut:${l.path}`, label: `LUT · ${l.name}` })),
-          { value: 'import', label: 'Import .cube…' }
+          { value: 'import', label: t('Import .cube…') }
         ]}
       />
       {recipe.profile.kind === 'lut' && (
         <RS
-          label="Amount"
+          label={tk('Amount')}
           read={(r) => r.profileAmount}
           write={(r, v) => (r.profileAmount = v)}
           min={0}
@@ -199,7 +225,7 @@ function CameraColourRow({
     ...(cc?.supported
       ? [{ value: 'pixl:1', label: `PIXL · ${cc.pixlCamera ?? `${cc.make} ${cc.model}`}` }]
       : []),
-    { value: 'container', label: 'Container (the file’s own)' }
+    { value: 'container', label: t('Container (the file’s own)') }
   ]
   const choose = async (v: string): Promise<void> => {
     try {
@@ -207,8 +233,10 @@ function CameraColourRow({
       await useDevelop.getState().reopen()
       say(
         steps > 0
-          ? 'Camera colour changed: heals, denoise and enhance steps made on the other colour are marked'
-          : 'Camera colour changed'
+          ? t(
+              'Camera colour changed: heals, denoise and enhance steps made on the other colour are marked'
+            )
+          : t('Camera colour changed')
       )
     } catch (err) {
       say(errorText(err), 'error')
@@ -219,12 +247,14 @@ function CameraColourRow({
       className="row"
       title={
         cc?.supported
-          ? 'How this camera’s colours are read. PIXL’s is fitted to the body; the file’s own is the maker’s matrix.'
+          ? t(
+              'How this camera’s colours are read. PIXL’s is fitted to the body; the file’s own is the maker’s matrix.'
+            )
           : (rawColourReason(session.info) ?? undefined)
       }
     >
       <Select
-        label="Colour"
+        label={t('Colour')}
         value={session.rawColour ?? 'container'}
         onChange={(v) => void choose(v)}
         options={options}
@@ -273,7 +303,7 @@ function WhiteBalanceRows(): React.JSX.Element | null {
     const next = [...saved.filter((p) => !(p.name === name && (p.op || p.absolute === abs))), entry]
     setSaved(next)
     await api.app.setSetting(WB_PRESETS_KEY, next)
-    useLibrary.getState().say(`Saved white balance "${name}"`)
+    useLibrary.getState().say(t('Saved white balance "{{name}}"', { name }))
   }
   const shot = session.asShot
   const shownTemp =
@@ -284,32 +314,33 @@ function WhiteBalanceRows(): React.JSX.Element | null {
       : recipe.wb.temperature
   const shownTint =
     recipe.wb.mode === 'as-shot' ? (abs && shot ? shot.tint * 3000 : 0) : recipe.wb.tint
-  const custom = (r: Recipe, t: number, n: number): void => {
-    r.wb = { mode: 'custom', temperature: t, tint: n, preset: null }
+  const custom = (r: Recipe, temp: number, n: number): void => {
+    r.wb = { mode: 'custom', temperature: temp, tint: n, preset: null }
   }
   const choose = async (v: string): Promise<void> => {
     if (v === 'as-shot')
       replace(
         { ...recipe, wb: { mode: 'as-shot', temperature: 0, tint: 0, preset: null } },
-        'White balance: As shot'
+        tk('White balance: As shot')
       )
     else if (v === 'auto') {
       try {
-        const wb = await runJob('Auto white balance', () => api.develop.autoWb(session.key), {
-          detail: 'Finding the neutral greys'
+        const wb = await runJob(t('Auto white balance'), () => api.develop.autoWb(session.key), {
+          detail: t('Finding the neutral greys')
         })
         if (!wb)
           return useLibrary
             .getState()
-            .say('Auto white balance found no neutral to work from', 'error')
+            .say(t('Auto white balance found no neutral to work from'), 'error')
         replace(
           {
             ...recipe,
             wb: { mode: 'custom', temperature: wb.temperature, tint: wb.tint, preset: 'auto' }
           },
-          'White balance: Auto'
+          tk('White balance: Auto')
         )
-        if (wb.clamped) useLibrary.getState().say('Auto white balance reached the end of the range')
+        if (wb.clamped)
+          useLibrary.getState().say(t('Auto white balance reached the end of the range'))
       } catch (err) {
         useLibrary.getState().say(errorText(err), 'error')
       }
@@ -337,24 +368,24 @@ function WhiteBalanceRows(): React.JSX.Element | null {
       {!layer && (
         <div className="row">
           <Select
-            label="WB"
+            label={t('WB')}
             value={presetValue}
             onChange={(v) => void choose(v)}
             options={[
-              { value: 'as-shot', label: 'As shot' },
-              { value: 'auto', label: 'Auto' },
-              { value: 'custom', label: 'Custom' },
-              ...(abs ? WB_PRESETS.map((p) => ({ value: p.name, label: p.name })) : []),
+              { value: 'as-shot', label: t('As shot') },
+              { value: 'auto', label: t('Auto') },
+              { value: 'custom', label: t('Custom') },
+              ...(abs ? WB_PRESETS.map((p) => ({ value: p.name, label: t(p.name) })) : []),
               ...mine.map((p) => ({ value: `mine:${p.name}`, label: `★ ${p.name}` })),
-              { value: 'save', label: 'Save current as preset…' }
+              { value: 'save', label: t('Save current as preset…') }
             ]}
           />
           <Toggle
             on={tool === 'wb-picker'}
             onChange={(on) => setTool(on ? 'wb-picker' : 'none')}
-            title={withKey('Pick a neutral in the photo', 'tool.wb')}
+            title={withKey(t('Pick a neutral in the photo'), 'tool.wb')}
           >
-            ⌖ Pick
+            ⌖ {t('Pick')}
           </Toggle>
         </div>
       )}
@@ -363,7 +394,7 @@ function WhiteBalanceRows(): React.JSX.Element | null {
           <input
             className="name"
             autoFocus
-            placeholder="Preset name"
+            placeholder={t('Preset name')}
             value={naming}
             onChange={(e) => setNaming(e.target.value)}
             onKeyDown={(e) => {
@@ -382,14 +413,14 @@ function WhiteBalanceRows(): React.JSX.Element | null {
               setNaming(null)
             }}
           >
-            Save
+            {t('Save')}
           </button>
         </div>
       )}
       {abs ? (
         <>
           <Slider
-            label="Temp"
+            label={t('Temp')}
             value={shownTemp}
             min={2000}
             max={25000}
@@ -398,38 +429,38 @@ function WhiteBalanceRows(): React.JSX.Element | null {
             format={(v) => `${Math.round(v)} K`}
             track="linear-gradient(90deg,#5b8cff,#fff,#ffb44d)"
             onChange={(v, live) => scoped.edit((r) => custom(r, v, shownTint), live)}
-            onCommit={() => scoped.commit('Temperature')}
+            onCommit={() => scoped.commit(tk('Temperature'))}
           />
           <Slider
-            label="Tint"
+            label={t('Tint')}
             value={shownTint}
             min={-150}
             max={150}
             def={(shot?.tint ?? 0) * 3000}
             track="linear-gradient(90deg,#4dff6a,#fff,#ff4de1)"
             onChange={(v, live) => scoped.edit((r) => custom(r, shownTemp, v), live)}
-            onCommit={() => scoped.commit('Tint')}
+            onCommit={() => scoped.commit(tk('Tint'))}
           />
         </>
       ) : (
         <>
           <Slider
-            label="Temp"
+            label={t('Temp')}
             value={shownTemp}
             min={-100}
             max={100}
             track="linear-gradient(90deg,#5b8cff,#fff,#ffb44d)"
             onChange={(v, live) => scoped.edit((r) => custom(r, v, shownTint), live)}
-            onCommit={() => scoped.commit('Temperature')}
+            onCommit={() => scoped.commit(tk('Temperature'))}
           />
           <Slider
-            label="Tint"
+            label={t('Tint')}
             value={shownTint}
             min={-100}
             max={100}
             track="linear-gradient(90deg,#4dff6a,#fff,#ff4de1)"
             onChange={(v, live) => scoped.edit((r) => custom(r, shownTemp, v), live)}
-            onCommit={() => scoped.commit('Tint')}
+            onCommit={() => scoped.commit(tk('Tint'))}
           />
         </>
       )}
@@ -444,15 +475,15 @@ export function AdjustHead(): React.JSX.Element | null {
   return (
     <div className="adjust-head">
       <div className="row">
-        <span className="adjust-head-label">Treatment</span>
+        <span className="adjust-head-label">{t('Treatment')}</span>
         <Tabs
           value={recipe.treatment}
           tabs={[
-            { value: 'color', label: 'Colour' },
-            { value: 'bw', label: 'B&W' }
+            { value: 'color', label: t('Colour') },
+            { value: 'bw', label: t('B&W') }
           ]}
-          onChange={(t) =>
-            replace({ ...recipe, treatment: t }, t === 'bw' ? 'Black & white' : 'Colour')
+          onChange={(v) =>
+            replace({ ...recipe, treatment: v }, v === 'bw' ? tk('Black & white') : tk('Colour'))
           }
         />
       </div>
@@ -472,16 +503,16 @@ export function AutoTone(): React.JSX.Element | null {
   if (!session || !recipe || layer) return null
   const auto = async (): Promise<void> => {
     try {
-      const basic = await runJob('Auto tone', () => api.develop.autoTone(session.key))
+      const basic = await runJob(t('Auto tone'), () => api.develop.autoTone(session.key))
       const now = useDevelop.getState().recipe ?? recipe
-      replace({ ...now, basic }, 'Auto tone')
+      replace({ ...now, basic }, tk('Auto tone'))
     } catch (err) {
       useLibrary.getState().say(errorText(err), 'error')
     }
   }
   return (
-    <button className="sm" onClick={() => void auto()} title={withKey('Auto tone', 'autoTone')}>
-      Auto
+    <button className="sm" onClick={() => void auto()} title={withKey(t('Auto tone'), 'autoTone')}>
+      {t('Auto')}
     </button>
   )
 }
@@ -490,7 +521,7 @@ export function LightBody(): React.JSX.Element {
   return (
     <>
       <RS
-        label="Exposure"
+        label={tk('Exposure')}
         tip={TIPS['light.exposure']}
         read={(r) => r.basic.exposure}
         write={(r, v) => (r.basic.exposure = v)}
@@ -500,31 +531,31 @@ export function LightBody(): React.JSX.Element {
         format={(v) => (v > 0 ? '+' : '') + v.toFixed(2)}
       />
       <RS
-        label="Contrast"
+        label={tk('Contrast')}
         tip={TIPS['light.contrast']}
         read={(r) => r.basic.contrast}
         write={(r, v) => (r.basic.contrast = v)}
       />
       <RS
-        label="Highlights"
+        label={tk('Highlights')}
         tip={TIPS['light.highlights']}
         read={(r) => r.basic.highlights}
         write={(r, v) => (r.basic.highlights = v)}
       />
       <RS
-        label="Shadows"
+        label={tk('Shadows')}
         tip={TIPS['light.shadows']}
         read={(r) => r.basic.shadows}
         write={(r, v) => (r.basic.shadows = v)}
       />
       <RS
-        label="Whites"
+        label={tk('Whites')}
         tip={TIPS['light.whites']}
         read={(r) => r.basic.whites}
         write={(r, v) => (r.basic.whites = v)}
       />
       <RS
-        label="Blacks"
+        label={tk('Blacks')}
         tip={TIPS['light.blacks']}
         read={(r) => r.basic.blacks}
         write={(r, v) => (r.basic.blacks = v)}
@@ -537,22 +568,31 @@ export function PresenceBody(): React.JSX.Element {
   return (
     <>
       <RS
-        label="Texture"
+        label={tk('Texture')}
         tip={TIPS['presence.texture']}
         read={(r) => r.presence.texture}
         write={(r, v) => (r.presence.texture = v)}
       />
       <RS
-        label="Clarity"
+        label={tk('Clarity')}
         tip={TIPS['presence.clarity']}
         read={(r) => r.presence.clarity}
         write={(r, v) => (r.presence.clarity = v)}
       />
       <RS
-        label="Dehaze"
+        label={tk('Dehaze')}
         tip={TIPS['presence.dehaze']}
         read={(r) => r.presence.dehaze}
         write={(r, v) => (r.presence.dehaze = v)}
+      />
+      <RS
+        label={tk('Smoothing')}
+        tip={TIPS['presence.smoothing']}
+        read={(r) => r.presence.smoothing}
+        write={(r, v) => (r.presence.smoothing = v)}
+        min={0}
+        max={100}
+        def={100}
       />
     </>
   )
@@ -563,20 +603,20 @@ export function ColourBody(): React.JSX.Element {
   return (
     <>
       <RS
-        label="Vibrance"
+        label={tk('Vibrance')}
         tip={TIPS['colour.vibrance']}
         read={(r) => r.presence.vibrance}
         write={(r, v) => (r.presence.vibrance = v)}
       />
       <RS
-        label="Saturation"
+        label={tk('Saturation')}
         tip={TIPS['colour.saturation']}
         read={(r) => r.presence.saturation}
         write={(r, v) => (r.presence.saturation = v)}
       />
       {layer && (
         <RS
-          label="Hue"
+          label={tk('Hue')}
           tip={TIPS['colour.hue']}
           read={(r) => r.presence.hue}
           write={(r, v) => (r.presence.hue = v)}
@@ -613,7 +653,7 @@ function TatToggle({ target }: { target: 'hsl' | 'curve' }): React.JSX.Element {
         s.setTatTarget(target)
         s.setTool(v ? 'tat' : 'none')
       }}
-      title={withKey('Targeted adjustment: drag up or down on the photo', 'tool.tat')}
+      title={withKey(t('Targeted adjustment: drag up or down on the photo'), 'tool.tat')}
     >
       <PathIcon d={TAT_ICON} />
     </Toggle>
@@ -638,27 +678,27 @@ export function CurveBody(): React.JSX.Element | null {
       : stats?.histograms[{ red: 0, green: 1, blue: 2 }[channel]]?.counts
   return (
     <ToolPanel>
-      <Section id="curve.presets" title="Presets">
+      <Section id="curve.presets" title={t('Presets')}>
         <CurvePresets />
       </Section>
-      <Section id="curve.region" title="Region">
+      <Section id="curve.region" title={t('Region')}>
         <RS
-          label="Highlights"
+          label={tk('Highlights')}
           read={(r) => r.toneCurve.highlights}
           write={(r, v) => (r.toneCurve.highlights = v)}
         />
         <RS
-          label="Lights"
+          label={tk('Lights')}
           read={(r) => r.toneCurve.lights}
           write={(r, v) => (r.toneCurve.lights = v)}
         />
         <RS
-          label="Darks"
+          label={tk('Darks')}
           read={(r) => r.toneCurve.darks}
           write={(r, v) => (r.toneCurve.darks = v)}
         />
         <RS
-          label="Shadows"
+          label={tk('Shadows')}
           tip={TIPS['light.shadows']}
           read={(r) => r.toneCurve.shadows}
           write={(r, v) => (r.toneCurve.shadows = v)}
@@ -666,7 +706,7 @@ export function CurveBody(): React.JSX.Element | null {
       </Section>
       <Section
         id="curve.point"
-        title="Point curve"
+        title={t('Point curve')}
         right={
           <>
             <TatToggle target="curve" />
@@ -703,19 +743,21 @@ export function CurveBody(): React.JSX.Element | null {
               commit(`Reset curve (${channel})`)
             }}
           >
-            Reset {channel}
+            {t(RESET_CHANNEL[channel])}
           </button>
         </div>
         <Slider
-          label="Refine saturation"
+          label={t('Refine saturation')}
           value={recipe.toneCurve.refineSaturation}
           min={0}
           max={100}
           def={100}
           disabled={isIdentityCurve(recipe.toneCurve.master)}
-          title="How much saturation the RGB curve brings as it steepens: lower keeps colours as they were"
+          title={t(
+            'How much saturation the RGB curve brings as it steepens: lower keeps colours as they were'
+          )}
           onChange={(v, live) => edit((r) => (r.toneCurve.refineSaturation = v), live)}
-          onCommit={() => commit('Refine saturation')}
+          onCommit={() => commit(tk('Refine saturation'))}
         />
       </Section>
     </ToolPanel>
@@ -724,7 +766,33 @@ export function CurveBody(): React.JSX.Element | null {
 
 // ── HSL / B&W mix ────────────────────────────────────────────────────────────
 
-const BAND_LABEL = (b: HslBand): string => b[0].toUpperCase() + b.slice(1)
+/** The point curve's Reset button, by channel. */
+const RESET_CHANNEL: Record<CurveChannel, string> = {
+  master: tk('Reset master'),
+  red: tk('Reset red'),
+  green: tk('Reset green'),
+  blue: tk('Reset blue')
+}
+
+/** Each colour band's name, in English (RS shows it translated). */
+const BAND_NAME: Record<HslBand, string> = {
+  red: tk('Red'),
+  orange: tk('Orange'),
+  yellow: tk('Yellow'),
+  green: tk('Green'),
+  aqua: tk('Aqua'),
+  blue: tk('Blue'),
+  purple: tk('Purple'),
+  magenta: tk('Magenta')
+}
+const BAND_LABEL = (b: HslBand): string => BAND_NAME[b]
+
+/** The mixer's sections, by axis. */
+const AXIS_TITLE: Record<'hue' | 'saturation' | 'luminance', string> = {
+  hue: tk('Hue'),
+  saturation: tk('Saturation'),
+  luminance: tk('Luminance')
+}
 
 export function MixerBody(): React.JSX.Element | null {
   const { recipe, layer } = useScope()
@@ -734,14 +802,14 @@ export function MixerBody(): React.JSX.Element | null {
   // A band chosen from the colour-concentration chart scrolls into view.
   useEffect(() => {
     if (!focus) return
-    const t = setTimeout(
+    const timer = setTimeout(
       () =>
         document
           .querySelector('.tool-panel .focused')
           ?.scrollIntoView({ block: 'center', behavior: 'smooth' }),
       320
     )
-    return () => clearTimeout(t)
+    return () => clearTimeout(timer)
   }, [focus, tab])
   if (!recipe) return null
   const bw = recipe.treatment === 'bw' || recipe.profile.kind === 'monochrome'
@@ -749,8 +817,9 @@ export function MixerBody(): React.JSX.Element | null {
     return (
       <ToolPanel>
         <p className="muted small">
-          This photo is black and white: its B&amp;W mix is set for the whole photo. Deselect the
-          mask to change it.
+          {t(
+            'This photo is black and white: its B&W mix is set for the whole photo. Deselect the mask to change it.'
+          )}
         </p>
       </ToolPanel>
     )
@@ -758,7 +827,7 @@ export function MixerBody(): React.JSX.Element | null {
   if (bw) {
     return (
       <ToolPanel>
-        <Section id="hsl.bw" title="B&W mix">
+        <Section id="hsl.bw" title={t('B&W mix')}>
           {HSL_BANDS.map((b) => (
             <RS
               key={b}
@@ -786,8 +855,8 @@ export function MixerBody(): React.JSX.Element | null {
               { value: 'hue', label: 'H' },
               { value: 'saturation', label: 'S' },
               { value: 'luminance', label: 'L' },
-              { value: 'all', label: 'All' },
-              { value: 'point', label: 'Point' }
+              { value: 'all', label: t('All') },
+              { value: 'point', label: t('Point') }
             ]}
           />
         </>
@@ -795,7 +864,12 @@ export function MixerBody(): React.JSX.Element | null {
     >
       {tab === 'point' && <PointColorSection />}
       {axes.map((axis) => (
-        <Section key={axis} id={`hsl.${axis}`} title={axis}>
+        <Section
+          key={axis}
+          id={`hsl.${axis}`}
+          title={t(AXIS_TITLE[axis])}
+          tip={axis === 'luminance' ? TIPS['hsl.luminance'] : undefined}
+        >
           {HSL_BANDS.map((b) => {
             const c = HSL_BAND_CENTRES[b]
             const track =
@@ -855,7 +929,7 @@ function PointColorSection(): React.JSX.Element | null {
     const next = structuredClone(recipe)
     next.pointColors = next.pointColors.filter((p) => p.id !== sel.id)
     setPointId(next.pointColors[Math.max(0, index - 1)]?.id ?? null)
-    replace(next, 'Point colour: remove')
+    replace(next, tk('Point colour: remove'))
   }
   // Each slider reads and writes the selected swatch, found by id.
   const at = (r: Recipe): PointColorSetting | undefined =>
@@ -880,30 +954,32 @@ function PointColorSection(): React.JSX.Element | null {
   return (
     <Section
       id="hsl.point"
-      title="Point colour"
+      title={t('Point colour')}
       right={
         <Toggle
           on={tool === 'point-picker'}
           onChange={(on) => setTool(on ? 'point-picker' : 'none')}
           title={
             full
-              ? `At most ${MAX_POINT_COLORS} colours: picking re-samples the selected one`
-              : 'Pick a colour in the photo'
+              ? t('At most {{count}} colours: picking re-samples the selected one', {
+                  count: MAX_POINT_COLORS
+                })
+              : t('Pick a colour in the photo')
           }
         >
-          ⌖ Pick
+          ⌖ {t('Pick')}
         </Toggle>
       }
     >
       <div className="row">
         {points.length === 0 && (
-          <span className="muted">Pick a colour in the photo to shift it.</span>
+          <span className="muted">{t('Pick a colour in the photo to shift it.')}</span>
         )}
         {points.map((p, i) => (
           <button
             key={p.id}
             className={`icon mf-swatch-btn${p.id === sel?.id ? ' on' : ''}`}
-            title={`Colour ${i + 1}`}
+            title={t('Colour {{n}}', { n: i + 1 })}
             onClick={() => setPointId(p.id)}
           >
             <span
@@ -913,7 +989,7 @@ function PointColorSection(): React.JSX.Element | null {
           </button>
         ))}
         {sel && (
-          <button className="icon" title="Remove this colour" onClick={remove}>
+          <button className="icon" title={t('Remove this colour')} onClick={remove}>
             <Icon name="trash" />
           </button>
         )}
@@ -921,21 +997,21 @@ function PointColorSection(): React.JSX.Element | null {
       {sel && (
         <>
           {shift(
-            'Hue',
+            tk('Hue'),
             'shiftHue',
             `linear-gradient(90deg,hsl(${sel.hue - 30} 80% 50%),hsl(${sel.hue} 80% 50%),hsl(${sel.hue + 30} 80% 50%))`
           )}
           {shift(
-            'Saturation',
+            tk('Saturation'),
             'shiftSat',
             `linear-gradient(90deg,hsl(${sel.hue} 0% 50%),hsl(${sel.hue} 90% 50%))`
           )}
           {shift(
-            'Luminance',
+            tk('Luminance'),
             'shiftLum',
             `linear-gradient(90deg,hsl(${sel.hue} 70% 15%),hsl(${sel.hue} 70% 50%),hsl(${sel.hue} 70% 85%))`
           )}
-          {shift('Range', 'range')}
+          {shift(tk('Range'), 'range')}
         </>
       )}
     </Section>
@@ -953,7 +1029,7 @@ export function GradingBody(): React.JSX.Element | null {
     size = 96
   ): React.JSX.Element => (
     <ColorWheel
-      label={label}
+      label={t(label)}
       size={size}
       value={recipe.colorGrade[key]}
       onChange={(w, live) => edit((r) => (r.colorGrade[key] = w), live)}
@@ -963,13 +1039,13 @@ export function GradingBody(): React.JSX.Element | null {
   return (
     <ToolPanel>
       <div className="wheels">
-        {wheel('shadows', 'Shadows')}
-        {wheel('midtones', 'Midtones')}
-        {wheel('highlights', 'Highlights')}
+        {wheel('shadows', tk('Shadows'))}
+        {wheel('midtones', tk('Midtones'))}
+        {wheel('highlights', tk('Highlights'))}
       </div>
-      <div className="wheels">{wheel('global', 'Global', 120)}</div>
+      <div className="wheels">{wheel('global', tk('Global'), 120)}</div>
       <RS
-        label="Blending"
+        label={tk('Blending')}
         read={(r) => r.colorGrade.blending}
         write={(r, v) => (r.colorGrade.blending = v)}
         min={0}
@@ -977,11 +1053,11 @@ export function GradingBody(): React.JSX.Element | null {
         def={50}
       />
       <RS
-        label="Balance"
+        label={tk('Balance')}
         read={(r) => r.colorGrade.balance}
         write={(r, v) => (r.colorGrade.balance = v)}
       />
-      <Section id="grade.add" title="Add colour">
+      <Section id="grade.add" title={t('Add colour')}>
         <AddColourControl
           target={layer ? { layer: layer.id, part: 'grade' } : 'grade'}
           value={recipe.colorGrade.add}
@@ -1011,8 +1087,8 @@ function NoiseAnalysis(): React.JSX.Element {
     <span className="menu-anchor">
       <button
         className={`icon sm${open ? ' on' : ''}`}
-        title="Noise analysis"
-        aria-label="Noise analysis"
+        title={t('Noise analysis')}
+        aria-label={t('Noise analysis')}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
@@ -1020,29 +1096,37 @@ function NoiseAnalysis(): React.JSX.Element {
       </button>
       {open && (
         <Popover onClose={() => setOpen(false)} align="right" className="noise-pop">
-          <span className="micro">Noise analysis</span>
+          <span className="micro">{t('Noise analysis')}</span>
           <div className="noise-readout">
             <button
               className="sm"
               disabled={measuring}
               onClick={() => {
                 setMeasuring(true)
-                void runJob('Measuring noise', () => measure()).finally(() => setMeasuring(false))
+                void runJob(t('Measuring noise'), () => measure()).finally(() =>
+                  setMeasuring(false)
+                )
               }}
             >
-              {measuring ? 'Measuring…' : 'Measure noise'}
+              {measuring ? t('Measuring…') : t('Measure noise')}
             </button>
             {noise && (
-              <span title="σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values">
-                σ̂ luma {(noise.luminance * 255).toFixed(2)} · chroma{' '}
-                {noise.color.map((c) => (c * 255).toFixed(2)).join(' / ')}
+              <span
+                title={t(
+                  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values"
+                )}
+              >
+                {t('σ̂ luma {{luma}} · chroma {{chroma}}', {
+                  luma: (noise.luminance * 255).toFixed(2),
+                  chroma: noise.color.map((c) => (c * 255).toFixed(2)).join(' / ')
+                })}
               </span>
             )}
           </div>
           {seen.length > 0 ? (
             <pre className="report-lines">{seen.map((l) => l.trim()).join('\n')}</pre>
           ) : (
-            <p className="muted small">No noise reduction in the last render.</p>
+            <p className="muted small">{t('No noise reduction in the last render.')}</p>
           )}
         </Popover>
       )}
@@ -1062,16 +1146,16 @@ export function DetailBody(): React.JSX.Element | null {
   if (!recipe) return null
   return (
     <ToolPanel>
-      <Section id="detail.sharpen" title="Sharpening">
+      <Section id="detail.sharpen" title={t('Sharpening')}>
         <RS
-          label="Amount"
+          label={tk('Amount')}
           read={(r) => r.detail.sharpenAmount}
           write={(r, v) => (r.detail.sharpenAmount = v)}
           min={0}
           max={150}
         />
         <RS
-          label="Radius"
+          label={tk('Radius')}
           read={(r) => r.detail.sharpenRadius}
           write={(r, v) => (r.detail.sharpenRadius = v)}
           min={0.5}
@@ -1081,7 +1165,7 @@ export function DetailBody(): React.JSX.Element | null {
           format={(v) => v.toFixed(1)}
         />
         <RS
-          label="Detail"
+          label={tk('Detail')}
           read={(r) => r.detail.sharpenDetail}
           write={(r, v) => (r.detail.sharpenDetail = v)}
           min={0}
@@ -1089,39 +1173,43 @@ export function DetailBody(): React.JSX.Element | null {
           def={25}
         />
         <RS
-          label="Masking"
+          label={tk('Masking')}
           read={(r) => r.detail.sharpenMasking}
           write={(r, v) => (r.detail.sharpenMasking = v)}
           min={0}
           max={100}
         />
+        <LeftOut note={LEFT_OUT.sharpen} />
       </Section>
-      <Section id="detail.noise" title="Noise reduction">
+      <Section id="detail.noise" title={t('Noise reduction')}>
         {/* Classic is a setting; AI makes pixel steps (both can apply, inside a mask too). */}
         <div className="row noise-tabs">
           <Tabs
             value={noiseTab}
             tabs={[
               { value: 'ai', label: 'AI' },
-              { value: 'classic', label: 'Classic' }
+              { value: 'classic', label: t('Classic') }
             ]}
             onChange={setNoiseTab}
           />
           <NoiseAnalysis />
         </div>
         {noiseTab === 'ai' ? (
-          <AiDenoise />
+          <>
+            <RawDenoise />
+            <AiDenoise />
+          </>
         ) : (
           <>
             <RS
-              label="Luminance"
+              label={tk('Luminance')}
               read={(r) => r.detail.noiseLuminance}
               write={(r, v) => (r.detail.noiseLuminance = v)}
               min={0}
               max={100}
             />
             <RS
-              label="Detail"
+              label={tk('Detail')}
               read={(r) => r.detail.noiseLuminanceDetail}
               write={(r, v) => (r.detail.noiseLuminanceDetail = v)}
               min={0}
@@ -1129,14 +1217,14 @@ export function DetailBody(): React.JSX.Element | null {
               def={50}
             />
             <RS
-              label="Colour"
+              label={tk('Colour')}
               read={(r) => r.detail.noiseColor}
               write={(r, v) => (r.detail.noiseColor = v)}
               min={0}
               max={100}
             />
             <RS
-              label="Detail"
+              label={tk('Detail')}
               read={(r) => r.detail.noiseColorDetail}
               write={(r, v) => (r.detail.noiseColorDetail = v)}
               min={0}
@@ -1150,6 +1238,42 @@ export function DetailBody(): React.JSX.Element | null {
   )
 }
 
+/**
+ * PMRID on a Bayer RAW's sensor data (engine 0.19's `mosaic_denoise`): an
+ * option of the whole photo, off unless chosen; asks for the model the first
+ * time. Developed at full size only, so it shows at 100% and in the export.
+ */
+function RawDenoise(): React.JSX.Element | null {
+  const { recipe, edit, commit, layer } = useScope()
+  const bayer = useDevelop((s) => s.session?.isRaw === true && s.session.info.raw_cfa === 'Bayer')
+  const installed = useModels().find((m) => m.id === 'pmrid')?.installed === true
+  if (!recipe || !bayer || layer) return null
+  const set = (on: boolean): void => {
+    edit((r) => (r.detail.rawDenoise = on))
+    commit(on ? tk('RAW data denoise on') : tk('RAW data denoise off'))
+  }
+  return (
+    <div className="row raw-denoise">
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={recipe.detail.rawDenoise}
+          onChange={(e) => {
+            const on = e.target.checked
+            if (!on || installed) return set(on)
+            void askModel('pmrid', t('Denoise the RAW data')).then((ok) => ok && set(true))
+          }}
+        />
+        {t('Denoise the RAW data')}
+      </label>
+      <InfoTip tip={TIPS['detail.rawDenoise']} label={t('Denoise the RAW data')} />
+      {recipe.detail.rawDenoise && (
+        <span className="muted micro">{t('Shows at 100% and in the export')}</span>
+      )}
+    </div>
+  )
+}
+
 // ── Effects ──────────────────────────────────────────────────────────────────
 
 export function EffectsBody(): React.JSX.Element | null {
@@ -1159,31 +1283,33 @@ export function EffectsBody(): React.JSX.Element | null {
   const paint = recipe.effects.vignetteStyle === 'paint'
   return (
     <ToolPanel>
-      <Section id="effects.vignette" title="Post-crop vignette" tip={TIPS['effects.vignette']}>
+      <Section id="effects.vignette" title={t('Post-crop vignette')} tip={TIPS['effects.vignette']}>
         <Select
-          label="Style"
+          label={t('Style')}
           value={recipe.effects.vignetteStyle}
           options={[
-            { value: 'highlight', label: 'Highlight priority' },
-            { value: 'paint', label: 'Paint overlay' }
+            { value: 'highlight', label: t('Highlight priority') },
+            { value: 'paint', label: t('Paint overlay') }
           ]}
           title={
             isHdr && paint
-              ? 'Paint overlay needs an SDR picture: this HDR photo keeps highlight priority'
-              : 'Highlight priority darkens like light falling off; paint overlay mixes toward black or white'
+              ? t('Paint overlay needs an SDR picture: this HDR photo keeps highlight priority')
+              : t(
+                  'Highlight priority darkens like light falling off; paint overlay mixes toward black or white'
+                )
           }
           onChange={(v) => {
             edit((r) => (r.effects.vignetteStyle = v))
-            commit('Vignette style')
+            commit(tk('Vignette style'))
           }}
         />
         <RS
-          label="Amount"
+          label={tk('Amount')}
           read={(r) => r.effects.vignetteAmount}
           write={(r, v) => (r.effects.vignetteAmount = v)}
         />
         <RS
-          label="Midpoint"
+          label={tk('Midpoint')}
           read={(r) => r.effects.vignetteMidpoint}
           write={(r, v) => (r.effects.vignetteMidpoint = v)}
           min={0}
@@ -1191,12 +1317,12 @@ export function EffectsBody(): React.JSX.Element | null {
           def={50}
         />
         <RS
-          label="Roundness"
+          label={tk('Roundness')}
           read={(r) => r.effects.vignetteRoundness}
           write={(r, v) => (r.effects.vignetteRoundness = v)}
         />
         <RS
-          label="Feather"
+          label={tk('Feather')}
           read={(r) => r.effects.vignetteFeather}
           write={(r, v) => (r.effects.vignetteFeather = v)}
           min={0}
@@ -1205,16 +1331,16 @@ export function EffectsBody(): React.JSX.Element | null {
         />
         {(!paint || isHdr) && (
           <RS
-            label="Highlights"
+            label={tk('Highlights')}
             read={(r) => r.effects.vignetteHighlights}
             write={(r, v) => (r.effects.vignetteHighlights = v)}
             min={0}
             max={100}
           />
         )}
-        {isHdr && paint && <p className="note small">HDR photos keep highlight priority.</p>}
+        {isHdr && paint && <p className="note small">{t('HDR photos keep highlight priority.')}</p>}
       </Section>
-      <Section id="effects.wash" title="Colour wash">
+      <Section id="effects.wash" title={t('Colour wash')}>
         <AddColourControl
           target={layer ? { layer: layer.id, part: 'wash' } : 'wash'}
           value={recipe.effects.wash}
@@ -1222,16 +1348,16 @@ export function EffectsBody(): React.JSX.Element | null {
           hint={TIPS['effects.wash']}
         />
       </Section>
-      <Section id="effects.grain" title="Grain" tip={TIPS['effects.grain']}>
+      <Section id="effects.grain" title={t('Grain')} tip={TIPS['effects.grain']}>
         <RS
-          label="Amount"
+          label={tk('Amount')}
           read={(r) => r.effects.grainAmount}
           write={(r, v) => (r.effects.grainAmount = v)}
           min={0}
           max={100}
         />
         <RS
-          label="Size"
+          label={tk('Size')}
           read={(r) => r.effects.grainSize}
           write={(r, v) => (r.effects.grainSize = v)}
           min={0}
@@ -1239,7 +1365,7 @@ export function EffectsBody(): React.JSX.Element | null {
           def={25}
         />
         <RS
-          label="Roughness"
+          label={tk('Roughness')}
           read={(r) => r.effects.grainRoughness}
           write={(r, v) => (r.effects.grainRoughness = v)}
           min={0}
@@ -1256,51 +1382,51 @@ export function EffectsBody(): React.JSX.Element | null {
 export function CalibrationBody(): React.JSX.Element {
   return (
     <ToolPanel>
-      <Section id="calibration.shadows" title="Shadows">
+      <Section id="calibration.shadows" title={t('Shadows')}>
         <RS
-          label="Shadows tint"
+          label={tk('Shadows tint')}
           read={(r) => r.calibration.shadowsTint}
           write={(r, v) => (r.calibration.shadowsTint = v)}
           track="linear-gradient(90deg,#4dff6a,#888,#ff4de1)"
         />
       </Section>
-      <Section id="calibration.red" title="Red primary">
+      <Section id="calibration.red" title={t('Red primary')}>
         <RS
-          label="Hue"
+          label={tk('Hue')}
           read={(r) => r.calibration.redHue}
           write={(r, v) => (r.calibration.redHue = v)}
           track="linear-gradient(90deg,#ff2d7a,#ff2d2d,#ff7a2d)"
         />
         <RS
-          label="Saturation"
+          label={tk('Saturation')}
           read={(r) => r.calibration.redSaturation}
           write={(r, v) => (r.calibration.redSaturation = v)}
           track="linear-gradient(90deg,#a88,#f22)"
         />
       </Section>
-      <Section id="calibration.green" title="Green primary">
+      <Section id="calibration.green" title={t('Green primary')}>
         <RS
-          label="Hue"
+          label={tk('Hue')}
           read={(r) => r.calibration.greenHue}
           write={(r, v) => (r.calibration.greenHue = v)}
           track="linear-gradient(90deg,#b8ff2d,#2dff4d,#2dffb8)"
         />
         <RS
-          label="Saturation"
+          label={tk('Saturation')}
           read={(r) => r.calibration.greenSaturation}
           write={(r, v) => (r.calibration.greenSaturation = v)}
           track="linear-gradient(90deg,#8a8,#2f4)"
         />
       </Section>
-      <Section id="calibration.blue" title="Blue primary">
+      <Section id="calibration.blue" title={t('Blue primary')}>
         <RS
-          label="Hue"
+          label={tk('Hue')}
           read={(r) => r.calibration.blueHue}
           write={(r, v) => (r.calibration.blueHue = v)}
           track="linear-gradient(90deg,#2dd7ff,#2d4dff,#8a2dff)"
         />
         <RS
-          label="Saturation"
+          label={tk('Saturation')}
           read={(r) => r.calibration.blueSaturation}
           write={(r, v) => (r.calibration.blueSaturation = v)}
           track="linear-gradient(90deg,#88a,#24f)"
@@ -1321,13 +1447,13 @@ export function CropDrawer(): React.JSX.Element | null {
   return (
     <ToolPanel>
       <Select
-        label="Aspect"
+        label={t('Aspect')}
         value={aspectValue(g.aspect)}
-        options={ASPECTS.map((a) => ({ value: a.value, label: a.label }))}
+        options={ASPECTS.map((a) => ({ value: a.value, label: t(a.label) }))}
         onChange={setAspect}
       />
       <RS
-        label="Straighten"
+        label={tk('Straighten')}
         read={(r) => r.geometry.straighten}
         write={(r, v) => (r.geometry.straighten = v)}
         min={-45}
@@ -1351,36 +1477,36 @@ export function GeometryBody(): React.JSX.Element | null {
   const g = recipe.geometry
   return (
     <ToolPanel>
-      <Section id="crop.upright" title="Upright" tip={TIPS['geometry.upright']}>
-        <div className="seg upright-modes" role="group" aria-label="Upright">
+      <Section id="crop.upright" title={t('Upright')} tip={TIPS['geometry.upright']}>
+        <div className="seg upright-modes" role="group" aria-label={t('Upright')}>
           {UPRIGHT_MODES.map((m) => (
             <button
               key={m.value}
               className={g.upright.mode === m.value ? 'on' : ''}
               aria-pressed={g.upright.mode === m.value}
-              title={m.title}
+              title={t(m.title)}
               onClick={() => void applyUpright(m.value)}
             >
-              {m.label}
+              {t(m.label)}
             </button>
           ))}
         </div>
         {g.upright.mode === 'guided' && tool !== 'upright-guide' && (
           <div className="row">
             <button className="sm" onClick={startGuides}>
-              Edit guides ({g.upright.guides.length})
+              {t('Edit guides ({{count}})', { count: g.upright.guides.length })}
             </button>
           </div>
         )}
       </Section>
       <Section
         id="crop.transform"
-        title="Transform"
+        title={t('Transform')}
         tip={TIPS['geometry.transform']}
         right={
           <button
             className="sm ghost"
-            title="The sliders back to zero (the Upright mode stays)"
+            title={t('The sliders back to zero (the Upright mode stays)')}
             onClick={() => {
               const u = g.upright
               if (
@@ -1404,37 +1530,37 @@ export function GeometryBody(): React.JSX.Element | null {
                   offsetY: 0
                 })
               )
-              commit('Transform: reset')
+              commit(tk('Transform: reset'))
             }}
           >
-            Reset
+            {t('Reset')}
           </button>
         }
       >
         <RS
-          label="Vertical"
+          label={tk('Vertical')}
           read={(r) => r.geometry.upright.vertical}
           write={(r, v) => (r.geometry.upright.vertical = v)}
-          title="Tilt top and bottom: straightens converging verticals"
+          title={t('Tilt top and bottom: straightens converging verticals')}
         />
         <RS
-          label="Horizontal"
+          label={tk('Horizontal')}
           read={(r) => r.geometry.upright.horizontal}
           write={(r, v) => (r.geometry.upright.horizontal = v)}
         />
         <RS
-          label="Rotate"
+          label={tk('Rotate')}
           read={(r) => r.geometry.upright.rotate}
           write={(r, v) => (r.geometry.upright.rotate = v)}
           step={0.5}
         />
         <RS
-          label="Aspect"
+          label={tk('Aspect')}
           read={(r) => r.geometry.upright.aspect}
           write={(r, v) => (r.geometry.upright.aspect = v)}
         />
         <RS
-          label="Scale"
+          label={tk('Scale')}
           read={(r) => r.geometry.upright.scale}
           write={(r, v) => (r.geometry.upright.scale = v)}
           min={50}
@@ -1442,12 +1568,12 @@ export function GeometryBody(): React.JSX.Element | null {
           def={100}
         />
         <RS
-          label="X offset"
+          label={tk('X offset')}
           read={(r) => r.geometry.upright.offsetX}
           write={(r, v) => (r.geometry.upright.offsetX = v)}
         />
         <RS
-          label="Y offset"
+          label={tk('Y offset')}
           read={(r) => r.geometry.upright.offsetY}
           write={(r, v) => (r.geometry.upright.offsetY = v)}
         />
@@ -1457,18 +1583,18 @@ export function GeometryBody(): React.JSX.Element | null {
 }
 
 const UPRIGHT_MODES: { value: UprightMode; label: string; title: string }[] = [
-  { value: 'off', label: 'Off', title: 'No perspective correction' },
+  { value: 'off', label: tk('Off'), title: tk('No perspective correction') },
   {
     value: 'auto',
-    label: 'Auto',
-    title: 'The most the lines support: Full, else Vertical, else Level'
+    label: tk('Auto'),
+    title: tk('The most the lines support: Full, else Vertical, else Level')
   },
-  { value: 'level', label: 'Level', title: 'Horizontal lines level' },
-  { value: 'vertical', label: 'Vertical', title: 'Level, and vertical lines upright' },
-  { value: 'full', label: 'Full', title: 'Level, vertical and horizontal perspective' },
+  { value: 'level', label: tk('Level'), title: tk('Horizontal lines level') },
+  { value: 'vertical', label: tk('Vertical'), title: tk('Level, and vertical lines upright') },
+  { value: 'full', label: tk('Full'), title: tk('Level, vertical and horizontal perspective') },
   {
     value: 'guided',
-    label: 'Guided',
-    title: 'Draw two to four lines that should be upright or level'
+    label: tk('Guided'),
+    title: tk('Draw two to four lines that should be upright or level')
   }
 ]

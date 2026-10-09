@@ -88,3 +88,25 @@
   --rail: 232px;
   --right: 360px;
 }
+
+/*
+ * Chinese and Japanese: Latin in our faces, the ideographs in the system's
+ * (each language its own, since Chinese and Japanese draw the same
+ * characters differently). Space Grotesk carries Vietnamese itself.
+ */
+:root:lang(zh-Hans) {
+  --font: 'Space Grotesk Variable', 'Space Grotesk', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
+  --font-body: 'Manrope Variable', 'Manrope', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
+}
+:root:lang(ja) {
+  --font: 'Space Grotesk Variable', 'Space Grotesk', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
+    'Yu Gothic UI', 'Meiryo UI', 'Noto Sans JP', system-ui, sans-serif;
+  --font-body: 'Manrope Variable', 'Manrope', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
+    'Yu Gothic UI', 'Meiryo UI', 'Noto Sans JP', system-ui, sans-serif;
+}
+/* Tracked capitals have no meaning in ideographs: set them close (the wordmark keeps its own). */
+:root:is(:lang(zh-Hans), :lang(ja)) body *:not(.wordmark, .wordmark *) {
+  letter-spacing: 0 !important;
+}

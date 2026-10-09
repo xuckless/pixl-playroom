@@ -10,7 +10,7 @@ import {
   type ViewGeometry
 } from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
-import { isFrame, pictureBitmap as framePixels } from '../../lib/frames'
+import { isFrame, pictureBitmap as framePixels, readable } from '../../lib/frames'
 import { touchInteracting } from '../../lib/interacting'
 import { planePng, rememberPlane } from '../../lib/planes'
 import type { Affine, Dab } from '../../workers/brush.worker'
@@ -19,6 +19,7 @@ import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { useUi, type BrushSettings } from '../../state/ui'
 import { brushWorker } from './brushWorker'
+import { t, tk } from '../../lib/i18n'
 
 /** Painted planes are this many pixels on their long edge, in the base frame. */
 const BRUSH_EDGE = 1024
@@ -204,7 +205,7 @@ export const BrushLayer = memo(function BrushLayer({
       stroke.current = null
       return useLibrary.getState().say(errorText(err), 'error')
     }
-    const picture = set.autoMask ? (d.picture?.url ?? null) : null
+    const picture = set.autoMask && d.picture ? readable(d.picture) : null
     // A preview frame is no file the worker could fetch: its pixels go along.
     const pictureBitmap =
       picture && isFrame(picture) ? await framePixels(picture).catch(() => undefined) : undefined
@@ -267,7 +268,7 @@ export const BrushLayer = memo(function BrushLayer({
             ref
           })
       })
-      commit(s.erase ? 'Brush erase' : 'Brush stroke')
+      commit(s.erase ? tk('Brush erase') : tk('Brush stroke'))
       madeComponent(s.compId)
     } catch (err) {
       useLibrary.getState().say(errorText(err), 'error')
@@ -330,7 +331,7 @@ export const BrushLayer = memo(function BrushLayer({
           <span className="brush-slot">{erasing ? '−' : slot}</span>
         </div>
       )}
-      {!layerId && <div className="tool-hint">Select or create a mask to paint into.</div>}
+      {!layerId && <div className="tool-hint">{t('Select or create a mask to paint into.')}</div>}
     </div>
   )
 })

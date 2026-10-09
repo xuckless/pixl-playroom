@@ -11,8 +11,10 @@ import type {
   Framing,
   GainMapMode,
   InputFormat,
+  MosaicDenoise,
   Orientation,
   RawMode,
+  SceneDemosaic,
   SourceInfo
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
@@ -101,6 +103,66 @@ export function rawDevelop(colour: RawColour): RawMode {
 export function rawProxyDevelop(colour: RawColour): RawMode {
   const full = rawDevelop(colour) as { Develop: Record<string, unknown> }
   return { Develop: { ...full.Develop, resolution: 'Cell' } } as RawMode
+}
+
+/**
+ * A RAW's master since engine 0.18 (its rule for a host: a RAW's master is
+ * `Scene` in float): PIXL's scene-linear develop, F32 linear PixlRGB,
+ * unclamped, the as-shot white, clipped channels rebuilt from the opposite
+ * ones (`InpaintOpposed`). Nothing clips at 1.0: up to about 1.65 stops over
+ * white on the owner's CR2s, which the 1:1 view, the export and (with Full
+ * HDR) the preview keep; an SDR picture rolls it onto white (compile's RAW
+ * shoulder). Denoise stays in the grade (`DENOISE_REACH` there, HR-0.18-4).
+ * Engine 0.19's demosaic and mosaic denoiser: the classic and none unless
+ * stated (at full size, `main/ai/rawdevelop.ts` chooses them).
+ */
+export function rawMaster(
+  colour: RawColour,
+  scene: { demosaic: SceneDemosaic; mosaic_denoise: MosaicDenoise | null } = {
+    demosaic: 'Classic',
+    mosaic_denoise: null
+  }
+): RawMode {
+  return {
+    Scene: {
+      white_balance: 'AsShot',
+      highlights: 'InpaintOpposed',
+      crop: 'Best',
+      denoise: null,
+      mosaic_denoise: scene.mosaic_denoise,
+      demosaic: scene.demosaic,
+      resolution: 'Full',
+      colour: cameraColourOf(colour),
+      dng_opcodes: DNG_OPCODES
+    }
+  }
+}
+
+/** The master at half size (`Cell`: one pixel per CFA cell, no demosaic), for a proxy. */
+export function rawProxyMaster(colour: RawColour): RawMode {
+  const full = rawMaster(colour) as { Scene: Record<string, unknown> }
+  return { Scene: { ...full.Scene, resolution: 'Cell' } } as RawMode
+}
+
+/**
+ * The master binned (engine 0.19, `Binned`): one pixel per `factor ×
+ * factor` photosites, each colour their mean, no demosaic. For a thumbnail
+ * only: a binned frame's grain isn't the export's, so nothing noise is judged
+ * on comes from one (HR-0.19-1).
+ */
+export function rawBinnedMaster(colour: RawColour, factor: number): RawMode {
+  const full = rawMaster(colour) as { Scene: Record<string, unknown> }
+  return { Scene: { ...full.Scene, resolution: { Binned: { factor } } } } as RawMode
+}
+
+/**
+ * The bin for a frame of at least `edge` on its long side: the largest
+ * multiple of the sensor's cell that leaves that much (a little margin for
+ * the crop), within the engine's 1…64; never less than the cell itself.
+ */
+export function binFactor(probeLong: number, cell: number, edge: number): number {
+  const f = Math.floor(probeLong / (edge * 1.02) / cell) * cell
+  return Math.min(Math.floor(64 / cell) * cell, Math.max(cell, f))
 }
 
 /** The file's own colour: what a RAW was developed with before engine 0.17 named one. */
@@ -228,6 +290,18 @@ export function interactiveThreads(): number {
 
 /** Threads for background work: a few, so the UI stays responsive. */
 export const BACKGROUND_THREADS = Math.max(1, Math.min(4, Math.floor(cpus().length / 2)))
+
+/**
+ * Threads for a heavy job (a model session, Enhance, an export): twice the
+ * background share, but on Apple silicon never more than the performance
+ * cores. Engine 0.18 measured a session fastest at 4 threads on the M2 Pro's
+ * 6 P-cores, and 12 threads 3.5× slower: work handed to the efficiency cores
+ * waits on them.
+ */
+export function heavyThreads(): number {
+  const n = BACKGROUND_THREADS * 2
+  return process.platform === 'darwin' ? Math.min(n, interactiveThreads()) : n
+}
 
 /**
  * Which rendition of a gain-map file (an iPhone HEIC, an UltraHDR JPEG) to

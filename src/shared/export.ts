@@ -309,7 +309,10 @@ export function masterPolicy(s: ExportSettings, src: MasterSource): MasterPolicy
     ceiling: headroom ? ceiling : null,
     reach: 'Measured',
     // PIXL's look acts on a RAW developed in Scene; an HDR source here is never one.
-    look: 'Colorimetric'
+    look: 'Colorimetric',
+    // 0.17's bytes: a float sink gets linear PixlRGB, and no SDR companion.
+    float: 'LinearPixlRgb',
+    companion: null
   }
 }
 
@@ -521,6 +524,15 @@ export function buildResize(s: ExportSettings, w: number, h: number): Resize {
 }
 
 /**
+ * An HDR output's peak is a display's (HR-0.18-8): 100–10 000 cd/m². Below
+ * about 21.5 the engine holds HLG's system gamma at 0.5, so a stray value
+ * (a file's clli, an old stored setting) would make a dark picture.
+ */
+export function displayPeak(nits: number): number {
+  return Number.isFinite(nits) ? Math.min(10000, Math.max(100, nits)) : 1000
+}
+
+/**
  * The colour policy for an export, given whether the source is PQ/HLG and
  * the peak it states (null when it states none). A peak the user did not set
  * comes from the file when the file has one, else 1000 cd/m² — BT.2100's
@@ -557,8 +569,8 @@ export function buildColor(
       Expand: {
         to: s.hdr.to,
         operator: { Linear: { sdr_white_nits: s.hdr.sdrWhite } },
-        peak_nits: s.hdr.peak,
-        limit: hdrLimit(s, s.hdr.peak)
+        peak_nits: displayPeak(s.hdr.peak),
+        limit: hdrLimit(s, displayPeak(s.hdr.peak))
       }
     }
   }

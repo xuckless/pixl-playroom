@@ -1,4 +1,5 @@
 import { useDevelop } from '../state/develop'
+import { readable } from '../lib/frames'
 import { Picture } from '../views/loupe/DecodedImage'
 import { useLibrary } from '../state/library'
 import { Ambient } from './index'
@@ -8,7 +9,8 @@ import { Ambient } from './index'
  * over the ambient gradient, held still — what the dialog's frosted glass shows through.
  */
 export function DialogBackdrop(): React.JSX.Element {
-  const picture = useDevelop((s) => s.picture?.url ?? null)
+  // Blurred and dimmed behind a dialog: the SDR picture, never one glowing in HDR.
+  const picture = useDevelop((s) => (s.picture ? readable(s.picture) : null))
   const inDevelop = useLibrary((s) => s.view === 'develop')
   return (
     <div className="dialog-backdrop" aria-hidden>

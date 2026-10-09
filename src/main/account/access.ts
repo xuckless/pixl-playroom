@@ -6,6 +6,7 @@
  * the server and the device are passed in), so tests/licence.test.ts runs
  * it; main/licence.ts is the Electron side.
  */
+import { t } from '../../shared/i18n'
 import type { AccountDevice, DeviceInfo, EntitlementResponse } from '../../shared/account'
 import { licenceStatus, type LicenceInput, type LicenceStatus } from '../../shared/licence'
 import { AccountError } from './api'
@@ -136,7 +137,7 @@ export class Access {
     const keysetIat = ks.ok ? ks.iat : f.keysetIat
     if (!ks.ok && ks.problem !== 'stale')
       throw new AccountError(
-        `The account server's keys couldn't be verified (${ks.problem}).`,
+        t("The account server's keys couldn't be verified ({{problem}}).", { problem: ks.problem }),
         'network'
       )
     const seenAt = Math.max(f.seenAt ?? 0, now)
@@ -144,7 +145,9 @@ export class Access {
     const c = this.check(next)
     if (!c?.ok)
       throw new AccountError(
-        `The account server's answer couldn't be verified (${c?.problem ?? 'no device'}).`,
+        t("The account server's answer couldn't be verified ({{problem}}).", {
+          problem: c?.problem ?? 'no device'
+        }),
         'network'
       )
     this.deviceLimit = null

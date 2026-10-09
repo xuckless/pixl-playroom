@@ -19,6 +19,7 @@ import {
 } from '../../../shared/retouch'
 import type { PixelStep } from '../../../shared/pixels'
 import { api, errorText } from './api'
+import { t, tk, tp } from './i18n'
 import { landingWork, useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { scoped } from '../state/scope'
@@ -80,6 +81,55 @@ export function beginSpot(
   if (kind === 'heal' || kind === 'clone') spot.source = { ...at }
   dev.edit((r) => r.retouch.push(spot), true)
   return spot.id
+}
+
+/**
+ * A painted spot (a Remove) grown along the pointer: a point added once it
+ * has moved a quarter of the brush's radius on the base frame.
+ */
+export function extendSpot(id: string, at: P): void {
+  const s = useDevelop.getState().recipe?.retouch.find((x) => x.id === id)
+  const last = s?.points.at(-1)
+  if (!s || !last || s.points.length >= 4096) return
+  const session = useDevelop.getState().session
+  const short = session ? Math.min(session.frameWidth, session.frameHeight) : 1
+  const dx = (at.x - last.x) * (session?.frameWidth ?? 1)
+  const dy = (at.y - last.y) * (session?.frameHeight ?? 1)
+  if (Math.hypot(dx, dy) < (s.radius * short) / 4) return
+  useDevelop.getState().edit((r) => {
+    const x = r.retouch.find((q) => q.id === id)
+    if (x) x.points.push({ x: clamp01(at.x), y: clamp01(at.y) })
+  }, true)
+}
+
+/**
+ * AI Remove on the object at a base-frame point: SAM 2.1 finds it, MI-GAN
+ * fills it (main), and its step lands as a painted one does.
+ */
+export function removeObjectAt(at: P): void {
+  const session = useDevelop.getState().session
+  if (!session) return
+  const key = session.key
+  const layerId = scoped.layer()?.id ?? null
+  const feather = useUi.getState().heal.feather
+  const job = (queue = queue.then(async () => {
+    if (useDevelop.getState().session?.key !== key) return
+    const steps = useDevelop.getState().recipe?.pixels ?? []
+    let step: PixelStep | null = null
+    try {
+      step = await api.develop.removeObject(key, at, feather, layerId, steps)
+    } catch (err) {
+      useLibrary.getState().say(t('Remove: {{error}}', { error: errorText(err) }), 'error')
+      return
+    }
+    if (useDevelop.getState().session?.key !== key) return
+    const dev = useDevelop.getState()
+    dev.edit((r: Recipe) => {
+      if (step) r.pixels.push(step)
+    })
+    dev.commit(step?.label ?? tk('Remove: nothing to change'))
+  }))
+  landingWork(job)
 }
 
 /** Move a spot's source while it is dragged (the picture follows). */
@@ -170,7 +220,7 @@ export async function bakeLiveSpots(): Promise<void> {
       r.retouch = []
       r.pixels.push(...made)
     })
-    d.commit(`Bake ${spots.length} spot${spots.length === 1 ? '' : 's'}`)
+    d.commit(tp('Bake {{count}} spot', 'Bake {{count}} spots', spots.length))
   }))
   landingWork(job)
   await job
@@ -182,5 +232,5 @@ export function removeLiveSpots(): void {
   const n = dev.recipe?.retouch.length ?? 0
   if (!n) return
   dev.edit((r) => (r.retouch = []))
-  dev.commit(`Remove ${n} spot${n === 1 ? '' : 's'}`)
+  dev.commit(tp('Remove {{count}} spot', 'Remove {{count}} spots', n))
 }

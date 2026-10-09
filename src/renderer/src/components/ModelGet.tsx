@@ -7,6 +7,7 @@ import type { ModelInfo } from '../../../shared/ipc'
 import { api, errorText } from '../lib/api'
 import { mb } from '../lib/models'
 import { useLibrary } from '../state/library'
+import { t } from '../lib/i18n'
 
 export function ModelGet({
   id,
@@ -25,7 +26,7 @@ export function ModelGet({
         {m.error && <span className="error"> · {m.error}</span>}
       </span>
       {m.progress !== null ? (
-        <span className="model-bar" aria-label="Downloading">
+        <span className="model-bar" aria-label={t('Downloading')}>
           <span style={{ width: `${Math.round(m.progress * 100)}%` }} />
         </span>
       ) : (
@@ -33,7 +34,7 @@ export function ModelGet({
           className="sm"
           onClick={() => void api.models.download(m.id).catch((e) => say(errorText(e), 'error'))}
         >
-          Download {mb(m.bytes)}
+          {t('Download {{size}}', { size: mb(m.bytes) })}
         </button>
       )}
     </div>

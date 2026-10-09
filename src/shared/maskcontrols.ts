@@ -38,6 +38,8 @@ export interface ComponentControls {
   /** Radial: Feather drives `softness`. */
   softness: boolean
   range: boolean
+  /** A depth range's Near, Far, Softness and its picker. */
+  depth: boolean
   /** Snap to edges and its Edge radius. */
   snap: boolean
 }
@@ -48,6 +50,7 @@ export function componentControls(c: MaskComponentSetting): ComponentControls {
     shift: c.kind === 'polygon' || fromModel(c) || (c.kind === 'brush' && refining(c)),
     softness: c.kind === 'radial',
     range: c.kind === 'range',
+    depth: c.kind === 'depth',
     snap: refinable(c)
   }
 }
@@ -55,7 +58,7 @@ export function componentControls(c: MaskComponentSetting): ComponentControls {
 /** Whether the card has anything to show (else only its row does). */
 export function hasControls(c: MaskComponentSetting): boolean {
   const k = componentControls(c)
-  return k.feather || k.shift || k.softness || k.range || k.snap
+  return k.feather || k.shift || k.softness || k.range || k.depth || k.snap
 }
 
 const sameEdge = (a: MaskEdge | undefined, b: MaskEdge): boolean =>

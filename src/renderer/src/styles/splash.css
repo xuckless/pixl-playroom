@@ -1,5 +1,6 @@
 /* ── the launch splash (shell/Splash.tsx), from the brand kit ───── */
 .splash {
+  -webkit-app-region: drag;
   position: fixed;
   inset: 0;
   z-index: 1000;

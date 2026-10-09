@@ -13,17 +13,18 @@ import {
   tone,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 const lx = (name: string): string => `Panasonic LUMIX ${name}`
 
 export const PANASONIC = collection('camera/panasonic', [
   look(
     'classic-neo',
-    'Classic Neo',
+    tk('Classic Neo'),
     {
       tags: ['classic', 'soft', 'nostalgic', 'lumix', 'panasonic'],
       inspiredBy: lx('L.Classic Neo'),
-      description: 'Soft blacks and gently nostalgic colour.'
+      description: tk('Soft blacks and gently nostalgic colour.')
     },
     tone({ contrast: -10 }),
     fade(0.03),
@@ -35,11 +36,11 @@ export const PANASONIC = collection('camera/panasonic', [
   ),
   look(
     'classic-shift',
-    'Classic Shift',
+    tk('Classic Shift'),
     {
       tags: ['classic', 'cinematic', 'split', 'lumix', 'panasonic'],
       inspiredBy: lx('L.Classic'),
-      description: 'Colour that shifts with brightness: teal low, warm high.'
+      description: tk('Colour that shifts with brightness: teal low, warm high.')
     },
     tone({ contrast: 5 }),
     presence({ saturation: -15 }),
@@ -47,11 +48,11 @@ export const PANASONIC = collection('camera/panasonic', [
   ),
   look(
     'gentle-mono',
-    'Gentle Mono',
+    tk('Gentle Mono'),
     {
       tags: ['bw', 'mono', 'warm', 'lumix', 'panasonic'],
       inspiredBy: lx('L.Monochrome'),
-      description: 'A faintly warm, even mono.'
+      description: tk('A faintly warm, even mono.')
     },
     mono({ orange: 5 }),
     sCurve(12),
@@ -60,11 +61,11 @@ export const PANASONIC = collection('camera/panasonic', [
   ),
   look(
     'dynamic-mono',
-    'Dynamic Mono',
+    tk('Dynamic Mono'),
     {
       tags: ['bw', 'mono', 'dramatic', 'lumix', 'panasonic'],
       inspiredBy: lx('L.Monochrome D'),
-      description: 'Dramatic mono with bright whites and deep blacks.'
+      description: tk('Dramatic mono with bright whites and deep blacks.')
     },
     mono({ red: 10, orange: 10, blue: -15 }),
     sCurve(30),
@@ -73,11 +74,11 @@ export const PANASONIC = collection('camera/panasonic', [
   ),
   look(
     'soft-mono',
-    'Soft Mono',
+    tk('Soft Mono'),
     {
       tags: ['bw', 'mono', 'soft', 'lumix', 'panasonic'],
       inspiredBy: lx('L.Monochrome S'),
-      description: 'A soft, low-contrast mono.'
+      description: tk('A soft, low-contrast mono.')
     },
     mono({ orange: 6, green: 6 }),
     tone({ contrast: -22, highlights: -15, shadows: 15 }),
@@ -86,22 +87,22 @@ export const PANASONIC = collection('camera/panasonic', [
   ),
   look(
     'cine-wide',
-    'Cine Wide',
+    tk('Cine Wide'),
     {
       tags: ['cinema', 'flat', 'dynamic range', 'video', 'lumix', 'panasonic'],
       inspiredBy: lx('Cinelike D2'),
-      description: 'Wide, flat cine gamma to grade from.'
+      description: tk('Wide, flat cine gamma to grade from.')
     },
     tone({ contrast: -35, highlights: -30, shadows: 25 }),
     presence({ saturation: -15 })
   ),
   look(
     'cine-contrast',
-    'Cine Contrast',
+    tk('Cine Contrast'),
     {
       tags: ['cinema', 'contrast', 'video', 'lumix', 'panasonic'],
       inspiredBy: lx('Cinelike V2'),
-      description: 'Cinematic contrast with soft highlights.'
+      description: tk('Cinematic contrast with soft highlights.')
     },
     tone({ contrast: 15, highlights: -15 }),
     presence({ saturation: 5 }),

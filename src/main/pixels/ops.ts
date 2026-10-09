@@ -233,3 +233,61 @@ export function buildPatch(
   writeWhole(out, encodePng16(rgba, pw, ph, 4, 6, colourChunks(withBytes)))
   return { x: x0, y: y0, w: pw, h: ph }
 }
+
+/**
+ * Where a float frame is not clipped, as an 8-bit grey plane (255 kept, 0
+ * clipped): its brightest channel at or under GUARD_LOW is the step's to
+ * change, at or over 1.0 the frame's own (an AI model clipped its input
+ * there), with a linear ramp between. `rgb` is the frame's F32 samples.
+ */
+export const GUARD_LOW = 0.95
+
+export function headroomGuard(rgb: Float32Array, w: number, h: number): Uint8Array {
+  const out = new Uint8Array(w * h)
+  for (let i = 0; i < out.length; i++) {
+    const m = Math.max(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2])
+    const k = (1 - m) / (1 - GUARD_LOW)
+    out[i] = Math.round(255 * Math.min(1, Math.max(0, k)))
+  }
+  return out
+}
+
+/** A float frame's headroom guard written as an 8-bit grey PNG (the pixels worker's job). */
+export function writeHeadroomGuard(rgb: Float32Array, w: number, h: number, out: string): void {
+  writeFileSync(out, encodeGreyPng(headroomGuard(rgb, w, h), w, h, 1))
+}
+
+/**
+ * A step's overlay (16-bit RGB or RGBA PNG) with its alpha multiplied by the
+ * frame's headroom guard (8-bit grey, the frame's size), the overlay's top
+ * left at `at` on the frame: under it the float frame keeps what the step's
+ * model clipped (engine 0.18: a RAW's master is Scene in float).
+ */
+export function guardOverlay(
+  src: string,
+  guard: string,
+  out: string,
+  at: { x: number; y: number }
+): void {
+  const bytes = readFileSync(src)
+  const img = decodePng(bytes)
+  if (img.bitDepth !== 16 || (img.colorType !== 2 && img.colorType !== 6))
+    throw new Error('the step overlay is not 16-bit RGB or RGBA')
+  const g = decodePng(readFileSync(guard))
+  if (g.bitDepth !== 8 || g.colorType !== 0) throw new Error('the guard is not an 8-bit grey plane')
+  const ch = img.colorType === 6 ? 4 : 3
+  const n = img.width * img.height
+  const rgba = new Uint16Array(n * 4)
+  for (let y = 0; y < img.height; y++)
+    for (let x = 0; x < img.width; x++) {
+      const i = y * img.width + x
+      const s = i * ch * 2
+      const d = i * 4
+      for (let c = 0; c < 3; c++) rgba[d + c] = (img.rows[s + c * 2] << 8) | img.rows[s + c * 2 + 1]
+      const a = ch === 4 ? (img.rows[s + 6] << 8) | img.rows[s + 7] : 65535
+      const gx = Math.min(g.width - 1, x + at.x)
+      const gy = Math.min(g.height - 1, y + at.y)
+      rgba[d + 3] = Math.round((a * g.rows[gy * g.width + gx]) / 255)
+    }
+  writeWhole(out, encodePng16(rgba, img.width, img.height, 4, 1, colourChunks(bytes)))
+}

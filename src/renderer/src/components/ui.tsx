@@ -6,6 +6,7 @@ import { dragValue, dragValueLog, keyValue, keyValueLog, logFraction } from '../
 import { LiquidGlass } from './glass/LiquidGlass'
 import { Icon, type IconName } from './icons'
 import { InfoTip, type Tip } from './InfoTip'
+import { t } from '../lib/i18n'
 
 /** A panel section that remembers whether it was open. */
 export function Section({
@@ -134,7 +135,7 @@ export function Card({
           <path d="M2 3.5 5 6.5 8 3.5" />
         </svg>
         <span className="title">{title}</span>
-        {changed && <span className="card-dot" aria-label="Changed" />}
+        {changed && <span className="card-dot" aria-label={t('Changed')} />}
         <span className="card-acts" onClick={(e) => e.stopPropagation()}>
           {right}
           {tip && <InfoTip tip={tip} label={title} />}
@@ -143,8 +144,12 @@ export function Card({
               type="button"
               className={`icon card-eye${off ? ' on' : ''}`}
               aria-pressed={off}
-              aria-label={off ? `Turn ${title} on` : `Turn ${title} off`}
-              title={off ? 'Turn on' : 'Turn off'}
+              aria-label={
+                off
+                  ? t('Turn {{name}} on', { name: title })
+                  : t('Turn {{name}} off', { name: title })
+              }
+              title={off ? t('Turn on') : t('Turn off')}
               onClick={onToggle}
             >
               <Icon name={off ? 'eyeOff' : 'eye'} />
@@ -154,8 +159,8 @@ export function Card({
             <button
               type="button"
               className="icon card-reset"
-              aria-label={`Reset ${title}`}
-              title="Reset"
+              aria-label={t('Reset {{name}}', { name: title })}
+              title={t('Reset')}
               disabled={!changed}
               onClick={onReset}
             >
@@ -216,6 +221,8 @@ export interface SliderProps {
    * steps aside while it moves; false for a slider that shapes a mask.
    */
   adjusts?: boolean
+  /** What is wrong with the picture this slider feeds: the row shows it in red, the text below. */
+  problem?: string
 }
 
 /** Where `v` sits along `min…max`, as a fraction. */
@@ -262,7 +269,8 @@ export function Slider({
   tip,
   scale = 'linear',
   ticks,
-  adjusts = true
+  adjusts = true,
+  problem
 }: SliderProps): React.JSX.Element {
   const log = scale === 'log'
   const [text, setText] = useState<string | null>(null)
@@ -303,10 +311,11 @@ export function Slider({
   const at = place(value)
   const rest = place(def)
   const showZero = !track && def > min && def < max
-  return (
+  const bar = (
     <div
-      className={`slider${disabled ? ' disabled' : ''}${value !== def ? ' changed' : ''}${dragging ? ' dragging' : ''}${track ? ' graded' : ''}`}
+      className={`slider${disabled ? ' disabled' : ''}${value !== def ? ' changed' : ''}${dragging ? ' dragging' : ''}${track ? ' graded' : ''}${problem ? ' problem' : ''}`}
       title={title}
+      aria-invalid={problem ? true : undefined}
       role="slider"
       tabIndex={disabled ? -1 : 0}
       aria-label={label}
@@ -416,7 +425,7 @@ export function Slider({
         ) : (
           <input
             className="num"
-            aria-label={`${label} value`}
+            aria-label={t('{{name}} value', { name: label })}
             value={text}
             autoFocus
             onChange={(e) => setText(e.target.value)}
@@ -435,6 +444,15 @@ export function Slider({
         )}
       </div>
     </div>
+  )
+  if (!problem) return bar
+  return (
+    <>
+      {bar}
+      <p className="sl-problem" role="alert">
+        {problem}
+      </p>
+    </>
   )
 }
 
@@ -565,13 +583,13 @@ export function Tabs<T extends string>({
 }): React.JSX.Element {
   return (
     <div className="tabs">
-      {tabs.map((t) => (
+      {tabs.map((tab) => (
         <button
-          key={t.value}
-          className={t.value === value ? 'on' : ''}
-          onClick={() => onChange(t.value)}
+          key={tab.value}
+          className={tab.value === value ? 'on' : ''}
+          onClick={() => onChange(tab.value)}
         >
-          {t.label}
+          {tab.label}
         </button>
       ))}
     </div>
@@ -640,7 +658,12 @@ export function Modal({
               )}
               {title}
             </h2>
-            <button className="icon" onClick={onClose} aria-label="Close" title="Close (Esc)">
+            <button
+              className="icon"
+              onClick={onClose}
+              aria-label={t('Close')}
+              title={t('Close (Esc)')}
+            >
               <Icon name="close" />
             </button>
           </header>

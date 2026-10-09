@@ -6,10 +6,13 @@ import type { PixelStep } from '../shared/pixels'
 import type { ExportSettings } from '../shared/export'
 import type { Guard } from '../shared/exportGuards'
 import type { RawColour } from '../shared/rawcolour'
+import type { InvariantPlace } from '../shared/invariant'
+import type { DisplayHdr, DisplayHdrSetting } from '../shared/hdrdisplay'
 import type { LensProfile } from '../shared/lens'
 import {
   IPC,
   type AppError,
+  type BrainStatus,
   type AutoWbResult,
   type BasicSetting,
   type CaMeasurement,
@@ -41,7 +44,6 @@ import {
   type MetaTextPatch,
   type Preset,
   type ExportPreview,
-  type LegacyPreview,
   type Prefs,
   type RegionRequest,
   type RegionResult,
@@ -62,9 +64,20 @@ import type { ReleaseNotes } from '../shared/releasenotes'
 import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
+import type { AiSwitches, HeavyBenchmark, HeavyModel } from '../shared/heavy'
+import type { PhotoNames } from '../shared/naming'
+import type { CullReason } from '../shared/cullsuggest'
 import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../shared/looks/run'
 import type { EnhanceRates } from '../shared/enhance'
+import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
+import type { Language, LanguageSetting } from '../shared/i18n'
+
+interface LanguageState {
+  setting: LanguageSetting
+  language: Language
+  pseudo?: boolean
+}
 
 async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
   const r = (await ipcRenderer.invoke(channel, ...args)) as
@@ -83,6 +96,14 @@ function on<T>(channel: string, cb: (payload: T) => void): () => void {
 }
 
 const api = {
+  menu: {
+    set: (spec: MenuBarSpec) => call<void>(IPC.menu.set, spec),
+    popup: (items: MenuNode[]) => call<void>(IPC.menu.popup, items),
+    onRun: (cb: (id: string) => void) => on(IPC.menu.run, cb),
+    top: () => call<string[]>(IPC.menu.top),
+    openTop: (index: number, x: number, y: number) => call<void>(IPC.menu.openTop, index, x, y),
+    onChanged: (cb: () => void) => on(IPC.menu.changed, cb)
+  },
   app: {
     cpus: () => call<number>(IPC.app.cpus),
     engineStatus: () => call<EngineStatus>(IPC.app.engineStatus),
@@ -90,11 +111,17 @@ const api = {
     setSetting: (key: string, value: unknown) => call<void>(IPC.app.setSetting, key, value),
     reveal: (path: string) => call<void>(IPC.app.reveal, path),
     renderScale: () => call<RenderScale>(IPC.app.renderScale),
+    displayHdr: () => call<DisplayHdr>(IPC.app.displayHdr),
+    setDisplayHdr: (setting: DisplayHdrSetting) => call<DisplayHdr>(IPC.app.setDisplayHdr, setting),
+    onDisplayHdr: (cb: (d: DisplayHdr) => void) => on(IPC.app.displayHdrChanged, cb),
     restart: () => call<void>(IPC.app.restart),
     onRenderScale: (cb: (s: RenderScale) => void) => on(IPC.app.renderScaleChanged, cb),
     takeOpens: () => call<string[]>(IPC.app.takeOpens),
     onOpenPaths: (cb: (paths: string[]) => void) => on(IPC.app.openPaths, cb),
     pathOf: (file: File) => webUtils.getPathForFile(file),
+    language: () => call<LanguageState>(IPC.app.language),
+    setLanguage: (setting: LanguageSetting) => call<LanguageState>(IPC.app.setLanguage, setting),
+    onLanguageChanged: (cb: (s: LanguageState) => void) => on(IPC.app.languageChanged, cb),
     onOpenPreferences: (cb: () => void) => on(IPC.app.openPreferences, cb),
     onOpenEngineReport: (cb: () => void) => on(IPC.app.openEngineReport, cb),
     onOpenReport: (cb: () => void) => on(IPC.app.openReport, cb),
@@ -128,13 +155,6 @@ const api = {
     freeDevice: (id: string) => call<LicenceStatus>(IPC.licence.freeDevice, id),
     onChange: (cb: (s: LicenceStatus) => void) => on(IPC.licence.changed, cb)
   },
-  legacy: {
-    get: (key: string) => call<LegacyPreview | null>(IPC.legacy.get, key),
-    seen: (key: string) => call<void>(IPC.legacy.seen, key),
-    remove: (key: string) => call<void>(IPC.legacy.remove, key),
-    removeAll: () => call<number>(IPC.legacy.removeAll),
-    count: () => call<number>(IPC.legacy.count)
-  },
   prefs: {
     get: () => call<Prefs>(IPC.prefs.get),
     setCrashReports: (c: CrashConsent) => call<CrashConsent>(IPC.prefs.setCrashReports, c)
@@ -160,6 +180,8 @@ const api = {
       on(IPC.library.thumb, cb),
     /** A photo's HDR kind, learned from its probe (every copy of it shares it). */
     onHdr: (cb: (p: { photoId: number; hdr: HdrKind | null }) => void) => on(IPC.library.hdr, cb),
+    /** A photo's search words from Gemma's names (every copy shares them). */
+    onNames: (cb: (p: { photoId: number; words: string[] }) => void) => on(IPC.library.names, cb),
     onChanged: (cb: (p: { folder: string }) => void) => on(IPC.library.changed, cb),
     openSource: (source: LibrarySource) => call<SourceListing>(IPC.library.openSource, source),
     resolvePaths: (paths: string[]) =>
@@ -208,6 +230,13 @@ const api = {
     measureCa: (key: string) => call<CaMeasurement>(IPC.develop.measureCa, key),
     bakeSpot: (key: string, spot: RetouchSpot, layerId: string | null, steps: PixelStep[]) =>
       call<PixelStep | null>(IPC.develop.bakeSpot, key, spot, layerId, steps),
+    removeObject: (
+      key: string,
+      at: SpotPoint,
+      feather: number,
+      layerId: string | null,
+      steps: PixelStep[]
+    ) => call<PixelStep | null>(IPC.develop.removeObject, key, at, feather, layerId, steps),
     suggestHeal: (
       key: string,
       points: SpotPoint[],
@@ -236,8 +265,17 @@ const api = {
     historyDelete: (key: string, seqs: number[]) =>
       call<HistoryLog>(IPC.develop.historyDelete, key, seqs),
     onRendered: (cb: (e: RenderEvent) => void) => on(IPC.develop.rendered, cb),
+    /** The 1:1 tile's source got better (the plan's RAW master after the quick one): ask again. */
+    onTileStale: (cb: (e: { key: string }) => void) => on(IPC.develop.tileStale, cb),
     onRenderError: (
-      cb: (e: { key: string; message: string; code: string; field?: string }) => void
+      cb: (e: {
+        key: string
+        message: string
+        code: string
+        field?: string
+        /** For `Invariant`: the layer and op that made pixels that are not numbers. */
+        invariant?: InvariantPlace
+      }) => void
     ) => on(IPC.develop.renderError, cb),
     onFrame: (cb: (e: { key: string; frameWidth: number; frameHeight: number }) => void) =>
       on(IPC.develop.frame, cb)
@@ -309,7 +347,35 @@ const api = {
     cancel: (jobId: string) => call<void>(IPC.ai.cancel, jobId),
     list: () => call<AiJobEvent[]>(IPC.ai.list),
     capabilities: () => call<AiCapabilities>(IPC.ai.capabilities),
-    onEvent: (cb: (e: AiJobEvent) => void) => on(IPC.ai.event, cb)
+    onEvent: (cb: (e: AiJobEvent) => void) => on(IPC.ai.event, cb),
+    switches: () => call<AiSwitches>(IPC.ai.switches),
+    setEnabled: (on: boolean) => call<AiSwitches>(IPC.ai.setEnabled, on),
+    setHeavy: (model: HeavyModel, on: boolean) => call<AiSwitches>(IPC.ai.setHeavy, model, on),
+    benchmark: (model: HeavyModel) => call<HeavyBenchmark>(IPC.ai.benchmark, model),
+    onSwitches: (cb: (s: AiSwitches) => void) => on(IPC.ai.switchesEvent, cb),
+    onBenchmark: (cb: (p: { model: HeavyModel; progress: number; note: string }) => void) =>
+      on(IPC.ai.benchmarkProgress, cb)
+  },
+  brain: {
+    status: () => call<BrainStatus>(IPC.brain.status),
+    download: () => call<void>(IPC.brain.download),
+    cancel: () => call<void>(IPC.brain.cancel),
+    remove: () => call<void>(IPC.brain.remove),
+    onEvent: (cb: (s: BrainStatus) => void) => on(IPC.brain.event, cb)
+  },
+  cull: {
+    suggestions: (keys: string[]) => call<Record<string, CullReason[]>>(IPC.cull.suggestions, keys),
+    keep: (keys: string[], keep: boolean) => call<void>(IPC.cull.keep, keys, keep),
+    measure: (keys: string[]) => call<number>(IPC.cull.measure, keys),
+    onEvent: (cb: () => void) => on(IPC.cull.event, cb),
+    onProgress: (cb: (p: { done: number; total: number }) => void) => on(IPC.cull.progress, cb)
+  },
+  names: {
+    get: (key: string) => call<PhotoNames | null>(IPC.names.get, key),
+    name: (key: string) => call<PhotoNames | null>(IPC.names.name, key),
+    edit: (key: string, names: PhotoNames | null) => call<void>(IPC.names.edit, key, names),
+    onEvent: (cb: (e: { photoId: number; names: PhotoNames | null }) => void) =>
+      on(IPC.names.event, cb)
   },
   /** Select by clicks, a box or strokes (SAM 2.1) on the open photo. */
   select: {
@@ -332,13 +398,27 @@ export type PlayroomApi = typeof api
  * (renderer/lib/frames.ts takes them).
  */
 function toPage(m: PreviewFrame): void {
-  const whole = m.data.byteOffset === 0 && m.data.byteLength === m.data.buffer.byteLength
-  const bytes = whole ? m.data : m.data.slice()
-  const buffer = bytes.buffer as ArrayBuffer
+  const own = (d: Uint8Array): ArrayBuffer => {
+    const whole = d.byteOffset === 0 && d.byteLength === d.buffer.byteLength
+    return (whole ? d : d.slice()).buffer as ArrayBuffer
+  }
+  const buffer = own(m.data)
+  const companion = m.companion
+    ? { width: m.companion.width, height: m.companion.height, data: own(m.companion.data) }
+    : undefined
   window.postMessage(
-    { pixlFrame: { frame: m.frame, width: m.width, height: m.height, data: buffer } },
+    {
+      pixlFrame: {
+        frame: m.frame,
+        width: m.width,
+        height: m.height,
+        data: buffer,
+        sample: m.sample ?? 'U8',
+        ...(companion ? { companion } : {})
+      }
+    },
     '*',
-    [buffer]
+    companion ? [buffer, companion.data] : [buffer]
   )
 }
 ipcRenderer.on(IPC.develop.previewPort, (e) => {

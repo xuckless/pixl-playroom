@@ -29,10 +29,1029 @@ from the old TODO and a full performance and bug sweep.
 
 ---
 
-## Top priority — Phase C: updates, the PIXL account and the beta (passes 23–26b)
+## Top priority — Phase N: engine 0.18.0 (passes 85–103)
 
-**Top priority (2026-10-01)**: this phase comes before everything else
-still open below. It is listed first, out of number order.
+**Status (2026-10-08)**: passes 85–103 are done and tested on the branch; what
+is left open below is the owner's to check (on the XDR and the M1), the
+model-server mirrors, and Windows' display read (later). Nothing is released:
+0.4.0-beta ships with engine 0.19's phase.
+
+**Top priority (2026-10-08)**: this phase comes before everything else still
+open, Phase C included. It is listed first, out of number order. Branch
+`feat/engine-0.18`, off main at 0.3.0-beta.
+
+Engine 0.18.0 is stabilisation: the HDR preview calibrated to the display,
+smoothed adjustments, Dehaze v2, HSL luminance in stops, Develop's highlight
+knee, Denoise that reaches as far in the export as in the preview, sanity
+checks between stages (`Invariant`), and new models (SPAN ×4, Depth Anything
+V2, MI-GAN; BiRefNet, EfficientSAM3 and SAM 3 on demand). The engine's
+migration notes are `docs/migration-0.18.0.md` and its integration guide
+`docs/integration.md` §4.5, 4.6, 6 and 7, at tag v0.18.0. The map from each
+change to Playroom's code is the doc "Playroom: adopting PIXL 0.18.0" (rows
+1–19). The plan, with every decision below, is
+`~/.claude/plans/a-big-integration-update-humming-adleman.md`.
+
+**Ships together with 0.19.0** (the owner, 2026-10-08): nothing is released
+after this phase alone. `feat/engine-0.18` carries on into "Next: engine
+0.19.0" below, and 0.4.0-beta goes out at the end of that, as one PR.
+
+Decided (2026-10-08):
+
+- **HDR preview, all of it**: Phase M (old passes 77–84) folds in here as
+  Passes 96–103. The display's white and peak come from a small native addon
+  on macOS. Windows gets a Preferences dialog for them, with an "Auto-fill
+  from this screen" stub.
+- **The settled picture is A/B tested** (F16 pixels, PQ JPEG XL, AVIF with a
+  gain map) before one is chosen. The owner's Chromium issue on JXL in
+  Electron: https://issues.chromium.org/issues/568825290.
+- **Smoothing is its own slider** under Dehaze, 0–100 → the engine's
+  `strength` (radius 0.02), on the seven ops that take it. It's applied on
+  release only. New photos start at 100, edits made before 0.18 at 0. Masks
+  have their own.
+- **Saved edits take the new maths**: Dehaze v2 and HSL in stops are
+  explained in What's new, and thumbnails are remade.
+- **RAW**: `RAW_DEVELOP_REV` is bumped and AI steps on RAWs re-run quietly.
+  The RAW master moves to `RawMode::Scene` in float.
+- **Enhance**: Scale ×2/×4 and Source Clean (SPAN) / Damaged (x4v3); ×2 is
+  SPAN ×4 brought down by half.
+- **New**: Depth range mask, AI Remove (MI-GAN), the guided/bilinear rule for
+  SAM masks, and a BiRefNet "Fine" Subject.
+- **Gone quietly**: the retired models (x2plus, LaMa, U²-Net, FBCNN at a
+  quality), with their files deleted from the user's disk, and the PixlRGB
+  before/after comparison with its kept thumbnails.
+- **Host rules**:
+  - an `Invariant` is shown on the named slider;
+  - Calibration's sliders are bounded so the mixer can't overflow;
+  - untouched RAW sharpening defaults move to masking 50;
+  - model threads ≤ P-cores on Apple Silicon.
+- **Not here** (0.19 or Pixl Auto, still being tested): SAM 3, EfficientSAM3
+  and `segmentConcept`; anything of Gemma's; the safe-shutdown advisory; the
+  GPU paths and the stage cache.
+
+### Pass 85 — Run on 0.18.0 · 5 pts
+
+- [x] **S** · `@xuckless/pixl-engine` and `@xuckless/pixl-models` 0.18.0.
+- [x] **M** · `shared/engine-types.ts` restated:
+      - `Master.float`/`companion`, `Ceiling.Display`, `LinearDisplayP3`;
+      - `Denoise.reach`;
+      - `smoothing` on Tone, Vibrance, Dehaze, ColorGrade, HslBands and
+        Qualifier;
+      - `SegmentPlane.quantity`;
+      - `ConvertReport.companion`/`checks`, `MasterReport.display`,
+        `non_finite`;
+      - `Invariant` named.
+- [x] **S** · `DENOISE_REACH` (0.03) from one constant for the preview, 1:1
+      and export (HR-0.18-3). A saved custom layer's `Denoise` gets it in
+      `withLutDomains`.
+- [x] **S** · `masterPolicy` sends `float: 'LinearPixlRgb', companion: null`
+      (0.17's bytes).
+- [x] **S** · The legacy U²-Net ref states `quantity: 'Coverage'` (until
+      Pass 90).
+- [x] **M** · ×2 is `span-x4-ch48` and the request brings it down by half
+      (`main/enhance.ts`). The remembered Enhance speeds moved to a new key
+      (the old ones timed Real-ESRGAN). The benchmark order no longer names
+      x2plus, which `entry()` would refuse.
+      _Checked on the real engine: 96×64 → ×4 → ½ = 192×128; a compiled
+      grade with every new field passes its 9 checks; x2plus is `UnknownModel`._
+- [x] **S** · Model copy for SPAN, MI-GAN and Depth Anything; a "Sense depth"
+      purpose.
+- [x] **S** · TODO.md and ENGINE-REQUESTS.md restructured: this phase first;
+      Phase M, Pass 52 and the duplicate waiting lines folded in; E12, E29,
+      E34 and E48–E52 removed.
+- [ ] **S** · Owner: mirror the new shipped models to the model server, since
+      the roster gives them no public upstream and their download fails until
+      then:
+      `node scripts/publish-models.mjs --only span-x4-ch48,migan-512,depth-anything-v2-small --bucket pixl-models`.
+
+### Pass 86 — Host rules and safety · 5 pts
+
+After: Pass 85.
+
+- [x] **S** · HR-0.18-6: contrast never sends a negative factor (a mask's
+      Amount at 200 with Contrast −100 sent −0.2).
+- [x] **M** · HR-0.18-7: Calibration is bounded at its sliders' ±100, in the
+      compiler and on load (photo and masks). `calibrationMatrix` refuses a
+      row past ±16 (`MIXER_ROW_MAX`) as a guard.
+      _Measured: inside ±100 the largest row is 1.8. Only values past the
+      sliders (a mask's Amount at 200 doubling them) degenerate, up to 533 009._
+- [x] **S** · HR-0.18-8: `displayPeak()` holds an HDR peak to 100–10 000
+      cd/m² (`main/exporter.ts`, `shared/export.ts`'s Expand).
+- [x] **L** · HR-0.18-9: `Invariant` named against the request it came from:
+      - `shared/invariant.ts` turns the field path into the layer and op;
+      - `EngineError.nameInvariant` is called on every graded convert in
+        `render.ts` (picture, 1:1, mask, Before, headroom) and on the export;
+      - the set sliders that feed that op, in that layer, turn red with the
+        message under them (`readPath` matches a row to its recipe field);
+      - the HUD says it too, the last good picture stays, and nothing is
+        retried without the op.
+      _Checked on the real engine: an overflowing mixer gives
+      `grade.layers[0].stages[0].ops[1]: +∞…`, named "Calibration in the
+      photo's settings made pixels that are not numbers."_
+- [x] **S** · `heavyThreads()`: model sessions, Enhance, export, the HDR
+      master and AI denoise use twice the background share, capped at the
+      P-core count on Apple Silicon (the M2 Pro ran fastest at 4; 12 was
+      3.5× slower).
+
+### Pass 87 — Denoise and sharpening match the export · 4 pts
+
+After: Pass 85.
+
+- [x] **S** · HR-0.18-2: a RAW's default sharpening has masking 50 (0.8 /
+      1.0 / 0.25 / 0.5 to the engine). `RECIPE_VERSION` 3: a RAW's untouched
+      40 / 1 / 25 / 0 saved before it moves to 50; a set one stays.
+- [x] **M** · HR-0.18-1: a sharpening the preview leaves out says so under
+      Detail ▸ Sharpening ("Sharpening shows at 100% only…") until the view
+      is at 100%, where the 1:1 tiles render it from the master. The note is
+      `LEFT_OUT.sharpen` in `compile.ts`; any panel shows its own with
+      `<LeftOut note={…} />` from the last render's `notes`.
+- [x] **S** · HR-0.18-5 (QA, no code): judge an export against a 1:1 export
+      from the master, never the proxy enlarged. The 1:1 view (`region()`)
+      already renders from the full-size master.
+
+### Pass 88 — The Smoothing slider · 5 pts
+
+After: Pass 85.
+
+- [x] **M** · `presence.smoothing` (0–100) on the photo and each mask, 100
+      for new photos and masks. `RECIPE_VERSION` 4: an edit made before it
+      gets 0 (its masks too), so it looks as it did; an untouched photo takes
+      100 (nothing to smooth, and it stays "not edited"). A mask's Amount
+      leaves it alone.
+- [x] **M** · `smoothingOf()` → `{ radius: 0.02, strength: v/100 }` on Dehaze,
+      Vibrance (the slider and the profiles'), Tone, the HSL bands and B&W
+      mix, Point colour and Color grading. `CompileContext.smoothing: false`
+      for drafts (`render.ts` picture and mask drafts); everything else (the
+      settled picture, 1:1, the export, thumbnails) is smoothed.
+- [x] **S** · The slider under Dehaze in Presence (photo and mask scope),
+      with its tip.
+      _Measured on the M2 Pro, 2560 × 1707, five smoothed ops, 6 threads: the
+      settled render 1.2–1.3 s against 0.53–0.6 s bare (drafts stay bare).
+      The M1 is to be measured with Pass 98's timings._
+
+### Pass 89 — New pixels, remade caches · 3 pts
+
+After: Passes 86–88.
+
+- [x] **S** · `ENGINE_RENDER_REV` 2 → 3: edited photos' thumbnails are made
+      again (Dehaze v2, HSL in stops, Denoise's reach, Smoothing).
+      `RAW_DEVELOP_REV` waits for Pass 94 (the owner, 2026-10-08): one bump
+      for the knee and the Scene master.
+- [x] **M** · A RAW's stale AI steps (`staleRawStep`):
+      - DRUNet denoise steps are made again in place as the photo opens
+        (`startStaleUpkeep`; the denoise job's `redo`: the steps before it,
+        its frozen mask, strength and place);
+      - SCUNet steps (minutes each) say so in their row, with "Run it again
+        on the new develop";
+      - Enhance and heal steps keep a note (their inputs weren't kept). From
+        now on Enhance stores its settings (`params.settings`) and a heal its
+        spot (`params.geometry`), so a later develop can remake them.
+- [x] **S** · Dehaze's tip rewritten for v2; a Color Mixer Luminance tip;
+      0.4.0-beta's What's new drafted (the 0.18 half) in `shared/releasenotes.ts`.
+
+### Pass 90 — Models: Enhance and quiet retirement · 5 pts
+
+After: Pass 85.
+
+- [x] **M** · Super resolution: Scale (Off / ×2 / ×4) and Source: Clean
+      (SPAN), Damaged (general-x4v3), Keep texture (wdn). ×2 is any of them
+      brought down by half. Saved settings keep the model they ran (`x4` →
+      ×4 Damaged, `x4-wdn` → ×4 Keep texture, `x2` → ×2 Clean); first time
+      guesses per source.
+      _Fixed on the way: a smart look's Deblur took the default ×2 with it,
+      enlarging the whole photo past its mask (`looks/runner.ts`)._
+- [x] **M** · Retired models go quietly:
+      - `legacymodels.ts` and the "Being retired" rows are gone; Subject is
+        U²-Netp alone;
+      - 20 s after start, `ModelStore.prune()` carries over what it can, then
+        deletes every model folder the roster doesn't ship (on-demand kept)
+        and every version a shipped one moved on from (`retiredModelDirs`);
+      - a saved FBCNN at a quality already reads as FBCNN.
+- [x] **M** · The PixlRGB before/after is gone: the dialog, `state/legacy`,
+      `main/legacy.ts`, the `legacy:*` IPC, the View command, the capture in
+      thumbnailing, the styles. Its kept thumbnails (`cache/legacy-previews`)
+      are deleted with the models' clean-up.
+      _Checked in the built app: a planted `models/lama` and
+      `cache/legacy-previews` were gone 20 s after start._
+
+### Pass 91 — SAM's size rule and the Depth range mask · 5 pts
+
+After: Pass 85.
+
+- [x] **S** · A kept SAM mask is guided only for an object of 128 SAM-grid
+      px or more both ways (`main/select/size.ts`), bilinear below. A box
+      prompt says its size; otherwise an unkept 256 px answer measures it
+      first (the lane's state untouched), then the real decode.
+- [x] **L** · The Depth range mask:
+      - the masks menu's Depth range offers Depth Anything V2 (it has a
+        public upstream), then runs the `segment` job's `depth` target:
+        the map, bilinear, 8-bit (255 the nearest), lands as a
+        `DepthComponent` holding it as a brush holds its plane (by `ref`
+        across IPC, in the sidecar);
+      - compiled to `DepthRange` (`Disparity`, near ≥ far, bilinear);
+        Near / Far / Softness 0–100 of the photo's depth; starts at the
+        nearest third;
+      - the card: Pick (click the photo: the range centred on that depth,
+        as wide as it was), the depth map with the range tinted, the three
+        sliders; the overlay comes from the render (the GL preview steps
+        aside for a depth range);
+      - a smart look can't carry one yet (it is this photo's own depth).
+      _Checked on the real engine: jpeg_test (6000 × 4000), map 1024 × 683
+      Disparity in 2.2 s on the CPU, the nearest third covering 17% with +2 EV
+      on the near road and trees only._
+
+### Pass 92 — AI Remove (MI-GAN) · 5 pts
+
+After: Pass 85.
+
+- [x] **L** · A Remove mode in the Heal tool, beside Heal, Clone and Fill:
+      - paint over what should go (a stroke on the base frame, its path drawn
+        as it goes); a click with Find object takes the object there:
+        SAM 2.1's mask (`oneShot`) becomes a serpentine stroke covering it
+        (`strokeOver`; the engine fills circles or strokes, not planes);
+      - the engine's `{ Remove: { shape, feather, opacity, context: 0.75,
+        model } }` with `migan-512`, **baked** at once as a heal stroke is
+        (`bakeSpot`), so MI-GAN runs once and the step lives on the photo's
+        own pixels (lens and crop changes keep it on its subject);
+      - live spots never carry one (`compileRetouch` leaves a Remove out
+        without an inpainter), so an HDR photo, whose spots stay live, says
+        Remove isn't available there yet;
+      - MI-GAN offered on the first stroke, and in the panel; SAM on Find
+        object.
+      _Checked on the real engine: the utility pole on jpeg_test removed in
+      1.3 s on the CPU (crop 2630² onto MI-GAN's 512² grid, model load 143 ms)._
+- [ ] **S** · Owner: MI-GAN on the model server (Pass 85's mirror line): it
+      has no public upstream.
+
+### Pass 93 — BiRefNet "Fine" Subject · 3 pts
+
+After: Pass 90.
+
+- [x] **M** · ModelStore offers the on-demand models Playroom wants
+      (`OFFERED_ON_DEMAND`: BiRefNet lite; SAM 3 and EfficientSAM3 wait for
+      0.19) beside the shipped ones: listed in Settings with their size,
+      downloaded (the mirror, else the author's public release) and checked
+      by SHA-256 as any model, resolved with `{ dir }`; the licence texts and
+      `NOTICE.md` are written beside the files. The clean-up keeps them.
+- [x] **S** · Masks ▸ Fine subject: BiRefNet offered (224 MB) when missing,
+      then the subject job with `fine`: no hardening and no Snap to edges by
+      default (they would cut the hair it keeps); the mask's source remembers
+      `fine`.
+      _Checked on the real engine: jpeg_test, 13.5 s on the M2 Pro's CPU
+      (1.8 s load, a 24 MP decode); in the built app, Settings lists it
+      installed and the clean-up leaves it._
+- [x] **S** · Fixed: MI-GAN's and Depth Anything's Settings copy, lost in
+      Pass 90's clean-up of the retired models' copy, is back.
+- [ ] **S** · Owner (optional): mirror BiRefNet to the model server; it
+      downloads from the author's GitHub release meanwhile.
+
+### Found in testing — Smoothing blotches in masks (E53) · 2 pts
+
+Found by the owner 2026-10-08 on IMG_2347.CR2 (red, blue and magenta
+patches over the subject; all over it at 1:1). Pinpointed: an engine bug in
+0.18's adjustment smoothing, written up as E53. It needs the base layer's
+**smoothed Color Mixer** (`HslBands`, here Orange hue +18) and a mask's
+**smoothed Tone** on pixels the mask's exposure (+2.17 EV, no highlight
+shoulder in a mask) pushed far past white. Leave either unsmoothed, or set
+the mask's Smoothing to 0, and it is clean (the owner confirmed Smoothing 0).
+
+- [x] **S** · Decide the stopgap until E53 is fixed (owner): **(d), applied
+      2026-10-08** (`compile.ts` `hslOp(…, null)`; on IMG_2347 the blotches
+      went 6840 → 5 garish pixels and the cyan specks 202 → 0). Turn it back on
+      when E53 lands. The options were:
+      (d) **the Color Mixer (HslBands, B&W mix) goes unsmoothed everywhere**:
+      it is where both artifacts start (the mask blotches need it, and alone
+      it specks deep shadows cyan: 202 specks on IMG_2347's Scene proxy, 0
+      unsmoothed); the other five ops keep Smoothing; the recommended one;
+      (a) a mask's Tone goes unsmoothed (the rest keeps Smoothing);
+      (b) a mask's exposure above +1 EV gets the base's highlight shoulder,
+      so its pixels stay near white (changes how such masks look);
+      (c) Smoothing starts at 0 for masks (new photos keep 100).
+- [x] **S** · A test holds HslBands unsmoothed (`tests/smoothing.test.ts`);
+      the Smoothing and Color Mixer tips no longer promise it.
+- [x] **M** · Second case (the owner, IMG_3198.CR2: Dehaze 100, Vibrance
+      100, Saturation +98): blocks of magenta and green on the Scene master
+      even with HslBands unsmoothed: smoothed Dehaze on the negatives that
+      PixlRGB's out-of-P3 colours become in the Encoded P3 look stage. Every
+      look stage now starts with `P3_FLOOR` (a 1D identity over 0…64:
+      negatives to 0, nothing else; the screen clips them anyway). IMG_3198:
+      224 455 → 39 garish pixels.
+- [x] **S** · Regression test `tests/e53.test.ts`: both edits' numbers as
+      fixtures (`tests/fixtures/e53/`, no image data: the owner, 2026-10-08,
+      no faces in the repository); the RAWs and IMG_2347's mask planes
+      (`IMG_2347.<component id>.png`) are the owner's, read from
+      `PIXL_E53_RAWS` (skipped without it). It checks
+      today's compile renders clean, and that smoothed HslBands still breaks
+      IMG_3198: when that check fails, E53 is fixed and the stopgap can go.
+      Run: `PIXL_E53_RAWS=<folder with the two CR2s and the planes> node
+      --import ./tests/register.mjs --experimental-strip-types --test tests/e53.test.ts`.
+
+### Pass 94 — The RAW master as Scene float 1/2 · 5 pts
+
+After: Pass 89.
+
+- [x] **S** · `RAW_DEVELOP_REV` `l` → `s` (moved from Pass 89): RAW proxies
+      and master caches are made again, and Pass 89's upkeep remakes the
+      DRUNet steps on them.
+- [x] **L** · The RAW master is `RawMode::Scene` into F32 (`rawMaster`,
+      `source.ts`): the as-shot white, `InpaintOpposed` highlights (owner,
+      2026-10-08), `crop: Best`, PIXL's camera colour where held, denoise
+      kept in the grade (its reach there, HR-0.18-4). Same 6000 × 4000 frame
+      as Develop on the owner's CR2s (no new bookkeeping), 2.1 s against 1.65.
+      Exports from the RAW use it too. The lateral-CA measurement keeps
+      Develop (a geometric fit).
+- [x] **M** · Proxies, draft, mid and lens-corrected sets from it are F32
+      (`ProxyFile.float`; owner: float, working space); the master is an F32
+      TIFF (288 MB at 24 MP, twice the 16-bit).
+- [x] **S** · A RAW's base rolls its headroom onto white for SDR whatever the
+      exposure (compile's shoulder, `RAW_SCENE_STOPS` = 2: the CR2s peak at
+      1.8–3.15, up to 25% of a frame over 1.0); none under HDR, which keeps it.
+      _Checked on IMG_2347: the same picture as Develop's, highlights
+      intact; the settled render 531 ms against 689 from the 16-bit proxy._
+      _Found on the way: smoothed HslBands specks deep shadows cyan, more on
+      the Scene proxy (it keeps the shadows' negatives): part of E53, and
+      stopgap (d) above._
+
+### Pass 95 — The RAW master as Scene float 2/2 · 4 pts
+
+After: Pass 94.
+
+- [x] **M** · AI steps guard the headroom (owner, 2026-10-08): over a float
+      frame, an AI Denoise or Enhance step's overlay takes the frame's
+      headroom guard as alpha (`headroomGuard`: kept at or under 0.95, the
+      frame's own at or over 1.0, a ramp between; the `guard` worker op), so
+      the master keeps what the model clipped. Heal, Fill and Remove are
+      replacements made in float: never guarded. The working set (proxies,
+      master, an upscale's resized base) stays F32 for a float frame. To
+      loosen once PIXL's own denoisers take values over 1.0.
+      _Checked on IMG_2347's Scene proxy: a clipped stand-in step laid
+      unguarded kept 0 of 38 650 pixels over white (peak 1.000), guarded all
+      of them (peak 2.98)._
+- [x] **S** · The 1:1 view and the noise measurement read the float master
+      (and the float working master) as they are: nothing to change.
+- [x] **S** · Float working sets keep 2 spare sets per photo, not 4 (a 24 MP
+      float master is about 290 MB).
+- [ ] **S** · Not applicable yet: Playroom has no Linear DNG export ("After
+      engine 0.16"); when it has one, it writes from Scene into float.
+- [ ] **S** · A RAW's develop time measured on the M1 (no M1 here): the M2
+      Pro took 2.1 s for a 24 MP Scene master, 1.0 s for its proxy.
+
+### Pass 96 — The display's peak and white (was 77) · 5 pts
+
+After: Pass 85.
+
+- [x] **S** · The spike (`scripts/hdr-spike`: `node scripts/build-native.mjs &&
+      npx electron scripts/hdr-spike <files>`), in Electron 44.4.3 on the
+      MacBook, 2026-10-08:
+      - `matchMedia('(dynamic-range: high)')` is true;
+      - a WebGPU canvas configures `rgba16float`, `display-p3`,
+        `toneMapping: extended` (it needs `COPY_DST` usage to be written to);
+      - an AVIF with the master's gain map decodes in `<img>`; **a PQ JPEG XL
+        does not decode at all** (this Chromium has no JXL decoder): the
+        settled picture's JXL arm (Pass 99) is out unless Playroom decodes it;
+      - macOS's current EDR headroom read 1.0 before and while the canvas
+        showed values to 4× (potential 16×): inconclusive. It falls with
+        the screen's brightness, or Chromium may not ask for EDR there.
+- [ ] **S** · Owner: look at the spike's ramp. Is its right half brighter
+      than the white quarter on its left, at a lower screen brightness?
+- [x] **L** · `src/native/display/`: a small N-API Objective-C++ reader of a
+      screen's `maximumExtendedDynamicRangeColorComponentValue` (and the
+      potential and reference values), by Electron's display id. Built for
+      Electron by `scripts/build-native.mjs` (macOS only; part of
+      `pnpm build`) into `build/native/display.node`, packaged as
+      `Resources/native/display.node`. Missing, Playroom falls back to
+      stated values. Reads the built-in XDR at potential 16× and the 27N7U
+      at 4×.
+- [x] **M** · `main/hdrdisplay.ts` + `shared/hdrdisplay.ts`:
+      `{ hdr, whiteNits, peakNits, headroom, potential, source }` (white 203,
+      peak 203 · H on a Mac; stated values win; SDR otherwise), re-read when
+      the window moves or displays change and every 2 s on macOS; IPC
+      `app.displayHdr`, `app.setDisplayHdr`, `app.onDisplayHdr`. Unit tests.
+- [x] **M** · Preferences → Display: Automatic (the screen) or Stated (SDR
+      white 80–500, peak 100–10 000 cd/m²), what the screen reads now; on
+      Windows, "Auto-fill from this screen" (`matchMedia` and typical values
+      for now).
+
+### Pass 97 — The Full HDR toggle (was 78) · 3 pts
+
+After: Pass 96.
+
+- [x] **M** · "Full HDR" on the top bar (`shell/DevelopToolbar.tsx`), kept in
+      the `ui` store (`fullHdr`, how the photo is viewed, not its recipe),
+      disabled with "This display shows SDR" where it can't show HDR. It says
+      "show", apart from a gain-map photo's SDR | HDR edit-as switch.
+- [x] **S** · `ViewState.display: { whiteNits, peakNits } | null`
+      (`renderDisplay`, `shared/hdrdisplay.ts`): a toggle or a display change
+      renders again. On a Mac whose headroom macOS has not raised yet (it
+      reads 1.0 at idle, potential 16×), the first HDR frame asks for 2×;
+      the 2-s reading brings the real number.
+- [x] **S** · `uiMigrate` version 5 (Full HDR starts off) and its test; the
+      display reader is found from the app path, the bundle or the working
+      directory in a checkout (the built app read the XDR's potential 16×).
+
+### Pass 98 — Drafts in 16-bit float (was 79) · 5 pts
+
+After: Pass 97.
+
+- [x] **M** · With Full HDR on (`ViewState.display`), drafts and the settled
+      picture render with `Master { headroom, ceiling: { Display },
+      float: 'ExtendedLinearDisplayP3', companion: 512 px }` into
+      `Pixels { sample: 'F16' }` (`render.ts` `masterFor`), `gain_map: null`,
+      the compile in HDR (no RAW shoulder). The sample type and the
+      companion travel with the frame (`engine/host.ts`, preload, main's
+      relay); `frames.ts` keeps the F16 pixels, and the companion as the
+      frame's bitmap for what reads the picture.
+- [x] **L** · `lib/floatcanvas.ts`: WebGPU `rgba16float`, `display-p3`,
+      extended tone mapping, the sign-preserving sRGB curve on RGB only;
+      `DecodedImage` draws an F16 frame with it, and the companion on a 2D
+      canvas where WebGPU won't.
+- [x] **M** · Measured in the built app (M2 Pro, IMG_3198, display 203/812):
+      settled 1920 px 490–514 ms (SDR JPEG 307 ms), a draft 1280 px 200 ms;
+      the frame peaks at 2.3, at +1 EV at the 4.0 ceiling with 2.5 % above
+      white. The RAW draft source is already the float proxy (Pass 94), so
+      no separate untagged source was needed at these times.
+- [ ] **S** · Owner: a drag on the M1 against 100 ms, and how the loupe looks
+      on the XDR (values above 1 visibly brighter than white).
+- Until Pass 99 decides it, Full HDR's settled picture is a frame (no file):
+  the mask's measurement and the library thumbnail skip it.
+
+### Pass 99 — The settled picture: an A/B test (was 80) · 5 pts
+
+After: Pass 98.
+
+- [x] **L** · A dev switch for Full HDR's settled picture, `PLAYROOM_SETTLED`
+      (`render.ts` `SETTLED_ARM`):
+      - (a) `frame` (the default): F16 pixels plus the companion over the
+        preview port, as the drafts;
+      - (b) PQ JPEG XL: **out**. This Chromium does not decode JXL (Pass 96's
+        spike; Chromium issue 568825290);
+      - (c) `avif`: an 8-bit AVIF (speed 9) whose SDR base carries the
+        master's gain map, shown by an `<img>`.
+- [x] **M** · Measured in the built app (M2 Pro, IMG_3198 RAW, display
+      203/812 nits), 2026-10-08:
+
+      | | settled 1920 px | per picture | draft → settled |
+      |---|---|---|---|
+      | (a) frame | 485–529 ms | 19.6 MB in memory (4 kept: ~80 MB) | the same pipeline and bytes as the draft |
+      | (c) avif | 679–692 ms | ~0.5 MB on disk | SDR base × a half-size map: an approximation of the draft |
+      | SDR (JPEG) | 307 ms | ~1 MB | — |
+
+      Recommendation: (a), for no shift when a drag ends and ~180 ms less;
+      (c) wins only on memory and on a picture that outlives the session.
+- [ ] **S** · Owner: compare (a) and (c) on the XDR (`PLAYROOM_SETTLED=avif
+      pnpm dev`): does the AVIF show in HDR, and does it shift when a drag
+      ends? Then the losing arm goes.
+- [x] **S** · Either arm keeps its SDR companion as a Display P3 PNG
+      (`encodePng8` with a `cICP` chunk, which the engine reads as Display
+      P3): `measureMask` reads it (by extension now, so a crop-mode PNG is
+      read as one too). The library thumbnail grades again on the
+      background engine, as with no settled picture to shrink.
+
+### Pass 100 — Caches and the library (was 81) · 4 pts
+
+After: Pass 99.
+
+- [x] **M** · In Full HDR the Before picture and the 1:1 tiles are HDR:
+      AVIFs whose SDR base carries the master's gain map (`hdrFile`); files,
+      since a frame is let go as the drafts stream past. A tile states the
+      settled picture's peak and gamut reach (the engine refuses `Measured`
+      on a region; an SDR tile until the first settled HDR picture).
+      `SharpTile` asks again when Full HDR or the display changes. Measured
+      (M2 Pro, IMG_3198): a warm HDR tile 558–588 ms against SDR 526–618 ms;
+      the first, which develops the RAW's full-size master, ~2.4 s; both
+      decode in the window.
+- [x] **S** · Mask thumbnails and look cards stay SDR (said where they are
+      made). **Library and filmstrip thumbnails stay SDR JPEGs**: Full HDR is
+      a Develop view, and a grid of glowing thumbnails would outshine the
+      photo being chosen. Files rotate as before (the view and companion
+      stems pruned together; four region slots, either extension).
+
+### Pass 101 — What reads the picture (was 82) · 5 pts
+
+After: Pass 98.
+
+- [x] **M** · In Full HDR a settled render's event carries `readUrl`, its
+      SDR companion as a Display P3 PNG (1024 px); a draft's frame bitmap is
+      its companion (512 px). `readable(e)` (`lib/frames.ts`) is what the
+      eyedropper and every `samplePatch` in `Loupe.tsx`, the scopes
+      (`ScopesExpanded`), a range's key (`MaskCanvas`), the brush's Auto
+      Mask, the Clipping and Spots overlays and the dialog backdrop read:
+      never the F16 canvas or a gain-map AVIF. Checked in the built app, both
+      arms: the companion decodes at 1024 × 682.
+- [x] **S** · In Full HDR the headroom overlay's 1 is the display's ceiling
+      (`log2(peak / white)`): what reaches it shows at the display's
+      brightest.
+- Cost (M2 Pro): settled 530–660 ms with the 1024 px companion (485–529
+  without), a draft 225–233 ms with its 512 px one.
+
+### Pass 102 — Masks fixed in the left pane (was 83) · 4 pts
+
+Waits on nothing from the engine; can be taken at any time.
+
+- [x] **L** · `panels/masks/MasksPane.tsx` (was `MasksWindow.tsx`): a fixed
+      column of the left pane (`shell/LeftRail.tsx`), never over the photo.
+      Floating, docking, dragging, the pill and the header's close button
+      go, with `minimizeMasks`, the `ui` store's `docked`/`minimized`/`x`/`y`
+      (`uiMigrate` version 6) and their CSS. The top bar's Masks and its
+      shortcut still show and hide it: that is how masks are entered and
+      left (`openMasks`/`closeMasks` kept). Checked in the built app.
+- [x] **S** · Glass over a photo shown in HDR: frost only
+      (`useHdrShown` in `LiquidGlass`), since the rim's bend and saturation
+      lift act on light above white.
+- [ ] **S** · Owner: look at the glass over an HDR picture on the XDR; if
+      frost alone still glares, say where.
+
+### Pass 103 — HDR edges, and the 0.18 half of the notes (was 84) · 3 pts
+
+After: Passes 96–102.
+
+- [x] **S** · With Full HDR on:
+      - the window moved to an SDR display, or HDR turned off in the system:
+        the display reads no headroom, `renderDisplay` is null, the next
+        render is SDR and the toggle greys out (Full HDR stays chosen, and
+        comes back on an HDR display);
+      - a MacBook's headroom drifting with its brightness: the reading is
+        taken in quarter stops, rounded down (`steppedHeadroom`), so a render
+        is made again only a step on; stated numbers are used as given;
+      - a WebGPU device lost: the presenter makes a new one on the next
+        frame, and draws the SDR companion where it cannot.
+- [ ] **S** · Owner: Retina Performance mode (and the other display presets)
+      on the XDR: does Settings → Display follow, and does Full HDR look
+      right?
+- [x] **S** · Cuts: none. On the M2 Pro a Full HDR draft is 225–233 ms at
+      1280 px against SDR's ~200 ms, and the settled picture 530–660 ms;
+      whether the draft's size is cut waits on the owner's M1 drag (Pass 98).
+- [x] **S** · The 0.18 half of 0.4.0-beta's What's new
+      (`shared/releasenotes.ts`: HDR, dials, detail, masks, heal, changes)
+      and the README's masks, viewing, enhance, AI models and HDR sections,
+      drafted. No release here: see below.
+- [ ] **M** · Later, not needed for 0.4.0-beta: Windows reads the display's
+      SDR white (`DisplayConfigGetDeviceInfo`, `DISPLAYCONFIG_SDR_WHITE_LEVEL`
+      × 80/1000) and peak (DXGI `MaxLuminance`) for the Display dialog's
+      Auto-fill.
+
+---
+
+## Next: Phase O, engine 0.19.1 (passes 104–117)
+
+**After Phase N, before everything else.** Branch `feat/engine-0.18` (0.18 and
+0.19 ship together): this phase ends with Release-As 0.4.0-beta, the final
+What's new, and the one PR to main.
+
+Sources, at the engine's tag `v0.19.1`: `docs/migration-0.19.0.md`,
+`docs/integration.md` (§2, 4.6, 4.7, 6–7) and `docs/auto/playroom-0.19.md`
+(Playroom's Pixl Auto guide). Published: `@xuckless/pixl-engine` and
+`pixl-models` 0.19.1, and model packages `nafnet-sidd-w32`, `pmrid`,
+`demosaicnet-bayer`/`-xtrans`, `dinov2-s-ade`, `selfie-multiclass`,
+`yunet-2023mar`, `face-mesh-v2` (1.0.0). `@xuckless/pixl-auto` is not
+published (the engine's release workflow has no step for `bindings/auto`):
+installed from the repo's subfolder at `v0.19.1` until it is.
+
+Not in 0.19: the GPU grade path and the stage cache (a 0.20.0 design; 0.20
+also brings PIXL's distilled models for everything but SAM 3 and
+EfficientSAM3). `Tone.base` waits for 0.20's local Laplacian (the owner,
+2026-10-08). Not built (rough or not recommended, `playroom-0.19.md` §3):
+Gemma's judge, its boxes and finder choice, `auto()`/`select()`,
+`rephrase()`, the cascade's bars, the "uncertain" flag, auto edits.
+
+Decisions (the owner, 2026-10-08):
+
+| Topic | Decision |
+|---|---|
+| RAW demosaic | DemosaicNet wherever a RAW is developed at full resolution (the master, 1:1, export; Bayer, and X-Trans's when an X-Trans RAW first opens), downloaded on install or update and recommended as the best quality; AHD (no model, faster, +6 dB over PPG) until it is here. Cell proxies have no demosaic |
+| RAW denoise | PMRID (on the mosaic, before the demosaic) an opt-in option for Bayer RAWs (noise `Measured`); off by default |
+| AI denoise | NAFNet SIDD in SCUNet's place (CoreML static shapes, 512 tiles); SCUNet deleted from every install on update; DRUNet stays |
+| Safe shutdown | engine hosts stop 60 s after the window is hidden or minimised, 120 s after Playroom goes inactive (a queued AI batch finishes first); restarted on the next need |
+| Flat UI | flat colours, no glass, animations paused whenever Playroom isn't focused, plus an "Always flat" setting |
+| Pixl Auto | naming chips → masks, and cull suggestions; Gemma downloaded on demand |
+| Naming runs | in the background on import, only idle and on power, then llama-server stops; a photo opened first is named first |
+| Name chips | at the top of the Masks pane: ★ the subject, a tap makes the mask, × dismisses, + types a name; kept in the library and the `.pixl` project |
+| Culling | in the Library: a culled photo's thumbnail is dimmed and grey, its colour back on hover (with the reason) and for good once the user overrides the cull; a "Suggested rejects" filter; one key accepts (flags reject). Star ratings are a factor, and thresholds learn from the user's flags and stars |
+| Finders | DINOv2 sky, vegetation, water; Selfie Multiclass people parts; Face Mesh face parts (brows beta); Find by name with SAM 3 (on demand) or EfficientSAM3 |
+| Background activity | a non-blocking progress bar / spinner on the top bar whenever AI or Gemma works in the background (only work that can be backgrounded: naming, cull signals, AI denoise, enhance, a batch, model downloads) |
+| Compute | GPU / Metal wherever possible: CoreML static shapes (`CpuAndGpu`) for every model whose roster names its dimensions, `llama-server` with every layer on Metal; the CPU (threads ≤ P-cores) only where the GPU path is refused or slower |
+
+### Pass 104 — Run on 0.19.1 · 5 pts
+
+- [x] **M** · Both packages at 0.19.1; the new required fields: Scene's
+      `mosaic_denoise: null` and `demosaic: 'Classic'` (until Pass 108),
+      `analyze`'s `phash: false` and `focus: null`, `SegmentPlane.indices`,
+      `SessionSpec.dimensions: []` and `intra_op_spinning: false` on every
+      session (`IDLE_SESSION`). Types restated (`Binned`, `Diffused`,
+      `raw_cfa`, `ingest_ms`/`egress_ms`, `focus`, `phash`); notices
+      regenerated. Checked in the built app: a RAW in SDR and Full HDR.
+- [x] **S** · `@xuckless/pixl-auto` from the engine repo at `v0.19.1`
+      (`bindings/auto`, a git dependency); CI and the release workflow let
+      git read the repo with `PACKAGES_TOKEN`. ENGINE-REQUESTS: publish it.
+- [ ] **S** · Owner: give `PACKAGES_TOKEN` read access to pixl-engine's
+      contents (or publish pixl-auto), else CI's install fails on it.
+- [x] **S** · The enhance ×2 already has the guide's chain form (the ×4
+      ref, `resize` ½ in the same convert).
+- [ ] **M** · GPU / Metal wherever possible: every model session's
+      provider reviewed; CoreML with static shapes and `CpuAndGpu` for each
+      roster model that names its `dimensions` (tiles fixed to match),
+      measured against the CPU on the M2 Pro; the CPU path keeps threads ≤
+      P-cores. _Taken with each model's pass (107, 108, 109–111)._
+
+### Pass 105 — Safe shutdown · 4 pts
+
+- [x] **M** · `main/rest.ts`: the engine hosts (interactive, background, AI,
+      select) are let go 60 s after the window is hidden or minimised (or
+      no window is shown) and 120 s after Playroom goes inactive,
+      whichever deadline comes first. A host goes only while it runs
+      nothing; the background engine waits for an export and the AI engine
+      for a queued batch (`busy`); while resting the check repeats every
+      15 s. The next request starts a host invisibly (a slept engine keeps
+      its 'ready' status); coming back to Playroom starts the interactive
+      engine at once. Checked in the built app: minimised 72 s, two hosts
+      gone; restored, the next render started a new host and rendered.
+- [x] **S** · HR-0.19-2: engine temps whose process is gone are swept from
+      the cache 30 s after launch (`sweepEngineTemps`). The host's own
+      temp-and-rename around engine writes is gone (E5): the engine writes
+      the proxies, masters, lens maps and step images whole itself
+      (`makeOnce(…, byEngine)`); the worker's own files keep theirs.
+- [ ] **S** · Owner: the inactive path on a real Mac (another app in front
+      for two minutes, then back): the log says `rest:` both ways.
+
+### Pass 106 — The efficient UI and the activity indicator · 5 pts ✅
+
+- [x] **M** · A non-blocking indicator on the top bar while background AI
+      works (naming, cull signals, AI denoise, enhance, batches, model
+      downloads): a slim progress bar where progress is known, a spinner
+      where not; hover names what runs and how far; a click opens the
+      queue. Work that blocks the UI (a click-to-select) keeps its own
+      feedback.
+
+- [x] **M** · Unfocused: glass is frost-free flat colour, animations and
+      the ambient background stop drawing; focused again, it all returns.
+      Settings → Interface: "Always flat".
+      Done (2026-10-08): `lib/activity.ts` + `IdentityBar` queue popover;
+      `lib/efficient.ts` (`:root[data-efficient]`, 400 ms settle on blur),
+      scenes held via `useFrameLimit`, Motion `reducedMotion: 'always'`.
+      Playwright emulates focus, so the blur path was checked in a plain
+      Electron run. **Owner check:** switch apps on the Mac and watch the
+      glass go flat and come back.
+
+### Pass 107 — AI denoise on NAFNet SIDD · 4 pts (held: E55)
+
+- [~] **M** · `nafnet-sidd-w32` through CoreML static shapes (512 tiles,
+      `dimensions` from the roster), CPU with threads ≤ P-cores elsewhere;
+      saved SCUNet settings map to it; SCUNet's files deleted from every
+      install when the update first runs; time guesses and the model copy
+      redone.
+
+      Done (2026-10-08): `shared/modelshape.ts` (CoreML `CpuAndGpu`,
+      `dimensions` from the roster, `Fixed` 512/32) for NAFNet SIDD and
+      the NAFNet deblur (deblur measured 9.3 s against 103 s at 20 MP, M2
+      Pro); SCUNet's files go via `prune` (it left the roster); saved
+      SCUNet maps through `aiDenoiseModel`. **Held:** NAFNet SIDD breaks
+      flat dark areas (E55), so `NAFNET_DENOISE = false` hides it and SCUNet
+      runs DRUNet; flip it when the fixed export ships.
+      Also fixed: AI denoise and Enhance on a RAW had failed since Pass 94
+      (the float master reached the model; the engine refuses unbounded
+      input): `modelInput` makes a bounded 16-bit copy, the guard keeps
+      the headroom.
+      **Owner:** mirror the 0.19 models (`node scripts/publish-models.mjs
+      --bucket pixl-models`): the server has none of them yet (404), and
+      their roster entries have no upstream link.
+
+### Pass 108 — RAW develop: DemosaicNet, AHD, PMRID, binned thumbnails · 5 pts ✅
+
+- [x] **L** · DemosaicNet wherever a RAW is developed at full resolution:
+      the master (1:1, the noise read, the pixel steps' base) and the
+      export from the file (`main/ai/rawdevelop.ts`: `scenePlan`,
+      `withScene`). Once downloaded, else AHD on Bayer, the classic on
+      anything else; a model the accelerator won't load runs on the CPU, a
+      develop the engine refuses with a model runs classic (not kept). The
+      choice names the master (`master-<stamp>-dn|ahd|ppg[-pm]`), so a model
+      downloaded later makes it again and the old one goes; pixel-step sets
+      record the base they were laid on (`masterOf`) and are laid again on
+      a new one. Proxies, thumbnails and the stamp are untouched (no
+      library-wide remake; 0.4.0's `RAW_DEVELOP_REV` 's' already remakes
+      everything once), so no further bump. CoreML static (512/32 Bayer,
+      516/36 X-Trans); Bayer fetched by itself 20 s after launch unless the
+      user removed it (`ai.declined`); X-Trans fetched when an X-Trans RAW
+      first develops. Settings → AI models: "Develop RAW files", Recommended.
+- [x] **M** · PMRID as `mosaic_denoise` (`Measured`): Detail → Noise
+      reduction → AI → "Denoise the RAW data" (`detail.rawDenoise`, base
+      only, Bayer only, off by default; asks for the model; travels with
+      the Noise reduction group). CoreML static 512/32.
+- [x] **S** · Edited RAWs' library thumbnails (and so the filmstrip) from
+      a `Binned` develop of about the draft's size when the proxies aren't
+      made yet (`ensureThumbSource`: 1 s, no proxies); with pixel steps, or
+      for the editor, the Cell proxies as before (HR-0.19-1).
+- Measured on the M2 Pro (IMG_2347 / IMG_1826, 24 MP CR2, F32 Scene):
+  Classic 1.2 s, AHD 3.2 s, DemosaicNet CPU 35.0 s, CoreML static 5.3 s
+  (the model 3.2 s; CPU = CoreML to 146 dB); PMRID CPU 3.3 s, static
+  0.56 s (CPU = static to 90 dB). In the built app: master `dn` 5.8 s,
+  `dn-pm` 6.6 s; export with both 9 s. Shadows: DemosaicNet against PPG
+  over 9.2 M pixels under 0.03, mean shift 6e-5, largest rise 0.017, none
+  blown up (E55's test: clean). Binned (×4) 0.62 s against Cell 0.71 s.
+- [ ] **S** · Owner: an X-Trans RAW on the Mac (its CoreML static path is
+      untimed in the engine too), and the models mirror (above).
+
+### Pass 109 — Named masks: sky, vegetation, water, people · 4 pts ✅
+
+- [x] **M** · DINOv2-S+ADE's `sky` (Guided 0.02 / 0.001), `vegetation` and
+      `water` (the same upsample) in the masks menu, one click each (the
+      model offered when missing); a plane under 0.2 % of the frame is "No
+      water found". `SKY_BY_CLICK` off: smart looks' sky masks are the
+      model's too (no question to the user). Saved as
+      `{ segment, target }`; looks carry `vegetation` / `water` targets.
+- [x] **M** · Selfie Multiclass's `hair`, `face_skin`, `body_skin`,
+      `clothes` as Face, Hair, Skin (face + body) and Clothes, in place of
+      the "soon" People entries; Person, Eyes, Lips, Teeth stay soon (face
+      parts, Pass 110; `personDetail` readiness behind `engine.faces`).
+      Found on the proxy, then again on a square around the person (the
+      model reads 256²: on a half-body portrait clothes went from 2.9 % to
+      10.9 % of the frame), each part kept where it beats the other parts
+      (a dark jumper read as hair stays clothes), hardened at 0.5 × 3.
+      Smart looks' skin, hair, face and clothes run as segment jobs.
+- In the built app (M2 Pro, CPU): sky 1.5 s, vegetation 1.8 s, hair 1.2 s,
+  face 1.7 s, skin 1.6 s, clothes 2.0 s. The menu says "get" until each
+  model is here.
+- Fixed on the way (Pass 107's): `ai.capabilities` threw ("no model
+  nafnet-sidd-w32") while NAFNet is held, which broke every AI tool's
+  availability; a model not offered is now simply not installed.
+- [ ] **S** · Owner: DINOv2-S+ADE's head is trained on ADE20K, whose terms
+      the roster calls research-only (docs/ai/roster.md): confirm shipping
+      it in Playroom is fine, or hold Vegetation/Water/Sky back.
+
+### Pass 110 — Face parts · 4 pts ✅
+
+- [x] **L** · `faces` (YuNet, Face Mesh v2): Eyes, Brows (beta), Lips and
+      Teeth (the inside of the mouth) as lasso masks, one click each (both
+      models offered when missing). A part is one polygon component of
+      every face's rings, filled even-odd (`PolygonComponent.rings`: the
+      other eye, the mouth cut out of the lips), feathered 3 about the
+      line; each face's own outline is kept (`found`), and with several
+      faces the mask's card has a Faces picker (All / Face 1… left to
+      right) that narrows it without running anything. Small faces: the
+      four overlapping quarters (5/8 of each side) are looked at too, a face
+      found twice kept once (the whole frame's) and one a quarter cuts left
+      out. "Left" is the subject's left (the engine's `left_*`), nothing
+      mirrored. Smart looks: eyes, brows, lips and teeth run as segment
+      jobs (`personDetail` ready with both models); a face part saved in a
+      look is found again; Person (the whole body) stays soon.
+- In the built app (M2 Pro, CPU, the five `faces` calls): eyes 1.8 s,
+  brows 1.5 s, lips 1.8 s, teeth 1.5 s; one `faces` call 0.33 s. The
+  picker checked with a made-up second face (no group photo here).
+- [ ] **S** · Owner: a group photo (small faces, the picker) on the Mac.
+
+### Pass 111 — Find by name · 5 pts ✅
+
+- [x] **L** · A "Find by name" box at the top of the New mask menu
+      (Enter): `segmentConcept`, every instance in one mask (bilinear, the
+      roster's finding; the render's snap firms the edge), saved as
+      `{ phrase, text }` and found again by a look (an object by its name:
+      smart looks' `object` is ready with a phrase model, so looks that
+      name objects now run). One host call embeds, lets the image encoder
+      go, then finds the phrase; the embedding is kept for the photo, so the
+      next phrase skips it. Without a phrase model the box offers it;
+      declined, Objects takes over for a box. "Nothing found for “…”" when
+      nothing scores 0.5.
+- **SAM 3 is held (E58):** its image encoder brings the host down
+  (SIGTRAP) under Electron 44 (utility process and `ELECTRON_RUN_AS_NODE`
+  alike), not under Node 26; EfficientSAM3 runs fine, so it is the phrase
+  model meanwhile (`SAM3_PHRASE` in shared/ai.ts; on: SAM 3 offered first).
+- Measured (M2 Pro, CPU; CoreML compiled SAM 3's encoder for 10+ min and
+  was stopped): SAM 3 under Node 17.7 s an embedding, 2.3 s a phrase, 5.1
+  GB peak; EfficientSAM3 1.75 s and 1.8 s, 2.4 GB. In the app with
+  EfficientSAM3: "tree" 4.3 s, then 2.3 s a phrase. On the sky photo SAM 3
+  found trees (6), power lines and clouds; EfficientSAM3 only the tree.
+- [ ] **S** · Turn `SAM3_PHRASE` on once the engine answers E58.
+
+### Pass 112 — Gemma: download and run, the killswitch, the heavy gate · 5 pts ✅
+
+- [x] **M** · Gemma 4 E2B (`main/ai/brain.ts`): the GGUFs and llama-server
+      from pixl-auto's `brains.json` pins (Hugging Face at a commit, the
+      GitHub release; sha-checked by the model store's resumable fetch),
+      the archive unpacked with `tar`; started on demand by
+      `startLocalServer` (127.0.0.1, a free port, a random key per launch,
+      Metal / Vulkan with every layer on the GPU), `max_tokens.plan` 3000;
+      stopped after 5 min idle, when Playroom rests, when AI or Gemma is
+      switched off, and killed synchronously on quit (checked: quitting
+      mid-benchmark leaves no server). Size and licences shown.
+- [x] **M** · The heavy models (the owner, 2026-10-08): Gemma and SAM 3 are
+      off by default and turn on only after a sustained-load benchmark
+      passes on this computer (`shared/heavy.ts`: the mean run, the slowdown
+      from the second run to the last, the model's memory against the
+      computer's, 8 GB at least); a failed or other-computer benchmark
+      keeps it off. Gemma: five naming runs of a drawn picture; SAM 3:
+      three fresh embeddings and a phrase each (not offered while held, E58).
+- [x] **M** · The killswitch: Settings → AI models → "Use AI models" (on by
+      default). Off: every AI job and click-to-select refused, the
+      capabilities say why (smart looks' `off`), Gemma stopped; a RAW's
+      develop keeps DemosaicNet and PMRID (the owner).
+- Fixed on the way: the startup clean-up of retired models would have
+  deleted Gemma's folder (and a held NAFNet SIDD's) on every launch
+  (`keptBesides`).
+- In the app (M2 Pro, idle): the benchmark passed, 10.8 s a photo, steady,
+  3.6 GB of 16, loaded in 8.1 s. The first try failed because a stray
+  CoreML compile was running beside it (since killed).
+- [ ] **S** · Owner: the benchmark on the M1 8 GB; an app-downloaded
+      llama-server under a signed build.
+
+### Pass 113 — Naming and the chips · 5 pts ✅
+
+**Not in 0.4.0-beta** (the owner, 2026-10-09): Gemma and llama-server don't
+ship in this release, nor SAM 3 (EfficientSAM3 and the rest do).
+`GEMMA_SHIPS = false` (`shared/heavy.ts`): a packaged build offers no
+download, no Settings card, no background naming; a development build has
+all of it. Turning it on for a release is the one constant (with the M1 and
+signed-build checks of Pass 112).
+
+- [x] **L** · Naming, the guide's corrected call (§1a, 2026-10-09, E56):
+      the first line of pixl-auto's `SYSTEM` plus the finders only, the PC
+      check's `NAME_PROMPT` word for word, the plan schema with no edits,
+      `checkPlan()` drops flagged targets; label, subject and intent kept,
+      finder and box ignored (`shared/naming.ts`, `BrainStore.name`). The
+      picture: the photo unedited, upright, 1024 px (a RAW's embedded
+      preview). The benchmark now times this same call.
+- [x] **M** · In the background (`main/ai/namer.ts`): newest arrivals first,
+      only on mains power, after a minute with nobody at the computer, with
+      Gemma and AI on; it stops after the photo in hand when anyone comes
+      back, and stops Gemma's server after the batch. A photo with no usable
+      answer isn't asked again by itself. The open photo can be named at
+      once from its Masks pane.
+- [x] **M** · Kept in the index (migration 14), the `.pixl` project's
+      `meta.names` and the sidecar (where the photo has one; naming makes
+      none), the user's changes marked so naming never overwrites them.
+- [x] **M** · The chips atop the Masks pane: ★ the subject, the intent as
+      the tip; a tap masks it by Playroom's own map (sky/vegetation/water →
+      DINOv2; hair/face/skin/clothes → Selfie; eyes/lips/brows/teeth →
+      faces; the subject → U²-Netp; one person among several → a click;
+      anything else → Find by name); × takes one off, + types one (the same
+      map).
+- [x] **S** · The owner: names searchable in the Library ("sea"): each name,
+      its words' other number, its scene class ("lake" → water), a few close
+      words ("ocean" ↔ "sea", "forest" → trees) and Gemma's sentence.
+- In the app (M2 Pro): 4 scenery photos named in the background in 42–60 s
+  (with the server's start), the server stopped after; the sky chip made
+  its mask in 4 s. Gemma's names now name things: "city skyline, distant
+  buildings", "foreground roof, utility wires", "woman ★, woman's shirt,
+  sofa".
+- Tried and dropped: a whitespace-free grammar for speed. Gemma writes the
+  field syntax into its labels without the space it expects after a colon;
+  the speed has to come from `brain.name()`'s shorter answer (engine 0.20).
+
+### Pass 114 — Cull signals · 4 pts ✅
+
+- [x] **M** · Per photo, cached (`main/cull.ts`, `shared/cull.ts`, index
+      migration 15): one unedited picture (2048 px, a RAW's embedded
+      preview) read once by `analyze` for exposure (luma percentiles 1/5/50/
+      95/99, the worst channel's crushed and blown fractions), the 64-bit
+      `phash`, and `focus` over the whole frame and inside U²-Netp's subject
+      plane (Laplacian variance, gradient energy, coherence and angle: blur
+      runs perpendicular); Face Mesh's `eyeBlinkLeft`/`Right` per face as a
+      hint only. Duplicates: `phashGroups` (Hamming ≤ 10 bits the same
+      picture, the guide's measure). The models run only with AI on and
+      their files here (nothing downloaded for this); the key names the
+      file version and the models used, so a model arriving later measures
+      again. In the background on Gemma's terms (mains power, a minute
+      idle), newest first.
+- In the app (M2 Pro): 0.3–0.6 s a photo with both models; a re-encoded
+  1600 px copy hashed the same as its original; the portrait's face found
+  with eyes open (0.10/0.06); landscapes without a salient subject keep the
+  whole-frame focus only.
+
+### Pass 115 — Cull suggestions in the Library · 4 pts ✅
+
+- [x] **M** · Suggested rejects (`shared/cullsuggest.ts`, `state/cull.ts`):
+      reasons from templates. In a burst (the same picture by its hash):
+      "Subject soft · focus 18% of the burst's best", "Motion blur · …",
+      "Duplicate of IMG_…". On any photo: "Subject soft · the background is
+      sharper", "Too dark · 31% crushed", "Too bright · 22% blown", "Eyes
+      closed? (0.91)" (a hint). Absolute sharpness across different photos
+      isn't judged. The thumbnail is dimmed and grey; on hover its colour
+      comes back with the reason, Keep and Reject. Filters → "Suggested
+      rejects only" measures what isn't measured yet, there and then; the
+      line above the grid counts them, with "Reject all" (Shift+X; Shift+K
+      keeps). Never deletes. A "Culling n of m" indicator atop the window
+      while signals are measured (the owner). Settings → Projects &
+      interface → "Suggest rejects in the Library" (on).
+- [x] **S** · The user's word wins for good: any star, a pick or Keep (kept
+      in the index and the `.pixl` project's `meta.cullKeep` / sidecar) means
+      never suggested; in a burst the starred or picked frame is the best
+      (Keep only says "not a reject"). Thresholds learn from the user's
+      keeps and rejects (balanced accuracy, 5 of each at least, each within
+      bounds): burst softness, subject softness, darkness, blown highlights,
+      blink.
+- In the app: the soft re-encoded copy suggested as "Soft · focus 25% of
+  the burst's best", a second copy of a photo as its duplicate; Keep took
+  it off at once.
+
+### Pass 116 — UI performance: profile, then speed up · 5 pts ✅
+
+The owner, 2026-10-08: the engine's own speed-ups come with its next
+update; before 0.4.0-beta ships, Playroom's side is profiled and made
+faster. Measured on the owner's real use (2026-10-09): a copy of the card's
+`DCIM/100CANON` (259 files, 246 CR2 with their projects and sidecars) with
+Full HDR on, on the M2 Pro.
+
+- [x] **S** · `scripts/perf.mjs`: the built app driven by Playwright from a
+      fresh profile, per scenario a renderer and a main `.cpuprofile` (a
+      `PLAYROOM_PROFILE_BUILD=1` build keeps the names), frame times, long
+      tasks and long animation frames, IPC round trips with their bytes
+      (`PLAYROOM_IPC_TRACE=1`), what main sends, the top self time; then a
+      **rest** check: minimised, the hosts must go about 60 s after their
+      work, the top bar say "Engine offline", the app sit idle; shown, the
+      engine come back. `PLAYROOM_ASSUME_FOCUSED=1`: a window a script
+      launched can't be the active app on macOS. Scenarios: open the folder,
+      scroll the grid, open a photo, drag Exposure, the 1:1 pan, a radial
+      mask, the filmstrip, an export.
+- [x] **M** · Before (the committed Pass 115), on the folder: the UI was
+      already smooth (frame p95 10 ms at 120 Hz, no frame held past 66 ms);
+      the waits are the engine's (all thumbnails 48 s, the first 24 at 10 s;
+      a settled Full HDR render 1.06 s after a drag; the 1:1 region of a
+      24 MP RAW 14.8 s; an export 5.7 s). Main's thread did pixel work: the
+      float frames' headroom guard and its PNG (96 ms opening the folder,
+      58 ms in masks), Full HDR's SDR companion's deflate on every settled
+      render (36 ms each), and 300 `mkdirSync` (170 ms) opening a folder.
+- [x] **L** · Fixes, each measured: the headroom guard and the companion's
+      PNG in the pixels worker (samples handed over, not copied); a photo's
+      cache folder made where it is written, off the main thread; HDR badges
+      batched once a frame with the thumbnails. Main-thread pixel work:
+      opening the folder 204 → 8 ms, masks 113 → 0, a drag 35 → 0; main's
+      busy time down 28–41 % there. Wall times are the engine's and moved
+      within noise.
+- [x] **M** · The rest, found by the rest check: a host was let go between
+      two thumbnails and started again for the next (the thumbnail queue,
+      and cull measuring, now keep the engines like an export does); the
+      launch's first look started the 60 s "hidden" timer before the window
+      was shown, and only a focus event cancelled it (now looked at again
+      when due). A resting engine says `resting`: the top bar shows "Engine
+      offline", yellow (the owner), not "ready". Minimised: hosts gone at
+      65 s, the app at 0 % CPU and ~830–1000 MB (main ~400–480 MB of which
+      only 19 MB is its JS heap: Electron's own), no llama-server; shown
+      again, ready in 0.7–1.2 s.
+- Left, measured and small: the masks overlay compiles its shaders on first
+  show (~30 ms in the renderer); each drag tick sends the whole recipe
+  (4.7 KB) and gets an 8.7 KB render event: cheap. The folder watcher's
+  test is timing-flaky under the full suite's load (passes alone).
+
+### Pass 117 — Release · 3 pts
+
+- [x] **S** · The packaged build checked (2026-10-09, an unsigned `--dir`
+      package, ad-hoc signed to run): `gemmaInBuild` compiles to
+      `return !packaged` and the model store's `held("sam3")` to `true`; run
+      40 s on a fresh profile, no llama-server, no Gemma folder, no SAM 3;
+      only DemosaicNet (Bayer) fetched. The package also carried the repo's
+      `docs/`, `site/`, `supabase/` and, from a local checkout, `.claude/`
+      (the agents' worktrees) and the gitignored `ENGINE-REQUESTS.md`:
+      excluded in `electron-builder.yml` (1.1 GB → 401 MB locally).
+- [x] **S** · What's new 0.4.0-beta final (both engines; Gemma and SAM 3
+      out), and the README (Suggested rejects, the 0.19 masks, the models,
+      the rest and "Engine offline", `scripts/perf.mjs`).
+- [ ] **S** · Owner: upload the two missing models before the release.
+      `publish-models` handled only shipped models, so `--only` matched nothing
+      ("0 models checked"). It now mirrors on-demand ones from their pinned
+      upstream files, checked against the roster's SHA-256 (dry run verified
+      2026-10-09).
+      1. `npx wrangler login` (an account with the `pixl-models` R2 bucket).
+      2. `node scripts/publish-models.mjs --only birefnet-lite,efficientsam3-ev-m --dry-run`:
+         downloads BiRefNet lite (224 MB, from its GitHub release) and SAM 3's
+         BPE vocabulary (1.4 MB, from facebookresearch/sam3 at a commit), and
+         checks both. EfficientSAM3's three networks stay on Hugging Face.
+      3. The same with `--bucket pixl-models` in place of `--dry-run`: uploads
+         to `<id>/1.0.0/<file>`.
+      4. `node scripts/publish-models.mjs --check`: every file the app offers
+         is served (expect "every file the app offers is served"; today 2
+         missing).
+      5. In the app, on a fresh profile: Fine subject, then Find by name, each
+         downloads and runs.
+      6. Every release from now on: `--check` before tagging.
+- [x] **S** · Before the release (the owner): Playroom pings the update
+      server as it opens (and every four hours), and a newer version shows
+      "Update available!" with What's new: the new version's notes, from the
+      feed (`build/release-notes.md` → electron-builder `releaseInfo`, written
+      by `pnpm release-notes` in the build and release.yml), its download
+      progress and Restart to update. Once per version per stage, quiet
+      while the dialog is open. 0.4.0-beta's notes say plainly where local
+      LLMs stand (not in this release: 3–4 GB and 10–20 s a photo; still
+      working out how they fit), and what is coming: our own language
+      models, MCP, more Photoshop- and Lightroom-like tools, more speed, and
+      a cookie.
+- [x] **M** · The engine's viewing guide (`viewing-0.19.md`, 2026-10-09),
+      after Playroom's 1:1 trace: Full HDR 1:1 tiles as F16 frames over the
+      preview port (no AVIF and gain map: encode 0.3–0.5 s → 0.02 s); a
+      quick PPG master shown first while DemosaicNet's is made, then
+      cross-faded in (first 1:1 of a RAW 6.9 s → 2.4 s); the laid working
+      copy cached with its master (an edited photo's first 1:1 after
+      reopening 16.6 s → 4.0 s). Also fixed by the trace: a 0.9999… zoom
+      refused in Full HDR, repeated tile asks cancelling each other, and a
+      stale denoise remake asking for a model that isn't there. Left: laying
+      pixel steps only over a tile's region (the first ever 1:1 of an edited
+      photo still lays the whole frame, ~8 s), and the thumbnail path (48 s
+      for 259 RAWs).
+- [ ] **S** · Release-As 0.4.0-beta and the PR to main, on the owner's ask.
+
+---
+
+## Phase C: updates, the PIXL account and the beta (passes 23–26b)
+
+**Next after Phase N** (re-ordered 2026-10-08; top priority since
+2026-10-01): this phase comes before everything else still open below. It is
+listed out of number order.
 
 Next up, in order:
 
@@ -839,7 +1858,8 @@ Each release runs picture → mask → before → headroom → mask thumbnails
       (`render.ts:1017-1072`). Uncompressed TIFF where cICP isn't needed, a
       cheap encoder for the stats pass, JPEG tiles.
       _Done: the stats pass is an uncompressed TIFF, 1:1 tiles are JPEG.
-      Left for E34: the PQ/HLG proxies and the gain-map master need cICP._
+      The PQ/HLG proxies and the gain-map master stay PNG: engine 0.18
+      answered E34 "no" (a TIFF has no place for CICP; use `Pixels` or PNG)._
 - [x] **S** · **Pixel steps**: `layOn` runs proxy then draft in sequence
       (`working.ts:344-357`), and `stepImage`/`sized()` write full-resolution
       16-bit PNG caches (`working.ts:113-172`). `Promise.all`; TIFF.
@@ -1058,14 +2078,12 @@ After: Pass 36.
 
 ---
 
-## Phase F — Develop features and phase leftovers (passes 40–52)
+## Phase F — Develop features and phase leftovers (passes 40–51)
 
 ### Pass 40 — Tone and detail · 5 pts
 
 - [ ] **L** · Tone curve: per-channel parametric (the region sliders are
       master only).
-- [ ] **M** · Sharpening/NR previews at fit size (today sharpening shows only
-      when its radius is ≥ half a proxy pixel, i.e. at 1:1).
 
 ### Pass 41 — Denoise and Enhance limits · 5 pts
 
@@ -1144,13 +2162,6 @@ with ExifTool. Needs sample files (Owner tasks).
 
 - [ ] **L** · Soft proofing: preview through the output profile (the gamut
       warning waits on E22).
-
-### Pass 52 — HDR on HDR displays · 3 pts
-
-After: Pass 32.
-
-- [ ] **L** · Show HDR photos as HDR on HDR displays (render PQ AVIF / PNG
-      cICP to the loupe); today they are tone mapped for SDR.
 
 ---
 
@@ -1436,6 +2447,16 @@ their size) are ruled out. Higher lossless effort gains nothing.
 Playroom work that starts once the engine request lands
 ([ENGINE-REQUESTS.md](ENGINE-REQUESTS.md)). Becomes a pass then.
 
+- [ ] **M** · Engine 0.20's data export (the engine's
+      `playroom-data-export.md`, 2026-10-08, in the owner's
+      `pixl-eye-review/guides`): a dev-build export of masks (first and
+      final, 16-bit grey, the full oriented frame), keep/reject shoots and
+      neutral edits into one folder with a `manifest.json`, the originals
+      referenced by SHA-256, never copied. The owner's photos only, never
+      committed or uploaded. Playroom picks the UI.
+- [ ] **S** · `brain.name()` (0.20): swap the naming call for it, its terse
+      answer several times faster; then decide `GEMMA_SHIPS`.
+
 - [ ] **S** · Drop `repairJpegExif` once JPEG EXIF is written correctly (E1).
       _Unblocked: 0.16.1 writes it once._
 - [ ] **S** · HEIC export and HEIC gain-map export (E2).
@@ -1458,9 +2479,6 @@ Playroom work that starts once the engine request lands
       _Done 2026-10-02 (engine 0.16): native Linear/Radial gradients (`gradients.ts`
       `gradientShape`), and a bidirectional gradient tool; only a gradient
       an older version gave an edge still goes as a plane._
-- [ ] **M** · Depth range mask (its picker entry is disabled) (E12).
-      _0.16 has the `DepthRange` shape; it waits on a depth map: a depth
-      model in the roster, or iPhone/ProRAW auxiliary depth images._
 - [ ] **M** · Smoothed range masks and an edge-aware brush in the tools (E13).
       _Half done in 0.16: Snap to edges (the engine's refine) on brushes,
       lassos and AI masks. Left: offer it on a colour/luminance range._
@@ -1481,9 +2499,12 @@ Playroom work that starts once the engine request lands
 - [ ] **M** · The develop view of an HDR edit graded as its HDR export is,
       tone mapped after the grade (E40); compile it with `hdr` then.
 - [ ] **S** · Highlight recovery on RAW, in the develop (E15).
+      _0.18 rolls Develop's highlights off through a knee, and Pass 94 keeps a
+      RAW's headroom in a Scene float master; a highlight fill is engine 0.19
+      (its Pass 107)._
 - [ ] **S** · Raw-domain noise reduction controls (E16).
+      _Engine 0.19 plans PMRID as Scene's `mosaic_denoise`._
 - [ ] **S** · Pixel steps' image caches as uncompressed TIFF overlays (E33).
-- [ ] **S** · PQ/HLG proxies and the gain-map master as uncompressed TIFF (E34).
 - [ ] **S** · Engine frames in crash reports: feed the binding's published
       debug symbols to `scripts/upload-symbols.mjs` (E35).
 - [ ] **S** · ProRAW and DNG gain maps (E17).
@@ -1498,11 +2519,11 @@ Playroom work that starts once the engine request lands
 - [ ] **M** · Gamut warning in soft proofing (E22).
 - [ ] **XL** · Merge to HDR, panorama, HDR panorama, focus stacking (E23).
 - [ ] **S** · AI denoise (SCUNet) and Enhance (FBCNN) on the accelerator
-      (E26, E27).
+      (E26, E27). _Engine 0.19 plans a ≤ 4-D SCUNet export for CoreML, and
+      static shapes (`SessionSpec.dimensions`)._
 - [ ] **M** · Select Sky in one click (E28). _Since 0.16 the Sky tool asks
       for a click on the sky and SAM 2.1 selects it (`SKY_BY_CLICK` in
       `shared/ai.ts`); turn the flag off when a sky model ships._
-- [ ] **L** · AI Remove (generative remove) in the Heal tool (E29).
 - [ ] **L** · Select People: face, skin, hair, eyes, lips, teeth, clothes
       (E30). _Since 2026-10-02 they are classes (`shared/concepts.ts`): the
       masks menu's People group asks for a click on each and SAM 2.1 keeps
@@ -1663,7 +2684,7 @@ Kept for reference: what was built, and where.
       `hasEnhance()` true; Enhance runs on the engine's bundled ONNX Runtime.
 - [x] Red-eye / pet-eye correction: done in Phase 6 (dragged ellipses).
 - [x] Healing / clone / content-aware fill: done in Phase 6. Generative remove
-      waits on E29; visualise spots is Pass 38.
+      is Pass 92 (MI-GAN, engine 0.18); visualise spots is Pass 38.
 - [x] Lens corrections (profiles, manual, defringe): Phases 4 and 12. File
       corrections are Passes 47–49; fisheye waits on E18.
 - [x] Transform/Upright: Phase 5. Spots under a warp are Pass 39.

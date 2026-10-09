@@ -5,6 +5,8 @@
  */
 import type { Collection, LibrarySource } from '../../../shared/ipc'
 import { keywordLabel } from '../../../shared/keywords'
+// Straight from shared (not ./i18n): tested in Node, without the preload's bridge.
+import { t } from '../../../shared/i18n'
 
 /** What a thumbnail carries when dragged: the keys of the photos it stands for. */
 export const KEYS_MIME = 'application/x-playroom-keys'
@@ -39,11 +41,15 @@ export function isUnder(path: string, folder: string): boolean {
 export function sourceTrail(src: LibrarySource, collections: Collection[]): string[] {
   switch (src.kind) {
     case 'folder':
-      return [src.deep ? `${folderName(src.path)} and subfolders` : folderName(src.path)]
+      return [
+        src.deep
+          ? t('{{folder}} and subfolders', { folder: folderName(src.path) })
+          : folderName(src.path)
+      ]
     case 'keyword':
-      return ['Keywords', ...keywordLabel(src.path).split(' › ')]
+      return [t('Keywords'), ...keywordLabel(src.path).split(' › ')]
     case 'duplicates':
-      return ['Duplicates', src.folder ? folderName(src.folder) : 'Whole library']
+      return [t('Duplicates'), src.folder ? folderName(src.folder) : t('Whole library')]
     case 'collection': {
       const byId = new Map(collections.map((c) => [c.id, c]))
       const trail: string[] = []
@@ -52,7 +58,7 @@ export function sourceTrail(src: LibrarySource, collections: Collection[]): stri
         seen.add(c.id)
         trail.unshift(c.name)
       }
-      return ['Collections', ...(trail.length ? trail : ['(removed)'])]
+      return [t('Collections'), ...(trail.length ? trail : [t('(removed)')])]
     }
   }
 }

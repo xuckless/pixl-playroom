@@ -1,5 +1,7 @@
+import { t } from '../shared/i18n'
 import { app, BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
+import { rm } from 'fs/promises'
 import { join } from 'path'
 import { MAIN_DIR } from './dirs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -7,6 +9,10 @@ import icon from '../../resources/icon.png?asset'
 import dockIcon from '../../resources/icon-dock.png?asset'
 import { startCrashReporting } from './crash'
 import { onRenderScale, settleScale, watchDisplay } from './display'
+import { sweepEngineTemps, watchRest } from './rest'
+import { Namer } from './ai/namer'
+import { CullMeasurer } from './cull'
+import { gemmaInBuild } from '../shared/heavy'
 import { EngineClient } from './engine/client'
 import { SelectService } from './select/service'
 import { setBrushSnapper } from './brushes'
@@ -17,6 +23,11 @@ import { AiJobs } from './ai/jobs'
 import { applyMaskResult } from './ai/apply'
 import { SegmentRunner } from './ai/segment'
 import { DenoiseRunner } from './ai/denoise'
+import { DISPLAY_SETTING_KEY, watchDisplayHdr } from './hdrdisplay'
+import { INPAINTER_MODEL, setInpainter } from './ai/inpainter'
+import { DEMOSAIC_MODEL, setRawModels } from './ai/rawdevelop'
+import { AiSwitchStore, setSwitchStore } from './ai/switches'
+import { BrainStore } from './ai/brain'
 import { ModelStore } from './ai/models'
 import { EnhanceRunner } from './enhance'
 import { Exporter } from './exporter'
@@ -29,6 +40,7 @@ import { startGate } from './gate'
 import { Library } from './library'
 import { OriginalEmbedder } from './project/embed'
 import { buildMenu } from './menu'
+import { onLanguage, startLanguage } from './i18n'
 import {
   handOffOpens,
   onOpenPaths,
@@ -138,7 +150,18 @@ function createWindow(): void {
     show: false,
     // The launch splash's black, so the window never flashes another colour first.
     backgroundColor: '#000000',
-    autoHideMenuBar: true,
+    // No title bar: the window's buttons sit in the top bar (its drag
+    // region), 36 px tall. macOS: the traffic lights at its left. Windows:
+    // its own minimise, maximise and close at the right, in the bar's colour
+    // (the menu names sit in the bar too: shell/WindowMenus.tsx).
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 14, y: 11 } }
+      : process.platform === 'win32'
+        ? {
+            titleBarStyle: 'hidden' as const,
+            titleBarOverlay: { color: '#09090b', symbolColor: '#b8b5c7', height: 36 }
+          }
+        : {}),
     title: 'Pixl Playroom',
     // macOS takes the bundle's .icns; elsewhere the window carries the mark.
     ...(process.platform !== 'darwin' ? { icon } : {}),
@@ -188,6 +211,10 @@ function createWindow(): void {
     win.loadFile(join(MAIN_DIR, '../renderer/index.html'))
   }
   watchDisplay(win)
+  void index
+    .getSetting(DISPLAY_SETTING_KEY)
+    .catch(() => null)
+    .then((stored) => watchDisplayHdr(win, stored))
 }
 
 /** About Pixl Playroom: the app's version and the engine it runs on. */
@@ -195,7 +222,9 @@ function setAbout(engineVersion?: string): void {
   app.setAboutPanelOptions({
     applicationName: 'Pixl Playroom',
     applicationVersion: app.getVersion(),
-    credits: engineVersion ? `Powered by PIXL Engine ${engineVersion}` : 'Powered by PIXL Engine',
+    credits: engineVersion
+      ? t('Powered by PIXL Engine {{version}}', { version: engineVersion })
+      : t('Powered by PIXL Engine'),
     copyright: 'Copyright © 2026 Syed Ali (PIXL Foundation)',
     iconPath: icon
   })
@@ -223,6 +252,13 @@ app.whenReady().then(() => {
   // The background engine waits off the launch's path: it starts with the
   // first work for it (a thumbnail, a probe), or a few seconds in.
   setTimeout(() => bgEngine.ensureStarted(), 3000)
+  // Engine temps a killed host left behind (HR-0.19-2), off the launch's path.
+  setTimeout(() => {
+    void sweepEngineTemps(paths.cacheRoot()).then(
+      (n) => n > 0 && log.info(`swept ${n} stale engine temp file(s)`),
+      () => undefined
+    )
+  }, 30_000).unref()
   // Thumbnails nothing names any more, once the launch has settled.
   setTimeout(() => {
     void index
@@ -231,6 +267,7 @@ app.whenReady().then(() => {
       .catch((err) => log.warn('pruning thumbnails failed', err))
   }, 20_000)
   void engine.whenStarted().then(() => setAbout(engine.getStatus().version))
+  onLanguage(() => setAbout(engine.getStatus().version))
   const planes = new PlaneStore(index)
   const library = new Library(index, bgEngine, planes)
   sessions = new DevelopSessions(library, engine, bgEngine)
@@ -240,6 +277,39 @@ app.whenReady().then(() => {
     if (e.name === 'project') embedder.request(e.key)
   })
   const models = new ModelStore(index, () => bgEngine.getStatus())
+  // The killswitch and the heavy models' switches (shared/heavy.ts), and Gemma.
+  const switches = new AiSwitchStore(index)
+  setSwitchStore(switches)
+  const brain = new BrainStore(models, switches)
+  // A Remove bakes with MI-GAN once it is downloaded (pixels/heal.ts).
+  setInpainter(async () =>
+    (await models.installed(INPAINTER_MODEL)) ? models.ref(INPAINTER_MODEL) : null
+  )
+  // A RAW's full-size develop: DemosaicNet once it is here, PMRID when asked.
+  setRawModels({
+    installed: (id) => models.installed(id),
+    ref: (id, provider) => models.ref(id, provider),
+    withCpuFallback: (ids, make, signal) => models.withCpuFallback(ids, make, signal),
+    canRun: async () => {
+      // What the engine can do is known once it has started.
+      if (bgEngine.getStatus().status === 'starting') {
+        bgEngine.start()
+        await bgEngine.whenStarted()
+      }
+      return bgEngine.getStatus().enhance === true
+    },
+    fetch: (id) => void models.autoFetch([id])
+  })
+  // Off the launch's path: retired models' files off the disk, the
+  // thumbnails 0.3's before/after (the previous engine's) kept, and the
+  // Bayer DemosaicNet (2 MB) fetched for RAWs.
+  setTimeout(() => {
+    void models
+      .prune()
+      .catch((err) => log.warn('model clean-up failed', (err as Error).message))
+      .then(() => models.autoFetch([DEMOSAIC_MODEL.Bayer]))
+    void rm(paths.legacyPreviews(), { recursive: true, force: true }).catch(() => undefined)
+  }, 20_000).unref()
   const lenses = new LensProfileStore()
   void lenses.start()
   const exporter = new Exporter(library, sessions, bgEngine)
@@ -266,7 +336,42 @@ app.whenReady().then(() => {
     async (key) => (await library.photoRow(key)).name,
     (e) => applyMaskResult(e, { library, sessions: sessions!, planes })
   )
+  // AI switched off in Settings: no job starts (a RAW's develop keeps its models).
+  ai.gate = () => switches.enabled()
+  // Gemma names the library's photos while nobody is at the computer, on mains power.
+  const namer = new Namer(index, library, brain, switches)
+  if (gemmaInBuild(app.isPackaged)) namer.start()
+  // The cull signals, measured on the same terms (Pass 115 suggests from them).
+  const cull = new CullMeasurer(index, library, bgEngine, aiEngine, models, switches)
+  cull.start()
+  // The engine's safe-shutdown advisory: hosts go while Playroom is out of
+  // the way, an export or a queued AI batch finishing first.
+  watchRest(
+    [
+      { engine },
+      // Queued work finishes first: an export, a folder's thumbnails, a
+      // batch of cull signals (asked for, or the idle one under way); then
+      // the hosts rest instead of starting again for each next piece.
+      { engine: bgEngine, busy: () => exporter.busy || library.busy || cull.busy },
+      { engine: aiEngine, busy: () => ai.busy || cull.busy },
+      { engine: selectEngine }
+    ],
+    () => engine.ensureStarted(),
+    // Gemma's server goes too, unless it is naming (the namer stops it after).
+    () => {
+      if (!brain.isBusy()) void brain.stop()
+    }
+  )
+  // Quitting: Gemma's server goes with Playroom, never left running.
+  app.on('will-quit', () => {
+    namer.stop()
+    cull.stop()
+    brain.killNow()
+  })
+  process.on('exit', () => brain.killNow())
   registerIpc({
+    namer,
+    cull,
     index,
     embedder,
     planes,
@@ -279,12 +384,16 @@ app.whenReady().then(() => {
     aiEngine,
     models,
     lenses,
-    select
+    select,
+    switches,
+    brain
   })
   onOpenPaths((paths) => mainWindow?.webContents.send(IPC.app.openPaths, paths))
 
+  startLanguage()
   buildMenu()
   onRenderScale(buildMenu)
+  onLanguage(buildMenu)
   createWindow()
   startPolicy()
   void setupUpdater().catch((err) => log.warn('updater setup failed', err))

@@ -17,8 +17,15 @@ import { normalisePixelStep, type PixelStep } from './pixels'
 import { normaliseEdge, type MaskEdge } from './maskedge'
 import { normalisePrompt, PROMPT_VIAS, type PromptGeometry, type PromptVia } from './prompt'
 import { conceptOf, type ConceptId } from './concepts'
+import { isFacePart, type FaceFound } from './faceparts'
+import { tk } from './i18n'
 
-export const RECIPE_VERSION = 2
+/**
+ * 3 (engine 0.18): a RAW's untouched default sharpening takes the edge mask
+ * (masking 50, HR-0.18-2). 4: Smoothing, 100 for new photos and masks, 0
+ * for edits made before it (so they look as they did).
+ */
+export const RECIPE_VERSION = 4
 
 export const HSL_BANDS = [
   'red',
@@ -109,6 +116,13 @@ export interface PresenceSetting {
   saturation: number
   /** −100…100: turns every hue (a mask's Hue slider; the whole photo has HSL for this). */
   hue: number
+  /**
+   * 0…100: how much the colour and tone adjustments' change is smoothed where
+   * the picture is flat (engine 0.18's `smoothing`, strength = /100), so a
+   * hazy sea or a JPEG sky stops going blotchy. Applied when a slider is let
+   * go, never while it drags. Not scaled by a mask's Amount.
+   */
+  smoothing: number
 }
 
 export interface CurvePointSetting {
@@ -163,6 +177,12 @@ export interface DetailSetting {
   noiseColor: number
   noiseColorDetail: number
   /**
+   * A Bayer RAW's noise taken out of its sensor data before the demosaic
+   * (engine 0.19's `mosaic_denoise`, PMRID, once downloaded): seen at 100%
+   * and in the export, which are developed at full size. Off unless chosen.
+   */
+  rawDenoise: boolean
+  /**
    * AI noise reduction as it was before it became a pixel step (`pixels`):
    * a photo whose recipe still has it on is given the step it described when
    * it opens (renderer lib/denoise.ts), and it goes off. Nothing else reads it.
@@ -170,7 +190,26 @@ export interface DetailSetting {
   ai: AiDenoiseSetting
 }
 
-export type AiDenoiseModel = 'scunet-color-real' | 'drunet-color'
+export type AiDenoiseModel = 'nafnet-sidd-w32' | 'drunet-color'
+
+/**
+ * SCUNet, retired with engine 0.19 (its files go from every disk): what a
+ * saved setting, a step's params or a look may still name.
+ */
+export const RETIRED_DENOISE = 'scunet-color-real'
+
+/**
+ * NAFNet SIDD, SCUNet's successor in engine 0.19, is held back: as shipped it
+ * turns flat dark areas into bright noise (ENGINE-REQUESTS E55). While held,
+ * nothing offers it and whatever named SCUNet runs DRUNet; turned on, the
+ * blind choice is NAFNet SIDD again everywhere.
+ */
+export const NAFNET_DENOISE = false
+
+/** A denoise model as saved, today: SCUNet (or anything unknown) is the blind denoiser there is. */
+export function aiDenoiseModel(v: unknown): AiDenoiseModel {
+  return v === 'drunet-color' || !NAFNET_DENOISE ? 'drunet-color' : 'nafnet-sidd-w32'
+}
 
 export interface AiDenoiseSetting {
   enabled: boolean
@@ -268,8 +307,15 @@ export interface BrushComponent extends ComponentBase {
 
 /** A model's mask, as what to ask for again (see `BrushComponent.source`). */
 export type BrushSource =
-  | { kind: 'segment'; target: 'subject' | 'background' | 'sky' }
+  /** `fine`: BiRefNet lite's cut-out (hair, fur), not U²-Netp's quick one. */
+  | {
+      kind: 'segment'
+      target: 'subject' | 'background' | 'sky' | 'vegetation' | 'water'
+      fine?: true
+    }
   | { kind: 'person'; part: string }
+  /** Found by a phrase (SAM 3 or EfficientSAM3, engine 0.19): found again by the same words. */
+  | { kind: 'phrase'; text: string }
   /**
    * SAM 2.1 from clicks, a box, strokes or a lasso, and the object's name
    * when it has one. `prompt` is what it was asked (base-frame fractions),
@@ -288,6 +334,14 @@ export type BrushSource =
 export interface PolygonComponent extends ComponentBase {
   kind: 'polygon'
   points: { x: number; y: number }[]
+  /**
+   * More outlines beside `points`, all filled even-odd: a face part's other
+   * eye, the mouth cut out of the lips, other faces' (shared/faceparts.ts).
+   * A lasso drawn by hand has none.
+   */
+  rings?: { x: number; y: number }[][]
+  /** A face part (engine 0.19's `faces`): every face's outline, and which is shown. */
+  found?: FaceFound
 }
 
 /** A colour and/or luminance range (the engine's HSL key), keyed in Display P3. */
@@ -351,6 +405,32 @@ export interface BidirectionalComponent extends ComponentBase {
 
 export type GradientComponent = LinearComponent | RadialComponent | BidirectionalComponent
 
+/**
+ * A depth range: the part of the photo between two distances, from a depth
+ * map a model made of it (Depth Anything V2: disparity, normalised per
+ * photo, so 255 is the nearest thing in it and 0 the farthest). The map is
+ * an 8-bit grey PNG in the base frame, held as a brush's plane is (`png`
+ * here, by `ref` across IPC). `near` and `far` are 0…100 of the photo's
+ * depth, 0 the nearest; `softness` 0…100 how far past them it fades.
+ */
+export interface DepthComponent extends ComponentBase {
+  kind: 'depth'
+  width: number
+  height: number
+  png: string
+  ref?: string
+  near: number
+  far: number
+  softness: number
+}
+
+/** A component that carries a grey plane of its own (a painted or model mask, a depth map). */
+export type PlaneComponent = BrushComponent | DepthComponent
+
+export function hasPlane(c: MaskComponentSetting): c is PlaneComponent {
+  return c.kind === 'brush' || c.kind === 'depth'
+}
+
 export type MaskComponentSetting =
   | BrushComponent
   | PolygonComponent
@@ -358,6 +438,7 @@ export type MaskComponentSetting =
   | LinearComponent
   | RadialComponent
   | BidirectionalComponent
+  | DepthComponent
 
 /**
  * A mask's sliders before version 2, when a mask had its own small set:
@@ -535,7 +616,15 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     gainMap: 'base',
     wb: { mode: 'as-shot', temperature: 0, tint: 0, preset: null },
     basic: { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 },
-    presence: { texture: 0, clarity: 0, dehaze: 0, vibrance: 0, saturation: 0, hue: 0 },
+    presence: {
+      texture: 0,
+      clarity: 0,
+      dehaze: 0,
+      vibrance: 0,
+      saturation: 0,
+      hue: 0,
+      smoothing: 100
+    },
     toneCurve: {
       highlights: 0,
       lights: 0,
@@ -564,12 +653,14 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       sharpenAmount: isRaw ? 40 : 0,
       sharpenRadius: 1,
       sharpenDetail: 25,
-      sharpenMasking: 0,
+      // A RAW sharpens edges, not the denoised grain of flat areas (HR-0.18-2).
+      sharpenMasking: isRaw ? 50 : 0,
       noiseLuminance: 0,
       noiseLuminanceDetail: 50,
       noiseColor: isRaw ? 25 : 0,
       noiseColorDetail: 50,
-      ai: { enabled: false, model: 'scunet-color-real', strength: 100 }
+      rawDenoise: false,
+      ai: { enabled: false, model: aiDenoiseModel(RETIRED_DENOISE), strength: 100 }
     },
     lens: defaultLens(),
     effects: {
@@ -631,12 +722,27 @@ function fill<T>(base: T, value: unknown): T {
 export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   const base = defaultRecipe(isRaw)
   const r = fill(base, value)
+  const saved = isObject(value) && typeof value.version === 'number' ? value.version : 1
+  // Before 3, a RAW's default sharpening had no edge mask: an untouched one
+  // takes the new default; one the user set is theirs.
+  const d = r.detail
+  if (
+    saved < 3 &&
+    isRaw &&
+    d.sharpenAmount === 40 &&
+    d.sharpenRadius === 1 &&
+    d.sharpenDetail === 25 &&
+    d.sharpenMasking === 0
+  )
+    d.sharpenMasking = 50
   r.version = RECIPE_VERSION
   if (r.gainMap !== 'hdr') r.gainMap = 'base'
   if (!isObject(value) || !isObject((value as Record<string, unknown>).profile)) {
     r.profile = base.profile
   }
   r.toneCurve = normaliseToneCurve(r.toneCurve)
+  r.calibration = normaliseCalibration(r.calibration)
+  d.ai.model = aiDenoiseModel(d.ai.model)
   r.geometry.crop = normaliseCrop(r.geometry.crop)
   r.layers = (r.layers ?? []).filter(isObject).map(({ overlayHue, ...withOld }) => {
     // Version 1's sliders become settings (`layerSettingsOf`) and go.
@@ -644,6 +750,7 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     delete l.adjust
     const settings = layerSettingsOf(withOld as unknown as Record<string, unknown>)
     settings.toneCurve = normaliseToneCurve(settings.toneCurve)
+    settings.calibration = normaliseCalibration(settings.calibration)
     return {
       ...l,
       id: typeof l.id === 'string' && l.id ? l.id : newId(),
@@ -677,7 +784,27 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     .map(normalisePointColor)
     .filter((p): p is PointColorSetting => p !== null)
     .slice(0, MAX_POINT_COLORS)
+  r.presence.smoothing = num(r.presence.smoothing, 100, 0, 100)
+  for (const l of r.layers)
+    l.settings.presence.smoothing = num(l.settings.presence.smoothing, 100, 0, 100)
+  // An edit made before Smoothing keeps its look: none, in the photo and its
+  // masks. An untouched photo takes the new default (it has nothing to smooth).
+  if (saved < 4 && isEdited(r, isRaw)) {
+    r.presence.smoothing = 0
+    for (const l of r.layers) l.settings.presence.smoothing = 0
+  }
   return r
+}
+
+/**
+ * Calibration held to its sliders' ±100 (HR-0.18-7): past them the mixer's
+ * matrix degenerates into coefficients that overflow (engine 0.18 refuses
+ * the render as `Invariant`).
+ */
+function normaliseCalibration(c: CalibrationSetting): CalibrationSetting {
+  return Object.fromEntries(
+    Object.entries(c).map(([k, v]) => [k, num(v, 0, -100, 100)])
+  ) as unknown as CalibrationSetting
 }
 
 const BLEND_MODES: BlendMode[] = [
@@ -763,16 +890,49 @@ function point(v: unknown, def: { x: number; y: number }): { x: number; y: numbe
   return isObject(v) ? { x: num(v.x, def.x), y: num(v.y, def.y) } : def
 }
 
+function ringsOf(v: unknown): { x: number; y: number }[][] {
+  if (!Array.isArray(v)) return []
+  return v
+    .filter((r): r is unknown[] => Array.isArray(r) && r.length >= 3)
+    .map((r) => r.map((p) => point(p, { x: 0, y: 0 })))
+}
+
+function foundOf(v: unknown): FaceFound | null {
+  if (!isObject(v) || !isFacePart(v.part) || !Array.isArray(v.faces)) return null
+  const faces = (v.faces as unknown[])
+    .filter(isObject)
+    .map((f) => {
+      const b = Array.isArray(f.bounds) ? (f.bounds as unknown[]) : []
+      return {
+        bounds: [0, 1, 2, 3].map((i) => num(b[i], 0)) as [number, number, number, number],
+        rings: ringsOf(f.rings)
+      }
+    })
+    .filter((f) => f.rings.length > 0)
+  if (faces.length === 0) return null
+  const face =
+    typeof v.face === 'number' && Number.isInteger(v.face) && v.face >= 0 && v.face < faces.length
+      ? v.face
+      : null
+  return { part: v.part, faces, face }
+}
+
 const MASK_MODES = ['Add', 'Subtract', 'Intersect'] as const
 
 function brushSource(v: unknown): BrushSource | null {
   if (!isObject(v)) return null
   if (
     v.kind === 'segment' &&
-    (v.target === 'subject' || v.target === 'background' || v.target === 'sky')
+    (v.target === 'subject' ||
+      v.target === 'background' ||
+      v.target === 'sky' ||
+      v.target === 'vegetation' ||
+      v.target === 'water')
   )
-    return { kind: 'segment', target: v.target }
+    return { kind: 'segment', target: v.target, ...(v.fine === true ? { fine: true } : {}) }
   if (v.kind === 'person' && typeof v.part === 'string') return { kind: 'person', part: v.part }
+  if (v.kind === 'phrase' && typeof v.text === 'string' && v.text.trim())
+    return { kind: 'phrase', text: v.text.trim().slice(0, 80) }
   if (v.kind === 'prompt') {
     const prompt = normalisePrompt(v.prompt)
     return {
@@ -817,13 +977,18 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         width: num(c.width, 1),
         height: num(c.height, 1)
       }
-    case 'polygon':
+    case 'polygon': {
       if (!Array.isArray(c.points)) return null
+      const rings = ringsOf(c.rings)
+      const found = foundOf(c.found)
       return {
         ...base,
         kind: 'polygon',
-        points: (c.points as unknown[]).map((p) => point(p, { x: 0, y: 0 }))
+        points: (c.points as unknown[]).map((p) => point(p, { x: 0, y: 0 })),
+        ...(rings.length ? { rings } : {}),
+        ...(found ? { found } : {})
       }
+    }
     case 'range':
       return {
         ...base,
@@ -864,6 +1029,21 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
         width: num(c.width, 512, 1),
         height: num(c.height, 512, 1)
       }
+    case 'depth': {
+      if (typeof c.png !== 'string') return null
+      const near = num(c.near, 0, 0, 100)
+      return {
+        ...base,
+        kind: 'depth',
+        png: c.png,
+        ...(typeof c.ref === 'string' && c.ref ? { ref: c.ref } : {}),
+        width: num(c.width, 1),
+        height: num(c.height, 1),
+        near,
+        far: num(c.far, 33, near, 100),
+        softness: num(c.softness, 10, 0, 100)
+      }
+    }
     default:
       return null
   }
@@ -901,26 +1081,26 @@ export const RECIPE_GROUPS = [
 export type RecipeGroup = (typeof RECIPE_GROUPS)[number]
 
 export const GROUP_LABELS: Record<RecipeGroup, string> = {
-  profile: 'Profile',
-  whiteBalance: 'White balance',
-  basicTone: 'Exposure & tone',
-  presence: 'Presence',
-  toneCurve: 'Tone curve',
-  hsl: 'HSL / B&W mix',
-  colorGrade: 'Colour grading',
-  detailSharpen: 'Sharpening',
-  detailNoise: 'Noise reduction',
-  lens: 'Lens corrections',
-  effects: 'Effects',
-  calibration: 'Calibration',
-  treatment: 'Treatment (colour / B&W)',
-  crop: 'Crop & straighten',
-  upright: 'Upright (perspective)',
-  orientation: 'Rotation & flip',
-  retouch: 'Spot removal & eyes',
-  localAdjustments: 'Masks & local adjustments',
-  custom: 'Advanced layers',
-  hdr: 'HDR editing (gain map)'
+  profile: tk('Profile'),
+  whiteBalance: tk('White balance'),
+  basicTone: tk('Exposure & tone'),
+  presence: tk('Presence'),
+  toneCurve: tk('Tone curve'),
+  hsl: tk('HSL / B&W mix'),
+  colorGrade: tk('Colour grading'),
+  detailSharpen: tk('Sharpening'),
+  detailNoise: tk('Noise reduction'),
+  lens: tk('Lens corrections'),
+  effects: tk('Effects'),
+  calibration: tk('Calibration'),
+  treatment: tk('Treatment (colour / B&W)'),
+  crop: tk('Crop & straighten'),
+  upright: tk('Upright (perspective)'),
+  orientation: tk('Rotation & flip'),
+  retouch: tk('Spot removal & eyes'),
+  localAdjustments: tk('Masks & local adjustments'),
+  custom: tk('Advanced layers'),
+  hdr: tk('HDR editing (gain map)')
 }
 
 /** Copy the chosen groups of `from` onto `to`, returning a new recipe. */
@@ -964,6 +1144,7 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.detail.noiseLuminanceDetail = f.detail.noiseLuminanceDetail
         r.detail.noiseColor = f.detail.noiseColor
         r.detail.noiseColorDetail = f.detail.noiseColorDetail
+        r.detail.rawDenoise = f.detail.rawDenoise
         r.detail.ai = f.detail.ai
         break
       case 'lens':
@@ -1178,13 +1359,13 @@ export function slimRecipe(
   refOf: (png: string) => string,
   known?: (ref: string, png: string) => void
 ): Recipe {
-  if (!r.layers.some((l) => l.components.some((c) => c.kind === 'brush' && c.png))) return r
+  if (!r.layers.some((l) => l.components.some((c) => hasPlane(c) && c.png))) return r
   return {
     ...r,
     layers: r.layers.map((l) => ({
       ...l,
       components: l.components.map((c) => {
-        if (c.kind !== 'brush' || !c.png) return c
+        if (!hasPlane(c) || !c.png) return c
         const ref = c.ref ?? refOf(c.png)
         known?.(ref, c.png)
         return { ...c, png: '', ref }
@@ -1199,14 +1380,13 @@ export function slimRecipe(
  * does not have stays a reference.
  */
 export function hydrateRecipe(r: Recipe, get: (ref: string) => string | undefined): Recipe {
-  if (!r.layers.some((l) => l.components.some((c) => c.kind === 'brush' && !c.png && c.ref)))
-    return r
+  if (!r.layers.some((l) => l.components.some((c) => hasPlane(c) && !c.png && c.ref))) return r
   return {
     ...r,
     layers: r.layers.map((l) => ({
       ...l,
       components: l.components.map((c) => {
-        if (c.kind !== 'brush' || c.png || !c.ref) return c
+        if (!hasPlane(c) || c.png || !c.ref) return c
         const png = get(c.ref)
         if (png === undefined) return c
         const out = { ...c, png }

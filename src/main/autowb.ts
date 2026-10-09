@@ -4,6 +4,7 @@
  * its own white. The batch runs on the background engine, so the loupe
  * keeps rendering while it works.
  */
+import { t } from '../shared/i18n'
 import log from 'electron-log/main'
 import { mkdir } from 'fs/promises'
 import { join } from 'path'
@@ -57,7 +58,10 @@ export function analyzeRequest(
     lens: null,
     limits: READ_LIMITS,
     hdr: null,
-    gain_map: null
+    gain_map: null,
+    // Engine 0.19's perceptual hash and focus: asked by culling (Pass 114).
+    phash: false,
+    focus: null
   }
 }
 
@@ -281,7 +285,7 @@ export async function autoWbBatch(s: WbServices, keys: string[]): Promise<AutoWb
   const measure = async (key: string): Promise<void> => {
     try {
       const cur = current.get(key)
-      if (!cur) throw new Error('the photo is not in the library')
+      if (!cur) throw new Error(t('the photo is not in the library'))
       const { recipe } = cur
       // Readable: the original, or its project's copy when it is gone.
       const row = await s.library.photoRow(key)
@@ -298,7 +302,7 @@ export async function autoWbBatch(s: WbServices, keys: string[]): Promise<AutoWb
         info.as_shot_white,
         BACKGROUND_THREADS
       )
-      if (!wb) throw new Error('no neutral to work from')
+      if (!wb) throw new Error(t('no neutral to work from'))
       changes.push({
         key,
         before: recipe,
@@ -319,7 +323,7 @@ export async function autoWbBatch(s: WbServices, keys: string[]): Promise<AutoWb
   const previous: AutoWbResult['previous'] = {}
   for (const c of changes) previous[c.key] = c.before.wb
   const items = changes.length
-    ? await commitWb(s, changes, 'Before auto WB', 'White balance: Auto')
+    ? await commitWb(s, changes, t('Before auto WB'), t('White balance: Auto'))
     : []
   return { items, previous, failed }
 }
@@ -338,5 +342,5 @@ export async function setWbBatch(
     return cur ? [{ key, before: cur.recipe, next: { ...cur.recipe, wb } }] : []
   })
   if (changes.length === 0) return []
-  return commitWb(s, changes, 'Before restoring white balance', 'White balance: restored')
+  return commitWb(s, changes, t('Before restoring white balance'), t('White balance: restored'))
 }

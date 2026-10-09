@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import type { AiJobEvent } from '../../../shared/ai'
 import {
+  ENHANCE_MODEL,
   enhanceRefusal,
   estimateMs,
   jpegRestoreRefusal,
@@ -19,9 +20,12 @@ import {
   scaleOf,
   type EnhanceRates,
   type JpegRestore,
-  type UpscaleChoice
+  type UpscaleChoice,
+  type UpscaleSource
 } from '../../../shared/enhance'
 import { ModelGet } from '../components/ModelGet'
+import { staleRawStep } from '../../../shared/pixels'
+import { developMark } from '../../../shared/rawcolour'
 import { allInstalled, useModels } from '../lib/models'
 import { Section, Select, Slider, Toggle, ToolPanel } from '../components/ui'
 import { TIPS } from './tips'
@@ -31,29 +35,41 @@ import { useAiJobs } from '../state/jobs'
 import { useLibrary, useTargets } from '../state/library'
 import { useScope } from '../state/scope'
 import { useUi } from '../state/ui'
+import { t, tk, tp } from '../lib/i18n'
 
 const JPEG_OPTIONS: { value: JpegRestore; label: string }[] = [
-  { value: 'off', label: 'Off' },
-  { value: 'reconstruct', label: 'Rebuild (no model)' },
-  { value: 'fbcnn', label: 'AI · judges the damage' }
+  { value: 'off', label: tk('Off') },
+  { value: 'reconstruct', label: tk('Rebuild (no model)') },
+  { value: 'fbcnn', label: tk('AI · judges the damage') }
 ]
 
 const UPSCALE_OPTIONS: { value: UpscaleChoice; label: string }[] = [
-  { value: 'off', label: 'Off' },
-  { value: 'x2', label: '×2 · photographic' },
-  { value: 'x4', label: '×4 · general' },
-  { value: 'x4-wdn', label: '×4 · keep texture' }
+  { value: 'off', label: tk('Off') },
+  { value: 'x2', label: '×2' },
+  { value: 'x4', label: '×4' }
 ]
 
-const FORMAT_NAME: Record<string, string> = {
-  Raw: 'a RAW',
-  Heif: 'a HEIC',
-  Png: 'a PNG',
-  Tiff: 'a TIFF',
-  Avif: 'an AVIF',
-  Webp: 'a WebP',
-  Jxl: 'a JPEG XL'
+/** What the photo is like: picks the model (engine 0.18: SPAN for clean, x4v3 for damaged). */
+const SOURCE_OPTIONS: { value: UpscaleSource; label: string }[] = [
+  { value: 'clean', label: tk('Clean · closest to the original') },
+  { value: 'damaged', label: tk('Damaged · repairs compression and noise') },
+  { value: 'texture', label: tk('Keep texture · leaves the grain') }
+]
+
+/** Why JPEG restore is skipped, by the photo's format. */
+const SKIPPED: Record<string, string> = {
+  Raw: tk('Skipped: this photo is a RAW.'),
+  Heif: tk('Skipped: this photo is a HEIC.'),
+  Png: tk('Skipped: this photo is a PNG.'),
+  Tiff: tk('Skipped: this photo is a TIFF.'),
+  Avif: tk('Skipped: this photo is an AVIF.'),
+  Webp: tk('Skipped: this photo is a WebP.'),
+  Jxl: tk('Skipped: this photo is a JPEG XL.')
 }
+
+/** An options list with its labels in the language in force. */
+const shown = <T extends string>(o: { value: T; label: string }[]): { value: T; label: string }[] =>
+  o.map((x) => ({ ...x, label: t(x.label) }))
 
 const duration = (ms: number): string =>
   ms < 60_000
@@ -71,6 +87,12 @@ let batch: string[] = []
 export function EnhancePanel(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
   const stepsBefore = useDevelop((s) => s.recipe?.pixels.length ?? 0)
+  // Enhance steps made from an older RAW develop (`staleRawStep`).
+  const stale = useDevelop((d) => {
+    if (!d.session?.isRaw || !d.recipe) return 0
+    const mark = developMark(d.session.rawColour ?? 'container')
+    return d.recipe.pixels.filter((p) => p.kind === 'enhance' && staleRawStep(p, true, mark)).length
+  })
   const { layer } = useScope()
   const s = useUi((u) => u.enhance)
   const set = useUi((u) => u.setEnhance)
@@ -97,7 +119,7 @@ export function EnhancePanel(): React.JSX.Element | null {
   const need = neededModels(s, isJpeg)
   const refusal =
     capable && !capable.enhance
-      ? (capable.why.enhance ?? 'Enhance is not available')
+      ? (capable.why.enhance ?? t('Enhance is not available'))
       : (enhanceRefusal(s, { isJpeg, isHdr: session.isHdr }) ??
         jpegRestoreRefusal(s, isJpeg, stepsBefore))
   const ready = !refusal && allInstalled(models, need)
@@ -134,33 +156,44 @@ export function EnhancePanel(): React.JSX.Element | null {
 
   return (
     <ToolPanel>
-      <Section id="enhance.jpeg" title="JPEG restore" tip={TIPS['enhance.jpeg']}>
+      {stale > 0 && (
+        <p className="pixel-step-stale">
+          {tp(
+            'One Enhance step was made from the previous RAW develop. Undo it in History and run Enhance again to match this one.',
+            '{{count}} Enhance steps were made from the previous RAW develop. Undo it in History and run Enhance again to match this one.',
+            stale
+          )}
+        </p>
+      )}
+      <Section id="enhance.jpeg" title={t('JPEG restore')} tip={TIPS['enhance.jpeg']}>
         <Select
-          label="Method"
+          label={t('Method')}
           value={s.jpeg}
-          options={JPEG_OPTIONS}
+          options={shown(JPEG_OPTIONS)}
           onChange={(jpeg) => set({ jpeg })}
         />
         {!isJpeg && s.jpeg !== 'off' && (
           <p className="muted small">
-            Skipped: this photo is {FORMAT_NAME[info.input] ?? 'not a JPEG'}.
+            {t(SKIPPED[info.input] ?? 'Skipped: this photo is not a JPEG.')}
           </p>
         )}
         {s.jpeg === 'reconstruct' && (
           <>
             <Slider
-              label="Smoothing"
+              label={t('Smoothing')}
               value={s.smoothing}
               min={0}
               max={100}
               def={50}
               onChange={(smoothing) => set({ smoothing })}
               onCommit={() => undefined}
-              title="How far the blocks and banding are smoothed: only ever into what the file's own coefficients allow"
+              title={t(
+                "How far the blocks and banding are smoothed: only ever into what the file's own coefficients allow"
+              )}
             />
             {subsampled && (
               <Toggle on={s.guidedChroma} onChange={(guidedChroma) => set({ guidedChroma })}>
-                Colour follows edges
+                {t('Colour follows edges')}
               </Toggle>
             )}
           </>
@@ -168,7 +201,7 @@ export function EnhancePanel(): React.JSX.Element | null {
         {s.jpeg === 'fbcnn' && (
           <>
             <Slider
-              label="Strength"
+              label={t('Strength')}
               value={s.jpegStrength}
               min={1}
               max={100}
@@ -181,14 +214,14 @@ export function EnhancePanel(): React.JSX.Element | null {
         )}
       </Section>
 
-      <Section id="enhance.deblur" title="Deblur" tip={TIPS['enhance.deblur']}>
+      <Section id="enhance.deblur" title={t('Deblur')} tip={TIPS['enhance.deblur']}>
         <Toggle on={s.deblur} onChange={(deblur) => set({ deblur })}>
-          Remove motion blur
+          {t('Remove motion blur')}
         </Toggle>
         {s.deblur && (
           <>
             <Slider
-              label="Strength"
+              label={t('Strength')}
               value={s.deblurStrength}
               min={1}
               max={100}
@@ -201,28 +234,27 @@ export function EnhancePanel(): React.JSX.Element | null {
         )}
       </Section>
 
-      <Section id="enhance.upscale" title="Super resolution" tip={TIPS['enhance.upscale']}>
+      <Section id="enhance.upscale" title={t('Super resolution')} tip={TIPS['enhance.upscale']}>
         <Select
-          label="Scale"
+          label={t('Scale')}
           value={s.upscale}
-          options={UPSCALE_OPTIONS}
+          options={shown(UPSCALE_OPTIONS)}
           onChange={(upscale) => set({ upscale })}
         />
         {s.upscale !== 'off' && (
-          <ModelGet
-            id={
-              s.upscale === 'x2'
-                ? 'real-esrgan-x2plus'
-                : s.upscale === 'x4'
-                  ? 'realesr-general-x4v3'
-                  : 'realesr-general-wdn-x4v3'
-            }
-            models={models}
-          />
+          <>
+            <Select
+              label={t('Source')}
+              value={s.upscaleSource}
+              options={shown(SOURCE_OPTIONS)}
+              onChange={(upscaleSource) => set({ upscaleSource })}
+            />
+            <ModelGet id={ENHANCE_MODEL[s.upscaleSource]} models={models} />
+          </>
         )}
       </Section>
 
-      <Section id="enhance.run" title="Apply" tip={TIPS['enhance.apply']}>
+      <Section id="enhance.run" title={t('Apply')} tip={TIPS['enhance.apply']}>
         <div className="enhance-sum">
           <span>
             {session.frameWidth} × {session.frameHeight}
@@ -236,34 +268,38 @@ export function EnhancePanel(): React.JSX.Element | null {
             )}
           </span>
           <span className="muted">
-            {outMp.toFixed(0)} MP · ~{bytes(outW * outH * (session.isRaw ? 2.3 : 0.4))} in the
-            project
+            {t('{{mp}} MP · ~{{size}} in the project', {
+              mp: outMp.toFixed(0),
+              size: bytes(outW * outH * (session.isRaw ? 2.3 : 0.4))
+            })}
           </span>
           {steps.length > 0 && (
-            <span className="muted" title="From how fast earlier runs went here">
+            <span className="muted" title={t('From how fast earlier runs went here')}>
               {steps.map((p) => p.label).join(' → ')} · ~{duration(eta)}
             </span>
           )}
         </div>
         {outMp > LARGE_OUTPUT_MP && (
-          <p className="note small">A {outMp.toFixed(0)} MP file is large to edit; consider ×2.</p>
+          <p className="note small">
+            {t('A {{mp}} MP file is large to edit; consider ×2.', { mp: outMp.toFixed(0) })}
+          </p>
         )}
         {refusal && <p className="muted small">{refusal}</p>}
         <div className="enhance-run">
           <button className="primary" disabled={!ready} onClick={() => void run()}>
             {many
-              ? `Enhance ${targets.length} photos`
+              ? tp('Enhance {{count}} photo', 'Enhance {{count}} photos', targets.length)
               : layer && k === 1
-                ? `Enhance inside ${layer.name}`
-                : 'Enhance'}
+                ? t('Enhance inside {{layer}}', { layer: layer.name })
+                : t('Enhance')}
           </button>
           {running && (
             <button
               className="ghost"
               onClick={() => ids.forEach((id) => void api.ai.cancel(id))}
-              title="Stop this batch"
+              title={t('Stop this batch')}
             >
-              Cancel
+              {t('Cancel')}
             </button>
           )}
         </div>
@@ -276,20 +312,22 @@ export function EnhancePanel(): React.JSX.Element | null {
                   {j.phase === 'running'
                     ? j.progress !== null
                       ? `${j.estimated ? '~' : ''}${Math.round(j.progress * 100)}%`
-                      : 'Working…'
+                      : t('Working…')
                     : j.phase === 'queued'
-                      ? 'Waiting'
+                      ? t('Waiting')
                       : j.phase === 'done'
-                        ? 'Added'
+                        ? t('Added')
                         : j.phase === 'cancelled'
-                          ? 'Cancelled'
-                          : (j.message ?? 'Failed')}
+                          ? t('Cancelled')
+                          : (j.message ?? t('Failed'))}
                 </span>
               </li>
             ))}
           </ul>
         )}
-        {layer && k > 1 && <p className="muted small">An upscale is always the whole photo.</p>}
+        {layer && k > 1 && (
+          <p className="muted small">{t('An upscale is always the whole photo.')}</p>
+        )}
       </Section>
     </ToolPanel>
   )

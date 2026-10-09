@@ -4,40 +4,60 @@
  * photos and has never heard of the models' own names.
  */
 import type { ModelInfo } from '../../../shared/ipc'
+import { t, tk, tp } from '../lib/i18n'
 
-export type Purpose = ModelInfo['role']
+export type Purpose = Exclude<ModelInfo['role'], 'raw-denoise'>
+
+/** The group a model is listed under: a RAW's sensor denoiser with the other grain removers. */
+export function purposeOf(role: ModelInfo['role']): Purpose {
+  return role === 'raw-denoise' ? 'denoise' : role
+}
 
 /** The purposes in the order the list shows them. */
 export const PURPOSES: { id: Purpose; title: string; what: string }[] = [
   {
+    id: 'demosaic',
+    title: tk('Develop RAW files'),
+    what: tk(
+      'Turns a camera’s raw sensor data into the full-size picture, with crisper edges and fewer colour fringes on fine detail. Without it, Playroom uses a faster classic method.'
+    )
+  },
+  {
     id: 'denoise',
-    title: 'Remove grain',
-    what: 'Cleans the speckled grain out of photos taken in low light or at high ISO.'
+    title: tk('Remove grain'),
+    what: tk('Cleans the speckled grain out of photos taken in low light or at high ISO.')
   },
   {
     id: 'segment',
-    title: 'Select subjects and objects',
-    what: 'Lets masks find the main subject for you, or anything you click, box or brush over.'
+    title: tk('Select subjects and objects'),
+    what: tk('Lets masks find the main subject for you, or anything you click, box or brush over.')
   },
   {
     id: 'upscale',
-    title: 'Make photos bigger',
-    what: 'Enlarges a photo with believable detail, for printing big or cropping in close.'
+    title: tk('Make photos bigger'),
+    what: tk('Enlarges a photo with believable detail, for printing big or cropping in close.')
   },
   {
     id: 'deblur',
-    title: 'Fix motion blur',
-    what: 'Sharpens photos smeared by a shaky hand or a moving subject.'
+    title: tk('Fix motion blur'),
+    what: tk('Sharpens photos smeared by a shaky hand or a moving subject.')
   },
   {
     id: 'restore',
-    title: 'Repair JPEGs',
-    what: 'Cleans up the blocky squares and smudged colour of heavily compressed JPEGs.'
+    title: tk('Repair JPEGs'),
+    what: tk('Cleans up the blocky squares and smudged colour of heavily compressed JPEGs.')
   },
   {
     id: 'inpaint',
-    title: 'Remove objects',
-    what: 'Paints over things you want gone from a photo.'
+    title: tk('Remove objects'),
+    what: tk('Paints over things you want gone from a photo.')
+  },
+  {
+    id: 'depth',
+    title: tk('Sense depth'),
+    what: tk(
+      'Works out what is near and what is far, so a mask can take the foreground or the background by distance.'
+    )
   }
 ]
 
@@ -50,66 +70,153 @@ export interface ModelCopy {
 }
 
 export const MODEL_COPY: Record<string, ModelCopy> = {
-  'drunet-color': {
-    name: 'Clean and detailed',
-    what: 'Playroom measures how grainy your photo is first, then removes just that much, so hair, fabric and skin keep their texture.',
-    where: 'Detail → Noise reduction → AI',
+  'demosaicnet-bayer': {
+    name: tk('Best quality RAW develop'),
+    what: tk(
+      'Builds the full-size picture from your RAW’s sensor data with fine detail and clean edges. Downloaded by itself; used at 100%, for AI tools and in the export. On a Mac it runs on the graphics chip: about 5 seconds for a 24 MP RAW, where the faster classic method takes 3.'
+    ),
+    where: tk('Every RAW, at full size'),
     recommended: true
   },
-  'scunet-color-real': {
-    name: 'Strong clean-up',
-    what: 'For very grainy night and indoor shots. It judges the grain by itself and cleans harder, which can smooth fine texture a little.',
-    where: 'Detail → Noise reduction → AI'
+  'demosaicnet-xtrans': {
+    name: tk('Best quality RAW develop, Fujifilm'),
+    what: tk(
+      'The same for Fujifilm’s X-Trans sensors. Downloaded by itself the first time you open one.'
+    ),
+    where: tk('Fujifilm X-Trans RAWs, at full size')
+  },
+  pmrid: {
+    name: tk('RAW sensor denoise'),
+    what: tk(
+      'Takes grain out of a RAW’s sensor data before it becomes a picture, measuring how noisy each photo is by itself. Best on high-ISO shots; can look a little crisp on fine texture. Under a second on a Mac.'
+    ),
+    where: tk('Detail → Noise reduction → AI → Denoise the RAW data')
+  },
+  'drunet-color': {
+    name: tk('Clean and detailed'),
+    what: tk(
+      'Playroom measures how grainy your photo is first, then removes just that much, so hair, fabric and skin keep their texture.'
+    ),
+    where: tk('Detail → Noise reduction → AI'),
+    recommended: true
+  },
+  'nafnet-sidd-w32': {
+    name: tk('Strong clean-up'),
+    what: tk(
+      'For very grainy night and indoor shots. It judges the grain by itself and cleans harder, which can smooth fine texture a little. On a Mac it runs on the graphics chip: about a quarter of a minute for a 24 MP photo.'
+    ),
+    where: tk('Detail → Noise reduction → AI')
   },
   'sam2-1-hiera-tiny': {
-    name: 'Select anything',
-    what: 'Click, drag a box or brush over anything in a photo (a car, a dog, a window, the sky) and the mask takes exactly that, its edges snapped to the photo’s own.',
-    where: 'Masks → New → Objects or Sky',
+    name: tk('Select anything'),
+    what: tk(
+      'Click, drag a box or brush over anything in a photo (a car, a dog, a window, the sky) and the mask takes exactly that, its edges snapped to the photo’s own.'
+    ),
+    where: tk('Masks → New → Objects or Sky'),
     recommended: true
   },
   u2netp: {
-    name: 'Subject finder',
-    what: 'Finds the main subject for the Subject and Background masks, small and fast.',
-    where: 'Masks → New → Subject or Background',
+    name: tk('Subject finder'),
+    what: tk('Finds the main subject for the Subject and Background masks, small and fast.'),
+    where: tk('Masks → New → Subject or Background'),
     recommended: true
   },
-  'real-esrgan-x2plus': {
-    name: 'Twice the size',
-    what: 'Makes a photo twice as wide and tall. The most natural-looking result, and the slowest.',
-    where: 'Enhance → Super resolution → ×2',
+  'span-x4-ch48': {
+    name: tk('Bigger, clean'),
+    what: tk(
+      'Makes a clean photo twice or four times as wide and tall, staying closest to the original. Quick: a fraction of a second.'
+    ),
+    where: tk('Enhance → Super resolution → Source: Clean'),
     recommended: true
   },
   'realesr-general-x4v3': {
-    name: 'Four times, quick',
-    what: 'Makes a photo four times as wide and tall, quickly. Best for small pictures; edges come out a little smooth.',
-    where: 'Enhance → Super resolution → ×4 general'
+    name: tk('Bigger, repaired'),
+    what: tk(
+      'Makes a photo twice or four times as wide and tall and repairs compression blocks and noise as it goes. Best for small, damaged pictures; edges come out a little smooth.'
+    ),
+    where: tk('Enhance → Super resolution → Source: Damaged')
   },
   'realesr-general-wdn-x4v3': {
-    name: 'Four times, keeps texture',
-    what: 'Like the quick one, but leaves more of the photo’s own texture, and a little of its grain.',
-    where: 'Enhance → Super resolution → ×4 keep texture'
+    name: tk('Bigger, keeps texture'),
+    what: tk(
+      'Like the repairing one, but leaves more of the photo’s own texture, and a little of its grain.'
+    ),
+    where: tk('Enhance → Super resolution → Source: Keep texture')
   },
   'nafnet-gopro-w32': {
-    name: 'Motion blur fix',
-    what: 'Sharpens a photo smeared by camera shake or a moving subject. It cannot rescue a photo that was simply out of focus.',
-    where: 'Enhance → Deblur',
+    name: tk('Motion blur fix'),
+    what: tk(
+      'Sharpens a photo smeared by camera shake or a moving subject. It cannot rescue a photo that was simply out of focus.'
+    ),
+    where: tk('Enhance → Deblur'),
     recommended: true
   },
-  // Retired by engine 0.17 and kept for who downloaded them until the next update.
-  u2net: {
-    name: 'Detailed subject',
-    what: 'Finds the main subject for the Subject and Background masks. It is being retired: the next update replaces it with the smaller, faster Subject finder. Until then Playroom keeps using it, since you have it.',
-    where: 'Masks → New → Subject or Background'
+  'birefnet-lite': {
+    name: tk('Fine subject finder'),
+    what: tk(
+      'Finds the main subject with a finer edge than the quick finder, keeping hair, fur and feathers. Larger, and about ten seconds a photo.'
+    ),
+    where: tk('Masks → New → Fine subject')
   },
-  'fbcnn-color-qf': {
-    name: 'JPEG repair, exact',
-    what: 'The JPEG repair that was told exactly how compressed the file is. It is being retired and no longer runs: the automatic JPEG repair does the same job. Remove it to free the space.',
-    where: ''
+  'migan-512': {
+    name: tk('Object remover'),
+    what: tk(
+      'Fills in what you paint over (a stranger, a sign, a power line) with what was likely behind it.'
+    ),
+    where: tk('Heal → Remove')
+  },
+  'dinov2-s-ade': {
+    name: tk('Scene finder'),
+    what: tk(
+      'Finds the sky (through branches too), trees and plants, and water in one click each. About a second a photo.'
+    ),
+    where: tk('Masks → New → Sky, Vegetation or Water')
+  },
+  'selfie-multiclass': {
+    name: tk('People parts finder'),
+    what: tk(
+      'Finds a person’s hair, face, skin and clothes in one click each. Best when the person fills a good part of the frame; edges are soft.'
+    ),
+    where: tk('Masks → New → Face, Hair, Skin or Clothes')
+  },
+  'efficientsam3-ev-m': {
+    name: tk('Find by name'),
+    what: tk(
+      'Type what you want masked (“red car”, “the trees”) and it finds every one in the photo. Clear names work best; a vague one can find the wrong thing. About 4 seconds the first time on a photo, 2 seconds each word after.'
+    ),
+    where: tk('Masks → New → Find by name'),
+    recommended: true
+  },
+  sam3: {
+    name: tk('Find by name, best quality'),
+    what: tk('The larger, surer model behind Find by name: it says “nothing” rather than guess.'),
+    where: tk('Masks → New → Find by name')
+  },
+  'yunet-2023mar': {
+    name: tk('Face finder'),
+    what: tk(
+      'Finds every face in a photo, small ones in a group too, for the face part masks. Tiny and quick.'
+    ),
+    where: tk('Masks → New → Eyes, Brows, Lips or Teeth')
+  },
+  'face-mesh-v2': {
+    name: tk('Face parts outliner'),
+    what: tk(
+      'Outlines each face’s eyes, brows, lips and mouth, so a mask takes exactly them. Brows are rough for now.'
+    ),
+    where: tk('Masks → New → Eyes, Brows, Lips or Teeth')
+  },
+  'depth-anything-v2-small': {
+    name: tk('Depth finder'),
+    what: tk('Sees which parts of a photo are near and which are far, for the Depth range mask.'),
+    where: tk('Masks → New → Depth range')
   },
   'fbcnn-color-blind': {
-    name: 'JPEG repair, automatic',
-    what: 'Works out by itself how damaged the file is. Good for pictures saved from the web or sent through messaging apps.',
-    where: 'Enhance → JPEG restore → AI, judges the damage',
+    name: tk('JPEG repair, automatic'),
+    what: tk(
+      'Works out by itself how damaged the file is. Good for pictures saved from the web or sent through messaging apps.'
+    ),
+    where: tk('Enhance → JPEG restore → AI, judges the damage'),
     recommended: true
   }
 }
@@ -124,13 +231,13 @@ export function copyOf(m: ModelInfo): ModelCopy {
 
 /** "under a second", "about 20 seconds", "about 4 minutes". */
 export function duration(ms: number): string {
-  if (ms < 1000) return 'under a second'
+  if (ms < 1000) return t('under a second')
   const s = ms / 1000
-  if (s < 20) return `about ${Math.round(s)} seconds`
-  if (s < 90) return `about ${Math.round(s / 5) * 5} seconds`
+  if (s < 20) return tp('about {{count}} second', 'about {{count}} seconds', Math.round(s))
+  if (s < 90) return tp('about {{count}} second', 'about {{count}} seconds', Math.round(s / 5) * 5)
   const min = s / 60
-  if (min < 90) return `about ${Math.round(min)} minutes`
-  return `about ${Math.round(min / 60)} hours`
+  if (min < 90) return tp('about {{count}} minute', 'about {{count}} minutes', Math.round(min))
+  return tp('about {{count}} hour', 'about {{count}} hours', Math.round(min / 60))
 }
 
 /** Quick, a moment or slow: a word for a time per photo. */

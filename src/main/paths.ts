@@ -26,9 +26,20 @@ export const paths = {
   settings: (): string => join(dir(), 'settings.json'),
   /** Per-photo working files: proxies, renders, mask planes. */
   photoCache: (photoId: number): string => dir('cache', 'photos', String(photoId)),
+  /**
+   * The same folder's path, not made: for the paths every photo of a folder
+   * asks for as it opens (the probe, the thumbnail's source), whose callers
+   * make it themselves, off the main thread, only when they write (300
+   * `mkdirSync` calls cost 170 ms of main's time opening a 300-photo folder).
+   */
+  photoCachePath: (photoId: number): string =>
+    join(app.getPath('userData'), 'cache', 'photos', String(photoId)),
   thumbs: (): string => dir('cache', 'thumbs'),
-  /** What edited photos looked like under the engine before 0.17 (`legacy.ts`). */
-  legacyPreviews: (): string => dir('cache', 'legacy-previews'),
+  /**
+   * Where 0.3's before/after kept edited photos' thumbnails from the engine
+   * before 0.17: only removed now (the comparison went with engine 0.18).
+   */
+  legacyPreviews: (): string => join(app.getPath('userData'), 'cache', 'legacy-previews'),
   luts: (): string => dir('luts'),
   /** Imported lens profiles, one JSON file per lens (`shared/lens.ts`). */
   lensProfiles: (): string => dir('lens-profiles'),

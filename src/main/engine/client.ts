@@ -32,13 +32,21 @@ import type {
   Transform,
   WhiteBalance
 } from '../../shared/engine-types'
-import { describeEngineError, unsupportedRaw } from '../../shared/engine-types'
+import { describeEngineError, unsupportedRaw, type Grade } from '../../shared/engine-types'
+import {
+  describeInvariant,
+  invariantDetail,
+  invariantPlace,
+  type InvariantPlace
+} from '../../shared/invariant'
 import { IPC, type EngineStatus } from '../../shared/ipc'
 import type { MainToHost } from '../../shared/engine-types'
 
 export class EngineError extends Error {
   code: string
   detail?: EngineErrorShape['detail']
+  /** For `Invariant`, once named against the request (`nameInvariant`): the layer and op. */
+  invariant?: InvariantPlace | null
   constructor(shape: EngineErrorShape) {
     super(shape.message)
     this.name = 'EngineError'
@@ -55,6 +63,23 @@ export class EngineError extends Error {
   get field(): string | undefined {
     const d = this.detail?.['InvalidRequest']
     return d && typeof d['field'] === 'string' ? (d['field'] as string) : undefined
+  }
+
+  /**
+   * For `Invariant` (engine 0.18, HR-0.18-9): name the adjustment against the
+   * request that was sent, in the message and in `invariant`. The caller keeps
+   * the edit and never renders again without the op.
+   */
+  nameInvariant(
+    grade: Grade | null,
+    sdrGrade: Grade | null,
+    layerIndex: Record<string, number>
+  ): this {
+    if (this.code !== 'Invariant') return this
+    const { stage, text } = invariantDetail(this.detail)
+    this.invariant = invariantPlace(text, grade, sdrGrade, layerIndex)
+    this.message = describeInvariant(this.invariant, stage)
+    return this
   }
 
   /** What to tell the user: the engine's words, or plainer ones where it has them. */
@@ -97,6 +122,20 @@ export function lowerPriority(pid: number | undefined): void {
   } catch {
     // Not permitted here: nothing lost but the courtesy.
   }
+}
+
+/** What `faces` reports, as Playroom reads it. */
+export interface FaceReport {
+  faces: {
+    /** `[x, y, width, height]` in frame pixels. */
+    bounds: number[]
+    score: number
+    outlines: Record<string, { contours: { points: { x: number; y: number }[] }[] }> | null
+    /** Face Mesh's 52 blendshape scores (`eyeBlinkLeft`, …), when the landmarker reads them. */
+    blendshapes?: { name: string; score: number }[] | null
+  }[]
+  frame_width: number
+  frame_height: number
 }
 
 export class EngineClient {
@@ -155,7 +194,9 @@ export class EngineClient {
     if (!child || this.running.size > 0 || this.inflight.size > 0) return false
     this.child = undefined
     this.spawned = false
-    this.status = { ...this.status, status: 'starting' }
+    // Resting, its version and abilities kept: the next call starts a host,
+    // which says 'starting' until it is up. The top bar says "offline".
+    this.status = { ...this.status, status: 'resting', reason: undefined }
     child.kill()
     return true
   }
@@ -311,6 +352,13 @@ export class EngineClient {
    */
   segment(request: Record<string, unknown>, opts: CallOptions = {}): Promise<SegmentReport> {
     return this.call('segment', [request], opts.signal) as Promise<SegmentReport>
+  }
+  /**
+   * Faces and their parts (engine 0.19, `faces`): YuNet's boxes, and with a
+   * landmarker each face's outlines as polygons (fractions of the frame).
+   */
+  faces(request: Record<string, unknown>, opts: CallOptions = {}): Promise<FaceReport> {
+    return this.call('faces', [request], opts.signal) as Promise<FaceReport>
   }
   /** Time models on providers (`benchmark`). */
   benchmark(

@@ -1,11 +1,11 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
+import { DISPLAY_SETTING_KEY, displayHdr, setDisplaySetting } from './hdrdisplay'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import log from 'electron-log/main'
 import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { cpus } from 'os'
 import { pathToFileURL } from 'url'
-import { cacheUrl } from './protocol'
 import type { RawColour } from '../shared/rawcolour'
 import { is } from '@electron-toolkit/utils'
 import type { ExportSettings } from '../shared/export'
@@ -17,7 +17,6 @@ import {
   type ErrorReport,
   type ExportPreset,
   type HistoryLog,
-  type LegacyPreview,
   type LibrarySource,
   type LookThumbRequest,
   type LutProfile,
@@ -32,7 +31,7 @@ import {
 } from '../shared/ipc'
 import { convertWb, type WbContext } from '../shared/wbconvert'
 import { LicenceError } from '../shared/licence'
-import { applyGroups, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
+import { applyGroups, NAFNET_DENOISE, newId, type Recipe, type RecipeGroup } from '../shared/recipe'
 import { applyLook } from '../shared/looks/apply'
 import { resolveLook } from '../shared/looks/catalog'
 import { planeRef } from './planeref'
@@ -49,7 +48,21 @@ import { EngineError, type EngineClient } from './engine/client'
 import { autoWbBatch, setWbBatch } from './autowb'
 import { crashConsent, reportRendererError, sendProblemReport, setCrashConsent } from './crash'
 import { freeDevice, licence, refreshLicence, requireLicence, startTrial } from './licence'
-import type { AiCapabilities, AiStartRequest } from '../shared/ai'
+import {
+  PARTS_MODEL,
+  PHRASE_MODELS,
+  SCENE_MODEL,
+  type AiCapabilities,
+  type AiStartRequest
+} from '../shared/ai'
+import { FACE_DETECTOR, FACE_LANDMARKER } from '../shared/faceparts'
+import type { HeavyModel } from '../shared/heavy'
+import type { AiSwitchStore } from './ai/switches'
+import type { BrainStore } from './ai/brain'
+import type { Namer } from './ai/namer'
+import type { CullMeasurer } from './cull'
+import { readNames } from '../shared/naming'
+import { benchmarkSam3 } from './ai/sam3bench'
 import { immediateLayers, previewLayers, smartReadiness } from '../shared/looks/smart'
 import type { LookRunRequest, PickAnswer } from '../shared/looks/run'
 import { LookRuns } from './looks/runner'
@@ -58,7 +71,8 @@ import type { ProblemInput } from '../shared/crash'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
 import type { GuideLine } from '../shared/upright'
-import type { P as SpotPoint, RetouchSpot } from '../shared/retouch'
+import { removeSpot, strokeOver, type P as SpotPoint, type RetouchSpot } from '../shared/retouch'
+import { grey8 } from './pngio'
 import type { PixelStep } from '../shared/pixels'
 import { enhanceAvailability, enhanceRates } from './enhance'
 import { readWatermark } from './watermark'
@@ -71,6 +85,10 @@ import type { Library } from './library'
 import { MAIN_DIR } from './dirs'
 import { appPage } from './guard'
 import { gate, gateRefuses } from './gate'
+import { openTopMenu, popupMenu, setMenuSpec, topMenus } from './menu'
+import { languageState, setLanguage } from './i18n'
+import { isLanguageSetting, t, type LanguageSetting } from '../shared/i18n'
+import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
 import { accountStatus, cancelSignIn, signIn, signOut } from './account'
 import { AccountError } from './account/api'
 import { OAuthError } from './account/oauth'
@@ -99,26 +117,63 @@ const isAppPage = appPage(
   is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
 )
 
+/**
+ * The profiling script's IPC trace (scripts/perf.mjs, `PLAYROOM_IPC_TRACE=1`):
+ * each call's channel, time and payload sizes, on `globalThis` where the
+ * script reads it. Off, nothing is recorded.
+ */
+const TRACE = process.env.PLAYROOM_IPC_TRACE === '1'
+type TraceRow = { channel: string; ms: number; inBytes: number; outBytes: number }
+function sizeOf(v: unknown): number {
+  if (v === undefined || v === null) return 0
+  if (ArrayBuffer.isView(v)) return v.byteLength
+  try {
+    return JSON.stringify(v)?.length ?? 0
+  } catch {
+    return 0
+  }
+}
+function trace(row: TraceRow): void {
+  const g = globalThis as { __playroomIpcTrace?: TraceRow[] }
+  ;(g.__playroomIpcTrace ??= []).push(row)
+}
+
 function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => Promise<R> | R): void {
   ipcMain.handle(channel, async (e, ...args: unknown[]) => {
-    if (!isAppPage(e.senderFrame?.url)) {
-      log.warn(`ipc: refused ${channel} from ${e.senderFrame?.url ?? 'a closed frame'}`)
-      return { ok: false, error: { message: 'Not allowed.', code: 'Forbidden' } }
-    }
-    // The beta gate holds everything but signing in, access, updates and settings.
-    if (gateRefuses(channel)) {
-      return {
-        ok: false,
-        error: { message: 'Pixl Playroom is locked until beta access is confirmed.', code: 'Gated' }
+    if (!TRACE) return answer(channel, fn, e, args)
+    const t0 = performance.now()
+    const out = await answer(channel, fn, e, args)
+    trace({ channel, ms: performance.now() - t0, inBytes: sizeOf(args), outBytes: sizeOf(out) })
+    return out
+  })
+}
+
+async function answer<A extends unknown[], R>(
+  channel: string,
+  fn: (...args: A) => Promise<R> | R,
+  e: Electron.IpcMainInvokeEvent,
+  args: unknown[]
+): Promise<unknown> {
+  if (!isAppPage(e.senderFrame?.url)) {
+    log.warn(`ipc: refused ${channel} from ${e.senderFrame?.url ?? 'a closed frame'}`)
+    return { ok: false, error: { message: t('Not allowed.'), code: 'Forbidden' } }
+  }
+  // The beta gate holds everything but signing in, access, updates and settings.
+  if (gateRefuses(channel)) {
+    return {
+      ok: false,
+      error: {
+        message: t('Pixl Playroom is locked until beta access is confirmed.'),
+        code: 'Gated'
       }
     }
-    try {
-      const value = await fn(...(args as A))
-      return { ok: true, value }
-    } catch (err) {
-      return { ok: false, error: toAppError(err) }
-    }
-  })
+  }
+  try {
+    const value = await fn(...(args as A))
+    return { ok: true, value }
+  } catch (err) {
+    return { ok: false, error: toAppError(err) }
+  }
 }
 
 async function wbContext(library: Library, key: string): Promise<WbContext> {
@@ -145,6 +200,36 @@ export interface Services {
   lenses: LensProfileStore
   /** Select by clicks, a box or strokes (SAM 2.1), on its own engine host. */
   select: SelectService
+  /** The killswitch and the heavy models' switches (shared/heavy.ts). */
+  switches: AiSwitchStore
+  /** Gemma, the local assistant. */
+  brain: BrainStore
+  /** Gemma's names for the library's photos. */
+  namer: Namer
+  /** Cull signals and suggestions. */
+  cull: CullMeasurer
+}
+
+/** What AI can do with the killswitch thrown: nothing a model does, and why. */
+function aiOff(): AiCapabilities {
+  const why = t('AI models are off: turn them on in Settings → AI models')
+  return {
+    enhance: false,
+    segment: false,
+    denoise: false,
+    prompt: false,
+    smart: smartReadiness({
+      models: true,
+      subjectModel: true,
+      drunetModel: true,
+      enhance: true,
+      off: true,
+      engine: { sky: true, people: true, sam2: true, detector: false, nafnet: false }
+    }),
+    finders: { click: false, text: false, parts: false, 'sky-model': false },
+    get: {},
+    why: { enhance: why, segment: why, denoise: why, prompt: why }
+  }
 }
 
 /** A photo's base frame (upright, before the user's turns): the open session's, else its proxies'. */
@@ -182,7 +267,21 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.getSetting, (key: string) => s.index.getSetting(key))
   handle(IPC.app.setSetting, (key: string, value: unknown) => s.index.setSetting(key, value))
   handle(IPC.app.reveal, (path: string) => shell.showItemInFolder(path))
+  handle(IPC.menu.set, (spec: MenuBarSpec) => setMenuSpec(spec))
+  handle(IPC.app.language, () => languageState())
+  handle(IPC.app.setLanguage, (setting: LanguageSetting) => {
+    if (!isLanguageSetting(setting)) throw new Error(t('Not a language Playroom has.'))
+    return setLanguage(setting)
+  })
+  handle(IPC.menu.popup, (items: MenuNode[]) => popupMenu(items))
+  handle(IPC.menu.top, () => topMenus())
+  handle(IPC.menu.openTop, (index: number, x: number, y: number) => openTopMenu(index, x, y))
   handle(IPC.app.renderScale, () => renderScale())
+  handle(IPC.app.displayHdr, () => displayHdr())
+  handle(IPC.app.setDisplayHdr, async (v: unknown) => {
+    await s.index.setSetting(DISPLAY_SETTING_KEY, v)
+    return setDisplaySetting(v)
+  })
   handle(IPC.app.restart, () => restart())
 
   handle(IPC.app.reportError, (e: ErrorReport) => reportRendererError(e))
@@ -191,11 +290,12 @@ export function registerIpc(s: Services): void {
   )
   handle(IPC.app.openNotices, async () => {
     const err = await shell.openPath(paths.notices())
-    if (err) throw new Error(`Couldn't open the third-party notices: ${err}`)
+    if (err)
+      throw new Error(t("Couldn't open the third-party notices: {{reason}}", { reason: err }))
   })
   handle(IPC.app.openBetaTerms, async () => {
     const err = await shell.openPath(paths.betaTerms())
-    if (err) throw new Error(`Couldn't open the beta terms: ${err}`)
+    if (err) throw new Error(t("Couldn't open the beta terms: {{reason}}", { reason: err }))
   })
 
   // ── the account, updates and preferences ──
@@ -210,16 +310,6 @@ export function registerIpc(s: Services): void {
   handle(IPC.updates.check, () => checkForUpdates())
   handle(IPC.updates.install, () => installUpdate())
   handle(IPC.updates.setChannel, (c: UpdateChannel) => setUpdateChannel(c))
-  // ── legacy previews ──
-  handle(IPC.legacy.get, async (key: string): Promise<LegacyPreview | null> => {
-    const { fresh } = await s.library.legacyFor(key)
-    const e = s.library.legacy.get(key)
-    return e ? { url: cacheUrl(e.path, e.capturedIn), engine: e.engine, seen: e.seen, fresh } : null
-  })
-  handle(IPC.legacy.seen, (key: string) => s.library.legacy.markSeen(key))
-  handle(IPC.legacy.remove, (key: string) => s.library.legacy.remove(key))
-  handle(IPC.legacy.removeAll, () => s.library.legacy.removeAll())
-  handle(IPC.legacy.count, () => s.library.legacy.count())
 
   handle(IPC.prefs.get, (): Prefs => ({
     updateChannel: readSettings().updateChannel,
@@ -235,7 +325,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.licence.refresh, () => refreshLicence())
   handle(IPC.licence.startTrial, () => startTrial())
   handle(IPC.licence.freeDevice, (id: string) => {
-    if (typeof id !== 'string' || !id) throw new Error('No device to free.')
+    if (typeof id !== 'string' || !id) throw new Error(t('No device to free.'))
     return freeDevice(id)
   })
 
@@ -362,10 +452,10 @@ export function registerIpc(s: Services): void {
   )
   handle(IPC.library.exportCollections, async (ids: string[]): Promise<string | null> => {
     const file = await s.index.exportCollections(ids)
-    const only = file.collections.length === 1 ? file.collections[0].name : 'Collections'
+    const only = file.collections.length === 1 ? file.collections[0].name : t('Collections')
     const opts = {
       defaultPath: `${only.replace(/[/\\:*?"<>|]/g, '-')}.json`,
-      filters: [{ name: 'Collections', extensions: ['json'] }]
+      filters: [{ name: t('Collections'), extensions: ['json'] }]
     }
     const w = win()
     const r = w ? await dialog.showSaveDialog(w, opts) : await dialog.showSaveDialog(opts)
@@ -376,7 +466,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.library.importCollections, async (): Promise<Collection[]> => {
     const opts = {
       properties: ['openFile'] as 'openFile'[],
-      filters: [{ name: 'Collections', extensions: ['json'] }]
+      filters: [{ name: t('Collections'), extensions: ['json'] }]
     }
     const w = win()
     const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
@@ -385,7 +475,7 @@ export function registerIpc(s: Services): void {
     try {
       parsed = JSON.parse(await readFile(r.filePaths[0], 'utf8'))
     } catch {
-      throw new Error(`${basename(r.filePaths[0])} is not a collections file`)
+      throw new Error(t('{{name}} is not a collections file', { name: basename(r.filePaths[0]) }))
     }
     return s.index.importCollections(parsed)
   })
@@ -453,6 +543,35 @@ export function registerIpc(s: Services): void {
     IPC.develop.bakeSpot,
     (key: string, spot: RetouchSpot, layerId: string | null, steps: PixelStep[]) =>
       s.sessions.bakeSpot(key, spot, layerId, steps)
+  )
+  // AI Remove by a click: the object SAM 2.1 finds there, as a stroke over
+  // it (the engine fills strokes, not planes), filled by MI-GAN and baked.
+  handle(
+    IPC.develop.removeObject,
+    async (
+      key: string,
+      at: SpotPoint,
+      feather: number,
+      layerId: string | null,
+      steps: PixelStep[]
+    ): Promise<PixelStep | null> => {
+      const found = await s.select.oneShot(
+        key,
+        { rect: null, points: [{ x: at.x, y: at.y, fg: true }] },
+        { via: 'click', label: 'Remove' },
+        new AbortController().signal
+      )
+      const png = await s.planes.get(found.ref)
+      if (png === undefined) throw new Error(t('the object’s mask went missing'))
+      const stroke = strokeOver(grey8(Buffer.from(png, 'base64')))
+      if (!stroke) throw new Error(t('nothing was found there to remove'))
+      return s.sessions.bakeSpot(
+        key,
+        removeSpot(stroke.points, stroke.radius, feather),
+        layerId,
+        steps
+      )
+    }
   )
   handle(
     IPC.develop.suggestHeal,
@@ -607,12 +726,12 @@ export function registerIpc(s: Services): void {
     // not given.
     promptJob: (r) => {
       if (r.prompt.kind === 'label')
-        throw new Error('finding an object by name needs the next engine update')
+        throw new Error(t('finding an object by name needs the next engine update'))
       const prompt =
         r.prompt.kind === 'point'
           ? { rect: null, points: [{ ...r.prompt.point, fg: true }] }
           : { rect: boxAround([r.prompt.from, r.prompt.to]), points: [] }
-      if (!prompt.rect && prompt.points.length === 0) throw new Error('nothing was pointed at')
+      if (!prompt.rect && prompt.points.length === 0) throw new Error(t('nothing was pointed at'))
       return s.ai.start({
         task: 'prompt',
         key: r.key,
@@ -646,7 +765,7 @@ export function registerIpc(s: Services): void {
     const w = win()
     const opts = {
       properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[],
-      filters: [{ name: 'Lens profile', extensions: ['json'] }]
+      filters: [{ name: t('Lens profile'), extensions: ['json'] }]
     }
     const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
     if (r.canceled) return []
@@ -683,7 +802,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.export.chooseWatermark, async () => {
     const w = win()
     const opts = {
-      title: 'Choose a watermark',
+      title: t('Choose a watermark'),
       properties: ['openFile'] as 'openFile'[],
       filters: [{ name: 'PNG', extensions: ['png'] }]
     }
@@ -728,9 +847,39 @@ export function registerIpc(s: Services): void {
   handle(IPC.ai.start, (req: AiStartRequest) => s.ai.start(req))
   handle(IPC.ai.cancel, (jobId: string) => s.ai.cancel(jobId))
   handle(IPC.ai.list, () => s.ai.list())
+  handle(IPC.ai.switches, () => s.switches.get())
+  handle(IPC.ai.setEnabled, (on: boolean) => s.switches.setEnabled(on === true))
+  handle(IPC.ai.setHeavy, (model: HeavyModel, on: boolean) =>
+    s.switches.setHeavy(model, on === true)
+  )
+  handle(IPC.ai.benchmark, (model: HeavyModel) => {
+    const progress = (p: number, note: string): void => {
+      for (const w of BrowserWindow.getAllWindows())
+        w.webContents.send(IPC.ai.benchmarkProgress, { model, progress: p, note })
+    }
+    return model === 'gemma'
+      ? s.brain.benchmark(progress)
+      : benchmarkSam3(s.aiEngine, s.models, s.switches, progress)
+  })
+  handle(IPC.brain.status, () => s.brain.status())
+  handle(IPC.brain.download, () => void s.brain.download())
+  handle(IPC.brain.cancel, () => s.brain.cancel())
+  handle(IPC.brain.remove, () => s.brain.remove())
+  handle(IPC.cull.suggestions, (keys: string[]) => s.cull.suggestions(keys))
+  handle(IPC.cull.keep, (keys: string[], keep: boolean) => s.cull.keep(keys, keep))
+  handle(IPC.cull.measure, (keys: string[]) => s.cull.measureNow(keys))
+  handle(IPC.names.get, async (key: string) =>
+    readNames(await s.index.namesOf(parseKey(key).photoId))
+  )
+  handle(IPC.names.name, (key: string) => s.namer.nameNow(parseKey(key).photoId))
+  handle(IPC.names.edit, (key: string, names: unknown) =>
+    s.namer.edit(parseKey(key).photoId, names === null ? null : readNames(names))
+  )
   handle(IPC.ai.capabilities, async (): Promise<AiCapabilities> => {
+    // AI switched off: every model's tool says so (a RAW's develop keeps its models).
+    if (!(await s.switches.enabled())) return aiOff()
     const enhance = enhanceAvailability(s.bgEngine.getStatus())
-    const subject = (await s.models.installed('u2net')) || (await s.models.installed('u2netp'))
+    const subject = await s.models.installed('u2netp')
     // Models run on the engine's bundled runtime; each denoise model is
     // offered for download where it is picked (Detail → Noise reduction).
     const status = s.bgEngine.getStatus()
@@ -743,12 +892,28 @@ export function registerIpc(s: Services): void {
       models,
       subjectModel: subject,
       drunetModel: await s.models.installed('drunet-color'),
+      nafnetModel: await s.models.installed('nafnet-sidd-w32'),
       samModel,
       enhance: enhance.available,
-      // Still to come: a sky model (E28; meanwhile the sky is clicked,
-      // SKY_BY_CLICK), people's parts (E30), the detector (E45) and NAFNet
-      // denoise. They turn on with the binding that has them.
-      engine: { sky: false, people: false, sam2, detector: false, nafnet: false }
+      sceneModel: await s.models.installed(SCENE_MODEL),
+      partsModel: await s.models.installed(PARTS_MODEL),
+      faceModels:
+        (await s.models.installed(FACE_DETECTOR)) && (await s.models.installed(FACE_LANDMARKER)),
+      phraseModel:
+        (await s.models.installed(PHRASE_MODELS[0])) ||
+        (await s.models.installed(PHRASE_MODELS[1])),
+      // The scene planes, people's parts and face parts came with 0.19
+      // (models the engine runs); the detector (E45) is still to come. NAFNet
+      // denoise came with 0.19 too, held back until its fixed export (E55).
+      engine: {
+        sky: models,
+        people: models,
+        faces: models,
+        phrase: models,
+        sam2,
+        detector: false,
+        nafnet: NAFNET_DENOISE
+      }
     })
     const drunet = await s.models.installed('drunet-color')
     return {
@@ -757,9 +922,9 @@ export function registerIpc(s: Services): void {
       denoise: models,
       prompt: sam2 && samModel,
       smart,
-      // By name: a text-prompted segmenter (SAM 3, or the detector, E45),
-      // people's parts (E30) and a sky model (E28) are still to come.
-      finders: { click: sam2, text: false, parts: false, 'sky-model': false },
+      // By name: the sky, people's parts and anything by a phrase (SAM 3),
+      // their models (0.19) offered when not downloaded.
+      finders: { click: sam2, text: models, parts: models, 'sky-model': models },
       // What to download for a task that waits only on its model: the one
       // Playroom recommends (the detailed subject model, SAM 2.1, DRUNet).
       get: {
@@ -769,21 +934,27 @@ export function registerIpc(s: Services): void {
       },
       why: {
         ...(enhance.available ? {} : { enhance: enhance.reason }),
-        ...(segment ? {} : { segment: `download ${modelName(s.models.entry('u2netp'))}` }),
-        ...(models ? {} : { denoise: 'this engine build runs no models' }),
+        ...(segment
+          ? {}
+          : { segment: t('download {{model}}', { model: modelName(s.models.entry('u2netp')) }) }),
+        ...(models ? {} : { denoise: t('this engine build runs no models') }),
         ...(sam2 && samModel
           ? {}
           : {
               prompt: sam2
-                ? `download ${modelName(s.models.entry(SAM_MODEL))}`
-                : 'this engine build has no prompted segmentation'
+                ? t('download {{model}}', { model: modelName(s.models.entry(SAM_MODEL)) })
+                : t('this engine build has no prompted segmentation')
             })
       }
     }
   })
 
   // ── select by clicks, a box or strokes (SAM 2.1) ──
-  handle(IPC.select.open, (key: string) => s.select.open(key))
+  handle(IPC.select.open, async (key: string) => {
+    if (!(await s.switches.enabled()))
+      throw new Error(t('AI models are off: turn them on in Settings → AI models'))
+    return s.select.open(key)
+  })
   handle(IPC.select.decode, (selId: string, req: SelectDecode) => s.select.decode(selId, req))
   handle(IPC.select.commit, (selId: string, source: PromptSourceAsk) =>
     s.select.commit(selId, source)

@@ -4,6 +4,7 @@
  * picture gets) and the built-in curve presets.
  */
 import type { CurvePointSetting, ToneCurveSetting } from './recipe'
+import { tk } from './i18n'
 
 /** Monotone cubic (Fritsch–Carlson), the interpolation the engine uses — so the drawn curve is the applied curve. */
 export function monotone(points: CurvePointSetting[]): (x: number) => number {
@@ -78,9 +79,9 @@ export interface CurvePreset {
 
 /** The curves every photo can start from, on the RGB point curve. */
 export const BUILTIN_CURVES: CurvePreset[] = [
-  { name: 'Linear', curve: {} },
+  { name: tk('Linear'), curve: {} },
   {
-    name: 'Medium contrast',
+    name: tk('Medium contrast'),
     curve: {
       master: [
         { x: 0, y: 0 },
@@ -92,7 +93,7 @@ export const BUILTIN_CURVES: CurvePreset[] = [
     }
   },
   {
-    name: 'Strong contrast',
+    name: tk('Strong contrast'),
     curve: {
       master: [
         { x: 0, y: 0 },
@@ -105,7 +106,7 @@ export const BUILTIN_CURVES: CurvePreset[] = [
   },
   {
     // Lifted blacks and a slightly dimmed white: the faded print look.
-    name: 'Matte',
+    name: tk('Matte'),
     curve: {
       master: [
         { x: 0, y: 0.09 },
@@ -118,7 +119,7 @@ export const BUILTIN_CURVES: CurvePreset[] = [
   },
   {
     // A gentle S with both ends eased off, as a film stock's toe and shoulder.
-    name: 'Soft film S',
+    name: tk('Soft film S'),
     curve: {
       master: [
         { x: 0, y: 0.04 },
@@ -130,7 +131,7 @@ export const BUILTIN_CURVES: CurvePreset[] = [
     }
   },
   {
-    name: 'Lifted shadows',
+    name: tk('Lifted shadows'),
     curve: {
       master: [
         { x: 0, y: 0 },

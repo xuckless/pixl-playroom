@@ -17,14 +17,15 @@ import {
   wash,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 export const CREATIVE = collection('creative', [
   look(
     'faded-summer',
-    'Faded Summer',
+    tk('Faded Summer'),
     {
       tags: ['summer', 'faded', 'warm', 'nostalgic'],
-      description: 'A sun-bleached summer afternoon.'
+      description: tk('A sun-bleached summer afternoon.')
     },
     tone({ contrast: -10, shadows: 15 }),
     fade(0.06),
@@ -34,10 +35,10 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'autumn-gold',
-    'Autumn Gold',
+    tk('Autumn Gold'),
     {
       tags: ['autumn', 'fall', 'gold', 'warm', 'foliage'],
-      description: 'Greens turned gold and orange, warm and rich.'
+      description: tk('Greens turned gold and orange, warm and rich.')
     },
     sCurve(20),
     presence({ vibrance: 15 }),
@@ -46,10 +47,10 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'winter-blue',
-    'Winter Blue',
+    tk('Winter Blue'),
     {
       tags: ['winter', 'cold', 'snow', 'blue'],
-      description: 'Crisp, cold and clean, with blue shadows.'
+      description: tk('Crisp, cold and clean, with blue shadows.')
     },
     tone({ contrast: 10, whites: 10 }),
     presence({ saturation: -15 }),
@@ -58,8 +59,11 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'desert-heat',
-    'Desert Heat',
-    { tags: ['desert', 'hot', 'warm', 'orange'], description: 'Baked orange heat and hazy sky.' },
+    tk('Desert Heat'),
+    {
+      tags: ['desert', 'hot', 'warm', 'orange'],
+      description: tk('Baked orange heat and hazy sky.')
+    },
     tone({ contrast: 15 }),
     presence({ dehaze: -10, saturation: -5 }),
     wheel('global', 30, 18),
@@ -67,10 +71,10 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'vaporwave',
-    'Vaporwave',
+    tk('Vaporwave'),
     {
       tags: ['vaporwave', 'retro', 'pink', 'cyan', 'synth'],
-      description: 'Magenta and cyan, faded and dreamy.'
+      description: tk('Magenta and cyan, faded and dreamy.')
     },
     fade(0.05),
     split(190, 30, 320, 30),
@@ -78,10 +82,10 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'lo-fi',
-    'Lo-Fi',
+    tk('Lo-Fi'),
     {
       tags: ['lo-fi', 'cheap camera', 'faded', 'grain'],
-      description: 'Cheap-camera charm: faded, soft and grainy.'
+      description: tk('Cheap-camera charm: faded, soft and grainy.')
     },
     tone({ contrast: 10 }),
     fade(0.06),
@@ -93,10 +97,10 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'cyberpunk-night',
-    'Cyberpunk Night',
+    tk('Cyberpunk Night'),
     {
       tags: ['cyberpunk', 'neon', 'night', 'magenta', 'teal'],
-      description: 'Electric magenta and teal, deep blacks.'
+      description: tk('Electric magenta and teal, deep blacks.')
     },
     tone({ contrast: 25, blacks: -10 }),
     split(185, 30, 315, 20),
@@ -105,8 +109,8 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'mint-fresh',
-    'Mint Fresh',
-    { tags: ['mint', 'fresh', 'pastel', 'airy'], description: 'Bright, minty and clean.' },
+    tk('Mint Fresh'),
+    { tags: ['mint', 'fresh', 'pastel', 'airy'], description: tk('Bright, minty and clean.') },
     tone({ contrast: -10, whites: 10 }),
     presence({ saturation: -5 }),
     wheel('shadows', 160, 12),
@@ -115,8 +119,8 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'sunset-glow',
-    'Sunset Glow',
-    { tags: ['sunset', 'glow', 'warm', 'pink'], description: 'Peach and pink evening glow.' },
+    tk('Sunset Glow'),
+    { tags: ['sunset', 'glow', 'warm', 'pink'], description: tk('Peach and pink evening glow.') },
     tone({ highlights: -10, shadows: 10 }),
     split(280, 10, 25, 25),
     presence({ vibrance: 15 }),
@@ -124,10 +128,10 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'forest-moody',
-    'Forest Moody',
+    tk('Forest Moody'),
     {
       tags: ['forest', 'moody', 'green', 'dark', 'nature'],
-      description: 'Deep, dark greens and misty quiet.'
+      description: tk('Deep, dark greens and misty quiet.')
     },
     tone({ contrast: 10, highlights: -15, whites: -10 }),
     fade(0.03),
@@ -137,10 +141,10 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'ocean-deep',
-    'Ocean Deep',
+    tk('Ocean Deep'),
     {
       tags: ['ocean', 'sea', 'blue', 'teal', 'water'],
-      description: 'Rich teal and deep sea blue.'
+      description: tk('Rich teal and deep sea blue.')
     },
     tone({ contrast: 15 }),
     hsl({ aqua: [-10, 35, -15], blue: [-10, 30, -20] }),
@@ -149,10 +153,10 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'urban-grit',
-    'Urban Grit',
+    tk('Urban Grit'),
     {
       tags: ['urban', 'gritty', 'street', 'desaturated'],
-      description: 'Hard, gritty city detail with little colour.'
+      description: tk('Hard, gritty city detail with little colour.')
     },
     tone({ contrast: 20 }),
     presence({ saturation: -40, clarity: 30, texture: 15 }),
@@ -161,10 +165,10 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'peach-skin',
-    'Peach Skin',
+    tk('Peach Skin'),
     {
       tags: ['portrait', 'peach', 'warm', 'soft', 'skin'],
-      description: 'Soft peachy skin, gentle everything else.'
+      description: tk('Soft peachy skin, gentle everything else.')
     },
     tone({ contrast: -8, shadows: 12 }),
     presence({ texture: -12 }),
@@ -174,10 +178,10 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'cotton-candy',
-    'Cotton Candy',
+    tk('Cotton Candy'),
     {
       tags: ['pastel', 'pink', 'blue', 'sweet'],
-      description: 'Pink highlights, blue shadows, all pastel.'
+      description: tk('Pink highlights, blue shadows, all pastel.')
     },
     tone({ contrast: -15 }),
     fade(0.04),
@@ -186,8 +190,8 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'honey-haze',
-    'Honey Haze',
-    { tags: ['honey', 'warm', 'haze', 'dreamy'], description: 'Hazy, honeyed backlight.' },
+    tk('Honey Haze'),
+    { tags: ['honey', 'warm', 'haze', 'dreamy'], description: tk('Hazy, honeyed backlight.') },
     tone({ contrast: -10 }),
     fade(0.04),
     presence({ dehaze: -15 }),
@@ -196,18 +200,18 @@ export const CREATIVE = collection('creative', [
   ),
   look(
     'bleach-pop',
-    'Bleach Pop',
+    tk('Bleach Pop'),
     {
       tags: ['bleach', 'fashion', 'contrast', 'desaturated'],
-      description: 'Fashion bleach: hard, bright and pale.'
+      description: tk('Fashion bleach: hard, bright and pale.')
     },
     tone({ contrast: 30, whites: 15 }),
     presence({ saturation: -35, clarity: 10 })
   ),
   look(
     'emerald-city',
-    'Emerald City',
-    { tags: ['green', 'emerald', 'night', 'city'], description: 'Everything leans emerald.' },
+    tk('Emerald City'),
+    { tags: ['green', 'emerald', 'night', 'city'], description: tk('Everything leans emerald.') },
     tone({ contrast: 15 }),
     split(150, 25, 130, 10),
     calib({ greenHue: 10, greenSaturation: 20 })

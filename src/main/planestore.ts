@@ -5,7 +5,7 @@
  * stores each plane once. Every recipe coming in is hydrated here before
  * anything renders or saves it; sidecars always get the PNGs themselves.
  */
-import type { Recipe } from '../shared/recipe'
+import { hasPlane, type Recipe } from '../shared/recipe'
 import { slim } from './planeref'
 import type { IndexClient } from './indexer/client'
 
@@ -71,7 +71,7 @@ export class PlaneStore {
    */
   async hydrate(recipe: Recipe): Promise<Recipe> {
     const wants = recipe.layers.some((l) =>
-      l.components.some((c) => c.kind === 'brush' && !c.png && c.ref)
+      l.components.some((c) => hasPlane(c) && !c.png && c.ref)
     )
     if (!wants) return recipe
     return {
@@ -81,7 +81,7 @@ export class PlaneStore {
           ...l,
           components: await Promise.all(
             l.components.map(async (c) => {
-              if (c.kind !== 'brush' || c.png || !c.ref) return c
+              if (!hasPlane(c) || c.png || !c.ref) return c
               const png = await this.get(c.ref)
               if (png === undefined)
                 throw new Error('a painted mask is missing from the plane store')

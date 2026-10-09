@@ -9,6 +9,7 @@
  * on. Deblur and restore can keep to a mask (frozen as it is when made).
  * The steps and their numbers are `shared/enhance.ts`'s.
  */
+import { t } from '../shared/i18n'
 import log from 'electron-log/main'
 import { rm } from 'fs/promises'
 import { join } from 'path'
@@ -44,6 +45,7 @@ import { ModelMissing, type ModelStore } from './ai/models'
 import type { Library } from './library'
 import {
   BACKGROUND_THREADS,
+  heavyThreads,
   blankRequest,
   colourOf,
   seedOf,
@@ -56,10 +58,11 @@ import { keyOf, parseKey } from './keys'
 import { paths } from './paths'
 import { ensureProxies } from './proxy'
 import type { DevelopSessions } from './render'
+import { askOf } from './ai/rawdevelop'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { freezeMask } from './pixels/freeze'
 import { addPixelStep, storesLossless } from './pixels/steps'
-import { ensureWorking } from './pixels/working'
+import { ensureWorking, modelInput } from './pixels/working'
 
 const TIFF = { Tiff: { compression: 'None' } } as const
 const ICC_ONLY = { exif: false, icc: true, xmp: false, iptc: false } as const
@@ -77,9 +80,9 @@ export interface EnhanceAvailability {
  */
 export function enhanceAvailability(status: EngineStatus): EnhanceAvailability {
   if (status.enhance !== true)
-    return { available: false, reason: 'this build of the engine runs no models' }
+    return { available: false, reason: t('this build of the engine runs no models') }
   if (!status.runtime)
-    return { available: false, reason: 'this build of the engine ships no ONNX Runtime' }
+    return { available: false, reason: t('this build of the engine ships no ONNX Runtime') }
   return { available: true }
 }
 
@@ -123,7 +126,7 @@ async function chainOf(
     const id = p.model!
     if (!(await models.installed(id))) throw new ModelMissing(models.entry(id))
     const provider = onCpu.has(id) ? ('Cpu' as const) : undefined
-    if (p.kind === 'x2' || p.kind === 'x4' || p.kind === 'x4-wdn') {
+    if (p.scale) {
       out.push({ Upscale: (await models.ref(id, provider)) as unknown as UpscalerRef })
       continue
     }
@@ -156,21 +159,21 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
 
   stages(): { id: string; label: string; weight: number }[] {
     return [
-      { id: 'model', label: 'Model', weight: 0.06 },
-      { id: 'enhance', label: 'Enhance', weight: 0.88 },
-      { id: 'save', label: 'Save', weight: 0.06 }
+      { id: 'model', label: t('Model'), weight: 0.06 },
+      { id: 'enhance', label: t('Enhance'), weight: 0.88 },
+      { id: 'save', label: t('Save'), weight: 0.06 }
     ]
   }
 
   title(req: EnhanceRequest): { title: string; subject: string } {
-    return { title: 'Enhancing', subject: chainSubject(planSteps(req.settings, true)) }
+    return { title: t('Enhancing'), subject: chainSubject(planSteps(req.settings, true)) }
   }
 
   async run(ctx: AiContext, req: EnhanceRequest): Promise<{ kind: 'step'; label: string }> {
     const { key, settings } = req
-    ctx.stage('model', 0, 'Checking the models')
+    ctx.stage('model', 0, t('Checking the models'))
     const avail = enhanceAvailability(this.status())
-    if (!avail.available) throw new Error(avail.reason ?? 'unavailable')
+    if (!avail.available) throw new Error(avail.reason ?? t('unavailable'))
     const sessions = this.sessions()
     // The probe first: it records a RAW's camera colour and moves its saved white with it.
     const row = await this.library.photoRow(key)
@@ -189,7 +192,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     // An upscale is the whole photo; deblur and restore can keep to a mask.
     const layer =
       req.layerId && k === 1 ? recipe.layers.find((l) => l.id === req.layerId) : undefined
-    if (req.layerId && k === 1 && !layer) throw new Error('the mask is gone')
+    if (req.layerId && k === 1 && !layer) throw new Error(t('the mask is gone'))
     if (this.engine.getStatus().status === 'starting') {
       this.engine.start()
       await this.engine.whenStarted()
@@ -203,7 +206,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const restoresJpeg = steps.some((p) => p.kind === 'reconstruct' || p.kind.startsWith('fbcnn'))
     const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const working = await ensureWorking(deps, versionStamp(row), plain, recipe.pixels, () =>
-      ensureBase(this.engine, row, info)
+      ensureBase(this.engine, row, info, askOf(recipe))
     )
     const master = working.master!
     const dir = paths.photoCache(row.id)
@@ -218,7 +221,16 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         encode: TIFF,
         metadata: ICC_ONLY,
         color: 'Preserve' as const,
-        threads: BACKGROUND_THREADS * 2
+        threads: heavyThreads(),
+        // ×2 is the ×4 model brought down by half on the enlarged frame
+        // (engine 0.18 retired its own ×2 model).
+        ...(k === 2
+          ? {
+              resize: { Scale: { factor: 0.5 } },
+              resampler: 'Lanczos3' as const,
+              linear_resample: true
+            }
+          : {})
       }
       if (restoresJpeg) {
         const orientation = sourceOrientation(info, null)
@@ -231,8 +243,10 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           { signal: ctx.signal }
         )
       }
+      // A RAW's float frame is read clipped to 0..1 (laid back under its headroom guard).
+      const input = await modelInput(this.engine, dir, master, heavyThreads())
       return this.engine.convert(
-        { ...blankRequest(master.path, out, master.input), ...common },
+        { ...blankRequest(input.path, out, input.input), ...common },
         { signal: ctx.signal }
       )
     }
@@ -257,7 +271,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         .setSetting(RATE_KEY, learnRates(steps, rates, Date.now() - t0, expected))
         .catch(() => {})
 
-      ctx.stage('save', 0.1, 'Keeping it in the project')
+      ctx.stage('save', 0.1, t('Keeping it in the project'))
       const lossless = await storesLossless(row.is_raw === 1, () =>
         this.settings.getSetting(LOSSLESS_KEY)
       )
@@ -268,8 +282,8 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           ...blankRequest(out, jxl, 'Tiff'),
           pixel: { depth: 'Sixteen', channels: 3 },
           encode: lossless
-            ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
-            : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
+            ? { JxlLossless: { effort: 3, threads: heavyThreads() } }
+            : { JxlLossy: { distance: 0.1, effort: 5, threads: heavyThreads() } },
           metadata: ICC_ONLY,
           color: 'Preserve'
         },
@@ -297,7 +311,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           recipe,
           layer.id
         )
-        if (!plane) throw new Error(`${layer.name} selects nothing`)
+        if (!plane) throw new Error(t('{{name}} selects nothing', { name: layer.name }))
         files.push(plane)
         alpha = await this.library.index.putBlob(photoKey, plane, {
           kind: 'mask',
@@ -310,7 +324,9 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
       const step: PixelStep = {
         id: newId(),
         kind: 'enhance',
-        label: layer ? `Enhance · ${subject} in ${layer.name}` : `Enhance · ${subject}`,
+        label: layer
+          ? t('Enhance · {{subject}} in {{mask}}', { subject, mask: layer.name })
+          : t('Enhance · {{subject}}', { subject }),
         blob,
         alpha,
         scope: layer?.name ?? null,
@@ -323,6 +339,8 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           scale: k,
           resizes: k > 1,
           lossless,
+          // Everything it was run with, so a later develop can make it again.
+          settings: JSON.stringify(settings),
           ...(row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {})
         }
       }

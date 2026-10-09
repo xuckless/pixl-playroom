@@ -13,8 +13,10 @@
  */
 import type { Ellipse, Feather, Orientation, Retouch, RetouchStep, SpotShape } from './engine-types'
 import { transformPoint } from './orientation'
+import { tk } from './i18n'
 
-export type SpotKind = 'heal' | 'clone' | 'fill' | 'redeye' | 'peteye'
+/** `remove`: an inpainting model fills it (MI-GAN, engine 0.18); baked at once, never live. */
+export type SpotKind = 'heal' | 'clone' | 'fill' | 'remove' | 'redeye' | 'peteye'
 
 export interface P {
   x: number
@@ -50,11 +52,12 @@ export interface RetouchSpot {
 }
 
 export const SPOT_LABEL: Record<SpotKind, string> = {
-  heal: 'Heal',
-  clone: 'Clone',
-  fill: 'Fill',
-  redeye: 'Red eye',
-  peteye: 'Pet eye'
+  heal: tk('Heal'),
+  clone: tk('Clone'),
+  fill: tk('Fill'),
+  remove: tk('Remove'),
+  redeye: tk('Red eye'),
+  peteye: tk('Pet eye')
 }
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
@@ -175,7 +178,9 @@ export function compileRetouch(
   spots: RetouchSpot[],
   user: Orientation,
   w: number,
-  h: number
+  h: number,
+  /** An inpainter's filled ref, for a Remove (only a bake has one: a live Remove is left out). */
+  inpainter: Record<string, unknown> | null = null
 ): Retouch | null {
   const swap = transformPoint(user, { x: 1, y: 0.5 }).y !== 0.5
   const fw = swap ? h : w
@@ -215,6 +220,12 @@ export function compileRetouch(
             // Reproducible: the same spot fills the same way every render.
             seed: parseInt(s.id.replace(/[^0-9a-f]/gi, '').slice(0, 8) || '1', 16)
           }
+        })
+        break
+      case 'remove':
+        if (!inpainter) continue
+        steps.push({
+          Remove: { shape, feather, opacity, context: REMOVE_CONTEXT, model: inpainter }
         })
         break
       case 'redeye':
@@ -268,4 +279,71 @@ export function newSpot(
     amount: 100,
     pupilLevel: 10
   }
+}
+
+/** How much around a Remove's hole the model sees: the box grown by this times its longer side. */
+export const REMOVE_CONTEXT = 0.75
+
+/**
+ * A mask (grey, 8 bits, a frame's size) as a brush stroke that covers it, for
+ * a Remove: the engine fills circles or strokes, not planes. Rows across the
+ * object a stroke's width apart, each from the mask's left to its right
+ * there, joined end to end (a serpentine); the stroke's radius grows it a
+ * little past the edge, which a removal wants. Fractions of the frame and of
+ * its shorter side; null when the mask selects nothing.
+ */
+export function strokeOver(mask: {
+  data: Uint8Array
+  width: number
+  height: number
+}): { points: P[]; radius: number } | null {
+  const { data, width: w, height: h } = mask
+  let x0 = w
+  let x1 = -1
+  let y0 = h
+  let y1 = -1
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      if (data[y * w + x] >= 128) {
+        if (x < x0) x0 = x
+        if (x > x1) x1 = x
+        if (y < y0) y0 = y
+        if (y > y1) y1 = y
+      }
+  if (x1 < 0) return null
+  // About two dozen rows over the object's longer side, never under 2 px.
+  const r = Math.max(2, Math.max(x1 - x0 + 1, y1 - y0 + 1) / 24)
+  let step = r * 1.2
+  // 4096 points at most: two a row.
+  step = Math.max(step, (y1 - y0 + 1) / 2000)
+  const points: P[] = []
+  let flip = false
+  for (let yc = y0; yc <= y1 + step / 2; yc += step) {
+    const lo = Math.max(0, Math.floor(yc - step / 2))
+    const hi = Math.min(h - 1, Math.ceil(yc + step / 2))
+    let a = w
+    let b = -1
+    for (let y = lo; y <= hi; y++)
+      for (let x = x0; x <= x1; x++)
+        if (data[y * w + x] >= 128) {
+          if (x < a) a = x
+          if (x > b) b = x
+        }
+    if (b < 0) continue
+    const y = Math.min(h - 1, yc)
+    const row = [
+      { x: (a + 0.5) / w, y: (y + 0.5) / h },
+      { x: (b + 0.5) / w, y: (y + 0.5) / h }
+    ]
+    points.push(...(flip ? row.reverse() : row))
+    flip = !flip
+  }
+  if (points.length === 1) points.push({ ...points[0] })
+  return { points, radius: r / Math.min(w, h) }
+}
+
+/** A Remove spot over `points` (a stroke, or one point for a disc), as the Heal tool makes one. */
+export function removeSpot(points: P[], radius: number, feather: number): RetouchSpot {
+  const id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4)
+  return newSpot(id, 'remove', points, radius, feather, 100)
 }

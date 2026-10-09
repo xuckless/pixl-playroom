@@ -8,6 +8,7 @@ import {
   type LocalLayer
 } from '../../../../shared/recipe'
 import { api } from '../../lib/api'
+import { t } from '../../lib/i18n'
 import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { patchMask } from './model'
@@ -69,7 +70,7 @@ export function useMaskPresets(): {
         amount: layer.amount
       }
       await store([...presets.filter((p) => p.name !== name), entry])
-      useLibrary.getState().say(`Saved mask preset "${name}"`)
+      useLibrary.getState().say(t('Saved mask preset "{{name}}"', { name }))
     },
     apply: (layer, p) =>
       patchMask(layer.id, `${layer.name}: preset ${p.name}`, (l) => {

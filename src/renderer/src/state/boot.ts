@@ -4,13 +4,14 @@
  * the splash names the first one still running.
  */
 import { create } from 'zustand'
+import { tk } from '../lib/i18n'
 
 export type BootStep = 'engine' | 'index' | 'folder'
 
 export const BOOT_STEPS: { id: BootStep; label: string }[] = [
-  { id: 'engine', label: 'Starting PIXL Engine' },
-  { id: 'index', label: 'Opening the library index' },
-  { id: 'folder', label: 'Opening your last folder' }
+  { id: 'engine', label: tk('Starting PIXL Engine') },
+  { id: 'index', label: tk('Opening the library index') },
+  { id: 'folder', label: tk('Opening your last folder') }
 ]
 
 interface BootState {

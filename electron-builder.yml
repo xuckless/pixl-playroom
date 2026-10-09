@@ -26,6 +26,14 @@ files:
   - '!{.github,release-please-config.json,.release-please-manifest.json}'
   - '!resources/ai/**'
   - '!resources/lens-profiles/**'
+  # Not the app's: the repo's docs, the website's and the backend's sources,
+  # and what a local checkout holds beside them (the agents' worktrees, the
+  # engine requests, both gitignored but on disk). Found inside a local
+  # package (Pass 117).
+  - '!{docs,site,supabase}/**'
+  - '!.claude/**'
+  - '!{ENGINE-REQUESTS.md,ENGINE-REQUESTS.*.md}'
+  - '!{out-verify,out-before,perf-out}/**'
 
 # The third-party notices (scripts/third-party-notices.mjs, run after the
 # build), opened from Settings and Help. Every platform's own extraResources
@@ -97,6 +105,12 @@ mac:
   # APPLE_TEAM_ID are set; the Developer ID certificate comes from CSC_LINK /
   # CSC_KEY_PASSWORD. Without them the build is unsigned.
   notarize: true
+  # Playroom's own display reader (scripts/build-native.mjs, built by
+  # `pnpm build` for this job's arch): a screen's EDR headroom for the HDR
+  # preview. Missing, Playroom uses the values stated in Preferences.
+  extraResources:
+    - from: build/native/display.node
+      to: native/display.node
   extendInfo:
     NSPhotoLibraryUsageDescription: Pixl Playroom opens the photos you choose to develop.
     NSDesktopFolderUsageDescription: Pixl Playroom opens folders of photos you choose.
@@ -247,6 +261,12 @@ appImage:
 # `releaseType: release`, and EP_GH_IGNORE_TIME for older tags). Once that
 # release is out, the github entry goes.
 generateUpdatesFilesForAllChannels: true
+# This version's What's new (scripts/release-notes.mjs, run by `pnpm build`):
+# the update feed's releaseNotes, read by an installed Playroom's "Update
+# available" dialog, and the GitHub release's body.
+releaseInfo:
+  releaseNotesFile: build/release-notes.md
+
 publish:
   - provider: generic
     url: https://updates.pixlfoundation.com/playroom

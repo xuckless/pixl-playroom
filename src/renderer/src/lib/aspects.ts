@@ -1,7 +1,9 @@
+import { tk } from './i18n'
+
 /** Crop aspect presets; "Original" (-1) is the frame's own aspect as the user has turned it. */
 export const ASPECTS: { value: string; label: string; ratio: number | null }[] = [
-  { value: 'free', label: 'Free', ratio: null },
-  { value: 'original', label: 'Original', ratio: -1 },
+  { value: 'free', label: tk('Free'), ratio: null },
+  { value: 'original', label: tk('Original'), ratio: -1 },
   { value: '1:1', label: '1 : 1', ratio: 1 },
   { value: '4:5', label: '4 : 5', ratio: 4 / 5 },
   { value: '5:4', label: '5 : 4', ratio: 5 / 4 },

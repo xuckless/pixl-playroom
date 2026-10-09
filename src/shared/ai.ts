@@ -12,23 +12,86 @@ import type { AiDenoiseModel, BrushSource } from './recipe'
 import type { SmartReadiness } from './looks/smart'
 import type { Finders } from './concepts'
 import type { PromptGeometry, PromptVia } from './prompt'
+import {
+  FACE_LANDMARKER,
+  FACE_PART_LABEL,
+  isFacePart,
+  type FaceFound,
+  type FacePart
+} from './faceparts'
+import { tk } from './i18n'
 
 export type AiTask = 'enhance' | 'segment' | 'denoise' | 'prompt'
 
 /**
- * Until a sky model ships (E28), the Sky tool and smart looks' sky masks
- * ask the user to click the sky, and SAM 2.1 selects it. Turn this off when
- * the roster has a sky model: Sky becomes one click again, found by the
- * model (ai/segment.ts).
+ * Before engine 0.19's sky plane (DINOv2-S+ADE), the Sky tool and smart
+ * looks' sky masks asked the user to click the sky, and SAM 2.1 selected
+ * it. Now the model finds it: one click on the tool (ai/segment.ts). Kept
+ * for a sky model that might be held back again.
  */
-export const SKY_BY_CLICK = true
+export const SKY_BY_CLICK = false
 /**
  * The masks' People tools (body, face, hair, skin…), each found by a click
  * on the part (SAM 2.1). Off until they are ready to release: the tools say
  * "soon" in the picker.
  */
 export const PEOPLE_BY_CLICK = false
-export type SegmentTarget = 'subject' | 'sky' | 'background'
+/** What DINOv2-S+ADE finds in a scene (engine 0.19): each one plane. */
+export type SceneTarget = 'sky' | 'vegetation' | 'water'
+export const SCENE_TARGETS: SceneTarget[] = ['sky', 'vegetation', 'water']
+/** A person's parts Selfie Multiclass finds (engine 0.19); the rest wait for face parts. */
+export type PartTarget = 'face' | 'hair' | 'skin' | 'clothes'
+export const PART_TARGETS: PartTarget[] = ['face', 'hair', 'skin', 'clothes']
+/** `depth`: a depth map (Depth Anything V2), landing as a Depth range. */
+export type SegmentTarget =
+  | 'subject'
+  | 'background'
+  | 'depth'
+  | SceneTarget
+  | PartTarget
+  /** A face part (YuNet and Face Mesh v2): lands as a lasso, not a plane. */
+  | FacePart
+  /** Anything named by a phrase (`phrase`): SAM 3, or EfficientSAM3. */
+  | 'phrase'
+
+/** The phrase models (engine 0.19, on demand), best first: SAM 3, then the lighter EfficientSAM3. */
+export const PHRASE_MODELS = ['sam3', 'efficientsam3-ev-m'] as const
+
+/**
+ * SAM 3 is held back: its image encoder brings the engine host down under
+ * Electron (SIGTRAP in Electron 44's runtime, fine under Node;
+ * ENGINE-REQUESTS E58). While held, EfficientSAM3 is the phrase model, the
+ * one offered and run; turned on, SAM 3 is offered first again.
+ */
+export const SAM3_PHRASE = false
+
+/** The phrase model to offer when none is downloaded. */
+export const OFFERED_PHRASE_MODEL: string = SAM3_PHRASE ? PHRASE_MODELS[0] : PHRASE_MODELS[1]
+
+/** The scene model (engine 0.19): sky, vegetation and water. */
+export const SCENE_MODEL = 'dinov2-s-ade'
+/** The people-parts model (engine 0.19): hair, face and body skin, clothes. */
+export const PARTS_MODEL = 'selfie-multiclass'
+
+export const isSceneTarget = (t: unknown): t is SceneTarget =>
+  SCENE_TARGETS.includes(t as SceneTarget)
+export const isPartTarget = (t: unknown): t is PartTarget => PART_TARGETS.includes(t as PartTarget)
+
+/** The model a segment job runs. */
+export function segmentModel(target: SegmentTarget, fine = false): string {
+  if (target === 'depth') return DEPTH_MODEL
+  if (isFacePart(target)) return FACE_LANDMARKER
+  if (target === 'phrase') return OFFERED_PHRASE_MODEL
+  if (isSceneTarget(target)) return SCENE_MODEL
+  if (isPartTarget(target)) return PARTS_MODEL
+  return fine ? FINE_SUBJECT_MODEL : 'u2netp'
+}
+
+/** The fine subject model (engine 0.18, on demand): BiRefNet lite. */
+export const FINE_SUBJECT_MODEL = 'birefnet-lite'
+
+/** The depth model (engine 0.18): disparity, per photo. */
+export const DEPTH_MODEL = 'depth-anything-v2-small'
 
 /** One step a job goes through, in order (Model → Analyse → Refine). */
 export interface AiStage {
@@ -54,6 +117,10 @@ export type AiResult =
       into?: { layerId: string; mode: MaskMode }
       /** What made it, kept on the mask (`BrushComponent.source`). */
       source?: BrushSource
+      /** A depth map, not a selection: it lands as a Depth range (`DepthComponent`). */
+      depth?: true
+      /** A face part: a lasso of every face's outline (no plane; `ref` is empty). */
+      polygon?: FaceFound
     }
 
 export type AiPhase = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
@@ -93,6 +160,10 @@ export type AiStartRequest = (
       key: string
       target: SegmentTarget
       into?: { layerId: string; mode: MaskMode }
+      /** The subject or background with BiRefNet lite (fine edges, ~5 s), not U²-Netp. */
+      fine?: boolean
+      /** With target `phrase`: what to find ("red car", "the dog"). */
+      phrase?: string
     }
   | {
       /**
@@ -119,6 +190,12 @@ export type AiStartRequest = (
        * the old setting made, if still kept, is taken as is (no model runs).
        */
       legacy?: boolean
+      /**
+       * Make this denoise step again, in its place: on the steps before it,
+       * inside the mask it froze, at its strength (a RAW step from an older
+       * develop, `staleRawStep`). `model`, `strength` and `layerId` are its own.
+       */
+      redo?: string
     }
 ) & {
   /** A look run's id (`AiJobEvent.group`). */
@@ -149,9 +226,18 @@ export interface AiCapabilities {
 }
 
 export const SEGMENT_LABEL: Record<SegmentTarget, string> = {
-  subject: 'Subject',
-  sky: 'Sky',
-  background: 'Background'
+  subject: tk('Subject'),
+  sky: tk('Sky'),
+  vegetation: tk('Vegetation'),
+  water: tk('Water'),
+  background: tk('Background'),
+  depth: tk('Depth range'),
+  face: tk('Face'),
+  hair: tk('Hair'),
+  skin: tk('Skin'),
+  clothes: tk('Clothes'),
+  ...FACE_PART_LABEL,
+  phrase: tk('Find by name')
 }
 
 /** The whole job's progress with `stage` at `p` (0…1) of its own way. */

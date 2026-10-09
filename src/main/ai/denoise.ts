@@ -1,6 +1,6 @@
 /**
  * AI noise reduction as a pixel step (shared/pixels.ts): a restoring model
- * (SCUNet, blind; or DRUNet, told the noise it measures) run once over the
+ * (NAFNet SIDD, blind; or DRUNet, told the noise it measures) run once over the
  * photo's pixels as they are (earlier steps laid on), its result kept in the
  * photo's project, and a step added to the recipe. From then on it undoes,
  * redoes and hides in History, and changes Strength, without the model ever
@@ -20,14 +20,22 @@
  * result decoded, never the model's output itself: what the photo shows now
  * is what it shows after a reload, on another machine, from the project alone.
  */
+import { t } from '../../shared/i18n'
 import { readFile, rm } from 'fs/promises'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import type { AiStartRequest } from '../../shared/ai'
 import { estimate } from '../../shared/ai'
 import type { EnhancerRef } from '../../shared/engine-types'
 import { pixelStepRefusal, type PixelStep } from '../../shared/pixels'
 import { developMark } from '../../shared/rawcolour'
-import { hash32, newId, type AiDenoiseModel, type Recipe } from '../../shared/recipe'
+import {
+  aiDenoiseModel,
+  hash32,
+  newId,
+  RETIRED_DENOISE,
+  type AiDenoiseModel,
+  type Recipe
+} from '../../shared/recipe'
 import { exists } from '../exists'
 import type { EngineClient } from '../engine/client'
 import type { IndexClient } from '../indexer/client'
@@ -36,17 +44,25 @@ import type { Library } from '../library'
 import { paths } from '../paths'
 import { ensureProxies, type ProxyFile } from '../proxy'
 import type { DevelopSessions } from '../render'
-import { BACKGROUND_THREADS, blankRequest, colourOf, seedOf, versionStamp } from '../source'
+import {
+  BACKGROUND_THREADS,
+  blankRequest,
+  colourOf,
+  heavyThreads,
+  seedOf,
+  versionStamp
+} from '../source'
+import { askOf } from './rawdevelop'
 import { ensureBase, pixelDeps } from '../pixels/base'
 import { freezeMask } from '../pixels/freeze'
-import { addPixelStep, storesLossless } from '../pixels/steps'
-import { ensureWorking } from '../pixels/working'
+import { addPixelStep, replacePixelStep, storesLossless } from '../pixels/steps'
+import { ensureWorking, modelInput } from '../pixels/working'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
 import { ModelMissing, modelName, type ModelStore } from './models'
 import { DENOISE_RATE_KEY } from './rates'
 
 export const DENOISE_SHORT: Record<AiDenoiseModel, string> = {
-  'scunet-color-real': 'SCUNet',
+  'nafnet-sidd-w32': 'NAFNet',
   'drunet-color': 'DRUNet'
 }
 
@@ -81,12 +97,14 @@ async function denoise(
   signal: AbortSignal,
   threads: number
 ): Promise<ProxyFile> {
+  // A RAW's float frame is read clipped to 0..1 (the result is laid back under its headroom guard).
+  const input = await modelInput(engine, dirname(out), from, threads)
   const r = await models.withCpuFallback(
     [model],
     async (onCpu) =>
       engine.convert(
         {
-          ...blankRequest(from.path, out, from.input),
+          ...blankRequest(input.path, out, input.input),
           enhance: [{ Model: await enhancer(models, model, onCpu.has(model)) }],
           pixel: { depth: 'Sixteen', channels: 3 },
           encode: TIFF,
@@ -109,7 +127,7 @@ async function denoise(
 async function legacyMaster(
   dir: string,
   version: string,
-  model: AiDenoiseModel,
+  model: string,
   strength: number,
   frame: ProxyFile
 ): Promise<string | null> {
@@ -130,7 +148,8 @@ type DenoiseRequest = Extract<AiStartRequest, { task: 'denoise' }>
 /** How long a megapixel of the full-resolution step takes, per model, remembered between runs. */
 const RATE_KEY = DENOISE_RATE_KEY
 const FIRST_GUESS_MS_PER_MP: Record<string, number> = {
-  'scunet-color-real': 27000,
+  // CoreML with static shapes: 15.2 s at 24 MP on an M2 Pro (engine 0.19); the M1 is unmeasured.
+  'nafnet-sidd-w32': 1200,
   'drunet-color': 9000
 }
 
@@ -154,26 +173,41 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
 
   stages(): { id: string; label: string; weight: number }[] {
     return [
-      { id: 'model', label: 'Model', weight: 0.05 },
-      { id: 'preview', label: 'Preview', weight: 0.15 },
-      { id: 'full', label: 'Full resolution', weight: 0.7 },
-      { id: 'save', label: 'Save', weight: 0.1 }
+      { id: 'model', label: t('Model'), weight: 0.05 },
+      { id: 'preview', label: t('Preview'), weight: 0.15 },
+      { id: 'full', label: t('Full resolution'), weight: 0.7 },
+      { id: 'save', label: t('Save'), weight: 0.1 }
     ]
   }
 
   title(req: DenoiseRequest): { title: string; subject: string } {
-    return { title: 'Denoising', subject: DENOISE_SHORT[req.model] ?? 'AI' }
+    return {
+      title: req.redo ? t('Remaking a denoise on the new RAW develop') : t('Denoising'),
+      subject: DENOISE_SHORT[aiDenoiseModel(req.model)]
+    }
   }
 
-  async run(ctx: AiContext, req: DenoiseRequest): Promise<{ kind: 'step'; label: string }> {
+  async run(ctx: AiContext, asked: DenoiseRequest): Promise<{ kind: 'step'; label: string }> {
+    // A step SCUNet made is made again on NAFNet SIDD, its successor (engine 0.19).
+    const req = { ...asked, model: aiDenoiseModel(asked.model) }
     const sessions = this.sessions()
     // The probe first: it records a RAW's camera colour and moves its saved white with it.
     const row = await this.library.photoRow(req.key)
     const info = await this.library.probe(row)
     const recipe: Recipe = sessions?.liveRecipe(req.key) ?? (await this.library.recipe(req.key))
-    const layer = req.layerId ? recipe.layers.find((l) => l.id === req.layerId) : undefined
-    if (req.layerId && !layer) throw new Error('the mask is gone')
-    ctx.stage('model', 0, `Loading ${modelName(this.models.entry(req.model))}`)
+    // Made again: the step's own mask (frozen when it was made) and place.
+    const old = req.redo
+      ? recipe.pixels.find((p) => p.id === req.redo && p.kind === 'denoise')
+      : undefined
+    if (req.redo && !old) throw new Error(t('the step is gone'))
+    const before = old ? recipe.pixels.slice(0, recipe.pixels.indexOf(old)) : recipe.pixels
+    const layer = req.layerId && !old ? recipe.layers.find((l) => l.id === req.layerId) : undefined
+    if (req.layerId && !old && !layer) throw new Error(t('the mask is gone'))
+    ctx.stage(
+      'model',
+      0,
+      t('Loading {{model}}', { model: modelName(this.models.entry(req.model)) })
+    )
     const refused = pixelStepRefusal(info)
     if (refused) throw new Error(refused)
     if (!(await this.models.installed(req.model)))
@@ -189,16 +223,16 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       })
     const tick = (expected: number): (() => void) => {
       const t0 = Date.now()
-      const t = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 250)
-      return () => clearInterval(t)
+      const timer = setInterval(() => ctx.progress(estimate(Date.now() - t0, expected), true), 250)
+      return () => clearInterval(timer)
     }
 
     // The pixels it runs on: the photo with the steps it already has.
     const deps = pixelDeps(this.engine, this.library.index, row)
     const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const working = await guard(
-      ensureWorking(deps, versionStamp(row), plain, recipe.pixels, () =>
-        ensureBase(this.engine, row, info)
+      ensureWorking(deps, versionStamp(row), plain, before, () =>
+        ensureBase(this.engine, row, info, askOf(recipe))
       )
     )
     const master = working.master!
@@ -208,8 +242,8 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
     const files: string[] = []
     try {
       // A whole-photo denoise shows at once, from the draft.
-      if (!layer && sessions) {
-        ctx.stage('preview', 0, 'Denoising a preview')
+      if (!layer && !old && sessions) {
+        ctx.stage('preview', 0, t('Denoising a preview'))
         const draft = working.px.draft
         const stop = tick(Math.max(1500, ((draft.width * draft.height) / 1e6) * rate))
         try {
@@ -224,12 +258,15 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         }
       }
 
-      ctx.stage('full', 0, 'Denoising at full resolution')
+      ctx.stage('full', 0, t('Denoising at full resolution'))
       const mp = (master.width * master.height) / 1e6
       // What the old setting made, when a photo from before steps still has it.
       const kept =
         req.legacy && recipe.pixels.length === 0
-          ? await legacyMaster(dir, versionStamp(row), req.model, req.strength, master)
+          ? ((await legacyMaster(dir, versionStamp(row), asked.model, req.strength, master)) ??
+            (req.model === 'nafnet-sidd-w32'
+              ? await legacyMaster(dir, versionStamp(row), RETIRED_DENOISE, req.strength, master)
+              : null))
           : null
       const result = kept ?? join(dir, `denoise-${stamp}.tiff`)
       if (!kept) {
@@ -238,15 +275,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         const t0 = Date.now()
         try {
           await guard(
-            denoise(
-              this.engine,
-              this.models,
-              req.model,
-              master,
-              result,
-              ctx.signal,
-              BACKGROUND_THREADS * 2
-            )
+            denoise(this.engine, this.models, req.model, master, result, ctx.signal, heavyThreads())
           )
         } finally {
           stop()
@@ -257,7 +286,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         )
       }
 
-      ctx.stage('save', 0, 'Keeping it in the project')
+      ctx.stage('save', 0, t('Keeping it in the project'))
       // A RAW's result is its developed, linear pixels: kept losslessly, so
       // exposure and white balance pushed later show nothing of compression.
       const lossless = await storesLossless(row.is_raw === 1, () =>
@@ -270,8 +299,8 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
           ...blankRequest(result, jxl, 'Tiff'),
           pixel: { depth: 'Sixteen', channels: 3 },
           encode: lossless
-            ? { JxlLossless: { effort: 3, threads: BACKGROUND_THREADS * 2 } }
-            : { JxlLossy: { distance: 0.1, effort: 5, threads: BACKGROUND_THREADS * 2 } },
+            ? { JxlLossless: { effort: 3, threads: heavyThreads() } }
+            : { JxlLossy: { distance: 0.1, effort: 5, threads: heavyThreads() } },
           metadata: ICC_ONLY,
           color: 'Preserve'
         },
@@ -285,7 +314,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         height: master.height
       })
       ctx.progress(0.5)
-      let alpha: string | null = null
+      let alpha: string | null = old?.alpha ?? null
       if (layer) {
         const plane = await freezeMask(
           deps,
@@ -299,7 +328,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
           recipe,
           layer.id
         )
-        if (!plane) throw new Error(`${layer.name} selects nothing`)
+        if (!plane) throw new Error(t('{{name}} selects nothing', { name: layer.name }))
         files.push(plane)
         alpha = await this.library.index.putBlob(key, plane, {
           kind: 'mask',
@@ -309,10 +338,29 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         })
       }
       const name = DENOISE_SHORT[req.model]
+      const develop: Record<string, string> =
+        row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {}
+      if (old) {
+        // Its place, mask, strength and name stay: only its pixels are today's.
+        const again: PixelStep = {
+          ...old,
+          blob,
+          width: master.width,
+          height: master.height,
+          params: { ...old.params, model: req.model, lossless, ...develop }
+        }
+        ctx.commit()
+        await replacePixelStep(this.library, sessions, req.key, again)
+        const { photoId, copyId } = parseKey(req.key)
+        this.library.queueThumb(photoId, copyId, true)
+        return { kind: 'step', label: again.label }
+      }
       const step: PixelStep = {
         id: newId(),
         kind: 'denoise',
-        label: layer ? `AI Denoise · ${name} in ${layer.name}` : `AI Denoise · ${name}`,
+        label: layer
+          ? t('AI Denoise · {{model}} in {{mask}}', { model: name, mask: layer.name })
+          : t('AI Denoise · {{model}}', { model: name }),
         blob,
         alpha,
         scope: layer?.name ?? null,
@@ -321,11 +369,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
         width: master.width,
         height: master.height,
         rect: null,
-        params: {
-          model: req.model,
-          lossless,
-          ...(row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {})
-        }
+        params: { model: req.model, lossless, ...develop }
       }
       // Computed on the steps there were when it began: it goes after them,
       // under any (a heal) added while it ran.

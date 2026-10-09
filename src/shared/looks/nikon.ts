@@ -16,6 +16,7 @@ import {
   vignette,
   wheel
 } from './dsl'
+import { tk } from '../i18n'
 
 const pc = (name: string): string => `Nikon Picture Control ${name}`
 const cpc = (name: string): string => `Nikon Creative Picture Control ${name}`
@@ -23,11 +24,11 @@ const cpc = (name: string): string => `Nikon Creative Picture Control ${name}`
 export const NIKON = collection('camera/nikon', [
   look(
     'crisp-standard',
-    'Crisp Standard',
+    tk('Crisp Standard'),
     {
       tags: ['standard', 'everyday', 'nikon'],
       inspiredBy: pc('Standard'),
-      description: 'Balanced contrast with slightly yellow greens.'
+      description: tk('Balanced contrast with slightly yellow greens.')
     },
     tone({ contrast: 14, blacks: -5 }),
     presence({ saturation: 10 }),
@@ -36,22 +37,22 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'even-neutral',
-    'Even Neutral',
+    tk('Even Neutral'),
     {
       tags: ['neutral', 'flat', 'grading', 'nikon'],
       inspiredBy: pc('Neutral'),
-      description: 'Gentle contrast and colour to build on.'
+      description: tk('Gentle contrast and colour to build on.')
     },
     tone({ contrast: -15 }),
     presence({ saturation: -10 })
   ),
   look(
     'bold-vivid',
-    'Bold Vivid',
+    tk('Bold Vivid'),
     {
       tags: ['vivid', 'saturated', 'punchy', 'nikon'],
       inspiredBy: pc('Vivid'),
-      description: 'Strong contrast and saturated blues and greens.'
+      description: tk('Strong contrast and saturated blues and greens.')
     },
     tone({ contrast: 22 }),
     presence({ saturation: 20 }),
@@ -59,11 +60,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'smooth-portrait',
-    'Smooth Portrait',
+    tk('Smooth Portrait'),
     {
       tags: ['portrait', 'skin', 'soft', 'nikon'],
       inspiredBy: pc('Portrait'),
-      description: 'Soft contrast and smooth, bright skin.'
+      description: tk('Soft contrast and smooth, bright skin.')
     },
     tone({ contrast: -8, shadows: 10 }),
     presence({ texture: -14, clarity: -6 }),
@@ -72,11 +73,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'open-landscape',
-    'Open Landscape',
+    tk('Open Landscape'),
     {
       tags: ['landscape', 'nature', 'green', 'blue', 'nikon'],
       inspiredBy: pc('Landscape'),
-      description: 'Rich greens and blues with extra punch.'
+      description: tk('Rich greens and blues with extra punch.')
     },
     tone({ contrast: 18, highlights: -10 }),
     presence({ vibrance: 15, clarity: 10 }),
@@ -84,22 +85,22 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'log-flat',
-    'Log Flat',
+    tk('Log Flat'),
     {
       tags: ['flat', 'log', 'grading', 'dynamic range', 'nikon'],
       inspiredBy: pc('Flat'),
-      description: 'As much range as possible, ready to grade.'
+      description: tk('As much range as possible, ready to grade.')
     },
     tone({ contrast: -40, shadows: 30, highlights: -30 }),
     presence({ saturation: -20 })
   ),
   look(
     'rich-tone-portrait',
-    'Rich Tone Portrait',
+    tk('Rich Tone Portrait'),
     {
       tags: ['portrait', 'skin', 'rich', 'zf', 'nikon'],
       inspiredBy: pc('Rich Tone Portrait'),
-      description: 'Deep, saturated skin with soft highlights.'
+      description: tk('Deep, saturated skin with soft highlights.')
     },
     tone({ contrast: 8, highlights: -20, shadows: 6 }),
     presence({ vibrance: 14, texture: -8 }),
@@ -108,11 +109,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'soft-gradation-mono',
-    'Soft Gradation Mono',
+    tk('Soft Gradation Mono'),
     {
       tags: ['bw', 'mono', 'soft', 'flat', 'warm', 'nikon'],
       inspiredBy: pc('Flat Monochrome'),
-      description: 'A gentle, slightly warm monochrome with open tones.'
+      description: tk('A gentle, slightly warm monochrome with open tones.')
     },
     mono(),
     tone({ contrast: -25, shadows: 10 }),
@@ -121,11 +122,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'deep-tone-mono',
-    'Deep Tone Mono',
+    tk('Deep Tone Mono'),
     {
       tags: ['bw', 'mono', 'deep', 'dramatic', 'nikon'],
       inspiredBy: pc('Deep Tone Monochrome'),
-      description: 'Heavy shadows and strong contrast.'
+      description: tk('Heavy shadows and strong contrast.')
     },
     mono(),
     tone({ contrast: 35, shadows: -25 }),
@@ -133,11 +134,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'simple-mono',
-    'Simple Mono',
+    tk('Simple Mono'),
     {
       tags: ['bw', 'mono', 'nikon'],
       inspiredBy: pc('Monochrome'),
-      description: 'A plain black and white with a little bite.'
+      description: tk('A plain black and white with a little bite.')
     },
     // Open mids and a yellow lean, the plain Monochrome control.
     mono({ yellow: 12, orange: 6, blue: -6 }),
@@ -145,11 +146,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'dream',
-    'Dream',
+    tk('Dream'),
     {
       tags: ['dreamy', 'soft', 'pastel', 'creative', 'nikon'],
       inspiredBy: cpc('Dream'),
-      description: 'Pale orange haze and softened detail.'
+      description: tk('Pale orange haze and softened detail.')
     },
     tone({ contrast: -15, shadows: 15 }),
     wheel('global', 35, 15),
@@ -157,11 +158,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'morning',
-    'Morning',
+    tk('Morning'),
     {
       tags: ['morning', 'cool', 'fresh', 'creative', 'nikon'],
       inspiredBy: cpc('Morning'),
-      description: 'Fresh, cool and bright, like early light.'
+      description: tk('Fresh, cool and bright, like early light.')
     },
     tone({ contrast: -10, shadows: 20, whites: 10 }),
     presence({ saturation: -5 }),
@@ -169,22 +170,22 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'pop',
-    'Pop',
+    tk('Pop'),
     {
       tags: ['pop', 'saturated', 'bright', 'creative', 'nikon'],
       inspiredBy: cpc('Pop'),
-      description: 'Bright and loudly colourful.'
+      description: tk('Bright and loudly colourful.')
     },
     tone({ contrast: 10, whites: 10 }),
     presence({ saturation: 45 })
   ),
   look(
     'sunday',
-    'Sunday',
+    tk('Sunday'),
     {
       tags: ['warm', 'relaxed', 'bright', 'creative', 'nikon'],
       inspiredBy: cpc('Sunday'),
-      description: 'Warm, bright and easy-going.'
+      description: tk('Warm, bright and easy-going.')
     },
     tone({ shadows: 15, whites: 10 }),
     presence({ saturation: 10 }),
@@ -192,11 +193,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'somber',
-    'Somber',
+    tk('Somber'),
     {
       tags: ['somber', 'muted', 'dark', 'cool', 'creative', 'nikon'],
       inspiredBy: cpc('Somber'),
-      description: 'Dim, muted and cool.'
+      description: tk('Dim, muted and cool.')
     },
     tone({ contrast: -10, whites: -15, highlights: -10 }),
     presence({ saturation: -35 }),
@@ -204,22 +205,22 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'dramatic',
-    'Dramatic',
+    tk('Dramatic'),
     {
       tags: ['dramatic', 'contrast', 'clarity', 'creative', 'nikon'],
       inspiredBy: cpc('Dramatic'),
-      description: 'Hard local contrast and drained colour.'
+      description: tk('Hard local contrast and drained colour.')
     },
     tone({ contrast: 30, whites: 20 }),
     presence({ clarity: 35, saturation: -15 })
   ),
   look(
     'silence',
-    'Silence',
+    tk('Silence'),
     {
       tags: ['quiet', 'muted', 'faded', 'cool', 'creative', 'nikon'],
       inspiredBy: cpc('Silence'),
-      description: 'Faded, cool and nearly colourless.'
+      description: tk('Faded, cool and nearly colourless.')
     },
     tone({ contrast: -15 }),
     fade(0.04),
@@ -228,11 +229,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'bleached',
-    'Bleached',
+    tk('Bleached'),
     {
       tags: ['bleached', 'desaturated', 'gritty', 'creative', 'nikon'],
       inspiredBy: cpc('Bleached'),
-      description: 'Hard contrast, washed colour and a faint green.'
+      description: tk('Hard contrast, washed colour and a faint green.')
     },
     tone({ contrast: 30 }),
     presence({ saturation: -50, clarity: 15 }),
@@ -240,11 +241,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'melancholic',
-    'Melancholic',
+    tk('Melancholic'),
     {
       tags: ['melancholy', 'faded', 'magenta', 'mood', 'creative', 'nikon'],
       inspiredBy: cpc('Melancholic'),
-      description: 'Faded, muted colour with a magenta sigh.'
+      description: tk('Faded, muted colour with a magenta sigh.')
     },
     tone({ contrast: -10 }),
     fade(0.04),
@@ -253,11 +254,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'pure',
-    'Pure',
+    tk('Pure'),
     {
       tags: ['pure', 'bright', 'airy', 'soft', 'creative', 'nikon'],
       inspiredBy: cpc('Pure'),
-      description: 'Bright, airy and veiled.'
+      description: tk('Bright, airy and veiled.')
     },
     tone({ contrast: -25, shadows: 20, whites: 15 }),
     fade(0.05),
@@ -266,11 +267,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'denim',
-    'Denim',
+    tk('Denim'),
     {
       tags: ['denim', 'blue', 'cool', 'creative', 'nikon'],
       inspiredBy: cpc('Denim'),
-      description: 'Washed indigo over everything.'
+      description: tk('Washed indigo over everything.')
     },
     tone({ contrast: 10 }),
     presence({ saturation: -20 }),
@@ -279,11 +280,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'toy',
-    'Toy',
+    tk('Toy'),
     {
       tags: ['toy camera', 'lomo', 'vignette', 'saturated', 'creative', 'nikon'],
       inspiredBy: cpc('Toy'),
-      description: 'Heavy corners and loud, yellowed colour.'
+      description: tk('Heavy corners and loud, yellowed colour.')
     },
     tone({ contrast: 20 }),
     presence({ saturation: 20 }),
@@ -292,11 +293,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'sepia-colour',
-    'Sepia Colour',
+    tk('Sepia Colour'),
     {
       tags: ['sepia', 'faded', 'vintage', 'creative', 'nikon'],
       inspiredBy: cpc('Sepia'),
-      description: 'A trace of colour under a brown tone.'
+      description: tk('A trace of colour under a brown tone.')
     },
     fade(0.03),
     presence({ saturation: -70 }),
@@ -304,44 +305,44 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'blue-wash',
-    'Blue Wash',
+    tk('Blue Wash'),
     {
       tags: ['blue', 'tinted', 'monochromatic', 'creative', 'nikon'],
       inspiredBy: cpc('Blue'),
-      description: 'Colour drained, then tinted blue.'
+      description: tk('Colour drained, then tinted blue.')
     },
     presence({ saturation: -60 }),
     wheel('global', 215, 30)
   ),
   look(
     'red-wash',
-    'Red Wash',
+    tk('Red Wash'),
     {
       tags: ['red', 'tinted', 'monochromatic', 'creative', 'nikon'],
       inspiredBy: cpc('Red'),
-      description: 'Colour drained, then tinted red.'
+      description: tk('Colour drained, then tinted red.')
     },
     presence({ saturation: -60 }),
     wheel('global', 5, 30)
   ),
   look(
     'pink-wash',
-    'Pink Wash',
+    tk('Pink Wash'),
     {
       tags: ['pink', 'tinted', 'monochromatic', 'creative', 'nikon'],
       inspiredBy: cpc('Pink'),
-      description: 'Colour drained, then tinted pink.'
+      description: tk('Colour drained, then tinted pink.')
     },
     presence({ saturation: -55 }),
     wheel('global', 335, 25)
   ),
   look(
     'charcoal',
-    'Charcoal',
+    tk('Charcoal'),
     {
       tags: ['bw', 'mono', 'charcoal', 'textured', 'creative', 'nikon'],
       inspiredBy: cpc('Charcoal'),
-      description: 'A smudged, textured mono like a charcoal drawing.'
+      description: tk('A smudged, textured mono like a charcoal drawing.')
     },
     mono(),
     tone({ contrast: 10, whites: -20, highlights: -15, shadows: -15 }),
@@ -351,11 +352,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'graphite',
-    'Graphite',
+    tk('Graphite'),
     {
       tags: ['bw', 'mono', 'graphite', 'crisp', 'creative', 'nikon'],
       inspiredBy: cpc('Graphite'),
-      description: 'A hard, cool pencil-sharp mono.'
+      description: tk('A hard, cool pencil-sharp mono.')
     },
     mono(),
     tone({ contrast: 25 }),
@@ -364,11 +365,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'binary',
-    'Binary',
+    tk('Binary'),
     {
       tags: ['bw', 'mono', 'graphic', 'two tone', 'creative', 'nikon'],
       inspiredBy: cpc('Binary'),
-      description: 'Nearly pure black and pure white.'
+      description: tk('Nearly pure black and pure white.')
     },
     mono(),
     curve('master', [
@@ -380,11 +381,11 @@ export const NIKON = collection('camera/nikon', [
   ),
   look(
     'carbon',
-    'Carbon',
+    tk('Carbon'),
     {
       tags: ['bw', 'mono', 'low key', 'dark', 'creative', 'nikon'],
       inspiredBy: cpc('Carbon'),
-      description: 'A dark, low-key mono with deep blacks.'
+      description: tk('A dark, low-key mono with deep blacks.')
     },
     mono(),
     tone({ contrast: 30, whites: -20, shadows: -15, blacks: -10 })

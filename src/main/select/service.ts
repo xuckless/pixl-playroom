@@ -19,9 +19,12 @@
  * The host is put to sleep after a few idle minutes: SAM's two models are
  * hundreds of megabytes.
  */
+import { t } from '../../shared/i18n'
+import { IDLE_SESSION } from '../ai/models'
 import log from 'electron-log/main'
 import type {
   LensCorrection,
+  MaskBounds,
   ModelRef,
   PlaneUpsample,
   PromptEmbeddingRequest,
@@ -30,6 +33,7 @@ import type {
 } from '../../shared/engine-types'
 import type { ConceptSize } from '../../shared/concepts'
 import { lensCorrection } from '../../shared/lens'
+import { guidedKeeps, SAM_GRID } from './size'
 import {
   addPart,
   enginePrompt,
@@ -66,8 +70,6 @@ const PREVIEW_MAX = 1024
 const KEEP_EMBEDDINGS = 3
 /** The host goes to sleep after this long with nothing selecting. */
 const IDLE_MS = 3 * 60_000
-/** SAM 2.1's encoder sees the frame fitted into a square this many pixels on a side. */
-const SAM_GRID = 1024
 /**
  * The decoder's logits are upsampled as they are and only then clamped into
  * 0…1: SAM's own cut (at a logit of 0) with about a pixel of anti-aliasing.
@@ -91,6 +93,18 @@ function guided(frameWidth: number, frameHeight: number): PlaneUpsample {
 const RESAMPLED: PlaneUpsample = { Resample: { kernel: 'Bilinear' } }
 /** How a plane reaches its size: guided for a mask kept, resampled for a preview. */
 type Upsample = 'guided' | 'resampled'
+
+/** The longer side of the unkept answer that only measures an object. */
+const SIZE_PROBE = 256
+
+/** The largest of a decode's answers' bounds (null when none found anything). */
+function largest(planes: { bounds: MaskBounds | null }[]): MaskBounds | null {
+  let best: MaskBounds | null = null
+  for (const p of planes)
+    if (p.bounds && (!best || p.bounds.width * p.bounds.height > best.width * best.height))
+      best = p.bounds
+  return best
+}
 /** A lens correction masks are placed after (none: null). */
 type Lens = LensCorrection | null
 /** A grey plane, 8 bits, row by row. */
@@ -167,12 +181,12 @@ export class SelectService {
       const threads = Math.max(2, interactiveThreads())
       ref.encoder.model = {
         ...ref.encoder.model,
-        session: { threads, optimisation: 'All', deterministic: false }
+        session: { threads, optimisation: 'All', deterministic: false, ...IDLE_SESSION }
       }
       // One prompt at a time, small: two threads answer as fast as eight.
       ref.decoder.model = {
         ...ref.decoder.model,
-        session: { threads: 2, optimisation: 'All', deterministic: false }
+        session: { threads: 2, optimisation: 'All', deterministic: false, ...IDLE_SESSION }
       }
       await this.engine.sam({ op: 'load', session: ENCODER, ref: ref.encoder.model })
       await this.engine.sam({ op: 'load', session: DECODER, ref: ref.decoder.model })
@@ -278,30 +292,46 @@ export class SelectService {
     if (!e) throw Object.assign(new EngineError({ message: 'embedding gone', code: 'Stale' }))
     const { frameWidth, frameHeight } = await e.ready
     const long = Math.max(frameWidth, frameHeight)
-    const request: PromptSegmentRequest = {
-      decoder: this.refs!.decoder,
-      prompt: enginePrompt(prompt, opts.count),
-      candidates: opts.all || opts.pick ? 'All' : 'HighestPredictedIou',
-      activation: ACTIVATION,
-      upsample: opts.upsample === 'guided' ? guided(frameWidth, frameHeight) : RESAMPLED,
-      bounds_at: 0.5,
-      png: { compression: 'Fast', filter: 'NoFilter' },
-      threads: 2,
-      plane_longest: opts.longest < long ? opts.longest : null
+    const decode = async (
+      upsample: Upsample,
+      longest: number,
+      keep: boolean
+    ): Promise<Extract<SamResult, { op: 'decode' }>> => {
+      const request: PromptSegmentRequest = {
+        decoder: this.refs!.decoder,
+        prompt: enginePrompt(prompt, opts.count),
+        candidates: opts.all || opts.pick ? 'All' : 'HighestPredictedIou',
+        activation: ACTIVATION,
+        upsample: upsample === 'guided' ? guided(frameWidth, frameHeight) : RESAMPLED,
+        bounds_at: 0.5,
+        png: { compression: 'Fast', filter: 'NoFilter' },
+        threads: 2,
+        plane_longest: longest < long ? longest : null
+      }
+      return (await this.engine.sam(
+        {
+          op: 'decode',
+          embedding: e.id,
+          session: DECODER,
+          lane,
+          request,
+          maskInput: opts.maskInput,
+          keep,
+          ...(opts.pick ? { pick: opts.pick } : {})
+        },
+        { signal: opts.signal }
+      )) as Extract<SamResult, { op: 'decode' }>
     }
-    return (await this.engine.sam(
-      {
-        op: 'decode',
-        embedding: e.id,
-        session: DECODER,
-        lane,
-        request,
-        maskInput: opts.maskInput,
-        keep: opts.keep,
-        ...(opts.pick ? { pick: opts.pick } : {})
-      },
-      { signal: opts.signal }
-    )) as Extract<SamResult, { op: 'decode' }>
+    let upsample = opts.upsample
+    if (upsample === 'guided') {
+      // Guided only for an object big enough to keep through its box (engine
+      // 0.18): a box prompt says its size; else a small, unkept answer does.
+      const size = prompt.rect
+        ? { width: prompt.rect.width * frameWidth, height: prompt.rect.height * frameHeight }
+        : largest((await decode('resampled', SIZE_PROBE, false)).planes)
+      if (!guidedKeeps(size, long)) upsample = 'resampled'
+    }
+    return decode(upsample, opts.longest, opts.keep)
   }
 
   /**
@@ -354,7 +384,7 @@ export class SelectService {
    */
   async decode(selId: string, req: SelectDecode): Promise<SelectPlane | null> {
     const sel = this.selections.get(selId)
-    if (!sel) throw new Error('this selection is closed')
+    if (!sel) throw new Error(t('this selection is closed'))
     this.awake()
     const t0 = Date.now()
     if (req.mode === 'probe') {
@@ -435,7 +465,7 @@ export class SelectService {
   /** The selection as a mask: its last answer, at the frame's size, in the plane store. */
   async commit(selId: string, source: PromptSourceAsk): Promise<SelectCommit> {
     const sel = this.selections.get(selId)
-    if (!sel?.last || !sel.prompt) throw new Error('nothing is selected yet')
+    if (!sel?.last || !sel.prompt) throw new Error(t('nothing is selected yet'))
     return this.keep(sel.last.png, sel.prompt, source)
   }
 
@@ -487,7 +517,7 @@ export class SelectService {
       onStage?.('decode')
       const r = await this.replay(lane, embKey, prompt, 'guided', FRAME_SIZE, signal)
       const plane = r.planes[0]
-      if (!plane) throw new Error('the model found nothing there')
+      if (!plane) throw new Error(t('the model found nothing there'))
       return this.keep(plane.png, prompt, source)
     } finally {
       this.busy--

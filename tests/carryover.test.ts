@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { carryOver } from '../src/main/ai/carryover'
+import { carryOver, retiredModelDirs } from '../src/main/ai/carryover'
 
 const sha = (s: string): string => createHash('sha256').update(s).digest('hex')
 const model = {
@@ -51,4 +51,38 @@ test('other files are left where they are: a changed model, a missing file, no f
   const partial = root({ 'x/1.0.0/a.onnx': '12345' })
   assert.equal(await carryOver(partial, model), false)
   assert.equal(await carryOver(root({}), model), false)
+})
+
+test('what no release uses goes: retired models and old versions; on-demand and current stay', async () => {
+  const r = root({
+    'real-esrgan-x2plus/1.0.0/x.onnx': 'x',
+    'lama/1.0.0/l.onnx': 'l',
+    'u2net/1.0.0/u.onnx': 'u',
+    'span-x4-ch48/1.0.0/s.onnx': 's',
+    'sam2-1-hiera-tiny/1.0.0/old.onnx': 'o',
+    'sam2-1-hiera-tiny/1.0.1/new.onnx': 'n',
+    'birefnet-lite/1.0.0/b.onnx': 'b'
+  })
+  writeFileSync(join(r, 'notes.txt'), 'not a model')
+  const gone = await retiredModelDirs(
+    r,
+    new Map([
+      ['span-x4-ch48', '1.0.0'],
+      ['sam2-1-hiera-tiny', '1.0.1']
+    ]),
+    new Set(['birefnet-lite'])
+  )
+  assert.deepEqual(gone.sort(), ['lama', 'real-esrgan-x2plus', 'sam2-1-hiera-tiny/1.0.0', 'u2net'])
+  assert.deepEqual(await retiredModelDirs(join(r, 'missing'), new Map(), new Set()), [])
+})
+
+test('Gemma’s folder and models held back are never cleaned up', async () => {
+  const { keptBesides } = await import('../src/main/ai/carryover')
+  const r = root({
+    'brains/gemma-4-e2b-it/b4243c156154/m.gguf': 'g',
+    'nafnet-sidd-w32/1.0.0/n.onnx': 'n',
+    'scunet-color-real/1.0.0/s.onnx': 's'
+  })
+  const gone = await retiredModelDirs(r, new Map(), keptBesides([], ['nafnet-sidd-w32']))
+  assert.deepEqual(gone, ['scunet-color-real'])
 })

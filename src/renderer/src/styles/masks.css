@@ -1,34 +1,13 @@
-/* ── the masks window: floating over the photo, or docked ──────── */
+/* ── the masks pane: a column of the left pane ──────── */
 .masks-win {
   width: 300px;
   display: flex;
+  flex: none;
   flex-direction: column;
   min-height: 0;
-}
-.masks-win.floating {
-  position: absolute;
-  max-height: calc(100% - 28px);
-  z-index: 8;
-  animation: floatIn 0.55s var(--spring) both;
-}
-.masks-win.docked {
-  flex: none;
-  border-right: 1px solid transparent;
-  border-image: var(--hl-y) 1;
-  animation: none;
-}
-.masks-win.liquid,
-.masks-win.liquid.refracting {
-  background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.01) 50%),
-    rgba(8, 8, 12, 0.66);
-}
-.masks-win.docked.liquid,
-.masks-win.docked.liquid.refracting {
   background: var(--s1);
-}
-.masks-win::after {
-  display: none;
+  border-left: 1px solid transparent;
+  border-image: var(--hl-y) 1;
 }
 .mf-body {
   flex: 1;
@@ -52,50 +31,6 @@
   width: 26px;
   height: 26px;
 }
-/* Folded: a pill naming the selected mask; a click unfolds it, a drag moves it. */
-.mf-pill {
-  position: absolute;
-  z-index: 8;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  max-width: 260px;
-  padding: 0 12px;
-  color: var(--text);
-  cursor: grab;
-  animation: floatIn 0.45s var(--spring) both;
-}
-.mf-pill.liquid,
-.mf-pill.liquid.refracting {
-  background: rgba(8, 8, 12, 0.7);
-}
-.mf-pill-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mf-pill-count {
-  font-size: 10px;
-  color: var(--muted);
-  border: 1px solid var(--hair);
-  border-radius: var(--r);
-  padding: 0 5px;
-}
-/* Dragging the window to the photo's left edge: where it will dock. */
-.stage.dock-hint::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 300px;
-  z-index: 7;
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.22), rgba(157, 139, 234, 0.04));
-  border-right: 1px solid var(--acc);
-  box-shadow: 0 0 24px -6px var(--glow);
-  pointer-events: none;
-}
 .mf-head {
   display: flex;
   align-items: center;
@@ -106,7 +41,6 @@
   border-bottom: 1px solid transparent;
   border-image: var(--hl-x) 1;
   flex: none;
-  cursor: grab;
   user-select: none;
 }
 .mf-head:active {
@@ -637,6 +571,34 @@ button.mode-badge:disabled {
 .tp-mode {
   color: var(--acc);
 }
+.tp-find {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+}
+.tp-find:focus-within {
+  border-color: var(--acc);
+}
+.tp-find .icon-svg {
+  width: 15px;
+  height: 15px;
+  color: var(--acc);
+  flex: none;
+}
+.tp-find input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+}
 .tp-group {
   display: flex;
   flex-direction: column;
@@ -708,6 +670,16 @@ button.mode-badge:disabled {
   padding: 4px 8px 6px;
   border-left: 1px solid var(--acc-a55);
   animation: bodyIn 0.3s var(--spring) backwards;
+}
+/* a Depth range's map, the range tinted */
+.depth-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 4px 0 6px;
+  border-radius: var(--r);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  image-rendering: auto;
 }
 .mf-card-row {
   display: flex;
@@ -976,4 +948,94 @@ button.grad-other:hover:not(:disabled) {
   border: 1px solid var(--hair);
   border-radius: var(--r);
   padding: 0 5px;
+}
+
+/* Gemma's names for the photo, as chips atop the pane (panels/masks/NameChips.tsx). */
+.name-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px 6px;
+}
+.name-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.15s var(--ease);
+}
+.name-chip:hover {
+  border-color: var(--acc-a55);
+}
+.name-chip.subject {
+  border-color: var(--acc-a55);
+}
+.name-chip .nc-mask {
+  height: 100%;
+  padding: 0 4px 0 10px;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  cursor: pointer;
+}
+.name-chip .nc-star {
+  color: var(--acc);
+}
+.name-chip .nc-off {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 100%;
+  padding: 0 4px 0 0;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  opacity: 0;
+  cursor: pointer;
+}
+.name-chip:hover .nc-off,
+.name-chip .nc-off:focus-visible {
+  opacity: 1;
+}
+.name-chip .nc-off .icon-svg {
+  width: 11px;
+  height: 11px;
+}
+.name-chips .nc-add {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px dashed var(--hair2);
+  border-radius: 12px;
+  background: none;
+  color: var(--muted);
+}
+.name-chips .nc-add .icon-svg {
+  width: 12px;
+  height: 12px;
+}
+.name-chips .nc-type {
+  width: 120px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--acc);
+  border-radius: 12px;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  outline: none;
+}
+.name-chips .nc-name {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 12px;
 }

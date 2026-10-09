@@ -25,7 +25,7 @@ test('a tool that is not a card (Crop, Heal, Enhance) leaves the cards be', () =
 
 test('a current layout passes through', () => {
   const saved = { focusCard: 'detail', cardsOpen: { detail: true } }
-  assert.deepEqual(migrateUi(saved, 4), saved)
+  assert.deepEqual(migrateUi(saved, 7), saved)
 })
 
 test('AI denoise left at the old default (SCUNet) moves to DRUNet, once', () => {
@@ -37,4 +37,22 @@ test('AI denoise left at the old default (SCUNet) moves to DRUNet, once', () => 
   // Chosen again afterwards, it stays.
   const kept = migrateUi({ denoise: { model: 'scunet-color-real', strength: 70 } }, 4)
   assert.deepEqual(kept.denoise, { model: 'scunet-color-real', strength: 70 })
+})
+
+test('version 5: Full HDR starts off', () => {
+  assert.equal(migrateUi({ fullHdr: true }, 4).fullHdr, false)
+  assert.equal(migrateUi({ fullHdr: true }, 5).fullHdr, true)
+})
+
+test('version 6: the masks window keeps only whether it is open', () => {
+  const old = { masksWin: { open: true, docked: false, minimized: true, x: 400, y: 20 } }
+  assert.deepEqual(migrateUi(old, 5).masksWin, { open: true })
+  assert.deepEqual(migrateUi({ masksWin: { minimized: true } }, 5).masksWin, { open: false })
+})
+
+test('version 7: every layout takes the flat UI once', () => {
+  assert.equal(migrateUi({ alwaysFlat: false }, 6).alwaysFlat, true)
+  assert.equal(migrateUi({}, 6).alwaysFlat, true)
+  // Turned back to glass after: kept.
+  assert.equal(migrateUi({ alwaysFlat: false }, 7).alwaysFlat, false)
 })

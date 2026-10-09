@@ -33,9 +33,11 @@ import { useAiJobs } from '../state/jobs'
 import { useLibrary } from '../state/library'
 import { runOnEvent, useLooks, type AppliedLook } from '../state/looks'
 import { api, errorText } from './api'
+import { t } from './i18n'
 
 /** A look's history label: `Look: X` for the catalog's, `Preset: X` for the user's own. */
-export const labelOf = (p: Preset): string => `${p.meta ? 'Look' : 'Preset'}: ${p.name}`
+export const labelOf = (p: Preset): string =>
+  p.meta ? t('Look: {{name}}', { name: p.name }) : t('Preset: {{name}}', { name: p.name })
 
 /** The step label for an Amount: the look's, with the amount when it is not whole. */
 const amountLabel = (a: AppliedLook, amount: number): string =>
@@ -180,11 +182,11 @@ async function applyNow(p: Preset, stack: boolean): Promise<boolean> {
   return true
 }
 
-/** `r` with the applied look at `t` (0…1): its fields blended, its masks and steps scaled. */
-function atAmount(r: Recipe, a: AppliedLook, t: number): void {
-  assignFields(r, blendLook(a.before, a.after, a.fields, t), a.fields)
-  for (const l of r.layers) if (l.id in a.layers) l.amount = Math.round(a.layers[l.id] * t)
-  for (const s of r.pixels) if (s.id in a.pixels) s.opacity = Math.round(a.pixels[s.id] * t)
+/** `r` with the applied look at `k` (0…1): its fields blended, its masks and steps scaled. */
+function atAmount(r: Recipe, a: AppliedLook, k: number): void {
+  assignFields(r, blendLook(a.before, a.after, a.fields, k), a.fields)
+  for (const l of r.layers) if (l.id in a.layers) l.amount = Math.round(a.layers[l.id] * k)
+  for (const s of r.pixels) if (s.id in a.pixels) s.opacity = Math.round(a.pixels[s.id] * k)
 }
 
 /** The applied look at `amount` (0…100), live while a slider moves. */
@@ -258,7 +260,7 @@ async function landed(e: Extract<LookRunEvent, { kind: 'landed' }>): Promise<voi
   const a = currentApplied()
   if (!a || a.runId !== e.runId) {
     // The look's step is not the newest any more (an edit, an undo since): a step of its own.
-    const look = useLooks.getState().runs[e.runId]?.look ?? 'Look'
+    const look = useLooks.getState().runs[e.runId]?.look ?? t('Look')
     await now.replace(recipe, `${look} · ${e.label}`)
     return
   }
@@ -272,8 +274,8 @@ async function landed(e: Extract<LookRunEvent, { kind: 'landed' }>): Promise<voi
     Object.entries(a.layers).filter(([id]) => recipe.layers.some((l) => l.id === id))
   )
   const next: AppliedLook = { ...a, layers, pixels }
-  const t = a.amount / 100
-  if (t !== 1) atAmount(recipe, next, t)
+  const k = a.amount / 100
+  if (k !== 1) atAmount(recipe, next, k)
   useDevelop.setState({ recipe })
   const seq = await now.amend(a.seq, amountLabel(a, a.amount))
   // The look at full strength now has what landed.
@@ -299,7 +301,7 @@ function ended(e: Extract<LookRunEvent, { kind: 'end' }>): void {
     useLibrary
       .getState()
       .say(
-        `${run?.look ?? 'The look'}: ${e.failed.map((f) => `${f.label}: ${f.why}`).join('; ')}`,
+        `${run?.look ?? t('The look')}: ${e.failed.map((f) => `${f.label}: ${f.why}`).join('; ')}`,
         'info'
       )
   setTimeout(() => {
@@ -315,13 +317,17 @@ function ask(e: Extract<LookRunEvent, { kind: 'pick' }>): void {
   const dev = useDevelop.getState()
   if (dev.session?.key === e.key) return dev.setTool('look-pick')
   const lib = useLibrary.getState()
-  lib.say(`${e.look} needs you to point at the ${e.label}`, 'info', {
-    label: 'Show',
-    run: () => {
-      lib.setFocus(e.key)
-      void useDevelop.getState().open(e.key)
+  lib.say(
+    t('{{look}} needs you to point at the {{label}}', { look: e.look, label: e.label }),
+    'info',
+    {
+      label: t('Show'),
+      run: () => {
+        lib.setFocus(e.key)
+        void useDevelop.getState().open(e.key)
+      }
     }
-  })
+  )
 }
 
 /** The user's answer to the pick tool: a click, a box, or skip. */

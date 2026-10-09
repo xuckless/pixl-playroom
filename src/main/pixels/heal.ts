@@ -12,6 +12,7 @@
  * pixels: the stroke's region rendered with it and without it, and the patch
  * is where the two differ (times the selected mask, frozen, when one clips it).
  */
+import { t } from '../../shared/i18n'
 import { existsSync, readFileSync } from 'fs'
 import { rm } from 'fs/promises'
 import { join } from 'path'
@@ -26,6 +27,7 @@ import {
   type RetouchSpot
 } from '../../shared/retouch'
 import { pngSamples16 } from '../pngio'
+import { inpainterRef } from '../ai/inpainter'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
 import type { FreezeContext } from './freeze'
 import { lensMap, moves } from './lensmap'
@@ -130,8 +132,8 @@ export async function bakeSpot(
   // Its size too: drawn on the corrected picture, the correction stretches it
   // on the photo (the feather is a share of the size, and follows).
   const centre = {
-    x: spot.points.reduce((t, p) => t + p.x, 0) / Math.max(1, spot.points.length),
-    y: spot.points.reduce((t, p) => t + p.y, 0) / Math.max(1, spot.points.length)
+    x: spot.points.reduce((sum, p) => sum + p.x, 0) / Math.max(1, spot.points.length),
+    y: spot.points.reduce((sum, p) => sum + p.y, 0) / Math.max(1, spot.points.length)
   }
   const k = moves(ctx.lens) ? localScale(map, centre, W, H) : 1
   const onPhoto: RetouchSpot = {
@@ -141,7 +143,11 @@ export async function bakeSpot(
     radius: spot.radius * k,
     radiusY: spot.radiusY ? spot.radiusY * k : spot.radiusY
   }
-  const retouch = compileRetouch([onPhoto], 'Normal', W, H)
+  // A Remove's model (MI-GAN): asked for only when one is baked.
+  const inpainter = spot.kind === 'remove' ? await inpainterRef() : null
+  if (spot.kind === 'remove' && !inpainter)
+    throw new Error(t('download the object remover (MI-GAN) in Settings → AI models first'))
+  const retouch = compileRetouch([onPhoto], 'Normal', W, H, inpainter)
   if (!retouch) return null
   const region = spotBounds(onPhoto, W, H)
   const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
@@ -215,7 +221,8 @@ export async function bakeSpot(
       width: W,
       height: H,
       rect: { x: region.x + placed.x, y: region.y + placed.y, w: placed.w, h: placed.h },
-      params: { spot: spot.kind }
+      // The spot itself too, so a later develop can bake it again.
+      params: { spot: spot.kind, geometry: JSON.stringify(spot) }
     }
   }
   // Its renders and patch are only on the way to the project: gone after.
