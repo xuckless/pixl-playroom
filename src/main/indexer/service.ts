@@ -48,6 +48,7 @@ import type {
 import { ENGINE_RENDER_REV } from '../../shared/pixels'
 import { groupNear } from '../../shared/dupes'
 import { parseRawColour } from '../../shared/rawcolour'
+import { readNames, searchWords } from '../../shared/naming'
 import { convertAsShot, type WbContext } from '../../shared/wbconvert'
 import { keywordPrefixes, normaliseKeyword } from '../../shared/keywords'
 import {
@@ -1018,6 +1019,7 @@ export class IndexService {
     this.store.setStack(row.id, sidecar.stack?.id ?? null, sidecar.stack?.position ?? null)
     // The truth where one is written; a photo with none keeps what the index recorded.
     if (sidecar.rawColour) this.store.setRawColour(row.id, sidecar.rawColour)
+    if (sidecar.names) this.store.setNames(row.id, JSON.stringify(sidecar.names))
     if (from === 'project') {
       this.store.setProject(row.id, row.project_path, mtime)
       row.project_mtime = mtime
@@ -1286,7 +1288,8 @@ export class IndexService {
           }
         : null,
       offline: folderGone,
-      project: row.project_path ?? null
+      project: row.project_path ?? null,
+      ...(row.names ? { names: searchWords(readNames(row.names)) } : {})
     }
   }
 
@@ -1952,9 +1955,12 @@ export class IndexService {
     const project = this.projectOf(row)
     // A sidecar or project made now keeps the camera colour the index recorded.
     const colour = raw ? parseRawColour(row.raw_colour) : null
+    // …and the names the index holds.
+    const names = readNames(row.names)
     const apply = (s: Sidecar): void => {
       change(s)
       if (colour && !s.rawColour) s.rawColour = colour
+      if (names && !s.names) s.names = names
     }
     if (project) {
       const truth = this.projects.write(project, (p) => {
@@ -2139,6 +2145,41 @@ export class IndexService {
       this.updateRow(row, (s) => {
         s.rawColour = c
       })
+  }
+
+  /**
+   * What Gemma named in a photo (shared/naming.ts), or the user's changes to
+   * it: in the index always, and in its project or sidecar when it has one
+   * (naming makes no sidecar of its own). Returns the photo's items, their
+   * search words changed.
+   */
+  setNames(photoId: number, json: string | null): LibraryItem[] {
+    const row = this.store.photo(photoId)
+    if (!row) return []
+    const names = readNames(json)
+    const kept = names ? JSON.stringify(names) : null
+    this.store.setNames(photoId, kept)
+    const now = { ...row, names: kept }
+    if (this.projectOf(row) || existsSync(sidecarPath(row.path)))
+      this.updateRow(now, (s) => {
+        s.names = names
+      })
+    return this.itemsOf([now])
+  }
+
+  /** A photo's names as kept, or null. */
+  namesOf(photoId: number): string | null {
+    return this.store.photo(photoId)?.names ?? null
+  }
+
+  /** Naming gave no usable answer: not tried again by itself. */
+  namingFailed(photoId: number): void {
+    this.store.setNamesTried(photoId, new Date().toISOString())
+  }
+
+  /** Photos to name next, newest arrivals first. */
+  unnamed(limit: number): number[] {
+    return this.store.unnamed(limit)
   }
 
   /**

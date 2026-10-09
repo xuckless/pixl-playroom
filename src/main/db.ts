@@ -63,6 +63,10 @@ export interface PhotoRow {
   raw_colour: string | null
   /** When the file arrived on this disk (ms): its birth time, else its modification time. */
   added?: number | null
+  /** What Gemma named in it (shared/naming.ts `PhotoNames`, JSON); null until named. */
+  names?: string | null
+  /** When naming it last gave no usable answer (ISO). */
+  names_tried?: string | null
   /** The photo's `.pixl` project (the truth about its edits once it has one), and its mtime as mirrored. */
   project_path: string | null
   project_mtime: number | null
@@ -330,7 +334,11 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   // 13. A RAW's camera colour (engine 0.17): 'container' or 'pixl:1', recorded
   // the first time the photo is developed (NULL until then) so it is chosen
   // once and not re-derived from a probe (shared/rawcolour.ts).
-  (db) => addColumns(db, 'photos', { raw_colour: 'TEXT' })
+  (db) => addColumns(db, 'photos', { raw_colour: 'TEXT' }),
+  // 14. What Gemma named in the photo (shared/naming.ts), as JSON, for the
+  // Masks pane's chips and the Library's search; and when it last tried and
+  // gave no usable answer (not tried again by itself).
+  (db) => addColumns(db, 'photos', { names: 'TEXT', names_tried: 'TEXT' })
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -786,6 +794,24 @@ export class Store {
       reason,
       photoId
     )
+  }
+
+  setNames(photoId: number, names: string | null): void {
+    this.prepare('UPDATE photos SET names = ?, names_tried = NULL WHERE id = ?').run(names, photoId)
+  }
+
+  setNamesTried(photoId: number, at: string): void {
+    this.prepare('UPDATE photos SET names_tried = ? WHERE id = ?').run(at, photoId)
+  }
+
+  /** Photos not named yet (nor tried), newest arrivals first, readable ones only. */
+  unnamed(limit: number): number[] {
+    return (
+      this.prepare(
+        `SELECT id FROM photos WHERE names IS NULL AND names_tried IS NULL AND failed_key IS NULL
+         ORDER BY COALESCE(added, mtime) DESC LIMIT ?`
+      ).all(limit) as { id: number }[]
+    ).map((r) => r.id)
   }
 
   setRawColour(photoId: number, colour: string | null): void {

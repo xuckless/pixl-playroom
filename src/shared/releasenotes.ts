@@ -75,7 +75,7 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
           'If an adjustment ever breaks the picture, the slider responsible turns red and says so; your edit is kept.',
           'AI work runs on your Mac’s performance cores, where it is fastest.',
           'Work running in the background (AI jobs, exports, model downloads) shows on the top bar with how far it has come; click it to see the queue, go to a photo or stop a job.',
-          'Settings → AI models → Use AI models turns every AI model off at once (RAW files still develop with theirs). Heavy models such as Gemma, the local assistant, stay off until a short benchmark shows your computer can keep them up.',
+          'Settings → AI models → Use AI models turns every AI model off at once (RAW files still develop with theirs).',
           'While Playroom is minimised or another app is in front, it lets its engine rest and draws flat, still panels, which is lighter on the battery. Settings → Interface → Always flat keeps the flat look all the time.'
         ]
       }

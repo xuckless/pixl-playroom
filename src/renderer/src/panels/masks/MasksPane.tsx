@@ -29,6 +29,7 @@ import {
 } from './model'
 import { ComponentCard, SelectedMask } from './MaskTool'
 import { ToolPicker } from './ToolPicker'
+import { NameChips } from './NameChips'
 import { useReorder } from './useReorder'
 import { keyHint, withKey } from '../../lib/commands'
 
@@ -723,6 +724,7 @@ export function MasksPane(): React.JSX.Element | null {
           </span>
         </span>
       </div>
+      <NameChips />
       <div className="mf-body">
         <div className={`mf-list${masks.drag ? ' sorting' : ''}`}>
           {layers.length === 0 && (

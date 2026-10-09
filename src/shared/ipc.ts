@@ -109,6 +109,8 @@ export const IPC = {
     /** main → renderer: a thumbnail (re)rendered */
     thumb: 'library:thumb',
     hdr: 'library:hdr',
+    /** main → renderer: a photo's search words from its names (every copy shares them). */
+    names: 'library:names',
     /** main → renderer: the folder's items changed (new file, new copy) */
     changed: 'library:changed',
     /** The items of any source: a folder, a collection, a keyword, the duplicates. */
@@ -272,6 +274,16 @@ export const IPC = {
     /** main → renderer: its state changed. */
     event: 'brain:event'
   },
+  /** What Gemma named in a photo (shared/naming.ts): the Masks pane's chips. */
+  names: {
+    get: 'names:get',
+    /** Name the photo now (its Masks pane), idle or not. */
+    name: 'names:name',
+    /** The user's own list: a chip taken off, a name typed. */
+    edit: 'names:edit',
+    /** main → renderer: a photo's names changed. */
+    event: 'names:event'
+  },
   /** Select by clicks, a box or strokes (SAM 2.1): main/select/service.ts. */
   select: {
     open: 'select:open',
@@ -380,6 +392,8 @@ export interface LibraryItem {
   hdr?: HdrKind | null
   /** Its `.pixl` project, once it has one (the truth about its edits and history). */
   project?: string | null
+  /** What the search finds it by from Gemma's names (shared/naming.ts `searchWords`); absent until named. */
+  names?: string[]
 }
 
 /** A gain map over an SDR base (iPhone, UltraHDR), or a PQ / HLG signal. */

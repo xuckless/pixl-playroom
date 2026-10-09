@@ -59,6 +59,8 @@ import { FACE_DETECTOR, FACE_LANDMARKER } from '../shared/faceparts'
 import type { HeavyModel } from '../shared/heavy'
 import type { AiSwitchStore } from './ai/switches'
 import type { BrainStore } from './ai/brain'
+import type { Namer } from './ai/namer'
+import { readNames } from '../shared/naming'
 import { benchmarkSam3 } from './ai/sam3bench'
 import { immediateLayers, previewLayers, smartReadiness } from '../shared/looks/smart'
 import type { LookRunRequest, PickAnswer } from '../shared/looks/run'
@@ -160,6 +162,8 @@ export interface Services {
   switches: AiSwitchStore
   /** Gemma, the local assistant. */
   brain: BrainStore
+  /** Gemma's names for the library's photos. */
+  namer: Namer
 }
 
 /** What AI can do with the killswitch thrown: nothing a model does, and why. */
@@ -807,6 +811,13 @@ export function registerIpc(s: Services): void {
   handle(IPC.brain.download, () => void s.brain.download())
   handle(IPC.brain.cancel, () => s.brain.cancel())
   handle(IPC.brain.remove, () => s.brain.remove())
+  handle(IPC.names.get, async (key: string) =>
+    readNames(await s.index.namesOf(parseKey(key).photoId))
+  )
+  handle(IPC.names.name, (key: string) => s.namer.nameNow(parseKey(key).photoId))
+  handle(IPC.names.edit, (key: string, names: unknown) =>
+    s.namer.edit(parseKey(key).photoId, names === null ? null : readNames(names))
+  )
   handle(IPC.ai.capabilities, async (): Promise<AiCapabilities> => {
     // AI switched off: every model's tool says so (a RAW's develop keeps its models).
     if (!(await s.switches.enabled())) return aiOff()

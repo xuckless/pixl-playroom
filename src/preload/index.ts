@@ -65,6 +65,7 @@ import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
 import type { AiSwitches, HeavyBenchmark, HeavyModel } from '../shared/heavy'
+import type { PhotoNames } from '../shared/naming'
 import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../shared/looks/run'
 import type { EnhanceRates } from '../shared/enhance'
@@ -159,6 +160,8 @@ const api = {
       on(IPC.library.thumb, cb),
     /** A photo's HDR kind, learned from its probe (every copy of it shares it). */
     onHdr: (cb: (p: { photoId: number; hdr: HdrKind | null }) => void) => on(IPC.library.hdr, cb),
+    /** A photo's search words from Gemma's names (every copy shares them). */
+    onNames: (cb: (p: { photoId: number; words: string[] }) => void) => on(IPC.library.names, cb),
     onChanged: (cb: (p: { folder: string }) => void) => on(IPC.library.changed, cb),
     openSource: (source: LibrarySource) => call<SourceListing>(IPC.library.openSource, source),
     resolvePaths: (paths: string[]) =>
@@ -337,6 +340,13 @@ const api = {
     cancel: () => call<void>(IPC.brain.cancel),
     remove: () => call<void>(IPC.brain.remove),
     onEvent: (cb: (s: BrainStatus) => void) => on(IPC.brain.event, cb)
+  },
+  names: {
+    get: (key: string) => call<PhotoNames | null>(IPC.names.get, key),
+    name: (key: string) => call<PhotoNames | null>(IPC.names.name, key),
+    edit: (key: string, names: PhotoNames | null) => call<void>(IPC.names.edit, key, names),
+    onEvent: (cb: (e: { photoId: number; names: PhotoNames | null }) => void) =>
+      on(IPC.names.event, cb)
   },
   /** Select by clicks, a box or strokes (SAM 2.1) on the open photo. */
   select: {

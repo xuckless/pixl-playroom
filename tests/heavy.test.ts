@@ -81,3 +81,14 @@ test('with AI off, smart looks say so for everything a model does; ranges and gr
   assert.equal(r.drunet, 'off')
   assert.match(whyNot('off'), /Settings → AI models/)
 })
+
+test('0.4.0-beta ships without Gemma: a packaged build has none, a development build has it', async () => {
+  const { GEMMA_SHIPS, gemmaInBuild } = await import('../src/shared/heavy')
+  const { SAM3_PHRASE, OFFERED_PHRASE_MODEL } = await import('../src/shared/ai')
+  assert.equal(GEMMA_SHIPS, false)
+  assert.equal(gemmaInBuild(true), false, 'packaged: no llama-server, no Gemma')
+  assert.equal(gemmaInBuild(false), true, 'development: all of it')
+  // SAM 3 held too: EfficientSAM3 is the phrase model offered.
+  assert.equal(SAM3_PHRASE, false)
+  assert.equal(OFFERED_PHRASE_MODEL, 'efficientsam3-ev-m')
+})

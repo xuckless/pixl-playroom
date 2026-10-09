@@ -949,3 +949,93 @@ button.grad-other:hover:not(:disabled) {
   border-radius: var(--r);
   padding: 0 5px;
 }
+
+/* Gemma's names for the photo, as chips atop the pane (panels/masks/NameChips.tsx). */
+.name-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px 6px;
+}
+.name-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.15s var(--ease);
+}
+.name-chip:hover {
+  border-color: var(--acc-a55);
+}
+.name-chip.subject {
+  border-color: var(--acc-a55);
+}
+.name-chip .nc-mask {
+  height: 100%;
+  padding: 0 4px 0 10px;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  cursor: pointer;
+}
+.name-chip .nc-star {
+  color: var(--acc);
+}
+.name-chip .nc-off {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 100%;
+  padding: 0 4px 0 0;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  opacity: 0;
+  cursor: pointer;
+}
+.name-chip:hover .nc-off,
+.name-chip .nc-off:focus-visible {
+  opacity: 1;
+}
+.name-chip .nc-off .icon-svg {
+  width: 11px;
+  height: 11px;
+}
+.name-chips .nc-add {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px dashed var(--hair2);
+  border-radius: 12px;
+  background: none;
+  color: var(--muted);
+}
+.name-chips .nc-add .icon-svg {
+  width: 12px;
+  height: 12px;
+}
+.name-chips .nc-type {
+  width: 120px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--acc);
+  border-radius: 12px;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  outline: none;
+}
+.name-chips .nc-name {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 12px;
+}

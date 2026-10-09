@@ -851,16 +851,48 @@ Decisions (the owner, 2026-10-08):
 - [ ] **S** · Owner: the benchmark on the M1 8 GB; an app-downloaded
       llama-server under a signed build.
 
-### Pass 113 — Naming and the chips · 5 pts
+### Pass 113 — Naming and the chips · 5 pts ✅
 
-- [ ] **L** · Background naming on import (idle, on power):
-      `planSchema()` with `edits.maxItems = 0`, `checkPlan()` drops flagged
-      targets; label, subject and intent kept; names in the library and the
-      `.pixl` project.
-- [ ] **M** · The chips atop the Masks pane, routed by Playroom's own map
-      (sky/vegetation/water → DINOv2; subject → U²-Netp; hair/skin/clothes →
-      Selfie; eyes/lips/brows → faces; a person among several → SAM 2.1 on
-      the user's click; anything else → Find by name).
+**Not in 0.4.0-beta** (the owner, 2026-10-09): Gemma and llama-server don't
+ship in this release, nor SAM 3 (EfficientSAM3 and the rest do).
+`GEMMA_SHIPS = false` (`shared/heavy.ts`): a packaged build offers no
+download, no Settings card, no background naming; a development build has
+all of it. Turning it on for a release is the one constant (with the M1 and
+signed-build checks of Pass 112).
+
+- [x] **L** · Naming, the guide's corrected call (§1a, 2026-10-09, E56):
+      the first line of pixl-auto's `SYSTEM` plus the finders only, the PC
+      check's `NAME_PROMPT` word for word, the plan schema with no edits,
+      `checkPlan()` drops flagged targets; label, subject and intent kept,
+      finder and box ignored (`shared/naming.ts`, `BrainStore.name`). The
+      picture: the photo unedited, upright, 1024 px (a RAW's embedded
+      preview). The benchmark now times this same call.
+- [x] **M** · In the background (`main/ai/namer.ts`): newest arrivals first,
+      only on mains power, after a minute with nobody at the computer, with
+      Gemma and AI on; it stops after the photo in hand when anyone comes
+      back, and stops Gemma's server after the batch. A photo with no usable
+      answer isn't asked again by itself. The open photo can be named at
+      once from its Masks pane.
+- [x] **M** · Kept in the index (migration 14), the `.pixl` project's
+      `meta.names` and the sidecar (where the photo has one; naming makes
+      none), the user's changes marked so naming never overwrites them.
+- [x] **M** · The chips atop the Masks pane: ★ the subject, the intent as
+      the tip; a tap masks it by Playroom's own map (sky/vegetation/water →
+      DINOv2; hair/face/skin/clothes → Selfie; eyes/lips/brows/teeth →
+      faces; the subject → U²-Netp; one person among several → a click;
+      anything else → Find by name); × takes one off, + types one (the same
+      map).
+- [x] **S** · The owner: names searchable in the Library ("sea"): each name,
+      its words' other number, its scene class ("lake" → water), a few close
+      words ("ocean" ↔ "sea", "forest" → trees) and Gemma's sentence.
+- In the app (M2 Pro): 4 scenery photos named in the background in 42–60 s
+  (with the server's start), the server stopped after; the sky chip made
+  its mask in 4 s. Gemma's names now name things: "city skyline, distant
+  buildings", "foreground roof, utility wires", "woman ★, woman's shirt,
+  sofa".
+- Tried and dropped: a whitespace-free grammar for speed. Gemma writes the
+  field syntax into its labels without the space it expects after a colon;
+  the speed has to come from `brain.name()`'s shorter answer (engine 0.20).
 
 ### Pass 114 — Cull signals · 4 pts
 
@@ -900,6 +932,9 @@ faster.
       `scripts/`), so later passes and engine updates can be compared.
 
 ### Pass 117 — Release · 3 pts
+
+- [ ] **S** · Check the packaged build: no Gemma card, no llama-server
+      download, no SAM 3 anywhere (`GEMMA_SHIPS`, `SAM3_PHRASE` false).
 
 - [ ] **S** · What's new 0.4.0-beta final (0.18 and 0.19), the README, and
       the model mirrors checked. Release-As 0.4.0-beta and the PR to main,
@@ -2306,6 +2341,16 @@ their size) are ruled out. Higher lossless effort gains nothing.
 
 Playroom work that starts once the engine request lands
 ([ENGINE-REQUESTS.md](ENGINE-REQUESTS.md)). Becomes a pass then.
+
+- [ ] **M** · Engine 0.20's data export (the engine's
+      `playroom-data-export.md`, 2026-10-08, in the owner's
+      `pixl-eye-review/guides`): a dev-build export of masks (first and
+      final, 16-bit grey, the full oriented frame), keep/reject shoots and
+      neutral edits into one folder with a `manifest.json`, the originals
+      referenced by SHA-256, never copied. The owner's photos only, never
+      committed or uploaded. Playroom picks the UI.
+- [ ] **S** · `brain.name()` (0.20): swap the naming call for it, its terse
+      answer several times faster; then decide `GEMMA_SHIPS`.
 
 - [ ] **S** · Drop `repairJpegExif` once JPEG EXIF is written correctly (E1).
       _Unblocked: 0.16.1 writes it once._

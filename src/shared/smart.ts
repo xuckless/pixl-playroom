@@ -230,7 +230,8 @@ export function itemTexts(item: LibraryItem): string[] {
     ...item.keywords,
     item.camera.make,
     item.camera.model,
-    item.camera.lens
+    item.camera.lens,
+    ...(item.names ?? [])
   ]
     .filter((s): s is string => !!s)
     .map((s) => s.toLowerCase())

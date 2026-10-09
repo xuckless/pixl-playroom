@@ -422,6 +422,10 @@ export default function App(): React.JSX.Element {
           .items.filter((i) => i.photoId === photoId && i.hdr !== hdr)
         if (mine.length) useLibrary.getState().patchItems(mine.map((i) => ({ ...i, hdr })))
       }),
+      api.library.onNames(({ photoId, words }) => {
+        const mine = useLibrary.getState().items.filter((i) => i.photoId === photoId)
+        if (mine.length) useLibrary.getState().patchItems(mine.map((i) => ({ ...i, names: words })))
+      }),
       api.library.onChanged(({ folder }) => useLibrary.getState().onChanged(folder)),
       api.library.onSourcesChanged(() => void useLibrary.getState().onSourcesChanged()),
       api.develop.onRendered((e) => {

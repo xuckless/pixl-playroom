@@ -10,10 +10,11 @@
  * benchmark (shared/heavy.ts): five naming runs of the same picture back to
  * back, timed, with the server's memory watched.
  *
- * What it does for the user (naming a photo's things) is Pass 113's, and
- * waits on the engine (ENGINE-REQUESTS E56).
+ * What it does for the user: it names a photo's things (`name`), the
+ * guide's corrected call (§1a, 2026-10-09), and nothing else; it never
+ * judges a mask and never plans an edit.
  */
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { execFile } from 'child_process'
 import { randomBytes } from 'crypto'
@@ -23,8 +24,22 @@ import { cpus, totalmem } from 'os'
 import { join } from 'path'
 import { promisify } from 'util'
 import * as auto from '@xuckless/pixl-auto'
+// SYSTEM isn't exported from the package's root in 0.19 (the guide §1a).
+import { SYSTEM } from '@xuckless/pixl-auto/brain/local-server'
 import { IPC, type BrainStatus } from '../../shared/ipc'
-import { judgeSustained, type HeavyBenchmark, type SustainedRun } from '../../shared/heavy'
+import {
+  gemmaInBuild,
+  judgeSustained,
+  type HeavyBenchmark,
+  type SustainedRun
+} from '../../shared/heavy'
+import {
+  NAME_MAX_TOKENS,
+  NAME_PROMPT,
+  namesFromPlan,
+  namingSystem,
+  type PhotoNames
+} from '../../shared/naming'
 import { encodePng8 } from '../pngio'
 import { paths } from '../paths'
 import { BRAINS_DIR } from './carryover'
@@ -34,6 +49,9 @@ import type { AiSwitchStore } from './switches'
 const run = promisify(execFile)
 
 export const BRAIN_ID = 'gemma-4-e2b-it'
+
+/** Gemma answered, but nothing usable: the photo is not asked again by itself. */
+export class NamingAnswerError extends Error {}
 const RUNTIME_ID = 'llama-server'
 /** A server nothing asked of for this long is stopped. */
 const IDLE_MS = 5 * 60_000
@@ -58,8 +76,16 @@ interface Pins {
 }
 const PINS = (auto as unknown as { pins: Pins }).pins
 
-/** brains.json's archive for this computer: Metal on Apple silicon, Vulkan on Windows. */
+/** pixl-auto's internals the guide's naming call uses until `brain.name()` exists (0.20). */
+interface BrainInternals {
+  _system: string
+  _messages(text: string, image: Buffer, mime: string): unknown[]
+  _chat(method: string, body: Record<string, unknown>): Promise<{ message: { content: string } }>
+}
+
+/** brains.json's archive for this computer: Metal on Apple silicon, Vulkan on Windows; none where Gemma isn't in this build. */
 function platformKey(): string | null {
+  if (!gemmaInBuild(app.isPackaged)) return null
   if (process.platform === 'darwin') return process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64'
   if (process.platform === 'win32' && process.arch === 'x64') return 'win32-x64-vulkan'
   if (process.platform === 'linux' && process.arch === 'x64') return 'linux-x64'
@@ -150,6 +176,8 @@ export class BrainStore {
   private brainObj: auto.LocalServerBrain | null = null
   private idle: NodeJS.Timeout | undefined
   private benching = false
+  /** Naming calls in flight. */
+  private busy = 0
 
   constructor(
     private readonly models: ModelStore,
@@ -299,6 +327,7 @@ export class BrainStore {
    * starts it for the benchmark, before it may be on.
    */
   async open(bench = false): Promise<auto.LocalServerBrain> {
+    if (!this.key) throw new Error('Gemma isn’t part of this version of Playroom')
     if (!bench && !(await this.switches.allowed('gemma')))
       throw new Error('Gemma is off: turn it on in Settings → AI models')
     if (!(await this.switches.enabled())) throw new Error('AI models are off in Settings')
@@ -338,6 +367,9 @@ export class BrainStore {
       workers: auto.workersForPrompt(),
       api_key
     })
+    // Naming only: the first line of its system text and the finders, no workers.
+    const inner = this.brainObj as unknown as BrainInternals
+    inner._system = namingSystem(SYSTEM, auto.workersForPrompt())
     this.emit()
     return this.brainObj
   }
@@ -379,11 +411,55 @@ export class BrainStore {
     }
   }
 
-  /** Naming only: the plan's schema with no edits (the engine's guide). */
+  /** Naming only: the plan's schema with no edits (the guide §1a). */
   private namingSchema(): Record<string, unknown> {
-    const schema = auto.planSchema() as { properties: { edits: { maxItems?: number } } }
-    schema.properties.edits.maxItems = 0
+    const schema = auto.planSchema({ auto: true }) as {
+      properties: { edits: Record<string, unknown> }
+    }
+    schema.properties.edits = { ...schema.properties.edits, maxItems: 0 }
     return schema as unknown as Record<string, unknown>
+  }
+
+  /** One naming call on an open brain: Gemma's answer, as names (flagged targets dropped). */
+  private async ask(
+    brain: auto.LocalServerBrain,
+    image: Buffer,
+    mime: string
+  ): Promise<PhotoNames> {
+    const inner = brain as unknown as BrainInternals
+    const choice = await inner._chat('plan', {
+      messages: inner._messages(NAME_PROMPT, image, mime),
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'plan', schema: this.namingSchema(), strict: true }
+      },
+      max_tokens: NAME_MAX_TOKENS
+    })
+    let plan: unknown
+    try {
+      plan = JSON.parse(choice.message.content)
+    } catch {
+      throw new NamingAnswerError('Gemma’s answer was not JSON')
+    }
+    const problems = auto.checkPlan(plan) as { path: string }[]
+    return namesFromPlan(plan as object, problems, BRAIN_ID, new Date().toISOString())
+  }
+
+  /** What is in this picture, named by Gemma (on, AI on): its server started if it isn't. */
+  async name(image: Buffer, mime: string): Promise<PhotoNames> {
+    const brain = await this.open()
+    this.busy++
+    try {
+      return await this.ask(brain, image, mime)
+    } finally {
+      this.busy--
+      this.touch()
+    }
+  }
+
+  /** Naming now (Playroom's rest leaves the server up until it is done). */
+  isBusy(): boolean {
+    return this.busy > 0 || this.benching
   }
 
   /**
@@ -417,14 +493,7 @@ export class BrainStore {
       for (let i = 0; i < BENCH_RUNS; i++) {
         progress((i + 0.5) / BENCH_RUNS, `Run ${i + 1} of ${BENCH_RUNS}`)
         const t = Date.now()
-        await brain.plan({
-          image,
-          mime: 'image/png',
-          schema: this.namingSchema(),
-          notes: [],
-          scope: { scene: null, camera: null },
-          workers: auto.workersForPrompt()
-        })
+        await this.ask(brain, image, 'image/png')
         runs.push({ ms: Date.now() - t })
         this.touch()
       }

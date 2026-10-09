@@ -13,7 +13,7 @@ export interface Filter {
   flag: FlagFilter
   label: ColorLabel | 'all'
   edited: 'all' | 'edited' | 'unedited'
-  /** Every word must be found in the name, title, caption, keywords, camera or lens. */
+  /** Every word must be found in the name, title, caption, keywords, camera, lens or Gemma's names. */
   text: string
   /** A camera name as `cameraName` gives it; '' for any. */
   camera: string

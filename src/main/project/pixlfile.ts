@@ -31,6 +31,7 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { dirname } from 'path'
 import type { ColorLabel, Flag, Snapshot } from '../../shared/ipc'
 import { parseRawColour } from '../../shared/rawcolour'
+import { readNames } from '../../shared/naming'
 import { hydrateRecipe, normaliseRecipe, slimRecipe, type Recipe } from '../../shared/recipe'
 import { HISTORY_SCHEMA, HistoryTable, type HistoryRow } from '../historytable'
 import { planeRef, pngSize, renameRefs } from '../planeref'
@@ -631,7 +632,8 @@ export class PixlFile {
         .filter((r) => r.item_id !== PHOTO)
         .map((r) => ({ ...itemOf(r), id: r.item_id, name: r.name })),
       stack: stack ? (JSON.parse(stack) as SidecarStack) : null,
-      rawColour: parseRawColour(this.meta('rawColour'))
+      rawColour: parseRawColour(this.meta('rawColour')),
+      names: readNames(this.meta('names'))
     }
   }
 
@@ -707,6 +709,7 @@ export class PixlFile {
       }
       this.setMeta('stack', s.stack ? JSON.stringify(s.stack) : null)
       this.setMeta('rawColour', s.rawColour ?? null)
+      this.setMeta('names', s.names ? JSON.stringify(s.names) : null)
     })
   }
 

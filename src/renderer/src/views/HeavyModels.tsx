@@ -189,13 +189,15 @@ export function HeavyModels({
 }: {
   s: AiSwitches | null
   models: ModelInfo[]
-}): React.JSX.Element {
+}): React.JSX.Element | null {
   const [brain, setBrain] = useState<BrainStatus | null>(null)
   useEffect(() => {
     void api.brain.status().then(setBrain, () => undefined)
     return api.brain.onEvent(setBrain)
   }, [])
   const sam3 = models.find((m) => m.id === 'sam3')
+  // Neither in this build (0.4.0-beta ships without them): no section at all.
+  if (!brain?.supported && !(SAM3_PHRASE && sam3)) return null
   return (
     <section className="model-group">
       <h4>Heavy models</h4>

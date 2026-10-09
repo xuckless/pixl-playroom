@@ -12,7 +12,7 @@
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { existsSync } from 'fs'
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { compile } from '../shared/compile'
 import { dhashFromGrey } from '../shared/dupes'
@@ -25,7 +25,7 @@ import {
   type SourceListing
 } from '../shared/ipc'
 import { orientedFrame } from '../shared/compile'
-import { hash32, type Recipe } from '../shared/recipe'
+import { defaultRecipe, hash32, type Recipe } from '../shared/recipe'
 import {
   asShotFor,
   defaultRawColour,
@@ -60,6 +60,8 @@ import {
 export { keyOf, parseKey } from './keys'
 
 export const THUMB_EDGE = 400
+/** The picture Gemma names: the guide's "Playroom's 1024 px JPEG". */
+export const NAMING_EDGE = 1024
 /** The most photos whose proxies are made ahead at once (see `warm`). */
 const WARM_MAX = 3
 
@@ -561,6 +563,49 @@ export class Library {
     }
     await this.index.setThumb(row.id, job.copyId, out, stamp)
     this.broadcast(IPC.library.thumb, { key, url: cacheUrl(out, stamp) })
+  }
+
+  /**
+   * The photo as Gemma is shown it (shared/naming.ts): unedited (names are
+   * of what is in it, not of an edit), upright, sRGB, its long side
+   * NAMING_EDGE: a RAW's embedded preview, anything else its own pixels. A
+   * RAW with no usable preview is developed plainly at thumbnail size.
+   */
+  async namingPicture(photoId: number): Promise<Buffer> {
+    const row = await this.readable(await this.index.row(keyOf(photoId, null)))
+    const info = await this.probe(row)
+    const raw = row.is_raw === 1
+    const out = join(paths.cacheRoot(), `naming-${process.pid}-${photoId}.jpg`)
+    const base = {
+      encode: { Jpeg: { quality: 88, subsampling: 'Quarter' as const, optimize: false } },
+      pixel: { depth: 'Eight' as const, channels: 3 },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      threads: BACKGROUND_THREADS,
+      color: displayPolicy(info, 'Srgb')
+    }
+    try {
+      const rawMode = raw ? ('EmbeddedPreview' as const) : null
+      const orientation = sourceOrientation(info, rawMode)
+      const factor = Math.min(1, NAMING_EDGE / Math.max(info.width, info.height))
+      try {
+        await this.engine.convert({
+          ...blankRequest(row.path, out, info.input, info),
+          ...base,
+          raw: rawMode,
+          resize: factor < 1 ? { Scale: { factor } } : 'None',
+          framing:
+            orientation === 'Normal'
+              ? null
+              : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
+        })
+      } catch (err) {
+        if (!raw) throw err
+        await this.graded(row, info, defaultRecipe(true), out, base)
+      }
+      return await readFile(out)
+    } finally {
+      await rm(out, { force: true })
+    }
   }
 
   /**

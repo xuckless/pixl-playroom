@@ -9,6 +9,8 @@ import dockIcon from '../../resources/icon-dock.png?asset'
 import { startCrashReporting } from './crash'
 import { onRenderScale, settleScale, watchDisplay } from './display'
 import { sweepEngineTemps, watchRest } from './rest'
+import { Namer } from './ai/namer'
+import { gemmaInBuild } from '../shared/heavy'
 import { EngineClient } from './engine/client'
 import { SelectService } from './select/service'
 import { setBrushSnapper } from './brushes'
@@ -329,12 +331,22 @@ app.whenReady().then(() => {
       { engine: selectEngine }
     ],
     () => engine.ensureStarted(),
-    () => void brain.stop()
+    // Gemma's server goes too, unless it is naming (the namer stops it after).
+    () => {
+      if (!brain.isBusy()) void brain.stop()
+    }
   )
+  // Gemma names the library's photos while nobody is at the computer, on mains power.
+  const namer = new Namer(index, library, brain, switches)
+  if (gemmaInBuild(app.isPackaged)) namer.start()
   // Quitting: Gemma's server goes with Playroom, never left running.
-  app.on('will-quit', () => brain.killNow())
+  app.on('will-quit', () => {
+    namer.stop()
+    brain.killNow()
+  })
   process.on('exit', () => brain.killNow())
   registerIpc({
+    namer,
     index,
     embedder,
     planes,

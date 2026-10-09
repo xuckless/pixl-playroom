@@ -13,6 +13,19 @@
  * Pure, for tests/heavy.test.ts.
  */
 
+/**
+ * Gemma (and the llama.cpp server it runs in) is not shipped in 0.4.0-beta
+ * (the owner, 2026-10-09): a packaged build offers no download, no switch,
+ * no naming. An unpackaged build (development) has all of it, so the work
+ * goes on. SAM 3 is held the same way (shared/ai.ts `SAM3_PHRASE`).
+ */
+export const GEMMA_SHIPS = false
+
+/** Whether this build may fetch and run Gemma: shipped, or a development build. */
+export function gemmaInBuild(packaged: boolean): boolean {
+  return GEMMA_SHIPS || !packaged
+}
+
 export type HeavyModel = 'gemma' | 'sam3'
 export const HEAVY_MODELS: HeavyModel[] = ['gemma', 'sam3']
 
