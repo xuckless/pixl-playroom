@@ -352,6 +352,7 @@ app.whenReady().then(() => {
   process.on('exit', () => brain.killNow())
   registerIpc({
     namer,
+    cull,
     index,
     embedder,
     planes,

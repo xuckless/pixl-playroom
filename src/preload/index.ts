@@ -66,6 +66,7 @@ import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
 import type { AiSwitches, HeavyBenchmark, HeavyModel } from '../shared/heavy'
 import type { PhotoNames } from '../shared/naming'
+import type { CullReason } from '../shared/cullsuggest'
 import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../shared/looks/run'
 import type { EnhanceRates } from '../shared/enhance'
@@ -340,6 +341,13 @@ const api = {
     cancel: () => call<void>(IPC.brain.cancel),
     remove: () => call<void>(IPC.brain.remove),
     onEvent: (cb: (s: BrainStatus) => void) => on(IPC.brain.event, cb)
+  },
+  cull: {
+    suggestions: (keys: string[]) => call<Record<string, CullReason[]>>(IPC.cull.suggestions, keys),
+    keep: (keys: string[], keep: boolean) => call<void>(IPC.cull.keep, keys, keep),
+    measure: (keys: string[]) => call<number>(IPC.cull.measure, keys),
+    onEvent: (cb: () => void) => on(IPC.cull.event, cb),
+    onProgress: (cb: (p: { done: number; total: number }) => void) => on(IPC.cull.progress, cb)
   },
   names: {
     get: (key: string) => call<PhotoNames | null>(IPC.names.get, key),

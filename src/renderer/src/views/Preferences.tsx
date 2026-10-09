@@ -610,6 +610,8 @@ function DisplaySection({ platform }: { platform: string | null }): React.JSX.El
 function InterfaceSection(): React.JSX.Element {
   const alwaysFlat = useUi((s) => s.alwaysFlat)
   const setAlwaysFlat = useUi((s) => s.setAlwaysFlat)
+  const cullSuggest = useUi((s) => s.cullSuggest)
+  const setCullSuggest = useUi((s) => s.setCullSuggest)
   return (
     <fieldset>
       <legend>Interface</legend>
@@ -626,6 +628,22 @@ function InterfaceSection(): React.JSX.Element {
             what: 'Glass panels become flat colour, and nothing animates: no moving backgrounds, no transitions.',
             expect:
               'Playroom already does this while another app is in front. On, it stays that way when Playroom is in front too: lighter on the battery and the graphics chip.'
+          }}
+        />
+      </label>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={cullSuggest}
+          onChange={(e) => setCullSuggest(e.target.checked)}
+        />
+        Suggest rejects in the Library
+        <InfoTip
+          label="Suggest rejects"
+          tip={{
+            what: 'Photos that look like rejects (a soft frame in a burst, a subject softer than its background, too dark or too bright, eyes that may be closed) show dimmed and grey; hover one for why, and Keep or Reject it.',
+            expect:
+              'Measured on this computer while it is idle and plugged in, or at once with Filters → Suggested rejects. A star, a pick or Keep means it is never suggested again, and what you keep and reject tunes the suggestions. Nothing is ever deleted.'
           }}
         />
       </label>

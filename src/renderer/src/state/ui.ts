@@ -163,6 +163,9 @@ interface UiState {
    */
   alwaysFlat: boolean
   setAlwaysFlat(on: boolean): void
+  /** The Library suggests rejects (dimmed, with the reason on hover): Pass 115. */
+  cullSuggest: boolean
+  setCullSuggest(on: boolean): void
   setMasksWin(p: Partial<MasksWindow>): void
   /** AI denoise's model and strength for the next step (Detail → AI). */
   denoise: { model: AiDenoiseModel; strength: number }
@@ -263,6 +266,8 @@ export const useUi = create<UiState>()(
       setFullHdr: (fullHdr) => set({ fullHdr }),
       alwaysFlat: false,
       setAlwaysFlat: (alwaysFlat) => set({ alwaysFlat }),
+      cullSuggest: true,
+      setCullSuggest: (cullSuggest) => set({ cullSuggest }),
       setHeal: (p) => set((s) => ({ heal: { ...s.heal, ...p } })),
       enhance: DEFAULT_ENHANCE,
       setEnhance: (p) => set((s) => ({ enhance: { ...s.enhance, ...p } })),

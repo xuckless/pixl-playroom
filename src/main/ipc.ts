@@ -60,6 +60,7 @@ import type { HeavyModel } from '../shared/heavy'
 import type { AiSwitchStore } from './ai/switches'
 import type { BrainStore } from './ai/brain'
 import type { Namer } from './ai/namer'
+import type { CullMeasurer } from './cull'
 import { readNames } from '../shared/naming'
 import { benchmarkSam3 } from './ai/sam3bench'
 import { immediateLayers, previewLayers, smartReadiness } from '../shared/looks/smart'
@@ -164,6 +165,8 @@ export interface Services {
   brain: BrainStore
   /** Gemma's names for the library's photos. */
   namer: Namer
+  /** Cull signals and suggestions. */
+  cull: CullMeasurer
 }
 
 /** What AI can do with the killswitch thrown: nothing a model does, and why. */
@@ -811,6 +814,9 @@ export function registerIpc(s: Services): void {
   handle(IPC.brain.download, () => void s.brain.download())
   handle(IPC.brain.cancel, () => s.brain.cancel())
   handle(IPC.brain.remove, () => s.brain.remove())
+  handle(IPC.cull.suggestions, (keys: string[]) => s.cull.suggestions(keys))
+  handle(IPC.cull.keep, (keys: string[], keep: boolean) => s.cull.keep(keys, keep))
+  handle(IPC.cull.measure, (keys: string[]) => s.cull.measureNow(keys))
   handle(IPC.names.get, async (key: string) =>
     readNames(await s.index.namesOf(parseKey(key).photoId))
   )

@@ -4,6 +4,7 @@
  * commands, the first whose `when` holds runs — so a tool's own use of a key
  * (Delete in Heal, [ ] for the heal brush) comes before the general one.
  */
+import { suggestedReasons, useCull } from '../state/cull'
 import { useSyncExternalStore } from 'react'
 import { nextOf } from '../../../shared/masks'
 import { RECIPE_GROUPS } from '../../../shared/recipe'
@@ -100,6 +101,21 @@ function maskTool(t: 'brush' | 'polygon' | 'linear' | 'radial' | 'bidirectional'
   d.setTool(t)
 }
 
+/** The suggested rejects shown, flagged rejected at once (one key: never deleted). */
+export async function rejectSuggested(): Promise<void> {
+  const { reasons } = useCull.getState()
+  const keys = lib()
+    .visible()
+    .filter((i) => suggestedReasons(i, reasons))
+    .map((i) => i.key)
+  if (keys.length === 0) return lib().say('No suggested rejects here', 'info')
+  await lib().setMeta({ flag: 'reject' }, keys)
+  lib().say(
+    `${keys.length} photo${keys.length === 1 ? '' : 's'} flagged rejected: nothing deleted`,
+    'info'
+  )
+}
+
 const rating = [0, 1, 2, 3, 4, 5].map<KeyCommand>((n) => ({
   id: `rate.${n}`,
   label: n === 0 ? 'Clear rating' : `Rate ${n} star${n === 1 ? '' : 's'}`,
@@ -152,6 +168,25 @@ export const COMMANDS: KeyCommand[] = [
     context: 'global',
     keys: ['X'],
     run: () => void lib().setMeta({ flag: 'reject' })
+  },
+  {
+    id: 'cull.rejectAll',
+    label: 'Reject every suggested reject shown',
+    group: 'Rating & flags',
+    context: 'library',
+    keys: ['Shift+X'],
+    run: () => void rejectSuggested()
+  },
+  {
+    id: 'cull.keep',
+    label: 'Keep: not a suggested reject',
+    group: 'Rating & flags',
+    context: 'library',
+    keys: ['Shift+K'],
+    run: () => {
+      const keys = lib().targets()
+      if (keys.length) void useCull.getState().keep(keys)
+    }
   },
   {
     id: 'flag.clear',

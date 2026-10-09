@@ -1,3 +1,4 @@
+import { useCull } from './state/cull'
 import '@fontsource-variable/space-grotesk'
 import '@fontsource-variable/manrope'
 import './styles/index.css'
@@ -19,7 +20,8 @@ import { useLooks } from './state/looks'
   useUi,
   useBusy,
   useAiJobs,
-  useLooks
+  useLooks,
+  useCull
 }
 
 createRoot(document.getElementById('root')!).render(

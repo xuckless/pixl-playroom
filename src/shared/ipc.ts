@@ -274,6 +274,17 @@ export const IPC = {
     /** main → renderer: its state changed. */
     event: 'brain:event'
   },
+  /** Cull suggestions (shared/cullsuggest.ts): the Library's suggested rejects. */
+  cull: {
+    suggestions: 'cull:suggestions',
+    keep: 'cull:keep',
+    /** Measure now what isn't yet (Suggested rejects shown). */
+    measure: 'cull:measure',
+    /** main → renderer: signals or decisions changed. */
+    event: 'cull:event',
+    /** main → renderer: `{ done, total }` of a measure-now. */
+    progress: 'cull:progress'
+  },
   /** What Gemma named in a photo (shared/naming.ts): the Masks pane's chips. */
   names: {
     get: 'names:get',

@@ -69,6 +69,7 @@ one file, written transactionally, readable by any SQLite tool or library.
 | `created_by`     | the application that made it                                                                                                                                                                    |
 | `stack`          | JSON `{ "id": string, "position": number }` (position 0 is the stack's cover), or absent                                                                                                        |
 | `names`          | JSON: what is in the photo, `{ "v": 1, "by", "at", "describe", "things": [{ "label", "intent", "subject", "user"? }], "edited"? }` (suggested by a local model, changed by the user), or absent |
+| `cullKeep`       | `1` when the user said Keep to a suggested reject (never suggested again), or absent                                                                                                            |
 
 ### `origin`
 

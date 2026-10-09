@@ -27,6 +27,11 @@ export interface Filter {
   to: string
   /** A keyword path (`|` between levels): that keyword or anything under it. */
   keyword: string
+  /**
+   * Only the suggested rejects (Pass 115). Not a rule: the suggestions are
+   * the renderer's (state/cull.ts), applied after the rules.
+   */
+  suggested?: boolean
 }
 
 export const DEFAULT_FILTER: Filter = {
@@ -42,7 +47,8 @@ export const DEFAULT_FILTER: Filter = {
   focal: null,
   from: '',
   to: '',
-  keyword: ''
+  keyword: '',
+  suggested: false
 }
 
 /** The far ends of an open date range (the rule wants a pair). */
@@ -97,7 +103,8 @@ export function extraFilterCount(f: Filter): number {
     f.iso,
     f.focal,
     f.from || f.to,
-    f.keyword
+    f.keyword,
+    f.suggested
   ].filter(Boolean).length
 }
 

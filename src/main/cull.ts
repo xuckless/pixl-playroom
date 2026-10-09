@@ -11,6 +11,7 @@
  * computer for a minute, newest arrivals first, one photo at a time.
  * Suggesting rejects from them is Pass 115's.
  */
+import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { rm, writeFile } from 'fs/promises'
 import { join } from 'path'
@@ -24,11 +25,22 @@ import {
   exposureOf,
   FOCUS_BINS,
   focusOf,
+  readCull,
   type CullModels,
   type CullSignals,
   type FaceSignal
 } from '../shared/cull'
+import {
+  learnThresholds,
+  samplesOf,
+  suggestRejects,
+  type CullInput,
+  type CullReason,
+  type CullThresholds
+} from '../shared/cullsuggest'
 import type { MeasureRegion } from '../shared/engine-types'
+import { IPC } from '../shared/ipc'
+import { keyOf, parseKey } from './keys'
 import { FACE_DETECTOR, FACE_LANDMARKER } from '../shared/faceparts'
 import { READ_LIMITS } from '../shared/limits'
 import { idleOnPower } from './ai/idle'
@@ -92,9 +104,11 @@ export class CullMeasurer {
     let done = 0
     try {
       const models = await this.available()
-      for (const id of await this.index.unmeasured(BATCH, models)) {
-        if (!idleOnPower(IDLE_S)) break
-        if (this.failed.has(id)) continue
+      const ids = (await this.index.unmeasured(BATCH, models)).filter((id) => !this.failed.has(id))
+      let n = 0
+      if (ids.length) this.progress(0, ids.length)
+      for (const id of ids) {
+        if (!idleOnPower(IDLE_S) || this.measuring) break
         try {
           await this.measureAndKeep(id)
           done++
@@ -102,11 +116,113 @@ export class CullMeasurer {
           this.failed.add(id)
           log.info('cull signals not measured', id, (err as Error).message)
         }
+        this.progress(++n, ids.length)
       }
+      // Stopped early (someone back at the computer): the indicator goes.
+      if (ids.length && n < ids.length) this.progress(ids.length, ids.length)
     } finally {
       this.running = false
-      if (done > 0) log.info(`cull signals: ${done} photo(s) measured`)
+      if (done > 0) {
+        log.info(`cull signals: ${done} photo(s) measured`)
+        this.changed()
+      }
     }
+  }
+
+  /** How far measuring is, for the indicator atop the window (done = total: finished). */
+  private progress(done: number, total: number): void {
+    for (const w of BrowserWindow.getAllWindows())
+      w.webContents.send(IPC.cull.progress, { done, total })
+  }
+
+  /** Signals or decisions changed: thresholds learnt again, the Library asks again. */
+  private changed(): void {
+    this.learnt = null
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC.cull.event, null)
+  }
+
+  private learnt: { at: number; t: CullThresholds } | null = null
+
+  /** The thresholds learnt from the user's keeps and rejects (kept a few minutes). */
+  private async thresholds(): Promise<CullThresholds> {
+    if (this.learnt && Date.now() - this.learnt.at < 5 * 60_000) return this.learnt.t
+    const t = learnThresholds(samplesOf(this.inputsOf(await this.index.cullInputs(null))))
+    this.learnt = { at: Date.now(), t }
+    return t
+  }
+
+  private inputsOf(rows: Awaited<ReturnType<IndexClient['cullInputs']>>): CullInput[] {
+    return rows.map((r) => ({ ...r, signals: readCull(r.signals) }))
+  }
+
+  /**
+   * The suggested rejects among these items (a photo's own item; its copies
+   * are the user's own), with their reasons, by key. Bursts are found among
+   * the photos asked about: the folder or collection shown.
+   */
+  async suggestions(keys: string[]): Promise<Record<string, CullReason[]>> {
+    const ids = [
+      ...new Set(
+        keys
+          .map((k) => parseKey(k))
+          .filter((k) => k.copyId === null)
+          .map((k) => k.photoId)
+      )
+    ]
+    const found = suggestRejects(
+      this.inputsOf(await this.index.cullInputs(ids)),
+      await this.thresholds()
+    )
+    const out: Record<string, CullReason[]> = {}
+    for (const [id, reasons] of found) out[keyOf(id, null)] = reasons
+    return out
+  }
+
+  /** The user's Keep (or its undoing) on suggested rejects. */
+  async keep(keys: string[], keep: boolean): Promise<void> {
+    await this.index.setCullKeep([...new Set(keys.map((k) => parseKey(k).photoId))], keep)
+    this.changed()
+  }
+
+  private measuring: AbortController | null = null
+
+  /**
+   * Measure now the photos among these not measured yet (the Library's
+   * Suggested rejects asked): one at a time, the newest call taking over.
+   * Returns how many were measured.
+   */
+  async measureNow(keys: string[]): Promise<number> {
+    this.measuring?.abort()
+    const abort = new AbortController()
+    this.measuring = abort
+    const ids = new Set(keys.map((k) => parseKey(k).photoId))
+    const models = await this.available()
+    const todo = (await this.index.unmeasured(100_000, models)).filter((id) => ids.has(id))
+    let done = 0
+    const send = (): void => this.progress(done, todo.length)
+    send()
+    for (const id of todo) {
+      if (abort.signal.aborted) break
+      if (this.failed.has(id)) {
+        done++
+        continue
+      }
+      try {
+        await this.measureAndKeep(id)
+      } catch (err) {
+        this.failed.add(id)
+        log.info('cull signals not measured', id, (err as Error).message)
+      }
+      done++
+      if (done % 10 === 0) this.changed()
+      send()
+    }
+    if (this.measuring === abort) {
+      this.measuring = null
+      if (done < todo.length) this.progress(todo.length, todo.length)
+    }
+    if (done > 0) this.changed()
+    return done
   }
 
   /** The models a measurement may use now: AI on and their files here. */

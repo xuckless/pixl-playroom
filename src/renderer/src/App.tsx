@@ -23,6 +23,7 @@ import { Splash } from './shell/Splash'
 import { LooksBrowser } from './views/looks/LooksBrowser'
 import { useDevelop } from './state/develop'
 import { useBoot } from './state/boot'
+import { startCullUpkeep } from './state/cull'
 import { useLibrary } from './state/library'
 import { useConfirm } from './state/confirm'
 import { commandFor, COMMANDS, currentBindings } from './lib/commands'
@@ -39,7 +40,7 @@ import { useGate } from './lib/gate'
 import { isFrame, whenFrame } from './lib/frames'
 import { openReport } from './lib/report'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
-import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
+import { LibraryIdentity, LibraryStatus, CullBar, LibraryView, Toolbar } from './views/Library'
 import { CollectionDialog } from './views/library/CollectionDialog'
 import { InfoDrawer } from './views/library/InfoDrawer'
 import { Sidebar } from './views/library/Sidebar'
@@ -86,6 +87,7 @@ const LibraryScreen = memo(function LibraryScreen(): React.JSX.Element {
       <div className="library-body">
         <Sidebar />
         <main className="library-main">
+          <CullBar />
           <LibraryView />
         </main>
         <InfoDrawer />
@@ -437,6 +439,7 @@ export default function App(): React.JSX.Element {
       startDenoiseUpkeep(),
       startStaleUpkeep(),
       startDisplayUpkeep(),
+      startCullUpkeep(),
       // Full HDR toggled, or the display's numbers moved: render for it again.
       useUi.subscribe((s, prev) => {
         if (s.fullHdr !== prev.fullHdr) useDevelop.getState().pushView()

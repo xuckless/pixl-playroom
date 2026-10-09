@@ -5,6 +5,8 @@ import { keywordLabel, keywordPaths } from '../../../../shared/keywords'
 import { cameraName } from '../../../../shared/smart'
 import { Icon } from '../../components/icons'
 import { Menu, Popover, type MenuItem } from '../../components/Popover'
+import { useCull } from '../../state/cull'
+import { useUi } from '../../state/ui'
 import { LABEL_COLOURS } from '../../lib/helpers'
 import { useLibrary, useTargets } from '../../state/library'
 import { keyHint } from '../../lib/commands'
@@ -112,6 +114,7 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
   const cameras = useMemo(() => distinct(items.map((i) => cameraName(i))), [items])
   const lenses = useMemo(() => distinct(items.map((i) => i.camera.lens)), [items])
   const keywords = useMemo(() => keywordPaths(tree), [tree])
+  const cullSuggest = useUi((s) => s.cullSuggest)
   const withCurrent = (list: string[], v: string): string[] =>
     v && !list.includes(v) ? [v, ...list] : list
   return (
@@ -153,6 +156,23 @@ function FilterForm({ onClose }: { onClose: () => void }): React.JSX.Element {
           ))}
         </select>
       </div>
+      {cullSuggest && (
+        <label
+          className="check field"
+          title="Photos that look like rejects, with why: nothing is deleted"
+        >
+          <input
+            type="checkbox"
+            checked={filter.suggested === true}
+            onChange={(e) => {
+              setFilter({ suggested: e.target.checked })
+              // Photos not measured yet are measured now.
+              if (e.target.checked) void useCull.getState().measure()
+            }}
+          />
+          Suggested rejects only
+        </label>
+      )}
       <div className="field">
         <span>Label</span>
         <div className="label-pick" role="group" aria-label="Colour label">

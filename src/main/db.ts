@@ -70,6 +70,8 @@ export interface PhotoRow {
   /** Cull signals (shared/cull.ts `CullSignals`, JSON), and what they were measured for (`cullKey`). */
   cull?: string | null
   cull_key?: string | null
+  /** 1: the user said Keep to a suggested reject. */
+  cull_keep?: number
   /** The photo's `.pixl` project (the truth about its edits once it has one), and its mtime as mirrored. */
   project_path: string | null
   project_mtime: number | null
@@ -345,7 +347,10 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   // 15. Cull signals (shared/cull.ts): exposure, focus in the subject, blur,
   // blink hints and the picture hash, as JSON, and the file version and
   // signal version they were measured for.
-  (db) => addColumns(db, 'photos', { cull: 'TEXT', cull_key: 'TEXT' })
+  (db) => addColumns(db, 'photos', { cull: 'TEXT', cull_key: 'TEXT' }),
+  // 16. The user's "Keep" on a suggested reject (shared/cullsuggest.ts):
+  // never suggested again.
+  (db) => addColumns(db, 'photos', { cull_keep: 'INTEGER NOT NULL DEFAULT 0' })
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -819,6 +824,31 @@ export class Store {
          ORDER BY COALESCE(added, mtime) DESC LIMIT ?`
       ).all(limit) as { id: number }[]
     ).map((r) => r.id)
+  }
+
+  setCullKeep(photoId: number, keep: boolean): void {
+    this.prepare('UPDATE photos SET cull_keep = ? WHERE id = ?').run(keep ? 1 : 0, photoId)
+  }
+
+  /** What suggesting rejects needs of these photos (or of every measured one, `ids` null). */
+  cullInputs(ids: number[] | null): {
+    id: number
+    name: string
+    rating: number
+    flag: string | null
+    cull_keep: number
+    mtime: number
+    size: number
+    cull: string | null
+    cull_key: string | null
+  }[] {
+    const cols = 'id, name, rating, flag, cull_keep, mtime, size, cull, cull_key'
+    if (ids === null)
+      return this.prepare(`SELECT ${cols} FROM photos WHERE cull IS NOT NULL`).all() as never
+    if (ids.length === 0) return []
+    return this.prepare(
+      `SELECT ${cols} FROM photos WHERE id IN (${ids.map(() => '?').join(',')})`
+    ).all(...ids) as never
   }
 
   setCull(photoId: number, cull: string, key: string): void {

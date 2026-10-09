@@ -13,10 +13,11 @@ import { folderName, KEYS_MIME, sourceTrail } from '../lib/sources'
 import { useThumbFirst } from '../lib/thumbs'
 import { IdentityBar } from '../shell/IdentityBar'
 import { useDevelop } from '../state/develop'
+import { suggestedReasons, useCull } from '../state/cull'
 import { selectionSet, useLibrary, useTargets, useVisible, type SortKey } from '../state/library'
 import { useUi } from '../state/ui'
 import { DuplicateControls, FilterButton, OrganiseMenu } from './library/ToolbarMenus'
-import { keyHint, withKey } from '../lib/commands'
+import { keyHint, rejectSuggested, withKey } from '../lib/commands'
 import { useEntering } from '../lib/hooks'
 
 /** A tile's part in a stack: the cover (collapsed or open), or a member of an open one. */
@@ -54,6 +55,8 @@ const Thumb = memo(function Thumb({
   const select = useLibrary((s) => s.select)
   const setMeta = useLibrary((s) => s.setMeta)
   const toggleStack = useLibrary((s) => s.toggleStack)
+  // A suggested reject (Pass 115): dimmed and grey, its colour and reason back on hover.
+  const cull = useCull((s) => suggestedReasons(item, s.reasons))
   const ref = useRef<HTMLDivElement>(null)
   useThumbFirst(ref, item.key, !item.thumbUrl && !item.unreadable && !item.offline)
   const cls = [
@@ -62,6 +65,7 @@ const Thumb = memo(function Thumb({
     focus && 'focus',
     item.flag === 'reject' && 'rejected',
     item.offline && 'offline',
+    cull && 'culled',
     stackId && !stackOpen && 'stack-closed',
     stackId && stackOpen && 'in-stack',
     stackId && stackOpen && stackCover && 'stack-cover'
@@ -113,6 +117,38 @@ const Thumb = memo(function Thumb({
           </span>
         )}
         {item.edited && <span className="edited" title="Edited" />}
+        {cull && (
+          <div className="cull-why" onDoubleClick={(e) => e.stopPropagation()}>
+            <span className="cull-label micro">Suggested reject</span>
+            {cull.map((r) => (
+              <span key={r.kind} className="cull-reason">
+                {r.text}
+              </span>
+            ))}
+            <span className="cull-acts">
+              <button
+                className="sm"
+                title="Keep it: never suggested again"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void useCull.getState().keep([item.key])
+                }}
+              >
+                Keep
+              </button>
+              <button
+                className="sm ghost"
+                title="Reject it (X): nothing is deleted"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void setMeta({ flag: 'reject' }, [item.key])
+                }}
+              >
+                Reject
+              </button>
+            </span>
+          </div>
+        )}
         {item.project && (
           <button
             className="project-badge"
@@ -660,6 +696,41 @@ export function LibraryView(): React.JSX.Element {
 }
 
 /** Counts and the keys that work here. */
+/**
+ * Suggested rejects shown (Pass 115): how many, the measuring still to do,
+ * and one button (or Shift+X) to flag them all rejected. Nothing is deleted.
+ */
+export function CullBar(): React.JSX.Element | null {
+  const on = useLibrary((s) => s.filter.suggested === true)
+  const setFilter = useLibrary((s) => s.setFilter)
+  const measuring = useCull((s) => s.measuring)
+  const count = useVisible().length
+  if (!on) return null
+  return (
+    <div className="cull-bar" role="status">
+      <span>
+        {count === 0
+          ? 'No suggested rejects here.'
+          : `${count} suggested reject${count === 1 ? '' : 's'}: hover one for why.`}{' '}
+        {measuring && `Measuring ${measuring.done} of ${measuring.total}…`}
+      </span>
+      <span className="grow" />
+      {count > 0 && (
+        <button
+          className="sm"
+          onClick={() => void rejectSuggested()}
+          title={keyHint('cull.rejectAll')}
+        >
+          Reject all {count}
+        </button>
+      )}
+      <button className="sm ghost" onClick={() => setFilter({ suggested: false })}>
+        Show all
+      </button>
+    </div>
+  )
+}
+
 export function LibraryStatus(): React.JSX.Element | null {
   const source = useLibrary((s) => s.source)
   const count = useVisible().length

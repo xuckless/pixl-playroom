@@ -914,15 +914,31 @@ signed-build checks of Pass 112).
   with eyes open (0.10/0.06); landscapes without a salient subject keep the
   whole-frame focus only.
 
-### Pass 115 — Cull suggestions in the Library · 4 pts
+### Pass 115 — Cull suggestions in the Library · 4 pts ✅
 
-- [ ] **M** · A culled photo's thumbnail dimmed and grey; on hover its
-      colour comes back with the reason, written from a template ("Subject
-      soft · focus 18% of the burst's best"); the user's override (a
-      rating, a pick, "Keep") restores it for good. A "Suggested rejects"
-      filter; one key accepts (reject flag); never deletes.
-- [ ] **S** · Star ratings a factor in the suggestion (a 3★+ photo is
-      never culled), and thresholds learn from the user's flags and stars.
+- [x] **M** · Suggested rejects (`shared/cullsuggest.ts`, `state/cull.ts`):
+      reasons from templates. In a burst (the same picture by its hash):
+      "Subject soft · focus 18% of the burst's best", "Motion blur · …",
+      "Duplicate of IMG_…". On any photo: "Subject soft · the background is
+      sharper", "Too dark · 31% crushed", "Too bright · 22% blown", "Eyes
+      closed? (0.91)" (a hint). Absolute sharpness across different photos
+      isn't judged. The thumbnail is dimmed and grey; on hover its colour
+      comes back with the reason, Keep and Reject. Filters → "Suggested
+      rejects only" measures what isn't measured yet, there and then; the
+      line above the grid counts them, with "Reject all" (Shift+X; Shift+K
+      keeps). Never deletes. A "Culling n of m" indicator atop the window
+      while signals are measured (the owner). Settings → Projects &
+      interface → "Suggest rejects in the Library" (on).
+- [x] **S** · The user's word wins for good: any star, a pick or Keep (kept
+      in the index and the `.pixl` project's `meta.cullKeep` / sidecar) means
+      never suggested; in a burst the starred or picked frame is the best
+      (Keep only says "not a reject"). Thresholds learn from the user's
+      keeps and rejects (balanced accuracy, 5 of each at least, each within
+      bounds): burst softness, subject softness, darkness, blown highlights,
+      blink.
+- In the app: the soft re-encoded copy suggested as "Soft · focus 25% of
+  the burst's best", a second copy of a photo as its duplicate; Keep took
+  it off at once.
 
 ### Pass 116 — UI performance: profile, then speed up · 5 pts
 

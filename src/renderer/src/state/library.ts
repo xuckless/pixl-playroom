@@ -20,6 +20,8 @@ import { api, errorText } from '../lib/api'
 import { folderName, isUnder } from '../lib/sources'
 import { useBusy } from './busy'
 import { useUi } from './ui'
+import { suggestedReasons, useCull } from './cull'
+import type { CullReason } from '../../../shared/cullsuggest'
 
 export type { Filter, FlagFilter } from '../../../shared/filter'
 export type SortKey = 'name' | 'captured' | 'added' | 'rating' | 'size' | 'edited'
@@ -491,7 +493,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
 
   visible() {
     const { items, filter, sort, groups, expandedStacks } = get()
-    return visibleFor(items, filter, sort, groups, expandedStacks)
+    return visibleFor(items, filter, sort, groups, expandedStacks, useCull.getState().reasons)
   },
 
   targets() {
@@ -513,6 +515,7 @@ let visibleMemo: {
   sort: SortKey
   groups: LibraryState['groups']
   expanded: Set<string>
+  cull: Record<string, CullReason[]>
   out: LibraryItem[]
 } | null = null
 
@@ -526,20 +529,27 @@ function visibleFor(
   filter: Filter,
   sort: SortKey,
   groups: LibraryState['groups'],
-  expanded: Set<string>
+  expanded: Set<string>,
+  cull: Record<string, CullReason[]>
 ): LibraryItem[] {
   const m = visibleMemo
+  // The suggestions only change what is shown while Suggested rejects is on.
+  const cullKey = filter.suggested ? cull : null
   if (
     m &&
     m.items === items &&
     m.filter === filter &&
     m.sort === sort &&
     m.groups === groups &&
-    m.expanded === expanded
+    m.expanded === expanded &&
+    (filter.suggested ? m.cull === cull : true)
   )
     return m.out
-  const out = computeVisible(items, filter, sort, groups, expanded)
-  visibleMemo = { items, filter, sort, groups, expanded, out }
+  const shown = filter.suggested
+    ? items.filter((i) => suggestedReasons(i, cullKey ?? {}) !== null)
+    : items
+  const out = computeVisible(shown, filter, sort, groups, expanded)
+  visibleMemo = { items, filter, sort, groups, expanded, cull, out }
   return out
 }
 
@@ -587,9 +597,10 @@ export function useVisible(): LibraryItem[] {
   const sort = useLibrary((s) => s.sort)
   const groups = useLibrary((s) => s.groups)
   const expanded = useLibrary((s) => s.expandedStacks)
+  const cull = useCull((s) => s.reasons)
   return useMemo(
-    () => visibleFor(items, filter, sort, groups, expanded),
-    [items, filter, sort, groups, expanded]
+    () => visibleFor(items, filter, sort, groups, expanded, cull),
+    [items, filter, sort, groups, expanded, cull]
   )
 }
 

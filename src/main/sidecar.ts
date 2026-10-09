@@ -47,6 +47,8 @@ export interface Sidecar {
   rawColour?: RawColour | null
   /** What Gemma named in the photo (shared/naming.ts), where the photo has a sidecar; absent is null. */
   names?: PhotoNames | null
+  /** The user said Keep to a suggested reject (shared/cullsuggest.ts); absent is false. */
+  cullKeep?: boolean
 }
 
 export function sidecarPath(photoPath: string): string {
@@ -110,7 +112,8 @@ export function readSidecar(
         copies,
         stack: stackOf(raw.stack),
         rawColour: parseRawColour(raw.rawColour),
-        names: readNames(raw.names)
+        names: readNames(raw.names),
+        cullKeep: raw.cullKeep === true
       },
       mtime: statSync(file).mtimeMs
     }
@@ -132,6 +135,7 @@ function saysNothing(s: Sidecar): boolean {
     s.stack === null &&
     !s.rawColour &&
     !s.names &&
+    !s.cullKeep &&
     p.rating === 0 &&
     p.flag === null &&
     p.label === null &&
@@ -149,7 +153,7 @@ export function writeSidecar(photoPath: string, sidecar: Sidecar): number | null
   }
   const tmp = `${file}.tmp-${process.pid}`
   // No stack, colour or names, no keys: a sidecar stays what older builds wrote.
-  const { stack, rawColour, names, ...rest } = sidecar
+  const { stack, rawColour, names, cullKeep, ...rest } = sidecar
   writeFileSync(
     tmp,
     JSON.stringify(
@@ -157,7 +161,8 @@ export function writeSidecar(photoPath: string, sidecar: Sidecar): number | null
         ...rest,
         ...(stack ? { stack } : {}),
         ...(rawColour ? { rawColour } : {}),
-        ...(names ? { names } : {})
+        ...(names ? { names } : {}),
+        ...(cullKeep ? { cullKeep } : {})
       },
       null,
       2

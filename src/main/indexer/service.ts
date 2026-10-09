@@ -1021,6 +1021,7 @@ export class IndexService {
     // The truth where one is written; a photo with none keeps what the index recorded.
     if (sidecar.rawColour) this.store.setRawColour(row.id, sidecar.rawColour)
     if (sidecar.names) this.store.setNames(row.id, JSON.stringify(sidecar.names))
+    if (sidecar.cullKeep) this.store.setCullKeep(row.id, true)
     if (from === 'project') {
       this.store.setProject(row.id, row.project_path, mtime)
       row.project_mtime = mtime
@@ -1962,6 +1963,7 @@ export class IndexService {
       change(s)
       if (colour && !s.rawColour) s.rawColour = colour
       if (names && !s.names) s.names = names
+      if (row.cull_keep === 1 && !s.cullKeep) s.cullKeep = true
     }
     if (project) {
       const truth = this.projects.write(project, (p) => {
@@ -2202,6 +2204,45 @@ export class IndexService {
       if (c.cull && c.cull_key?.startsWith(`${c.mtime}:${c.size}:v${CULL_VERSION}:`))
         out[c.id] = c.cull
     return out
+  }
+
+  /**
+   * The user's Keep on suggested rejects: in the index always, and in each
+   * photo's project or sidecar when it has one.
+   */
+  setCullKeep(photoIds: number[], keep: boolean): void {
+    for (const id of photoIds) {
+      const row = this.store.photo(id)
+      if (!row) continue
+      this.store.setCullKeep(id, keep)
+      if (this.projectOf(row) || existsSync(sidecarPath(row.path)))
+        this.updateRow({ ...row, cull_keep: keep ? 1 : 0 }, (s) => {
+          s.cullKeep = keep
+        })
+    }
+  }
+
+  /**
+   * What suggesting needs: these photos (or every measured one, null), with
+   * their signals where measured on the current file.
+   */
+  cullInputs(photoIds: number[] | null): {
+    photoId: number
+    name: string
+    rating: number
+    flag: 'pick' | 'reject' | null
+    keep: boolean
+    signals: string | null
+  }[] {
+    return this.store.cullInputs(photoIds).map((r) => ({
+      photoId: r.id,
+      name: r.name,
+      rating: r.rating,
+      flag: r.flag === 'pick' || r.flag === 'reject' ? r.flag : null,
+      keep: r.cull_keep === 1,
+      signals:
+        r.cull && r.cull_key?.startsWith(`${r.mtime}:${r.size}:v${CULL_VERSION}:`) ? r.cull : null
+    }))
   }
 
   /** Photos to name next, newest arrivals first. */

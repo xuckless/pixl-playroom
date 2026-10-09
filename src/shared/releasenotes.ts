@@ -62,6 +62,12 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
         ]
       },
       {
+        title: 'Library',
+        items: [
+          'Suggested rejects: photos that look like rejects (a soft frame in a burst, a subject softer than its background, too dark or too bright, closed eyes, a duplicate) show dimmed and grey. Hover one for why, then Keep or Reject it; Filters → Suggested rejects only lists them, and Reject all flags them in one go. Nothing is ever deleted, a star or a pick means a photo is never suggested, and what you keep and reject tunes the suggestions. Measured on your computer while it is idle and plugged in; Settings → Projects & interface turns it off.'
+        ]
+      },
+      {
         title: 'Heal',
         items: [
           'Remove: paint over something, or click it with Find object, and an AI model fills it with what was likely behind it — people, signs, wires. It is baked into the photo like your other heal strokes.'
