@@ -23,9 +23,41 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
   {
     version: '0.4.0-beta',
     headline: tk(
-      'HDR while you edit, masks you can ask for by name, suggested rejects, and noise reduction that matches your export.'
+      'Playroom in six languages, HDR while you edit, masks you can ask for by name, suggested rejects, and menus with every tool.'
     ),
     sections: [
+      {
+        title: tk('In your language'),
+        items: [
+          tk(
+            'Playroom now speaks English, French, German, Simplified Chinese, Japanese and Vietnamese. It starts in your computer’s language when it is one of these, and in English otherwise; Settings → General → Language changes it.'
+          ),
+          tk(
+            'The translations are new and ours, not yet checked by native speakers: Report wording, beside the language, tells us where one reads wrong.'
+          )
+        ]
+      },
+      {
+        title: tk('Menus and windows'),
+        items: [
+          tk(
+            'The menu bar holds the whole app: File, Edit, Photo, Develop, Masks and View, with every panel, tool and mask, and your own shortcuts beside them. What doesn’t apply where you are is greyed.'
+          ),
+          tk(
+            'Right-click a photo, the picture, a mask or a text field for what you can do with it.'
+          ),
+          tk('Settings has a gear at the right of the top bar.'),
+          tk(
+            'On a Mac, the window’s buttons sit in the top bar instead of a title bar above it. On Windows, the menus and the window’s buttons share the top bar.'
+          ),
+          tk(
+            'The flat look is the default now; turn off Settings → Interface → Always flat for the glass.'
+          ),
+          tk(
+            'Labels, buttons and the logo no longer get selected or dragged by accident; the text in the info panes still can be.'
+          )
+        ]
+      },
       {
         title: 'HDR',
         items: [
@@ -134,7 +166,7 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
             'Settings → AI models → Use AI models turns every AI model off at once (RAW files still develop with theirs).'
           ),
           tk(
-            'While Playroom is minimised or another app is in front, it lets its engine rest and draws flat, still panels, which is lighter on the battery and frees memory; the top bar says Engine offline, in yellow, until you come back. Settings → Interface → Always flat keeps the flat look all the time.'
+            'While Playroom is minimised or another app is in front, it lets its engine rest, which is lighter on the battery and frees memory; the top bar says Engine offline, in yellow, until you come back.'
           ),
           tk(
             'Settings opens wide, in sections across the top like Export: General, Projects & interface, Display, AI models, Key bindings, and Privacy & about.'

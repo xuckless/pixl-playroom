@@ -362,6 +362,12 @@ aside.right .panels {
 .rail-item.future {
   opacity: 0.4;
 }
+/* A long name (a translated look's) ends in an ellipsis, not at the pane's edge. */
+.rail-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .rail-label {
   display: inline-flex;
   align-items: center;

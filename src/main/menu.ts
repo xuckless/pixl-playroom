@@ -223,9 +223,10 @@ export function buildMenu(): void {
       label: t('Window'),
       submenu: [
         { role: 'minimize', label: t('Minimize') },
-        { role: 'zoom', label: t('Zoom') },
+        // Zoom is the Mac's (Windows maximises from the title bar's own button).
         ...(mac
           ? [
+              { role: 'zoom' as const, label: t('Zoom') },
               { type: 'separator' as const },
               { role: 'front' as const, label: t('Bring All to Front') }
             ]

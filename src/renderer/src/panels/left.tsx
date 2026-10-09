@@ -164,7 +164,7 @@ export function PresetsPane(): React.JSX.Element | null {
           ) : (
             <i className="dot" />
           )}
-          {p.builtin ? t(p.name) : p.name}
+          <span className="rail-name">{p.builtin ? t(p.name) : p.name}</span>
         </span>
         {action}
       </div>
