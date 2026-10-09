@@ -15,10 +15,16 @@ export { rich } from './rich'
 interface LanguageState {
   setting: LanguageSetting
   language: Language
+  /** What "system" gives here (main reads the OS once for both). */
+  system: Language
   pseudo?: boolean
 }
 
-export const useLanguage = create<LanguageState>(() => ({ setting: 'system', language: 'en' }))
+export const useLanguage = create<LanguageState>(() => ({
+  setting: 'system',
+  language: 'en',
+  system: 'en'
+}))
 
 let inst: i18n | null = null
 
@@ -31,10 +37,10 @@ function apply(s: LanguageState): void {
 
 /** Before the first frame: the language main has in force (the system's, if it can't say). */
 export async function startLanguage(): Promise<void> {
-  const s = await api.app.language().catch((): LanguageState => ({
-    setting: 'system',
-    language: pickLanguage(navigator.languages)
-  }))
+  const s = await api.app.language().catch((): LanguageState => {
+    const system = pickLanguage(navigator.languages)
+    return { setting: 'system', language: system, system }
+  })
   apply(s)
   api.app.onLanguageChanged(apply)
 }

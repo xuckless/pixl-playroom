@@ -575,14 +575,16 @@ export function Toggle({
 export function Tabs<T extends string>({
   value,
   tabs,
-  onChange
+  onChange,
+  className
 }: {
   value: T
   tabs: { value: T; label: string }[]
   onChange: (v: T) => void
+  className?: string
 }): React.JSX.Element {
   return (
-    <div className="tabs">
+    <div className={className ? `tabs ${className}` : 'tabs'}>
       {tabs.map((tab) => (
         <button
           key={tab.value}

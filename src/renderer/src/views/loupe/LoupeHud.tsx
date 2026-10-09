@@ -1,4 +1,5 @@
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
+import { Spinner } from '../../fx'
 import { useDevelop } from '../../state/develop'
 import { t } from '../../lib/i18n'
 import { useHudNote } from './hudNote'
@@ -28,7 +29,7 @@ export function LoupeHud({ scale }: { scale: number | null }): React.JSX.Element
       )}
       {rendering && (
         <span className="hud-item">
-          <i className="hud-dot busy" />
+          <Spinner size={14} />
           {t('Rendering')}
         </span>
       )}

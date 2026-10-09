@@ -1,5 +1,5 @@
 import { t } from '../shared/i18n'
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import log from 'electron-log/main'
 import { rm } from 'fs/promises'
 import { join } from 'path'
@@ -390,6 +390,11 @@ app.whenReady().then(() => {
   })
   onOpenPaths((paths) => mainWindow?.webContents.send(IPC.app.openPaths, paths))
 
+  // Playroom is dark (color-scheme: dark): the OS's own surfaces follow it, not
+  // the system's day or night, so the menus (the bar's, right-click, Windows'
+  // from the top bar), dialogs and the Windows caption buttons never come up
+  // light beside it.
+  nativeTheme.themeSource = 'dark'
   startLanguage()
   buildMenu()
   onRenderScale(buildMenu)

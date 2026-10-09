@@ -15,7 +15,7 @@ import { startDisplayUpkeep, useDisplay, renderDisplay } from './state/display'
 import { useUi } from './state/ui'
 import { startDenoiseUpkeep, startStaleUpkeep } from './lib/denoise'
 import { startHdrUpkeep } from './lib/hdr'
-import { setAlwaysFlat, startEfficientUpkeep, useEfficient } from './lib/efficient'
+import { setAlwaysFlat, startEfficientUpkeep, useStill } from './lib/efficient'
 import { DevelopToolbar } from './shell/DevelopToolbar'
 import { DevelopIdentity } from './shell/IdentityBar'
 import { LeftRail } from './shell/LeftRail'
@@ -432,7 +432,8 @@ export default function App(): React.JSX.Element {
   // it's shut, and the splash stays behind the gate meanwhile.
   const [booted, setBooted] = useState(false)
   if (!booted && gate?.kind === 'open') setBooted(true)
-  const efficient = useEfficient()
+  // Motion follows focus: "Always flat" is a look, not a stop.
+  const still = useStill()
   // The efficient UI, from the first frame: unfocused, or "Always flat".
   useEffect(() => {
     setAlwaysFlat(useUi.getState().alwaysFlat)
@@ -550,7 +551,7 @@ export default function App(): React.JSX.Element {
     }
   }, [booted])
   return (
-    <MotionConfig reducedMotion={efficient ? 'always' : 'user'}>
+    <MotionConfig reducedMotion={still ? 'always' : 'user'}>
       {/* Drawn again, whole, in a newly chosen language. */}
       <div className="app" key={language}>
         <Screens />

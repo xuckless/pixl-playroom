@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useBusy } from '../state/busy'
 import { useDevelop } from '../state/develop'
-import { ProgressRing, Sphere } from './index'
+import { Aperture } from './Aperture'
 import { t } from '../lib/i18n'
 
-/** Work shorter than this never shows the sphere at all. */
+/** Work shorter than this never shows the loader at all. */
 const SHOW_AFTER_MS = 250
 
 /**
- * The processing sphere over the loupe while something the user waits on is
+ * The panel loader over the loupe while something the user waits on is
  * running — a photo opening, auto tone, auto white balance, a noise
- * measurement. It never takes the pointer, so nothing under it is disturbed.
+ * measurement: the glass aperture, spinning until the work reports how far
+ * it is, then its ring filling. It never takes the pointer, so nothing under
+ * it is disturbed.
  */
 export function ProcessingOverlay(): React.JSX.Element | null {
   const job = useBusy((s) => s.jobs.filter((j) => j.scope === 'loupe').at(-1) ?? null)
@@ -32,10 +34,7 @@ export function ProcessingOverlay(): React.JSX.Element | null {
   const progress = job?.progress ?? null
   return (
     <div className="proc" role="status" aria-live="polite">
-      <div className="sphere-wrap">
-        <Sphere />
-        <ProgressRing progress={progress} />
-      </div>
+      <Aperture size={150} tone="glass" glow progress={progress} />
       <div className="proc-label">
         <span className="micro">{title}</span>
         {progress !== null ? (

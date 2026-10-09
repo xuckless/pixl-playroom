@@ -656,6 +656,27 @@ aside.right .panels.adjust {
   gap: 8px;
   padding: 12px 0 2px;
 }
+/* Heal's six modes: a grid across the panel that wraps, never wider than it
+   (a single row ran off its left edge, and translations run longer) */
+.tabs.heal-modes {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 1px;
+  background: var(--hair);
+}
+.tabs.heal-modes button {
+  height: 28px;
+  min-width: 0;
+  padding: 0 8px;
+  border-right: none;
+  background-color: var(--s1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tool-panel > .section:first-of-type > header,
 .tool-actions + .section > header {
   margin-top: 4px;

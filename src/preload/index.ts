@@ -76,6 +76,8 @@ import type { Language, LanguageSetting } from '../shared/i18n'
 interface LanguageState {
   setting: LanguageSetting
   language: Language
+  /** What "system" gives here (main reads the OS once for both). */
+  system: Language
   pseudo?: boolean
 }
 

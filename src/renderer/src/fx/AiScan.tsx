@@ -2,7 +2,7 @@ import type { AiJobEvent } from '../../../shared/ai'
 import { stageStates } from '../../../shared/ai'
 import type { Rect } from '../../../shared/view'
 import { LiquidGlass } from '../components/glass/LiquidGlass'
-import { Mark } from '../components/Mark'
+import { Aperture } from './Aperture'
 import { api } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { jobFor, useAiJobs } from '../state/jobs'
@@ -87,7 +87,11 @@ function AiCard({ job, ended }: { job: AiJobEvent; ended: boolean }): React.JSX.
       role="status"
       aria-live="polite"
     >
-      <Mark size={30} drift={!ended} glow={job.phase === 'running'} />
+      <Aperture
+        size={30}
+        state={job.phase === 'running' ? undefined : job.phase === 'queued' ? 'spin' : 'idle'}
+        progress={job.phase === 'running' ? job.progress : null}
+      />
       <div className="ai-body">
         <span className="ai-title micro">
           {job.title}

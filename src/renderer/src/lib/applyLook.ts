@@ -35,9 +35,9 @@ import { runOnEvent, useLooks, type AppliedLook } from '../state/looks'
 import { api, errorText } from './api'
 import { t } from './i18n'
 
-/** A look's history label: `Look: X` for the catalog's, `Preset: X` for the user's own. */
+/** A look's history label: `Look: X` for the catalog's (its name translated), `Preset: X` for the user's own. */
 export const labelOf = (p: Preset): string =>
-  p.meta ? t('Look: {{name}}', { name: p.name }) : t('Preset: {{name}}', { name: p.name })
+  p.meta ? t('Look: {{name}}', { name: t(p.name) }) : t('Preset: {{name}}', { name: p.name })
 
 /** The step label for an Amount: the look's, with the amount when it is not whole. */
 const amountLabel = (a: AppliedLook, amount: number): string =>
@@ -159,7 +159,8 @@ async function applyNow(p: Preset, stack: boolean): Promise<boolean> {
         : {
             key: session.key,
             lookId: p.id,
-            name: p.name,
+            // A catalog look's name in the language shown (the user's own keep theirs).
+            name: p.meta ? t(p.name) : p.name,
             label,
             before,
             after,

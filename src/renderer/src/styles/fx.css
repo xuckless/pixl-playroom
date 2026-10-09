@@ -7,7 +7,7 @@
   display: block;
 }
 
-/* ── the processing sphere over the loupe ──────────────────────── */
+/* ── the panel loader over the loupe (fx/ProcessingOverlay.tsx) ── */
 .proc {
   position: absolute;
   inset: 0;
@@ -21,70 +21,6 @@
   backdrop-filter: blur(8px) saturate(0.8);
   pointer-events: none;
   animation: fadeIn 0.5s var(--ease) both;
-}
-.sphere-wrap {
-  position: relative;
-  width: 220px;
-  height: 220px;
-  display: grid;
-  place-items: center;
-  animation: breathe 3.8s ease-in-out infinite;
-}
-/* the glow is a still gradient behind the sphere, not a drop-shadow filter
-   re-run over every frame the sphere draws */
-.sphere-wrap::before {
-  content: '';
-  position: absolute;
-  inset: -90px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(157, 139, 234, 0.4) 0%,
-    rgba(123, 104, 216, 0.18) 38%,
-    transparent 68%
-  );
-  pointer-events: none;
-}
-.sphere-wrap .fx-canvas,
-.sphere-wrap .css-sphere {
-  position: absolute;
-  inset: 0;
-  width: 220px;
-  height: 220px;
-}
-.css-sphere {
-  animation: spin 24s linear infinite;
-}
-.css-sphere.still {
-  animation: none;
-}
-.proc-ring {
-  position: absolute;
-  inset: -14px;
-  width: calc(100% + 28px);
-  height: calc(100% + 28px);
-  overflow: visible;
-}
-.proc-ring circle {
-  fill: none;
-  stroke-width: 1.5;
-}
-.proc-ring .bg {
-  stroke: rgba(255, 255, 255, 0.1);
-}
-.proc-ring .fg {
-  /* the stroke is the ring's own gradient, set on the element */
-  transform: rotate(-90deg);
-  transform-origin: 50% 50%;
-  transition: stroke-dashoffset 0.4s var(--ease);
-  filter: drop-shadow(0 0 6px var(--acc));
-}
-.proc-ring .head {
-  fill: #fff;
-  filter: drop-shadow(0 0 6px var(--acc));
-}
-.proc-ring.spinning .fg {
-  animation: ringSpin 1.6s var(--ease) infinite;
 }
 .proc-label {
   text-align: center;
@@ -111,42 +47,6 @@
 .proc-detail {
   color: var(--text2);
   font-size: 12.5px;
-}
-
-/* the highlight pixel on the sphere's lit side (see SpherePixel): --sr is
-   the sphere's radius as a share of the box */
-.sphere-pixel {
-  position: absolute;
-  left: calc(50% - var(--sr) * 42% - var(--sr) * 12%);
-  top: calc(50% - var(--sr) * 44% - var(--sr) * 12%);
-  width: calc(var(--sr) * 24%);
-  aspect-ratio: 1;
-  background: #fff;
-  opacity: 0.9;
-  pointer-events: none;
-}
-
-/* ── the inline loader ─────────────────────────────────────────── */
-.spinner {
-  flex: none;
-  display: block;
-  overflow: visible;
-}
-.spinner circle.track,
-.spinner circle.arc {
-  fill: none;
-  stroke-width: 20;
-}
-.spinner .track {
-  stroke: rgba(255, 255, 255, 0.12);
-}
-.spinner .arc {
-  transition: stroke-dashoffset 0.4s var(--ease);
-}
-.spinner .turning {
-  transform-box: view-box;
-  transform-origin: 50% 50%;
-  animation: spin 1.4s linear infinite;
 }
 
 /* the mark's loose pixels, drifting off the corner (the splash) */
