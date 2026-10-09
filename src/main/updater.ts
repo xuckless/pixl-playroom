@@ -15,6 +15,7 @@ import log from 'electron-log/main'
 import type { AppUpdater, ProgressInfo, UpdateInfo } from 'electron-updater'
 import { IPC, type UpdateChannel, type UpdateState } from '../shared/ipc'
 import { belowFloor } from '../shared/policy'
+import { parseReleaseNotes } from '../shared/releasenotes'
 import { onPolicy } from './policy'
 import { readSettings, writeSettings } from './settings'
 
@@ -122,7 +123,13 @@ export async function setupUpdater(): Promise<void> {
     setState({ phase: 'checking', error: undefined, lastCheckedAt: new Date().toISOString() })
   })
   autoUpdater.on('update-available', (info: UpdateInfo) => {
-    setState({ phase: 'available', version: info.version, releaseDate: info.releaseDate })
+    setState({
+      phase: 'available',
+      version: info.version,
+      releaseDate: info.releaseDate,
+      // What it brings, from the feed (build/release-notes.md as published).
+      notes: parseReleaseNotes(info.releaseNotes, info.version)
+    })
   })
   autoUpdater.on('update-not-available', (info: UpdateInfo) => {
     setState({ phase: 'not-available', version: info.version, progress: undefined })
@@ -139,7 +146,12 @@ export async function setupUpdater(): Promise<void> {
     })
   })
   autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
-    setState({ phase: 'downloaded', version: info.version, progress: undefined })
+    setState({
+      phase: 'downloaded',
+      version: info.version,
+      progress: undefined,
+      notes: parseReleaseNotes(info.releaseNotes, info.version) ?? state.notes
+    })
   })
   autoUpdater.on('error', (err: Error) => {
     // electron-updater's messages run on with headers and a stack: the log

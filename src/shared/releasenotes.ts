@@ -87,7 +87,33 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
           'Settings opens wide, in sections across the top like Export: General, Projects & interface, Display, AI models, Key bindings, and Privacy & about.',
           'Work in the background no longer slows the app: opening a large folder, masks and the HDR preview keep their pixel work off the window’s thread.'
         ]
+      },
+      {
+        title: 'Local AI, honestly',
+        items: [
+          'We tried a local language model inside Playroom, one that would look at your photos and name what is in them so a mask is a tap away, all on your own computer. It works, but today it needs 3 to 4 GB of memory and 10 to 20 seconds a photo on a fast Mac, and more on an older one. That is too heavy to switch on for everyone, so it is not in this release.',
+          'We are still working out how a local model best fits your workflow without slowing your computer down: when it should run, how much it may use, and what is worth its time. Until we have that right, every AI tool in Playroom is a small, focused model that does one job quickly, and Settings → AI models turns them all off at once.'
+        ]
       }
+    ],
+    next: [
+      {
+        title: 'Our own language models',
+        text: 'Small models of our own, made to understand photos and editing, light enough for a laptop.'
+      },
+      {
+        title: 'MCP',
+        text: 'Let an AI assistant you already use work in Playroom with you, on your own computer, through an MCP server.'
+      },
+      {
+        title: 'More of the tools you know',
+        text: 'Features you would reach for in Photoshop or Lightroom, the PIXL way.'
+      },
+      {
+        title: 'Faster, again',
+        text: 'The next engine brings its own speed-ups, and we keep making Playroom lighter on your computer.'
+      },
+      { title: 'And a cookie', text: 'For reading this far. 🍪' }
     ]
   },
   {
@@ -226,4 +252,83 @@ export function latestNotes(
 /** A version as people read it: 0.2.0-beta → 0.2.0 beta, 0.2.0-beta.3 → 0.2.0 beta 3. */
 export function versionLabel(v: string): string {
   return v.replace(/-beta(?:\.(\d+))?$/, (_, n?: string) => (n ? ` beta ${n}` : ' beta'))
+}
+
+/**
+ * A release's notes as Markdown: the release feed's `releaseNotes`
+ * (electron-builder `releaseInfo.releaseNotesFile`, written by
+ * scripts/release-notes.mjs) and the GitHub release's body. An installed
+ * build reads it back with `parseReleaseNotes` to show what an update
+ * brings before it is installed.
+ */
+export function releaseNotesMarkdown(n: ReleaseNotes): string {
+  const lines = [n.headline, '']
+  for (const s of n.sections) {
+    lines.push(`## ${s.title}`, '')
+    for (const item of s.items) lines.push(`- ${item}`)
+    lines.push('')
+  }
+  if (n.next?.length) {
+    lines.push('## Coming soon', '')
+    for (const x of n.next) lines.push(`- **${x.title}**: ${x.text}`)
+    lines.push('')
+  }
+  return lines.join('\n')
+}
+
+/**
+ * The feed's notes read back: Markdown as `releaseNotesMarkdown` writes it
+ * (a headline, `## ` sections of `- ` items, "Coming soon" last), or, from
+ * a feed that holds something else, its text as one section. electron-updater
+ * hands over a string, a list of `{ version, note }`, or nothing.
+ */
+export function parseReleaseNotes(raw: unknown, version: string): ReleaseNotes | null {
+  const text = Array.isArray(raw)
+    ? (raw as { version?: string; note?: string | null }[])
+        .filter((r) => !r.version || r.version === version)
+        .map((r) => r.note ?? '')
+        .join('\n\n')
+    : typeof raw === 'string'
+      ? raw
+      : ''
+  // Some feeds (GitHub's) carry HTML: its text is enough to read.
+  const plain = text
+    .replace(/<\/(p|li|h\d)>/gi, '\n')
+    .replace(/<li>/gi, '- ')
+    .replace(/<h\d>/gi, '## ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .trim()
+  if (!plain) return null
+  const notes: ReleaseNotes = { version, headline: '', sections: [] }
+  let section: { title: string; items: string[] } | null = null
+  let coming = false
+  for (const raw of plain.split('\n')) {
+    const line = raw.trim()
+    if (!line) continue
+    const h = /^#{1,3}\s+(.*)$/.exec(line)
+    if (h) {
+      coming = /^coming soon$/i.test(h[1].trim())
+      section = coming ? null : { title: h[1].trim(), items: [] }
+      if (section) notes.sections.push(section)
+      continue
+    }
+    const item = /^[-*]\s+(.*)$/.exec(line)
+    if (item && coming) {
+      const m = /^\*\*(.+?)\*\*:?\s*(.*)$/.exec(item[1])
+      ;(notes.next ??= []).push(m ? { title: m[1], text: m[2] } : { title: item[1], text: '' })
+      continue
+    }
+    if (item) {
+      if (!section) notes.sections.push((section = { title: 'What’s new', items: [] }))
+      section.items.push(item[1])
+      continue
+    }
+    if (!notes.headline && !section) notes.headline = line
+    else if (section) section.items.push(line)
+    else notes.headline += ` ${line}`
+  }
+  return notes
 }

@@ -129,6 +129,12 @@ jobs:
       - name: Third-party notices
         run: pnpm notices
 
+      # This version's What's new as the update feed's releaseNotes
+      # (electron-builder.yml releaseInfo): an installed Playroom shows it in
+      # its "Update available" dialog, before the update is installed.
+      - name: Release notes
+        run: pnpm release-notes
+
       - name: Signing credentials (only those that exist)
         # Unset secrets must stay unset (electron-builder treats an empty
         # variable as a value). Without a macOS identity the build is

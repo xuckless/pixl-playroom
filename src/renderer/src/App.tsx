@@ -24,6 +24,8 @@ import { LooksBrowser } from './views/looks/LooksBrowser'
 import { useDevelop } from './state/develop'
 import { useBoot } from './state/boot'
 import { startCullUpkeep } from './state/cull'
+import { startUpdateNotice } from './lib/updates'
+import { UpdateDialog } from './views/UpdateDialog'
 import { useLibrary } from './state/library'
 import { useConfirm } from './state/confirm'
 import { commandFor, COMMANDS, currentBindings } from './lib/commands'
@@ -118,6 +120,7 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'crash-consent' && <CrashConsentDialog key="crash-consent" />}
       {dialog === 'engine' && <EngineReportDialog key="engine" />}
       {dialog === 'whats-new' && <WhatsNewDialog key="whats-new" />}
+      {dialog === 'update' && <UpdateDialog key="update" />}
       {dialog === 'scopes' && <ScopesExpandedDialog key="scopes" />}
     </AnimatePresence>
   )
@@ -450,6 +453,7 @@ export default function App(): React.JSX.Element {
       startStaleUpkeep(),
       startDisplayUpkeep(),
       startCullUpkeep(),
+      startUpdateNotice(),
       // Full HDR toggled, or the display's numbers moved: render for it again.
       useUi.subscribe((s, prev) => {
         if (s.fullHdr !== prev.fullHdr) useDevelop.getState().pushView()

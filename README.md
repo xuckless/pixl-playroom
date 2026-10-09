@@ -471,8 +471,12 @@ offscreen-rendered window with a throwaway profile (`PLAYROOM_HIDDEN=1`,
 
 AI models download on demand (Settings → AI models) from
 models.pixlfoundation.com, mirrored there by `pnpm publish-models --bucket
-<bucket>`; `PLAYROOM_MODELS_URL` points at another mirror (`file://` works) for
-development, e.g. one made with `pnpm publish-models --dry-run --out <dir>`.
+<bucket>` (the shipped models from their packages; the on-demand ones, such as
+BiRefNet lite and EfficientSAM3's vocabulary, from their pinned upstream files,
+each checked against the roster); `pnpm publish-models --check` asks the live
+mirror for every file the app offers. `PLAYROOM_MODELS_URL` points at another
+mirror (`file://` works) for development, e.g. one made with
+`pnpm publish-models --dry-run --out <dir>`.
 `window.__maskPreview` reports the loupe's own mask preview (`stats`, and
 `read()` for its plane, to compare with the engine's).
 

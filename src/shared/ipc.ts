@@ -18,6 +18,8 @@ import type { SmartGroup } from './smart'
 import type { LookMeta } from './looks/types'
 import type { SmartPart } from './looks/smart'
 
+import type { ReleaseNotes } from './releasenotes'
+
 export const IPC = {
   app: {
     cpus: 'app:cpus',
@@ -874,6 +876,8 @@ export interface UpdateState {
   lastCheckedAt?: string
   /** This version is below the release policy's floor: it must update before it goes on. */
   required?: { minVersion: string; message?: string }
+  /** What the offered version brings, from the feed (shared/releasenotes.ts `parseReleaseNotes`). */
+  notes?: ReleaseNotes | null
 }
 
 // ── Preferences ──────────────────────────────────────────────────────────────

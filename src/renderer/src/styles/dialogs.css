@@ -1002,3 +1002,8 @@ button.keybind-key.waiting {
   font-size: 12px;
   color: var(--text2);
 }
+
+/* The Update available dialog (views/UpdateDialog.tsx): its download state left of the buttons. */
+.update-available .update-status {
+  margin-right: auto;
+}

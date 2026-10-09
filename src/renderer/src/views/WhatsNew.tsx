@@ -1,4 +1,4 @@
-import { versionLabel } from '../../../shared/releasenotes'
+import { versionLabel, type ReleaseNotes } from '../../../shared/releasenotes'
 import { Modal } from '../components/ui'
 import { api } from '../lib/api'
 import { useLibrary } from '../state/library'
@@ -27,6 +27,21 @@ export function WhatsNewDialog(): React.JSX.Element | null {
         </button>
       }
     >
+      <NotesBody notes={notes} next={next} />
+    </Modal>
+  )
+}
+
+/** Releases' notes, and what is coming: the What's new and Update available dialogs both show them. */
+export function NotesBody({
+  notes,
+  next
+}: {
+  notes: ReleaseNotes[]
+  next?: ReleaseNotes['next']
+}): React.JSX.Element {
+  return (
+    <>
       {notes.map((n) => (
         <section key={n.version} className="wn-release">
           {notes.length > 1 && <h3 className="wn-version">{versionLabel(n.version)}</h3>}
@@ -56,6 +71,6 @@ export function WhatsNewDialog(): React.JSX.Element | null {
           </div>
         </div>
       )}
-    </Modal>
+    </>
   )
 }

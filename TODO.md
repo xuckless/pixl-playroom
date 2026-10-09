@@ -1002,11 +1002,35 @@ Full HDR on, on the M2 Pro.
 - [x] **S** · What's new 0.4.0-beta final (both engines; Gemma and SAM 3
       out), and the README (Suggested rejects, the 0.19 masks, the models,
       the rest and "Engine offline", `scripts/perf.mjs`).
-- [ ] **S** · Owner: the model mirror serves 26 of 28 files the release
-      offers; missing (404) `birefnet-lite/1.0.0/birefnet_lite.onnx` (Fine
-      subject) and `efficientsam3-ev-m/1.0.0/bpe_simple_vocab_16e6.txt.gz`
-      (Find by name's vocabulary): `node scripts/publish-models.mjs --only
-      birefnet-lite,efficientsam3-ev-m` before the release.
+- [ ] **S** · Owner: upload the two missing models before the release.
+      `publish-models` handled only shipped models, so `--only` matched nothing
+      ("0 models checked"). It now mirrors on-demand ones from their pinned
+      upstream files, checked against the roster's SHA-256 (dry run verified
+      2026-10-09).
+      1. `npx wrangler login` (an account with the `pixl-models` R2 bucket).
+      2. `node scripts/publish-models.mjs --only birefnet-lite,efficientsam3-ev-m --dry-run`:
+         downloads BiRefNet lite (224 MB, from its GitHub release) and SAM 3's
+         BPE vocabulary (1.4 MB, from facebookresearch/sam3 at a commit), and
+         checks both. EfficientSAM3's three networks stay on Hugging Face.
+      3. The same with `--bucket pixl-models` in place of `--dry-run`: uploads
+         to `<id>/1.0.0/<file>`.
+      4. `node scripts/publish-models.mjs --check`: every file the app offers
+         is served (expect "every file the app offers is served"; today 2
+         missing).
+      5. In the app, on a fresh profile: Fine subject, then Find by name, each
+         downloads and runs.
+      6. Every release from now on: `--check` before tagging.
+- [x] **S** · Before the release (the owner): Playroom pings the update
+      server as it opens (and every four hours), and a newer version shows
+      "Update available!" with What's new: the new version's notes, from the
+      feed (`build/release-notes.md` → electron-builder `releaseInfo`, written
+      by `pnpm release-notes` in the build and release.yml), its download
+      progress and Restart to update. Once per version per stage, quiet
+      while the dialog is open. 0.4.0-beta's notes say plainly where local
+      LLMs stand (not in this release: 3–4 GB and 10–20 s a photo; still
+      working out how they fit), and what is coming: our own language
+      models, MCP, more Photoshop- and Lightroom-like tools, more speed, and
+      a cookie.
 - [ ] **S** · Release-As 0.4.0-beta and the PR to main, on the owner's ask.
 
 ---

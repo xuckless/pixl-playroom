@@ -80,6 +80,8 @@ interface LibraryState {
     | 'engine'
     | 'whats-new'
     | 'scopes'
+    /** An update is available: what it brings, and Restart to update. */
+    | 'update'
   /** The collection the 'collection' dialog edits. */
   editing: CollectionDraft | null
   clipboard: { recipe: Recipe; groups: RecipeGroup[]; source: string | null } | null

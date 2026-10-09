@@ -261,6 +261,12 @@ appImage:
 # `releaseType: release`, and EP_GH_IGNORE_TIME for older tags). Once that
 # release is out, the github entry goes.
 generateUpdatesFilesForAllChannels: true
+# This version's What's new (scripts/release-notes.mjs, run by `pnpm build`):
+# the update feed's releaseNotes, read by an installed Playroom's "Update
+# available" dialog, and the GitHub release's body.
+releaseInfo:
+  releaseNotesFile: build/release-notes.md
+
 publish:
   - provider: generic
     url: https://updates.pixlfoundation.com/playroom
