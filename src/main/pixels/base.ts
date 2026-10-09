@@ -73,6 +73,6 @@ export function pixelDeps(engine: EngineClient, index: IndexClient, row: PhotoRo
     engine,
     cacheDir: paths.photoCache(row.id),
     blobFile: (hash, ext) => index.blobFile(key, hash, ext),
-    work: (job) => pixels.run(job)
+    work: (job, transfer) => pixels.run(job, transfer)
   }
 }

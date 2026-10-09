@@ -113,26 +113,60 @@ const isAppPage = appPage(
   is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
 )
 
+/**
+ * The profiling script's IPC trace (scripts/perf.mjs, `PLAYROOM_IPC_TRACE=1`):
+ * each call's channel, time and payload sizes, on `globalThis` where the
+ * script reads it. Off, nothing is recorded.
+ */
+const TRACE = process.env.PLAYROOM_IPC_TRACE === '1'
+type TraceRow = { channel: string; ms: number; inBytes: number; outBytes: number }
+function sizeOf(v: unknown): number {
+  if (v === undefined || v === null) return 0
+  if (ArrayBuffer.isView(v)) return v.byteLength
+  try {
+    return JSON.stringify(v)?.length ?? 0
+  } catch {
+    return 0
+  }
+}
+function trace(row: TraceRow): void {
+  const g = globalThis as { __playroomIpcTrace?: TraceRow[] }
+  ;(g.__playroomIpcTrace ??= []).push(row)
+}
+
 function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => Promise<R> | R): void {
   ipcMain.handle(channel, async (e, ...args: unknown[]) => {
-    if (!isAppPage(e.senderFrame?.url)) {
-      log.warn(`ipc: refused ${channel} from ${e.senderFrame?.url ?? 'a closed frame'}`)
-      return { ok: false, error: { message: 'Not allowed.', code: 'Forbidden' } }
-    }
-    // The beta gate holds everything but signing in, access, updates and settings.
-    if (gateRefuses(channel)) {
-      return {
-        ok: false,
-        error: { message: 'Pixl Playroom is locked until beta access is confirmed.', code: 'Gated' }
-      }
-    }
-    try {
-      const value = await fn(...(args as A))
-      return { ok: true, value }
-    } catch (err) {
-      return { ok: false, error: toAppError(err) }
-    }
+    if (!TRACE) return answer(channel, fn, e, args)
+    const t0 = performance.now()
+    const out = await answer(channel, fn, e, args)
+    trace({ channel, ms: performance.now() - t0, inBytes: sizeOf(args), outBytes: sizeOf(out) })
+    return out
   })
+}
+
+async function answer<A extends unknown[], R>(
+  channel: string,
+  fn: (...args: A) => Promise<R> | R,
+  e: Electron.IpcMainInvokeEvent,
+  args: unknown[]
+): Promise<unknown> {
+  if (!isAppPage(e.senderFrame?.url)) {
+    log.warn(`ipc: refused ${channel} from ${e.senderFrame?.url ?? 'a closed frame'}`)
+    return { ok: false, error: { message: 'Not allowed.', code: 'Forbidden' } }
+  }
+  // The beta gate holds everything but signing in, access, updates and settings.
+  if (gateRefuses(channel)) {
+    return {
+      ok: false,
+      error: { message: 'Pixl Playroom is locked until beta access is confirmed.', code: 'Gated' }
+    }
+  }
+  try {
+    const value = await fn(...(args as A))
+    return { ok: true, value }
+  } catch (err) {
+    return { ok: false, error: toAppError(err) }
+  }
 }
 
 async function wbContext(library: Library, key: string): Promise<WbContext> {

@@ -32,6 +32,10 @@ export type PixelsJob =
   | { op: 'compose'; image: string; mask: string; out: string }
   /** A step's overlay kept off a float frame's clipped pixels (pixels/ops.ts). */
   | { op: 'guard'; src: string; guard: string; out: string; at: { x: number; y: number } }
+  /** An 8-bit RGB picture written as a Display P3 PNG (Full HDR's SDR companion), its samples handed over. */
+  | { op: 'png8'; data: Uint8Array; w: number; h: number; out: string }
+  /** A float frame's headroom guard, its samples handed over (pixels/ops.ts). */
+  | { op: 'headroom'; rgb: Float32Array; w: number; h: number; out: string }
   /** A coordinate ramp for a lens map (pixels/ops.ts). */
   | { op: 'ramp'; file: string; w: number; h: number }
   /** A mask put back on the photo's own pixels through a lens map (pixels/ops.ts). */
@@ -88,13 +92,14 @@ class Pool {
     return w
   }
 
-  run<T>(job: PixelsJob): Promise<T> {
+  /** Post a job; `transfer` hands buffers over instead of copying them (they are gone here after). */
+  run<T>(job: PixelsJob, transfer: ArrayBuffer[] = []): Promise<T> {
     const i = this.turn
     this.turn = (this.turn + 1) % this.threads.length
     const id = ++this.nextId
     return new Promise<T>((resolve, reject) => {
       this.waiting.set(id, { resolve: resolve as (v: unknown) => void, reject, thread: i })
-      this.thread(i).postMessage({ ...job, id })
+      this.thread(i).postMessage({ ...job, id }, transfer)
     })
   }
 

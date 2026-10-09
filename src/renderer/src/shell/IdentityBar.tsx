@@ -19,13 +19,20 @@ export function EngineStatus(): React.JSX.Element {
   const rendering = useDevelop((s) => s.rendering && s.session !== null)
   const status = engine?.status ?? 'starting'
   const ok = status === 'ready'
+  // Let go while Playroom is behind (the safe-shutdown rest): yellow, not an error.
+  const resting = status === 'resting'
+  const tone = ok ? 'ok' : resting ? 'rest' : 'bad'
   return (
     <span
-      className={`engine-status micro ${ok ? 'ok' : 'bad'}`}
-      title={engine?.reason ?? (ok && ms !== null ? `Last render ${ms} ms` : '')}
+      className={`engine-status micro ${tone}`}
+      title={
+        resting
+          ? 'Resting while Playroom is in the background, to spare the battery and memory. It starts again with the next thing you do.'
+          : (engine?.reason ?? (ok && ms !== null ? `Last render ${ms} ms` : ''))
+      }
     >
-      <i className={`status-dot${rendering ? ' busy' : ''}${ok ? '' : ' bad'}`} />
-      Engine {status}
+      <i className={`status-dot${rendering ? ' busy' : ''}${ok ? '' : ` ${tone}`}`} />
+      {resting ? 'Engine offline' : `Engine ${status}`}
     </span>
   )
 }

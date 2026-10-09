@@ -314,7 +314,11 @@ export interface AppError {
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: AppError }
 
 export interface EngineStatus {
-  status: 'starting' | 'ready' | 'unavailable' | 'crashed'
+  /**
+   * `resting`: let go while Playroom is behind (the safe-shutdown rest,
+   * rest.ts); the next call starts it again, through `starting`.
+   */
+  status: 'starting' | 'ready' | 'resting' | 'unavailable' | 'crashed'
   version?: string
   enhance?: boolean
   /** The ONNX Runtime bundled with the engine: what model steps run on. */

@@ -122,6 +122,17 @@ export class Library {
     })
   }
 
+  /**
+   * Thumbnails still to make: the safe-shutdown rest keeps the background
+   * engine for them (rest.ts), as for an export, so a folder opened just
+   * before Playroom goes behind finishes once, rather than the host being
+   * let go between two thumbnails and started again for the next (Pass 116:
+   * that churn made a 259-RAW folder take minutes instead of a minute).
+   */
+  get busy(): boolean {
+    return this.running > 0 || this.queue.length > 0
+  }
+
   private broadcast(channel: string, payload: unknown): void {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload)
   }
@@ -215,7 +226,7 @@ export class Library {
   private async probeOnce(photo: PhotoRow, k: string, engine: EngineClient): Promise<SourceInfo> {
     // Per app version too: the engine ships with it, and a newer one may say more.
     const file = join(
-      paths.photoCache(photo.id),
+      paths.photoCachePath(photo.id),
       `probe-${hash32(`${k}:${app.getVersion()}`).toString(16)}.json`
     )
     let info: SourceInfo | null = null
@@ -223,7 +234,7 @@ export class Library {
       info = JSON.parse(await readFile(file, 'utf8')) as SourceInfo
     } catch {
       info = await engine.probe(photo.path)
-      await mkdir(paths.photoCache(photo.id), { recursive: true })
+      await mkdir(paths.photoCachePath(photo.id), { recursive: true })
       await writeFile(file, JSON.stringify(info)).catch(() => undefined)
     }
     this.probes.set(k, info)

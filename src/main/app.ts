@@ -322,13 +322,22 @@ app.whenReady().then(() => {
   )
   // AI switched off in Settings: no job starts (a RAW's develop keeps its models).
   ai.gate = () => switches.enabled()
+  // Gemma names the library's photos while nobody is at the computer, on mains power.
+  const namer = new Namer(index, library, brain, switches)
+  if (gemmaInBuild(app.isPackaged)) namer.start()
+  // The cull signals, measured on the same terms (Pass 115 suggests from them).
+  const cull = new CullMeasurer(index, library, bgEngine, aiEngine, models, switches)
+  cull.start()
   // The engine's safe-shutdown advisory: hosts go while Playroom is out of
   // the way, an export or a queued AI batch finishing first.
   watchRest(
     [
       { engine },
-      { engine: bgEngine, busy: () => exporter.busy },
-      { engine: aiEngine, busy: () => ai.busy },
+      // Queued work finishes first: an export, a folder's thumbnails, a
+      // batch of cull signals (asked for, or the idle one under way); then
+      // the hosts rest instead of starting again for each next piece.
+      { engine: bgEngine, busy: () => exporter.busy || library.busy || cull.busy },
+      { engine: aiEngine, busy: () => ai.busy || cull.busy },
       { engine: selectEngine }
     ],
     () => engine.ensureStarted(),
@@ -337,12 +346,6 @@ app.whenReady().then(() => {
       if (!brain.isBusy()) void brain.stop()
     }
   )
-  // Gemma names the library's photos while nobody is at the computer, on mains power.
-  const namer = new Namer(index, library, brain, switches)
-  if (gemmaInBuild(app.isPackaged)) namer.start()
-  // The cull signals, measured on the same terms (Pass 115 suggests from them).
-  const cull = new CullMeasurer(index, library, bgEngine, aiEngine, models, switches)
-  cull.start()
   // Quitting: Gemma's server goes with Playroom, never left running.
   app.on('will-quit', () => {
     namer.stop()

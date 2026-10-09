@@ -186,6 +186,11 @@ export class CullMeasurer {
 
   private measuring: AbortController | null = null
 
+  /** Measuring under way (asked for, or an idle batch): the rest keeps the engines until it ends. */
+  get busy(): boolean {
+    return this.measuring !== null || this.running
+  }
+
   /**
    * Measure now the photos among these not measured yet (the Library's
    * Suggested rejects asked): one at a time, the newest call taking over.

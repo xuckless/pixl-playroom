@@ -90,6 +90,7 @@ import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import { keyOf, parseKey } from './keys'
 import type { Library, Picture } from './library'
 import { CICP_DISPLAY_P3, encodePng8, pngToFloats } from './pngio'
+import { pixels } from './workers/pool'
 import { cacheUrl } from './protocol'
 import {
   ensureLensedProxies,
@@ -976,7 +977,7 @@ class Session {
       const c = report.companion
       if (c) {
         const file = this.nextFile('companion', 'png')
-        await writeFile(file, encodePng8(c.data, c.width, c.height, 1, [CICP_DISPLAY_P3]))
+        await writeCompanion(file, c.data, c.width, c.height)
         this.lastFull = file
         readUrl = cacheUrl(file, seq)
         // The library's thumbnail is a JPEG of the picture as shown: in
@@ -2036,6 +2037,23 @@ class Session {
     return saved.then(() =>
       this.owner.library.index.holdOpen(this.key, false).catch(() => undefined)
     )
+  }
+}
+
+/**
+ * Full HDR's SDR companion written as a Display P3 PNG by the pixels worker:
+ * its deflate held main up about 36 ms per settled render (Pass 116). The
+ * samples are handed over when they own their buffer (nothing reads them
+ * after); the worker gone, it is written here.
+ */
+async function writeCompanion(file: string, data: Uint8Array, w: number, h: number): Promise<void> {
+  const own = data.byteOffset === 0 && data.byteLength === data.buffer.byteLength
+  const px = own ? data : data.slice()
+  try {
+    await pixels.run({ op: 'png8', data: px, w, h, out: file }, [px.buffer as ArrayBuffer])
+  } catch (err) {
+    if (px.byteLength === 0) throw err
+    await writeFile(file, encodePng8(px, w, h, 1, [CICP_DISPLAY_P3]))
   }
 }
 

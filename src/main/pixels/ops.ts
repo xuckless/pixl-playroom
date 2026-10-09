@@ -252,6 +252,11 @@ export function headroomGuard(rgb: Float32Array, w: number, h: number): Uint8Arr
   return out
 }
 
+/** A float frame's headroom guard written as an 8-bit grey PNG (the pixels worker's job). */
+export function writeHeadroomGuard(rgb: Float32Array, w: number, h: number, out: string): void {
+  writeFileSync(out, encodeGreyPng(headroomGuard(rgb, w, h), w, h, 1))
+}
+
 /**
  * A step's overlay (16-bit RGB or RGBA PNG) with its alpha multiplied by the
  * frame's headroom guard (8-bit grey, the frame's size), the overlay's top

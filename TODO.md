@@ -940,25 +940,54 @@ signed-build checks of Pass 112).
   the burst's best", a second copy of a photo as its duplicate; Keep took
   it off at once.
 
-### Pass 116 — UI performance: profile, then speed up · 5 pts
+### Pass 116 — UI performance: profile, then speed up · 5 pts ✅
 
 The owner, 2026-10-08: the engine's own speed-ups come with its next
 update; before 0.4.0-beta ships, Playroom's side is profiled and made
-faster.
+faster. Measured on the owner's real use (2026-10-09): a copy of the card's
+`DCIM/100CANON` (259 files, 246 CR2 with their projects and sidecars) with
+Full HDR on, on the M2 Pro.
 
-- [ ] **M** · Flame graphs of the renderer and main process on the built
-      app (Chrome DevTools / CDP traces through Playwright, `--cpu-prof`
-      for main): opening a folder of a few hundred photos, scrolling the
-      library and filmstrip, opening a photo, dragging a slider (drafts →
-      settled), the 1:1 loupe pan, masks and the Masks pane, an export.
-      Long tasks, React commits (Profiler), IPC round trips and payload
-      sizes, frame times; numbers written here before any change.
-- [ ] **L** · The fixes the graphs point at (re-renders, store selectors,
-      work on the UI thread that belongs in a worker or main, IPC chatter,
-      image decode, layout thrash), each measured before and after; the
-      efficient UI (Pass 106) checked still to hold.
-- [ ] **S** · The same scenarios kept as a repeatable script (scratch or
-      `scripts/`), so later passes and engine updates can be compared.
+- [x] **S** · `scripts/perf.mjs`: the built app driven by Playwright from a
+      fresh profile, per scenario a renderer and a main `.cpuprofile` (a
+      `PLAYROOM_PROFILE_BUILD=1` build keeps the names), frame times, long
+      tasks and long animation frames, IPC round trips with their bytes
+      (`PLAYROOM_IPC_TRACE=1`), what main sends, the top self time; then a
+      **rest** check: minimised, the hosts must go about 60 s after their
+      work, the top bar say "Engine offline", the app sit idle; shown, the
+      engine come back. `PLAYROOM_ASSUME_FOCUSED=1`: a window a script
+      launched can't be the active app on macOS. Scenarios: open the folder,
+      scroll the grid, open a photo, drag Exposure, the 1:1 pan, a radial
+      mask, the filmstrip, an export.
+- [x] **M** · Before (the committed Pass 115), on the folder: the UI was
+      already smooth (frame p95 10 ms at 120 Hz, no frame held past 66 ms);
+      the waits are the engine's (all thumbnails 48 s, the first 24 at 10 s;
+      a settled Full HDR render 1.06 s after a drag; the 1:1 region of a
+      24 MP RAW 14.8 s; an export 5.7 s). Main's thread did pixel work: the
+      float frames' headroom guard and its PNG (96 ms opening the folder,
+      58 ms in masks), Full HDR's SDR companion's deflate on every settled
+      render (36 ms each), and 300 `mkdirSync` (170 ms) opening a folder.
+- [x] **L** · Fixes, each measured: the headroom guard and the companion's
+      PNG in the pixels worker (samples handed over, not copied); a photo's
+      cache folder made where it is written, off the main thread; HDR badges
+      batched once a frame with the thumbnails. Main-thread pixel work:
+      opening the folder 204 → 8 ms, masks 113 → 0, a drag 35 → 0; main's
+      busy time down 28–41 % there. Wall times are the engine's and moved
+      within noise.
+- [x] **M** · The rest, found by the rest check: a host was let go between
+      two thumbnails and started again for the next (the thumbnail queue,
+      and cull measuring, now keep the engines like an export does); the
+      launch's first look started the 60 s "hidden" timer before the window
+      was shown, and only a focus event cancelled it (now looked at again
+      when due). A resting engine says `resting`: the top bar shows "Engine
+      offline", yellow (the owner), not "ready". Minimised: hosts gone at
+      65 s, the app at 0 % CPU and ~830–1000 MB (main ~400–480 MB of which
+      only 19 MB is its JS heap: Electron's own), no llama-server; shown
+      again, ready in 0.7–1.2 s.
+- Left, measured and small: the masks overlay compiles its shaders on first
+  show (~30 ms in the renderer); each drag tick sends the whole recipe
+  (4.7 KB) and gets an 8.7 KB render event: cheap. The folder watcher's
+  test is timing-flaky under the full suite's load (passes alone).
 
 ### Pass 117 — Release · 3 pts
 

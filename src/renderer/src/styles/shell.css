@@ -90,6 +90,14 @@
   background: var(--danger);
   box-shadow: 0 0 10px var(--danger);
 }
+/* Resting while Playroom is behind: yellow, not an error. */
+.engine-status.rest {
+  color: var(--warn);
+}
+.status-dot.rest {
+  background: var(--warn);
+  box-shadow: 0 0 10px var(--warn);
+}
 .tool-bar,
 .toolbar {
   display: flex;

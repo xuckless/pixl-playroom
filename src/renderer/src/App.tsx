@@ -1,7 +1,7 @@
 import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect, useState } from 'react'
 import type { AiJobEvent } from '../../shared/ai'
-import type { LibraryItem, LibrarySource, RenderScale } from '../../shared/ipc'
+import type { HdrKind, LibraryItem, LibrarySource, RenderScale } from '../../shared/ipc'
 import { api, errorText } from './lib/api'
 import { useAiJobs } from './state/jobs'
 import { ProcessingOverlay } from './fx/ProcessingOverlay'
@@ -146,7 +146,8 @@ function Toast(): React.JSX.Element | null {
 
 function EngineBanner(): React.JSX.Element | null {
   const engine = useLibrary((s) => s.engine)
-  if (!engine || engine.status === 'ready') return null
+  // Resting (Playroom behind) is no trouble: the top bar says so, quietly.
+  if (!engine || engine.status === 'ready' || engine.status === 'resting') return null
   return (
     <div className="engine-banner" role="alert">
       {engine.code === 'VersionMismatch'
@@ -306,15 +307,26 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
  * per thumbnail.
  */
 const thumbsWaiting = new Map<string, { url: string | null; unreadable?: boolean }>()
+/** Photos' HDR kinds learnt since the last frame (a folder opening sends one per photo). */
+const hdrWaiting = new Map<number, HdrKind | null>()
 let thumbFrame = 0
+/** Thumbnails and HDR badges, laid on once a frame: one change to the items, not one per photo. */
 function flushThumbs(): void {
   thumbFrame = 0
   const patch: LibraryItem[] = []
   for (const it of useLibrary.getState().items) {
     const t = thumbsWaiting.get(it.key)
-    if (t) patch.push({ ...it, thumbUrl: t.url ?? it.thumbUrl, unreadable: !!t.unreadable })
+    const hdr = hdrWaiting.get(it.photoId)
+    const hdrChanged = hdrWaiting.has(it.photoId) && it.hdr !== hdr
+    if (!t && !hdrChanged) continue
+    patch.push({
+      ...it,
+      ...(t ? { thumbUrl: t.url ?? it.thumbUrl, unreadable: !!t.unreadable } : {}),
+      ...(hdrChanged ? { hdr } : {})
+    })
   }
   thumbsWaiting.clear()
+  hdrWaiting.clear()
   if (patch.length) useLibrary.getState().patchItems(patch)
 }
 
@@ -419,10 +431,8 @@ export default function App(): React.JSX.Element {
         thumbFrame ||= requestAnimationFrame(flushThumbs)
       }),
       api.library.onHdr(({ photoId, hdr }) => {
-        const mine = useLibrary
-          .getState()
-          .items.filter((i) => i.photoId === photoId && i.hdr !== hdr)
-        if (mine.length) useLibrary.getState().patchItems(mine.map((i) => ({ ...i, hdr })))
+        hdrWaiting.set(photoId, hdr)
+        thumbFrame ||= requestAnimationFrame(flushThumbs)
       }),
       api.library.onNames(({ photoId, words }) => {
         const mine = useLibrary.getState().items.filter((i) => i.photoId === photoId)

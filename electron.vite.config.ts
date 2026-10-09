@@ -61,9 +61,11 @@ export default defineConfig({
     },
     plugins: [react(), bundledPackages()],
     build: {
-      // Less to parse at start: three.js and the app ship minified.
-      minify: 'esbuild',
-      sourcemap: false,
+      // Less to parse at start: three.js and the app ship minified. A
+      // profiling build (scripts/perf.mjs, PLAYROOM_PROFILE_BUILD=1) keeps
+      // the names, so its flame graphs read.
+      minify: process.env.PLAYROOM_PROFILE_BUILD === '1' ? false : 'esbuild',
+      sourcemap: process.env.PLAYROOM_PROFILE_BUILD === '1',
       // Vite inlines assets under 4 kB as data: URLs, which caught one
       // subset of Manrope (cyrillic-ext, 2.5 kB); the CSP in index.html has
       // no font-src, so default-src 'self' blocked it in every build (dev

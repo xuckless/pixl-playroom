@@ -120,7 +120,7 @@ export async function ensureThumbSource(
   threads: number
 ): Promise<Proxies> {
   const s = stamp(photo)
-  const dir = paths.photoCache(photo.id)
+  const dir = paths.photoCachePath(photo.id)
   if (info.input !== 'Raw' || info.is_hdr || (await exists(join(dir, `proxies-${s}.json`))))
     return ensureProxies(engine, photo, info, threads)
   const cell = cellFactor(photo)

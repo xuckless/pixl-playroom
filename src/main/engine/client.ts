@@ -194,8 +194,9 @@ export class EngineClient {
     if (!child || this.running.size > 0 || this.inflight.size > 0) return false
     this.child = undefined
     this.spawned = false
-    // Its status stands (a resting engine is still ready): the next call
-    // starts a host, and that says 'starting' until it is up.
+    // Resting, its version and abilities kept: the next call starts a host,
+    // which says 'starting' until it is up. The top bar says "offline".
+    this.status = { ...this.status, status: 'resting', reason: undefined }
     child.kill()
     return true
   }

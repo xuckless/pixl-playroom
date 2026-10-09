@@ -27,11 +27,19 @@ export interface RestEngine {
   busy?: () => boolean
 }
 
+/**
+ * The profiling script (scripts/perf.mjs) can't make a window it launched the
+ * active app on macOS: with `PLAYROOM_ASSUME_FOCUSED=1` a shown window counts
+ * as in use, so its scenarios measure Playroom in use; minimising still rests.
+ */
+const ASSUME_FOCUSED = process.env.PLAYROOM_ASSUME_FOCUSED === '1'
+
 function windowState(): { visible: boolean; focused: boolean } {
   const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed())
+  const visible = wins.some((w) => w.isVisible() && !w.isMinimized())
   return {
-    visible: wins.some((w) => w.isVisible() && !w.isMinimized()),
-    focused: BrowserWindow.getFocusedWindow() !== null
+    visible,
+    focused: ASSUME_FOCUSED ? visible : BrowserWindow.getFocusedWindow() !== null
   }
 }
 
@@ -73,6 +81,11 @@ export function watchRest(engines: RestEngine[], wake: () => void, rest?: () => 
     deadline = at
     timer = setTimeout(() => {
       timer = undefined
+      // Looked at again when it comes due: a window that came on screen with
+      // no event to say so (the launch's first look is before it is shown)
+      // and is in use now is not rested (Pass 116: hosts were let go under a
+      // window in use, 60 s after the launch).
+      if (restDelay(windowState()) === null) return
       resting = true
       rest?.()
       letGo()

@@ -35,8 +35,8 @@ export interface PixelDeps {
   cacheDir: string
   /** A blob of the photo's project written out to a file (null when it has none). */
   blobFile(hash: string, ext: string): Promise<string | null>
-  /** Per-pixel work, off the main thread. */
-  work(job: PixelsJob): Promise<unknown>
+  /** Per-pixel work, off the main thread; `transfer` hands buffers over (gone here after). */
+  work(job: PixelsJob, transfer?: ArrayBuffer[]): Promise<unknown>
 }
 
 export interface WorkingSet {
@@ -272,11 +272,25 @@ async function guardOf(deps: PixelDeps, from: ProxyFile): Promise<string | null>
         threads: BACKGROUND_THREADS
       })
       const b = r.output!
-      const rgb = new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4)
-      await writeFile(
-        tmp,
-        encodeGreyPng(headroomGuard(rgb, r.width, r.height), r.width, r.height, 1)
-      )
+      // The pixel loop and the encode in the pixels worker: tens of
+      // milliseconds of main's time per frame otherwise (Pass 116). The
+      // samples are handed over, not copied, when they own their buffer.
+      const own =
+        b.byteOffset === 0 && b.byteLength === b.buffer.byteLength && b.byteOffset % 4 === 0
+      const buf = own
+        ? (b.buffer as ArrayBuffer)
+        : (b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer)
+      const rgb = new Float32Array(buf)
+      try {
+        await deps.work({ op: 'headroom', rgb, w: r.width, h: r.height, out: tmp }, [buf])
+      } catch (err) {
+        // The worker is gone before it took the samples: here rather than not at all.
+        if (buf.byteLength === 0) throw err
+        await writeFile(
+          tmp,
+          encodeGreyPng(headroomGuard(rgb, r.width, r.height), r.width, r.height, 1)
+        )
+      }
     },
     true
   )
