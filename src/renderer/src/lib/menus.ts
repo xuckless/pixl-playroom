@@ -126,7 +126,7 @@ function flagMenu(): Item {
   return {
     label: t('Flag'),
     submenu: [
-      cmd('flag.pick', t('Pick'), { checked: now === 'pick', radio: true }),
+      cmd('flag.pick', t('Pick|flag'), { checked: now === 'pick', radio: true }),
       cmd('flag.reject', t('Reject'), { checked: now === 'reject', radio: true }),
       cmd('flag.clear', t('None'), { checked: now === null, radio: true })
     ]
@@ -313,9 +313,9 @@ function editMenu(): Item[] {
       { key: 'redo', enabled: true }
     ),
     sep,
-    { role: 'cut' },
-    { role: 'copy' },
-    { role: 'paste' },
+    { role: 'cut', label: t('Cut') },
+    { role: 'copy', label: t('Copy') },
+    { role: 'paste', label: t('Paste') },
     act(
       'edit.selectAll',
       t('Select All'),
@@ -621,12 +621,18 @@ function fallbackMenu(e: MouseEvent): void {
     (el?.tagName === 'INPUT' && editingType((el as HTMLInputElement).type))
   if (field) {
     e.preventDefault()
-    popup([{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, sep, { role: 'selectAll' }])
+    popup([
+      { role: 'cut', label: t('Cut') },
+      { role: 'copy', label: t('Copy') },
+      { role: 'paste', label: t('Paste') },
+      sep,
+      { role: 'selectAll', label: t('Select All') }
+    ])
     return
   }
   if (document.getSelection()?.toString()) {
     e.preventDefault()
-    popup([{ role: 'copy' }])
+    popup([{ role: 'copy', label: t('Copy') }])
   }
 }
 

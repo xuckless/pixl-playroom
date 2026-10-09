@@ -155,7 +155,7 @@ export async function listImported(): Promise<LensProfile[]> {
         basename(f, '.json')
       )
       if (typeof p === 'string') log.warn('lens profile refused', f, p)
-      else out.push({ ...p, source: p.source ?? 'Imported' })
+      else out.push({ ...p, source: p.source ?? t('Imported') })
     } catch (err) {
       log.warn('lens profile unreadable', f, (err as Error).message)
     }
@@ -277,7 +277,8 @@ export class LensProfileStore {
     try {
       const raw = await fetchBytes(`${BASE}/index.json`)
       const index = readIndex(JSON.parse(raw.toString('utf8')))
-      if (!index) throw new Error(t('the online catalogue is in a format this version does not read'))
+      if (!index)
+        throw new Error(t('the online catalogue is in a format this version does not read'))
       this.checkedAt = new Date().toISOString()
       this.error = null
       const current = this.catalog

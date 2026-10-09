@@ -76,6 +76,7 @@ import type { Language, LanguageSetting } from '../shared/i18n'
 interface LanguageState {
   setting: LanguageSetting
   language: Language
+  pseudo?: boolean
 }
 
 async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -98,7 +99,10 @@ const api = {
   menu: {
     set: (spec: MenuBarSpec) => call<void>(IPC.menu.set, spec),
     popup: (items: MenuNode[]) => call<void>(IPC.menu.popup, items),
-    onRun: (cb: (id: string) => void) => on(IPC.menu.run, cb)
+    onRun: (cb: (id: string) => void) => on(IPC.menu.run, cb),
+    top: () => call<string[]>(IPC.menu.top),
+    openTop: (index: number, x: number, y: number) => call<void>(IPC.menu.openTop, index, x, y),
+    onChanged: (cb: () => void) => on(IPC.menu.changed, cb)
   },
   app: {
     cpus: () => call<number>(IPC.app.cpus),

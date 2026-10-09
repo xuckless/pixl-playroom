@@ -1,5 +1,5 @@
 "use strict";
-const concepts = require("./concepts-BlHF9Hl2.js");
+const concepts = require("./concepts-DZXwTWWX.js");
 const MATRICES = {
   Normal: [
     [1, 0],
@@ -180,7 +180,9 @@ function validateProfile(v, id) {
   for (const s of fish) {
     const n = s.model === "none" ? 0 : DIST_ARITY[s.model];
     if (!isNum$1(s.focal) || n === void 0 || !nums(s.k, n))
-      return concepts.t("each fisheye sample needs `focal`, `model` (none, poly3, poly5, ptlens) and its `k`");
+      return concepts.t(
+        "each fisheye sample needs `focal`, `model` (none, poly3, poly5, ptlens) and its `k`"
+      );
     if (s.realFocal !== void 0 && !(isNum$1(s.realFocal) && s.realFocal > 0))
       return concepts.t("a fisheye sample’s `realFocal` must be a positive number");
   }

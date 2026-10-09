@@ -321,7 +321,7 @@ export function BetaGate({ gate }: { gate: GateState | null }): React.JSX.Elemen
                   disabled={busy}
                   onClick={() => void run(() => api.licence.freeDevice(d.id))}
                 >
-                  {t('Free')}
+                  {t('Free|device')}
                 </button>
               </li>
             ))}

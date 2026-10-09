@@ -305,7 +305,8 @@ export class Exporter {
         }
       }
       // By the file, not the name: IMG_1.jpg is IMG_1.JPG on a case-insensitive disk.
-      if (await sameFile(out, row.path)) throw new Error(t('the export would overwrite the original'))
+      if (await sameFile(out, row.path))
+        throw new Error(t('the export would overwrite the original'))
     }
 
     // An HDR source stays HDR only where the settings ask and the format can
@@ -600,7 +601,9 @@ export class Exporter {
           id: 'folder-unwritable',
           severity: 'block',
           step: 'review',
-          message: t('Playroom cannot write to {{folder}}: choose another folder.', { folder: there })
+          message: t('Playroom cannot write to {{folder}}: choose another folder.', {
+            folder: there
+          })
         })
         continue
       }
@@ -620,10 +623,11 @@ export class Exporter {
           id: 'disk-low',
           severity: 'warn',
           step: 'review',
-          message: t(
-            '{{free}} is free where {{folder}} is; this export may need about {{need}}.',
-            { free: formatBytes(free), folder: there, need: formatBytes(need) }
-          )
+          message: t('{{free}} is free where {{folder}} is; this export may need about {{need}}.', {
+            free: formatBytes(free),
+            folder: there,
+            need: formatBytes(need)
+          })
         })
     }
     if (existing > 0) {

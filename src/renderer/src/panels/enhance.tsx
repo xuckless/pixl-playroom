@@ -325,7 +325,9 @@ export function EnhancePanel(): React.JSX.Element | null {
             ))}
           </ul>
         )}
-        {layer && k > 1 && <p className="muted small">{t('An upscale is always the whole photo.')}</p>}
+        {layer && k > 1 && (
+          <p className="muted small">{t('An upscale is always the whole photo.')}</p>
+        )}
       </Section>
     </ToolPanel>
   )

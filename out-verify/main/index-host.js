@@ -1,17 +1,17 @@
 "use strict";
-const pixlfile = require("./chunks/pixlfile-CLk-_7wd.js");
+const pixlfile = require("./chunks/pixlfile-Bj95bmAq.js");
+const concepts = require("./chunks/concepts-DZXwTWWX.js");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const recipe = require("./chunks/recipe-BOlCEsxK.js");
-const source = require("./chunks/source-YZyIdPnn.js");
+const recipe = require("./chunks/recipe-DEuWaDNo.js");
+const source = require("./chunks/source-BSBanTT8.js");
 const exifr = require("exifr");
 const promises = require("fs/promises");
 const node_sqlite = require("node:sqlite");
 const os = require("os");
 require("module");
-require("./chunks/concepts-BlHF9Hl2.js");
-require("./chunks/gradients-D8SBBasL.js");
+require("./chunks/gradients-CEysoqMz.js");
 require("timers/promises");
 require("child_process");
 const isGroup = (r) => r.rules !== void 0;
@@ -2452,16 +2452,16 @@ class IndexService {
     if (!["manual", "smart", "set"].includes(c.kind))
       throw new Error(`bad collection kind ${c.kind}`);
     const name = String(c.name ?? "").trim();
-    if (!name) throw new Error("a collection needs a name");
+    if (!name) throw new Error(concepts.tk("a collection needs a name"));
     const existing = c.id ? this.store.collection(c.id) : void 0;
     if (existing && existing.kind !== c.kind) throw new Error("a collection cannot change kind");
     const id = existing?.id ?? c.id ?? recipe.newId();
     const parent = c.parent ?? null;
     if (parent !== null) {
       const p = this.store.collection(parent);
-      if (!p || p.kind !== "set") throw new Error("a collection can only sit in a set");
+      if (!p || p.kind !== "set") throw new Error(concepts.tk("a collection can only sit in a set"));
       for (let at = p; at; ) {
-        if (at.id === id) throw new Error("a set cannot sit inside itself");
+        if (at.id === id) throw new Error(concepts.tk("a set cannot sit inside itself"));
         at = at.parent ? this.store.collection(at.parent) : void 0;
       }
     }
@@ -2544,7 +2544,7 @@ class IndexService {
   async importCollections(file) {
     const f = file;
     if (!f || f.app !== "pixl-playroom" || f.kind !== "collections" || !Array.isArray(f.collections))
-      throw new Error("not a Pixl Playroom collections file");
+      throw new Error(concepts.tk("not a Pixl Playroom collections file"));
     const defs = f.collections.filter(
       (c) => !!c && typeof c.id === "string" && ["manual", "smart", "set"].includes(c.kind)
     );

@@ -91,7 +91,11 @@ export class Session {
   }
 
   async signIn(deps: Omit<SignInDeps, 'fetch' | 'now'>): Promise<Identity> {
-    const tokens = await signInWithBrowser(this.cfg, { ...deps, fetch: this.fetchFn, now: this.now })
+    const tokens = await signInWithBrowser(this.cfg, {
+      ...deps,
+      fetch: this.fetchFn,
+      now: this.now
+    })
     const who = identityOf(tokens)
     // Wait out a refresh of the old session, so it can't save over this one.
     await this.refreshing?.catch(() => {})

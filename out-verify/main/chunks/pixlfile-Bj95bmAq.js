@@ -24,14 +24,14 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 const promises = require("fs/promises");
 const module$1 = require("module");
 const path = require("path");
-const recipe = require("./recipe-BOlCEsxK.js");
-const concepts = require("./concepts-BlHF9Hl2.js");
-const gradients = require("./gradients-D8SBBasL.js");
+const recipe = require("./recipe-DEuWaDNo.js");
+const concepts = require("./concepts-DZXwTWWX.js");
+const gradients = require("./gradients-CEysoqMz.js");
 const crypto = require("crypto");
 const fs = require("fs");
 const promises$1 = require("timers/promises");
 const node_sqlite = require("node:sqlite");
-const source = require("./source-YZyIdPnn.js");
+const source = require("./source-BSBanTT8.js");
 let shared;
 let explicitPath;
 function setExiftoolPath(path2) {
@@ -2547,19 +2547,19 @@ function smartReadiness(b) {
 }
 const IMMEDIATE_KEYS = /* @__PURE__ */ new Set(["range", "linear", "bidirectional", "radial"]);
 function whyNot(r) {
-  if (r === "off") return "AI models are off: turn them on in Settings → AI models";
-  return r === "needs-model" ? "needs a model: download it in Settings → AI models" : "needs the next engine update";
+  if (r === "off") return concepts.t("AI models are off: turn them on in Settings → AI models");
+  return r === "needs-model" ? concepts.t("needs a model: download it in Settings → AI models") : concepts.t("needs the next engine update");
 }
 const IMMEDIATE = /* @__PURE__ */ new Set(["range", "linear", "bidirectional", "radial"]);
-function partNeed(t, r) {
-  if (t.kind === "object") {
+function partNeed(tg, r) {
+  if (tg.kind === "object") {
     if (r.object === "ready") return { key: "object", ready: true };
     return { key: "pick", ready: r.pick === "ready" };
   }
-  if (t.kind === "person" && t.part === "body") return { key: "body", ready: false };
-  if (t.kind === "person" && !MODEL_PARTS.includes(t.part))
+  if (tg.kind === "person" && tg.part === "body") return { key: "body", ready: false };
+  if (tg.kind === "person" && !MODEL_PARTS.includes(tg.part))
     return { key: "personDetail", ready: r.personDetail === "ready" };
-  return { key: t.kind, ready: r[t.kind] === "ready" };
+  return { key: tg.kind, ready: r[tg.kind] === "ready" };
 }
 const MODEL_PARTS = ["face", "hair", "skin", "clothes"];
 function denoiseModel(m, r) {
@@ -2618,39 +2618,39 @@ function componentOf(part, feather, plane) {
     invert: part.invert ?? false,
     feather
   };
-  const t = part.target;
-  if (t.kind === "range")
+  const tg = part.target;
+  if (tg.kind === "range")
     return {
       ...base,
       kind: "range",
-      hue: t.hue ?? null,
-      saturation: t.saturation ?? null,
-      luma: t.luma ?? null,
-      smoothness: t.smoothness ?? 0
+      hue: tg.hue ?? null,
+      saturation: tg.saturation ?? null,
+      luma: tg.luma ?? null,
+      smoothness: tg.smoothness ?? 0
     };
-  if (t.kind === "linear")
-    return { ...base, kind: "linear", start: { ...t.start }, end: { ...t.end }, ...plane };
-  if (t.kind === "bidirectional")
+  if (tg.kind === "linear")
+    return { ...base, kind: "linear", start: { ...tg.start }, end: { ...tg.end }, ...plane };
+  if (tg.kind === "bidirectional")
     return {
       ...base,
       kind: "bidirectional",
-      start: { ...t.start },
-      end: { ...t.end },
-      centre: t.centre ?? 0.5,
+      start: { ...tg.start },
+      end: { ...tg.end },
+      centre: tg.centre ?? 0.5,
       ...plane
     };
-  if (t.kind === "radial")
+  if (tg.kind === "radial")
     return {
       ...base,
       kind: "radial",
-      centre: { ...t.centre },
-      radiusX: t.radiusX,
-      radiusY: t.radiusY,
-      angle: t.angle ?? 0,
-      softness: t.softness ?? 50,
+      centre: { ...tg.centre },
+      radiusX: tg.radiusX,
+      radiusY: tg.radiusY,
+      angle: tg.angle ?? 0,
+      softness: tg.softness ?? 50,
       ...plane
     };
-  throw new Error(`not a component: ${t.kind}`);
+  throw new Error(`not a component: ${tg.kind}`);
 }
 const DENOISE_NAME = { drunet: "DRUNet", nafnet: "NAFNet" };
 function planSmart(smart, ready, photo) {
@@ -2670,16 +2670,16 @@ function planSmart(smart, ready, photo) {
   for (const m of smart.masks) {
     const missing = m.parts.map((p) => partNeed(p.target, ready)).filter((n) => !n.ready).map((n) => whyNot(ready[n.key]));
     if (missing.length > 0) {
-      plan.skipped.push({ name: m.name, why: missing[0] });
+      plan.skipped.push({ name: concepts.t(m.name), why: missing[0] });
       if (m.required) plan.complete = false;
       continue;
     }
-    const layer = recipe.newLocalLayer(m.name);
+    const layer = recipe.newLocalLayer(concepts.t(m.name));
     applyAdjust(layer.settings, m.adjust);
     layer.amount = Math.min(200, Math.max(0, m.amount ?? 100));
     const feather = m.feather ?? 5;
     made.set(m.id, layer.id);
-    plan.summary.push(`${m.name} mask`);
+    plan.summary.push(concepts.t("{{name}} mask", { name: concepts.t(m.name) }));
     if (m.parts.every((p) => IMMEDIATE.has(p.target.kind))) {
       layer.components = m.parts.map((p) => componentOf(p, feather, plane));
       plan.layers.push(layer);
@@ -2688,25 +2688,25 @@ function planSmart(smart, ready, photo) {
     layer.enabled = false;
     plan.layers.push(layer);
     for (const p of m.parts) {
-      const t = p.target;
+      const tg = p.target;
       const at = { layerId: layer.id, mask: m.id, mode: p.mode, invert: p.invert ?? false };
-      if (IMMEDIATE.has(t.kind)) {
+      if (IMMEDIATE.has(tg.kind)) {
         plan.ops.push({
           kind: "component",
           layerId: layer.id,
           mask: m.id,
           component: componentOf(p, feather, plane)
         });
-      } else if (t.kind === "sky" && SKY_BY_CLICK) ;
-      else if (t.kind === "subject" || t.kind === "background" || t.kind === "sky" || t.kind === "vegetation" || t.kind === "water") {
-        plan.ops.push({ kind: "segment", ...at, target: t.kind });
+      } else if (tg.kind === "sky" && SKY_BY_CLICK) ;
+      else if (tg.kind === "subject" || tg.kind === "background" || tg.kind === "sky" || tg.kind === "vegetation" || tg.kind === "water") {
+        plan.ops.push({ kind: "segment", ...at, target: tg.kind });
         plan.etaMs += rates.segmentMs;
-      } else if (t.kind === "person") {
-        plan.ops.push({ kind: "person", ...at, part: t.part });
+      } else if (tg.kind === "person") {
+        plan.ops.push({ kind: "person", ...at, part: tg.part });
         plan.etaMs += rates.personMs;
-      } else if (t.kind === "object") {
+      } else if (tg.kind === "object") {
         const detect = ready.object === "ready";
-        plan.ops.push({ kind: "object", ...at, label: t.label, detect });
+        plan.ops.push({ kind: "object", ...at, label: tg.label, detect });
         plan.etaMs += (detect ? rates.detectMs : 0) + rates.sam2Ms;
         if (!detect) plan.picks++;
       }
@@ -2714,12 +2714,12 @@ function planSmart(smart, ready, photo) {
     plan.ops.push({ kind: "enable", layerId: layer.id, mask: m.id });
   }
   for (const s of smart.steps) {
-    const name = s.kind === "denoise" ? "AI denoise" : "AI deblur";
+    const name = s.kind === "denoise" ? concepts.t("AI denoise") : concepts.t("AI deblur");
     let layerId = null;
     if (s.scope !== void 0) {
       const id = made.get(s.scope);
       if (!id) {
-        plan.skipped.push({ name, why: "its mask could not be made" });
+        plan.skipped.push({ name, why: concepts.t("its mask could not be made") });
         continue;
       }
       layerId = id;
@@ -2734,7 +2734,7 @@ function planSmart(smart, ready, photo) {
       }
       plan.ops.push({ kind: "denoise", model, strength, layerId });
       plan.etaMs += mp * (model === "nafnet" ? rates.nafnetMsPerMp : rates.drunetMsPerMp);
-      plan.summary.push(`AI denoise (${DENOISE_NAME[model]})`);
+      plan.summary.push(concepts.t("AI denoise ({{model}})", { model: DENOISE_NAME[model] }));
     } else {
       if (ready.deblur !== "ready") {
         plan.skipped.push({ name, why: whyNot(ready.deblur) });
@@ -2742,7 +2742,7 @@ function planSmart(smart, ready, photo) {
       }
       plan.ops.push({ kind: "deblur", strength, layerId });
       plan.etaMs += mp * rates.deblurMsPerMp;
-      plan.summary.push("AI deblur (NAFNet)");
+      plan.summary.push(concepts.t("AI deblur (NAFNet)"));
     }
   }
   plan.etaMs = Math.round(plan.etaMs);
@@ -2786,16 +2786,16 @@ function targetOf(v) {
   if (!isObj(v)) return null;
   switch (v.kind) {
     case "range": {
-      const t = { kind: "range" };
+      const tg = { kind: "range" };
       const h = band(v.hue, true);
       const s = band(v.saturation, false);
       const l = band(v.luma, false);
-      if (h) t.hue = h;
-      if (s) t.saturation = s;
-      if (l) t.luma = l;
+      if (h) tg.hue = h;
+      if (s) tg.saturation = s;
+      if (l) tg.luma = l;
       if (!h && !s && !l) return null;
-      if (num(v.smoothness)) t.smoothness = clamp(v.smoothness, 0, 100);
-      return t;
+      if (num(v.smoothness)) tg.smoothness = clamp(v.smoothness, 0, 100);
+      return tg;
     }
     case "linear": {
       const start = point(v.start);
@@ -3053,7 +3053,7 @@ function refsIn(json) {
 }
 class NotAProject extends Error {
   constructor(path2) {
-    super(`${path2} is not a Pixl project`);
+    super(concepts.t("{{path}} is not a Pixl project", { path: path2 }));
     this.name = "NotAProject";
   }
 }
@@ -3083,7 +3083,7 @@ class PixlFile {
    * project. Fails if `path` exists.
    */
   static create(path$1, origin, fill) {
-    if (fs.existsSync(path$1)) throw new Error(`${path$1} already exists`);
+    if (fs.existsSync(path$1)) throw new Error(concepts.t("{{path}} already exists", { path: path$1 }));
     const tmp = `${path$1}.creating-${process.pid}`;
     if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
     const db = new node_sqlite.DatabaseSync(tmp);
@@ -3122,7 +3122,9 @@ class PixlFile {
       if (id !== PIXL_APPLICATION_ID) throw new NotAProject(path2);
       const v = db.prepare("PRAGMA user_version").get().user_version;
       if (v > PIXL_FORMAT_VERSION)
-        throw new Error(`${path2} was made by a newer Pixl Playroom (format ${v})`);
+        throw new Error(
+          concepts.t("{{path}} was made by a newer Pixl Playroom (format {{format}})", { path: path2, format: v })
+        );
       db.exec(SCHEMA);
       const file = new PixlFile(path2, db);
       if (v < PIXL_FORMAT_VERSION) file.upgrade(v);
@@ -3678,9 +3680,9 @@ class ProjectPool {
     this.onCommit(path2);
   }
   idleTimer(path2) {
-    const t = setTimeout(() => this.drop(path2), this.idleMs);
-    t.unref?.();
-    return t;
+    const timer = setTimeout(() => this.drop(path2), this.idleMs);
+    timer.unref?.();
+    return timer;
   }
   /** Keep a project open while idle (`on`), or let it close after its idle time again. */
   pin(path2, on) {

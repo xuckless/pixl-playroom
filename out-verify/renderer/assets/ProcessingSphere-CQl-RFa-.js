@@ -1,4 +1,4 @@
-import{j as n,w as p,r as a}from"./index-BjPR7Ynt.js";import{C as d,a as i,u as h,b as x,S as g}from"./noise-x-iPUb0d.js";const w=`
+import{j as n,w as p,r as a}from"./index-BnftGmD8.js";import{C as d,a as i,u as h,b as x,S as g}from"./noise-P0V2kogM.js";const w=`
 ${g}
 uniform float uTime;
 uniform float uAmp;

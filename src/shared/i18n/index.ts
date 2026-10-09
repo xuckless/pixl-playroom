@@ -12,6 +12,8 @@
  *   singular; Chinese, Japanese and Vietnamese don't (CLDR rules).
  * - `tk(text)`: marks text defined in one place and shown in another (a
  *   list of labels made once, at load): `t(label)` where it is shown.
+ * - `t('Free|device')`: a context after a bar, for an English word with two
+ *   meanings (see `withoutContext`).
  *
  * Whoever shows text (the renderer, main for its menus, dialogs and errors)
  * installs its i18next instance with `setTranslator`; until then the English
@@ -77,8 +79,18 @@ export type Values = Record<string, string | number | undefined | null>
 
 type Translator = (key: string, values?: Values) => string
 
+/**
+ * A word with two meanings in English gets a context after a bar, so each
+ * meaning has its own translation: `t('Free|device')` (a device freed) is
+ * not `t('Free')` (the free crop ratio). The English drops the bar.
+ */
+export function withoutContext(key: string): string {
+  return key.replace(/\|[a-z][\w-]*$/, '')
+}
+
 /** `{{name}}` filled from `values` (the English, before a translator is installed). */
 export function fill(text: string, values?: Values): string {
+  text = withoutContext(text)
   if (!values) return text
   return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, name: string) =>
     values[name] === undefined || values[name] === null ? m : String(values[name])
@@ -86,6 +98,16 @@ export function fill(text: string, values?: Values): string {
 }
 
 let impl: Translator = fill
+let current: Language = 'en'
+
+/** The language `t()` answers in (set with the translator). */
+export function currentLanguage(): Language {
+  return current
+}
+
+export function setCurrentLanguage(l: Language): void {
+  current = l
+}
 
 /** The process's i18next, once it has one. */
 export function setTranslator(fn: Translator): void {
@@ -110,6 +132,16 @@ export function tp(one: string, other: string, count: number, values?: Values): 
     : out
 }
 
+/**
+ * A name (a label) translated for the middle of a sentence: "Finding the
+ * sky". English, French and Vietnamese lower-case it; German keeps its
+ * nouns' capitals; Chinese and Japanese have no case.
+ */
+export function midSentence(label: string): string {
+  const text = t(label)
+  return current === 'de' ? text : text.charAt(0).toLowerCase() + text.slice(1)
+}
+
 /** Marks text for the catalogs where it is defined; `t()` it where it is shown. */
 export function tk<T extends string>(text: T): T {
   return text
@@ -118,4 +150,5 @@ export function tk<T extends string>(text: T): T {
 /** For tests: back to the English. */
 export function resetTranslator(): void {
   impl = fill
+  current = 'en'
 }

@@ -2,8 +2,8 @@
 const fs = require("fs");
 const path = require("path");
 const worker_threads = require("worker_threads");
-const gradients = require("./gradients-D8SBBasL.js");
-const recipe = require("./recipe-BOlCEsxK.js");
+const gradients = require("./gradients-CEysoqMz.js");
+const recipe = require("./recipe-DEuWaDNo.js");
 const zlib = require("zlib");
 const SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const CRC_TABLE = (() => {

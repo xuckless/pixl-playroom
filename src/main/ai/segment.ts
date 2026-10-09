@@ -16,7 +16,7 @@
  * 256 × 256: a half-body portrait's person is otherwise a few dozen of its
  * pixels), each part kept where it beats the others.
  */
-import { t } from '../../shared/i18n'
+import { midSentence, t } from '../../shared/i18n'
 import type { AiResult, AiStartRequest } from '../../shared/ai'
 import {
   estimate,
@@ -158,7 +158,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     ctx.stage(
       'analyse',
       0,
-      t('Finding the {{subject}}', { subject: t(SEGMENT_LABEL[req.target]).toLowerCase() })
+      t('Finding the {{subject}}', { subject: midSentence(SEGMENT_LABEL[req.target]) })
     )
     const t0 = Date.now()
     // BiRefNet: 13.5 s on the M2 Pro's CPU with a 24 MP decode, about 10 s from a
@@ -206,7 +206,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     if (scene) {
       const label = t(SEGMENT_LABEL[req.target])
       if (plane.coverage < NOTHING_FOUND)
-        throw new Error(t('No {{label}} found in this photo', { label: label.toLowerCase() }))
+        throw new Error(t('No {{label}} found in this photo', { label: midSentence(label) }))
       // The plane as it is: soft where the model is unsure (sky through branches).
       const d = grey8(Buffer.from(plane.png))
       const png = encodeGreyPng(d.data, d.width, d.height).toString('base64')
@@ -464,7 +464,8 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         }))
         .filter((f) => f.rings.length > 0)
     )
-    if (outlines.length === 0) throw new Error(t('No face found in this photo for {{label}}', { label }))
+    if (outlines.length === 0)
+      throw new Error(t('No face found in this photo for {{label}}', { label }))
     ctx.progress(0.9)
     return {
       kind: 'mask',
@@ -526,7 +527,8 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     const whole = await run(proxy.path, proxy.input, lens)
     const { width: W, height: H } = whole[0]
     const box = personBox(whole, W, H)
-    if (!box) throw new Error(t('No person found in this photo for {{label}}: try a brush', { label }))
+    if (!box)
+      throw new Error(t('No person found in this photo for {{label}}: try a brush', { label }))
     const sq = squareAround(box, W, H)
     let planes = whole
     // The person already fills the frame: the first answer is as good as it gets.
@@ -558,8 +560,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     const grey = partPlane(planes, PART_PLANES[target], W * H)
     let any = false
     for (let i = 0; i < grey.length && !any; i++) any = grey[i] >= 128
-    if (!any)
-      throw new Error(t('No {{label}} found in this photo', { label: label.toLowerCase() }))
+    if (!any) throw new Error(t('No {{label}} found in this photo', { label: midSentence(label) }))
     hardenPlane(grey, 0.5, 3)
     ctx.progress(0.8)
     const png = encodeGreyPng(grey, W, H).toString('base64')

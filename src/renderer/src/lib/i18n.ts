@@ -5,20 +5,17 @@
  */
 import type { i18n } from 'i18next'
 import { create } from 'zustand'
-import {
-  pickLanguage,
-  type Language,
-  type LanguageSetting
-} from '../../../shared/i18n'
+import { pickLanguage, type Language, type LanguageSetting } from '../../../shared/i18n'
 import { startI18n } from '../../../shared/i18n/setup'
 import { api } from './api'
 
-export { t, tk, tp } from '../../../shared/i18n'
+export { midSentence, t, tk, tp } from '../../../shared/i18n'
 export { rich } from './rich'
 
 interface LanguageState {
   setting: LanguageSetting
   language: Language
+  pseudo?: boolean
 }
 
 export const useLanguage = create<LanguageState>(() => ({ setting: 'system', language: 'en' }))
@@ -26,7 +23,7 @@ export const useLanguage = create<LanguageState>(() => ({ setting: 'system', lan
 let inst: i18n | null = null
 
 function apply(s: LanguageState): void {
-  if (!inst) inst = startI18n(s.language)
+  if (!inst) inst = startI18n(s.language, s.pseudo)
   else if (inst.language !== s.language) void inst.changeLanguage(s.language)
   document.documentElement.lang = s.language
   useLanguage.setState(s)
@@ -34,9 +31,10 @@ function apply(s: LanguageState): void {
 
 /** Before the first frame: the language main has in force (the system's, if it can't say). */
 export async function startLanguage(): Promise<void> {
-  const s = await api.app
-    .language()
-    .catch((): LanguageState => ({ setting: 'system', language: pickLanguage(navigator.languages) }))
+  const s = await api.app.language().catch((): LanguageState => ({
+    setting: 'system',
+    language: pickLanguage(navigator.languages)
+  }))
   apply(s)
   api.app.onLanguageChanged(apply)
 }

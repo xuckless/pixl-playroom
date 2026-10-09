@@ -45,8 +45,9 @@ const HINT: Record<SpotKind, Tip> = {
   },
   remove: {
     what: tk('Paint over what should go: an AI model fills it with what was likely behind it.'),
-    expect:
-      tk('Works on people, signs, wires and larger things where Fill would repeat the background. With Find object, click something and it is found for you.'),
+    expect: tk(
+      'Works on people, signs, wires and larger things where Fill would repeat the background. With Find object, click something and it is found for you.'
+    ),
     tip: tk('Paint a little past its edges, shadow included.')
   },
   redeye: {
@@ -87,14 +88,23 @@ export function HealPanel(): React.JSX.Element | null {
     <ToolPanel
       actions={
         <>
-          <Tabs value={heal.mode} onChange={(m) => setHeal({ mode: m })} tabs={MODES.map((m) => ({ ...m, label: t(m.label) }))} />
-          <InfoTip tip={HINT[heal.mode]} label={t(MODES.find((m) => m.value === heal.mode)!.label)} />
+          <Tabs
+            value={heal.mode}
+            onChange={(m) => setHeal({ mode: m })}
+            tabs={MODES.map((m) => ({ ...m, label: t(m.label) }))}
+          />
+          <InfoTip
+            tip={HINT[heal.mode]}
+            label={t(MODES.find((m) => m.value === heal.mode)!.label)}
+          />
         </>
       }
     >
-      {layer && !isHdr && <p className="scope-note small">
+      {layer && !isHdr && (
+        <p className="scope-note small">
           {t('Strokes keep inside {{layer}}.', { layer: layer.name })}
-        </p>}
+        </p>
+      )}
       {heal.mode === 'remove' &&
         (isHdr ? (
           <p className="scope-note small">
@@ -178,7 +188,10 @@ export function HealPanel(): React.JSX.Element | null {
         )}
       </Section>
       <Section id="heal.spots" title={t('Visualise spots')}>
-        <label className="check" title={t('Show the picture as specks on black, where dust stands out')}>
+        <label
+          className="check"
+          title={t('Show the picture as specks on black, where dust stands out')}
+        >
           <input
             type="checkbox"
             checked={!!heal.visualise}
@@ -188,7 +201,7 @@ export function HealPanel(): React.JSX.Element | null {
         </label>
         {heal.visualise && (
           <Slider
-            label={t('Level')}
+            label={t('Level|spots')}
             value={heal.spotLevel ?? 50}
             min={0}
             max={100}

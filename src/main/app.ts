@@ -150,11 +150,18 @@ function createWindow(): void {
     show: false,
     // The launch splash's black, so the window never flashes another colour first.
     backgroundColor: '#000000',
-    // macOS: no title bar; the window's buttons sit in the top bar (its
-    // drag region), centred in its 36 px.
+    // No title bar: the window's buttons sit in the top bar (its drag
+    // region), 36 px tall. macOS: the traffic lights at its left. Windows:
+    // its own minimise, maximise and close at the right, in the bar's colour
+    // (the menu names sit in the bar too: shell/WindowMenus.tsx).
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 14, y: 11 } }
-      : {}),
+      : process.platform === 'win32'
+        ? {
+            titleBarStyle: 'hidden' as const,
+            titleBarOverlay: { color: '#09090b', symbolColor: '#b8b5c7', height: 36 }
+          }
+        : {}),
     title: 'Pixl Playroom',
     // macOS takes the bundle's .icns; elsewhere the window carries the mark.
     ...(process.platform !== 'darwin' ? { icon } : {}),

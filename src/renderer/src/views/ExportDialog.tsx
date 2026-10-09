@@ -339,7 +339,9 @@ export function ExportDialog(): React.JSX.Element {
                   })}
             </button>
           )}
-          {!running && at > 0 && <button onClick={() => setStep(STEPS[at - 1].id)}>{t('Back')}</button>}
+          {!running && at > 0 && (
+            <button onClick={() => setStep(STEPS[at - 1].id)}>{t('Back')}</button>
+          )}
           {running ? (
             <button onClick={() => void api.export.cancel(progress.jobId)}>
               {t('Cancel after this file')}
@@ -527,7 +529,9 @@ export function ExportDialog(): React.JSX.Element {
                     onCommit={() => undefined}
                     adjusts={false}
                     format={(v) => v.toFixed(1)}
-                    title={t('How far from the original: 1 is visually lossless, higher is smaller')}
+                    title={t(
+                      'How far from the original: 1 is visually lossless, higher is smaller'
+                    )}
                   />
                 )}
                 <Slider
@@ -726,7 +730,7 @@ export function ExportDialog(): React.JSX.Element {
                   })
                 }
               >
-                <option value="screen">{t('Screen')}</option>
+                <option value="screen">{t('Screen|medium')}</option>
                 <option value="matte">{t('Matte paper')}</option>
                 <option value="glossy">{t('Glossy paper')}</option>
               </select>

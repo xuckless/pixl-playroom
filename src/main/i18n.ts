@@ -13,7 +13,11 @@ import { readSettings, writeSettings } from './settings'
 export interface LanguageState {
   setting: LanguageSetting
   language: Language
+  /** Checking: every translated string shown ⟦bracketed⟧, so what isn't stands out. */
+  pseudo?: boolean
 }
+
+const PSEUDO = process.env.PLAYROOM_PSEUDO_LOCALE === '1'
 
 let inst: i18n | null = null
 let state: LanguageState | null = null
@@ -27,8 +31,12 @@ function preferred(): string[] {
 /** Start in the saved language (call at ready, before the menus). */
 export function startLanguage(): LanguageState {
   const setting = readSettings().language ?? 'system'
-  state = { setting, language: resolveLanguage(setting, preferred()) }
-  inst = startI18n(state.language)
+  state = {
+    setting,
+    language: resolveLanguage(setting, preferred()),
+    ...(PSEUDO ? { pseudo: true } : {})
+  }
+  inst = startI18n(state.language, PSEUDO)
   return state
 }
 
@@ -39,8 +47,12 @@ export function languageState(): LanguageState {
 /** Settings → Language: saved, in force at once, the window and the menus told. */
 export function setLanguage(setting: LanguageSetting): LanguageState {
   writeSettings({ language: setting })
-  state = { setting, language: resolveLanguage(setting, preferred()) }
-  if (!inst) inst = startI18n(state.language)
+  state = {
+    setting,
+    language: resolveLanguage(setting, preferred()),
+    ...(PSEUDO ? { pseudo: true } : {})
+  }
+  if (!inst) inst = startI18n(state.language, PSEUDO)
   else void inst.changeLanguage(state.language)
   for (const w of BrowserWindow.getAllWindows())
     if (!w.isDestroyed()) w.webContents.send(IPC.app.languageChanged, state)

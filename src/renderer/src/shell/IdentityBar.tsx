@@ -12,6 +12,7 @@ import { liveJobs, useAiJobs } from '../state/jobs'
 import { useDevelop } from '../state/develop'
 import { useLibrary } from '../state/library'
 import { t, tk } from '../lib/i18n'
+import { WindowMenus } from './WindowMenus'
 import type { EngineStatus as EngineState } from '../../../shared/ipc'
 
 /** The engine's state, as the top bar says it ("offline" while resting). */
@@ -199,6 +200,7 @@ export function IdentityBar({
           PIXL <em>PLAYROOM</em>
         </span>
       </span>
+      <WindowMenus />
       <span className="vsep" />
       <span className="identity">{children}</span>
       <span className="spacer" />
@@ -227,7 +229,8 @@ export function DevelopIdentity(): React.JSX.Element {
       facts={
         <>
           {Number.isFinite(mp) ? `${mp.toFixed(1)} MP · ` : ''}
-          {info.color} · {info.bits}-bit{info.is_hdr ? ' · HDR' : ''}
+          {info.color} · {t('{{bits}}-bit', { bits: info.bits })}
+          {info.is_hdr ? ' · HDR' : ''}
         </>
       }
     >

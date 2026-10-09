@@ -113,7 +113,9 @@ export function ModelsSection(): React.JSX.Element {
   const used = installed.reduce((s, m) => s + m.bytes, 0)
   const purposes = PURPOSES.filter((p) => all.some((m) => purposeOf(m.role) === p.id))
   const shown = show === 'all' ? purposes : purposes.filter((p) => p.id === show)
-  const chip = provider?.accelerator ? t(CHIP[provider.accelerator] ?? tk('the graphics chip')) : null
+  const chip = provider?.accelerator
+    ? t(CHIP[provider.accelerator] ?? tk('the graphics chip'))
+    : null
   const onChip = provider?.choice === 'accelerated' && chip
   const measured = provider?.measured
   const sec = (ms: number): string => `${(ms / 1000).toFixed(2)} s`
@@ -181,12 +183,7 @@ export function ModelsSection(): React.JSX.Element {
         <h4>{t('This computer')}</h4>
         <p className="small">
           {onChip ? t('AI runs on {{chip}}.', { chip }) : t('AI runs on the processor.')}
-          {lastTest && (
-            <>
-              {' '}
-              {lastTest}
-            </>
-          )}
+          {lastTest && <> {lastTest}</>}
         </p>
         <div className="prefs-row">
           <button

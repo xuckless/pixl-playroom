@@ -253,7 +253,9 @@ function LensProfileSection(): React.JSX.Element | null {
       <div className="row">
         <Toggle
           on={l.profile.enabled}
-          onChange={(on) => void apply(on, id, on ? tk('Lens: profile on') : tk('Lens: profile off'))}
+          onChange={(on) =>
+            void apply(on, id, on ? tk('Lens: profile on') : tk('Lens: profile off'))
+          }
           title={t('Correct distortion, vignetting and colour fringes from a profile of this lens')}
         >
           {t('Enable profile corrections')}
@@ -303,12 +305,16 @@ function LensProfileSection(): React.JSX.Element | null {
                 >
                   <span>{h.name}</span>
                   <span className="muted micro">
-                    {[h.mount, h.crop ? t('crop {{crop}}', { crop: h.crop }) : null].filter(Boolean).join(' · ')}
+                    {[h.mount, h.crop ? t('crop {{crop}}', { crop: h.crop }) : null]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </span>
                 </button>
               </li>
             ))}
-            {query.trim() && hits.length === 0 && <li className="muted small">{t('No lens found')}</li>}
+            {query.trim() && hits.length === 0 && (
+              <li className="muted small">{t('No lens found')}</li>
+            )}
           </ul>
           <button className="sm ghost" onClick={() => void importProfile()}>
             {t('Import a profile…')}
@@ -322,7 +328,7 @@ function LensProfileSection(): React.JSX.Element | null {
         <>
           <LS
             label={t('Distortion')}
- undo={tk('Lens: Distortion')}
+            undo={tk('Lens: Distortion')}
             read={(x) => x.profile.distortion}
             write={(x, v) => (x.profile.distortion = v)}
             min={0}
@@ -333,7 +339,7 @@ function LensProfileSection(): React.JSX.Element | null {
           />
           <LS
             label={t('Vignetting')}
- undo={tk('Lens: Vignetting')}
+            undo={tk('Lens: Vignetting')}
             read={(x) => x.profile.vignetting}
             write={(x, v) => (x.profile.vignetting = v)}
             min={0}
@@ -361,7 +367,7 @@ function LensProfileSection(): React.JSX.Element | null {
               {l.profile.defish && (
                 <LS
                   label={t('Field')}
- undo={tk('Lens: Field')}
+                  undo={tk('Lens: Field')}
                   read={(x) => x.profile.field}
                   write={(x, v) => (x.profile.field = v)}
                   min={50}
@@ -487,7 +493,7 @@ export function LensPanel(): React.JSX.Element | null {
       <Section id="lens.manual" title={t('Manual')} tip={TIPS['optics.manual']}>
         <LS
           label={t('Distortion')}
- undo={tk('Lens: Distortion')}
+          undo={tk('Lens: Distortion')}
           read={(x) => x.distortion}
           write={(x, v) => (x.distortion = v)}
           disabled={profileDistorts(l)}
@@ -499,14 +505,14 @@ export function LensPanel(): React.JSX.Element | null {
         />
         <LS
           label={t('Vignetting')}
- undo={tk('Lens: Vignetting')}
+          undo={tk('Lens: Vignetting')}
           read={(x) => x.vignetting}
           write={(x, v) => (x.vignetting = v)}
           title={t('Positive brightens the corners; negative darkens them')}
         />
         <LS
           label={t('Midpoint')}
- undo={tk('Lens: Midpoint')}
+          undo={tk('Lens: Midpoint')}
           read={(x) => x.vignettingMidpoint}
           write={(x, v) => (x.vignettingMidpoint = v)}
           min={0}
@@ -532,7 +538,7 @@ export function LensPanel(): React.JSX.Element | null {
       >
         <LS
           label={t('Purple amount')}
- undo={tk('Lens: Purple amount')}
+          undo={tk('Lens: Purple amount')}
           read={(x) => x.defringe.purpleAmount}
           write={(x, v) => (x.defringe.purpleAmount = v)}
           min={0}
@@ -540,7 +546,7 @@ export function LensPanel(): React.JSX.Element | null {
         />
         <LS
           label={t('Purple hue')}
- undo={tk('Lens: Purple hue')}
+          undo={tk('Lens: Purple hue')}
           read={(x) => x.defringe.purpleHue}
           write={(x, v) => (x.defringe.purpleHue = v)}
           min={240}
@@ -551,7 +557,7 @@ export function LensPanel(): React.JSX.Element | null {
         />
         <LS
           label={t('Green amount')}
- undo={tk('Lens: Green amount')}
+          undo={tk('Lens: Green amount')}
           read={(x) => x.defringe.greenAmount}
           write={(x, v) => (x.defringe.greenAmount = v)}
           min={0}
@@ -559,7 +565,7 @@ export function LensPanel(): React.JSX.Element | null {
         />
         <LS
           label={t('Green hue')}
- undo={tk('Lens: Green hue')}
+          undo={tk('Lens: Green hue')}
           read={(x) => x.defringe.greenHue}
           write={(x, v) => (x.defringe.greenHue = v)}
           min={60}

@@ -85,7 +85,7 @@ import type { Library } from './library'
 import { MAIN_DIR } from './dirs'
 import { appPage } from './guard'
 import { gate, gateRefuses } from './gate'
-import { popupMenu, setMenuSpec } from './menu'
+import { openTopMenu, popupMenu, setMenuSpec, topMenus } from './menu'
 import { languageState, setLanguage } from './i18n'
 import { isLanguageSetting, t, type LanguageSetting } from '../shared/i18n'
 import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
@@ -274,6 +274,8 @@ export function registerIpc(s: Services): void {
     return setLanguage(setting)
   })
   handle(IPC.menu.popup, (items: MenuNode[]) => popupMenu(items))
+  handle(IPC.menu.top, () => topMenus())
+  handle(IPC.menu.openTop, (index: number, x: number, y: number) => openTopMenu(index, x, y))
   handle(IPC.app.renderScale, () => renderScale())
   handle(IPC.app.displayHdr, () => displayHdr())
   handle(IPC.app.setDisplayHdr, async (v: unknown) => {
@@ -288,7 +290,8 @@ export function registerIpc(s: Services): void {
   )
   handle(IPC.app.openNotices, async () => {
     const err = await shell.openPath(paths.notices())
-    if (err) throw new Error(t("Couldn't open the third-party notices: {{reason}}", { reason: err }))
+    if (err)
+      throw new Error(t("Couldn't open the third-party notices: {{reason}}", { reason: err }))
   })
   handle(IPC.app.openBetaTerms, async () => {
     const err = await shell.openPath(paths.betaTerms())
@@ -472,9 +475,7 @@ export function registerIpc(s: Services): void {
     try {
       parsed = JSON.parse(await readFile(r.filePaths[0], 'utf8'))
     } catch {
-      throw new Error(
-        t('{{name}} is not a collections file', { name: basename(r.filePaths[0]) })
-      )
+      throw new Error(t('{{name}} is not a collections file', { name: basename(r.filePaths[0]) }))
     }
     return s.index.importCollections(parsed)
   })
@@ -933,7 +934,9 @@ export function registerIpc(s: Services): void {
       },
       why: {
         ...(enhance.available ? {} : { enhance: enhance.reason }),
-        ...(segment ? {} : { segment: t('download {{model}}', { model: modelName(s.models.entry('u2netp')) }) }),
+        ...(segment
+          ? {}
+          : { segment: t('download {{model}}', { model: modelName(s.models.entry('u2netp')) }) }),
         ...(models ? {} : { denoise: t('this engine build runs no models') }),
         ...(sam2 && samModel
           ? {}

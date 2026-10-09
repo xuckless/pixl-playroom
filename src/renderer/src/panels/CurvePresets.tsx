@@ -91,7 +91,10 @@ export function CurvePresets(): React.JSX.Element {
             ...BUILTIN_CURVES.map((p) => ({ value: `builtin:${p.name}`, label: t(p.name) })),
             ...saved.map((p) => ({ value: `use:${p.name}`, label: `★ ${p.name}` })),
             { value: 'save', label: t('Save this curve as a preset…') },
-            ...saved.map((p) => ({ value: `del:${p.name}`, label: t('Delete "{{name}}"', { name: p.name }) }))
+            ...saved.map((p) => ({
+              value: `del:${p.name}`,
+              label: t('Delete "{{name}}"', { name: p.name })
+            }))
           ]}
         />
       </div>

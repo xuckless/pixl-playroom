@@ -34,7 +34,9 @@ const ALL_MODELS: { value: AiDenoiseModel; label: string; hint: string }[] = [
   {
     value: 'nafnet-sidd-w32',
     label: tk('NAFNet · real noise'),
-    hint: tk('Trained on real camera noise; judges it by itself. Best on high-ISO shots, and quick on a Mac’s graphics chip.')
+    hint: tk(
+      'Trained on real camera noise; judges it by itself. Best on high-ISO shots, and quick on a Mac’s graphics chip.'
+    )
   }
 ]
 
@@ -206,13 +208,17 @@ export function AiDenoise(): React.JSX.Element | null {
               onClick={() =>
                 void (async () => {
                   // Its model first, offered there and then when it is not here yet.
-                  if (!(await ensureModelId(prefs.model, model?.installed === true, t('AI denoise'))))
+                  if (
+                    !(await ensureModelId(prefs.model, model?.installed === true, t('AI denoise')))
+                  )
                     return
                   await applyDenoise()
                 })().catch((e) => say(errorText(e), 'error'))
               }
             >
-              {layer ? t('Denoise inside {{layer}}', { layer: layer.name }) : t('Denoise the photo')}
+              {layer
+                ? t('Denoise inside {{layer}}', { layer: layer.name })
+                : t('Denoise the photo')}
             </button>
           ))}
       </div>

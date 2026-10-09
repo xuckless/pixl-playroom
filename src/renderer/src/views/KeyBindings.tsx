@@ -141,9 +141,7 @@ export function KeyBindingsSection(): React.JSX.Element {
         </button>
       </div>
       <p className="muted small">
-        {t(
-          'Click a key to change it, then press the new one. Esc cancels; Backspace removes it.'
-        )}
+        {t('Click a key to change it, then press the new one. Esc cancels; Backspace removes it.')}
       </p>
 
       {pending && (

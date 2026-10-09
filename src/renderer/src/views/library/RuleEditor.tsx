@@ -109,7 +109,7 @@ function ValueEditor({
               />
               {and}
               <NumberInput
-                label={t('To')}
+                label={t('To|range')}
                 value={pair[1]}
                 onChange={(n) => set([Number(pair[0]) || 0, n])}
               />
@@ -190,7 +190,7 @@ function ValueEditor({
             />
             {and}
             <DateInput
-              label={t('To')}
+              label={t('To|range')}
               value={pair[1]}
               onChange={(d) => set([String(pair[0]), d])}
             />
@@ -229,7 +229,7 @@ function RuleRow({
     <div className="rule-row">
       <select
         className="rule-field"
-        aria-label={t('Field')}
+        aria-label={t('Field|rule')}
         value={rule.field}
         onChange={(e) => onChange(defaultRule(e.target.value as SmartField))}
       >
@@ -241,7 +241,7 @@ function RuleRow({
       </select>
       <select
         className="rule-op"
-        aria-label={t('Operator')}
+        aria-label={t('Operator|rule')}
         value={rule.op}
         onChange={(e) => onChange(withOp(rule, e.target.value as SmartOp))}
       >
@@ -292,15 +292,15 @@ export function GroupEditor({
   return (
     <div className={`rule-group${depth > 0 ? ' nested' : ''}`}>
       <div className="rule-group-head">
-        <span>{t('Match')}</span>
+        <span>{t('Match|rules')}</span>
         <select
-          aria-label={t('Match')}
+          aria-label={t('Match|rules')}
           value={group.match}
           onChange={(e) => onChange({ ...group, match: e.target.value as SmartGroup['match'] })}
         >
-          <option value="all">{t('all')}</option>
-          <option value="any">{t('any')}</option>
-          <option value="none">{t('none')}</option>
+          <option value="all">{t('all|rules')}</option>
+          <option value="any">{t('any|rules')}</option>
+          <option value="none">{t('none|rules')}</option>
         </select>
         <span>{depth > 0 ? t('of the following') : t('of the following rules')}</span>
         <span className="spacer" />

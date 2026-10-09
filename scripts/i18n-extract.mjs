@@ -45,7 +45,13 @@ export function extract() {
   for (const file of files(SRC)) {
     const text = readFileSync(file, 'utf8')
     if (!/\b(t[pk]?|rich)\(/.test(text)) continue
-    const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+    const sf = ts.createSourceFile(
+      file,
+      text,
+      ts.ScriptTarget.Latest,
+      true,
+      file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+    )
     const visit = (n) => {
       if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
         const name = n.expression.text
@@ -66,7 +72,8 @@ export function extract() {
     visit(sf)
   }
   const en = {}
-  for (const k of [...keys.keys()].sort()) en[k] = k
+  // A context after a bar ('Free|device') is not shown: the English drops it.
+  for (const k of [...keys.keys()].sort()) en[k] = k.replace(/\|[a-z][\w-]*$/, '')
   for (const [other, { one }] of [...plurals].sort(([a], [b]) => a.localeCompare(b))) {
     en[`${other}_one`] = one
     en[`${other}_other`] = other
@@ -86,12 +93,19 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (args.has('--dynamic')) for (const d of dynamic) console.log(`dynamic t(): ${d}`)
   let bad = false
   if (args.has('--check')) {
-    if (JSON.stringify(en) !== JSON.stringify(Object.fromEntries(Object.entries(read('en')).sort(([a], [b]) => a.localeCompare(b))))) {
+    if (
+      JSON.stringify(en) !==
+      JSON.stringify(
+        Object.fromEntries(Object.entries(read('en')).sort(([a], [b]) => a.localeCompare(b)))
+      )
+    ) {
       console.log('en.json is stale: run node scripts/i18n-extract.mjs')
       bad = true
     }
   } else write('en', en)
-  console.log(`en: ${Object.keys(en).length} lines (${dynamic.length} t() calls with text made elsewhere)`)
+  console.log(
+    `en: ${Object.keys(en).length} lines (${dynamic.length} t() calls with text made elsewhere)`
+  )
   for (const code of LOCALES.filter((c) => c !== 'en')) {
     const cat = read(code)
     const r = compareCatalog(en, cat, code)
@@ -99,7 +113,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       for (const k of r.stale) delete cat[k]
       write(code, cat)
     }
-    console.log(`${code}: ${r.missing.length} missing, ${r.placeholders.length} with other placeholders, ${r.stale.length} stale`)
+    console.log(
+      `${code}: ${r.missing.length} missing, ${r.placeholders.length} with other placeholders, ${r.stale.length} stale`
+    )
     if (r.missing.length || r.placeholders.length) bad = true
   }
   if (args.has('--check') && bad) process.exit(1)

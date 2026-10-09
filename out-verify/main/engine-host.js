@@ -1,6 +1,6 @@
 "use strict";
 const module$1 = require("module");
-const concepts = require("./chunks/concepts-BlHF9Hl2.js");
+const concepts = require("./chunks/concepts-DZXwTWWX.js");
 const ENGINE_PACKAGE = "@xuckless/pixl-engine";
 const METHODS = ["engineVersion", "probe", "convert", "analyze", "suggestEncode"];
 function send(msg) {

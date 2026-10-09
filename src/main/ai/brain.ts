@@ -492,7 +492,10 @@ export class BrainStore {
       sampler = setInterval(() => void sample(), 1000)
       const image = benchPicture()
       for (let i = 0; i < BENCH_RUNS; i++) {
-        progress((i + 0.5) / BENCH_RUNS, t('Run {{run}} of {{runs}}', { run: i + 1, runs: BENCH_RUNS }))
+        progress(
+          (i + 0.5) / BENCH_RUNS,
+          t('Run {{run}} of {{runs}}', { run: i + 1, runs: BENCH_RUNS })
+        )
         const t0 = Date.now()
         await this.ask(brain, image, 'image/png')
         runs.push({ ms: Date.now() - t0 })

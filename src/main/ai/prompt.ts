@@ -6,7 +6,7 @@
  * The Objects tool on the open photo does not come here: it commits its
  * selection straight into the recipe.
  */
-import { t } from '../../shared/i18n'
+import { midSentence, t } from '../../shared/i18n'
 import type { AiResult, AiStartRequest } from '../../shared/ai'
 import { estimate } from '../../shared/ai'
 import { Cancelled, type AiContext, type AiRunner } from './jobs'
@@ -57,7 +57,9 @@ export class PromptRunner implements AiRunner<PromptRequest> {
             ctx.stage(
               'analyse',
               0,
-              t('Finding the {{subject}}', { subject: (req.label ? t(req.label) : t('object')).toLowerCase() })
+              t('Finding the {{subject}}', {
+                subject: midSentence(req.label ?? 'object')
+              })
             )
             const t0 = Date.now()
             tick = setInterval(() => ctx.progress(estimate(Date.now() - t0, EMBED_MS), true), 200)

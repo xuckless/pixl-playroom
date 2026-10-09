@@ -62,8 +62,8 @@ function BenchResult({ b, machine }: { b: HeavyBenchmark; machine: string }): Re
         ))}
       </ul>
       <span className="muted micro">
-        {new Date(b.at).toLocaleString()} · {tp('{{count}} run', '{{count}} runs', b.runs.length)}{' '}
-        · {t('loaded in {{seconds}} s', { seconds: (b.readyMs / 1000).toFixed(1) })}
+        {new Date(b.at).toLocaleString()} · {tp('{{count}} run', '{{count}} runs', b.runs.length)} ·{' '}
+        {t('loaded in {{seconds}} s', { seconds: (b.readyMs / 1000).toFixed(1) })}
       </span>
     </div>
   )

@@ -434,7 +434,9 @@ export class ModelStore {
     const got = await sha256(part)
     if (got !== f.sha256) {
       await rm(part, { force: true })
-      throw new Error(t('{{file}} arrived damaged (checksum mismatch); try again', { file: f.name }))
+      throw new Error(
+        t('{{file}} arrived damaged (checksum mismatch); try again', { file: f.name })
+      )
     }
     await rename(part, dest)
   }
@@ -633,10 +635,14 @@ function explain(err: unknown, url: string, file: string, only = false): string 
     code === 'UND_ERR_CONNECT_TIMEOUT'
   )
     why = t('{{host}} did not answer', { host })
-  else if (code === 'ENOENT') why = t('{{file}} is not in {{folder}}', { file, folder: url.replace(/[^/]*$/, '') })
-  else if (/HTTP 40[34]/.test(e.message)) why = t('{{host}} does not have {{file}} yet', { host, file })
+  else if (code === 'ENOENT')
+    why = t('{{file}} is not in {{folder}}', { file, folder: url.replace(/[^/]*$/, '') })
+  else if (/HTTP 40[34]/.test(e.message))
+    why = t('{{host}} does not have {{file}} yet', { host, file })
   else why = e.message
-  return only ? t("{{reason}} — this model is only on Playroom's model server", { reason: why }) : why
+  return only
+    ? t("{{reason}} — this model is only on Playroom's model server", { reason: why })
+    : why
 }
 
 async function sha256(file: string): Promise<string> {

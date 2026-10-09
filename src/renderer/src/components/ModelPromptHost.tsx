@@ -49,7 +49,7 @@ function ModelPrompt({ ask }: { ask: ModelAsk }): React.JSX.Element {
 
   return (
     <Modal
-      title={copy?.name ?? t('A model is needed')}
+      title={copy ? t(copy.name) : t('A model is needed')}
       icon="smart"
       className="confirm model-prompt"
       onClose={close}
@@ -69,10 +69,10 @@ function ModelPrompt({ ask }: { ask: ModelAsk }): React.JSX.Element {
           purpose: <strong>{ask.purpose}</strong>
         })}
       </p>
-      {copy && <p>{copy.what}</p>}
+      {copy && <p>{t(copy.what)}</p>}
       <p className="muted">
         {t('It downloads once and stays on this Mac or PC; everything it does runs here, offline.')}
-        {copy?.where ? ` ${t("You'll find it later in {{where}}.", { where: copy.where })}` : ''}
+        {copy?.where ? ` ${t("You'll find it later in {{where}}.", { where: t(copy.where) })}` : ''}
       </p>
       {downloading && (
         <div className="model-prompt-progress" aria-label={t('Downloading')}>

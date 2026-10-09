@@ -10,7 +10,9 @@ import { tk } from '../lib/i18n'
 export const TIPS = {
   // ── White balance ──────────────────────────────────────────────────
   wb: {
-    what: tk('Sets what counts as neutral white, so colours read as they did in the light you shot in.'),
+    what: tk(
+      'Sets what counts as neutral white, so colours read as they did in the light you shot in.'
+    ),
     expect: tk('The whole picture shifts warmer or cooler, greener or pinker.'),
     tip: tk('Pick a grey or white with the eyedropper first, then season by eye.')
   },
@@ -38,7 +40,9 @@ export const TIPS = {
   },
   'light.contrast': {
     what: tk('Spreads the tones apart (right) or draws them together (left).'),
-    expect: tk('More contrast deepens shadows, brightens highlights and saturates colour a little.'),
+    expect: tk(
+      'More contrast deepens shadows, brightens highlights and saturates colour a little.'
+    ),
     tip: tk('Keep it modest here; the Tone curve gives finer control.')
   },
   'light.highlights': {
@@ -65,7 +69,9 @@ export const TIPS = {
   // ── Presence ───────────────────────────────────────────────────────
   presence: {
     what: tk('Local contrast at three scales: fine texture, midtone punch and haze.'),
-    expect: tk('These change how sharp and deep a picture feels without moving its overall brightness.')
+    expect: tk(
+      'These change how sharp and deep a picture feels without moving its overall brightness.'
+    )
   },
   'presence.texture': {
     what: tk('Brings out or smooths fine detail: skin pores, foliage, fabric.'),
@@ -79,27 +85,35 @@ export const TIPS = {
   },
   'presence.dehaze': {
     what: tk('Cuts through haze and fog by bringing back local contrast where the air is thick.'),
-    expect:
-      tk('Hazy areas regain depth and detail and keep their own brightness and colour; it does not darken the whole picture.'),
-    tip: tk('For a denser, darker look add Contrast or a Tone Curve. Go negative for a soft, misty look.')
+    expect: tk(
+      'Hazy areas regain depth and detail and keep their own brightness and colour; it does not darken the whole picture.'
+    ),
+    tip: tk(
+      'For a denser, darker look add Contrast or a Tone Curve. Go negative for a soft, misty look.'
+    )
   },
   'hsl.luminance': {
     what: tk('Brightens or darkens one colour at a time.'),
-    expect:
-      tk('Even in feel across the range: all the way down halves a colour’s brightness, so a sky deepens without going black.')
+    expect: tk(
+      'Even in feel across the range: all the way down halves a colour’s brightness, so a sky deepens without going black.'
+    )
   },
   'presence.smoothing': {
-    what: tk('Keeps colour and tone changes smooth across flat areas such as sea, sky and skin, so they don’t go blotchy or show the file’s compression blocks.'),
-    expect:
-      tk('Works on Dehaze, Highlights and Shadows, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.'),
+    what: tk(
+      'Keeps colour and tone changes smooth across flat areas such as sea, sky and skin, so they don’t go blotchy or show the file’s compression blocks.'
+    ),
+    expect: tk(
+      'Works on Dehaze, Highlights and Shadows, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.'
+    ),
     tip: tk('Turn it down only if you want each pixel to follow an adjustment exactly.')
   },
 
   // ── Colour ─────────────────────────────────────────────────────────
   colour: {
     what: tk('How strong colour is overall.'),
-    expect:
-      tk('Vibrance protects skin and already-strong colours; Saturation treats every colour alike.')
+    expect: tk(
+      'Vibrance protects skin and already-strong colours; Saturation treats every colour alike.'
+    )
   },
   'colour.vibrance': {
     what: tk('Boosts muted colours more than strong ones, and protects skin.'),
@@ -151,7 +165,9 @@ export const TIPS = {
   curve: {
     what: tk('Maps every input brightness to an output brightness, for full control of contrast.'),
     expect: tk('An S shape adds contrast; lifting the bottom-left point fades the blacks.'),
-    tip: tk('Region sliders are the gentle way in; the point curve is for precise shapes and colour.')
+    tip: tk(
+      'Region sliders are the gentle way in; the point curve is for precise shapes and colour.'
+    )
   },
   'curve.region': {
     what: tk('Bends the curve in four broad ranges without placing points.'),
@@ -159,8 +175,9 @@ export const TIPS = {
   },
   'curve.point': {
     what: tk('Places points on the curve itself, for all channels or red, green and blue alone.'),
-    expect:
-      tk('Lifting blue in the shadows and cutting it in the highlights gives a cross-processed look.'),
+    expect: tk(
+      'Lifting blue in the shadows and cutting it in the highlights gives a cross-processed look.'
+    ),
     tip: tk('Turn on the target tool and drag up or down on the photo to bend the curve there.')
   },
 
@@ -197,26 +214,36 @@ export const TIPS = {
     expect: tk('Safe to raise to 25 or so; very high values bleed colour at edges.')
   },
   'detail.ai': {
-    what: tk('A trained model removes the noise once; Strength then blends its result with the original.'),
-    expect:
-      tk('Much cleaner than classic noise reduction at high ISO. The result is kept with the photo, so undo, redo and Strength never run the model again.'),
+    what: tk(
+      'A trained model removes the noise once; Strength then blends its result with the original.'
+    ),
+    expect: tk(
+      'Much cleaner than classic noise reduction at high ISO. The result is kept with the photo, so undo, redo and Strength never run the model again.'
+    ),
     tip: tk('Run it once, then fine-tune with Strength.')
   },
   'detail.ai.raw': {
-    what: tk('On a RAW, the model works on the developed, linear pixels: white balance, profile and tone stay as editable as before.'),
-    expect:
-      tk('The result is kept losslessly, so pushing it later shows no compression; undo, redo and Strength never run the model again.'),
+    what: tk(
+      'On a RAW, the model works on the developed, linear pixels: white balance, profile and tone stay as editable as before.'
+    ),
+    expect: tk(
+      'The result is kept losslessly, so pushing it later shows no compression; undo, redo and Strength never run the model again.'
+    ),
     tip: tk('Run it once the exposure is roughly right, before fine colour work.')
   },
   'detail.rawDenoise': {
-    what: tk('Takes the grain out of the camera’s raw sensor data before it becomes a picture, with an AI model (PMRID) that reads how noisy this photo is by itself.'),
-    expect:
-      tk('Best on high-ISO shots. Fine texture such as bark or fabric can look a little crisper or flatter. It works on the full-size picture, so judge it at 100%; the export has it too. Most cameras only: not Fujifilm X-Trans.')
+    what: tk(
+      'Takes the grain out of the camera’s raw sensor data before it becomes a picture, with an AI model (PMRID) that reads how noisy this photo is by itself.'
+    ),
+    expect: tk(
+      'Best on high-ISO shots. Fine texture such as bark or fabric can look a little crisper or flatter. It works on the full-size picture, so judge it at 100%; the export has it too. Most cameras only: not Fujifilm X-Trans.'
+    )
   },
   'detail.ai.lossless': {
     what: tk('Keeps each AI result exactly, at about six times the size of near-lossless.'),
-    expect:
-      tk('Near-lossless (the default) cannot be told apart, but leaves a little less room for very strong exposure or shadow pushes.')
+    expect: tk(
+      'Near-lossless (the default) cannot be told apart, but leaves a little less room for very strong exposure or shadow pushes.'
+    )
   },
 
   // ── Effects ────────────────────────────────────────────────────────
@@ -281,8 +308,9 @@ export const TIPS = {
   },
   'geometry.upright': {
     what: tk('Levels the photo and makes it upright from the straight lines in it.'),
-    expect:
-      tk('Auto picks the most the lines support. The crop then fits the corrected picture; Transform adds to it.'),
+    expect: tk(
+      'Auto picks the most the lines support. The crop then fits the corrected picture; Transform adds to it.'
+    ),
     tip: tk('Guided: draw two to four lines that should be upright or level.')
   },
   'geometry.transform': {
@@ -312,8 +340,9 @@ export const TIPS = {
   },
   'enhance.jpeg': {
     what: tk('Repairs the blocks and colour smearing of heavily compressed JPEGs.'),
-    expect:
-      tk('Rebuild works from the file’s own compressed data, changing nothing it states; the AI methods repaint the damage.'),
+    expect: tk(
+      'Rebuild works from the file’s own compressed data, changing nothing it states; the AI methods repaint the damage.'
+    ),
     tip: tk('Rebuild first; the AI suits pictures saved from the web or messaging apps.')
   },
   'enhance.deblur': {
@@ -322,13 +351,15 @@ export const TIPS = {
   },
   'enhance.apply': {
     what: tk('Runs the steps above once and keeps the result in the photo’s project as a step.'),
-    expect:
-      tk('Undo, redo and History never run the models again, and no file is written beside the photo. An upscale makes the photo larger from this step on; crop, masks and spots keep their places.')
+    expect: tk(
+      'Undo, redo and History never run the models again, and no file is written beside the photo. An upscale makes the photo larger from this step on; crop, masks and spots keep their places.'
+    )
   },
   'enhance.upscale': {
     what: tk('Makes the photo larger with a model that adds believable detail.'),
-    expect:
-      tk('×2 is a safe default; ×4 makes very large files. Source picks the model: Clean stays closest to a sharp original, Damaged repairs a compressed or noisy one as it enlarges, Keep texture leaves its grain.')
+    expect: tk(
+      '×2 is a safe default; ×4 makes very large files. Source picks the model: Clean stays closest to a sharp original, Damaged repairs a compressed or noisy one as it enlarges, Keep texture leaves its grain.'
+    )
   }
 } satisfies Record<string, Tip>
 

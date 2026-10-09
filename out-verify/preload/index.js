@@ -8,7 +8,12 @@ const IPC = {
     /** renderer → main: a right-click menu, at the pointer */
     popup: "menu:popup",
     /** main → renderer: the item chosen, by id */
-    run: "menu:run"
+    run: "menu:run",
+    /** Windows: the menu bar's names, and one opened under its name in the top bar */
+    top: "menu:top",
+    openTop: "menu:open-top",
+    /** main → renderer: the menu bar was made again (Windows reads its names again) */
+    changed: "menu:changed"
   },
   app: {
     cpus: "app:cpus",
@@ -318,7 +323,10 @@ const api = {
   menu: {
     set: (spec) => call(IPC.menu.set, spec),
     popup: (items) => call(IPC.menu.popup, items),
-    onRun: (cb) => on(IPC.menu.run, cb)
+    onRun: (cb) => on(IPC.menu.run, cb),
+    top: () => call(IPC.menu.top),
+    openTop: (index, x, y) => call(IPC.menu.openTop, index, x, y),
+    onChanged: (cb) => on(IPC.menu.changed, cb)
   },
   app: {
     cpus: () => call(IPC.app.cpus),

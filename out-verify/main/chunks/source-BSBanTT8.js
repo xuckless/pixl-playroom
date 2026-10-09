@@ -1,6 +1,6 @@
 "use strict";
-const concepts = require("./concepts-BlHF9Hl2.js");
-const recipe = require("./recipe-BOlCEsxK.js");
+const concepts = require("./concepts-DZXwTWWX.js");
+const recipe = require("./recipe-DEuWaDNo.js");
 const child_process = require("child_process");
 const os = require("os");
 const STRIP_ALL = { exif: false, icc: false, xmp: false, iptc: false };
@@ -12,7 +12,9 @@ function unsupportedRaw(detail) {
   const d = detail?.["Unsupported"];
   const op = d && typeof d["operation"] === "string" ? d["operation"] : null;
   if (op === "raw frames")
-    return concepts.t("This RAW holds several frames (dual pixel, pixel shift or a burst), which Playroom cannot develop yet.");
+    return concepts.t(
+      "This RAW holds several frames (dual pixel, pixel shift or a burst), which Playroom cannot develop yet."
+    );
   if (op === "raw decode")
     return typeof d?.["detail"] === "string" && d["detail"] ? concepts.t("This RAW format isn't supported ({{detail}}).", { detail: d["detail"] }) : concepts.t("This RAW format isn't supported.");
   return null;
@@ -28,7 +30,8 @@ function describeEngineError(code, detail) {
       side
     }) : concepts.t("This picture is {{size}}, more than Playroom opens.", { size });
   }
-  if (code === "StaleCache") return concepts.t("A saved render was made by another engine and is made again.");
+  if (code === "StaleCache")
+    return concepts.t("A saved render was made by another engine and is made again.");
   return null;
 }
 const READ_LIMITS = { max_pixels: 6e8, max_side: 65535 };

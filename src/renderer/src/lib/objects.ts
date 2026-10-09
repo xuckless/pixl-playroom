@@ -16,7 +16,7 @@ import { useObjects } from '../state/objects'
 import { useMaskDraft } from '../views/loupe/maskgl/state'
 import { api, errorText } from './api'
 import { ensureModel } from './ensureModel'
-import { t, tk } from './i18n'
+import { midSentence, t, tk } from './i18n'
 
 /** Bytes as base64, in chunks (a plane is hundreds of kilobytes). */
 function base64(bytes: Uint8Array): string {
@@ -96,9 +96,7 @@ export async function commitObjects(): Promise<void> {
       if (label && l.components.length === 0) l.name = t(label)
       l.components.push(comp)
     })
-    // "Select sky" in English; a translated name keeps its own case (German nouns).
-    const what = label ? (t(label) === label ? label.toLowerCase() : t(label)) : null
-    d.commit(what ? t('Select {{what}}', { what }) : tk('Select object'))
+    d.commit(label ? t('Select {{what}}', { what: midSentence(label) }) : tk('Select object'))
     madeComponent(comp.id)
     showDraft(null)
     useObjects.setState({ plane: null })

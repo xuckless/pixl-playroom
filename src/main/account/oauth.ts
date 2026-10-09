@@ -194,7 +194,10 @@ export function listenForCallback(opts: {
               ),
               'port-in-use'
             )
-          : new OAuthError(t("Couldn't start the sign-in: {{reason}}", { reason: err.message }), 'network')
+          : new OAuthError(
+              t("Couldn't start the sign-in: {{reason}}", { reason: err.message }),
+              'network'
+            )
       )
     })
     server.listen(opts.port, '127.0.0.1', () => {
@@ -261,7 +264,10 @@ async function tokenRequest(
     // session for the next try.
     const refused = res.status === 400 || res.status === 401
     if (!refused && !res.ok)
-      throw new OAuthError(t('The PIXL account is unavailable ({{reason}}).', { reason: why }), 'network')
+      throw new OAuthError(
+        t('The PIXL account is unavailable ({{reason}}).', { reason: why }),
+        'network'
+      )
     if (body.grant_type === 'refresh_token')
       throw new OAuthError(t('Signed out: {{reason}}', { reason: why }), 'signed-out')
     throw new OAuthError(t('Sign-in was refused: {{reason}}', { reason: why }), 'rejected')

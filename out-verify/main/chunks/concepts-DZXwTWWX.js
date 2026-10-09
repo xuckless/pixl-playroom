@@ -28,7 +28,11 @@ function pickLanguage(preferred) {
 function resolveLanguage(setting, preferred) {
   return setting === "system" ? pickLanguage(preferred) : setting;
 }
+function withoutContext(key) {
+  return key.replace(/\|[a-z][\w-]*$/, "");
+}
 function fill(text, values) {
+  text = withoutContext(text);
   if (!values) return text;
   return text.replace(
     /\{\{\s*(\w+)\s*\}\}/g,
@@ -36,6 +40,10 @@ function fill(text, values) {
   );
 }
 let impl = fill;
+let current = "en";
+function setCurrentLanguage(l) {
+  current = l;
+}
 function setTranslator(fn) {
   impl = fn;
 }
@@ -45,6 +53,10 @@ function t(text, values) {
 function tp(one, other, count, values) {
   const out = impl(other, { ...values, count });
   return out === other || out === fill(other, { ...values, count }) ? fill(count === 1 ? one : other, { ...values, count }) : out;
+}
+function midSentence(label) {
+  const text = t(label);
+  return current === "de" ? text : text.charAt(0).toLowerCase() + text.slice(1);
 }
 function tk(text) {
   return text;
@@ -85,9 +97,12 @@ function pickBySize(size, area, iou) {
   );
 }
 exports.conceptOf = conceptOf;
+exports.fill = fill;
 exports.isLanguageSetting = isLanguageSetting;
+exports.midSentence = midSentence;
 exports.pickBySize = pickBySize;
 exports.resolveLanguage = resolveLanguage;
+exports.setCurrentLanguage = setCurrentLanguage;
 exports.setTranslator = setTranslator;
 exports.t = t;
 exports.tk = tk;

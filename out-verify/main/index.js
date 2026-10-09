@@ -5,9 +5,9 @@ const log = require("electron-log/main");
 const child_process = require("child_process");
 const fs = require("fs");
 const path = require("path");
-const source = require("./chunks/source-YZyIdPnn.js");
-require("./chunks/concepts-BlHF9Hl2.js");
-require("./chunks/recipe-BOlCEsxK.js");
+const source = require("./chunks/source-BSBanTT8.js");
+require("./chunks/concepts-DZXwTWWX.js");
+require("./chunks/recipe-DEuWaDNo.js");
 require("os");
 const IPC = {
   /** The native menus (shared/appmenu.ts). */
@@ -17,7 +17,12 @@ const IPC = {
     /** renderer → main: a right-click menu, at the pointer */
     popup: "menu:popup",
     /** main → renderer: the item chosen, by id */
-    run: "menu:run"
+    run: "menu:run",
+    /** Windows: the menu bar's names, and one opened under its name in the top bar */
+    top: "menu:top",
+    openTop: "menu:open-top",
+    /** main → renderer: the menu bar was made again (Windows reads its names again) */
+    changed: "menu:changed"
   },
   app: {
     cpus: "app:cpus",
@@ -621,7 +626,7 @@ if (bootScale({ canRelaunch: electron.app.isPackaged && !hidden })) {
     electron.app.exit(0);
   });
 } else {
-  void Promise.resolve().then(() => require("./chunks/app-DpJepX0u.js"));
+  void Promise.resolve().then(() => require("./chunks/app-DPvnzVkN.js"));
 }
 exports.IPC = IPC;
 exports.PERFORMANCE_SCALE = PERFORMANCE_SCALE;

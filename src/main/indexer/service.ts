@@ -9,6 +9,7 @@
  * from it). Folder scans and the exif fill are the only long work; they run
  * in chunks and give other requests a turn between them.
  */
+import { tk } from '../../shared/i18n'
 import { createHash } from 'crypto'
 import {
   createReadStream,
@@ -1480,17 +1481,17 @@ export class IndexService {
     if (!['manual', 'smart', 'set'].includes(c.kind))
       throw new Error(`bad collection kind ${c.kind}`)
     const name = String(c.name ?? '').trim()
-    if (!name) throw new Error('a collection needs a name')
+    if (!name) throw new Error(tk('a collection needs a name'))
     const existing = c.id ? this.store.collection(c.id) : undefined
     if (existing && existing.kind !== c.kind) throw new Error('a collection cannot change kind')
     const id = existing?.id ?? c.id ?? newId()
     const parent = c.parent ?? null
     if (parent !== null) {
       const p = this.store.collection(parent)
-      if (!p || p.kind !== 'set') throw new Error('a collection can only sit in a set')
+      if (!p || p.kind !== 'set') throw new Error(tk('a collection can only sit in a set'))
       // Walk up from the new parent: meeting this collection would make a loop.
       for (let at: CollectionRow | undefined = p; at;) {
-        if (at.id === id) throw new Error('a set cannot sit inside itself')
+        if (at.id === id) throw new Error(tk('a set cannot sit inside itself'))
         at = at.parent ? this.store.collection(at.parent) : undefined
       }
     }
@@ -1588,7 +1589,7 @@ export class IndexService {
       f.kind !== 'collections' ||
       !Array.isArray(f.collections)
     )
-      throw new Error('not a Pixl Playroom collections file')
+      throw new Error(tk('not a Pixl Playroom collections file'))
     type Def = CollectionsFile['collections'][number]
     const defs = f.collections.filter(
       (c): c is Def =>

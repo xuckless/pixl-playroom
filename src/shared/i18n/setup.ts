@@ -4,7 +4,7 @@
  * catalog doesn't have yet.
  */
 import i18next, { type i18n } from 'i18next'
-import { setTranslator, type Language, type Values } from './index'
+import { fill, setCurrentLanguage, setTranslator, type Language, type Values } from './index'
 import en from './locales/en.json'
 import fr from './locales/fr.json'
 import de from './locales/de.json'
@@ -21,8 +21,12 @@ const resources = {
   vi: { translation: vi }
 }
 
-/** A started instance in `language`, installed as the process's `t`. */
-export function startI18n(language: Language): i18n {
+/**
+ * A started instance in `language`, installed as the process's `t`. With
+ * `pseudo` (a check, PLAYROOM_PSEUDO_LOCALE=1), each string comes back
+ * ⟦bracketed⟧: text on screen without brackets never went through `t()`.
+ */
+export function startI18n(language: Language, pseudo = false): i18n {
   const inst = i18next.createInstance()
   void inst.init({
     resources,
@@ -36,6 +40,13 @@ export function startI18n(language: Language): i18n {
     interpolation: { escapeValue: false },
     initAsync: false
   })
-  setTranslator((key, values?: Values) => inst.t(key, values as Record<string, unknown>) as string)
+  setCurrentLanguage(language)
+  inst.on('languageChanged', (l) => setCurrentLanguage(l as Language))
+  setTranslator((key, values?: Values) => {
+    const found = inst.t(key, values as Record<string, unknown>) as string
+    // Not in any catalog: the English, its context dropped.
+    const out = found === key ? fill(key, values) : found
+    return pseudo && !out.startsWith('⟦') ? `⟦${out}⟧` : out
+  })
   return inst
 }

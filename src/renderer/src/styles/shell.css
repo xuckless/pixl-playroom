@@ -26,6 +26,35 @@
   -webkit-app-region: drag;
   user-select: none;
 }
+/*
+ * Windows: the window's buttons are drawn over the bar's right end (main/app.ts,
+ * the window controls overlay); the bar ends before them.
+ */
+:root[data-platform='win'] .identity-bar {
+  padding-right: calc(
+    100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 12px
+  );
+}
+.window-menus {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: -6px;
+  -webkit-app-region: no-drag;
+}
+.window-menus button {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text2);
+  font-size: 12.5px;
+}
+.window-menus button:hover,
+.window-menus button:focus-visible {
+  color: var(--text);
+  border-color: var(--hair2);
+}
 /* macOS: the window's own buttons sit at the bar's left (main/app.ts). */
 :root[data-platform='mac']:not([data-fullscreen]) .identity-bar {
   padding-left: 84px;

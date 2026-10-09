@@ -8,7 +8,11 @@ export const LOCALES = ['en', 'fr', 'de', 'zh-Hans', 'ja', 'vi']
 
 const SUFFIX = /_(zero|one|two|few|many|other)$/
 
-const holes = (s) => [...String(s).matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((m) => m[1]).sort().join(',')
+const holes = (s) =>
+  [...String(s).matchAll(/\{\{\s*(\w+)\s*\}\}/g)]
+    .map((m) => m[1])
+    .sort()
+    .join(',')
 
 /** The plural forms a language needs (i18next's suffixes, from CLDR via Intl). */
 export function pluralForms(code) {

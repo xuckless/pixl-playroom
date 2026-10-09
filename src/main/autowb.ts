@@ -342,10 +342,5 @@ export async function setWbBatch(
     return cur ? [{ key, before: cur.recipe, next: { ...cur.recipe, wb } }] : []
   })
   if (changes.length === 0) return []
-  return commitWb(
-    s,
-    changes,
-    t('Before restoring white balance'),
-    t('White balance: restored')
-  )
+  return commitWb(s, changes, t('Before restoring white balance'), t('White balance: restored'))
 }

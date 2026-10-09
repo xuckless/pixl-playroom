@@ -25,11 +25,16 @@ import { useLooks } from './state/looks'
   useCull
 }
 
-// macOS draws its window buttons in the top bar (no title bar): the bar
-// leaves them room, except in full screen, where they go with the menu bar.
+// No title bar: macOS draws its window buttons at the top bar's left (room
+// left for them, bar in full screen, where they go with the menu bar);
+// Windows draws its own at the right, beside the menu names (WindowMenus).
 {
   const root = document.documentElement
-  root.dataset.platform = /Mac/.test(navigator.platform) ? 'mac' : 'other'
+  root.dataset.platform = /Mac/.test(navigator.platform)
+    ? 'mac'
+    : /Win/.test(navigator.platform)
+      ? 'win'
+      : 'other'
   const full = (): void => {
     root.toggleAttribute(
       'data-fullscreen',

@@ -203,7 +203,11 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
     const before = old ? recipe.pixels.slice(0, recipe.pixels.indexOf(old)) : recipe.pixels
     const layer = req.layerId && !old ? recipe.layers.find((l) => l.id === req.layerId) : undefined
     if (req.layerId && !old && !layer) throw new Error(t('the mask is gone'))
-    ctx.stage('model', 0, t('Loading {{model}}', { model: modelName(this.models.entry(req.model)) }))
+    ctx.stage(
+      'model',
+      0,
+      t('Loading {{model}}', { model: modelName(this.models.entry(req.model)) })
+    )
     const refused = pixelStepRefusal(info)
     if (refused) throw new Error(refused)
     if (!(await this.models.installed(req.model)))

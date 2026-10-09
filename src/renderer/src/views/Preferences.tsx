@@ -332,7 +332,7 @@ function LicenceSection(): React.JSX.Element | null {
                   )
                 }
               >
-                {t('Free')}
+                {t('Free|device')}
               </button>
             </li>
           ))}

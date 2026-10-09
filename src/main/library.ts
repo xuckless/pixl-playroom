@@ -408,7 +408,9 @@ export class Library {
     if (e === undefined) return row
     if (e === null)
       throw new Error(
-        t('{{name}} is missing, and its project does not carry a copy of it yet', { name: row.name })
+        t('{{name}} is missing, and its project does not carry a copy of it yet', {
+          name: row.name
+        })
       )
     if (e.codec !== 'jxl-jpeg') return { ...row, path: e.path }
     const jpg = e.path.replace(/\.jxl$/i, '.jpg')

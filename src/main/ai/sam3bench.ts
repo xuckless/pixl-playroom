@@ -57,7 +57,8 @@ export async function benchmarkSam3(
   switches: AiSwitchStore,
   progress: (p: number, note: string) => void
 ): Promise<HeavyBenchmark> {
-  if (!SAM3_PHRASE) throw new Error(t('SAM 3 is held back for now (it brings the engine down: E58)'))
+  if (!SAM3_PHRASE)
+    throw new Error(t('SAM 3 is held back for now (it brings the engine down: E58)'))
   if (!(await models.installed('sam3'))) throw new Error(t('Download SAM 3 first'))
   const ref = (await models.ref('sam3', 'Cpu')) as {
     encoder: Record<string, unknown>

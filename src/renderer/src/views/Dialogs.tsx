@@ -62,7 +62,11 @@ export function SyncDialog(): React.JSX.Element {
   const copied = [...groups].filter((g) => !(autoWb && g === 'whiteBalance'))
   return (
     <Modal
-      title={tp('Apply settings to {{count}} photo', 'Apply settings to {{count}} photos', keys.length)}
+      title={tp(
+        'Apply settings to {{count}} photo',
+        'Apply settings to {{count}} photos',
+        keys.length
+      )}
       onClose={() => setDialog(null)}
       icon="copy"
       footer={
@@ -84,7 +88,8 @@ export function SyncDialog(): React.JSX.Element {
                 const dev = useDevelop.getState
                 if (developKey && keys.includes(developKey) && dev().session?.key === developKey) {
                   const s = await api.develop.open(developKey)
-                  if (dev().session?.key === developKey) dev().replace(s.recipe, tk('Sync settings'))
+                  if (dev().session?.key === developKey)
+                    dev().replace(s.recipe, tk('Sync settings'))
                 }
               }
               setDialog(null)
@@ -229,7 +234,11 @@ export function SavePresetDialog(): React.JSX.Element {
               const kept = [...groups].filter((g) => g !== 'localAdjustments')
               await api.presets.save({
                 name: name.trim(),
-                group: group.trim() || t('User presets'),
+                // The default group is kept in English (shown in the language of the day).
+                group:
+                  !group.trim() || group.trim() === t('User presets')
+                    ? 'User presets'
+                    : group.trim(),
                 groups: kept,
                 recipe: { ...recipe, layers: [], pixels: [] },
                 ...(wbOp ? { wbOp } : {}),

@@ -18,7 +18,9 @@ export const PURPOSES: { id: Purpose; title: string; what: string }[] = [
   {
     id: 'demosaic',
     title: tk('Develop RAW files'),
-    what: tk('Turns a camera’s raw sensor data into the full-size picture, with crisper edges and fewer colour fringes on fine detail. Without it, Playroom uses a faster classic method.')
+    what: tk(
+      'Turns a camera’s raw sensor data into the full-size picture, with crisper edges and fewer colour fringes on fine detail. Without it, Playroom uses a faster classic method.'
+    )
   },
   {
     id: 'denoise',
@@ -53,7 +55,9 @@ export const PURPOSES: { id: Purpose; title: string; what: string }[] = [
   {
     id: 'depth',
     title: tk('Sense depth'),
-    what: tk('Works out what is near and what is far, so a mask can take the foreground or the background by distance.')
+    what: tk(
+      'Works out what is near and what is far, so a mask can take the foreground or the background by distance.'
+    )
   }
 ]
 
@@ -68,34 +72,46 @@ export interface ModelCopy {
 export const MODEL_COPY: Record<string, ModelCopy> = {
   'demosaicnet-bayer': {
     name: tk('Best quality RAW develop'),
-    what: tk('Builds the full-size picture from your RAW’s sensor data with fine detail and clean edges. Downloaded by itself; used at 100%, for AI tools and in the export. On a Mac it runs on the graphics chip: about 5 seconds for a 24 MP RAW, where the faster classic method takes 3.'),
+    what: tk(
+      'Builds the full-size picture from your RAW’s sensor data with fine detail and clean edges. Downloaded by itself; used at 100%, for AI tools and in the export. On a Mac it runs on the graphics chip: about 5 seconds for a 24 MP RAW, where the faster classic method takes 3.'
+    ),
     where: tk('Every RAW, at full size'),
     recommended: true
   },
   'demosaicnet-xtrans': {
     name: tk('Best quality RAW develop, Fujifilm'),
-    what: tk('The same for Fujifilm’s X-Trans sensors. Downloaded by itself the first time you open one.'),
+    what: tk(
+      'The same for Fujifilm’s X-Trans sensors. Downloaded by itself the first time you open one.'
+    ),
     where: tk('Fujifilm X-Trans RAWs, at full size')
   },
   pmrid: {
     name: tk('RAW sensor denoise'),
-    what: tk('Takes grain out of a RAW’s sensor data before it becomes a picture, measuring how noisy each photo is by itself. Best on high-ISO shots; can look a little crisp on fine texture. Under a second on a Mac.'),
+    what: tk(
+      'Takes grain out of a RAW’s sensor data before it becomes a picture, measuring how noisy each photo is by itself. Best on high-ISO shots; can look a little crisp on fine texture. Under a second on a Mac.'
+    ),
     where: tk('Detail → Noise reduction → AI → Denoise the RAW data')
   },
   'drunet-color': {
     name: tk('Clean and detailed'),
-    what: tk('Playroom measures how grainy your photo is first, then removes just that much, so hair, fabric and skin keep their texture.'),
+    what: tk(
+      'Playroom measures how grainy your photo is first, then removes just that much, so hair, fabric and skin keep their texture.'
+    ),
     where: tk('Detail → Noise reduction → AI'),
     recommended: true
   },
   'nafnet-sidd-w32': {
     name: tk('Strong clean-up'),
-    what: tk('For very grainy night and indoor shots. It judges the grain by itself and cleans harder, which can smooth fine texture a little. On a Mac it runs on the graphics chip: about a quarter of a minute for a 24 MP photo.'),
+    what: tk(
+      'For very grainy night and indoor shots. It judges the grain by itself and cleans harder, which can smooth fine texture a little. On a Mac it runs on the graphics chip: about a quarter of a minute for a 24 MP photo.'
+    ),
     where: tk('Detail → Noise reduction → AI')
   },
   'sam2-1-hiera-tiny': {
     name: tk('Select anything'),
-    what: tk('Click, drag a box or brush over anything in a photo (a car, a dog, a window, the sky) and the mask takes exactly that, its edges snapped to the photo’s own.'),
+    what: tk(
+      'Click, drag a box or brush over anything in a photo (a car, a dog, a window, the sky) and the mask takes exactly that, its edges snapped to the photo’s own.'
+    ),
     where: tk('Masks → New → Objects or Sky'),
     recommended: true
   },
@@ -107,49 +123,67 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
   },
   'span-x4-ch48': {
     name: tk('Bigger, clean'),
-    what: tk('Makes a clean photo twice or four times as wide and tall, staying closest to the original. Quick: a fraction of a second.'),
+    what: tk(
+      'Makes a clean photo twice or four times as wide and tall, staying closest to the original. Quick: a fraction of a second.'
+    ),
     where: tk('Enhance → Super resolution → Source: Clean'),
     recommended: true
   },
   'realesr-general-x4v3': {
     name: tk('Bigger, repaired'),
-    what: tk('Makes a photo twice or four times as wide and tall and repairs compression blocks and noise as it goes. Best for small, damaged pictures; edges come out a little smooth.'),
+    what: tk(
+      'Makes a photo twice or four times as wide and tall and repairs compression blocks and noise as it goes. Best for small, damaged pictures; edges come out a little smooth.'
+    ),
     where: tk('Enhance → Super resolution → Source: Damaged')
   },
   'realesr-general-wdn-x4v3': {
     name: tk('Bigger, keeps texture'),
-    what: tk('Like the repairing one, but leaves more of the photo’s own texture, and a little of its grain.'),
+    what: tk(
+      'Like the repairing one, but leaves more of the photo’s own texture, and a little of its grain.'
+    ),
     where: tk('Enhance → Super resolution → Source: Keep texture')
   },
   'nafnet-gopro-w32': {
     name: tk('Motion blur fix'),
-    what: tk('Sharpens a photo smeared by camera shake or a moving subject. It cannot rescue a photo that was simply out of focus.'),
+    what: tk(
+      'Sharpens a photo smeared by camera shake or a moving subject. It cannot rescue a photo that was simply out of focus.'
+    ),
     where: tk('Enhance → Deblur'),
     recommended: true
   },
   'birefnet-lite': {
     name: tk('Fine subject finder'),
-    what: tk('Finds the main subject with a finer edge than the quick finder, keeping hair, fur and feathers. Larger, and about ten seconds a photo.'),
+    what: tk(
+      'Finds the main subject with a finer edge than the quick finder, keeping hair, fur and feathers. Larger, and about ten seconds a photo.'
+    ),
     where: tk('Masks → New → Fine subject')
   },
   'migan-512': {
     name: tk('Object remover'),
-    what: tk('Fills in what you paint over (a stranger, a sign, a power line) with what was likely behind it.'),
+    what: tk(
+      'Fills in what you paint over (a stranger, a sign, a power line) with what was likely behind it.'
+    ),
     where: tk('Heal → Remove')
   },
   'dinov2-s-ade': {
     name: tk('Scene finder'),
-    what: tk('Finds the sky (through branches too), trees and plants, and water in one click each. About a second a photo.'),
+    what: tk(
+      'Finds the sky (through branches too), trees and plants, and water in one click each. About a second a photo.'
+    ),
     where: tk('Masks → New → Sky, Vegetation or Water')
   },
   'selfie-multiclass': {
     name: tk('People parts finder'),
-    what: tk('Finds a person’s hair, face, skin and clothes in one click each. Best when the person fills a good part of the frame; edges are soft.'),
+    what: tk(
+      'Finds a person’s hair, face, skin and clothes in one click each. Best when the person fills a good part of the frame; edges are soft.'
+    ),
     where: tk('Masks → New → Face, Hair, Skin or Clothes')
   },
   'efficientsam3-ev-m': {
     name: tk('Find by name'),
-    what: tk('Type what you want masked (“red car”, “the trees”) and it finds every one in the photo. Clear names work best; a vague one can find the wrong thing. About 4 seconds the first time on a photo, 2 seconds each word after.'),
+    what: tk(
+      'Type what you want masked (“red car”, “the trees”) and it finds every one in the photo. Clear names work best; a vague one can find the wrong thing. About 4 seconds the first time on a photo, 2 seconds each word after.'
+    ),
     where: tk('Masks → New → Find by name'),
     recommended: true
   },
@@ -160,12 +194,16 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
   },
   'yunet-2023mar': {
     name: tk('Face finder'),
-    what: tk('Finds every face in a photo, small ones in a group too, for the face part masks. Tiny and quick.'),
+    what: tk(
+      'Finds every face in a photo, small ones in a group too, for the face part masks. Tiny and quick.'
+    ),
     where: tk('Masks → New → Eyes, Brows, Lips or Teeth')
   },
   'face-mesh-v2': {
     name: tk('Face parts outliner'),
-    what: tk('Outlines each face’s eyes, brows, lips and mouth, so a mask takes exactly them. Brows are rough for now.'),
+    what: tk(
+      'Outlines each face’s eyes, brows, lips and mouth, so a mask takes exactly them. Brows are rough for now.'
+    ),
     where: tk('Masks → New → Eyes, Brows, Lips or Teeth')
   },
   'depth-anything-v2-small': {
@@ -175,7 +213,9 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
   },
   'fbcnn-color-blind': {
     name: tk('JPEG repair, automatic'),
-    what: tk('Works out by itself how damaged the file is. Good for pictures saved from the web or sent through messaging apps.'),
+    what: tk(
+      'Works out by itself how damaged the file is. Good for pictures saved from the web or sent through messaging apps.'
+    ),
     where: tk('Enhance → JPEG restore → AI, judges the damage'),
     recommended: true
   }

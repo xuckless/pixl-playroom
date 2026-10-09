@@ -150,13 +150,17 @@ function renderingMenu(): MenuItemConstructorOptions[] {
 export function buildMenu(): void {
   const developer: MenuItemConstructorOptions = {
     label: t('Developer'),
-    submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }]
+    submenu: [
+      { role: 'reload', label: t('Reload') },
+      { role: 'forceReload', label: t('Force Reload') },
+      { role: 'toggleDevTools', label: t('Toggle Developer Tools') }
+    ]
   }
   const viewTail: MenuItemConstructorOptions[] = [
     engineReport(),
     ...renderingMenu(),
     { type: 'separator' },
-    { role: 'togglefullscreen' },
+    { role: 'togglefullscreen', label: t('Toggle Full Screen') },
     { type: 'separator' },
     developer
   ]
@@ -178,17 +182,17 @@ export function buildMenu(): void {
           {
             label: app.name,
             submenu: [
-              { role: 'about' },
+              { role: 'about', label: t('About {{app}}', { app: app.name }) },
               { type: 'separator' },
               settingsItem,
               { type: 'separator' },
-              { role: 'services' },
+              { role: 'services', label: t('Services') },
               { type: 'separator' },
-              { role: 'hide' },
-              { role: 'hideOthers' },
-              { role: 'unhide' },
+              { role: 'hide', label: t('Hide {{app}}', { app: app.name }) },
+              { role: 'hideOthers', label: t('Hide Others') },
+              { role: 'unhide', label: t('Show All') },
               { type: 'separator' },
-              { role: 'quit' }
+              { role: 'quit', label: t('Quit {{app}}', { app: app.name }) }
             ] satisfies MenuItemConstructorOptions[]
           }
         ]
@@ -199,8 +203,10 @@ export function buildMenu(): void {
           submenu: [
             ...fileItems,
             { type: 'separator' },
-            mac ? { role: 'close' } : settingsItem,
-            ...(mac ? [] : [{ type: 'separator' as const }, { role: 'quit' as const }])
+            mac ? { role: 'close', label: t('Close Window') } : settingsItem,
+            ...(mac
+              ? []
+              : [{ type: 'separator' as const }, { role: 'quit' as const, label: t('Exit') }])
           ]
         }
       : mac
@@ -212,8 +218,38 @@ export function buildMenu(): void {
       label: viewMenu?.label ?? t('View'),
       submenu: viewItems.length ? [...viewItems, { type: 'separator' }, ...viewTail] : viewTail
     },
-    { role: 'windowMenu' },
-    { role: 'help', submenu: help() }
+    {
+      role: 'windowMenu',
+      label: t('Window'),
+      submenu: [
+        { role: 'minimize', label: t('Minimize') },
+        { role: 'zoom', label: t('Zoom') },
+        ...(mac
+          ? [
+              { type: 'separator' as const },
+              { role: 'front' as const, label: t('Bring All to Front') }
+            ]
+          : [{ role: 'close' as const, label: t('Close') }])
+      ]
+    },
+    { role: 'help', label: t('Help'), submenu: help() }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+  // Windows shows the menu names in the window's top bar: they are read again.
+  if (process.platform === 'win32')
+    for (const w of BrowserWindow.getAllWindows())
+      if (!w.isDestroyed()) w.webContents.send(IPC.menu.changed)
+}
+
+/** The menu bar's names, for the window's top bar to show (Windows). */
+export function topMenus(): string[] {
+  return Menu.getApplicationMenu()?.items.map((i) => i.label) ?? []
+}
+
+/** One of the menu bar's menus, opened under its name in the top bar (window coordinates). */
+export function openTopMenu(index: number, x: number, y: number): void {
+  const win = target()
+  const menu = Menu.getApplicationMenu()?.items[index]?.submenu
+  if (!win || win.isDestroyed() || !menu) return
+  menu.popup({ window: win, x, y })
 }
