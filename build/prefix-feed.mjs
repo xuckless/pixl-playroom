@@ -17,7 +17,7 @@
  * scripts/rollout.mjs raises or stops it later).
  *
  * Takes the version from the feed itself, rewrites only the `url:` and
- * `path:` lines, and throws on anything it doesn't expect, so a format change
+ * `path:` lines (never a line of the release notes), and throws on anything it doesn't expect, so a format change
  * fails the release instead of publishing a feed nobody can update from.
  */
 import { readFileSync } from 'node:fs'
@@ -31,7 +31,11 @@ export function prefixFeed(text, source = 'feed', rollout = 100) {
     throw new Error(`${source}: no version, or not one we publish`)
   let urls = 0
   let paths = 0
+  /** Inside a block value (`releaseNotes: |`): its indented lines are text, left alone. */
+  let inBlock = false
   const out = text.split('\n').map((line, i) => {
+    if (inBlock && (line === '' || line.startsWith('  '))) return line
+    inBlock = /^\w+: [|>][-+]?$/.test(line)
     const m = /^( {2}- url: |path: )(.+)$/.exec(line)
     if (!m) return line
     const name = m[2]
