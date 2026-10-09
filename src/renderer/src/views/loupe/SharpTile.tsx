@@ -57,6 +57,8 @@ export const SharpTile = memo(function SharpTile({
     )
   )
   const request = useRef(0)
+  /** The ask in flight or shown, by what it is of: the same again is not asked (it would cancel it). */
+  const asked = useRef<string | null>(null)
   const shownWidth = g.crop && !g.whole ? g.crop.width * g.width : g.width
   // The preview is enough while it has a pixel for every device pixel.
   const wanted = scale > (previewWidth / shownWidth) * 1.1 && !(g.whole && g.transform)
@@ -76,19 +78,23 @@ export const SharpTile = memo(function SharpTile({
       const y0 = Math.max(0, vis.y / rect.h - my)
       const x1 = Math.min(1, (vis.x + vis.w) / rect.w + mx)
       const y1 = Math.min(1, (vis.y + vis.h) / rect.h + my)
+      // 1:1 is 1 (the view's arithmetic can land a hair under it).
+      const zoom = scale >= 0.9999 ? 1 : Math.min(1, scale)
+      const part = { key: session.key, x: x0, y: y0, width: x1 - x0, height: y1 - y0, zoom }
+      // Asked already, for the same pixels (a re-render that changed nothing
+      // the tile shows): asking again would cancel the one on its way.
+      const what = JSON.stringify([part, g.whole === true, hdr, recipe])
+      if (what === asked.current) return
+      asked.current = what
       void api.develop
-        .region({
-          key: session.key,
-          x: x0,
-          y: y0,
-          width: x1 - x0,
-          height: y1 - y0,
-          zoom: Math.min(1, scale)
-        })
+        .region(part)
         .then((r) => {
           if (id === request.current) setTile({ ...r, recipe, whole: g.whole === true, hdr })
         })
-        .catch(() => undefined)
+        .catch(() => {
+          // Cancelled or failed: the next rest may ask again.
+          if (asked.current === what) asked.current = null
+        })
     }
     let timer = setTimeout(ask, SETTLE_MS)
     return () => clearTimeout(timer)

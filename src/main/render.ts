@@ -44,6 +44,7 @@ import { ensureWorking, workingKey, type WorkingSet } from './pixels/working'
 import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
 import type {
   ColorPolicy,
+  ConvertRequest,
   Encode,
   Companion,
   HdrWorking,
@@ -91,6 +92,7 @@ import { keyOf, parseKey } from './keys'
 import type { Library, Picture } from './library'
 import { CICP_DISPLAY_P3, encodePng8, pngToFloats } from './pngio'
 import { pixels } from './workers/pool'
+import { traceRegion } from './trace'
 import { cacheUrl } from './protocol'
 import {
   ensureLensedProxies,
@@ -1486,6 +1488,9 @@ class Session {
     const abort = new AbortController()
     this.regionAbort = abort
     const { signal } = abort
+    // What the region is cut from, timed for the trace: the working copy
+    // (pixel steps at full size) or the RAW master, made or found.
+    const tMaster = performance.now()
     // The pixel steps laid on at full size: the same pixels an export uses.
     const stepsMaster = await this.workingMaster()
     const raw = this.isRaw
@@ -1501,9 +1506,13 @@ class Session {
               width: this.px.frameWidth,
               height: this.px.frameHeight
             }
+    const masterMs = Math.round(performance.now() - tMaster)
     // The source's own size: the frame its full-size render is of.
     const { user, width, height } = orientedFrame(this.recipe, src.width, src.height)
-    const zoom = Math.min(1, req.zoom)
+    // 1:1 is 1: the loupe's arithmetic can send 0.9999999999999999, which
+    // would ask for a resize that changes nothing (and, in Full HDR, one the
+    // engine refuses without a linear resample: Pass 117's trace).
+    const zoom = req.zoom >= 0.9999 ? 1 : Math.min(1, req.zoom)
     // Full HDR: the tile in HDR too (an AVIF with the master's gain map),
     // stating the settled picture's peak and reach, which a part cannot
     // measure. Before the first settled HDR picture, an SDR tile.
@@ -1542,29 +1551,62 @@ class Session {
     const out = join(this.dir, `region-${this.regionSlot}.${hdr ? 'avif' : 'jpg'}`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
-    await this.owner.engine
-      .convert(
-        {
-          ...blankRequest(src.path, out, src.input, original),
-          raw: null,
-          resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
-          pixel: { depth: 'Eight', channels: 3 },
-          encode: hdr
-            ? hdr.encode
-            : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
-          metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: hdr ? hdr.color : displayPolicy(this.info, 'DisplayP3'),
-          // The master reads a gain map itself, and refuses the field.
-          ...(hdr ? { gain_map: null } : {}),
-          grade: compiled.grade,
-          framing: compiled.framing,
-          lens: compiled.lens,
-          retouch: compiled.retouch,
-          region: { x, y, width: w, height: h, margin: 96 }
-        },
-        { signal }
-      )
-      .catch(named(compiled))
+    const request: ConvertRequest = {
+      ...blankRequest(src.path, out, src.input, original),
+      raw: null,
+      resize: zoom < 1 ? { Scale: { factor: zoom } } : 'None',
+      pixel: { depth: 'Eight', channels: 3 },
+      encode: hdr ? hdr.encode : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      color: hdr ? hdr.color : displayPolicy(this.info, 'DisplayP3'),
+      // The master reads a gain map itself, and refuses the field.
+      ...(hdr ? { gain_map: null } : {}),
+      grade: compiled.grade,
+      framing: compiled.framing,
+      lens: compiled.lens,
+      retouch: compiled.retouch,
+      region: { x, y, width: w, height: h, margin: 96 },
+      // A Full HDR tile is resized inside the master's float pass, which the
+      // engine allows only as a linear resample.
+      ...(hdr && zoom < 1 ? { linear_resample: true } : {})
+    }
+    const tConvert = performance.now()
+    const report = await this.owner.engine.convert(request, { signal }).catch(named(compiled))
+    traceRegion({
+      step: 'region',
+      key: this.key,
+      asked: req,
+      // Where the region's pixels come from, and how long getting it took.
+      source: stepsMaster
+        ? 'working master (pixel steps)'
+        : this.hdrMaster
+          ? 'HDR master'
+          : raw
+            ? 'RAW master'
+            : 'the original',
+      masterMs,
+      src,
+      zoom: req.zoom,
+      fullHdr: hdr !== null,
+      convertMs: Math.round(performance.now() - tConvert),
+      totalMs: Math.round(performance.now() - t0),
+      request,
+      report: {
+        width: report.width,
+        height: report.height,
+        input_bytes: report.input_bytes,
+        output_bytes: report.output_bytes,
+        decode_ms: report.decode_ms,
+        resize_ms: report.resize_ms,
+        color_ms: report.color_ms,
+        ingest_ms: report.ingest_ms,
+        egress_ms: report.egress_ms,
+        encode_ms: report.encode_ms,
+        region: report.region,
+        frame_width: report.frame_width,
+        frame_height: report.frame_height
+      }
+    })
     if (this.regionAbort === abort) this.regionAbort = null
     return {
       url: cacheUrl(out, `${Date.now()}`),
@@ -2207,7 +2249,20 @@ export class DevelopSessions {
   }
 
   region(req: RegionRequest): Promise<RegionResult> {
-    return this.get(req.key).region(req)
+    const t0 = performance.now()
+    return this.get(req.key)
+      .region(req)
+      .catch((err: unknown) => {
+        traceRegion({
+          step: 'region failed',
+          key: req.key,
+          asked: req,
+          zoom: req.zoom,
+          ms: Math.round(performance.now() - t0),
+          message: (err as Error)?.message ?? String(err)
+        })
+        throw err
+      })
   }
 
   sample(key: string, x: number, y: number): Promise<SampleResult> {

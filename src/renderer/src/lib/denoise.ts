@@ -91,8 +91,19 @@ export function startStaleUpkeep(): () => void {
       (p) => staleRawStep(p, true, mark) && redoesQuietly(p) && !tried.has(`${key}/${p.id}`)
     )
     void (async () => {
+      if (stale.length === 0) return
+      // Made again quietly only with its model here and AI on: otherwise the
+      // step stays as it is (its row offers the remake), and nothing blocks
+      // or asks for a download as the photo opens (the owner, 2026-10-09).
+      const [models, caps] = await Promise.all([
+        api.models.list().catch(() => []),
+        api.ai.capabilities().catch(() => null)
+      ])
+      if (caps && !caps.denoise) return
+      const here = new Set(models.filter((m) => m.installed).map((m) => m.id))
       for (const p of stale) {
         tried.add(`${key}/${p.id}`)
+        if (!here.has(aiDenoiseModel(p.params.model))) continue
         // One after the other: each is made on the steps before it.
         await redoDenoise(key, p).catch((err) => useLibrary.getState().say(errorText(err), 'error'))
       }

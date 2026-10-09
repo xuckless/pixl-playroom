@@ -17,6 +17,7 @@
  * build, nothing learned runs.
  */
 import log from 'electron-log/main'
+import { traceRegion } from '../trace'
 import type {
   ExecutionProvider,
   MosaicDenoise,
@@ -120,6 +121,19 @@ async function fill(plan: ScenePlan, onCpu: ReadonlySet<string>): Promise<SceneM
   const mosaic_denoise: MosaicDenoise | null = plan.pmrid
     ? { model: await ref(RAW_DENOISER), noise: 'Measured' }
     : null
+  traceRegion({
+    step: 'scene',
+    tag: plan.tag,
+    demosaic: plan.demosaic === 'model' ? DEMOSAIC_MODEL[plan.cfa!] : plan.demosaic,
+    pmrid: plan.pmrid,
+    // The store's default is the accelerator (CoreML on a Mac); a model it refused runs on the CPU.
+    provider: Object.fromEntries(
+      [
+        ...(plan.demosaic === 'model' ? [DEMOSAIC_MODEL[plan.cfa!]] : []),
+        ...(plan.pmrid ? [RAW_DENOISER] : [])
+      ].map((id) => [id, onCpu.has(id) ? 'Cpu' : 'default'])
+    )
+  })
   return { demosaic, mosaic_denoise }
 }
 
@@ -158,6 +172,7 @@ export async function withScene<T>(
   } catch (err) {
     if (signal.aborted || !MODEL_TROUBLE.test(String((err as Error)?.message))) throw err
     log.warn('RAW develop with', plan.tag, 'refused; developing classic', (err as Error).message)
+    traceRegion({ step: 'refused', tag: plan.tag, message: (err as Error).message })
     return { value: await run(plain), classic: true }
   }
 }

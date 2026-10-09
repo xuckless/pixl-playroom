@@ -37,6 +37,7 @@ import { PLAIN_DEVELOP, scenePlan, withScene, type RawDevelopAsk } from './ai/ra
 import { exists } from './exists'
 import type { PhotoRow } from './db'
 import { paths } from './paths'
+import { traceRegion } from './trace'
 import {
   BACKGROUND_THREADS,
   binFactor,
@@ -521,20 +522,55 @@ export async function ensureMaster(
       const name = `master-${s}-${plan.tag}`
       const path = join(dir, `${name}.tiff`)
       const meta = `${path}.json`
-      if ((await exists(path)) && (await exists(meta)))
-        return JSON.parse(await readFile(meta, 'utf8')) as ProxyFile
+      if ((await exists(path)) && (await exists(meta))) {
+        const kept = JSON.parse(await readFile(meta, 'utf8')) as ProxyFile
+        traceRegion({
+          step: 'master',
+          photoId: photo.id,
+          tag: plan.tag,
+          cached: true,
+          path,
+          width: kept.width,
+          height: kept.height
+        })
+        return kept
+      }
       const t0 = Date.now()
-      const { value: report, classic } = await withScene(plan, (scene) =>
-        engine.convert({
+      let request: unknown = null
+      const { value: report, classic } = await withScene(plan, (scene) => {
+        const req = {
           ...blankRequest(photo.path, path, 'Raw'),
           raw: rawMaster(colourOf(photo), scene),
-          pixel: { depth: 'F32', channels: 3 },
-          encode: { Tiff: { compression: 'None' } },
+          pixel: { depth: 'F32', channels: 3 } as const,
+          encode: { Tiff: { compression: 'None' } } as const,
           metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: 'Preserve'
-        })
-      )
+          color: 'Preserve' as const
+        }
+        request = req
+        return engine.convert(req)
+      })
       log.info('RAW master developed', plan.tag, classic ? '(classic)' : '', Date.now() - t0, 'ms')
+      traceRegion({
+        step: 'master',
+        photoId: photo.id,
+        tag: plan.tag,
+        cached: false,
+        classic,
+        // Not kept when classic stood in: the next 1:1 develops it again.
+        keptForNextTime: !classic,
+        ms: Date.now() - t0,
+        request,
+        report: {
+          width: report.width,
+          height: report.height,
+          input_bytes: report.input_bytes,
+          output_bytes: report.output_bytes,
+          decode_ms: report.decode_ms,
+          color_ms: report.color_ms,
+          encode_ms: report.encode_ms,
+          raw: report.raw
+        }
+      })
       const out: ProxyFile = {
         path,
         input: 'Tiff',
