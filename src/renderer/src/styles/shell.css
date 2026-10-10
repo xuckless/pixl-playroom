@@ -825,6 +825,34 @@ aside.right .panels.scoped {
   color: var(--acc);
   box-shadow: inset 0 0 0 1px var(--acc-a55);
 }
-.tool-bar .full-hdr:disabled {
-  opacity: 0.45;
+/* Unavailable here (an SDR screen, an SDR photo): greyed, but it still
+   answers the pointer, so its note can say why (components/HoverHint.tsx). */
+.tool-bar button[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
+.tool-bar button[aria-disabled='true']:hover {
+  color: var(--muted);
+  background: transparent;
+}
+
+/* A toolbar control's note: box-less, so the bar lays the control out itself. */
+.hover-hint {
+  display: contents;
+}
+/* In a segmented group each control sits in its own wrapper, so every one is
+   its wrapper's last child: the dividers between them come back here. */
+.seg > .hover-hint:not(:last-child) > button {
+  border-right: 1px solid var(--hair);
+}
+.hint-pop .tip-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hint-pop .tip-title .kbd {
+  margin-left: auto;
+}
+.hint-pop .hint-now {
+  color: var(--muted);
 }

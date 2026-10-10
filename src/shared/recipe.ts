@@ -23,9 +23,12 @@ import { tk } from './i18n'
 /**
  * 3 (engine 0.18): a RAW's untouched default sharpening takes the edge mask
  * (masking 50, HR-0.18-2). 4: Smoothing, 100 for new photos and masks, 0
- * for edits made before it (so they look as they did).
+ * for edits made before it (so they look as they did). 5: a gain-map photo
+ * is edited in HDR by default (Photo → Edit as SDR for the stored SDR
+ * picture); one with pixel steps (AI Denoise, Enhance, baked heals and
+ * removals, which an HDR photo cannot take yet) keeps its SDR base.
  */
-export const RECIPE_VERSION = 4
+export const RECIPE_VERSION = 5
 
 export const HSL_BANDS = [
   'red',
@@ -552,14 +555,27 @@ export interface Recipe {
   layers: LocalLayer[]
   custom: CustomLayer[]
   /**
-   * A photo with a gain map (an iPhone HEIC, an UltraHDR JPEG) edited on its
-   * SDR base, or on the HDR rendition the map lifts it to. Other photos
-   * ignore it.
+   * The editing space of a photo with a gain map (an iPhone HEIC, an UltraHDR
+   * JPEG): the HDR rendition the map lifts it to (the default), or the SDR
+   * picture the file stores (Photo → Edit as SDR). Other photos ignore it.
    */
   gainMap: GainMapEdit
 }
 
 export type GainMapEdit = 'base' | 'hdr'
+
+/**
+ * Whether a gain-map photo is edited in HDR: its recipe asks for it and it
+ * has no pixel steps (AI Denoise, Enhance, baked heals and removals were
+ * made on the SDR picture, and an HDR photo cannot take them yet). Main
+ * opens the photo on this, and the renderer follows the same rule.
+ */
+export function editsInHdr(
+  recipe: Pick<Recipe, 'gainMap' | 'pixels'>,
+  hasGainMap: boolean
+): boolean {
+  return hasGainMap && recipe.gainMap === 'hdr' && recipe.pixels.length === 0
+}
 
 // ── Defaults ─────────────────────────────────────────────────────────────────
 
@@ -613,7 +629,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     profile: isRaw ? { kind: 'standard' } : { kind: 'neutral' },
     profileAmount: 100,
     treatment: 'color',
-    gainMap: 'base',
+    gainMap: 'hdr',
     wb: { mode: 'as-shot', temperature: 0, tint: 0, preset: null },
     basic: { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 },
     presence: {
@@ -735,8 +751,11 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     d.sharpenMasking === 0
   )
     d.sharpenMasking = 50
+  // Before 5 every gain-map photo was edited on its SDR base by default: it
+  // moves to HDR, unless it has pixel steps, which an HDR photo cannot take.
+  if (saved < 5) r.gainMap = r.pixels.length > 0 ? 'base' : 'hdr'
   r.version = RECIPE_VERSION
-  if (r.gainMap !== 'hdr') r.gainMap = 'base'
+  if (r.gainMap !== 'base') r.gainMap = 'hdr'
   if (!isObject(value) || !isObject((value as Record<string, unknown>).profile)) {
     r.profile = base.profile
   }

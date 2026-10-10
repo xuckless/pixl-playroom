@@ -59,6 +59,8 @@ import type {
   SourceInfo
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
+import { CEILING_MAX, CEILING_MIN } from '../shared/export'
+import { DETECTED_PEAK, REFERENCE_WHITE } from '../shared/hdrdisplay'
 import {
   IPC,
   type BasicSetting,
@@ -179,6 +181,25 @@ function masterFor(
       look: 'Colorimetric',
       float: 'ExtendedLinearDisplayP3',
       companion: { longest_side: companionEdge, resampler: 'Bilinear' }
+    }
+  }
+}
+
+/**
+ * A RAW's headroom plane (the Headroom overlay): its master to `display`, as
+ * Full HDR shows it, written as PQ so the engine can say where it sits above
+ * white (`Inspect::Headroom` needs a PQ/HLG output). No companion.
+ */
+function headroomMaster(display: { whiteNits: number; peakNits: number }): ColorPolicy {
+  return {
+    Master: {
+      headroom: true,
+      peak: 'Measured',
+      ceiling: { Nits: Math.min(CEILING_MAX, Math.max(CEILING_MIN, display.peakNits)) },
+      reach: 'Measured',
+      look: 'Colorimetric',
+      float: 'LinearPixlRgb',
+      companion: null
     }
   }
 }
@@ -1115,18 +1136,24 @@ class Session {
    */
   private async renderHeadroom(signal: AbortSignal): Promise<void> {
     const hdr = this.hdrWorking
-    if (!hdr) return
+    // A RAW's light above white is its Scene develop's (engine 0.18): the
+    // engine marks it on the master Full HDR shows, to this display or (Full
+    // HDR off) to a typical HDR screen's peak.
+    if (!hdr && !this.isRaw) return
     const src = this.source('full')
-    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true)
+    const display = this.view.display ?? null
+    const compiled = await this.compileFor(this.recipe, src, !this.view.cropMode, true, true, !hdr)
     // A plane has one channel, so a warp's transparent corners cannot be said.
     if (framingTransparent(compiled.framing)) return
     // In Full HDR, 1 is the display's ceiling: what reaches it is what shows
     // at its brightest; above that the master rolled it off.
-    const display = this.view.display ?? null
+    const target = display ?? { whiteNits: REFERENCE_WHITE, peakNits: DETECTED_PEAK }
     const stops = Math.max(
       0.5,
       Math.log2(
-        display ? display.peakNits / display.whiteNits : hdr.peak_nits / hdr.reference_white_nits
+        hdr && !display
+          ? hdr.peak_nits / hdr.reference_white_nits
+          : target.peakNits / target.whiteNits
       )
     )
     const out = this.nextFile('headroom', 'png')
@@ -1138,8 +1165,9 @@ class Session {
             pixel: { depth: 'Eight', channels: 1 },
             encode: { Png: { compression: 'Fast', filter: 'Sub' } },
             metadata: STRIP_ALL,
-            color: 'Preserve',
-            hdr,
+            ...(hdr
+              ? { color: 'Preserve' as const, hdr }
+              : { color: headroomMaster(target), gain_map: null }),
             grade: compiled.grade,
             framing: compiled.framing,
             lens: compiled.lens,

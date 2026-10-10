@@ -154,7 +154,8 @@ interface UiState {
   /**
    * Full HDR: the photo shown with its light above white on a display that
    * has headroom (engine 0.18). How the photo is viewed, not part of its
-   * recipe; not the SDR | HDR "edit as" switch a gain-map photo has.
+   * recipe; not the editing space a gain-map photo is edited in (Photo →
+   * Edit as SDR). On by default.
    */
   fullHdr: boolean
   setFullHdr(on: boolean): void
@@ -263,7 +264,7 @@ export const useUi = create<UiState>()(
       brushSlot: 'A',
       setBrushSlot: (brushSlot) => set({ brushSlot }),
       heal: { mode: 'heal', size: 0.02, feather: 50, opacity: 100 },
-      fullHdr: false,
+      fullHdr: true,
       setFullHdr: (fullHdr) => set({ fullHdr }),
       alwaysFlat: true,
       setAlwaysFlat: (alwaysFlat) => set({ alwaysFlat }),
@@ -318,7 +319,7 @@ export const useUi = create<UiState>()(
     {
       name: 'playroom.ui',
       storage,
-      version: 7,
+      version: 8,
       migrate: (persisted, version) => migrateUi(persisted, version),
       // Crop or Heal is never in hand when the app opens.
       partialize: (s) => {

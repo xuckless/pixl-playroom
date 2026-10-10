@@ -7,6 +7,7 @@
  */
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { CARDS } from '../../../shared/cards'
+import { editsInHdr } from '../../../shared/recipe'
 import { SEPARATOR, tidyMenu, type MenuBarSpec, type MenuNode } from '../../../shared/appmenu'
 import type { LibraryItem } from '../../../shared/ipc'
 import { masksOpen } from '../develop/tools'
@@ -332,9 +333,20 @@ function editMenu(): Item[] {
   ]
 }
 
+/** Photo → Edit as SDR…: the open gain-map photo's editing space (views/EditingSpace.tsx). */
+function editingSpaceItem(): Item {
+  const d = dev()
+  const able = !modal() && inDevelop() && !!d.session?.info.gain_map && !!d.recipe
+  return act('photo.editAsSdr', t('Edit as SDR…'), () => lib().setDialog('editing-space'), {
+    checked: able && !!d.recipe && !editsInHdr(d.recipe, true),
+    enabled: able
+  })
+}
+
 function photoMenu(): Item[] {
   return [
     cmd('library.develop', t('Open in Develop')),
+    editingSpaceItem(),
     sep,
     ratingMenu(),
     flagMenu(),

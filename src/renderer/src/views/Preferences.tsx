@@ -547,8 +547,8 @@ export function PreferencesDialog(): React.JSX.Element {
 /**
  * The display the HDR preview renders for (engine 0.18 never reads one):
  * on a Mac, Automatic reads the screen's headroom; anywhere, the SDR white
- * and peak can be stated. On Windows, Auto-fill is a stand-in until
- * Playroom reads the screen there too.
+ * and peak can be stated. On Windows, Automatic takes typical numbers when
+ * the system says the screen shows HDR, until Playroom reads it there too.
  */
 function DisplaySection({ platform }: { platform: string | null }): React.JSX.Element {
   const say = useLibrary((s) => s.say)
@@ -570,19 +570,6 @@ function DisplaySection({ platform }: { platform: string | null }): React.JSX.El
       .catch((e) => say(errorText(e), 'error'))
   }
   const mac = platform === 'darwin'
-  // Until Playroom reads a Windows screen: whether Chromium sees HDR, and typical numbers.
-  const autoFill = (): void => {
-    const hdr = window.matchMedia('(dynamic-range: high)').matches
-    save({ mode: 'stated', whiteNits: 203, peakNits: hdr ? 1000 : 203 })
-    say(
-      hdr
-        ? t(
-            'This screen shows HDR: filled with typical values (white 203, peak 1000). Set your screen’s own if you know them.'
-          )
-        : t('This screen shows SDR now: the preview stays SDR.'),
-      'info'
-    )
-  }
   return (
     <fieldset>
       <legend>
@@ -598,7 +585,7 @@ function DisplaySection({ platform }: { platform: string | null }): React.JSX.El
                   'Automatic reads your Mac’s screen, and follows its brightness. State the numbers only to preview for another screen.'
                 )
               : t(
-                  'Set your screen’s SDR white and peak brightness (in Windows’ HDR settings, or its specifications).'
+                  'Automatic turns Full HDR on when Windows shows HDR, with typical values (white 203, peak 1000). State your screen’s own (in Windows’ HDR settings, or its specifications) for a closer preview.'
                 )
           }}
         />
@@ -609,7 +596,7 @@ function DisplaySection({ platform }: { platform: string | null }): React.JSX.El
         options={[
           {
             value: 'auto',
-            label: mac ? t('Automatic (read the screen)') : t('Automatic (SDR until stated)')
+            label: mac ? t('Automatic (read the screen)') : t('Automatic (detect HDR)')
           },
           { value: 'stated', label: t('Stated') }
         ]}
@@ -643,36 +630,34 @@ function DisplaySection({ platform }: { platform: string | null }): React.JSX.El
           </label>
         </div>
       )}
-      {!mac && (
-        <div className="prefs-row">
-          <button className="sm" onClick={autoFill}>
-            {t('Auto-fill from this screen')}
-          </button>
-        </div>
-      )}
       {now && (
         <p className="muted small">
-          {now.hdr
-            ? now.potential
-              ? t(
-                  'Now: {{headroom}}× headroom (white {{white}}, peak {{peak}} cd/m²), up to {{potential}}× on this screen.',
-                  {
+          {now.hdr && now.source === 'detected'
+            ? t('Now: HDR, with typical values (white {{white}}, peak {{peak}} cd/m²).', {
+                white: now.whiteNits,
+                peak: Math.round(now.peakNits)
+              })
+            : now.hdr
+              ? now.potential
+                ? t(
+                    'Now: {{headroom}}× headroom (white {{white}}, peak {{peak}} cd/m²), up to {{potential}}× on this screen.',
+                    {
+                      headroom: now.headroom,
+                      white: now.whiteNits,
+                      peak: Math.round(now.peakNits),
+                      potential: now.potential
+                    }
+                  )
+                : t('Now: {{headroom}}× headroom (white {{white}}, peak {{peak}} cd/m²).', {
                     headroom: now.headroom,
                     white: now.whiteNits,
-                    peak: Math.round(now.peakNits),
+                    peak: Math.round(now.peakNits)
+                  })
+              : now.potential && now.potential > 1
+                ? t('Now: SDR. This screen reaches {{potential}}× when it shows HDR.', {
                     potential: now.potential
-                  }
-                )
-              : t('Now: {{headroom}}× headroom (white {{white}}, peak {{peak}} cd/m²).', {
-                  headroom: now.headroom,
-                  white: now.whiteNits,
-                  peak: Math.round(now.peakNits)
-                })
-            : now.potential && now.potential > 1
-              ? t('Now: SDR. This screen reaches {{potential}}× when it shows HDR.', {
-                  potential: now.potential
-                })
-              : t('Now: SDR.')}
+                  })
+                : t('Now: SDR.')}
         </p>
       )}
     </fieldset>

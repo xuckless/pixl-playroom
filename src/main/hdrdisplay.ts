@@ -1,7 +1,9 @@
 /**
  * The window's display as an HDR target (engine 0.18): macOS's EDR headroom
  * through Playroom's native reader (src/native/display, built by
- * scripts/build-native.mjs), or the white and peak stated in Preferences.
+ * scripts/build-native.mjs), or the white and peak stated in Preferences,
+ * or typical numbers when the renderer says the screen shows HDR (Windows,
+ * which has no reader; a Mac whose reader did not load).
  * Re-read when the displays change and every 2 s on macOS (the headroom
  * moves with the brightness slider and ambient light, and macOS raises it
  * only while a window shows extended-range content); published when it
@@ -54,6 +56,8 @@ function nativeReader(): Reader | null {
 }
 
 let setting: DisplayHdrSetting = normaliseDisplaySetting(null)
+/** The renderer's `dynamic-range: high` for the window's screen. */
+let detected = false
 let last: DisplayHdr | null = null
 let win: BrowserWindow | null = null
 
@@ -68,7 +72,7 @@ function read(): DisplayHdr {
       log.warn('display headroom not read', (err as Error).message)
     }
   }
-  return resolveDisplay(setting, measured)
+  return resolveDisplay(setting, measured, detected)
 }
 
 function publish(): void {
@@ -88,6 +92,15 @@ export function setDisplaySetting(v: unknown): DisplayHdr {
   setting = normaliseDisplaySetting(v)
   last = null
   publish()
+  return displayHdr()
+}
+
+/** The renderer says whether the window's screen shows HDR now. */
+export function setDisplayDetected(hdr: boolean): DisplayHdr {
+  if (hdr !== detected) {
+    detected = hdr
+    publish()
+  }
   return displayHdr()
 }
 

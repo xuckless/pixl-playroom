@@ -13,7 +13,13 @@ import {
   sdrRendition,
   withGainMap
 } from '../src/shared/export'
-import { applyGroups, defaultRecipe, normaliseRecipe } from '../src/shared/recipe'
+import {
+  applyGroups,
+  defaultRecipe,
+  editsInHdr,
+  normaliseRecipe,
+  RECIPE_VERSION
+} from '../src/shared/recipe'
 import {
   cellFactor,
   proxyByCell,
@@ -170,15 +176,44 @@ test("a LUT profile keeps an HDR photo's headroom and clamps an SDR one as befor
   assert.equal(lut(compile(e, ctx)).out_of_domain, 'Clamp')
 })
 
-test('a recipe edits a gain map on its base unless it says HDR, and sync carries it', () => {
-  assert.equal(defaultRecipe(false).gainMap, 'base')
-  assert.equal(normaliseRecipe({ gainMap: 'nonsense' }, false).gainMap, 'base')
-  assert.equal(normaliseRecipe({ gainMap: 'hdr' }, false).gainMap, 'hdr')
-  const from = { ...defaultRecipe(false), gainMap: 'hdr' as const }
-  assert.equal(applyGroups(defaultRecipe(false), from, ['hdr']).gainMap, 'hdr')
+test('a gain-map photo is edited in HDR unless it says SDR, and sync carries it', () => {
+  assert.equal(defaultRecipe(false).gainMap, 'hdr')
+  const now = { version: RECIPE_VERSION }
+  assert.equal(normaliseRecipe({ ...now, gainMap: 'nonsense' }, false).gainMap, 'hdr')
+  assert.equal(normaliseRecipe({ ...now, gainMap: 'base' }, false).gainMap, 'base')
+  const from = { ...defaultRecipe(false), gainMap: 'base' as const }
+  assert.equal(applyGroups(defaultRecipe(false), from, ['hdr']).gainMap, 'base')
   // Noise reduction now carries the AI denoise with it.
   from.detail.ai.enabled = true
   assert.equal(applyGroups(defaultRecipe(false), from, ['detailNoise']).detail.ai.enabled, true)
+})
+
+test('version 5: gain-map photos move to HDR, unless they have pixel steps', () => {
+  const step = { id: 's', kind: 'denoise', label: 'AI Denoise', blob: 'b', alpha: null }
+  // Before 5, SDR was the default: every one moves, edited or not…
+  assert.equal(normaliseRecipe({ version: 4, gainMap: 'base' }, false).gainMap, 'hdr')
+  assert.equal(normaliseRecipe({ version: 4, gainMap: 'hdr' }, false).gainMap, 'hdr')
+  // …but one with AI steps (made on the SDR picture) keeps it.
+  const ai = normaliseRecipe({ version: 4, gainMap: 'hdr', pixels: [step] }, false)
+  assert.equal(ai.gainMap, 'base')
+  // From 5 on, the photo's own choice stays.
+  assert.equal(normaliseRecipe({ version: 5, gainMap: 'base' }, false).gainMap, 'base')
+})
+
+test('a photo is edited in HDR only with a gain map, asked for, and no pixel steps', () => {
+  const r = defaultRecipe(false)
+  assert.equal(editsInHdr(r, true), true)
+  assert.equal(editsInHdr(r, false), false)
+  assert.equal(editsInHdr({ ...r, gainMap: 'base' }, true), false)
+  const withStep = { ...r, pixels: [{ id: 's' } as (typeof r.pixels)[number]] }
+  assert.equal(editsInHdr(withStep, true), false)
+})
+
+test('SDR → HDR exports default to an Apple XDR peak and a brighter white', () => {
+  const s = defaultExportSettings()
+  assert.equal(s.hdr.mode, 'sdr')
+  assert.equal(s.hdr.peak, 1600)
+  assert.equal(s.hdr.sdrWhite, 350)
 })
 
 test('a RAW proxy develops at half size when its cells are more than the proxy needs', () => {

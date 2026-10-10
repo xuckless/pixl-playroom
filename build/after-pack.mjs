@@ -201,8 +201,29 @@ export default async function afterPack(context) {
         `engine's notices ("${engineFirstLine}"); run pnpm notices`
     )
   }
+  // macOS: Playroom's own display reader (scripts/build-native.mjs), the
+  // screen's EDR headroom. 0.4.0 and 0.4.1 shipped without it (the release
+  // built with electron-vite alone) and every Mac took its screen for SDR,
+  // so Full HDR could not be turned on: a missing or foreign one fails here.
+  let reader = ''
+  if (electronPlatformName === 'darwin') {
+    const file = path.join(packager.getResourcesDir(appOutDir), 'native', 'display.node')
+    if (!existsSync(file)) {
+      throw new Error(
+        `display reader check failed for ${target}: ${file} is missing, so Full HDR would never turn on; ` +
+          `run node scripts/build-native.mjs for this arch before packaging`
+      )
+    }
+    const readerArch = binaryArch(file)
+    if (readerArch !== arch && readerArch !== 'universal') {
+      throw new Error(
+        `display reader check failed for ${target}: display.node is ${readerArch}, not ${arch}`
+      )
+    }
+    reader = ' display.node'
+  }
   console.log(
     `  • engine binding ok  target=${target} package=${expected}@${version} addon=${addons[0]} ` +
-      `onnxruntime=${ort.version} (${ort.providers.join(', ')}) ${libraw} and its sources`
+      `onnxruntime=${ort.version} (${ort.providers.join(', ')}) ${libraw} and its sources${reader}`
   )
 }

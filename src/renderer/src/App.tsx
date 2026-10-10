@@ -1,3 +1,4 @@
+import { EditingSpaceDialog } from './views/EditingSpace'
 import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect, useState } from 'react'
 import type { AiJobEvent } from '../../shared/ai'
@@ -124,6 +125,7 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'whats-new' && <WhatsNewDialog key="whats-new" />}
       {dialog === 'update' && <UpdateDialog key="update" />}
       {dialog === 'scopes' && <ScopesExpandedDialog key="scopes" />}
+      {dialog === 'editing-space' && <EditingSpaceDialog key="editing-space" />}
     </AnimatePresence>
   )
 }

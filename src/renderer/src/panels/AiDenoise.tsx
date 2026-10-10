@@ -5,6 +5,7 @@
  * in History, and its Strength changes, without the model running again.
  * With a mask selected the step is made inside it (the mask frozen as it is).
  */
+import { HdrAiNote } from './HdrAiNote'
 import { useEffect, useState } from 'react'
 import { NAFNET_DENOISE, type AiDenoiseModel } from '../../../shared/recipe'
 import { staleRawStep, type PixelStep } from '../../../shared/pixels'
@@ -147,7 +148,8 @@ export function AiDenoise(): React.JSX.Element | null {
   const pct = job?.progress == null ? null : Math.round(job.progress * 100)
 
   let status: string | null = null
-  if (isHdr) status = t('HDR photos cannot take AI pixel steps yet')
+  // An HDR photo: HdrAiNote below says why, and offers the SDR editing space.
+  if (isHdr) status = null
   else if (running)
     status =
       job.phase === 'queued'
@@ -193,6 +195,7 @@ export function AiDenoise(): React.JSX.Element | null {
         onChange={(v) => setPrefs({ strength: v })}
         onCommit={() => undefined}
       />
+      <HdrAiNote />
       <div className="ai-denoise-status">
         {status && (
           <span className={job?.phase === 'error' && !running ? 'error' : undefined}>{status}</span>

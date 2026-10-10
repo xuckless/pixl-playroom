@@ -16,7 +16,7 @@
 import { mkdir, readFile, readdir, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import type { GainMapMode, HdrWorking, SourceInfo } from '../shared/engine-types'
-import type { Recipe } from '../shared/recipe'
+import { editsInHdr, type Recipe } from '../shared/recipe'
 import type { PhotoRow } from './db'
 import type { EngineClient } from './engine/client'
 import { exists } from './exists'
@@ -41,9 +41,9 @@ export function appliedPeak(info: SourceInfo): number {
   return Math.min(10000, Math.round(GAIN_MAP_WHITE_NITS * 2 ** appliedHeadroom(info)))
 }
 
-/** Whether a photo is edited on its gain map's HDR rendition. */
-export function editsHdr(recipe: Pick<Recipe, 'gainMap'>, info: SourceInfo): boolean {
-  return recipe.gainMap === 'hdr' && !!info.gain_map
+/** Whether a photo is edited on its gain map's HDR rendition (shared/recipe `editsInHdr`). */
+export function editsHdr(recipe: Pick<Recipe, 'gainMap' | 'pixels'>, info: SourceInfo): boolean {
+  return editsInHdr(recipe, !!info.gain_map)
 }
 
 export interface HdrSource {

@@ -167,8 +167,10 @@ export function defaultExportSettings(): ExportSettings {
       targetPeak: 203,
       gamut: 'Compress',
       to: 'Rec2100Pq',
-      peak: 1000,
-      sdrWhite: 203,
+      // SDR → HDR's defaults (the owner): an Apple XDR screen's sustained
+      // peak, and a white bright enough to sit beside it.
+      peak: 1600,
+      sdrWhite: 350,
       referenceWhite: 203,
       limit: 'clip',
       knee: 100,

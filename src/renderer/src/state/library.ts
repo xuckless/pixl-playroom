@@ -83,6 +83,8 @@ interface LibraryState {
     | 'scopes'
     /** An update is available: what it brings, and Restart to update. */
     | 'update'
+    /** Photo → Edit as SDR: the open gain-map photo's editing space. */
+    | 'editing-space'
   /** The collection the 'collection' dialog edits. */
   editing: CollectionDraft | null
   clipboard: { recipe: Recipe; groups: RecipeGroup[]; source: string | null } | null

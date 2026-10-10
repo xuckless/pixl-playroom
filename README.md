@@ -176,8 +176,8 @@ gain maps).
 ### Interface
 
 Two tiers (identity: photo, frame, engine status; tools:
-library, undo and redo, view modes, SDR | HDR, the masks window, engine
-report, virtual copy, export). The left rail is a spine of Presets,
+library, undo and redo, Full HDR and the view modes, each with a note on
+hover, engine report, virtual copy, export). The left rail is a spine of Presets,
 Snapshots, History and Info, one pane at a time, folding to the spine. The
 right column pins the scopes above the tool strip (Crop, Heal, Masks; Jump
 to, which opens a card and scrolls to it; and a solo switch, under which
@@ -261,6 +261,10 @@ location" to strip GPS.
 
 ### Enhance
 
+**Held** until Playroom's own models (0.4.2): the card shows greyed with a
+note and runs nothing (`ENHANCE_HELD` in `src/renderer/src/panels/enhance.tsx`);
+steps already made keep rendering. As it was:
+
 The last card in the right column runs the engine's enhance
 chain over the photo's original, in its fixed order: a JPEG rebuilt from its
 DCT coefficients (no model) or FBCNN's JPEG restore, NAFNet's motion deblur,
@@ -314,23 +318,28 @@ publishes it.
 
 The grid marks HDR photos (a gain map, PQ or HLG).
 A gain-map photo (an iPhone HEIC, an UltraHDR JPEG, an Apple JPEG) is edited
-on its SDR picture, or with the toolbar's **SDR | HDR** on the HDR rendition
-its map lifts it to: the map applied once at the file's headroom into a PQ
-master (`src/main/hdrsource.ts`), which the loupe, the 1:1 view, the
-thumbnails and the export then grade like any PQ photo, with the HDR
-histogram. **Headroom** in the view bar colours where the picture rises
-above white, amber to magenta at its peak. On an HDR photo the grade keeps
+in HDR: on the rendition its map lifts it to, the map applied once at the
+file's headroom into a PQ master (`src/main/hdrsource.ts`), which the loupe,
+the 1:1 view, the thumbnails and the export then grade like any PQ photo,
+with the HDR histogram. **Photo → Edit as SDR…** edits the SDR picture the
+file stores instead, per photo; a photo with pixel steps (AI Denoise,
+Enhance, baked heals), which an HDR photo cannot take yet, stays in SDR
+(`editsInHdr` in `src/shared/recipe.ts`). **Headroom** in the view bar
+colours where the picture rises above white, amber to magenta at its peak,
+on every photo with light above white (a RAW too); greyed on an SDR one. On an HDR photo the grade keeps
 its highlights: positive exposure has no SDR shoulder, tone curves run on
 past white, and a LUT profile keeps the headroom.
 
 **Full HDR** (engine 0.18) shows any photo with its light above white while
 editing, on a display that has headroom: drafts and the settled picture are
 rendered for that display (its SDR white and peak; Settings → Display reads
-them on macOS, or takes them as stated) into 16-bit float and drawn on a
+them on macOS, takes typical ones where the system says the screen shows
+HDR, as on Windows, or takes them as stated) into 16-bit float and drawn on a
 WebGPU canvas; the Before and the 1:1 view come as AVIFs with a gain map.
 What reads the picture (the eyedropper, scopes, overlays, a range's key)
 reads an SDR companion of the same render. Off, or on an SDR display, the
-picture is SDR as before. A RAW is developed in floating point with its blown
+picture is SDR as before; an SDR photo is always shown SDR. Full HDR is on
+by default. A RAW is developed in floating point with its blown
 highlights rebuilt (engine 0.18's Scene master), and rolls softly into white
 when shown in SDR.
 
