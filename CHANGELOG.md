@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.2-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.1-beta...v0.4.2-beta) (2026-10-10)
+
+
+### Bug Fixes
+
+* Full HDR on Macs, HDR editing space, Headroom everywhere (0.4.2-beta, silent) ([ad7d964](https://github.com/xuckless/pixl-playroom/commit/ad7d964253a0304ee0632d048d733fe39ae4cacb))
+* HDR working space should work properly ([ca45e02](https://github.com/xuckless/pixl-playroom/commit/ca45e0200e2777a861054b8e0ec318e41c323b79))
+
+
+### Maintenance
+
+* release 0.4.2-beta (silent) ([2848e1e](https://github.com/xuckless/pixl-playroom/commit/2848e1e9825eaefd40e4f8d7bda4765b7fe23a68))
+
 ## [0.4.1-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.0-beta...v0.4.1-beta) (2026-10-09)
 
 
