@@ -29,6 +29,7 @@ import { developMark } from '../../../shared/rawcolour'
 import { allInstalled, useModels } from '../lib/models'
 import { Section, Select, Slider, Toggle, ToolPanel } from '../components/ui'
 import { TIPS } from './tips'
+import { HdrAiNote } from './HdrAiNote'
 import { api, errorText } from '../lib/api'
 import { useDevelop } from '../state/develop'
 import { useAiJobs } from '../state/jobs'
@@ -80,6 +81,9 @@ const duration = (ms: number): string =>
 
 const bytes = (b: number): string =>
   b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`
+
+/** Enhance is held until Playroom's own models: the panel shows, greyed, and runs nothing. */
+const ENHANCE_HELD = true
 
 /** The jobs started from this panel, newest batch last (kept across the panel's remounts). */
 let batch: string[] = []
@@ -156,179 +160,193 @@ export function EnhancePanel(): React.JSX.Element | null {
 
   return (
     <ToolPanel>
-      {stale > 0 && (
-        <p className="pixel-step-stale">
-          {tp(
-            'One Enhance step was made from the previous RAW develop. Undo it in History and run Enhance again to match this one.',
-            '{{count}} Enhance steps were made from the previous RAW develop. Undo it in History and run Enhance again to match this one.',
-            stale
-          )}
-        </p>
-      )}
-      <Section id="enhance.jpeg" title={t('JPEG restore')} tip={TIPS['enhance.jpeg']}>
-        <Select
-          label={t('Method')}
-          value={s.jpeg}
-          options={shown(JPEG_OPTIONS)}
-          onChange={(jpeg) => set({ jpeg })}
-        />
-        {!isJpeg && s.jpeg !== 'off' && (
-          <p className="muted small">
-            {t(SKIPPED[info.input] ?? 'Skipped: this photo is not a JPEG.')}
+      {/* Held until Playroom's own models (the owner, 0.4.x): greyed, not
+          gone, and the steps already made keep rendering. */}
+      <p className="note small enhance-held">
+        {t(
+          'Enhance is coming back in a future update, with models we’re training ourselves. Photos you’ve already enhanced keep their result.'
+        )}
+      </p>
+      <HdrAiNote offer={false} />
+      <div className="enhance-held-body" inert aria-disabled>
+        {stale > 0 && (
+          <p className="pixel-step-stale">
+            {tp(
+              'One Enhance step was made from the previous RAW develop. Undo it in History and run Enhance again to match this one.',
+              '{{count}} Enhance steps were made from the previous RAW develop. Undo it in History and run Enhance again to match this one.',
+              stale
+            )}
           </p>
         )}
-        {s.jpeg === 'reconstruct' && (
-          <>
-            <Slider
-              label={t('Smoothing')}
-              value={s.smoothing}
-              min={0}
-              max={100}
-              def={50}
-              onChange={(smoothing) => set({ smoothing })}
-              onCommit={() => undefined}
-              title={t(
-                "How far the blocks and banding are smoothed: only ever into what the file's own coefficients allow"
+        <Section id="enhance.jpeg" title={t('JPEG restore')} tip={TIPS['enhance.jpeg']}>
+          <Select
+            label={t('Method')}
+            value={s.jpeg}
+            options={shown(JPEG_OPTIONS)}
+            onChange={(jpeg) => set({ jpeg })}
+          />
+          {!isJpeg && s.jpeg !== 'off' && (
+            <p className="muted small">
+              {t(SKIPPED[info.input] ?? 'Skipped: this photo is not a JPEG.')}
+            </p>
+          )}
+          {s.jpeg === 'reconstruct' && (
+            <>
+              <Slider
+                label={t('Smoothing')}
+                value={s.smoothing}
+                min={0}
+                max={100}
+                def={50}
+                onChange={(smoothing) => set({ smoothing })}
+                onCommit={() => undefined}
+                title={t(
+                  "How far the blocks and banding are smoothed: only ever into what the file's own coefficients allow"
+                )}
+              />
+              {subsampled && (
+                <Toggle on={s.guidedChroma} onChange={(guidedChroma) => set({ guidedChroma })}>
+                  {t('Colour follows edges')}
+                </Toggle>
               )}
-            />
-            {subsampled && (
-              <Toggle on={s.guidedChroma} onChange={(guidedChroma) => set({ guidedChroma })}>
-                {t('Colour follows edges')}
-              </Toggle>
-            )}
-          </>
-        )}
-        {s.jpeg === 'fbcnn' && (
-          <>
-            <Slider
-              label={t('Strength')}
-              value={s.jpegStrength}
-              min={1}
-              max={100}
-              def={100}
-              onChange={(jpegStrength) => set({ jpegStrength })}
-              onCommit={() => undefined}
-            />
-            <ModelGet id="fbcnn-color-blind" models={models} />
-          </>
-        )}
-      </Section>
+            </>
+          )}
+          {s.jpeg === 'fbcnn' && (
+            <>
+              <Slider
+                label={t('Strength')}
+                value={s.jpegStrength}
+                min={1}
+                max={100}
+                def={100}
+                onChange={(jpegStrength) => set({ jpegStrength })}
+                onCommit={() => undefined}
+              />
+              <ModelGet id="fbcnn-color-blind" models={models} />
+            </>
+          )}
+        </Section>
 
-      <Section id="enhance.deblur" title={t('Deblur')} tip={TIPS['enhance.deblur']}>
-        <Toggle on={s.deblur} onChange={(deblur) => set({ deblur })}>
-          {t('Remove motion blur')}
-        </Toggle>
-        {s.deblur && (
-          <>
-            <Slider
-              label={t('Strength')}
-              value={s.deblurStrength}
-              min={1}
-              max={100}
-              def={100}
-              onChange={(deblurStrength) => set({ deblurStrength })}
-              onCommit={() => undefined}
-            />
-            <ModelGet id="nafnet-gopro-w32" models={models} />
-          </>
-        )}
-      </Section>
+        <Section id="enhance.deblur" title={t('Deblur')} tip={TIPS['enhance.deblur']}>
+          <Toggle on={s.deblur} onChange={(deblur) => set({ deblur })}>
+            {t('Remove motion blur')}
+          </Toggle>
+          {s.deblur && (
+            <>
+              <Slider
+                label={t('Strength')}
+                value={s.deblurStrength}
+                min={1}
+                max={100}
+                def={100}
+                onChange={(deblurStrength) => set({ deblurStrength })}
+                onCommit={() => undefined}
+              />
+              <ModelGet id="nafnet-gopro-w32" models={models} />
+            </>
+          )}
+        </Section>
 
-      <Section id="enhance.upscale" title={t('Super resolution')} tip={TIPS['enhance.upscale']}>
-        <Select
-          label={t('Scale')}
-          value={s.upscale}
-          options={shown(UPSCALE_OPTIONS)}
-          onChange={(upscale) => set({ upscale })}
-        />
-        {s.upscale !== 'off' && (
-          <>
-            <Select
-              label={t('Source')}
-              value={s.upscaleSource}
-              options={shown(SOURCE_OPTIONS)}
-              onChange={(upscaleSource) => set({ upscaleSource })}
-            />
-            <ModelGet id={ENHANCE_MODEL[s.upscaleSource]} models={models} />
-          </>
-        )}
-      </Section>
+        <Section id="enhance.upscale" title={t('Super resolution')} tip={TIPS['enhance.upscale']}>
+          <Select
+            label={t('Scale')}
+            value={s.upscale}
+            options={shown(UPSCALE_OPTIONS)}
+            onChange={(upscale) => set({ upscale })}
+          />
+          {s.upscale !== 'off' && (
+            <>
+              <Select
+                label={t('Source')}
+                value={s.upscaleSource}
+                options={shown(SOURCE_OPTIONS)}
+                onChange={(upscaleSource) => set({ upscaleSource })}
+              />
+              <ModelGet id={ENHANCE_MODEL[s.upscaleSource]} models={models} />
+            </>
+          )}
+        </Section>
 
-      <Section id="enhance.run" title={t('Apply')} tip={TIPS['enhance.apply']}>
-        <div className="enhance-sum">
-          <span>
-            {session.frameWidth} × {session.frameHeight}
-            {k > 1 && (
-              <>
-                {' → '}
-                <b>
-                  {outW} × {outH}
-                </b>
-              </>
-            )}
-          </span>
-          <span className="muted">
-            {t('{{mp}} MP · ~{{size}} in the project', {
-              mp: outMp.toFixed(0),
-              size: bytes(outW * outH * (session.isRaw ? 2.3 : 0.4))
-            })}
-          </span>
-          {steps.length > 0 && (
-            <span className="muted" title={t('From how fast earlier runs went here')}>
-              {steps.map((p) => p.label).join(' → ')} · ~{duration(eta)}
+        <Section id="enhance.run" title={t('Apply')} tip={TIPS['enhance.apply']}>
+          <div className="enhance-sum">
+            <span>
+              {session.frameWidth} × {session.frameHeight}
+              {k > 1 && (
+                <>
+                  {' → '}
+                  <b>
+                    {outW} × {outH}
+                  </b>
+                </>
+              )}
             </span>
+            <span className="muted">
+              {t('{{mp}} MP · ~{{size}} in the project', {
+                mp: outMp.toFixed(0),
+                size: bytes(outW * outH * (session.isRaw ? 2.3 : 0.4))
+              })}
+            </span>
+            {steps.length > 0 && (
+              <span className="muted" title={t('From how fast earlier runs went here')}>
+                {steps.map((p) => p.label).join(' → ')} · ~{duration(eta)}
+              </span>
+            )}
+          </div>
+          {outMp > LARGE_OUTPUT_MP && (
+            <p className="note small">
+              {t('A {{mp}} MP file is large to edit; consider ×2.', { mp: outMp.toFixed(0) })}
+            </p>
           )}
-        </div>
-        {outMp > LARGE_OUTPUT_MP && (
-          <p className="note small">
-            {t('A {{mp}} MP file is large to edit; consider ×2.', { mp: outMp.toFixed(0) })}
-          </p>
-        )}
-        {refusal && <p className="muted small">{refusal}</p>}
-        <div className="enhance-run">
-          <button className="primary" disabled={!ready} onClick={() => void run()}>
-            {many
-              ? tp('Enhance {{count}} photo', 'Enhance {{count}} photos', targets.length)
-              : layer && k === 1
-                ? t('Enhance inside {{layer}}', { layer: layer.name })
-                : t('Enhance')}
-          </button>
-          {running && (
+          {refusal && <p className="muted small">{refusal}</p>}
+          <div className="enhance-run">
             <button
-              className="ghost"
-              onClick={() => ids.forEach((id) => void api.ai.cancel(id))}
-              title={t('Stop this batch')}
+              className="primary"
+              disabled={!ready || ENHANCE_HELD}
+              onClick={() => void run()}
             >
-              {t('Cancel')}
+              {many
+                ? tp('Enhance {{count}} photo', 'Enhance {{count}} photos', targets.length)
+                : layer && k === 1
+                  ? t('Enhance inside {{layer}}', { layer: layer.name })
+                  : t('Enhance')}
             </button>
+            {running && (
+              <button
+                className="ghost"
+                onClick={() => ids.forEach((id) => void api.ai.cancel(id))}
+                title={t('Stop this batch')}
+              >
+                {t('Cancel')}
+              </button>
+            )}
+          </div>
+          {list.length > 0 && (
+            <ul className="enhance-jobs">
+              {list.map((j) => (
+                <li key={j.jobId} className={j.phase}>
+                  <span className="name">{j.name}</span>
+                  <span className="muted">
+                    {j.phase === 'running'
+                      ? j.progress !== null
+                        ? `${j.estimated ? '~' : ''}${Math.round(j.progress * 100)}%`
+                        : t('Working…')
+                      : j.phase === 'queued'
+                        ? t('Waiting')
+                        : j.phase === 'done'
+                          ? t('Added')
+                          : j.phase === 'cancelled'
+                            ? t('Cancelled')
+                            : (j.message ?? t('Failed'))}
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
-        </div>
-        {list.length > 0 && (
-          <ul className="enhance-jobs">
-            {list.map((j) => (
-              <li key={j.jobId} className={j.phase}>
-                <span className="name">{j.name}</span>
-                <span className="muted">
-                  {j.phase === 'running'
-                    ? j.progress !== null
-                      ? `${j.estimated ? '~' : ''}${Math.round(j.progress * 100)}%`
-                      : t('Working…')
-                    : j.phase === 'queued'
-                      ? t('Waiting')
-                      : j.phase === 'done'
-                        ? t('Added')
-                        : j.phase === 'cancelled'
-                          ? t('Cancelled')
-                          : (j.message ?? t('Failed'))}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {layer && k > 1 && (
-          <p className="muted small">{t('An upscale is always the whole photo.')}</p>
-        )}
-      </Section>
+          {layer && k > 1 && (
+            <p className="muted small">{t('An upscale is always the whole photo.')}</p>
+          )}
+        </Section>
+      </div>
     </ToolPanel>
   )
 }

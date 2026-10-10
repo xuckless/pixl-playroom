@@ -35,6 +35,27 @@ test('stated numbers win; nothing read and nothing stated is SDR', () => {
   assert.deepEqual([sdr.hdr, sdr.peakNits, sdr.source], [false, 203, 'none'])
 })
 
+test('a screen the system says shows HDR takes typical numbers, below a reading or a statement', () => {
+  const detected = resolveDisplay(DEFAULT_DISPLAY_SETTING, null, true)
+  assert.deepEqual(
+    [detected.hdr, detected.whiteNits, detected.peakNits, detected.source],
+    [true, 203, 1000, 'detected']
+  )
+  // The Mac's reading wins (it follows the brightness), and so do stated numbers.
+  const mac = resolveDisplay(DEFAULT_DISPLAY_SETTING, { current: 4, potential: 16 }, true)
+  assert.equal(mac.source, 'screen')
+  const stated = resolveDisplay({ mode: 'stated', whiteNits: 240, peakNits: 1200 }, null, true)
+  assert.equal(stated.source, 'stated')
+})
+
+test('Full HDR renders a detected screen at its typical numbers, as given', async () => {
+  const { renderDisplay, canShowHdr } = await import('../src/shared/hdrdisplay')
+  const d = resolveDisplay(DEFAULT_DISPLAY_SETTING, null, true)
+  assert.ok(canShowHdr(d))
+  assert.deepEqual(renderDisplay(true, d), { whiteNits: 203, peakNits: 1000 })
+  assert.equal(renderDisplay(false, d), null)
+})
+
 test('a stored setting is held to what a display can be', () => {
   assert.deepEqual(normaliseDisplaySetting({ mode: 'stated', whiteNits: 5, peakNits: 99999 }), {
     mode: 'stated',

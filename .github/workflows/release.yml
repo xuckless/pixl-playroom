@@ -125,6 +125,17 @@ jobs:
       - name: Build renderer, preload and main
         run: pnpm exec electron-vite build
 
+      # macOS: Playroom's display reader (src/native/display), the screen's
+      # EDR headroom Full HDR needs, built for this job's arch against the
+      # Electron it ships. `pnpm build` does this; the release builds step by
+      # step, and 0.4.0/0.4.1 shipped without it. build/after-pack.mjs
+      # refuses a Mac app that lacks it.
+      - name: Display reader (macOS)
+        if: runner.os == 'macOS'
+        run: node scripts/build-native.mjs
+        env:
+          npm_config_arch: ${{ matrix.arch }}
+
       # After the build (it reads what the bundles contain); ONNX Runtime's
       # own notices come from the engine's platform package.
       - name: Third-party notices

@@ -51,5 +51,8 @@ export function migrateUi(persisted: unknown, version: number): Saved {
   // 7: the flat UI became the default (the owner: it looks better); every
   // layout takes it once, and Settings can turn the glass back on.
   if (version < 7) p.alwaysFlat = true
+  // 8: Full HDR starts on (the owner): it shows wherever the screen can, and
+  // 0.4.0/0.4.1 could not turn it on at all on a Mac (no display reader).
+  if (version < 8) p.fullHdr = true
   return p
 }

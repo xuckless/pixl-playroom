@@ -116,6 +116,7 @@ const api = {
     displayHdr: () => call<DisplayHdr>(IPC.app.displayHdr),
     setDisplayHdr: (setting: DisplayHdrSetting) => call<DisplayHdr>(IPC.app.setDisplayHdr, setting),
     onDisplayHdr: (cb: (d: DisplayHdr) => void) => on(IPC.app.displayHdrChanged, cb),
+    displayDetected: (hdr: boolean) => call<DisplayHdr>(IPC.app.displayDetected, hdr),
     restart: () => call<void>(IPC.app.restart),
     onRenderScale: (cb: (s: RenderScale) => void) => on(IPC.app.renderScaleChanged, cb),
     takeOpens: () => call<string[]>(IPC.app.takeOpens),

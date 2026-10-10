@@ -19,8 +19,12 @@ export interface DisplayHdr {
   headroom: number
   /** The most this screen can reach (macOS's potential EDR), when known. */
   potential: number | null
-  /** Where the numbers came from: the screen (macOS), the user, or nowhere (SDR assumed). */
-  source: 'screen' | 'stated' | 'none'
+  /**
+   * Where the numbers came from: the screen (macOS), the user, the system
+   * saying it shows HDR (typical numbers: Windows, or a Mac without the
+   * reader), or nowhere (SDR assumed).
+   */
+  source: 'screen' | 'stated' | 'detected' | 'none'
 }
 
 /** What the user set in Preferences → Display. */
@@ -50,14 +54,19 @@ export function normaliseDisplaySetting(v: unknown): DisplayHdrSetting {
   }
 }
 
+/** The peak taken for a screen the system says shows HDR, when nothing reads its own. */
+export const DETECTED_PEAK = 1000
+
 /**
  * The display's numbers: stated ones when the user set them; else the
  * screen's EDR headroom (`white 203, peak 203 · H`, the engine's recipe for
- * macOS); else SDR.
+ * macOS); else typical numbers (white 203, peak 1000) when the system says
+ * the screen shows HDR (`detected`: Chromium's `dynamic-range: high`); else SDR.
  */
 export function resolveDisplay(
   setting: DisplayHdrSetting,
-  screen: { current: number; potential: number } | null
+  screen: { current: number; potential: number } | null,
+  detected = false
 ): DisplayHdr {
   if (setting.mode === 'stated') {
     const headroom = setting.peakNits / setting.whiteNits
@@ -81,6 +90,15 @@ export function resolveDisplay(
       source: 'screen'
     }
   }
+  if (detected)
+    return {
+      hdr: true,
+      whiteNits: REFERENCE_WHITE,
+      peakNits: DETECTED_PEAK,
+      headroom: round(DETECTED_PEAK / REFERENCE_WHITE),
+      potential: null,
+      source: 'detected'
+    }
   return {
     hdr: false,
     whiteNits: REFERENCE_WHITE,
@@ -135,8 +153,8 @@ export function renderDisplay(
   display: DisplayHdr | null
 ): { whiteNits: number; peakNits: number } | null {
   if (!fullHdr || !display || !canShowHdr(display)) return null
-  // Stated numbers are the owner's, as given; a screen's reading in steps.
-  if (display.hdr && display.source === 'stated')
+  // Stated or typical numbers are as given; a screen's reading in steps.
+  if (display.hdr && (display.source === 'stated' || display.source === 'detected'))
     return { whiteNits: display.whiteNits, peakNits: display.peakNits }
   if (display.hdr) {
     const h = steppedHeadroom(display.headroom)

@@ -1,3 +1,4 @@
+import { aboveWhite } from '../../state/display'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { loupeContextMenu } from '../../lib/menus'
 import { readable } from '../../lib/frames'
@@ -163,7 +164,8 @@ export function Loupe(): React.JSX.Element {
   const tool = useDevelop((s) => s.tool)
   const compare = useDevelop((s) => s.compare)
   const clipping = useDevelop((s) => s.clipping)
-  const headroom = useDevelop((s) => s.headroom && s.session?.isHdr === true)
+  // Every photo with light above white: a RAW or an HDR one (state/display `aboveWhite`).
+  const headroom = useDevelop((s) => s.headroom && aboveWhite(s.session))
   const headroomPlane = useDevelop((s) => s.headroomPlane)
   const zoom = useDevelop((s) => s.zoom)
   const layerId = useDevelop((s) => s.layerId)

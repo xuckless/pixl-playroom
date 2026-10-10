@@ -23,7 +23,7 @@ import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
 import { useLibrary } from './library'
 import { useUi } from './ui'
-import { renderDisplay, useDisplay } from './display'
+import { aboveWhite, renderDisplay, useDisplay } from './display'
 import type { GuideLine } from '../../../shared/upright'
 import type { InvariantPlace } from '../../../shared/invariant'
 
@@ -687,8 +687,13 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       // With a range selected its mask comes with every draft: only the
       // engine knows exactly what the key selects in the graded picture.
       maskLive: rangeSelected(get()),
-      headroom: get().headroom && session.isHdr,
-      display: renderDisplay(useUi.getState().fullHdr, useDisplay.getState().display),
+      // Every photo whose editing space has light above white: a RAW or an HDR one.
+      headroom: get().headroom && aboveWhite(session),
+      // Full HDR for those too; an SDR photo (a gain-map one edited in SDR
+      // among them) shows its SDR picture, which has nothing above white.
+      display: aboveWhite(session)
+        ? renderDisplay(useUi.getState().fullHdr, useDisplay.getState().display)
+        : null,
       targetEdge
     }
     set({ rendering: true })

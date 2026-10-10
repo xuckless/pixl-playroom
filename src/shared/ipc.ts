@@ -46,6 +46,8 @@ export const IPC = {
     displayHdr: 'app:display-hdr',
     /** Preferences → Display: automatic, or a stated white and peak. */
     setDisplayHdr: 'app:set-display-hdr',
+    /** renderer → main: whether the system says the window's screen shows HDR (`dynamic-range: high`). */
+    displayDetected: 'app:display-detected',
     /** main → renderer: the display's HDR numbers moved */
     displayHdrChanged: 'app:display-hdr-changed',
     restart: 'app:restart',

@@ -74,6 +74,9 @@ interface Job {
 
 /** Photos probed for their size in a preflight: a probe is cached, but a thousand are still a wait. */
 const PROBE_LIMIT = 100
+
+/** The peak an HDR source that states none is read at, in cd/m². */
+const UNSTATED_HDR_PEAK = 1000
 /** The room an export leaves, below which it is refused. */
 const MIN_FREE = 50 * 1024 * 1024
 
@@ -317,7 +320,9 @@ export class Exporter {
       (s.hdr.mode === 'gainmap' && !gainMapOut && !pixl)
         ? { ...s, hdr: { ...s.hdr, mode: 'sdr' } }
         : s
-    const peak = displayPeak(info.peak_nits ?? s.hdr.peak)
+    // An HDR source that states no peak is taken at 1000 cd/m² (the expand
+    // setting's peak is SDR → HDR's alone, and its default moved to 1600).
+    const peak = displayPeak(info.peak_nits ?? UNSTATED_HDR_PEAK)
     const resize = preview ? previewResize(s, cw, ch) : buildResize(s, cw, ch)
     // The watermark, placed on the output as it will be: cropped, then resized.
     const wm = s.watermark

@@ -3,6 +3,7 @@
  * painted on the photo (`views/loupe/HealTool.tsx`) and baked into its pixels
  * stroke by stroke (`lib/heal.ts`). The sliders set the next stroke.
  */
+import { HdrAiNote } from './HdrAiNote'
 import type { SpotKind } from '../../../shared/retouch'
 import { staleRawStep } from '../../../shared/pixels'
 import { developMark } from '../../../shared/rawcolour'
@@ -108,9 +109,7 @@ export function HealPanel(): React.JSX.Element | null {
       )}
       {heal.mode === 'remove' &&
         (isHdr ? (
-          <p className="scope-note small">
-            {t('Remove bakes into the photo’s pixels, which an HDR photo cannot take yet.')}
-          </p>
+          <HdrAiNote />
         ) : (
           <div className="row heal-remove">
             <Toggle

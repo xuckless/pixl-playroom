@@ -936,20 +936,6 @@ button.grad-other:hover:not(:disabled) {
 .tp-needs.ai {
   color: var(--acc);
 }
-/* The develop toolbar's Masks button: lit while the window is up, with a count. */
-.masks-toggle.on {
-  color: var(--acc);
-  border-color: var(--acc-a55);
-}
-.masks-count {
-  margin-left: 6px;
-  font-size: 10px;
-  color: var(--muted);
-  border: 1px solid var(--hair);
-  border-radius: var(--r);
-  padding: 0 5px;
-}
-
 /* Gemma's names for the photo, as chips atop the pane (panels/masks/NameChips.tsx). */
 .name-chips {
   display: flex;
