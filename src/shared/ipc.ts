@@ -48,6 +48,9 @@ export const IPC = {
     setDisplayHdr: 'app:set-display-hdr',
     /** renderer → main: whether the system says the window's screen shows HDR (`dynamic-range: high`). */
     displayDetected: 'app:display-detected',
+    /** Preferences → GPU dragging (Phase A §4.3): whether it can run here, and on or off. */
+    gpuDrag: 'app:gpu-drag',
+    setGpuDrag: 'app:set-gpu-drag',
     /** main → renderer: the display's HDR numbers moved */
     displayHdrChanged: 'app:display-hdr-changed',
     restart: 'app:restart',
@@ -356,10 +359,24 @@ export interface EngineStatus {
   runtime?: { library: string; version: string; providers: string[] }
   /** The engine has SAM 2.1's prompt calls (0.16+). */
   prompt?: boolean
+  /** 0.19.2: the addon has the GPU grade path (`hasGpu`, Phase A §4.3). */
+  gpu?: boolean
   reason?: string
   /** Why the engine is unavailable, when the load named it (e.g. `VersionMismatch`). */
   code?: string
   restarts: number
+}
+
+/**
+ * GPU dragging (engine 0.19.2, Phase A §4.3): `available` where the addon
+ * has the GPU path (Metal on macOS, Direct3D 12 on Windows); `on` unless
+ * turned off in Preferences; `constrained` on the 8 GB / M1 Mac (one photo's
+ * frame at a time, Tone dragged without its base).
+ */
+export interface GpuDragState {
+  available: boolean
+  on: boolean
+  constrained: boolean
 }
 
 /** Ultra draws a scaled display at 1×, Performance at 1.5×, Native at the display's own scale. */
