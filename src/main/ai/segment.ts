@@ -22,6 +22,7 @@ import {
   estimate,
   isPartTarget,
   isSceneTarget,
+  NOTHING_SALIENT,
   OFFERED_PHRASE_MODEL,
   PHRASE_MODELS,
   SAM3_PHRASE,
@@ -42,6 +43,7 @@ import {
   type FacePart
 } from '../../shared/faceparts'
 import { lensCorrection } from '../../shared/lens'
+import type { PlaneShare } from '../../shared/naming'
 import { hardenPlane } from '../../shared/refine'
 import { partPlane, pasted, personBox, squareAround } from './parts'
 import { planeRef } from '../planeref'
@@ -95,8 +97,41 @@ const PART_PLANES: Record<PartTarget, string[]> = {
 /** The subject models, best first. (U²-Net, retired by engine 0.17, went with 0.18.) */
 const SUBJECT_MODELS = ['u2netp']
 
-/** Below this the model saw nothing salient (a flat plane stretched to full range). */
-const NOTHING_SALIENT = 0.2
+/**
+ * A segment request on a picture of the base frame (the proxy, upright:
+ * what masks are placed on), its planes at the picture's own size unless
+ * `longest` says smaller: the edge is followed there, not stretched later.
+ */
+function segmentRequest(
+  path: string,
+  input: string,
+  lens: LensCorrection | null,
+  model: Record<string, unknown>,
+  upsample: unknown,
+  longest: number | null = null
+): Record<string, unknown> {
+  return {
+    source: { Path: path },
+    input,
+    raw: null,
+    gain_map: null,
+    orientation: 'Normal',
+    lens,
+    segmenter: { Classes: model },
+    upsample,
+    png: { compression: 'Fast', filter: 'Sub' },
+    threads: BACKGROUND_THREADS,
+    limits: READ_LIMITS,
+    plane_longest: longest
+  }
+}
+
+/**
+ * How small the planes are made for `coverage()`: the models read 256–320 px
+ * squares, so their share of the frame is told as well at this size, and
+ * nothing is spent following an edge nobody sees.
+ */
+const SHARE_LONGEST = 256
 
 export class SegmentRunner implements AiRunner<SegmentRequest> {
   readonly task = 'segment' as const
@@ -128,6 +163,53 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     return null
   }
 
+  /** The photo's frame as the models read it: its proxy (made if missing) and its recipe. */
+  private async frame(key: string): Promise<{
+    row: Awaited<ReturnType<Library['photoRow']>>
+    px: Awaited<ReturnType<typeof ensureProxies>>
+    recipe: Awaited<ReturnType<Library['recipe']>>
+  }> {
+    const row = await this.library.photoRow(key)
+    const info = await this.library.probe(row)
+    if (this.engine.getStatus().status === 'starting') {
+      this.engine.start()
+      await this.engine.whenStarted()
+    }
+    const px = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
+    const recipe = this.sessions()?.liveRecipe(key) ?? (await this.library.recipe(key))
+    return { row, px, recipe }
+  }
+
+  /**
+   * Each plane a model finds on the photo, as its share of the frame: what
+   * the Masks pane's found chips are told from (ai/found.ts). The same frame
+   * and model as the mask a chip then makes, its planes small. Null when the
+   * model isn't downloaded: nothing is fetched for this.
+   */
+  async coverage(key: string, model: string, signal: AbortSignal): Promise<PlaneShare[] | null> {
+    if (!(await this.models.installed(model))) return null
+    const { px, recipe } = await this.frame(key)
+    const ref = await this.models.ref(model, 'Cpu')
+    if (signal.aborted) throw new Cancelled()
+    try {
+      const r = await this.engine.segment(
+        segmentRequest(
+          px.proxy.path,
+          px.proxy.input,
+          lensCorrection(recipe.lens),
+          ref,
+          DEPTH_UPSAMPLE,
+          SHARE_LONGEST
+        ),
+        { signal }
+      )
+      return r.planes.map((p) => ({ name: p.name, coverage: p.coverage, rawMax: p.raw_max }))
+    } catch (err) {
+      if (signal.aborted) throw new Cancelled()
+      throw err
+    }
+  }
+
   async run(ctx: AiContext, req: SegmentRequest): Promise<Extract<AiResult, { kind: 'mask' }>> {
     ctx.stage('model', 0, t('Loading the model'))
     if (isFacePart(req.target)) return this.faceParts(ctx, req, req.target)
@@ -142,14 +224,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         : null
     const id = named ? ((await this.models.installed(named)) ? named : null) : await this.model()
     if (!id) throw new ModelMissing(this.models.entry(named ?? 'u2netp'))
-    const row = await this.library.photoRow(req.key)
-    const info = await this.library.probe(row)
-    if (this.engine.getStatus().status === 'starting') {
-      this.engine.start()
-      await this.engine.whenStarted()
-    }
-    const px = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
-    const recipe = this.sessions()?.liveRecipe(req.key) ?? (await this.library.recipe(req.key))
+    const { row, px, recipe } = await this.frame(req.key)
     // One run of a small network: the CPU is done before an accelerator has
     // compiled it (CoreML takes about a second to), so segmenting stays there.
     const segmenter = await this.models.ref(id, 'Cpu')
@@ -175,26 +250,19 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
         clearInterval(tick)
       }
     }
-    const request = (model: Record<string, unknown>): Record<string, unknown> => ({
-      source: { Path: px.proxy.path },
-      input: px.proxy.input,
-      raw: null,
-      gain_map: null,
-      // The proxy is the base frame, upright: what masks are placed on.
-      orientation: 'Normal',
-      lens,
-      segmenter: { Classes: model },
-      // A depth map's edges aren't the picture's: bilinear (engine 0.18).
-      upsample: depth ? DEPTH_UPSAMPLE : scene ? SCENE_UPSAMPLE : UPSAMPLE,
-      png: { compression: 'Fast', filter: 'Sub' },
-      threads: BACKGROUND_THREADS,
-      limits: READ_LIMITS,
-      // At the proxy's own size: the edge is followed there, not stretched later.
-      plane_longest: null
-    })
     try {
       // Stopped mid-run by the signal (the engine's model calls take one since 0.16).
-      report = await this.engine.segment(request(segmenter), { signal: ctx.signal })
+      report = await this.engine.segment(
+        segmentRequest(
+          px.proxy.path,
+          px.proxy.input,
+          lens,
+          segmenter,
+          // A depth map's edges aren't the picture's: bilinear (engine 0.18).
+          depth ? DEPTH_UPSAMPLE : scene ? SCENE_UPSAMPLE : UPSAMPLE
+        ),
+        { signal: ctx.signal }
+      )
     } catch (err) {
       if (ctx.signal.aborted) throw new Cancelled()
       throw err
@@ -292,14 +360,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       if (await this.models.installed(m)) id = m
     }
     if (!id) throw new ModelMissing(this.models.entry(OFFERED_PHRASE_MODEL))
-    const row = await this.library.photoRow(req.key)
-    const info = await this.library.probe(row)
-    if (this.engine.getStatus().status === 'starting') {
-      this.engine.start()
-      await this.engine.whenStarted()
-    }
-    const px = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
-    const recipe = this.sessions()?.liveRecipe(req.key) ?? (await this.library.recipe(req.key))
+    const { row, px, recipe } = await this.frame(req.key)
     const ref = (await this.models.ref(id, 'Cpu')) as {
       encoder: Record<string, unknown>
       text_encoder: Record<string, unknown>
@@ -403,14 +464,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
   ): Promise<Extract<AiResult, { kind: 'mask' }>> {
     for (const id of [FACE_DETECTOR, FACE_LANDMARKER])
       if (!(await this.models.installed(id))) throw new ModelMissing(this.models.entry(id))
-    const row = await this.library.photoRow(req.key)
-    const info = await this.library.probe(row)
-    if (this.engine.getStatus().status === 'starting') {
-      this.engine.start()
-      await this.engine.whenStarted()
-    }
-    const px = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
-    const recipe = this.sessions()?.liveRecipe(req.key) ?? (await this.library.recipe(req.key))
+    const { px, recipe } = await this.frame(req.key)
     const detector = await this.models.ref(FACE_DETECTOR, 'Cpu')
     const landmarks = await this.models.ref(FACE_LANDMARKER, 'Cpu')
     if (ctx.signal.aborted) throw new Cancelled()
@@ -501,20 +555,7 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
     ): Promise<{ name: string; data: Uint8Array; width: number; height: number }[]> => {
       try {
         const r = await this.engine.segment(
-          {
-            source: { Path: path },
-            input,
-            raw: null,
-            gain_map: null,
-            orientation: 'Normal',
-            lens: withLens,
-            segmenter: { Classes: segmenter },
-            upsample: UPSAMPLE,
-            png: { compression: 'Fast', filter: 'Sub' },
-            threads: BACKGROUND_THREADS,
-            limits: READ_LIMITS,
-            plane_longest: null
-          },
+          segmentRequest(path, input, withLens, segmenter, UPSAMPLE),
           { signal: ctx.signal }
         )
         return r.planes.map((p) => ({ name: p.name, ...grey8(Buffer.from(p.png)) }))

@@ -7,7 +7,7 @@
  *
  * Pure, for tests/naming.test.ts.
  */
-import type { PartTarget, SceneTarget } from './ai'
+import { NOTHING_SALIENT, type PartTarget, type SceneTarget } from './ai'
 import type { FacePart } from './faceparts'
 
 /**
@@ -354,4 +354,119 @@ export function searchWords(n: PhotoNames | null): string[] {
   }
   if (n.describe) out.add(n.describe.toLowerCase())
   return [...out]
+}
+
+// ── Found with no brain: the named planes a photo holds (engine 0.19.2) ──
+//
+// Gemma is shelved, so the default flow names nothing. What the Masks pane
+// offers instead is what pixl-auto's `auto({ brain: null })` does: the named
+// planes the photo holds, the subject, and the phrases the user types. Found
+// chips are suggestions (pixl-auto's `unconfirmed`): nothing checked the mask
+// a chip makes, so they are shown apart from accepted ones, and a mask is
+// made only when one is tapped.
+
+/** One plane a model found, and how much of the frame it covers (0…1). */
+export interface PlaneShare {
+  name: string
+  coverage: number
+  /** The model's strongest answer anywhere, 0…1 (U²-Netp's "anything salient"). */
+  rawMax: number
+}
+
+/** What each model found on a photo; null where it didn't run (not downloaded, or skipped). */
+export interface FoundPlanes {
+  /** U²-Netp's one plane. */
+  subject: PlaneShare | null
+  /** DINOv2-S+ADE's planes. */
+  scene: PlaneShare[] | null
+  /** Selfie Multiclass's planes, on the whole frame. */
+  parts: PlaneShare[] | null
+}
+
+/** A chip's word: each routes (`routeName`) to the tool whose plane it was found on. */
+export type FoundLabel =
+  'subject' | 'sky' | 'vegetation' | 'water' | 'hair' | 'face' | 'skin' | 'clothes'
+
+/** One thing found, as a chip. */
+export interface FoundThing {
+  label: FoundLabel
+  /** The subject plane (★): `routeName` sends it to Select subject. */
+  subject: boolean
+  /** Its share of the frame. */
+  coverage: number
+}
+
+/** A plane under this share of the frame isn't offered (pixl-auto's bar with no brain: 0.5 %). */
+export const FOUND_MIN = 0.005
+
+/** DINOv2's planes, by name, as chips (in this order). */
+const SCENE_CHIPS: [string, FoundLabel][] = [
+  ['sky', 'sky'],
+  ['vegetation', 'vegetation'],
+  ['water', 'water']
+]
+/**
+ * Selfie Multiclass's planes as chips. Body skin is the "skin" chip: face
+ * skin alone is the face's, so a head-and-shoulders portrait isn't offered
+ * one plane under two names.
+ */
+const PART_CHIPS: [string, FoundLabel][] = [
+  ['hair', 'hair'],
+  ['face_skin', 'face'],
+  ['body_skin', 'skin'],
+  ['clothes', 'clothes']
+]
+
+/** The chips the planes make: the subject first, then the scene, then the person's parts. */
+export function foundThings(f: FoundPlanes, min = FOUND_MIN): FoundThing[] {
+  const out: FoundThing[] = []
+  const s = f.subject
+  if (s && s.rawMax >= NOTHING_SALIENT && s.coverage >= min)
+    out.push({ label: 'subject', subject: true, coverage: s.coverage })
+  const add = (planes: PlaneShare[] | null, chips: [string, FoundLabel][]): void => {
+    if (!planes) return
+    for (const [name, label] of chips) {
+      const p = planes.find((x) => x.name === name)
+      if (p && p.coverage >= min) out.push({ label, subject: false, coverage: p.coverage })
+    }
+  }
+  add(f.scene, SCENE_CHIPS)
+  add(f.parts, PART_CHIPS)
+  return out
+}
+
+/**
+ * Whether a person is plausibly in the photo, so the people-parts model is
+ * worth running. Only cheap signals already in hand: U²-Netp saw nothing
+ * salient (`subject`: null when it didn't run), or the cull signals' face
+ * detector found no face (`faces`: null when not measured). Either says no;
+ * neither known, it is run. A person seen from behind is missed this way:
+ * a typed "hair" still finds theirs.
+ */
+export function peoplePlausible(subject: PlaneShare | null, faces: number | null): boolean {
+  if (subject && subject.rawMax < NOTHING_SALIENT) return false
+  return faces !== 0
+}
+
+/** Two routes to the same tool and plane. */
+function sameRoute(a: NameRoute, b: NameRoute): boolean {
+  if (a.kind !== b.kind) return false
+  if (a.kind === 'scene') return a.target === (b as typeof a).target
+  if (a.kind === 'part' || a.kind === 'face') return a.part === (b as typeof a).part
+  if (a.kind === 'phrase') return a.text === (b as typeof a).text
+  return true
+}
+
+/**
+ * The found chips to show beside the names already there (Gemma's, the
+ * user's typed ones): one whose label is there, or whose tool a name already
+ * goes to ("trees" is the vegetation plane; Gemma's ★ is the subject), is
+ * left out, so nothing has two chips.
+ */
+export function foundChips(found: FoundThing[], names: NamedThing[]): FoundThing[] {
+  const routes = names.map((n) => routeName(n))
+  return found.filter(
+    (f) =>
+      !names.some((n) => n.label === f.label) && !routes.some((r) => sameRoute(r, routeName(f)))
+  )
 }

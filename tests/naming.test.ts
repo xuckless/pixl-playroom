@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { DatabaseSync } from 'node:sqlite'
-import type { PhotoNames } from '../src/shared/naming'
+import type { PhotoNames, PlaneShare } from '../src/shared/naming'
 import { item } from './items'
 
 const target = (label: string, subject = false, extra: object = {}): object => ({
@@ -174,4 +174,99 @@ test('a sidecar keeps the names, and one with only names is still written', asyn
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+// With no brain (engine 0.19.2's default flow): the named planes the photo
+// holds and the subject, as found chips (main/ai/found.ts).
+const share = (coverage: number, rawMax = 1, name = ''): PlaneShare => ({ name, coverage, rawMax })
+const planes = (names: string[], coverage = 0.1): PlaneShare[] =>
+  names.map((n) => share(coverage, 1, n))
+
+test('found chips: the subject, then the scene, then the parts, each at 0.5 % of the frame or more', async () => {
+  const { foundThings } = await import('../src/shared/naming')
+  const found = foundThings({
+    subject: share(0.3),
+    scene: [share(0.2, 1, 'water'), share(0.004, 1, 'sky'), share(0.005, 1, 'vegetation')],
+    // Face skin is the face, body skin the skin; a plane no chip names is left.
+    parts: [
+      share(0.1, 1, 'clothes'),
+      share(0.02, 1, 'face_skin'),
+      share(0.001, 1, 'body_skin'),
+      share(0.03, 1, 'hair'),
+      share(0.5, 1, 'others')
+    ]
+  })
+  assert.deepEqual(
+    found.map((f) => f.label),
+    ['subject', 'vegetation', 'water', 'hair', 'face', 'clothes']
+  )
+  assert.equal(found[0].subject, true)
+  assert.ok(found.slice(1).every((f) => !f.subject))
+})
+
+test('found chips: nothing salient is no subject; a model that did not run gives none', async () => {
+  const { foundThings } = await import('../src/shared/naming')
+  // U²-Netp's flat answer stretched to full range covers a lot and means nothing.
+  assert.deepEqual(foundThings({ subject: share(0.6, 0.1), scene: null, parts: null }), [])
+  assert.deepEqual(foundThings({ subject: share(0.003), scene: null, parts: null }), [])
+  assert.deepEqual(foundThings({ subject: null, scene: null, parts: null }), [])
+})
+
+test('found chips each go to the tool whose plane they were found on', async () => {
+  const { foundThings, routeName } = await import('../src/shared/naming')
+  const all = foundThings({
+    subject: share(0.2),
+    scene: planes(['sky', 'vegetation', 'water']),
+    parts: planes(['hair', 'face_skin', 'body_skin', 'clothes'])
+  })
+  assert.deepEqual(
+    all.map((f) => routeName(f)),
+    [
+      { kind: 'subject' },
+      { kind: 'scene', target: 'sky' },
+      { kind: 'scene', target: 'vegetation' },
+      { kind: 'scene', target: 'water' },
+      { kind: 'part', part: 'hair' },
+      { kind: 'part', part: 'face' },
+      { kind: 'part', part: 'skin' },
+      { kind: 'part', part: 'clothes' }
+    ]
+  )
+})
+
+test('found chips leave out what a name (Gemma’s or typed) already covers', async () => {
+  const { foundChips, foundThings } = await import('../src/shared/naming')
+  const found = foundThings({
+    subject: share(0.2),
+    scene: planes(['sky', 'vegetation', 'water']),
+    parts: planes(['hair', 'clothes'])
+  })
+  const names = [
+    // Gemma's ★ is the subject; "trees" is the vegetation plane; "woman's hair" is hair.
+    { label: 'building', intent: '', subject: true },
+    { label: 'trees', intent: '', subject: false },
+    { label: "woman's hair", intent: '', subject: false },
+    // Typed, word for word.
+    { label: 'sky', intent: '', subject: false, user: true },
+    // A phrase covers no plane.
+    { label: 'red car', intent: '', subject: false, user: true }
+  ]
+  assert.deepEqual(
+    foundChips(found, names).map((f) => f.label),
+    ['water', 'clothes']
+  )
+  // No names: every one.
+  assert.equal(foundChips(found, []).length, found.length)
+})
+
+test('the people-parts model runs only where a person is plausible', async () => {
+  const { peoplePlausible } = await import('../src/shared/naming')
+  // Nothing known: run it.
+  assert.equal(peoplePlausible(null, null), true)
+  assert.equal(peoplePlausible(share(0.2), null), true)
+  assert.equal(peoplePlausible(share(0.2), 2), true)
+  // Nothing salient, or the cull signals' face detector found no face: skip it.
+  assert.equal(peoplePlausible(share(0.6, 0.1), null), false)
+  assert.equal(peoplePlausible(share(0.2), 0), false)
+  assert.equal(peoplePlausible(null, 0), false)
 })
