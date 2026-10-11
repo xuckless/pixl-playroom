@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.4.3-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.2-beta...v0.4.3-beta) (2026-10-11)
+
+
+### Features
+
+* **develop:** refine methods, drawn-edge Smooth and Contrast, heal Edges, Tone base (Phase A §3.2, §4.1, §4.2) ([a0ca2d3](https://github.com/xuckless/pixl-playroom/commit/a0ca2d3418758d89cf8d036d0766c91f85b6b064))
+* **engine:** 0.19.2's required request shapes (Phase A §1.1–1.6) ([fa130ff](https://github.com/xuckless/pixl-playroom/commit/fa130ffceeb9d2ba5d6ded74c6d16478a699b0b3))
+* **engine:** 1:1 tiles take their margin from regionReach (HR-0.20-1) ([8666176](https://github.com/xuckless/pixl-playroom/commit/86661764ff526e4c08baf9602c7b3a53f5fd4b67))
+* **engine:** GPU drag frames and held measurements (Phase A §4.3, §4.4) ([f4839bf](https://github.com/xuckless/pixl-playroom/commit/f4839bfba5b1d53478bd246c1bc9e6ccbd20273b))
+* finalize integration with 0.19.2 udpate. Merged, reviewed, fixed ([2c2e673](https://github.com/xuckless/pixl-playroom/commit/2c2e67317e29000e1cc1ca4966bd0738e7dc0f08))
+* **library:** open a single photo straight into Develop ([125bb67](https://github.com/xuckless/pixl-playroom/commit/125bb67fa3ff7caf42e60c72e52e4b1e495f118e))
+* **masks:** found chips with no brain: the named planes a photo holds ([cdeaf3d](https://github.com/xuckless/pixl-playroom/commit/cdeaf3d6d794e6b82ec00115aeb240fcb568a18a))
+* **projects:** new installs keep projects in ~/Pixl Projects, asked once ([8a7ce07](https://github.com/xuckless/pixl-playroom/commit/8a7ce0761e0abda493f141c1a52cc3e15208cbae))
+
+
+### Bug Fixes
+
+* a settled picture always arrives in Full HDR; the mask pane's snap settings; where exports go, in every language ([daad151](https://github.com/xuckless/pixl-playroom/commit/daad151f55cb22cf990e321fbf5babb974268db8))
+* the GPU drag's held measurements and the Retina held flag share no name; the GPU setting in every language ([d034416](https://github.com/xuckless/pixl-playroom/commit/d0344160d7e9937b7bb9ee99538b558a44576e16))
+
+
+### Performance
+
+* **develop:** a held slider settles at the draft's size on Retina ([16ad5b2](https://github.com/xuckless/pixl-playroom/commit/16ad5b2b4b18d009ff9fd5141df4cdd7141944c6))
+
+
+### Maintenance
+
+* release 0.4.3-beta (silent) ([263f35a](https://github.com/xuckless/pixl-playroom/commit/263f35ad061ecf54cd6621c5f1dd9c35b5ae8904))
+
 ## [0.4.2-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.1-beta...v0.4.2-beta) (2026-10-10)
 
 
