@@ -164,6 +164,12 @@ export interface CompileContext {
    * measured: Phase A §3.2); the base comes back on release.
    */
   dragWithoutBase?: boolean
+  /**
+   * A drag graded on the GPU (Phase A §4.3), which refuses the Guided base
+   * the CPU drags with and runs the release's local Laplacian in about
+   * 82 ms: the drag keeps that base (unless `dragWithoutBase`).
+   */
+  gpuDrag?: boolean
 }
 
 /**
@@ -180,12 +186,14 @@ export const DRAG_BASE: ToneBase = { Guided: { radius: 0.005, epsilon: 0.01 } }
 /**
  * Tone's base for a render. While dragging on the CPU the guided base stands
  * in (about 70 ms against 250 at a 2560 px preview); the release renders the
- * local Laplacian. With `dragWithoutBase`, a drag runs none.
+ * local Laplacian. With `dragWithoutBase` (the M1), a drag runs none; a
+ * GPU drag (`gpuDrag`) runs the local Laplacian there, as the release does.
  */
 export function toneBaseFor(ctx: CompileContext): ToneBase | null {
   if (ctx.toneBase !== 'texture') return null
   if (ctx.smoothing !== false) return TEXTURE_BASE
-  return ctx.dragWithoutBase ? null : DRAG_BASE
+  if (ctx.dragWithoutBase) return null
+  return ctx.gpuDrag ? TEXTURE_BASE : DRAG_BASE
 }
 
 export interface Compiled {

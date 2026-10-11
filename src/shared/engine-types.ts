@@ -16,10 +16,23 @@ import { t, tp } from './i18n'
 
 // ── Sources and sinks ────────────────────────────────────────────────────────
 
-export type Source = { Path: string } | { Bytes: number[] }
+/**
+ * `GpuFrame` (0.19.2, Phase A §4.3): a drag frame graded from the frame
+ * uploaded to the GPU session (`uploadGpuFrame`), named in the call's
+ * options; its `input` is `'GpuFrame'` too.
+ */
+export type Source = { Path: string } | { Bytes: number[] } | { GpuFrame: null }
 export type Sink = { Path: string } | 'Bytes'
 
-export type InputFormat = 'Jpeg' | 'Png' | 'Heif' | 'Jxl' | 'Tiff' | 'WebP' | 'Raw'
+export type InputFormat =
+  | 'Jpeg'
+  | 'Png'
+  | 'Heif'
+  | 'Jxl'
+  | 'Tiff'
+  | 'WebP'
+  | 'Raw'
+  | /** 0.19.2: see `Source.GpuFrame`. */ 'GpuFrame'
 
 /** `F32` is unbounded 32-bit float: only TIFF and `Encode.Pixels` take it. */
 export type Depth = 'Eight' | 'Sixteen' | 'F32'
@@ -1735,7 +1748,31 @@ export interface ConvertReport {
    * measurements (null otherwise, and for a region). Only the host process
    * holds the handle; across IPC it arrives as its `fields`.
    */
-  held?: HeldMeasurements | { fields: string[] } | null
+  held?: HeldMeasurements | HeldRef | null
+  /**
+   * 0.19.2: what a `Pixels` encode's bytes are (`output`): the grade input a
+   * GPU frame is uploaded from is described by it (Phase A §4.3).
+   */
+  pixels?: PixelsReport | null
+}
+
+/** A `Pixels` output's layout (0.19.2). */
+export interface PixelsReport {
+  width: number
+  height: number
+  /** 3 RGB, 4 RGBA. */
+  channels: number
+  [k: string]: unknown
+}
+
+/**
+ * Held measurements as main sees them: their `fields`, and the id the host
+ * keeps the native handle under when it was asked to (`NativeRefs.keepHeld`).
+ * No `id`: the host closed them.
+ */
+export interface HeldRef {
+  fields: string[]
+  id?: string
 }
 
 /** One check between stages; `op` is the grade field just checked, `check_us` in microseconds. */
@@ -2271,6 +2308,8 @@ export interface EngineRequestMessage {
   args: unknown[]
   /** The call may be cancelled (`convert` and `analyze` take a signal). */
   cancellable?: boolean
+  /** Native objects the host keeps, by id, for this call's options (`NativeRefs`). */
+  native?: NativeRefs
   /**
    * A `convert` to a `Bytes` sink whose output is a preview frame: the host
    * posts the bytes straight to the window under this id (its preview port)
@@ -2377,6 +2416,60 @@ export type SamResult =
       conceptMs: number
     }
 
+/**
+ * The native objects a `convert` (or `regionReach`) is given or returns,
+ * named by main and kept in the host (Phase A §4.3–4.4): a GPU frame, the
+ * held measurements, which can't cross IPC. The host resolves them into the
+ * call's options.
+ */
+export interface NativeRefs {
+  /** An uploaded frame (`GpuOp` `upload`): the call runs on the GPU session with it. */
+  frame?: string
+  /** Held measurements kept earlier under this id, passed as `held`. */
+  held?: string
+  /** Keep the report's held measurements under this id (else they are closed). */
+  keepHeld?: string
+  /** Drop the output's bytes in the host: a render made only for its measurements. */
+  discardOutput?: boolean
+}
+
+/**
+ * The GPU drag path's calls (0.19.2, Phase A §4.3), whose objects (the
+ * session, each photo's uploaded frame, held measurements) are native and
+ * stay in the host: main names them by id, as SAM's.
+ *
+ * - `open`: the app's GPU session (once; kept while it is open).
+ * - `upload`: `request` (the grade input: `gradeInputRequest`) rendered on
+ *   the CPU and uploaded as frame `id`, replacing what `id` held. `only`
+ *   closes every other frame first (the 8 GB M1: one open at a time).
+ * - `release`: let go of frames, held measurements and (`session`) the
+ *   GPU session.
+ */
+export type GpuOp =
+  | { op: 'open'; spec: GpuSessionSpec }
+  | { op: 'upload'; id: string; request: ConvertRequest; only: boolean }
+  | { op: 'release'; frames?: string[]; held?: string[]; session?: boolean }
+
+/** What a `gpu` call answers. */
+export type GpuResult =
+  | { op: 'open'; ms: number }
+  | {
+      op: 'upload'
+      width: number
+      height: number
+      alpha: boolean
+      renderMs: number
+      uploadMs: number
+    }
+  | { op: 'release' }
+
+export interface EngineGpuMessage {
+  kind: 'gpu'
+  id: number
+  call: GpuOp
+  cancellable?: boolean
+}
+
 export interface EngineSamMessage {
   kind: 'sam'
   id: number
@@ -2399,6 +2492,8 @@ export interface EngineHelloMessage {
   runtime?: { library: string; version: string; providers: string[] }
   /** The binding has SAM 2.1's prompt calls (0.16+). */
   prompt?: boolean
+  /** 0.19.2: the addon was built with the GPU grade path (`hasGpu`; macOS and Windows). */
+  gpu?: boolean
   reason?: string
   /** The load error's code when the engine is unavailable, e.g. `VersionMismatch`. */
   code?: string
@@ -2414,4 +2509,8 @@ export interface EngineResponseMessage {
 
 export type HostToMain = EngineHelloMessage | EngineResponseMessage
 export type MainToHost =
-  EngineRequestMessage | EngineSamMessage | EngineCancelMessage | EnginePortMessage
+  | EngineRequestMessage
+  | EngineSamMessage
+  | EngineGpuMessage
+  | EngineCancelMessage
+  | EnginePortMessage

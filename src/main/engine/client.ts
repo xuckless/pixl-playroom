@@ -17,6 +17,8 @@ import type {
   ConvertRequest,
   EngineErrorShape,
   EngineMethod,
+  GpuOp,
+  GpuResult,
   GradeSpace,
   HostToMain,
   ImageStats,
@@ -24,6 +26,7 @@ import type {
   LensReport,
   Framing,
   MaskBounds,
+  NativeRefs,
   ReachReport,
   ReachRequest,
   Rgb,
@@ -95,7 +98,7 @@ export class EngineError extends Error {
 interface Pending {
   resolve: (v: unknown) => void
   reject: (e: Error) => void
-  method: EngineMethod | 'sam'
+  method: EngineMethod | 'sam' | 'gpu'
 }
 
 /** A call that can be stopped: the engine returns `Cancelled` at its next stage boundary. */
@@ -103,6 +106,11 @@ export interface CallOptions {
   signal?: AbortSignal
   /** A `Bytes` convert whose output is a preview frame for the window (see `sendPreviewsTo`). */
   frame?: string
+  /**
+   * Native objects the host keeps, by main's names for them (Phase A §4.3–4.4):
+   * a GPU drag's frame, held measurements to pass or keep (`NativeRefs`).
+   */
+  native?: NativeRefs
 }
 
 /** True for an error that only says the call was stopped. */
@@ -322,7 +330,13 @@ export class EngineClient {
     return this.call('probe', [path]) as Promise<SourceInfo>
   }
   convert(request: ConvertRequest, opts: CallOptions = {}): Promise<ConvertReport> {
-    return this.call('convert', [request], opts.signal, opts.frame) as Promise<ConvertReport>
+    return this.call(
+      'convert',
+      [request],
+      opts.signal,
+      opts.frame,
+      opts.native
+    ) as Promise<ConvertReport>
   }
   analyze(request: AnalyzeRequest, opts: CallOptions = {}): Promise<ImageStats> {
     return this.call('analyze', [request], opts.signal) as Promise<ImageStats>
@@ -332,8 +346,10 @@ export class EngineClient {
    * An engine without it (0.19.1) answers `UnknownMethod`-like errors: the
    * caller keeps its own margin then.
    */
-  regionReach(request: ReachRequest): Promise<ReachReport> {
-    return this.call('regionReach', [request]) as Promise<ReachReport>
+  regionReach(request: ReachRequest, held?: string): Promise<ReachReport> {
+    // With held measurements (§4.4), Dehaze and Denoise leave `measured`.
+    const native = held ? { held } : undefined
+    return this.call('regionReach', [request], undefined, undefined, native) as Promise<ReachReport>
   }
   /** What a lens correction does to a `width × height` frame, without pixels. */
   lensFrame(lens: LensCorrection, width: number, height: number): Promise<LensReport> {
@@ -385,6 +401,18 @@ export class EngineClient {
     const run = (): Promise<unknown> =>
       this.post('sam', (id, cancellable) => ({ kind: 'sam', id, call, cancellable }), opts.signal)
     return run() as Promise<SamResult>
+  }
+
+  /**
+   * One of the GPU drag path's calls (`GpuOp`, Phase A §4.3): the session,
+   * each photo's frame and held measurements stay in the host, named by id.
+   */
+  gpu(call: GpuOp, opts: CallOptions = {}): Promise<GpuResult> {
+    return this.post(
+      'gpu',
+      (id, cancellable) => ({ kind: 'gpu', id, call, cancellable }),
+      opts.signal
+    ) as Promise<GpuResult>
   }
 
   /** Where a heal or clone should copy from (see `retouch/suggest.rs`). */
@@ -459,6 +487,7 @@ export class EngineClient {
               enhance: msg.enhance,
               runtime: msg.runtime,
               prompt: msg.prompt,
+              gpu: msg.gpu === true,
               restarts: this.status.restarts
             }
           : {
@@ -494,7 +523,8 @@ export class EngineClient {
     method: EngineMethod,
     args: unknown[],
     signal?: AbortSignal,
-    frame?: string
+    frame?: string,
+    native?: NativeRefs
   ): Promise<unknown> {
     const hold = this.yieldTo && this.yieldTo.running.size > 0
     const drain = signal !== undefined && this.draining.size > 0
@@ -504,7 +534,8 @@ export class EngineClient {
       method,
       args,
       cancellable,
-      ...(frame ? { frame } : {})
+      ...(frame ? { frame } : {}),
+      ...(native ? { native } : {})
     })
     if (!hold && !drain) return this.post(method, message, signal)
     return (async () => {
@@ -515,7 +546,7 @@ export class EngineClient {
   }
 
   private post(
-    method: EngineMethod | 'sam',
+    method: EngineMethod | 'sam' | 'gpu',
     message: (id: number, cancellable: boolean) => MainToHost,
     signal?: AbortSignal
   ): Promise<unknown> {

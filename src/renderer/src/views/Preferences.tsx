@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { MAX_PROBLEM_TEXT } from '../../../shared/crash'
 import type { AccountStatus } from '../../../shared/account'
-import type { Prefs, UpdateState } from '../../../shared/ipc'
+import type { GpuDragState, Prefs, UpdateState } from '../../../shared/ipc'
 import { ACCOUNT_URL, BUY_URL, LICENCE_RULES, type LicenceStatus } from '../../../shared/licence'
 import { latestNotes } from '../../../shared/releasenotes'
 import { InfoTip } from '../components/InfoTip'
@@ -533,6 +533,7 @@ export function PreferencesDialog(): React.JSX.Element {
           <>
             <ProjectsSection />
             <InterfaceSection />
+            <PerformanceSection />
           </>
         )}
         {section === 'display' && <DisplaySection platform={prefs?.platform ?? null} />}
@@ -660,6 +661,55 @@ function DisplaySection({ platform }: { platform: string | null }): React.JSX.El
                 : t('Now: SDR.')}
         </p>
       )}
+    </fieldset>
+  )
+}
+
+/**
+ * GPU dragging (engine 0.19.2, Phase A §4.3): while a slider moves, the
+ * preview is graded on the graphics chip from a frame uploaded once per
+ * photo; the release and every export still render on the processor. On
+ * unless turned off, and shown only where this build and computer have it
+ * (Metal on a Mac, Direct3D 12 on Windows).
+ */
+function PerformanceSection(): React.JSX.Element | null {
+  const say = useLibrary((s) => s.say)
+  const [state, setState] = useState<GpuDragState | null>(null)
+  useEffect(() => {
+    void api.app.gpuDrag().then(setState)
+  }, [])
+  if (!state?.available) return null
+  return (
+    <fieldset>
+      <legend>{t('Performance')}</legend>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={state.on}
+          onChange={(e) =>
+            void api.app
+              .setGpuDrag(e.target.checked)
+              .then(setState)
+              .catch((err) => say(errorText(err), 'error'))
+          }
+        />
+        {t('Drag sliders on the graphics chip')}
+        <InfoTip
+          label={t('Drag sliders on the graphics chip')}
+          tip={{
+            what: t(
+              'While a slider moves, the preview is graded on the graphics chip: about twice as fast, and at the full preview size. When you let go, the picture renders on the processor, as an export does.'
+            ),
+            expect: state.constrained
+              ? t(
+                  'Exposure, contrast, Tone, HSL and Dehaze drag there; an edit with anything else (white balance, curves, effects, masks, smoothing) drags on the processor, as before. On this Mac only the open photo keeps its copy on the graphics chip, and Tone drags without its texture base until you let go. Turn it off if a drag looks different from the picture you let go on.'
+                )
+              : t(
+                  'Exposure, contrast, Tone, HSL and Dehaze drag there; an edit with anything else (white balance, curves, effects, masks, smoothing) drags on the processor, as before. The open photo keeps a copy on the graphics chip (about 130–250 MB). Turn it off if a drag looks different from the picture you let go on.'
+                )
+          }}
+        />
+      </label>
     </fieldset>
   )
 }

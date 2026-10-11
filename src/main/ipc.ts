@@ -288,6 +288,8 @@ export function registerIpc(s: Services): void {
     return setDisplaySetting(v)
   })
   handle(IPC.app.displayDetected, (hdr: unknown) => setDisplayDetected(hdr === true))
+  handle(IPC.app.gpuDrag, () => s.sessions.gpu.state())
+  handle(IPC.app.setGpuDrag, (on: unknown) => s.sessions.gpu.setOn(on !== false))
   handle(IPC.app.restart, () => restart())
 
   handle(IPC.app.reportError, (e: ErrorReport) => reportRendererError(e))

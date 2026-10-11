@@ -56,6 +56,7 @@ import type {
   Transform,
   ImageStats,
   Measure,
+  NativeRefs,
   NoiseEstimate,
   SourceInfo
 } from '../shared/engine-types'
@@ -91,6 +92,18 @@ import { paths } from './paths'
 import { sweepPhoto } from './sweep'
 import type { PhotoRow } from './db'
 import { EngineError, isCancelled, type EngineClient } from './engine/client'
+import { GpuDrag, HeldSlot, type FrameRef } from './gpudrag'
+import {
+  dragRegion,
+  dragVerdict,
+  gpuDragRequest,
+  gpuRefusal,
+  gradeInputRequest,
+  gradeShape,
+  heldKey,
+  inputKey,
+  measuresPhoto
+} from '../shared/gpudrag'
 import { keyOf, parseKey } from './keys'
 import type { Library, Picture } from './library'
 import { CICP_DISPLAY_P3, encodePng8, pngToFloats } from './pngio'
@@ -126,6 +139,19 @@ import {
 } from './source'
 
 type Kind = 'draft' | 'full'
+
+/** What a GPU drag frame is made from (see `Session.gpuPlan`, Phase A §4.3). */
+interface GpuPlan {
+  /** The recipe compiled for the full proxy, as a GPU drag (`compileFor`'s `'gpu'`). */
+  compiled: Compiled
+  /** Its grade's shape (shared/gpudrag.ts `gradeShape`): what a refusal is remembered by. */
+  shape: string
+  /** The display space the drag names, the CPU draft's own. */
+  color: ColorPolicy
+  /** The grade-input render the frame is uploaded from, and its key. */
+  input: ConvertRequest
+  inputKey: string
+}
 
 /** How long a slider must rest before the full proxy renders. */
 /**
@@ -414,6 +440,7 @@ class Session {
     readonly hdrMaster: ProxyFile | null = null
   ) {
     this.dir = rendersDir(row.id)
+    this.held = new HeldSlot(owner.engine, `${key}#held`)
     void this.clearEarlier()
   }
 
@@ -442,7 +469,9 @@ class Session {
     headroom = false,
     smoothing = true,
     /** Rendered for an HDR display (Full HDR, engine 0.18's Master): light above white kept. */
-    hdrOut = false
+    hdrOut = false,
+    /** A drag graded on the GPU (Phase A §4.3): Tone keeps the local-Laplacian base there. */
+    drag: 'cpu' | 'gpu' = 'cpu'
   ): Promise<Compiled> {
     const baked = this.isBaked(source)
     // The working pixels' frame: the photo's, or an upscale step's.
@@ -465,7 +494,11 @@ class Session {
       // 1 there is refused).
       hdr: (headroom && this.info.is_hdr) || hdrOut,
       showTransform: !this.view.guides,
-      smoothing
+      smoothing,
+      // The M1 drags Tone without its base until it is measured (Phase A
+      // §3.2, §4.3); the release brings it back. Only a drag reads these.
+      dragWithoutBase: this.owner.gpu.constrained,
+      gpuDrag: drag === 'gpu'
     })
     return baked ? { ...compiled, lens: null, retouch: null } : compiled
   }
@@ -809,7 +842,11 @@ class Session {
     try {
       // A settled edit bakes its lens correction in the background.
       if (kind === 'full') this.bake()
+      // The release (or a pause long enough to settle) ends the drag.
+      if (kind === 'full') this.endDrag()
       await this.renderPicture(kind, signal)
+      // The GPU frame made ready for the next drag, off the drag's path.
+      if (kind === 'full' && !this.pending && !this.previewing) void this.warmGpu()
       // A newer edit waiting behind this render will redo what follows.
       if (
         kind === 'draft' &&
@@ -891,6 +928,10 @@ class Session {
     const recipe = preview ?? this.recipe
     // Full HDR (engine 0.18): the display it is shown on, or SDR as before.
     const display = this.view.display ?? null
+    // A drag frame on the GPU when it will take it (Phase A §4.3); every
+    // other picture, and a drag it won't, on the CPU as before.
+    if (kind === 'draft' && (await this.gpuDraft(t0, cropMode, rev, recipe, display, signal)))
+      return
     const compiled = await this.compileFor(
       recipe,
       src,
@@ -949,52 +990,53 @@ class Session {
     const out = frame ? '' : this.nextFile('view', avif ? 'avif' : alpha ? 'png' : 'jpg')
     const hdrStats =
       kind === 'full' ? this.measureHdr(cropMode, signal) : Promise.resolve(undefined)
-    const report = await this.owner.engine
-      .convert(
-        {
-          ...blankRequest(src.path, out, src.input),
-          ...(frame ? { sink: 'Bytes' as const } : {}),
-          pixel: {
-            depth: display && frame ? 'F32' : 'Eight',
-            channels: alpha || frame ? 4 : 3
-          },
-          encode: frame
-            ? { Pixels: { sample: display ? 'F16' : 'U8' } }
-            : avif
-              ? SETTLED_AVIF
-              : alpha
-                ? { Png: { compression: 'Fast', filter: 'Sub' } }
-                : {
-                    // A settled picture is a few MB less as 4:2:0, which a screen
-                    // shows the same; the draft keeps full chroma at its lower quality.
-                    Jpeg: {
-                      quality: kind === 'draft' ? 92 : 95,
-                      subsampling: kind === 'draft' ? 'None' : 'Quarter',
-                      optimize: false
-                    }
-                  },
-          metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: display
-            ? masterFor(
-                display,
-                undefined,
-                kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE
-              )
-            : displayPolicy(this.info, 'DisplayP3'),
-          // The master reads a gain map itself, and refuses the field.
-          ...(display ? { gain_map: null } : {}),
-          grade: compiled.grade,
-          framing: compiled.framing,
-          lens: compiled.lens,
-          retouch: compiled.retouch,
-          threads: interactiveThreads(),
-          // A warp shown whole counts its empty corners (as black) rather than
-          // risk measuring nothing when little of the picture is left.
-          measure: measureOf(kind === 'draft' ? 2 : 1)
+    // A CPU drag of Dehaze or Denoise reuses its first frame's measurement
+    // (Phase A §4.4); a settled picture measures fresh.
+    const keyHeld =
+      kind === 'draft' && !this.heldOff && measuresPhoto(compiled.grade)
+        ? heldKey(src.path, compiled.framing)
+        : null
+    const report = await this.convertHeld(
+      {
+        ...blankRequest(src.path, out, src.input),
+        ...(frame ? { sink: 'Bytes' as const } : {}),
+        pixel: {
+          depth: display && frame ? 'F32' : 'Eight',
+          channels: alpha || frame ? 4 : 3
         },
-        { signal, frame }
-      )
-      .catch(named(compiled))
+        encode: frame
+          ? { Pixels: { sample: display ? 'F16' : 'U8' } }
+          : avif
+            ? SETTLED_AVIF
+            : alpha
+              ? { Png: { compression: 'Fast', filter: 'Sub' } }
+              : {
+                  // A settled picture is a few MB less as 4:2:0, which a screen
+                  // shows the same; the draft keeps full chroma at its lower quality.
+                  Jpeg: {
+                    quality: kind === 'draft' ? 92 : 95,
+                    subsampling: kind === 'draft' ? 'None' : 'Quarter',
+                    optimize: false
+                  }
+                },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        color: display
+          ? masterFor(display, undefined, kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE)
+          : displayPolicy(this.info, 'DisplayP3'),
+        // The master reads a gain map itself, and refuses the field.
+        ...(display ? { gain_map: null } : {}),
+        grade: compiled.grade,
+        framing: compiled.framing,
+        lens: compiled.lens,
+        retouch: compiled.retouch,
+        threads: interactiveThreads(),
+        // A warp shown whole counts its empty corners (as black) rather than
+        // risk measuring nothing when little of the picture is left.
+        measure: measureOf(kind === 'draft' ? 2 : 1)
+      },
+      { signal, frame },
+      keyHeld
+    ).catch(named(compiled))
     // The engine had no way to the window (it was reloading): main passes the frame on.
     if (frame && report.output)
       this.owner.send(IPC.develop.previewFrame, {
@@ -1070,6 +1112,332 @@ class Session {
         this.recentFull.delete(this.recentFull.keys().next().value as string)
     }
     this.owner.send(IPC.develop.rendered, event)
+  }
+
+  // ── the GPU drag path (Phase A §4.3) and held measurements (§4.4) ──
+
+  /** This photo's held measurements, kept in the interactive host (see `HeldSlot`). */
+  private readonly held: HeldSlot
+  /**
+   * The grade shapes (shared/gpudrag.ts `gradeShape`) the engine refused on
+   * the GPU this drag: the rest of the drag goes straight to the CPU. The
+   * release forgets them.
+   */
+  private gpuRefused = new Set<string>()
+  /** `held` was refused this drag: the rest of it measures each frame, as before. */
+  private heldOff = false
+  /** Whether this drag's first GPU frame has been logged. */
+  private gpuLogged = false
+
+  /**
+   * The release (Phase A §4.4: "drop it on release"; it measures fresh), and
+   * the end of what this drag learned about the GPU's refusals.
+   */
+  private endDrag(): void {
+    this.held.drop()
+    this.gpuRefused.clear()
+    this.heldOff = false
+    this.gpuLogged = false
+  }
+
+  /**
+   * What a GPU drag of `recipe` needs, or null when it stays on the CPU:
+   * GPU dragging off or not here, an HDR (PQ/HLG) photo (its grade runs
+   * after a tone map the frame would need to carry), a lens correction
+   * still being baked (its proxies would make another upload at once), or a
+   * grade the GPU is known to refuse (`gpuRefusal`) or refused this drag.
+   * The frame is the full proxy (§4.3: "upload at full proxy size"), so the
+   * drag grades at the scale of the settled picture.
+   */
+  private async gpuPlan(
+    recipe: Recipe,
+    cropMode: boolean,
+    display: ViewState['display'] | null
+  ): Promise<GpuPlan | null> {
+    if (!this.owner.gpu.usable() || this.info.is_hdr || this.bakePending()) return null
+    const src = this.viewPx().proxy
+    const compiled = await this.compileFor(recipe, src, !cropMode, false, false, !!display, 'gpu')
+    if (gpuRefusal(compiled.grade) !== null) return null
+    const shape = gradeShape(compiled.grade)
+    if (this.gpuRefused.has(shape)) return null
+    // The CPU draft's display space: the drag names it (§4.3), the frame is graded into it.
+    const color = display
+      ? masterFor(display, undefined, DRAFT_COMPANION_EDGE)
+      : displayPolicy(this.info, 'DisplayP3')
+    const input = gradeInputRequest({
+      path: src.path,
+      input: src.input,
+      color,
+      lens: compiled.lens,
+      retouch: compiled.retouch,
+      threads: interactiveThreads(),
+      limits: READ_LIMITS
+    })
+    return { compiled, shape, color, input, inputKey: inputKey(input) }
+  }
+
+  /**
+   * After a settled picture: the photo's GPU frame uploaded for the next
+   * drag if it isn't (the photo just opened, or something before the grade
+   * changed), in the background. Never in a drag's way: until it is up,
+   * drags render on the CPU.
+   */
+  private async warmGpu(): Promise<void> {
+    try {
+      const plan = await this.gpuPlan(this.recipe, this.view.cropMode, this.view.display ?? null)
+      if (plan && !this.closed) this.owner.gpu.prepare(this.key, plan.inputKey, plan.input)
+    } catch {
+      // Nothing lost: drags stay on the CPU.
+    }
+  }
+
+  /**
+   * One drag frame graded on the GPU from the photo's uploaded frame (Phase
+   * A §4.3), sent as a draft. False when this frame renders on the CPU
+   * instead: no frame up yet (one is asked for), a framing the frame can't
+   * show (a turn, a straighten, an Upright), or the engine refused it.
+   * Every refusal or error is that signal and never the user's error: the
+   * engine doesn't fall back by itself, Playroom does.
+   */
+  private async gpuDraft(
+    t0: number,
+    cropMode: boolean,
+    rev: number,
+    recipe: Recipe,
+    display: ViewState['display'] | null,
+    signal: AbortSignal
+  ): Promise<boolean> {
+    let shape = ''
+    try {
+      const plan = await this.gpuPlan(recipe, cropMode, display)
+      if (!plan) return false
+      shape = plan.shape
+      const gpu = this.owner.gpu
+      const frame = gpu.ready(this.key, plan.inputKey)
+      if (!frame) {
+        // Not on the photo's opening (its first picture comes as a draft):
+        // the upload waits for a settled picture, then `warmGpu` makes it.
+        if (this.lastEvent.full) gpu.prepare(this.key, plan.inputKey, plan.input)
+        return false
+      }
+      const { compiled } = plan
+      const region = dragRegion(compiled.framing, frame.width, frame.height, 0)
+      if (region === 'cpu') return false
+      const keyHeld = heldKey(`gpu:${plan.inputKey}`, compiled.framing)
+      const measured = measuresPhoto(compiled.grade) && !this.heldOff
+      // A cropped drag is a region, which returns no held measurement (§4.4)
+      // and of Dehaze differs without one: the drag's first frame is
+      // measured whole, its pixels left in the host, then every frame reuses it.
+      if (region && measured && !this.held.use(keyHeld)) {
+        await this.gpuConvert(
+          gpuDragRequest({
+            grade: compiled.grade,
+            color: plan.color,
+            hdr: !!display,
+            region: null,
+            measure: null,
+            threads: interactiveThreads()
+          }),
+          frame,
+          keyHeld,
+          undefined,
+          { discardOutput: true },
+          signal
+        )
+      }
+      if (region)
+        region.margin = await this.dragReach(compiled.grade, frame, this.held.use(keyHeld))
+      const seq = ++this.seq
+      const sig = String(
+        hash32(gradeKey(['gpu', plan.inputKey, cropMode, display, compiled.grade, region]))
+      )
+      if (sig === this.lastSig.draft && this.lastEvent.draft) {
+        if (!this.closed)
+          this.owner.send(IPC.develop.rendered, { ...this.lastEvent.draft, seq, rev })
+        return true
+      }
+      const tag = `${this.tag}-${seq}`
+      const report = await this.gpuConvert(
+        gpuDragRequest({
+          grade: compiled.grade,
+          color: plan.color,
+          hdr: !!display,
+          region,
+          measure: gpu.measure ? measureOf(2) : null,
+          threads: interactiveThreads()
+        }),
+        frame,
+        keyHeld,
+        measured ? this.held.use(keyHeld) : undefined,
+        { frame: tag },
+        signal
+      )
+      // The engine had no way to the window (it was reloading): main passes the frame on.
+      if (report.output)
+        this.owner.send(IPC.develop.previewFrame, {
+          frame: tag,
+          width: report.width,
+          height: report.height,
+          data: report.output,
+          sample: display ? 'F16' : 'U8',
+          ...(report.companion ? { companion: companionOf(report.companion) } : {})
+        })
+      const ms = Math.round(performance.now() - t0)
+      if (!this.gpuLogged) {
+        this.gpuLogged = true
+        log.info(`GPU drag frame ${report.width}×${report.height} in ${ms} ms`)
+      }
+      if (this.closed) return true
+      // Unmeasured (the engine wouldn't, on the GPU): the last picture's numbers stand.
+      const stats = report.stats ?? this.lastEvent.draft?.stats ?? this.lastEvent.full?.stats
+      const event: RenderEvent = {
+        key: this.key,
+        seq,
+        rev,
+        kind: 'draft',
+        cropMode,
+        url: `frame:${tag}`,
+        width: report.width,
+        height: report.height,
+        ...(stats ? { stats } : {}),
+        ...(display && report.color?.master?.display
+          ? { ceiling: report.color.master.display.headroom }
+          : {}),
+        report: reportOf(report, ms, compiled.notes, compiled.layerIndex)
+      }
+      this.lastSig.draft = sig
+      this.lastEvent.draft = event
+      this.lastOut.draft = ''
+      this.owner.send(IPC.develop.rendered, event)
+      return true
+    } catch (err) {
+      if (isCancelled(err)) throw err
+      const e = err as EngineError
+      if (dragVerdict(e) === 'stale') {
+        // The frame (or the host) is gone: uploaded again for the next drag.
+        this.owner.gpu.lost(this.key)
+        this.held.drop()
+      } else if (shape) {
+        this.gpuRefused.add(shape)
+      }
+      log.info('GPU drag declined; this drag renders on the CPU', e.code, e.field ?? e.message)
+      return false
+    }
+  }
+
+  /**
+   * A GPU drag's convert with the photo's frame, keeping any held
+   * measurement it returns. A `held` refused by the engine (§4.4: a
+   * different op, size or setting) is dropped and the frame rendered once
+   * without it; a `measure` the GPU won't do is left off from then on.
+   * Anything else is for `gpuDraft` to read.
+   */
+  private async gpuConvert(
+    request: ConvertRequest,
+    frame: FrameRef,
+    keyHeld: string,
+    held: string | undefined,
+    opts: { frame?: string; discardOutput?: boolean },
+    signal: AbortSignal,
+    retried = false
+  ): Promise<ConvertReport> {
+    const native: NativeRefs = {
+      frame: frame.id,
+      keepHeld: this.held.id,
+      ...(held ? { held } : {}),
+      ...(opts.discardOutput ? { discardOutput: true } : {})
+    }
+    try {
+      const report = await this.owner.engine.convert(request, {
+        signal,
+        native,
+        ...(opts.frame ? { frame: opts.frame } : {})
+      })
+      this.held.kept(report, keyHeld)
+      return report
+    } catch (err) {
+      if (retried || !(err instanceof EngineError) || err.cancelled) throw err
+      const v = dragVerdict(err)
+      if (v === 'held' && held) {
+        this.held.drop()
+        this.heldOff = true
+        return this.gpuConvert(request, frame, keyHeld, undefined, opts, signal, true)
+      }
+      if (v === 'measure' && request.measure) {
+        this.owner.gpu.measure = false
+        log.info('the GPU drag path does not measure: drags keep the last numbers')
+        return this.gpuConvert(
+          { ...request, measure: null },
+          frame,
+          keyHeld,
+          held,
+          opts,
+          signal,
+          true
+        )
+      }
+      throw err
+    }
+  }
+
+  /**
+   * A cropped GPU drag's margin: the grade's reach (HR-0.20-1), asked with
+   * the held measurement so a held Dehaze leaves `measured` (§3.1, §4.4).
+   * Without an answer, the whole frame: the region is then the full render,
+   * cut, whatever the grade reads.
+   */
+  private dragReach(
+    grade: Grade | null,
+    frame: FrameRef,
+    held: string | undefined
+  ): Promise<number> {
+    const whole = Math.max(frame.width, frame.height)
+    return this.owner.engine
+      .regionReach(
+        {
+          grade,
+          sdr_grade: null,
+          frame_width: frame.width,
+          frame_height: frame.height,
+          output_width: frame.width,
+          output_height: frame.height
+        },
+        held
+      )
+      .then(
+        (r) => Math.max(REGION_MARGIN, Math.ceil(r.pixels)),
+        () => whole
+      )
+  }
+
+  /**
+   * A CPU render, with the held measurement of `keyHeld` when one is kept
+   * (a drag of Dehaze or Denoise: Phase A §4.4), keeping what it returns
+   * for the next frame. `keyHeld` null: a plain render, as before. A `held`
+   * refused is dropped and the render made once without it.
+   */
+  private async convertHeld(
+    request: ConvertRequest,
+    opts: { signal: AbortSignal; frame?: string },
+    keyHeld: string | null
+  ): Promise<ConvertReport> {
+    if (!keyHeld) return this.owner.engine.convert(request, opts)
+    const held = this.held.use(keyHeld)
+    try {
+      const report = await this.owner.engine.convert(request, {
+        ...opts,
+        native: { keepHeld: this.held.id, ...(held ? { held } : {}) }
+      })
+      this.held.kept(report, keyHeld)
+      return report
+    } catch (err) {
+      if (!held || !(err instanceof EngineError) || err.cancelled) throw err
+      const v = dragVerdict(err)
+      if (v !== 'held' && v !== 'stale') throw err
+      this.held.drop()
+      this.heldOff = true
+      return this.owner.engine.convert(request, opts)
+    }
   }
 
   /**
@@ -1753,7 +2121,9 @@ class Session {
    * the engine says the grade reads around a pixel, asked again whenever the
    * grade changes. A smoothed op at radius 0.02 on a 4000 px short side
    * needs about 220 px, so 96 px tiles disagreed at their edges. An engine
-   * without `regionReach` keeps the fixed margin.
+   * without `regionReach` keeps the fixed margin. No held measurement here
+   * (Phase A §4.4): a tile is of the full-resolution frame, which no drag's
+   * is, so it measures fresh (a cropped GPU drag passes its own: `dragReach`).
    */
   private async regionMargin(
     grade: Grade | null,
@@ -2196,6 +2566,9 @@ class Session {
   /** Stop, writing a pending edit; resolves once it is saved. */
   close(): Promise<void> {
     this.closed = true
+    // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5).
+    this.held.drop()
+    this.owner.gpu.close(this.key)
     this.lookQueue?.close()
     for (const f of this.lookFiles.values()) void rm(f, { force: true }).catch(() => undefined)
     clearTimeout(this.settle)
@@ -2239,11 +2612,16 @@ export class DevelopSessions {
   /** The photo a fresh open is loading, until its session is made. */
   private openingKey: string | null = null
 
+  /** The GPU drag path's state for the interactive engine (Phase A §4.3). */
+  readonly gpu: GpuDrag
+
   constructor(
     readonly library: Library,
     readonly engine: EngineClient,
     readonly bgEngine: EngineClient
-  ) {}
+  ) {
+    this.gpu = new GpuDrag(engine, library.index)
+  }
 
   send(channel: string, payload: unknown): void {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload)
