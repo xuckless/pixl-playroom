@@ -11,7 +11,16 @@
  * A heal or clone keeps its source as a point, not an offset, for the same
  * reason.
  */
-import type { Ellipse, Feather, Orientation, Retouch, RetouchStep, SpotShape } from './engine-types'
+import type {
+  Ellipse,
+  Feather,
+  Orientation,
+  Refine,
+  Retouch,
+  RetouchStep,
+  SpotShape
+} from './engine-types'
+import { refineFor } from './refine'
 import { transformPoint } from './orientation'
 import { tk } from './i18n'
 
@@ -49,6 +58,24 @@ export interface RetouchSpot {
   /** Pet eye: 0…100 each. */
   amount: number
   pupilLevel: number
+  /**
+   * Heal and clone: how the spot's edge meets the photo (engine 0.19.2,
+   * Phase A §4.2). Absent is plain, as before; `edgeSnap` keeps the strong
+   * edges a spot crosses; `matting` blends softer and wider. The owner's
+   * three choices (2026-10-11).
+   */
+  refine?: SpotRefine
+}
+
+/** A heal's edge: the heal brush's setting, kept for every new spot until changed. */
+export type SpotRefine = 'edgeSnap' | 'matting'
+export type SpotRefineChoice = 'plain' | SpotRefine
+export const SPOT_REFINES: SpotRefineChoice[] = ['plain', 'edgeSnap', 'matting']
+
+/** The engine's refine for a heal or clone spot, or null for plain: each method at its defaults. */
+export function spotRefine(r: SpotRefine | undefined): Refine | null {
+  if (r !== 'edgeSnap' && r !== 'matting') return null
+  return refineFor({ on: true, radius: 0.5, method: r }, false, 0.005)
 }
 
 export const SPOT_LABEL: Record<SpotKind, string> = {
@@ -200,11 +227,14 @@ export function compileRetouch(
         const want = { x: src.x - points[0].x, y: src.y - points[0].y }
         const off = fitOffset(want, points, s.radius, feather.radius, fw, fh)
         if (!off) continue
+        const refine = spotRefine(s.refine)
         const spot = {
           shape,
           source_offset: { x: round5(off.x), y: round5(off.y) },
           feather,
-          opacity
+          opacity,
+          // Only when one is set, so a plain spot's request is 0.19's.
+          ...(refine ? { refine } : {})
         }
         steps.push(s.kind === 'heal' ? { Heal: spot } : { Clone: spot })
         break

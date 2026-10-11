@@ -832,9 +832,10 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     .filter((p): p is PixelStep => p !== null)
   // The Advanced view's layers are the engine's own JSON: a 0.19 one is
   // brought to 0.19.2's shapes (Phase A §1.6), or the engine refuses it.
-  r.custom = (Array.isArray(r.custom) ? (r.custom as unknown[]) : [])
-    .filter(isObject)
-    .map((c) => ({ ...(c as unknown as CustomLayer), layer: migrateLook(structuredClone(c.layer)) }))
+  r.custom = (Array.isArray(r.custom) ? (r.custom as unknown[]) : []).filter(isObject).map((c) => ({
+    ...(c as unknown as CustomLayer),
+    layer: migrateLook(structuredClone(c.layer))
+  }))
   r.retouch = (Array.isArray(r.retouch) ? (r.retouch as unknown[]) : []).filter(
     (s): s is RetouchSpot =>
       isObject(s) &&

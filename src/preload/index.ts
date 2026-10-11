@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { NoiseEstimate, PreviewFrame, Transform } from '../shared/engine-types'
 import type { GuideLine } from '../shared/upright'
-import type { P as SpotPoint, RetouchSpot } from '../shared/retouch'
+import type { P as SpotPoint, RetouchSpot, SpotRefine } from '../shared/retouch'
 import type { PixelStep } from '../shared/pixels'
 import type { ExportSettings } from '../shared/export'
 import type { Guard } from '../shared/exportGuards'
@@ -245,8 +245,9 @@ const api = {
       points: SpotPoint[],
       radius: number,
       feather: number,
-      kind: 'heal' | 'clone'
-    ) => call<SpotPoint>(IPC.develop.suggestHeal, key, points, radius, feather, kind),
+      kind: 'heal' | 'clone',
+      refine?: SpotRefine
+    ) => call<SpotPoint>(IPC.develop.suggestHeal, key, points, radius, feather, kind, refine),
     suggestUpright: (key: string, mode: 'Level' | 'Vertical' | 'Full', focal: number) =>
       call<Transform>(IPC.develop.suggestUpright, key, mode, focal),
     uprightFromLines: (key: string, lines: GuideLine[], focal: number) =>

@@ -135,7 +135,15 @@ export const REFINE_METHODS: RefineMethodInfo[] = [
     what: tk('Pulls the edge onto the photo’s brightness edges. The quickest.'),
     expect: tk('Smooth, slightly soft edges. Good for most masks, and live while you drag.'),
     params: [
-      { key: 'epsilon', label: tk('Edge threshold'), min: 1e-6, max: 1, step: 1e-4, def: REFINE_EPSILON, unit: 'plain' }
+      {
+        key: 'epsilon',
+        label: tk('Edge threshold'),
+        min: 1e-6,
+        max: 1,
+        step: 1e-4,
+        def: REFINE_EPSILON,
+        unit: 'plain'
+      }
     ],
     whole: false
   },
@@ -143,9 +151,19 @@ export const REFINE_METHODS: RefineMethodInfo[] = [
     kind: 'guidedColour',
     label: tk('Guided, colour'),
     what: tk('Like Guided, but sees colour edges too, where two colours are equally bright.'),
-    expect: tk('Cleaner edges between colours that are equally bright. A little slower than Guided.'),
+    expect: tk(
+      'Cleaner edges between colours that are equally bright. A little slower than Guided.'
+    ),
     params: [
-      { key: 'epsilon', label: tk('Edge threshold'), min: 1e-6, max: 1, step: 1e-4, def: REFINE_EPSILON, unit: 'plain' }
+      {
+        key: 'epsilon',
+        label: tk('Edge threshold'),
+        min: 1e-6,
+        max: 1,
+        step: 1e-4,
+        def: REFINE_EPSILON,
+        unit: 'plain'
+      }
     ],
     whole: false
   },
@@ -153,10 +171,20 @@ export const REFINE_METHODS: RefineMethodInfo[] = [
     kind: 'edgeSnap',
     label: tk('Edge snap'),
     what: tk('Snaps a hard edge onto the strongest edge in the photo nearby.'),
-    expect: tk('Crisp edges and sharp corners. Best on skies, buildings and trees. Applied when you let go.'),
+    expect: tk(
+      'Crisp edges and sharp corners. Best on skies, buildings and trees. Applied when you let go.'
+    ),
     strength: 'distance',
     params: [
-      { key: 'distance', label: tk('Distance'), min: 0.0005, max: 0.05, step: 0.0005, def: 0.005, unit: 'short' }
+      {
+        key: 'distance',
+        label: tk('Distance'),
+        min: 0.0005,
+        max: 0.05,
+        step: 0.0005,
+        def: 0.005,
+        unit: 'short'
+      }
     ],
     whole: true
   },
@@ -167,11 +195,51 @@ export const REFINE_METHODS: RefineMethodInfo[] = [
     expect: tk('Soft edges that still follow the photo. Slower. Applied when you let go.'),
     strength: 'sigma_spatial',
     params: [
-      { key: 'sigma_spatial', label: tk('Reach'), min: 0.001, max: 0.05, step: 0.001, def: 0.008, unit: 'short' },
-      { key: 'sigma_luma', label: tk('Brightness'), min: 0.001, max: 1, step: 0.001, def: 0.05, unit: 'plain' },
-      { key: 'sigma_chroma', label: tk('Colour'), min: 0.001, max: 1, step: 0.001, def: 0.05, unit: 'plain' },
-      { key: 'lambda', label: tk('Smoothness'), min: 1, max: 1024, step: 1, def: 128, unit: 'plain' },
-      { key: 'iterations', label: tk('Iterations'), min: 1, max: 100, step: 1, def: 25, unit: 'plain' }
+      {
+        key: 'sigma_spatial',
+        label: tk('Reach'),
+        min: 0.001,
+        max: 0.05,
+        step: 0.001,
+        def: 0.008,
+        unit: 'short'
+      },
+      {
+        key: 'sigma_luma',
+        label: tk('Brightness'),
+        min: 0.001,
+        max: 1,
+        step: 0.001,
+        def: 0.05,
+        unit: 'plain'
+      },
+      {
+        key: 'sigma_chroma',
+        label: tk('Colour'),
+        min: 0.001,
+        max: 1,
+        step: 0.001,
+        def: 0.05,
+        unit: 'plain'
+      },
+      {
+        key: 'lambda',
+        label: tk('Smoothness'),
+        min: 1,
+        max: 1024,
+        step: 1,
+        def: 128,
+        unit: 'plain'
+      },
+      {
+        key: 'iterations',
+        label: tk('Iterations'),
+        min: 1,
+        max: 100,
+        step: 1,
+        def: 25,
+        unit: 'plain'
+      }
     ],
     whole: true
   },
@@ -179,12 +247,38 @@ export const REFINE_METHODS: RefineMethodInfo[] = [
     kind: 'matting',
     label: tk('Hair and fine detail'),
     what: tk('Matting: works out partial transparency in a band along the edge.'),
-    expect: tk('Keeps hair, twigs and branches against the sky. Best on people. The slowest; applied when you let go.'),
+    expect: tk(
+      'Keeps hair, twigs and branches against the sky. Best on people. The slowest; applied when you let go.'
+    ),
     strength: 'band',
     params: [
-      { key: 'band', label: tk('Band'), min: 0.001, max: 0.05, step: 0.001, def: 0.01, unit: 'short' },
-      { key: 'epsilon', label: tk('Edge threshold'), min: 1e-7, max: 0.1, step: 1e-6, def: 1e-5, unit: 'plain' },
-      { key: 'iterations', label: tk('Iterations'), min: 1, max: 500, step: 1, def: 100, unit: 'plain' }
+      {
+        key: 'band',
+        label: tk('Band'),
+        min: 0.001,
+        max: 0.05,
+        step: 0.001,
+        def: 0.01,
+        unit: 'short'
+      },
+      {
+        key: 'epsilon',
+        label: tk('Edge threshold'),
+        min: 1e-7,
+        max: 0.1,
+        step: 1e-6,
+        def: 1e-5,
+        unit: 'plain'
+      },
+      {
+        key: 'iterations',
+        label: tk('Iterations'),
+        min: 1,
+        max: 500,
+        step: 1,
+        def: 100,
+        unit: 'plain'
+      }
     ],
     whole: true
   }

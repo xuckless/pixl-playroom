@@ -76,7 +76,13 @@ import type { ProblemInput } from '../shared/crash'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
 import type { GuideLine } from '../shared/upright'
-import { removeSpot, strokeOver, type P as SpotPoint, type RetouchSpot } from '../shared/retouch'
+import {
+  removeSpot,
+  strokeOver,
+  type P as SpotPoint,
+  type RetouchSpot,
+  type SpotRefine
+} from '../shared/retouch'
 import { grey8 } from './pngio'
 import type { PixelStep } from '../shared/pixels'
 import { enhanceAvailability, enhanceRates } from './enhance'
@@ -581,8 +587,14 @@ export function registerIpc(s: Services): void {
   )
   handle(
     IPC.develop.suggestHeal,
-    (key: string, points: SpotPoint[], radius: number, feather: number, kind: 'heal' | 'clone') =>
-      s.sessions.suggestHeal(key, points, radius, feather, kind)
+    (
+      key: string,
+      points: SpotPoint[],
+      radius: number,
+      feather: number,
+      kind: 'heal' | 'clone',
+      refine?: SpotRefine
+    ) => s.sessions.suggestHeal(key, points, radius, feather, kind, refine)
   )
   handle(
     IPC.develop.suggestUpright,

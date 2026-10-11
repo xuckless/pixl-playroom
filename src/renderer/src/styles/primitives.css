@@ -381,6 +381,10 @@ input.name {
   width: 100%;
   min-width: 0;
 }
+/* A choice with an (i) after it. */
+.select.with-tip {
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+}
 
 /* checkbox */
 .check {

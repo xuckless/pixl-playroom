@@ -30,9 +30,11 @@ import { lensCorrection, MANUAL_GEOMETRY } from '../shared/lens'
 import {
   compileRetouch,
   featherOf,
+  spotRefine,
   spotShape,
   type P as SpotPoint,
-  type RetouchSpot
+  type RetouchSpot,
+  type SpotRefine
 } from '../shared/retouch'
 import { stackSignature, type PixelStep } from '../shared/pixels'
 import { developMark, pixlSupported, resolveRawColour } from '../shared/rawcolour'
@@ -2023,8 +2025,11 @@ class Session {
     points: SpotPoint[],
     radius: number,
     feather: number,
-    kind: 'heal' | 'clone'
+    kind: 'heal' | 'clone',
+    refine?: SpotRefine
   ): Promise<SpotPoint> {
+    // The spot's refine (0.19.2): the source found lies past the refined hole.
+    const r0 = spotRefine(refine)
     // The photo as it is now: a source is never picked from what a stroke healed away.
     const src = this.basePx().proxy
     const r = (await this.owner.bgEngine.suggestHealSource({
@@ -2037,6 +2042,7 @@ class Session {
       shape: spotShape(points, radius),
       feather: featherOf({ feather, radius }),
       score: kind === 'heal' ? 'Texture' : 'Difference',
+      ...(r0 ? { refine: r0 } : {}),
       limits: READ_LIMITS,
       threads: BACKGROUND_THREADS
     })) as unknown as { source_offset: SpotPoint }
@@ -2462,9 +2468,10 @@ export class DevelopSessions {
     points: SpotPoint[],
     radius: number,
     feather: number,
-    kind: 'heal' | 'clone'
+    kind: 'heal' | 'clone',
+    refine?: SpotRefine
   ): Promise<SpotPoint> {
-    return this.get(key).suggestHeal(points, radius, feather, kind)
+    return this.get(key).suggestHeal(points, radius, feather, kind, refine)
   }
 
   suggestUpright(

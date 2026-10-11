@@ -15,7 +15,8 @@ import {
   SPOT_LABEL,
   type P,
   type RetouchSpot,
-  type SpotKind
+  type SpotKind,
+  type SpotRefine
 } from '../../../shared/retouch'
 import type { PixelStep } from '../../../shared/pixels'
 import { api, errorText } from './api'
@@ -41,12 +42,13 @@ async function sourceFor(
   points: P[],
   radius: number,
   feather: number,
-  kind: 'heal' | 'clone'
+  kind: 'heal' | 'clone',
+  refine?: SpotRefine
 ): Promise<P> {
   const session = useDevelop.getState().session
   if (!session) return besideOf(points, radius)
   try {
-    const p = await api.develop.suggestHeal(session.key, points, radius, feather, kind)
+    const p = await api.develop.suggestHeal(session.key, points, radius, feather, kind, refine)
     return { x: clamp01(p.x), y: clamp01(p.y) }
   } catch {
     return besideOf(points, radius)
@@ -78,7 +80,11 @@ export function beginSpot(
     spot.radiusY = shape.radiusY
     spot.rotate = shape.rotate
   }
-  if (kind === 'heal' || kind === 'clone') spot.source = { ...at }
+  if (kind === 'heal' || kind === 'clone') {
+    spot.source = { ...at }
+    // The heal brush's Edges, kept for every new spot until changed.
+    if (h.refine && h.refine !== 'plain') spot.refine = h.refine
+  }
   dev.edit((r) => r.retouch.push(spot), true)
   return spot.id
 }
@@ -156,7 +162,8 @@ export async function endSpot(id: string, source: P | null): Promise<void> {
   const spot = dev.recipe?.retouch.find((x) => x.id === id)
   if (!session || !spot) return
   if (spot.kind === 'heal' || spot.kind === 'clone') {
-    const src = source ?? (await sourceFor(spot.points, spot.radius, spot.feather, spot.kind))
+    const src =
+      source ?? (await sourceFor(spot.points, spot.radius, spot.feather, spot.kind, spot.refine))
     dragSource(id, src)
     spot.source = src
   }

@@ -5,7 +5,7 @@
  */
 import { create } from 'zustand'
 import { DEFAULT_ENHANCE, normaliseEnhance, type EnhanceSettings } from '../../../shared/enhance'
-import type { SpotKind } from '../../../shared/retouch'
+import type { SpotKind, SpotRefineChoice } from '../../../shared/retouch'
 import { aiDenoiseModel, type AiDenoiseModel } from '../../../shared/recipe'
 import { isCardId, type CardId } from '../../../shared/cards'
 import { migrateUi } from './uiMigrate'
@@ -95,6 +95,12 @@ export interface HealSettings {
   /** Remove: a click (no drag) takes the object there (SAM 2.1), not a disc. */
   findObject?: boolean
   spotLevel?: number
+  /**
+   * Heal and clone: how a new spot's edge meets the photo (engine 0.19.2):
+   * plain, Edge snap or Matting. Set once here and kept for every spot after
+   * until changed (the owner, 2026-10-11). Absent is plain.
+   */
+  refine?: SpotRefineChoice
 }
 
 /**
