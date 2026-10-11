@@ -9,7 +9,13 @@ export interface IndexRequest {
 
 export type IndexResponse =
   | { kind: 'response'; id: number; ok: true; result: unknown }
-  | { kind: 'response'; id: number; ok: false; error: { message: string; code: string } }
+  | {
+      kind: 'response'
+      id: number
+      ok: false
+      /** `values`: what a message for the user names (`{{folder}}`), filled in where it is translated. */
+      error: { message: string; code: string; values?: Record<string, string> }
+    }
 
 /**
  * What the index finds out on its own, after a call has answered. `sources`:

@@ -268,17 +268,20 @@ export function LibraryIdentity(): React.JSX.Element {
 
 /** Photos opened on their own: their folder, whole, a click away (the focused photo's). */
 function ShowFolder(): React.JSX.Element | null {
-  const folder = useLibrary(
-    (s) => (s.items.find((i) => i.key === s.focus) ?? s.items[0])?.folder ?? null
-  )
+  const shown = useLibrary((s) => s.items.find((i) => i.key === s.focus) ?? s.items[0] ?? null)
   const openFolder = useLibrary((s) => s.openFolder)
-  if (!folder) return null
+  const folder = shown?.folder ?? null
+  if (!folder || !shown) return null
   return (
     <button
       className="sm ghost"
       title={folder}
       onClick={() => {
-        void openFolder(folder)
+        // The photo it was opened for stays the one selected among its folder's.
+        void openFolder(folder).then(() => {
+          if (useLibrary.getState().items.some((i) => i.key === shown.key))
+            useLibrary.setState({ selection: [shown.key], focus: shown.key })
+        })
       }}
     >
       <Icon name="folder" />

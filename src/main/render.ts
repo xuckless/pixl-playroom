@@ -7,9 +7,10 @@
  * Renders are coalesced: while one is in flight only the newest recipe waits,
  * and a moving slider renders the small draft proxy; the full proxy follows
  * once the slider settles, or at once when it is let go. A slider still held
- * settles at the draft's size, as it does on a 1× screen, and takes the
- * larger proxy a Retina loupe asks for only after a long rest (or the
- * release). A newer edit stops a settled
+ * settles at the draft's size wherever the loupe asks for more than the
+ * draft (a Retina screen, or a large loupe on a 1× one), and takes the
+ * larger proxy only after a long rest (or the release); a drag frame the GPU
+ * graded is the full proxy already, and stands until then. A newer edit stops a settled
  * render (and the masks, "before" and thumbnails after it) at the engine's
  * next stage; a draft in flight finishes, so a moving slider keeps showing
  * frames. Both are JPEGs, quick to write and for the loupe to read.
@@ -165,9 +166,9 @@ interface GpuPlan {
 const REGION_MARGIN = 96
 const SETTLE_MS = 180
 /**
- * How long it must rest when the full render is the large proxy: pausing
- * mid-drag should not start a render four times the draft's size that the
- * next move then waits behind.
+ * How long the first draft of a photo stands when the full render is the
+ * large proxy, four times the draft's size (a held slider has its own rest,
+ * `HELD_SETTLE_MS`).
  */
 const SETTLE_LARGE_MS = 500
 /**
@@ -408,6 +409,11 @@ class Session {
    */
   private held = false
   private letGo: NodeJS.Timeout | undefined
+  /**
+   * Whether the draft on screen was graded on the GPU: the full proxy's
+   * size, so a held slider's rest has nothing smaller to put in its place.
+   */
+  private gpuShown = false
   private save: NodeJS.Timeout | undefined
   /**
    * Picture, mask and headroom files: each render its own name, so an event
@@ -847,11 +853,17 @@ class Session {
       if (this.held) {
         // A slider held: it rests at the draft's size soon, and at the
         // loupe's own once it has rested a while (or at once when let go).
-        this.settle = setTimeout(() => this.schedule('full'), SETTLE_MS)
+        this.settle = setTimeout(() => {
+          // The GPU's frame is the full proxy: the draft-sized stand-in would be a step down.
+          if (this.held && this.gpuShown && this.holding()) return
+          this.schedule('full')
+        }, SETTLE_MS)
         this.letGo = setTimeout(() => {
           const larger = this.holding()
           this.held = false
           if (larger) this.schedule('full')
+          // No larger picture to make: the rest still ends the drag.
+          else this.endDrag()
         }, HELD_SETTLE_MS)
       } else {
         const wait = this.source('full') === this.viewPx().proxy ? SETTLE_LARGE_MS : SETTLE_MS
@@ -874,11 +886,13 @@ class Session {
     try {
       // A settled edit bakes its lens correction in the background.
       if (kind === 'full') this.bake()
-      // The release (or a pause long enough to settle) ends the drag.
-      if (kind === 'full') this.endDrag()
+      // The release (or the long rest) ends the drag; a held slider's pause does not.
+      if (kind === 'full' && !this.held) this.endDrag()
       await this.renderPicture(kind, signal)
-      // The GPU frame made ready for the next drag, off the drag's path.
-      if (kind === 'full' && !this.pending && !this.previewing) void this.warmGpu()
+      if (kind === 'full') this.gpuShown = false
+      // The GPU frame made ready for the next drag, off the drag's path: its
+      // upload renders the full proxy, which a held slider must not wait behind.
+      if (kind === 'full' && !this.pending && !this.previewing && !this.held) void this.warmGpu()
       // A newer edit waiting behind this render will redo what follows.
       if (
         kind === 'draft' &&
@@ -977,8 +991,10 @@ class Session {
     const display = this.view.display ?? null
     // A drag frame on the GPU when it will take it (Phase A §4.3); every
     // other picture, and a drag it won't, on the CPU as before.
-    if (kind === 'draft' && (await this.gpuDraft(t0, cropMode, rev, recipe, display, signal)))
-      return
+    if (kind === 'draft') {
+      this.gpuShown = await this.gpuDraft(t0, cropMode, rev, recipe, display, signal)
+      if (this.gpuShown) return
+    }
     const compiled = await this.compileFor(
       recipe,
       src,
@@ -1152,7 +1168,8 @@ class Session {
     this.lastOut[kind] = out
     // A frame is kept by the window only a moment: a file alone can be shown
     // again (and Full HDR's AVIF arm, which stays a dev switch, is not kept).
-    if (kind === 'full' && out && !display) {
+    // Nor is a held slider's stand-in (the draft's size) one to go back to.
+    if (kind === 'full' && out && !display && !this.holding()) {
       this.recentFull.delete(sig)
       this.recentFull.set(sig, { event, out })
       while (this.recentFull.size > RECENT_FULL)
@@ -1199,12 +1216,16 @@ class Session {
   private async gpuPlan(
     recipe: Recipe,
     cropMode: boolean,
-    display: ViewState['display'] | null
+    display: ViewState['display'] | null,
+    /** For the upload alone: a photo with no grade yet may get one the GPU takes. */
+    warm = false
   ): Promise<GpuPlan | null> {
     if (!this.owner.gpu.usable() || this.info.is_hdr || this.bakePending()) return null
     const src = this.viewPx().proxy
     const compiled = await this.compileFor(recipe, src, !cropMode, false, false, !!display, 'gpu')
-    if (gpuRefusal(compiled.grade) !== null) return null
+    // No grade is nothing to drag on the GPU, but nothing against the frame
+    // being up for the first edit; a grade it refuses would not use one.
+    if (compiled.grade ? gpuRefusal(compiled.grade) !== null : !warm) return null
     const shape = gradeShape(compiled.grade)
     if (this.gpuRefused.has(shape)) return null
     // The CPU draft's display space: the drag names it (§4.3), the frame is graded into it.
@@ -1231,7 +1252,12 @@ class Session {
    */
   private async warmGpu(): Promise<void> {
     try {
-      const plan = await this.gpuPlan(this.recipe, this.view.cropMode, this.view.display ?? null)
+      const plan = await this.gpuPlan(
+        this.recipe,
+        this.view.cropMode,
+        this.view.display ?? null,
+        true
+      )
       if (plan && !this.closed) this.owner.gpu.prepare(this.key, plan.inputKey, plan.input)
     } catch {
       // Nothing lost: drags stay on the CPU.
@@ -1241,7 +1267,7 @@ class Session {
   /**
    * One drag frame graded on the GPU from the photo's uploaded frame (Phase
    * A §4.3), sent as a draft. False when this frame renders on the CPU
-   * instead: no frame up yet (one is asked for), a framing the frame can't
+   * instead: no frame up yet, a framing the frame can't
    * show (a turn, a straighten, an Upright), or the engine refused it.
    * Every refusal or error is that signal and never the user's error: the
    * engine doesn't fall back by itself, Playroom does.
@@ -1261,15 +1287,20 @@ class Session {
       shape = plan.shape
       const gpu = this.owner.gpu
       const frame = gpu.ready(this.key, plan.inputKey)
-      if (!frame) {
-        // Not on the photo's opening (its first picture comes as a draft):
-        // the upload waits for a settled picture, then `warmGpu` makes it.
-        if (this.lastEvent.full) gpu.prepare(this.key, plan.inputKey, plan.input)
-        return false
-      }
+      // No frame up: this drag is the CPU's. The upload renders the full
+      // proxy, so it waits for a settled picture (`warmGpu`), never a drag.
+      if (!frame) return false
       const { compiled } = plan
       const region = dragRegion(compiled.framing, frame.width, frame.height, 0)
       if (region === 'cpu') return false
+      // Full HDR, cropped: a region measures neither the picture's peak nor
+      // its reach (refused by `color.peak` / `color.reach`), so it states the
+      // whole picture's, as a 1:1 tile does. None yet: this drag is the CPU's.
+      let color = plan.color
+      if (display && region) {
+        if (!this.hdrFigures) return false
+        color = masterFor(display, this.hdrFigures, DRAFT_COMPANION_EDGE)
+      }
       const keyHeld = heldKey(`gpu:${plan.inputKey}`, compiled.framing)
       const measured = measuresPhoto(compiled.grade) && !this.heldOff
       // A cropped drag is a region, which returns no held measurement (§4.4)
@@ -1296,7 +1327,7 @@ class Session {
         region.margin = await this.dragReach(compiled.grade, frame, this.heldSlot.use(keyHeld))
       const seq = ++this.seq
       const sig = String(
-        hash32(gradeKey(['gpu', plan.inputKey, cropMode, display, compiled.grade, region]))
+        hash32(gradeKey(['gpu', plan.inputKey, cropMode, display, color, compiled.grade, region]))
       )
       if (sig === this.lastSig.draft && this.lastEvent.draft) {
         if (!this.closed)
@@ -1307,7 +1338,7 @@ class Session {
       const report = await this.gpuConvert(
         gpuDragRequest({
           grade: compiled.grade,
-          color: plan.color,
+          color,
           hdr: !!display,
           region,
           measure: gpu.measure ? measureOf(2) : null,
@@ -2037,7 +2068,11 @@ class Session {
     const out = frame ? '' : join(this.dir, `region-${this.regionSlot}.jpg`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
-    const margin = await this.regionMargin(compiled.grade, src, framed, zoom)
+    const margin = await this.regionMargin(
+      compiled.grade,
+      await this.lensedSize(compiled.lens, width, height),
+      framed
+    )
     const request: ConvertRequest = {
       ...blankRequest(src.path, out, src.input, original),
       raw: null,
@@ -2142,13 +2177,7 @@ class Session {
     const key = JSON.stringify([c.lens, c.framing, width, height])
     const had = this.framedSizes.get(key)
     if (had) return had
-    let w = width
-    let h = height
-    if (c.lens) {
-      const f = await this.owner.engine.lensFrame(c.lens, width, height)
-      w = f.frame.width
-      h = f.frame.height
-    }
+    const { width: w, height: h } = await this.lensedSize(c.lens, width, height)
     let size = { width: w, height: h }
     if (c.framing) {
       // The frame is already oriented: only what comes after the turn.
@@ -2158,6 +2187,17 @@ class Session {
     if (this.framedSizes.size > 32) this.framedSizes.clear()
     this.framedSizes.set(key, size)
     return size
+  }
+
+  /** The oriented frame after its lens correction's crop: the frame the grade runs on. */
+  private async lensedSize(
+    lens: LensCorrection | null,
+    width: number,
+    height: number
+  ): Promise<{ width: number; height: number }> {
+    if (!lens) return { width, height }
+    const f = await this.owner.engine.lensFrame(lens, width, height)
+    return { width: f.frame.width, height: f.frame.height }
   }
 
   /** The last grade's region reach, by what it was asked for (one: tiles of one view share it). */
@@ -2174,27 +2214,33 @@ class Session {
    */
   private async regionMargin(
     grade: Grade | null,
-    src: { width: number; height: number },
-    framed: { width: number; height: number },
-    zoom: number
+    /** The oriented frame after the lens correction: what the grade runs on. */
+    frame: { width: number; height: number },
+    /** The render's output at full size, before any resize. */
+    framed: { width: number; height: number }
   ): Promise<number> {
-    const output = {
-      width: Math.max(1, Math.round(framed.width * zoom)),
-      height: Math.max(1, Math.round(framed.height * zoom))
-    }
-    const key = JSON.stringify([grade, src.width, src.height, output.width, output.height])
+    const key = JSON.stringify([grade, frame.width, frame.height, framed.width, framed.height])
     if (this.reach?.key !== key) {
+      const whole = Math.max(frame.width, frame.height)
       const pixels = await this.owner.engine
         .regionReach({
           grade,
           sdr_grade: null,
-          frame_width: src.width,
-          frame_height: src.height,
-          output_width: output.width,
-          output_height: output.height
+          frame_width: frame.width,
+          frame_height: frame.height,
+          output_width: framed.width,
+          output_height: framed.height
         })
         .then(
-          (r) => Math.ceil(r.pixels),
+          (r) => {
+            // A mask snapped by a method that reads the whole frame (Edge
+            // snap, the solver, Matting) has no reach short of all of it:
+            // the tile is then the whole frame's render, cut (the owner,
+            // 2026-10-11: 1:1 shows the edge the export makes, at its cost).
+            if (r.pixels >= whole)
+              log.info('1:1 tiles render the whole frame', { reads: r.measured })
+            return Math.min(Math.ceil(r.pixels), whole)
+          },
           () => 0
         )
       this.reach = { key, pixels }
@@ -2444,7 +2490,8 @@ class Session {
     refine?: SpotRefine
   ): Promise<SpotPoint> {
     // The spot's refine (0.19.2): the source found lies past the refined hole.
-    const r0 = spotRefine(refine)
+    const frame = orientedFrame(this.recipe, this.px.frameWidth, this.px.frameHeight)
+    const r0 = spotRefine(refine, { radius, feather }, frame.width, frame.height)
     // The photo as it is now: a source is never picked from what a stroke healed away.
     const src = this.basePx().proxy
     const r = (await this.owner.bgEngine.suggestHealSource({

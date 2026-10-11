@@ -93,7 +93,7 @@ function act(
 }
 
 const focusedItem = (): LibraryItem | undefined => lib().items.find((i) => i.key === lib().focus)
-const revealLabel = (): string =>
+export const revealLabel = (): string =>
   IS_MAC
     ? t('Show in Finder')
     : navigator.platform.startsWith('Win')

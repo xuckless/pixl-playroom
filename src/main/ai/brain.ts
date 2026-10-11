@@ -373,7 +373,9 @@ export class BrainStore {
       brain: BRAIN_ID,
       seed: 1,
       // Gemma pretty-prints its JSON: under 3000 a plan is cut off (the guide).
-      max_tokens: { plan: 3000, rephrase: 40, describe: 300 },
+      // `name` is required since pixl-auto 0.19.2 (Playroom's own naming call
+      // states the same budget itself).
+      max_tokens: { name: NAME_MAX_TOKENS, plan: 3000, rephrase: 40, describe: 300 },
       timeout_ms: 180_000,
       workers: auto().workersForPrompt(),
       api_key

@@ -28,6 +28,7 @@ import type {
   SamResult
 } from '../../shared/engine-types'
 import { pickBySize } from '../../shared/concepts'
+import { toRgba } from '../../shared/gpudrag'
 
 const ENGINE_PACKAGE = '@xuckless/pixl-engine'
 /** What Playroom cannot run without. The rest (lens, upright, AI…) are looked up per call. */
@@ -436,7 +437,13 @@ function deliver(frame: string, result: unknown): void {
     height: number
     companion?: { width: number; height: number; data: Uint8Array } | null
   } | null
-  if (!previews || !r?.output) return
+  if (!r?.output) return
+  // A GPU drag of an opaque photo is RGB (it names no channels): RGBA, as
+  // the window and main's relay both take a frame.
+  r.output = toRgba(r.output, r.width, r.height)
+  if (r.companion)
+    r.companion.data = toRgba(r.companion.data, r.companion.width, r.companion.height)
+  if (!previews) return
   // Four bytes a pixel is RGBA U8; eight is RGBA half floats (Full HDR).
   const f16 = r.output.byteLength === r.width * r.height * 8
   const msg: PreviewFrame = {

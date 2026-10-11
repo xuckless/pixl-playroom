@@ -7,7 +7,7 @@ import {
 } from './hdrdisplay'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import log from 'electron-log/main'
-import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
+import { copyFile, mkdir, readdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { cpus } from 'os'
 import { pathToFileURL } from 'url'
@@ -107,7 +107,15 @@ import { OAuthError } from './account/oauth'
 import { takeOpens } from './open'
 import { SAM_MODEL, type SelectService } from './select/service'
 import { boxAround, type PromptSourceAsk, type SelectDecode } from '../shared/prompt'
-import { paths } from './paths'
+import { paths, scriptedHome } from './paths'
+import { locationRoot } from './project/locate'
+import {
+  LOCATION_SETTING,
+  LOCATIONS_ASKED,
+  locationOf,
+  type LocationKind,
+  type LocationsInfo
+} from '../shared/locations'
 import type { DevelopSessions } from './render'
 import { readSettings } from './settings'
 import { checkForUpdates, installUpdate, setUpdateChannel, updateState } from './updater'
@@ -281,6 +289,29 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.getSetting, (key: string) => s.index.getSetting(key))
   handle(IPC.app.setSetting, (key: string, value: unknown) => s.index.setSetting(key, value))
   handle(IPC.app.reveal, (path: string) => shell.showItemInFolder(path))
+  handle(IPC.app.locations, async (): Promise<LocationsInfo> => {
+    const home = scriptedHome() ?? undefined
+    const [projects, exports, asked] = await Promise.all([
+      s.index.getSetting(LOCATION_SETTING.projects).then(locationOf),
+      s.index.getSetting(LOCATION_SETTING.exports).then(locationOf),
+      s.index.getSetting(LOCATIONS_ASKED)
+    ])
+    return {
+      projects: { location: projects, path: locationRoot('projects', projects, home) },
+      exports: { location: exports, path: locationRoot('exports', exports, home) },
+      // A scripted run is never asked (and saves inside its own profile).
+      ask: asked !== true && scriptedHome() === null
+    }
+  })
+  handle(IPC.app.showLocation, async (kind: LocationKind) => {
+    const loc = locationOf(await s.index.getSetting(LOCATION_SETTING[kind]))
+    const dir = locationRoot(kind, loc, scriptedHome() ?? undefined)
+    if (!dir) return
+    // The preset folder is made by the first thing saved there: made now, to be shown.
+    await mkdir(dir, { recursive: true }).catch(() => undefined)
+    const failed = await shell.openPath(dir)
+    if (failed) throw new Error(t('Playroom cannot open {{folder}}.', { folder: dir }))
+  })
   handle(IPC.menu.set, (spec: MenuBarSpec) => setMenuSpec(spec))
   handle(IPC.app.language, () => languageState())
   handle(IPC.app.setLanguage, (setting: LanguageSetting) => {

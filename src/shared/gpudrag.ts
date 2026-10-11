@@ -98,12 +98,13 @@ function refusedIn(op: GradeOp): string | null {
  * §4.3's list), or null when it should take it: a layer's mask, an opacity
  * other than 1, a blend other than Normal, an HDR or ICC stage, Tone's
  * Guided base, any smoothing above 0, and every op but Primary, Tone,
- * HslBands and Dehaze. Asking first would only cost a round trip to be told
- * so; the engine's own refusal still decides anything this misses.
+ * HslBands and Dehaze, and no grade at all (nothing to run on the device:
+ * refused by `grade_device`). Asking first would only cost a round trip to
+ * be told so; the engine's own refusal still decides anything this misses.
  * A disabled layer is left to the engine (it is not graded).
  */
 export function gpuRefusal(grade: Grade | null): string | null {
-  if (!grade) return null
+  if (!grade) return 'grade_device'
   for (const [i, l] of grade.layers.entries()) {
     if (!l.enabled) continue
     const at = `grade.layers[${i}]`
@@ -178,9 +179,15 @@ export interface GradeInputParts {
  * frame's full size into F16 pixels, with no grade, framing, resize, region,
  * overlays, output sharpening, SDR rendition or measuring. Not a draft: a
  * Full HDR draft is the master's output, and grading it again would apply
- * the grade on top of the master.
+ * the grade on top of the master. Nor has it an SDR companion: an
+ * inspection plane is not the picture (the engine refuses one, by
+ * `color.companion`), so a master's is left out here and kept on the drags.
  */
 export function gradeInputRequest(p: GradeInputParts): ConvertRequest {
+  const color: ColorPolicy =
+    typeof p.color === 'object' && 'Master' in p.color
+      ? { Master: { ...p.color.Master, companion: null } }
+      : p.color
   return {
     source: { Path: p.path },
     sink: 'Bytes',
@@ -190,7 +197,7 @@ export function gradeInputRequest(p: GradeInputParts): ConvertRequest {
     pixel: { depth: 'F32', channels: null },
     encode: { Pixels: { sample: 'F16' } },
     metadata: ICC_ONLY,
-    color: p.color,
+    color,
     linear_resample: false,
     raw: null,
     upscaler: null,
@@ -240,7 +247,9 @@ export interface DragParts {
 /**
  * A drag frame on the GPU (Phase A §4.3, step 3): from the uploaded frame,
  * so everything before the grade is null here (it is in the frame), no
- * framing and no resize, a display `color`, RGBA pixels for the window.
+ * framing and no resize, a display `color`. It names no channels: the frame
+ * has its own (`pixel.channels` is refused on a `GpuFrame`), so an opaque
+ * photo comes back RGB and the host lays in the alpha (`toRgba`).
  */
 export function gpuDragRequest(p: DragParts): ConvertRequest {
   return {
@@ -249,7 +258,7 @@ export function gpuDragRequest(p: DragParts): ConvertRequest {
     input: 'GpuFrame',
     resize: 'None',
     resampler: 'Lanczos3',
-    pixel: { depth: p.hdr ? 'F32' : 'Eight', channels: 4 },
+    pixel: { depth: p.hdr ? 'F32' : 'Eight', channels: null },
     encode: { Pixels: { sample: p.hdr ? 'F16' : 'U8' } },
     metadata: ICC_ONLY,
     color: p.color,
@@ -274,6 +283,43 @@ export function gpuDragRequest(p: DragParts): ConvertRequest {
     measure: p.measure,
     grade_device: 'Gpu'
   }
+}
+
+/** One, as a half float: an opaque pixel's alpha in F16. */
+const HALF_ONE = 0x3c00
+
+/**
+ * A frame's pixels as the window takes them, RGBA: a GPU drag of an opaque
+ * photo returns RGB (three bytes a pixel in 8 bits, six in half floats),
+ * its SDR companion too, and what reads a frame (`deliver` in the engine
+ * host, lib/frames.ts in the window) counts four or eight. Pixels that are
+ * RGBA already, or of no size this knows, are returned as they are.
+ */
+export function toRgba(data: Uint8Array, width: number, height: number): Uint8Array {
+  const px = width * height
+  if (px <= 0) return data
+  if (data.byteLength === px * 3) {
+    const out = new Uint8Array(px * 4)
+    const words = new Uint32Array(out.buffer)
+    // One write a pixel (little-endian, as every platform Playroom runs on): R, G, B, 255.
+    for (let i = 0, s = 0; i < px; i++, s += 3)
+      words[i] = (data[s] | (data[s + 1] << 8) | (data[s + 2] << 16) | 0xff000000) >>> 0
+    return out
+  }
+  if (data.byteLength === px * 6) {
+    // Half floats are read two bytes at a time: a view needs an even start.
+    const even = data.byteOffset % 2 === 0 ? data : data.slice()
+    const src = new Uint16Array(even.buffer, even.byteOffset, px * 3)
+    const out = new Uint16Array(px * 4)
+    for (let i = 0, s = 0, d = 0; i < px; i++, s += 3, d += 4) {
+      out[d] = src[s]
+      out[d + 1] = src[s + 1]
+      out[d + 2] = src[s + 2]
+      out[d + 3] = HALF_ONE
+    }
+    return new Uint8Array(out.buffer)
+  }
+  return data
 }
 
 /**

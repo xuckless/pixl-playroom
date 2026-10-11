@@ -29,7 +29,7 @@ import {
   REFINE_METHODS,
   strengthOf
 } from '../src/shared/refine'
-import { compileRetouch, newSpot, spotRefine } from '../src/shared/retouch'
+import { compileRetouch, newSpot, refineRefused, spotRefine } from '../src/shared/retouch'
 
 const ctx: CompileContext = {
   isRaw: false,
@@ -178,9 +178,21 @@ test('Tone’s base: none by default; Keep texture is the local Laplacian, guide
 })
 
 test('a heal’s edge: plain sends no refine; Edge snap and Matting send theirs', () => {
-  assert.equal(spotRefine(undefined), null)
-  assert.ok('EdgeSnap' in spotRefine('edgeSnap')!)
-  assert.ok('Matting' in spotRefine('matting')!)
+  const big = { radius: 0.02, feather: 50 }
+  assert.equal(spotRefine(undefined, big, 6000, 4000), null)
+  assert.ok('Matting' in spotRefine('matting', big, 6000, 4000)!)
+  // Edge snap stays inside the spot (the engine refuses a heal snapped as
+  // far as its radius): its default where there is room, less on a small
+  // brush, and the smallest spots are healed plain.
+  const snap = (radius: number, feather: number): number | null => {
+    const r = spotRefine('edgeSnap', { radius, feather }, 6000, 4000)
+    return r && 'EdgeSnap' in r ? r.EdgeSnap.distance : null
+  }
+  assert.equal(snap(0.02, 50), 0.005)
+  assert.equal(snap(0.004, 0), 0.002)
+  assert.ok(snap(0.004, 100)! < 0.002)
+  assert.equal(snap(0.001, 0), null)
+  assert.ok('Matting' in spotRefine('matting', { radius: 0.001, feather: 0 }, 6000, 4000)!)
   const spot = newSpot('a1', 'heal', [{ x: 0.5, y: 0.5 }], 0.02, 50, 100)
   spot.source = { x: 0.6, y: 0.5 }
   const plain = compileRetouch([spot], 'Normal', 6000, 4000)!
@@ -189,3 +201,135 @@ test('a heal’s edge: plain sends no refine; Edge snap and Matting send theirs'
   const matted = compileRetouch([spot], 'Normal', 6000, 4000)!
   assert.ok('Matting' in (matted.steps[0] as { Heal: { refine: object } }).Heal.refine)
 })
+
+test('a heal the engine won’t refine is told from any other refusal', () => {
+  // The step itself, by the field the host reads or the message's own.
+  assert.ok(refineRefused({ field: 'retouch.steps[0]' }))
+  assert.ok(
+    refineRefused({
+      message: 'invalid request field `retouch.steps[3]`: the heal covers the whole frame'
+    })
+  )
+  // One of its fields (a source past the frame) is another matter, as is anything else.
+  assert.ok(!refineRefused({ field: 'retouch.steps[0].source_offset' }))
+  assert.ok(!refineRefused({ field: 'grade.layers[0].mask' }))
+  assert.ok(!refineRefused(new Error('the disk is full')))
+  assert.ok(!refineRefused(null))
+})
+
+/** The native engine, where it is built (not in CI: this check skips). */
+const realEngine = await (async () => {
+  try {
+    const { createRequire } = await import('node:module')
+    return createRequire(import.meta.url)('@xuckless/pixl-engine') as {
+      convert(r: unknown): Promise<{ output: Uint8Array; width: number; height: number }>
+    }
+  } catch {
+    return null
+  }
+})()
+
+test(
+  'the engine takes every refine method across its range, Tone’s base, and each heal edge at the frame’s edge',
+  { skip: realEngine === null ? 'the engine is not built for this platform' : false },
+  async () => {
+    const { blankRequest, displayPolicy } = await import('../src/main/source')
+    const { encodePng16 } = await import('../src/main/pngio')
+    const { defaultRecipe, newLocalLayer } = await import('../src/shared/recipe')
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'phasea-'))
+    // The develop view's smallest frame: where a spot's bound is the largest share.
+    const w = 1280
+    const h = 853
+    const px = new Uint16Array(w * h * 3)
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        // Two flat halves with an edge between them, and some texture, for the methods to read.
+        const v = (x < w / 2 ? 12000 : 42000) + ((x * 31 + y * 17) % 2000)
+        px.fill(v, (y * w + x) * 3, (y * w + x) * 3 + 3)
+      }
+    const path = join(dir, 'in.png')
+    writeFileSync(path, encodePng16(px, w, h, 3))
+    const here: CompileContext = { ...ctx, frameWidth: w, frameHeight: h, scale: 1 }
+    const render = async (
+      grade: unknown,
+      retouch: unknown = null
+    ): Promise<{ width: number; height: number }> =>
+      realEngine!.convert({
+        ...blankRequest(path, '', 'Png'),
+        sink: 'Bytes',
+        pixel: { depth: 'Eight', channels: 3 },
+        encode: { Pixels: { sample: 'U8' } },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        color: displayPolicy({ is_hdr: false } as never, 'DisplayP3'),
+        grade,
+        retouch,
+        threads: 4
+      })
+    try {
+      // Each method on a lasso mask: at its defaults, and at each parameter's two ends.
+      for (const m of REFINE_METHODS) {
+        const sets: Record<string, number>[] = [{}]
+        for (const p of m.params) sets.push({ [p.key]: p.min }, { [p.key]: p.max })
+        for (const params of sets) {
+          const r = defaultRecipe(false)
+          const l = newLocalLayer('g')
+          l.settings.exposure = 1
+          l.components.push(lasso({ refine: { on: true, radius: 0.6, method: m.kind, params } }))
+          r.layers.push(l)
+          const c = compile(r, here)
+          await assert.doesNotReject(
+            render(c.grade),
+            `${m.kind} ${JSON.stringify(params)}: ${JSON.stringify(engineRefine(l.components[0]))}`
+          )
+        }
+      }
+      // Smooth, Contrast and a moved edge on a drawn mask.
+      const drawn = defaultRecipe(false)
+      const dl = newLocalLayer('d')
+      dl.settings.exposure = 1
+      dl.components.push(lasso({ smooth: 100, contrast: 100 }))
+      drawn.layers.push(dl)
+      await assert.doesNotReject(render(compile(drawn, here).grade), 'smooth and contrast')
+      // Tone on each base: the settled picture's, and a CPU drag's.
+      const toned = defaultRecipe(false)
+      toned.basic.shadows = 60
+      toned.basic.highlights = -60
+      toned.toneBase = 'texture'
+      await assert.doesNotReject(render(compile(toned, here).grade), 'the local-Laplacian base')
+      await assert.doesNotReject(
+        render(compile(toned, { ...here, smoothing: false }).grade),
+        'the drag’s guided base'
+      )
+      // A heal on each edge setting, from the smallest brush up, at each
+      // feather: mid-frame, and in a corner with its source pulled to the
+      // frame's edge. Compiled for the photo (6000 × 4000), rendered on the draft.
+      const refused: string[] = []
+      for (const refine of [undefined, 'edgeSnap', 'matting'] as const)
+        for (const radius of [0.002, 0.0027, 0.004, 0.0073, 0.02, 0.07])
+          for (const feather of [0, 37, 100])
+            for (const at of [
+              { x: 0.5, y: 0.5 },
+              { x: 0.04, y: 0.05 },
+              { x: 0.96, y: 0.95 },
+              { x: 0.013, y: 0.5 }
+            ]) {
+              const spot = newSpot('s', 'heal', [at], radius, feather, 100)
+              spot.source = { x: at.x < 0.5 ? -0.2 : 1.2, y: at.y < 0.5 ? -0.2 : 1.2 }
+              if (refine) spot.refine = refine
+              const retouch = compileRetouch([spot], 'Normal', 6000, 4000)
+              if (!retouch) continue
+              await render(null, retouch).catch((err: Error) =>
+                refused.push(
+                  `${refine ?? 'plain'} r${radius} f${feather} @${at.x},${at.y}: ${err.message}`
+                )
+              )
+            }
+      assert.deepEqual(refused, [])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+)

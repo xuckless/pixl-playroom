@@ -65,7 +65,8 @@ test('the constrained Mac: the plain M1, or 8 GB', async () => {
 
 test('what the GPU takes: Primary, Tone (no base or the local Laplacian), HSL bands, Dehaze', async () => {
   const { gpuRefusal } = await import('../src/shared/gpudrag')
-  assert.equal(gpuRefusal(null), null)
+  // No grade: nothing to run on the device (the engine refuses it by `grade_device`).
+  assert.equal(gpuRefusal(null), 'grade_device')
   assert.equal(gpuRefusal(grade(layer([PRIMARY, tone()]))), null)
   const ll = { LocalLaplacian: { radius: 0.05, sigma: 0.1, spacing: 0.05 } }
   assert.equal(gpuRefusal(grade(layer([tone(ll)]))), null)
@@ -164,6 +165,30 @@ test('the grade input is the guide’s exact request', async () => {
   for (const k of ['framing', 'region', 'overlays', 'output_sharpen', 'sdr', 'measure'] as const)
     assert.equal(r[k], null, k)
   assert.equal(r.resize, 'None')
+  // Full HDR: the master's SDR companion is left out (an inspection plane has none).
+  const master = {
+    Master: {
+      headroom: true,
+      peak: 'Measured',
+      ceiling: { Display: { white_nits: 203, peak_nits: 812 } },
+      reach: 'Measured',
+      look: 'Colorimetric',
+      float: 'ExtendedLinearDisplayP3',
+      companion: { longest_side: 1024, resampler: 'Bilinear' }
+    }
+  } as unknown as Parameters<typeof gradeInputRequest>[0]['color']
+  const m = gradeInputRequest({
+    path: '/p/proxy.jpg',
+    input: 'Jpeg',
+    color: master,
+    lens: null,
+    retouch: null,
+    threads: 6,
+    limits: null
+  })
+  const made = m.color as { Master: { companion: unknown; float: string } }
+  assert.equal(made.Master.companion, null)
+  assert.equal(made.Master.float, 'ExtendedLinearDisplayP3')
 })
 
 test('an upload again only when something before the grade changes', async () => {
@@ -209,13 +234,176 @@ test('a drag frame nulls what is before the grade and names a display space', as
   assert.equal(r.resize, 'None')
   assert.deepEqual(r.color, color)
   assert.deepEqual(r.encode, { Pixels: { sample: 'U8' } })
-  assert.equal(r.pixel.depth, 'Eight')
+  // No channels named: the frame has its own (refused by `pixel.channels` otherwise).
+  assert.deepEqual(r.pixel, { depth: 'Eight', channels: null })
   assert.equal(r.grade, g)
   // An HDR draft: F16 pixels, F32 working.
   const h = gpuDragRequest({ grade: g, color, hdr: true, region: null, measure: null, threads: 6 })
   assert.deepEqual(h.encode, { Pixels: { sample: 'F16' } })
-  assert.equal(h.pixel.depth, 'F32')
+  assert.deepEqual(h.pixel, { depth: 'F32', channels: null })
 })
+
+test('a drag’s RGB pixels are laid out RGBA for the window', async () => {
+  const { toRgba } = await import('../src/shared/gpudrag')
+  // 8 bits: three bytes a pixel in, four out, opaque.
+  const rgb = Uint8Array.from([1, 2, 3, 250, 251, 252])
+  assert.deepEqual([...toRgba(rgb, 2, 1)], [1, 2, 3, 255, 250, 251, 252, 255])
+  // Half floats: six bytes a pixel in, eight out, alpha 1.0 (0x3C00).
+  const half = new Uint16Array([0x3c00, 0x3800, 0x0000, 0x4000, 0x3c00, 0x3555])
+  const out = toRgba(new Uint8Array(half.buffer), 2, 1)
+  assert.deepEqual(
+    [...new Uint16Array(out.buffer, out.byteOffset, 8)],
+    [0x3c00, 0x3800, 0x0000, 0x3c00, 0x4000, 0x3c00, 0x3555, 0x3c00]
+  )
+  // Half floats at an odd offset (a view into a larger buffer) read the same.
+  const padded = new Uint8Array(13)
+  padded.set(new Uint8Array(half.buffer), 1)
+  assert.deepEqual([...toRgba(padded.subarray(1), 2, 1)], [...out])
+  // RGBA already (U8 and F16), or a size it does not know: as given.
+  const rgba = new Uint8Array(8)
+  assert.equal(toRgba(rgba, 2, 1), rgba)
+  const rgba16 = new Uint8Array(16)
+  assert.equal(toRgba(rgba16, 2, 1), rgba16)
+  const odd = new Uint8Array(5)
+  assert.equal(toRgba(odd, 2, 1), odd)
+})
+
+/** The native engine with its GPU path, where both are there (not in CI: these skip). */
+const gpuEngine = await (async () => {
+  try {
+    const { createRequire } = await import('node:module')
+    const e = createRequire(import.meta.url)('@xuckless/pixl-engine') as {
+      hasGpu?: () => boolean
+      convert(
+        r: unknown,
+        o?: unknown
+      ): Promise<{
+        output: Uint8Array
+        width: number
+        height: number
+        pixels: { width: number; height: number; channels: number }
+        companion?: { width: number; height: number; data: Uint8Array } | null
+      }>
+      openGpuSession(spec: unknown): Promise<{ close(): void }>
+      uploadGpuFrame(gpu: unknown, spec: unknown, bytes: Uint8Array): Promise<{ close(): void }>
+    }
+    return e.hasGpu?.() ? e : null
+  } catch {
+    return null
+  }
+})()
+
+test(
+  'the engine takes the upload and the drag as built, and refuses what Playroom must not send',
+  { skip: gpuEngine === null ? 'no engine with a GPU path here' : false },
+  async () => {
+    const e = gpuEngine!
+    const { gradeInputRequest, gpuDragRequest, gpuBackend, toRgba } =
+      await import('../src/shared/gpudrag')
+    const { encodePng16 } = await import('../src/main/pngio')
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'gpudrag-'))
+    const w = 64
+    const h = 48
+    const px = new Uint16Array(w * h * 3).map((_, i) => (i * 7919) % 60000)
+    const path = join(dir, 'in.png')
+    writeFileSync(path, encodePng16(px, w, h, 3))
+    type Color = Parameters<typeof gradeInputRequest>[0]['color']
+    const p3 = {
+      ConvertTo: { to: 'DisplayP3', intent: 'RelativeColorimetric', black_point_compensation: true }
+    } as unknown as Color
+    const master = (stated: boolean): Color =>
+      ({
+        Master: {
+          headroom: true,
+          peak: stated ? { Nits: 600 } : 'Measured',
+          ceiling: { Display: { white_nits: 203, peak_nits: 812 } },
+          reach: stated ? { Stated: 1 } : 'Measured',
+          look: 'Colorimetric',
+          float: 'ExtendedLinearDisplayP3',
+          companion: { longest_side: 32, resampler: 'Bilinear' }
+        }
+      }) as unknown as Color
+    const parts = {
+      path,
+      input: 'Png' as const,
+      lens: null,
+      retouch: null,
+      threads: 2,
+      limits: null
+    }
+    const g = grade(layer([PRIMARY]))
+    const field = (err: unknown): string =>
+      /field `([^`]+)`/.exec(String((err as Error).message))?.[1] ?? ''
+    const gpu = await e.openGpuSession(gpuBackend(process.platform))
+    const upload = async (color: Color): Promise<{ close(): void }> => {
+      const input = await e.convert(gradeInputRequest({ ...parts, color }))
+      return e.uploadGpuFrame(
+        gpu,
+        {
+          width: input.pixels.width,
+          height: input.pixels.height,
+          sample: 'F16',
+          alpha: input.pixels.channels === 4
+        },
+        input.output
+      )
+    }
+    try {
+      // SDR: the upload, then a drag, whose RGB pixels the host lays out RGBA.
+      const frame = await upload(p3)
+      const drag = { grade: g, color: p3, hdr: false, region: null, measure: null, threads: 2 }
+      const r = await e.convert(gpuDragRequest(drag), { gpu, frame })
+      assert.equal(toRgba(r.output, r.width, r.height).byteLength, w * h * 4)
+      // What 0.19.2 refuses, each by its field: channels on a frame, and no grade.
+      await assert.rejects(
+        e.convert(
+          { ...gpuDragRequest(drag), pixel: { depth: 'Eight', channels: 4 } },
+          { gpu, frame }
+        ),
+        (err) => field(err) === 'pixel.channels'
+      )
+      await assert.rejects(
+        e.convert(gpuDragRequest({ ...drag, grade: null }), { gpu, frame }),
+        (err) => field(err) === 'grade_device'
+      )
+      frame.close()
+      // Full HDR: the upload leaves the companion out; the drag keeps it.
+      const hdrFrame = await upload(master(false))
+      const hdr = {
+        grade: g,
+        color: master(false),
+        hdr: true,
+        region: null,
+        measure: null,
+        threads: 2
+      }
+      const m = await e.convert(gpuDragRequest(hdr), { gpu, frame: hdrFrame })
+      assert.equal(toRgba(m.output, m.width, m.height).byteLength, w * h * 8)
+      assert.ok(m.companion)
+      const c = m.companion!
+      assert.equal(toRgba(c.data, c.width, c.height).byteLength, c.width * c.height * 4)
+      // A cropped drag states the picture's figures: measured ones are refused.
+      const region = { x: 8, y: 8, width: 32, height: 24, margin: 4 }
+      await assert.rejects(
+        e.convert(gpuDragRequest({ ...hdr, region }), { gpu, frame: hdrFrame }),
+        (err) => /^color\.(peak|reach)$/.test(field(err))
+      )
+      const cut = await e.convert(gpuDragRequest({ ...hdr, color: master(true), region }), {
+        gpu,
+        frame: hdrFrame
+      })
+      assert.equal(cut.width, 32)
+      assert.equal(cut.height, 24)
+      hdrFrame.close()
+    } finally {
+      gpu.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+)
 
 test('framing on a drag: none, a crop as a region, anything else on the CPU', async () => {
   const { dragRegion } = await import('../src/shared/gpudrag')

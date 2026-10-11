@@ -10,7 +10,9 @@
  * in chunks and give other requests a turn between them.
  */
 import { tk } from '../../shared/i18n'
+import { exportLocationFromLast, LOCATION_SETTING } from '../../shared/locations'
 import { createHash } from 'crypto'
+import { homedir } from 'os'
 import {
   createReadStream,
   existsSync,
@@ -78,7 +80,7 @@ import {
   type SidecarStack
 } from '../sidecar'
 import {
-  DEFAULT_PROJECTS_DIR,
+  presetProjectsDir,
   locationOf,
   newProjectPath,
   pastFoldersOf,
@@ -163,6 +165,12 @@ export interface IndexOptions {
    * says otherwise. Left out, an unset location stays beside the photo.
    */
   freshLocation?: ProjectLocation
+  /**
+   * Where the preset projects folder is made (`Pixl Projects` inside it):
+   * the user's home, unless a scripted run names its own profile, so it
+   * never writes into the user's.
+   */
+  home?: string
 }
 
 /** A saved collections file: definitions, and a manual collection's items by path. */
@@ -264,6 +272,8 @@ interface Scan {
 export class IndexService {
   private readonly store: Store
   private readonly cacheRoot: string
+  /** Where the preset projects folder is made (`IndexOptions.home`). */
+  private readonly home: string
   private readonly emit: (event: IndexEvent) => void
   /** When each folder was last scanned (a listing a moment after needs no walk). */
   private readonly scannedAt = new Map<string, { at: number; dirMtime: number | null }>()
@@ -302,6 +312,17 @@ export class IndexService {
     // (beside the photo, while unset); a new one starts where it is told.
     if (fresh && opts.freshLocation && this.store.getSetting('projects.location') == null)
       this.store.setSetting('projects.location', opts.freshLocation)
+    // Exports the same: a new install's go to the preset folder; one updating
+    // keeps what it had (the folder its Export dialog last used, or beside
+    // each original), now as a setting of its own.
+    if (this.store.getSetting(LOCATION_SETTING.exports) == null)
+      this.store.setSetting(
+        LOCATION_SETTING.exports,
+        fresh && opts.freshLocation
+          ? opts.freshLocation
+          : exportLocationFromLast(this.store.getSetting('export.last'))
+      )
+    this.home = opts.home ?? homedir()
     this.cacheRoot = join(opts.userData, 'cache')
     this.emit = opts.emit
     this.xmp = opts.xmp ?? exiftoolXmp()
@@ -577,10 +598,10 @@ export class IndexService {
    */
   private projectRoots(): string[] {
     const loc = this.location()
-    const roots = [DEFAULT_PROJECTS_DIR]
+    const roots = [presetProjectsDir(this.home)]
     const chosen = [
       ...pastFoldersOf(this.store.getSetting('projects.pastFolders')),
-      ...(typeof loc === 'object' ? [projectsRoot(loc)] : [])
+      ...(typeof loc === 'object' ? [projectsRoot(loc, this.home)] : [])
     ]
     for (const r of chosen) if (!roots.includes(r)) roots.push(r)
     return roots
@@ -792,12 +813,19 @@ export class IndexService {
     const names = this.imageNames(row.folder)
     let path: string
     try {
-      path = newProjectPath(row.path, this.location(), names)
+      path = newProjectPath(row.path, this.location(), names, this.home)
       PixlFile.create(path, origin, fill).close()
     } catch (err) {
-      // A folder that will not take it (a locked card): the projects folder will.
-      if (this.location() !== 'beside') throw err
-      path = newProjectPath(row.path, 'home', names)
+      // The photo's own folder will not take it (a locked card): the preset
+      // folder will. A projects folder that will not is the user's to put
+      // right (the owner, 2026-10-11): the error names it, and no project is
+      // made anywhere they did not choose.
+      if (this.location() !== 'beside')
+        throw Object.assign(
+          new Error(tk('Playroom cannot write to {{folder}}: choose another folder.')),
+          { values: { folder: projectsRoot(this.location(), this.home) }, cause: err }
+        )
+      path = newProjectPath(row.path, 'home', names, this.home)
       PixlFile.create(path, origin, fill).close()
     }
     for (const { key } of keys) this.store.removeHistory(key)

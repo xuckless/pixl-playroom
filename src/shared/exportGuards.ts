@@ -56,8 +56,12 @@ const NO_IPTC: ExportFormat[] = ['png', 'webp', 'jxl']
 /** Whether a source is wider than sRGB (a RAW, HDR, a wide-gamut gain map photo). */
 const wide = (p: ExportSource): boolean => p.isRaw || p.isHdr || p.hasGainMap
 
-/** Every guard these settings raise for these photos, blocks first. */
-export function exportGuards(s: ExportSettings, sources: ExportSource[]): Guard[] {
+/**
+ * Every guard these settings raise for these photos, blocks first. `beside`:
+ * exports are saved beside each original (`export.location`), where a file
+ * of the original's own name and kind would be written over it.
+ */
+export function exportGuards(s: ExportSettings, sources: ExportSource[], beside = true): Guard[] {
   const out: Guard[] = []
   const add = (g: Guard): void => void out.push(g)
   const name = FORMAT_NAME[s.format]
@@ -129,13 +133,6 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[]): Guard[
         message: t('A scale past 1000% is not allowed.')
       })
   }
-  if (s.folder === '')
-    add({
-      id: 'folder-empty',
-      severity: 'block',
-      step: 'review',
-      message: t('Choose a folder, or export beside each original.')
-    })
   if (!s.template.trim())
     add({
       id: 'name-empty',
@@ -149,12 +146,7 @@ export function exportGuards(s: ExportSettings, sources: ExportSource[]): Guard[
     const e = p.ext.toLowerCase()
     return e === ext || (ext === 'jpg' && e === 'jpeg')
   }
-  if (
-    s.folder === null &&
-    !s.subfolder.trim() &&
-    s.template.replace(/\s/g, '') === '{name}' &&
-    any(sameKind)
-  )
+  if (beside && !s.subfolder.trim() && s.template.replace(/\s/g, '') === '{name}' && any(sameKind))
     add({
       id: 'overwrite-original',
       severity: 'block',

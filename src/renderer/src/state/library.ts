@@ -303,13 +303,14 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       RECENT_PHOTOS
     )
     set({ recentPhotos })
-    void api.app.setSetting('library.recentPhotos', recentPhotos)
+    // Not kept (the index is busy or gone): the list is still right for now.
+    void api.app.setSetting('library.recentPhotos', recentPhotos).catch(() => undefined)
   },
 
   forgetPhoto(path) {
     const recentPhotos = get().recentPhotos.filter((p) => p !== path)
     set({ recentPhotos })
-    void api.app.setSetting('library.recentPhotos', recentPhotos)
+    void api.app.setSetting('library.recentPhotos', recentPhotos).catch(() => undefined)
   },
 
   togglePin(folder) {

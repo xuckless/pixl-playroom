@@ -59,8 +59,11 @@ export interface OutputSharpenSetting {
 }
 
 export interface ExportSettings {
-  /** null exports beside each original. */
-  folder: string | null
+  /**
+   * A folder inside where exports are saved. Where that is (beside each
+   * original, the preset folder, or the user's) is not an export's own
+   * setting but one for them all: `export.location` (shared/locations.ts).
+   */
   subfolder: string
   /** Tokens: {name} {ext} {seq} {date} {rating} {copy}. */
   template: string
@@ -132,7 +135,6 @@ export interface ExportSettings {
 
 export function defaultExportSettings(): ExportSettings {
   return {
-    folder: null,
     subfolder: '',
     template: '{name}-edit',
     collision: 'suffix',
@@ -211,9 +213,12 @@ export function normaliseExportSettings(
 ): ExportSettings {
   const d = defaultExportSettings()
   if (!v) return d
+  // What an older version kept its destination as: now `export.location`.
+  const { folder: _folder, ...kept } = v as Partial<ExportSettings> & { folder?: unknown }
+  void _folder
   return {
     ...d,
-    ...v,
+    ...kept,
     // HEIC export left with engine 0.17 (no GPL x265): AVIF is its successor.
     format: (v.format as string) === 'heic' ? 'avif' : (v.format ?? d.format),
     resize: { ...d.resize, ...v.resize },

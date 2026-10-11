@@ -93,12 +93,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (args.has('--dynamic')) for (const d of dynamic) console.log(`dynamic t(): ${d}`)
   let bad = false
   if (args.has('--check')) {
-    if (
-      JSON.stringify(en) !==
-      JSON.stringify(
-        Object.fromEntries(Object.entries(read('en')).sort(([a], [b]) => a.localeCompare(b)))
-      )
-    ) {
+    // Both in one order: the file's is `write`'s, which is not the extract's own.
+    const ordered = (o) =>
+      JSON.stringify(Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b))))
+    if (ordered(en) !== ordered(read('en'))) {
       console.log('en.json is stale: run node scripts/i18n-extract.mjs')
       bad = true
     }

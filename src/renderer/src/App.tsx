@@ -23,6 +23,7 @@ import { LeftRail } from './shell/LeftRail'
 import { Splash } from './shell/Splash'
 import { LooksBrowser } from './views/looks/LooksBrowser'
 import { useDevelop } from './state/develop'
+import { openPhotos } from './lib/openPhotos'
 import { useBoot } from './state/boot'
 import { startCullUpkeep } from './state/cull'
 import { startUpdateNotice } from './lib/updates'
@@ -34,7 +35,7 @@ import { chordOf } from './lib/keys'
 import { SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { ExportDialog } from './views/ExportDialog'
 import { EngineReportDialog } from './views/EngineReport'
-import { CrashConsentDialog, PreferencesDialog, ProjectsLocationDialog } from './views/Preferences'
+import { CrashConsentDialog, LocationsDialog, PreferencesDialog } from './views/Preferences'
 import { WhatsNewDialog } from './views/WhatsNew'
 import { ScopesExpandedDialog } from './develop/ScopesExpanded'
 import { showWhatsNew } from './state/whatsNew'
@@ -122,7 +123,7 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'looks' && <LooksBrowser key="looks" />}
       {dialog === 'preferences' && <PreferencesDialog key="preferences" />}
       {dialog === 'crash-consent' && <CrashConsentDialog key="crash-consent" />}
-      {dialog === 'projects-location' && <ProjectsLocationDialog key="projects-location" />}
+      {dialog === 'projects-location' && <LocationsDialog key="projects-location" />}
       {dialog === 'engine' && <EngineReportDialog key="engine" />}
       {dialog === 'whats-new' && <WhatsNewDialog key="whats-new" />}
       {dialog === 'update' && <UpdateDialog key="update" />}
@@ -223,28 +224,19 @@ async function waitForEngine(): Promise<void> {
 
 /**
  * Photos opened from outside (Finder's and Explorer's "Open With", a second
- * launch): their folder opens with them selected, and the first goes to
- * Develop. A folder (main sends it with a trailing separator) just opens.
- * The folder opens as the library's source, in place of whatever was shown.
+ * launch): they open on their own, as File → Open Photo… opens them (the
+ * library shows only them, not their folder), and the first goes to
+ * Develop. A folder (main sends it with a trailing separator) just opens,
+ * as the library's source, in place of whatever was shown.
  */
 async function openPaths(paths: string[]): Promise<void> {
   const isDir = (p: string): boolean => /[\\/]$/.test(p)
   const files = paths.filter((p) => !isDir(p))
   // A folder loses its separator again, unless it is a root.
   const dir = paths.find(isDir)?.replace(/(?<=[^\\/:])[\\/]$/, '') ?? null
+  if (files.length) return openPhotos(files)
   try {
-    const { folder, keys } = files.length
-      ? await api.library.resolvePaths(files)
-      : { folder: dir, keys: [] }
-    if (!folder) return
-    if (!(await useLibrary.getState().openSource({ kind: 'folder', path: folder }))) return
-    const lib = useLibrary.getState()
-    const known = new Set(lib.items.map((i) => i.key))
-    const picked = keys.filter((k) => known.has(k))
-    if (!picked[0]) return
-    useLibrary.setState({ selection: picked, focus: picked[0] })
-    lib.setView('develop')
-    await useDevelop.getState().open(picked[0])
+    if (dir) await useLibrary.getState().openSource({ kind: 'folder', path: dir })
   } catch (err) {
     useLibrary.getState().say(errorText(err), 'error')
   }
@@ -387,12 +379,17 @@ async function askCrashConsent(): Promise<void> {
 }
 
 /**
- * The first Develop asks once where projects go (before an edit makes one).
- * Another dialog already open: asked at the next Develop instead.
+ * The first Develop asks once where projects and exports go (before an edit
+ * makes a project): of everyone, a new install and one updating alike, each
+ * shown what it has now. Never of a scripted run. Another dialog already
+ * open: asked at the next Develop instead.
  */
 async function askProjectsLocation(): Promise<void> {
-  const asked = await api.app.getSetting<boolean>('projects.asked').catch(() => true)
-  if (asked === true || useLibrary.getState().dialog) return
+  const ask = await api.app.locations().then(
+    (l) => l.ask,
+    () => false
+  )
+  if (!ask || useLibrary.getState().dialog) return
   useLibrary.getState().setDialog('projects-location')
 }
 

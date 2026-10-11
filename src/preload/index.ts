@@ -4,6 +4,7 @@ import type { GuideLine } from '../shared/upright'
 import type { P as SpotPoint, RetouchSpot, SpotRefine } from '../shared/retouch'
 import type { PixelStep } from '../shared/pixels'
 import type { ExportSettings } from '../shared/export'
+import type { LocationKind, LocationsInfo } from '../shared/locations'
 import type { Guard } from '../shared/exportGuards'
 import type { RawColour } from '../shared/rawcolour'
 import type { InvariantPlace } from '../shared/invariant'
@@ -113,6 +114,8 @@ const api = {
     getSetting: <T>(key: string) => call<T | null>(IPC.app.getSetting, key),
     setSetting: (key: string, value: unknown) => call<void>(IPC.app.setSetting, key, value),
     reveal: (path: string) => call<void>(IPC.app.reveal, path),
+    locations: () => call<LocationsInfo>(IPC.app.locations),
+    showLocation: (kind: LocationKind) => call<void>(IPC.app.showLocation, kind),
     renderScale: () => call<RenderScale>(IPC.app.renderScale),
     displayHdr: () => call<DisplayHdr>(IPC.app.displayHdr),
     setDisplayHdr: (setting: DisplayHdrSetting) => call<DisplayHdr>(IPC.app.setDisplayHdr, setting),

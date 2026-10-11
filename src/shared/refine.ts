@@ -79,6 +79,8 @@ export function snapsToObject(c: MaskComponentSetting): boolean {
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
 const round6 = (v: number): number => Math.round(v * 1e6) / 1e6
+/** Six significant digits: a threshold of 1e-7 is not rounded away, as six decimals would. */
+const sig6 = (v: number): number => Number(v.toPrecision(6))
 
 /** Whether a component can be snapped: its edge is drawn or found, not computed. */
 export function refinable(c: MaskComponentSetting): boolean {
@@ -122,11 +124,13 @@ export interface RefineMethodInfo {
 }
 
 /**
- * The methods, cheapest first. **Provisional values:** Phase A names each
- * method's fields but not their ranges or defaults; these follow the
- * engine's units elsewhere (lengths are fractions of the shorter side) and
- * want checking against the engine's `docs/migration-0.20.0.md`. A value
- * the engine refuses names its field (`….refine.EdgeSnap.distance`).
+ * The methods, cheapest first. Each range lies inside what engine 0.19.2
+ * takes (its `src/color/mask.rs`: Guided's epsilon 1e-6…1, EdgeSnap's
+ * distance 0.0005…0.05, the solver's sigmas 0.001…0.05 and 0.005…1, its
+ * lambda 0.001…1000 and 1…500 rounds, Matting's band 0.0005…0.05, epsilon
+ * 1e-7…0.1 and 1…1000 rounds); lengths are fractions of the shorter side.
+ * The defaults are Playroom's own: the engine names none. A value the
+ * engine refuses names its field (`….refine.EdgeSnap.distance`).
  */
 export const REFINE_METHODS: RefineMethodInfo[] = [
   {
@@ -207,7 +211,7 @@ export const REFINE_METHODS: RefineMethodInfo[] = [
       {
         key: 'sigma_luma',
         label: tk('Brightness'),
-        min: 0.001,
+        min: 0.005,
         max: 1,
         step: 0.001,
         def: 0.05,
@@ -216,7 +220,7 @@ export const REFINE_METHODS: RefineMethodInfo[] = [
       {
         key: 'sigma_chroma',
         label: tk('Colour'),
-        min: 0.001,
+        min: 0.005,
         max: 1,
         step: 0.001,
         def: 0.05,
@@ -226,7 +230,7 @@ export const REFINE_METHODS: RefineMethodInfo[] = [
         key: 'lambda',
         label: tk('Smoothness'),
         min: 1,
-        max: 1024,
+        max: 1000,
         step: 1,
         def: 128,
         unit: 'plain'
@@ -288,11 +292,16 @@ export function refineMethod(kind: RefineKind | undefined): RefineMethodInfo {
   return REFINE_METHODS.find((m) => m.kind === (kind ?? 'guided')) ?? REFINE_METHODS[0]
 }
 
-/** The Strength slider's position (0…100) for a method's main parameter value. */
+/**
+ * The Strength slider's position (0…100) for a method's main parameter
+ * value. By ratio, not by amount: these are lengths from 0.1% to 5% of the
+ * shorter side, and a step that doubles one reads as the same step
+ * anywhere, with each default near the middle.
+ */
 export function strengthOf(m: RefineMethodInfo, value: number): number {
   const p = m.params.find((q) => q.key === m.strength)
   if (!p) return 50
-  return Math.round(((clamp(value, p.min, p.max) - p.min) / (p.max - p.min)) * 100)
+  return Math.round((Math.log(clamp(value, p.min, p.max) / p.min) / Math.log(p.max / p.min)) * 100)
 }
 
 /** A method's parameter as set: the Advanced value, else what Strength puts it at, else its default. */
@@ -301,8 +310,11 @@ export function paramValue(m: RefineMethodInfo, r: MaskRefine | undefined, key: 
   if (!p) return 0
   const set = r?.params?.[key]
   if (typeof set === 'number') return clamp(set, p.min, p.max)
-  if (key === m.strength && typeof r?.strength === 'number')
-    return p.min + (clamp(r.strength, 0, 100) / 100) * (p.max - p.min)
+  if (key === m.strength && typeof r?.strength === 'number') {
+    // The Strength a method starts at is its default, exactly (not that position's rounding).
+    if (r.strength === strengthOf(m, p.def)) return p.def
+    return p.min * Math.pow(p.max / p.min, clamp(r.strength, 0, 100) / 100)
+  }
   return p.def
 }
 
@@ -328,7 +340,7 @@ export function refineFor(
   const guided = (guide: 'Luma' | 'Colour', epsilon: number): Refine => ({
     Guided: { radius: round6(radius), epsilon, guide }
   })
-  const v = (key: string): number => round6(paramValue(m, r, key))
+  const v = (key: string): number => sig6(paramValue(m, r, key))
   if (draft && m.whole) return guided('Luma', REFINE_EPSILON)
   switch (m.kind) {
     case 'guided':

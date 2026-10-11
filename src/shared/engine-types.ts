@@ -1615,8 +1615,8 @@ export interface FramingReport {
 export interface RegionReport {
   output: MaskBounds
   context: MaskBounds
-  /** 0.19.2: the margin the grade needed, in pixels (`regionReach`'s). */
-  reach?: number
+  /** 0.19.2: what the grade read around a pixel (`regionReach`'s report). */
+  reach?: ReachReport
   /** 0.19.2: how far the margin fell short of `reach`; non-zero means tiles may disagree at their edges. */
   short_by?: number
 }

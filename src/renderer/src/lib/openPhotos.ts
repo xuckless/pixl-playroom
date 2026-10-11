@@ -32,6 +32,8 @@ export async function openPhotos(files: string[]): Promise<void> {
     const first = useLibrary.getState().items.find((i) => i.path === paths[0] && !i.copyId)
     if (!first) return
     useLibrary.setState({ selection: [first.key], focus: first.key })
+    // Its file is not there now (a drive unplugged): shown in the library, as any missing photo is.
+    if (first.offline) return
     lib.setView('develop')
     await useDevelop.getState().open(first.key)
   } catch (err) {

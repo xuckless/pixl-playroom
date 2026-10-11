@@ -9,7 +9,15 @@ import type { AccountStatus } from '../../../shared/account'
 import type { GpuDragState, Prefs, UpdateState } from '../../../shared/ipc'
 import { ACCOUNT_URL, BUY_URL, LICENCE_RULES, type LicenceStatus } from '../../../shared/licence'
 import { latestNotes } from '../../../shared/releasenotes'
+import {
+  LOCATIONS_ASKED,
+  type LocationKind,
+  type LocationsInfo,
+  type SaveLocation
+} from '../../../shared/locations'
 import { InfoTip } from '../components/InfoTip'
+import { LocationField } from '../components/LocationField'
+import { useLocations } from '../lib/useLocations'
 import { Icon, type IconName } from '../components/icons'
 import { Modal, Select } from '../components/ui'
 import { api, errorText } from '../lib/api'
@@ -360,80 +368,19 @@ function LicenceSection(): React.JSX.Element | null {
   )
 }
 
-type ProjectsLocation = 'beside' | 'home' | { folder: string }
-
-/** Read the setting `projects.location` (unset is beside the photo, as main reads it). */
-function locationOf(v: unknown): ProjectsLocation {
-  if (
-    v === 'home' ||
-    (v && typeof v === 'object' && typeof (v as { folder?: unknown }).folder === 'string')
-  )
-    return v as ProjectsLocation
-  return 'beside'
-}
-
-/** The setting `projects.location`, read once and saved on every change. */
-function useProjectsLocation(): [ProjectsLocation | null, (v: ProjectsLocation) => void] {
-  const say = useLibrary((s) => s.say)
-  const [loc, setLoc] = useState<ProjectsLocation | null>(null)
-  useEffect(() => {
-    void api.app
-      .getSetting<ProjectsLocation>('projects.location')
-      .then((v) => setLoc(locationOf(v)))
-  }, [])
-  const save = (v: ProjectsLocation): void => {
-    setLoc(v)
-    void api.app.setSetting('projects.location', v).catch((e) => say(errorText(e), 'error'))
-  }
-  return [loc, save]
-}
-
-/** Where new projects go: beside the photo, ~/Pixl Projects, or a folder the user picks (or makes). */
-function ProjectsLocationField({
-  loc,
-  save
-}: {
-  loc: ProjectsLocation
-  save: (v: ProjectsLocation) => void
-}): React.JSX.Element {
-  const choose = async (): Promise<void> => {
-    const folder = await api.library.chooseFolder()
-    if (folder) save({ folder })
-  }
-  const mode = typeof loc === 'object' ? 'folder' : loc
-  return (
-    <>
-      <Select
-        label={t('Make projects')}
-        value={mode}
-        options={[
-          { value: 'beside', label: t('Beside the photo') },
-          { value: 'home', label: t('In ~/Pixl Projects') },
-          { value: 'folder', label: t('In a folder of my choice…') }
-        ]}
-        onChange={(v) => {
-          if (v === 'folder') void choose()
-          else save(v as 'beside' | 'home')
-        }}
-      />
-      {typeof loc === 'object' && (
-        <div className="prefs-row">
-          <span className="muted small">{loc.folder}</span>
-          <button onClick={() => void choose()}>{t('Change…')}</button>
-        </div>
-      )}
-    </>
-  )
-}
-
 /**
  * Where a photo's `.pixl` project is made, on its first edit: beside the
  * photo, or in a projects folder (one subfolder per photo folder). Projects
  * already made stay where they are.
  */
-function ProjectsSection(): React.JSX.Element {
+function ProjectsSection({
+  info,
+  save
+}: {
+  info: LocationsInfo | null
+  save: (kind: LocationKind, v: SaveLocation) => void
+}): React.JSX.Element {
   const say = useLibrary((s) => s.say)
-  const [loc, save] = useProjectsLocation()
   const [embed, setEmbed] = useState(true)
   useEffect(() => {
     void api.app.getSetting<boolean>('projects.embedOriginal').then((v) => setEmbed(v !== false))
@@ -449,12 +396,12 @@ function ProjectsSection(): React.JSX.Element {
               'A photo’s first edit makes its project: one .pixl file with its edits, copies, snapshots and whole history.'
             ),
             expect: t(
-              'They go wherever the file goes. A folder that cannot be written (a locked card) puts its projects in ~/Pixl Projects; projects already made stay where they are.'
+              'Beside the photo, a project goes wherever the file goes; a photo folder that cannot be written (a locked card) puts its projects in the Pixl Projects folder. If a projects folder you chose cannot be written, the edit says so and nothing is saved elsewhere. Projects already made stay where they are.'
             )
           }}
         />
       </legend>
-      {loc && <ProjectsLocationField loc={loc} save={save} />}
+      {info && <LocationField kind="projects" info={info} save={save} />}
       <label className="check">
         <input
           type="checkbox"
@@ -480,6 +427,46 @@ function ProjectsSection(): React.JSX.Element {
         />
       </label>
     </fieldset>
+  )
+}
+
+/** Where exported files are saved: the same three choices as projects, and the Export dialog's own. */
+function ExportsSection({
+  info,
+  save
+}: {
+  info: LocationsInfo | null
+  save: (kind: LocationKind, v: SaveLocation) => void
+}): React.JSX.Element {
+  return (
+    <fieldset>
+      <legend>
+        {t('Exports')}
+        <InfoTip
+          label={t('Exports')}
+          tip={{
+            what: t(
+              'Where the files you export are saved. In the Pixl Projects folder, each photo folder gets a folder of its own name under Exports.'
+            ),
+            expect: t(
+              'The Export dialog shows the same choice: changing it there changes it here. Files already exported stay where they are.'
+            )
+          }}
+        />
+      </legend>
+      {info && <LocationField kind="exports" info={info} save={save} />}
+    </fieldset>
+  )
+}
+
+/** Projects and exports: one read of where each is saved, shared by both. */
+function SavingSections(): React.JSX.Element {
+  const { info, save } = useLocations()
+  return (
+    <>
+      <ProjectsSection info={info} save={save} />
+      <ExportsSection info={info} save={save} />
+    </>
   )
 }
 
@@ -565,7 +552,7 @@ export function PreferencesDialog(): React.JSX.Element {
         )}
         {section === 'library' && (
           <>
-            <ProjectsSection />
+            <SavingSections />
             <InterfaceSection />
             <PerformanceSection />
           </>
@@ -999,18 +986,23 @@ export function CrashConsentDialog(): React.JSX.Element {
 }
 
 /**
- * Asked once, the first time a photo opens in Develop (before its first edit
- * makes a project): where projects go. Closing keeps what is shown.
+ * Asked once of everyone, the first time a photo opens in Develop (before its
+ * first edit makes a project): where projects and exports are saved, each
+ * shown as it is now. Closing keeps what is shown.
  */
-export function ProjectsLocationDialog(): React.JSX.Element {
+export function LocationsDialog(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
-  const [loc, save] = useProjectsLocation()
+  const say = useLibrary((s) => s.say)
+  const { info, save } = useLocations()
   const done = (): void => {
-    void api.app.setSetting('projects.asked', true).finally(() => setDialog(null))
+    void api.app
+      .setSetting(LOCATIONS_ASKED, true)
+      .catch((e) => say(errorText(e), 'error'))
+      .finally(() => setDialog(null))
   }
   return (
     <Modal
-      title={t('Where should projects go?')}
+      title={t('Where should projects and exports go?')}
       onClose={done}
       icon="library"
       footer={
@@ -1024,9 +1016,13 @@ export function ProjectsLocationDialog(): React.JSX.Element {
           'Your first edit to a photo makes its project: one .pixl file with its edits, copies and history. Your photos themselves are never changed.'
         )}
       </p>
-      {loc && <ProjectsLocationField loc={loc} save={save} />}
+      {info && <LocationField kind="projects" info={info} save={save} />}
+      <p>{t('Exports are the finished files you save from a photo.')}</p>
+      {info && <LocationField kind="exports" info={info} save={save} />}
       <p className="muted small">
-        {t('Projects already made stay where they are. You can change this any time in Settings.')}
+        {t(
+          'Projects and files already made stay where they are. You can change this any time in Settings.'
+        )}
       </p>
     </Modal>
   )

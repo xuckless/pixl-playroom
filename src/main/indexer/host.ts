@@ -32,7 +32,9 @@ const service = new IndexService({
   userData,
   emit: (event) => send({ kind: 'event', ...event }),
   // A new install keeps its projects in ~/Pixl Projects until the user chooses.
-  freshLocation: 'home'
+  freshLocation: 'home',
+  // A scripted run's own home for that folder (its profile), never the user's.
+  home: arg('--home')
 })
 
 send({ kind: 'hello' })
@@ -88,12 +90,18 @@ process.parentPort.on('message', (e) => {
   }
 })
 
-function errorShape(err: unknown): { message: string; code: string } {
+function errorShape(err: unknown): {
+  message: string
+  code: string
+  values?: Record<string, string>
+} {
+  const values = (err as { values?: unknown })?.values
   return {
     message: err instanceof Error ? err.message : String(err),
     code:
       (err as { code?: unknown })?.code === undefined
         ? 'Error'
-        : String((err as { code: unknown }).code)
+        : String((err as { code: unknown }).code),
+    ...(values && typeof values === 'object' ? { values: values as Record<string, string> } : {})
   }
 }

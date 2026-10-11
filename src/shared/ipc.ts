@@ -41,6 +41,10 @@ export const IPC = {
     getSetting: 'app:get-setting',
     setSetting: 'app:set-setting',
     reveal: 'app:reveal',
+    /** Where projects and exports are saved, as folders on this computer (shared/locations.ts). */
+    locations: 'app:locations',
+    /** Open the folder one of them names (made first, where it is the preset). */
+    showLocation: 'app:show-location',
     renderScale: 'app:render-scale',
     /** The window's display as an HDR target (shared/hdrdisplay.ts). */
     displayHdr: 'app:display-hdr',
