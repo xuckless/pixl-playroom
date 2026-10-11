@@ -6,8 +6,10 @@
  *
  * Renders are coalesced: while one is in flight only the newest recipe waits,
  * and a moving slider renders the small draft proxy; the full proxy follows
- * once the slider settles (longer when that is the large proxy a Retina
- * loupe asks for), or at once when it is let go. A newer edit stops a settled
+ * once the slider settles, or at once when it is let go. A slider still held
+ * settles at the draft's size, as it does on a 1× screen, and takes the
+ * larger proxy a Retina loupe asks for only after a long rest (or the
+ * release). A newer edit stops a settled
  * render (and the masks, "before" and thumbnails after it) at the engine's
  * next stage; a draft in flight finishes, so a moving slider keeps showing
  * frames. Both are JPEGs, quick to write and for the loupe to read.
@@ -134,6 +136,14 @@ const SETTLE_MS = 180
  * next move then waits behind.
  */
 const SETTLE_LARGE_MS = 500
+/**
+ * How long a slider still held must rest before its picture is the larger
+ * proxy a Retina loupe asks for. Until then it rests at the draft's size:
+ * a pause mid-drag started a render two to four times the draft's pixels,
+ * which the next move had to stop and then wait for to let go of the cores
+ * (up to `DRAIN_MAX_MS`, engine/client.ts), a stall a 1× screen never has.
+ */
+const HELD_SETTLE_MS = 1000
 /** The signature of a mask that compiles to nothing (its event has no picture). */
 const EMPTY = 'empty'
 /** How long an edit must rest before the sidecar is written. */
@@ -358,6 +368,12 @@ class Session {
   /** The render running now, or the last one. */
   private current: Promise<void> = Promise.resolve()
   private settle: NodeJS.Timeout | undefined
+  /**
+   * Whether the last edit was interactive (a slider still held), and the
+   * long rest that lets go of it (`HELD_SETTLE_MS`).
+   */
+  private held = false
+  private letGo: NodeJS.Timeout | undefined
   private save: NodeJS.Timeout | undefined
   /**
    * Picture, mask and headroom files: each render its own name, so an event
@@ -690,6 +706,8 @@ class Session {
     // added since), the session only ever holds a complete recipe.
     const recipe = normaliseRecipe(next, this.isRaw)
     this.recipe = recipe
+    this.held = interactive
+    if (!interactive) clearTimeout(this.letGo)
     // An edit ends any preview: the photo's own recipe is what shows.
     this.previewing = null
     if (rev !== undefined) this.rev = rev
@@ -784,8 +802,20 @@ class Session {
   schedule(kind: Kind): void {
     clearTimeout(this.settle)
     if (kind === 'draft') {
-      const wait = this.source('full') === this.viewPx().proxy ? SETTLE_LARGE_MS : SETTLE_MS
-      this.settle = setTimeout(() => this.schedule('full'), wait)
+      clearTimeout(this.letGo)
+      if (this.held) {
+        // A slider held: it rests at the draft's size soon, and at the
+        // loupe's own once it has rested a while (or at once when let go).
+        this.settle = setTimeout(() => this.schedule('full'), SETTLE_MS)
+        this.letGo = setTimeout(() => {
+          const larger = this.holding()
+          this.held = false
+          if (larger) this.schedule('full')
+        }, HELD_SETTLE_MS)
+      } else {
+        const wait = this.source('full') === this.viewPx().proxy ? SETTLE_LARGE_MS : SETTLE_MS
+        this.settle = setTimeout(() => this.schedule('full'), wait)
+      }
     }
     if (this.inflight) {
       this.pending = this.pending === 'full' || kind === 'full' ? 'full' : 'draft'
@@ -815,7 +845,9 @@ class Session {
         await this.renderMask('draft', signal)
       // While a bake is pending, what follows waits for the render it brings.
       // A preview is the picture alone: what follows belongs to the photo's own recipe.
-      const extras = !this.closed && !this.pending && !this.bakePending() && !this.previewing
+      // A held slider's resting picture is only a stand-in: they follow the release.
+      const extras =
+        !this.closed && !this.pending && !this.bakePending() && !this.previewing && !this.holding()
       if (kind === 'full' && extras) {
         if (this.view.maskLayer) await this.renderMask('full', signal)
         if (this.view.before) await this.renderBefore(signal)
@@ -850,6 +882,12 @@ class Session {
     // A correction still being baked: the draft, corrected live, stands in
     // (a large proxy warped on every render is what the bake avoids).
     if (this.bakePending()) return px.draft
+    if (this.held) return px.draft
+    return this.loupeSource(px)
+  }
+
+  /** The proxy the loupe's own size asks for. */
+  private loupeSource(px: Proxies): ProxyFile {
     const long = (f: ProxyFile): number => Math.max(f.width, f.height)
     if (this.view.targetEdge <= long(px.draft)) return px.draft
     // The middle size up to a little short of the view (the screen scales it
@@ -857,6 +895,13 @@ class Session {
     // pixels than from the full proxy.
     if (px.mid && this.view.targetEdge * MID_SHORTFALL <= long(px.mid)) return px.mid
     return px.proxy
+  }
+
+  /** Whether a held slider is resting at the draft's size where the loupe asks for more. */
+  private holding(): boolean {
+    if (!this.held) return false
+    const px = this.viewPx()
+    return this.loupeSource(px) !== px.draft
   }
 
   private nextFile(stem: string, ext: string): string {
@@ -2149,6 +2194,7 @@ class Session {
     this.lookQueue?.close()
     for (const f of this.lookFiles.values()) void rm(f, { force: true }).catch(() => undefined)
     clearTimeout(this.settle)
+    clearTimeout(this.letGo)
     this.abort?.abort()
     this.regionAbort?.abort()
     // Corrected proxies for any other correction are no longer read.
