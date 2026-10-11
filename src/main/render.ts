@@ -458,7 +458,7 @@ class Session {
     readonly hdrMaster: ProxyFile | null = null
   ) {
     this.dir = rendersDir(row.id)
-    this.held = new HeldSlot(owner.engine, `${key}#held`)
+    this.heldSlot = new HeldSlot(owner.engine, `${key}#held`)
     void this.clearEarlier()
   }
 
@@ -1164,7 +1164,7 @@ class Session {
   // ── the GPU drag path (Phase A §4.3) and held measurements (§4.4) ──
 
   /** This photo's held measurements, kept in the interactive host (see `HeldSlot`). */
-  private readonly held: HeldSlot
+  private readonly heldSlot: HeldSlot
   /**
    * The grade shapes (shared/gpudrag.ts `gradeShape`) the engine refused on
    * the GPU this drag: the rest of the drag goes straight to the CPU. The
@@ -1181,7 +1181,7 @@ class Session {
    * the end of what this drag learned about the GPU's refusals.
    */
   private endDrag(): void {
-    this.held.drop()
+    this.heldSlot.drop()
     this.gpuRefused.clear()
     this.heldOff = false
     this.gpuLogged = false
@@ -1275,7 +1275,7 @@ class Session {
       // A cropped drag is a region, which returns no held measurement (§4.4)
       // and of Dehaze differs without one: the drag's first frame is
       // measured whole, its pixels left in the host, then every frame reuses it.
-      if (region && measured && !this.held.use(keyHeld)) {
+      if (region && measured && !this.heldSlot.use(keyHeld)) {
         await this.gpuConvert(
           gpuDragRequest({
             grade: compiled.grade,
@@ -1293,7 +1293,7 @@ class Session {
         )
       }
       if (region)
-        region.margin = await this.dragReach(compiled.grade, frame, this.held.use(keyHeld))
+        region.margin = await this.dragReach(compiled.grade, frame, this.heldSlot.use(keyHeld))
       const seq = ++this.seq
       const sig = String(
         hash32(gradeKey(['gpu', plan.inputKey, cropMode, display, compiled.grade, region]))
@@ -1315,7 +1315,7 @@ class Session {
         }),
         frame,
         keyHeld,
-        measured ? this.held.use(keyHeld) : undefined,
+        measured ? this.heldSlot.use(keyHeld) : undefined,
         { frame: tag },
         signal
       )
@@ -1363,7 +1363,7 @@ class Session {
       if (dragVerdict(e) === 'stale') {
         // The frame (or the host) is gone: uploaded again for the next drag.
         this.owner.gpu.lost(this.key)
-        this.held.drop()
+        this.heldSlot.drop()
       } else if (shape) {
         this.gpuRefused.add(shape)
       }
@@ -1390,7 +1390,7 @@ class Session {
   ): Promise<ConvertReport> {
     const native: NativeRefs = {
       frame: frame.id,
-      keepHeld: this.held.id,
+      keepHeld: this.heldSlot.id,
       ...(held ? { held } : {}),
       ...(opts.discardOutput ? { discardOutput: true } : {})
     }
@@ -1400,13 +1400,13 @@ class Session {
         native,
         ...(opts.frame ? { frame: opts.frame } : {})
       })
-      this.held.kept(report, keyHeld)
+      this.heldSlot.kept(report, keyHeld)
       return report
     } catch (err) {
       if (retried || !(err instanceof EngineError) || err.cancelled) throw err
       const v = dragVerdict(err)
       if (v === 'held' && held) {
-        this.held.drop()
+        this.heldSlot.drop()
         this.heldOff = true
         return this.gpuConvert(request, frame, keyHeld, undefined, opts, signal, true)
       }
@@ -1469,19 +1469,19 @@ class Session {
     keyHeld: string | null
   ): Promise<ConvertReport> {
     if (!keyHeld) return this.owner.engine.convert(request, opts)
-    const held = this.held.use(keyHeld)
+    const held = this.heldSlot.use(keyHeld)
     try {
       const report = await this.owner.engine.convert(request, {
         ...opts,
-        native: { keepHeld: this.held.id, ...(held ? { held } : {}) }
+        native: { keepHeld: this.heldSlot.id, ...(held ? { held } : {}) }
       })
-      this.held.kept(report, keyHeld)
+      this.heldSlot.kept(report, keyHeld)
       return report
     } catch (err) {
       if (!held || !(err instanceof EngineError) || err.cancelled) throw err
       const v = dragVerdict(err)
       if (v !== 'held' && v !== 'stale') throw err
-      this.held.drop()
+      this.heldSlot.drop()
       this.heldOff = true
       return this.owner.engine.convert(request, opts)
     }
@@ -2618,7 +2618,7 @@ class Session {
   close(): Promise<void> {
     this.closed = true
     // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5).
-    this.held.drop()
+    this.heldSlot.drop()
     this.owner.gpu.close(this.key)
     this.lookQueue?.close()
     for (const f of this.lookFiles.values()) void rm(f, { force: true }).catch(() => undefined)
