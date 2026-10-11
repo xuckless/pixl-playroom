@@ -65,6 +65,7 @@ import type { HeavyModel } from '../shared/heavy'
 import type { AiSwitchStore } from './ai/switches'
 import type { BrainStore } from './ai/brain'
 import type { Namer } from './ai/namer'
+import type { PlaneFinder } from './ai/found'
 import type { CullMeasurer } from './cull'
 import { readNames } from '../shared/naming'
 import { benchmarkSam3 } from './ai/sam3bench'
@@ -209,6 +210,8 @@ export interface Services {
   switches: AiSwitchStore
   /** Gemma, the local assistant. */
   brain: BrainStore
+  /** What the open photo holds, found with no brain: the found chips. */
+  finder: PlaneFinder
   /** Gemma's names for the library's photos. */
   namer: Namer
   /** Cull signals and suggestions. */
@@ -508,6 +511,9 @@ export function registerIpc(s: Services): void {
     const d = await s.sessions.open(key)
     // A project made before its original could be carried (or interrupted) catches up.
     s.embedder.request(keyOf(parseKey(key).photoId, null))
+    // What it holds, found in the background for the Masks pane's chips
+    // (the pane asks for the same answer when it opens).
+    void s.finder.find(key)
     // Upright's perspective: the file's 35 mm figure, else focal length × the camera's crop.
     const focal35 = d.info.lens?.focal_35mm
       ? d.info.lens.focal_35mm
@@ -878,6 +884,7 @@ export function registerIpc(s: Services): void {
     readNames(await s.index.namesOf(parseKey(key).photoId))
   )
   handle(IPC.names.name, (key: string) => s.namer.nameNow(parseKey(key).photoId))
+  handle(IPC.names.found, (key: string) => s.finder.find(key))
   handle(IPC.names.edit, (key: string, names: unknown) =>
     s.namer.edit(parseKey(key).photoId, names === null ? null : readNames(names))
   )

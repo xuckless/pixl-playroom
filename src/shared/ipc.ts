@@ -317,6 +317,8 @@ export const IPC = {
     name: 'names:name',
     /** The user's own list: a chip taken off, a name typed. */
     edit: 'names:edit',
+    /** What the photo holds, found with no brain (main/ai/found.ts): the found chips. */
+    found: 'names:found',
     /** main → renderer: a photo's names changed. */
     event: 'names:event'
   },

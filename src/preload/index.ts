@@ -65,7 +65,7 @@ import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
 import type { AiSwitches, HeavyBenchmark, HeavyModel } from '../shared/heavy'
-import type { PhotoNames } from '../shared/naming'
+import type { FoundThing, PhotoNames } from '../shared/naming'
 import type { CullReason } from '../shared/cullsuggest'
 import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../shared/looks/run'
@@ -377,6 +377,8 @@ const api = {
     get: (key: string) => call<PhotoNames | null>(IPC.names.get, key),
     name: (key: string) => call<PhotoNames | null>(IPC.names.name, key),
     edit: (key: string, names: PhotoNames | null) => call<void>(IPC.names.edit, key, names),
+    /** What the photo holds, found with no brain: the found chips (null: AI off, or another photo took over). */
+    found: (key: string) => call<FoundThing[] | null>(IPC.names.found, key),
     onEvent: (cb: (e: { photoId: number; names: PhotoNames | null }) => void) =>
       on(IPC.names.event, cb)
   },
