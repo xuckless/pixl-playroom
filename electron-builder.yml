@@ -90,6 +90,12 @@ afterPack: ./build/after-pack.mjs
 
 mac:
   category: public.app-category.photography
+  # The least macOS Playroom runs on (the owner, 2026-10-11: macOS 15). The
+  # bundle says so (LSMinimumSystemVersion: an older macOS will not open it),
+  # and the Mac update feed must say so too, or an install on macOS 13 or 14
+  # would update itself into a build it cannot open:
+  # build/merge-mac-channel.mjs reads this line and writes the feed's own.
+  minimumSystemVersion: '15.0'
   target:
     # zip is what electron-updater downloads; dmg is what people install from.
     # No `arch` list on purpose: one would override the CLI flag and package
