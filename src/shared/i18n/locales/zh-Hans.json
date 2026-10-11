@@ -3197,5 +3197,8 @@
   "Zoom to 100%": "缩放到 100%",
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "缩放到 100%，照片的一个像素对应屏幕的一个像素，用于检查对焦和噪点。捏合或滚动以缩放；按住 {{key}} 并拖动以平移。",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ 亮度 {{luma}} · 色度 {{chroma}}",
-  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各平面白噪声的 σ̂，由降噪器自身估算，以 8 位代码值表示"
+  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各平面白噪声的 σ̂，由降噪器自身估算，以 8 位代码值表示",
+  "Where should projects go?": "项目应保存在哪里？",
+  "Your first edit to a photo makes its project: one .pixl file with its edits, copies and history. Your photos themselves are never changed.": "首次编辑照片时会创建它的项目：一个 .pixl 文件，包含编辑、副本和历史记录。您的照片本身绝不会被更改。",
+  "Projects already made stay where they are. You can change this any time in Settings.": "已创建的项目保留在原处。您可以随时在设置中更改此项。"
 }

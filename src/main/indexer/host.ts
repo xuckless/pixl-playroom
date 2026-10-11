@@ -30,7 +30,9 @@ setExiftoolPath(arg('--exiftool'))
 
 const service = new IndexService({
   userData,
-  emit: (event) => send({ kind: 'event', ...event })
+  emit: (event) => send({ kind: 'event', ...event }),
+  // A new install keeps its projects in ~/Pixl Projects until the user chooses.
+  freshLocation: 'home'
 })
 
 send({ kind: 'hello' })

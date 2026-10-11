@@ -1,10 +1,12 @@
 /**
  * Where a photo's `.pixl` project goes, and how projects are found again.
  *
- * - Beside the photo (the default): `IMG_0001.pixl` next to `IMG_0001.CR3`.
+ * - Beside the photo (while the setting is unset, as on installs from
+ *   before the choice): `IMG_0001.pixl` next to `IMG_0001.CR3`.
  *   When another photo in the folder shares the name's stem (a RAW and its
  *   JPEG), each project keeps its extension: `IMG_0001.CR3.pixl`.
- * - In a projects folder (`~/Pixl Projects`, or one the user chose): one
+ * - In a projects folder (`~/Pixl Projects`, where a new install starts, or
+ *   one the user chose): one
  *   subfolder per photo folder, named after it and told apart by a short hash
  *   of its path, so two folders called "Export" never share projects.
  *
@@ -104,4 +106,9 @@ export function locationOf(v: unknown): ProjectLocation {
   if (v && typeof v === 'object' && typeof (v as { folder?: unknown }).folder === 'string')
     return { folder: (v as { folder: string }).folder }
   return 'beside'
+}
+
+/** Read `projects.pastFolders`: the folders chosen before the one in use. */
+export function pastFoldersOf(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((f): f is string => typeof f === 'string') : []
 }

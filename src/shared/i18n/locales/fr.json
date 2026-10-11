@@ -3319,5 +3319,8 @@
   "Zoom to 100%": "Zoom à 100 %",
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "Zoome à 100 %, un pixel de la photo par pixel de l’écran, pour vérifier la netteté et le bruit. Pincez ou faites défiler pour zoomer ; maintenez {{key}} et faites glisser pour déplacer la vue.",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ luma {{luma}} · chroma {{chroma}}",
-  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ du bruit blanc sur chaque plan, selon l'estimateur du débruiteur, en valeurs de code 8 bits"
+  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ du bruit blanc sur chaque plan, selon l'estimateur du débruiteur, en valeurs de code 8 bits",
+  "Where should projects go?": "Où placer les projets ?",
+  "Your first edit to a photo makes its project: one .pixl file with its edits, copies and history. Your photos themselves are never changed.": "La première retouche d’une photo crée son projet : un fichier .pixl avec ses retouches, ses copies et son historique. Vos photos elles-mêmes ne sont jamais modifiées.",
+  "Projects already made stay where they are. You can change this any time in Settings.": "Les projets déjà créés restent où ils sont. Vous pouvez changer cela à tout moment dans les Réglages."
 }

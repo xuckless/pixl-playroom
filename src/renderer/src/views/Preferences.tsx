@@ -362,46 +362,47 @@ function LicenceSection(): React.JSX.Element | null {
 
 type ProjectsLocation = 'beside' | 'home' | { folder: string }
 
-/**
- * Where a photo's `.pixl` project is made, on its first edit: beside the
- * photo, or in a projects folder (one subfolder per photo folder). Projects
- * already made stay where they are.
- */
-function ProjectsSection(): React.JSX.Element {
+/** Read the setting `projects.location` (unset is beside the photo, as main reads it). */
+function locationOf(v: unknown): ProjectsLocation {
+  if (
+    v === 'home' ||
+    (v && typeof v === 'object' && typeof (v as { folder?: unknown }).folder === 'string')
+  )
+    return v as ProjectsLocation
+  return 'beside'
+}
+
+/** The setting `projects.location`, read once and saved on every change. */
+function useProjectsLocation(): [ProjectsLocation | null, (v: ProjectsLocation) => void] {
   const say = useLibrary((s) => s.say)
-  const [loc, setLoc] = useState<ProjectsLocation>('beside')
-  const [embed, setEmbed] = useState(true)
+  const [loc, setLoc] = useState<ProjectsLocation | null>(null)
   useEffect(() => {
-    void api.app.getSetting<boolean>('projects.embedOriginal').then((v) => setEmbed(v !== false))
-    void api.app.getSetting<ProjectsLocation>('projects.location').then((v) => {
-      if (v === 'home' || (v && typeof v === 'object' && typeof v.folder === 'string')) setLoc(v)
-    })
+    void api.app
+      .getSetting<ProjectsLocation>('projects.location')
+      .then((v) => setLoc(locationOf(v)))
   }, [])
   const save = (v: ProjectsLocation): void => {
     setLoc(v)
     void api.app.setSetting('projects.location', v).catch((e) => say(errorText(e), 'error'))
   }
+  return [loc, save]
+}
+
+/** Where new projects go: beside the photo, ~/Pixl Projects, or a folder the user picks (or makes). */
+function ProjectsLocationField({
+  loc,
+  save
+}: {
+  loc: ProjectsLocation
+  save: (v: ProjectsLocation) => void
+}): React.JSX.Element {
   const choose = async (): Promise<void> => {
     const folder = await api.library.chooseFolder()
     if (folder) save({ folder })
   }
   const mode = typeof loc === 'object' ? 'folder' : loc
   return (
-    <fieldset>
-      <legend>
-        {t('Projects')}
-        <InfoTip
-          label={t('Projects')}
-          tip={{
-            what: t(
-              'A photo’s first edit makes its project: one .pixl file with its edits, copies, snapshots and whole history.'
-            ),
-            expect: t(
-              'They go wherever the file goes. A folder that cannot be written (a locked card) puts its projects in ~/Pixl Projects; projects already made stay where they are.'
-            )
-          }}
-        />
-      </legend>
+    <>
       <Select
         label={t('Make projects')}
         value={mode}
@@ -421,6 +422,39 @@ function ProjectsSection(): React.JSX.Element {
           <button onClick={() => void choose()}>{t('Change…')}</button>
         </div>
       )}
+    </>
+  )
+}
+
+/**
+ * Where a photo's `.pixl` project is made, on its first edit: beside the
+ * photo, or in a projects folder (one subfolder per photo folder). Projects
+ * already made stay where they are.
+ */
+function ProjectsSection(): React.JSX.Element {
+  const say = useLibrary((s) => s.say)
+  const [loc, save] = useProjectsLocation()
+  const [embed, setEmbed] = useState(true)
+  useEffect(() => {
+    void api.app.getSetting<boolean>('projects.embedOriginal').then((v) => setEmbed(v !== false))
+  }, [])
+  return (
+    <fieldset>
+      <legend>
+        {t('Projects')}
+        <InfoTip
+          label={t('Projects')}
+          tip={{
+            what: t(
+              'A photo’s first edit makes its project: one .pixl file with its edits, copies, snapshots and whole history.'
+            ),
+            expect: t(
+              'They go wherever the file goes. A folder that cannot be written (a locked card) puts its projects in ~/Pixl Projects; projects already made stay where they are.'
+            )
+          }}
+        />
+      </legend>
+      {loc && <ProjectsLocationField loc={loc} save={save} />}
       <label className="check">
         <input
           type="checkbox"
@@ -910,6 +944,40 @@ export function CrashConsentDialog(): React.JSX.Element {
         )}
       </p>
       <p className="muted small">{t('You can change this any time in Settings.')}</p>
+    </Modal>
+  )
+}
+
+/**
+ * Asked once, the first time a photo opens in Develop (before its first edit
+ * makes a project): where projects go. Closing keeps what is shown.
+ */
+export function ProjectsLocationDialog(): React.JSX.Element {
+  const setDialog = useLibrary((s) => s.setDialog)
+  const [loc, save] = useProjectsLocation()
+  const done = (): void => {
+    void api.app.setSetting('projects.asked', true).finally(() => setDialog(null))
+  }
+  return (
+    <Modal
+      title={t('Where should projects go?')}
+      onClose={done}
+      icon="library"
+      footer={
+        <button className="primary" onClick={done}>
+          {t('Done')}
+        </button>
+      }
+    >
+      <p>
+        {t(
+          'Your first edit to a photo makes its project: one .pixl file with its edits, copies and history. Your photos themselves are never changed.'
+        )}
+      </p>
+      {loc && <ProjectsLocationField loc={loc} save={save} />}
+      <p className="muted small">
+        {t('Projects already made stay where they are. You can change this any time in Settings.')}
+      </p>
     </Modal>
   )
 }

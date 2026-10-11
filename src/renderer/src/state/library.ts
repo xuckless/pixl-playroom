@@ -80,6 +80,8 @@ interface LibraryState {
     | 'collection'
     | 'preferences'
     | 'crash-consent'
+    /** Where projects go, asked once at the first Develop. */
+    | 'projects-location'
     | 'engine'
     | 'whats-new'
     | 'scopes'

@@ -34,7 +34,7 @@ import { chordOf } from './lib/keys'
 import { SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { ExportDialog } from './views/ExportDialog'
 import { EngineReportDialog } from './views/EngineReport'
-import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
+import { CrashConsentDialog, PreferencesDialog, ProjectsLocationDialog } from './views/Preferences'
 import { WhatsNewDialog } from './views/WhatsNew'
 import { ScopesExpandedDialog } from './develop/ScopesExpanded'
 import { showWhatsNew } from './state/whatsNew'
@@ -59,6 +59,7 @@ import { setSpace } from './views/loupe/zoom'
  * changing elsewhere never re-renders what is under the pointer.
  */
 const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
+  useEffect(() => void askProjectsLocation(), [])
   return (
     <div className="develop">
       <DevelopIdentity />
@@ -121,6 +122,7 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'looks' && <LooksBrowser key="looks" />}
       {dialog === 'preferences' && <PreferencesDialog key="preferences" />}
       {dialog === 'crash-consent' && <CrashConsentDialog key="crash-consent" />}
+      {dialog === 'projects-location' && <ProjectsLocationDialog key="projects-location" />}
       {dialog === 'engine' && <EngineReportDialog key="engine" />}
       {dialog === 'whats-new' && <WhatsNewDialog key="whats-new" />}
       {dialog === 'update' && <UpdateDialog key="update" />}
@@ -382,6 +384,16 @@ async function askCrashConsent(): Promise<void> {
   const prefs = await api.prefs.get().catch(() => null)
   if (prefs?.crashReports !== 'unset' || useLibrary.getState().dialog) return
   useLibrary.getState().setDialog('crash-consent')
+}
+
+/**
+ * The first Develop asks once where projects go (before an edit makes one).
+ * Another dialog already open: asked at the next Develop instead.
+ */
+async function askProjectsLocation(): Promise<void> {
+  const asked = await api.app.getSetting<boolean>('projects.asked').catch(() => true)
+  if (asked === true || useLibrary.getState().dialog) return
+  useLibrary.getState().setDialog('projects-location')
 }
 
 function useShortcuts(): void {
