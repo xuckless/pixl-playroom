@@ -76,6 +76,13 @@ const PATHS = {
     </>
   ),
   folder: <path d="M3 7h6l2 2h10v11H3z" />,
+  photo: (
+    <>
+      <rect x="3" y="5" width="18" height="14" />
+      <circle cx="9" cy="10" r="1.5" />
+      <path d="m3 17 5-5 4 4 3-3 6 6" />
+    </>
+  ),
   search: (
     <>
       <circle cx="11" cy="11" r="7" />

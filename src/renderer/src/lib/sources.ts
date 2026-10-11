@@ -1,6 +1,6 @@
 /**
- * What the library can show — a folder, a collection, a keyword, the
- * duplicates — named for the identity bar and arranged for the sidebar.
+ * What the library can show — a folder, a collection, a keyword, photos
+ * opened on their own, the duplicates — named for the identity bar and arranged for the sidebar.
  * Pure, so the tests can hold it to its word.
  */
 import type { Collection, LibrarySource } from '../../../shared/ipc'
@@ -26,6 +26,12 @@ export function sameSource(a: LibrarySource | null, b: LibrarySource | null): bo
       return b.kind === 'collection' && a.id === b.id
     case 'keyword':
       return b.kind === 'keyword' && a.path === b.path
+    case 'photos':
+      return (
+        b.kind === 'photos' &&
+        a.paths.length === b.paths.length &&
+        a.paths.every((p, i) => p === b.paths[i])
+      )
     case 'duplicates':
       return b.kind === 'duplicates' && a.folder === b.folder && a.threshold === b.threshold
   }
@@ -48,6 +54,16 @@ export function sourceTrail(src: LibrarySource, collections: Collection[]): stri
       ]
     case 'keyword':
       return [t('Keywords'), ...keywordLabel(src.path).split(' › ')]
+    case 'photos':
+      return [
+        t('Photos'),
+        src.paths.length === 1
+          ? folderName(src.paths[0])
+          : t('{{name}} and {{count}} more', {
+              name: folderName(src.paths[0]),
+              count: src.paths.length - 1
+            })
+      ]
     case 'duplicates':
       return [t('Duplicates'), src.folder ? folderName(src.folder) : t('Whole library')]
     case 'collection': {

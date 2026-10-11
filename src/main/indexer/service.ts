@@ -1136,6 +1136,33 @@ export class IndexService {
     return { folder, keys }
   }
 
+  /**
+   * Files picked to open on their own (File → Open Photo…) as the paths of
+   * the photos they are: a project stands for its photo. The folder of a
+   * file the index has not seen is scanned (to learn the file and tie it to
+   * its project), but it is not opened, watched or added to the recent ones.
+   */
+  async photoPaths(paths: string[]): Promise<string[]> {
+    const out: string[] = []
+    for (const p of paths.map((x) => resolve(x))) {
+      let row: PhotoRow | null
+      if (p.toLowerCase().endsWith(PIXL_EXT)) {
+        const { keys } = await this.resolveProjects([p])
+        row = keys[0] ? (this.store.photosByIds([parseKey(keys[0]).photoId])[0] ?? null) : null
+      } else row = await this.photoAt(p)
+      if (row && !out.includes(row.path)) out.push(row.path)
+    }
+    return out
+  }
+
+  /** The photo at `path`, its folder scanned first when the index does not know it yet. */
+  private async photoAt(path: string): Promise<PhotoRow | null> {
+    const row = this.store.photoByPath(path)
+    if (row) return row
+    await this.rescan(dirname(path), false)
+    return this.store.photoByPath(path) ?? null
+  }
+
   private async resolveProjects(
     paths: string[]
   ): Promise<{ folder: string | null; keys: string[] }> {
@@ -1317,6 +1344,14 @@ export class IndexService {
       }
       case 'collection':
         return { source: src, items: this.markMissing(this.collectionListing(src.id)) }
+      case 'photos': {
+        const rows: PhotoRow[] = []
+        for (const p of src.paths) {
+          const row = await this.photoAt(p)
+          if (row && !rows.some((r) => r.id === row.id)) rows.push(row)
+        }
+        return { source: src, items: this.markMissing(this.itemsOf(rows)) }
+      }
       case 'duplicates':
         return this.duplicates(src.folder, src.threshold)
       default:
