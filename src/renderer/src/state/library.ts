@@ -67,6 +67,8 @@ interface LibraryState {
   sort: SortKey
   thumbSize: number
   recent: string[]
+  /** Photos opened on their own (File → Open Photo…), the latest first. */
+  recentPhotos: string[]
   engine: EngineStatus | null
   toast: { text: string; tone: 'info' | 'error'; action?: ToastAction } | null
   dialog:
@@ -102,6 +104,10 @@ interface LibraryState {
   togglePin(folder: string): void
   /** Take a folder off the sidebar's list (unpinned too); nothing on disk changes. */
   forgetFolder(folder: string): Promise<void>
+  /** Photos just opened on their own go to the top of Recent Photos. */
+  rememberPhotos(paths: string[]): void
+  /** Take a photo off Recent Photos; nothing on disk changes. */
+  forgetPhoto(path: string): void
   patchItems(items: (LibraryItem | undefined)[]): void
   select(key: string, mode: 'only' | 'toggle' | 'range'): void
   selectAll(): void
@@ -133,6 +139,9 @@ interface LibraryState {
   targets(): string[]
 }
 
+/** How many photos Recent Photos keeps. */
+const RECENT_PHOTOS = 10
+
 /** Bumped by every open: a listing that lands after a newer open is dropped. */
 let openSeq = 0
 
@@ -154,6 +163,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   sort: 'name',
   thumbSize: 180,
   recent: [],
+  recentPhotos: [],
   engine: null,
   toast: null,
   dialog: null,
@@ -283,6 +293,21 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     } catch (err) {
       get().say(errorText(err), 'error')
     }
+  },
+
+  rememberPhotos(paths) {
+    const recentPhotos = [...paths, ...get().recentPhotos.filter((p) => !paths.includes(p))].slice(
+      0,
+      RECENT_PHOTOS
+    )
+    set({ recentPhotos })
+    void api.app.setSetting('library.recentPhotos', recentPhotos)
+  },
+
+  forgetPhoto(path) {
+    const recentPhotos = get().recentPhotos.filter((p) => p !== path)
+    set({ recentPhotos })
+    void api.app.setSetting('library.recentPhotos', recentPhotos)
   },
 
   togglePin(folder) {

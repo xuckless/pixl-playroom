@@ -116,6 +116,8 @@ export const IPC = {
   },
   library: {
     chooseFolder: 'library:choose-folder',
+    /** Pick photos (or projects) to open on their own, without their folder. */
+    choosePhotos: 'library:choose-photos',
     openFolder: 'library:open-folder',
     /** A folder's subfolders (one level): the sidebar's folder tree. */
     subfolders: 'library:subfolders',
@@ -140,6 +142,8 @@ export const IPC = {
     openSource: 'library:open-source',
     /** Files → their folder and item keys (indexing the folder if new). */
     resolvePaths: 'library:resolve-paths',
+    /** Files → the paths of the photos they are (a project → its photo), indexed if new. */
+    photoPaths: 'library:photo-paths',
     projectInfo: 'library:project-info',
     setMetadata: 'library:set-metadata',
     keywordTree: 'library:keyword-tree',
@@ -454,6 +458,8 @@ export type LibrarySource =
   /** A manual collection, a smart one or a set (the union of its children). */
   | { kind: 'collection'; id: string }
   | { kind: 'keyword'; path: string }
+  /** Photos opened on their own (File → Open Photo…), without their folders. */
+  | { kind: 'photos'; paths: string[] }
   /** `folder` null: the whole library. `threshold`: the dHash distance still "similar". */
   | { kind: 'duplicates'; folder: string | null; threshold: number }
 

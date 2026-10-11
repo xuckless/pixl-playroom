@@ -44,7 +44,7 @@ import { equivalentFocal } from '../shared/upright'
 import { orientedFrame } from '../shared/compile'
 import { cropAtAspect } from '../shared/crop'
 import { ensureProxies } from './proxy'
-import { BACKGROUND_THREADS } from './source'
+import { BACKGROUND_THREADS, IMAGE_EXTENSIONS } from './source'
 import type { IndexClient } from './indexer/client'
 import { IndexError } from './indexer/client'
 import type { PlaneStore } from './planestore'
@@ -355,6 +355,17 @@ export function registerIpc(s: Services): void {
       : await dialog.showOpenDialog({ properties: ['openDirectory'] })
     return r.canceled ? null : r.filePaths[0]
   })
+  handle(IPC.library.choosePhotos, async () => {
+    // Lower and upper case: some Linux file pickers match extensions exactly.
+    const exts = [...IMAGE_EXTENSIONS, 'pixl']
+    const opts = {
+      properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[],
+      filters: [{ name: t('Photos'), extensions: [...exts, ...exts.map((e) => e.toUpperCase())] }]
+    }
+    const w = win()
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    return r.canceled ? [] : r.filePaths
+  })
   handle(IPC.library.openFolder, async (folder: string) => ({
     folder,
     items: await s.library.openFolder(folder)
@@ -452,6 +463,7 @@ export function registerIpc(s: Services): void {
   // ── library sources, metadata, collections, stacks, duplicates ── workstream D1
   handle(IPC.library.openSource, (src: LibrarySource) => s.library.openSource(src))
   handle(IPC.library.resolvePaths, (paths: string[]) => s.index.resolvePaths(paths))
+  handle(IPC.library.photoPaths, (paths: string[]) => s.index.photoPaths(paths))
   handle(IPC.library.projectInfo, (key: string) => s.index.originalState(key))
   handle(IPC.library.setMetadata, (keys: string[], patch: MetaTextPatch) =>
     s.index.setMetadata(keys, patch)

@@ -525,11 +525,16 @@ export default function App(): React.JSX.Element {
       // The rail's lists and the last source load side by side, not one
       // after the other: the folder is what the launch is waiting to see.
       const lists = (async () => {
-        const [recent, pinned] = await Promise.all([
+        const [recent, pinned, photos] = await Promise.all([
           api.library.recentFolders(),
-          api.app.getSetting<string[]>('library.pinned')
+          api.app.getSetting<string[]>('library.pinned'),
+          api.app.getSetting<string[]>('library.recentPhotos')
         ])
-        useLibrary.setState({ recent, pinned: Array.isArray(pinned) ? pinned : [] })
+        useLibrary.setState({
+          recent,
+          pinned: Array.isArray(pinned) ? pinned : [],
+          recentPhotos: Array.isArray(photos) ? photos.filter((p) => typeof p === 'string') : []
+        })
         await useLibrary.getState().loadSources()
         boot.finish('index')
       })()

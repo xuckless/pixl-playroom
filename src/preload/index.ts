@@ -164,6 +164,7 @@ const api = {
   },
   library: {
     chooseFolder: () => call<string | null>(IPC.library.chooseFolder),
+    choosePhotos: () => call<string[]>(IPC.library.choosePhotos),
     openFolder: (folder: string) => call<FolderListing>(IPC.library.openFolder, folder),
     subfolders: (folder: string) =>
       call<{ path: string; name: string }[]>(IPC.library.subfolders, folder),
@@ -189,6 +190,7 @@ const api = {
     openSource: (source: LibrarySource) => call<SourceListing>(IPC.library.openSource, source),
     resolvePaths: (paths: string[]) =>
       call<{ folder: string | null; keys: string[] }>(IPC.library.resolvePaths, paths),
+    photoPaths: (paths: string[]) => call<string[]>(IPC.library.photoPaths, paths),
     projectInfo: (key: string) => call<ProjectInfo>(IPC.library.projectInfo, key),
     setMetadata: (keys: string[], patch: MetaTextPatch) =>
       call<(LibraryItem | undefined)[]>(IPC.library.setMetadata, keys, patch),

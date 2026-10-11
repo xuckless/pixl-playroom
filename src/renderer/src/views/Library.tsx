@@ -8,6 +8,7 @@ import { Stars } from '../components/ui'
 import { Ambient, Spinner } from '../fx'
 import { api } from '../lib/api'
 import { autoWbBatch } from '../lib/autowb'
+import { choosePhotos } from '../lib/openPhotos'
 import { LABEL_COLOURS } from '../lib/helpers'
 import { folderName, KEYS_MIME, sourceTrail } from '../lib/sources'
 import { useThumbFirst } from '../lib/thumbs'
@@ -260,7 +261,29 @@ export function LibraryIdentity(): React.JSX.Element {
       ) : (
         <span className="t-body muted">{t('Nothing open')}</span>
       )}
+      {source?.kind === 'photos' && <ShowFolder />}
     </IdentityBar>
+  )
+}
+
+/** Photos opened on their own: their folder, whole, a click away (the focused photo's). */
+function ShowFolder(): React.JSX.Element | null {
+  const folder = useLibrary(
+    (s) => (s.items.find((i) => i.key === s.focus) ?? s.items[0])?.folder ?? null
+  )
+  const openFolder = useLibrary((s) => s.openFolder)
+  if (!folder) return null
+  return (
+    <button
+      className="sm ghost"
+      title={folder}
+      onClick={() => {
+        void openFolder(folder)
+      }}
+    >
+      <Icon name="folder" />
+      {t('Show folder')}
+    </button>
   )
 }
 
@@ -442,6 +465,10 @@ function EmptyLibrary(): React.JSX.Element {
           <button className="primary lg" onClick={() => void chooseFolder()}>
             <Icon name="folder" />
             {t('Choose folder…')}
+          </button>
+          <button className="lg" onClick={() => void choosePhotos()}>
+            <Icon name="photo" />
+            {t('Open a photo…')}
           </button>
         </div>
         {recent.length > 0 && (

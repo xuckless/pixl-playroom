@@ -78,6 +78,14 @@ test('sourceTrail names the source and the sets it sits in', () => {
     'Whole library'
   ])
   assert.equal(folderName('C:\\Photos\\Trip'), 'Trip')
+  assert.deepEqual(sourceTrail({ kind: 'photos', paths: ['/a/IMG_1.CR3'] }, list), [
+    'Photos',
+    'IMG_1.CR3'
+  ])
+  assert.deepEqual(sourceTrail({ kind: 'photos', paths: ['/a/IMG_1.CR3', '/b/x.jpg'] }, list), [
+    'Photos',
+    'IMG_1.CR3 and 1 more'
+  ])
 })
 
 test('sameSource compares by what the source names', () => {
@@ -85,6 +93,10 @@ test('sameSource compares by what the source names', () => {
   assert.ok(!sameSource({ kind: 'folder', path: '/a' }, { kind: 'keyword', path: '/a' }))
   assert.ok(sameSource(null, null))
   assert.ok(!sameSource(null, { kind: 'collection', id: 'x' }))
+  assert.ok(
+    sameSource({ kind: 'photos', paths: ['/a', '/b'] }, { kind: 'photos', paths: ['/a', '/b'] })
+  )
+  assert.ok(!sameSource({ kind: 'photos', paths: ['/a', '/b'] }, { kind: 'photos', paths: ['/a'] }))
 })
 
 test('the metadata editor sends only what changed', () => {

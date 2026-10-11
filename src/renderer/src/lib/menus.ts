@@ -271,6 +271,7 @@ function maskEditItems(): Item[] {
 function fileMenu(): Item[] {
   const recent = lib().recent.slice(0, 10)
   return [
+    cmd('library.openPhotos', t('Open Photo…')),
     cmd('library.chooseFolder', t('Open Folder…')),
     {
       label: t('Open Recent'),
