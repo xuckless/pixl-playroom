@@ -246,8 +246,16 @@ test('a snapped component reads the luminance, so its mask states a space', () =
     edge: { shift: 50, harden: 0 }
   })
   const m = layerMask(l, 'Normal', { b: '/tmp/b.png' })!
-  // Shift edge +50 grows it by 1.5% of the shorter side: the refine's contract, negative.
-  assert.deepEqual(m.components[0].refine, { radius: 0.004, epsilon: 0.001, contract: -0.015 })
+  // Engine 0.19.2: the refine is a method, Guided by the luminance (0.19's,
+  // bit for bit), and Shift edge +50 grows it by 1.5% of the shorter side as
+  // the component's own shift (0.19's contract −0.015, the sign turned).
+  assert.deepEqual(m.components[0].refine, {
+    Guided: { radius: 0.004, epsilon: 0.001, guide: 'Luma' }
+  })
+  assert.equal(m.components[0].shift, 0.015)
+  assert.equal(m.components[0].smooth, 0)
+  assert.equal(m.components[0].contrast, 0)
+  assert.equal(m.edge, null)
   assert.notEqual(m.space, null)
   l.components[0].refine = { on: false, radius: 0.4 }
   const off = layerMask(l, 'Normal', { b: '/tmp/b.png' })!

@@ -532,16 +532,19 @@ export function Select<T extends string>({
   options,
   onChange,
   label,
-  title
+  title,
+  tip
 }: {
   value: T
   options: { value: T; label: string }[]
   onChange: (v: T) => void
   label?: string
   title?: string
+  /** What the choice does, behind an (i) beside it. */
+  tip?: Tip
 }): React.JSX.Element {
   return (
-    <label className="select" title={title}>
+    <label className={`select${tip ? ' with-tip' : ''}`} title={title}>
       {label && <span>{label}</span>}
       <select value={value} onChange={(e) => onChange(e.target.value as T)}>
         {options.map((o) => (
@@ -550,6 +553,7 @@ export function Select<T extends string>({
           </option>
         ))}
       </select>
+      {tip && <InfoTip tip={tip} label={label ?? title ?? ''} />}
     </label>
   )
 }

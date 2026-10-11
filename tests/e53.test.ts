@@ -7,8 +7,9 @@
 // (IMG_2347.<component id>.png) in PIXL_E53_RAWS to run it.
 //
 // - Today's compile (the Color Mixer unsmoothed, the stopgap) renders clean.
-// - The engine still breaks with the Color Mixer smoothed: when this second
-//   check starts failing, E53 is fixed upstream and the stopgap can go.
+// - Engine 0.19.2 fixed E53 (smoothed ops no longer blob on out-of-gamut
+//   colours): the Color Mixer smoothed renders clean too, so the stopgap in
+//   compile.ts is no longer needed for the engine's sake.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
@@ -141,13 +142,12 @@ for (const name of ['IMG_2347', 'IMG_3198']) {
     })
     const n = await blotches(engine, proxy, c.grade, c.framing)
     assert.ok(n < 500, `${n} blotched pixels`)
-    // The engine still breaks with the Color Mixer smoothed (E53 open), on
-    // IMG_3198 even past the look stage's floor (IMG_2347's floor alone
-    // clears): when this fails, E53 is fixed and compile.ts can smooth
-    // HslBands again.
+    // E53 is fixed in 0.19.2: IMG_3198, which blotched with the Color Mixer
+    // smoothed even past the look stage's floor (70 000 pixels and more),
+    // renders as clean smoothed as not.
     if (name === 'IMG_3198') {
-      const broken = await blotches(engine, proxy, smoothHsl(c.grade!), c.framing)
-      assert.ok(broken > 5 * Math.max(100, n), `E53 may be fixed: ${broken} with HSL smoothed`)
+      const smoothed = await blotches(engine, proxy, smoothHsl(c.grade!), c.framing)
+      assert.ok(smoothed < 500, `${smoothed} blotched pixels with HSL smoothed`)
     }
   })
 }

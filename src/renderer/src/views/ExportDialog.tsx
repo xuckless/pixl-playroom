@@ -33,6 +33,8 @@ import {
 import type { ExportPreset, ExportPreview, ExportProgress } from '../../../shared/ipc'
 import { BUY_URL } from '../../../shared/licence'
 import { InfoTip, type Tip } from '../components/InfoTip'
+import { LocationField } from '../components/LocationField'
+import { useLocations } from '../lib/useLocations'
 import { Card, Modal, Slider, StepSlider } from '../components/ui'
 import { Spinner } from '../fx'
 import { api, errorText } from '../lib/api'
@@ -230,7 +232,10 @@ export function ExportDialog(): React.JSX.Element {
       }),
     [targets, items]
   )
-  const local = useMemo(() => exportGuards(s, sources), [s, sources])
+  // Where exports are saved (one setting, Settings' too): the checks follow it.
+  const locations = useLocations()
+  const dest = locations.info?.exports.location ?? 'beside'
+  const local = useMemo(() => exportGuards(s, sources, dest === 'beside'), [s, sources, dest])
   // The disk's checks follow the settings, a moment after the last change.
   const asked = useRef(0)
   useEffect(() => {
@@ -242,7 +247,7 @@ export function ExportDialog(): React.JSX.Element {
         .catch(() => id === asked.current && setRemote([]))
     }, 350)
     return () => clearTimeout(timer)
-  }, [s, targets])
+  }, [s, targets, dest])
   const guards = useMemo(() => {
     const seen = new Set(local.map((g) => g.id))
     const rank = { block: 0, warn: 1, minor: 2 }
@@ -990,21 +995,12 @@ export function ExportDialog(): React.JSX.Element {
             id="export.location"
             title={t('Location & name')}
             defaultOpen
-            changed={differs('folder', 'subfolder', 'template', 'collision', 'reveal')}
-            onReset={reset('folder', 'subfolder', 'template', 'collision', 'reveal')}
+            changed={differs('subfolder', 'template', 'collision', 'reveal')}
+            onReset={reset('subfolder', 'template', 'collision', 'reveal')}
           >
-            <Check on={s.folder === null} onChange={(v) => up('folder', v ? null : '')}>
-              {t('Beside each original')}
-            </Check>
-            {s.folder !== null && (
-              <div className="row">
-                <input value={s.folder} readOnly placeholder={t('Choose a folder')} />
-                <button
-                  onClick={() => void api.export.chooseFolder().then((f) => f && up('folder', f))}
-                >
-                  {t('Choose…')}
-                </button>
-              </div>
+            {/* Where exports are saved: Settings' own choice, changed here too. */}
+            {locations.info && (
+              <LocationField kind="exports" info={locations.info} save={locations.save} />
             )}
             <Field label={t('Subfolder')}>
               <input

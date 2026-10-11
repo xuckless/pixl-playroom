@@ -186,6 +186,22 @@ export const RELEASE_NOTES: ReleaseNotes[] = [
             'We are still working out how a local model best fits your workflow without slowing your computer down: when it should run, how much it may use, and what is worth its time. Until we have that right, every AI tool in Playroom is a small, focused model that does one job quickly, and Settings → AI models turns them all off at once.'
           )
         ]
+      },
+      // Engine 0.19.2 (Phase A of 0.20), added to this entry (the owner: no
+      // entry of its own, the speed-ups last).
+      {
+        title: tk('Performance'),
+        items: [
+          tk(
+            'On a Retina screen, pausing in the middle of a drag no longer makes the next move wait: a held slider rests at the draft’s size and sharpens when you let go.'
+          ),
+          tk(
+            'Slider drags can run on the graphics chip, at the full preview size (Settings → Projects & interface → Performance): for now on photos that are not RAW, with the simpler edits. RAW photos still drag on the processor.'
+          ),
+          tk(
+            '1:1 stays seamless under heavier edits: each part of the picture now reads as far around itself as the edit needs.'
+          )
+        ]
       }
     ],
     next: [

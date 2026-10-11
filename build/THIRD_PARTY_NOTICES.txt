@@ -1,6 +1,6 @@
 PIXL PLAYROOM: THIRD-PARTY NOTICES
 
-Pixl Playroom 0.3.0-beta includes the third-party software listed below. Each
+Pixl Playroom 0.4.2-beta includes the third-party software listed below. Each
 component is used under its own licence, reproduced here or in section 3. Pixl
 Playroom itself is proprietary software; these licences cover only the components
 they name.
@@ -25,7 +25,7 @@ PIXL Engine's components
   Source:    the source of LibRaw, PIXL's LibRaw shim, libheif and libde265 ships inside the application, beside the engine (app.asar.unpacked/node_modules/@xuckless/pixl-engine-<platform>/); each notice below also names its upstream
   Copyright (c) their respective authors, as each notice below states
 
-    PIXL Engine 0.19.1 (aarch64-apple-darwin)
+    PIXL Engine 0.19.2 (aarch64-apple-darwin)
     Copyright (c) 2026 Syed Ali (xuckless), PixlFoundation. All rights reserved.
 
     This package contains third-party software, listed below with its licence.
@@ -63,7 +63,7 @@ PIXL Engine's components
     LibRaw: CDDL-1.0 (or LGPL-2.1); the shim: MIT
     ================================================================================
 
-    Sources beside it: LibRaw-0.22.2.tar.gz and pixl_libraw-0.19.1-source.tar.gz (REBUILD.md inside says how to rebuild the library and put it in place).
+    Sources beside it: LibRaw-0.22.2.tar.gz and pixl_libraw-0.19.2-source.tar.gz (REBUILD.md inside says how to rebuild the library and put it in place).
 
     LibRaw in PIXL
     ==============
@@ -14328,6 +14328,32 @@ MediaPipe Face Mesh v2 and Blendshapes: 478 landmarks, face-part outlines, 52 bl
 2. NPM PACKAGES
 ------------------------------------------------------------------------------
 
+@babel/runtime 7.29.7
+  Licence: MIT
+
+    MIT License
+
+    Copyright (c) 2014-present Sebastian McKenzie and other contributors
+
+    Permission is hereby granted, free of charge, to any person obtaining
+    a copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be
+    included in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+    NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+    LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+    OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+    WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 @electron-internal/extract-zip 1.0.5
   Licence: BSD-2-Clause
   (No licence file shipped; the licence text is in section 3.)
@@ -15413,6 +15439,57 @@ he 1.2.0
     OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
     WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+html-parse-stringify 4.0.1
+  Licence: MIT
+
+    MIT License
+
+    Copyright (c) 2025 Henrik Joreteg <henrik@joreteg.com>
+    Copyright (c) 2026-present i18next (https://github.com/i18next)
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+i18next 26.4.2
+  Licence: MIT
+
+    The MIT License (MIT)
+
+    Copyright (c) 2011-present i18next
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
 immer 11.1.18
   Licence: MIT
 
@@ -15781,6 +15858,31 @@ react-dom 19.3.0
     MIT License
 
     Copyright (c) Meta Platforms, Inc. and affiliates.
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+react-i18next 17.0.16
+  Licence: MIT
+
+    The MIT License (MIT)
+
+    Copyright (c) 2015-present i18next
 
     Permission is hereby granted, free of charge, to any person obtaining a copy
     of this software and associated documentation files (the "Software"), to deal

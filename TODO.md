@@ -2802,6 +2802,51 @@ masters are in `build/brand/`.
       `site/` is only a redirect from the old GitHub Pages address. Downloads
       say "Soon" until the first release.
 
+### Upgrade to pixl-engine 0.19.2 (branch `feat/engine-0.19.2`, 2026-10-11)
+
+Phase A of the engine's 0.20, shipped as the 0.19.2 patch. Built by four
+cloud threads without the engine (`claude/project-thread-c8m17h` holds them
+all, with the project locations, Open Photo and the Retina hold of draft PR
+#34), then run and put right on the Mac against the published 0.19.2. Guides:
+`~/fedora-data/pixl-eye-review/guides/phase-a-release.md`, `gpu-before-after.md`.
+
+- **Request shapes** (§1): `grade_device` on every convert, `cpu_arena: false`
+  on every session, `smooth`/`contrast`/`shift` and `edge`, refine and Tone's
+  base as methods, `migrateLook` on custom layers, `withFloors` gone.
+- **GPU drags** (§4.3): never ran as written (the drag named
+  `pixel.channels`, refused on a `GpuFrame`; the upload carried a master's
+  companion; a cropped Full HDR drag measured its peak). Fixed: no channels
+  named and the RGB laid out RGBA in the host (`toRgba`), no companion on the
+  upload, stated figures for a region, no drag of a null grade. The frame is
+  warmed for an untouched photo. **It takes Primary, Tone, HslBands and
+  Dehaze only**: a RAW at defaults never qualifies (ENGINE-REQUESTS E59).
+- **The Retina hold** (PR #34) and the GPU: a GPU frame stands through a
+  held pause; the drag ends on the release or the 1 s rest; no upload starts
+  while a slider is held.
+- **Refine methods**: ranges inside the engine's, Matting's epsilon no longer
+  rounded to 0, Strength by ratio. A heal's Edge snap stays inside the spot,
+  and a refined heal the engine refuses is baked plain (E60). 1:1 tiles of a
+  whole-frame method render the whole frame, cut (the owner: true edges):
+  1.2–1.8 s a pan at 24 MP against 0.15 s.
+- **Where things are saved** (the owner, 2026-10-11): exports by the same
+  three choices as projects (`export.location`; the preset is
+  `~/Pixl Projects/Exports/<photo folder>`), asked once of everyone with
+  projects, shown as folders with a button to open them; an unwritable
+  projects folder is an error that names it; a scripted run saves inside its
+  profile and is never asked.
+- **Opening one photo** is photo-only from the OS too (Open With, a
+  double-clicked `.pixl`, the Dock).
+- **Found on the way, on main too**: in Full HDR a slider let go where the
+  photo last settled left "Rendering" for good (a frame the window had let
+  go of was sent again); the top bar took a window as large as the screen
+  for full screen. Both fixed.
+- E53 is fixed upstream (tests/e53.test.ts asserts it): the Colour mixer
+  could be smoothed again, the owner's call.
+
+Not done: the found chips' "looking" state and their refresh after a model
+downloads; Open Photo still lists its whole folder into the index for a file
+new to it; main was not timed against the Retina hold (the branch was, at 2×).
+
 ### Upgrade to pixl-engine 0.17.0 (branch `claude/dazzling-noether-nssfax`, 2026-10-04)
 
 Roadmap: PixlRGB working space, `ColorPolicy::Master`, new required request

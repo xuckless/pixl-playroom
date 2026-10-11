@@ -39,6 +39,7 @@ import {
   type CullThresholds
 } from '../shared/cullsuggest'
 import type { MeasureRegion } from '../shared/engine-types'
+import { NOTHING_SALIENT } from '../shared/ai'
 import { IPC } from '../shared/ipc'
 import { keyOf, parseKey } from './keys'
 import { FACE_DETECTOR, FACE_LANDMARKER } from '../shared/faceparts'
@@ -54,8 +55,6 @@ import { grey8 } from './pngio'
 import { BACKGROUND_THREADS } from './source'
 
 const SUBJECT_MODEL = 'u2netp'
-/** Below this the subject model saw nothing salient (segment.ts's bar). */
-const NOTHING_SALIENT = 0.2
 /** A subject under this share of the frame is too small to measure focus in. */
 const MIN_SUBJECT_SHARE = 0.01
 /** The subject tool's own edge (segment.ts): the region is the mask the user would get. */

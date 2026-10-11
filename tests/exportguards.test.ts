@@ -61,7 +61,7 @@ test('AVIF: speed 10 and lossless with subsampled colour are blocks', () => {
   )
 })
 
-test('a size of nothing, an empty folder or name, and the original’s own name are blocks', () => {
+test('a size of nothing, an empty name, and the original’s own name beside it are blocks', () => {
   const s = defaultExportSettings()
   assert.ok(
     ids(exportGuards({ ...s, resize: { ...s.resize, mode: 'long', value: 0 } }, [jpg])).includes(
@@ -73,14 +73,14 @@ test('a size of nothing, an empty folder or name, and the original’s own name 
       exportGuards({ ...s, resize: { ...s.resize, mode: 'box', value: 800, valueH: 0 } }, [jpg])
     ).includes('size-empty')
   )
-  assert.ok(ids(exportGuards({ ...s, folder: '' }, [jpg])).includes('folder-empty'))
   assert.ok(ids(exportGuards({ ...s, template: '  ' }, [jpg])).includes('name-empty'))
   const same = { ...s, template: '{name}', subfolder: '' }
   assert.ok(ids(exportGuards(same, [jpg])).includes('overwrite-original'))
   // Another format, another folder or another name is fine.
   assert.ok(!ids(exportGuards({ ...same, format: 'png' }, [jpg])).includes('overwrite-original'))
   assert.ok(!ids(exportGuards({ ...same, subfolder: 'out' }, [jpg])).includes('overwrite-original'))
-  assert.ok(!ids(exportGuards({ ...same, folder: '/tmp/x' }, [jpg])).includes('overwrite-original'))
+  // Saved somewhere else (the preset folder, or the user's): nothing beside the original.
+  assert.ok(!ids(exportGuards(same, [jpg], false)).includes('overwrite-original'))
   // JPEG's two extensions are one format.
   assert.ok(ids(exportGuards(same, [{ ...jpg, ext: 'JPEG' }])).includes('overwrite-original'))
 })
@@ -101,7 +101,7 @@ test('what is lost is warned, once, and only when it applies', () => {
 })
 
 test('the minor notes are minor, and blocks sort first', () => {
-  const g = exportGuards(set({ format: 'jpeg', folder: '' }), [raw])
+  const g = exportGuards(set({ format: 'jpeg', template: '  ' }), [raw])
   assert.equal(g[0].severity, 'block')
   assert.equal(g[g.length - 1].severity, 'minor')
   assert.equal(g.find((x) => x.id === 'chroma-jpeg')!.severity, 'minor')

@@ -1,4 +1,5 @@
 import { useCull } from './state/cull'
+import { api } from './lib/api'
 import '@fontsource-variable/space-grotesk'
 import '@fontsource-variable/manrope'
 import './styles/index.css'
@@ -35,14 +36,12 @@ import { useLooks } from './state/looks'
     : /Win/.test(navigator.platform)
       ? 'win'
       : 'other'
-  const full = (): void => {
-    root.toggleAttribute(
-      'data-fullscreen',
-      window.outerWidth >= screen.width && window.outerHeight >= screen.height
-    )
-  }
-  full()
-  window.addEventListener('resize', full)
+  // Full screen as the window says it is, not guessed from its size: a
+  // window as large as the screen (zoomed, with the menu bar and Dock
+  // hidden) still has its buttons, and the bar must keep their room.
+  const full = (on: boolean): void => void root.toggleAttribute('data-fullscreen', on)
+  void api.app.fullScreen().then(full, () => undefined)
+  api.app.onFullScreen(full)
 }
 
 // The language first, so the first frame is drawn in it.

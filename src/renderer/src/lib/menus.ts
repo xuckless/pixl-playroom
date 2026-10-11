@@ -93,7 +93,7 @@ function act(
 }
 
 const focusedItem = (): LibraryItem | undefined => lib().items.find((i) => i.key === lib().focus)
-const revealLabel = (): string =>
+export const revealLabel = (): string =>
   IS_MAC
     ? t('Show in Finder')
     : navigator.platform.startsWith('Win')
@@ -271,6 +271,7 @@ function maskEditItems(): Item[] {
 function fileMenu(): Item[] {
   const recent = lib().recent.slice(0, 10)
   return [
+    cmd('library.openPhotos', t('Open Photo…')),
     cmd('library.chooseFolder', t('Open Folder…')),
     {
       label: t('Open Recent'),

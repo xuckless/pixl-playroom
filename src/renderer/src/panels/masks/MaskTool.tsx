@@ -6,8 +6,14 @@ import {
   hiddenAdjusted,
   resetHidden
 } from '../../../../shared/maskcontrols'
-import { defaultEdgeRadius, EDGE_RADIUS_MAX, EDGE_RADIUS_MIN } from '../../../../shared/refine'
-import type { MaskComponentSetting } from '../../../../shared/recipe'
+import {
+  defaultEdgeRadius,
+  edgeShaping,
+  EDGE_RADIUS_MAX,
+  EDGE_RADIUS_MIN
+} from '../../../../shared/refine'
+import type { MaskComponentSetting, MaskRefine } from '../../../../shared/recipe'
+import type { Tip } from '../../components/InfoTip'
 import { shownRings } from '../../../../shared/faceparts'
 import { Icon } from '../../components/icons'
 import { Section, Select, Slider, Toggle } from '../../components/ui'
@@ -18,6 +24,31 @@ import { ensureModel } from '../../lib/ensureModel'
 import { t, tk, tp } from '../../lib/i18n'
 import { BandBar } from './BandBar'
 import { DepthPreview } from './DepthPreview'
+import { RefineControls } from './RefineControls'
+
+/** The drawn edge's (i)s (engine 0.19.2, Photoshop's Select and Mask). */
+const EDGE_TIPS: Record<'smooth' | 'contrast' | 'shift', Tip> = {
+  smooth: {
+    what: tk('Takes the jaggies and specks out of the outline, and keeps it hard.'),
+    expect: tk('A cleaner, rounder outline. Small corners and notches smooth away first.'),
+    tip: tk('Only on drawn edges: on an AI mask it would turn a soft area into a hard blob.')
+  },
+  contrast: {
+    what: tk('Hardens a soft edge about its middle.'),
+    expect: tk('At 100 the edge is a hard cut with no fade.'),
+    tip: tk('Only on drawn edges: on an AI mask, use Snap to edges and Feather instead.')
+  },
+  shift: {
+    what: tk('Moves the edge out (+) or in (−), up to 3% of the photo’s shorter side.'),
+    expect: tk('The whole outline grows or shrinks by the same amount all the way round.')
+  }
+}
+
+/** Smooth or Contrast set, kept only while it changes something. */
+function setOrDrop(x: MaskComponentSetting, key: 'smooth' | 'contrast', v: number): void {
+  if (Math.round(v) > 0) x[key] = Math.round(v)
+  else delete x[key]
+}
 
 const BLENDS: { value: BlendMode; label: string }[] = [
   { value: 'Normal', label: tk('Normal') },
@@ -73,25 +104,33 @@ export function ComponentCard({
       if (e) x.edge = e
       else delete x.edge
     }, live)
-  const snapping = c.refine?.on === true
   const radiusDef = defaultEdgeRadius(c)
   // A painted stroke snaps to the object SAM finds under it (main/brushes.ts).
   const stroke = c.kind === 'brush' && !c.source
-  // Snap to edges on: a model's mask lets the snap firm its edge, in place of
+  // Snap to edges: a model's mask lets the snap firm its edge, in place of
   // an older recipe's harden.
-  const setSnap = async (on: boolean): Promise<void> => {
-    // SAM offered first when it is not here; without it nothing changes.
-    if (on && stroke && !(await ensureModel('prompt', t('Snap to edges')))) return
-    edit((x) => {
-      // A stroke's snap is the object's edge: a light refine on it, whatever it was.
-      x.refine = { on, radius: on && stroke ? radiusDef : (x.refine?.radius ?? radiusDef) }
-      if (on && fromModel(x) && x.edge) {
-        const e = normaliseEdge({ ...x.edge, harden: 0 })
-        if (e) x.edge = e
-        else delete x.edge
-      }
-    })
-    commit(on ? tk('Snap to edges') : tk('Snap to edges off'))
+  const setRefine = (fn: (r: MaskRefine) => MaskRefine, live = false): Promise<boolean> => {
+    const was = c.refine?.on === true
+    const apply = (): void =>
+      edit((x) => {
+        const next = fn(x.refine ?? { on: false, radius: radiusDef })
+        // A stroke turned on snaps to its object first: a light refine on it, whatever it was.
+        if (next.on && !was && stroke) next.radius = radiusDef
+        x.refine = next
+        if (next.on && fromModel(x) && x.edge) {
+          const e = normaliseEdge({ ...x.edge, harden: 0 })
+          if (e) x.edge = e
+          else delete x.edge
+        }
+      }, live)
+    // SAM offered first when a stroke turns on and it is not here; without it nothing changes.
+    if (!was && stroke && fn(c.refine ?? { on: false, radius: radiusDef }).on)
+      return ensureModel('prompt', t('Snap to edges')).then((ok) => {
+        if (ok) apply()
+        return ok
+      })
+    apply()
+    return Promise.resolve(true)
   }
   // A face part found on several faces: all of them, or one (left to right).
   const faces = c.kind === 'polygon' ? (c.found?.faces.length ?? 0) : 0
@@ -126,23 +165,16 @@ export function ComponentCard({
       )}
       {show.snap && (
         <>
-          <div className="mf-card-row">
-            <Toggle
-              on={snapping}
-              onChange={(on) => void setSnap(on)}
-              title={
-                stroke
-                  ? t(
-                      "Keep this stroke to the object it was painted on, cut at the object's edges (SAM 2.1)"
-                    )
-                  : t(
-                      "Pull this edge onto the photo's own edges, at full resolution (the engine's refine)"
-                    )
-              }
-            >
-              {t('Snap to edges')}
-            </Toggle>
-            {c.kind === 'polygon' && (
+          <RefineControls
+            c={c}
+            radiusDef={radiusDef}
+            radiusMin={EDGE_RADIUS_MIN}
+            radiusMax={EDGE_RADIUS_MAX}
+            setRefine={setRefine}
+            commit={(label) => commit(label)}
+          />
+          {c.kind === 'polygon' && (
+            <div className="mf-card-row">
               <button
                 className="sm ghost"
                 disabled={c.points.length < 3}
@@ -154,28 +186,34 @@ export function ComponentCard({
                 <Icon name="objects" />
                 {t('Find object')}
               </button>
-            )}
-          </div>
-          {snapping && (
-            <Slider
-              label={t('Edge radius')}
-              adjusts={false}
-              value={c.refine?.radius ?? radiusDef}
-              min={EDGE_RADIUS_MIN}
-              max={EDGE_RADIUS_MAX}
-              step={0.05}
-              scale="log"
-              def={radiusDef}
-              format={(v) => `${v.toFixed(2)}%`}
-              title={t(
-                "How far the photo's edges may pull this one, as a share of its shorter side: about three times how far off the edge is"
-              )}
-              onChange={(v, live) =>
-                edit((x) => (x.refine = { on: true, radius: Math.round(v * 100) / 100 }), live)
-              }
-              onCommit={() => commit(tk('Edge radius'))}
-            />
+            </div>
           )}
+        </>
+      )}
+      {edgeShaping(c) && (
+        <>
+          <Slider
+            label={t('Smooth')}
+            adjusts={false}
+            value={c.smooth ?? 0}
+            min={0}
+            max={100}
+            def={0}
+            tip={EDGE_TIPS.smooth}
+            onChange={(v, live) => edit((x) => setOrDrop(x, 'smooth', v), live)}
+            onCommit={() => commit(tk('Smooth edge'))}
+          />
+          <Slider
+            label={t('Contrast')}
+            adjusts={false}
+            value={c.contrast ?? 0}
+            min={0}
+            max={100}
+            def={0}
+            tip={EDGE_TIPS.contrast}
+            onChange={(v, live) => edit((x) => setOrDrop(x, 'contrast', v), live)}
+            onCommit={() => commit(tk('Edge contrast'))}
+          />
         </>
       )}
       {show.feather && (
@@ -185,7 +223,7 @@ export function ComponentCard({
           value={c.feather}
           min={0}
           max={100}
-          def={3}
+          def={c.kind === 'polygon' ? 3 : 0}
           onChange={(v, live) => edit((x) => (x.feather = v), live)}
           onCommit={() => commit(tk('Feather'))}
         />
@@ -198,7 +236,7 @@ export function ComponentCard({
           min={-100}
           max={100}
           def={0}
-          title={t("Move the edge in (−) or out (+), up to 3% of the photo's shorter side")}
+          tip={EDGE_TIPS.shift}
           onChange={(v, live) => setEdge({ shift: v }, live)}
           onCommit={() => commit(tk('Shift edge'))}
         />

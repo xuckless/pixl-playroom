@@ -27,7 +27,15 @@ import {
 } from '../src/main/project/pixlfile'
 import { planFor } from '../src/main/project/embedplan'
 import type { SourceInfo } from '../src/shared/engine-types'
-import { newProjectPath, projectName, projectsDirFor } from '../src/main/project/locate'
+import {
+  exportDirFor,
+  locationRoot,
+  newProjectPath,
+  presetExportsDir,
+  presetProjectsDir,
+  projectName,
+  projectsDirFor
+} from '../src/main/project/locate'
 import { IndexService } from '../src/main/indexer/service'
 import { emptySidecar, sidecarPath } from '../src/main/sidecar'
 import type { XmpIo } from '../src/main/indexer/xmp'
@@ -491,6 +499,153 @@ test('a photo moved away from its project in a projects folder finds it again', 
   // The project now names where the photo is.
   assert.equal(PixlFile.peekOrigin(f.project)?.path, join(elsewhere, 'a.jpg'))
   await f.done()
+  rmSync(root, { recursive: true })
+})
+
+test('a projects folder left for another is still searched for its projects', async () => {
+  const root = tmp()
+  const f = await withProject({ folder: join(root, 'first') })
+  assert.ok(f.project.startsWith(join(root, 'first')))
+  f.index.setSetting('projects.location', { folder: join(root, 'second') })
+  assert.deepEqual(f.index.getSetting('projects.pastFolders'), [join(root, 'first')])
+  // An index that has never seen the photo (no link, no registry of the
+  // project) finds it by the folders alone: not where projects go now, nor
+  // the preset, but the one left behind.
+  const other = (past: string[]): IndexService => {
+    const index = new IndexService({
+      userData: mkdtempSync(join(root, 'ud-')),
+      emit: () => {},
+      xmp: noXmp,
+      home: join(root, 'home')
+    })
+    index.setSetting('projects.location', { folder: join(root, 'second') })
+    index.setSetting('projects.pastFolders', past)
+    return index
+  }
+  const knows = other([join(root, 'first')])
+  const found = (await knows.listFolder(f.folder)).find((i) => i.name === 'a.jpg')!
+  assert.equal(found.project, f.project)
+  knows.close()
+  // Without it in the list, the project is not found: the search is what found it.
+  const blind = other([])
+  const missed = (await blind.listFolder(f.folder)).find((i) => i.name === 'a.jpg')!
+  assert.equal(missed.project ?? null, null)
+  blind.close()
+  await f.done()
+  rmSync(root, { recursive: true })
+})
+
+test('exports are saved by the same three choices; a new index starts in the preset folder', () => {
+  const root = tmp()
+  const open = (ud: string, fresh: boolean): IndexService =>
+    new IndexService({
+      userData: join(root, ud),
+      emit: () => {},
+      xmp: noXmp,
+      ...(fresh ? { freshLocation: 'home' as const } : {})
+    })
+  // A new install: projects and exports both in the preset folder.
+  const fresh = open('fresh', true)
+  assert.equal(fresh.getSetting('projects.location'), 'home')
+  assert.equal(fresh.getSetting('export.location'), 'home')
+  fresh.close()
+  // One updating, whose Export dialog last chose a folder: that folder still.
+  const chose = open('chose', false)
+  chose.setSetting('export.last', { folder: '/exports/here', format: 'jpeg' })
+  chose.setSetting('export.location', null)
+  chose.close()
+  const choseAgain = open('chose', true)
+  assert.deepEqual(choseAgain.getSetting('export.location'), { folder: '/exports/here' })
+  // What it is once set is kept, whatever the dialog last held.
+  choseAgain.setSetting('export.location', 'home')
+  choseAgain.close()
+  const kept = open('chose', true)
+  assert.equal(kept.getSetting('export.location'), 'home')
+  kept.close()
+  // One updating that always exported beside the original: beside, as before.
+  const beside = open('beside', false)
+  assert.equal(beside.getSetting('export.location'), 'beside')
+  beside.close()
+  // The folder each choice names for a photo: its own, its folder's name
+  // under the preset's Exports, or the user's.
+  const home = join(root, 'home')
+  assert.equal(exportDirFor('beside', '/shoots/Wedding', home), '/shoots/Wedding')
+  assert.equal(
+    exportDirFor('home', '/shoots/Wedding', home),
+    join(home, 'Pixl Projects', 'Exports', 'Wedding')
+  )
+  assert.equal(exportDirFor({ folder: '/out' }, '/shoots/Wedding', home), '/out')
+  assert.equal(presetExportsDir(home), join(presetProjectsDir(home), 'Exports'))
+  assert.equal(locationRoot('exports', 'beside', home), null)
+  assert.equal(locationRoot('projects', 'home', home), join(home, 'Pixl Projects'))
+  rmSync(root, { recursive: true })
+})
+
+test('a projects folder that cannot be written is an error that names it; nothing is made elsewhere', async () => {
+  const root = tmp()
+  const folder = join(root, 'photos')
+  mkdirSync(folder)
+  writeFileSync(join(folder, 'a.jpg'), 'not really a photo')
+  const home = join(root, 'home')
+  // A file where the projects folder should be: nothing can be made inside it.
+  const blocked = join(root, 'blocked')
+  writeFileSync(blocked, '')
+  const index = new IndexService({
+    userData: join(root, 'ud'),
+    emit: () => {},
+    xmp: noXmp,
+    home
+  })
+  index.setSetting('projects.location', { folder: blocked })
+  const a = (await index.listFolder(folder))[0].key
+  const r = defaultRecipe(false)
+  const edited = structuredClone(r)
+  edited.basic.exposure = 1
+  // The base only records what is saved; the first real edit makes the project.
+  index.commitEdit(a, 'Opened', r, r)
+  assert.throws(
+    () => index.commitEdit(a, 'Exposure', edited, edited),
+    (err: Error & { values?: { folder?: string } }) =>
+      /cannot write to \{\{folder\}\}/.test(err.message) && err.values?.folder === blocked
+  )
+  // Not beside the photo, and not in the preset folder either.
+  assert.deepEqual(
+    readdirSync(folder).filter((n) => n.endsWith('.pixl')),
+    []
+  )
+  assert.equal(existsSync(join(home, 'Pixl Projects')), false)
+  // The preset folder is made in the home the index is given, never the user's own.
+  index.setSetting('projects.location', 'home')
+  const next = structuredClone(edited)
+  next.basic.exposure = 2
+  index.commitEdit(a, 'Exposure', next, next)
+  assert.ok(index.projectPath(a)?.startsWith(join(home, 'Pixl Projects')))
+  await settle()
+  index.close()
+  rmSync(root, { recursive: true })
+})
+
+test('a new index starts where it is told; one already made keeps its setting', () => {
+  const root = tmp()
+  const ud = join(root, 'ud')
+  const fresh = new IndexService({
+    userData: ud,
+    emit: () => {},
+    xmp: noXmp,
+    freshLocation: 'home'
+  })
+  assert.equal(fresh.getSetting('projects.location'), 'home')
+  fresh.setSetting('projects.location', null)
+  fresh.close()
+  // Opened again (an install from before the choice): left unset, beside the photo.
+  const again = new IndexService({
+    userData: ud,
+    emit: () => {},
+    xmp: noXmp,
+    freshLocation: 'home'
+  })
+  assert.equal(again.getSetting('projects.location'), null)
+  again.close()
   rmSync(root, { recursive: true })
 })
 

@@ -7,7 +7,7 @@ import {
 } from './hdrdisplay'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import log from 'electron-log/main'
-import { copyFile, readdir, readFile, writeFile } from 'fs/promises'
+import { copyFile, mkdir, readdir, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import { cpus } from 'os'
 import { pathToFileURL } from 'url'
@@ -44,7 +44,7 @@ import { equivalentFocal } from '../shared/upright'
 import { orientedFrame } from '../shared/compile'
 import { cropAtAspect } from '../shared/crop'
 import { ensureProxies } from './proxy'
-import { BACKGROUND_THREADS } from './source'
+import { BACKGROUND_THREADS, IMAGE_EXTENSIONS } from './source'
 import type { IndexClient } from './indexer/client'
 import { IndexError } from './indexer/client'
 import type { PlaneStore } from './planestore'
@@ -65,6 +65,7 @@ import type { HeavyModel } from '../shared/heavy'
 import type { AiSwitchStore } from './ai/switches'
 import type { BrainStore } from './ai/brain'
 import type { Namer } from './ai/namer'
+import type { PlaneFinder } from './ai/found'
 import type { CullMeasurer } from './cull'
 import { readNames } from '../shared/naming'
 import { benchmarkSam3 } from './ai/sam3bench'
@@ -76,7 +77,13 @@ import type { ProblemInput } from '../shared/crash'
 import { importProfiles, type LensProfileStore, type LensShot } from './lensprofiles'
 import type { LensProfile } from '../shared/lens'
 import type { GuideLine } from '../shared/upright'
-import { removeSpot, strokeOver, type P as SpotPoint, type RetouchSpot } from '../shared/retouch'
+import {
+  removeSpot,
+  strokeOver,
+  type P as SpotPoint,
+  type RetouchSpot,
+  type SpotRefine
+} from '../shared/retouch'
 import { grey8 } from './pngio'
 import type { PixelStep } from '../shared/pixels'
 import { enhanceAvailability, enhanceRates } from './enhance'
@@ -100,7 +107,15 @@ import { OAuthError } from './account/oauth'
 import { takeOpens } from './open'
 import { SAM_MODEL, type SelectService } from './select/service'
 import { boxAround, type PromptSourceAsk, type SelectDecode } from '../shared/prompt'
-import { paths } from './paths'
+import { paths, scriptedHome } from './paths'
+import { locationRoot } from './project/locate'
+import {
+  LOCATION_SETTING,
+  LOCATIONS_ASKED,
+  locationOf,
+  type LocationKind,
+  type LocationsInfo
+} from '../shared/locations'
 import type { DevelopSessions } from './render'
 import { readSettings } from './settings'
 import { checkForUpdates, installUpdate, setUpdateChannel, updateState } from './updater'
@@ -209,6 +224,8 @@ export interface Services {
   switches: AiSwitchStore
   /** Gemma, the local assistant. */
   brain: BrainStore
+  /** What the open photo holds, found with no brain: the found chips. */
+  finder: PlaneFinder
   /** Gemma's names for the library's photos. */
   namer: Namer
   /** Cull signals and suggestions. */
@@ -272,6 +289,29 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.getSetting, (key: string) => s.index.getSetting(key))
   handle(IPC.app.setSetting, (key: string, value: unknown) => s.index.setSetting(key, value))
   handle(IPC.app.reveal, (path: string) => shell.showItemInFolder(path))
+  handle(IPC.app.locations, async (): Promise<LocationsInfo> => {
+    const home = scriptedHome() ?? undefined
+    const [projects, exports, asked] = await Promise.all([
+      s.index.getSetting(LOCATION_SETTING.projects).then(locationOf),
+      s.index.getSetting(LOCATION_SETTING.exports).then(locationOf),
+      s.index.getSetting(LOCATIONS_ASKED)
+    ])
+    return {
+      projects: { location: projects, path: locationRoot('projects', projects, home) },
+      exports: { location: exports, path: locationRoot('exports', exports, home) },
+      // A scripted run is never asked (and saves inside its own profile).
+      ask: asked !== true && scriptedHome() === null
+    }
+  })
+  handle(IPC.app.showLocation, async (kind: LocationKind) => {
+    const loc = locationOf(await s.index.getSetting(LOCATION_SETTING[kind]))
+    const dir = locationRoot(kind, loc, scriptedHome() ?? undefined)
+    if (!dir) return
+    // The preset folder is made by the first thing saved there: made now, to be shown.
+    await mkdir(dir, { recursive: true }).catch(() => undefined)
+    const failed = await shell.openPath(dir)
+    if (failed) throw new Error(t('Playroom cannot open {{folder}}.', { folder: dir }))
+  })
   handle(IPC.menu.set, (spec: MenuBarSpec) => setMenuSpec(spec))
   handle(IPC.app.language, () => languageState())
   handle(IPC.app.setLanguage, (setting: LanguageSetting) => {
@@ -283,11 +323,14 @@ export function registerIpc(s: Services): void {
   handle(IPC.menu.openTop, (index: number, x: number, y: number) => openTopMenu(index, x, y))
   handle(IPC.app.renderScale, () => renderScale())
   handle(IPC.app.displayHdr, () => displayHdr())
+  handle(IPC.app.fullScreen, () => BrowserWindow.getAllWindows()[0]?.isFullScreen() ?? false)
   handle(IPC.app.setDisplayHdr, async (v: unknown) => {
     await s.index.setSetting(DISPLAY_SETTING_KEY, v)
     return setDisplaySetting(v)
   })
   handle(IPC.app.displayDetected, (hdr: unknown) => setDisplayDetected(hdr === true))
+  handle(IPC.app.gpuDrag, () => s.sessions.gpu.state())
+  handle(IPC.app.setGpuDrag, (on: unknown) => s.sessions.gpu.setOn(on !== false))
   handle(IPC.app.restart, () => restart())
 
   handle(IPC.app.reportError, (e: ErrorReport) => reportRendererError(e))
@@ -341,10 +384,21 @@ export function registerIpc(s: Services): void {
   // ── library ──
   handle(IPC.library.chooseFolder, async () => {
     const w = win()
-    const r = w
-      ? await dialog.showOpenDialog(w, { properties: ['openDirectory'] })
-      : await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    // A new folder can be made from the dialog (macOS hides the button otherwise).
+    const opts: Electron.OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
     return r.canceled ? null : r.filePaths[0]
+  })
+  handle(IPC.library.choosePhotos, async () => {
+    // Lower and upper case: some Linux file pickers match extensions exactly.
+    const exts = [...IMAGE_EXTENSIONS, 'pixl']
+    const opts = {
+      properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[],
+      filters: [{ name: t('Photos'), extensions: [...exts, ...exts.map((e) => e.toUpperCase())] }]
+    }
+    const w = win()
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    return r.canceled ? [] : r.filePaths
   })
   handle(IPC.library.openFolder, async (folder: string) => ({
     folder,
@@ -443,6 +497,7 @@ export function registerIpc(s: Services): void {
   // ── library sources, metadata, collections, stacks, duplicates ── workstream D1
   handle(IPC.library.openSource, (src: LibrarySource) => s.library.openSource(src))
   handle(IPC.library.resolvePaths, (paths: string[]) => s.index.resolvePaths(paths))
+  handle(IPC.library.photoPaths, (paths: string[]) => s.index.photoPaths(paths))
   handle(IPC.library.projectInfo, (key: string) => s.index.originalState(key))
   handle(IPC.library.setMetadata, (keys: string[], patch: MetaTextPatch) =>
     s.index.setMetadata(keys, patch)
@@ -508,6 +563,9 @@ export function registerIpc(s: Services): void {
     const d = await s.sessions.open(key)
     // A project made before its original could be carried (or interrupted) catches up.
     s.embedder.request(keyOf(parseKey(key).photoId, null))
+    // What it holds, found in the background for the Masks pane's chips
+    // (the pane asks for the same answer when it opens).
+    void s.finder.find(key)
     // Upright's perspective: the file's 35 mm figure, else focal length × the camera's crop.
     const focal35 = d.info.lens?.focal_35mm
       ? d.info.lens.focal_35mm
@@ -543,6 +601,7 @@ export function registerIpc(s: Services): void {
     s.sessions.preview(key, recipe ? await s.planes.hydrate(recipe) : null)
   )
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
+  handle(IPC.develop.frameLost, (key: string) => s.sessions.frameLost(key))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))
   handle(IPC.develop.measureCa, (key: string) => s.sessions.measureCa(key))
   handle(
@@ -581,8 +640,14 @@ export function registerIpc(s: Services): void {
   )
   handle(
     IPC.develop.suggestHeal,
-    (key: string, points: SpotPoint[], radius: number, feather: number, kind: 'heal' | 'clone') =>
-      s.sessions.suggestHeal(key, points, radius, feather, kind)
+    (
+      key: string,
+      points: SpotPoint[],
+      radius: number,
+      feather: number,
+      kind: 'heal' | 'clone',
+      refine?: SpotRefine
+    ) => s.sessions.suggestHeal(key, points, radius, feather, kind, refine)
   )
   handle(
     IPC.develop.suggestUpright,
@@ -878,6 +943,7 @@ export function registerIpc(s: Services): void {
     readNames(await s.index.namesOf(parseKey(key).photoId))
   )
   handle(IPC.names.name, (key: string) => s.namer.nameNow(parseKey(key).photoId))
+  handle(IPC.names.found, (key: string) => s.finder.find(key))
   handle(IPC.names.edit, (key: string, names: unknown) =>
     s.namer.edit(parseKey(key).photoId, names === null ? null : readNames(names))
   )

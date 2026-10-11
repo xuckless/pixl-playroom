@@ -292,10 +292,10 @@ it takes over that sidecar and the edit history, and the sidecar is removed.
 
 **Where a new project goes:**
 
-| Setting                                                      | Path                                                                                                                                                              |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Beside the photo (default)                                   | `IMG_0001.pixl` next to `IMG_0001.CR3`. When another image in the folder shares the stem (a RAW and its JPEG), the name keeps the extension: `IMG_0001.CR3.pixl`. |
-| A projects folder (`~/Pixl Projects`, or one the user chose) | `<projects folder>/<photo folder name>-<6 hex of SHA-1 of the folder's path>/<name>.pixl`                                                                         |
+| Setting                                                                                  | Path                                                                                                                                                              |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Beside the photo (an install from before the choice)                                     | `IMG_0001.pixl` next to `IMG_0001.CR3`. When another image in the folder shares the stem (a RAW and its JPEG), the name keeps the extension: `IMG_0001.CR3.pixl`. |
+| A projects folder (`~/Pixl Projects`, where a new install starts, or one the user chose) | `<projects folder>/<photo folder name>-<6 hex of SHA-1 of the folder's path>/<name>.pixl`                                                                         |
 
 A folder that cannot be written puts its projects in `~/Pixl Projects`.
 

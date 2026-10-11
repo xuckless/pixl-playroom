@@ -15,9 +15,39 @@
  * publishing a feed nobody can update from. That shape includes a block
  * value (`releaseNotes: |` and its indented lines: the notes the app's
  * "Update available" dialog shows), carried into the merged feed as it is.
+ *
+ * The feed also states the least macOS the build opens on, when
+ * electron-builder.yml sets one (`mac.minimumSystemVersion`): electron-builder
+ * writes that into the bundle only, and an app on an older macOS would
+ * otherwise install an update its Mac then refuses to open. electron-updater
+ * compares the feed's `minimumSystemVersion` with `os.release()`, which on
+ * macOS is the Darwin kernel's version, so that is what the feed carries.
  */
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
+
+/**
+ * The Darwin kernel a macOS release runs (what `os.release()` reports), for
+ * the releases a minimum may name. One not listed fails the release: a feed
+ * without the line would let every older Mac take the update.
+ */
+const DARWIN = { 13: '22.0.0', 14: '23.0.0', 15: '24.0.0', 26: '25.0.0' }
+
+/**
+ * The feed's `minimumSystemVersion` for electron-builder.yml's
+ * `mac.minimumSystemVersion` (a macOS version), or null when it sets none.
+ */
+export function minimumDarwin(builderYaml) {
+  const mac = /^mac:\n((?: .*\n|#.*\n|\n)*)/m.exec(builderYaml)?.[1] ?? ''
+  const stated = /^ {2}minimumSystemVersion: ['"]?([0-9.]+)['"]?\s*$/m.exec(mac)?.[1]
+  if (!stated) return null
+  const darwin = DARWIN[Number(stated.split('.')[0])]
+  if (!darwin)
+    throw new Error(
+      `electron-builder.yml asks for macOS ${stated} or later, which this script cannot state in the update feed: add its Darwin version to DARWIN`
+    )
+  return darwin
+}
 
 /** A YAML block scalar's header: `|`, `|-`, `>`, `>-` (what electron-builder writes for releaseNotes). */
 const BLOCK = /^[|>][-+]?$/
@@ -91,8 +121,11 @@ function parseManifest(source, text) {
   }
 }
 
-/** The manifests (`{ source, text }`) merged into one feed's text. */
-export function mergeManifests(manifests) {
+/**
+ * The manifests (`{ source, text }`) merged into one feed's text. `least`:
+ * the Darwin version the build needs (`minimumDarwin`), stated in the feed.
+ */
+export function mergeManifests(manifests, least = null) {
   if (manifests.length < 2) throw new Error('two manifests or more to merge')
   const parsed = manifests.map(({ source, text }) => parseManifest(source, text))
 
@@ -149,6 +182,9 @@ export function mergeManifests(manifests) {
   out.push(`path: ${merged[0].url}`, `sha512: ${merged[0].sha512}`)
   if (notes[0]) out.push(`releaseNotes: ${notes[0].header}`, ...notes[0].lines)
   if (releaseDate !== undefined) out.push(`releaseDate: ${releaseDate}`)
+  // An app on an older macOS leaves this update alone (electron-updater's
+  // `checkIfUpdateSupported`), where it would not open once installed.
+  if (least) out.push(`minimumSystemVersion: ${least}`)
   return out.join('\n') + '\n'
 }
 
@@ -157,7 +193,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (sources.length < 2) {
     throw new Error('usage: node build/merge-mac-channel.mjs <manifest> <manifest> [...]')
   }
+  const builder = readFileSync(new URL('../electron-builder.yml', import.meta.url), 'utf8')
   process.stdout.write(
-    mergeManifests(sources.map((source) => ({ source, text: readFileSync(source, 'utf8') })))
+    mergeManifests(
+      sources.map((source) => ({ source, text: readFileSync(source, 'utf8') })),
+      minimumDarwin(builder)
+    )
   )
 }

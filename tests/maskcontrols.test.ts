@@ -80,8 +80,11 @@ test('each kind shows only what it needs', () => {
     snap: true
   })
   assert.equal(componentControls({ ...brush, refine: { on: true, radius: 0.6 } }).shift, true)
-  // A model's mask, old or new: Snap and Shift edge.
+  // A model's mask, old or new: Snap, Shift edge, and Feather to soften it
+  // (Smooth and Contrast are a drawn edge's: refine.ts `edgeShaping`).
   assert.equal(componentControls({ ...brush, edge: { ...AI_MASK_EDGE } }).shift, true)
+  assert.equal(componentControls({ ...brush, edge: { ...AI_MASK_EDGE } }).feather, true)
+  assert.equal(componentControls(ai).feather, true)
   assert.equal(componentControls(ai).shift, true)
   assert.equal(hasControls(brush), true)
 })

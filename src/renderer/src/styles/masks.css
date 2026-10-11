@@ -959,6 +959,31 @@ button.grad-other:hover:not(:disabled) {
 .name-chip.subject {
   border-color: var(--acc-a55);
 }
+/*
+ * Found by Playroom's models, not named (main/ai/found.ts): a suggestion
+ * nothing has checked, so dashed and quieter than a name until it is tapped.
+ */
+.name-chip.found {
+  border-style: dashed;
+  border-color: var(--hair3);
+}
+.name-chip.found:hover,
+.name-chip.found.subject {
+  border-color: var(--acc-a55);
+}
+.name-chip.found .nc-mask {
+  padding-right: 10px;
+  color: var(--text2);
+}
+.name-chip.found:hover .nc-mask {
+  color: var(--text);
+}
+.name-chips .nc-about {
+  display: grid;
+  place-items: center;
+  height: 24px;
+  margin-left: auto;
+}
 .name-chip .nc-mask {
   height: 100%;
   padding: 0 4px 0 10px;

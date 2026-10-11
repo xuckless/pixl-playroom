@@ -43,8 +43,9 @@ test('a staged rollout adds stagingPercentage at the end; a full one adds nothin
 })
 
 // @ts-expect-error a plain .mjs build script, without types
-const { mergeManifests } = (await import('../build/merge-mac-channel.mjs')) as {
-  mergeManifests: (m: { source: string; text: string }[]) => string
+const { mergeManifests, minimumDarwin } = (await import('../build/merge-mac-channel.mjs')) as {
+  mergeManifests: (m: { source: string; text: string }[], least?: string | null) => string
+  minimumDarwin: (builderYaml: string) => string | null
 }
 
 const macFeed = (arch: 'x64' | 'arm64', date: string): string => `version: 0.4.0-beta
@@ -93,4 +94,31 @@ test('Mac feeds whose notes differ are refused', () => {
       }
     ])
   )
+})
+
+test('the Mac feed states the least macOS the build opens on, as the updater reads it', async () => {
+  const feeds = [
+    { source: 'x64', text: macFeed('x64', '2026-10-11T10:00:00.000Z') },
+    { source: 'arm64', text: macFeed('arm64', '2026-10-11T10:01:00.000Z') }
+  ]
+  // No minimum in the build: the feed says nothing, and every Mac takes the update.
+  assert.doesNotMatch(mergeManifests(feeds), /minimumSystemVersion/)
+  assert.equal(minimumDarwin('mac:\n  category: x\nwin:\n  minimumSystemVersion: 9\n'), null)
+  // macOS 15 is Darwin 24: what `os.release()` reports, and what the updater compares.
+  const builder =
+    "appId: x\nmac:\n  category: x\n  # a note\n  minimumSystemVersion: '15.0'\nwin:\n  x: 1\n"
+  assert.equal(minimumDarwin(builder), '24.0.0')
+  const merged = mergeManifests(feeds, minimumDarwin(builder))
+  assert.match(merged, /\nminimumSystemVersion: 24\.0\.0\n$/)
+  // It survives the step that points the files into their version's folder.
+  assert.match(prefix(merged), /\nminimumSystemVersion: 24\.0\.0\n/)
+  // A macOS this script cannot state fails the release, rather than leave the line out.
+  assert.throws(() => minimumDarwin("mac:\n  minimumSystemVersion: '99.0'\n"))
+  // The app's own build file: macOS 15 or later (the owner, 2026-10-11).
+  const { readFileSync } = await import('node:fs')
+  const own = readFileSync(new URL('../electron-builder.yml', import.meta.url), 'utf8')
+  assert.equal(minimumDarwin(own), '24.0.0')
+  // electron-updater (6.8.9, `checkIfUpdateSupported`) leaves an update whose
+  // `minimumSystemVersion` is above `os.release()`: macOS 13 is Darwin 22 and
+  // 14 is 23, both below 24, so they keep the version they have.
 })

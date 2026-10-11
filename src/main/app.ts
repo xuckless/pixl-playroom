@@ -22,6 +22,7 @@ import { externalAllowed } from './guard'
 import { AiJobs } from './ai/jobs'
 import { applyMaskResult } from './ai/apply'
 import { SegmentRunner } from './ai/segment'
+import { PlaneFinder } from './ai/found'
 import { DenoiseRunner } from './ai/denoise'
 import { DISPLAY_SETTING_KEY, watchDisplayHdr } from './hdrdisplay'
 import { INPAINTER_MODEL, setInpainter } from './ai/inpainter'
@@ -189,6 +190,13 @@ function createWindow(): void {
     rendererGone()
     if (mainWindow === win) mainWindow = undefined
   })
+  // Full screen, as the window itself says it: its buttons go with the menu
+  // bar then, and the top bar closes the room it leaves for them.
+  const fullScreen = (full: boolean) => (): void => {
+    if (!win.isDestroyed()) win.webContents.send(IPC.app.fullScreenChanged, full)
+  }
+  win.on('enter-full-screen', fullScreen(true))
+  win.on('leave-full-screen', fullScreen(false))
 
   // The window stays on the app's page: links open in the browser, and only
   // to our own sites and the checkout (guard.ts); nothing navigates the
@@ -319,6 +327,7 @@ app.whenReady().then(() => {
     key: (key, lens) => select.snapKey(key, lens),
     object: (key, lens, stroke) => select.objectUnder(key, lens, stroke)
   })
+  const segment = new SegmentRunner(library, planes, aiEngine, models, () => sessions)
   const ai = new AiJobs(
     {
       prompt: new PromptRunner(select, models),
@@ -330,7 +339,7 @@ app.whenReady().then(() => {
         index,
         () => sessions
       ),
-      segment: new SegmentRunner(library, planes, aiEngine, models, () => sessions),
+      segment,
       denoise: new DenoiseRunner(library, aiEngine, models, index, () => sessions)
     },
     async (key) => (await library.photoRow(key)).name,
@@ -338,6 +347,9 @@ app.whenReady().then(() => {
   )
   // AI switched off in Settings: no job starts (a RAW's develop keeps its models).
   ai.gate = () => switches.enabled()
+  // With no brain (Gemma shelved), the open photo's named planes and subject
+  // are found in the background for the Masks pane's chips.
+  const finder = new PlaneFinder(segment, models, switches, index, () => ai.busy)
   // Gemma names the library's photos while nobody is at the computer, on mains power.
   const namer = new Namer(index, library, brain, switches)
   if (gemmaInBuild(app.isPackaged)) namer.start()
@@ -353,7 +365,7 @@ app.whenReady().then(() => {
       // batch of cull signals (asked for, or the idle one under way); then
       // the hosts rest instead of starting again for each next piece.
       { engine: bgEngine, busy: () => exporter.busy || library.busy || cull.busy },
-      { engine: aiEngine, busy: () => ai.busy || cull.busy },
+      { engine: aiEngine, busy: () => ai.busy || cull.busy || finder.busy },
       { engine: selectEngine }
     ],
     () => engine.ensureStarted(),
@@ -371,6 +383,7 @@ app.whenReady().then(() => {
   process.on('exit', () => brain.killNow())
   registerIpc({
     namer,
+    finder,
     cull,
     index,
     embedder,

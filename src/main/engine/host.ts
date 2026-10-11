@@ -11,9 +11,16 @@ import type {
   EngineErrorShape,
   EngineHelloMessage,
   EngineMethod,
+  GpuFrame,
+  GpuOp,
+  GpuResult,
+  GpuSession,
+  HeldMeasurements,
+  HeldRef,
   HostToMain,
   MainToHost,
   ModelSession,
+  NativeRefs,
   PixlEngineModule,
   PreviewFrame,
   PromptEmbedding,
@@ -21,6 +28,7 @@ import type {
   SamResult
 } from '../../shared/engine-types'
 import { pickBySize } from '../../shared/concepts'
+import { toRgba } from '../../shared/gpudrag'
 
 const ENGINE_PACKAGE = '@xuckless/pixl-engine'
 /** What Playroom cannot run without. The rest (lens, upright, AI…) are looked up per call. */
@@ -96,6 +104,20 @@ function bundledRuntime(e: PixlEngineModule): EngineHelloMessage['runtime'] {
   }
 }
 
+/** Whether the addon has the GPU grade path (0.19.2; built for macOS and Windows only). */
+function hasGpu(e: PixlEngineModule): boolean {
+  try {
+    return (
+      typeof e.hasGpu === 'function' &&
+      typeof e.openGpuSession === 'function' &&
+      typeof e.uploadGpuFrame === 'function' &&
+      e.hasGpu() === true
+    )
+  } catch {
+    return false
+  }
+}
+
 const loaded = loadNative()
 const engine = 'engine' in loaded ? loaded.engine : undefined
 
@@ -106,7 +128,8 @@ if (engine) {
     version: engine.engineVersion(),
     enhance: engine.hasEnhance(),
     runtime: bundledRuntime(engine),
-    prompt: typeof engine.segmentPrompt === 'function'
+    prompt: typeof engine.segmentPrompt === 'function',
+    gpu: hasGpu(engine)
   })
 } else {
   send({
@@ -115,6 +138,45 @@ if (engine) {
     reason: 'reason' in loaded ? loaded.reason : '',
     code: 'code' in loaded ? loaded.code : undefined
   })
+}
+
+/**
+ * Every convert names where its grade runs (0.19.2, Phase A §1.1: one
+ * without is refused). The request builders send it; a request made before
+ * them is the CPU's, as 0.19 was.
+ */
+function withGradeDevice(method: EngineMethod, args: unknown[]): unknown[] {
+  if (method !== 'convert') return args
+  const [request, ...rest] = args
+  if (!request || typeof request !== 'object' || 'grade_device' in request) return args
+  return [{ ...request, grade_device: 'Cpu' }, ...rest]
+}
+
+/**
+ * A report's held measurements (0.19.2, Phase A §4.4) are a native handle
+ * that can't cross to main: only their `fields` are sent on. A drag asks
+ * for them to be kept here (`keepHeld`), named by main, so its next frame
+ * reuses the measurement instead of redoing it; a render given `held`
+ * returns that same object, which stays where it is. Any other is closed.
+ */
+function stripHeld(result: unknown, native?: NativeRefs): void {
+  const r = result as { held?: HeldMeasurements | HeldRef | null } | null
+  if (!r || typeof r !== 'object' || !r.held || !('close' in r.held)) return
+  const made = r.held as HeldMeasurements
+  const fields = Array.isArray(made.fields) ? [...made.fields] : []
+  const given = native?.held ? helds.get(native.held) : undefined
+  let id: string | undefined
+  if (native?.keepHeld) {
+    const had = helds.get(native.keepHeld)
+    if (had && had !== made) had.close()
+    helds.set(native.keepHeld, made)
+    id = native.keepHeld
+  } else if (given === made) {
+    id = native?.held
+  } else {
+    made.close()
+  }
+  r.held = id ? { fields, id } : { fields }
 }
 
 /** The calls that may still be stopped, by request id. */
@@ -264,6 +326,102 @@ async function sam(e: PixlEngineModule, call: SamOp, signal?: AbortSignal): Prom
   }
 }
 
+// ── The GPU drag path: native objects kept here, named by main ──────────────
+// Phase A §4.3: one GPU session per app, a frame per open photo, and §4.4's
+// held measurements. None can cross IPC, so they live in this process (as
+// SAM's sessions do) and main names them by id. A host that dies takes them
+// with it; main hears the new host (`onSpawn`) and starts over.
+
+/** The app's GPU session, once opened. */
+let gpu: GpuSession | null = null
+/** Each open photo's uploaded grade input, by main's id for it. */
+const frames = new Map<string, GpuFrame>()
+/** Held measurements a drag asked to keep, by main's id for them. */
+const helds = new Map<string, HeldMeasurements>()
+
+function noGpu(): Error & { code: string } {
+  return Object.assign(new Error('this engine has no GPU grade path'), {
+    code: 'EngineUnavailable'
+  })
+}
+
+function closeFrame(id: string): void {
+  const f = frames.get(id)
+  if (f && !f.closed) f.close()
+  frames.delete(id)
+}
+
+async function gpuCall(e: PixlEngineModule, call: GpuOp, signal?: AbortSignal): Promise<GpuResult> {
+  switch (call.op) {
+    case 'open': {
+      if (gpu && !gpu.closed) return { op: 'open', ms: 0 }
+      if (!hasGpu(e)) throw noGpu()
+      const t0 = Date.now()
+      gpu = await e.openGpuSession!(call.spec)
+      return { op: 'open', ms: Date.now() - t0 }
+    }
+    case 'upload': {
+      if (!gpu || gpu.closed) throw stale('the GPU session')
+      // The 8 GB M1: one frame open at a time (131–175 MB each, freed on close).
+      if (call.only) for (const id of [...frames.keys()]) if (id !== call.id) closeFrame(id)
+      const t0 = Date.now()
+      const input = await e.convert({ ...call.request, grade_device: 'Cpu' }, { signal })
+      const renderMs = Date.now() - t0
+      const bytes = input.output
+      if (!bytes)
+        throw Object.assign(new Error('the grade input came back empty'), { code: 'Invariant' })
+      // `report.pixels` says what the bytes are (§4.3); the report's own size otherwise.
+      const width = input.pixels?.width ?? input.width
+      const height = input.pixels?.height ?? input.height
+      const alpha = (input.pixels?.channels ?? input.channels) === 4
+      const t1 = Date.now()
+      const frame = await e.uploadGpuFrame!(gpu, { width, height, sample: 'F16', alpha }, bytes)
+      // Only once the new one is up: a failed upload leaves the photo's old frame.
+      closeFrame(call.id)
+      frames.set(call.id, frame)
+      return { op: 'upload', width, height, alpha, renderMs, uploadMs: Date.now() - t1 }
+    }
+    case 'release': {
+      for (const id of call.frames ?? []) closeFrame(id)
+      for (const id of call.held ?? []) {
+        const h = helds.get(id)
+        if (h && !h.closed) h.close()
+        helds.delete(id)
+      }
+      if (call.session) {
+        for (const id of [...frames.keys()]) closeFrame(id)
+        if (gpu && !gpu.closed) gpu.close()
+        gpu = null
+      }
+      return { op: 'release' }
+    }
+  }
+}
+
+/**
+ * A call's native options from main's names for them: the GPU session and
+ * the photo's frame for a GPU drag, the held measurements for a drag or
+ * `regionReach`. One that is not here (closed, or this host is newer than
+ * the name) is `Stale`, which main reads as "upload again" or "measure
+ * again", never as the user's error.
+ */
+function nativeOptions(native: NativeRefs | undefined): Record<string, unknown> {
+  if (!native) return {}
+  const out: Record<string, unknown> = {}
+  if (native.frame) {
+    const frame = frames.get(native.frame)
+    if (!gpu || gpu.closed || !frame || frame.closed) throw stale(`GPU frame ${native.frame}`)
+    out['gpu'] = gpu
+    out['frame'] = frame
+  }
+  if (native.held) {
+    const held = helds.get(native.held)
+    if (!held || held.closed) throw stale(`held measurements ${native.held}`)
+    out['held'] = held
+  }
+  return out
+}
+
 /** The window's end of the preview channel: frames go to it, not through main. */
 let previews: MessagePortMain | undefined
 
@@ -279,7 +437,13 @@ function deliver(frame: string, result: unknown): void {
     height: number
     companion?: { width: number; height: number; data: Uint8Array } | null
   } | null
-  if (!previews || !r?.output) return
+  if (!r?.output) return
+  // A GPU drag of an opaque photo is RGB (it names no channels): RGBA, as
+  // the window and main's relay both take a frame.
+  r.output = toRgba(r.output, r.width, r.height)
+  if (r.companion)
+    r.companion.data = toRgba(r.companion.data, r.companion.width, r.companion.height)
+  if (!previews) return
   // Four bytes a pixel is RGBA U8; eight is RGBA half floats (Full HDR).
   const f16 = r.output.byteLength === r.width * r.height * 8
   const msg: PreviewFrame = {
@@ -339,6 +503,31 @@ process.parentPort.on('message', (e) => {
       .finally(() => aborts.delete(id))
     return
   }
+  if (msg?.kind === 'gpu') {
+    const { id } = msg
+    if (!engine) {
+      send({
+        kind: 'response',
+        id,
+        ok: false,
+        error: { message: 'engine unavailable', code: 'EngineUnavailable' }
+      })
+      return
+    }
+    let signal: AbortSignal | undefined
+    if (msg.cancellable) {
+      const abort = new AbortController()
+      aborts.set(id, abort)
+      signal = abort.signal
+    }
+    gpuCall(engine, msg.call, signal)
+      .then(
+        (result) => send({ kind: 'response', id, ok: true, result }),
+        (err) => send({ kind: 'response', id, ok: false, error: toErrorShape(err) })
+      )
+      .finally(() => aborts.delete(id))
+    return
+  }
   if (!msg || msg.kind !== 'request') return
   const { id, method, args } = msg
   if (!engine) {
@@ -360,19 +549,30 @@ process.parentPort.on('message', (e) => {
     })
     return
   }
-  // A signal goes after the request; the engine checks it between stages.
-  let callArgs = args
+  // A signal goes after the request (the engine checks it between stages),
+  // in one options object with any native objects main named (`NativeRefs`).
+  const callArgs = withGradeDevice(method, args)
+  const { native } = msg
+  let options: Record<string, unknown> = {}
   if (msg.cancellable) {
     const abort = new AbortController()
     aborts.set(id, abort)
-    callArgs = [...args, { signal: abort.signal }]
+    options = { signal: abort.signal }
   }
   const frame = msg.frame
   Promise.resolve()
-    .then(() => fn.apply(engine, callArgs))
+    .then(() => {
+      options = { ...options, ...nativeOptions(native) }
+      const all = Object.keys(options).length > 0 ? [...callArgs, options] : callArgs
+      return fn.apply(engine, all)
+    })
     .then(
       (result) => {
-        if (frame) deliver(frame, result)
+        // A render made only for its measurements: its pixels stay here.
+        if (native?.discardOutput && result && typeof result === 'object')
+          (result as { output?: unknown }).output = null
+        else if (frame) deliver(frame, result)
+        stripHeld(result, native)
         send({ kind: 'response', id, ok: true, result })
       },
       (err) => send({ kind: 'response', id, ok: false, error: toErrorShape(err) })

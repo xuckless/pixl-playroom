@@ -1,7 +1,7 @@
 /**
  * pixl-auto (engine 0.19's orchestrator), where it is installed. It is not a
  * dependency of this release: until the engine publishes it, it comes from
- * the private engine repo (`pnpm add github:xuckless/pixl-engine#v0.19.1&path:/bindings/auto`),
+ * the private engine repo (`pnpm add github:xuckless/pixl-engine#v0.19.2&path:/bindings/auto`),
  * which CI can't read, and Gemma, its one user here, is held out of
  * 0.4.0-beta. Without it Gemma reads as not part of this version.
  *

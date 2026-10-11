@@ -11,7 +11,16 @@
  * A heal or clone keeps its source as a point, not an offset, for the same
  * reason.
  */
-import type { Ellipse, Feather, Orientation, Retouch, RetouchStep, SpotShape } from './engine-types'
+import type {
+  Ellipse,
+  Feather,
+  Orientation,
+  Refine,
+  Retouch,
+  RetouchStep,
+  SpotShape
+} from './engine-types'
+import { refineFor } from './refine'
 import { transformPoint } from './orientation'
 import { tk } from './i18n'
 
@@ -49,6 +58,69 @@ export interface RetouchSpot {
   /** Pet eye: 0…100 each. */
   amount: number
   pupilLevel: number
+  /**
+   * Heal and clone: how the spot's edge meets the photo (engine 0.19.2,
+   * Phase A §4.2). Absent is plain, as before; `edgeSnap` keeps the strong
+   * edges a spot crosses; `matting` blends softer and wider. The owner's
+   * three choices (2026-10-11).
+   */
+  refine?: SpotRefine
+}
+
+/** A heal's edge: the heal brush's setting, kept for every new spot until changed. */
+export type SpotRefine = 'edgeSnap' | 'matting'
+export type SpotRefineChoice = 'plain' | SpotRefine
+export const SPOT_REFINES: SpotRefineChoice[] = ['plain', 'edgeSnap', 'matting']
+
+/** The long edge of the smallest frame spots are rendered on (the develop view's draft). */
+const SMALLEST_RENDER = 1280
+
+/** The shorter side, in pixels, of the smallest render of a `w × h` frame. */
+function smallestShort(w: number, h: number): number {
+  return Math.min(w, h) * Math.min(1, SMALLEST_RENDER / Math.max(w, h))
+}
+
+/**
+ * The engine's refine for a heal or clone spot on a `w × h` frame, or null
+ * for plain. Matting runs at its defaults. Edge snap's distance is kept
+ * inside the spot: engine 0.19.2 refuses a heal whose snap reaches as far as
+ * its radius less its feather ("the heal covers the whole frame": nothing
+ * is left around it to fit the colour to), on any photo, and counts in whole
+ * pixels of each render. So the distance is at most half the radius, and at
+ * most what the draft (the smallest render, where a pixel is the largest
+ * share) has room for; a spot with no room for even a pixel is healed plain.
+ */
+export function spotRefine(
+  r: SpotRefine | undefined,
+  spot: Pick<RetouchSpot, 'radius' | 'feather'>,
+  w: number,
+  h: number
+): Refine | null {
+  if (r === 'matting') return refineFor({ on: true, radius: 0.5, method: r }, false, 0.005)
+  if (r !== 'edgeSnap') return null
+  const snap = refineFor({ on: true, radius: 0.5, method: r }, false, 0.005)
+  if (!('EdgeSnap' in snap)) return snap
+  const short = smallestShort(w, h)
+  const room = Math.floor(spot.radius * short - Math.round(featherOf(spot).radius * short) - 1)
+  if (room < 1) return null
+  const distance = Math.min(snap.EdgeSnap.distance, spot.radius / 2, room / short)
+  if (distance < SNAP_LEAST) return null
+  return { EdgeSnap: { distance: Math.round(distance * 1e6) / 1e6 } }
+}
+
+/** The least distance the engine's Edge snap takes (a shorter-side fraction). */
+const SNAP_LEAST = 0.0005
+
+/**
+ * Whether the engine refused a retouch step itself (not one of its fields):
+ * 0.19.2 does when a heal's refined edge takes in everything around the
+ * spot ("the heal covers the whole frame"), which a flat area can do to
+ * either method whatever its settings. The spot is then healed plain.
+ */
+export function refineRefused(err: unknown): boolean {
+  const e = err as { field?: string; message?: string } | null
+  const field = e?.field ?? /field `([^`]+)`/.exec(e?.message ?? '')?.[1] ?? ''
+  return /^retouch\.steps\[\d+\]$/.test(field)
 }
 
 export const SPOT_LABEL: Record<SpotKind, string> = {
@@ -84,15 +156,17 @@ export function spotShape(points: P[], radius: number): SpotShape {
 }
 
 /**
- * The reach of a spot in frame fractions per axis — its points, its radius
- * and its feather's reach (three times its radius) — for a `w × h` frame.
+ * The reach of a spot in frame fractions per axis — its points, its radius,
+ * its feather's reach (three times its radius) and what a refine adds to
+ * that (`bound`, a shorter-side fraction) — for a `w × h` frame.
  */
 function reach(
   points: P[],
   radius: number,
   feather: number,
   w: number,
-  h: number
+  h: number,
+  bound = 0
 ): {
   minX: number
   maxX: number
@@ -100,8 +174,8 @@ function reach(
   maxY: number
 } {
   const short = Math.min(w, h)
-  const rx = ((radius + 3 * feather) * short) / w
-  const ry = ((radius + 3 * feather) * short) / h
+  const rx = ((radius + 3 * feather + bound) * short) / w
+  const ry = ((radius + 3 * feather + bound) * short) / h
   return {
     minX: Math.min(...points.map((p) => p.x)) - rx,
     maxX: Math.max(...points.map((p) => p.x)) + rx,
@@ -110,8 +184,21 @@ function reach(
   }
 }
 
-/** The long edge of the smallest frame spots are rendered on (the develop view's draft). */
-const SMALLEST_RENDER = 1280
+/**
+ * How much further a refined spot reads than a plain one, as a shorter-side
+ * fraction of a `w × h` frame: the engine grows its support by the method's
+ * own bound (0.19.2: Edge snap's distance and a pixel, Matting's band and
+ * two, each rounded to whole pixels), and refuses a source that reaches
+ * past the frame for it (`source_offset`). The pixels are the smallest
+ * render's, where they are the largest share of the frame.
+ */
+export function refineBound(refine: Refine | null, w: number, h: number): number {
+  if (!refine) return 0
+  const short = smallestShort(w, h)
+  if ('EdgeSnap' in refine) return refine.EdgeSnap.distance + 1.5 / short
+  if ('Matting' in refine) return refine.Matting.band + 2.5 / short
+  return 0
+}
 
 /**
  * The offset to the source, pulled back so everything it reads (the spot's
@@ -124,14 +211,17 @@ export function fitOffset(
   radius: number,
   feather: number,
   w: number,
-  h: number
+  h: number,
+  /** A refined spot's further reach (`refineBound`). */
+  bound = 0
 ): P | null {
-  const r = reach(points, radius, feather, w, h)
+  const r = reach(points, radius, feather, w, h, bound)
   // The spot is rendered at every size from the 1280 px draft up, and the
-  // engine counts whole pixels at each: the margin is two of the smallest's
-  // (a heal's one-pixel ring, and rounding), not a fraction of the largest's.
+  // engine counts whole pixels at each (the shape's bounds outwards, three
+  // times the feather's rounded radius, the offset rounded): the margin is
+  // four of the smallest's, not a fraction of the largest's.
   const k = Math.min(1, SMALLEST_RENDER / Math.max(w, h))
-  const ring = { x: 2 / (w * k), y: 2 / (h * k) }
+  const ring = { x: 4 / (w * k), y: 4 / (h * k) }
   const lo = { x: -(r.minX - ring.x), y: -(r.minY - ring.y) }
   const hi = { x: 1 - (r.maxX + ring.x), y: 1 - (r.maxY + ring.y) }
   if (lo.x > hi.x || lo.y > hi.y) return null
@@ -198,13 +288,17 @@ export function compileRetouch(
         if (!s.source) continue
         const src = transformPoint(user, s.source)
         const want = { x: src.x - points[0].x, y: src.y - points[0].y }
-        const off = fitOffset(want, points, s.radius, feather.radius, fw, fh)
+        const refine = spotRefine(s.refine, s, fw, fh)
+        const bound = refineBound(refine, fw, fh)
+        const off = fitOffset(want, points, s.radius, feather.radius, fw, fh, bound)
         if (!off) continue
         const spot = {
           shape,
           source_offset: { x: round5(off.x), y: round5(off.y) },
           feather,
-          opacity
+          opacity,
+          // Only when one is set, so a plain spot's request is 0.19's.
+          ...(refine ? { refine } : {})
         }
         steps.push(s.kind === 'heal' ? { Heal: spot } : { Clone: spot })
         break

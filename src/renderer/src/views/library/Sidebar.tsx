@@ -4,6 +4,7 @@ import { Icon, type IconName } from '../../components/icons'
 import { Menu, type MenuItem } from '../../components/Popover'
 import { Section } from '../../components/ui'
 import { api, errorText } from '../../lib/api'
+import { choosePhotos, openPhotos } from '../../lib/openPhotos'
 import { t, tp } from '../../lib/i18n'
 import { askConfirm } from '../../state/confirm'
 import {
@@ -343,6 +344,62 @@ function Folders(): React.JSX.Element {
   )
 }
 
+/** Photos opened on their own (File → Open Photo…), the latest first; each opens in Develop. */
+function RecentPhotos(): React.JSX.Element {
+  const recent = useLibrary((s) => s.recentPhotos)
+  const source = useLibrary((s) => s.source)
+  const forget = useLibrary((s) => s.forgetPhoto)
+  return (
+    <Section
+      id="lib-recent-photos"
+      title={t('Recent Photos')}
+      right={
+        <button
+          className="icon sm"
+          title={t('Open photo…')}
+          aria-label={t('Open photo')}
+          onClick={() => void choosePhotos()}
+        >
+          <Icon name="plus" />
+        </button>
+      }
+    >
+      <div className="src-list">
+        {recent.map((path) => (
+          <SourceRow
+            key={path}
+            icon="photo"
+            label={folderName(path)}
+            title={path}
+            active={sameSource(source, { kind: 'photos', paths: [path] })}
+            onOpen={() => void openPhotos([path])}
+            menu={() => [{ label: t('Remove from the list'), onSelect: () => forget(path) }]}
+            actions={
+              <button
+                className="icon src-forget"
+                title={t('Remove from the list (the photo stays on disk)')}
+                aria-label={t('Remove {{name}} from the list', { name: folderName(path) })}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  forget(path)
+                }}
+              >
+                <Icon name="close" />
+              </button>
+            }
+          />
+        ))}
+        {recent.length === 0 && (
+          <button className="sm ghost src-empty" onClick={() => void choosePhotos()}>
+            <Icon name="photo" />
+            {t('Open photo…')}
+          </button>
+        )}
+      </div>
+    </Section>
+  )
+}
+
 /** New collections, and the file round trip. */
 function collectionsMenu(): (MenuItem | 'sep')[] {
   const lib = useLibrary.getState()
@@ -625,7 +682,8 @@ function Duplicates(): React.JSX.Element {
 }
 
 /**
- * The library's left column: the folders it has seen, the collections, the
+ * The library's left column: the folders it has seen, the photos opened on
+ * their own, the collections, the
  * keyword tree and the duplicates finder. Folds away (Cmd/Ctrl+Shift+L or
  * backslash) and remembers.
  */
@@ -635,6 +693,7 @@ export function Sidebar(): React.JSX.Element {
     <aside className={`lib-sidebar${open ? ' open' : ''}`} aria-label={t('Sources')} inert={!open}>
       <div className="lib-sidebar-inner">
         <Folders />
+        <RecentPhotos />
         <Collections />
         <Keywords />
         <Duplicates />

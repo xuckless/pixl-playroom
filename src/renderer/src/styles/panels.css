@@ -610,6 +610,16 @@ aside.right .panels.adjust {
   color: var(--text2);
   font-weight: 500;
 }
+/* Tone's base, under the four sliders it changes. */
+.row.tone-base {
+  gap: 8px;
+  margin: 6px 0 2px;
+  /* A longer language's two choices go under the label, not past the card. */
+  flex-wrap: wrap;
+}
+.row.tone-base .adjust-head-label {
+  flex: 0 0 84px;
+}
 .ai-badge {
   padding: 1px 5px;
   border: 1px solid var(--acc-a35);

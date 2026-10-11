@@ -140,10 +140,14 @@ export async function measureAutoWb(
                   opacity: 1,
                   invert: false,
                   feather: { radius: 0, edge: 'Zero' },
-                  refine: null
+                  refine: null,
+                  smooth: 0,
+                  contrast: 0,
+                  shift: 0
                 }
               ],
               invert: false,
+              edge: null,
               space: {
                 Encoded: {
                   space: 'Srgb',

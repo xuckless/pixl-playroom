@@ -1,9 +1,26 @@
-/** Where Playroom keeps what it makes. Everything under userData is a cache or an index — the truth lives beside the photos. */
+/**
+ * Where Playroom keeps what it makes. Everything under userData is a cache
+ * or an index: the truth lives in each photo's project, beside the photo or
+ * in the projects folder (project/locate.ts).
+ */
 import { app } from 'electron'
 import { mkdirSync } from 'fs'
 import { join } from 'path'
 
 const made = new Set<string>()
+
+/**
+ * A scripted run (automation's hidden window, or a profile of its own:
+ * scripts/drive.mjs, perf.mjs, the site's screenshots) keeps what it saves
+ * for the user inside its profile: the preset projects and exports folder is
+ * made there, not in the user's home, and nothing asks where they should go.
+ * Null in the app as people run it.
+ */
+export function scriptedHome(): string | null {
+  return process.env['PLAYROOM_HIDDEN'] === '1' || process.env['PLAYROOM_USER_DATA']
+    ? app.getPath('userData')
+    : null
+}
 
 /**
  * A directory under userData, made the first time it is asked for (the

@@ -13,6 +13,7 @@ import { app, utilityProcess, type UtilityProcess } from 'electron'
 import log from 'electron-log/main'
 import { join } from 'path'
 import { MAIN_DIR } from '../dirs'
+import { scriptedHome } from '../paths'
 import { vendoredExiftoolPath } from '../exiftool'
 import type { HostToMain, IndexEvent, IndexRequest } from './protocol'
 import type { IndexService } from './service'
@@ -126,6 +127,8 @@ class Connection implements IndexControl {
 
   private spawn(): void {
     const args = ['--user-data', app.getPath('userData')]
+    const home = scriptedHome()
+    if (home) args.push('--home', home)
     if (this.firstStart) args.push('--prune')
     // Resolved here, where a packaged app's paths are known for sure.
     const exiftool = vendoredExiftoolPath()
@@ -187,7 +190,7 @@ class Connection implements IndexControl {
     this.pending.delete(msg.id)
     if (msg.ok) p.resolve(msg.result)
     // The host has no translator: its messages for the user (tk() there) are translated here.
-    else p.reject(new IndexError(t(msg.error.message), msg.error.code))
+    else p.reject(new IndexError(t(msg.error.message, msg.error.values), msg.error.code))
   }
 }
 

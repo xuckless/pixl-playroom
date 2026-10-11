@@ -4,13 +4,13 @@
  * stroke by stroke (`lib/heal.ts`). The sliders set the next stroke.
  */
 import { HdrAiNote } from './HdrAiNote'
-import type { SpotKind } from '../../../shared/retouch'
+import { SPOT_REFINES, type SpotKind, type SpotRefineChoice } from '../../../shared/retouch'
 import { staleRawStep } from '../../../shared/pixels'
 import { developMark } from '../../../shared/rawcolour'
 import { Icon } from '../components/icons'
 import { useState } from 'react'
 import { InfoTip, type Tip } from '../components/InfoTip'
-import { Section, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
+import { Section, Select, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
 import { ModelGet } from '../components/ModelGet'
 import { ensureModel } from '../lib/ensureModel'
 import { useModels } from '../lib/models'
@@ -58,6 +58,33 @@ const HINT: Record<SpotKind, Tip> = {
   peteye: {
     what: tk('Click a glowing pet pupil to bring it to dark.'),
     expect: tk('Size sets how big the pupil is.')
+  }
+}
+
+/** A heal's edge (engine 0.19.2, Phase A §4.2): the owner's three choices. */
+const EDGES: Record<SpotRefineChoice, { label: string; tip: Tip }> = {
+  plain: {
+    label: tk('Plain'),
+    tip: {
+      what: tk('The spot blends over its feather, as it always has.'),
+      expect: tk('The quickest, and right for most dust and blemishes.')
+    }
+  },
+  edgeSnap: {
+    label: tk('Edge snap · keeps strong edges'),
+    tip: {
+      what: tk('Snaps the spot’s edge onto the strong edges it crosses.'),
+      expect: tk('A spot across a horizon, a roofline or a jaw keeps that line crisp.'),
+      tip: tk('Kept for every spot after this until you change it.')
+    }
+  },
+  matting: {
+    label: tk('Matting · softer, wider'),
+    tip: {
+      what: tk('Blends the spot into the photo softer and wider, following fine detail.'),
+      expect: tk('Best where a spot meets hair, fur or foliage. A little slower to bake.'),
+      tip: tk('Kept for every spot after this until you change it.')
+    }
   }
 }
 
@@ -175,6 +202,15 @@ export function HealPanel(): React.JSX.Element | null {
           onChange={(v) => setHeal({ feather: v })}
           onCommit={() => undefined}
         />
+        {(heal.mode === 'heal' || heal.mode === 'clone') && (
+          <Select
+            label={t('Edges')}
+            value={heal.refine ?? 'plain'}
+            tip={EDGES[heal.refine ?? 'plain'].tip}
+            options={SPOT_REFINES.map((v) => ({ value: v, label: t(EDGES[v].label) }))}
+            onChange={(v) => setHeal({ refine: v })}
+          />
+        )}
         {!eye && (
           <Slider
             label={t('Opacity')}

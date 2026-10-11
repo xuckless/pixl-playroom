@@ -6,10 +6,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { MAX_PROBLEM_TEXT } from '../../../shared/crash'
 import type { AccountStatus } from '../../../shared/account'
-import type { Prefs, UpdateState } from '../../../shared/ipc'
+import type { GpuDragState, Prefs, UpdateState } from '../../../shared/ipc'
 import { ACCOUNT_URL, BUY_URL, LICENCE_RULES, type LicenceStatus } from '../../../shared/licence'
 import { latestNotes } from '../../../shared/releasenotes'
+import {
+  LOCATIONS_ASKED,
+  type LocationKind,
+  type LocationsInfo,
+  type SaveLocation
+} from '../../../shared/locations'
 import { InfoTip } from '../components/InfoTip'
+import { LocationField } from '../components/LocationField'
+import { useLocations } from '../lib/useLocations'
 import { Icon, type IconName } from '../components/icons'
 import { Modal, Select } from '../components/ui'
 import { api, errorText } from '../lib/api'
@@ -360,32 +368,23 @@ function LicenceSection(): React.JSX.Element | null {
   )
 }
 
-type ProjectsLocation = 'beside' | 'home' | { folder: string }
-
 /**
  * Where a photo's `.pixl` project is made, on its first edit: beside the
  * photo, or in a projects folder (one subfolder per photo folder). Projects
  * already made stay where they are.
  */
-function ProjectsSection(): React.JSX.Element {
+function ProjectsSection({
+  info,
+  save
+}: {
+  info: LocationsInfo | null
+  save: (kind: LocationKind, v: SaveLocation) => void
+}): React.JSX.Element {
   const say = useLibrary((s) => s.say)
-  const [loc, setLoc] = useState<ProjectsLocation>('beside')
   const [embed, setEmbed] = useState(true)
   useEffect(() => {
     void api.app.getSetting<boolean>('projects.embedOriginal').then((v) => setEmbed(v !== false))
-    void api.app.getSetting<ProjectsLocation>('projects.location').then((v) => {
-      if (v === 'home' || (v && typeof v === 'object' && typeof v.folder === 'string')) setLoc(v)
-    })
   }, [])
-  const save = (v: ProjectsLocation): void => {
-    setLoc(v)
-    void api.app.setSetting('projects.location', v).catch((e) => say(errorText(e), 'error'))
-  }
-  const choose = async (): Promise<void> => {
-    const folder = await api.library.chooseFolder()
-    if (folder) save({ folder })
-  }
-  const mode = typeof loc === 'object' ? 'folder' : loc
   return (
     <fieldset>
       <legend>
@@ -397,30 +396,12 @@ function ProjectsSection(): React.JSX.Element {
               'A photo’s first edit makes its project: one .pixl file with its edits, copies, snapshots and whole history.'
             ),
             expect: t(
-              'They go wherever the file goes. A folder that cannot be written (a locked card) puts its projects in ~/Pixl Projects; projects already made stay where they are.'
+              'Beside the photo, a project goes wherever the file goes; a photo folder that cannot be written (a locked card) puts its projects in the Pixl Projects folder. If a projects folder you chose cannot be written, the edit says so and nothing is saved elsewhere. Projects already made stay where they are.'
             )
           }}
         />
       </legend>
-      <Select
-        label={t('Make projects')}
-        value={mode}
-        options={[
-          { value: 'beside', label: t('Beside the photo') },
-          { value: 'home', label: t('In ~/Pixl Projects') },
-          { value: 'folder', label: t('In a folder of my choice…') }
-        ]}
-        onChange={(v) => {
-          if (v === 'folder') void choose()
-          else save(v as 'beside' | 'home')
-        }}
-      />
-      {typeof loc === 'object' && (
-        <div className="prefs-row">
-          <span className="muted small">{loc.folder}</span>
-          <button onClick={() => void choose()}>{t('Change…')}</button>
-        </div>
-      )}
+      {info && <LocationField kind="projects" info={info} save={save} />}
       <label className="check">
         <input
           type="checkbox"
@@ -446,6 +427,46 @@ function ProjectsSection(): React.JSX.Element {
         />
       </label>
     </fieldset>
+  )
+}
+
+/** Where exported files are saved: the same three choices as projects, and the Export dialog's own. */
+function ExportsSection({
+  info,
+  save
+}: {
+  info: LocationsInfo | null
+  save: (kind: LocationKind, v: SaveLocation) => void
+}): React.JSX.Element {
+  return (
+    <fieldset>
+      <legend>
+        {t('Exports')}
+        <InfoTip
+          label={t('Exports')}
+          tip={{
+            what: t(
+              'Where the files you export are saved. In the Pixl Projects folder, each photo folder gets a folder of its own name under Exports.'
+            ),
+            expect: t(
+              'The Export dialog shows the same choice: changing it there changes it here. Files already exported stay where they are.'
+            )
+          }}
+        />
+      </legend>
+      {info && <LocationField kind="exports" info={info} save={save} />}
+    </fieldset>
+  )
+}
+
+/** Projects and exports: one read of where each is saved, shared by both. */
+function SavingSections(): React.JSX.Element {
+  const { info, save } = useLocations()
+  return (
+    <>
+      <ProjectsSection info={info} save={save} />
+      <ExportsSection info={info} save={save} />
+    </>
   )
 }
 
@@ -531,8 +552,9 @@ export function PreferencesDialog(): React.JSX.Element {
         )}
         {section === 'library' && (
           <>
-            <ProjectsSection />
+            <SavingSections />
             <InterfaceSection />
+            <PerformanceSection />
           </>
         )}
         {section === 'display' && <DisplaySection platform={prefs?.platform ?? null} />}
@@ -660,6 +682,55 @@ function DisplaySection({ platform }: { platform: string | null }): React.JSX.El
                 : t('Now: SDR.')}
         </p>
       )}
+    </fieldset>
+  )
+}
+
+/**
+ * GPU dragging (engine 0.19.2, Phase A §4.3): while a slider moves, the
+ * preview is graded on the graphics chip from a frame uploaded once per
+ * photo; the release and every export still render on the processor. On
+ * unless turned off, and shown only where this build and computer have it
+ * (Metal on a Mac, Direct3D 12 on Windows).
+ */
+function PerformanceSection(): React.JSX.Element | null {
+  const say = useLibrary((s) => s.say)
+  const [state, setState] = useState<GpuDragState | null>(null)
+  useEffect(() => {
+    void api.app.gpuDrag().then(setState)
+  }, [])
+  if (!state?.available) return null
+  return (
+    <fieldset>
+      <legend>{t('Performance')}</legend>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={state.on}
+          onChange={(e) =>
+            void api.app
+              .setGpuDrag(e.target.checked)
+              .then(setState)
+              .catch((err) => say(errorText(err), 'error'))
+          }
+        />
+        {t('Drag sliders on the graphics chip')}
+        <InfoTip
+          label={t('Drag sliders on the graphics chip')}
+          tip={{
+            what: t(
+              'While a slider moves, the preview can be graded on the graphics chip: at the full preview size, where the processor shows a smaller draft. When you let go, the picture renders on the processor, as an export does.'
+            ),
+            expect: state.constrained
+              ? t(
+                  'It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, the Colour mixer and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. On this Mac only the open photo keeps its copy on the graphics chip, and Highlights, Shadows, Whites and Blacks drag without Keep texture until you let go. Turn it off if a drag looks different from the picture you let go on.'
+                )
+              : t(
+                  'It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, the Colour mixer and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. The open photo keeps a copy on the graphics chip (about 130–250 MB). Turn it off if a drag looks different from the picture you let go on.'
+                )
+          }}
+        />
+      </label>
     </fieldset>
   )
 }
@@ -910,6 +981,49 @@ export function CrashConsentDialog(): React.JSX.Element {
         )}
       </p>
       <p className="muted small">{t('You can change this any time in Settings.')}</p>
+    </Modal>
+  )
+}
+
+/**
+ * Asked once of everyone, the first time a photo opens in Develop (before its
+ * first edit makes a project): where projects and exports are saved, each
+ * shown as it is now. Closing keeps what is shown.
+ */
+export function LocationsDialog(): React.JSX.Element {
+  const setDialog = useLibrary((s) => s.setDialog)
+  const say = useLibrary((s) => s.say)
+  const { info, save } = useLocations()
+  const done = (): void => {
+    void api.app
+      .setSetting(LOCATIONS_ASKED, true)
+      .catch((e) => say(errorText(e), 'error'))
+      .finally(() => setDialog(null))
+  }
+  return (
+    <Modal
+      title={t('Where should projects and exports go?')}
+      onClose={done}
+      icon="library"
+      footer={
+        <button className="primary" onClick={done}>
+          {t('Done')}
+        </button>
+      }
+    >
+      <p>
+        {t(
+          'Your first edit to a photo makes its project: one .pixl file with its edits, copies and history. Your photos themselves are never changed.'
+        )}
+      </p>
+      {info && <LocationField kind="projects" info={info} save={save} />}
+      <p>{t('Exports are the finished files you save from a photo.')}</p>
+      {info && <LocationField kind="exports" info={info} save={save} />}
+      <p className="muted small">
+        {t(
+          'Projects and files already made stay where they are. You can change this any time in Settings.'
+        )}
+      </p>
     </Modal>
   )
 }

@@ -41,13 +41,24 @@ export const IPC = {
     getSetting: 'app:get-setting',
     setSetting: 'app:set-setting',
     reveal: 'app:reveal',
+    /** Where projects and exports are saved, as folders on this computer (shared/locations.ts). */
+    locations: 'app:locations',
+    /** Open the folder one of them names (made first, where it is the preset). */
+    showLocation: 'app:show-location',
     renderScale: 'app:render-scale',
+    /** Whether the window is in full screen (its own buttons are then with the menu bar). */
+    fullScreen: 'app:full-screen',
+    /** main → renderer: it entered or left full screen. */
+    fullScreenChanged: 'app:full-screen-changed',
     /** The window's display as an HDR target (shared/hdrdisplay.ts). */
     displayHdr: 'app:display-hdr',
     /** Preferences → Display: automatic, or a stated white and peak. */
     setDisplayHdr: 'app:set-display-hdr',
     /** renderer → main: whether the system says the window's screen shows HDR (`dynamic-range: high`). */
     displayDetected: 'app:display-detected',
+    /** Preferences → GPU dragging (Phase A §4.3): whether it can run here, and on or off. */
+    gpuDrag: 'app:gpu-drag',
+    setGpuDrag: 'app:set-gpu-drag',
     /** main → renderer: the display's HDR numbers moved */
     displayHdrChanged: 'app:display-hdr-changed',
     restart: 'app:restart',
@@ -116,6 +127,8 @@ export const IPC = {
   },
   library: {
     chooseFolder: 'library:choose-folder',
+    /** Pick photos (or projects) to open on their own, without their folder. */
+    choosePhotos: 'library:choose-photos',
     openFolder: 'library:open-folder',
     /** A folder's subfolders (one level): the sidebar's folder tree. */
     subfolders: 'library:subfolders',
@@ -140,6 +153,8 @@ export const IPC = {
     openSource: 'library:open-source',
     /** Files → their folder and item keys (indexing the folder if new). */
     resolvePaths: 'library:resolve-paths',
+    /** Files → the paths of the photos they are (a project → its photo), indexed if new. */
+    photoPaths: 'library:photo-paths',
     projectInfo: 'library:project-info',
     setMetadata: 'library:set-metadata',
     keywordTree: 'library:keyword-tree',
@@ -171,6 +186,8 @@ export const IPC = {
     close: 'develop:close',
     update: 'develop:update',
     view: 'develop:view',
+    /** renderer → main: a settled picture's pixels never reached the window; make it again. */
+    frameLost: 'develop:frame-lost',
     region: 'develop:region',
     sample: 'develop:sample',
     autoTone: 'develop:auto-tone',
@@ -317,6 +334,8 @@ export const IPC = {
     name: 'names:name',
     /** The user's own list: a chip taken off, a name typed. */
     edit: 'names:edit',
+    /** What the photo holds, found with no brain (main/ai/found.ts): the found chips. */
+    found: 'names:found',
     /** main → renderer: a photo's names changed. */
     event: 'names:event'
   },
@@ -350,10 +369,24 @@ export interface EngineStatus {
   runtime?: { library: string; version: string; providers: string[] }
   /** The engine has SAM 2.1's prompt calls (0.16+). */
   prompt?: boolean
+  /** 0.19.2: the addon has the GPU grade path (`hasGpu`, Phase A §4.3). */
+  gpu?: boolean
   reason?: string
   /** Why the engine is unavailable, when the load named it (e.g. `VersionMismatch`). */
   code?: string
   restarts: number
+}
+
+/**
+ * GPU dragging (engine 0.19.2, Phase A §4.3): `available` where the addon
+ * has the GPU path (Metal on macOS, Direct3D 12 on Windows); `on` unless
+ * turned off in Preferences; `constrained` on the 8 GB / M1 Mac (one photo's
+ * frame at a time, Tone dragged without its base).
+ */
+export interface GpuDragState {
+  available: boolean
+  on: boolean
+  constrained: boolean
 }
 
 /** Ultra draws a scaled display at 1×, Performance at 1.5×, Native at the display's own scale. */
@@ -452,6 +485,8 @@ export type LibrarySource =
   /** A manual collection, a smart one or a set (the union of its children). */
   | { kind: 'collection'; id: string }
   | { kind: 'keyword'; path: string }
+  /** Photos opened on their own (File → Open Photo…), without their folders. */
+  | { kind: 'photos'; paths: string[] }
   /** `folder` null: the whole library. `threshold`: the dHash distance still "similar". */
   | { kind: 'duplicates'; folder: string | null; threshold: number }
 

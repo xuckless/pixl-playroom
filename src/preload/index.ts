@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { NoiseEstimate, PreviewFrame, Transform } from '../shared/engine-types'
 import type { GuideLine } from '../shared/upright'
-import type { P as SpotPoint, RetouchSpot } from '../shared/retouch'
+import type { P as SpotPoint, RetouchSpot, SpotRefine } from '../shared/retouch'
 import type { PixelStep } from '../shared/pixels'
 import type { ExportSettings } from '../shared/export'
+import type { LocationKind, LocationsInfo } from '../shared/locations'
 import type { Guard } from '../shared/exportGuards'
 import type { RawColour } from '../shared/rawcolour'
 import type { InvariantPlace } from '../shared/invariant'
@@ -23,6 +24,7 @@ import {
   type ErrorReport,
   type DevelopSession,
   type EngineStatus,
+  type GpuDragState,
   type ExportPreset,
   type ExportProgress,
   type FolderListing,
@@ -65,7 +67,7 @@ import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
 import type { AiSwitches, HeavyBenchmark, HeavyModel } from '../shared/heavy'
-import type { PhotoNames } from '../shared/naming'
+import type { FoundThing, PhotoNames } from '../shared/naming'
 import type { CullReason } from '../shared/cullsuggest'
 import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../shared/looks/run'
@@ -112,11 +114,17 @@ const api = {
     getSetting: <T>(key: string) => call<T | null>(IPC.app.getSetting, key),
     setSetting: (key: string, value: unknown) => call<void>(IPC.app.setSetting, key, value),
     reveal: (path: string) => call<void>(IPC.app.reveal, path),
+    locations: () => call<LocationsInfo>(IPC.app.locations),
+    fullScreen: () => call<boolean>(IPC.app.fullScreen),
+    onFullScreen: (cb: (full: boolean) => void) => on<boolean>(IPC.app.fullScreenChanged, cb),
+    showLocation: (kind: LocationKind) => call<void>(IPC.app.showLocation, kind),
     renderScale: () => call<RenderScale>(IPC.app.renderScale),
     displayHdr: () => call<DisplayHdr>(IPC.app.displayHdr),
     setDisplayHdr: (setting: DisplayHdrSetting) => call<DisplayHdr>(IPC.app.setDisplayHdr, setting),
     onDisplayHdr: (cb: (d: DisplayHdr) => void) => on(IPC.app.displayHdrChanged, cb),
     displayDetected: (hdr: boolean) => call<DisplayHdr>(IPC.app.displayDetected, hdr),
+    gpuDrag: () => call<GpuDragState>(IPC.app.gpuDrag),
+    setGpuDrag: (on: boolean) => call<GpuDragState>(IPC.app.setGpuDrag, on),
     restart: () => call<void>(IPC.app.restart),
     onRenderScale: (cb: (s: RenderScale) => void) => on(IPC.app.renderScaleChanged, cb),
     takeOpens: () => call<string[]>(IPC.app.takeOpens),
@@ -164,6 +172,7 @@ const api = {
   },
   library: {
     chooseFolder: () => call<string | null>(IPC.library.chooseFolder),
+    choosePhotos: () => call<string[]>(IPC.library.choosePhotos),
     openFolder: (folder: string) => call<FolderListing>(IPC.library.openFolder, folder),
     subfolders: (folder: string) =>
       call<{ path: string; name: string }[]>(IPC.library.subfolders, folder),
@@ -189,6 +198,7 @@ const api = {
     openSource: (source: LibrarySource) => call<SourceListing>(IPC.library.openSource, source),
     resolvePaths: (paths: string[]) =>
       call<{ folder: string | null; keys: string[] }>(IPC.library.resolvePaths, paths),
+    photoPaths: (paths: string[]) => call<string[]>(IPC.library.photoPaths, paths),
     projectInfo: (key: string) => call<ProjectInfo>(IPC.library.projectInfo, key),
     setMetadata: (keys: string[], patch: MetaTextPatch) =>
       call<(LibraryItem | undefined)[]>(IPC.library.setMetadata, keys, patch),
@@ -224,6 +234,7 @@ const api = {
     update: (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
       call<void>(IPC.develop.update, key, recipe, interactive, rev),
     view: (key: string, view: ViewState) => call<void>(IPC.develop.view, key, view),
+    frameLost: (key: string) => call<void>(IPC.develop.frameLost, key),
     region: (req: RegionRequest) => call<RegionResult>(IPC.develop.region, req),
     sample: (key: string, x: number, y: number) =>
       call<SampleResult>(IPC.develop.sample, key, x, y),
@@ -245,8 +256,9 @@ const api = {
       points: SpotPoint[],
       radius: number,
       feather: number,
-      kind: 'heal' | 'clone'
-    ) => call<SpotPoint>(IPC.develop.suggestHeal, key, points, radius, feather, kind),
+      kind: 'heal' | 'clone',
+      refine?: SpotRefine
+    ) => call<SpotPoint>(IPC.develop.suggestHeal, key, points, radius, feather, kind, refine),
     suggestUpright: (key: string, mode: 'Level' | 'Vertical' | 'Full', focal: number) =>
       call<Transform>(IPC.develop.suggestUpright, key, mode, focal),
     uprightFromLines: (key: string, lines: GuideLine[], focal: number) =>
@@ -377,6 +389,8 @@ const api = {
     get: (key: string) => call<PhotoNames | null>(IPC.names.get, key),
     name: (key: string) => call<PhotoNames | null>(IPC.names.name, key),
     edit: (key: string, names: PhotoNames | null) => call<void>(IPC.names.edit, key, names),
+    /** What the photo holds, found with no brain: the found chips (null: AI off, or another photo took over). */
+    found: (key: string) => call<FoundThing[] | null>(IPC.names.found, key),
     onEvent: (cb: (e: { photoId: number; names: PhotoNames | null }) => void) =>
       on(IPC.names.event, cb)
   },

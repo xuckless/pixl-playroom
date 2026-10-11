@@ -136,7 +136,7 @@ test('an edit made before Smoothing keeps its look (0, masks too); an untouched 
   )
 })
 
-test('E53: every smoothed op comes right after a floor; a draft has none of them', async () => {
+test('engine 0.19.2: smoothed ops run with no floor before them (withFloors is gone); a draft has none', async () => {
   const { compile, isP3Floor } = await import('../src/shared/compile')
   const { defaultRecipe } = await import('../src/shared/recipe')
   const r = defaultRecipe(true)
@@ -168,12 +168,14 @@ test('E53: every smoothed op comes right after a floor; a draft has none of them
     if (v && typeof v === 'object' && v.smoothing != null) {
       smoothedOps++
       assert.ok(
-        i > 0 && isP3Floor(settled[i - 1]),
-        `${Object.keys(o)[0]} without a floor before it`
+        i === 0 || !isP3Floor(settled[i - 1]),
+        `${Object.keys(o)[0]} with a floor before it`
       )
     }
   })
   assert.ok(smoothedOps >= 3, `${smoothedOps} smoothed ops`)
+  assert.equal(settled.filter(isP3Floor).length, 0)
   const draft = ops(compile(r, { ...ctx, smoothing: false }).grade)
-  assert.equal(draft.filter(isP3Floor).length, 1)
+  assert.equal(draft.filter(isP3Floor).length, 0)
+  assert.ok(draft.every((o) => (Object.values(o)[0] as { smoothing?: unknown }).smoothing == null))
 })

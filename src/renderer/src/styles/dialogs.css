@@ -1018,3 +1018,13 @@ button.keybind-key.waiting {
 .update-available .update-status {
   margin-right: auto;
 }
+
+/* Where projects or exports are saved (components/LocationField.tsx): the
+   folder it is now, on a line of its own, then what changes or opens it. */
+.location-path {
+  margin: 2px 0 12px;
+}
+.location-path > span {
+  flex: 1 1 100%;
+  overflow-wrap: anywhere;
+}

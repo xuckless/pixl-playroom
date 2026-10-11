@@ -23,6 +23,7 @@ import { LeftRail } from './shell/LeftRail'
 import { Splash } from './shell/Splash'
 import { LooksBrowser } from './views/looks/LooksBrowser'
 import { useDevelop } from './state/develop'
+import { openPhotos } from './lib/openPhotos'
 import { useBoot } from './state/boot'
 import { startCullUpkeep } from './state/cull'
 import { startUpdateNotice } from './lib/updates'
@@ -34,7 +35,7 @@ import { chordOf } from './lib/keys'
 import { SavePresetDialog, SyncDialog } from './views/Dialogs'
 import { ExportDialog } from './views/ExportDialog'
 import { EngineReportDialog } from './views/EngineReport'
-import { CrashConsentDialog, PreferencesDialog } from './views/Preferences'
+import { CrashConsentDialog, LocationsDialog, PreferencesDialog } from './views/Preferences'
 import { WhatsNewDialog } from './views/WhatsNew'
 import { ScopesExpandedDialog } from './develop/ScopesExpanded'
 import { showWhatsNew } from './state/whatsNew'
@@ -59,6 +60,7 @@ import { setSpace } from './views/loupe/zoom'
  * changing elsewhere never re-renders what is under the pointer.
  */
 const DevelopScreen = memo(function DevelopScreen(): React.JSX.Element {
+  useEffect(() => void askProjectsLocation(), [])
   return (
     <div className="develop">
       <DevelopIdentity />
@@ -121,6 +123,7 @@ function DialogHost(): React.JSX.Element {
       {dialog === 'looks' && <LooksBrowser key="looks" />}
       {dialog === 'preferences' && <PreferencesDialog key="preferences" />}
       {dialog === 'crash-consent' && <CrashConsentDialog key="crash-consent" />}
+      {dialog === 'projects-location' && <LocationsDialog key="projects-location" />}
       {dialog === 'engine' && <EngineReportDialog key="engine" />}
       {dialog === 'whats-new' && <WhatsNewDialog key="whats-new" />}
       {dialog === 'update' && <UpdateDialog key="update" />}
@@ -221,28 +224,19 @@ async function waitForEngine(): Promise<void> {
 
 /**
  * Photos opened from outside (Finder's and Explorer's "Open With", a second
- * launch): their folder opens with them selected, and the first goes to
- * Develop. A folder (main sends it with a trailing separator) just opens.
- * The folder opens as the library's source, in place of whatever was shown.
+ * launch): they open on their own, as File → Open Photo… opens them (the
+ * library shows only them, not their folder), and the first goes to
+ * Develop. A folder (main sends it with a trailing separator) just opens,
+ * as the library's source, in place of whatever was shown.
  */
 async function openPaths(paths: string[]): Promise<void> {
   const isDir = (p: string): boolean => /[\\/]$/.test(p)
   const files = paths.filter((p) => !isDir(p))
   // A folder loses its separator again, unless it is a root.
   const dir = paths.find(isDir)?.replace(/(?<=[^\\/:])[\\/]$/, '') ?? null
+  if (files.length) return openPhotos(files)
   try {
-    const { folder, keys } = files.length
-      ? await api.library.resolvePaths(files)
-      : { folder: dir, keys: [] }
-    if (!folder) return
-    if (!(await useLibrary.getState().openSource({ kind: 'folder', path: folder }))) return
-    const lib = useLibrary.getState()
-    const known = new Set(lib.items.map((i) => i.key))
-    const picked = keys.filter((k) => known.has(k))
-    if (!picked[0]) return
-    useLibrary.setState({ selection: picked, focus: picked[0] })
-    lib.setView('develop')
-    await useDevelop.getState().open(picked[0])
+    if (dir) await useLibrary.getState().openSource({ kind: 'folder', path: dir })
   } catch (err) {
     useLibrary.getState().say(errorText(err), 'error')
   }
@@ -384,6 +378,25 @@ async function askCrashConsent(): Promise<void> {
   useLibrary.getState().setDialog('crash-consent')
 }
 
+/** How many settled pictures in a row are asked for again when their pixels never arrive. */
+const LOST_FRAME_RETRIES = 3
+let lostFrames = 0
+
+/**
+ * The first Develop asks once where projects and exports go (before an edit
+ * makes a project): of everyone, a new install and one updating alike, each
+ * shown what it has now. Never of a scripted run. Another dialog already
+ * open: asked at the next Develop instead.
+ */
+async function askProjectsLocation(): Promise<void> {
+  const ask = await api.app.locations().then(
+    (l) => l.ask,
+    () => false
+  )
+  if (!ask || useLibrary.getState().dialog) return
+  useLibrary.getState().setDialog('projects-location')
+}
+
 function useShortcuts(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -467,7 +480,19 @@ export default function App(): React.JSX.Element {
       api.develop.onRendered((e) => {
         // A draft sent as pixels is shown once they are here (they come on their own port).
         if (!isFrame(e.url)) return useDevelop.getState().onRendered(e)
-        void whenFrame(e.url).then((bmp) => bmp && useDevelop.getState().onRendered(e))
+        void whenFrame(e.url).then((bmp) => {
+          if (bmp) {
+            lostFrames = 0
+            return useDevelop.getState().onRendered(e)
+          }
+          // Its pixels never came. A draft is passed by the next one; a
+          // settled picture is what the view waits on ("Rendering" until it
+          // shows), so main makes it again, a few times at most in a row.
+          const dev = useDevelop.getState()
+          const waiting = dev.session?.key === e.key && (dev.picture?.seq ?? -1) < e.seq
+          if (e.kind === 'full' && waiting && lostFrames++ < LOST_FRAME_RETRIES)
+            void api.develop.frameLost(e.key).catch(() => undefined)
+        })
       }),
       startDrawerSync(),
       startDenoiseUpkeep(),
@@ -525,11 +550,16 @@ export default function App(): React.JSX.Element {
       // The rail's lists and the last source load side by side, not one
       // after the other: the folder is what the launch is waiting to see.
       const lists = (async () => {
-        const [recent, pinned] = await Promise.all([
+        const [recent, pinned, photos] = await Promise.all([
           api.library.recentFolders(),
-          api.app.getSetting<string[]>('library.pinned')
+          api.app.getSetting<string[]>('library.pinned'),
+          api.app.getSetting<string[]>('library.recentPhotos')
         ])
-        useLibrary.setState({ recent, pinned: Array.isArray(pinned) ? pinned : [] })
+        useLibrary.setState({
+          recent,
+          pinned: Array.isArray(pinned) ? pinned : [],
+          recentPhotos: Array.isArray(photos) ? photos.filter((p) => typeof p === 'string') : []
+        })
         await useLibrary.getState().loadSources()
         boot.finish('index')
       })()

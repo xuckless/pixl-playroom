@@ -68,6 +68,13 @@ export const SAM3_PHRASE = false
 /** The phrase model to offer when none is downloaded. */
 export const OFFERED_PHRASE_MODEL: string = SAM3_PHRASE ? PHRASE_MODELS[0] : PHRASE_MODELS[1]
 
+/**
+ * Below this U²-Netp saw nothing salient: its strongest answer anywhere is
+ * a flat plane stretched to full range (the subject tool, the cull signals
+ * and the found chips all draw the line here).
+ */
+export const NOTHING_SALIENT = 0.2
+
 /** The scene model (engine 0.19): sky, vegetation and water. */
 export const SCENE_MODEL = 'dinov2-s-ade'
 /** The people-parts model (engine 0.19): hair, face and body skin, clothes. */

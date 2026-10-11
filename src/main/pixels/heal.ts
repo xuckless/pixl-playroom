@@ -21,6 +21,7 @@ import type { PixelStep } from '../../shared/pixels'
 import { newId, type Recipe } from '../../shared/recipe'
 import {
   compileRetouch,
+  refineRefused,
   featherOf,
   SPOT_LABEL,
   type P,
@@ -147,7 +148,7 @@ export async function bakeSpot(
   const inpainter = spot.kind === 'remove' ? await inpainterRef() : null
   if (spot.kind === 'remove' && !inpainter)
     throw new Error(t('download the object remover (MI-GAN) in Settings → AI models first'))
-  const retouch = compileRetouch([onPhoto], 'Normal', W, H, inpainter)
+  let retouch = compileRetouch([onPhoto], 'Normal', W, H, inpainter)
   if (!retouch) return null
   const region = spotBounds(onPhoto, W, H)
   const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
@@ -166,8 +167,22 @@ export async function bakeSpot(
   const a = join(deps.cacheDir, `heal-${stamp}-with.png`)
   const b = join(deps.cacheDir, `heal-${stamp}-without.png`)
   const patchFile = join(deps.cacheDir, `heal-${stamp}-patch.png`)
+  // An edge the engine won't refine here (a flat area takes the whole
+  // spot's surroundings in, and it refuses the step): the spot healed plain.
+  const stroke = async (): Promise<void> => {
+    try {
+      await render(a, true)
+    } catch (err) {
+      const plain = onPhoto.refine
+        ? compileRetouch([{ ...onPhoto, refine: undefined }], 'Normal', W, H, inpainter)
+        : null
+      if (!plain || !refineRefused(err)) throw err
+      retouch = plain
+      await render(a, true)
+    }
+  }
   const bake = async (): Promise<PixelStep | null> => {
-    await Promise.all([render(a, true), render(b, false)])
+    await Promise.all([stroke(), render(b, false)])
     const layer = layerId ? ctx.recipe.layers.find((l) => l.id === layerId) : undefined
     let mask: { path: string; at: { x: number; y: number } } | undefined
     if (layer) {

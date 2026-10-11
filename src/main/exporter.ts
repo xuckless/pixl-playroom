@@ -36,7 +36,9 @@ import {
 import { FORMAT_NAME, receiptNotes, type Guard } from '../shared/exportGuards'
 import { IPC, type ExportPreview, type ExportProgress, type LibraryItem } from '../shared/ipc'
 import { READ_LIMITS } from '../shared/limits'
-import { paths } from './paths'
+import { paths, scriptedHome } from './paths'
+import { exportDirFor } from './project/locate'
+import { LOCATION_SETTING, locationOf, type SaveLocation } from '../shared/locations'
 import { cacheUrl } from './protocol'
 import { brushPlanes } from './brushes'
 import { embedMetadata } from './exiftool'
@@ -109,6 +111,20 @@ function formatBytes(n: number): string {
 
 export class Exporter {
   private jobs = new Map<string, Job>()
+  /**
+   * What the exports running have written: a name taken by one of their own
+   * files is never written over or skipped, whatever is asked of files that
+   * were there before (two photos of one name, from two folders, exported
+   * into one).
+   */
+  private readonly written = new Set<string>()
+
+  /** Where exports go (`export.location`: Settings and the Export dialog change the one setting). */
+  private async destination(): Promise<SaveLocation> {
+    return locationOf(
+      await this.library.index.getSetting(LOCATION_SETTING.exports).catch(() => null)
+    )
+  }
 
   constructor(
     private readonly library: Library,
@@ -132,7 +148,10 @@ export class Exporter {
   start(keys: string[], settings: ExportSettings): string {
     const job: Job = { id: Math.random().toString(36).slice(2), abort: new AbortController() }
     this.jobs.set(job.id, job)
-    void this.run(job, keys, settings).finally(() => this.jobs.delete(job.id))
+    void this.run(job, keys, settings).finally(() => {
+      this.jobs.delete(job.id)
+      if (this.jobs.size === 0) this.written.clear()
+    })
     return job.id
   }
 
@@ -294,19 +313,23 @@ export class Exporter {
     let out: string
     if (preview) out = preview.out
     else {
-      // Beside the photo: where it is listed (its copy may be the project's own).
-      const { target, stem } = this.nameOf(row, item, s, seq)
+      // Where exports go: beside the photo (where it is listed: its copy may
+      // be the project's own), the preset folder, or the user's.
+      const { target, stem } = this.nameOf(row, item, s, seq, await this.destination())
       await mkdir(target, { recursive: true })
       const ext = FORMAT_EXT[s.format]
       out = join(target, `${stem}.${ext}`)
-      if (await exists(out)) {
-        if (s.collision === 'skip') return null
-        if (s.collision === 'suffix') {
+      const mine = this.written.has(out)
+      if (mine || (await exists(out))) {
+        if (!mine && s.collision === 'skip') return null
+        if (mine || s.collision === 'suffix') {
           let n = 2
-          while (await exists(join(target, `${stem}-${n}.${ext}`))) n++
-          out = join(target, `${stem}-${n}.${ext}`)
+          const at = (): string => join(target, `${stem}-${n}.${ext}`)
+          while (this.written.has(at()) || (await exists(at()))) n++
+          out = at()
         }
       }
+      this.written.add(out)
       // By the file, not the name: IMG_1.jpg is IMG_1.JPG on a case-insensitive disk.
       if (await sameFile(out, row.path))
         throw new Error(t('the export would overwrite the original'))
@@ -477,14 +500,15 @@ export class Exporter {
     return { out, report }
   }
 
-  /** Where an item's file goes: its folder (beside the original unless one is chosen) and its name. */
+  /** Where an item's file goes: its folder (`exportDirFor`, for where exports are saved) and its name. */
   private nameOf(
     row: PhotoRow,
     item: LibraryItem | null | undefined,
     s: ExportSettings,
-    seq: number
+    seq: number,
+    dest: SaveLocation
   ): { target: string; stem: string } {
-    const folder = s.folder ?? row.folder
+    const folder = exportDirFor(dest, row.folder, scriptedHome() ?? undefined)
     return {
       target: s.subfolder ? join(folder, s.subfolder) : folder,
       stem: expandTemplate(s.template, {
@@ -564,11 +588,12 @@ export class Exporter {
     let replaced = false
     let need = 0
     const big: string[] = []
+    const dest = await this.destination()
     for (const [i, key] of keys.entries()) {
       const row = await this.library.photoRow(key).catch(() => null)
       if (!row) continue
       const item = await this.library.item(key)
-      const { target, stem } = this.nameOf(row, item, s, i + 1)
+      const { target, stem } = this.nameOf(row, item, s, i + 1, dest)
       folders.add(target)
       const file = join(target, `${stem}.${FORMAT_EXT[s.format]}`)
       if (await exists(file)) {

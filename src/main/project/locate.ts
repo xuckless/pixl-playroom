@@ -1,29 +1,79 @@
 /**
  * Where a photo's `.pixl` project goes, and how projects are found again.
  *
- * - Beside the photo (the default): `IMG_0001.pixl` next to `IMG_0001.CR3`.
+ * - Beside the photo (while the setting is unset, as on installs from
+ *   before the choice): `IMG_0001.pixl` next to `IMG_0001.CR3`.
  *   When another photo in the folder shares the name's stem (a RAW and its
  *   JPEG), each project keeps its extension: `IMG_0001.CR3.pixl`.
- * - In a projects folder (`~/Pixl Projects`, or one the user chose): one
+ * - In a projects folder (`~/Pixl Projects`, where a new install starts, or
+ *   one the user chose): one
  *   subfolder per photo folder, named after it and told apart by a short hash
  *   of its path, so two folders called "Export" never share projects.
  *
- * A folder that cannot be written (a locked card, a read-only share) puts
- * its projects in the projects folder instead.
+ * A photo's own folder that cannot be written (a locked card, a read-only
+ * share) puts its projects in the preset folder instead. A projects folder
+ * that cannot be written is an error that names it: nothing is made
+ * anywhere the user did not choose.
+ *
+ * Exports follow the same three choices (shared/locations.ts): beside the
+ * original, `~/Pixl Projects/Exports/<the photo's folder>`, or a folder of
+ * the user's.
  */
 import { createHash } from 'crypto'
 import { accessSync, constants, existsSync, mkdirSync, readdirSync } from 'fs'
 import { homedir } from 'os'
 import { basename, dirname, extname, join } from 'path'
+import { EXPORTS_FOLDER, PROJECTS_FOLDER, type SaveLocation } from '../../shared/locations'
 import { PIXL_EXT } from './pixlfile'
 
-/** The setting `projects.location`: beside the photo, the default folder, or a folder of the user's. */
-export type ProjectLocation = 'beside' | 'home' | { folder: string }
+export { locationOf } from '../../shared/locations'
 
-export const DEFAULT_PROJECTS_DIR = join(homedir(), 'Pixl Projects')
+/** The setting `projects.location`: beside the photo, the preset folder, or a folder of the user's. */
+export type ProjectLocation = SaveLocation
 
-export function projectsRoot(loc: ProjectLocation): string {
-  return typeof loc === 'object' ? loc.folder : DEFAULT_PROJECTS_DIR
+/**
+ * The preset projects folder: `Pixl Projects` in `home`, the user's home
+ * folder on every platform. A scripted run names another (its own profile),
+ * so it never writes into the user's.
+ */
+export function presetProjectsDir(home: string = homedir()): string {
+  return join(home, PROJECTS_FOLDER)
+}
+
+/** The preset exports folder, inside the projects one. */
+export function presetExportsDir(home: string = homedir()): string {
+  return join(presetProjectsDir(home), EXPORTS_FOLDER)
+}
+
+export function projectsRoot(loc: ProjectLocation, home: string = homedir()): string {
+  return typeof loc === 'object' ? loc.folder : presetProjectsDir(home)
+}
+
+/**
+ * The folder a photo in `photoFolder` is exported to: its own; its folder's
+ * name under the preset exports folder (shoots stay apart; two folders of
+ * one name share theirs, and a name taken is the exporter's to settle); or
+ * the user's folder.
+ */
+export function exportDirFor(
+  loc: SaveLocation,
+  photoFolder: string,
+  home: string = homedir()
+): string {
+  if (loc === 'beside') return photoFolder
+  if (loc === 'home') return join(presetExportsDir(home), basename(photoFolder) || 'Photos')
+  return loc.folder
+}
+
+/** The folder a location names as a whole (for showing it): none beside the photo. */
+export function locationRoot(
+  kind: 'projects' | 'exports',
+  loc: SaveLocation,
+  home: string = homedir()
+): string | null {
+  if (loc === 'beside') return null
+  if (typeof loc === 'object') return loc.folder
+  return kind === 'projects' ? presetProjectsDir(home) : presetExportsDir(home)
 }
 
 /** A photo folder's own subfolder under a projects folder. */
@@ -72,12 +122,13 @@ function free(dir: string, name: string): string {
 export function newProjectPath(
   photoPath: string,
   loc: ProjectLocation,
-  imageNames: string[]
+  imageNames: string[],
+  home: string = homedir()
 ): string {
   const folder = dirname(photoPath)
   const name = projectName(basename(photoPath), imageNames)
   if (loc === 'beside' && writable(folder)) return free(folder, name)
-  const dir = projectsDirFor(projectsRoot(loc === 'beside' ? 'home' : loc), folder)
+  const dir = projectsDirFor(projectsRoot(loc === 'beside' ? 'home' : loc, home), folder)
   mkdirSync(dir, { recursive: true })
   return free(dir, name)
 }
@@ -98,10 +149,7 @@ export function projectDirsFor(folder: string, roots: string[]): string[] {
   return [folder, ...roots.map((r) => projectsDirFor(r, folder))]
 }
 
-/** Read the setting's stored value (anything else is the default). */
-export function locationOf(v: unknown): ProjectLocation {
-  if (v === 'home') return 'home'
-  if (v && typeof v === 'object' && typeof (v as { folder?: unknown }).folder === 'string')
-    return { folder: (v as { folder: string }).folder }
-  return 'beside'
+/** Read `projects.pastFolders`: the folders chosen before the one in use. */
+export function pastFoldersOf(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((f): f is string => typeof f === 'string') : []
 }

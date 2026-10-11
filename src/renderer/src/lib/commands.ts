@@ -32,6 +32,7 @@ import { runJob } from '../state/busy'
 import { useDevelop } from '../state/develop'
 import { scoped } from '../state/scope'
 import { useLibrary } from '../state/library'
+import { choosePhotos } from './openPhotos'
 import { OVERLAY_MODES, useUi } from '../state/ui'
 import { flashHud } from '../views/loupe/hudNote'
 import { loupeZoom, setSpace } from '../views/loupe/zoom'
@@ -229,11 +230,22 @@ export const COMMANDS: KeyCommand[] = [
     run: () => lib().setDialog('export')
   },
   {
+    id: 'library.openPhotos',
+    label: tk('Open a photo…'),
+    group: 'Library',
+    context: 'global',
+    keys: ['Mod+O'],
+    run: (e) => {
+      void choosePhotos()
+      stop(e)
+    }
+  },
+  {
     id: 'library.chooseFolder',
     label: tk('Open a folder…'),
     group: 'Library',
     context: 'global',
-    keys: ['Mod+O'],
+    keys: ['Mod+Shift+O'],
     run: (e) => {
       void lib().chooseFolder()
       stop(e)

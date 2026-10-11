@@ -339,6 +339,28 @@ test('setMetadata writes the .xmp (RAW beside, others with extension) and mirror
   }
 })
 
+test('a photo opened on its own lists alone, its folder not opened', async () => {
+  const f = fixture(['a.jpg', 'b.CR2', 'c.png'])
+  try {
+    const a = join(f.folder, 'a.jpg')
+    const paths = await f.index.photoPaths([a, join(f.folder, 'notes.txt')])
+    assert.deepEqual(paths, [a], 'only what is a photo comes back')
+    assert.deepEqual(f.index.recentFolders(), [], 'its folder is not a recent one')
+    const { items } = await f.index.listSource({ kind: 'photos', paths })
+    assert.deepEqual(
+      items.map((i) => i.path),
+      [a],
+      'the photo, not the folder beside it'
+    )
+    // Gone from disk: no longer listed.
+    unlinkSync(a)
+    const after = await f.index.listSource({ kind: 'photos', paths })
+    assert.ok(after.items.every((i) => i.offline || i.path !== a))
+  } finally {
+    f.done()
+  }
+})
+
 test('a scan picks up an .xmp changed or removed by another app', async () => {
   const f = fixture()
   try {

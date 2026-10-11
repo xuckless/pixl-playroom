@@ -9,7 +9,9 @@ import {
   type HslBand,
   type PointColorSetting,
   type ProfileRef,
-  type Recipe
+  type Recipe,
+  TONE_BASES,
+  type ToneBaseKind
 } from '../../../shared/recipe'
 import { rawColourReason } from '../../../shared/rawcolour'
 import { WB_PRESETS } from '../../../shared/wb'
@@ -560,7 +562,41 @@ export function LightBody(): React.JSX.Element {
         read={(r) => r.basic.blacks}
         write={(r, v) => (r.basic.blacks = v)}
       />
+      <ToneBaseRow />
     </>
+  )
+}
+
+const TONE_BASE_LABEL: Record<ToneBaseKind, string> = {
+  none: tk('None'),
+  texture: tk('Keep texture')
+}
+
+/**
+ * Tone's base (engine 0.19.2, Phase A §3.2): None, as Highlights, Shadows,
+ * Whites and Blacks always ran, or the local Laplacian, which keeps fine
+ * texture's contrast where they pull. Under the four it changes, so it's in
+ * view whenever they are. The photo's setting: its masks' Tone follows it.
+ */
+function ToneBaseRow(): React.JSX.Element | null {
+  const whole = useDevelop((s) => s.recipe)
+  if (!whole) return null
+  const value = whole.toneBase ?? 'none'
+  return (
+    <div className="row tone-base">
+      <span className="adjust-head-label">{t('Tone base')}</span>
+      <Tabs
+        value={value}
+        tabs={TONE_BASES.map((v) => ({ value: v, label: t(TONE_BASE_LABEL[v]) }))}
+        onChange={(v) => {
+          // Always the photo's, from a mask's scope too.
+          const dev = useDevelop.getState()
+          dev.edit((r) => (r.toneBase = v))
+          void dev.commit(v === 'texture' ? tk('Tone base: Keep texture') : tk('Tone base: None'))
+        }}
+      />
+      <InfoTip tip={TIPS['light.toneBase']} label={t('Tone base')} />
+    </div>
   )
 }
 

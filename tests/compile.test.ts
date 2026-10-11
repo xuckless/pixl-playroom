@@ -467,11 +467,12 @@ test('a RAW’s Scene headroom rolls onto white for SDR, whatever the exposure; 
   assert.equal(shoulderOf(0, false, false), null)
 })
 
-test('every look stage starts by flooring the negatives Scene’s wide colours bring (E53)', () => {
+test('engine 0.19.2: the look stage no longer floors Scene’s wide colours first (Phase A §2)', () => {
   const r = defaultRecipe(true)
   r.presence.dehaze = 30
   const look = compile(r, { ...ctx, isRaw: true, scale: 1 }).grade!.layers[0].stages.at(-1)!
-  assert.ok(isP3Floor(look.ops[0]))
+  assert.ok(!look.ops.some(isP3Floor))
+  assert.ok('Dehaze' in look.ops[0])
   // Nothing in the look stage, no floor either.
   assert.equal(compile(defaultRecipe(false), ctx).grade, null)
 })
