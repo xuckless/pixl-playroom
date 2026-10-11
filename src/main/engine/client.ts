@@ -24,6 +24,8 @@ import type {
   LensReport,
   Framing,
   MaskBounds,
+  ReachReport,
+  ReachRequest,
   Rgb,
   SamOp,
   SamResult,
@@ -324,6 +326,14 @@ export class EngineClient {
   }
   analyze(request: AnalyzeRequest, opts: CallOptions = {}): Promise<ImageStats> {
     return this.call('analyze', [request], opts.signal) as Promise<ImageStats>
+  }
+  /**
+   * The margin a region of this grade needs (0.19.2, host rule HR-0.20-1).
+   * An engine without it (0.19.1) answers `UnknownMethod`-like errors: the
+   * caller keeps its own margin then.
+   */
+  regionReach(request: ReachRequest): Promise<ReachReport> {
+    return this.call('regionReach', [request]) as Promise<ReachReport>
   }
   /** What a lens correction does to a `width × height` frame, without pixels. */
   lensFrame(lens: LensCorrection, width: number, height: number): Promise<LensReport> {

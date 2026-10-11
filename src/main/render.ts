@@ -46,6 +46,7 @@ import type {
   ColorPolicy,
   ConvertRequest,
   Encode,
+  Grade,
   Companion,
   HdrWorking,
   ConvertReport,
@@ -127,6 +128,11 @@ import {
 type Kind = 'draft' | 'full'
 
 /** How long a slider must rest before the full proxy renders. */
+/**
+ * A region's least margin, pixels: what every tile had before the engine
+ * stated a grade's reach (0.19.2), and still the floor under it.
+ */
+const REGION_MARGIN = 96
 const SETTLE_MS = 180
 /**
  * How long it must rest when the full render is the large proxy: pausing
@@ -1616,6 +1622,7 @@ class Session {
     const out = frame ? '' : join(this.dir, `region-${this.regionSlot}.jpg`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
+    const margin = await this.regionMargin(compiled.grade, src, framed, zoom)
     const request: ConvertRequest = {
       ...blankRequest(src.path, out, src.input, original),
       raw: null,
@@ -1636,7 +1643,7 @@ class Session {
       framing: compiled.framing,
       lens: compiled.lens,
       retouch: compiled.retouch,
-      region: { x, y, width: w, height: h, margin: 96 },
+      region: { x, y, width: w, height: h, margin },
       // A Full HDR tile is resized inside the master's float pass, which the
       // engine allows only as a linear resample.
       ...(hdr && zoom < 1 ? { linear_resample: true } : {})
@@ -1645,6 +1652,9 @@ class Session {
     const report = await this.owner.engine
       .convert(request, { signal, frame })
       .catch(named(compiled))
+    // The margin fell short of what the grade read: its edges may not meet a neighbour's.
+    if (report.region?.short_by)
+      log.warn('region margin short', { margin, short_by: report.region.short_by })
     // The engine had no way to the window (it was reloading): main passes the frame on.
     if (frame && report.output)
       this.owner.send(IPC.develop.previewFrame, {
@@ -1735,6 +1745,46 @@ class Session {
     return size
   }
 
+  /** The last grade's region reach, by what it was asked for (one: tiles of one view share it). */
+  private reach: { key: string; pixels: number } | null = null
+
+  /**
+   * A 1:1 tile's margin (host rule HR-0.20-1, Phase A §3.1): at least what
+   * the engine says the grade reads around a pixel, asked again whenever the
+   * grade changes. A smoothed op at radius 0.02 on a 4000 px short side
+   * needs about 220 px, so 96 px tiles disagreed at their edges. An engine
+   * without `regionReach` keeps the fixed margin.
+   */
+  private async regionMargin(
+    grade: Grade | null,
+    src: { width: number; height: number },
+    framed: { width: number; height: number },
+    zoom: number
+  ): Promise<number> {
+    const output = {
+      width: Math.max(1, Math.round(framed.width * zoom)),
+      height: Math.max(1, Math.round(framed.height * zoom))
+    }
+    const key = JSON.stringify([grade, src.width, src.height, output.width, output.height])
+    if (this.reach?.key !== key) {
+      const pixels = await this.owner.engine
+        .regionReach({
+          grade,
+          sdr_grade: null,
+          frame_width: src.width,
+          frame_height: src.height,
+          output_width: output.width,
+          output_height: output.height
+        })
+        .then(
+          (r) => Math.ceil(r.pixels),
+          () => 0
+        )
+      this.reach = { key, pixels }
+    }
+    return Math.max(REGION_MARGIN, this.reach.pixels)
+  }
+
   /** Per lens correction and frame size, the shrink its crop makes (1 when none). */
   private lensScale = new Map<string, number>()
   /** The recipe's lens correction baked into proxies (see `ensureLensedProxies`). */
@@ -1750,7 +1800,7 @@ class Session {
     width: number,
     height: number,
     r: { x: number; y: number; w: number; h: number },
-    margin = 96
+    margin = REGION_MARGIN
   ): Promise<{ x: number; y: number; width: number; height: number; margin: number }> {
     let k = 1
     if (lens) {
