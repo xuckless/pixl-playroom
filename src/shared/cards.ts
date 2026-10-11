@@ -36,7 +36,8 @@ export interface CardSpec {
 
 export const CARDS: CardSpec[] = [
   { id: 'wb', title: tk('White balance'), fields: [['wb']], inMask: true },
-  { id: 'light', title: tk('Light'), fields: [['basic']], inMask: true },
+  // Tone base is the photo's own (a mask has none): it resets with Light, outside a mask.
+  { id: 'light', title: tk('Light'), fields: [['basic'], ['toneBase']], inMask: true },
   {
     id: 'presence',
     title: tk('Presence'),

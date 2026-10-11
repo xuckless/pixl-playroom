@@ -323,6 +323,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.menu.openTop, (index: number, x: number, y: number) => openTopMenu(index, x, y))
   handle(IPC.app.renderScale, () => renderScale())
   handle(IPC.app.displayHdr, () => displayHdr())
+  handle(IPC.app.fullScreen, () => BrowserWindow.getAllWindows()[0]?.isFullScreen() ?? false)
   handle(IPC.app.setDisplayHdr, async (v: unknown) => {
     await s.index.setSetting(DISPLAY_SETTING_KEY, v)
     return setDisplaySetting(v)
@@ -600,6 +601,7 @@ export function registerIpc(s: Services): void {
     s.sessions.preview(key, recipe ? await s.planes.hydrate(recipe) : null)
   )
   handle(IPC.develop.view, (key: string, view: ViewState) => s.sessions.view(key, view))
+  handle(IPC.develop.frameLost, (key: string) => s.sessions.frameLost(key))
   handle(IPC.develop.region, (req: RegionRequest) => s.sessions.region(req))
   handle(IPC.develop.measureCa, (key: string) => s.sessions.measureCa(key))
   handle(

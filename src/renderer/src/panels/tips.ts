@@ -70,7 +70,7 @@ export const TIPS = {
       'Where Highlights, Shadows, Whites and Blacks read the photo. None reads each pixel as it is; Keep texture reads a smoothed version, so fine detail keeps its contrast where they pull.'
     ),
     expect: tk(
-      'With Keep texture, strong Shadows or Highlights look less flat and less haloed. It renders a little slower; while you drag you see a quicker version.'
+      'With Keep texture, strong Shadows or Highlights look less flat and less haloed. It renders a little slower; while you drag you may see a quicker version, and the full one when you let go.'
     ),
     tip: tk('It applies to the whole photo and its masks.')
   },

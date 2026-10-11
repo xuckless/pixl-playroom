@@ -190,6 +190,13 @@ function createWindow(): void {
     rendererGone()
     if (mainWindow === win) mainWindow = undefined
   })
+  // Full screen, as the window itself says it: its buttons go with the menu
+  // bar then, and the top bar closes the room it leaves for them.
+  const fullScreen = (full: boolean) => (): void => {
+    if (!win.isDestroyed()) win.webContents.send(IPC.app.fullScreenChanged, full)
+  }
+  win.on('enter-full-screen', fullScreen(true))
+  win.on('leave-full-screen', fullScreen(false))
 
   // The window stays on the app's page: links open in the browser, and only
   // to our own sites and the checkout (guard.ts); nothing navigates the

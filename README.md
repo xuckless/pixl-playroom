@@ -13,7 +13,8 @@
 [pixl-web](https://github.com/xuckless/pixl-web) repo; its media are rebuilt from here with
 `scripts/site-media.sh`)
 
-**Free beta 0.3.0-beta** for macOS (Apple silicon or Intel) and Windows 64-bit.
+**Free beta 0.3.0-beta** for macOS 15 or later (Apple silicon or Intel) and
+Windows 10 or later, 64-bit.
 Free until 1.0 with a free PIXL account (18 or older); then $69.99 once, no
 subscription, 3 computers per licence.
 

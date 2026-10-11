@@ -115,6 +115,8 @@ const api = {
     setSetting: (key: string, value: unknown) => call<void>(IPC.app.setSetting, key, value),
     reveal: (path: string) => call<void>(IPC.app.reveal, path),
     locations: () => call<LocationsInfo>(IPC.app.locations),
+    fullScreen: () => call<boolean>(IPC.app.fullScreen),
+    onFullScreen: (cb: (full: boolean) => void) => on<boolean>(IPC.app.fullScreenChanged, cb),
     showLocation: (kind: LocationKind) => call<void>(IPC.app.showLocation, kind),
     renderScale: () => call<RenderScale>(IPC.app.renderScale),
     displayHdr: () => call<DisplayHdr>(IPC.app.displayHdr),
@@ -232,6 +234,7 @@ const api = {
     update: (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
       call<void>(IPC.develop.update, key, recipe, interactive, rev),
     view: (key: string, view: ViewState) => call<void>(IPC.develop.view, key, view),
+    frameLost: (key: string) => call<void>(IPC.develop.frameLost, key),
     region: (req: RegionRequest) => call<RegionResult>(IPC.develop.region, req),
     sample: (key: string, x: number, y: number) =>
       call<SampleResult>(IPC.develop.sample, key, x, y),

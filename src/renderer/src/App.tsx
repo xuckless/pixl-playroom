@@ -378,6 +378,10 @@ async function askCrashConsent(): Promise<void> {
   useLibrary.getState().setDialog('crash-consent')
 }
 
+/** How many settled pictures in a row are asked for again when their pixels never arrive. */
+const LOST_FRAME_RETRIES = 3
+let lostFrames = 0
+
 /**
  * The first Develop asks once where projects and exports go (before an edit
  * makes a project): of everyone, a new install and one updating alike, each
@@ -476,7 +480,19 @@ export default function App(): React.JSX.Element {
       api.develop.onRendered((e) => {
         // A draft sent as pixels is shown once they are here (they come on their own port).
         if (!isFrame(e.url)) return useDevelop.getState().onRendered(e)
-        void whenFrame(e.url).then((bmp) => bmp && useDevelop.getState().onRendered(e))
+        void whenFrame(e.url).then((bmp) => {
+          if (bmp) {
+            lostFrames = 0
+            return useDevelop.getState().onRendered(e)
+          }
+          // Its pixels never came. A draft is passed by the next one; a
+          // settled picture is what the view waits on ("Rendering" until it
+          // shows), so main makes it again, a few times at most in a row.
+          const dev = useDevelop.getState()
+          const waiting = dev.session?.key === e.key && (dev.picture?.seq ?? -1) < e.seq
+          if (e.kind === 'full' && waiting && lostFrames++ < LOST_FRAME_RETRIES)
+            void api.develop.frameLost(e.key).catch(() => undefined)
+        })
       }),
       startDrawerSync(),
       startDenoiseUpkeep(),

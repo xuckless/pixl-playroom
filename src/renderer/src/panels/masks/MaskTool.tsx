@@ -40,7 +40,7 @@ const EDGE_TIPS: Record<'smooth' | 'contrast' | 'shift', Tip> = {
   },
   shift: {
     what: tk('Moves the edge out (+) or in (−), up to 3% of the photo’s shorter side.'),
-    expect: tk('Growing it rounds the corners, as in Photoshop.')
+    expect: tk('The whole outline grows or shrinks by the same amount all the way round.')
   }
 }
 
@@ -109,7 +109,7 @@ export function ComponentCard({
   const stroke = c.kind === 'brush' && !c.source
   // Snap to edges: a model's mask lets the snap firm its edge, in place of
   // an older recipe's harden.
-  const setRefine = (fn: (r: MaskRefine) => MaskRefine, live = false): void => {
+  const setRefine = (fn: (r: MaskRefine) => MaskRefine, live = false): Promise<boolean> => {
     const was = c.refine?.on === true
     const apply = (): void =>
       edit((x) => {
@@ -124,11 +124,13 @@ export function ComponentCard({
         }
       }, live)
     // SAM offered first when a stroke turns on and it is not here; without it nothing changes.
-    if (!was && stroke && fn(c.refine ?? { on: false, radius: radiusDef }).on) {
-      void ensureModel('prompt', t('Snap to edges')).then((ok) => ok && apply())
-      return
-    }
+    if (!was && stroke && fn(c.refine ?? { on: false, radius: radiusDef }).on)
+      return ensureModel('prompt', t('Snap to edges')).then((ok) => {
+        if (ok) apply()
+        return ok
+      })
     apply()
+    return Promise.resolve(true)
   }
   // A face part found on several faces: all of them, or one (left to right).
   const faces = c.kind === 'polygon' ? (c.found?.faces.length ?? 0) : 0
@@ -221,7 +223,7 @@ export function ComponentCard({
           value={c.feather}
           min={0}
           max={100}
-          def={3}
+          def={c.kind === 'polygon' ? 3 : 0}
           onChange={(v, live) => edit((x) => (x.feather = v), live)}
           onCommit={() => commit(tk('Feather'))}
         />

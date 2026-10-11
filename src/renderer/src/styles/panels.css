@@ -614,6 +614,8 @@ aside.right .panels.adjust {
 .row.tone-base {
   gap: 8px;
   margin: 6px 0 2px;
+  /* A longer language's two choices go under the label, not past the card. */
+  flex-wrap: wrap;
 }
 .row.tone-base .adjust-head-label {
   flex: 0 0 84px;

@@ -135,7 +135,8 @@ export interface RefineMethodInfo {
 export const REFINE_METHODS: RefineMethodInfo[] = [
   {
     kind: 'guided',
-    label: tk('Guided'),
+    // Its own line in the catalogs: Upright's Guided is guide lines, not this.
+    label: tk('Guided|snap'),
     what: tk('Pulls the edge onto the photo’s brightness edges. The quickest.'),
     expect: tk('Smooth, slightly soft edges. Good for most masks, and live while you drag.'),
     params: [

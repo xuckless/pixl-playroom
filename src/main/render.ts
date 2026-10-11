@@ -438,6 +438,20 @@ class Session {
    */
   private lastSig: Record<Kind, string> = { draft: '', full: '' }
   private lastEvent: Record<Kind, RenderEvent | null> = { draft: null, full: null }
+  /** The picture sent last, of either kind: the one the window has. */
+  private lastSent: RenderEvent | null = null
+
+  /**
+   * Whether a picture sent before can be sent again in place of rendering
+   * it: a file can; a frame (a draft, or any Full HDR picture) only while it
+   * is the picture the window has. The window keeps a frame a moment (four
+   * of them: lib/frames.ts) and drops an event whose frame is gone, so a
+   * slider let go where the photo last settled, a drag's frames since,
+   * would leave it waiting for a picture that never comes.
+   */
+  private showable(e: RenderEvent): boolean {
+    return !e.url.startsWith('frame:') || this.lastSent === e
+  }
   private maskSig = ''
   /** The last mask event sent: re-sent (with the current seq and rev) when nothing changed. */
   private lastMask: RenderEvent | null = null
@@ -835,6 +849,17 @@ class Session {
   /** Whether the view has been asked for yet: the first picture comes as a draft, at once. */
   private viewed = false
 
+  /**
+   * The window says the settled picture's pixels never reached it (a frame
+   * it had let go of, or one lost with the preview port): nothing sent
+   * before is taken as shown, and the picture is rendered again.
+   */
+  frameLost(): void {
+    if (this.closed) return
+    this.lastSent = null
+    this.schedule('full')
+  }
+
   setView(view: ViewState): void {
     this.view = view
     // Opening: the draft first (a fraction of the pixels), the full picture
@@ -1021,8 +1046,10 @@ class Session {
       )
     )
     const known = kind === 'full' ? this.recentFull.get(sig) : undefined
-    const last = known?.event ?? (sig === this.lastSig[kind] ? this.lastEvent[kind] : null)
+    const again = sig === this.lastSig[kind] ? this.lastEvent[kind] : null
+    const last = known?.event ?? (again && this.showable(again) ? again : null)
     if (last) {
+      this.lastSent = last
       if (known) {
         this.lastFull = known.out
         this.lastSig.full = sig
@@ -1165,6 +1192,7 @@ class Session {
     }
     this.lastSig[kind] = sig
     this.lastEvent[kind] = event
+    this.lastSent = event
     this.lastOut[kind] = out
     // A frame is kept by the window only a moment: a file alone can be shown
     // again (and Full HDR's AVIF arm, which stays a dev switch, is not kept).
@@ -1329,7 +1357,12 @@ class Session {
       const sig = String(
         hash32(gradeKey(['gpu', plan.inputKey, cropMode, display, color, compiled.grade, region]))
       )
-      if (sig === this.lastSig.draft && this.lastEvent.draft) {
+      if (
+        sig === this.lastSig.draft &&
+        this.lastEvent.draft &&
+        this.showable(this.lastEvent.draft)
+      ) {
+        this.lastSent = this.lastEvent.draft
         if (!this.closed)
           this.owner.send(IPC.develop.rendered, { ...this.lastEvent.draft, seq, rev })
         return true
@@ -1385,6 +1418,7 @@ class Session {
       }
       this.lastSig.draft = sig
       this.lastEvent.draft = event
+      this.lastSent = event
       this.lastOut.draft = ''
       this.owner.send(IPC.develop.rendered, event)
       return true
@@ -2856,6 +2890,11 @@ export class DevelopSessions {
 
   view(key: string, view: ViewState): void {
     this.get(key).setView(view)
+  }
+
+  /** The window never got a settled picture's pixels: the photo's picture made again (if still open). */
+  frameLost(key: string): void {
+    this.sessions.get(key)?.frameLost()
   }
 
   region(req: RegionRequest): Promise<RegionResult> {

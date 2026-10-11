@@ -1,4 +1,8 @@
-/** Where Playroom keeps what it makes. Everything under userData is a cache or an index — the truth lives beside the photos. */
+/**
+ * Where Playroom keeps what it makes. Everything under userData is a cache
+ * or an index: the truth lives in each photo's project, beside the photo or
+ * in the projects folder (project/locate.ts).
+ */
 import { app } from 'electron'
 import { mkdirSync } from 'fs'
 import { join } from 'path'

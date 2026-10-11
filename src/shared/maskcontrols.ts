@@ -46,7 +46,9 @@ export interface ComponentControls {
 
 export function componentControls(c: MaskComponentSetting): ComponentControls {
   return {
-    feather: c.kind === 'polygon',
+    // A model's mask too (the owner, 2026-10-11): what softens its edge, where
+    // Smooth and Contrast are not offered (they would harden a soft plane).
+    feather: c.kind === 'polygon' || fromModel(c),
     shift: c.kind === 'polygon' || fromModel(c) || (c.kind === 'brush' && refining(c)),
     softness: c.kind === 'radial',
     range: c.kind === 'range',

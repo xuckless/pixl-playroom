@@ -46,6 +46,10 @@ export const IPC = {
     /** Open the folder one of them names (made first, where it is the preset). */
     showLocation: 'app:show-location',
     renderScale: 'app:render-scale',
+    /** Whether the window is in full screen (its own buttons are then with the menu bar). */
+    fullScreen: 'app:full-screen',
+    /** main → renderer: it entered or left full screen. */
+    fullScreenChanged: 'app:full-screen-changed',
     /** The window's display as an HDR target (shared/hdrdisplay.ts). */
     displayHdr: 'app:display-hdr',
     /** Preferences → Display: automatic, or a stated white and peak. */
@@ -182,6 +186,8 @@ export const IPC = {
     close: 'develop:close',
     update: 'develop:update',
     view: 'develop:view',
+    /** renderer → main: a settled picture's pixels never reached the window; make it again. */
+    frameLost: 'develop:frame-lost',
     region: 'develop:region',
     sample: 'develop:sample',
     autoTone: 'develop:auto-tone',

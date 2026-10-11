@@ -13,7 +13,6 @@
  * moves, the drag renders Guided in their place (compile.ts, a draft), and
  * the method itself on release.
  */
-import { useState } from 'react'
 import type { MaskComponentSetting, MaskRefine, RefineKind } from '../../../../shared/recipe'
 import {
   defaultStrength,
@@ -25,7 +24,7 @@ import {
   type RefineParam
 } from '../../../../shared/refine'
 import type { Tip } from '../../components/InfoTip'
-import { Select, Slider } from '../../components/ui'
+import { Section, Select, Slider } from '../../components/ui'
 import { t, tk } from '../../lib/i18n'
 
 /** The dropdown's line for each method: its name and what it's for, so the choice reads at a glance. */
@@ -56,9 +55,16 @@ function methodTip(m: RefineMethodInfo): Tip {
   }
 }
 
-/** A parameter's slider reading: a length as a share of the shorter side, else the number. */
+/**
+ * A length is shown, and typed, as a percentage of the shorter side: the
+ * slider works in that unit, so the number typed is the number meant (a
+ * reading of 0.50% typed back as 0.5 is not half the frame).
+ */
+const shown = (p: RefineParam): number => (p.unit === 'short' ? 100 : 1)
+
+/** A parameter's slider reading, in the slider's own unit (`shown`). */
 function formatParam(p: RefineParam, v: number): string {
-  if (p.unit === 'short') return `${(v * 100).toFixed(2)}%`
+  if (p.unit === 'short') return `${v.toFixed(2)}%`
   if (p.step >= 1) return String(Math.round(v))
   return v < 0.01 ? v.toExponential(1) : v.toFixed(3)
 }
@@ -75,39 +81,31 @@ export function AdvancedParams({
   onChange: (key: string, v: number, live: boolean) => void
   onCommit: () => void
 }): React.JSX.Element | null {
-  const [open, setOpen] = useState(false)
   if (m.params.length === 0) return null
   return (
-    <div className={`mf-advanced${open ? ' open' : ''}`}>
-      <button
-        className="sm ghost mf-advanced-toggle"
-        aria-expanded={open}
-        title={t('Every setting of this method, in the engine’s own units')}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <svg className="caret" viewBox="0 0 10 10" aria-hidden>
-          <path d="M3.5 2 6.5 5 3.5 8" />
-        </svg>
-        {t('Advanced')}
-      </button>
-      {open &&
-        m.params.map((p) => (
-          <Slider
-            key={p.key}
-            label={t(p.label)}
-            adjusts={false}
-            value={paramValue(m, refine, p.key)}
-            min={p.min}
-            max={p.max}
-            step={p.step}
-            scale={p.max / p.min > 100 ? 'log' : 'linear'}
-            def={p.def}
-            format={(v) => formatParam(p, v)}
-            onChange={(v, live) => onChange(p.key, v, live)}
-            onCommit={onCommit}
-          />
-        ))}
-    </div>
+    <Section
+      id="masks.snap.settings"
+      title={t('Snap settings')}
+      tip={{ what: tk('Every setting of this method, in the engine’s own units') }}
+      defaultOpen={false}
+    >
+      {m.params.map((p) => (
+        <Slider
+          key={p.key}
+          label={t(p.label)}
+          adjusts={false}
+          value={paramValue(m, refine, p.key) * shown(p)}
+          min={p.min * shown(p)}
+          max={p.max * shown(p)}
+          step={p.step * shown(p)}
+          scale={p.max / p.min > 100 ? 'log' : 'linear'}
+          def={p.def * shown(p)}
+          format={(v) => formatParam(p, v)}
+          onChange={(v, live) => onChange(p.key, v / shown(p), live)}
+          onCommit={onCommit}
+        />
+      ))}
+    </Section>
   )
 }
 
@@ -127,8 +125,12 @@ export function RefineControls({
   radiusDef: number
   radiusMin: number
   radiusMax: number
-  /** The new refine, or `{ on: false }`; resolved by the caller (a stroke may need SAM first). */
-  setRefine: (fn: (r: MaskRefine) => MaskRefine, live?: boolean) => void
+  /**
+   * The new refine, or `{ on: false }`. Resolves once the caller has made
+   * the change, false when it did not (a stroke needs SAM first, and its
+   * download was declined): a History step is recorded only for a change made.
+   */
+  setRefine: (fn: (r: MaskRefine) => MaskRefine, live?: boolean) => Promise<boolean>
   commit: (label: string) => void
 }): React.JSX.Element {
   const r = c.refine
@@ -138,12 +140,13 @@ export function RefineControls({
   const guided = m.kind === 'guided' || m.kind === 'guidedColour'
   const pick = (v: RefineKind | 'off'): void => {
     if (v === 'off') {
-      setRefine((x) => ({ ...x, on: false }))
-      commit(tk('Snap to edges off'))
+      void setRefine((x) => ({ ...x, on: false })).then(
+        (made) => made && commit(tk('Snap to edges off'))
+      )
       return
     }
     const next = refineMethod(v)
-    setRefine((x) => {
+    void setRefine((x) => {
       // A method's own settings start fresh; Guided keeps the radius it had.
       const { params: _params, strength: _strength, ...rest } = x
       void _params
@@ -154,8 +157,8 @@ export function RefineControls({
         ...(v === 'guided' ? { method: undefined } : { method: v }),
         ...(next.strength ? { strength: defaultStrength(next) } : {})
       }
-    })
-    commit(t(next.label))
+      // The step is named in English, as every step is kept (translated where History shows it).
+    }).then((made) => made && commit(next.label))
   }
   return (
     <>

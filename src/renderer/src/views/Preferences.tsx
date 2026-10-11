@@ -719,14 +719,14 @@ function PerformanceSection(): React.JSX.Element | null {
           label={t('Drag sliders on the graphics chip')}
           tip={{
             what: t(
-              'While a slider moves, the preview is graded on the graphics chip: about twice as fast, and at the full preview size. When you let go, the picture renders on the processor, as an export does.'
+              'While a slider moves, the preview can be graded on the graphics chip: at the full preview size, where the processor shows a smaller draft. When you let go, the picture renders on the processor, as an export does.'
             ),
             expect: state.constrained
               ? t(
-                  'Exposure, contrast, Tone, HSL and Dehaze drag there; an edit with anything else (white balance, curves, effects, masks, smoothing) drags on the processor, as before. On this Mac only the open photo keeps its copy on the graphics chip, and Tone drags without its texture base until you let go. Turn it off if a drag looks different from the picture you let go on.'
+                  'It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, the Colour mixer and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. On this Mac only the open photo keeps its copy on the graphics chip, and Highlights, Shadows, Whites and Blacks drag without Keep texture until you let go. Turn it off if a drag looks different from the picture you let go on.'
                 )
               : t(
-                  'Exposure, contrast, Tone, HSL and Dehaze drag there; an edit with anything else (white balance, curves, effects, masks, smoothing) drags on the processor, as before. The open photo keeps a copy on the graphics chip (about 130–250 MB). Turn it off if a drag looks different from the picture you let go on.'
+                  'It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, the Colour mixer and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. The open photo keeps a copy on the graphics chip (about 130–250 MB). Turn it off if a drag looks different from the picture you let go on.'
                 )
           }}
         />
