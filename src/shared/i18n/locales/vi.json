@@ -3187,5 +3187,8 @@
   "Zoom to 100%": "Phóng to 100%",
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "Phóng to 100%, mỗi điểm ảnh của ảnh ứng với một điểm ảnh màn hình, để kiểm tra độ nét và nhiễu. Chụm hoặc cuộn để thu phóng; giữ {{key}} và kéo để di chuyển khung nhìn.",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ luma {{luma}} · chroma {{chroma}}",
-  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ của nhiễu trắng trên từng mặt phẳng, theo bộ ước lượng riêng của bộ khử nhiễu, tính bằng giá trị mã 8 bit"
+  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ của nhiễu trắng trên từng mặt phẳng, theo bộ ước lượng riêng của bộ khử nhiễu, tính bằng giá trị mã 8 bit",
+  "Where should projects go?": "Nên lưu dự án ở đâu?",
+  "Your first edit to a photo makes its project: one .pixl file with its edits, copies and history. Your photos themselves are never changed.": "Lần chỉnh sửa đầu tiên một ảnh sẽ tạo dự án của ảnh đó: một tệp .pixl chứa các chỉnh sửa, bản sao và lịch sử. Bản thân ảnh của bạn không bao giờ bị thay đổi.",
+  "Projects already made stay where they are. You can change this any time in Settings.": "Các dự án đã tạo vẫn ở nguyên chỗ cũ. Bạn có thể thay đổi điều này bất cứ lúc nào trong Cài đặt."
 }

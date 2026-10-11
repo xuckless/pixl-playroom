@@ -494,6 +494,47 @@ test('a photo moved away from its project in a projects folder finds it again', 
   rmSync(root, { recursive: true })
 })
 
+test('a projects folder left for another is still searched for its projects', async () => {
+  const root = tmp()
+  const f = await withProject({ folder: join(root, 'first') })
+  assert.ok(f.project.startsWith(join(root, 'first')))
+  f.index.setSetting('projects.location', { folder: join(root, 'second') })
+  assert.deepEqual(f.index.getSetting('projects.pastFolders'), [join(root, 'first')])
+  // The photo moved: only the project in the first folder knows its edits.
+  const elsewhere = join(f.root, 'moved')
+  mkdirSync(elsewhere)
+  renameSync(join(f.folder, 'a.jpg'), join(elsewhere, 'a.jpg'))
+  const items = await f.index.listFolder(elsewhere)
+  const a = items.find((i) => i.name === 'a.jpg')!
+  assert.equal(a.project, f.project)
+  await f.done()
+  rmSync(root, { recursive: true })
+})
+
+test('a new index starts where it is told; one already made keeps its setting', () => {
+  const root = tmp()
+  const ud = join(root, 'ud')
+  const fresh = new IndexService({
+    userData: ud,
+    emit: () => {},
+    xmp: noXmp,
+    freshLocation: 'home'
+  })
+  assert.equal(fresh.getSetting('projects.location'), 'home')
+  fresh.setSetting('projects.location', null)
+  fresh.close()
+  // Opened again (an install from before the choice): left unset, beside the photo.
+  const again = new IndexService({
+    userData: ud,
+    emit: () => {},
+    xmp: noXmp,
+    freshLocation: 'home'
+  })
+  assert.equal(again.getSetting('projects.location'), null)
+  again.close()
+  rmSync(root, { recursive: true })
+})
+
 test('opening a .pixl opens its photo', async () => {
   const f = await withProject()
   const { folder, keys } = await f.index.resolvePaths([f.project])

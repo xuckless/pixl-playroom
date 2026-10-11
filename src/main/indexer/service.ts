@@ -81,6 +81,7 @@ import {
   DEFAULT_PROJECTS_DIR,
   locationOf,
   newProjectPath,
+  pastFoldersOf,
   projectDirsFor,
   projectFilesIn,
   projectsRoot,
@@ -157,6 +158,11 @@ export interface IndexOptions {
   emit: (event: IndexEvent) => void
   /** How `.xmp` sidecars are read and written (ExifTool unless a test says otherwise). */
   xmp?: XmpIo
+  /**
+   * Where projects go on an index made fresh (a new install), until the user
+   * says otherwise. Left out, an unset location stays beside the photo.
+   */
+  freshLocation?: ProjectLocation
 }
 
 /** A saved collections file: definitions, and a manual collection's items by path. */
@@ -289,7 +295,13 @@ export class IndexService {
 
   constructor(opts: IndexOptions) {
     mkdirSync(opts.userData, { recursive: true })
-    this.store = Store.open(join(opts.userData, 'playroom.db'))
+    const db = join(opts.userData, 'playroom.db')
+    const fresh = !existsSync(db)
+    this.store = Store.open(db)
+    // An install that already made projects keeps making them where it did
+    // (beside the photo, while unset); a new one starts where it is told.
+    if (fresh && opts.freshLocation && this.store.getSetting('projects.location') == null)
+      this.store.setSetting('projects.location', opts.freshLocation)
     this.cacheRoot = join(opts.userData, 'cache')
     this.emit = opts.emit
     this.xmp = opts.xmp ?? exiftoolXmp()
@@ -558,11 +570,19 @@ export class IndexService {
     return locationOf(this.store.getSetting('projects.location'))
   }
 
-  /** The projects folders a folder's projects may be in besides the folder itself. */
+  /**
+   * The projects folders a folder's projects may be in besides the folder
+   * itself: the default one, and every folder the user has chosen (projects
+   * made in one stay there when another is chosen).
+   */
   private projectRoots(): string[] {
     const loc = this.location()
     const roots = [DEFAULT_PROJECTS_DIR]
-    if (typeof loc === 'object' && !roots.includes(projectsRoot(loc))) roots.push(projectsRoot(loc))
+    const chosen = [
+      ...pastFoldersOf(this.store.getSetting('projects.pastFolders')),
+      ...(typeof loc === 'object' ? [projectsRoot(loc)] : [])
+    ]
+    for (const r of chosen) if (!roots.includes(r)) roots.push(r)
     return roots
   }
 
@@ -2528,6 +2548,15 @@ export class IndexService {
   }
 
   setSetting(key: string, value: unknown): void {
+    // The folder being left keeps being searched for the projects made in it.
+    if (key === 'projects.location') {
+      const was = this.location()
+      if (typeof was === 'object') {
+        const past = pastFoldersOf(this.store.getSetting('projects.pastFolders'))
+        if (!past.includes(was.folder))
+          this.store.setSetting('projects.pastFolders', [...past, was.folder])
+      }
+    }
     this.store.setSetting(key, value)
   }
 }

@@ -341,9 +341,9 @@ export function registerIpc(s: Services): void {
   // ── library ──
   handle(IPC.library.chooseFolder, async () => {
     const w = win()
-    const r = w
-      ? await dialog.showOpenDialog(w, { properties: ['openDirectory'] })
-      : await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    // A new folder can be made from the dialog (macOS hides the button otherwise).
+    const opts: Electron.OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
     return r.canceled ? null : r.filePaths[0]
   })
   handle(IPC.library.openFolder, async (folder: string) => ({
