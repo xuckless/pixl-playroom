@@ -117,6 +117,31 @@ if (engine) {
   })
 }
 
+/**
+ * Every convert names where its grade runs (0.19.2, Phase A §1.1: one
+ * without is refused). The request builders send it; a request made before
+ * them is the CPU's, as 0.19 was.
+ */
+function withGradeDevice(method: EngineMethod, args: unknown[]): unknown[] {
+  if (method !== 'convert') return args
+  const [request, ...rest] = args
+  if (!request || typeof request !== 'object' || 'grade_device' in request) return args
+  return [{ ...request, grade_device: 'Cpu' }, ...rest]
+}
+
+/**
+ * A report's held measurements (0.19.2) are a native handle that can't
+ * cross to main: closed here, and only their `fields` sent on, unless the
+ * GPU drag path keeps them (`keepHeld`).
+ */
+function stripHeld(result: unknown): void {
+  const r = result as { held?: { fields?: string[]; close?: () => void } | null } | null
+  if (!r || typeof r !== 'object' || !r.held || typeof r.held.close !== 'function') return
+  const fields = Array.isArray(r.held.fields) ? [...r.held.fields] : []
+  r.held.close()
+  r.held = { fields } as never
+}
+
 /** The calls that may still be stopped, by request id. */
 const aborts = new Map<number, AbortController>()
 
@@ -361,11 +386,11 @@ process.parentPort.on('message', (e) => {
     return
   }
   // A signal goes after the request; the engine checks it between stages.
-  let callArgs = args
+  let callArgs = withGradeDevice(method, args)
   if (msg.cancellable) {
     const abort = new AbortController()
     aborts.set(id, abort)
-    callArgs = [...args, { signal: abort.signal }]
+    callArgs = [...callArgs, { signal: abort.signal }]
   }
   const frame = msg.frame
   Promise.resolve()
@@ -373,6 +398,7 @@ process.parentPort.on('message', (e) => {
     .then(
       (result) => {
         if (frame) deliver(frame, result)
+        stripHeld(result)
         send({ kind: 'response', id, ok: true, result })
       },
       (err) => send({ kind: 'response', id, ok: false, error: toErrorShape(err) })

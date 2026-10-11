@@ -15,6 +15,7 @@ import { defaultUpright, type UprightSetting } from './upright'
 import type { RetouchSpot } from './retouch'
 import { normalisePixelStep, type PixelStep } from './pixels'
 import { normaliseEdge, type MaskEdge } from './maskedge'
+import { migrateLook } from './migratelook'
 import { normalisePrompt, PROMPT_VIAS, type PromptGeometry, type PromptVia } from './prompt'
 import { conceptOf, type ConceptId } from './concepts'
 import { isFacePart, type FaceFound } from './faceparts'
@@ -110,6 +111,10 @@ export interface BasicSetting {
   whites: number
   blacks: number
 }
+
+/** Tone's base (compile.ts `toneBaseFor`). */
+export type ToneBaseKind = 'none' | 'texture'
+export const TONE_BASES: ToneBaseKind[] = ['none', 'texture']
 
 export interface PresenceSetting {
   texture: number
@@ -279,13 +284,38 @@ interface ComponentBase {
    * a brush, a lasso or a model's mask. Absent is off.
    */
   refine?: MaskRefine
+  /**
+   * 0…100, the engine's `smooth` (0.19.2, Photoshop's Select and Mask):
+   * takes the jaggies and speckle out of a contour and keeps it hard. 100
+   * is 5% of the shorter side. Offered on drawn edges only (a lasso, a
+   * painted brush). Absent is 0.
+   */
+  smooth?: number
+  /**
+   * 0…100, the engine's `contrast` (0.19.2): hardens a soft edge about its
+   * middle, 100 a hard threshold. Drawn edges only. Absent is 0.
+   */
+  contrast?: number
 }
 
-/** Snap to edges: on or off, and how far an edge may pull it (% of the shorter side). */
+/** How an edge is snapped (shared/refine.ts `REFINE_METHODS`): the engine's methods, by Playroom's names. */
+export type RefineKind = 'guided' | 'guidedColour' | 'edgeSnap' | 'solver' | 'matting'
+
+/**
+ * Snap to edges: on or off, the method, and how strongly. A recipe from
+ * before the methods (0.19) has neither `method` nor `strength`: it's
+ * Guided by its radius, as it rendered.
+ */
 export interface MaskRefine {
   on: boolean
-  /** 0.05…5: how far the picture's edges may pull the selection's, % of the shorter side. */
+  /** 0.05…5: how far the picture's edges may pull the selection's, % of the shorter side (Guided). */
   radius: number
+  /** Absent is `guided`. */
+  method?: RefineKind
+  /** 0…100: the method's main setting (EdgeSnap, the solver, Matting); absent is its default. */
+  strength?: number
+  /** The Advanced settings: a method's parameters in the engine's own units, by name. */
+  params?: Record<string, number>
 }
 
 /**
@@ -532,6 +562,13 @@ export interface Recipe {
   treatment: 'color' | 'bw'
   wb: WhiteBalanceSetting
   basic: BasicSetting
+  /**
+   * Where Highlights, Shadows, Whites and Blacks read the picture (engine
+   * 0.19.2's Tone base): `none` as they always ran; `texture` the local
+   * Laplacian, so fine texture keeps its contrast where they pull (the
+   * owner's pick). The photo's and its masks' alike. None by default.
+   */
+  toneBase: ToneBaseKind
   presence: PresenceSetting
   toneCurve: ToneCurveSetting
   hsl: Record<HslBand, BandSetting>
@@ -632,6 +669,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     gainMap: 'hdr',
     wb: { mode: 'as-shot', temperature: 0, tint: 0, preset: null },
     basic: { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 },
+    toneBase: 'none',
     presence: {
       texture: 0,
       clarity: 0,
@@ -760,6 +798,7 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     r.profile = base.profile
   }
   r.toneCurve = normaliseToneCurve(r.toneCurve)
+  if (!TONE_BASES.includes(r.toneBase)) r.toneBase = 'none'
   r.calibration = normaliseCalibration(r.calibration)
   d.ai.model = aiDenoiseModel(d.ai.model)
   r.geometry.crop = normaliseCrop(r.geometry.crop)
@@ -791,6 +830,11 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   r.pixels = (Array.isArray(r.pixels) ? (r.pixels as unknown[]) : [])
     .map(normalisePixelStep)
     .filter((p): p is PixelStep => p !== null)
+  // The Advanced view's layers are the engine's own JSON: a 0.19 one is
+  // brought to 0.19.2's shapes (Phase A §1.6), or the engine refuses it.
+  r.custom = (Array.isArray(r.custom) ? (r.custom as unknown[]) : [])
+    .filter(isObject)
+    .map((c) => ({ ...(c as unknown as CustomLayer), layer: migrateLook(structuredClone(c.layer)) }))
   r.retouch = (Array.isArray(r.retouch) ? (r.retouch as unknown[]) : []).filter(
     (s): s is RetouchSpot =>
       isObject(s) &&
@@ -981,7 +1025,9 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
     feather: num(c.feather, 0, 0, 100),
     ...(typeof c.name === 'string' && c.name.trim() ? { name: c.name.trim() } : {}),
     ...((e) => (e ? { edge: e } : {}))(normaliseEdge(c.edge)),
-    ...((r) => (r ? { refine: r } : {}))(normaliseRefine(c.refine))
+    ...((r) => (r ? { refine: r } : {}))(normaliseRefine(c.refine)),
+    ...(num(c.smooth, 0, 0, 100) > 0 ? { smooth: num(c.smooth, 0, 0, 100) } : {}),
+    ...(num(c.contrast, 0, 0, 100) > 0 ? { contrast: num(c.contrast, 0, 0, 100) } : {})
   }
   switch (c.kind) {
     case 'brush':
@@ -1070,8 +1116,24 @@ export function normaliseComponent(value: unknown): MaskComponentSetting | null 
 
 function normaliseRefine(v: unknown): MaskRefine | null {
   if (!isObject(v)) return null
-  return { on: v.on === true, radius: num(v.radius, 0.5, 0.05, 5) }
+  const method = REFINE_KINDS.includes(v.method as RefineKind) ? (v.method as RefineKind) : null
+  const params = isObject(v.params)
+    ? Object.fromEntries(
+        Object.entries(v.params).filter(
+          (e): e is [string, number] => typeof e[1] === 'number' && Number.isFinite(e[1])
+        )
+      )
+    : null
+  return {
+    on: v.on === true,
+    radius: num(v.radius, 0.5, 0.05, 5),
+    ...(method && method !== 'guided' ? { method } : {}),
+    ...(typeof v.strength === 'number' ? { strength: num(v.strength, 50, 0, 100) } : {}),
+    ...(params && Object.keys(params).length ? { params } : {})
+  }
 }
+
+const REFINE_KINDS: RefineKind[] = ['guided', 'guidedColour', 'edgeSnap', 'solver', 'matting']
 
 // ── Groups: what copy, paste, sync and presets move ─────────────────────────
 
@@ -1137,6 +1199,7 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         break
       case 'basicTone':
         r.basic = f.basic
+        r.toneBase = f.toneBase
         break
       case 'presence':
         r.presence = f.presence
@@ -1295,7 +1358,7 @@ function groupValues(r: Recipe, g: RecipeGroup): unknown[] {
     case 'whiteBalance':
       return [r.wb]
     case 'basicTone':
-      return [r.basic]
+      return [r.basic, r.toneBase]
     case 'presence':
       return [r.presence]
     case 'toneCurve':

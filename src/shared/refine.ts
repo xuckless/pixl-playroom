@@ -19,8 +19,9 @@
  * then only smooths that object's last pixels.
  */
 import type { Refine } from './engine-types'
+import { tk } from './i18n'
 import { EDGE_SHIFT_SPAN, isPlainEdge, type MaskEdge } from './maskedge'
-import type { MaskComponentSetting, MaskRefine } from './recipe'
+import type { MaskComponentSetting, MaskRefine, RefineKind } from './recipe'
 
 /** The Edge radius slider's ends, % of the frame's shorter side (the engine's 0.0005…0.05). */
 export const EDGE_RADIUS_MIN = 0.05
@@ -89,15 +90,212 @@ export function refining(c: MaskComponentSetting): boolean {
   return refinable(c) && c.refine?.on === true
 }
 
-/** The engine's refine for a component, or null when it is not snapped. */
-export function engineRefine(c: MaskComponentSetting): Refine | null {
+// ── The methods (engine 0.19.2, Phase A §4.2) ────────────────────────────────
+
+/** One of a method's parameters, in the engine's own units, for the Advanced settings. */
+export interface RefineParam {
+  /** The engine's field name. */
+  key: string
+  label: string
+  min: number
+  max: number
+  step: number
+  def: number
+  /** Shown as a percentage of the shorter side (a length), or as the number itself. */
+  unit: 'short' | 'plain'
+}
+
+export interface RefineMethodInfo {
+  kind: RefineKind
+  label: string
+  /** The (i): what it does, and what to expect. */
+  what: string
+  expect: string
+  /**
+   * The one parameter the Strength slider drives (0…100 across its range);
+   * absent for Guided, whose strength is the Edge radius.
+   */
+  strength?: string
+  params: RefineParam[]
+  /** It reads the whole frame: applied on release, never on a drag frame. */
+  whole: boolean
+}
+
+/**
+ * The methods, cheapest first. **Provisional values:** Phase A names each
+ * method's fields but not their ranges or defaults; these follow the
+ * engine's units elsewhere (lengths are fractions of the shorter side) and
+ * want checking against the engine's `docs/migration-0.20.0.md`. A value
+ * the engine refuses names its field (`….refine.EdgeSnap.distance`).
+ */
+export const REFINE_METHODS: RefineMethodInfo[] = [
+  {
+    kind: 'guided',
+    label: tk('Guided'),
+    what: tk('Pulls the edge onto the photo’s brightness edges. The quickest.'),
+    expect: tk('Smooth, slightly soft edges. Good for most masks, and live while you drag.'),
+    params: [
+      { key: 'epsilon', label: tk('Edge threshold'), min: 1e-6, max: 1, step: 1e-4, def: REFINE_EPSILON, unit: 'plain' }
+    ],
+    whole: false
+  },
+  {
+    kind: 'guidedColour',
+    label: tk('Guided, colour'),
+    what: tk('Like Guided, but sees colour edges too, where two colours are equally bright.'),
+    expect: tk('Cleaner edges between colours that are equally bright. A little slower than Guided.'),
+    params: [
+      { key: 'epsilon', label: tk('Edge threshold'), min: 1e-6, max: 1, step: 1e-4, def: REFINE_EPSILON, unit: 'plain' }
+    ],
+    whole: false
+  },
+  {
+    kind: 'edgeSnap',
+    label: tk('Edge snap'),
+    what: tk('Snaps a hard edge onto the strongest edge in the photo nearby.'),
+    expect: tk('Crisp edges and sharp corners. Best on skies, buildings and trees. Applied when you let go.'),
+    strength: 'distance',
+    params: [
+      { key: 'distance', label: tk('Distance'), min: 0.0005, max: 0.05, step: 0.0005, def: 0.005, unit: 'short' }
+    ],
+    whole: true
+  },
+  {
+    kind: 'solver',
+    label: tk('Soft snap'),
+    what: tk('An edge-aware solver that follows the photo’s edges softly.'),
+    expect: tk('Soft edges that still follow the photo. Slower. Applied when you let go.'),
+    strength: 'sigma_spatial',
+    params: [
+      { key: 'sigma_spatial', label: tk('Reach'), min: 0.001, max: 0.05, step: 0.001, def: 0.008, unit: 'short' },
+      { key: 'sigma_luma', label: tk('Brightness'), min: 0.001, max: 1, step: 0.001, def: 0.05, unit: 'plain' },
+      { key: 'sigma_chroma', label: tk('Colour'), min: 0.001, max: 1, step: 0.001, def: 0.05, unit: 'plain' },
+      { key: 'lambda', label: tk('Smoothness'), min: 1, max: 1024, step: 1, def: 128, unit: 'plain' },
+      { key: 'iterations', label: tk('Iterations'), min: 1, max: 100, step: 1, def: 25, unit: 'plain' }
+    ],
+    whole: true
+  },
+  {
+    kind: 'matting',
+    label: tk('Hair and fine detail'),
+    what: tk('Matting: works out partial transparency in a band along the edge.'),
+    expect: tk('Keeps hair, twigs and branches against the sky. Best on people. The slowest; applied when you let go.'),
+    strength: 'band',
+    params: [
+      { key: 'band', label: tk('Band'), min: 0.001, max: 0.05, step: 0.001, def: 0.01, unit: 'short' },
+      { key: 'epsilon', label: tk('Edge threshold'), min: 1e-7, max: 0.1, step: 1e-6, def: 1e-5, unit: 'plain' },
+      { key: 'iterations', label: tk('Iterations'), min: 1, max: 500, step: 1, def: 100, unit: 'plain' }
+    ],
+    whole: true
+  }
+]
+
+export function refineMethod(kind: RefineKind | undefined): RefineMethodInfo {
+  return REFINE_METHODS.find((m) => m.kind === (kind ?? 'guided')) ?? REFINE_METHODS[0]
+}
+
+/** The Strength slider's position (0…100) for a method's main parameter value. */
+export function strengthOf(m: RefineMethodInfo, value: number): number {
+  const p = m.params.find((q) => q.key === m.strength)
+  if (!p) return 50
+  return Math.round(((clamp(value, p.min, p.max) - p.min) / (p.max - p.min)) * 100)
+}
+
+/** A method's parameter as set: the Advanced value, else what Strength puts it at, else its default. */
+export function paramValue(m: RefineMethodInfo, r: MaskRefine | undefined, key: string): number {
+  const p = m.params.find((q) => q.key === key)
+  if (!p) return 0
+  const set = r?.params?.[key]
+  if (typeof set === 'number') return clamp(set, p.min, p.max)
+  if (key === m.strength && typeof r?.strength === 'number')
+    return p.min + (clamp(r.strength, 0, 100) / 100) * (p.max - p.min)
+  return p.def
+}
+
+/** The Strength a method starts at: where its default parameter sits. */
+export function defaultStrength(m: RefineMethodInfo): number {
+  const p = m.params.find((q) => q.key === m.strength)
+  return p ? strengthOf(m, p.def) : 50
+}
+
+/**
+ * The engine's refine for a method. `draft` (a drag frame): a method that
+ * reads the whole frame stands aside for Guided at the same reach, so the
+ * drag stays live and a tile stays the full render, cut; the release
+ * renders the method itself.
+ */
+export function refineFor(
+  r: MaskRefine,
+  draft: boolean,
+  /** Guided's radius, a fraction of the shorter side. */
+  radius: number
+): Refine {
+  const m = refineMethod(r.method)
+  const guided = (guide: 'Luma' | 'Colour', epsilon: number): Refine => ({
+    Guided: { radius: round6(radius), epsilon, guide }
+  })
+  const v = (key: string): number => round6(paramValue(m, r, key))
+  if (draft && m.whole) return guided('Luma', REFINE_EPSILON)
+  switch (m.kind) {
+    case 'guided':
+      return guided('Luma', v('epsilon'))
+    case 'guidedColour':
+      return guided('Colour', v('epsilon'))
+    case 'edgeSnap':
+      return { EdgeSnap: { distance: v('distance') } }
+    case 'solver':
+      return {
+        BilateralSolver: {
+          sigma_spatial: v('sigma_spatial'),
+          sigma_luma: v('sigma_luma'),
+          sigma_chroma: v('sigma_chroma'),
+          lambda: v('lambda'),
+          iterations: Math.round(v('iterations'))
+        }
+      }
+    case 'matting':
+      return {
+        Matting: { band: v('band'), epsilon: v('epsilon'), iterations: Math.round(v('iterations')) }
+      }
+  }
+}
+
+/**
+ * The engine's refine for a component, or null when it is not snapped.
+ * `draft`: a drag frame (see `refineFor`).
+ */
+export function engineRefine(c: MaskComponentSetting, draft = false): Refine | null {
   if (!refining(c) || !c.refine) return null
   const radius = clamp(c.refine.radius, EDGE_RADIUS_MIN, EDGE_RADIUS_MAX) / 100
-  // A painted plane's Shift edge moves the snapped edge: + grows it, and
-  // the engine's contract shrinks for +.
-  const shift = c.kind === 'brush' ? clamp(c.edge?.shift ?? 0, -100, 100) : 0
-  const contract = (-shift / 100) * EDGE_SHIFT_SPAN
-  return { radius: round6(radius), epsilon: REFINE_EPSILON, contract: round6(contract) || 0 }
+  return refineFor(c.refine, draft, radius)
+}
+
+/**
+ * The engine's `shift` for a component (0.19.2): a snapped painted plane's
+ * Shift edge moves the snapped edge, resolution-free (0.19's
+ * `refine.contract`, the sign turned: + grows it). Elsewhere Playroom moves
+ * the edge itself (the plane, a lasso's line), so the engine's stays 0.
+ */
+export function engineShift(c: MaskComponentSetting): number {
+  if (!refining(c) || c.kind !== 'brush') return 0
+  return round6((clamp(c.edge?.shift ?? 0, -100, 100) / 100) * EDGE_SHIFT_SPAN) || 0
+}
+
+/** Smooth 100: 5% of the shorter side, the engine's most. */
+export const SMOOTH_SPAN = 0.05
+
+/** Whether a component offers Smooth and Contrast: a drawn edge (a lasso, a painted brush), never a model's. */
+export function edgeShaping(c: MaskComponentSetting): boolean {
+  return c.kind === 'polygon' || (c.kind === 'brush' && !c.source && !((c.edge?.harden ?? 0) > 0))
+}
+
+/** The engine's `smooth` and `contrast` for a component (0 where it doesn't offer them). */
+export function engineEdge(c: MaskComponentSetting): { smooth: number; contrast: number } {
+  if (!edgeShaping(c)) return { smooth: 0, contrast: 0 }
+  return {
+    smooth: round6((clamp(c.smooth ?? 0, 0, 100) / 100) * SMOOTH_SPAN) || 0,
+    contrast: round6(clamp(c.contrast ?? 0, 0, 100) / 100) || 0
+  }
 }
 
 /**

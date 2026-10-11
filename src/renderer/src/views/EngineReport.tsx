@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react'
 import { compile } from '../../../shared/compile'
 import { rasterGradient } from '../../../shared/gradients'
 import type { GradeLayer } from '../../../shared/engine-types'
+import { migrateLook } from '../../../shared/migratelook'
 import { fromExif } from '../../../shared/orientation'
 import { newId } from '../../../shared/recipe'
 import { Icon } from '../components/icons'
@@ -77,7 +78,8 @@ function CustomLayers(): React.JSX.Element | null {
                 <button
                   onClick={() => {
                     try {
-                      const layer = JSON.parse(text) as GradeLayer
+                      // A layer copied from a 0.19 grade takes 0.19.2's shapes.
+                      const layer = migrateLook(JSON.parse(text)) as GradeLayer
                       edit((r) => {
                         r.custom[i].layer = layer
                         r.custom[i].name = layer.name || c.name

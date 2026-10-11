@@ -353,7 +353,8 @@ export function blankRequest(
     retouch: null,
     output_sharpen: null,
     limits: READ_LIMITS,
-    measure: null
+    measure: null,
+    grade_device: 'Cpu'
   }
 }
 

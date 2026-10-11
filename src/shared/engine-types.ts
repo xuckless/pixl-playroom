@@ -107,6 +107,8 @@ export interface Region {
 }
 
 export type Inspect =
+  /** 0.19.2: the grade's input (everything before the grade), for a GPU frame's upload. */
+  | 'GradeInput'
   | { LayerMask: { layer: number } }
   | { GroupMask: { layer: number; group: number } }
   /** Where HDR output sits above its white: `clamp(log2(Y / white) / stops, 0, 1)`. */
@@ -225,6 +227,13 @@ export interface SessionSpec {
   dimensions: { name: string; value: number }[]
   /** 0.19.0: ONNX Runtime's intra-op spinning; `false` lets an idle host sleep (Playroom). */
   intra_op_spinning: boolean
+  /**
+   * 0.19.2 (Phase A §1.2): ONNX Runtime's CPU arena. `false` gives a big
+   * model's working memory back between runs (SAM 3's encoder: about 3.6 GB
+   * resident instead of 9 GB, as fast); `true` is 0.19's behaviour. A
+   * session loaded one way is refused for a request asking the other.
+   */
+  cpu_arena: boolean
 }
 
 /** A model file and the ONNX Runtime it runs on. One runtime per process. */
@@ -584,7 +593,23 @@ export interface Tone {
   whites: number
   blacks: number
   smoothing: AdjustmentSmoothing | null
+  /**
+   * Where the bands' weights read the picture (0.19.2, Phase A §1.5, §3.2):
+   * a smoothed luma, so texture keeps its contrast. Absent or `null` is the
+   * op as it always ran.
+   */
+  base?: ToneBase | null
 }
+
+/**
+ * Tone's base, a method (0.19.2). `Guided` is 0.19's `{ radius, epsilon }`
+ * bit for bit; `LocalLaplacian` keeps more local contrast with about an
+ * eighth of the halo (the owner's pick), at about 250 ms on a 2560 px
+ * preview against guided's 70. The GPU drag path refuses `Guided`.
+ */
+export type ToneBase =
+  | { Guided: { radius: number; epsilon: number } }
+  | { LocalLaplacian: { radius: number; sigma: number; spacing: number } }
 
 export interface WhiteBalance {
   temperature_kelvin: number
@@ -912,20 +937,50 @@ export type MaskShape =
   | { BidirectionalGradient: BidirectionalGradient }
   | { DepthRange: DepthRange }
 
-/**
- * Snap a component's edge to the picture's, after its feather: a guided
- * filter of its plane by the luminance in `Mask.space` (which a refined
- * component needs), then a contraction. `radius` 0.0005…0.05 and `contract`
- * −0.05…0.05 (positive shrinks) are fractions of the shorter side; `epsilon`
- * 1e-6…1 is how strong an edge must be to hold the selection.
- */
-export interface Refine {
-  radius: number
-  epsilon: number
-  contract: number
-}
+/** What a guided refine reads its edges from: the luminance, or colour edges too. */
+export type RefineGuide = 'Luma' | 'Colour'
 
-/** Built in this order: shape → feather → refine → invert → opacity → mode. */
+/**
+ * Snap an edge to the picture's (0.19.2, Phase A §1.4, §4.2): a method.
+ * Lengths are fractions of the frame's shorter side.
+ *
+ * - `Guided`: 0.19's refine bit for bit with `guide: 'Luma'` (`radius`
+ *   0.0005…0.05, `epsilon` 1e-6…1). Cheap: the one to use while dragging.
+ * - `EdgeSnap`: a hard edge snapped onto the strongest edge within
+ *   `distance`; sharp corners come back. Best on sky and vegetation.
+ * - `BilateralSolver`: a soft, edge-aware snap.
+ * - `Matting`: partial alpha in a `band` about the edge, for hair, twigs
+ *   and branches. Best on people.
+ *
+ * EdgeSnap, the solver and Matting read the whole frame: a region using one
+ * is never the full render, cut, so they're applied on release.
+ */
+export type Refine =
+  | { Guided: { radius: number; epsilon: number; guide: RefineGuide } }
+  | { EdgeSnap: { distance: number } }
+  | {
+      BilateralSolver: {
+        sigma_spatial: number
+        sigma_luma: number
+        sigma_chroma: number
+        lambda: number
+        iterations: number
+      }
+    }
+  | { Matting: { band: number; epsilon: number; iterations: number } }
+
+/** A refine method's name, as its JSON key. */
+export type RefineMethod = 'Guided' | 'EdgeSnap' | 'BilateralSolver' | 'Matting'
+
+/**
+ * Built in this order: shape → feather → refine → invert → opacity → mode.
+ * 0.19.2 (Phase A §1.3, §4.1), Photoshop's Select and Mask: `smooth`
+ * (0…0.05 of the shorter side) takes the jaggies out of a contour and keeps
+ * it hard, `contrast` (0…1, 1 a hard threshold at the middle) hardens a
+ * soft edge, `shift` (−0.05…0.05) moves it, positive growing the selection
+ * with round corners (0.19's `refine.contract: c` is `shift: -c`). Each 0
+ * leaves the component as it was.
+ */
 export interface MaskComponent {
   shape: MaskShape
   mode: MaskMode
@@ -933,12 +988,26 @@ export interface MaskComponent {
   invert: boolean
   feather: Feather
   refine: Refine | null
+  smooth: number
+  contrast: number
+  shift: number
+}
+
+/** The whole mask's edge (0.19.2), after its components are combined. */
+export interface MaskEdgeSpec {
+  smooth: number
+  feather: Feather
+  refine: Refine | null
+  contrast: number
+  shift: number
 }
 
 export interface Mask {
   components: MaskComponent[]
   invert: boolean
   space: GradeSpace | null
+  /** 0.19.2: `null` leaves the combined mask as it was. */
+  edge: MaskEdgeSpec | null
 }
 
 export interface MaskBounds {
@@ -1121,6 +1190,12 @@ export interface Spot {
   source_offset: Point
   feather: Feather
   opacity: number
+  /**
+   * 0.19.2 (Phase A §4.2): the spot's edge snapped to the photo's. Playroom
+   * offers plain (`null`), EdgeSnap (keeps the strong edges a spot crosses)
+   * and Matting (a softer, wider blend), the owner's decision (2026-10-11).
+   */
+  refine?: Refine | null
 }
 
 export interface ContentFill {
@@ -1314,7 +1389,15 @@ export interface ConvertRequest {
   /** Refuses a picture past it from its header; `null` checks nothing. */
   limits: Limits | null
   measure: Measure | null
+  /**
+   * 0.19.2 (Phase A §1.1): where the grade runs. `'Cpu'` is what 0.19 did;
+   * `'Gpu'` is the drag path (a frame uploaded once, §4.3). Required: a
+   * request without it is refused, naming `grade_device`.
+   */
+  grade_device: GradeDevice
 }
+
+export type GradeDevice = 'Cpu' | 'Gpu'
 
 export type AnalysisDomain = 'Encoded' | 'Linear'
 export type TransparentPixels = 'Include' | 'Exclude'
@@ -1519,6 +1602,79 @@ export interface FramingReport {
 export interface RegionReport {
   output: MaskBounds
   context: MaskBounds
+  /** 0.19.2: the margin the grade needed, in pixels (`regionReach`'s). */
+  reach?: number
+  /** 0.19.2: how far the margin fell short of `reach`; non-zero means tiles may disagree at their edges. */
+  short_by?: number
+}
+
+/**
+ * `regionReach`'s request (0.19.2, host rule HR-0.20-1): the same grade and
+ * frame as the render. Ask again whenever the grade changes.
+ */
+export interface ReachRequest {
+  grade: Grade | null
+  sdr_grade: Grade | null
+  frame_width: number
+  frame_height: number
+  output_width: number
+  output_height: number
+}
+
+export interface ReachReport {
+  /** How far a pixel's result reads around it: the region's margin must be at least this. */
+  pixels: number
+  /**
+   * The ops that measure the whole photo (Denoise, Dehaze, and the refine
+   * methods EdgeSnap, the solver and matting): a region of those can differ
+   * at any margin, unless the measurement is held (`HeldMeasurements`).
+   */
+  measured: string[]
+  /** The SDR look's reach; the engine covers it itself, so the margin needn't grow for it. */
+  sdr_edge: number
+}
+
+/**
+ * Dehaze's and Denoise's whole-photo measurements (0.19.2, Phase A §4.4),
+ * returned by a whole-frame render that ran one. Passed back on a drag, the
+ * measurement is reused, and a region is then the full render, cut, exactly.
+ * A native handle: it lives in the engine host that made it.
+ */
+export interface HeldMeasurements {
+  fields: string[]
+  closed: boolean
+  close(): void
+}
+
+/** The GPU drag path (0.19.2, Phase A §4.3): one per app, a frame per open photo. */
+export interface GpuSessionSpec {
+  backend: 'Metal' | 'Dx12'
+  adapter: 'HighPerformance' | 'LowPower'
+}
+
+export interface GpuSession {
+  closed: boolean
+  close(): void
+}
+
+export interface GpuFrameSpec {
+  width: number
+  height: number
+  sample: 'F16'
+  alpha: boolean
+}
+
+export interface GpuFrame {
+  closed: boolean
+  close(): void
+}
+
+/** What `convert` takes beside the request (0.19.2 adds the GPU frame and the held measurements). */
+export interface ConvertOptions {
+  signal?: AbortSignal
+  gpu?: GpuSession
+  frame?: GpuFrame
+  held?: HeldMeasurements
 }
 
 export interface ConvertReport {
@@ -1574,6 +1730,12 @@ export interface ConvertReport {
    * is never here: it rejects with code `Invariant`.
    */
   checks: CheckReport[]
+  /**
+   * 0.19.2: a whole-frame render that ran Dehaze or Denoise returns their
+   * measurements (null otherwise, and for a region). Only the host process
+   * holds the handle; across IPC it arrives as its `fields`.
+   */
+  held?: HeldMeasurements | { fields: string[] } | null
 }
 
 /** One check between stages; `op` is the grade field just checked, `check_us` in microseconds. */
@@ -2040,7 +2202,13 @@ export interface PixlEngineModule {
   bindingVersion(): string
   hasEnhance(): boolean
   probe(path: string): Promise<SourceInfo>
-  convert(request: ConvertRequest, options?: { signal?: AbortSignal }): Promise<ConvertReport>
+  convert(request: ConvertRequest, options?: ConvertOptions): Promise<ConvertReport>
+  /** 0.19.2: the margin a region of this grade needs (HR-0.20-1). */
+  regionReach?(request: ReachRequest, options?: { held?: HeldMeasurements }): ReachReport
+  /** 0.19.2: whether this addon was built with the GPU grade path (macOS and Windows). */
+  hasGpu?(): boolean
+  openGpuSession?(spec: GpuSessionSpec): Promise<GpuSession>
+  uploadGpuFrame?(gpu: GpuSession, spec: GpuFrameSpec, bytes: Uint8Array): Promise<GpuFrame>
   analyze(request: AnalyzeRequest, options?: { signal?: AbortSignal }): Promise<ImageStats>
   suggestEncode(info: SourceInfo, threads: number): Encode
   whiteBalanceFromPixel(rgb: Rgb, space: GradeSpace): WhiteBalance

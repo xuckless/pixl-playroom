@@ -67,10 +67,16 @@ export const MODELS_BASE = BASE
  * What every model session states since engine 0.19 beside its threads: no
  * dimensions fixed (a model run with static shapes states its own), and the
  * intra-op workers asleep between runs, so an idle Playroom costs nothing.
+ *
+ * 0.19.2 (Phase A §1.2): no CPU arena, so a model's working memory goes back
+ * between runs (SAM 3's encoder: about 3.6 GB resident instead of 9 GB, as
+ * fast). The same for every session: one loaded with the arena is refused
+ * for a request asking without it.
  */
-export const IDLE_SESSION: Pick<SessionSpec, 'dimensions' | 'intra_op_spinning'> = {
+export const IDLE_SESSION: Pick<SessionSpec, 'dimensions' | 'intra_op_spinning' | 'cpu_arena'> = {
   dimensions: [],
-  intra_op_spinning: false
+  intra_op_spinning: false,
+  cpu_arena: false
 }
 
 /** Which provider the performance test chose: the accelerator unless the CPU won. */

@@ -33,6 +33,7 @@ import type {
   Orientation,
   Primary,
   Rgb,
+  ToneBase,
   Transform,
   WhitePoint
 } from './engine-types'
@@ -44,7 +45,7 @@ import { compose, swapsAxes, transformPoint, userOrientation } from './orientati
 import { effectiveMode } from './masks'
 import { EDGE_SHIFT_SPAN, offsetPolygon } from './maskedge'
 import { gradientShape, rasterGradient } from './gradients'
-import { engineRefine } from './refine'
+import { engineEdge, engineRefine, engineShift } from './refine'
 import {
   HSL_BANDS,
   type CurvePointSetting,
@@ -53,7 +54,8 @@ import {
   type MaskComponentSetting,
   type PointColorSetting,
   type WheelSetting,
-  type Recipe
+  type Recipe,
+  type ToneBaseKind
 } from './recipe'
 import { opFromAbsolute, opFromRelative, type OpWhite } from './wb'
 import { tk } from './i18n'
@@ -155,6 +157,35 @@ export interface CompileContext {
    * dragging). Missing or true: smoothed as set.
    */
   smoothing?: boolean
+  /** Set by `compile` from the recipe: Tone's base (`toneBaseFor`). */
+  toneBase?: ToneBaseKind
+  /**
+   * Drag Tone with no base at all, not a guided stand-in (the M1, until it's
+   * measured: Phase A §3.2); the base comes back on release.
+   */
+  dragWithoutBase?: boolean
+}
+
+/**
+ * The local Laplacian the owner picked (Phase A §3.2): it keeps more local
+ * contrast and texture than the guided base, with about an eighth of its
+ * halo. `spacing` is its pyramid's: larger is faster, as in an HDR stage.
+ */
+export const TEXTURE_BASE: ToneBase = {
+  LocalLaplacian: { radius: 0.05, sigma: 0.1, spacing: 0.05 }
+}
+/** The guided base (0.19's, Pass 106b's recommended values): what a CPU drag runs in its place. */
+export const DRAG_BASE: ToneBase = { Guided: { radius: 0.005, epsilon: 0.01 } }
+
+/**
+ * Tone's base for a render. While dragging on the CPU the guided base stands
+ * in (about 70 ms against 250 at a 2560 px preview); the release renders the
+ * local Laplacian. With `dragWithoutBase`, a drag runs none.
+ */
+export function toneBaseFor(ctx: CompileContext): ToneBase | null {
+  if (ctx.toneBase !== 'texture') return null
+  if (ctx.smoothing !== false) return TEXTURE_BASE
+  return ctx.dragWithoutBase ? null : DRAG_BASE
 }
 
 export interface Compiled {
@@ -830,7 +861,9 @@ function maskComponent(
   user: Orientation,
   brushPaths: Record<string, string>,
   /** The frame as the user turned it: what a lasso's offset is measured on. */
-  frame: { width: number; height: number }
+  frame: { width: number; height: number },
+  /** A drag frame: a refine that reads the whole frame stands aside (refine.ts `refineFor`). */
+  draft = false
 ): MaskComponent | null {
   const smooth = c.kind === 'range' ? smoothnessFeather(c.smoothness ?? 0) : 0
   const base = {
@@ -841,7 +874,9 @@ function maskComponent(
       radius: round4(clamp((c.feather / 100) * 0.1 + smooth, 0, 0.5)),
       edge: 'Zero' as const
     },
-    refine: engineRefine(c)
+    refine: engineRefine(c, draft),
+    ...engineEdge(c),
+    shift: engineShift(c)
   }
   switch (c.kind) {
     case 'linear':
@@ -940,11 +975,14 @@ export function layerMask(
   l: LocalLayer,
   user: Orientation,
   brushPaths: Record<string, string>,
-  frame: { width: number; height: number } = { width: 1, height: 1 }
+  frame: { width: number; height: number } = { width: 1, height: 1 },
+  draft = false
 ): Mask | null {
   // The first component always adds (as the masks panel shows it).
   const drawn = l.components
-    .map((c, i) => maskComponent({ ...c, mode: effectiveMode(i, c.mode) }, user, brushPaths, frame))
+    .map((c, i) =>
+      maskComponent({ ...c, mode: effectiveMode(i, c.mode) }, user, brushPaths, frame, draft)
+    )
     .filter((c): c is MaskComponent => c !== null)
   // One that could not be drawn (a brush whose plane is missing, a lasso of
   // one point) leaves a Subtract or Intersect first: taken from nothing it
@@ -955,7 +993,7 @@ export function layerMask(
   const components = drawn.slice(first)
   // A key reads the picture's colours, a snapped edge its luminance: both in one stated space.
   const reads = components.some((c) => 'Range' in c.shape || c.refine !== null)
-  return { components, invert: l.invert, space: reads ? LOOK_SPACE : null }
+  return { components, invert: l.invert, space: reads ? LOOK_SPACE : null, edge: null }
 }
 
 /** Modes whose formula only holds on values in 0…1. */
@@ -990,54 +1028,23 @@ function stage(space: GradeSpace, ops: GradeOp[]): { space: GradeSpace; ops: Gra
 }
 
 /**
- * Negatives floored at 0, nothing else touched (a 1D identity over 0…64): the
- * look stage's first op. A RAW's Scene master is PixlRGB (engine 0.18), wider
- * than Display P3, so its most saturated colours enter the look stage with a
- * channel below 0, where smoothed ops break (E53: Dehaze at 30 already
- * blotched IMG_3198). A Develop master never held them (it was linear sRGB),
- * and the screen clips them, so the picture keeps its look.
+ * Negatives floored at 0, nothing else touched (a 1D identity over 0…64).
+ * Before engine 0.19.2 it led the look stage and preceded every smoothed op
+ * (E53: smoothed ops blobbed on out-of-gamut colours). 0.19.2 fixed that in
+ * the engine, and the floor also took colour that Full HDR's gamut step
+ * should compress (Phase A §2), so Playroom no longer writes it. Kept to
+ * recognise one in a grade made before.
  */
 const P3_FLOOR = 'LUT_1D_SIZE 2\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 64 64 64\n0 0 0\n64 64 64\n'
 
-/** Whether an op is the look stage's floor (`P3_FLOOR`). */
+/** Whether an op is the old look stage's floor (`P3_FLOOR`). */
 export function isP3Floor(op: GradeOp): boolean {
   return 'Lut' in op && 'Cube' in op.Lut.lut && op.Lut.lut.Cube === P3_FLOOR
 }
 
-const floorOp = (): GradeOp => ({
-  Lut: { lut: { Cube: P3_FLOOR }, amount: 1, out_of_domain: 'Clamp' }
-})
-
-/** Whether an op carries adjustment smoothing (engine 0.18). */
-function smoothed(op: GradeOp): boolean {
-  const v = Object.values(op)[0] as { smoothing?: unknown } | undefined
-  return !!v && typeof v === 'object' && v.smoothing != null
-}
-
-/**
- * A floor before every smoothed op too (E53 again, 2026-10-08): ops after the
- * stage's first floor make negatives of their own (Saturation, Vibrance, a
- * profile's curve on a saturated colour), and a smoothed op spills colour
- * from them in blobs (IMG_1826: Shadows +26 and Saturation at Exposure +4).
- * Only where smoothing is on, so a draft is never touched; a floor already
- * in place is not doubled. Into masked groups too.
- */
-function withFloors(ops: GradeOp[]): GradeOp[] {
-  const out: GradeOp[] = []
-  for (const op of ops) {
-    const o: GradeOp =
-      'Masked' in op ? { Masked: { ...op.Masked, ops: withFloors(op.Masked.ops) } } : op
-    const last = out[out.length - 1]
-    if (smoothed(o) && !(last && isP3Floor(last))) out.push(floorOp())
-    out.push(o)
-  }
-  return out
-}
-
-/** The look stage (display-referred, `LOOK_SPACE`), its negatives floored first and before each smoothed op. */
+/** The look stage (display-referred, `LOOK_SPACE`). */
 function lookStage(ops: GradeOp[]): { space: GradeSpace; ops: GradeOp[] }[] {
-  if (ops.length === 0) return []
-  return stage(LOOK_SPACE, withFloors([floorOp(), ...ops]))
+  return stage(LOOK_SPACE, ops)
 }
 
 function sharpenOp(
@@ -1155,11 +1162,15 @@ export function pointColorOps(
             opacity: 1,
             invert: false,
             feather: { radius: 0, edge: 'Zero' },
-            refine: null
+            refine: null,
+            smooth: 0,
+            contrast: 0,
+            shift: 0
           }
         ],
         invert: false,
-        space: LOOK_SPACE
+        space: LOOK_SPACE,
+        edge: null
       }
       ops.push({ Masked: { mask, opacity: 1, ops: [{ Primary: correction }] } })
     } else ops.push({ Qualifier: { key, correction, smoothing } })
@@ -1318,7 +1329,9 @@ function settingsStages(
         shadows: clamp(b.shadows / 100, -1, 1),
         whites: clamp(b.whites / 100, -1, 1),
         blacks: clamp(b.blacks / 100, -1, 1),
-        smoothing
+        smoothing,
+        // Only when one is set, so a request is 0.19's where none is.
+        ...((tb) => (tb ? { base: tb } : {}))(toneBaseFor(ctx))
       }
     })
   }
@@ -1455,7 +1468,9 @@ function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vig
  * Compile a recipe. `grade` is null when nothing moves a pixel, so an
  * untouched photo takes the engine's fast path.
  */
-export function compile(r: Recipe, ctx: CompileContext): Compiled {
+export function compile(r: Recipe, given: CompileContext): Compiled {
+  // The photo's Tone base reaches its masks' Tone too.
+  const ctx: CompileContext = { ...given, toneBase: r.toneBase ?? 'none' }
   const notes: string[] = []
   const oriented = orientedFrame(r, ctx.frameWidth, ctx.frameHeight)
   const crop = effectiveCrop(r, oriented.width, oriented.height)
@@ -1479,7 +1494,7 @@ export function compile(r: Recipe, ctx: CompileContext): Compiled {
     })
   }
   for (const l of r.layers) {
-    const mask = layerMask(l, oriented.user, ctx.brushPaths, oriented)
+    const mask = layerMask(l, oriented.user, ctx.brushPaths, oriented, ctx.smoothing === false)
     if (!mask) continue
     let stages = settingsStages(
       scaleSettings(l.settings, l.amount ?? 100),
