@@ -121,8 +121,10 @@ export function rawMaster(
   scene: { demosaic: SceneDemosaic; mosaic_denoise: MosaicDenoise | null } = {
     demosaic: 'Classic',
     mosaic_denoise: null
-  }
+  },
+  linear = false
 ): RawMode {
+  if (linear) return rawDevelop(colour)
   return {
     Scene: {
       white_balance: 'AsShot',
@@ -136,6 +138,17 @@ export function rawMaster(
       dng_opcodes: DNG_OPCODES
     }
   }
+}
+
+/**
+ * Whether a RAW is a linear DNG (PhotometricInterpretation LinearRaw: every
+ * pixel already has every colour, as in Apple ProRAW). Scene reads only a
+ * colour filter array (engine 0.19: "use RawMode::Develop"), and a linear
+ * frame has no cells to develop at half size or bin, so its master and its
+ * proxies are the Develop at full size (`rawMaster(…, linear)`).
+ */
+export function isLinearRaw(info: Pick<SourceInfo, 'input' | 'dng'>): boolean {
+  return info.input === 'Raw' && !!info.dng?.linear
 }
 
 /** The master at half size (`Cell`: one pixel per CFA cell, no demosaic), for a proxy. */
