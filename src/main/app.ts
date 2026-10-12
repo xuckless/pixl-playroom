@@ -56,6 +56,7 @@ import { PlaneStore } from './planestore'
 import { pixels } from './workers/pool'
 import { registerProtocol, registerSchemePrivileges } from './protocol'
 import { DevelopSessions } from './render'
+import { forgetOtherCopies } from './othercopies'
 import { setupUpdater } from './updater'
 import { startPolicy } from './policy'
 import { noteInstall } from './whatsnew'
@@ -415,6 +416,7 @@ app.whenReady().then(() => {
   createWindow()
   startPolicy()
   void setupUpdater().catch((err) => log.warn('updater setup failed', err))
+  if (!hidden) void forgetOtherCopies()
   startLicence()
   startAccount()
   startGate()
