@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.4-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.3-beta...v0.4.4-beta) (2026-10-12)
+
+
+### Bug Fixes
+
+* Open With lists one Playroom after an update (0.4.4-beta, silent) ([07e200a](https://github.com/xuckless/pixl-playroom/commit/07e200a3a956e12f2296cf9fed9fa2e0b4f440b0))
+* Open With lists one Playroom: the installed copy has macOS forget the others ([c607c99](https://github.com/xuckless/pixl-playroom/commit/c607c99736325cba786a420145e392528342c7b2))
+
+
+### Maintenance
+
+* release 0.4.4-beta (silent) ([1668c47](https://github.com/xuckless/pixl-playroom/commit/1668c4740a221acf1f1063767ead05383beff70f))
+
 ## [0.4.3-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.2-beta...v0.4.3-beta) (2026-10-11)
 
 
