@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.5-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.4-beta...v0.4.5-beta) (2026-10-12)
+
+
+### Bug Fixes
+
+* develop linear DNGs (Apple ProRAW) with RawMode::Develop ([d33c887](https://github.com/xuckless/pixl-playroom/commit/d33c8875ea250a5bae3fa8ad323fd80bc7f5c777))
+
+
+### Maintenance
+
+* release 0.4.5-beta (silent) ([2c52728](https://github.com/xuckless/pixl-playroom/commit/2c5272834a6564c094760f9630fe136a4ae13fcb))
+
 ## [0.4.4-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.3-beta...v0.4.4-beta) (2026-10-12)
 
 
