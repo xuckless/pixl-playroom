@@ -159,6 +159,21 @@ test('a thumbnail’s bin: the largest multiple of the cell that keeps the edge'
   assert.equal(binFactor(200_000, 3, 1280), 63)
 })
 
+test('a linear DNG (Apple ProRAW) is developed with Develop, a mosaic with Scene', async () => {
+  const { isLinearRaw, rawMaster } = await import('../src/main/source')
+  const dng = (linear: boolean): { input: 'Raw'; dng: { linear: boolean } } =>
+    ({ input: 'Raw', dng: { linear } }) as never
+  assert.equal(isLinearRaw(dng(true)), true)
+  assert.equal(isLinearRaw(dng(false)), false)
+  // A CR2 has no DNG description; a TIFF is no RAW, whatever it says.
+  assert.equal(isLinearRaw({ input: 'Raw', dng: null }), false)
+  assert.equal(isLinearRaw({ input: 'Tiff', dng: { linear: true } } as never), false)
+  const scene = { demosaic: 'Classic', mosaic_denoise: null } as const
+  assert.ok('Scene' in (rawMaster('container', scene) as object))
+  const linear = rawMaster('container', scene, true) as { Develop?: { resolution: unknown } }
+  assert.equal(linear.Develop?.resolution, 'Full')
+})
+
 test('DemosaicNet runs on CoreML with tiles on the filter’s period', async () => {
   const { staticPlan } = await import('../src/shared/modelshape')
   const coreml = {

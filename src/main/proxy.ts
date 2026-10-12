@@ -46,6 +46,7 @@ import {
   interactiveThreads,
   proxyByCell,
   colourOf,
+  isLinearRaw,
   rawMaster,
   rawBinnedMaster,
   rawProxyMaster,
@@ -122,7 +123,13 @@ export async function ensureThumbSource(
 ): Promise<Proxies> {
   const s = stamp(photo)
   const dir = paths.photoCachePath(photo.id)
-  if (info.input !== 'Raw' || info.is_hdr || (await exists(join(dir, `proxies-${s}.json`))))
+  // A linear DNG has no photosites to bin (`isLinearRaw`): its proxies, then.
+  if (
+    info.input !== 'Raw' ||
+    info.is_hdr ||
+    isLinearRaw(info) ||
+    (await exists(join(dir, `proxies-${s}.json`)))
+  )
     return ensureProxies(engine, photo, info, threads)
   const cell = cellFactor(photo)
   const long = Math.max(info.width, info.height)
@@ -227,7 +234,8 @@ async function build(
     : ({ Tiff: { compression: 'None' } } as const)
   // The camera colour the photo was recorded with (shared/rawcolour.ts): part of the stamp.
   const colour = colourOf(photo)
-  const raw = info.input === 'Raw' ? rawMaster(colour) : null
+  const linear = isLinearRaw(info)
+  const raw = info.input === 'Raw' ? rawMaster(colour, undefined, linear) : null
   // A RAW's master is Scene in float (engine 0.18): so are its proxies.
   const float = raw !== null
   const orientation = sourceOrientation(info, raw)
@@ -263,7 +271,7 @@ async function build(
   // width, to within a pixel or two of the full develop's crop, which only
   // the full-size master is cut by (its own size is used there).
   const cell = raw ? cellFactor(photo) : 1
-  let byCell = raw !== null && proxyByCell(long, cell, PROXY_EDGE)
+  let byCell = raw !== null && !linear && proxyByCell(long, cell, PROXY_EDGE)
   let report = byCell
     ? await develop(rawProxyMaster(colour), long / cell).catch(() => null)
     : await develop(raw, long)
@@ -572,7 +580,7 @@ export function ensureQuickMaster(engine: EngineClient, photo: PhotoRow): Promis
 export async function ensureMaster(
   engine: EngineClient,
   photo: PhotoRow,
-  info: Pick<SourceInfo, 'raw_cfa'>,
+  info: Pick<SourceInfo, 'raw_cfa' | 'input' | 'dng'>,
   ask: RawDevelopAsk = PLAIN_DEVELOP
 ): Promise<ProxyFile> {
   const plan = await scenePlan(info.raw_cfa, ask)
@@ -605,7 +613,7 @@ export async function ensureMaster(
       const { value: report, classic } = await withScene(plan, (scene) => {
         const req = {
           ...blankRequest(photo.path, path, 'Raw'),
-          raw: rawMaster(colourOf(photo), scene),
+          raw: rawMaster(colourOf(photo), scene, isLinearRaw(info)),
           pixel: { depth: 'F32', channels: 3 } as const,
           encode: { Tiff: { compression: 'None' } } as const,
           metadata: { exif: false, icc: true, xmp: false, iptc: false },

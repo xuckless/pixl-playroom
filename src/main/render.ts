@@ -136,6 +136,7 @@ import {
   gainMapOf,
   interactiveThreads,
   colourOf,
+  isLinearRaw,
   rawDevelop,
   RAW_DEVELOP,
   sourceOrientation,
@@ -2015,7 +2016,12 @@ class Session {
     const plan = await scenePlan(this.file.raw_cfa, ask)
     const plain = (): Promise<ProxyFile> =>
       ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
-    if (plan.demosaic === 'classic' || (await masterCached(this.row, this.file, ask)))
+    // A linear DNG has no demosaic to wait for (`isLinearRaw`): its one master, at once.
+    if (
+      plan.demosaic === 'classic' ||
+      isLinearRaw(this.file) ||
+      (await masterCached(this.row, this.file, ask))
+    )
       return plain()
     const key = this.key
     void plain().then(

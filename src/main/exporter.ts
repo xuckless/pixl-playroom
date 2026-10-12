@@ -62,6 +62,7 @@ import {
   heavyThreads,
   blankRequest,
   colourOf,
+  isLinearRaw,
   rawMaster,
   sourceOrientation,
   uprightFraming,
@@ -265,7 +266,11 @@ export class Exporter {
     const info = hdrSource?.info ?? file
     // Pixel steps (an AI denoise): the photo at full size with them laid on is the source.
     const master = hdrSource?.master ?? (await this.stepsMaster(row, info, recipe))
-    const raw = master ? null : info.input === 'Raw' ? rawMaster(colourOf(row)) : null
+    const raw = master
+      ? null
+      : info.input === 'Raw'
+        ? rawMaster(colourOf(row), undefined, isLinearRaw(info))
+        : null
     const srcOrientation = master ? 'Normal' : sourceOrientation(info, raw)
     // The full-resolution frame, upright. A RAW's developed frame is smaller
     // than its mosaic and not always the same shape (a Canon's masked borders
@@ -470,7 +475,7 @@ export class Exporter {
       const plan = await scenePlan(info.raw_cfa, askOf(recipe))
       const done = await withScene(
         plan,
-        (scene) => convert({ ...request, raw: rawMaster(colourOf(row), scene) }),
+        (scene) => convert({ ...request, raw: rawMaster(colourOf(row), scene, isLinearRaw(info)) }),
         signal
       )
       log.info('export RAW develop', key, done.classic ? 'classic' : plan.tag)
