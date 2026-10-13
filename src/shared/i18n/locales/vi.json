@@ -3245,7 +3245,7 @@
   "Working copy {{width}} × {{height}}": "Bản làm việc {{width}} × {{height}}",
   "Working…": "Đang xử lý…",
   "Works now": "Dùng được ngay",
-  "Works on Dehaze, Highlights and Shadows, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.": "Áp dụng cho Khử sương mù, Vùng sáng và Vùng tối, Độ rực, Màu điểm và Chỉnh màu theo tông. Hiệu ứng hiện khi bạn thả thanh trượt, không phải trong lúc kéo.",
+  "Works on Dehaze, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.": "Áp dụng cho Khử sương mù, Độ rực, Màu điểm và Chỉnh màu theo tông. Hiệu ứng hiện khi bạn thả thanh trượt, không phải trong lúc kéo.",
   "Works on people, signs, wires and larger things where Fill would repeat the background. With Find object, click something and it is found for you.": "Dùng cho người, biển hiệu, dây điện và những thứ lớn hơn mà Tô lấp sẽ lặp lại nền. Với Tìm đối tượng, nhấp vào một thứ và nó sẽ được tìm giúp bạn.",
   "Works out by itself how damaged the file is. Good for pictures saved from the web or sent through messaging apps.": "Tự xác định mức độ hư hỏng của tệp. Phù hợp với ảnh lưu từ web hoặc gửi qua ứng dụng nhắn tin.",
   "Works out what is near and what is far, so a mask can take the foreground or the background by distance.": "Xác định vật nào ở gần và vật nào ở xa, để mặt nạ có thể lấy tiền cảnh hoặc hậu cảnh theo khoảng cách.",

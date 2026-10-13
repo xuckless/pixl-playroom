@@ -3245,7 +3245,7 @@
   "Working copy {{width}} × {{height}}": "工作副本 {{width}} × {{height}}",
   "Working…": "正在处理…",
   "Works now": "现已可用",
-  "Works on Dehaze, Highlights and Shadows, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.": "适用于去朦胧、高光和阴影、自然饱和度、点颜色和颜色分级。松开滑块时才会显示，拖动过程中不显示。",
+  "Works on Dehaze, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.": "适用于去朦胧、自然饱和度、点颜色和颜色分级。松开滑块时才会显示，拖动过程中不显示。",
   "Works on people, signs, wires and larger things where Fill would repeat the background. With Find object, click something and it is found for you.": "适用于人物、标牌、电线以及“填充”会重复背景的较大物体。使用“查找物体”时，点击某物即可自动识别。",
   "Works out by itself how damaged the file is. Good for pictures saved from the web or sent through messaging apps.": "自动判断文件的受损程度。适合从网页保存或通过聊天应用发送的图片。",
   "Works out what is near and what is far, so a mask can take the foreground or the background by distance.": "判断哪些近、哪些远，使蒙版可按距离选取前景或背景。",
