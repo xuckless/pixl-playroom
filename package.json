@@ -18,6 +18,8 @@
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
+    "dev:kit": "node scripts/engine-dev.mjs --run",
+    "engine:dev": "node scripts/engine-dev.mjs",
     "build": "pnpm run typecheck && node scripts/build-native.mjs && electron-vite build && pnpm run notices && pnpm run release-notes",
     "build:native": "node scripts/build-native.mjs",
     "postinstall": "electron-builder install-app-deps",
