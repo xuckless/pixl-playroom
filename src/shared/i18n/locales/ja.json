@@ -3245,7 +3245,7 @@
   "Working copy {{width}} × {{height}}": "作業用コピー {{width}} × {{height}}",
   "Working…": "処理中…",
   "Works now": "今すぐ使えます",
-  "Works on Dehaze, Highlights and Shadows, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.": "かすみの除去、ハイライトとシャドウ、自然な彩度、ポイントカラー、カラーグレーディングで機能します。ドラッグ中ではなく、スライダーを離したときに反映されます。",
+  "Works on Dehaze, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.": "かすみの除去、自然な彩度、ポイントカラー、カラーグレーディングで機能します。ドラッグ中ではなく、スライダーを離したときに反映されます。",
   "Works on people, signs, wires and larger things where Fill would repeat the background. With Find object, click something and it is found for you.": "人物、看板、電線など、塗りつぶしでは背景の繰り返しになってしまう大きめのものに効果的です。「オブジェクトを検索」では、クリックするだけで対象を見つけます。",
   "Works out by itself how damaged the file is. Good for pictures saved from the web or sent through messaging apps.": "ファイルの劣化具合を自動で判断します。ウェブから保存した画像やメッセージアプリで送られた画像に適しています。",
   "Works out what is near and what is far, so a mask can take the foreground or the background by distance.": "何が近く何が遠いかを判断し、距離に応じて前景や背景をマスクできるようにします。",

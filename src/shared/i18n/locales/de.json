@@ -3305,7 +3305,7 @@
   "Working copy {{width}} × {{height}}": "Arbeitskopie {{width}} × {{height}}",
   "Working…": "In Arbeit…",
   "Works now": "Funktioniert jetzt",
-  "Works on Dehaze, Highlights and Shadows, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.": "Funktioniert bei Dunst entfernen, Lichtern und Tiefen, Dynamik, Punktfarbe und Color Grading. Es erscheint, wenn Sie einen Regler loslassen, nicht während des Ziehens.",
+  "Works on Dehaze, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.": "Funktioniert bei Dunst entfernen, Dynamik, Punktfarbe und Color Grading. Es erscheint, wenn Sie einen Regler loslassen, nicht während des Ziehens.",
   "Works on people, signs, wires and larger things where Fill would repeat the background. With Find object, click something and it is found for you.": "Funktioniert bei Personen, Schildern, Leitungen und größeren Dingen, bei denen „Füllen“ den Hintergrund wiederholen würde. Mit „Objekt finden“ klicken Sie etwas an, und es wird für Sie gefunden.",
   "Works out by itself how damaged the file is. Good for pictures saved from the web or sent through messaging apps.": "Ermittelt selbst, wie beschädigt die Datei ist. Gut für Bilder aus dem Web oder aus Messenger-Apps.",
   "Works out what is near and what is far, so a mask can take the foreground or the background by distance.": "Ermittelt, was nah und was fern ist, damit eine Maske Vorder- oder Hintergrund nach Entfernung erfassen kann.",

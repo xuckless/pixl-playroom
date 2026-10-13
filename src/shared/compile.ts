@@ -91,6 +91,17 @@ export const RAW_SCENE_STOPS = 2
 /** The smoothing's reach, a fraction of the shorter side: the engine's calibration point. */
 export const SMOOTHING_RADIUS = 0.02
 
+/**
+ * Whether Tone (Highlights, Shadows, Whites, Blacks) takes the Smoothing
+ * slider. Held off, the owner's stopgap of 2026-10-12 (E63, engine 0.19.2):
+ * a smoothed Tone with Shadows or Blacks moved paints patches of pure white
+ * over dark and mid tones (any amount, any Smoothing above 0, a floor before
+ * or after it changes nothing), blue ones in Full HDR when they are raised,
+ * and the colour ops after it turn its output into magenta and green blocks.
+ * Unsmoothed it is clean. `tests/e63.test.ts` says when the engine's is.
+ */
+export const TONE_SMOOTHING = false
+
 /** The Smoothing slider (0–100) as the engine's field, or none for a draft or at 0. */
 export function smoothingOf(value: number, ctx: CompileContext): AdjustmentSmoothing | null {
   if (ctx.smoothing === false || !(value > 0)) return null
@@ -1241,8 +1252,8 @@ function settingsStages(
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
   const hdr = ctx.hdr === true
-  // One value for every op that takes it (Tone, Vibrance, Dehaze, Point
-  // colour, Color grading; HSL waits for E53); null in a draft.
+  // One value for every op that takes it (Vibrance, Dehaze, Point colour,
+  // Color grading; HSL waits for E53, Tone for E63); null in a draft.
   const smoothing = smoothingOf(r.presence.smoothing, ctx)
   const d = r.detail
   const denoise =
@@ -1337,7 +1348,7 @@ function settingsStages(
         shadows: clamp(b.shadows / 100, -1, 1),
         whites: clamp(b.whites / 100, -1, 1),
         blacks: clamp(b.blacks / 100, -1, 1),
-        smoothing,
+        smoothing: TONE_SMOOTHING ? smoothing : null,
         // Only when one is set, so a request is 0.19's where none is.
         ...((tb) => (tb ? { base: tb } : {}))(toneBaseFor(ctx))
       }

@@ -2,7 +2,8 @@
 
 Everything still open in Playroom, as numbered **passes**: small, ordered
 batches of related work a model (or you) can take one at a time. Work the
-engine has to do is in [ENGINE-REQUESTS.md](ENGINE-REQUESTS.md) (E1, E2…);
+engine has to do is in `~/fedora-data/pixl-engine-requests/ENGINE-REQUESTS.md`
+(E1, E2…; outside the repository since 2026-10-12, with the full bug reports);
 Playroom work that waits on it is under "Waiting on the engine". Things only
 you can do (accounts, certificates, lawyers, decisions) are under "Owner
 tasks". What is finished is under "Done" at the end. Re-planned 2026-10-01
@@ -344,6 +345,31 @@ the mask's Smoothing to 0, and it is clean (the owner confirmed Smoothing 0).
       IMG_3198: when that check fails, E53 is fixed and the stopgap can go.
       Run: `PIXL_E53_RAWS=<folder with the two CR2s and the planes> node
       --import ./tests/register.mjs --experimental-strip-types --test tests/e53.test.ts`.
+
+### Found in testing — White patches from Shadows and Blacks (E63) · 1 pt
+
+Found by the owner 2026-10-12 (Full HDR and exports; CR2, HDR HEIC and
+JPEG): reducing Shadows leaves patches of pure white, and Saturation and
+Contrast on top of it colour them. Pinpointed: engine 0.19.2's **smoothed
+Tone** with Shadows or Blacks moved, alone, at any amount and any Smoothing
+above 0; the colour ops after it make magenta and green blocks of its
+output. A drag (unsmoothed) is clean. Written up as E63
+(`~/fedora-data/pixl-engine-requests/E63-smoothed-tone-white-patches.md`).
+
+- [x] **S** · The stopgap (the owner, 2026-10-12: a temporary fix in
+      Playroom): **Tone leaves the Smoothing slider alone**
+      (`TONE_SMOOTHING = false`, `compile.ts`); Dehaze, Vibrance, Point Color
+      and Color Grading keep it. On IMG_3198's proxy, whitened pixels:
+      Shadows −100, 798 → 0 (Full HDR 546 → 0); Blacks −100, 19 019 → 0;
+      Shadows −50 with Vibrance 100 and Saturation +100, 3834 → 0 and
+      25 507 → 26 garish. A JPEG of it: 815 → 0. A floor at 0 around every op
+      (E53's stopgap, widened) was tried first and left the white as it was.
+- [x] **S** · The Smoothing tip no longer names Highlights and Shadows (six
+      languages); `tests/smoothing.test.ts` holds Tone unsmoothed.
+- [x] **S** · Regression test `tests/e63.test.ts` (the RAW by
+      `PIXL_E53_RAWS`, skipped without it): today's compile renders clean,
+      and Tone smoothed still breaks; when that check fails, E63 is fixed:
+      turn `TONE_SMOOTHING` on and give the tip its words back.
 
 ### Pass 94 — The RAW master as Scene float 1/2 · 5 pts
 
@@ -2445,7 +2471,7 @@ their size) are ruled out. Higher lossless effort gains nothing.
 ## Waiting on the engine
 
 Playroom work that starts once the engine request lands
-([ENGINE-REQUESTS.md](ENGINE-REQUESTS.md)). Becomes a pass then.
+(`~/fedora-data/pixl-engine-requests/ENGINE-REQUESTS.md`). Becomes a pass then.
 
 - [ ] **M** · Engine 0.20's data export (the engine's
       `playroom-data-export.md`, 2026-10-08, in the owner's
