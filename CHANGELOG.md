@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.6-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.5-beta...v0.4.6-beta) (2026-10-13)
+
+
+### Bug Fixes
+
+* Shadows and Blacks no longer leave white patches (0.4.6-beta, silent) ([035b6c5](https://github.com/xuckless/pixl-playroom/commit/035b6c54c321d736362a26a92648c5b4bc1aeb12))
+* Shadows and Blacks no longer leave white patches (Tone held out of Smoothing) ([43e2f58](https://github.com/xuckless/pixl-playroom/commit/43e2f58dc2668a40bbe08837d9a759bb2ebdc145))
+
+
+### Maintenance
+
+* release 0.4.6-beta (silent) ([2a7fae3](https://github.com/xuckless/pixl-playroom/commit/2a7fae391b18e2f6bde8eb7e150a3e14b75f9ac2))
+
 ## [0.4.5-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.4-beta...v0.4.5-beta) (2026-10-12)
 
 
