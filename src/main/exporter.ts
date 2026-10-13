@@ -478,7 +478,11 @@ export class Exporter {
         (scene) => convert({ ...request, raw: rawMaster(colourOf(row), scene, isLinearRaw(info)) }),
         signal
       )
-      log.info('export RAW develop', key, done.classic ? 'classic' : plan.tag)
+      log.info(
+        'export RAW develop',
+        key,
+        done.classic ? `${done.ran} (stood in for ${plan.tag})` : plan.tag
+      )
       report = done.value
     } else report = await convert(request)
 

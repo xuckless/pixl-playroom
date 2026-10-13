@@ -30,6 +30,8 @@ import { Popover } from '../components/Popover'
 import { CurvePresets } from './CurvePresets'
 import { AiDenoise } from './AiDenoise'
 import { useModels } from '../lib/models'
+import { useSwitches } from '../lib/switches'
+import { pixlDemosaicActive } from '../../../shared/pixldemosaic'
 import { askModel } from '../state/modelPrompt'
 import { applyUpright, startGuides } from '../lib/upright'
 import type { UprightMode } from '../../../shared/upright'
@@ -1282,8 +1284,13 @@ export function DetailBody(): React.JSX.Element | null {
 function RawDenoise(): React.JSX.Element | null {
   const { recipe, edit, commit, layer } = useScope()
   const bayer = useDevelop((s) => s.session?.isRaw === true && s.session.info.raw_cfa === 'Bayer')
-  const installed = useModels().find((m) => m.id === 'pmrid')?.installed === true
+  const models = useModels()
+  const switches = useSwitches()
+  const installed = models.find((m) => m.id === 'pmrid')?.installed === true
   if (!recipe || !bayer || layer) return null
+  // The PIXL demosaic (an engine development kit's) denoises as it develops:
+  // nothing to choose while it is this photo's develop. The edit keeps its choice.
+  if (pixlDemosaicActive('Bayer', models, switches?.pixlDemosaic !== false)) return null
   const set = (on: boolean): void => {
     edit((r) => (r.detail.rawDenoise = on))
     commit(on ? tk('RAW data denoise on') : tk('RAW data denoise off'))

@@ -7,7 +7,9 @@
  */
 import { useEffect, useState } from 'react'
 import type { ModelInfo, ProviderInfo } from '../../../shared/ipc'
+import type { AiSwitches } from '../../../shared/heavy'
 import { TYPICAL_MP } from '../../../shared/modelSpeed'
+import { offersPixlDemosaic } from '../../../shared/pixldemosaic'
 import { GlassSelect } from '../components/GlassSelect'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
@@ -95,6 +97,35 @@ function ModelRow({ m }: { m: ModelInfo }): React.JSX.Element {
   )
 }
 
+/**
+ * "Use PIXL demosaic (development)": a RAW's full-size develop with PIXL's
+ * own model, or the released one. Shown only where the roster offers the
+ * model (an engine development kit's does: `pnpm dev:kit`).
+ */
+function PixlDemosaic({ s }: { s: AiSwitches | null }): React.JSX.Element {
+  const say = useLibrary((x) => x.say)
+  const on = s?.pixlDemosaic !== false
+  const set = (to: boolean): void =>
+    void api.ai.setPixlDemosaic(to).catch((err) => say(errorText(err), 'error'))
+  return (
+    <section className="model-group model-kill">
+      <label className="check">
+        <input type="checkbox" checked={on} disabled={!s} onChange={(e) => set(e.target.checked)} />
+        <strong>{t('Use PIXL demosaic (development)')}</strong>
+      </label>
+      <p className="muted small">
+        {on
+          ? t(
+              'A RAW develops at full size with PIXL’s own model once it is downloaded. It takes out the grain as it develops, so “Denoise the RAW data” is not offered. Off goes back to the released develop.'
+            )
+          : t(
+              'RAW files develop as in the released Playroom. On, PIXL’s own model develops them at full size and takes out the grain as it goes.'
+            )}
+      </p>
+    </section>
+  )
+}
+
 export function ModelsSection(): React.JSX.Element {
   const say = useLibrary((s) => s.say)
   const [models, setModels] = useState<ModelInfo[] | null>(null)
@@ -152,6 +183,7 @@ export function ModelsSection(): React.JSX.Element {
             )}
       </p>
       <AiKillswitch s={switches} />
+      {offersPixlDemosaic(all) && <PixlDemosaic s={switches} />}
       <div className="models-filter">
         <GlassSelect
           label={t('Show models for')}

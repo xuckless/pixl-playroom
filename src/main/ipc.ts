@@ -923,6 +923,12 @@ export function registerIpc(s: Services): void {
   handle(IPC.ai.setHeavy, (model: HeavyModel, on: boolean) =>
     s.switches.setHeavy(model, on === true)
   )
+  handle(IPC.ai.setPixlDemosaic, async (on: boolean) => {
+    const switches = await s.switches.setPixlDemosaic(on === true)
+    // A RAW's full-size develop is another now: the open photo's 1:1 tile is asked for again.
+    s.sessions.tilesStale()
+    return switches
+  })
   handle(IPC.ai.benchmark, (model: HeavyModel) => {
     const progress = (p: number, note: string): void => {
       for (const w of BrowserWindow.getAllWindows())

@@ -157,11 +157,40 @@ export interface MosaicDenoise {
 }
 
 /**
+ * What a learned demosaic reads and answers (the engine's 0.20 work, not
+ * released): demosaicnet's own arithmetic, or a stated curve (PIXL's own
+ * demosaic: `Log`, `ln(1 + gain·x) / ln(1 + gain·peak)`).
+ */
+export type MosaicEncoding =
+  | 'Demosaicnet'
+  | { Curve: { encoding: { Log: { gain: number; peak: number } } } }
+
+/** Whether a learned demosaic is told the frame's noise (0.20): a fourth plane, or none. */
+export type DemosaicNoise = 'None' | { Map: { noise: MosaicDenoise['noise'] } }
+
+/**
+ * A learned demosaic's ref (`@xuckless/pixl-models`' `ref(id, host)` for a
+ * `demosaicker`), as far as Playroom reads it. `encoding` and `noise` are
+ * required by the 0.20 engine on every learned demosaic and unknown to
+ * 0.19.2; the roster installed beside the engine supplies them (the
+ * released one has neither, a development kit's has both), and Playroom
+ * passes the ref on as it is.
+ */
+export interface DemosaickerRef extends Record<string, unknown> {
+  cfa?: RawCfa
+  tiling?: ModelInput
+  encoding?: MosaicEncoding
+  noise?: DemosaicNoise
+}
+
+/**
  * Scene's demosaic (0.19.0): `Classic` (PPG / Markesteijn, 0.18's bytes),
  * `Ahd` (Bayer, no model), or a learned one (`demosaicnet-bayer` /
- * `-xtrans`, by `SourceInfo.raw_cfa`; `resolution` must be `Full`).
+ * `-xtrans`, by `SourceInfo.raw_cfa`; `resolution` must be `Full`). With a
+ * development kit, PIXL's own (`pixl-demosaic-bayer` / `-xtrans`), which
+ * denoises as it develops: `mosaic_denoise` stays null beside it.
  */
-export type SceneDemosaic = 'Classic' | 'Ahd' | { Model: Record<string, unknown> }
+export type SceneDemosaic = 'Classic' | 'Ahd' | { Model: DemosaickerRef }
 
 /** A RAW's colour filter when PIXL demosaics it (0.19.0). */
 export type RawCfa = 'Bayer' | 'XTrans'
@@ -1805,6 +1834,14 @@ export interface RawReport {
   white_temperature_kelvin: number | null
   white_tint: number | null
   demosaic: string
+  /** Present when a learned demosaic ran (0.19.0): the model's file, where it ran, what it cost. */
+  demosaic_model?: {
+    model: string
+    provider: ExecutionProvider
+    tiles: number
+    model_load_ms: number
+    model_ms: number
+  } | null
   /** What decoded the file: `"LibRaw 0.22.2"` or `"PIXL DNG reader (DNG 1.7.1)"`. */
   decoder: string
 }

@@ -204,7 +204,11 @@ export const IPC = {
     previewPort: 'develop:preview-port',
     /** main → renderer: a preview frame main relays (when the engine had no port) */
     previewFrame: 'develop:preview-frame',
-    /** main → renderer: the 1:1 tile's source got better (the plan's RAW master after the quick one): ask again. */
+    /**
+     * main → renderer: the 1:1 tile's source got better (the plan's RAW master after the quick
+     * one), or its develop changed: ask again. `note`, with a development kit, says what
+     * developed it ("PIXL demosaic · 8.4 s").
+     */
     tileStale: 'develop:tile-stale',
     historySetHidden: 'develop:history-set-hidden',
     historyDelete: 'develop:history-delete',
@@ -300,6 +304,8 @@ export const IPC = {
     switches: 'ai:switches',
     setEnabled: 'ai:set-enabled',
     setHeavy: 'ai:set-heavy',
+    /** The PIXL demosaic's switch (a development kit; shared/pixldemosaic.ts). */
+    setPixlDemosaic: 'ai:set-pixl-demosaic',
     /** A heavy model's sustained-load benchmark; resolves with its result. */
     benchmark: 'ai:benchmark',
     /** main → renderer: the switches changed. */

@@ -33,7 +33,14 @@ import type {
   SourceInfo
 } from '../shared/engine-types'
 import type { EngineClient } from './engine/client'
-import { PLAIN_DEVELOP, scenePlan, withScene, type RawDevelopAsk } from './ai/rawdevelop'
+import {
+  keptMasterTags,
+  PLAIN_DEVELOP,
+  scenePlan,
+  withScene,
+  type RawDevelopAsk
+} from './ai/rawdevelop'
+import { DEV_KIT, noteDeveloped, providerName } from './devkit'
 import { exists } from './exists'
 import type { PhotoRow } from './db'
 import { paths } from './paths'
@@ -575,7 +582,9 @@ export function ensureQuickMaster(engine: EngineClient, photo: PhotoRow): Promis
  * original each time. Its demosaic is the best there is now (DemosaicNet once
  * downloaded, else AHD) and PMRID goes first when the edit asks
  * (`ai/rawdevelop.ts`); each names the file, so a model downloaded later
- * makes it again, and the one it replaces goes.
+ * makes it again, and the one it replaces goes. With a development kit
+ * (`devkit.ts`) the PIXL demosaic's master and DemosaicNet's stay side by
+ * side, and each develop says what ran.
  */
 export async function ensureMaster(
   engine: EngineClient,
@@ -610,7 +619,7 @@ export async function ensureMaster(
       }
       const t0 = Date.now()
       let request: unknown = null
-      const { value: report, classic } = await withScene(plan, (scene) => {
+      const { value: report, classic, ran, refused } = await withScene(plan, (scene) => {
         const req = {
           ...blankRequest(photo.path, path, 'Raw'),
           raw: rawMaster(colourOf(photo), scene, isLinearRaw(info)),
@@ -622,16 +631,26 @@ export async function ensureMaster(
         request = req
         return engine.convert(req)
       })
-      log.info('RAW master developed', plan.tag, classic ? '(classic)' : '', Date.now() - t0, 'ms')
+      const ms = Date.now() - t0
+      log.info('RAW master developed', plan.tag, classic ? `(${ran} stood in)` : '', ms, 'ms')
+      // A development kit's trial: what ran, where and how long, for every master.
+      noteDeveloped(photo.id, {
+        planned: plan.tag,
+        ran,
+        provider: providerName(report.raw?.demosaic_model?.provider),
+        ms,
+        refused
+      })
       traceRegion({
         step: 'master',
         photoId: photo.id,
         tag: plan.tag,
         cached: false,
         classic,
+        ran,
         // Not kept when classic stood in: the next 1:1 develops it again.
         keptForNextTime: !classic,
-        ms: Date.now() - t0,
+        ms,
         request,
         report: {
           width: report.width,
@@ -655,10 +674,11 @@ export async function ensureMaster(
       if (!classic) await writeFile(meta, JSON.stringify(out))
       // Masters of another demosaic (the model since downloaded, or removed)
       // and the untagged ones from before: off the disk. With and without
-      // PMRID are both kept, for edits that differ.
-      const same = `master-${s}-${plan.tag.replace(/-pm$/, '')}`
+      // PMRID are both kept, for edits that differ; with a development kit,
+      // the PIXL demosaic's and DemosaicNet's too (its switch flips between them).
+      const kept = keptMasterTags(plan.tag, DEV_KIT !== null).map((tag) => `master-${s}-${tag}.`)
       for (const f of await readdir(dir).catch(() => [] as string[]))
-        if (f.startsWith('master-') && !f.startsWith(`${same}.`) && !f.startsWith(`${same}-pm.`))
+        if (f.startsWith('master-') && !kept.some((k) => f.startsWith(k)))
           await unlink(join(dir, f)).catch(() => undefined)
       return out
     })().finally(() => mastering.delete(key))

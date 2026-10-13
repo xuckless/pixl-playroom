@@ -70,6 +70,11 @@ export class AiSwitchStore {
     return this.save({ ...s, heavy: { ...s.heavy, [model]: { ...h, on } } })
   }
 
+  /** The PIXL demosaic (a development kit's) for RAWs at full size, or the released develop. */
+  async setPixlDemosaic(on: boolean): Promise<AiSwitches> {
+    return this.save({ ...(await this.get()), pixlDemosaic: on })
+  }
+
   /** A benchmark's result kept; one that failed turns the model off. */
   async recordBenchmark(b: HeavyBenchmark): Promise<AiSwitches> {
     const s = await this.get()

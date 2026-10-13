@@ -8,7 +8,10 @@
  * into `userData/models/<id>/<version>/`, and checked against the roster's
  * SHA-256 and size before it is used. A download resumes where it stopped.
  * `PLAYROOM_MODELS_URL` points somewhere else (an `https://` mirror, or a
- * `file://` folder in the same layout) for development.
+ * `file://` folder in the same layout) for development. `PLAYROOM_DEV_KIT`
+ * names an engine development kit (`scripts/engine-dev.mjs`, `pnpm
+ * dev:kit`): a file its `models/<id>/<version>/` holds is taken from there
+ * first, checked the same way.
  *
  * What runs a model is the engine's bundled ONNX Runtime, on the machine's
  * accelerator (CoreML on a Mac, DirectML on Windows) unless the performance
@@ -20,7 +23,7 @@ import log from 'electron-log/main'
 import { createHash } from 'crypto'
 import { createReadStream, createWriteStream } from 'fs'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 import { join } from 'path'
 import { pipeline } from 'stream/promises'
 import { Readable, Transform } from 'stream'
@@ -28,13 +31,14 @@ import type { ExecutionProvider, SessionSpec } from '../../shared/engine-types'
 import { IPC, type EngineStatus, type ModelInfo, type ProviderInfo } from '../../shared/ipc'
 import type { EngineClient } from '../engine/client'
 import type { IndexClient } from '../indexer/client'
+import { DEV_KIT } from '../devkit'
 import { paths } from '../paths'
 import { heavyThreads } from '../source'
 import { ENHANCE_MODEL, FIRST_GUESS_MS_PER_MP, type EnhanceStepKind } from '../../shared/enhance'
 import { modelSpeed, referenceOf, testFactor, type ModelSpeed } from '../../shared/modelSpeed'
 import { DENOISE_RATE_KEY, ENHANCE_RATE_KEY } from './rates'
 import { carryOver, keptBesides, retiredModelDirs } from './carryover'
-import { staticPlan } from '../../shared/modelshape'
+import { acceleratorTrouble, staticPlan } from '../../shared/modelshape'
 import { NAFNET_DENOISE } from '../../shared/recipe'
 import { SAM3_PHRASE } from '../../shared/ai'
 
@@ -127,6 +131,18 @@ export class ModelStore {
   /** An on-demand model: its licence texts and NOTICE are kept beside its files. */
   private onDemand(id: string): pixlModels.OnDemandEntry | undefined {
     return pixlModels.onDemand().find((m) => m.id === id && OFFERED_ON_DEMAND.includes(m.id))
+  }
+
+  private offeredIds: Set<string> | null = null
+
+  /**
+   * The roster has this model (the PIXL demosaic: only a development kit's
+   * roster does). Asked at every RAW develop's plan, so read once: the
+   * roster is the installed package's, the same for the whole run.
+   */
+  offered(id: string): boolean {
+    this.offeredIds ??= new Set(this.roster().map((m) => m.id))
+    return this.offeredIds.has(id)
   }
 
   entry(id: string): RosterEntry {
@@ -300,6 +316,20 @@ export class ModelStore {
         const onBytes = (n: number): void => {
           state.done += n
           tick()
+        }
+        // A development kit's own copy first (devkit.ts; no server has its
+        // unreleased models): copied in and checked as a download is.
+        const kit = DEV_KIT ? join(DEV_KIT, 'models', e.id, e.version, f.name) : null
+        if (kit && (await stat(kit).catch(() => null))?.isFile()) {
+          try {
+            await this.fetchFile(pathToFileURL(kit).href, dest, f, abort.signal, onBytes)
+            log.info('model file taken from the development kit', kit)
+            continue
+          } catch (err) {
+            if (abort.signal.aborted) throw err
+            log.warn('the development kit’s copy was not taken', kit, (err as Error).message)
+            state.done = before
+          }
         }
         // An on-demand file PIXL hosts itself (SAM 3's on Hugging Face) comes
         // from there; everything else from Playroom's mirror.
@@ -582,7 +612,8 @@ export class ModelStore {
    * Runtime refuses it; a static-shaped model CoreML refuses) — the one the error names, or all of
    * them when it names none (a provider that cannot be registered). Never
    * silently: each move is logged, and the model stays on the CPU for the
-   * session. `make` is told which models to put on the CPU.
+   * session. `make` is told which models to put on the CPU. A request the
+   * engine refuses for another reason is thrown as it is (`acceleratorTrouble`).
    */
   async withCpuFallback<T>(
     ids: string[],
@@ -597,7 +628,8 @@ export class ModelStore {
         return await make(onCpu)
       } catch (err) {
         const message = String((err as Error)?.message)
-        if (signal.aborted || !/load-model|provider/i.test(message)) throw err
+        // A request the engine refuses for itself is no better on the CPU (modelshape.ts).
+        if (signal.aborted || !acceleratorTrouble(err)) throw err
         const left = ids.filter((id) => !onCpu.has(id))
         if (left.length === 0) throw err
         const named = left.filter((id) => message.includes(`${id}/`))

@@ -44,6 +44,7 @@ import { developMark, pixlSupported, resolveRawColour } from '../shared/rawcolou
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
 import { askOf, scenePlan } from './ai/rawdevelop'
+import { takeDevelopedNote } from './devkit'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking, workingKey, type WorkingSet } from './pixels/working'
 import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
@@ -2026,7 +2027,9 @@ class Session {
     const key = this.key
     void plain().then(
       () => {
-        if (!this.closed) this.owner.send(IPC.develop.tileStale, { key })
+        // With a development kit, what developed it and how long it took (devkit.ts).
+        const note = takeDevelopedNote(this.row.id) ?? undefined
+        if (!this.closed) this.owner.send(IPC.develop.tileStale, { key, note })
       },
       (err: unknown) => log.warn('RAW master for 1:1 not made', (err as Error).message)
     )
@@ -2764,6 +2767,11 @@ export class DevelopSessions {
 
   send(channel: string, payload: unknown): void {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload)
+  }
+
+  /** The open photo's 1:1 tile is asked for again: its RAW develop changed. */
+  tilesStale(): void {
+    for (const key of this.sessions.keys()) this.send(IPC.develop.tileStale, { key })
   }
 
   private get(key: string): Session {

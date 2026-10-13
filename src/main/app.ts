@@ -27,6 +27,8 @@ import { DenoiseRunner } from './ai/denoise'
 import { DISPLAY_SETTING_KEY, watchDisplayHdr } from './hdrdisplay'
 import { INPAINTER_MODEL, setInpainter } from './ai/inpainter'
 import { DEMOSAIC_MODEL, setRawModels } from './ai/rawdevelop'
+import { PIXL_DEMOSAIC } from '../shared/pixldemosaic'
+import { DEV_KIT } from './devkit'
 import { AiSwitchStore, setSwitchStore } from './ai/switches'
 import { BrainStore } from './ai/brain'
 import { ModelStore } from './ai/models'
@@ -294,8 +296,22 @@ app.whenReady().then(() => {
   setInpainter(async () =>
     (await models.installed(INPAINTER_MODEL)) ? models.ref(INPAINTER_MODEL) : null
   )
-  // A RAW's full-size develop: DemosaicNet once it is here, PMRID when asked.
+  // A development kit's run says at once whether its roster is the one installed
+  // (a `pnpm install` since would have put the released one back).
+  if (DEV_KIT) {
+    const offered = Object.values(PIXL_DEMOSAIC).every((id) => models.offered(id))
+    console.log(
+      `[dev kit] ${DEV_KIT}:`,
+      offered
+        ? 'the installed roster offers the PIXL demosaic'
+        : 'the installed roster does NOT offer the PIXL demosaic: run `pnpm engine:dev` again'
+    )
+  }
+  // A RAW's full-size develop: DemosaicNet once it is here, PMRID when asked;
+  // with a development kit, the PIXL demosaic while its switch is on.
   setRawModels({
+    offered: (id) => models.offered(id),
+    pixlDemosaic: async () => (await switches.get()).pixlDemosaic,
     installed: (id) => models.installed(id),
     ref: (id, provider) => models.ref(id, provider),
     withCpuFallback: (ids, make, signal) => models.withCpuFallback(ids, make, signal),
@@ -311,12 +327,16 @@ app.whenReady().then(() => {
   })
   // Off the launch's path: retired models' files off the disk, the
   // thumbnails 0.3's before/after (the previous engine's) kept, and the
-  // Bayer DemosaicNet (2 MB) fetched for RAWs.
+  // Bayer DemosaicNet (2 MB) fetched for RAWs; the PIXL demosaic's two too
+  // where a development kit's roster offers them (`autoFetch` passes over
+  // an id the roster lacks).
   setTimeout(() => {
     void models
       .prune()
       .catch((err) => log.warn('model clean-up failed', (err as Error).message))
-      .then(() => models.autoFetch([DEMOSAIC_MODEL.Bayer]))
+      .then(() =>
+        models.autoFetch([DEMOSAIC_MODEL.Bayer, PIXL_DEMOSAIC.Bayer, PIXL_DEMOSAIC.XTrans])
+      )
     void rm(paths.legacyPreviews(), { recursive: true, force: true }).catch(() => undefined)
   }, 20_000).unref()
   const lenses = new LensProfileStore()

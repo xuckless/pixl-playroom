@@ -3284,5 +3284,12 @@
   "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各平面白噪声的 σ̂，由降噪器自身估算，以 8 位代码值表示",
   "On a Retina screen, pausing in the middle of a drag no longer makes the next move wait: a held slider rests at the draft’s size and sharpens when you let go.": "在 Retina 屏幕上，拖动途中停顿不再让下一次移动等待：按住的滑块以草稿尺寸停留，松开后变清晰。",
   "Slider drags can run on the graphics chip, at the full preview size (Settings → Projects & interface → Performance): for now on photos that are not RAW, with the simpler edits. RAW photos still drag on the processor.": "滑块拖动可以在显卡芯片上运行，并以完整预览尺寸显示（设置 → 项目与界面 → 性能）：目前适用于非 RAW 照片的较简单编辑。RAW 照片仍在处理器上拖动。",
-  "1:1 stays seamless under heavier edits: each part of the picture now reads as far around itself as the edit needs.": "在较重的编辑下，1:1 视图依然无缝：画面的每个部分现在会按编辑所需的范围读取周围像素。"
+  "1:1 stays seamless under heavier edits: each part of the picture now reads as far around itself as the edit needs.": "在较重的编辑下，1:1 视图依然无缝：画面的每个部分现在会按编辑所需的范围读取周围像素。",
+  "PIXL demosaic (development)": "PIXL 去马赛克（开发版）",
+  "PIXL’s own model, not released yet: builds the full-size picture from your RAW’s sensor data and takes out its grain in the same step. For trying out in a development build. On a Mac it runs on the graphics chip: about 9 seconds for a 25 MP RAW.": "PIXL 自己的模型，尚未发布：利用 RAW 的传感器数据构建全尺寸画面，并在同一步中去除颗粒。供在开发版本中试用。在 Mac 上它在图形芯片上运行：25 MP 的 RAW 约需 9 秒。",
+  "PIXL demosaic, Fujifilm (development)": "PIXL 去马赛克（富士，开发版）",
+  "The same for Fujifilm’s X-Trans sensors: about 7 seconds for a 16 MP RAW on a Mac.": "适用于富士 X-Trans 传感器的同类模型：在 Mac 上，16 MP 的 RAW 约需 7 秒。",
+  "Use PIXL demosaic (development)": "使用 PIXL 去马赛克（开发版）",
+  "A RAW develops at full size with PIXL’s own model once it is downloaded. It takes out the grain as it develops, so “Denoise the RAW data” is not offered. Off goes back to the released develop.": "下载后，RAW 会用 PIXL 自己的模型进行全尺寸修改。它在修改的同时去除颗粒，因此不再提供“对 RAW 数据降噪”。关闭后恢复为已发布版本的修改方式。",
+  "RAW files develop as in the released Playroom. On, PIXL’s own model develops them at full size and takes out the grain as it goes.": "RAW 文件按已发布的 Playroom 的方式进行修改。开启后，PIXL 自己的模型会对其进行全尺寸修改，并同时去除颗粒。"
 }

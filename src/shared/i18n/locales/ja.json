@@ -3284,5 +3284,12 @@
   "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各プレーンのホワイトノイズの σ̂（ノイズ除去機能自体の推定値、8ビットのコード値）",
   "On a Retina screen, pausing in the middle of a drag no longer makes the next move wait: a held slider rests at the draft’s size and sharpens when you let go.": "Retina ディスプレイで、ドラッグの途中で止めても次の動きが待たされなくなりました。押さえたままのスライダーは下書きのサイズで待機し、手を離すと鮮明になります。",
   "Slider drags can run on the graphics chip, at the full preview size (Settings → Projects & interface → Performance): for now on photos that are not RAW, with the simpler edits. RAW photos still drag on the processor.": "スライダーのドラッグをグラフィックチップで、プレビューの最大サイズのまま処理できます（設定 → プロジェクトとインターフェイス → パフォーマンス）。現時点では RAW 以外の写真の、より単純な編集が対象です。RAW 写真は引き続きプロセッサーで処理されます。",
-  "1:1 stays seamless under heavier edits: each part of the picture now reads as far around itself as the edit needs.": "重い編集でも 1:1 表示につなぎ目が出ません。画像の各部分が、編集に必要な範囲まで周囲を読むようになりました。"
+  "1:1 stays seamless under heavier edits: each part of the picture now reads as far around itself as the edit needs.": "重い編集でも 1:1 表示につなぎ目が出ません。画像の各部分が、編集に必要な範囲まで周囲を読むようになりました。",
+  "PIXL demosaic (development)": "PIXL デモザイク（開発版）",
+  "PIXL’s own model, not released yet: builds the full-size picture from your RAW’s sensor data and takes out its grain in the same step. For trying out in a development build. On a Mac it runs on the graphics chip: about 9 seconds for a 25 MP RAW.": "まだリリースされていない PIXL 独自のモデルです。RAW のセンサーデータからフルサイズの画像を作成し、同じ工程でざらつきも取り除きます。開発ビルドでの試用向けです。Mac ではグラフィックチップで動作し、25 MP の RAW で約9秒です。",
+  "PIXL demosaic, Fujifilm (development)": "PIXL デモザイク（Fujifilm、開発版）",
+  "The same for Fujifilm’s X-Trans sensors: about 7 seconds for a 16 MP RAW on a Mac.": "Fujifilm の X-Trans センサー向けの同等のモデル。Mac では 16 MP の RAW で約7秒です。",
+  "Use PIXL demosaic (development)": "PIXL デモザイクを使用（開発版）",
+  "A RAW develops at full size with PIXL’s own model once it is downloaded. It takes out the grain as it develops, so “Denoise the RAW data” is not offered. Off goes back to the released develop.": "ダウンロードが済むと、RAW は PIXL 独自のモデルでフルサイズ現像されます。現像と同時にざらつきを取り除くため、「RAW データのノイズを除去」は表示されません。オフにすると、リリース版の現像に戻ります。",
+  "RAW files develop as in the released Playroom. On, PIXL’s own model develops them at full size and takes out the grain as it goes.": "RAW ファイルはリリース版の Playroom と同じように現像されます。オンにすると、PIXL 独自のモデルがフルサイズで現像し、同時にざらつきを取り除きます。"
 }
