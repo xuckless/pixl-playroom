@@ -203,3 +203,130 @@ export function scalePrimaries(p: PrimariesSetting, k: number): PrimariesSetting
     tint: p.tint * k
   }
 }
+
+// ── Curves: the vs curves (the Custom curve is the tone curve's own) ─────────
+
+/** Resolve's vs curves: what the curve's x reads, and what its y changes. */
+export const VS_CURVES = ['hueHue', 'hueSat', 'hueLum', 'lumSat', 'satSat'] as const
+export type VsCurve = (typeof VS_CURVES)[number]
+
+/** Each a list of points, `y` 0.5 untouched; an empty list is a flat curve. */
+export type CurvesVsSetting = Record<VsCurve, { x: number; y: number }[]>
+
+/** The vs curves the engine has no op for yet: kept, shown as waiting, not compiled (E71, E72). */
+export const VS_WAITING: Partial<Record<VsCurve, string>> = { hueLum: 'E71', satSat: 'E72' }
+
+/** Whether a vs curve's x is a hue (it wraps at red). */
+export const vsPeriodic = (c: VsCurve): boolean => c.startsWith('hue')
+
+/** At most this many points a curve. */
+export const MAX_VS_POINTS = 16
+
+export function defaultCurvesVs(): CurvesVsSetting {
+  return { hueHue: [], hueSat: [], hueLum: [], lumSat: [], satSat: [] }
+}
+
+/** Saved vs curves made whole: points in range, sorted, one per x. */
+export function normaliseCurvesVs(v: unknown): CurvesVsSetting {
+  const o = (v && typeof v === 'object' ? v : {}) as Partial<Record<VsCurve, unknown>>
+  const out = defaultCurvesVs()
+  for (const c of VS_CURVES) {
+    const pts = Array.isArray(o[c]) ? (o[c] as unknown[]) : []
+    const clean = pts
+      .filter((p): p is { x: number; y: number } => {
+        const q = p as { x?: unknown; y?: unknown }
+        return !!q && Number.isFinite(q.x) && Number.isFinite(q.y)
+      })
+      .map((p) => ({ x: clamp(p.x, 0, 1), y: clamp(p.y, 0, 1) }))
+      .sort((a, b) => a.x - b.x)
+      .filter((p, i, all) => i === 0 || p.x - all[i - 1].x > 1e-4)
+      .slice(0, MAX_VS_POINTS)
+    out[c] = clean
+  }
+  return out
+}
+
+/** Whether a vs curve changes nothing (no points, or all at 0.5). */
+export const vsFlat = (pts: { x: number; y: number }[]): boolean =>
+  pts.every((p) => Math.abs(p.y - 0.5) < 1e-4)
+
+/**
+ * A vs curve's points as the engine takes them, over the whole 0…1: a hue
+ * curve wrapped across red (its ends meet at the value between the last
+ * point and the first, so there is no seam); the others held level past
+ * their ends.
+ */
+export function vsPoints(
+  pts: { x: number; y: number }[],
+  periodic: boolean
+): { x: number; y: number }[] {
+  if (pts.length === 0)
+    return [
+      { x: 0, y: 0.5 },
+      { x: 1, y: 0.5 }
+    ]
+  // A point at either end is kept just inside it (red sits at both ends of a hue curve).
+  const inner = pts
+    .map((p) => ({ x: clamp(p.x, 1e-3, 1 - 1e-3), y: p.y }))
+    .filter((p, i, all) => i === 0 || p.x - all[i - 1].x > 1e-4)
+  if (!periodic) {
+    const first = pts[0]
+    const last = pts[pts.length - 1]
+    return [{ x: 0, y: first.y }, ...inner, { x: 1, y: last.y }]
+  }
+  if (inner.length === 0) {
+    const y = pts[0].y
+    return [
+      { x: 0, y },
+      { x: 1, y }
+    ]
+  }
+  const a = inner[inner.length - 1]
+  const b = inner[0]
+  // Across the seam: from the last point to the first, one hue turn on.
+  const span = b.x + 1 - a.x
+  const y = a.y + ((b.y - a.y) * (1 - a.x)) / span
+  return [{ x: 0, y }, ...inner, { x: 1, y }]
+}
+
+/**
+ * The vs curves as one engine `Curves` op (Hue vs Hue in degrees, ±180;
+ * the saturation curves as multipliers, 0 to 2), and the ones that wait.
+ */
+export function curvesVsOp(c: CurvesVsSetting): { op: GradeOp | null; waiting: VsCurve[] } {
+  const waiting = VS_CURVES.filter((k) => VS_WAITING[k] && !vsFlat(c[k]))
+  const curve = (
+    k: VsCurve,
+    y: (v: number) => number
+  ): { points: { x: number; y: number }[] } | null =>
+    vsFlat(c[k])
+      ? null
+      : { points: vsPoints(c[k], vsPeriodic(k)).map((p) => ({ x: r4(p.x), y: r4(y(p.y)) })) }
+  const hueHue = curve('hueHue', (v) => (v - 0.5) * 360)
+  const hueSat = curve('hueSat', (v) => v * 2)
+  const lumSat = curve('lumSat', (v) => v * 2)
+  if (!hueHue && !hueSat && !lumSat) return { op: null, waiting }
+  return {
+    op: {
+      Curves: {
+        master: null,
+        red: null,
+        green: null,
+        blue: null,
+        luma_vs_saturation: lumSat,
+        hue_vs_saturation: hueSat,
+        hue_vs_hue: hueHue,
+        refine_saturation: null
+      }
+    },
+    waiting
+  }
+}
+
+/** A mask's Amount on its vs curves: each point moved toward flat by `k`. */
+export function scaleCurvesVs(c: CurvesVsSetting, k: number): CurvesVsSetting {
+  const out = defaultCurvesVs()
+  for (const v of VS_CURVES)
+    out[v] = c[v].map((p) => ({ x: p.x, y: clamp(0.5 + (p.y - 0.5) * k, 0, 1) }))
+  return out
+}

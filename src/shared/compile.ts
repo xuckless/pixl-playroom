@@ -60,7 +60,20 @@ import {
 import { opFromAbsolute, opFromRelative, type OpWhite } from './wb'
 import { tk } from './i18n'
 import { effective } from './edits'
-import { primariesOp, primariesWhite, scalePrimaries } from './resolve'
+import {
+  curvesVsOp,
+  primariesOp,
+  primariesWhite,
+  scaleCurvesVs,
+  scalePrimaries,
+  type VsCurve
+} from './resolve'
+
+/** What a waiting vs curve says in the render's notes. */
+const VS_WAITING_NOTE: Partial<Record<VsCurve, string>> = {
+  hueLum: tk('Hue vs Lum waits for the engine (E71): kept, not applied yet'),
+  satSat: tk('Sat vs Sat waits for the engine (E72): kept, not applied yet')
+}
 
 // ── Spaces ───────────────────────────────────────────────────────────────────
 
@@ -852,6 +865,7 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
       shiftLum: m(p.shiftLum)
     })),
     primaries: scalePrimaries(s.primaries, k),
+    curvesVs: scaleCurvesVs(s.curvesVs, k),
     colorGrade: {
       ...cg,
       shadows: wheel(cg.shadows),
@@ -1425,6 +1439,10 @@ function settingsStages(
   // Resolve's primaries, after Lightroom's grading (shared/resolve.ts).
   const prim = bw ? null : primariesOp(r.primaries)
   if (prim) tail.push(prim)
+  // Resolve's vs curves; the two the engine lacks wait, said in the notes.
+  const vs = curvesVsOp(r.curvesVs)
+  if (vs.op && !bw) tail.push(vs.op)
+  for (const w of vs.waiting) notes.push(VS_WAITING_NOTE[w] ?? '')
   if (r.calibration.shadowsTint !== 0) {
     const a = round4((r.calibration.shadowsTint / 100) * 0.02)
     tail.push({ Primary: primary({ lift: { r: a / 2, g: -a, b: a / 2 } }) })

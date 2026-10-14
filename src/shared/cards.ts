@@ -18,6 +18,7 @@ export const CARD_IDS = [
   'grading',
   'curve',
   'primaries',
+  'rcurves',
   'detail',
   'effects',
   'optics',
@@ -91,6 +92,14 @@ export const CARDS: CardSpec[] = [
     id: 'primaries',
     title: tk('Primaries'),
     fields: [['primaries']],
+    inMask: true,
+    set: 'resolve'
+  },
+  {
+    id: 'rcurves',
+    // Its Custom tab is the tone curve itself (the Tone curve card's section).
+    title: tk('Curves'),
+    fields: [['curvesVs']],
     inMask: true,
     set: 'resolve'
   },

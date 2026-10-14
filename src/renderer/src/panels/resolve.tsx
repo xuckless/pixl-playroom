@@ -2,12 +2,22 @@
  * DaVinci Resolve's colour tools as cards (Settings → Interface → Colour
  * tools: Resolve). The recipe and the engine's side are shared/resolve.ts.
  */
+import { useState } from 'react'
 import { GradeWheel, type WheelScale } from '../components/grading/GradeWheel'
-import { ToolPanel } from '../components/ui'
+import { CurveEditor } from '../components/editors'
+import { Tabs, ToolPanel } from '../components/ui'
+import { useDevelop, type CurveChannel } from '../state/develop'
 import { t, tk } from '../lib/i18n'
 import { useScope } from '../state/scope'
 import { RS } from './global'
-import type { PrimariesSetting, Yrgb } from '../../../shared/resolve'
+import {
+  VS_WAITING,
+  vsPeriodic,
+  type PrimariesSetting,
+  type VsCurve,
+  type Yrgb
+} from '../../../shared/resolve'
+import type { CurvePointSetting } from '../../../shared/recipe'
 
 type WheelKey = 'lift' | 'gamma' | 'gain' | 'offset'
 
@@ -116,4 +126,138 @@ export function PrimariesBody(): React.JSX.Element | null {
       </div>
     </ToolPanel>
   )
+}
+
+// ── Curves ───────────────────────────────────────────────────────────────────
+
+type CurvesTab = 'custom' | VsCurve
+
+const CURVE_TABS: { value: CurvesTab; label: string }[] = [
+  { value: 'custom', label: tk('Custom') },
+  { value: 'hueHue', label: tk('Hue vs Hue') },
+  { value: 'hueSat', label: tk('Hue vs Sat') },
+  { value: 'hueLum', label: tk('Hue vs Lum') },
+  { value: 'lumSat', label: tk('Lum vs Sat') },
+  { value: 'satSat', label: tk('Sat vs Sat') }
+]
+
+const HUES = 'linear-gradient(90deg,#f33,#fd3,#3f5,#3ff,#36f,#f3f,#f33)'
+const STRIP: Record<VsCurve, string> = {
+  hueHue: HUES,
+  hueSat: HUES,
+  hueLum: HUES,
+  lumSat: 'linear-gradient(90deg,#000,#fff)',
+  satSat: 'linear-gradient(90deg,#808080,#f33)'
+}
+
+/** Resolve's six quick picks on a hue curve: red, yellow, green, cyan, blue, magenta. */
+const SWATCHES = [
+  { at: 0, colour: '#ff4040' },
+  { at: 1 / 6, colour: '#ffe040' },
+  { at: 1 / 3, colour: '#40ff60' },
+  { at: 1 / 2, colour: '#40ffff' },
+  { at: 2 / 3, colour: '#4070ff' },
+  { at: 5 / 6, colour: '#ff40ff' }
+]
+
+const CHANNEL_COLOUR: Record<CurveChannel, string> = {
+  master: '#c9bdf7',
+  red: '#ff5a5a',
+  green: '#5aff78',
+  blue: '#5a8cff'
+}
+
+export function ResolveCurvesBody(): React.JSX.Element | null {
+  const { recipe, edit, commit } = useScope()
+  const [tab, setTab] = useState<CurvesTab>('custom')
+  const channel = useDevelop((s) => s.curveChannel)
+  const setChannel = useDevelop((s) => s.setCurveChannel)
+  if (!recipe) return null
+  const label = CURVE_TABS.find((x) => x.value === tab)!.label
+  if (tab === 'custom')
+    return (
+      <ToolPanel>
+        <Tabs value={tab} onChange={setTab} className="rc-tabs" tabs={tabsOf()} />
+        <div className="row rc-channels">
+          <Tabs
+            value={channel}
+            onChange={setChannel}
+            tabs={[
+              { value: 'master', label: 'Y' },
+              { value: 'red', label: 'R' },
+              { value: 'green', label: 'G' },
+              { value: 'blue', label: 'B' }
+            ]}
+          />
+        </div>
+        <CurveEditor
+          points={recipe.toneCurve[channel]}
+          colour={CHANNEL_COLOUR[channel]}
+          onChange={(p: CurvePointSetting[], live) => edit((r) => (r.toneCurve[channel] = p), live)}
+          onCommit={() => commit(`Curves: Custom (${channel})`)}
+        />
+        <p className="muted small">{t('The same curve as the Tone curve card’s point curve.')}</p>
+      </ToolPanel>
+    )
+  const vs = tab
+  const waiting = VS_WAITING[vs]
+  const periodic = vsPeriodic(vs)
+  const pts = recipe.curvesVs[vs]
+  const addAt = (h: number): void => {
+    // Three points on the line, the middle one at the hue: drag it to move that hue alone.
+    const wrap = (x: number): number => ((x % 1) + 1) % 1
+    const next = [...pts]
+    for (const x of [h - 1 / 12, h, h + 1 / 12].map(wrap))
+      if (!next.some((p) => Math.abs(p.x - x) < 0.01)) next.push({ x, y: 0.5 })
+    edit((r) => (r.curvesVs[vs] = next.sort((a, b) => a.x - b.x)))
+    commit(`Curves: ${label}`)
+  }
+  return (
+    <ToolPanel>
+      <Tabs value={tab} onChange={setTab} className="rc-tabs" tabs={tabsOf()} />
+      {waiting && (
+        <p className="rc-waiting">
+          {t('Waiting for the engine')} ({waiting}):{' '}
+          {t('the curve is kept with the photo and applies once the engine has it.')}
+        </p>
+      )}
+      <CurveEditor
+        vs
+        periodic={periodic}
+        background={STRIP[vs]}
+        points={pts}
+        colour="#e8e6f2"
+        onChange={(p: CurvePointSetting[], live) => edit((r) => (r.curvesVs[vs] = p), live)}
+        onCommit={() => commit(`Curves: ${label}`)}
+      />
+      <div className="row rc-foot">
+        {periodic &&
+          SWATCHES.map((s) => (
+            <button
+              key={s.at}
+              className="rc-swatch"
+              style={{ background: s.colour }}
+              aria-label={t('Add points at this hue')}
+              title={t('Add points at this hue')}
+              onClick={() => addAt(s.at)}
+            />
+          ))}
+        <span className="spacer" />
+        <button
+          className="sm"
+          disabled={pts.length === 0}
+          onClick={() => {
+            edit((r) => (r.curvesVs[vs] = []))
+            commit(`Reset ${label}`)
+          }}
+        >
+          {t('Reset')}
+        </button>
+      </div>
+    </ToolPanel>
+  )
+}
+
+function tabsOf(): { value: CurvesTab; label: string }[] {
+  return CURVE_TABS.map((x) => ({ ...x, label: t(x.label) }))
 }

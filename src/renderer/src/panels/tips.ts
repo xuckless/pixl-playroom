@@ -347,6 +347,15 @@ export const TIPS = {
       'Balance with Offset first, then shape with Lift, Gamma and Gain while watching the parade. Shift makes any drag finer; double-click a wheel’s name to reset it.'
     )
   },
+  rcurves: {
+    what: tk(
+      'DaVinci Resolve’s curves. Custom is the tone curve (Y, R, G, B); the others change one thing by another: Hue vs Hue turns a colour, Hue vs Sat and Lum vs Sat make colours richer or quieter by hue or by brightness.'
+    ),
+    expect: tk('The line in the middle changes nothing. Click it to add a point, then drag.'),
+    tip: tk(
+      'On a hue curve, the colour dots add three points at that hue: drag the middle one to change only that colour.'
+    )
+  },
   calibration: {
     what: tk('Shifts how the camera’s red, green and blue primaries are read.'),
     expect: tk('Broad, subtle colour changes across the whole palette.'),

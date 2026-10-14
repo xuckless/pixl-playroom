@@ -8,7 +8,14 @@
  * Every recipe is complete: no field is optional, so an old sidecar is
  * brought up to date by `normaliseRecipe` rather than by `?.` everywhere.
  */
-import { defaultPrimaries, normalisePrimaries, type PrimariesSetting } from './resolve'
+import {
+  defaultCurvesVs,
+  defaultPrimaries,
+  normaliseCurvesVs,
+  normalisePrimaries,
+  type CurvesVsSetting,
+  type PrimariesSetting
+} from './resolve'
 import { NO_ADD, type AddColourSetting } from './addcolor'
 import type { BlendMode, CropRect, KeyBand, MaskMode } from './engine-types'
 import { defaultLens, type LensSetting } from './lens'
@@ -548,6 +555,7 @@ export const SETTINGS_KEYS = [
   'pointColors',
   'colorGrade',
   'primaries',
+  'curvesVs',
   'detail',
   'effects',
   'calibration'
@@ -572,6 +580,7 @@ export const EDIT_SECTIONS = [
   'grading',
   'curve',
   'primaries',
+  'rcurves',
   'detail',
   'effects',
   'optics',
@@ -611,6 +620,8 @@ export interface Recipe {
   colorGrade: ColorGradeSetting
   /** DaVinci Resolve's primaries (shared/resolve.ts): the Resolve colour tools' first card. */
   primaries: PrimariesSetting
+  /** Resolve's vs curves (Hue vs Hue, Hue vs Sat, …); its Custom curve is `toneCurve`. */
+  curvesVs: CurvesVsSetting
   detail: DetailSetting
   /** Lens corrections: profile, manual, chromatic aberration, defringe (see `lens.ts`). */
   lens: LensSetting
@@ -742,6 +753,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       add: { ...NO_ADD }
     },
     primaries: defaultPrimaries(),
+    curvesVs: defaultCurvesVs(),
     detail: {
       sharpenAmount: isRaw ? 40 : 0,
       sharpenRadius: 1,
@@ -851,6 +863,7 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   }
   r.toneCurve = normaliseToneCurve(r.toneCurve)
   r.primaries = normalisePrimaries(r.primaries)
+  r.curvesVs = normaliseCurvesVs(r.curvesVs)
   // Only sections there are, each switched off by `true` (`fill` keeps any key).
   r.off = Object.fromEntries(
     Object.entries(r.off ?? {}).filter(
@@ -1268,6 +1281,7 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         break
       case 'toneCurve':
         r.toneCurve = f.toneCurve
+        r.curvesVs = f.curvesVs
         break
       case 'hsl':
         r.hsl = f.hsl
@@ -1427,7 +1441,7 @@ function groupValues(r: Recipe, g: RecipeGroup): unknown[] {
     case 'presence':
       return [r.presence]
     case 'toneCurve':
-      return [r.toneCurve]
+      return [r.toneCurve, r.curvesVs]
     case 'hsl':
       return [r.hsl, r.bwMix, r.pointColors]
     case 'colorGrade':

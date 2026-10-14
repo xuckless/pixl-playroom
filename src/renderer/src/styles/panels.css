@@ -1103,3 +1103,57 @@ aside.right .panels.adjust {
   flex: 1;
   min-width: 0;
 }
+
+/* ── Resolve's Curves card ───────────────────────────────────────── */
+.tabs.rc-tabs {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  height: auto;
+  gap: 2px;
+}
+.tabs.rc-tabs button {
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rc-channels {
+  justify-content: flex-end;
+}
+.curve-strip {
+  width: 100%;
+  height: 100%;
+  opacity: 0.75;
+}
+.rc-waiting {
+  margin: 4px 0;
+  padding: 6px 8px;
+  border-radius: var(--r);
+  border: 1px dashed color-mix(in srgb, var(--acc) 45%, transparent);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text2);
+}
+.rc-foot {
+  align-items: center;
+  gap: 6px;
+}
+.rc-foot .spacer {
+  flex: 1;
+}
+.rc-swatch {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgb(var(--shade-rgb) / 0.6);
+  box-shadow: 0 0 0 1px var(--hair2);
+}
+.rc-swatch:hover {
+  transform: scale(1.15);
+}
