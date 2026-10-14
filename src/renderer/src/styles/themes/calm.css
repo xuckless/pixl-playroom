@@ -42,12 +42,13 @@
 }
 
 :root[data-theme='calm'] .card {
-  background: var(--s1);
-  border-color: var(--hair);
+  /* One step lighter than the panel it sits on, so it holds beside a bright HDR picture. */
+  background: var(--s4);
+  border-color: var(--hair2);
   box-shadow: none;
 }
 :root[data-theme='calm'] .card.open {
-  border-color: var(--hair2);
+  border-color: var(--hair3);
 }
 :root[data-theme='calm'] .slider {
   background: var(--s3);
