@@ -34,26 +34,16 @@ test('reset puts back a card’s fields and nothing else', () => {
   assert.equal(r.basic.exposure, 1)
 })
 
-test('Basic corrections, the curves, the HSL, then the other colour tools, in both sets', async () => {
-  const { panelsFor, panelOf } = await import('../src/shared/cards')
-  assert.deepEqual(panelsFor('lightroom'), [
+test('Basic corrections, Curves, HSL, then the other colour tools, in one set', async () => {
+  const { panelsFor, panelOf, cardSpec, panelTitle } = await import('../src/shared/cards')
+  assert.deepEqual(panelsFor(), [
     'basic',
     'curve',
-    'mixer',
-    'grading',
-    'calibration',
-    'detail',
-    'effects',
-    'optics',
-    'geometry'
-  ])
-  assert.deepEqual(panelsFor('resolve'), [
-    'basic',
-    'rcurves',
     'mixer',
     'primaries',
     'logwheels',
     'qualifier',
+    'calibration',
     'detail',
     'effects',
     'optics',
@@ -62,9 +52,31 @@ test('Basic corrections, the curves, the HSL, then the other colour tools, in bo
   assert.equal(panelOf('light'), 'basic')
   assert.equal(panelOf('wb'), 'basic')
   assert.equal(panelOf('presence'), 'basic')
+  assert.equal(panelTitle('mixer'), 'HSL')
+  assert.equal(panelTitle('curve'), 'Curves')
+  // Curves holds the tone curve and the vs curves.
+  assert.deepEqual(cardSpec('curve').fields, [['toneCurve'], ['curvesVs']])
   // In a mask: no Optics or Geometry.
-  assert.ok(!panelsFor('lightroom', true).includes('optics'))
-  assert.equal(panelsFor('lightroom', true)[0], 'basic')
+  assert.ok(!panelsFor(true).includes('optics'))
+  assert.equal(panelsFor(true)[0], 'basic')
+})
+
+test('Lightroom’s Colour grading is offered only where it holds edits', async () => {
+  const { panelsFor } = await import('../src/shared/cards')
+  const r = photo()
+  const base = cardBase(r, true, false)
+  const held = (c: Parameters<typeof cardChanged>[0]): boolean => cardChanged(c, r, base, false)
+  assert.ok(!panelsFor(false, held).includes('grading'))
+  r.colorGrade.shadows = { hue: 200, saturation: 20, luminance: 0 }
+  const shown = panelsFor(false, held)
+  assert.equal(shown[shown.indexOf('calibration') + 1], 'grading')
+  // Add colour is the Primaries' now: it alone does not bring the old wheels back.
+  const r2 = photo()
+  r2.colorGrade.add = { hue: 30, saturation: 50, amount: 20 }
+  const h2 = (c: Parameters<typeof cardChanged>[0]): boolean =>
+    cardChanged(c, r2, cardBase(r2, true, false), false)
+  assert.ok(!panelsFor(false, h2).includes('grading'))
+  assert.ok(cardChanged(cardSpec('primaries'), r2, cardBase(r2, true, false), false))
 })
 
 test('in a mask, a card reads the mask’s settings against neutral', () => {
@@ -85,4 +97,10 @@ test('in a mask, a card holds only what a mask carries', () => {
     CARDS.filter((c) => !c.inMask).map((c) => c.id),
     ['optics', 'geometry']
   )
+})
+
+test('a recipe with Resolve’s Curves switched off has Curves off', async () => {
+  const { normaliseRecipe } = await import('../src/shared/recipe')
+  const r = { ...defaultRecipe(true), off: { rcurves: true } } as unknown as Recipe
+  assert.deepEqual(normaliseRecipe(r, true).off, { curve: true })
 })

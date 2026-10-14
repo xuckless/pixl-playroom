@@ -175,14 +175,7 @@ export const TIPS = {
     expect: tk('Left lets the highlight tint reach deeper; right lets the shadow tint climb.')
   },
 
-  // ── Tone curve ─────────────────────────────────────────────────────
-  curve: {
-    what: tk('Maps every input brightness to an output brightness, for full control of contrast.'),
-    expect: tk('An S shape adds contrast; lifting the bottom-left point fades the blacks.'),
-    tip: tk(
-      'Region sliders are the gentle way in; the point curve is for precise shapes and colour.'
-    )
-  },
+  // ── Curves (Custom is the tone curve) ─────────────────────────────
   'curve.region': {
     what: tk('Bends the curve in four broad ranges without placing points.'),
     expect: tk('Smooth, safe changes that never cross over.')
@@ -383,7 +376,7 @@ export const TIPS = {
     ),
     tip: tk('Blur smooths a noisy key; Invert corrects everything except the colour.')
   },
-  rcurves: {
+  curve: {
     what: tk(
       'DaVinci Resolve’s curves. Custom is the tone curve (Y, R, G, B); the others change one thing by another: Hue vs Hue turns a colour, Hue vs Sat and Lum vs Sat make colours richer or quieter by hue or by brightness.'
     ),

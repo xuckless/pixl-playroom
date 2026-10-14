@@ -6,10 +6,7 @@ import {
   cardBase,
   cardChanged,
   cardFields,
-  CARDS,
   cardSpec,
-  cardTitle,
-  keyedAs,
   panelCards,
   panelsFor,
   panelTitle,
@@ -28,7 +25,6 @@ import {
   AutoTone,
   CalibrationBody,
   CropDrawer,
-  CurveBody,
   DetailBody,
   EffectsBody,
   GeometryBody,
@@ -48,7 +44,7 @@ import { scoped, scopedView, scopeLayer, useScope } from '../state/scope'
 import { useUi, type Drawer, type Panel } from '../state/ui'
 import { GlassSelect } from '../components/GlassSelect'
 import { useKeyHint } from '../lib/commands'
-import { jumpToCard, openDrawer } from './tools'
+import { jumpToCard, openDrawer, useLegacyHeld } from './tools'
 
 const BODIES: Record<CardId, ComponentType> = {
   wb: WhiteBalanceBody,
@@ -56,10 +52,9 @@ const BODIES: Record<CardId, ComponentType> = {
   presence: PresenceBody,
   mixer: MixerBody,
   grading: GradingBody,
-  curve: CurveBody,
+  curve: ResolveCurvesBody,
   primaries: PrimariesBody,
   logwheels: LogWheelsBody,
-  rcurves: ResolveCurvesBody,
   qualifier: QualifierBody,
   detail: DetailBody,
   effects: EffectsBody,
@@ -67,9 +62,6 @@ const BODIES: Record<CardId, ComponentType> = {
   geometry: GeometryBody,
   calibration: CalibrationBody
 }
-
-/** The mixer with the Resolve tools: Lightroom's H, S, L and All, no point colour (the Qualifier is there). */
-const CompactHsl = (): React.JSX.Element | null => <MixerBody compact />
 
 /** What a card carries in its header beside the (i), eye and reset. */
 const HEADER: Partial<Record<CardId, ComponentType>> = { light: AutoTone }
@@ -96,39 +88,6 @@ function ScopeChip(): React.JSX.Element | null {
         onClick={() => useDevelop.getState().setLayer(null)}
       >
         <Icon name="close" />
-      </button>
-    </div>
-  )
-}
-
-/**
- * When the colour tools not shown hold edits (a photo graded with the other
- * set): they still act, and the chip says so and switches over.
- */
-function OtherToolsChip(): React.JSX.Element | null {
-  const tools = useUi((s) => s.colourTools)
-  const setTools = useUi((s) => s.setColourTools)
-  const masksOpen = useUi((s) => s.masksWin.open)
-  const other = tools === 'lightroom' ? 'resolve' : 'lightroom'
-  const held = useDevelop((s) => {
-    if (!s.recipe) return false
-    const layer = scopeLayer(s.recipe, s.layerId, masksOpen)
-    const view = scopedView(s.recipe, layer)
-    const base = cardBase(view, s.session?.isRaw ?? false, !!layer)
-    return CARDS.some(
-      (c) => c.set === other && (!layer || c.inMask) && cardChanged(c, view, base, !!layer)
-    )
-  })
-  if (!held) return null
-  return (
-    <div className="tools-chip">
-      <span>
-        {other === 'resolve'
-          ? t('Resolve colour edits are on this photo')
-          : t('Lightroom colour edits are on this photo')}
-      </span>
-      <button className="sm" onClick={() => setTools(other)}>
-        {t('Show')}
       </button>
     </div>
   )
@@ -170,13 +129,12 @@ function useCardState(spec: CardSpec): {
 /** One adjustment card, the section shown: its dot and reset from its fields. */
 function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
   const { changed, off, inMask, switchOff, reset } = useCardState(spec)
-  const tools = useUi((s) => s.colourTools)
-  const Body = spec.id === 'mixer' && tools === 'resolve' ? CompactHsl : BODIES[spec.id]
+  const Body = BODIES[spec.id]
   const Right = HEADER[spec.id]
   return (
     <Card
       id={spec.id}
-      title={t(cardTitle(spec, tools))}
+      title={t(spec.title)}
       tip={TIPS[spec.id]}
       changed={changed}
       off={off}
@@ -334,11 +292,10 @@ function DrawerPanel({ drawer }: { drawer: Exclude<Drawer, 'adjust'> }): React.J
 
 /**
  * The one dropdown that picks the section the column shows (Basic
- * corrections, then each colour tools set's own, in order, then Enhance),
+ * corrections, then the other tools in order, then Super resolution),
  * with a dot on each that holds changes, as the cards' own dots showed them.
  */
 function SectionPicker({ panels, shown }: { panels: PanelId[]; shown: Panel }): React.JSX.Element {
-  const tools = useUi((s) => s.colourTools)
   const masksOpen = useUi((s) => s.masksWin.open)
   const key = useKeyHint()
   // One string, so a slider's tick re-renders this only when a dot turns.
@@ -359,8 +316,8 @@ function SectionPicker({ panels, shown }: { panels: PanelId[]; shown: Panel }): 
   const options = [
     ...panels.map((p, i) => ({
       value: p as Panel,
-      label: t(panelTitle(p, tools)),
-      hint: key(`card.${keyedAs(p)}`),
+      label: t(panelTitle(p)),
+      hint: key(`card.${p}`),
       dot: dots[i] === '1'
     })),
     { value: 'enhance' as Panel, label: t('Super resolution'), hint: key('develop.enhance') }
@@ -380,8 +337,8 @@ function SectionPicker({ panels, shown }: { panels: PanelId[]; shown: Panel }): 
 
 /**
  * The right column under the strip: one dropdown, then the one section it
- * picks (Basic corrections with Treatment and Profile, another adjustment in
- * Lightroom's or Resolve's set, or Enhance); or Crop's or Heal's panel in
+ * picks (Basic corrections with Treatment and Profile, another adjustment,
+ * or Super resolution); or Crop's or Heal's panel in
  * their place. With a mask selected, only the sections a mask carries are
  * offered, and they edit the mask.
  */
@@ -389,11 +346,16 @@ export function AdjustStack(): React.JSX.Element {
   const drawer = useUi((s) => s.drawer)
   const layer = useScope().layer
   const overlayHue = useUi((s) => s.maskOverlay.hue)
-  const tools = useUi((s) => s.colourTools)
   const focus = useUi((s) => s.focusCard)
-  const panels = panelsFor(tools, !!layer)
+  const panels = panelsFor(!!layer, useLegacyHeld())
   // A section this scope or set does not offer gives way to the first that is.
-  const shown: Panel = focus === 'enhance' || panels.includes(focus) ? focus : panels[0]
+  const shown: Panel =
+    focus === 'enhance' || panels.includes(focus)
+      ? focus
+      : // Lightroom's wheels reset away: their successors.
+        focus === 'grading' && panels.includes('primaries')
+        ? 'primaries'
+        : panels[0]
   return (
     <div
       className={`panels adjust${layer ? ' scoped' : ''}`}
@@ -403,7 +365,6 @@ export function AdjustStack(): React.JSX.Element {
       {drawer === 'adjust' ? (
         <>
           <SectionPicker panels={panels} shown={shown} />
-          <OtherToolsChip />
           {shown === 'enhance' ? (
             <Card
               id="enhance"

@@ -19,7 +19,7 @@ import {
   toggleDrawer,
   toggleMasks
 } from '../develop/tools'
-import { CARDS, panelTitle, RESOLVE_TWIN, type PanelId } from '../../../shared/cards'
+import { CARDS, panelTitle, type PanelId } from '../../../shared/cards'
 import {
   componentLabel,
   deleteComponent,
@@ -171,28 +171,26 @@ const PANEL_KEYS: Partial<Record<PanelId, number>> = {
   basic: 1,
   curve: 2,
   mixer: 3,
-  grading: 4,
+  primaries: 4,
   detail: 5,
   optics: 6,
   geometry: 7,
   effects: 8,
   calibration: 9
 }
-/** The panel a key's command shows with the colour tools in force. */
-const keyedPanel = (id: PanelId): PanelId =>
-  (ui().colourTools === 'resolve' && RESOLVE_TWIN[id]) || id
-const PANELS: PanelId[] = ['basic', ...CARDS.filter((c) => !c.basic).map((c) => c.id)]
+// Lightroom's Colour grading (legacy) is offered only on photos using it: no command.
+const PANELS: PanelId[] = ['basic', ...CARDS.filter((c) => !c.basic && !c.legacy).map((c) => c.id)]
 const cards = PANELS.map<KeyCommand>((id) => ({
   id: `card.${id}`,
   // Made when read, in the language in force (`t()` of it where it is shown changes nothing).
   get label() {
-    return t('Show {{card}}', { card: t(panelTitle(keyedPanel(id), ui().colourTools)) })
+    return t('Show {{card}}', { card: t(panelTitle(id)) })
   },
   group: 'Tools',
   context: 'develop',
   keys: PANEL_KEYS[id] ? [`Mod+${PANEL_KEYS[id]}`] : [],
   run: (e) => {
-    jumpToCard(keyedPanel(id))
+    jumpToCard(id)
     stop(e)
   }
 }))
@@ -815,7 +813,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'tool.tat',
-    label: tk('Targeted adjustment (HSL or Tone Curve)'),
+    label: tk('Targeted adjustment (HSL or Curves)'),
     group: 'Tools',
     context: 'develop.curve',
     keys: ['T'],

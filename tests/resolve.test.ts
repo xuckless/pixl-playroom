@@ -7,7 +7,6 @@ import {
   newLocalLayer,
   normaliseRecipe
 } from '../src/shared/recipe'
-import { CARDS, cardShows } from '../src/shared/cards'
 import { effective, setSectionOff } from '../src/shared/edits'
 import {
   defaultPrimaries,
@@ -102,15 +101,6 @@ test('a mask carries primaries, scaled by its Amount; switched off they compile 
   r.primaries.contrast = 1.3
   setSectionOff(r, 'primaries', true)
   assert.equal(effective(r, false).primaries.contrast, 1)
-})
-
-test('each colour card belongs to one set, and the rest show with both', () => {
-  const lightroom = CARDS.filter((c) => cardShows(c, 'lightroom')).map((c) => c.id)
-  const resolve = CARDS.filter((c) => cardShows(c, 'resolve')).map((c) => c.id)
-  assert.ok(lightroom.includes('grading') && !lightroom.includes('primaries'))
-  assert.ok(resolve.includes('primaries') && !resolve.includes('grading'))
-  for (const id of ['wb', 'light', 'detail', 'effects'] as const)
-    assert.ok(lightroom.includes(id) && resolve.includes(id), id)
 })
 
 test('a hue curve wraps across red with no seam; the others hold level past their ends', async () => {
@@ -253,19 +243,6 @@ test('a mask’s qualifier keys only inside the mask, inverted masks too', async
   assert.equal(ki.mode, 'Add')
   assert.equal(ki.invert, true)
   assert.equal(mi.invert, true)
-})
-
-test('with the Resolve tools the mixer is the compact HSL, named HSL', async () => {
-  const { cardsFor, cardTitle, cardSpec } = await import('../src/shared/cards')
-  const ids = cardsFor('resolve').map((c) => c.id)
-  assert.ok(ids.includes('mixer') && !ids.includes('grading') && !ids.includes('curve'))
-  assert.equal(cardTitle(cardSpec('mixer'), 'resolve'), 'HSL')
-  assert.equal(cardTitle(cardSpec('mixer'), 'lightroom'), 'Colour mixer')
-  // Lightroom's order is the catalog's own.
-  assert.deepEqual(
-    cardsFor('lightroom').map((c) => c.id),
-    CARDS.filter((c) => cardShows(c, 'lightroom')).map((c) => c.id)
-  )
 })
 
 test('the vs curves’ presets: each a curve the recipe keeps as written, Flat first', async () => {

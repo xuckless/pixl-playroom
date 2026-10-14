@@ -1081,24 +1081,6 @@ aside.right .panels.adjust {
   color: var(--text);
 }
 
-/* The colour tools not shown hold edits (develop/AdjustStack.tsx). */
-.tools-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0;
-  padding: 5px 6px 5px 10px;
-  border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent);
-  border-radius: var(--r);
-  background: color-mix(in srgb, var(--acc) 10%, transparent);
-  font-size: 12px;
-  color: var(--text2);
-}
-.tools-chip span {
-  flex: 1;
-  min-width: 0;
-}
-
 /* ── Resolve's Curves card ───────────────────────────────────────── */
 .tabs.rc-tabs {
   display: grid;

@@ -584,13 +584,12 @@ export const EDIT_SECTIONS = [
   'light',
   'presence',
   'curve',
-  'rcurves',
   'mixer',
-  'grading',
-  'calibration',
   'primaries',
   'logwheels',
   'qualifier',
+  'calibration',
+  'grading',
   'detail',
   'effects',
   'optics',
@@ -884,6 +883,8 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   // Colour (Vibrance, Saturation, Hue) joined Presence: off, it keeps them off.
   const off: Record<string, unknown> = { ...(r.off ?? {}) }
   if (off.colour === true) off.presence = true
+  // Resolve's Curves and the Tone curve are one card now: either off is it off.
+  if (off.rcurves === true) off.curve = true
   r.off = Object.fromEntries(
     Object.entries(off).filter(
       ([k, v]) => v === true && (EDIT_SECTIONS as readonly string[]).includes(k)

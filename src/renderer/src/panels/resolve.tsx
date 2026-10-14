@@ -1,18 +1,18 @@
 /**
- * DaVinci Resolve's colour tools as cards (Settings → Interface → Colour
- * tools: Resolve). The recipe and the engine's side are shared/resolve.ts.
+ * Playroom's colour tools after DaVinci Resolve's: Curves, Primaries, Log
+ * wheels and the Qualifier, as cards. The recipe and the engine's side are
+ * shared/resolve.ts.
  */
-import { CurvePresets } from './CurvePresets'
 import { VsPresets } from './VsPresets'
 import { useEffect, useState } from 'react'
 import { GradeWheel, type WheelScale } from '../components/grading/GradeWheel'
 import { CurveEditor } from '../components/editors'
 import { Tabs, Toggle, ToolPanel } from '../components/ui'
 import { Icon } from '../components/icons'
-import { useDevelop, type CurveChannel } from '../state/develop'
+import { useDevelop } from '../state/develop'
 import { t, tk } from '../lib/i18n'
 import { useScope } from '../state/scope'
-import { RS } from './global'
+import { AddColourSection, RS, ToneCurveCustom } from './global'
 import { TIPS } from './tips'
 import { InfoTip } from '../components/InfoTip'
 import {
@@ -139,6 +139,7 @@ export function PrimariesBody(): React.JSX.Element | null {
         {wheel('gain')}
         {wheel('offset')}
       </div>
+      <AddColourSection />
     </ToolPanel>
   )
 }
@@ -175,46 +176,16 @@ const SWATCHES = [
   { at: 5 / 6, colour: '#ff40ff' }
 ]
 
-const CHANNEL_COLOUR: Record<CurveChannel, string> = {
-  master: '#c9bdf7',
-  red: '#ff5a5a',
-  green: '#5aff78',
-  blue: '#5a8cff'
-}
-
 export function ResolveCurvesBody(): React.JSX.Element | null {
   const { recipe, edit, commit } = useScope()
   const [tab, setTab] = useState<CurvesTab>('custom')
-  const channel = useDevelop((s) => s.curveChannel)
-  const setChannel = useDevelop((s) => s.setCurveChannel)
   if (!recipe) return null
   const label = CURVE_TABS.find((x) => x.value === tab)!.label
   if (tab === 'custom')
     return (
       <ToolPanel>
         <Tabs value={tab} onChange={setTab} className="rc-tabs" tabs={tabsOf()} />
-        <CurvePresets />
-        <div className="row rc-channels">
-          <InfoTip tip={TIPS['rcurves.custom']} label={t('Custom')} />
-          <span className="spacer" />
-          <Tabs
-            value={channel}
-            onChange={setChannel}
-            tabs={[
-              { value: 'master', label: 'Y' },
-              { value: 'red', label: 'R' },
-              { value: 'green', label: 'G' },
-              { value: 'blue', label: 'B' }
-            ]}
-          />
-        </div>
-        <CurveEditor
-          points={recipe.toneCurve[channel]}
-          colour={CHANNEL_COLOUR[channel]}
-          onChange={(p: CurvePointSetting[], live) => edit((r) => (r.toneCurve[channel] = p), live)}
-          onCommit={() => commit(`Curves: Custom (${channel})`)}
-        />
-        <p className="muted small">{t('The same curve as the Tone curve card’s point curve.')}</p>
+        <ToneCurveCustom />
       </ToolPanel>
     )
   const vs = tab

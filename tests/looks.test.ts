@@ -220,17 +220,10 @@ test('the catalog is large and every collection is stocked', () => {
     )
 })
 
-test('the rebuilt looks set only what the Resolve colour tools show', async () => {
+test('the rebuilt looks set only what the colour tools show', async () => {
   const { LOOKS } = await import('../src/shared/looks/catalog')
-  const { cardsFor } = await import('../src/shared/cards')
-  // The Curves card's Custom tab is the tone curve's own point curve.
-  const shown = [
-    ...cardsFor('resolve').flatMap((c) => c.fields.map((f) => f.join('.'))),
-    'toneCurve.master',
-    'toneCurve.red',
-    'toneCurve.green',
-    'toneCurve.blue'
-  ]
+  const { CARDS } = await import('../src/shared/cards')
+  const shown = CARDS.filter((c) => !c.legacy).flatMap((c) => c.fields.map((f) => f.join('.')))
   const rebuilt = LOOKS.filter(
     (l) => ['essentials', 'creative', 'bw'].includes(l.meta.collection) && l.meta.version >= 2
   )
@@ -238,11 +231,11 @@ test('the rebuilt looks set only what the Resolve colour tools show', async () =
   for (const l of rebuilt)
     for (const f of l.fields) {
       const path = f.join('.')
-      // B&W is the treatment (the panel's head), shown with either set.
+      // B&W is the treatment (the panel's head).
       if (path === 'treatment') continue
       assert.ok(
         shown.some((s) => path === s || path.startsWith(`${s}.`)),
-        `${l.name}: ${path} is not shown with the Resolve tools`
+        `${l.name}: ${path} is not shown with the colour tools`
       )
     }
 })

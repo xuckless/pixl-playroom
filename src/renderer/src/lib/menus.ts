@@ -382,9 +382,7 @@ function developMenu(): Item[] {
   const tool = dev().tool
   const session = !!dev().session
   return [
-    ...panelsFor(useUi.getState().colourTools).map((id) =>
-      cmd(`card.${id}`, t(panelTitle(id, useUi.getState().colourTools)))
-    ),
+    ...panelsFor().map((id) => cmd(`card.${id}`, t(panelTitle(id)))),
     act('develop.enhance', t('Super resolution'), showEnhance, {
       enabled: !modal() && inDevelop() && session
     }),

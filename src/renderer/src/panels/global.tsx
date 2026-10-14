@@ -693,7 +693,12 @@ function TatToggle({ target }: { target: 'hsl' | 'curve' }): React.JSX.Element {
   )
 }
 
-export function CurveBody(): React.JSX.Element | null {
+/**
+ * Curves' Custom tab: the tone curve whole. Presets, the point curve on Y, R,
+ * G or B over its histogram (with the targeted adjustment and Refine
+ * saturation), then Lightroom's four regions that bend it by tone.
+ */
+export function ToneCurveCustom(): React.JSX.Element | null {
   const { recipe, edit, commit } = useScope()
   const stats = useDevelop((s) => s.stats)
   const channel = useDevelop((s) => s.curveChannel)
@@ -710,10 +715,60 @@ export function CurveBody(): React.JSX.Element | null {
       ? stats?.luma_histogram.counts
       : stats?.histograms[{ red: 0, green: 1, blue: 2 }[channel]]?.counts
   return (
-    <ToolPanel>
-      <Section id="curve.presets" title={t('Presets')}>
-        <CurvePresets />
-      </Section>
+    <>
+      <CurvePresets />
+      <div className="row rc-channels">
+        <InfoTip tip={TIPS['rcurves.custom']} label={t('Custom')} />
+        <TatToggle target="curve" />
+        <span className="spacer" />
+        <Tabs
+          value={channel}
+          onChange={setChannel}
+          tabs={[
+            { value: 'master', label: 'Y' },
+            { value: 'red', label: 'R' },
+            { value: 'green', label: 'G' },
+            { value: 'blue', label: 'B' }
+          ]}
+        />
+      </div>
+      <CurveEditor
+        points={recipe.toneCurve[channel]}
+        colour={colours[channel]}
+        histogram={hist}
+        onChange={(p: CurvePointSetting[], live) => edit((r) => (r.toneCurve[channel] = p), live)}
+        onCommit={() => commit(`Curves: Custom (${channel})`)}
+      />
+      <div className="row">
+        <button
+          className="sm"
+          onClick={() => {
+            edit(
+              (r) =>
+                (r.toneCurve[channel] = [
+                  { x: 0, y: 0 },
+                  { x: 1, y: 1 }
+                ])
+            )
+            commit(`Reset curve (${channel})`)
+          }}
+        >
+          {t(RESET_CHANNEL[channel])}
+        </button>
+      </div>
+      <Slider
+        label={t('Refine saturation')}
+        value={recipe.toneCurve.refineSaturation}
+        min={0}
+        max={100}
+        def={100}
+        disabled={isIdentityCurve(recipe.toneCurve.master)}
+        title={t(
+          'How much saturation the RGB curve brings as it steepens: lower keeps colours as they were'
+        )}
+        onChange={(v, live) => edit((r) => (r.toneCurve.refineSaturation = v), live)}
+        onCommit={() => commit(tk('Refine saturation'))}
+      />
       <Section id="curve.region" title={t('Region')}>
         <RS
           label={tk('Highlights')}
@@ -737,63 +792,7 @@ export function CurveBody(): React.JSX.Element | null {
           write={(r, v) => (r.toneCurve.shadows = v)}
         />
       </Section>
-      <Section
-        id="curve.point"
-        title={t('Point curve')}
-        right={
-          <>
-            <TatToggle target="curve" />
-            <Tabs
-              value={channel}
-              onChange={setChannel}
-              tabs={[
-                { value: 'master', label: 'RGB' },
-                { value: 'red', label: 'R' },
-                { value: 'green', label: 'G' },
-                { value: 'blue', label: 'B' }
-              ]}
-            />
-          </>
-        }
-      >
-        <CurveEditor
-          points={recipe.toneCurve[channel]}
-          colour={colours[channel]}
-          histogram={hist}
-          onChange={(p: CurvePointSetting[], live) => edit((r) => (r.toneCurve[channel] = p), live)}
-          onCommit={() => commit(`Curve (${channel})`)}
-        />
-        <div className="row">
-          <button
-            onClick={() => {
-              edit(
-                (r) =>
-                  (r.toneCurve[channel] = [
-                    { x: 0, y: 0 },
-                    { x: 1, y: 1 }
-                  ])
-              )
-              commit(`Reset curve (${channel})`)
-            }}
-          >
-            {t(RESET_CHANNEL[channel])}
-          </button>
-        </div>
-        <Slider
-          label={t('Refine saturation')}
-          value={recipe.toneCurve.refineSaturation}
-          min={0}
-          max={100}
-          def={100}
-          disabled={isIdentityCurve(recipe.toneCurve.master)}
-          title={t(
-            'How much saturation the RGB curve brings as it steepens: lower keeps colours as they were'
-          )}
-          onChange={(v, live) => edit((r) => (r.toneCurve.refineSaturation = v), live)}
-          onCommit={() => commit(tk('Refine saturation'))}
-        />
-      </Section>
-    </ToolPanel>
+    </>
   )
 }
 
@@ -827,13 +826,9 @@ const AXIS_TITLE: Record<'hue' | 'saturation' | 'luminance', string> = {
   luminance: tk('Luminance')
 }
 
-export function MixerBody({
-  compact = false
-}: { compact?: boolean } = {}): React.JSX.Element | null {
+export function MixerBody(): React.JSX.Element | null {
   const { recipe, layer } = useScope()
-  const kept = useDevelop((s) => s.hslTab)
-  // Compact (the Resolve tools' HSL): no Point tab; a tab left on it shows Hue.
-  const tab = compact && kept === 'point' ? 'hue' : kept
+  const tab = useDevelop((s) => s.hslTab)
   const setTab = useDevelop((s) => s.setHslTab)
   const focus = useDevelop((s) => s.hslFocus)
   // A band chosen from the colour-concentration chart scrolls into view.
@@ -893,7 +888,7 @@ export function MixerBody({
               { value: 'saturation', label: 'S' },
               { value: 'luminance', label: 'L' },
               { value: 'all', label: t('All') },
-              ...(compact ? [] : [{ value: 'point' as const, label: t('Point') }])
+              { value: 'point', label: t('Point') }
             ]}
           />
         </>
@@ -1055,10 +1050,34 @@ function PointColorSection(): React.JSX.Element | null {
   )
 }
 
-// ── Colour grading ───────────────────────────────────────────────────────────
+// ── Colour grading (Lightroom's, kept for the photos using it) ──────────────
 
+/**
+ * Add colour: light of a colour laid on the scene before the look (under
+ * the Primaries' wheels).
+ */
+export function AddColourSection(): React.JSX.Element | null {
+  const { recipe, edit, layer } = useScope()
+  if (!recipe) return null
+  return (
+    <Section id="grade.add" title={t('Add colour')}>
+      <AddColourControl
+        target={layer ? { layer: layer.id, part: 'grade' } : 'grade'}
+        value={recipe.colorGrade.add}
+        onChange={(v, live) => edit((r) => (r.colorGrade.add = v), live)}
+        hint={layer ? TIPS['grading.add.mask'] : TIPS['grading.add']}
+      />
+    </Section>
+  )
+}
+
+/**
+ * Lightroom's Colour grading wheels, offered only on a photo (or mask) that
+ * holds them: they still act and can be changed or reset. Primaries and Log
+ * wheels do what they did.
+ */
 export function GradingBody(): React.JSX.Element | null {
-  const { recipe, edit, commit, layer } = useScope()
+  const { recipe, edit, commit } = useScope()
   if (!recipe) return null
   const wheel = (
     key: 'shadows' | 'midtones' | 'highlights' | 'global',
@@ -1075,6 +1094,11 @@ export function GradingBody(): React.JSX.Element | null {
   )
   return (
     <ToolPanel>
+      <p className="muted small">
+        {t(
+          'Lightroom’s colour wheels, kept for this photo. Reset them to move to the Primaries and Log wheels.'
+        )}
+      </p>
       <div className="wheels">
         {wheel('shadows', tk('Shadows'))}
         {wheel('midtones', tk('Midtones'))}
@@ -1094,14 +1118,6 @@ export function GradingBody(): React.JSX.Element | null {
         read={(r) => r.colorGrade.balance}
         write={(r, v) => (r.colorGrade.balance = v)}
       />
-      <Section id="grade.add" title={t('Add colour')}>
-        <AddColourControl
-          target={layer ? { layer: layer.id, part: 'grade' } : 'grade'}
-          value={recipe.colorGrade.add}
-          onChange={(v, live) => edit((r) => (r.colorGrade.add = v), live)}
-          hint={layer ? TIPS['grading.add.mask'] : TIPS['grading.add']}
-        />
-      </Section>
     </ToolPanel>
   )
 }

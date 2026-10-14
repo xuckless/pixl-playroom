@@ -718,7 +718,7 @@ export function MasksPane(): React.JSX.Element | null {
   const addMode = useDevelop((s) => s.addMode)
   const open = useUi((s) => s.masksWin.open)
   // Resolve's node view, where it is asked for (Settings → Interface).
-  const nodes = useUi((s) => s.nodeView && s.colourTools === 'resolve')
+  const nodes = useUi((s) => s.nodeView)
   const [picker, setPicker] = useState(false)
   const masks = useReorder((from, to) => {
     const l = useDevelop.getState().recipe?.layers[from]

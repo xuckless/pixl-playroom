@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import { DEFAULT_ENHANCE, normaliseEnhance, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind, SpotRefineChoice } from '../../../shared/retouch'
 import { aiDenoiseModel, type AiDenoiseModel } from '../../../shared/recipe'
-import { cardSpec, isCardId, isPanelId, panelOf, type PanelId } from '../../../shared/cards'
+import { isCardId, isPanelId, panelOf, type PanelId } from '../../../shared/cards'
 import { migrateUi } from './uiMigrate'
 import { DEFAULT_SCOPES, normaliseScopes, type ScopePrefs } from '../../../shared/scopes'
 import { tk } from '../lib/i18n'
@@ -52,17 +52,6 @@ export const THEMES: { value: Theme; label: string }[] = [
 export const DEFAULT_THEME: Theme = 'calm'
 /** The themes with no glass to draw: flat by nature, whatever "Always flat" says. */
 export const FLAT_THEMES: readonly Theme[] = ['calm', 'studio', 'contrast']
-
-/**
- * Which colour tools the right column shows (Settings → Interface): the
- * Lightroom-style cards, or DaVinci Resolve's (Primaries, Log wheels, Curves,
- * Qualifier). One set shows at a time; both act on the photo.
- */
-export type ColourTools = 'lightroom' | 'resolve'
-export const COLOUR_TOOLS: { value: ColourTools; label: string }[] = [
-  { value: 'lightroom', label: tk('Lightroom') },
-  { value: 'resolve', label: tk('Resolve') }
-]
 
 /** What the right column can show: Basic corrections, another adjustment card, or Enhance. */
 export type Panel = PanelId | 'enhance'
@@ -177,8 +166,6 @@ interface UiState {
   /** The scopes: the one in the right column, the expanded viewer's layout and options. */
   scopes: ScopePrefs
   setScopes(p: Partial<ScopePrefs>): void
-  colourTools: ColourTools
-  setColourTools(c: ColourTools): void
   /** Resolve's node view of the layers in the masks pane (advanced; off until asked for). */
   nodeView: boolean
   setNodeView(on: boolean): void
@@ -318,6 +305,8 @@ const storage = createJSONStorage(() => ({
 function savedPanel(v: unknown): Panel | undefined {
   if (v === 'enhance') return v
   if (v === 'colour') return 'basic'
+  // Resolve's Curves became the one Curves card.
+  if (v === 'rcurves') return 'curve'
   if (isCardId(v)) return panelOf(v)
   return isPanelId(v) ? v : undefined
 }
@@ -329,16 +318,6 @@ export const useUi = create<UiState>()(
       setTheme: (theme) => set({ theme }),
       scopes: DEFAULT_SCOPES,
       setScopes: (p) => set((s) => ({ scopes: normaliseScopes({ ...s.scopes, ...p }) })),
-      colourTools: 'lightroom',
-      setColourTools: (colourTools) =>
-        set((s) => {
-          // The focused card stays in view: one of the set going away gives way to Basic.
-          const away =
-            s.focusCard === 'enhance' || s.focusCard === 'basic'
-              ? undefined
-              : cardSpec(s.focusCard).set
-          return { colourTools, ...(away && away !== colourTools ? { focusCard: 'basic' } : {}) }
-        }),
       nodeView: false,
       setNodeView: (nodeView) => set({ nodeView }),
       rebuildQuiet: [],
@@ -437,7 +416,6 @@ export const useUi = create<UiState>()(
           // The retired Original, and anything unknown, is Signature.
           theme: THEMES.some((x) => x.value === p.theme) ? p.theme! : DEFAULT_THEME,
           scopes: normaliseScopes(p.scopes),
-          colourTools: p.colourTools === 'resolve' ? 'resolve' : 'lightroom',
           nodeView: p.nodeView === true,
           masksWin: { open: p.masksWin?.open === true },
           maskOverlay: withoutPins({ ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay }),
