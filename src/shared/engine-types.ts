@@ -2467,6 +2467,12 @@ export interface NativeRefs {
   keepHeld?: string
   /** Drop the output's bytes in the host: a render made only for its measurements. */
   discardOutput?: boolean
+  /**
+   * An SDR render sent as an F16 frame (linear Display P3): the host makes
+   * its 8-bit companion at this longest side (shared/sdrcompanion.ts), as
+   * the engine does only for a Master.
+   */
+  sdrCompanion?: number
 }
 
 /**

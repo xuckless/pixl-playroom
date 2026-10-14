@@ -685,6 +685,12 @@ export interface ViewState {
    * `Ceiling::Display`); null renders SDR, as before.
    */
   display?: { whiteNits: number; peakNits: number } | null
+  /**
+   * The window draws F16 frames (WebGPU's float canvas): a settled SDR
+   * picture and the 1:1 tiles go as linear Display P3 half floats, not
+   * 8-bit files. Absent or false: as before.
+   */
+  float?: boolean
 }
 
 export interface RenderReport {

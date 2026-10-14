@@ -228,6 +228,20 @@ const LOOK_KEEP = 600
  * this display (`Ceiling::Display`), F16 linear Display P3 with 1.0 = SDR
  * white, and an 8-bit SDR companion for what reads the picture.
  */
+/**
+ * An SDR picture in float (the settled picture and the 1:1 tiles on a
+ * window that draws F16 frames): the same Display P3 picture, linear, so
+ * its gradients are not cut into 256 steps. Values stop at 1, as the 8-bit
+ * picture's do, and match it within one step of 255 once encoded.
+ */
+const LINEAR_P3: ColorPolicy = {
+  ConvertTo: {
+    to: 'LinearDisplayP3',
+    intent: 'RelativeColorimetric',
+    black_point_compensation: false
+  }
+}
+
 function masterFor(
   display: { whiteNits: number; peakNits: number },
   /** The whole picture's figures, for a part of it (a region measures neither). */
@@ -1062,10 +1076,21 @@ class Session {
       const extras =
         !this.closed && !this.pending && !this.bakePending() && !this.previewing && !this.holding()
       if (kind === 'full' && extras) {
-        if (this.view.maskLayer) await this.renderMask('full', signal)
-        if (this.view.before) await this.renderBefore(signal)
-        if (this.view.headroom) await this.renderHeadroom(signal)
-        if (this.view.maskThumbs) await this.renderMaskThumbs(signal)
+        // The picture is shown: what goes beside it failing is logged, not
+        // said over it (the picture is fine, and the next edit tries again).
+        const beside = async (what: string, run: () => Promise<void>): Promise<void> => {
+          try {
+            await run()
+          } catch (err) {
+            if (isCancelled(err)) throw err
+            const e = err as EngineError
+            log.warn(`${what} render failed`, e.code, e.message)
+          }
+        }
+        if (this.view.maskLayer) await beside('mask', () => this.renderMask('full', signal))
+        if (this.view.before) await beside('before', () => this.renderBefore(signal))
+        if (this.view.headroom) await beside('headroom', () => this.renderHeadroom(signal))
+        if (this.view.maskThumbs) await beside('mask thumbs', () => this.renderMaskThumbs(signal))
       }
     } catch (err) {
       // Stopped for a newer edit, which renders next: nothing went wrong.
@@ -1111,6 +1136,15 @@ class Session {
   private screening: string | null = null
   /** A level that could not be made (or has no full-size frame yet): not asked again. */
   private screenFailed: string | null = null
+
+  /**
+   * Whether a settled SDR picture (or a 1:1 tile) goes as an F16 frame: the
+   * window draws float frames (`ViewState.float`), and the photo has no light
+   * above white to tone map (that keeps its 8-bit path).
+   */
+  private floatSdr(kind: Kind, display: unknown): boolean {
+    return kind === 'full' && !display && this.view.float === true && !this.info.is_hdr
+  }
 
   /** The edge the loupe wants past the proxy's, or null when the proxy serves. */
   private screenEdge(px: Proxies): number | null {
@@ -1293,6 +1327,7 @@ class Session {
           src.path,
           cropMode,
           display,
+          this.floatSdr(kind, display),
           compiled.grade,
           compiled.framing,
           compiled.lens,
@@ -1313,9 +1348,10 @@ class Session {
       }
       // In Full HDR the picture a thumbnail shrinks from is the companion,
       // whose size is its own.
-      const shown = display
-        ? this.lastCompanion
-        : { path: this.lastFull, width: last.width, height: last.height }
+      const shown =
+        display || this.floatSdr(kind, display)
+          ? this.lastCompanion
+          : { path: this.lastFull, width: last.width, height: last.height }
       if (whole && shown) this.fullPicture = { recipe, picture: shown }
       if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq, rev })
       return
@@ -1331,7 +1367,11 @@ class Session {
     // AVIF with a gain map (the A/B's other arm; no alpha, so not a warp
     // shown whole).
     const avif = display !== null && kind === 'full' && !alpha && SETTLED_ARM === 'avif'
-    const frame = kind === 'draft' || (display && !avif) ? `${this.tag}-${seq}` : undefined
+    // An SDR settled picture in float too, where the window draws F16 frames
+    // (an HDR photo shown in SDR is tone mapped as before, in 8 bits).
+    const floatSdr = this.floatSdr(kind, display)
+    const frame =
+      kind === 'draft' || (display && !avif) || floatSdr ? `${this.tag}-${seq}` : undefined
     const out = frame ? '' : this.nextFile('view', avif ? 'avif' : alpha ? 'png' : 'jpg')
     const hdrStats =
       kind === 'full' ? this.measureHdr(cropMode, signal) : Promise.resolve(undefined)
@@ -1346,11 +1386,11 @@ class Session {
         ...blankRequest(src.path, out, src.input),
         ...(frame ? { sink: 'Bytes' as const } : {}),
         pixel: {
-          depth: display && frame ? 'F32' : 'Eight',
+          depth: (display || floatSdr) && frame ? 'F32' : 'Eight',
           channels: alpha || frame ? 4 : 3
         },
         encode: frame
-          ? { Pixels: { sample: display ? 'F16' : 'U8' } }
+          ? { Pixels: { sample: display || floatSdr ? 'F16' : 'U8' } }
           : avif
             ? SETTLED_AVIF
             : alpha
@@ -1367,7 +1407,9 @@ class Session {
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: display
           ? masterFor(display, undefined, kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE)
-          : displayPolicy(this.info, 'DisplayP3'),
+          : floatSdr
+            ? LINEAR_P3
+            : displayPolicy(this.info, 'DisplayP3'),
         // The master reads a gain map itself, and refuses the field.
         ...(display ? { gain_map: null } : {}),
         grade: compiled.grade,
@@ -1379,7 +1421,7 @@ class Session {
         // risk measuring nothing when little of the picture is left.
         measure: measureOf(kind === 'draft' ? 2 : 1)
       },
-      { signal, frame },
+      { signal, frame, ...(floatSdr ? { native: { sdrCompanion: COMPANION_EDGE } } : {}) },
       keyHeld
     ).catch(named(compiled))
     // The engine had no way to the window (it was reloading): main passes the frame on.
@@ -1389,17 +1431,18 @@ class Session {
         width: report.width,
         height: report.height,
         data: report.output,
-        sample: display ? 'F16' : 'U8',
+        sample: display || floatSdr ? 'F16' : 'U8',
         ...(report.companion ? { companion: companionOf(report.companion) } : {})
       })
     const stats = statsOf(report)
     // Full HDR's settled picture, either arm: what measures it (inside a
     // mask) and what reads its pixels take its SDR companion, kept as a PNG.
     let readUrl: string | undefined
-    if (kind === 'full' && display) {
+    if (kind === 'full' && (display || floatSdr)) {
       const m = report.color.master
-      this.hdrFigures =
-        m && m.gamut ? { peakNits: m.peak_nits, reach: m.gamut.reach } : this.hdrFigures
+      if (display)
+        this.hdrFigures =
+          m && m.gamut ? { peakNits: m.peak_nits, reach: m.gamut.reach } : this.hdrFigures
       const c = report.companion
       if (c) {
         const file = this.nextFile('companion', 'png')
@@ -1785,7 +1828,7 @@ class Session {
    */
   private async convertHeld(
     request: ConvertRequest,
-    opts: { signal: AbortSignal; frame?: string },
+    opts: { signal: AbortSignal; frame?: string; native?: NativeRefs },
     keyHeld: string | null
   ): Promise<ConvertReport> {
     if (!keyHeld) return this.owner.engine.convert(request, opts)
@@ -1793,7 +1836,7 @@ class Session {
     try {
       const report = await this.owner.engine.convert(request, {
         ...opts,
-        native: { keepHeld: this.heldSlot.id, ...(held ? { held } : {}) }
+        native: { ...opts.native, keepHeld: this.heldSlot.id, ...(held ? { held } : {}) }
       })
       this.heldSlot.kept(report, keyHeld)
       return report
@@ -2197,7 +2240,7 @@ class Session {
     // Full HDR: the before in HDR too, as an AVIF with the master's gain map
     // (a file: a frame would be let go as the drafts stream past it).
     const display = this.view.display ?? null
-    const compiled = await this.compileFor(
+    let compiled = await this.compileFor(
       before,
       src,
       !this.view.cropMode,
@@ -2205,6 +2248,13 @@ class Session {
       true,
       display !== null
     )
+    // PNG only where it has transparent corners to keep (the crop tool's
+    // warp); else a JPEG, as the picture beside it is.
+    const alpha = framingTransparent(compiled.framing)
+    // That PNG is SDR even in Full HDR: its grade compiles as SDR too (a
+    // curve carried past 1 into a Display P3 picture is refused).
+    if (alpha && display !== null)
+      compiled = await this.compileFor(before, src, !this.view.cropMode, false, true, false)
     // Keyed on what the engine is asked for, not on the raw geometry: a
     // straighten in the crop tool changes the recipe but not this picture.
     const key = JSON.stringify([
@@ -2216,9 +2266,6 @@ class Session {
       display
     ])
     if (key === this.beforeKey) return
-    // PNG only where it has transparent corners to keep (the crop tool's
-    // warp); else a JPEG, as the picture beside it is.
-    const alpha = framingTransparent(compiled.framing)
     const hdr = display && !alpha ? hdrFile(display) : null
     const ext = hdr ? 'avif' : alpha ? 'png' : 'jpg'
     const out = join(this.dir, `before-${hash32(key).toString(16)}.${ext}`)
@@ -2375,7 +2422,9 @@ class Session {
     this.regionSlot = (this.regionSlot + 1) % 4
     // A JPEG at full chroma: as sharp at 1:1 as the PNG it was, a fraction
     // of the time to write and decode at the screen's size.
-    const frame = hdr ? `${this.tag}-tile${++this.tileSeq}` : undefined
+    // An SDR tile in float too, where the window draws F16 frames.
+    const floatSdr = !hdr && this.floatSdr('full', display)
+    const frame = hdr || floatSdr ? `${this.tag}-tile${++this.tileSeq}` : undefined
     const out = frame ? '' : join(this.dir, `region-${this.regionSlot}.jpg`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
@@ -2397,7 +2446,9 @@ class Session {
       color:
         frame && display && figures
           ? masterFor(display, figures, TILE_COMPANION_EDGE)
-          : displayPolicy(this.info, 'DisplayP3'),
+          : floatSdr
+            ? LINEAR_P3
+            : displayPolicy(this.info, 'DisplayP3'),
       // The master reads a gain map itself, and refuses the field.
       ...(hdr ? { gain_map: null } : {}),
       grade: compiled.grade,
@@ -2411,7 +2462,11 @@ class Session {
     }
     const tConvert = performance.now()
     const report = await this.owner.engine
-      .convert(request, { signal, frame })
+      .convert(request, {
+        signal,
+        frame,
+        ...(floatSdr ? { native: { sdrCompanion: TILE_COMPANION_EDGE } } : {})
+      })
       .catch(named(compiled))
     // The margin fell short of what the grade read: its edges may not meet a neighbour's.
     if (report.region?.short_by)

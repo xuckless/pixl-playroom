@@ -1,3 +1,4 @@
+import { floatCanvasKnown, floatCanvasReady } from '../lib/floatcanvas'
 import { produce, setAutoFreeze } from 'immer'
 import { create } from 'zustand'
 import { t, tk } from '../lib/i18n'
@@ -694,8 +695,12 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       display: aboveWhite(session)
         ? renderDisplay(useUi.getState().fullHdr, useDisplay.getState().display)
         : null,
-      targetEdge
+      targetEdge,
+      // Settled SDR pictures in float once the window is known to draw F16
+      // frames (asked once; the view goes again when the answer comes).
+      float: floatCanvasKnown() === true
     }
+    if (floatCanvasKnown() === null) void floatCanvasReady().then((ok) => ok && get().pushView())
     set({ rendering: true })
     void api.develop.view(session.key, view)
   },
