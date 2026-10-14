@@ -3475,5 +3475,18 @@
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "Phóng to 100%, mỗi điểm ảnh của ảnh ứng với một điểm ảnh màn hình, để kiểm tra độ nét và nhiễu. Chụm hoặc cuộn để thu phóng; giữ {{key}} và kéo để di chuyển khung nhìn.",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ luma {{luma}} · chroma {{chroma}}",
   "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ của nhiễu trắng trên từng mặt phẳng, theo bộ ước lượng riêng của bộ khử nhiễu, tính bằng giá trị mã 8 bit",
-  "AI tools work on the SDR picture this photo stores, so using one moves the photo out of HDR: its highlights stop at white, and Full HDR and Headroom have nothing above white to show.\n\nYour adjustments stay. To edit in HDR again, remove the AI steps (untick the box, or in History), then choose Photo → Edit as HDR.": "Công cụ AI làm việc trên ảnh SDR mà ảnh này lưu kèm, nên dùng chúng sẽ đưa ảnh ra khỏi HDR: vùng sáng dừng ở mức trắng, và Full HDR cùng Headroom không còn gì trên mức trắng để hiển thị.\n\nCác chỉnh sửa của bạn vẫn giữ nguyên. Để chỉnh lại trong HDR, hãy bỏ các bước AI (bỏ chọn ô, hoặc trong Lịch sử). Sau đó chọn Ảnh → Chỉnh sửa dạng HDR."
+  "AI tools work on the SDR picture this photo stores, so using one moves the photo out of HDR: its highlights stop at white, and Full HDR and Headroom have nothing above white to show.\n\nYour adjustments stay. To edit in HDR again, remove the AI steps (untick the box, or in History), then choose Photo → Edit as HDR.": "Công cụ AI làm việc trên ảnh SDR mà ảnh này lưu kèm, nên dùng chúng sẽ đưa ảnh ra khỏi HDR: vùng sáng dừng ở mức trắng, và Full HDR cùng Headroom không còn gì trên mức trắng để hiển thị.\n\nCác chỉnh sửa của bạn vẫn giữ nguyên. Để chỉnh lại trong HDR, hãy bỏ các bước AI (bỏ chọn ô, hoặc trong Lịch sử). Sau đó chọn Ảnh → Chỉnh sửa dạng HDR.",
+  "Autumn foliage": "Lá mùa thu",
+  "Brighter skin": "Da sáng hơn",
+  "Calmer skin": "Da dịu hơn",
+  "Clean highlights": "Vùng sáng sạch",
+  "Clean shadows": "Vùng tối sạch",
+  "Deeper blue skies": "Trời xanh sâu hơn",
+  "Even skin tones": "Tông da đều màu",
+  "Film: both ends": "Phim: cả hai đầu",
+  "Lift muted colour": "Nâng màu nhạt",
+  "Muted greens": "Xanh lá dịu",
+  "Richer blues": "Xanh dương đậm hơn",
+  "Tame strong colour": "Dịu bớt màu mạnh",
+  "Teal skies": "Trời xanh mòng két"
 }

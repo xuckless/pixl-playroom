@@ -3475,5 +3475,18 @@
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "缩放到 100%，照片的一个像素对应屏幕的一个像素，用于检查对焦和噪点。捏合或滚动以缩放；按住 {{key}} 并拖动以平移。",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ 亮度 {{luma}} · 色度 {{chroma}}",
   "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各平面白噪声的 σ̂，由降噪器自身估算，以 8 位代码值表示",
-  "AI tools work on the SDR picture this photo stores, so using one moves the photo out of HDR: its highlights stop at white, and Full HDR and Headroom have nothing above white to show.\n\nYour adjustments stay. To edit in HDR again, remove the AI steps (untick the box, or in History), then choose Photo → Edit as HDR.": "AI 工具处理的是这张照片存储的 SDR 画面，因此使用后照片会离开 HDR：高光止于白色，Full HDR 和余量也没有高于白色的内容可显示。\n\n你的调整会保留。要重新在 HDR 中编辑，请移除 AI 步骤（取消勾选，或在历史记录中）。然后选择“照片”→“作为 HDR 编辑”。"
+  "AI tools work on the SDR picture this photo stores, so using one moves the photo out of HDR: its highlights stop at white, and Full HDR and Headroom have nothing above white to show.\n\nYour adjustments stay. To edit in HDR again, remove the AI steps (untick the box, or in History), then choose Photo → Edit as HDR.": "AI 工具处理的是这张照片存储的 SDR 画面，因此使用后照片会离开 HDR：高光止于白色，Full HDR 和余量也没有高于白色的内容可显示。\n\n你的调整会保留。要重新在 HDR 中编辑，请移除 AI 步骤（取消勾选，或在历史记录中）。然后选择“照片”→“作为 HDR 编辑”。",
+  "Autumn foliage": "秋叶",
+  "Brighter skin": "更亮的肤色",
+  "Calmer skin": "更柔和的肤色",
+  "Clean highlights": "干净的高光",
+  "Clean shadows": "干净的阴影",
+  "Deeper blue skies": "更深的蓝天",
+  "Even skin tones": "均匀的肤色",
+  "Film: both ends": "胶片：两端",
+  "Lift muted colour": "提升暗淡的颜色",
+  "Muted greens": "柔和的绿色",
+  "Richer blues": "更浓郁的蓝色",
+  "Tame strong colour": "收敛浓烈的颜色",
+  "Teal skies": "青色天空"
 }

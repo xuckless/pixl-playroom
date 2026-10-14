@@ -12,6 +12,7 @@
  * balance in linear light until the engine has them with the primaries (E75).
  */
 import type { GradeOp, HslKey, Primary } from './engine-types'
+import { tk } from './i18n'
 
 /** A wheel's four numbers: Y moves all three channels, R/G/B each its own. */
 export interface Yrgb {
@@ -321,6 +322,111 @@ export function curvesVsOp(c: CurvesVsSetting): { op: GradeOp | null; waiting: V
     },
     waiting
   }
+}
+
+// ── Curves presets: starting points for each vs curve ───────────────────────
+
+/** A vs curve under a name: a built-in, or one the user saved. */
+export interface VsPreset {
+  name: string
+  points: { x: number; y: number }[]
+}
+
+/** Where each colour sits on a hue curve's x (red at both ends). */
+const HUE_AT = { red: 0, orange: 1 / 12, yellow: 1 / 6, green: 1 / 3, aqua: 1 / 2, blue: 2 / 3 }
+/** A Hue vs Hue point: a turn of `deg` degrees. */
+const turn = (x: number, deg: number): { x: number; y: number } => ({
+  x: r4(x),
+  y: r4(0.5 + deg / 360)
+})
+/** A Hue vs Lum point: `d` brighter (or darker) on the curve's own scale, 0.5 untouched. */
+const lift = (x: number, d: number): { x: number; y: number } => ({ x: r4(x), y: r4(0.5 + d) })
+/** A saturation curve's point: `k` times as strong. */
+const times = (x: number, k: number): { x: number; y: number } => ({ x: r4(x), y: r4(k / 2) })
+
+/**
+ * The built-in starting points of each vs curve, gentle as a colourist's
+ * first moves, each a few points to drag from: Flat first (the curve put
+ * back). Hue vs Lum and Sat vs Sat are kept and wait for the engine
+ * (`VS_WAITING`) as drawn ones do.
+ */
+export const VS_PRESETS: Record<VsCurve, VsPreset[]> = {
+  hueHue: [
+    { name: tk('Flat'), points: [] },
+    {
+      // Reds and yellows toward one orange: skin of one tone.
+      name: tk('Even skin tones'),
+      points: [turn(0, 8), turn(HUE_AT.orange, 0), turn(HUE_AT.yellow, -10), turn(0.25, 0)]
+    },
+    {
+      name: tk('Autumn foliage'),
+      points: [turn(0.25, 0), turn(HUE_AT.green, -20), turn(0.42, 0)]
+    },
+    {
+      name: tk('Teal skies'),
+      points: [turn(HUE_AT.aqua, 0), turn(0.6, -12), turn(0.72, 0)]
+    }
+  ],
+  hueSat: [
+    { name: tk('Flat'), points: [] },
+    {
+      name: tk('Richer blues'),
+      points: [times(0.55, 1), times(HUE_AT.blue, 1.3), times(0.78, 1)]
+    },
+    {
+      name: tk('Muted greens'),
+      points: [times(0.25, 1), times(HUE_AT.green, 0.7), times(0.42, 1)]
+    },
+    {
+      name: tk('Calmer skin'),
+      points: [times(0, 1), times(HUE_AT.orange, 0.85), times(HUE_AT.yellow, 1)]
+    },
+    {
+      name: tk('Teal & orange'),
+      points: [
+        times(0, 1),
+        times(HUE_AT.orange, 1.2),
+        times(0.2, 1),
+        times(HUE_AT.green, 0.85),
+        times(HUE_AT.aqua, 1.2),
+        times(HUE_AT.blue, 1)
+      ]
+    }
+  ],
+  hueLum: [
+    { name: tk('Flat'), points: [] },
+    {
+      name: tk('Deeper blue skies'),
+      points: [lift(0.55, 0), lift(HUE_AT.blue, -0.08), lift(0.78, 0)]
+    },
+    {
+      name: tk('Brighter skin'),
+      points: [lift(0, 0), lift(HUE_AT.orange, 0.05), lift(HUE_AT.yellow, 0)]
+    }
+  ],
+  lumSat: [
+    { name: tk('Flat'), points: [] },
+    { name: tk('Clean shadows'), points: [times(0, 0.7), times(0.25, 1)] },
+    { name: tk('Clean highlights'), points: [times(0.75, 1), times(1, 0.7)] },
+    {
+      name: tk('Film: both ends'),
+      points: [times(0, 0.8), times(0.25, 1), times(0.75, 1), times(1, 0.8)]
+    }
+  ],
+  satSat: [
+    { name: tk('Flat'), points: [] },
+    { name: tk('Tame strong colour'), points: [times(0, 1), times(0.6, 1), times(1, 0.76)] },
+    { name: tk('Lift muted colour'), points: [times(0, 1), times(0.25, 1.2), times(0.5, 1)] }
+  ]
+}
+
+/** Whether two vs curves draw the same: their points, as normalised. */
+export function sameVs(a: { x: number; y: number }[], b: { x: number; y: number }[]): boolean {
+  if (vsFlat(a) && vsFlat(b)) return true
+  return (
+    a.length === b.length &&
+    a.every((p, i) => Math.abs(p.x - b[i].x) < 1e-4 && Math.abs(p.y - b[i].y) < 1e-4)
+  )
 }
 
 /** A mask's Amount on its vs curves: each point moved toward flat by `k`. */

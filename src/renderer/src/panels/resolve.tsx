@@ -2,6 +2,8 @@
  * DaVinci Resolve's colour tools as cards (Settings → Interface → Colour
  * tools: Resolve). The recipe and the engine's side are shared/resolve.ts.
  */
+import { CurvePresets } from './CurvePresets'
+import { VsPresets } from './VsPresets'
 import { useEffect, useState } from 'react'
 import { GradeWheel, type WheelScale } from '../components/grading/GradeWheel'
 import { CurveEditor } from '../components/editors'
@@ -191,6 +193,7 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
     return (
       <ToolPanel>
         <Tabs value={tab} onChange={setTab} className="rc-tabs" tabs={tabsOf()} />
+        <CurvePresets />
         <div className="row rc-channels">
           <InfoTip tip={TIPS['rcurves.custom']} label={t('Custom')} />
           <span className="spacer" />
@@ -234,6 +237,7 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
         <span className="micro">{t(label)}</span>
         <InfoTip tip={TIPS[`rcurves.${vs}`]} label={t(label)} />
       </div>
+      <VsPresets key={vs} vs={vs} label={label} />
       {waiting && (
         <p className="rc-waiting">
           {t('Waiting for the engine')} ({waiting}):{' '}

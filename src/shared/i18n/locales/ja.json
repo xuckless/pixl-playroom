@@ -3475,5 +3475,18 @@
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "100% にズームし、写真の 1 ピクセルを画面の 1 ピクセルで表示して、ピントとノイズを確認します。ピンチまたはスクロールでズーム、{{key}} を押しながらドラッグでパンします。",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ 輝度 {{luma}} · 色差 {{chroma}}",
   "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各プレーンのホワイトノイズの σ̂（ノイズ除去機能自体の推定値、8ビットのコード値）",
-  "AI tools work on the SDR picture this photo stores, so using one moves the photo out of HDR: its highlights stop at white, and Full HDR and Headroom have nothing above white to show.\n\nYour adjustments stay. To edit in HDR again, remove the AI steps (untick the box, or in History), then choose Photo → Edit as HDR.": "AI ツールはこの写真が持つ SDR 画像で動作するため、使うと写真は HDR から外れます。ハイライトは白で止まり、Full HDR とヘッドルームで白より上に表示するものがなくなります。\n\n調整はそのまま残ります。HDR で編集し直すには、AI のステップを取り除いてください（チェックを外すか、履歴で）。そのあと「写真」→「HDR として編集」を選んでください。"
+  "AI tools work on the SDR picture this photo stores, so using one moves the photo out of HDR: its highlights stop at white, and Full HDR and Headroom have nothing above white to show.\n\nYour adjustments stay. To edit in HDR again, remove the AI steps (untick the box, or in History), then choose Photo → Edit as HDR.": "AI ツールはこの写真が持つ SDR 画像で動作するため、使うと写真は HDR から外れます。ハイライトは白で止まり、Full HDR とヘッドルームで白より上に表示するものがなくなります。\n\n調整はそのまま残ります。HDR で編集し直すには、AI のステップを取り除いてください（チェックを外すか、履歴で）。そのあと「写真」→「HDR として編集」を選んでください。",
+  "Autumn foliage": "秋の紅葉",
+  "Brighter skin": "明るい肌",
+  "Calmer skin": "落ち着いた肌",
+  "Clean highlights": "クリーンなハイライト",
+  "Clean shadows": "クリーンなシャドウ",
+  "Deeper blue skies": "深い青空",
+  "Even skin tones": "均一な肌色",
+  "Film: both ends": "フィルム：両端",
+  "Lift muted colour": "くすんだ色を持ち上げる",
+  "Muted greens": "落ち着いた緑",
+  "Richer blues": "豊かな青",
+  "Tame strong colour": "強い色を抑える",
+  "Teal skies": "ティールの空"
 }

@@ -3535,5 +3535,18 @@
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "Zoomt auf 100 %, ein Fotopixel pro Bildschirmpixel, um Schärfe und Rauschen zu prüfen. Zum Zoomen zusammenziehen oder scrollen; {{key}} halten und ziehen zum Verschieben.",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ Luma {{luma}} · Chroma {{chroma}}",
   "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ des weißen Rauschens je Ebene, der eigene Schätzer des Entrauschers, in 8-Bit-Codewerten",
-  "AI tools work on the SDR picture this photo stores, so using one moves the photo out of HDR: its highlights stop at white, and Full HDR and Headroom have nothing above white to show.\n\nYour adjustments stay. To edit in HDR again, remove the AI steps (untick the box, or in History), then choose Photo → Edit as HDR.": "KI-Werkzeuge arbeiten auf dem SDR-Bild, das dieses Foto speichert: Wer eines nutzt, holt das Foto aus HDR. Seine Lichter enden bei Weiß, und Full HDR und Headroom haben über Weiß nichts zu zeigen.\n\nIhre Anpassungen bleiben. Um wieder in HDR zu bearbeiten, entfernen Sie die KI-Schritte (Häkchen entfernen oder im Verlauf). Dann Foto → Als HDR bearbeiten wählen."
+  "AI tools work on the SDR picture this photo stores, so using one moves the photo out of HDR: its highlights stop at white, and Full HDR and Headroom have nothing above white to show.\n\nYour adjustments stay. To edit in HDR again, remove the AI steps (untick the box, or in History), then choose Photo → Edit as HDR.": "KI-Werkzeuge arbeiten auf dem SDR-Bild, das dieses Foto speichert: Wer eines nutzt, holt das Foto aus HDR. Seine Lichter enden bei Weiß, und Full HDR und Headroom haben über Weiß nichts zu zeigen.\n\nIhre Anpassungen bleiben. Um wieder in HDR zu bearbeiten, entfernen Sie die KI-Schritte (Häkchen entfernen oder im Verlauf). Dann Foto → Als HDR bearbeiten wählen.",
+  "Autumn foliage": "Herbstlaub",
+  "Brighter skin": "Hellere Haut",
+  "Calmer skin": "Ruhigere Haut",
+  "Clean highlights": "Saubere Lichter",
+  "Clean shadows": "Saubere Schatten",
+  "Deeper blue skies": "Tiefere blaue Himmel",
+  "Even skin tones": "Gleichmäßige Hauttöne",
+  "Film: both ends": "Film: beide Enden",
+  "Lift muted colour": "Gedämpfte Farben anheben",
+  "Muted greens": "Gedämpfte Grüntöne",
+  "Richer blues": "Sattere Blautöne",
+  "Tame strong colour": "Kräftige Farben zähmen",
+  "Teal skies": "Petrolfarbene Himmel"
 }

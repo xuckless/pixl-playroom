@@ -3595,5 +3595,18 @@
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "Zoome à 100 %, un pixel de la photo par pixel de l’écran, pour vérifier la netteté et le bruit. Pincez ou faites défiler pour zoomer ; maintenez {{key}} et faites glisser pour déplacer la vue.",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ luma {{luma}} · chroma {{chroma}}",
   "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ du bruit blanc sur chaque plan, selon l'estimateur du débruiteur, en valeurs de code 8 bits",
-  "AI tools work on the SDR picture this photo stores, so using one moves the photo out of HDR: its highlights stop at white, and Full HDR and Headroom have nothing above white to show.\n\nYour adjustments stay. To edit in HDR again, remove the AI steps (untick the box, or in History), then choose Photo → Edit as HDR.": "Les outils IA travaillent sur l’image SDR que cette photo contient : en utiliser un fait sortir la photo du HDR. Ses hautes lumières s’arrêtent au blanc, et Full HDR et Marge n’ont plus rien au-dessus du blanc à montrer.\n\nVos réglages restent. Pour retravailler en HDR, retirez les étapes IA (décochez la case, ou dans l’Historique). Puis choisissez Photo → Modifier en HDR."
+  "AI tools work on the SDR picture this photo stores, so using one moves the photo out of HDR: its highlights stop at white, and Full HDR and Headroom have nothing above white to show.\n\nYour adjustments stay. To edit in HDR again, remove the AI steps (untick the box, or in History), then choose Photo → Edit as HDR.": "Les outils IA travaillent sur l’image SDR que cette photo contient : en utiliser un fait sortir la photo du HDR. Ses hautes lumières s’arrêtent au blanc, et Full HDR et Marge n’ont plus rien au-dessus du blanc à montrer.\n\nVos réglages restent. Pour retravailler en HDR, retirez les étapes IA (décochez la case, ou dans l’Historique). Puis choisissez Photo → Modifier en HDR.",
+  "Autumn foliage": "Feuillage d’automne",
+  "Brighter skin": "Peau plus lumineuse",
+  "Calmer skin": "Peau plus douce",
+  "Clean highlights": "Hautes lumières nettes",
+  "Clean shadows": "Ombres nettes",
+  "Deeper blue skies": "Ciels bleus plus profonds",
+  "Even skin tones": "Tons chair uniformes",
+  "Film: both ends": "Film : les deux extrémités",
+  "Lift muted colour": "Raviver les couleurs ternes",
+  "Muted greens": "Verts atténués",
+  "Richer blues": "Bleus plus riches",
+  "Tame strong colour": "Adoucir les couleurs fortes",
+  "Teal skies": "Ciels sarcelle"
 }

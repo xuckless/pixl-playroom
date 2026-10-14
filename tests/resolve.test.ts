@@ -267,3 +267,23 @@ test('with the Resolve tools the mixer is the compact HSL, named HSL', async () 
     CARDS.filter((c) => cardShows(c, 'lightroom')).map((c) => c.id)
   )
 })
+
+test('the vs curves’ presets: each a curve the recipe keeps as written, Flat first', async () => {
+  const { VS_PRESETS, VS_CURVES, normaliseCurvesVs, sameVs, curvesVsOp, defaultCurvesVs } =
+    await import('../src/shared/resolve')
+  for (const vs of VS_CURVES) {
+    const list = VS_PRESETS[vs]
+    assert.equal(list[0].points.length, 0, `${vs} starts with Flat`)
+    assert.equal(new Set(list.map((p) => p.name)).size, list.length)
+    for (const p of list) {
+      const kept = normaliseCurvesVs({ [vs]: p.points })[vs]
+      assert.ok(sameVs(kept, p.points), `${vs} ${p.name} survives normalising`)
+      // Gentle: no point far from untouched.
+      assert.ok(p.points.every((q) => Math.abs(q.y - 0.5) <= 0.2), `${vs} ${p.name} is gentle`)
+    }
+  }
+  // A built-in compiles into the engine's Curves op.
+  const c = defaultCurvesVs()
+  c.hueSat = VS_PRESETS.hueSat[1].points
+  assert.ok(curvesVsOp(c).op)
+})
