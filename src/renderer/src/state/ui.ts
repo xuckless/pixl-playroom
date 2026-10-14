@@ -26,9 +26,8 @@ export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
 
 /** How a mask is shown over the photo (Lightroom's overlay modes). */
 export type OverlayMode =
-  'glass' | 'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
+  'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
 export const OVERLAY_MODES: { value: OverlayMode; label: string }[] = [
-  { value: 'glass', label: tk('Glass') },
   { value: 'color', label: tk('Colour overlay') },
   { value: 'color-bw', label: tk('Colour overlay on B&W') },
   { value: 'image-black', label: tk('Image on black') },
@@ -68,8 +67,9 @@ export interface MaskOverlaySettings {
   autoToggle: boolean
 }
 
+/** Lightroom's classic: a red tint at 45%. */
 export const DEFAULT_MASK_OVERLAY: MaskOverlaySettings = {
-  mode: 'glass',
+  mode: 'color',
   hue: 350,
   opacity: 45,
   showAll: false,
@@ -325,7 +325,7 @@ export const useUi = create<UiState>()(
     {
       name: 'playroom.ui',
       storage,
-      version: 8,
+      version: 9,
       migrate: (persisted, version) => migrateUi(persisted, version),
       // Crop or Heal is never in hand when the app opens.
       partialize: (s) => {

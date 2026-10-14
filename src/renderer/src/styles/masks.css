@@ -851,33 +851,32 @@ button.grad-other:hover:not(:disabled) {
 .grad-knob:hover {
   transform: scale(1.4);
 }
+/* Lightroom's classic pin: a white ring round a dark centre, with a dark
+   hairline outside so it reads on a white sky as on a black coat. */
 .grad-pin {
   position: absolute;
-  width: 20px;
-  height: 20px;
-  margin: -10px 0 0 -10px;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.9);
+  border: 2px solid #fff;
+  background: #1b1b1f;
   display: grid;
   place-items: center;
   pointer-events: auto;
   cursor: move;
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.5),
-    0 0 16px -2px var(--glow);
-  animation: pinIn 0.5s var(--spring) both;
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 1px 3px rgba(0, 0, 0, 0.45);
 }
 .grad-pin i {
-  width: 7px;
-  height: 7px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background: var(--acc);
-}
-.grad-pin::after {
-  display: none;
+  background: #fff;
 }
 .grad-pin:hover {
-  transform: scale(1.2);
+  border-color: var(--acc);
 }
 .tool-layer.gradients.on-hover:not(.drawing) .grad-lines,
 .tool-layer.gradients.on-hover:not(.drawing) .grad-handle,

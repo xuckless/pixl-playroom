@@ -31,14 +31,14 @@ export const BASE_EDGE = 1024
 /** The widest Gaussian the blur shader takes, in texels (its loop reaches 3σ ≤ 64). */
 const MAX_SIGMA = 16
 export type ViewMode =
-  'colour' | 'image-black' | 'image-white' | 'white-black' | 'outline' | 'glass' | 'ghost'
+  'colour' | 'image-black' | 'image-white' | 'white-black' | 'outline' | 'ghost'
 const VIEW_INDEX: Record<ViewMode, number> = {
   colour: 0,
   'image-black': 1,
   'image-white': 2,
   'white-black': 3,
   outline: 4,
-  glass: 5,
+  // 5 was the glass view (removed for Lightroom's classic tint).
   ghost: 6
 }
 const MODE_INDEX: Record<MaskMode, number> = { Add: 0, Subtract: 1, Intersect: 2 }
@@ -96,7 +96,6 @@ export class MaskGl {
   private engineKey = ''
   private picture: WebGLTexture | null = null
   private pictureKey = ''
-  private pictureSize = { w: 0, h: 0 }
   private polygonCanvas: OffscreenCanvas | null = null
   /** The last mask composed, and whether it is there to show. */
   private accIndex = 0
@@ -186,13 +185,12 @@ export class MaskGl {
     return { tex, fb, w, h }
   }
 
-  /** The picture as shown (decoded upside down), for ranges and the glass. */
+  /** The picture as shown (decoded upside down), for ranges. */
   setPicture(bitmap: ImageBitmap | null, key: string): void {
     if (!bitmap || key === this.pictureKey) return
     this.picture ??= this.texture()
     this.upload(bitmap, this.picture)
     this.pictureKey = key
-    this.pictureSize = { w: bitmap.width, h: bitmap.height }
   }
 
   private run(p: WebGLProgram, into: Target | null, w: number, h: number): void {
@@ -480,12 +478,8 @@ export class MaskGl {
     gl.clearColor(0, 0, 0, 0)
     gl.clear(gl.COLOR_BUFFER_BIT)
     if (!this.haveAcc && !this.haveEngine) return
-    const picture =
-      f.view === 'glass' && this.picture && this.pictureSize.w > 0 ? this.picture : null
     const p = this.programs.shade
     gl.useProgram(p)
-    if (picture) this.bind(p, 2, 'uPicture', picture)
-    gl.uniform1i(this.u(p, 'uHavePicture'), picture ? 1 : 0)
     gl.uniform1f(this.u(p, 'uPx'), f.px ?? 1)
     const acc = this.acc[this.accIndex]
     if (acc) this.bind(p, 0, 'uAcc', acc.tex)

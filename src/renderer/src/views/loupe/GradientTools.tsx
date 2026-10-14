@@ -23,7 +23,6 @@ import {
   type Rect,
   type ViewGeometry
 } from '../../../../shared/view'
-import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { createMask, madeComponent, modeForNew } from '../../panels/masks/model'
 import { useDevelop } from '../../state/develop'
 import { useUi } from '../../state/ui'
@@ -444,19 +443,14 @@ export const GradientTools = memo(function GradientTools({
           title={t('Turn')}
           onPointerDown={(e) => begin(e, 'rotate', shown)}
         />
-        <LiquidGlass
+        <span
           className="grad-pin"
-          radius={10}
-          bezel={6}
-          strength={1.2}
-          frost={0.5}
-          magnify
           style={{ left: m.x, top: m.y }}
           title={t('Move')}
           onPointerDown={(e) => begin(e, 'move', shown)}
         >
           <i />
-        </LiquidGlass>
+        </span>
       </>
     )
   } else if (shown?.kind === 'bidirectional') {
@@ -501,19 +495,14 @@ export const GradientTools = memo(function GradientTools({
           title={t('Turn')}
           onPointerDown={(e) => begin(e, 'rotate', shown)}
         />
-        <LiquidGlass
+        <span
           className="grad-pin"
-          radius={10}
-          bezel={6}
-          strength={1.2}
-          frost={0.5}
-          magnify
           style={{ left: c.x, top: c.y }}
           title={t('Move')}
           onPointerDown={(e) => begin(e, 'move', shown)}
         >
           <i />
-        </LiquidGlass>
+        </span>
       </>
     )
   } else if (shown?.kind === 'radial') {
@@ -567,13 +556,8 @@ export const GradientTools = memo(function GradientTools({
           })}
           onPointerDown={(e) => begin(e, 'feather', shown)}
         />
-        <LiquidGlass
+        <span
           className="grad-pin"
-          radius={10}
-          bezel={6}
-          strength={1.2}
-          frost={0.5}
-          magnify
           style={{ left: c.x, top: c.y }}
           title={t('Move · double-click to fill the frame')}
           onPointerDown={(e) => {
@@ -590,7 +574,7 @@ export const GradientTools = memo(function GradientTools({
           }}
         >
           <i />
-        </LiquidGlass>
+        </span>
       </>
     )
   }

@@ -175,15 +175,11 @@ void main() {
 
 /**
  * The overlay: the loupe's mask and the engine's, crossfaded, shown as the
- * chosen view. Premultiplied alpha out.
+ * chosen view. Premultiplied alpha out. The colour view (0) is Lightroom's
+ * classic tint: the mask's colour laid over the photo at the overlay's
+ * opacity.
  *
- * Clear glass (view 5) lays the mask on the photo as a pane of tinted glass:
- * inside, the picture stays sharp, a little more saturated and tinted the
- * mask's colour, so the edit can be judged through it. Its edge is one
- * crisp line, a CSS pixel wide, in the mask's colour, wherever the mask
- * crosses half; without the picture yet it shows as the colour view.
- *
- * The line is placed from how far each screen pixel is from that crossing
+ * The outline's and the ghost's line is placed from how far each screen pixel is from that crossing
  * (the mask's value over its steepness), not from a blur of it, so it keeps
  * its width at any zoom, and the mask is averaged over the pixel's own area
  * so a minified edge does not shimmer. A feathered edge keeps the line,
@@ -192,13 +188,11 @@ void main() {
 export const SHADE_FS = `${HEAD}
 uniform sampler2D uAcc;
 uniform sampler2D uEngine;
-uniform sampler2D uPicture;
 uniform bool uHaveAcc;
 uniform bool uHaveEngine;
-uniform bool uHavePicture;
 uniform bool uLayerInvert;
 uniform float uLive;      // 1: the loupe's mask, 0: the engine's
-uniform int uView;        // 0 colour, 1 image on black, 2 image on white, 3 white on black, 4 outline, 5 glass, 6 ghost
+uniform int uView;        // 0 colour, 1 image on black, 2 image on white, 3 white on black, 4 outline, 6 ghost (5 was glass)
 uniform vec3 uTint;
 uniform float uAlpha;
 uniform float uReveal;    // 0…1: a wipe from the top (a mask arriving from a model)
@@ -208,10 +202,6 @@ float M(vec2 d) {
   if (uHaveAcc) { live = S(uAcc, d); if (uLayerInvert) live = 1.0 - live; }
   float engine = uHaveEngine ? S(uEngine, d) : live;
   return uHaveAcc ? mix(engine, live, uLive) : engine;
-}
-vec3 P(sampler2D t, vec2 q) {
-  q = clamp(q, vec2(0.0), vec2(1.0));
-  return texture(t, vec2(q.x, 1.0 - q.y)).rgb;
 }
 // The mask averaged over this pixel's own area (4 x 4 taps): steady where the plane is minified.
 float MA(vec2 d) {
@@ -233,25 +223,7 @@ void main() {
   float front = uReveal < 1.0 ? 1.0 - smoothstep(0.0, 0.008, abs(d.y - uReveal)) : 0.0;
   if (d.y > uReveal + 0.008) { o = vec4(0.0); return; }
   if (d.y > uReveal) { o = vec4(vec3(0.62, 0.55, 0.92) * front, front); return; }
-  if (uView == 5 && uHavePicture) {
-    float ma = MA(d);
-    // Clear glass: the picture stays sharp, a little more saturated and tinted inside.
-    vec3 c = P(uPicture, d);
-    float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
-    float body = smoothstep(0.0, 0.75, ma);
-    c = mix(vec3(luma), c, 1.0 + 0.3 * body);
-    c = mix(c, uTint, 0.16 * body) * 1.03 + 0.012;
-    // Well inside, away from the edge, the glass is lighter.
-    float inner = body * smoothstep(0.6, 1.0, ma);
-    float a = clamp(ma * uAlpha, 0.0, 1.0) * (1.0 - 0.45 * inner);
-    o = vec4(c * a, a);
-    // The edge: one line a CSS pixel wide, in the mask's colour. A sharp
-    // edge (a steep change) is drawn full; a feathered one fainter.
-    float steep = smoothstep(0.03, 0.25, fwidth(ma));
-    float la = edgeLine(ma, max(1.0, uPx)) * mix(0.4, 1.0, steep) * mix(0.8, 1.0, uAlpha);
-    vec3 line = mix(uTint, vec3(1.0), 0.08);
-    o = vec4(line * la + (1.0 - la) * o.rgb, la + (1.0 - la) * o.a);
-  } else if (uView == 0 || uView == 5) {
+  if (uView == 0) {
     float a = uAlpha * m;
     o = vec4(uTint * a, a);
   } else if (uView == 1 || uView == 2) {

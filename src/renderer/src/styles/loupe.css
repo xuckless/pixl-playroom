@@ -577,11 +577,6 @@
 :root[data-adjusting] .picture.ov-bw:has(.mask-layer.auto-hide) > img {
   filter: none;
 }
-/* Molten glass without the loupe's drawing: clear glass, the photo kept sharp where the mask is. */
-.mask-overlay.glass {
-  backdrop-filter: saturate(1.35) brightness(1.06);
-  -webkit-backdrop-filter: saturate(1.35) brightness(1.06);
-}
 /* The selected mask, drawn by the loupe (views/loupe/maskgl). */
 .mask-canvas {
   position: absolute;

@@ -2,9 +2,19 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { migrateUi } from '../src/renderer/src/state/uiMigrate'
 
-test('the old colour overlay default becomes Molten glass', () => {
+test('an overlay from before the glass is the colour overlay again', () => {
   const p = migrateUi({ maskOverlay: { mode: 'color', opacity: 50 } }, 1)
-  assert.deepEqual(p.maskOverlay, { mode: 'glass', opacity: 50 })
+  assert.deepEqual(p.maskOverlay, { mode: 'color', opacity: 50 })
+})
+
+test('the glass overlay becomes the classic colour overlay, its hue and opacity kept', () => {
+  const p = migrateUi({ maskOverlay: { mode: 'glass', hue: 200, opacity: 60 } }, 8)
+  assert.deepEqual(p.maskOverlay, { mode: 'color', hue: 200, opacity: 60 })
+})
+
+test('another overlay view chosen before the glass went stays', () => {
+  const p = migrateUi({ maskOverlay: { mode: 'outline', opacity: 45 } }, 8)
+  assert.deepEqual(p.maskOverlay, { mode: 'outline', opacity: 45 })
 })
 
 test('the wheel’s last tool becomes the open, focused card', () => {
@@ -25,7 +35,7 @@ test('a tool that is not a card (Crop, Heal, Enhance) leaves the cards be', () =
 
 test('a current layout passes through', () => {
   const saved = { focusCard: 'detail', cardsOpen: { detail: true } }
-  assert.deepEqual(migrateUi(saved, 8), saved)
+  assert.deepEqual(migrateUi(saved, 9), saved)
 })
 
 test('AI denoise left at the old default (SCUNet) moves to DRUNet, once', () => {

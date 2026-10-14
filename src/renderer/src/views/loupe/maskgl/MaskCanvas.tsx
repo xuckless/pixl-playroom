@@ -26,10 +26,9 @@ const HOVER_OPACITY = 55
 /** So does the Objects tool's selection while it is made. */
 const SELECT_OPACITY = 55
 
-/** The shade's strength for a view at the overlay's opacity (0…100): glass reads stronger. */
-function alphaFor(view: ViewMode, opacity: number): number {
-  const a = opacity / 100
-  return view === 'glass' ? Math.min(1, Math.max(0.35, a * 1.6)) : a
+/** The shade's strength for a view at the overlay's opacity (0…100). */
+function alphaFor(_view: ViewMode, opacity: number): number {
+  return opacity / 100
 }
 
 /**
@@ -160,12 +159,10 @@ export function MaskCanvas({
   )
   const overlayOn = useDevelop((s) => s.overlay)
   // The Objects tool's selection being made (what a hover, a box or a click
-  // would take) shows plainly, overlay on or off: as a tint, since the glass's
-  // rim alone hardly shows what is taken.
+  // would take) shows plainly, overlay on or off.
   const selecting = useDevelop((s) => !isHover && s.tool === 'objects')
   const overlay = isHover || overlayOn || selecting
   const o = useUi((s) => s.maskOverlay)
-  const glass = o.mode === 'glass'
   const [bitmapTick, setBitmapTick] = useState(0)
   const [engineBmp, setEngineBmp] = useState<{ url: string; bmp: ImageBitmap } | null>(null)
   const [picture, setPicture] = useState<{ url: string; bmp: ImageBitmap } | null>(null)
@@ -257,9 +254,9 @@ export function MaskCanvas({
     }
   }, [mask?.url])
 
-  // The picture, for ranges and for the glass to show through.
+  // The picture, for ranges.
   const hasRange = components?.some((c) => c.kind === 'range') ?? false
-  const needPicture = hasRange || glass
+  const needPicture = hasRange
   const isHdr = useDevelop((s) => s.session?.isHdr ?? false)
   const hdrRange = isHdr && hasRange
   useEffect(() => {
@@ -413,7 +410,7 @@ export function MaskCanvas({
         }
       }
       const chosen = viewOf(o.mode)
-      const view = ghost ? 'ghost' : selecting && chosen === 'glass' ? 'colour' : chosen
+      const view = ghost ? 'ghost' : chosen
       const opacity = isHover
         ? Math.max(o.opacity, HOVER_OPACITY)
         : selecting
