@@ -27,8 +27,7 @@ async function refreshDevelop(keys: string[]): Promise<void> {
   const [s, listed] = await Promise.all([api.develop.open(key), api.develop.historyList(key)])
   // The head is the session's recipe here; the state keeps only the log.
   const history = { base: listed.base, steps: listed.steps }
-  if (useDevelop.getState().session?.key === key)
-    useDevelop.setState({ recipe: s.recipe, history, redo: [] })
+  if (useDevelop.getState().session?.key === key) useDevelop.setState({ recipe: s.recipe, history })
 }
 
 async function restore(previous: AutoWbResult['previous']): Promise<void> {

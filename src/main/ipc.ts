@@ -710,6 +710,8 @@ export function registerIpc(s: Services): void {
       return change
     }
   )
+  handle(IPC.develop.historyUndo, async (key: string) => slimLog(await s.index.undoHistory(key)))
+  handle(IPC.develop.historyRedo, async (key: string) => slimLog(await s.index.redoHistory(key)))
   handle(IPC.develop.historySetHidden, async (key: string, seqs: number[], hidden: boolean) =>
     slimLog(await s.index.setHistoryHidden(key, seqs, hidden))
   )

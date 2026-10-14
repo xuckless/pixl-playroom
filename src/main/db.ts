@@ -972,6 +972,14 @@ export class Store {
     return this.hist.setHidden(itemKey, seqs, hidden)
   }
 
+  undoHistory(itemKey: string): HistoryLog {
+    return this.hist.undo(itemKey)
+  }
+
+  redoHistory(itemKey: string): HistoryLog {
+    return this.hist.redo(itemKey)
+  }
+
   deleteHistory(itemKey: string, seqs: number[]): HistoryLog {
     return this.hist.delete(itemKey, seqs)
   }

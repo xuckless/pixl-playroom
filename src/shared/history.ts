@@ -37,7 +37,23 @@ export interface Step {
   label: string
   at: string
   patch: Patch
+  /** Not in effect: undone, or (before linear Undo) hidden by hand. */
   hidden: boolean
+  /** Taken back by Undo (stored `hidden = 2`): Redo can bring it back while nothing came after it. */
+  undone?: true
+}
+
+/**
+ * Whether Redo has something to bring back: an undone step with no step in
+ * effect after it (a new edit after an Undo ends what can be redone; the
+ * undone steps stay stored, as the record of what was done).
+ */
+export function canRedo(steps: readonly Step[]): boolean {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    if (!steps[i].hidden) return false
+    if (steps[i].undone) return true
+  }
+  return false
 }
 
 type Obj = Record<string, unknown>

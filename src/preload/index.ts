@@ -278,6 +278,8 @@ const api = {
       call<HistoryAmend | null>(IPC.develop.historyAmend, key, seq, label, recipe),
     /** Show `recipe` on the loupe without making it the photo's (null: the photo's again). */
     preview: (key: string, recipe: Recipe | null) => call<void>(IPC.develop.preview, key, recipe),
+    historyUndo: (key: string) => call<HistoryLog>(IPC.develop.historyUndo, key),
+    historyRedo: (key: string) => call<HistoryLog>(IPC.develop.historyRedo, key),
     historySetHidden: (key: string, seqs: number[], hidden: boolean) =>
       call<HistoryLog>(IPC.develop.historySetHidden, key, seqs, hidden),
     historyDelete: (key: string, seqs: number[]) =>

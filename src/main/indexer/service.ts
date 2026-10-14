@@ -2501,6 +2501,24 @@ export class IndexService {
     )
   }
 
+  /** Undo: the newest step in effect taken back (linear, like any editor's). */
+  undoHistory(key: string): HistoryLog {
+    return this.inHistory(
+      key,
+      (p, k) => p.history.undo(k),
+      () => this.store.undoHistory(key)
+    )
+  }
+
+  /** Redo: the oldest step Undo took back since the last edit, brought back. */
+  redoHistory(key: string): HistoryLog {
+    return this.inHistory(
+      key,
+      (p, k) => p.history.redo(k),
+      () => this.store.redoHistory(key)
+    )
+  }
+
   setHistoryHidden(key: string, seqs: number[], hidden: boolean): HistoryLog {
     return this.inHistory(
       key,

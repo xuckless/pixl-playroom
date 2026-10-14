@@ -11,7 +11,7 @@ import type {
   Snapshot,
   ViewState
 } from '../../../shared/ipc'
-import { amendLog, appendToLog, replay } from '../../../shared/history'
+import { amendLog, appendToLog, canRedo, replay } from '../../../shared/history'
 import {
   newId,
   normaliseRecipe,
@@ -96,7 +96,6 @@ interface DevelopState {
   /** The photo's edit history: the recipe is its base with every visible step replayed. */
   history: HistoryLog
   /** Steps Undo hid, newest last: what Redo shows again. A new edit clears it. */
-  redo: number[]
   snapshots: Snapshot[]
   /** The picture on screen: the latest render for the current view. */
   picture: RenderEvent | null
@@ -319,7 +318,6 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   recipe: null,
   previewing: null,
   history: { base: null, steps: [] },
-  redo: [],
   snapshots: [],
   picture: null,
   pictures: { framed: null, crop: null },
@@ -413,7 +411,6 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         shown: session,
         recipe: session.recipe,
         history,
-        redo: [],
         snapshots: session.snapshots,
         loading: false
       })
@@ -480,7 +477,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         try {
           const change = await api.develop.historyAppend(session.key, label, recipe)
           if (get().session?.key === session.key)
-            set({ history: appendToLog(get().history, change), redo: [] })
+            set({ history: appendToLog(get().history, change) })
           resolve(change.step?.seq ?? null)
         } catch (err) {
           resolve(null)
@@ -512,8 +509,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
             resolve(get().commit(label))
             return
           }
-          if (get().session?.key === session.key)
-            set({ history: amendLog(get().history, change), redo: [] })
+          if (get().session?.key === session.key) set({ history: amendLog(get().history, change) })
           resolve(change.step ? change.seq : null)
         } catch (err) {
           resolve(null)
@@ -534,22 +530,18 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   undo() {
     queueHistoryOp(async () => {
       await landing
-      const last = get().history.steps.findLast((s) => !s.hidden)
-      if (!last) return
-      await get().setStepsHidden([last.seq], true)
-      set({ redo: [...get().redo, last.seq] })
+      const session = get().session
+      if (!session || !get().history.steps.some((s) => !s.hidden)) return
+      applyLog(session.key, await api.develop.historyUndo(session.key))
     })
   },
 
   redoStep() {
     queueHistoryOp(async () => {
       await landing
-      const { redo, history } = get()
-      // Skip what was shown again by hand since.
-      const stack = redo.filter((seq) => history.steps.some((s) => s.seq === seq && s.hidden))
-      const seq = stack.pop()
-      if (seq !== undefined) await get().setStepsHidden([seq], false)
-      set({ redo: stack })
+      const session = get().session
+      if (!session || !canRedo(get().history.steps)) return
+      applyLog(session.key, await api.develop.historyRedo(session.key))
     })
   },
 

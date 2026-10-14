@@ -5,11 +5,12 @@ import { DatabaseSync } from 'node:sqlite'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { Store } from '../src/main/db'
-import { KEYFRAME_EVERY } from '../src/main/historytable'
+import { HISTORY_LIMIT, KEYFRAME_EVERY } from '../src/main/historytable'
 import {
   amendLog,
   appendToLog,
   applyPatch,
+  canRedo,
   dependents,
   diffRecipe,
   patchSummary,
@@ -27,6 +28,7 @@ import {
   type Recipe,
   type RangeComponent
 } from '../src/shared/recipe'
+import type { HistoryLog } from '../src/shared/ipc'
 
 const range = (): RangeComponent => ({
   id: 'r1',
@@ -207,17 +209,103 @@ test('past the limit the oldest steps fold into the base', () => {
   withStore((store) => {
     let r = defaultRecipe(false)
     store.appendHistory('k', 'Opened', r)
-    for (let i = 1; i <= 205; i++) {
+    const n = HISTORY_LIMIT + 5
+    for (let i = 1; i <= n; i++) {
       r = structuredClone(r)
-      r.basic.exposure = i / 100
+      r.basic.exposure = i / 1000
       store.appendHistory('k', `Exposure ${i}`, r)
     }
     const log = store.history('k')
-    assert.equal(log.steps.length + 1, 200)
-    assert.equal(log.base!.recipe.basic.exposure, 0.06)
-    assert.equal(replay(log.base!.recipe, log.steps).basic.exposure, 2.05)
+    assert.equal(log.steps.length + 1, HISTORY_LIMIT)
+    assert.equal(log.base!.recipe.basic.exposure, 6 / 1000)
+    assert.equal(replay(log.base!.recipe, log.steps).basic.exposure, n / 1000)
   })
 })
+
+test('Undo takes back the newest step and Redo brings it back, linearly', () => {
+  withStore((store) => {
+    const base = defaultRecipe(false)
+    store.appendHistory('k', 'Opened', base)
+    const a = structuredClone(base)
+    a.basic.exposure = 0.5
+    store.appendHistory('k', 'Exposure', a)
+    const b = structuredClone(a)
+    b.off = { light: true }
+    store.appendHistory('k', 'Light off', b)
+    const head = (log: ReturnType<typeof store.history>): Recipe =>
+      replay(log.base!.recipe, log.steps)
+    // Undo the switch, then the exposure: each the newest step in effect.
+    let log = store.undoHistory('k')
+    assert.deepEqual(head(log).off, {})
+    assert.equal(head(log).basic.exposure, 0.5)
+    assert.equal(canRedo(log.steps), true)
+    log = store.undoHistory('k')
+    assert.equal(head(log).basic.exposure, 0)
+    assert.deepEqual(
+      log.steps.map((s) => s.undone === true),
+      [true, true]
+    )
+    // Nothing left to undo: the history as it is.
+    assert.deepEqual(store.undoHistory('k').steps, log.steps)
+    // Redo brings them back oldest first.
+    log = store.redoHistory('k')
+    assert.equal(head(log).basic.exposure, 0.5)
+    assert.deepEqual(head(log).off, {})
+    log = store.redoHistory('k')
+    assert.deepEqual(head(log).off, { light: true })
+    assert.equal(canRedo(log.steps), false)
+    // The head read from the table (its keyframes rebuilt) agrees.
+    assert.deepEqual(store.history('k').head, head(log))
+  })
+})
+
+test('a new edit after Undo ends Redo; the undone step stays stored', () => {
+  withStore((store) => {
+    const base = defaultRecipe(false)
+    store.appendHistory('k', 'Opened', base)
+    const a = structuredClone(base)
+    a.basic.exposure = 0.5
+    store.appendHistory('k', 'Exposure', a)
+    let log = store.undoHistory('k')
+    const c = replay(log.base!.recipe, log.steps)
+    c.basic.contrast = 20
+    log = appendToLog(log, store.appendHistory('k', 'Contrast', c))
+    assert.equal(canRedo(log.steps), false)
+    log = store.redoHistory('k')
+    const now = replay(log.base!.recipe, log.steps)
+    assert.equal(now.basic.exposure, 0, 'the undone exposure does not come back')
+    assert.equal(now.basic.contrast, 20)
+    assert.equal(log.steps.length, 2, 'kept, as the record of what was done')
+    assert.equal(log.steps[0].undone, true)
+  })
+})
+
+test('a step hidden by hand (an older project) stays hidden: Undo and Redo pass it by', () => {
+  withStore((store) => {
+    const base = defaultRecipe(false)
+    store.appendHistory('k', 'Opened', base)
+    const a = structuredClone(base)
+    a.basic.exposure = 0.5
+    store.appendHistory('k', 'Exposure', a)
+    const b = structuredClone(a)
+    b.basic.contrast = 20
+    store.appendHistory('k', 'Contrast', b)
+    let log = store.setHistoryHidden('k', [log0(store).steps[1].seq], true)
+    assert.equal(replay(log.base!.recipe, log.steps).basic.contrast, 0)
+    // Undo takes the exposure (the newest in effect), not the hidden contrast.
+    log = store.undoHistory('k')
+    assert.equal(replay(log.base!.recipe, log.steps).basic.exposure, 0)
+    log = store.redoHistory('k')
+    const now = replay(log.base!.recipe, log.steps)
+    assert.equal(now.basic.exposure, 0.5)
+    assert.equal(now.basic.contrast, 0, 'the hand-hidden step stays hidden')
+  })
+})
+
+/** The log as stored now. */
+function log0(store: Store): HistoryLog {
+  return store.history('k')
+}
 
 test('every KEYFRAME_EVERY steps a row keeps the whole recipe, and the head comes from it', () => {
   withStore((store, file) => {

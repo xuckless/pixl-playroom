@@ -214,6 +214,9 @@ export const IPC = {
     master: 'develop:master',
     /** main → renderer: the open RAW's PIXL demosaic state changed (`PixlDemosaicEvent`). */
     pixlDemosaic: 'develop:pixl-demosaic',
+    /** Linear Undo and Redo on the photo's history (main/historytable.ts). */
+    historyUndo: 'develop:history-undo',
+    historyRedo: 'develop:history-redo',
     historySetHidden: 'develop:history-set-hidden',
     historyDelete: 'develop:history-delete',
     noise: 'develop:noise',
