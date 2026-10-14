@@ -1,20 +1,24 @@
-/* Calm pro (Settings → Interface → Theme): Lightroom and Capture One calm.
-   Flat solid surfaces, quiet lines, short motion that only explains, no
-   glass and no glow. The accent is today's purple, unchanged. */
+/* Calm pro (Settings → Interface → Theme): Lightroom and Capture One calm,
+   in blacks. Layered near-black surfaces over the OLED-black workspace,
+   quiet lines, short motion that only explains, no glass and no glow. The
+   accent is today's purple, unchanged. */
 :root[data-theme='calm'] {
-  --bg: #0e0e10;
-  --s1: #141416;
-  --s2: #1a1a1d;
-  --s3: #212125;
-  --s4: #2a2a2f;
+  /* Layered blacks on the OLED-black workspace: each step a whisper above
+     the one under it, slightly cool, never grey. Lines separate them. */
+  --bg: #000000;
+  --s1: #050506;
+  --s2: #08080a;
+  --s3: #0c0c0f;
+  --s4: #121216;
 
-  --hair: rgb(var(--fg-rgb) / 0.07);
-  --hair2: rgb(var(--fg-rgb) / 0.11);
-  --hair3: rgb(var(--fg-rgb) / 0.18);
+  --hair: rgb(var(--fg-rgb) / 0.06);
+  --hair2: rgb(var(--fg-rgb) / 0.1);
+  --hair3: rgb(var(--fg-rgb) / 0.16);
 
-  --text: #e4e4e7;
-  --text2: #a6a6ae;
-  --muted: #74747c;
+  /* Ink stays bright on black. */
+  --text: #e8e8ec;
+  --text2: #a8a8b0;
+  --muted: #6e6e76;
 
   /* No glow: the accent marks, it does not shine. */
   --glow: transparent;
@@ -38,7 +42,8 @@
 }
 
 :root[data-theme='calm'] .card {
-  background: var(--s2);
+  background: var(--s1);
+  border-color: var(--hair);
   box-shadow: none;
 }
 :root[data-theme='calm'] .card.open {
