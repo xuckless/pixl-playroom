@@ -158,7 +158,7 @@ export function NodeView(): React.JSX.Element | null {
       )}
       {recipe.layers.length > 0 && (
         <div className={`node-group${masks.drag ? ' sorting' : ''}`}>
-          {recipe.layers.map((l, i) => (
+          {recipe.layers.map((l, i) => [
             <Node
               key={l.id}
               n={n++}
@@ -176,8 +176,31 @@ export function NodeView(): React.JSX.Element | null {
               offset={masks.offset(i)}
               dragging={masks.drag?.from === i}
               onGrip={(e) => masks.start(e, i)}
-            />
-          ))}
+            />,
+            // The mask's own qualifiers run right after it, keyed inside it.
+            ...(l.settings.qualifiers ?? []).map((q, j) => (
+              <Node
+                key={q.id}
+                n={n++}
+                name={t('Qualifier {{n}}', { n: j + 1 })}
+                kind={t('Qualifier in {{mask}}', { mask: l.name })}
+                swatch={hueOf(q.keyHue.centre, q.keyHue.on, q.keyLum.centre)}
+                enabled={l.enabled && q.enabled}
+                selected={l.id === layerId && q.id === qualifierId}
+                onPick={() => {
+                  d.setLayer(l.id)
+                  d.setQualifier(q.id)
+                  jumpToCard('qualifier')
+                }}
+                onToggle={() =>
+                  patchMask(l.id, tk('Qualifier: on/off'), (x) => {
+                    const y = x.settings.qualifiers.find((z) => z.id === q.id)
+                    if (y) y.enabled = !y.enabled
+                  })
+                }
+              />
+            ))
+          ])}
         </div>
       )}
       {recipe.custom.length > 0 && (

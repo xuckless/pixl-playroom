@@ -510,19 +510,20 @@ export function Loupe(): React.JSX.Element {
         // eight in use, the selected one keyed again there).
         const s = hsvOf(...(await samplePatch(readable(picture), p.x, p.y)))
         const sample = { hue: s.hue, saturation: s.saturation, luminance: s.luma }
-        const next = structuredClone(useDevelop.getState().recipe ?? recipe)
+        // In the selected mask's scope when one is up: its qualifiers key inside it.
+        const next = structuredClone(scoped.recipe() ?? recipe)
         const dev = useDevelop.getState()
         const qs = next.qualifiers
         if (qs.length < MAX_QUALIFIERS) {
           const q = qualifierFromSample(newId(), sample)
           qs.push(q)
           dev.setQualifier(q.id)
-          dev.replace(next, tk('Qualifier: add'))
+          scoped.replace(next, tk('Qualifier: add'))
         } else {
           const sel = qs.find((x) => x.id === dev.qualifierId) ?? qs[qs.length - 1]
           const keyed = qualifierFromSample(sel.id, sample)
           Object.assign(sel, { keyHue: keyed.keyHue, keySat: keyed.keySat, keyLum: keyed.keyLum })
-          dev.replace(next, tk('Qualifier: re-sample'))
+          scoped.replace(next, tk('Qualifier: re-sample'))
         }
         setTool('none')
       } else if (tool === 'point-picker' && picture) {

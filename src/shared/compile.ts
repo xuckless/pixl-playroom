@@ -68,6 +68,8 @@ import {
   qualifierCorrection,
   qualifierKey,
   qualifierLayerId,
+  scaleQualifier,
+  type QualifierSetting,
   scaleCurvesVs,
   scaleLogWheels,
   scalePrimaries,
@@ -872,6 +874,8 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
     primaries: scalePrimaries(s.primaries, k),
     curvesVs: scaleCurvesVs(s.curvesVs, k),
     logWheels: scaleLogWheels(s.logWheels, k),
+    // Scaled where they compile, as their own layers (`qualifierLayer`).
+    qualifiers: s.qualifiers,
     colorGrade: {
       ...cg,
       shadows: wheel(cg.shadows),
@@ -1524,6 +1528,46 @@ function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vig
  * Compile a recipe. `grade` is null when nothing moves a pixel, so an
  * untouched photo takes the engine's fast path.
  */
+/**
+ * A qualifier as its own engine layer: its key a Range mask (inside `within`,
+ * a mask layer's own mask, when it is a mask's), its correction in the look
+ * stage. Null when no band of its key is on.
+ */
+function qualifierLayer(
+  q: QualifierSetting,
+  within: Mask | null,
+  opacity: number
+): GradeLayer | null {
+  const key = qualifierKey(q)
+  if (!key) return null
+  const inverted = within?.invert === true
+  const range: Mask['components'][number] = {
+    shape: { Range: key },
+    // Inside an inverted mask: NOT(mask ∪ NOT key) is the key where the mask is not.
+    mode: within && !inverted ? 'Intersect' : 'Add',
+    opacity: 1,
+    invert: inverted,
+    feather: { radius: round4(smoothnessFeather(q.blur)), edge: 'Zero' },
+    refine: null,
+    smooth: 0,
+    contrast: 0,
+    shift: 0
+  }
+  return {
+    name: 'qualifier',
+    enabled: q.enabled,
+    opacity,
+    mask: {
+      components: [...(within?.components ?? []), range],
+      invert: within ? inverted !== q.invert : q.invert,
+      space: LOOK_SPACE,
+      edge: within?.edge ?? null
+    },
+    blend: { mode: 'Normal', space: 'LinearWorking' },
+    stages: lookStage([{ Primary: qualifierCorrection(q) ?? primary({}) }])
+  }
+}
+
 export function compile(recipe: Recipe, given: CompileContext): Compiled {
   // What is rendered: sections switched off at the photo's defaults, steps switched off left out.
   const r = effective(recipe, given.isRaw)
@@ -1554,34 +1598,10 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
   // Resolve's qualifiers: each its own layer after the photo's grade, its key
   // a Range mask, so the key view (Inspect::LayerMask) is the engine's key.
   for (const q of r.qualifiers) {
-    const key = qualifierKey(q)
-    if (!key) continue
+    const layer = qualifierLayer(q, null, 1)
+    if (!layer) continue
     layerIndex[qualifierLayerId(q.id)] = layers.length
-    layers.push({
-      name: 'qualifier',
-      enabled: q.enabled,
-      opacity: 1,
-      mask: {
-        components: [
-          {
-            shape: { Range: key },
-            mode: 'Add',
-            opacity: 1,
-            invert: false,
-            feather: { radius: round4(smoothnessFeather(q.blur)), edge: 'Zero' },
-            refine: null,
-            smooth: 0,
-            contrast: 0,
-            shift: 0
-          }
-        ],
-        invert: q.invert,
-        space: LOOK_SPACE,
-        edge: null
-      },
-      blend: { mode: 'Normal', space: 'LinearWorking' },
-      stages: lookStage([{ Primary: qualifierCorrection(q) ?? primary({}) }])
-    })
+    layers.push(layer)
   }
   for (const l of r.layers) {
     const mask = layerMask(l, oriented.user, ctx.brushPaths, oriented, ctx.smoothing === false)
@@ -1607,6 +1627,15 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
       blend: blendFor(l.blend, ctx.hdr === true),
       stages
     })
+    // A mask's own qualifiers: each keys only inside the mask (Resolve's
+    // qualifier within a window), right after the mask's own layer.
+    for (const q of l.settings.qualifiers ?? []) {
+      const scaled = scaleQualifier(q, clamp(l.amount ?? 100, 0, 200) / 100)
+      const ql = qualifierLayer(scaled, mask, clamp(l.opacity / 100, 0, 1))
+      if (!ql) continue
+      layerIndex[qualifierLayerId(q.id)] = layers.length
+      layers.push({ ...ql, enabled: l.enabled && q.enabled })
+    }
   }
   if (finish && finish.length > 0) {
     layers.push({

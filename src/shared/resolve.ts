@@ -571,3 +571,15 @@ export function qualifierCorrection(q: QualifierSetting): Primary | null {
 
 /** The engine layer a qualifier compiles to, by name in `Compiled.layerIndex` (its key view's). */
 export const qualifierLayerId = (id: string): string => `q:${id}`
+
+/** A mask's Amount on a qualifier's correction: the key stays, the change scales by `k`. */
+export function scaleQualifier(q: QualifierSetting, k: number): QualifierSetting {
+  if (k === 1) return q
+  const pow = (v: number): number => (v > 0 ? Math.pow(v, k) : 0)
+  return {
+    ...q,
+    gain: { y: pow(q.gain.y), r: pow(q.gain.r), g: pow(q.gain.g), b: pow(q.gain.b) },
+    sat: 50 + (q.sat - 50) * k,
+    hue: 50 + (q.hue - 50) * k
+  }
+}

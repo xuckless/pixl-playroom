@@ -116,7 +116,7 @@ export const CARDS: CardSpec[] = [
     id: 'qualifier',
     title: tk('Qualifier'),
     fields: [['qualifiers']],
-    inMask: false,
+    inMask: true,
     set: 'resolve'
   },
   { id: 'detail', title: tk('Detail'), fields: [['detail']], inMask: true },

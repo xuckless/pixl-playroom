@@ -1,7 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { compile, scaleSettings, type CompileContext } from '../src/shared/compile'
-import { defaultRecipe, neutralSettings, newLocalLayer } from '../src/shared/recipe'
+import {
+  defaultRecipe,
+  neutralSettings,
+  newLocalLayer,
+  normaliseRecipe
+} from '../src/shared/recipe'
 import { CARDS, cardShows } from '../src/shared/cards'
 import { effective, setSectionOff } from '../src/shared/edits'
 import {
@@ -208,4 +213,44 @@ test('each qualifier is its own layer after the photo’s grade, its key the lay
   assert.equal(compile(r, ctx).grade!.layers[1].enabled, false)
   // Saved ones are made whole; duplicates and strays dropped.
   assert.equal(normaliseQualifiers([q, q, { nope: 1 }]).length, 1)
+})
+
+test('a mask’s qualifier keys only inside the mask, inverted masks too', async () => {
+  const { qualifierFromSample, qualifierLayerId } = await import('../src/shared/resolve')
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('Sky')
+  l.components = [
+    {
+      id: 'c1',
+      kind: 'linear',
+      mode: 'add',
+      opacity: 100,
+      invert: false,
+      start: { x: 0.5, y: 0 },
+      end: { x: 0.5, y: 0.4 },
+      width: 512,
+      height: 512
+    } as never
+  ]
+  l.settings.qualifiers = [qualifierFromSample('mq', { hue: 210, saturation: 0.4, luminance: 0.6 })]
+  r.layers = [l]
+  const c = compile(normaliseRecipe(r, false), ctx)
+  const maskIndex = c.layerIndex[l.id]
+  const qi = c.layerIndex[qualifierLayerId('mq')]
+  assert.equal(qi, maskIndex + 1, 'right after its mask')
+  const own = c.grade!.layers[maskIndex].mask!
+  const m = c.grade!.layers[qi].mask!
+  assert.equal(m.components.length, own.components.length + 1)
+  const key = m.components[m.components.length - 1]
+  assert.ok('Range' in key.shape)
+  assert.equal(key.mode, 'Intersect')
+  assert.equal(m.invert, false)
+  // Inverted: NOT(mask ∪ NOT key).
+  l.invert = true
+  const ci = compile(normaliseRecipe(r, false), ctx)
+  const mi = ci.grade!.layers[ci.layerIndex[qualifierLayerId('mq')]].mask!
+  const ki = mi.components[mi.components.length - 1]
+  assert.equal(ki.mode, 'Add')
+  assert.equal(ki.invert, true)
+  assert.equal(mi.invert, true)
 })

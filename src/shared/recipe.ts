@@ -562,6 +562,7 @@ export const SETTINGS_KEYS = [
   'primaries',
   'logWheels',
   'curvesVs',
+  'qualifiers',
   'detail',
   'effects',
   'calibration'

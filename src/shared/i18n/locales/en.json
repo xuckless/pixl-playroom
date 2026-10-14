@@ -2395,6 +2395,7 @@
   "Put the tool down, edit the whole photo, fit, or back to the library": "Put the tool down, edit the whole photo, fit, or back to the library",
   "Qualifier": "Qualifier",
   "Qualifier {{n}}": "Qualifier {{n}}",
+  "Qualifier in {{mask}}": "Qualifier in {{mask}}",
   "Qualifier: add": "Qualifier: add",
   "Qualifier: on/off": "Qualifier: on/off",
   "Qualifier: re-sample": "Qualifier: re-sample",

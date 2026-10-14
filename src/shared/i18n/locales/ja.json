@@ -3434,5 +3434,6 @@
   "Reorder qualifiers": "クオリファイアーを並べ替え",
   "The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.": "マスクパネルにグレーディングを Resolve のノードとして表示します。写真自体の補正、続いて各クオリファイアー、各マスク、詳細レイヤーが実行順に並びます。ノードはオフにしたり、選んで編集したり、グループ内でドラッグしたりできます。",
   "In mask": "マスク内",
-  "Read only what the selected mask holds": "選択中のマスクが含む部分だけを読み取ります"
+  "Read only what the selected mask holds": "選択中のマスクが含む部分だけを読み取ります",
+  "Qualifier in {{mask}}": "{{mask}} 内のクオリファイアー"
 }
