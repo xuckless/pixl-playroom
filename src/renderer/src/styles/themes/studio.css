@@ -1,0 +1,62 @@
+/* Playroom Studio (Settings → Interface → Theme; id `studio`): for judging
+   colour. The photo sits in a neutral mid grey, as a print is viewed in a
+   grey surround (ISO 12646 asks for one): black around a picture makes it
+   look lighter and richer than it is, and a tinted surface shifts its colour
+   to the eye. Every surface is a true neutral, nothing glows or moves for
+   show, and the accent is the same purple, used sparingly. */
+:root[data-theme='studio'] {
+  --bg: #3a3a3a;
+  --s1: #262626;
+  --s2: #2c2c2c;
+  --s3: #333333;
+  --s4: #3b3b3b;
+
+  --hair: rgb(var(--fg-rgb) / 0.1);
+  --hair2: rgb(var(--fg-rgb) / 0.16);
+  --hair3: rgb(var(--fg-rgb) / 0.24);
+
+  --text: #ececec;
+  --text2: #bdbdbd;
+  --muted: #8c8c8c;
+
+  --glow: transparent;
+  --glow-soft: transparent;
+  --primary-grad: linear-gradient(180deg, var(--acc2), var(--acc2));
+
+  --r: 3px;
+  --spring: var(--ease);
+  --spring-soft: var(--ease);
+  --dur-hover: 80ms;
+  --dur-toggle: 140ms;
+  --dur-panel: 160ms;
+  --dur-dialog: 180ms;
+
+  --hl-x: linear-gradient(90deg, var(--hair), var(--hair));
+  --hl-x-rev: linear-gradient(270deg, var(--hair), var(--hair));
+  --hl-y: linear-gradient(180deg, var(--hair), var(--hair));
+}
+
+/* The surround: neutral mid grey (about L* 35), not black. */
+:root[data-theme='studio'] .loupe {
+  background: #575757;
+}
+:root[data-theme='studio'] .card {
+  background: var(--s3);
+  border-color: var(--hair);
+  box-shadow: none;
+}
+:root[data-theme='studio'] .card.open {
+  border-color: var(--hair2);
+}
+:root[data-theme='studio'] .sl-fill {
+  background: color-mix(in srgb, var(--acc) 30%, transparent);
+  box-shadow: none;
+}
+:root[data-theme='studio'] .sl-knob {
+  background: var(--s4);
+  border-color: var(--hair3);
+  box-shadow: none;
+}
+:root[data-theme='studio'] .rail-item.on {
+  background: color-mix(in srgb, var(--acc) 14%, transparent);
+}

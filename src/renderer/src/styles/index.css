@@ -21,6 +21,9 @@
 @import './fx.css' layer(fx);
 @import './aperture.css' layer(fx);
 @import './motion.css' layer(motion);
-/* The themes last (Settings → Interface → Theme): over every layer. Original is tokens.css itself. */
+/* The themes last (Settings → Interface → Theme): over every layer. The
+   retired Original is tokens.css itself, the base they all build on. */
 @import './themes/calm.css' layer(themes);
 @import './themes/bold.css' layer(themes);
+@import './themes/studio.css' layer(themes);
+@import './themes/contrast.css' layer(themes);

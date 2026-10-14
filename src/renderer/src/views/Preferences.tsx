@@ -24,7 +24,7 @@ import { api, errorText } from '../lib/api'
 import { openReport, takeReportFocus } from '../lib/report'
 import { chooseLanguage, rich, t, tk, tp, useLanguage } from '../lib/i18n'
 import { useLibrary } from '../state/library'
-import { useUi, COLOUR_TOOLS, THEMES, type ColourTools, type Theme } from '../state/ui'
+import { useUi, COLOUR_TOOLS, FLAT_THEMES, THEMES, type ColourTools, type Theme } from '../state/ui'
 import { KeyBindingsSection } from './KeyBindings'
 import { ModelsSection } from './ModelsSection'
 import { openReleaseNotes } from '../state/whatsNew'
@@ -761,10 +761,10 @@ function InterfaceSection(): React.JSX.Element {
           label={t('Theme')}
           tip={{
             what: t(
-              'How Playroom looks: Original, purple on near black; Calm pro, flat and quiet in layered blacks; Bolder modern, black, purple and electric cyan, with glow.'
+              'How Playroom looks: Signature, flat and quiet in layered blacks; Modern, black, purple and electric cyan, with glow; Studio, neutral greys for judging colour; High contrast, pure black and white with strong lines.'
             ),
             expect: t(
-              'Only the interface changes: your photos and their edits look the same in all three.'
+              'Only the interface changes: your photos and their edits look the same in every theme.'
             )
           }}
         />
@@ -801,7 +801,7 @@ function InterfaceSection(): React.JSX.Element {
           }}
         />
       </label>
-      <label className="check" hidden={theme === 'calm'}>
+      <label className="check" hidden={FLAT_THEMES.includes(theme)}>
         <input
           type="checkbox"
           checked={alwaysFlat}

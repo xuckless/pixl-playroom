@@ -7,7 +7,7 @@
  * no tooltip (styles/fit.css, lib/overflowTitles.ts).
  *
  *   pnpm build:renderer   (or electron-vite build: not while `pnpm dev` runs)
- *   node scripts/ui-sweep.mjs <folder of photos> [--themes original,calm,bold] [--langs en,de,…,pseudo]
+ *   node scripts/ui-sweep.mjs <folder of photos> [--themes calm,bold,studio,contrast] [--langs en,de,…,pseudo]
  *
  * Screenshots go to SCREENSHOT_DIR (default: a temp folder), as
  * <theme>/<language>/<screen>.png; `pseudo` is PLAYROOM_PSEUDO_LOCALE=expand
@@ -30,7 +30,7 @@ const opt = (name, def) => {
   const i = args.indexOf(`--${name}`)
   return i >= 0 ? args[i + 1].split(',') : def
 }
-const THEMES = opt('themes', ['original', 'calm', 'bold'])
+const THEMES = opt('themes', ['calm', 'bold', 'studio', 'contrast'])
 const LANGS = opt('langs', ['en', 'fr', 'de', 'zh-Hans', 'ja', 'vi', 'pseudo'])
 /** The smallest window Playroom allows (src/main/app.ts). */
 const SIZE = { width: 1000, height: 640 }

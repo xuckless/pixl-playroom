@@ -1,0 +1,78 @@
+/* High contrast (Settings → Interface → Theme; id `contrast`): for eyes, or
+   rooms, that need it. Pure black and white, every edge a clear line, text
+   at full strength, a brighter purple accent and a thick focus ring; no
+   glass, glow or tint to read through. */
+:root[data-theme='contrast'] {
+  --bg: #000000;
+  --s1: #000000;
+  --s2: #050505;
+  --s3: #0d0d0d;
+  --s4: #181818;
+
+  --hair: rgb(var(--fg-rgb) / 0.35);
+  --hair2: rgb(var(--fg-rgb) / 0.55);
+  --hair3: rgb(var(--fg-rgb) / 0.8);
+
+  --text: #ffffff;
+  --text2: #e6e6e6;
+  --muted: #b8b8b8;
+
+  --acc: #b9a6ff;
+  --acc2: #a08cff;
+  --acc-deep: #6b55e0;
+
+  --glow: transparent;
+  --glow-soft: transparent;
+  --primary-grad: linear-gradient(180deg, var(--acc2), var(--acc2));
+
+  --r: 4px;
+  --spring: var(--ease);
+  --spring-soft: var(--ease);
+  --dur-hover: 0ms;
+  --dur-toggle: 0ms;
+  --dur-panel: 120ms;
+  --dur-dialog: 120ms;
+
+  --hl-x: linear-gradient(90deg, var(--hair), var(--hair));
+  --hl-x-rev: linear-gradient(270deg, var(--hair), var(--hair));
+  --hl-y: linear-gradient(180deg, var(--hair), var(--hair));
+}
+
+:root[data-theme='contrast'] :focus-visible {
+  outline: 3px solid var(--acc);
+  outline-offset: 2px;
+}
+:root[data-theme='contrast'] .card {
+  background: var(--s1);
+  border-color: var(--hair2);
+  box-shadow: none;
+}
+:root[data-theme='contrast'] .card > header .title {
+  color: var(--text);
+  font-weight: 700;
+}
+:root[data-theme='contrast'] .slider {
+  background: var(--s3);
+  border: 1px solid var(--hair);
+}
+:root[data-theme='contrast'] .sl-label {
+  color: var(--text);
+}
+:root[data-theme='contrast'] .sl-fill {
+  background: color-mix(in srgb, var(--acc) 45%, transparent);
+  box-shadow: none;
+}
+:root[data-theme='contrast'] .sl-knob {
+  background: var(--text);
+  border-color: var(--bg);
+  box-shadow: none;
+}
+:root[data-theme='contrast'] .tabs button.on,
+:root[data-theme='contrast'] .seg button.on {
+  background: var(--acc);
+  color: #000;
+}
+:root[data-theme='contrast'] .rail-item.on {
+  background: color-mix(in srgb, var(--acc) 22%, transparent);
+  outline: 1px solid var(--acc);
+}

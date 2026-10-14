@@ -15,7 +15,7 @@ import { AdjustStack } from './develop/AdjustStack'
 import { ToolStrip } from './develop/ToolStrip'
 import { startDrawerSync } from './develop/tools'
 import { startDisplayUpkeep, useDisplay, renderDisplay } from './state/display'
-import { useUi } from './state/ui'
+import { FLAT_THEMES, useUi, type Theme } from './state/ui'
 import { startDenoiseUpkeep, startStaleUpkeep } from './lib/denoise'
 import { startHdrUpkeep } from './lib/hdr'
 import { setAlwaysFlat, startEfficientUpkeep, useStill } from './lib/efficient'
@@ -460,9 +460,9 @@ export default function App(): React.JSX.Element {
   const still = useStill()
   // The efficient UI, from the first frame: unfocused, or "Always flat".
   useEffect(() => {
-    // Calm pro is flat by nature: no glass to draw.
-    const flat = (s: { alwaysFlat: boolean; theme: string }): boolean =>
-      s.alwaysFlat || s.theme === 'calm'
+    // Signature, Studio and High contrast are flat by nature: no glass to draw.
+    const flat = (s: { alwaysFlat: boolean; theme: Theme }): boolean =>
+      s.alwaysFlat || FLAT_THEMES.includes(s.theme)
     setAlwaysFlat(flat(useUi.getState()))
     const offs = [
       startEfficientUpkeep(),

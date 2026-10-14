@@ -26,17 +26,32 @@ export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
 export type Rail = 'presets' | 'edits' | 'history' | 'info'
 
 /**
- * The interface's look (Settings → Interface → Theme), for A/B testing:
- * Original (the purple OLED look), Calm pro (flat and quiet, in layered
- * blacks) and Bolder modern (black, purple and electric cyan, with bloom).
- * The accent is purple in all three. `:root[data-theme]`, styles/themes/.
+ * The interface's look (Settings → Interface → Theme), for A/B testing. The
+ * accent is purple in every one. `:root[data-theme]`, styles/themes/; the
+ * ids stay as first shipped, so a saved choice carries over.
+ *
+ * - `calm`, Playroom Signature (the default, 2026-10-14): flat and quiet,
+ *   layered blacks on the OLED-black workspace.
+ * - `bold`, Playroom Modern: black, purple and electric cyan, with bloom.
+ * - `studio`, Playroom Studio: neutral greys around the photo, nothing
+ *   tinted, for judging colour (the surround a print is viewed in).
+ * - `contrast`, High contrast: pure black and white, strong lines and focus
+ *   rings, for eyes or rooms that need them.
+ *
+ * `original` (the purple OLED look with glass and glow) is retired: its
+ * values are still the base every theme builds on (styles/tokens.css), but it
+ * is not offered, and a layout that chose it shows Signature.
  */
-export type Theme = 'original' | 'calm' | 'bold'
+export type Theme = 'calm' | 'bold' | 'studio' | 'contrast'
 export const THEMES: { value: Theme; label: string }[] = [
-  { value: 'original', label: tk('Original') },
-  { value: 'calm', label: tk('Calm pro') },
-  { value: 'bold', label: tk('Bolder modern') }
+  { value: 'calm', label: tk('Playroom Signature') },
+  { value: 'bold', label: tk('Playroom Modern') },
+  { value: 'studio', label: tk('Playroom Studio') },
+  { value: 'contrast', label: tk('High contrast') }
 ]
+export const DEFAULT_THEME: Theme = 'calm'
+/** The themes with no glass to draw: flat by nature, whatever "Always flat" says. */
+export const FLAT_THEMES: readonly Theme[] = ['calm', 'studio', 'contrast']
 
 /**
  * Which colour tools the right column shows (Settings → Interface): the
@@ -298,7 +313,7 @@ const storage = createJSONStorage(() => ({
 export const useUi = create<UiState>()(
   persist(
     (set, get) => ({
-      theme: 'original',
+      theme: DEFAULT_THEME,
       setTheme: (theme) => set({ theme }),
       scopes: DEFAULT_SCOPES,
       setScopes: (p) => set((s) => ({ scopes: normaliseScopes({ ...s.scopes, ...p }) })),
@@ -404,7 +419,8 @@ export const useUi = create<UiState>()(
           ...p,
           // Settings saved before a field existed take its default.
           enhance: normaliseEnhance(p.enhance),
-          theme: THEMES.some((x) => x.value === p.theme) ? p.theme! : 'original',
+          // The retired Original, and anything unknown, is Signature.
+          theme: THEMES.some((x) => x.value === p.theme) ? p.theme! : DEFAULT_THEME,
           scopes: normaliseScopes(p.scopes),
           colourTools: p.colourTools === 'resolve' ? 'resolve' : 'lightroom',
           nodeView: p.nodeView === true,
