@@ -77,10 +77,21 @@ export const TIPS = {
 
   // ── Presence ───────────────────────────────────────────────────────
   presence: {
-    what: tk('Local contrast at three scales: fine texture, midtone punch and haze.'),
+    what: tk(
+      'Local contrast at three scales (fine texture, midtone punch and haze), then how strong colour is.'
+    ),
     expect: tk(
-      'These change how sharp and deep a picture feels without moving its overall brightness.'
+      'Texture, Clarity and Dehaze change how sharp and deep a picture feels without moving its brightness; Vibrance protects skin and already-strong colours, Saturation treats every colour alike.'
     )
+  },
+  basic: {
+    what: tk(
+      'The first corrections nearly every photo gets: its treatment and profile, white balance, light and presence.'
+    ),
+    expect: tk(
+      'Work top to bottom: set the colour, then the brightness and contrast, then texture and colour strength.'
+    ),
+    tip: tk('The reset and eye at the top act on all of it; each part has its own too.')
   },
   'presence.texture': {
     what: tk('Brings out or smooths fine detail: skin pores, foliage, fabric.'),
@@ -117,13 +128,7 @@ export const TIPS = {
     tip: tk('Turn it down only if you want each pixel to follow an adjustment exactly.')
   },
 
-  // ── Colour ─────────────────────────────────────────────────────────
-  colour: {
-    what: tk('How strong colour is overall.'),
-    expect: tk(
-      'Vibrance protects skin and already-strong colours; Saturation treats every colour alike.'
-    )
-  },
+  // ── Presence's colour sliders ─────────────────────────────────────
   'colour.vibrance': {
     what: tk('Boosts muted colours more than strong ones, and protects skin.'),
     expect: tk('A natural lift that rarely looks overdone.'),

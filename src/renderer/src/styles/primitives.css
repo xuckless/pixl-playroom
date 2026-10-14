@@ -186,7 +186,11 @@ button.on,
 .btn.on {
   color: var(--text);
   border-color: var(--acc-a55);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 16%, transparent), color-mix(in srgb, var(--acc) 6%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--acc) 16%, transparent),
+    color-mix(in srgb, var(--acc) 6%, transparent)
+  );
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--acc) 12%, transparent),
     0 0 16px -6px var(--glow);
@@ -275,7 +279,11 @@ button.on:not(.icon):not(.chip)::after {
 .tabs button.on,
 .seg button.on {
   color: #fff;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 32%, transparent), rgba(123, 104, 216, 0.16));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--acc) 32%, transparent),
+    rgba(123, 104, 216, 0.16)
+  );
   text-shadow: 0 0 12px var(--glow);
   box-shadow: none;
 }
@@ -746,7 +754,12 @@ input[type='checkbox']:disabled {
   flex: 1;
   height: 1px;
   min-width: 12px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 45%, transparent), var(--hair) 40%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 45%, transparent),
+    var(--hair) 40%,
+    transparent
+  );
 }
 .section > header .caret {
   width: 10px;
@@ -1126,4 +1139,65 @@ input[type='checkbox']:disabled {
   animation-iteration-count: 1 !important;
   transition-duration: 0s !important;
   transition-delay: 0s !important;
+}
+
+/* ── a part of Basic corrections: a card's header inside the card ──── */
+.card-part {
+  position: relative;
+  scroll-margin-top: 8px;
+}
+.card-part + .card-part,
+.adjust-head + .card-part {
+  margin-top: 6px;
+}
+.card-part > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+.card-part > header .title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--acc);
+  white-space: nowrap;
+}
+.card-part > header .line {
+  flex: 1;
+  height: 1px;
+  min-width: 12px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 45%, transparent),
+    var(--hair) 40%,
+    transparent
+  );
+}
+.card-part > header .card-acts {
+  margin-left: 0;
+}
+.card-part > header:hover .card-eye,
+.card-part > header:hover .card-reset,
+.card-part > header:focus-within .card-eye,
+.card-part > header:focus-within .card-reset,
+.card-part.off .card-eye {
+  opacity: 1;
+}
+.card-part.off .card-eye {
+  color: var(--warn);
+}
+.card-part > header:hover .card-reset:disabled {
+  opacity: 0.3;
+}
+.card-part.off > header .title {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.card-part.off .card-part-body {
+  opacity: 0.45;
 }

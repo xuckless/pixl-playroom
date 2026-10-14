@@ -1,25 +1,32 @@
 import { setSectionOff } from '../../../shared/edits'
 import type { ComponentType } from 'react'
 import {
+  BASIC_HEAD_FIELDS,
+  BASIC_TITLE,
   cardBase,
   cardChanged,
   cardFields,
   CARDS,
-  cardsFor,
   cardSpec,
   cardTitle,
+  keyedAs,
+  panelCards,
+  panelsFor,
+  panelTitle,
   type CardId,
-  type CardSpec
+  type CardSpec,
+  type PanelId
 } from '../../../shared/cards'
+import { sameValue, type Recipe } from '../../../shared/recipe'
 import { assignFields } from '../../../shared/recipe'
 import { Icon } from '../components/icons'
 import { Card } from '../components/ui'
+import { InfoTip } from '../components/InfoTip'
 import { EnhancePanel } from '../panels/enhance'
 import {
   AdjustHead,
   AutoTone,
   CalibrationBody,
-  ColourBody,
   CropDrawer,
   CurveBody,
   DetailBody,
@@ -47,7 +54,6 @@ const BODIES: Record<CardId, ComponentType> = {
   wb: WhiteBalanceBody,
   light: LightBody,
   presence: PresenceBody,
-  colour: ColourBody,
   mixer: MixerBody,
   grading: GradingBody,
   curve: CurveBody,
@@ -128,8 +134,14 @@ function OtherToolsChip(): React.JSX.Element | null {
   )
 }
 
-/** One adjustment card: open or folded as the store says, its dot and reset from its fields. */
-function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
+/** What a card's header reads and does: its dot, its eye, its reset (in the scope shown). */
+function useCardState(spec: CardSpec): {
+  changed: boolean
+  off: boolean
+  inMask: boolean
+  switchOff: () => void
+  reset: () => void
+} {
   const masksOpen = useUi((s) => s.masksWin.open)
   // A boolean, so a slider's tick elsewhere re-renders only the cards whose dot it turns.
   const changed = useDevelop((s) => {
@@ -152,6 +164,12 @@ function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
     scoped.edit((r) => assignFields(r, cardBase(r, isRaw, !!layer), cardFields(spec, !!layer)))
     scoped.commit(`Reset ${spec.title}`)
   }
+  return { changed, off, inMask, switchOff, reset }
+}
+
+/** One adjustment card, the section shown: its dot and reset from its fields. */
+function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
+  const { changed, off, inMask, switchOff, reset } = useCardState(spec)
   const tools = useUi((s) => s.colourTools)
   const Body = spec.id === 'mixer' && tools === 'resolve' ? CompactHsl : BODIES[spec.id]
   const Right = HEADER[spec.id]
@@ -168,6 +186,123 @@ function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
       right={Right && <Right />}
     >
       <Body />
+    </Card>
+  )
+}
+
+/** One part of Basic corrections: a card's own header (dot, (i), eye, reset) over its sliders. */
+function CardPart({ spec }: { spec: CardSpec }): React.JSX.Element {
+  const { changed, off, inMask, switchOff, reset } = useCardState(spec)
+  const Body = BODIES[spec.id]
+  const Right = HEADER[spec.id]
+  const title = t(spec.title)
+  return (
+    <section className={`card-part${off ? ' off' : ''}`} data-part={spec.id}>
+      <header>
+        <span className="title">{title}</span>
+        {changed && <span className="card-dot" aria-label={t('Changed')} />}
+        <span className="line" />
+        <span className="card-acts">
+          {Right && <Right />}
+          <InfoTip tip={TIPS[spec.id]} label={title} />
+          {!inMask && (
+            <button
+              type="button"
+              className={`icon card-eye${off ? ' on' : ''}`}
+              aria-pressed={off}
+              aria-label={
+                off
+                  ? t('Turn {{name}} on', { name: title })
+                  : t('Turn {{name}} off', { name: title })
+              }
+              title={off ? t('Turn on') : t('Turn off')}
+              onClick={switchOff}
+            >
+              <Icon name={off ? 'eyeOff' : 'eye'} />
+            </button>
+          )}
+          <button
+            type="button"
+            className="icon card-reset"
+            aria-label={t('Reset {{name}}', { name: title })}
+            title={t('Reset')}
+            disabled={!changed}
+            onClick={reset}
+          >
+            <Icon name="reset" />
+          </button>
+        </span>
+      </header>
+      <div className="card-part-body">
+        <Body />
+      </div>
+    </section>
+  )
+}
+
+const valueAt = (o: unknown, path: string[]): unknown =>
+  path.reduce<unknown>(
+    (v, k) => (v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined),
+    o
+  )
+
+/** Whether Treatment or Profile differ from the photo's defaults (the whole photo only). */
+const headChanged = (view: Recipe, base: Recipe): boolean =>
+  BASIC_HEAD_FIELDS.some((p) => !sameValue(valueAt(view, p), valueAt(base, p)))
+
+/**
+ * Basic corrections: Treatment and Profile, then White balance, Light and
+ * Presence, each with its own header. Its own eye and reset act on all of
+ * it; in a mask, on the three a mask carries.
+ */
+function BasicPanel({ parts }: { parts: CardSpec[] }): React.JSX.Element {
+  const masksOpen = useUi((s) => s.masksWin.open)
+  const changed = useDevelop((s) => {
+    if (!s.recipe) return false
+    const layer = scopeLayer(s.recipe, s.layerId, masksOpen)
+    const view = scopedView(s.recipe, layer)
+    const base = cardBase(view, s.session?.isRaw ?? false, !!layer)
+    return (
+      parts.some((c) => cardChanged(c, view, base, !!layer)) || (!layer && headChanged(view, base))
+    )
+  })
+  const inMask = useDevelop((s) => !!s.recipe && !!scopeLayer(s.recipe, s.layerId, masksOpen))
+  const sections = [...parts.map((c) => c.id), 'profile'] as const
+  const off = useDevelop(
+    (s) => !inMask && !!s.recipe && sections.every((id) => s.recipe?.off?.[id] === true)
+  )
+  const switchOff = (): void => {
+    const d = useDevelop.getState()
+    d.edit((r) => {
+      for (const id of sections) setSectionOff(r, id, !off)
+    })
+    d.commit(`${BASIC_TITLE}: ${off ? 'On' : 'Off'}`)
+  }
+  const reset = (): void => {
+    const layer = scoped.layer()
+    const isRaw = useDevelop.getState().session?.isRaw ?? false
+    const fields = [
+      ...parts.flatMap((c) => cardFields(c, !!layer)),
+      ...(layer ? [] : BASIC_HEAD_FIELDS)
+    ]
+    scoped.edit((r) => assignFields(r, cardBase(r, isRaw, !!layer), fields))
+    scoped.commit(`Reset ${BASIC_TITLE}`)
+  }
+  return (
+    <Card
+      id="basic"
+      title={t(BASIC_TITLE)}
+      tip={TIPS.basic}
+      changed={changed}
+      off={off}
+      onToggle={inMask ? undefined : switchOff}
+      fixed
+      onReset={reset}
+    >
+      <AdjustHead />
+      {parts.map((c) => (
+        <CardPart key={c.id} spec={c} />
+      ))}
     </Card>
   )
 }
@@ -198,11 +333,11 @@ function DrawerPanel({ drawer }: { drawer: Exclude<Drawer, 'adjust'> }): React.J
 }
 
 /**
- * The one dropdown that picks the section the column shows (each colour
- * tools set's own, in its order, then Enhance), with a dot on each that
- * holds changes, as the cards' own dots showed them.
+ * The one dropdown that picks the section the column shows (Basic
+ * corrections, then each colour tools set's own, in order, then Enhance),
+ * with a dot on each that holds changes, as the cards' own dots showed them.
  */
-function SectionPicker({ cards, shown }: { cards: CardSpec[]; shown: Panel }): React.JSX.Element {
+function SectionPicker({ panels, shown }: { panels: PanelId[]; shown: Panel }): React.JSX.Element {
   const tools = useUi((s) => s.colourTools)
   const masksOpen = useUi((s) => s.masksWin.open)
   const key = useKeyHint()
@@ -212,13 +347,20 @@ function SectionPicker({ cards, shown }: { cards: CardSpec[]; shown: Panel }): R
     const layer = scopeLayer(s.recipe, s.layerId, masksOpen)
     const view = scopedView(s.recipe, layer)
     const base = cardBase(view, s.session?.isRaw ?? false, !!layer)
-    return cards.map((c) => (cardChanged(c, view, base, !!layer) ? '1' : '0')).join('')
+    return panels
+      .map((p) =>
+        panelCards(p).some((c) => (!layer || c.inMask) && cardChanged(c, view, base, !!layer)) ||
+        (p === 'basic' && !layer && headChanged(view, base))
+          ? '1'
+          : '0'
+      )
+      .join('')
   })
   const options = [
-    ...cards.map((c, i) => ({
-      value: c.id as Panel,
-      label: t(cardTitle(c, tools)),
-      hint: key(`card.${c.id}`),
+    ...panels.map((p, i) => ({
+      value: p as Panel,
+      label: t(panelTitle(p, tools)),
+      hint: key(`card.${keyedAs(p)}`),
       dot: dots[i] === '1'
     })),
     { value: 'enhance' as Panel, label: t('Enhance'), hint: key('develop.enhance') }
@@ -237,11 +379,11 @@ function SectionPicker({ cards, shown }: { cards: CardSpec[]; shown: Panel }): R
 }
 
 /**
- * The right column under the strip: Treatment and Profile, then one
- * dropdown, then the one section it picks (an adjustment, in Lightroom's or
- * Resolve's set, or Enhance); or Crop's or Heal's panel in their place.
- * With a mask selected, only the sections a mask carries are offered, and
- * they edit the mask.
+ * The right column under the strip: one dropdown, then the one section it
+ * picks (Basic corrections with Treatment and Profile, another adjustment in
+ * Lightroom's or Resolve's set, or Enhance); or Crop's or Heal's panel in
+ * their place. With a mask selected, only the sections a mask carries are
+ * offered, and they edit the mask.
  */
 export function AdjustStack(): React.JSX.Element {
   const drawer = useUi((s) => s.drawer)
@@ -249,10 +391,9 @@ export function AdjustStack(): React.JSX.Element {
   const overlayHue = useUi((s) => s.maskOverlay.hue)
   const tools = useUi((s) => s.colourTools)
   const focus = useUi((s) => s.focusCard)
-  const cards = cardsFor(tools).filter((c) => !layer || c.inMask)
+  const panels = panelsFor(tools, !!layer)
   // A section this scope or set does not offer gives way to the first that is.
-  const shown: Panel =
-    focus === 'enhance' || cards.some((c) => c.id === focus) ? focus : cards[0].id
+  const shown: Panel = focus === 'enhance' || panels.includes(focus) ? focus : panels[0]
   return (
     <div
       className={`panels adjust${layer ? ' scoped' : ''}`}
@@ -261,8 +402,7 @@ export function AdjustStack(): React.JSX.Element {
       <ScopeChip />
       {drawer === 'adjust' ? (
         <>
-          <AdjustHead />
-          <SectionPicker cards={cards} shown={shown} />
+          <SectionPicker panels={panels} shown={shown} />
           <OtherToolsChip />
           {shown === 'enhance' ? (
             <Card
@@ -274,6 +414,8 @@ export function AdjustStack(): React.JSX.Element {
             >
               <EnhancePanel />
             </Card>
+          ) : shown === 'basic' ? (
+            <BasicPanel parts={panelCards('basic').filter((c) => !layer || c.inMask)} />
           ) : (
             <AdjustCard key={shown} spec={cardSpec(shown)} />
           )}

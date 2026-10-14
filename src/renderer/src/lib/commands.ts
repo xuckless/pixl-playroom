@@ -19,7 +19,7 @@ import {
   toggleDrawer,
   toggleMasks
 } from '../develop/tools'
-import { CARDS } from '../../../shared/cards'
+import { CARDS, panelTitle, RESOLVE_TWIN, type PanelId } from '../../../shared/cards'
 import {
   componentLabel,
   deleteComponent,
@@ -162,20 +162,37 @@ const labels = (['red', 'yellow', 'green', 'blue'] as const).map<KeyCommand>((la
   }
 }))
 
-// ⌘1…⌘9 stay on the cards they always had: the Resolve cards came later and take none.
-const KEYED = CARDS.filter((c) => c.set !== 'resolve').map((c) => c.id)
-const cards = CARDS.map<KeyCommand>((c) => ({
-  id: `card.${c.id}`,
+/**
+ * ⌘1…⌘9 as in Lightroom Classic: Basic, Tone curve, HSL, Colour grading,
+ * Detail, Optics, Geometry, Effects, Calibration. With Resolve's tools the
+ * curve's and the grading's keys show their Resolve twins.
+ */
+const PANEL_KEYS: Partial<Record<PanelId, number>> = {
+  basic: 1,
+  curve: 2,
+  mixer: 3,
+  grading: 4,
+  detail: 5,
+  optics: 6,
+  geometry: 7,
+  effects: 8,
+  calibration: 9
+}
+/** The panel a key's command shows with the colour tools in force. */
+const keyedPanel = (id: PanelId): PanelId =>
+  (ui().colourTools === 'resolve' && RESOLVE_TWIN[id]) || id
+const PANELS: PanelId[] = ['basic', ...CARDS.filter((c) => !c.basic).map((c) => c.id)]
+const cards = PANELS.map<KeyCommand>((id) => ({
+  id: `card.${id}`,
   // Made when read, in the language in force (`t()` of it where it is shown changes nothing).
   get label() {
-    return t('Show {{card}}', { card: t(c.title) })
+    return t('Show {{card}}', { card: t(panelTitle(keyedPanel(id), ui().colourTools)) })
   },
   group: 'Tools',
   context: 'develop',
-  keys:
-    KEYED.indexOf(c.id) >= 0 && KEYED.indexOf(c.id) < 9 ? [`Mod+${KEYED.indexOf(c.id) + 1}`] : [],
+  keys: PANEL_KEYS[id] ? [`Mod+${PANEL_KEYS[id]}`] : [],
   run: (e) => {
-    jumpToCard(c.id)
+    jumpToCard(keyedPanel(id))
     stop(e)
   }
 }))

@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import { DEFAULT_ENHANCE, normaliseEnhance, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind, SpotRefineChoice } from '../../../shared/retouch'
 import { aiDenoiseModel, type AiDenoiseModel } from '../../../shared/recipe'
-import { cardSpec, isCardId, type CardId } from '../../../shared/cards'
+import { cardSpec, isCardId, isPanelId, panelOf, type PanelId } from '../../../shared/cards'
 import { migrateUi } from './uiMigrate'
 import { DEFAULT_SCOPES, normaliseScopes, type ScopePrefs } from '../../../shared/scopes'
 import { tk } from '../lib/i18n'
@@ -64,8 +64,8 @@ export const COLOUR_TOOLS: { value: ColourTools; label: string }[] = [
   { value: 'resolve', label: tk('Resolve') }
 ]
 
-/** What the right column can show: an adjustment card, or Enhance. */
-export type Panel = CardId | 'enhance'
+/** What the right column can show: Basic corrections, another adjustment card, or Enhance. */
+export type Panel = PanelId | 'enhance'
 
 /** How a mask is shown over the photo (Lightroom's overlay modes). */
 export type OverlayMode =
@@ -153,7 +153,7 @@ export interface HealSettings {
 export type Drawer = 'adjust' | 'crop' | 'heal'
 
 /** The cards that start unfolded: the ones nearly every edit touches. */
-const DEFAULT_CARDS_OPEN: Partial<Record<CardId, boolean>> = {
+const DEFAULT_CARDS_OPEN: Partial<Record<string, boolean>> = {
   wb: true,
   light: true,
   presence: true,
@@ -241,14 +241,15 @@ interface UiState {
    * Older layouts' unfolded cards and solo switch: kept for what reads them,
    * no longer shown (the column shows one section, `focusCard`).
    */
-  cardsOpen: Partial<Record<CardId, boolean>>
+  cardsOpen: Partial<Record<string, boolean>>
   /** Opening a card shows it: it becomes the section shown. */
   setCardOpen(id: Panel, open: boolean): void
   cardSolo: boolean
   setCardSolo(on: boolean): void
   /**
-   * The section the right column shows, under Treatment and Profile: one
-   * card, or Enhance. The dropdown picks it; the previous / next keys step.
+   * The section the right column shows, under its dropdown: Basic
+   * corrections, one card, or Enhance. The dropdown picks it; the previous /
+   * next keys step.
    */
   focusCard: Panel
   setFocusCard(id: Panel): void
@@ -310,6 +311,17 @@ const storage = createJSONStorage(() => ({
   }
 }))
 
+/**
+ * A saved section as one the column offers: White balance, Light, Presence
+ * and Colour (Colour's sliders joined Presence) show inside Basic corrections.
+ */
+function savedPanel(v: unknown): Panel | undefined {
+  if (v === 'enhance') return v
+  if (v === 'colour') return 'basic'
+  if (isCardId(v)) return panelOf(v)
+  return isPanelId(v) ? v : undefined
+}
+
 export const useUi = create<UiState>()(
   persist(
     (set, get) => ({
@@ -320,9 +332,12 @@ export const useUi = create<UiState>()(
       colourTools: 'lightroom',
       setColourTools: (colourTools) =>
         set((s) => {
-          // The focused card stays in view: one of the set going away gives way to Light.
-          const away = s.focusCard === 'enhance' ? undefined : cardSpec(s.focusCard).set
-          return { colourTools, ...(away && away !== colourTools ? { focusCard: 'light' } : {}) }
+          // The focused card stays in view: one of the set going away gives way to Basic.
+          const away =
+            s.focusCard === 'enhance' || s.focusCard === 'basic'
+              ? undefined
+              : cardSpec(s.focusCard).set
+          return { colourTools, ...(away && away !== colourTools ? { focusCard: 'basic' } : {}) }
         }),
       nodeView: false,
       setNodeView: (nodeView) => set({ nodeView }),
@@ -377,7 +392,7 @@ export const useUi = create<UiState>()(
       cardSolo: false,
       setCardSolo: (cardSolo) =>
         set((s) => ({ cardSolo, ...(cardSolo ? { cardsOpen: { [s.focusCard]: true } } : {}) })),
-      focusCard: 'light',
+      focusCard: 'basic',
       setFocusCard: (focusCard) => set({ focusCard }),
       pickRail: (rail) => {
         const s = get()
@@ -435,8 +450,7 @@ export const useUi = create<UiState>()(
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
           cardsOpen:
             p.cardsOpen && typeof p.cardsOpen === 'object' ? p.cardsOpen : current.cardsOpen,
-          focusCard:
-            isCardId(p.focusCard) || p.focusCard === 'enhance' ? p.focusCard : current.focusCard,
+          focusCard: savedPanel(p.focusCard) ?? current.focusCard,
           drawer: 'adjust'
         }
       }

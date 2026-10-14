@@ -602,7 +602,9 @@ function ToneBaseRow(): React.JSX.Element | null {
   )
 }
 
+/** Lightroom's Presence: local contrast, then how strong colour is (Hue in a mask), then Smoothing. */
 export function PresenceBody(): React.JSX.Element {
+  const { layer } = useScope()
   return (
     <>
       <RS
@@ -624,23 +626,6 @@ export function PresenceBody(): React.JSX.Element {
         write={(r, v) => (r.presence.dehaze = v)}
       />
       <RS
-        label={tk('Smoothing')}
-        tip={TIPS['presence.smoothing']}
-        read={(r) => r.presence.smoothing}
-        write={(r, v) => (r.presence.smoothing = v)}
-        min={0}
-        max={100}
-        def={100}
-      />
-    </>
-  )
-}
-
-export function ColourBody(): React.JSX.Element {
-  const { layer } = useScope()
-  return (
-    <>
-      <RS
         label={tk('Vibrance')}
         tip={TIPS['colour.vibrance']}
         read={(r) => r.presence.vibrance}
@@ -661,6 +646,15 @@ export function ColourBody(): React.JSX.Element {
           track="linear-gradient(90deg,#2df,#f2d,#fd2,#2f8,#2df)"
         />
       )}
+      <RS
+        label={tk('Smoothing')}
+        tip={TIPS['presence.smoothing']}
+        read={(r) => r.presence.smoothing}
+        write={(r, v) => (r.presence.smoothing = v)}
+        min={0}
+        max={100}
+        def={100}
+      />
     </>
   )
 }

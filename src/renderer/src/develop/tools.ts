@@ -1,4 +1,4 @@
-import { cardsFor, cardSpec, type CardId } from '../../../shared/cards'
+import { cardSpec, panelOf, panelsFor, type CardId } from '../../../shared/cards'
 import { useDevelop, type Tool } from '../state/develop'
 import { scoped } from '../state/scope'
 import { useUi, type Drawer, type Panel } from '../state/ui'
@@ -57,31 +57,31 @@ export function toggleDrawer(d: Exclude<Drawer, 'adjust'>): void {
   openDrawer(useUi.getState().drawer === d ? 'adjust' : d)
 }
 
-/** The cards the column shows now: in a mask, only those a mask carries. */
-export function visibleCards(): CardId[] {
-  const inMask = scoped.layer() !== null
-  return cardsFor(useUi.getState().colourTools)
-    .filter((c) => !inMask || c.inMask)
-    .map((c) => c.id)
-}
-
-/** The sections the dropdown offers now: the visible cards, then Enhance. */
+/** The sections the dropdown offers now (in a mask, those a mask carries), then Enhance. */
 export function visiblePanels(): Panel[] {
-  return [...visibleCards(), 'enhance']
+  return [...panelsFor(useUi.getState().colourTools, scoped.layer() !== null), 'enhance']
 }
 
-/** Show a section: the cards back if a tool's panel was up, that section the one shown. */
-export function jumpToCard(id: Panel): void {
+/**
+ * Show a section: the cards back if a tool's panel was up, that section the
+ * one shown. A card shown inside Basic corrections shows Basic, scrolled to it.
+ */
+export function jumpToCard(id: Panel | CardId): void {
   openDrawer('adjust')
   const ui = useUi.getState()
+  const card = id !== 'enhance' && id !== 'basic' ? id : null
   // A card of the colour tools not shown brings them.
-  const set = id === 'enhance' ? undefined : cardSpec(id).set
+  const set = card ? cardSpec(card).set : undefined
   if (set && set !== ui.colourTools) ui.setColourTools(set)
-  ui.setFocusCard(id)
-  // From the top of the section, wherever the last one was scrolled to.
-  requestAnimationFrame(() =>
-    document.querySelector('.panels.adjust')?.scrollTo({ top: 0, behavior: 'smooth' })
-  )
+  const panel = card ? panelOf(card) : (id as Panel)
+  ui.setFocusCard(panel)
+  // From the top of the section, wherever the last one was scrolled to; or at the part asked for.
+  requestAnimationFrame(() => {
+    const column = document.querySelector('.panels.adjust')
+    const part = card && panel !== card ? column?.querySelector(`[data-part="${card}"]`) : null
+    if (part) part.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    else column?.scrollTo({ top: 0, behavior: 'smooth' })
+  })
 }
 
 /** The section before or after the shown one (wrapping). */

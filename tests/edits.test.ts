@@ -66,15 +66,17 @@ test('a section switched off renders at the defaults, its values kept and the re
   assert.equal(effective(r, false), e)
 })
 
-test('switching off Colour leaves Presence: the same object, two cards', () => {
+test('Colour joined Presence: an older photo with Colour off has Presence off', async () => {
+  const { normaliseRecipe } = await import('../src/shared/recipe')
   const r = defaultRecipe(false)
   r.presence.clarity = 30
   r.presence.vibrance = 20
-  r.off = { colour: true }
-  const e = effective(r, false)
-  assert.equal(e.presence.clarity, 30)
+  ;(r.off as Record<string, true>) = { colour: true }
+  const n = normaliseRecipe(r, false)
+  assert.deepEqual(n.off, { presence: true })
+  const e = effective(n, false)
   assert.equal(e.presence.vibrance, 0)
-  assert.equal(r.presence.vibrance, 20)
+  assert.equal(n.presence.vibrance, 20)
 })
 
 test('a section switched off compiles as if it had never been edited', () => {

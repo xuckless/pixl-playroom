@@ -579,23 +579,22 @@ export type SettingsKey = (typeof SETTINGS_KEYS)[number]
  * are: everything is placed by them.
  */
 export const EDIT_SECTIONS = [
+  'profile',
   'wb',
   'light',
   'presence',
-  'colour',
+  'curve',
+  'rcurves',
   'mixer',
   'grading',
-  'curve',
+  'calibration',
   'primaries',
   'logwheels',
-  'rcurves',
   'qualifier',
   'detail',
   'effects',
   'optics',
   'geometry',
-  'calibration',
-  'profile',
   'crop',
   'heal'
 ] as const
@@ -882,8 +881,11 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   r.logWheels = normaliseLogWheels(r.logWheels)
   r.qualifiers = normaliseQualifiers(r.qualifiers)
   // Only sections there are, each switched off by `true` (`fill` keeps any key).
+  // Colour (Vibrance, Saturation, Hue) joined Presence: off, it keeps them off.
+  const off: Record<string, unknown> = { ...(r.off ?? {}) }
+  if (off.colour === true) off.presence = true
   r.off = Object.fromEntries(
-    Object.entries(r.off ?? {}).filter(
+    Object.entries(off).filter(
       ([k, v]) => v === true && (EDIT_SECTIONS as readonly string[]).includes(k)
     )
   ) as OffSections

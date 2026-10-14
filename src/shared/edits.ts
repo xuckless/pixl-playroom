@@ -9,7 +9,7 @@
  * `effective` is what is rendered: `compile` reads it, so the picture, the
  * export, the thumbnail and the 1:1 view agree. Pure, for tests.
  */
-import { CARDS, cardBase, type CardId } from './cards'
+import { BASIC_HEAD_FIELDS, CARDS, cardBase, type CardId } from './cards'
 import { tk } from './i18n'
 import { activeSteps } from './pixels'
 import {
@@ -28,7 +28,7 @@ void _cards
 /** The recipe paths each section holds (as `changedFields` gives them). */
 export const SECTION_FIELDS: Record<EditSection, string[][]> = {
   ...(Object.fromEntries(CARDS.map((c) => [c.id, c.fields])) as Record<CardId, string[][]>),
-  profile: [['profile'], ['profileAmount'], ['treatment']],
+  profile: BASIC_HEAD_FIELDS,
   crop: [
     ['geometry', 'straighten'],
     ['geometry', 'crop'],
