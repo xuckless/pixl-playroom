@@ -7,7 +7,7 @@
  * order; what they need, the size and the time are `shared/enhance.ts`'s
  * arithmetic. The settings are the panel's own (kept for the next photo).
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AiJobEvent } from '../../../shared/ai'
 import {
   ENHANCE_MODEL,
@@ -19,6 +19,7 @@ import {
   planSteps,
   scaleOf,
   type EnhanceRates,
+  type EnhanceSettings,
   type JpegRestore,
   type UpscaleChoice,
   type UpscaleSource,
@@ -45,6 +46,8 @@ import { useLibrary, useTargets } from '../state/library'
 import { useScope } from '../state/scope'
 import { useUi } from '../state/ui'
 import { t, tk, tp } from '../lib/i18n'
+import { displayToBase, viewGeometry } from '../../../shared/view'
+import { loupeZoom } from '../views/loupe/zoom'
 
 const JPEG_OPTIONS: { value: JpegRestore; label: string }[] = [
   { value: 'off', label: tk('Off') },
@@ -104,6 +107,85 @@ const bytes = (b: number): string =>
  */
 /** The jobs started from this panel, newest batch last (kept across the panel's remounts). */
 let batch: string[] = []
+
+/**
+ * PIXL Enhance's preview: the model on a square at the centre of the view,
+ * at full size, which the loupe then shows at 100% (graded and framed as
+ * Apply's step will be). Let go when its settings, the photo or the panel
+ * change, and when Apply starts.
+ */
+function PixlPreview({
+  settings,
+  ready,
+  running
+}: {
+  settings: EnhanceSettings
+  ready: boolean
+  /** Apply under way: the whole photo is being made, the preview went (main let it go). */
+  running: boolean
+}): React.JSX.Element {
+  const key = useDevelop((d) => d.session?.key ?? null)
+  const say = useLibrary((l) => l.say)
+  const [busy, setBusy] = useState(false)
+  const [made, setMade] = useState<{ key: string; sig: string; shown: boolean } | null>(null)
+  const sig = JSON.stringify([settings.pixl, settings.pixlStrength])
+  // The preview stands for these settings on this photo, and until Apply starts.
+  const live = made && made.key === key && made.sig === sig && !running ? made : null
+  // What the unmount lets go of.
+  const held = useRef(live)
+  useEffect(() => {
+    held.current = live
+    // One for other settings, another photo or before Apply: main lets it go.
+    if (made && !live) void api.enhance.previewClear(made.key).catch(() => undefined)
+  }, [made, live])
+  useEffect(
+    () => () => {
+      const m = held.current
+      if (m) void api.enhance.previewClear(m.key).catch(() => undefined)
+    },
+    []
+  )
+  const preview = async (): Promise<void> => {
+    const d = useDevelop.getState()
+    if (!d.session || !d.recipe) return
+    // The view's centre, in the photo's own frame (before its crop, straighten and turns).
+    const g = viewGeometry(d.recipe, d.session.frameWidth, d.session.frameHeight, false)
+    const at = displayToBase(g, { x: d.zoom.cx, y: d.zoom.cy })
+    const asked = { key: d.session.key, sig }
+    setBusy(true)
+    try {
+      await api.enhance.preview(asked.key, settings, at)
+      setMade({ ...asked, shown: true })
+      loupeZoom.actual()
+    } catch (err) {
+      say(errorText(err), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const show = (on: boolean): void => {
+    if (!live) return
+    setMade({ ...live, shown: on })
+    void api.enhance.previewShow(live.key, on).catch(() => undefined)
+  }
+  return (
+    <div className="enhance-preview">
+      <button className="sm" disabled={!ready || busy || running} onClick={() => void preview()}>
+        {busy ? t('Previewing…') : t('Preview at 100%')}
+      </button>
+      {live && (
+        <Toggle on={live.shown} onChange={show}>
+          {t('Show the preview')}
+        </Toggle>
+      )}
+      <p className="muted small">
+        {t(
+          'PIXL Enhance on a 1024 px square at the centre of the view, shown at 100%. Apply enhances the whole photo.'
+        )}
+      </p>
+    </div>
+  )
+}
 
 /** The batch just started, kept for the panel's next mount. */
 function keepBatch(ids: string[]): void {
@@ -165,6 +247,8 @@ export function EnhancePanel(): React.JSX.Element | null {
 
   const run = async (): Promise<void> => {
     const keys = many ? targets : [session.key]
+    // The whole photo now: a preview of a square goes.
+    void api.enhance.previewClear(session.key).catch(() => undefined)
     try {
       const started = await Promise.all(
         keys.map((key) =>
@@ -227,6 +311,11 @@ export function EnhancePanel(): React.JSX.Element | null {
                   onCommit={() => undefined}
                 />
                 <ModelGet id={PIXL_ENHANCE} models={models} />
+                <PixlPreview
+                  settings={s}
+                  ready={!session.isHdr && allInstalled(models, [PIXL_ENHANCE])}
+                  running={running}
+                />
               </>
             )}
           </Section>

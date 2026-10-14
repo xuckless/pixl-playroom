@@ -3309,5 +3309,10 @@
   "PIXL demosaic": "Giải khảm PIXL",
   "PIXL demosaic: developing this RAW at full size": "Giải khảm PIXL: đang xử lý RAW này ở kích thước đầy đủ",
   "PIXL demosaic: this RAW is developed by PIXL’s own model, zoomed out, at 1:1 and in the export": "Giải khảm PIXL: RAW này được xử lý bằng mô hình riêng của PIXL, khi thu nhỏ, ở 1:1 và khi xuất",
-  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "Giải khảm PIXL: công cụ đã từ chối áp dụng cho RAW này, nên ảnh được hiển thị bằng cách xử lý của bản phát hành"
+  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "Giải khảm PIXL: công cụ đã từ chối áp dụng cho RAW này, nên ảnh được hiển thị bằng cách xử lý của bản phát hành",
+  "Preview at 100%": "Xem trước ở 100%",
+  "Previewing…": "Đang tạo bản xem trước…",
+  "Show the preview": "Hiển thị bản xem trước",
+  "PIXL Enhance on a 1024 px square at the centre of the view, shown at 100%. Apply enhances the whole photo.": "PIXL Enhance trên một ô vuông 1024 px ở giữa khung nhìn, hiển thị ở 100%. Áp dụng sẽ cải thiện toàn bộ ảnh.",
+  "Choose an Enhance level to preview": "Chọn một mức cải thiện để xem trước"
 }

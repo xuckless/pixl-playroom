@@ -295,7 +295,12 @@ export const IPC = {
     progress: 'export:progress'
   },
   enhance: {
-    rates: 'enhance:rates'
+    rates: 'enhance:rates',
+    /** PIXL Enhance's preview: a square about the view's centre, read by the 1:1 view. */
+    preview: 'enhance:preview',
+    /** The preview shown or not (to compare), or let go. */
+    previewShow: 'enhance:preview-show',
+    previewClear: 'enhance:preview-clear'
   },
   ai: {
     start: 'ai:start',
@@ -751,6 +756,11 @@ export interface RenderEvent {
  * A part of the picture as the loupe shows it (straightened, cropped,
  * warped, or the crop tool's whole frame), rendered at full resolution.
  */
+/** PIXL Enhance's preview made: where its square is, in fractions of the frame. */
+export interface EnhancePreview {
+  square: { x: number; y: number; width: number; height: number }
+}
+
 /** The open RAW's full-size develop (its master) under way: how long it should take, or over. */
 export interface MasterEvent {
   key: string

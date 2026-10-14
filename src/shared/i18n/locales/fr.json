@@ -3431,5 +3431,10 @@
   "PIXL demosaic": "Dématriçage PIXL",
   "PIXL demosaic: developing this RAW at full size": "Dématriçage PIXL : développement de ce RAW en pleine taille",
   "PIXL demosaic: this RAW is developed by PIXL’s own model, zoomed out, at 1:1 and in the export": "Dématriçage PIXL : ce RAW est développé par le modèle de PIXL, en vue réduite, à 1:1 et à l’export",
-  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "Dématriçage PIXL : le moteur l’a refusé pour ce RAW, il est donc affiché avec le développement publié"
+  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "Dématriçage PIXL : le moteur l’a refusé pour ce RAW, il est donc affiché avec le développement publié",
+  "Preview at 100%": "Aperçu à 100 %",
+  "Previewing…": "Aperçu en cours…",
+  "Show the preview": "Afficher l’aperçu",
+  "PIXL Enhance on a 1024 px square at the centre of the view, shown at 100%. Apply enhances the whole photo.": "PIXL Enhance sur un carré de 1024 px au centre de la vue, affiché à 100 %. Appliquer améliore toute la photo.",
+  "Choose an Enhance level to preview": "Choisissez un niveau d’amélioration à prévisualiser"
 }

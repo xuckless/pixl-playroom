@@ -3309,5 +3309,10 @@
   "PIXL demosaic": "PIXL デモザイク",
   "PIXL demosaic: developing this RAW at full size": "PIXL デモザイク：この RAW をフルサイズで現像中",
   "PIXL demosaic: this RAW is developed by PIXL’s own model, zoomed out, at 1:1 and in the export": "PIXL デモザイク：この RAW は PIXL 独自のモデルで現像されています（縮小表示、1:1、書き出しのすべて）",
-  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "PIXL デモザイク：エンジンがこの RAW での使用を拒否したため、リリース版の現像で表示しています"
+  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "PIXL デモザイク：エンジンがこの RAW での使用を拒否したため、リリース版の現像で表示しています",
+  "Preview at 100%": "100% でプレビュー",
+  "Previewing…": "プレビューを作成中…",
+  "Show the preview": "プレビューを表示",
+  "PIXL Enhance on a 1024 px square at the centre of the view, shown at 100%. Apply enhances the whole photo.": "表示の中央にある 1024 px の正方形に PIXL Enhance をかけ、100% で表示します。適用すると写真全体が補正されます。",
+  "Choose an Enhance level to preview": "プレビューする補正レベルを選んでください"
 }

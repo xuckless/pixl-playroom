@@ -86,7 +86,8 @@ import {
 } from '../shared/retouch'
 import { grey8 } from './pngio'
 import type { PixelStep } from '../shared/pixels'
-import { enhanceAvailability, enhanceRates } from './enhance'
+import { enhanceAvailability, enhanceRates, makeEnhancePreview } from './enhance'
+import type { EnhanceSettings } from '../shared/enhance'
 import { readWatermark } from './watermark'
 import type { AiJobs } from './ai/jobs'
 import { modelName, type ModelStore } from './ai/models'
@@ -904,6 +905,42 @@ export function registerIpc(s: Services): void {
 
   // ── enhance ──
   handle(IPC.enhance.rates, () => enhanceRates(s.index))
+  // PIXL Enhance's preview: one at a time a photo, a newer ask stopping the one before.
+  const previewing = new Map<string, AbortController>()
+  handle(
+    IPC.enhance.preview,
+    async (key: string, settings: EnhanceSettings, at: { x: number; y: number }) => {
+      previewing.get(key)?.abort()
+      const abort = new AbortController()
+      previewing.set(key, abort)
+      try {
+        const session = s.sessions.session(key)
+        const made = await makeEnhancePreview(
+          s.sessions.bgEngine,
+          s.models,
+          s.index,
+          session.row,
+          session.file,
+          await session.fullFrame(),
+          settings,
+          { x: Math.min(1, Math.max(0, at.x)), y: Math.min(1, Math.max(0, at.y)) },
+          abort.signal
+        )
+        if (abort.signal.aborted) throw new Error(t('cancelled'))
+        session.setEnhancePreview(made)
+        return { square: made.square }
+      } finally {
+        if (previewing.get(key) === abort) previewing.delete(key)
+      }
+    }
+  )
+  handle(IPC.enhance.previewShow, (key: string, on: boolean) =>
+    s.sessions.session(key).showEnhancePreview(on === true)
+  )
+  handle(IPC.enhance.previewClear, (key: string) => {
+    previewing.get(key)?.abort()
+    s.sessions.session(key).setEnhancePreview(null)
+  })
 
   // ── AI models ──
   handle(IPC.models.list, () => s.models.list())

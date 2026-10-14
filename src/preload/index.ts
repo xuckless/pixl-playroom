@@ -49,6 +49,7 @@ import {
   type Prefs,
   type RegionRequest,
   type RegionResult,
+  type EnhancePreview,
   type MasterEvent,
   type PixlDemosaicEvent,
   type RenderEvent,
@@ -73,7 +74,7 @@ import type { FoundThing, PhotoNames } from '../shared/naming'
 import type { CullReason } from '../shared/cullsuggest'
 import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../shared/looks/run'
-import type { EnhanceRates } from '../shared/enhance'
+import type { EnhanceRates, EnhanceSettings } from '../shared/enhance'
 import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
 import type { Language, LanguageSetting } from '../shared/i18n'
 
@@ -361,7 +362,12 @@ const api = {
   },
   enhance: {
     /** How fast each step has run here (ms per megapixel), for the panel's estimate. */
-    rates: () => call<EnhanceRates>(IPC.enhance.rates)
+    rates: () => call<EnhanceRates>(IPC.enhance.rates),
+    /** PIXL Enhance on a square about `at` (a fraction of the frame), for the 1:1 view. */
+    preview: (key: string, settings: EnhanceSettings, at: { x: number; y: number }) =>
+      call<EnhancePreview>(IPC.enhance.preview, key, settings, at),
+    previewShow: (key: string, on: boolean) => call<void>(IPC.enhance.previewShow, key, on),
+    previewClear: (key: string) => call<void>(IPC.enhance.previewClear, key)
   },
   ai: {
     start: (req: AiStartRequest) => call<string>(IPC.ai.start, req),

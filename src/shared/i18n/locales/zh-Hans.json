@@ -3309,5 +3309,10 @@
   "PIXL demosaic": "PIXL 去马赛克",
   "PIXL demosaic: developing this RAW at full size": "PIXL 去马赛克：正在以全尺寸显影此 RAW",
   "PIXL demosaic: this RAW is developed by PIXL’s own model, zoomed out, at 1:1 and in the export": "PIXL 去马赛克：此 RAW 由 PIXL 自有模型显影，缩小视图、1:1 和导出均是如此",
-  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "PIXL 去马赛克：引擎拒绝对此 RAW 使用它，因此以正式版的显影方式显示"
+  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "PIXL 去马赛克：引擎拒绝对此 RAW 使用它，因此以正式版的显影方式显示",
+  "Preview at 100%": "以 100% 预览",
+  "Previewing…": "正在生成预览…",
+  "Show the preview": "显示预览",
+  "PIXL Enhance on a 1024 px square at the centre of the view, shown at 100%. Apply enhances the whole photo.": "对视图中央 1024 px 的方块应用 PIXL Enhance，并以 100% 显示。应用后将增强整张照片。",
+  "Choose an Enhance level to preview": "请选择要预览的增强级别"
 }

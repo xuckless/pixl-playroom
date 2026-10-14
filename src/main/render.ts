@@ -763,6 +763,52 @@ class Session {
     return { width: px.frameWidth, height: px.frameHeight }
   }
 
+  /**
+   * The photo's full-size frame as the next step would read it: the steps
+   * laid on, else its own pixels (a RAW's master). PIXL Enhance's preview is
+   * made from it.
+   */
+  async fullFrame(): Promise<ProxyFile> {
+    return (
+      (await this.workingMaster()) ??
+      ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
+    )
+  }
+
+  /**
+   * PIXL Enhance's preview (main/enhance.ts `makeEnhancePreview`): the
+   * full-size frame with a square enhanced, which the 1:1 view reads while
+   * it is shown; made for these steps only, so gone when they change.
+   */
+  private enhancePreview: { file: ProxyFile; steps: string; shown: boolean } | null = null
+
+  setEnhancePreview(file: ProxyFile | null): void {
+    const was = this.enhancePreview
+    if (was && was.file.path !== file?.path) dropFiles([was.file.path])
+    this.enhancePreview =
+      file && !this.closed ? { file, steps: this.stepsKey(this.recipe), shown: true } : null
+    if (file && this.closed) dropFiles([file.path])
+    if (was || file) this.owner.send(IPC.develop.tileStale, { key: this.key })
+  }
+
+  /** The preview shown, or the 1:1 view without it, to compare. */
+  showEnhancePreview(on: boolean): void {
+    if (!this.enhancePreview || this.enhancePreview.shown === on) return
+    this.enhancePreview.shown = on
+    this.owner.send(IPC.develop.tileStale, { key: this.key })
+  }
+
+  /** The preview the 1:1 view reads now: shown, and made for the steps the recipe has. */
+  private previewFrame(): ProxyFile | null {
+    const p = this.enhancePreview
+    if (!p) return null
+    if (p.steps !== this.stepsKey(this.recipe)) {
+      this.setEnhancePreview(null)
+      return null
+    }
+    return p.shown ? p.file : null
+  }
+
   /** The full-resolution working frame (the recipe's steps on the photo at full size): 1:1 and export. */
   async workingMaster(): Promise<ProxyFile | null> {
     if (this.recipe.pixels.length === 0) return null
@@ -2363,7 +2409,8 @@ class Session {
     // (pixel steps at full size) or the RAW master, made or found.
     const tMaster = performance.now()
     // The pixel steps laid on at full size: the same pixels an export uses.
-    const stepsMaster = await this.workingMaster()
+    // PIXL Enhance's preview (the steps' frame with a square enhanced) while it is shown.
+    const stepsMaster = this.previewFrame() ?? (await this.workingMaster())
     const raw = this.isRaw
     const src: ProxyFile = stepsMaster
       ? stepsMaster
@@ -3030,6 +3077,8 @@ class Session {
   /** Stop, writing a pending edit; resolves once it is saved. */
   close(): Promise<void> {
     this.closed = true
+    if (this.enhancePreview) dropFiles([this.enhancePreview.file.path])
+    this.enhancePreview = null
     if (this.screen) dropFiles(this.screen.made)
     this.screen = null
     // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5).
@@ -3115,6 +3164,11 @@ export class DevelopSessions {
   /** The open photo's 1:1 tile is asked for again: its RAW develop changed. */
   tilesStale(): void {
     for (const key of this.sessions.keys()) this.send(IPC.develop.tileStale, { key })
+  }
+
+  /** An open photo's session, for what works on it from outside (PIXL Enhance's preview). */
+  session(key: string): Session {
+    return this.get(key)
   }
 
   /** The PIXL demosaic's switch turned: the open RAW's picture follows it. */

@@ -3370,5 +3370,10 @@
   "PIXL demosaic": "PIXL-Demosaicing",
   "PIXL demosaic: developing this RAW at full size": "PIXL-Demosaicing: Dieses RAW wird in voller Größe entwickelt",
   "PIXL demosaic: this RAW is developed by PIXL’s own model, zoomed out, at 1:1 and in the export": "PIXL-Demosaicing: Dieses RAW wird vom eigenen Modell von PIXL entwickelt, verkleinert, bei 1:1 und im Export",
-  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "PIXL-Demosaicing: Die Engine hat es für dieses RAW abgelehnt, daher wird es mit der veröffentlichten Entwicklung angezeigt"
+  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "PIXL-Demosaicing: Die Engine hat es für dieses RAW abgelehnt, daher wird es mit der veröffentlichten Entwicklung angezeigt",
+  "Preview at 100%": "Vorschau bei 100 %",
+  "Previewing…": "Vorschau wird erstellt…",
+  "Show the preview": "Vorschau anzeigen",
+  "PIXL Enhance on a 1024 px square at the centre of the view, shown at 100%. Apply enhances the whole photo.": "PIXL Enhance auf einem 1024-px-Quadrat in der Mitte der Ansicht, bei 100 % angezeigt. Anwenden verbessert das ganze Foto.",
+  "Choose an Enhance level to preview": "Wählen Sie eine Verbesserungsstufe für die Vorschau"
 }

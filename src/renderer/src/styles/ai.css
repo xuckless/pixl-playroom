@@ -355,3 +355,12 @@ button.bg-job-link {
   flex-direction: column;
   gap: 4px;
 }
+
+/* PIXL Enhance's preview (panels/enhance.tsx): its button, toggle and note */
+.enhance-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+}

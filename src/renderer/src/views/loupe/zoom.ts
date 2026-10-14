@@ -62,5 +62,9 @@ export const loupeZoom = {
   },
   fit(): void {
     apply(() => FIT)
+  },
+  /** 100%, about the loupe's centre (PIXL Enhance's preview: its square is there). */
+  actual(): void {
+    apply((v) => zoomTo(v, useDevelop.getState().zoom, 1, centre(v)))
   }
 }

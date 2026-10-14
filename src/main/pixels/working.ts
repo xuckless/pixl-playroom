@@ -352,6 +352,22 @@ async function guarded(
   return out
 }
 
+/**
+ * A 16-bit PNG made to be laid on a float frame at `at` (whole pixels),
+ * guarded as an AI step is (`guards`): where the frame is at or over white
+ * its own value stays. On a 16-bit frame, the PNG as it is. PIXL Enhance's
+ * preview (main/enhance.ts) lays its square on with it.
+ */
+export async function guardPatch(
+  deps: PixelDeps,
+  frame: ProxyFile,
+  src: string,
+  at: { x: number; y: number }
+): Promise<string> {
+  const guard = await guardOf(deps, frame)
+  return guard ? guarded(deps, src, guard, at) : src
+}
+
 /** The engine overlays for a list of steps over a `w × h` frame, in order. */
 export async function overlaysOf(
   deps: PixelDeps,
