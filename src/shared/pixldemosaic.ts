@@ -1,9 +1,9 @@
 /**
- * PIXL's own demosaic (the engine's 0.20 work, not released): one model for
- * the whole route from a noisy mosaic to RGB, so nothing denoises the
- * mosaic before it (PMRID is never stacked on it). Only a development
- * kit's roster offers it (`scripts/engine-dev.mjs`, `pnpm dev:kit`); the
- * released roster has neither id, and none of this is reached.
+ * PIXL's own demosaic (engine 0.20.0): one model for the whole route from a
+ * noisy mosaic to RGB, so nothing denoises the mosaic before it (PMRID is
+ * never stacked on it). Offered by 0.20.0's roster, or before its release
+ * a development kit's (`scripts/engine-dev.mjs`, `pnpm dev:kit`); a roster
+ * with neither id reaches none of this.
  *
  * Pure, for tests/rawdevelop.test.ts.
  */

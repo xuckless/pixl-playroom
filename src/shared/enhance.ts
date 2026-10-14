@@ -11,7 +11,14 @@
  */
 
 import { t, tk } from './i18n'
-import { LEVEL_LABEL, LEVEL_NUMBER, PIXL_ENHANCE, PIXL_LEVELS, type PixlLevel } from './pixlenhance'
+import {
+  LEVEL_LABEL,
+  LEVEL_NUMBER,
+  PIXL_ENHANCE,
+  PIXL_LEVELS,
+  type PixlLevel,
+  type PixlLevelValues
+} from './pixlenhance'
 import type { PixelStep } from './pixels'
 
 /**
@@ -321,4 +328,17 @@ export function nextLevel(now: PixlLevel | null, want: PixlLevel, on: boolean): 
   if (on) return w > n ? want : now
   // Unticked: the level under it (a lower box ticked inside it stays ticked).
   return w > 0 ? PIXL_LEVELS[w - 1] : null
+}
+
+/**
+ * PIXL Enhance's step from the store's ref: the level's tiling over the
+ * ref's (on CoreML the store puts in the static tile, 1024 / 128, and level
+ * 2 needs 1024 / 256: 128 leaves seams; the 0.20.0 guide §4), its strength.
+ */
+export function pixlModelStep<R extends object>(
+  ref: R,
+  level: Pick<PixlLevelValues, 'tiling'>,
+  strength: number
+): R & { tiling: PixlLevelValues['tiling']; strength: number } {
+  return { ...ref, tiling: level.tiling, strength: Math.min(1, Math.max(0.01, strength / 100)) }
 }

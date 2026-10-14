@@ -325,6 +325,7 @@ export const IPC = {
     setHeavy: 'ai:set-heavy',
     /** The PIXL demosaic's switch (a development kit; shared/pixldemosaic.ts). */
     setPixlDemosaic: 'ai:set-pixl-demosaic',
+    setPixlCpu: 'ai:set-pixl-cpu',
     /** What today's pipeline has (shared/rebuild.ts `Pipeline`): the PIXL demosaic, PIXL Enhance. */
     pipeline: 'ai:pipeline',
     /** A heavy model's sustained-load benchmark; resolves with its result. */
@@ -1055,6 +1056,7 @@ export interface ModelInfo {
     | 'depth'
     | 'demosaic'
     | 'raw-denoise'
+    | 'faces'
   bytes: number
   licence: string
   holder: string
@@ -1066,6 +1068,8 @@ export interface ModelInfo {
   error?: string
   /** How long it takes on this computer, for one photo (see `modelSpeed.ts`). */
   speed: ModelSpeed | null
+  /** Settings lists it: false for a borrowed model PIXL's own replaces (shared/borrowed.ts). */
+  listed: boolean
 }
 
 /** Gemma, the local assistant: its files, its server, its switch and benchmark. */

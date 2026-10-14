@@ -41,6 +41,8 @@ import { carryOver, keptBesides, retiredModelDirs } from './carryover'
 import { acceleratorTrouble, staticPlan } from '../../shared/modelshape'
 import { NAFNET_DENOISE } from '../../shared/recipe'
 import { SAM3_PHRASE } from '../../shared/ai'
+import { listed } from '../../shared/borrowed'
+import { CpuDeclined, isPixlModel, mayUsePixlCpu, pixlCpuNow } from './pixlcpu'
 
 import * as pixlModels from '@xuckless/pixl-models'
 import type { ModelEntry as RosterEntry, ModelFile as RosterFile } from '@xuckless/pixl-models'
@@ -183,7 +185,9 @@ export class ModelStore {
     return Promise.all(
       this.roster().map(async (e) => {
         const d = this.downloads.get(e.id)
+        const installed = await this.installed(e.id)
         return {
+          listed: listed(e.id, installed, (id) => this.offered(id)),
           speed: speeds.get(e.id) ?? null,
           id: e.id,
           title: e.title,
@@ -192,7 +196,7 @@ export class ModelStore {
           licence: e.licence.spdx,
           holder: e.licence.holder,
           caveat: e.caveat,
-          installed: await this.installed(e.id),
+          installed,
           progress: d ? d.done / Math.max(1, d.total) : null,
           error: this.failed.get(e.id)
         }
@@ -359,6 +363,13 @@ export class ModelStore {
         for (const text of od.licence_texts)
           await writeFile(join(dir, text.name), await readFile(text.path, 'utf8'))
         await writeFile(join(dir, 'NOTICE.md'), od.notice)
+      } else {
+        // A shipped model's too (0.20.0: PIXL's own are Apache-2.0, with training-data credits).
+        const shipped = pixlModels.manifest().find((m) => m.id === id)
+        if (shipped)
+          await writeFile(join(dir, 'NOTICE.md'), pixlModels.notice(shipped)).catch((err) =>
+            log.warn('model notice not written', id, (err as Error).message)
+          )
       }
       this.installedCache.set(id, true)
       log.info('model installed', id)
@@ -623,6 +634,9 @@ export class ModelStore {
     const onCpu = new Set(
       (await this.provider()) === 'Cpu' ? ids : ids.filter((id) => this.cpuOnly.has(id))
     )
+    // PIXL's own never start on the CPU unasked (ai/pixlcpu.ts).
+    const pixlOnCpu = [...onCpu].filter(isPixlModel)
+    if (pixlOnCpu.length > 0 && !(await mayUsePixlCpu(pixlOnCpu, 'no-gpu'))) throw new CpuDeclined()
     for (;;) {
       try {
         return await make(onCpu)
@@ -634,6 +648,10 @@ export class ModelStore {
         if (left.length === 0) throw err
         const named = left.filter((id) => message.includes(`${id}/`))
         const moved = named.length > 0 ? named : left
+        // Nor are they moved there when the accelerator refuses one: asked first.
+        const movedPixl = moved.filter(isPixlModel)
+        if (movedPixl.length > 0 && !(await mayUsePixlCpu(movedPixl, 'refused', message)))
+          throw new CpuDeclined()
         log.warn('models would not run on the accelerator; using the CPU', moved, message)
         for (const id of moved) {
           onCpu.add(id)
@@ -641,6 +659,16 @@ export class ModelStore {
         }
       }
     }
+  }
+
+  /**
+   * The user said no to PIXL's models on this computer's CPU, and this one
+   * would run there: planned around (`ai/rawdevelop.ts`), no question per photo.
+   */
+  async pixlDeclined(id: string): Promise<boolean> {
+    if (!isPixlModel(id)) return false
+    const onCpu = (await this.provider()) === 'Cpu' || this.cpuOnly.has(id)
+    return onCpu && (await pixlCpuNow()) === 'no'
   }
 
   /** The licence texts shipped with the roster (for the notices). */

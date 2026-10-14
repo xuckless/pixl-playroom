@@ -153,7 +153,12 @@ export type RawDenoiserRef = Record<string, unknown>
  */
 export interface MosaicDenoise {
   model: RawDenoiserRef
-  noise: 'Measured' | 'DngNoiseProfile' | { Stated: { k: number; sigma2: number } }
+  /**
+   * `MeasuredFloor` (0.20): measured, with the read-noise floor taken from
+   * the frame's darkest tiles (the PIXL demosaic's roster ref states it).
+   */
+  noise:
+    'Measured' | 'MeasuredFloor' | 'DngNoiseProfile' | { Stated: { k: number; sigma2: number } }
 }
 
 /**
@@ -298,7 +303,13 @@ export type ModelInput =
   | { Dynamic: { tile: number; overlap: number; multiple: number } }
   | { Fixed: { width: number; height: number; overlap: number } }
 
-export type ModelSpace = 'Srgb' | 'SourceEncoding'
+/**
+ * What a model reads (0.20 adds `PixlRgb`: linear PixlRGB through a stated
+ * log curve, so a Scene frame goes in with its highlights; PIXL's own
+ * models state it, and run in no other).
+ */
+export type ModelSpace =
+  'Srgb' | 'SourceEncoding' | { PixlRgb: { encoding: { Log: { gain: number; peak: number } } } }
 
 export type AlphaUpscale = 'Model' | { Resample: Resampler }
 
@@ -1840,6 +1851,10 @@ export interface RawReport {
     tiles: number
     model_load_ms: number
     model_ms: number
+    /** 0.20: where the noise it was told came from (`measured, with the floor`, `stated`). */
+    noise_from?: string
+    /** 0.20: the noise read of each plane (`variance = k·x + σ²`). */
+    noise_planes?: unknown
   } | null
   /** What decoded the file: `"LibRaw 0.22.2"` or `"PIXL DNG reader (DNG 1.7.1)"`. */
   decoder: string

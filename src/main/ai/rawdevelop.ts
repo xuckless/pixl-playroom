@@ -16,15 +16,18 @@
  * once it is up (app.ts); before that, and without the engine's `enhance`
  * build, nothing learned runs.
  *
- * With a development kit (`pnpm dev:kit`, shared/pixldemosaic.ts) the roster
- * also offers PIXL's own demosaic, which denoises as it develops: where it
- * is offered for the sensor, downloaded and its switch on (Settings → AI
- * models), it is the develop, alone (no PMRID before it), under its own tag
- * `pd`. Refused, the develop above stands in, then the classic; never
- * silently (a trial): the refusal is one `console.error` line, and that
- * model is planned around until its switch is turned off and on, or
- * Playroom starts again (a develop refused at every 1:1 view would be made
- * again at every one).
+ * Engine 0.20.0's roster (and a development kit's, `pnpm dev:kit`) also
+ * offers PIXL's own demosaic, which denoises as it develops: where it is
+ * offered for the sensor, downloaded and "Use PIXL demosaic" is on
+ * (Settings → AI models, on by default), it is the develop, alone (no PMRID
+ * before it), under its own tag `pd`. Refused, the develop above stands in,
+ * then the classic, and the user is told in the engine's words (the 1:1
+ * view's note, the export's receipt). A refusal that is the model's own (it
+ * will not load, the provider fails) plans around it until its switch is
+ * turned off and on, or Playroom starts again; one that is the frame's (its
+ * noise cannot be read, E64) is that photo's alone. Which is which is read
+ * from the engine's error code and field, never its words alone (the 0.20.0
+ * audit's B1 and B4).
  */
 import { remember, statedNoiseFor, type NoisePlane, type Shot, type StatedNoise } from './noisebook'
 import log from 'electron-log/main'
@@ -37,6 +40,7 @@ import type {
   SceneDemosaic
 } from '../../shared/engine-types'
 import { PIXL_DEMOSAIC } from '../../shared/pixldemosaic'
+import { CpuDeclined } from '../../shared/pixlcpu'
 import type { Recipe } from '../../shared/recipe'
 
 export const DEMOSAIC_MODEL: Record<RawCfa, string> = {
@@ -71,10 +75,15 @@ export interface RawModels {
   canRun(): Promise<boolean>
   /** Fetch a model quietly (an X-Trans RAW's DemosaicNet the first time one opens). */
   fetch(id: string): void
-  /** The roster offers this model (the PIXL demosaic: a development kit's roster only). */
+  /** The roster offers this model (the PIXL demosaic: 0.20.0's roster, or a development kit's). */
   offered(id: string): boolean
-  /** "Use PIXL demosaic (development)" is on (Settings → AI models). */
+  /** "Use PIXL demosaic" is on (Settings → AI models). */
   pixlDemosaic(): Promise<boolean>
+  /**
+   * The user said no to PIXL's models on this computer's CPU, and this one
+   * would run there (`ai/pixlcpu.ts`): planned around, no question per photo.
+   */
+  pixlDeclined?(id: string): Promise<boolean>
 }
 
 let models: RawModels | null = null
@@ -178,6 +187,7 @@ export async function scenePlan(
     return released
   }
   if (pixlRefused.has(pixl)) return released
+  if (await m!.pixlDeclined?.(pixl).catch(() => false)) return released
   if (!(await m!.installed(pixl))) {
     // Fetched the first time a RAW wants it (once a run), the released develop meanwhile.
     if (!pixlAsked.has(pixl)) {
@@ -235,15 +245,55 @@ async function fill(
 
 const NEVER = new AbortController().signal
 
-/** What a develop refused for its models says (anything else is the file's, and stands). */
-const MODEL_TROUBLE = /raw\.(demosaic|mosaic_denoise)|model|onnx|session|provider|coreml/i
+/** An engine error's code and the request field it named (`InvalidRequest`), where it has them. */
+function codeOf(err: unknown): { code: string | null; field: string | null } {
+  const e = err as {
+    code?: unknown
+    field?: unknown
+    detail?: { InvalidRequest?: { field?: unknown } }
+  } | null
+  const code = typeof e?.code === 'string' ? e.code : null
+  const named = e?.field ?? e?.detail?.InvalidRequest?.field
+  // An error passed on without its detail still names the field in its words.
+  const said =
+    code === 'InvalidRequest'
+      ? /invalid request field `([^`]+)`/.exec(String((err as Error)?.message))?.[1]
+      : undefined
+  const field = typeof named === 'string' ? named : (said ?? null)
+  return { code, field }
+}
+
+/** What a develop refused for its models says, for an error without a code. */
+const MODEL_WORDS = /raw\.(demosaic|mosaic_denoise)|onnx|session|provider|coreml/i
+
+/**
+ * Whether a develop was refused for its models (and the picture can be had
+ * with another develop), not for the file: the engine's `Model` errors, a
+ * request it refuses on the demosaic's or denoiser's fields, and a model
+ * the user would not have run on the CPU. By code and field; the words only
+ * where an error has no code.
+ */
+export function modelTrouble(err: unknown): boolean {
+  if (err instanceof CpuDeclined) return true
+  const { code, field } = codeOf(err)
+  if (code === 'Model') return true
+  if (code === 'InvalidRequest') return !!field && /^raw\.(demosaic|mosaic_denoise)/.test(field)
+  if (code) return false
+  return MODEL_WORDS.test(String((err as Error)?.message))
+}
 
 /**
  * The engine could not read this frame's noise (E64): the photo's own
  * trouble, not the model's. Its noise can be stated instead, and the model
  * stays planned for every other photo.
  */
-const NOISE_UNREAD = /noise cannot be read|state it with MosaicNoise::Stated/i
+export function noiseUnread(err: unknown): boolean {
+  const { field } = codeOf(err)
+  if (field) return field === 'raw.demosaic.noise.noise'
+  return /noise cannot be read|state it with MosaicNoise::Stated/i.test(
+    String((err as Error)?.message)
+  )
+}
 
 /** A develop's own account of the noise its demosaic was told, where one ran. */
 function planesOf(value: unknown): NoisePlane[] | null {
@@ -265,6 +315,10 @@ export interface SceneRun<T> {
   refused?: string
   /** The plan's ran with the frame's noise stated, not read (E64): from what. */
   statedFrom?: string
+  /** The refusal was the frame's (its noise unread, nothing to state yet): the model stays planned. */
+  photoOnly?: boolean
+  /** The user said no to the CPU: the develop of before ran, by their choice (not a refusal). */
+  declined?: boolean
 }
 
 /** An engine error's message and code, for a line in the log. */
@@ -308,7 +362,7 @@ export async function withScene<T>(
     return { value, classic: false, ran: plan.tag }
   } catch (err) {
     if (signal.aborted) throw err
-    const trouble = MODEL_TROUBLE.test(String((err as Error)?.message))
+    const trouble = modelTrouble(err)
     if (plan.demosaic === 'pixl') {
       const id = demosaicModel(plan)!
       if (!trouble) {
@@ -316,10 +370,24 @@ export async function withScene<T>(
         console.error(`PIXL demosaic: the develop with ${id} failed: ${inWords(err)}`)
         throw err
       }
+      const next: ScenePlan = plan.then ?? {
+        cfa: plan.cfa,
+        demosaic: 'classic',
+        pmrid: false,
+        tag: developTag('classic', false)
+      }
+      // Not on this computer's CPU, the user said (ai/pixlcpu.ts): the develop
+      // of before, by choice. Planned around from now on (`pixlDeclined`).
+      if (err instanceof CpuDeclined) {
+        log.info('PIXL demosaic declined on the CPU; developing', next.tag)
+        traceRegion({ step: 'declined', tag: plan.tag, then: next.tag })
+        const stood = await withScene(next, run, signal)
+        return { ...stood, classic: true, declined: true }
+      }
       let why = inWords(err)
       // This frame's noise could not be read (E64): stated from what its
       // camera's other frames were measured to have, and developed again.
-      const unread = NOISE_UNREAD.test(why)
+      const unread = noiseUnread(err)
       const stated = unread ? statedNoiseFor(shot) : null
       if (stated) {
         try {
@@ -336,12 +404,6 @@ export async function withScene<T>(
           why = `${why}; with its noise stated from ${stated.source}: ${inWords(again)}`
         }
       }
-      const next: ScenePlan = plan.then ?? {
-        cfa: plan.cfa,
-        demosaic: 'classic',
-        pmrid: false,
-        tag: developTag('classic', false)
-      }
       // A frame whose noise cannot be read is this photo's trouble: the model
       // stays planned for the rest. Anything else is the model's, for the run.
       const scope = unread
@@ -354,7 +416,7 @@ export async function withScene<T>(
       traceRegion({ step: 'refused', tag: plan.tag, then: next.tag, message: why })
       if (!unread) pixlRefused.set(id, why)
       const stood = await withScene(next, run, signal)
-      return { ...stood, classic: true, refused: why }
+      return { ...stood, classic: true, refused: why, ...(unread ? { photoOnly: true } : {}) }
     }
     if (!trouble) throw err
     log.warn('RAW develop with', plan.tag, 'refused; developing classic', (err as Error).message)

@@ -36,6 +36,7 @@ import { DEMOSAIC_MODEL, setRawModels } from './ai/rawdevelop'
 import { PIXL_DEMOSAIC } from '../shared/pixldemosaic'
 import { DEV_KIT } from './devkit'
 import { AiSwitchStore, setSwitchStore } from './ai/switches'
+import { setPixlCpuStore } from './ai/pixlcpu'
 import { BrainStore } from './ai/brain'
 import { ModelStore } from './ai/models'
 import { EnhanceRunner } from './enhance'
@@ -297,6 +298,8 @@ app.whenReady().then(() => {
   // The killswitch and the heavy models' switches (shared/heavy.ts), and Gemma.
   const switches = new AiSwitchStore(index)
   setSwitchStore(switches)
+  // PIXL's models on the CPU: asked once per computer, kept with the switches.
+  setPixlCpuStore(switches)
   const brain = new BrainStore(models, switches)
   // A Remove bakes with MI-GAN once it is downloaded (pixels/heal.ts).
   setInpainter(async () =>
@@ -313,12 +316,13 @@ app.whenReady().then(() => {
         : 'the installed roster does NOT offer the PIXL demosaic: run `pnpm engine:dev` again'
     )
   }
-  // A RAW's full-size develop: DemosaicNet once it is here, PMRID when asked;
-  // with a development kit, the PIXL demosaic while its switch is on.
+  // A RAW's full-size develop: the PIXL demosaic where the roster offers it
+  // and its switch is on, else DemosaicNet once it is here, PMRID when asked.
   keepNoiseIn(join(paths.models(), 'raw-noise.json'))
   setRawModels({
     offered: (id) => models.offered(id),
     pixlDemosaic: async () => (await switches.get()).pixlDemosaic,
+    pixlDeclined: (id) => models.pixlDeclined(id),
     installed: (id) => models.installed(id),
     ref: (id, provider) => models.ref(id, provider),
     withCpuFallback: (ids, make, signal) => models.withCpuFallback(ids, make, signal),

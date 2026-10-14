@@ -8,9 +8,11 @@
  * With it set, every full-size RAW master says on the console what
  * developed it, where its model ran and how long it took, and the 1:1 view
  * says the same in a line when the master lands: a trial is judged by what
- * ran, never by what was planned.
+ * ran, never by what was planned. Without it, only a develop that stood in
+ * for the planned one is said (in every build).
  */
 import type { ExecutionProvider } from '../shared/engine-types'
+import { developedLine, standInNote } from '../shared/develops'
 
 /**
  * The kit's folder, or null without one. Never in a packaged app
@@ -38,40 +40,32 @@ export interface Developed {
   ms: number
   /** Why the planned one did not run, in the engine's words. */
   refused?: string | undefined
-}
-
-const NAMES: Record<string, string> = {
-  pd: 'PIXL demosaic',
-  dn: 'DemosaicNet',
-  'dn-pm': 'DemosaicNet after PMRID',
-  ahd: 'AHD',
-  'ahd-pm': 'AHD after PMRID',
-  ppg: 'classic demosaic',
-  'ppg-pm': 'classic demosaic after PMRID'
+  /** The planned one was the user's no to the processor, not a refusal. */
+  declined?: boolean | undefined
 }
 
 /** The console's line for a master: its tag, its provider, its wall time. */
-export function developedLine(d: Developed): string {
-  const stoodIn = d.ran === d.planned ? '' : ` (planned ${d.planned}: ${d.refused ?? 'refused'})`
+export function developedConsoleLine(d: Developed): string {
+  const stoodIn = d.ran === d.planned ? '' : ` (planned ${d.planned}: ${d.refused ?? 'declined'})`
   return `[dev kit] RAW master ${d.ran}${stoodIn} · ${d.provider} · ${d.ms} ms`
 }
 
-/** The 1:1 view's line: "PIXL demosaic · 8.4 s", or what stood in for it. */
+/** The 1:1 view's line: "PIXL demosaic · 8.4 s", or what stood in for it and why. */
 export function developedNote(d: Developed): string {
-  const took = `${(d.ms / 1000).toFixed(1)} s`
-  const ran = NAMES[d.ran] ?? d.ran
-  return d.ran === d.planned
-    ? `${ran} · ${took}`
-    : `${NAMES[d.planned] ?? d.planned} refused: ${ran} instead · ${took}`
+  if (d.ran === d.planned) return developedLine(d.ran, d.ms)
+  return standInNote(d.planned, d.ran, d.declined ? null : (d.refused ?? ''))
 }
 
 const last = new Map<number, Developed>()
 
-/** A photo's master was developed just now (said on the console, kept for its note). */
+/**
+ * A photo's master was developed just now. Another develop standing in is
+ * the user's to know, always (engine 0.20.0 guide §3); a develop as planned
+ * is said only on a development kit's trial (and on its console).
+ */
 export function noteDeveloped(photoId: number, d: Developed): void {
-  if (!DEV_KIT) return
-  console.log(developedLine(d))
-  last.set(photoId, d)
+  if (DEV_KIT) console.log(developedConsoleLine(d))
+  if (DEV_KIT || d.ran !== d.planned) last.set(photoId, d)
 }
 
 /** The note for a photo's master developed since the last ask, once. */

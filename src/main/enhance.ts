@@ -31,6 +31,7 @@ import {
   estimateMs,
   jpegRestoreRefusal,
   learnRates,
+  pixlModelStep,
   planSteps,
   reconstructParams,
   scaleOf,
@@ -139,13 +140,7 @@ async function chainOf(
       // (modelshape.ts) and the level sets the overlap.
       const level = levelValues(models.entry(id), p.level)
       const ref = (await models.ref(id, provider, { ...level })) as unknown as EnhancerRef
-      out.push({
-        Model: {
-          ...ref,
-          tiling: level.tiling,
-          strength: Math.min(1, Math.max(0.01, s.pixlStrength / 100))
-        }
-      })
+      out.push({ Model: pixlModelStep(ref, level, s.pixlStrength) })
       continue
     }
     const ref = (await models.ref(id, provider, {})) as unknown as EnhancerRef

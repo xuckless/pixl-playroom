@@ -330,11 +330,11 @@ test('a refused PIXL demosaic says so, and the released develop stands in', asyn
     withScene(plan, async (scene) => {
       scenes.push(scene)
       const model = (scene.demosaic as { Model?: { id: string } }).Model?.id
+      // The model's own trouble (the engine's `Model` error): planned around for the run.
       if (model === 'pixl-demosaic-v1-bayer')
-        throw Object.assign(
-          new Error('invalid request field `raw.demosaic.noise.noise`: not on this sensor'),
-          { code: 'InvalidRequest' }
-        )
+        throw Object.assign(new Error('model pixl-demosaic-v1-bayer: the session failed to load'), {
+          code: 'Model'
+        })
       return 7
     })
   )
@@ -342,15 +342,15 @@ test('a refused PIXL demosaic says so, and the released develop stands in', asyn
   assert.equal(done.value, 7)
   assert.equal(done.classic, true)
   assert.equal(done.ran, 'dn-pm')
-  assert.match(done.refused ?? '', /raw\.demosaic\.noise\.noise.*\[InvalidRequest\]/)
+  assert.match(done.refused ?? '', /session failed to load.*\[Model\]/)
   assert.equal(scenes.length, 2)
   assert.equal((scenes[1].demosaic as { Model: { id: string } }).Model.id, 'demosaicnet-bayer')
   assert.notEqual(scenes[1].mosaic_denoise, null)
   // One line, with the model, the engine's message and its code.
   assert.equal(said.length, 1)
   assert.match(said[0], /pixl-demosaic-v1-bayer/)
-  assert.match(said[0], /raw\.demosaic\.noise\.noise/)
-  assert.match(said[0], /InvalidRequest/)
+  assert.match(said[0], /session failed to load/)
+  assert.match(said[0], /\[Model\]/)
 
   // Planned around from then on (a 1:1 view would develop it again each time)…
   assert.equal((await scenePlan('Bayer', { pmrid: true })).tag, 'dn-pm')
@@ -438,14 +438,68 @@ test('X-Trans: the PIXL demosaic is refused for its noise, DemosaicNet develops'
   assert.match(said[0], /MosaicNoise::Measured reads a Bayer mosaic/)
   assert.match(said[0], /\[InvalidRequest\]/)
 
-  // The next Fujifilm RAW plans DemosaicNet at once (no refusal at every 1:1 view, one line a
-  // run); a Bayer RAW is still the PIXL demosaic's.
-  assert.equal((await scenePlan('XTrans')).tag, 'dn')
+  assert.equal(done.photoOnly, true)
+  // The frame's noise is that photo's trouble, by the field the engine named (the 0.20.0
+  // audit's B1): the next Fujifilm RAW is still the PIXL demosaic's, as a Bayer RAW is
+  // (ensureMaster keeps the stand-in for the run, so the 1:1 view does not ask again).
+  assert.equal((await scenePlan('XTrans')).tag, 'pd')
   assert.equal((await scenePlan('Bayer')).tag, 'pd')
-  const next = await scenePlan('XTrans')
-  const again = await errorsOf(() => withScene(next, async () => 'x'))
-  assert.deepEqual(again.said, [])
-  assert.deepEqual(again.value, { value: 'x', classic: false, ran: 'dn' })
+})
+
+test('a refusal is the model’s or the file’s by the engine’s code and field, not its words', async () => {
+  const { modelTrouble, noiseUnread } = await import('../src/main/ai/rawdevelop')
+  const { CpuDeclined } = await import('../src/shared/pixlcpu')
+  const err = (message: string, extra: object): Error => Object.assign(new Error(message), extra)
+  assert.equal(modelTrouble(err('the model file is damaged', { code: 'Model' })), true)
+  assert.equal(
+    modelTrouble(err('bad tile', { code: 'InvalidRequest', field: 'raw.demosaic.input' })),
+    true
+  )
+  assert.equal(
+    modelTrouble(
+      err('x', {
+        code: 'InvalidRequest',
+        detail: { InvalidRequest: { field: 'raw.mosaic_denoise' } }
+      })
+    ),
+    true
+  )
+  // A decode that mentions a model is still the file's.
+  assert.equal(modelTrouble(err('the camera model is not supported', { code: 'Decode' })), false)
+  assert.equal(modelTrouble(err('bad', { code: 'InvalidRequest', field: 'raw.white' })), false)
+  assert.equal(modelTrouble(new CpuDeclined()), true)
+  assert.equal(
+    noiseUnread(err('x', { code: 'InvalidRequest', field: 'raw.demosaic.noise.noise' })),
+    true
+  )
+  assert.equal(
+    noiseUnread(err('x', { code: 'InvalidRequest', field: 'raw.demosaic.input' })),
+    false
+  )
+})
+
+test('a "no" to the processor: the develop of before, by choice, and PIXL planned around', async () => {
+  const { scenePlan, setRawModels, withScene } = await import('../src/main/ai/rawdevelop')
+  const { CpuDeclined } = await import('../src/shared/pixlcpu')
+  let declined = false
+  const a = fakeModels(['demosaicnet-bayer', ...PIXL], { offers: PIXL })
+  a.m.pixlDeclined = async () => declined
+  setRawModels(a.m)
+  const plan = await scenePlan('Bayer')
+  assert.equal(plan.tag, 'pd')
+  const { said, value: done } = await errorsOf(() =>
+    withScene(plan, async (scene) => {
+      const id = (scene.demosaic as { Model?: { id: string } }).Model?.id
+      if (id === 'pixl-demosaic-v1-bayer') throw new CpuDeclined()
+      return id
+    })
+  )
+  assert.equal(done.value, 'demosaicnet-bayer')
+  assert.equal(done.declined, true)
+  assert.equal(done.refused, undefined)
+  assert.deepEqual(said, [], 'a choice, not a refusal: nothing on the console')
+  declined = true
+  assert.equal((await scenePlan('Bayer')).tag, 'dn')
 })
 
 test('a PIXL demosaic refused, then DemosaicNet refused: the classic, as before', async () => {
@@ -546,7 +600,7 @@ test('the panels know when the PIXL demosaic is a photo’s develop', async () =
 })
 
 test('a development kit’s run says what developed a master, where and how long', async () => {
-  const { developedLine, developedNote, providerName } = await import('../src/main/devkit')
+  const { developedConsoleLine, developedNote, providerName } = await import('../src/main/devkit')
   const gpu = providerName({
     CoreMl: {
       units: 'CpuAndGpu',
@@ -559,11 +613,16 @@ test('a development kit’s run says what developed a master, where and how long
   assert.equal(providerName('Cpu'), 'Cpu')
   assert.equal(providerName(null), 'no model')
   const ok = { planned: 'pd', ran: 'pd', provider: gpu, ms: 8412 }
-  assert.equal(developedLine(ok), `[dev kit] RAW master pd · ${gpu} · 8412 ms`)
+  assert.equal(developedConsoleLine(ok), `[dev kit] RAW master pd · ${gpu} · 8412 ms`)
   assert.equal(developedNote(ok), 'PIXL demosaic · 8.4 s')
   const stood = { ...ok, ran: 'dn', ms: 5200, refused: 'no [InvalidRequest]' }
-  assert.match(developedLine(stood), /RAW master dn \(planned pd: no \[InvalidRequest\]\)/)
-  assert.equal(developedNote(stood), 'PIXL demosaic refused: DemosaicNet instead · 5.2 s')
+  assert.match(developedConsoleLine(stood), /RAW master dn \(planned pd: no \[InvalidRequest\]\)/)
+  // The user is told in the engine's words.
+  assert.equal(
+    developedNote(stood),
+    'PIXL demosaic was refused for this photo, so DemosaicNet developed it: no [InvalidRequest]'
+  )
+  assert.match(developedNote({ ...stood, declined: true }), /kept off the processor/)
 })
 
 test('a frame whose noise cannot be read is told its camera’s measured noise; the model stays planned', async () => {

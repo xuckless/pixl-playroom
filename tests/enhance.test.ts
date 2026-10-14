@@ -214,3 +214,27 @@ test('Detail’s AI boxes: one PIXL step, at the highest level ticked', async ()
   assert.equal(levelOfStep(pixlStepOf([pixl])), 'denoise')
   assert.equal(pixlStepOf([up]), null)
 })
+
+test('PIXL Enhance level 2 runs at its own 1024 / 256 tiling, on CoreML too', async () => {
+  const { pixlModelStep } = await import('../src/shared/enhance')
+  const { STATIC_TILE } = await import('../src/shared/modelshape')
+  const fixed = (
+    overlap: number
+  ): { Fixed: { width: number; height: number; overlap: number } } => ({
+    Fixed: { width: 1024, height: 1024, overlap }
+  })
+  const entry = {
+    levels: [
+      { level: 1, conditioning: [{ Channel: { value: 1 } }], tiling: fixed(128) },
+      { level: 2, conditioning: [{ Channel: { value: 2 } }], tiling: fixed(256) }
+    ]
+  }
+  const level = levelValues(entry, 'sharpen')
+  // The store on CoreML: its ref carries the static tile, over what the host asked.
+  const ref = { ...level, tiling: fixed(STATIC_TILE[PIXL_ENHANCE].overlap) }
+  const step = pixlModelStep(ref, level, 100)
+  assert.deepEqual(step.tiling, fixed(256))
+  assert.deepEqual(step.conditioning, [{ Channel: { value: 2 } }])
+  assert.equal(step.strength, 1)
+  assert.equal(levelValues(entry, 'denoise').tiling.Fixed.overlap, 128)
+})

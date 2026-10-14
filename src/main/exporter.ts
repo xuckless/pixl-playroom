@@ -48,6 +48,7 @@ import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import type { Library } from './library'
 import { ensureProxies, type ProxyFile } from './proxy'
 import { askOf, scenePlan, withScene } from './ai/rawdevelop'
+import { standInNote } from '../shared/develops'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking } from './pixels/working'
 import { editsHdr, ensureHdrSource } from './hdrsource'
@@ -493,6 +494,9 @@ export class Exporter {
         key,
         done.classic ? `${done.ran} (stood in for ${plan.tag})` : plan.tag
       )
+      // Another develop stood in: the receipt says which, and why (the engine's words).
+      if (done.classic && (done.refused || done.declined))
+        warn(standInNote(plan.tag, done.ran, done.declined ? null : (done.refused ?? '')))
       report = done.value
     } else report = await convert(request)
 

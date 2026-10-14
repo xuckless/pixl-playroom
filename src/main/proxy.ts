@@ -41,6 +41,7 @@ import {
   type RawDevelopAsk
 } from './ai/rawdevelop'
 import { DEV_KIT, noteDeveloped, providerName } from './devkit'
+import { noiseKept } from './ai/noisebook'
 import { exists } from './exists'
 import type { PhotoRow } from './db'
 import { paths } from './paths'
@@ -561,6 +562,14 @@ export async function pruneLensed(
 
 const mastering = new Map<string, Promise<ProxyFile>>()
 
+/**
+ * Masters another develop stood in for, this run, by the plan's key: used
+ * again rather than refused and developed again at every 1:1 view (the
+ * 0.20.0 audit's B4). One refused for its frame's noise (E64) is tried
+ * again once a measurement it could be stated from has been kept.
+ */
+const stoodIn = new Map<string, { out: ProxyFile; photoOnly: boolean; kept: number }>()
+
 const developed = new Map<string, Promise<Proxies>>()
 
 /**
@@ -752,6 +761,9 @@ export async function ensureMaster(
   const plan = await scenePlan(info.raw_cfa, ask)
   const s = stamp(photo)
   const key = `${photo.id}:${s}:${plan.tag}`
+  const stood = stoodIn.get(key)
+  if (stood && (!stood.photoOnly || stood.kept === noiseKept()) && (await exists(stood.out.path)))
+    return stood.out
   let p = mastering.get(key)
   if (!p) {
     // Said over only once the master's record is written: what hears it finds the master made.
@@ -787,7 +799,9 @@ export async function ensureMaster(
         classic,
         ran,
         refused,
-        statedFrom
+        statedFrom,
+        photoOnly,
+        declined
       } = await withScene(
         plan,
         (scene) => {
@@ -815,13 +829,14 @@ export async function ensureMaster(
         ms,
         'ms'
       )
-      // A development kit's trial: what ran, where and how long, for every master.
+      // What stood in, for the user (and a development kit's trial: what ran, where and how long).
       noteDeveloped(photo.id, {
         planned: plan.tag,
         ran,
         provider: providerName(report.raw?.demosaic_model?.provider),
         ms,
-        refused
+        refused,
+        declined
       })
       traceRegion({
         step: 'master',
@@ -830,7 +845,7 @@ export async function ensureMaster(
         cached: false,
         classic,
         ran,
-        // Not kept when classic stood in: the next 1:1 develops it again.
+        // A stand-in is kept for this run only (`stoodIn`).
         keptForNextTime: !classic,
         ms,
         request,
@@ -852,8 +867,26 @@ export async function ensureMaster(
         height: report.height,
         float: true
       }
-      // Kept only when it is the plan's: a classic stand-in is made again next time.
-      if (!classic) await writeFile(meta, JSON.stringify(out))
+      // Kept only when it is the plan's, with what developed it (the engine's
+      // `report.raw.demosaic_model`: a later develop can be compared with it).
+      // A stand-in is kept for this run only.
+      const model = report.raw?.demosaic_model
+      if (!classic)
+        await writeFile(
+          meta,
+          JSON.stringify({
+            ...out,
+            developed: {
+              tag: plan.tag,
+              model: model?.model ?? null,
+              provider: providerName(model?.provider),
+              noise_from: model?.noise_from ?? null,
+              ms,
+              ...(statedFrom ? { stated_from: statedFrom } : {})
+            }
+          })
+        )
+      else stoodIn.set(key, { out, photoOnly: photoOnly === true, kept: noiseKept() })
       // Masters of another demosaic (the model since downloaded, or removed)
       // and the untagged ones from before: off the disk. With and without
       // PMRID are both kept, for edits that differ; with a development kit,

@@ -7,10 +7,11 @@
  */
 import { useEffect, useState } from 'react'
 import type { ModelInfo, ProviderInfo } from '../../../shared/ipc'
-import type { AiSwitches } from '../../../shared/heavy'
+import { pixlCpuAnswer, type AiSwitches, type PixlCpuAnswer } from '../../../shared/heavy'
 import { TYPICAL_MP } from '../../../shared/modelSpeed'
 import { offersPixlDemosaic } from '../../../shared/pixldemosaic'
 import { GlassSelect } from '../components/GlassSelect'
+import { Tabs } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
 import { copyOf, duration, pace, PURPOSES, purposeOf, type Purpose } from './modelCopy'
@@ -98,9 +99,9 @@ function ModelRow({ m }: { m: ModelInfo }): React.JSX.Element {
 }
 
 /**
- * "Use PIXL demosaic (development)": a RAW's full-size develop with PIXL's
- * own model, or the released one. Shown only where the roster offers the
- * model (an engine development kit's does: `pnpm dev:kit`).
+ * "Use PIXL demosaic": a RAW's full-size develop with PIXL's own model (on
+ * by default), or the develop of before. Shown where the roster offers the
+ * model (engine 0.20.0's, or a development kit's).
  */
 function PixlDemosaic({ s }: { s: AiSwitches | null }): React.JSX.Element {
   const say = useLibrary((x) => x.say)
@@ -111,16 +112,63 @@ function PixlDemosaic({ s }: { s: AiSwitches | null }): React.JSX.Element {
     <section className="model-group model-kill">
       <label className="check">
         <input type="checkbox" checked={on} disabled={!s} onChange={(e) => set(e.target.checked)} />
-        <strong>{t('Use PIXL demosaic (development)')}</strong>
+        <strong>{t('Use PIXL demosaic')}</strong>
       </label>
       <p className="muted small">
         {on
           ? t(
-              'A RAW develops at full size with PIXL’s own model once it is downloaded. It takes out the grain as it develops, so “Denoise the RAW data” is not offered. Off goes back to the released develop.'
+              'A RAW develops at full size with PIXL’s own model once it is downloaded. It takes out the grain as it develops, so “Denoise the RAW data” is not offered. Off goes back to the develop of before.'
             )
           : t(
-              'RAW files develop as in the released Playroom. On, PIXL’s own model develops them at full size and takes out the grain as it goes.'
+              'RAW files develop as before PIXL’s own model. On, it develops them at full size and takes out the grain as it goes.'
             )}
+      </p>
+    </section>
+  )
+}
+
+/** This computer, as main names it for answers kept per computer (`machineKey`). */
+function useMachine(): string | null {
+  const [m, setM] = useState<string | null>(null)
+  useEffect(() => {
+    void api.brain.status().then(
+      (b) => setM(b.machine),
+      () => undefined
+    )
+  }, [])
+  return m
+}
+
+/**
+ * "Run PIXL models on the processor": asked once per computer the first
+ * time one would (main's ai/pixlcpu.ts), changed here. Shown where the
+ * roster offers a PIXL model.
+ */
+function PixlCpu({ s }: { s: AiSwitches | null }): React.JSX.Element {
+  const say = useLibrary((x) => x.say)
+  const machine = useMachine()
+  const answer: PixlCpuAnswer = s && machine !== null ? pixlCpuAnswer(s, machine) : 'ask'
+  const set = (to: PixlCpuAnswer): void =>
+    void api.ai.setPixlCpu(to).catch((err) => say(errorText(err), 'error'))
+  return (
+    <section className="model-group model-kill">
+      <div className="row">
+        <strong>{t('Run PIXL models on the processor')}</strong>
+        <span className="spacer" />
+        <Tabs
+          value={answer}
+          onChange={set}
+          tabs={[
+            { value: 'ask', label: t('Ask') },
+            { value: 'yes', label: t('Yes') },
+            { value: 'no', label: t('No') }
+          ]}
+        />
+      </div>
+      <p className="muted small">
+        {t(
+          'Where the graphics chip can’t run them. On the processor a RAW takes about 40 seconds to develop, and PIXL Enhance one to two minutes a photo; No develops RAWs as before and leaves Detail’s AI boxes waiting.'
+        )}
       </p>
     </section>
   )
@@ -139,7 +187,8 @@ export function ModelsSection(): React.JSX.Element {
   }, [say])
   const switches = useSwitches()
   // SAM 3 is a heavy model: it has its own card below, behind its benchmark.
-  const all = (models ?? []).filter((m) => m.id !== 'sam3')
+  // A borrowed model PIXL's own replaces is not listed (shared/borrowed.ts).
+  const all = (models ?? []).filter((m) => m.id !== 'sam3' && m.listed)
   const installed = all.filter((m) => m.installed)
   const used = installed.reduce((s, m) => s + m.bytes, 0)
   const purposes = PURPOSES.filter((p) => all.some((m) => purposeOf(m.role) === p.id))
@@ -184,6 +233,7 @@ export function ModelsSection(): React.JSX.Element {
       </p>
       <AiKillswitch s={switches} />
       {offersPixlDemosaic(all) && <PixlDemosaic s={switches} />}
+      {all.some((m) => m.id.startsWith('pixl-')) && <PixlCpu s={switches} />}
       <div className="models-filter">
         <GlassSelect
           label={t('Show models for')}

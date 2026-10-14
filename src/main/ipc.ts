@@ -94,6 +94,7 @@ import type { EnhanceSettings } from '../shared/enhance'
 import { readWatermark } from './watermark'
 import type { AiJobs } from './ai/jobs'
 import { modelName, type ModelStore } from './ai/models'
+import { PIXL_ENHANCE } from '../shared/pixlenhance'
 import type { Exporter } from './exporter'
 import { keyOf, parseKey } from './keys'
 import type { OriginalEmbedder } from './project/embed'
@@ -822,6 +823,7 @@ export function registerIpc(s: Services): void {
       const f = await baseFrame(s, key)
       return (f.width * f.height) / 1e6
     },
+    pixlEnhance: () => s.models.offered(PIXL_ENHANCE),
     // SAM 2.1 (engine 0.16) selects what the user points at. Finding an
     // object by its name needs the detector (E45), and people's parts their
     // model (E30): neither has shipped, so `label` waits and `personJob` is
@@ -991,6 +993,13 @@ export function registerIpc(s: Services): void {
     s.switches.setHeavy(model, on === true)
   )
   handle(IPC.ai.pipeline, () => pipeline())
+  handle(IPC.ai.setPixlCpu, async (answer: unknown) => {
+    const a = answer === 'yes' || answer === 'no' ? answer : 'ask'
+    const switches = await s.switches.setPixlCpu(a)
+    // A RAW planned around the PIXL demosaic for a "no" is planned again.
+    if (a !== 'no') s.sessions.tilesStale()
+    return switches
+  })
   handle(IPC.ai.setPixlDemosaic, async (on: boolean) => {
     const switches = await s.switches.setPixlDemosaic(on === true)
     // A RAW's full-size develop is another now: the open photo's 1:1 tile is asked for again.

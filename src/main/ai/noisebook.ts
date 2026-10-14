@@ -26,6 +26,13 @@ type Book = NoiseBook
 /** Where the book is kept: set as the app starts (`keepNoiseIn`); nowhere, it lives in memory. */
 let where: string | null = null
 let book: Book | null = null
+/** Counts what was kept: a frame stood in for before can be tried again once it moves. */
+let kept = 0
+
+/** How many measurements were kept this run (a frame refused for want of one is retried after). */
+export function noiseKept(): number {
+  return kept
+}
 
 /** Keep the book at `path` (the app's models folder's `raw-noise.json`). */
 export function keepNoiseIn(path: string): void {
@@ -64,6 +71,7 @@ export function remember(shot: Shot, planes: readonly NoisePlane[] | null | unde
   const had = b[shot.camera]?.[iso]
   if (had && had.k === n.k && had.sigma2 === n.sigma2) return
   b[shot.camera] = { ...b[shot.camera], [iso]: n }
+  kept++
   save()
 }
 

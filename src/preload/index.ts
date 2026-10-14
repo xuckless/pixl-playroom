@@ -70,7 +70,7 @@ import type { ReleaseNotes } from '../shared/releasenotes'
 import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
-import type { AiSwitches, HeavyBenchmark, HeavyModel } from '../shared/heavy'
+import type { AiSwitches, HeavyBenchmark, HeavyModel, PixlCpuAnswer } from '../shared/heavy'
 import type { FoundThing, PhotoNames } from '../shared/naming'
 import type { CullReason } from '../shared/cullsuggest'
 import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
@@ -395,6 +395,7 @@ const api = {
     setEnabled: (on: boolean) => call<AiSwitches>(IPC.ai.setEnabled, on),
     setHeavy: (model: HeavyModel, on: boolean) => call<AiSwitches>(IPC.ai.setHeavy, model, on),
     setPixlDemosaic: (on: boolean) => call<AiSwitches>(IPC.ai.setPixlDemosaic, on),
+    setPixlCpu: (answer: PixlCpuAnswer) => call<AiSwitches>(IPC.ai.setPixlCpu, answer),
     /** What today's pipeline has (shared/rebuild.ts): the PIXL demosaic, PIXL Enhance. */
     pipeline: () => call<Pipeline>(IPC.ai.pipeline),
     benchmark: (model: HeavyModel) => call<HeavyBenchmark>(IPC.ai.benchmark, model),
