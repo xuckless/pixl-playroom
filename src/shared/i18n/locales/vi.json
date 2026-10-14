@@ -3432,5 +3432,7 @@
   "Qualifier: on/off": "Bộ lọc màu: bật/tắt",
   "Reorder advanced layers": "Sắp xếp lại các lớp nâng cao",
   "Reorder qualifiers": "Sắp xếp lại các bộ lọc màu",
-  "The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.": "Bảng mặt nạ hiển thị quá trình chỉnh màu dưới dạng các nút của Resolve: chỉnh sửa riêng của ảnh, rồi từng bộ lọc màu, từng mặt nạ và mọi lớp nâng cao, theo thứ tự chúng chạy. Tắt một nút, chọn để chỉnh sửa, kéo nó trong nhóm của nó."
+  "The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.": "Bảng mặt nạ hiển thị quá trình chỉnh màu dưới dạng các nút của Resolve: chỉnh sửa riêng của ảnh, rồi từng bộ lọc màu, từng mặt nạ và mọi lớp nâng cao, theo thứ tự chúng chạy. Tắt một nút, chọn để chỉnh sửa, kéo nó trong nhóm của nó.",
+  "In mask": "Trong mặt nạ",
+  "Read only what the selected mask holds": "Chỉ đọc phần mà mặt nạ đang chọn bao phủ"
 }

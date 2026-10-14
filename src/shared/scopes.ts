@@ -184,6 +184,11 @@ export interface ScopeOptions {
   /** At most this many pixels are read (an even stride across the picture). */
   budget?: number
   want?: readonly ScopeKind[]
+  /**
+   * A mask plane over the same pixels (RGBA, its first channel read): only
+   * pixels it holds at half or more are counted (the scopes "in mask").
+   */
+  mask?: Uint8ClampedArray | null
 }
 
 /** Counts behind the scopes binned from pixels. */
@@ -256,6 +261,7 @@ export function binScopes(px: ScopePixels, o: ScopeOptions = {}): ScopeBins {
   for (let y = 0; y < px.height; y += stride) {
     for (let x = 0; x < px.width; x += stride) {
       const i = (y * px.width + x) * 4
+      if (o.mask && o.mask[i] < 128) continue
       const r = d[i] * scale
       const g = d[i + 1] * scale
       const b = d[i + 2] * scale
@@ -353,6 +359,8 @@ export interface ScopePrefs {
   /** The vectorscope at 1× or 2× (the middle of it, for skin and pastels). */
   vectorZoom: 1 | 2
   skinLine: boolean
+  /** With a mask selected, the binned scopes read only what it holds. */
+  inMask: boolean
 }
 
 export const DEFAULT_SCOPES: ScopePrefs = {
@@ -361,7 +369,8 @@ export const DEFAULT_SCOPES: ScopePrefs = {
   slots: ['parade', 'vectorscope', 'waveform', 'histogram'],
   waveform: 'luma',
   vectorZoom: 1,
-  skinLine: true
+  skinLine: true,
+  inMask: false
 }
 
 /** Saved preferences made whole: what is missing or unknown takes its default. */
@@ -378,7 +387,8 @@ export function normaliseScopes(p: unknown): ScopePrefs {
     slots: DEFAULT_SCOPES.slots.map((d, i) => slot(slots[i], d)),
     waveform: o.waveform === 'rgb' ? 'rgb' : 'luma',
     vectorZoom: o.vectorZoom === 2 ? 2 : 1,
-    skinLine: o.skinLine !== false
+    skinLine: o.skinLine !== false,
+    inMask: o.inMask === true
   }
 }
 

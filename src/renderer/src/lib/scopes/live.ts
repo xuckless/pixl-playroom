@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react'
 import type { ScopeBins, ScopeKind } from '../../../../shared/scopes'
 import { oetf, BINNED_SCOPES } from '../../../../shared/scopes'
 import { useDevelop } from '../../state/develop'
+import { useUi } from '../../state/ui'
 import { frameFloat, isFrame, pictureBitmap, readable, whenFrame } from '../frames'
 import type { FloatFrame } from '../floatcanvas'
 
@@ -74,13 +75,23 @@ function sampleFloat(f: FloatFrame): { width: number; height: number; data: Floa
 interface Source {
   /** The picture's own url (a frame's F16 pixels are found by it). */
   url: string
+  /** The selected mask's plane, when the scopes read only what it holds. */
+  mask: string | null
   /** What reads it as a bitmap: Full HDR's companion, else the picture. */
   read: string
   width: number
 }
 
+/** The mask plane the scopes read through: "in mask" on, a mask selected and its plane here. */
+function maskNow(): string | null {
+  const d = useDevelop.getState()
+  if (!useUi.getState().scopes.inMask || !d.layerId || !d.mask?.url) return null
+  return d.mask.url
+}
+
 const sourceOf = (p: { url: string; readUrl?: string; width: number }): Source => ({
   url: p.url,
+  mask: maskNow(),
   read: readable(p),
   width: p.width
 })
@@ -120,12 +131,22 @@ async function run(src: Source): Promise<void> {
         resolve(e.data)
       }
       w.addEventListener('message', on)
+      const mask = src.mask ? pictureBitmap(src.mask).catch(() => null) : Promise.resolve(null)
       if (float) {
         const floats = sampleFloat(float)
-        w.postMessage({ id, want: kinds, floats }, [floats.data.buffer])
+        void mask.then((m) =>
+          w.postMessage(
+            { id, want: kinds, floats, ...(m ? { mask: m } : {}) },
+            m ? [floats.data.buffer, m] : [floats.data.buffer]
+          )
+        )
       } else {
-        void pictureBitmap(src.read, Math.min(READ_EDGE, src.width)).then(
-          (bitmap) => w.postMessage({ id, want: kinds, bitmap }, [bitmap]),
+        void Promise.all([pictureBitmap(src.read, Math.min(READ_EDGE, src.width)), mask]).then(
+          ([bitmap, m]) =>
+            w.postMessage(
+              { id, want: kinds, bitmap, ...(m ? { mask: m } : {}) },
+              m ? [bitmap, m] : [bitmap]
+            ),
           (err) => resolve({ id, error: String(err) })
         )
       }
@@ -163,6 +184,19 @@ useDevelop.subscribe((s, prev) => {
   if (listeners.size === 0 || s.picture === prev.picture || !s.picture) return
   if (s.picture.url === lastUrl && last) return
   feed(sourceOf(s.picture))
+})
+
+// Reading through a mask: a new plane, or another mask chosen, bins again.
+let lastMask: string | null = null
+useDevelop.subscribe((s, prev) => {
+  if (listeners.size === 0 || (s.mask === prev.mask && s.layerId === prev.layerId)) return
+  const m = maskNow()
+  if (m === lastMask) return
+  lastMask = m
+  refresh()
+})
+useUi.subscribe((s, prev) => {
+  if (listeners.size > 0 && s.scopes.inMask !== prev.scopes.inMask) refresh()
 })
 
 /** The newest bins for `kinds` (the scopes mounted), or null until the first arrive. */

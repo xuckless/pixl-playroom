@@ -31,26 +31,31 @@ const BINNED: Partial<Record<ExpandedScope, ScopeKind>> = {
 export function ScopeOptions({ kind }: { kind: ExpandedScope }): React.JSX.Element | null {
   const prefs = useUi((s) => s.scopes)
   const set = useUi((s) => s.setScopes)
+  const inMask = <InMask />
   if (kind === 'waveform')
     return (
-      <div className="seg sm" role="group" aria-label={t('Waveform')}>
-        <button
-          className={prefs.waveform === 'luma' ? 'on' : ''}
-          onClick={() => set({ waveform: 'luma' })}
-        >
-          Y
-        </button>
-        <button
-          className={prefs.waveform === 'rgb' ? 'on' : ''}
-          onClick={() => set({ waveform: 'rgb' })}
-        >
-          RGB
-        </button>
-      </div>
+      <>
+        {inMask}
+        <div className="seg sm" role="group" aria-label={t('Waveform')}>
+          <button
+            className={prefs.waveform === 'luma' ? 'on' : ''}
+            onClick={() => set({ waveform: 'luma' })}
+          >
+            Y
+          </button>
+          <button
+            className={prefs.waveform === 'rgb' ? 'on' : ''}
+            onClick={() => set({ waveform: 'rgb' })}
+          >
+            RGB
+          </button>
+        </div>
+      </>
     )
   if (kind === 'vectorscope')
     return (
       <>
+        {inMask}
         <div className="seg sm" role="group" aria-label={t('Zoom')}>
           <button
             className={prefs.vectorZoom === 1 ? 'on' : ''}
@@ -75,7 +80,26 @@ export function ScopeOptions({ kind }: { kind: ExpandedScope }): React.JSX.Eleme
         </button>
       </>
     )
+  if (kind === 'parade' || kind === 'cie') return inMask
   return null
+}
+
+/** With a mask selected: the binned scopes read only what it holds. */
+function InMask(): React.JSX.Element | null {
+  const on = useUi((s) => s.scopes.inMask)
+  const set = useUi((s) => s.setScopes)
+  const masked = useDevelop((s) => s.layerId !== null)
+  if (!masked) return null
+  return (
+    <button
+      className={`chip sm${on ? ' on' : ''}`}
+      aria-pressed={on}
+      title={t('Read only what the selected mask holds')}
+      onClick={() => set({ inMask: !on })}
+    >
+      {t('In mask')}
+    </button>
+  )
 }
 
 export function ScopeView({

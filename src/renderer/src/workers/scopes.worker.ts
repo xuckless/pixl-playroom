@@ -12,11 +12,22 @@ interface Job {
   bitmap?: ImageBitmap
   /** Full HDR: encoded floats already sampled from the F16 frame. */
   floats?: { width: number; height: number; data: Float32Array }
+  /** The selected mask's plane, for the scopes "in mask": stretched over the picture. */
+  mask?: ImageBitmap
 }
 
 const post = (
   self as unknown as { postMessage(m: unknown, t?: Transferable[]): void }
 ).postMessage.bind(self)
+
+/** A mask plane at the picture's size, as RGBA bytes (its grey in each channel). */
+function planeOf(bmp: ImageBitmap, width: number, height: number): Uint8ClampedArray {
+  const c = new OffscreenCanvas(width, height)
+  const ctx = c.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D
+  ctx.drawImage(bmp, 0, 0, width, height)
+  bmp.close()
+  return ctx.getImageData(0, 0, width, height).data
+}
 
 function pixelsOf(bmp: ImageBitmap): ScopePixels {
   const c = new OffscreenCanvas(bmp.width, bmp.height)
@@ -31,12 +42,12 @@ function pixelsOf(bmp: ImageBitmap): ScopePixels {
 }
 
 self.onmessage = (e: MessageEvent<Job>): void => {
-  const { id, want, bitmap, floats } = e.data
+  const { id, want, bitmap, floats, mask } = e.data
   try {
     const t0 = performance.now()
     const px = floats ?? (bitmap ? pixelsOf(bitmap) : null)
     if (!px) throw new Error('no pixels')
-    const bins = binScopes(px, { want })
+    const bins = binScopes(px, { want, mask: mask ? planeOf(mask, px.width, px.height) : null })
     const ms = performance.now() - t0
     const buffers = [bins.waveform, bins.parade, bins.vector, bins.cie]
       .filter((b): b is Uint32Array => b !== null)

@@ -3552,5 +3552,7 @@
   "Qualifier: on/off": "Qualificateur : activer/désactiver",
   "Reorder advanced layers": "Réordonner les calques avancés",
   "Reorder qualifiers": "Réordonner les qualificateurs",
-  "The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.": "Le panneau des masques affiche l’étalonnage sous forme de nœuds Resolve : la correction propre à la photo, puis chaque qualificateur, chaque masque et tout calque avancé, dans l’ordre où ils s’appliquent. Désactivez un nœud, sélectionnez-le pour le modifier, faites-le glisser au sein de son groupe."
+  "The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.": "Le panneau des masques affiche l’étalonnage sous forme de nœuds Resolve : la correction propre à la photo, puis chaque qualificateur, chaque masque et tout calque avancé, dans l’ordre où ils s’appliquent. Désactivez un nœud, sélectionnez-le pour le modifier, faites-le glisser au sein de son groupe.",
+  "In mask": "Dans le masque",
+  "Read only what the selected mask holds": "Ne lire que ce que contient le masque sélectionné"
 }

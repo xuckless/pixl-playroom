@@ -120,3 +120,16 @@ test('saved scope preferences are made whole, unknown values taking their defaul
   assert.equal(cycleExpanded('cie', 1), 'metrics')
   assert.equal(cycleExpanded('metrics', 1), 'histogram')
 })
+
+test('in mask, only the pixels the mask holds are counted', async () => {
+  const { binScopes } = await import('../src/shared/scopes')
+  const w = 16
+  const h = 8
+  const px = solid(w, h, [0.5, 0.5, 0.5], true)
+  // The left half selected.
+  const mask = new Uint8ClampedArray(w * h * 4)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w / 2; x++) mask[(y * w + x) * 4] = 255
+  const all = binScopes(px, { want: ['vectorscope'] })
+  const half = binScopes(px, { want: ['vectorscope'], mask })
+  assert.equal(half.pixels, all.pixels / 2)
+})
