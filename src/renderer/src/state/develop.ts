@@ -172,9 +172,9 @@ interface DevelopState {
   /** Show the step Undo last hid. */
   redoStep(): void
   /** Hide or show steps; the caller has already added any dependents. */
-  setStepsHidden(seqs: number[], hidden: boolean): Promise<void>
+
   /** Delete steps; the caller has already added any dependents. */
-  deleteSteps(seqs: number[]): Promise<void>
+
   setTool(tool: Tool): void
   setGesture(g: Gesture): void
   setComp(id: string | null): void
@@ -551,18 +551,6 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       if (!session || !canRedo(get().history.steps)) return
       applyLog(session.key, await api.develop.historyRedo(session.key))
     })
-  },
-
-  async setStepsHidden(seqs, hidden) {
-    const session = get().session
-    if (!session || seqs.length === 0) return
-    applyLog(session.key, await api.develop.historySetHidden(session.key, seqs, hidden))
-  },
-
-  async deleteSteps(seqs) {
-    const session = get().session
-    if (!session || seqs.length === 0) return
-    applyLog(session.key, await api.develop.historyDelete(session.key, seqs))
   },
 
   setTool(tool) {

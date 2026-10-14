@@ -18,6 +18,7 @@
  */
 import type { HistoryAmend, HistoryAppend, HistoryLog } from './ipc'
 import { GROUP_LABELS, type Recipe, type RecipeGroup } from './recipe'
+import { activeSteps, stackSignature } from './pixels'
 
 /** A key into an object, or an entity (mask, component, advanced layer) by id. */
 export type Seg = string | { id: string }
@@ -310,4 +311,118 @@ export function patchSummary(patch: Patch): string[] {
     if (g) groups.add(g)
   }
   return [...groups].map((g) => GROUP_LABELS[g])
+}
+
+// ── the timeline (History's view: panels/HistoryPane.tsx) ───────────────────
+
+/** What a step touched, as a key: its op paths (entities by id), sorted. Steps of one control share it. */
+export function controlKey(patch: Patch): string {
+  return patch
+    .map((op) => op.path.map((s) => (typeof s === 'string' ? s : `#${s.id}`)).join('.'))
+    .sort()
+    .join('|')
+}
+
+/** One row of the timeline: a step, or a run of steps on the same control merged. */
+export interface TimelineRow {
+  /** The steps it stands for, oldest first (the last is where clicking it goes back to). */
+  seqs: number[]
+  label: string
+  /** When its first and its last step were made. */
+  firstAt: string
+  at: string
+  /** A single slider's value before the first step and after the last, when that is what it moved. */
+  from?: number
+  to?: number
+  /** The pixel steps laid on after it (`stackSignature`): a moment whose differ from today's. */
+  pixels: string
+}
+
+/** One editing session: steps with no long pause between them. */
+export interface TimelineSession {
+  start: string
+  end: string
+  /** Oldest first. */
+  rows: TimelineRow[]
+  /** The history's start ("Opened") is in this session. */
+  opened: boolean
+}
+
+export interface TimelineOptions {
+  /** A pause longer than this starts a new session. */
+  gapMs: number
+  /** Steps on the same control closer than this merge into one row. */
+  mergeMs: number
+}
+
+export const TIMELINE: TimelineOptions = { gapMs: 30 * 60_000, mergeMs: 10 * 60_000 }
+
+/** The value at a path of plain keys, if it is a number. */
+function numberAt(o: unknown, path: Seg[]): number | undefined {
+  let v = o
+  for (const s of path) {
+    if (typeof s !== 'string' || !isObj(v)) return undefined
+    v = v[s]
+  }
+  return typeof v === 'number' ? v : undefined
+}
+
+/**
+ * The history as a short timeline: the steps in effect (undone and hidden
+ * ones left out), a run of changes to one control merged into one row
+ * ("Exposure 0 → +0.6", 12 drags), split into sessions at long pauses.
+ * One pass, the recipe patched in place as it goes.
+ */
+export function groupTimeline(
+  log: Pick<HistoryLog, 'base' | 'steps'>,
+  opts: TimelineOptions = TIMELINE
+): TimelineSession[] {
+  if (!log.base) return []
+  const running = structuredClone(log.base.recipe) as unknown as Obj
+  const sessions: TimelineSession[] = [
+    { start: log.base.at, end: log.base.at, rows: [], opened: true }
+  ]
+  let lastKey = ''
+  for (const s of log.steps) {
+    if (s.hidden) continue
+    const session = sessions[sessions.length - 1]
+    const t = Date.parse(s.at)
+    if (t - Date.parse(session.end) > opts.gapMs)
+      sessions.push({ start: s.at, end: s.at, rows: [], opened: false })
+    const here = sessions[sessions.length - 1]
+    // One plain slider moved: its value before and after.
+    const single = s.patch.length === 1 && 'value' in s.patch[0] ? s.patch[0] : null
+    const from = single ? numberAt(running, single.path) : undefined
+    for (const op of s.patch) applyOp(running, op)
+    const to = single ? numberAt(running, single.path) : undefined
+    const pixels = stackSignature(activeSteps((running as unknown as Recipe).pixels ?? []))
+    const key = `${s.label}\n${controlKey(s.patch)}`
+    const prev = here.rows[here.rows.length - 1]
+    if (prev && key === lastKey && t - Date.parse(prev.at) <= opts.mergeMs) {
+      prev.seqs.push(s.seq)
+      prev.at = s.at
+      prev.pixels = pixels
+      if (prev.to !== undefined && to !== undefined) prev.to = to
+    } else
+      here.rows.push({
+        seqs: [s.seq],
+        label: s.label,
+        firstAt: s.at,
+        at: s.at,
+        pixels,
+        ...(from !== undefined && to !== undefined ? { from, to } : {})
+      })
+    lastKey = key
+    here.end = s.at
+  }
+  return sessions
+}
+
+/** The recipe as it was right after step `seq` (the steps in effect up to it; the base for 0). */
+export function recipeAt(log: Pick<HistoryLog, 'base' | 'steps'>, seq: number): Recipe | null {
+  if (!log.base) return null
+  return replay(
+    log.base.recipe,
+    log.steps.filter((s) => s.seq <= seq)
+  )
 }

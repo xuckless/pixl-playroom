@@ -460,6 +460,34 @@ button.versions-auto {
   color: var(--muted);
   cursor: pointer;
 }
+/* History's timeline (panels/HistoryPane.tsx): sessions of a few rows. */
+button.timeline-head {
+  width: calc(100% - 12px);
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  cursor: pointer;
+}
+.timeline-count {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.timeline-time {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.timeline-row.base {
+  cursor: default;
+  color: var(--muted);
+}
+.timeline-note {
+  margin: 4px 6px 8px;
+}
 .rail-grip {
   width: 5px;
   flex: none;

@@ -14,6 +14,7 @@ const STEP_HEADS = [
   tk('Colour grade'),
   tk('Snapshot'),
   tk('Version'),
+  tk('Back to'),
   tk('Before look'),
   tk('Mask mode'),
   tk('Camera colour'),

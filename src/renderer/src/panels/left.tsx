@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { rawColourLabel, rawColourReason } from '../../../shared/rawcolour'
-import { dependents, patchSummary, prerequisites, type Step } from '../../../shared/history'
 import type { Preset, ProjectInfo } from '../../../shared/ipc'
 import { GROUP_LABELS } from '../../../shared/recipe'
 import { LOOK_BY_ID, LOOKS } from '../../../shared/looks/catalog'
@@ -30,7 +29,6 @@ import { useMaskPresets, useSelectedMask } from './masks/presets'
 import { TechInfo } from '../components/TechInfo'
 import { useReorder } from './masks/useReorder'
 import { t, tk, tp } from '../lib/i18n'
-import { stepLabel } from '../lib/stepLabel'
 
 /**
  * The left rail's panes. Each shows one list at a time under the rail's
@@ -432,159 +430,6 @@ function MaskPresetsGroup(): React.JSX.Element | null {
             />
           </div>
         )}
-      </div>
-    </div>
-  )
-}
-
-const clock = (at: string): string =>
-  new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-
-/** A hide or delete that takes later steps with it, waiting for a yes. */
-interface Cascade {
-  kind: 'hide' | 'delete'
-  seq: number
-  /** The step and its dependents. */
-  seqs: number[]
-}
-
-/**
- * The edit history as steps, newest first. Every step can be hidden (the
- * photo shows without it; the eye), shown again, or deleted. A step that made
- * a mask takes the later steps that use that mask with it, after asking.
- * Selecting a step shows what it changed.
- */
-export function HistoryPane(): React.JSX.Element {
-  const history = useDevelop((s) => s.history)
-  const setStepsHidden = useDevelop((s) => s.setStepsHidden)
-  const deleteSteps = useDevelop((s) => s.deleteSteps)
-  const [selected, setSelected] = useState<number | null>(null)
-  const [ask, setAsk] = useState<Cascade | null>(null)
-  const { base, steps } = history
-  if (!base) return <p className="rail-empty">{t('Nothing has happened yet.')}</p>
-  const labelOf = (seq: number): string => {
-    const label = steps.find((s) => s.seq === seq)?.label
-    return label ? stepLabel(label) : ''
-  }
-  const toggle = (step: Step): void => {
-    setAsk(null)
-    if (step.hidden) {
-      void setStepsHidden([step.seq, ...prerequisites(steps, step.seq)], false)
-      return
-    }
-    const deps = dependents(steps, step.seq, (s) => !s.hidden)
-    if (deps.length > 0) setAsk({ kind: 'hide', seq: step.seq, seqs: [step.seq, ...deps] })
-    else void setStepsHidden([step.seq], true)
-  }
-  const remove = (step: Step): void => {
-    setAsk(null)
-    const deps = dependents(steps, step.seq)
-    if (deps.length > 0) setAsk({ kind: 'delete', seq: step.seq, seqs: [step.seq, ...deps] })
-    else void deleteSteps([step.seq])
-  }
-  const confirm = (): void => {
-    if (!ask) return
-    setAsk(null)
-    if (ask.kind === 'hide') void setStepsHidden(ask.seqs, true)
-    else void deleteSteps(ask.seqs)
-  }
-  return (
-    <div className="rail-list history">
-      {ask && (
-        <div className="history-ask" role="alertdialog" aria-label={t('Confirm')}>
-          <p>
-            {ask.kind === 'hide'
-              ? tp(
-                  'Hiding “{{step}}” also hides {{count}} later step that uses what it made:',
-                  'Hiding “{{step}}” also hides {{count}} later steps that use what it made:',
-                  ask.seqs.length - 1,
-                  { step: labelOf(ask.seq) }
-                )
-              : tp(
-                  'Deleting “{{step}}” also deletes {{count}} later step that uses what it made:',
-                  'Deleting “{{step}}” also deletes {{count}} later steps that use what it made:',
-                  ask.seqs.length - 1,
-                  { step: labelOf(ask.seq) }
-                )}
-          </p>
-          <ul>
-            {ask.seqs.slice(1).map((seq) => (
-              <li key={seq}>{labelOf(seq)}</li>
-            ))}
-          </ul>
-          <div className="row">
-            <button className={ask.kind === 'delete' ? 'danger' : 'primary'} onClick={confirm}>
-              {ask.kind === 'hide'
-                ? tp('Hide {{count}} step', 'Hide {{count}} steps', ask.seqs.length)
-                : tp('Delete {{count}} step', 'Delete {{count}} steps', ask.seqs.length)}
-            </button>
-            <button className="ghost" onClick={() => setAsk(null)}>
-              {t('Cancel')}
-            </button>
-          </div>
-        </div>
-      )}
-      {[...steps].reverse().map((step) => {
-        const on = selected === step.seq
-        const pick = (): void => setSelected(on ? null : step.seq)
-        return (
-          <div key={step.seq} className="history-step">
-            <div
-              role="button"
-              tabIndex={0}
-              aria-expanded={on}
-              className={`history-row rail-item${on ? ' on' : ''}${step.hidden ? ' hidden' : ''}`}
-              onClick={pick}
-              onKeyDown={(e) => {
-                if (e.target !== e.currentTarget) return
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  pick()
-                }
-              }}
-            >
-              <span className="rail-label">
-                <i className="dot" />
-                {stepLabel(step.label)}
-              </span>
-              <span className="t">{clock(step.at)}</span>
-              <button
-                className="icon sm eye"
-                title={step.hidden ? t('Show this step') : t('Hide this step')}
-                aria-pressed={!step.hidden}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  toggle(step)
-                }}
-              >
-                <Icon name={step.hidden ? 'eyeOff' : 'eye'} />
-              </button>
-              <button
-                className="icon sm"
-                title={t('Delete this step')}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  remove(step)
-                }}
-              >
-                <Icon name="trash" />
-              </button>
-            </div>
-            {on && (
-              <p className="history-changed">
-                {patchSummary(step.patch).join(' · ') || t('No visible change')}
-                {step.hidden ? ` — ${t('hidden')}` : ''}
-              </p>
-            )}
-          </div>
-        )
-      })}
-      <div className="history-row rail-item base" title={t('Where the history starts')}>
-        <span className="rail-label">
-          <i className="dot" />
-          {stepLabel(base.label)}
-        </span>
-        <span className="t">{clock(base.at)}</span>
       </div>
     </div>
   )

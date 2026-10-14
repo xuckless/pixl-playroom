@@ -745,12 +745,6 @@ export function registerIpc(s: Services): void {
   )
   handle(IPC.develop.historyUndo, async (key: string) => slimLog(await s.index.undoHistory(key)))
   handle(IPC.develop.historyRedo, async (key: string) => slimLog(await s.index.redoHistory(key)))
-  handle(IPC.develop.historySetHidden, async (key: string, seqs: number[], hidden: boolean) =>
-    slimLog(await s.index.setHistoryHidden(key, seqs, hidden))
-  )
-  handle(IPC.develop.historyDelete, async (key: string, seqs: number[]) =>
-    slimLog(await s.index.deleteHistory(key, seqs))
-  )
 
   // ── presets and profiles ──
   // The user's presets as the Looks browser's cards need them, read once until one changes.

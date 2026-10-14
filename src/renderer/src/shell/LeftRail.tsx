@@ -1,6 +1,7 @@
 import { Icon, type IconName } from '../components/icons'
 import { MasksPane } from '../panels/masks/MasksPane'
-import { HistoryPane, InfoPane, PresetsActions, PresetsPane } from '../panels/left'
+import { InfoPane, PresetsActions, PresetsPane } from '../panels/left'
+import { HistoryPane } from '../panels/HistoryPane'
 import { VersionsSection } from '../panels/VersionsSection'
 import { EditsPane } from '../panels/EditsPane'
 import { useUi, type Rail } from '../state/ui'

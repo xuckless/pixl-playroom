@@ -224,8 +224,7 @@ export const IPC = {
     compareWith: 'develop:compare-with',
     historyUndo: 'develop:history-undo',
     historyRedo: 'develop:history-redo',
-    historySetHidden: 'develop:history-set-hidden',
-    historyDelete: 'develop:history-delete',
+
     noise: 'develop:noise',
     /** Measure the photo's lateral chromatic aberration (Lens → Remove CA). */
     measureCa: 'develop:measure-ca',
