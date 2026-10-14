@@ -3305,5 +3305,9 @@
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "缩放到 100%，照片的一个像素对应屏幕的一个像素，用于检查对焦和噪点。捏合或滚动以缩放；按住 {{key}} 并拖动以平移。",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ 亮度 {{luma}} · 色度 {{chroma}}",
   "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各平面白噪声的 σ̂，由降噪器自身估算，以 8 位代码值表示",
-  "Developing RAW": "正在显影 RAW"
+  "Developing RAW": "正在显影 RAW",
+  "PIXL demosaic": "PIXL 去马赛克",
+  "PIXL demosaic: developing this RAW at full size": "PIXL 去马赛克：正在以全尺寸显影此 RAW",
+  "PIXL demosaic: this RAW is developed by PIXL’s own model, zoomed out, at 1:1 and in the export": "PIXL 去马赛克：此 RAW 由 PIXL 自有模型显影，缩小视图、1:1 和导出均是如此",
+  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "PIXL 去马赛克：引擎拒绝对此 RAW 使用它，因此以正式版的显影方式显示"
 }

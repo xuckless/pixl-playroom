@@ -387,6 +387,16 @@ export async function overlaysOf(
  * from a float frame (its headroom kept under AI steps by the guard), else
  * 16-bit.
  */
+/** A frame with the steps laid on it, at its own size (the screen-sized level: render.ts). */
+export function layStepsOn(
+  deps: PixelDeps,
+  from: ProxyFile,
+  out: string,
+  steps: PixelStep[]
+): Promise<ProxyFile> {
+  return layOn(deps, from, out, steps)
+}
+
 async function layOn(
   deps: PixelDeps,
   from: ProxyFile,

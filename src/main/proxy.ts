@@ -394,6 +394,76 @@ export function ensureLensedProxies(
   return p
 }
 
+/**
+ * A frame with a lens correction and the spots laid on it (`retouch`,
+ * placed on the base frame, which is what every proxy is), at its own size:
+ * a lensed set's proxy, or the screen-sized level (render.ts).
+ */
+export async function lensOn(
+  engine: EngineClient,
+  from: ProxyFile,
+  out: string,
+  lens: LensCorrection | null,
+  retouch: Retouch | null,
+  hdr: HdrWorking | null
+): Promise<ProxyFile> {
+  const report = await engine.convert({
+    ...blankRequest(from.path, out, from.input),
+    pixel: { depth: depthOf(from), channels: 3 },
+    encode:
+      from.input === 'Png'
+        ? ({ Png: { compression: 'Fast', filter: 'Sub' } } as const)
+        : ({ Tiff: { compression: 'None' } } as const),
+    metadata: { exif: false, icc: true, xmp: false, iptc: false },
+    color: 'Preserve',
+    lens,
+    retouch,
+    // A PQ/HLG proxy is corrected in the HDR working space it is graded in.
+    hdr,
+    // Baked behind the editing: its share of the cores, not all of them.
+    threads: BACKGROUND_THREADS
+  })
+  return {
+    path: out,
+    input: from.input,
+    width: report.width,
+    height: report.height,
+    ...(from.float ? { float: true } : {})
+  }
+}
+
+/**
+ * A frame resized to exactly `width` × `height` (a float one averaged as
+ * light): the developed proxies, and the screen-sized level (render.ts).
+ */
+export async function cutTo(
+  engine: EngineClient,
+  from: ProxyFile,
+  out: string,
+  width: number,
+  height: number,
+  threads = BACKGROUND_THREADS
+): Promise<ProxyFile> {
+  const report = await engine.convert({
+    ...blankRequest(from.path, out, from.input),
+    resize: { Exact: { width, height } },
+    resampler: 'Lanczos3',
+    linear_resample: true,
+    pixel: { depth: depthOf(from), channels: 3 },
+    encode: { Tiff: { compression: 'None' } },
+    metadata: { exif: false, icc: true, xmp: false, iptc: false },
+    color: 'Preserve',
+    threads
+  })
+  return {
+    path: out,
+    input: 'Tiff',
+    width: report.width,
+    height: report.height,
+    ...(from.float ? { float: true } : {})
+  }
+}
+
 async function bakeLens(
   engine: EngineClient,
   photo: PhotoRow,
@@ -416,27 +486,7 @@ async function bakeLens(
       ? ({ Png: { compression: 'Fast', filter: 'Sub' } } as const)
       : ({ Tiff: { compression: 'None' } } as const)
   const proxyPath = join(dir, `${prefix}-proxy.${ext}`)
-  const report = await engine.convert({
-    ...blankRequest(px.proxy.path, proxyPath, px.proxy.input),
-    pixel: { depth: depthOf(px.proxy), channels: 3 },
-    encode,
-    metadata: { exif: false, icc: true, xmp: false, iptc: false },
-    color: 'Preserve',
-    lens,
-    // Placed on the base frame, which is what the proxy is.
-    retouch,
-    // A PQ/HLG proxy is corrected in the HDR working space it is graded in.
-    hdr,
-    // Baked behind the editing: its share of the cores, not all of them.
-    threads: BACKGROUND_THREADS
-  })
-  const proxy: ProxyFile = {
-    path: proxyPath,
-    input: px.proxy.input,
-    width: report.width,
-    height: report.height,
-    ...(px.proxy.float ? { float: true } : {})
-  }
+  const proxy = await lensOn(engine, px.proxy, proxyPath, lens, retouch, hdr)
   const draftPath = join(dir, `${prefix}-draft.${ext}`)
   const dFactor = Math.min(1, px.draft.width / px.proxy.width)
   const draftReport = await engine.convert({
@@ -448,7 +498,7 @@ async function bakeLens(
     color: 'Preserve',
     threads: BACKGROUND_THREADS
   })
-  const k = report.width / px.proxy.width
+  const k = proxy.width / px.proxy.width
   const mid = px.mid
     ? await shrink(
         engine,
@@ -539,22 +589,9 @@ export function ensureDevelopedProxies(
         const known = JSON.parse(await readFile(meta, 'utf8')) as Proxies
         if ((await exists(known.proxy.path)) && (await exists(known.draft.path))) return known
       }
-      const cut = async (from: ProxyFile, like: ProxyFile, name: string): Promise<ProxyFile> => {
-        const path = join(dir, `${name}-${s}-${tag}.tiff`)
-        const report = await engine.convert({
-          ...blankRequest(from.path, path, 'Tiff'),
-          resize: { Exact: { width: like.width, height: like.height } },
-          resampler: 'Lanczos3',
-          // The master is scene-linear float: averaged as light.
-          linear_resample: true,
-          pixel: { depth: 'F32', channels: 3 },
-          encode: { Tiff: { compression: 'None' } },
-          metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: 'Preserve',
-          threads
-        })
-        return { path, input: 'Tiff', width: report.width, height: report.height, float: true }
-      }
+      // The master is scene-linear float: averaged as light.
+      const cut = (from: ProxyFile, like: ProxyFile, name: string): Promise<ProxyFile> =>
+        cutTo(engine, from, join(dir, `${name}-${s}-${tag}.tiff`), like.width, like.height, threads)
       const proxy = await cut(master, plain.proxy, 'proxy')
       const mid = plain.mid ? await cut(proxy, plain.mid, 'mid') : undefined
       const draft = await cut(proxy, plain.draft, 'draft')

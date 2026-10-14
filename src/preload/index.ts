@@ -50,6 +50,7 @@ import {
   type RegionRequest,
   type RegionResult,
   type MasterEvent,
+  type PixlDemosaicEvent,
   type RenderEvent,
   type RenderScale,
   type SampleResult,
@@ -285,6 +286,8 @@ const api = {
     onTileStale: (cb: (e: { key: string; note?: string }) => void) => on(IPC.develop.tileStale, cb),
     /** The open RAW's full-size develop started (how long it should take) or ended. */
     onMaster: (cb: (e: MasterEvent) => void) => on(IPC.develop.master, cb),
+    /** The open RAW's PIXL demosaic: developing, on, or refused (a development kit's). */
+    onPixlDemosaic: (cb: (e: PixlDemosaicEvent) => void) => on(IPC.develop.pixlDemosaic, cb),
     onRenderError: (
       cb: (e: {
         key: string

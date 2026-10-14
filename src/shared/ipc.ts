@@ -212,6 +212,8 @@ export const IPC = {
     tileStale: 'develop:tile-stale',
     /** main → renderer: the open RAW's full-size develop started or ended (`MasterEvent`). */
     master: 'develop:master',
+    /** main → renderer: the open RAW's PIXL demosaic state changed (`PixlDemosaicEvent`). */
+    pixlDemosaic: 'develop:pixl-demosaic',
     historySetHidden: 'develop:history-set-hidden',
     historyDelete: 'develop:history-delete',
     noise: 'develop:noise',
@@ -748,6 +750,19 @@ export interface MasterEvent {
   key: string
   /** Milliseconds the develop is expected to take; null once it is over. */
   expectedMs: number | null
+}
+
+/**
+ * The PIXL demosaic's part in the open RAW (a development kit's), for the
+ * loupe's badge: its master being developed, the picture developed by it,
+ * or the engine refused it and the released develop stood in.
+ */
+export type PixlDemosaicState = 'developing' | 'on' | 'refused'
+
+export interface PixlDemosaicEvent {
+  key: string
+  /** Null: not the PIXL demosaic's (its switch turned off). */
+  state: PixlDemosaicState | null
 }
 
 export interface RegionRequest {

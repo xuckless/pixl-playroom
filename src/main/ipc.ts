@@ -927,6 +927,7 @@ export function registerIpc(s: Services): void {
     const switches = await s.switches.setPixlDemosaic(on === true)
     // A RAW's full-size develop is another now: the open photo's 1:1 tile is asked for again.
     s.sessions.tilesStale()
+    s.sessions.pixlSwitched()
     return switches
   })
   handle(IPC.ai.benchmark, (model: HeavyModel) => {

@@ -46,7 +46,7 @@ import { freezeMask } from './pixels/freeze'
 import { askOf, scenePlan, type ScenePlan } from './ai/rawdevelop'
 import { takeDevelopedNote } from './devkit'
 import { ensureBase, pixelDeps } from './pixels/base'
-import { ensureWorking, workingKey, type WorkingSet } from './pixels/working'
+import { ensureWorking, frameOf, layStepsOn, workingKey, type WorkingSet } from './pixels/working'
 import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
 import type {
   ColorPolicy,
@@ -76,6 +76,7 @@ import {
   type DevelopSession,
   type LookThumbEvent,
   type MasterEvent,
+  type PixlDemosaicState,
   type RegionRequest,
   type RegionResult,
   type RenderEvent,
@@ -118,8 +119,10 @@ import { pixels } from './workers/pool'
 import { traceRegion } from './trace'
 import { cacheUrl } from './protocol'
 import {
+  cutTo,
   ensureDevelopedProxies,
   ensureLensedProxies,
+  lensOn,
   ensureMaster,
   onMasterWork,
   ensureProxies,
@@ -196,6 +199,13 @@ const SAVE_MS = 600
 const MASK_THUMB_EDGE = 512
 /** How long editing pauses before an open photo's thumbnail is made again. */
 const THUMB_IDLE_MS = 4000
+/** The settled picture is made screen-sized once the loupe wants this much more than the proxy. */
+const SCREEN_GAIN = 1.1
+/** The screen-sized level's largest edge, and the steps its edge is rounded up to. */
+const SCREEN_EDGE_MAX = 6144
+const SCREEN_STEP = 512
+/** Past this share of the frame, the full-size frame itself is the screen-sized level. */
+const SCREEN_WHOLE = 0.92
 /** How long a RAW stays open before the PIXL demosaic's master is made for it. */
 const DEVELOP_ON_OPEN_MS = 1200
 /** The middle proxy serves a view up to 1/MID_SHORTFALL its size. */
@@ -598,13 +608,52 @@ class Session {
    */
   async developOnOpen(): Promise<void> {
     try {
-      await new Promise((r) => setTimeout(r, DEVELOP_ON_OPEN_MS))
-      if (this.closed || this.developedTag || !(await this.pixlPlan())) return
-      await ensureMaster(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
+      if (this.developedTag || !(await this.pixlPlan())) return
+      const ask = askOf(this.recipe)
+      // Made on an earlier visit: at once.
+      if (!(await masterCached(this.row, this.file, ask))) {
+        await new Promise((r) => setTimeout(r, DEVELOP_ON_OPEN_MS))
+        if (this.closed || this.developedTag || !(await this.pixlPlan())) return
+        this.setPixl('developing')
+        await ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+      }
+      // The engine refused the model: the released develop stood in, and is planned from now on.
+      if (!(await this.pixlPlan())) return this.setPixl('refused')
       await this.adoptDeveloped()
     } catch (err) {
-      if (!this.closed) this.masterRefused(err)
+      if (this.closed) return
+      this.setPixl('refused')
+      this.masterRefused(err)
     }
+  }
+
+  /** The PIXL demosaic's part in this RAW, as the loupe's badge says it (`PixlDemosaicEvent`). */
+  private pixl: PixlDemosaicState | null = null
+
+  private setPixl(state: PixlDemosaicState | null): void {
+    if (this.pixl === state || this.closed) return
+    this.pixl = state
+    this.owner.send(IPC.develop.pixlDemosaic, { key: this.key, state })
+  }
+
+  /** The proxies before `adoptDeveloped`: back to them when the PIXL demosaic is turned off. */
+  private plainPx: Proxies | null = null
+
+  /**
+   * The PIXL demosaic's switch turned (Settings → AI models): the picture
+   * follows it, from the master's proxies or back to the plain ones.
+   */
+  async pixlSwitched(): Promise<void> {
+    if (this.closed) return
+    if (await this.pixlPlan()) return void this.developOnOpen()
+    this.setPixl(null)
+    if (!this.developedTag || !this.plainPx) return
+    this.px = this.plainPx
+    this.plainPx = null
+    this.developedTag = null
+    this.working = null
+    if (this.recipe.pixels.length > 0) await this.refreshWorking()
+    else this.schedule('full')
   }
 
   /**
@@ -629,8 +678,10 @@ class Session {
         plan.tag
       )
       if (this.closed || this.developedTag) return
+      this.plainPx = this.px
       this.px = px
       this.developedTag = plan.tag
+      this.setPixl('on')
       // Steps laid on the plain proxies are laid again on these.
       this.working = null
       if (this.recipe.pixels.length > 0) await this.refreshWorking()
@@ -967,7 +1018,9 @@ class Session {
           else this.endDrag()
         }, HELD_SETTLE_MS)
       } else {
-        const wait = this.source('full') === this.viewPx().proxy ? SETTLE_LARGE_MS : SETTLE_MS
+        const src = this.source('full')
+        const large = src === this.viewPx().proxy || src === this.screen?.file
+        const wait = large ? SETTLE_LARGE_MS : SETTLE_MS
         this.settle = setTimeout(() => this.schedule('full'), wait)
       }
     }
@@ -1046,10 +1099,136 @@ class Session {
     return this.loupeSource(px)
   }
 
+  /**
+   * The screen-sized level: the settled picture at the loupe's own pixels
+   * where they are more than the proxy's (a large window, a 5K or 6K
+   * screen), cut from the full-size frame (a RAW's master once it is made,
+   * else the photo decoded) with the steps and the baked lens correction laid
+   * on as on the proxies. Until it is there the proxy serves, and the sharp
+   * tile over it as before.
+   */
+  private screen: { key: string; file: ProxyFile; made: string[] } | null = null
+  private screening: string | null = null
+  /** A level that could not be made (or has no full-size frame yet): not asked again. */
+  private screenFailed: string | null = null
+
+  /** The edge the loupe wants past the proxy's, or null when the proxy serves. */
+  private screenEdge(px: Proxies): number | null {
+    if (this.hdrMaster || this.info.is_hdr) return null
+    const long = Math.max(px.proxy.width, px.proxy.height)
+    const target = this.view.targetEdge
+    if (target <= long * SCREEN_GAIN) return null
+    // An upscale step makes another frame: the proxies show it, as before.
+    const frame = frameOf(this.recipe.pixels, this.px.frameWidth, this.px.frameHeight)
+    if (frame.width !== this.px.frameWidth || frame.height !== this.px.frameHeight) return null
+    const whole = Math.max(this.px.frameWidth, this.px.frameHeight)
+    const edge = Math.min(whole, SCREEN_EDGE_MAX, Math.ceil(target / SCREEN_STEP) * SCREEN_STEP)
+    return edge > long * SCREEN_GAIN ? edge : null
+  }
+
+  /** What a screen-sized level is of: its edge, the develop, the steps, and the lens baked or live. */
+  private screenKey(edge: number): string {
+    const lens = this.lensKey(this.recipe)
+    return [
+      edge,
+      this.developedTag ?? '',
+      this.recipe.pixels.length > 0 ? this.stepsKey(this.recipe) : '',
+      lens && this.lensed?.key === lens ? lens : 'live'
+    ].join(':')
+  }
+
+  /** A master made since: a level that waited for one is asked for again. */
+  screenAgain(): void {
+    this.screenFailed = null
+    this.schedule('full')
+  }
+
+  private makeScreen(edge: number, key: string): void {
+    if (this.screening === key || this.screenFailed === key || this.closed) return
+    this.screening = key
+    void this.buildScreen(edge, key).then(
+      (made) => {
+        if (this.screening === key) this.screening = null
+        if (!made) return void (this.screenFailed = key)
+        const now = this.screenEdge(this.viewPx())
+        if (this.closed || now === null || this.screenKey(now) !== key) {
+          dropFiles(made.made)
+          if (!this.closed && now !== null) this.makeScreen(now, this.screenKey(now))
+          return
+        }
+        const was = this.screen
+        this.screen = { key, ...made }
+        if (was) dropFiles(was.made)
+        this.schedule('full')
+      },
+      (err: unknown) => {
+        if (this.screening === key) this.screening = null
+        this.screenFailed = key
+        log.warn('screen-sized picture not made', (err as Error).message)
+      }
+    )
+  }
+
+  private async buildScreen(
+    edge: number,
+    key: string
+  ): Promise<{ file: ProxyFile; made: string[] } | null> {
+    const engine = this.owner.bgEngine
+    const ask = askOf(this.recipe)
+    // A RAW's full-size frame is its master, once made (on open for the PIXL demosaic).
+    if (this.isRaw && !(await masterCached(this.row, this.file, ask))) return null
+    const full = this.isRaw
+      ? await ensureMaster(engine, this.row, this.file, ask)
+      : await ensureBase(engine, this.row, this.file)
+    const dir = paths.photoCache(this.row.id)
+    const name = `screen-${versionStamp(this.row)}-${hash32(key).toString(36)}`
+    const made: string[] = []
+    const k = edge / Math.max(this.px.frameWidth, this.px.frameHeight)
+    let file = full
+    if (k < SCREEN_WHOLE) {
+      file = await cutTo(
+        engine,
+        full,
+        join(dir, `${name}-cut.tiff`),
+        Math.round(this.px.frameWidth * k),
+        Math.round(this.px.frameHeight * k)
+      )
+      made.push(file.path)
+    }
+    if (this.recipe.pixels.length > 0) {
+      const deps = pixelDeps(engine, this.owner.library.index, this.row)
+      file = await layStepsOn(deps, file, join(dir, `${name}-steps.tiff`), this.recipe.pixels)
+      made.push(file.path)
+    }
+    // The lensed set's correction, baked as on its proxies; a live one is the render's.
+    if (key.endsWith(':live') === false) {
+      const { lens, retouch } = this.prepared(this.recipe)
+      file = await lensOn(
+        engine,
+        file,
+        join(dir, `${name}-lens.tiff`),
+        lens,
+        retouch,
+        this.hdrWorking
+      )
+      made.push(file.path)
+    }
+    // Only the last is read: what came before it goes.
+    dropFiles(made.slice(0, -1))
+    log.info('screen-sized picture made', `${file.width}×${file.height}`, this.row.name)
+    return { file, made: made.slice(-1) }
+  }
+
   /** The proxy the loupe's own size asks for. */
   private loupeSource(px: Proxies): ProxyFile {
     const long = (f: ProxyFile): number => Math.max(f.width, f.height)
     if (this.view.targetEdge <= long(px.draft)) return px.draft
+    const edge = this.screenEdge(px)
+    if (edge !== null) {
+      const key = this.screenKey(edge)
+      if (this.screen?.key === key) return this.screen.file
+      this.makeScreen(edge, key)
+    }
     // The middle size up to a little short of the view (the screen scales it
     // the last stretch): a 1200 pt loupe on a Retina screen grades 44% fewer
     // pixels than from the full proxy.
@@ -2796,6 +2975,8 @@ class Session {
   /** Stop, writing a pending edit; resolves once it is saved. */
   close(): Promise<void> {
     this.closed = true
+    if (this.screen) dropFiles(this.screen.made)
+    this.screen = null
     // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5).
     this.heldSlot.drop()
     this.owner.gpu.close(this.key)
@@ -2864,8 +3045,10 @@ export class DevelopSessions {
           // With a development kit, what developed it and how long it took (devkit.ts).
           const note = takeDevelopedNote(e.photoId)
           if (note) this.send(IPC.develop.tileStale, { key, note })
-          // The PIXL demosaic's master, just made: the zoomed-out picture is cut from it.
+          // The PIXL demosaic's master, just made: the zoomed-out picture is cut from it,
+          // and a screen-sized picture that waited for a full-size frame has one.
           void s.adoptDeveloped()
+          s.screenAgain()
         }
     })
   }
@@ -2877,6 +3060,11 @@ export class DevelopSessions {
   /** The open photo's 1:1 tile is asked for again: its RAW develop changed. */
   tilesStale(): void {
     for (const key of this.sessions.keys()) this.send(IPC.develop.tileStale, { key })
+  }
+
+  /** The PIXL demosaic's switch turned: the open RAW's picture follows it. */
+  pixlSwitched(): void {
+    for (const s of this.sessions.values()) void s.pixlSwitched()
   }
 
   private get(key: string): Session {
@@ -3134,3 +3322,8 @@ export class DevelopSessions {
 }
 
 export { RAW_DEVELOP }
+
+/** Files a screen-sized picture made, off the disk (they are hundreds of MB at 5K in float). */
+function dropFiles(files: string[]): void {
+  for (const f of files) void rm(f, { force: true }).catch(() => undefined)
+}

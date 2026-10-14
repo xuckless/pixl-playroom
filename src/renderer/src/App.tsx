@@ -52,7 +52,7 @@ import { InfoDrawer } from './views/library/InfoDrawer'
 import { Sidebar } from './views/library/Sidebar'
 import { FloatingToolbar } from './views/loupe/FloatingToolbar'
 import { Loupe } from './views/loupe/Loupe'
-import { onMaster } from './views/loupe/mastering'
+import { onMaster, onPixlDemosaic } from './views/loupe/mastering'
 import { setSpace } from './views/loupe/zoom'
 
 /**
@@ -524,6 +524,7 @@ export default function App(): React.JSX.Element {
         }
       }),
       api.develop.onMaster(onMaster),
+      api.develop.onPixlDemosaic(onPixlDemosaic),
       api.develop.onRenderError((e) => {
         // A failed save is said whichever photo is open: it may be the one just left.
         if (e.code === 'Save') return useLibrary.getState().say(e.message, 'error')

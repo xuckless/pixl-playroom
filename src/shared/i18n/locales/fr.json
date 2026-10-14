@@ -3427,5 +3427,9 @@
   "RAW files develop as in the released Playroom. On, PIXL’s own model develops them at full size and takes out the grain as it goes.": "Les fichiers RAW se développent comme dans la version publiée de Playroom. Activé, le modèle de PIXL les développe en pleine taille et retire le grain au passage.",
   "The same for Fujifilm’s X-Trans sensors: about 7 seconds for a 16 MP RAW on a Mac.": "La même chose pour les capteurs X-Trans de Fujifilm : environ 7 secondes pour un RAW de 16 MP sur un Mac.",
   "Use PIXL demosaic (development)": "Utiliser le dématriçage PIXL (développement)",
-  "Developing RAW": "Développement du RAW"
+  "Developing RAW": "Développement du RAW",
+  "PIXL demosaic": "Dématriçage PIXL",
+  "PIXL demosaic: developing this RAW at full size": "Dématriçage PIXL : développement de ce RAW en pleine taille",
+  "PIXL demosaic: this RAW is developed by PIXL’s own model, zoomed out, at 1:1 and in the export": "Dématriçage PIXL : ce RAW est développé par le modèle de PIXL, en vue réduite, à 1:1 et à l’export",
+  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "Dématriçage PIXL : le moteur l’a refusé pour ce RAW, il est donc affiché avec le développement publié"
 }

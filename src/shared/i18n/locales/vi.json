@@ -3305,5 +3305,9 @@
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "Phóng to 100%, mỗi điểm ảnh của ảnh ứng với một điểm ảnh màn hình, để kiểm tra độ nét và nhiễu. Chụm hoặc cuộn để thu phóng; giữ {{key}} và kéo để di chuyển khung nhìn.",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ luma {{luma}} · chroma {{chroma}}",
   "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ của nhiễu trắng trên từng mặt phẳng, theo bộ ước lượng riêng của bộ khử nhiễu, tính bằng giá trị mã 8 bit",
-  "Developing RAW": "Đang xử lý RAW"
+  "Developing RAW": "Đang xử lý RAW",
+  "PIXL demosaic": "Giải khảm PIXL",
+  "PIXL demosaic: developing this RAW at full size": "Giải khảm PIXL: đang xử lý RAW này ở kích thước đầy đủ",
+  "PIXL demosaic: this RAW is developed by PIXL’s own model, zoomed out, at 1:1 and in the export": "Giải khảm PIXL: RAW này được xử lý bằng mô hình riêng của PIXL, khi thu nhỏ, ở 1:1 và khi xuất",
+  "PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop": "Giải khảm PIXL: công cụ đã từ chối áp dụng cho RAW này, nên ảnh được hiển thị bằng cách xử lý của bản phát hành"
 }

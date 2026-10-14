@@ -3,9 +3,30 @@ import { estimate } from '../../../../shared/ai'
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
 import { Spinner } from '../../fx'
 import { useDevelop } from '../../state/develop'
-import { t } from '../../lib/i18n'
+import { t, tk } from '../../lib/i18n'
 import { useHudNote } from './hudNote'
-import { useMastering } from './mastering'
+import { useMastering, usePixlDemosaic } from './mastering'
+import type { PixlDemosaicState } from '../../../../shared/ipc'
+
+const PIXL_HINT: Record<PixlDemosaicState, string> = {
+  developing: tk('PIXL demosaic: developing this RAW at full size'),
+  on: tk(
+    'PIXL demosaic: this RAW is developed by PIXL’s own model, zoomed out, at 1:1 and in the export'
+  ),
+  refused: tk(
+    'PIXL demosaic: the engine refused it for this RAW, so it is shown with the released develop'
+  )
+}
+
+/** The PIXL demosaic's state for the open RAW (a development kit's): a dot and its name. */
+function PixlChip({ state }: { state: PixlDemosaicState }): React.JSX.Element {
+  return (
+    <span className={`hud-item pixl-chip ${state}`} title={t(PIXL_HINT[state])}>
+      <i className="pixl-dot" aria-hidden />
+      {t('PIXL demosaic')}
+    </span>
+  )
+}
 
 /** A RAW's full-size develop under way: how far by the clock (it takes seconds, and says nothing). */
 function Developing({
@@ -46,6 +67,8 @@ export function LoupeHud({ scale }: { scale: number | null }): React.JSX.Element
   const { note, n } = useHudNote()
   const mastering = useMastering()
   const developing = useDevelop((s) => mastering.key !== null && s.session?.key === mastering.key)
+  const key = useDevelop((s) => s.session?.key)
+  const pixl = usePixlDemosaic((s) => (key ? s.states[key] : undefined))
   if (!rendering && compare !== 'before' && !error && scale === null && !note && !developing)
     return null
   return (
@@ -64,6 +87,7 @@ export function LoupeHud({ scale }: { scale: number | null }): React.JSX.Element
           {t('Rendering')}
         </span>
       )}
+      {pixl && <PixlChip state={pixl} />}
       {developing && <Developing since={mastering.since} expectedMs={mastering.expectedMs} />}
       {compare === 'before' && <span className="hud-item accent">{t('Before')}</span>}
       {note && (

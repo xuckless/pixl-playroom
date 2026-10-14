@@ -158,6 +158,35 @@
 .hud-track i {
   transition: width 0.25s linear;
 }
+/* the PIXL demosaic's state for the open RAW (a development kit's) */
+.pixl-chip {
+  font-size: 11px;
+  opacity: 0.85;
+}
+.pixl-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok, #4ade80);
+  flex: none;
+}
+.pixl-chip.developing .pixl-dot {
+  background: var(--acc);
+  animation: pixl-pulse 1.1s ease-in-out infinite;
+}
+.pixl-chip.refused .pixl-dot {
+  background: var(--warn);
+}
+@keyframes pixl-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pixl-chip.developing .pixl-dot {
+    animation: none;
+  }
+}
 .loupe-status {
   left: 14px;
   bottom: 14px;
