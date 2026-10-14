@@ -5,6 +5,7 @@
  * progress; cancelling stops the file being written at the engine's next
  * stage (a cancelled conversion writes nothing) and the rest are not begun.
  */
+import { activeSteps } from '../shared/pixels'
 import { BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
 import { constants as fsConstants } from 'fs'
@@ -203,13 +204,13 @@ export class Exporter {
     info: SourceInfo,
     recipe: Recipe
   ): Promise<ProxyFile | null> {
-    if (recipe.pixels.length === 0) return null
+    if (activeSteps(recipe.pixels).length === 0) return null
     const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const set = await ensureWorking(
       pixelDeps(this.engine, this.library.index, row),
       versionStamp(row),
       plain,
-      recipe.pixels,
+      activeSteps(recipe.pixels),
       () => ensureBase(this.engine, row, info, askOf(recipe))
     )
     return set.master

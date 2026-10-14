@@ -26,7 +26,7 @@ import { dirname, join } from 'path'
 import type { AiStartRequest } from '../../shared/ai'
 import { estimate } from '../../shared/ai'
 import type { EnhancerRef } from '../../shared/engine-types'
-import { pixelStepRefusal, type PixelStep } from '../../shared/pixels'
+import { activeSteps, pixelStepRefusal, type PixelStep } from '../../shared/pixels'
 import { developMark } from '../../shared/rawcolour'
 import {
   aiDenoiseModel,
@@ -200,7 +200,10 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       ? recipe.pixels.find((p) => p.id === req.redo && p.kind === 'denoise')
       : undefined
     if (req.redo && !old) throw new Error(t('the step is gone'))
-    const before = old ? recipe.pixels.slice(0, recipe.pixels.indexOf(old)) : recipe.pixels
+    // What it is laid on: the steps before it that are switched on.
+    const before = activeSteps(
+      old ? recipe.pixels.slice(0, recipe.pixels.indexOf(old)) : recipe.pixels
+    )
     const layer = req.layerId && !old ? recipe.layers.find((l) => l.id === req.layerId) : undefined
     if (req.layerId && !old && !layer) throw new Error(t('the mask is gone'))
     ctx.stage(

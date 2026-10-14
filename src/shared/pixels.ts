@@ -46,6 +46,11 @@ export interface PixelStep {
    * true: it made the frame larger (an upscale): the frame is its size from it on.
    */
   params: Record<string, string | number | boolean | null>
+  /**
+   * Switched off (the Edits list, History's on/off): kept, with its pixels,
+   * but not laid on (`activeSteps`). Absent when on.
+   */
+  off?: true
 }
 
 export const PIXEL_LABEL: Record<PixelStepKind, string> = {
@@ -113,8 +118,18 @@ export function normalisePixelStep(v: unknown): PixelStep | null {
     width: Math.max(1, Math.round(num(s.width, 1))),
     height: Math.max(1, Math.round(num(s.height, 1))),
     rect: rectOf(s.rect),
-    params: s.params && typeof s.params === 'object' ? (s.params as PixelStep['params']) : {}
+    params: s.params && typeof s.params === 'object' ? (s.params as PixelStep['params']) : {},
+    ...(s.off === true ? { off: true as const } : {})
   }
+}
+
+/**
+ * The steps laid on: those not switched off, in order. The list itself when
+ * none is off, so what is keyed by it (`stackSignature`, the working sets)
+ * stays put.
+ */
+export function activeSteps(steps: PixelStep[]): PixelStep[] {
+  return steps.some((s) => s.off) ? steps.filter((s) => !s.off) : steps
 }
 
 function rectOf(v: unknown): PixelStep['rect'] {

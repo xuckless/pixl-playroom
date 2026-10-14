@@ -39,7 +39,8 @@ import {
   type RetouchSpot,
   type SpotRefine
 } from '../shared/retouch'
-import { stackSignature, type PixelStep } from '../shared/pixels'
+import { activeSteps, stackSignature, type PixelStep } from '../shared/pixels'
+import { effective } from '../shared/edits'
 import { developMark, pixlSupported, resolveRawColour } from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
@@ -594,7 +595,7 @@ class Session {
   workingJob: Promise<void> = Promise.resolve()
 
   private stepsKey(recipe: Recipe): string {
-    return workingKey(this.workingVersion(), recipe.pixels)
+    return workingKey(this.workingVersion(), activeSteps(recipe.pixels))
   }
 
   /** The develop the proxies were cut from, once they are the master's (`adoptDeveloped`). */
@@ -666,7 +667,7 @@ class Session {
     this.plainPx = null
     this.developedTag = null
     this.working = null
-    if (this.recipe.pixels.length > 0) await this.refreshWorking()
+    if (activeSteps(this.recipe.pixels).length > 0) await this.refreshWorking()
     else this.schedule('full')
   }
 
@@ -698,7 +699,7 @@ class Session {
       this.setPixl('on')
       // Steps laid on the plain proxies are laid again on these.
       this.working = null
-      if (this.recipe.pixels.length > 0) await this.refreshWorking()
+      if (activeSteps(this.recipe.pixels).length > 0) await this.refreshWorking()
       else this.schedule('full')
       log.info('develop view now from the master', plan.tag, this.row.name)
     } catch (err) {
@@ -712,7 +713,7 @@ class Session {
    */
   private basePx(): Proxies {
     if (this.preview) return this.preview
-    if (this.recipe.pixels.length === 0) return this.px
+    if (activeSteps(this.recipe.pixels).length === 0) return this.px
     return this.working?.px ?? this.px
   }
 
@@ -724,7 +725,7 @@ class Session {
   async refreshWorking(): Promise<void> {
     const key = this.stepsKey(this.recipe)
     if (this.working?.key === key) return
-    if (this.recipe.pixels.length === 0) {
+    if (activeSteps(this.recipe.pixels).length === 0) {
       const was = this.frameSize()
       this.working = null
       this.frameChanged(was)
@@ -736,7 +737,7 @@ class Session {
         pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row),
         this.workingVersion(),
         this.px,
-        this.recipe.pixels,
+        activeSteps(this.recipe.pixels),
         null
       )
       if (this.closed || this.stepsKey(this.recipe) !== set.key) return
@@ -759,7 +760,7 @@ class Session {
    * the recipe) the steps'. What a 1:1 view and the renderer measure in.
    */
   frameSize(): { width: number; height: number } {
-    const px = this.recipe.pixels.length > 0 ? (this.working?.px ?? this.px) : this.px
+    const px = activeSteps(this.recipe.pixels).length > 0 ? (this.working?.px ?? this.px) : this.px
     return { width: px.frameWidth, height: px.frameHeight }
   }
 
@@ -811,12 +812,12 @@ class Session {
 
   /** The full-resolution working frame (the recipe's steps on the photo at full size): 1:1 and export. */
   async workingMaster(): Promise<ProxyFile | null> {
-    if (this.recipe.pixels.length === 0) return null
+    if (activeSteps(this.recipe.pixels).length === 0) return null
     const set = await ensureWorking(
       pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row),
       this.workingVersion(),
       this.px,
-      this.recipe.pixels,
+      activeSteps(this.recipe.pixels),
       () => ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
     )
     return set.master
@@ -856,11 +857,13 @@ class Session {
     /** The proxies they are prepared from: the plain ones or the working pixels (steps laid on). */
     base: string
   } {
+    // Optics or the heal spots switched off are not baked in either (`effective`).
+    const shown = effective(recipe, this.isRaw)
     return {
       base: this.basePx().proxy.path,
-      lens: lensCorrection(recipe.lens),
+      lens: lensCorrection(shown.lens),
       retouch: compileRetouch(
-        recipe.retouch,
+        shown.retouch,
         'Normal',
         this.basePx().frameWidth,
         this.basePx().frameHeight
@@ -949,7 +952,7 @@ class Session {
   }
 
   update(next: Recipe, interactive: boolean, rev?: number): void {
-    const stepsWere = stackSignature(this.recipe.pixels)
+    const stepsWere = stackSignature(activeSteps(this.recipe.pixels))
     // Whatever the renderer replayed (an old history base can lack fields
     // added since), the session only ever holds a complete recipe.
     const recipe = normaliseRecipe(next, this.isRaw)
@@ -961,7 +964,8 @@ class Session {
     if (rev !== undefined) this.rev = rev
     // A pixel step added, undone, hidden or its strength changed: the working
     // pixels for the steps now (made already, for an undo or a redo).
-    if (stackSignature(recipe.pixels) !== stepsWere) this.workingJob = this.refreshWorking()
+    if (stackSignature(activeSteps(recipe.pixels)) !== stepsWere)
+      this.workingJob = this.refreshWorking()
     // A settled render of the old recipe is only in the way; so is anything
     // in flight when the slider is let go (the full render follows at once).
     if (this.inflight && (this.inflightKind === 'full' || !interactive)) this.abort?.abort()
@@ -1199,7 +1203,7 @@ class Session {
     const target = this.view.targetEdge
     if (target <= long * SCREEN_GAIN) return null
     // An upscale step makes another frame: the proxies show it, as before.
-    const frame = frameOf(this.recipe.pixels, this.px.frameWidth, this.px.frameHeight)
+    const frame = frameOf(activeSteps(this.recipe.pixels), this.px.frameWidth, this.px.frameHeight)
     if (frame.width !== this.px.frameWidth || frame.height !== this.px.frameHeight) return null
     const whole = Math.max(this.px.frameWidth, this.px.frameHeight)
     const edge = Math.min(whole, SCREEN_EDGE_MAX, Math.ceil(target / SCREEN_STEP) * SCREEN_STEP)
@@ -1212,7 +1216,7 @@ class Session {
     return [
       edge,
       this.developedTag ?? '',
-      this.recipe.pixels.length > 0 ? this.stepsKey(this.recipe) : '',
+      activeSteps(this.recipe.pixels).length > 0 ? this.stepsKey(this.recipe) : '',
       lens && this.lensed?.key === lens ? lens : 'live'
     ].join(':')
   }
@@ -1275,9 +1279,14 @@ class Session {
       )
       made.push(file.path)
     }
-    if (this.recipe.pixels.length > 0) {
+    if (activeSteps(this.recipe.pixels).length > 0) {
       const deps = pixelDeps(engine, this.owner.library.index, this.row)
-      file = await layStepsOn(deps, file, join(dir, `${name}-steps.tiff`), this.recipe.pixels)
+      file = await layStepsOn(
+        deps,
+        file,
+        join(dir, `${name}-steps.tiff`),
+        activeSteps(this.recipe.pixels)
+      )
       made.push(file.path)
     }
     // The lensed set's correction, baked as on its proxies; a live one is the render's.
@@ -2273,11 +2282,13 @@ class Session {
   /** The default recipe with the same framing: the "before", and the ghost bars. */
   private async renderBefore(signal: AbortSignal): Promise<void> {
     const before = defaultRecipe(this.isRaw)
-    before.geometry = structuredClone(this.recipe.geometry)
+    // As the picture beside it is framed (a crop or optics switched off included).
+    const shown = effective(this.recipe, this.isRaw)
+    before.geometry = structuredClone(shown.geometry)
     // The lens's geometry too, so before and after line up; not its defringe.
-    before.lens = { ...structuredClone(this.recipe.lens), defringe: before.lens.defringe }
+    before.lens = { ...structuredClone(shown.lens), defringe: before.lens.defringe }
     // Spots too: they are repairs, not a look, and the prepared proxies carry them.
-    before.retouch = structuredClone(this.recipe.retouch)
+    before.retouch = structuredClone(shown.retouch)
     // The photo as it came: never the pixel steps the edit renders from (the
     // plain proxy then, with the lens and spots applied live).
     const view = this.source('full')

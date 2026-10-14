@@ -552,6 +552,37 @@ export const SETTINGS_KEYS = [
 ] as const
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number]
+
+/**
+ * What can be switched off as a whole (the Edits list, a card's eye): every
+ * card of the right column (`cards.ts` CARD_IDS, kept the same here: cards.ts
+ * reads this module as it loads), the profile, the crop and straighten, and
+ * the heal spots. A section switched off keeps its values and is compiled as
+ * the photo's defaults (`edits.ts` `effective`). The turns and flips never
+ * are: everything is placed by them.
+ */
+export const EDIT_SECTIONS = [
+  'wb',
+  'light',
+  'presence',
+  'colour',
+  'mixer',
+  'grading',
+  'curve',
+  'detail',
+  'effects',
+  'optics',
+  'geometry',
+  'calibration',
+  'profile',
+  'crop',
+  'heal'
+] as const
+
+export type EditSection = (typeof EDIT_SECTIONS)[number]
+
+/** The sections switched off: each one `true`, absent when on. */
+export type OffSections = Partial<Record<EditSection, true>>
 export type LayerSettings = Pick<Recipe, SettingsKey>
 
 export interface Recipe {
@@ -597,6 +628,8 @@ export interface Recipe {
    * picture the file stores (Photo → Edit as SDR). Other photos ignore it.
    */
   gainMap: GainMapEdit
+  /** Sections switched off, their values kept (see `EDIT_SECTIONS`). */
+  off: OffSections
 }
 
 export type GainMapEdit = 'base' | 'hdr'
@@ -749,7 +782,8 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     retouch: [],
     pixels: [],
     layers: [],
-    custom: []
+    custom: [],
+    off: {}
   }
 }
 
@@ -798,6 +832,12 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     r.profile = base.profile
   }
   r.toneCurve = normaliseToneCurve(r.toneCurve)
+  // Only sections there are, each switched off by `true` (`fill` keeps any key).
+  r.off = Object.fromEntries(
+    Object.entries(r.off ?? {}).filter(
+      ([k, v]) => v === true && (EDIT_SECTIONS as readonly string[]).includes(k)
+    )
+  ) as OffSections
   if (!TONE_BASES.includes(r.toneBase)) r.toneBase = 'none'
   r.calibration = normaliseCalibration(r.calibration)
   d.ai.model = aiDenoiseModel(d.ai.model)

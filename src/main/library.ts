@@ -9,6 +9,7 @@
  * until it has been edited, the photo's own pixels otherwise, and the graded
  * picture (from its proxy) once it has a recipe.
  */
+import { activeSteps } from '../shared/pixels'
 import { t } from '../shared/i18n'
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
@@ -684,17 +685,17 @@ export class Library {
     // though, are laid on the proxies, which the editor then finds made.
     const plain =
       hdr?.px ??
-      (recipe.pixels.length > 0
+      (activeSteps(recipe.pixels).length > 0
         ? await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
         : await ensureThumbSource(this.engine, row, info, BACKGROUND_THREADS))
     const px =
-      !hdr && recipe.pixels.length > 0
+      !hdr && activeSteps(recipe.pixels).length > 0
         ? (
             await ensureWorking(
               pixelDeps(this.engine, this.index, row),
               versionStamp(row),
               plain,
-              recipe.pixels,
+              activeSteps(recipe.pixels),
               null
             )
           ).px

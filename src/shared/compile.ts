@@ -59,6 +59,7 @@ import {
 } from './recipe'
 import { opFromAbsolute, opFromRelative, type OpWhite } from './wb'
 import { tk } from './i18n'
+import { effective } from './edits'
 
 // ── Spaces ───────────────────────────────────────────────────────────────────
 
@@ -1487,7 +1488,9 @@ function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vig
  * Compile a recipe. `grade` is null when nothing moves a pixel, so an
  * untouched photo takes the engine's fast path.
  */
-export function compile(r: Recipe, given: CompileContext): Compiled {
+export function compile(recipe: Recipe, given: CompileContext): Compiled {
+  // What is rendered: sections switched off at the photo's defaults, steps switched off left out.
+  const r = effective(recipe, given.isRaw)
   // The photo's Tone base reaches its masks' Tone too.
   const ctx: CompileContext = { ...given, toneBase: r.toneBase ?? 'none' }
   const notes: string[] = []

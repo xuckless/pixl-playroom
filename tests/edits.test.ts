@@ -1,0 +1,157 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { compile, type CompileContext } from '../src/shared/compile'
+import { effective, sectionsOff, SECTION_FIELDS } from '../src/shared/edits'
+import { activeSteps, type PixelStep } from '../src/shared/pixels'
+import { defaultRecipe, editsInHdr, normaliseRecipe, EDIT_SECTIONS } from '../src/shared/recipe'
+import { CARD_IDS } from '../src/shared/cards'
+import { viewGeometry } from '../src/shared/view'
+
+const ctx: CompileContext = {
+  isRaw: false,
+  asShot: null,
+  sourceOrientation: 'Normal',
+  frameWidth: 6000,
+  frameHeight: 4000,
+  scale: 0.4,
+  seed: 7,
+  brushPaths: {},
+  applyCrop: true
+}
+
+const step = (id: string, off?: true): PixelStep => ({
+  id,
+  kind: 'enhance',
+  label: 'Enhance',
+  blob: 'a'.repeat(64),
+  alpha: null,
+  scope: null,
+  opacity: 100,
+  width: 6000,
+  height: 4000,
+  rect: null,
+  params: {},
+  ...(off ? { off } : {})
+})
+
+test('every card is a section that can be switched off', () => {
+  for (const id of CARD_IDS) assert.ok(EDIT_SECTIONS.includes(id), id)
+  for (const s of EDIT_SECTIONS) assert.ok(SECTION_FIELDS[s].length > 0, s)
+})
+
+test('nothing switched off: the recipe itself is rendered', () => {
+  const r = defaultRecipe(false)
+  r.basic.exposure = 0.6
+  r.pixels = [step('a')]
+  assert.equal(effective(r, false), r)
+  assert.equal(activeSteps(r.pixels), r.pixels)
+})
+
+test('a section switched off renders at the defaults, its values kept and the rest shared', () => {
+  const r = defaultRecipe(false)
+  r.basic.exposure = 0.6
+  r.toneBase = 'texture'
+  r.presence.clarity = 30
+  r.off = { light: true }
+  const e = effective(r, false)
+  assert.equal(e.basic.exposure, 0)
+  assert.equal(e.toneBase, 'none')
+  assert.deepEqual(e.off, {})
+  // Kept in the recipe, to come back when switched on.
+  assert.equal(r.basic.exposure, 0.6)
+  // What is not switched off is the recipe's own, not a copy.
+  assert.equal(e.wb, r.wb)
+  assert.equal(e.presence, r.presence)
+  // Made once per recipe.
+  assert.equal(effective(r, false), e)
+})
+
+test('switching off Colour leaves Presence: the same object, two cards', () => {
+  const r = defaultRecipe(false)
+  r.presence.clarity = 30
+  r.presence.vibrance = 20
+  r.off = { colour: true }
+  const e = effective(r, false)
+  assert.equal(e.presence.clarity, 30)
+  assert.equal(e.presence.vibrance, 0)
+  assert.equal(r.presence.vibrance, 20)
+})
+
+test('a section switched off compiles as if it had never been edited', () => {
+  const plain = defaultRecipe(false)
+  const curved = defaultRecipe(false)
+  curved.toneCurve.master = [
+    { x: 0, y: 0.1 },
+    { x: 0.5, y: 0.6 },
+    { x: 1, y: 1 }
+  ]
+  curved.off = { curve: true }
+  assert.deepEqual(compile(curved, ctx).grade, compile(plain, ctx).grade)
+})
+
+test('a RAW goes back to its own defaults (its profile and sharpening), not a JPEG’s', () => {
+  const r = defaultRecipe(true)
+  r.detail.sharpenAmount = 90
+  r.profile = { kind: 'neutral' }
+  r.off = { detail: true, profile: true }
+  const e = effective(r, true)
+  assert.equal(e.detail.sharpenAmount, defaultRecipe(true).detail.sharpenAmount)
+  assert.deepEqual(e.profile, defaultRecipe(true).profile)
+})
+
+test('a pixel step switched off is not laid on, and stays in the list', () => {
+  const r = defaultRecipe(false)
+  r.pixels = [step('a'), step('b', true), step('c')]
+  assert.deepEqual(
+    effective(r, false).pixels.map((s) => s.id),
+    ['a', 'c']
+  )
+  assert.equal(r.pixels.length, 3)
+  // Switching a step off never flips a gain-map photo's editing space.
+  assert.equal(editsInHdr({ ...r, gainMap: 'hdr' }, true), false)
+})
+
+test('crop and heal switched off: the full frame and no spots', () => {
+  const r = defaultRecipe(false)
+  r.geometry.crop = { x: 0.1, y: 0.1, width: 0.5, height: 0.5 }
+  r.geometry.straighten = 3
+  r.geometry.quarterTurns = 1
+  r.retouch = [{ id: 's', kind: 'heal', points: [], radius: 10 } as never]
+  r.off = { crop: true, heal: true }
+  const e = effective(r, false)
+  assert.equal(e.geometry.crop, null)
+  assert.equal(e.geometry.straighten, 0)
+  // The turns are never switched off: everything is placed by them.
+  assert.equal(e.geometry.quarterTurns, 1)
+  assert.deepEqual(e.retouch, [])
+  // The loupe lays out what is rendered.
+  const g = viewGeometry(r, 6000, 4000, false)
+  assert.equal(g.crop, null)
+  assert.equal(g.straighten, 0)
+})
+
+test('a recipe read back keeps only real sections, switched off by true', () => {
+  const old = normaliseRecipe({ version: 5, basic: { exposure: 1 } }, false)
+  assert.deepEqual(old.off, {})
+  const r = normaliseRecipe(
+    { version: 5, off: { light: true, curve: false, bogus: true, wb: 'yes' } },
+    false
+  )
+  assert.deepEqual(r.off, { light: true })
+  assert.deepEqual(sectionsOff(r), ['light'])
+})
+
+test('switching a section or a step off and on is a small patch that replays', async () => {
+  const { diffRecipe, applyPatch } = await import('../src/shared/history')
+  const on = defaultRecipe(false)
+  on.basic.exposure = 0.6
+  on.pixels = [step('a')]
+  const off = structuredClone(on)
+  off.off = { light: true }
+  off.pixels = [step('a', true)]
+  const patch = diffRecipe(on, off)
+  // The section's own values are not in it: only the switch, and the step.
+  assert.ok(!JSON.stringify(patch).includes('exposure'))
+  assert.deepEqual(applyPatch(structuredClone(on), patch), off)
+  assert.deepEqual(applyPatch(structuredClone(off), diffRecipe(off, on)), on)
+})

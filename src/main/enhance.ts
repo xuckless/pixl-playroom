@@ -22,7 +22,7 @@ import type {
   UpscalerRef
 } from '../shared/engine-types'
 import type { AiStartRequest } from '../shared/ai'
-import { type PixelStep } from '../shared/pixels'
+import { activeSteps, type PixelStep } from '../shared/pixels'
 import { developMark } from '../shared/rawcolour'
 import { newId, type Recipe } from '../shared/recipe'
 import {
@@ -229,8 +229,12 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const deps = pixelDeps(this.engine, this.library.index, row)
     const restoresJpeg = steps.some((p) => p.kind === 'reconstruct' || p.kind.startsWith('fbcnn'))
     const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
-    const working = await ensureWorking(deps, versionStamp(row), plain, recipe.pixels, () =>
-      ensureBase(this.engine, row, info, askOf(recipe))
+    const working = await ensureWorking(
+      deps,
+      versionStamp(row),
+      plain,
+      activeSteps(recipe.pixels),
+      () => ensureBase(this.engine, row, info, askOf(recipe))
     )
     const master = working.master!
     const dir = paths.photoCache(row.id)

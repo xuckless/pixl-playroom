@@ -31,7 +31,7 @@ export interface ViewGeometry {
 }
 
 export function viewGeometry(
-  r: Pick<Recipe, 'geometry'>,
+  r: Pick<Recipe, 'geometry'> & { off?: Recipe['off'] },
   frameWidth: number,
   frameHeight: number,
   cropMode: boolean,
@@ -39,13 +39,17 @@ export function viewGeometry(
   guides = false
 ): ViewGeometry {
   const o = orientedFrame(r, frameWidth, frameHeight)
+  // As `edits.ts` `effective` renders it: crop and straighten, or Upright, switched off.
+  const cropOff = r.off?.crop === true
+  const uprightOff = r.off?.geometry === true
   return {
     width: o.width,
     height: o.height,
     user: o.user,
-    crop: effectiveCrop(r, o.width, o.height),
-    straighten: r.geometry.straighten,
-    transform: guides ? null : uprightTransform(r.geometry.upright, o.width, o.height),
+    crop: cropOff ? null : effectiveCrop(r, o.width, o.height),
+    straighten: cropOff ? 0 : r.geometry.straighten,
+    transform:
+      guides || uprightOff ? null : uprightTransform(r.geometry.upright, o.width, o.height),
     whole: cropMode || guides
   }
 }
