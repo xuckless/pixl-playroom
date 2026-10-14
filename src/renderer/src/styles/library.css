@@ -33,9 +33,9 @@
   border-color: var(--hair3);
 }
 .search-field:focus-within {
-  border-color: rgba(157, 139, 234, 0.7);
+  border-color: color-mix(in srgb, var(--acc) 70%, transparent);
   box-shadow:
-    0 0 0 1px rgba(157, 139, 234, 0.25),
+    0 0 0 1px color-mix(in srgb, var(--acc) 25%, transparent),
     0 0 20px -6px var(--glow);
 }
 .search-field .icon-svg {
@@ -115,20 +115,20 @@
 .thumb:hover {
   transform: translateY(-4px);
   border-color: var(--hair3);
-  box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.9);
+  box-shadow: 0 20px 40px -20px rgb(var(--shade-rgb) / 0.9);
   z-index: 2;
 }
 .thumb.selected {
   border-color: var(--acc);
   box-shadow:
-    0 0 0 1px rgba(157, 139, 234, 0.4),
+    0 0 0 1px color-mix(in srgb, var(--acc) 40%, transparent),
     0 16px 40px -18px var(--glow);
 }
 .thumb.focus::after {
   content: '';
   position: absolute;
   inset: 0;
-  border: 1px solid rgba(157, 139, 234, 0.55);
+  border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent);
   pointer-events: none;
   animation: fadeIn 0.3s;
 }
@@ -153,7 +153,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 18px 10px 8px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0));
+  background: linear-gradient(to top, rgb(var(--shade-rgb) / 0.82), rgb(var(--shade-rgb) / 0));
   color: #fff;
   font-size: 11.5px;
   line-height: 1.35;
@@ -251,7 +251,7 @@
   width: 8px;
   height: 8px;
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgb(var(--shade-rgb) / 0.6),
     0 0 10px currentColor;
 }
 .flag {
@@ -261,8 +261,8 @@
   font-size: 9.5px;
   padding: 2px 6px;
   letter-spacing: 0.12em;
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgb(var(--shade-rgb) / 0.5);
+  border: 1px solid rgb(var(--fg-rgb) / 0.2);
   backdrop-filter: blur(6px);
 }
 .flag.pick {
@@ -285,7 +285,7 @@
   position: absolute;
   left: 8px;
   bottom: 8px;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgb(var(--shade-rgb) / 0.6);
   backdrop-filter: blur(6px);
 }
 
@@ -332,7 +332,7 @@
 .empty-card.liquid,
 .empty-card.liquid.refracting {
   background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.01) 50%),
+    linear-gradient(155deg, rgb(var(--fg-rgb) / 0.07), rgb(var(--fg-rgb) / 0.01) 50%),
     rgba(8, 7, 14, 0.5);
 }
 .empty-card .micro.accent {
@@ -478,7 +478,7 @@
 .src-row:hover,
 .src-row:focus-visible,
 .src-row.menu-open {
-  background: rgba(255, 255, 255, 0.035);
+  background: rgb(var(--fg-rgb) / 0.035);
   color: var(--text);
 }
 .src-row:focus-visible {
@@ -486,8 +486,8 @@
 }
 .src-row.on {
   color: var(--text);
-  border-color: rgba(157, 139, 234, 0.35);
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.16), transparent);
+  border-color: color-mix(in srgb, var(--acc) 35%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 16%, transparent), transparent);
 }
 .src-row.drop {
   border: 1px dashed var(--acc);
@@ -636,7 +636,7 @@
   width: 10px;
   height: 10px;
   background: currentColor;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 1px rgb(var(--shade-rgb) / 0.6);
   opacity: 0.75;
   transition:
     opacity 0.2s var(--ease),
@@ -651,7 +651,7 @@
 }
 .label-pick .swatch.on i {
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgb(var(--shade-rgb) / 0.6),
     0 0 10px currentColor;
 }
 .label-pick .swatch.on::after {
@@ -720,6 +720,30 @@
   opacity: 0.3;
   filter: grayscale(1);
 }
+/* Edited with an earlier develop (shared/rebuild.ts): a click rebuilds it. */
+.older-badge {
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  max-width: calc(100% - 64px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  color: var(--text);
+  background: color-mix(in oklab, var(--acc-deep) 70%, transparent);
+  border: 1px solid color-mix(in oklab, var(--acc) 55%, transparent);
+  border-radius: var(--r);
+  cursor: pointer;
+  opacity: 0.85;
+}
+.older-badge:hover {
+  opacity: 1;
+  background: var(--acc-deep);
+}
 .offline-badge {
   position: absolute;
   left: 50%;
@@ -730,7 +754,7 @@
   text-transform: uppercase;
   padding: 2px 7px;
   color: var(--warn);
-  background: rgba(0, 0, 0, 0.6);
+  background: rgb(var(--shade-rgb) / 0.6);
   border: 1px solid rgba(232, 197, 107, 0.45);
   backdrop-filter: blur(6px);
 }
@@ -743,8 +767,8 @@
   gap: 5px;
   font-size: 11px;
   color: #fff;
-  background: rgba(0, 0, 0, 0.6);
-  border-color: rgba(255, 255, 255, 0.22);
+  background: rgb(var(--shade-rgb) / 0.6);
+  border-color: rgb(var(--fg-rgb) / 0.22);
   backdrop-filter: blur(6px);
 }
 .stack-badge svg {
@@ -772,22 +796,22 @@
   box-shadow:
     4px -4px 0 -1px var(--s2),
     4px -4px 0 0 var(--acc-a55),
-    0 0 0 1px rgba(157, 139, 234, 0.4),
+    0 0 0 1px color-mix(in srgb, var(--acc) 40%, transparent),
     0 16px 40px -18px var(--glow);
 }
 .thumb.stack-closed:hover {
   box-shadow:
     4px -4px 0 -1px var(--s2),
     4px -4px 0 0 var(--hair3),
-    0 20px 40px -20px rgba(0, 0, 0, 0.9);
+    0 20px 40px -20px rgb(var(--shade-rgb) / 0.9);
 }
 /* An open stack's tiles share a purple ground and edge. */
 .thumb.in-stack {
-  border-color: rgba(157, 139, 234, 0.42);
+  border-color: color-mix(in srgb, var(--acc) 42%, transparent);
 }
 .thumb.in-stack .thumb-meta {
-  background: linear-gradient(180deg, rgba(157, 139, 234, 0.16), rgba(157, 139, 234, 0.05));
-  border-top-color: rgba(157, 139, 234, 0.3);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 16%, transparent), color-mix(in srgb, var(--acc) 5%, transparent));
+  border-top-color: color-mix(in srgb, var(--acc) 30%, transparent);
 }
 .thumb.in-stack:not(.stack-cover) .thumb-img {
   opacity: 0.92;
@@ -817,7 +841,7 @@
 .dupe-head .line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.45), var(--hair) 40%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 45%, transparent), var(--hair) 40%, transparent);
 }
 .grid.loading {
   opacity: 0.55;
@@ -921,9 +945,9 @@
     box-shadow var(--dur-toggle) var(--ease);
 }
 .kw-tokens:focus-within {
-  border-color: rgba(157, 139, 234, 0.7);
+  border-color: color-mix(in srgb, var(--acc) 70%, transparent);
   box-shadow:
-    0 0 0 1px rgba(157, 139, 234, 0.25),
+    0 0 0 1px color-mix(in srgb, var(--acc) 25%, transparent),
     0 0 20px -6px var(--glow);
 }
 .kw-token {
@@ -989,7 +1013,7 @@
   border: 1px solid var(--hair2);
   border-radius: var(--r);
   backdrop-filter: blur(16px) saturate(1.4);
-  box-shadow: 0 20px 40px -18px rgba(0, 0, 0, 0.9);
+  box-shadow: 0 20px 40px -18px rgb(var(--shade-rgb) / 0.9);
   animation: popIn 0.3s var(--spring) both;
 }
 .kw-offer {
@@ -1031,7 +1055,7 @@
   margin: 4px 0 2px 4px;
   padding: 8px 0 8px 12px;
   border-left: 1px solid var(--acc-a35);
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.05), transparent 60%);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 5%, transparent), transparent 60%);
   animation: rowIn 0.45s var(--spring) both;
 }
 .rule-group-head {
@@ -1143,9 +1167,9 @@ select.rule-value {
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--acc);
-  border: 1px solid rgba(157, 139, 234, 0.4);
+  border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent);
   border-radius: var(--r);
-  background: rgba(0, 0, 0, 0.55);
+  background: rgb(var(--shade-rgb) / 0.55);
   backdrop-filter: blur(6px);
   opacity: 0;
   transition: opacity 0.2s;

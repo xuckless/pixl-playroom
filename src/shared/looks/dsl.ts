@@ -23,6 +23,7 @@ import {
   type RecipeGroup
 } from '../recipe'
 import { COLLECTION_BY_ID } from './collections'
+import { discToward } from '../resolve'
 import type { MaskMode } from '../engine-types'
 import type { MaskPart, MaskTarget, PersonPart, SmartDenoiseModel, SmartPart } from './smart'
 import type { Look, LookApproximation, LookMeta } from './types'
@@ -60,6 +61,10 @@ export interface LookDraft {
 }
 
 const ROOT_GROUP: Record<string, RecipeGroup> = {
+  primaries: 'primaries',
+  logWheels: 'primaries',
+  qualifiers: 'primaries',
+  curvesVs: 'toneCurve',
   basic: 'basicTone',
   presence: 'presence',
   toneCurve: 'toneCurve',
@@ -143,6 +148,111 @@ export function collection(id: string, drafts: LookDraft[]): Look[] {
     }
   })
 }
+
+// ── Steps: DaVinci Resolve's tools ─────────────────────────────────────────
+
+type Wheel = 'lift' | 'gamma' | 'gain' | 'offset'
+
+/**
+ * How far a wheel's disc goes for each point of a Lightroom grading wheel's
+ * saturation: measured on a grey ramp, the tint at the wheel's own tones
+ * matches (Lift for Shadows, Gamma for Midtones, Gain for Highlights, Offset
+ * for Global). So "lift(200, 30)" is the strength Lightroom calls 30.
+ */
+const DISC_PER_POINT: Record<Wheel, number> = {
+  lift: 0.00103,
+  gamma: 0.0034,
+  gain: 0.0011,
+  offset: 0.00118
+}
+
+/** A Resolve wheel's disc pushed toward `hue` (degrees) at Lightroom-wheel `strength` 0…100. */
+export const push =
+  (wheel: Wheel, hue: number, strength: number): LookStep =>
+  (r) => {
+    const t = discToward(hue, strength * DISC_PER_POINT[wheel])
+    const w = r.primaries[wheel]
+    w.r = round(w.r + t.r)
+    w.g = round(w.g + t.g)
+    w.b = round(w.b + t.b)
+  }
+export const lift = (hue: number, strength: number): LookStep => push('lift', hue, strength)
+export const gamma = (hue: number, strength: number): LookStep => push('gamma', hue, strength)
+export const gain = (hue: number, strength: number): LookStep => push('gain', hue, strength)
+export const offset = (hue: number, strength: number): LookStep => push('offset', hue, strength)
+
+/** A wheel's master (Y): Lift, Gamma and Offset add, Gain multiplies. */
+export const master =
+  (wheel: Wheel, v: number): LookStep =>
+  (r) => {
+    const w = r.primaries[wheel]
+    w.y = round(wheel === 'gain' ? w.y * v : w.y + v)
+  }
+
+/**
+ * A matte base: the blacks lifted to `lift` and the whites held to 1 − `drop`
+ * with the Lift and Gain masters (exactly the squeeze `fade` and `rolloff`
+ * make on the master curve, `lift + v·(gain − lift)`).
+ */
+export const matte =
+  (liftBy: number, drop = 0): LookStep =>
+  (r) => {
+    r.primaries.lift.y = round(r.primaries.lift.y + liftBy)
+    r.primaries.gain.y = round(r.primaries.gain.y * (1 - drop))
+  }
+
+/** The Primaries' bar: contrast (1 untouched), pivot, and Sat and Hue as Lightroom-style changes (−100…100). */
+export const prim =
+  (p: { contrast?: number; pivot?: number; sat?: number; hue?: number }): LookStep =>
+  (r) => {
+    if (p.contrast !== undefined) r.primaries.contrast = round(r.primaries.contrast * p.contrast)
+    if (p.pivot !== undefined) r.primaries.pivot = p.pivot
+    if (p.sat !== undefined)
+      r.primaries.saturation = round(r.primaries.saturation * (1 + p.sat / 100))
+    if (p.hue !== undefined) r.primaries.hue = round(r.primaries.hue + p.hue / 3.6)
+  }
+
+/** A Log wheel's push toward `hue` at Lightroom-wheel strength (its own tones only). */
+export const logPush =
+  (part: 'shadow' | 'midtone' | 'highlight', hue: number, strength: number): LookStep =>
+  (r) => {
+    const t = discToward(hue, strength * DISC_PER_POINT.offset)
+    const w = r.logWheels[part]
+    w.r = round(w.r + t.r)
+    w.g = round(w.g + t.g)
+    w.b = round(w.b + t.b)
+  }
+
+/**
+ * A hue curve's change at a few hues, each a bump that eases back to none
+ * `width` degrees either side: Hue vs Hue in degrees turned, Hue vs Sat as a
+ * multiplier (1 untouched). The colour alone moves, the rest stays.
+ */
+export const hueCurve =
+  (curve: 'hueHue' | 'hueSat', at: [number, number][], width = 35): LookStep =>
+  (r) => {
+    const y = (v: number): number =>
+      curve === 'hueHue' ? round(0.5 + v / 360) : round(Math.min(1, Math.max(0, v / 2)))
+    const pts = new Map<number, number>()
+    const wrap = (h: number): number => round((((h % 360) + 360) % 360) / 360)
+    for (const [h] of at) {
+      for (const side of [-width, width]) {
+        const x = wrap(h + side)
+        if (!pts.has(x)) pts.set(x, 0.5)
+      }
+    }
+    for (const [h, v] of at) pts.set(wrap(h), y(v))
+    r.curvesVs[curve] = [...pts.entries()]
+      .map(([x, yy]) => ({ x, y: yy }))
+      .sort((a, b) => a.x - b.x)
+  }
+
+/** Lum vs Sat: saturation multipliers at brightnesses 0…1 (1 untouched). */
+export const lumSat =
+  (at: [number, number][]): LookStep =>
+  (r) => {
+    r.curvesVs.lumSat = at.map(([x, v]) => ({ x, y: round(Math.min(1, Math.max(0, v / 2))) }))
+  }
 
 // ── Steps ───────────────────────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@ import { t } from '../lib/i18n'
 export function HdrAiNote({
   offer = true
 }: {
-  /** Offer Edit as SDR (not where the tool is held for everyone anyway: Enhance). */
+  /** Offer Edit as SDR (not where the tool is held for everyone anyway). */
   offer?: boolean
 }): React.JSX.Element | null {
   const isHdr = useDevelop((s) => s.session?.isHdr === true)

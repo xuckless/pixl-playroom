@@ -490,6 +490,38 @@ mirror (`file://` works) for development, e.g. one made with
 `window.__maskPreview` reports the loupe's own mask preview (`stats`, and
 `read()` for its plane, to compare with the engine's).
 
+### Running against a development kit
+
+A development kit is a folder the engine's side makes for trying unreleased
+work on this computer: an engine addon built from a branch
+(`engine/<platform>/`), the models package with a roster that names PIXL's own
+unreleased models (`pixl-models/`), their weights (`models/<id>/<version>/`),
+and `kit.json`, which lists every file with its size and SHA-256. It is looked
+for in `~/Public/pixl-weights`, or where `--kit <dir>` or `PLAYROOM_DEV_KIT`
+says. Not a release: the kit's engine must be the installed package's version,
+and on a Mac it loads Homebrew's libraries, so `brew install libheif jpeg-xl`
+first (a released engine carries its own).
+
+```sh
+pnpm dev:kit                  # install the kit, then pnpm dev with PLAYROOM_DEV_KIT set
+pnpm dev:kit -- /path/to/photo.CR2
+pnpm engine:dev --check       # what is installed: the released packages, or which kit
+pnpm engine:dev --restore     # put the released engine and models back
+```
+
+`scripts/engine-dev.mjs` lays the kit over the installed
+`@xuckless/pixl-engine` and `@xuckless/pixl-models` (only the files `kit.json`
+lists, each checked first; the released files are kept beside as
+`<name>.released`), and changes neither `package.json` nor the lockfile.
+Restore before packaging a build. With the kit, Settings → AI models lists
+PIXL demosaic (development): one model that develops a RAW at full size and
+takes out its grain, in place of DemosaicNet and PMRID, with a switch to go
+back to the released develop (both full-size pictures are kept, so flipping it
+develops nothing again). The terminal says what developed each full-size
+picture, on what and how long (`[dev kit] RAW master pd · CoreMl (CpuAndGpu,
+static shapes) · 8412 ms`), and says so in one line when the engine refuses
+the model and the released develop stands in.
+
 ## Keys
 
 Every key can be changed in Settings → Key bindings; these are the defaults.

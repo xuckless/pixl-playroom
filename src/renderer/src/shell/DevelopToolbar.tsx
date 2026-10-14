@@ -1,3 +1,4 @@
+import { canRedo } from '../../../shared/history'
 import { LiquidGlass } from '../components/glass/LiquidGlass'
 import { Icon } from '../components/icons'
 import { api, errorText } from '../lib/api'
@@ -77,7 +78,7 @@ export function DevelopToolbar(): React.JSX.Element {
   const undo = useDevelop((s) => s.undo)
   const redo = useDevelop((s) => s.redoStep)
   const canUndo = useDevelop((s) => s.history.steps.some((x) => !x.hidden))
-  const canRedo = useDevelop((s) => s.redo.length > 0)
+  const redoable = useDevelop((s) => canRedo(s.history.steps))
   const session = useDevelop((s) => s.session)
   const setView = useLibrary((s) => s.setView)
   const setDialog = useLibrary((s) => s.setDialog)
@@ -181,7 +182,7 @@ export function DevelopToolbar(): React.JSX.Element {
       <button
         className="icon ghost lg"
         onClick={redo}
-        disabled={!canRedo}
+        disabled={!redoable}
         title={withKey(t('Redo'), 'redo')}
       >
         <Icon name="redo" />

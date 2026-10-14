@@ -22,6 +22,14 @@ export const STATIC_TILE: Readonly<Record<string, StaticTile>> = {
   // A tile starts on the filter's period (the roster's `Fixed`): 2 × 2 Bayer, 6 × 6 X-Trans.
   'demosaicnet-bayer': { size: 512, overlap: 32 },
   'demosaicnet-xtrans': { size: 516, overlap: 36 },
+  // PIXL's own demosaic (a development kit's roster; shared/pixldemosaic.ts), at its
+  // roster's `Fixed` 576: a 25 MP Bayer frame in 8.6 s on an M2 Pro, 16 MP X-Trans 7.3 s.
+  'pixl-demosaic-v1-bayer': { size: 576, overlap: 32 },
+  'pixl-demosaic-v1-xtrans': { size: 576, overlap: 48 },
+  // PIXL Enhance (shared/pixlenhance.ts) at 1024: a 12 MP HEIC at level 1 in
+  // 8.1 s on an M2 Pro. The overlap is its level's (the roster's `levels`:
+  // 128, or 256 for level 2, whose reach is wider); main/enhance.ts sets it.
+  'pixl-enhance-v1': { size: 1024, overlap: 128 },
   // A multiple of its 32 (the roster's Dynamic tiling): 0.56 s for a 24 MP mosaic, 3.3 s on the CPU.
   pmrid: { size: 512, overlap: 32 }
 }
@@ -61,4 +69,19 @@ export function staticPlan(
     dimensions: dims.map((name) => ({ name, value: tile.size })),
     tiling: { Fixed: { width: tile.size, height: tile.size, overlap: tile.overlap } }
   }
+}
+
+/**
+ * Whether an error is the accelerator's own (a model it would not load, a
+ * provider it could not register), so the CPU is worth a try (the store's
+ * `withCpuFallback`). A request the engine refuses for anything else is
+ * refused the same on the CPU: the PIXL demosaic on an X-Trans mosaic is
+ * `InvalidRequest`, field `raw.demosaic.noise.noise`, in 20 ms, and must
+ * not move a model to the CPU for the session.
+ */
+export function acceleratorTrouble(err: unknown): boolean {
+  const e = err as { message?: unknown; code?: unknown; field?: unknown } | null
+  if (e?.code === 'InvalidRequest' && typeof e.field === 'string' && !/provider/i.test(e.field))
+    return false
+  return /load-model|provider/i.test(String(e?.message))
 }

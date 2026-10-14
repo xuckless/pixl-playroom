@@ -33,7 +33,15 @@ import type {
   SourceInfo
 } from '../shared/engine-types'
 import type { EngineClient } from './engine/client'
-import { PLAIN_DEVELOP, scenePlan, withScene, type RawDevelopAsk } from './ai/rawdevelop'
+import {
+  keptMasterTags,
+  PLAIN_DEVELOP,
+  scenePlan,
+  withScene,
+  type RawDevelopAsk
+} from './ai/rawdevelop'
+import { DEV_KIT, noteDeveloped, providerName } from './devkit'
+import { noiseKept } from './ai/noisebook'
 import { exists } from './exists'
 import type { PhotoRow } from './db'
 import { paths } from './paths'
@@ -387,6 +395,76 @@ export function ensureLensedProxies(
   return p
 }
 
+/**
+ * A frame with a lens correction and the spots laid on it (`retouch`,
+ * placed on the base frame, which is what every proxy is), at its own size:
+ * a lensed set's proxy, or the screen-sized level (render.ts).
+ */
+export async function lensOn(
+  engine: EngineClient,
+  from: ProxyFile,
+  out: string,
+  lens: LensCorrection | null,
+  retouch: Retouch | null,
+  hdr: HdrWorking | null
+): Promise<ProxyFile> {
+  const report = await engine.convert({
+    ...blankRequest(from.path, out, from.input),
+    pixel: { depth: depthOf(from), channels: 3 },
+    encode:
+      from.input === 'Png'
+        ? ({ Png: { compression: 'Fast', filter: 'Sub' } } as const)
+        : ({ Tiff: { compression: 'None' } } as const),
+    metadata: { exif: false, icc: true, xmp: false, iptc: false },
+    color: 'Preserve',
+    lens,
+    retouch,
+    // A PQ/HLG proxy is corrected in the HDR working space it is graded in.
+    hdr,
+    // Baked behind the editing: its share of the cores, not all of them.
+    threads: BACKGROUND_THREADS
+  })
+  return {
+    path: out,
+    input: from.input,
+    width: report.width,
+    height: report.height,
+    ...(from.float ? { float: true } : {})
+  }
+}
+
+/**
+ * A frame resized to exactly `width` × `height` (a float one averaged as
+ * light): the developed proxies, and the screen-sized level (render.ts).
+ */
+export async function cutTo(
+  engine: EngineClient,
+  from: ProxyFile,
+  out: string,
+  width: number,
+  height: number,
+  threads = BACKGROUND_THREADS
+): Promise<ProxyFile> {
+  const report = await engine.convert({
+    ...blankRequest(from.path, out, from.input),
+    resize: { Exact: { width, height } },
+    resampler: 'Lanczos3',
+    linear_resample: true,
+    pixel: { depth: depthOf(from), channels: 3 },
+    encode: { Tiff: { compression: 'None' } },
+    metadata: { exif: false, icc: true, xmp: false, iptc: false },
+    color: 'Preserve',
+    threads
+  })
+  return {
+    path: out,
+    input: 'Tiff',
+    width: report.width,
+    height: report.height,
+    ...(from.float ? { float: true } : {})
+  }
+}
+
 async function bakeLens(
   engine: EngineClient,
   photo: PhotoRow,
@@ -409,27 +487,7 @@ async function bakeLens(
       ? ({ Png: { compression: 'Fast', filter: 'Sub' } } as const)
       : ({ Tiff: { compression: 'None' } } as const)
   const proxyPath = join(dir, `${prefix}-proxy.${ext}`)
-  const report = await engine.convert({
-    ...blankRequest(px.proxy.path, proxyPath, px.proxy.input),
-    pixel: { depth: depthOf(px.proxy), channels: 3 },
-    encode,
-    metadata: { exif: false, icc: true, xmp: false, iptc: false },
-    color: 'Preserve',
-    lens,
-    // Placed on the base frame, which is what the proxy is.
-    retouch,
-    // A PQ/HLG proxy is corrected in the HDR working space it is graded in.
-    hdr,
-    // Baked behind the editing: its share of the cores, not all of them.
-    threads: BACKGROUND_THREADS
-  })
-  const proxy: ProxyFile = {
-    path: proxyPath,
-    input: px.proxy.input,
-    width: report.width,
-    height: report.height,
-    ...(px.proxy.float ? { float: true } : {})
-  }
+  const proxy = await lensOn(engine, px.proxy, proxyPath, lens, retouch, hdr)
   const draftPath = join(dir, `${prefix}-draft.${ext}`)
   const dFactor = Math.min(1, px.draft.width / px.proxy.width)
   const draftReport = await engine.convert({
@@ -441,7 +499,7 @@ async function bakeLens(
     color: 'Preserve',
     threads: BACKGROUND_THREADS
   })
-  const k = report.width / px.proxy.width
+  const k = proxy.width / px.proxy.width
   const mid = px.mid
     ? await shrink(
         engine,
@@ -503,6 +561,120 @@ export async function pruneLensed(
 }
 
 const mastering = new Map<string, Promise<ProxyFile>>()
+
+/**
+ * Masters another develop stood in for, this run, by the plan's key: used
+ * again rather than refused and developed again at every 1:1 view (the
+ * 0.20.0 audit's B4). One refused for its frame's noise (E64) is tried
+ * again once a measurement it could be stated from has been kept.
+ */
+const stoodIn = new Map<string, { out: ProxyFile; photoOnly: boolean; kept: number }>()
+
+const developed = new Map<string, Promise<Proxies>>()
+
+/**
+ * A RAW's proxies cut from its full-size master instead of the half-size
+ * develop (the PIXL demosaic, demosaic and denoise in one: the half-size
+ * develop the plain proxies come from has neither). The same sizes and frame
+ * as the plain ones, which they stand in for, so the zoomed-out picture is
+ * what the 1:1 view and the export are. Named by the master's develop (`tag`).
+ */
+export function ensureDevelopedProxies(
+  engine: EngineClient,
+  photo: PhotoRow,
+  plain: Proxies,
+  master: ProxyFile,
+  tag: string,
+  threads = BACKGROUND_THREADS
+): Promise<Proxies> {
+  const s = stamp(photo)
+  const key = `${photo.id}:${s}:${tag}`
+  let p = developed.get(key)
+  if (!p) {
+    p = (async (): Promise<Proxies> => {
+      const dir = paths.photoCache(photo.id)
+      const meta = join(dir, `proxies-${s}-${tag}.json`)
+      if (await exists(meta)) {
+        const known = JSON.parse(await readFile(meta, 'utf8')) as Proxies
+        if ((await exists(known.proxy.path)) && (await exists(known.draft.path))) return known
+      }
+      // The master is scene-linear float: averaged as light.
+      const cut = (from: ProxyFile, like: ProxyFile, name: string): Promise<ProxyFile> =>
+        cutTo(engine, from, join(dir, `${name}-${s}-${tag}.tiff`), like.width, like.height, threads)
+      const proxy = await cut(master, plain.proxy, 'proxy')
+      const mid = plain.mid ? await cut(proxy, plain.mid, 'mid') : undefined
+      const draft = await cut(proxy, plain.draft, 'draft')
+      const out: Proxies = {
+        proxy,
+        ...(mid ? { mid } : {}),
+        draft,
+        frameWidth: plain.frameWidth,
+        frameHeight: plain.frameHeight
+      }
+      await writeFile(meta, JSON.stringify(out))
+      return out
+    })().finally(() => developed.delete(key))
+    developed.set(key, p)
+  }
+  return p
+}
+
+/**
+ * The proxies a photo is seen from: a RAW's cut from its PIXL demosaic
+ * master once one is made (the develop view adopts them), else the plain
+ * ones. The models that find masks read these, so a mask is found on the
+ * picture it is drawn over.
+ */
+export async function viewProxies(
+  engine: EngineClient,
+  photo: PhotoRow,
+  info: SourceInfo,
+  ask: RawDevelopAsk,
+  threads = BACKGROUND_THREADS
+): Promise<Proxies> {
+  const plain = await ensureProxies(engine, photo, info, threads)
+  if (info.input !== 'Raw' || isLinearRaw(info)) return plain
+  const plan = await scenePlan(info.raw_cfa, ask)
+  if (plan.demosaic !== 'pixl' || !(await masterCached(photo, info, ask))) return plain
+  const master = await ensureMaster(engine, photo, info, ask)
+  return ensureDevelopedProxies(engine, photo, plain, master, plan.tag, threads)
+}
+
+/** A RAW's full-size develop starting or ending, for the window's progress (`MasterEvent`). */
+export interface MasterWork {
+  photoId: number
+  phase: 'start' | 'end'
+  /** How long it is expected to take: what the last one of its kind took for its size here. */
+  expectedMs: number
+}
+
+let masterWork: ((e: MasterWork) => void) | null = null
+/** Masters being developed for each photo: over when the last one is. */
+const developing = new Map<number, number>()
+
+function masterStarted(photoId: number, expectedMs: number): void {
+  developing.set(photoId, (developing.get(photoId) ?? 0) + 1)
+  masterWork?.({ photoId, phase: 'start', expectedMs })
+}
+
+function masterEnded(photoId: number): void {
+  const left = (developing.get(photoId) ?? 1) - 1
+  if (left > 0) return void developing.set(photoId, left)
+  developing.delete(photoId)
+  masterWork?.({ photoId, phase: 'end', expectedMs: 0 })
+}
+
+/** Who is told when a master is developed (the open photo's session, which tells the window). */
+export function onMasterWork(listener: (e: MasterWork) => void): void {
+  masterWork = listener
+}
+
+/** What a develop took for each megapixel, by its tag: the last one's, this run. */
+const masterRate = new Map<string, number>()
+/** Before the first: about what an M2 Pro takes (the PIXL demosaic, DemosaicNet, AHD, the classic). */
+function firstRate(demosaic: string): number {
+  return demosaic === 'pixl' ? 350 : demosaic === 'model' ? 240 : demosaic === 'ahd' ? 135 : 50
+}
 
 /**
  * Whether a RAW's full-size master for this develop is made already (its
@@ -575,19 +747,27 @@ export function ensureQuickMaster(engine: EngineClient, photo: PhotoRow): Promis
  * original each time. Its demosaic is the best there is now (DemosaicNet once
  * downloaded, else AHD) and PMRID goes first when the edit asks
  * (`ai/rawdevelop.ts`); each names the file, so a model downloaded later
- * makes it again, and the one it replaces goes.
+ * makes it again, and the one it replaces goes. With a development kit
+ * (`devkit.ts`) the PIXL demosaic's master and DemosaicNet's stay side by
+ * side, and each develop says what ran.
  */
 export async function ensureMaster(
   engine: EngineClient,
   photo: PhotoRow,
-  info: Pick<SourceInfo, 'raw_cfa' | 'input' | 'dng'>,
+  info: Pick<SourceInfo, 'raw_cfa' | 'input' | 'dng'> &
+    Partial<Pick<SourceInfo, 'width' | 'height'>>,
   ask: RawDevelopAsk = PLAIN_DEVELOP
 ): Promise<ProxyFile> {
   const plan = await scenePlan(info.raw_cfa, ask)
   const s = stamp(photo)
   const key = `${photo.id}:${s}:${plan.tag}`
+  const stood = stoodIn.get(key)
+  if (stood && (!stood.photoOnly || stood.kept === noiseKept()) && (await exists(stood.out.path)))
+    return stood.out
   let p = mastering.get(key)
   if (!p) {
+    // Said over only once the master's record is written: what hears it finds the master made.
+    let said = false
     p = (async (): Promise<ProxyFile> => {
       // F32 (engine 0.18: a RAW's master is Scene in float): twice a 16-bit
       // TIFF's size, nothing clipped at 1.0.
@@ -610,28 +790,64 @@ export async function ensureMaster(
       }
       const t0 = Date.now()
       let request: unknown = null
-      const { value: report, classic } = await withScene(plan, (scene) => {
-        const req = {
-          ...blankRequest(photo.path, path, 'Raw'),
-          raw: rawMaster(colourOf(photo), scene, isLinearRaw(info)),
-          pixel: { depth: 'F32', channels: 3 } as const,
-          encode: { Tiff: { compression: 'None' } } as const,
-          metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: 'Preserve' as const
-        }
-        request = req
-        return engine.convert(req)
+      // The engine says nothing while it develops: the window shows how far by the clock.
+      const megapixels = ((info.width ?? 0) * (info.height ?? 0)) / 1e6 || 24
+      masterStarted(photo.id, (masterRate.get(plan.tag) ?? firstRate(plan.demosaic)) * megapixels)
+      said = true
+      const {
+        value: report,
+        classic,
+        ran,
+        refused,
+        statedFrom,
+        photoOnly,
+        declined
+      } = await withScene(
+        plan,
+        (scene) => {
+          const req = {
+            ...blankRequest(photo.path, path, 'Raw'),
+            raw: rawMaster(colourOf(photo), scene, isLinearRaw(info)),
+            pixel: { depth: 'F32', channels: 3 } as const,
+            encode: { Tiff: { compression: 'None' } } as const,
+            metadata: { exif: false, icc: true, xmp: false, iptc: false },
+            color: 'Preserve' as const
+          }
+          request = req
+          return engine.convert(req)
+        },
+        undefined,
+        { camera: photo.camera, iso: photo.iso }
+      )
+      const ms = Date.now() - t0
+      if (!classic) masterRate.set(plan.tag, ms / megapixels)
+      log.info(
+        'RAW master developed',
+        plan.tag,
+        classic ? `(${ran} stood in)` : '',
+        statedFrom ? `(noise stated from ${statedFrom})` : '',
+        ms,
+        'ms'
+      )
+      // What stood in, for the user (and a development kit's trial: what ran, where and how long).
+      noteDeveloped(photo.id, {
+        planned: plan.tag,
+        ran,
+        provider: providerName(report.raw?.demosaic_model?.provider),
+        ms,
+        refused,
+        declined
       })
-      log.info('RAW master developed', plan.tag, classic ? '(classic)' : '', Date.now() - t0, 'ms')
       traceRegion({
         step: 'master',
         photoId: photo.id,
         tag: plan.tag,
         cached: false,
         classic,
-        // Not kept when classic stood in: the next 1:1 develops it again.
+        ran,
+        // A stand-in is kept for this run only (`stoodIn`).
         keptForNextTime: !classic,
-        ms: Date.now() - t0,
+        ms,
         request,
         report: {
           width: report.width,
@@ -651,17 +867,39 @@ export async function ensureMaster(
         height: report.height,
         float: true
       }
-      // Kept only when it is the plan's: a classic stand-in is made again next time.
-      if (!classic) await writeFile(meta, JSON.stringify(out))
+      // Kept only when it is the plan's, with what developed it (the engine's
+      // `report.raw.demosaic_model`: a later develop can be compared with it).
+      // A stand-in is kept for this run only.
+      const model = report.raw?.demosaic_model
+      if (!classic)
+        await writeFile(
+          meta,
+          JSON.stringify({
+            ...out,
+            developed: {
+              tag: plan.tag,
+              model: model?.model ?? null,
+              provider: providerName(model?.provider),
+              noise_from: model?.noise_from ?? null,
+              ms,
+              ...(statedFrom ? { stated_from: statedFrom } : {})
+            }
+          })
+        )
+      else stoodIn.set(key, { out, photoOnly: photoOnly === true, kept: noiseKept() })
       // Masters of another demosaic (the model since downloaded, or removed)
       // and the untagged ones from before: off the disk. With and without
-      // PMRID are both kept, for edits that differ.
-      const same = `master-${s}-${plan.tag.replace(/-pm$/, '')}`
+      // PMRID are both kept, for edits that differ; with a development kit,
+      // the PIXL demosaic's and DemosaicNet's too (its switch flips between them).
+      const kept = keptMasterTags(plan.tag, DEV_KIT !== null).map((tag) => `master-${s}-${tag}.`)
       for (const f of await readdir(dir).catch(() => [] as string[]))
-        if (f.startsWith('master-') && !f.startsWith(`${same}.`) && !f.startsWith(`${same}-pm.`))
+        if (f.startsWith('master-') && !kept.some((k) => f.startsWith(k)))
           await unlink(join(dir, f)).catch(() => undefined)
       return out
-    })().finally(() => mastering.delete(key))
+    })().finally(() => {
+      mastering.delete(key)
+      if (said) masterEnded(photo.id)
+    })
     mastering.set(key, p)
   }
   return p

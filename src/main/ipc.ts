@@ -1,4 +1,7 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
+import { pipeline } from './pipeline'
+import type { VersionReason } from '../shared/versions'
+import { keepWrittenOn } from '../shared/edits'
 import {
   DISPLAY_SETTING_KEY,
   displayHdr,
@@ -86,10 +89,12 @@ import {
 } from '../shared/retouch'
 import { grey8 } from './pngio'
 import type { PixelStep } from '../shared/pixels'
-import { enhanceAvailability, enhanceRates } from './enhance'
+import { enhanceAvailability, enhanceRates, makeEnhancePreview } from './enhance'
+import type { EnhanceSettings } from '../shared/enhance'
 import { readWatermark } from './watermark'
 import type { AiJobs } from './ai/jobs'
 import { modelName, type ModelStore } from './ai/models'
+import { PIXL_ENHANCE } from '../shared/pixlenhance'
 import type { Exporter } from './exporter'
 import { keyOf, parseKey } from './keys'
 import type { OriginalEmbedder } from './project/embed'
@@ -99,7 +104,7 @@ import { appPage } from './guard'
 import { gate, gateRefuses } from './gate'
 import { openTopMenu, popupMenu, setMenuSpec, topMenus } from './menu'
 import { languageState, setLanguage } from './i18n'
-import { isLanguageSetting, t, type LanguageSetting } from '../shared/i18n'
+import { isLanguageSetting, t, type LanguageSetting, tk } from '../shared/i18n'
 import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
 import { accountStatus, cancelSignIn, signIn, signOut } from './account'
 import { AccountError } from './account/api'
@@ -440,7 +445,15 @@ export function registerIpc(s: Services): void {
         const live = s.sessions.liveRecipe(key)
         const base = live ?? saved.get(key)
         if (!base) continue
-        const next = applyGroups(base, from, groups)
+        // What it had before the settings came over it, a Version to step back to.
+        await s.library.addVersion(key, {
+          name: tk('Before pasted settings'),
+          kind: 'auto',
+          reason: 'paste',
+          recipe: base
+        })
+        // What was pasted is meant to show: a section it wrote is on again.
+        const next = keepWrittenOn(base, applyGroups(base, from, groups))
         // A crop locked to an aspect keeps it on a photo of another shape:
         // the same centre and share of the frame, the aspect's shape.
         const g = next.geometry
@@ -671,12 +684,35 @@ export function registerIpc(s: Services): void {
     if (png === undefined) throw new Error('a painted mask is missing from the plane store')
     return png
   })
-  // Snapshots come and go by reference: the index keeps the planes they name.
-  handle(IPC.develop.saveSnapshots, (key: string, snapshots: Snapshot[]) =>
-    s.index.saveSnapshots(
-      key,
-      snapshots.map((sn) => ({ ...sn, recipe: s.planes.slim(sn.recipe) }))
-    )
+  // Versions come and go by reference (the index keeps the planes they name),
+  // and cross to the window slim, as the session's own do.
+  const slimVersions = (list: Snapshot[] | null): Snapshot[] | null =>
+    list && list.map((v) => ({ ...v, recipe: s.planes.slim(v.recipe) }))
+  handle(
+    IPC.develop.versionAdd,
+    async (key: string, name: string, slim: Recipe, auto?: { reason: VersionReason }) =>
+      slimVersions(
+        await s.library.addVersion(key, {
+          name,
+          recipe: await s.planes.hydrate(slim),
+          ...(auto ? { kind: 'auto' as const, reason: auto.reason } : {})
+        })
+      )
+  )
+  handle(IPC.develop.versionList, async (key: string) =>
+    slimVersions((await s.index.openData(key)).snapshots)
+  )
+  handle(IPC.develop.versionRename, async (key: string, id: string, name: string) =>
+    slimVersions(await s.index.renameVersion(key, id, name))
+  )
+  handle(IPC.develop.versionDelete, async (key: string, id: string) =>
+    slimVersions(await s.index.deleteVersion(key, id))
+  )
+  handle(IPC.develop.versionKeep, async (key: string, id: string) =>
+    slimVersions(await s.index.keepVersion(key, id))
+  )
+  handle(IPC.develop.compareWith, async (key: string, slim: Recipe | null) =>
+    s.sessions.compareWith(key, slim && (await s.planes.hydrate(slim)))
   )
   // Stored recipes and patches hold planes by reference; the base crosses slim.
   const slimLog = (log: HistoryLog): HistoryLog => ({
@@ -709,12 +745,8 @@ export function registerIpc(s: Services): void {
       return change
     }
   )
-  handle(IPC.develop.historySetHidden, async (key: string, seqs: number[], hidden: boolean) =>
-    slimLog(await s.index.setHistoryHidden(key, seqs, hidden))
-  )
-  handle(IPC.develop.historyDelete, async (key: string, seqs: number[]) =>
-    slimLog(await s.index.deleteHistory(key, seqs))
-  )
+  handle(IPC.develop.historyUndo, async (key: string) => slimLog(await s.index.undoHistory(key)))
+  handle(IPC.develop.historyRedo, async (key: string) => slimLog(await s.index.redoHistory(key)))
 
   // ── presets and profiles ──
   // The user's presets as the Looks browser's cards need them, read once until one changes.
@@ -791,6 +823,7 @@ export function registerIpc(s: Services): void {
       const f = await baseFrame(s, key)
       return (f.width * f.height) / 1e6
     },
+    pixlEnhance: () => s.models.offered(PIXL_ENHANCE),
     // SAM 2.1 (engine 0.16) selects what the user points at. Finding an
     // object by its name needs the detector (E45), and people's parts their
     // model (E30): neither has shipped, so `label` waits and `personJob` is
@@ -904,6 +937,42 @@ export function registerIpc(s: Services): void {
 
   // ── enhance ──
   handle(IPC.enhance.rates, () => enhanceRates(s.index))
+  // PIXL Enhance's preview: one at a time a photo, a newer ask stopping the one before.
+  const previewing = new Map<string, AbortController>()
+  handle(
+    IPC.enhance.preview,
+    async (key: string, settings: EnhanceSettings, at: { x: number; y: number }) => {
+      previewing.get(key)?.abort()
+      const abort = new AbortController()
+      previewing.set(key, abort)
+      try {
+        const session = s.sessions.session(key)
+        const made = await makeEnhancePreview(
+          s.sessions.bgEngine,
+          s.models,
+          s.index,
+          session.row,
+          session.file,
+          await session.fullFrame(),
+          settings,
+          { x: Math.min(1, Math.max(0, at.x)), y: Math.min(1, Math.max(0, at.y)) },
+          abort.signal
+        )
+        if (abort.signal.aborted) throw new Error(t('cancelled'))
+        session.setEnhancePreview(made)
+        return { square: made.square }
+      } finally {
+        if (previewing.get(key) === abort) previewing.delete(key)
+      }
+    }
+  )
+  handle(IPC.enhance.previewShow, (key: string, on: boolean) =>
+    s.sessions.session(key).showEnhancePreview(on === true)
+  )
+  handle(IPC.enhance.previewClear, (key: string) => {
+    previewing.get(key)?.abort()
+    s.sessions.session(key).setEnhancePreview(null)
+  })
 
   // ── AI models ──
   handle(IPC.models.list, () => s.models.list())
@@ -923,6 +992,21 @@ export function registerIpc(s: Services): void {
   handle(IPC.ai.setHeavy, (model: HeavyModel, on: boolean) =>
     s.switches.setHeavy(model, on === true)
   )
+  handle(IPC.ai.pipeline, () => pipeline())
+  handle(IPC.ai.setPixlCpu, async (answer: unknown) => {
+    const a = answer === 'yes' || answer === 'no' ? answer : 'ask'
+    const switches = await s.switches.setPixlCpu(a)
+    // A RAW planned around the PIXL demosaic for a "no" is planned again.
+    if (a !== 'no') s.sessions.tilesStale()
+    return switches
+  })
+  handle(IPC.ai.setPixlDemosaic, async (on: boolean) => {
+    const switches = await s.switches.setPixlDemosaic(on === true)
+    // A RAW's full-size develop is another now: the open photo's 1:1 tile is asked for again.
+    s.sessions.tilesStale()
+    s.sessions.pixlSwitched()
+    return switches
+  })
   handle(IPC.ai.benchmark, (model: HeavyModel) => {
     const progress = (p: number, note: string): void => {
       for (const w of BrowserWindow.getAllWindows())

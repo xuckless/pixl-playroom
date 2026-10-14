@@ -291,3 +291,29 @@ test('progress and time left follow the parts’ expected times', () => {
   assert.equal(formatEta(40_000), '~40 s')
   assert.equal(formatEta(200_000), '~3 min')
 })
+
+test('with PIXL Enhance offered, a look’s denoise and deblur are its levels, no upscale', async () => {
+  const h = harness()
+  const runs = new LookRuns({ ...h.deps, pixlEnhance: () => true })
+  runs.start({
+    key: 'k',
+    runId: 'r1',
+    look: 'Clean',
+    ops: [
+      { kind: 'denoise', model: 'nafnet', strength: 60, layerId: null },
+      { kind: 'deblur', strength: 80, layerId: h.shell.id }
+    ]
+  })
+  await h.tick()
+  h.end('j1', 'done')
+  await h.tick()
+  await h.tick()
+  const [denoise, deblur] = h.started as Extract<AiStartRequest, { task: 'enhance' }>[]
+  assert.equal(denoise.task, 'enhance')
+  assert.equal(denoise.settings.pixl, 'denoise')
+  assert.equal(denoise.settings.pixlStrength, 60)
+  assert.equal(denoise.settings.upscale, 'off')
+  assert.equal(deblur.settings.pixl, 'sharpen')
+  assert.equal(deblur.settings.deblur, false, 'NAFNet GoPro is PIXL Enhance’s job')
+  assert.equal(deblur.layerId, h.shell.id)
+})

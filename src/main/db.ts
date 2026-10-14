@@ -35,6 +35,8 @@ export interface PhotoRow {
   flag: string | null
   label: string | null
   edited: number
+  /** What of the earlier pipeline its recipe holds (shared/rebuild.ts `legacyBits`). */
+  legacy?: number
   camera_json: string | null
   thumb_path: string | null
   thumb_key: string | null
@@ -61,6 +63,8 @@ export interface PhotoRow {
   hdr_key: string | null
   /** A RAW's camera colour ('container' or 'pixl:1'); null until it is first developed. */
   raw_colour: string | null
+  /** 1: the person chose `raw_colour` (migration 18). */
+  raw_colour_chosen?: number
   /** When the file arrived on this disk (ms): its birth time, else its modification time. */
   added?: number | null
   /** What Gemma named in it (shared/naming.ts `PhotoNames`, JSON); null until named. */
@@ -99,6 +103,8 @@ export interface CopyRow {
   flag: string | null
   label: string | null
   edited: number
+  /** What of the earlier pipeline its recipe holds (shared/rebuild.ts `legacyBits`). */
+  legacy?: number
   thumb_path: string | null
   thumb_key: string | null
   /** Its recipe as its thumbnail knows it (see `PhotoRow.recipe_key`). */
@@ -350,7 +356,17 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   (db) => addColumns(db, 'photos', { cull: 'TEXT', cull_key: 'TEXT' }),
   // 16. The user's "Keep" on a suggested reject (shared/cullsuggest.ts):
   // never suggested again.
-  (db) => addColumns(db, 'photos', { cull_keep: 'INTEGER NOT NULL DEFAULT 0' })
+  (db) => addColumns(db, 'photos', { cull_keep: 'INTEGER NOT NULL DEFAULT 0' }),
+  // 17. What of the earlier pipeline an item's recipe holds (shared/rebuild.ts
+  // `legacyBits`): the library's "Older develop" badge.
+  (db) => {
+    addColumns(db, 'photos', { legacy: 'INTEGER NOT NULL DEFAULT 0' })
+    addColumns(db, 'copies', { legacy: 'INTEGER NOT NULL DEFAULT 0' })
+  },
+  // 18. A RAW's camera colour the person chose (not a default worked out
+  // again): a default "container" moves to PIXL's colour once the database
+  // holds the body (shared/rawcolour.ts `upgradesToPixl`); a chosen one never.
+  (db) => addColumns(db, 'photos', { raw_colour_chosen: 'INTEGER NOT NULL DEFAULT 0' })
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -738,11 +754,26 @@ export class Store {
 
   setPhotoMeta(
     id: number,
-    meta: { rating: number; flag: Flag; label: ColorLabel; edited: boolean; recipeKey?: string }
+    meta: {
+      rating: number
+      flag: Flag
+      label: ColorLabel
+      edited: boolean
+      recipeKey?: string
+      legacy?: number
+    }
   ): void {
     this.prepare(
-      'UPDATE photos SET rating = ?, flag = ?, label = ?, edited = ?, recipe_key = ? WHERE id = ?'
-    ).run(meta.rating, meta.flag, meta.label, meta.edited ? 1 : 0, meta.recipeKey ?? null, id)
+      'UPDATE photos SET rating = ?, flag = ?, label = ?, edited = ?, recipe_key = ?, legacy = ? WHERE id = ?'
+    ).run(
+      meta.rating,
+      meta.flag,
+      meta.label,
+      meta.edited ? 1 : 0,
+      meta.recipeKey ?? null,
+      meta.legacy ?? 0,
+      id
+    )
   }
 
   /** Remember a project and the photo it names (see migration 5). */
@@ -885,8 +916,15 @@ export class Store {
     }[]
   }
 
-  setRawColour(photoId: number, colour: string | null): void {
-    this.prepare('UPDATE photos SET raw_colour = ? WHERE id = ?').run(colour, photoId)
+  setRawColour(photoId: number, colour: string | null, chosen?: boolean): void {
+    if (chosen === undefined)
+      this.prepare('UPDATE photos SET raw_colour = ? WHERE id = ?').run(colour, photoId)
+    else
+      this.prepare('UPDATE photos SET raw_colour = ?, raw_colour_chosen = ? WHERE id = ?').run(
+        colour,
+        chosen ? 1 : 0,
+        photoId
+      )
   }
 
   setHdr(photoId: number, kind: string, key: string): void {
@@ -931,12 +969,13 @@ export class Store {
       label: ColorLabel
       edited: boolean
       recipeKey?: string
+      legacy?: number
     }[]
   ): void {
     const existing = new Map(this.copiesOf(photoId).map((c) => [c.copy_id, c]))
     this.prepare('DELETE FROM copies WHERE photo_id = ?').run(photoId)
     const ins = this.prepare(
-      'INSERT INTO copies(photo_id, copy_id, name, rating, flag, label, edited, thumb_path, thumb_key, recipe_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO copies(photo_id, copy_id, name, rating, flag, label, edited, thumb_path, thumb_key, recipe_key, legacy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
     for (const c of copies) {
       const old = existing.get(c.id)
@@ -950,7 +989,8 @@ export class Store {
         c.edited ? 1 : 0,
         old?.thumb_path ?? null,
         old?.thumb_key ?? null,
-        c.recipeKey ?? null
+        c.recipeKey ?? null,
+        c.legacy ?? 0
       )
     }
   }
@@ -970,6 +1010,14 @@ export class Store {
 
   setHistoryHidden(itemKey: string, seqs: number[], hidden: boolean): HistoryLog {
     return this.hist.setHidden(itemKey, seqs, hidden)
+  }
+
+  undoHistory(itemKey: string): HistoryLog {
+    return this.hist.undo(itemKey)
+  }
+
+  redoHistory(itemKey: string): HistoryLog {
+    return this.hist.redo(itemKey)
   }
 
   deleteHistory(itemKey: string, seqs: number[]): HistoryLog {

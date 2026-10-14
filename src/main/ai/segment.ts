@@ -54,7 +54,8 @@ import type { PlaneStore } from '../planestore'
 import { unlink } from 'fs/promises'
 import { join } from 'path'
 import { paths } from '../paths'
-import { ensureProxies, type ProxyFile } from '../proxy'
+import { ensureProxies, viewProxies, type ProxyFile } from '../proxy'
+import { askOf } from './rawdevelop'
 import type { DevelopSessions } from '../render'
 import { BACKGROUND_THREADS, blankRequest } from '../source'
 import { READ_LIMITS } from '../../shared/limits'
@@ -175,8 +176,9 @@ export class SegmentRunner implements AiRunner<SegmentRequest> {
       this.engine.start()
       await this.engine.whenStarted()
     }
-    const px = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const recipe = this.sessions()?.liveRecipe(key) ?? (await this.library.recipe(key))
+    // What the photo is seen from (a RAW's PIXL develop once made): masks fit what they cover.
+    const px = await viewProxies(this.engine, row, info, askOf(recipe), BACKGROUND_THREADS)
     return { row, px, recipe }
   }
 

@@ -1,0 +1,74 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+const STYLES = join(import.meta.dirname, '..', 'src', 'renderer', 'src', 'styles')
+
+/** A #rrggbb colour's hue, in degrees. */
+function hue(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+  const max = Math.max(r, g, b)
+  const d = max - Math.min(r, g, b)
+  if (d === 0) return 0
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+  return (h * 60 + 360) % 360
+}
+
+/** The accent a stylesheet sets, if it sets one. */
+const accentOf = (css: string): string | null =>
+  css.match(/--acc:\s*(#[0-9a-fA-F]{6})/)?.[1] ?? null
+
+test('the accent is purple in every theme (the owner, 2026-10-14)', () => {
+  const original = accentOf(readFileSync(join(STYLES, 'tokens.css'), 'utf8'))
+  assert.ok(original)
+  for (const file of [
+    'tokens.css',
+    'themes/calm.css',
+    'themes/bold.css',
+    'themes/studio.css',
+    'themes/contrast.css'
+  ]) {
+    const css = readFileSync(join(STYLES, file), 'utf8')
+    const acc = accentOf(css) ?? original
+    const h = hue(acc)
+    assert.ok(h >= 240 && h <= 290, `${file}: --acc ${acc} is hue ${Math.round(h)}°, not purple`)
+  }
+})
+
+test('each theme is a :root[data-theme] block, loaded after every other layer', () => {
+  const index = readFileSync(join(STYLES, 'index.css'), 'utf8')
+  assert.match(index, /@layer [^;]*motion, themes;/)
+  for (const t of ['calm', 'bold', 'studio', 'contrast']) {
+    assert.match(index, new RegExp(`themes/${t}\\.css' layer\\(themes\\)`))
+    assert.match(
+      readFileSync(join(STYLES, 'themes', `${t}.css`), 'utf8'),
+      new RegExp(`:root\\[data-theme='${t}'\\]`)
+    )
+  }
+})
+
+test('Bolder modern pairs the purple with a second colour, for its gradients and bloom', () => {
+  const css = readFileSync(join(STYLES, 'themes', 'bold.css'), 'utf8')
+  const b = css.match(/--acc-b:\s*(#[0-9a-fA-F]{6})/)?.[1]
+  assert.ok(b, 'bold.css defines --acc-b')
+  // Cyan: well away from the purple, so the duo reads as two colours.
+  const h = hue(b!)
+  assert.ok(h >= 170 && h <= 200, `--acc-b ${b} is hue ${Math.round(h)}°, not cyan`)
+})
+
+test('Signature is the default; the retired Original, and anything unknown, opens as it', async () => {
+  const src = readFileSync(join(STYLES, '..', 'state', 'ui.ts'), 'utf8')
+  assert.match(src, /export const DEFAULT_THEME: Theme = 'calm'/)
+  assert.match(src, /\{ value: 'calm', label: tk\('Playroom Signature'\) \}/)
+  assert.match(src, /\{ value: 'bold', label: tk\('Playroom Modern'\) \}/)
+  assert.doesNotMatch(src, /value: 'original'/)
+})
+
+test('Studio surrounds the photo in a true neutral grey', () => {
+  const css = readFileSync(join(STYLES, 'themes', 'studio.css'), 'utf8')
+  const stage = css.match(/\.loupe \{\s*background: (#[0-9a-fA-F]{6})/)?.[1]
+  assert.ok(stage)
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(stage!.slice(i, i + 2), 16))
+  assert.ok(r === g && g === b && r > 0x40 && r < 0x90, `${stage} is not a neutral mid grey`)
+})

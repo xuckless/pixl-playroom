@@ -21,7 +21,7 @@ type Saved = Record<string, unknown>
 export function migrateUi(persisted: unknown, version: number): Saved {
   let p: Saved = { ...((persisted ?? {}) as Saved) }
   // 2: the overlay's default view became Molten glass; whoever kept the old
-  // default (colour) gets the new one once.
+  // default (colour) gets the new one once. (9 takes the glass away again.)
   const overlay = p.maskOverlay as Saved | undefined
   if (version < 2 && overlay?.mode === 'color') p.maskOverlay = { ...overlay, mode: 'glass' }
   // 3: the wheel's one tool became a stack of cards; the tool last shown
@@ -54,5 +54,12 @@ export function migrateUi(persisted: unknown, version: number): Saved {
   // 8: Full HDR starts on (the owner): it shows wherever the screen can, and
   // 0.4.0/0.4.1 could not turn it on at all on a Mac (no display reader).
   if (version < 8) p.fullHdr = true
+  // 9: masks are Lightroom's classic tint again (the owner): the glass view is
+  // gone, and a layout that chose it shows the colour overlay, its hue and
+  // opacity kept.
+  const shown = p.maskOverlay as Saved | undefined
+  if (version < 9 && shown?.mode === 'glass') p.maskOverlay = { ...shown, mode: 'color' }
+  // 10: the Snapshots pane went into History (the Edits list took its place).
+  if (version < 10 && p.rail === 'snapshots') p.rail = 'history'
   return p
 }

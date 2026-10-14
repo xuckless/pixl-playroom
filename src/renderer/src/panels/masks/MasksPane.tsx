@@ -32,6 +32,7 @@ import { ComponentCard, SelectedMask } from './MaskTool'
 import { ToolPicker } from './ToolPicker'
 import { NameChips } from './NameChips'
 import { useReorder } from './useReorder'
+import { NodeView } from './NodeView'
 import { keyHint, withKey } from '../../lib/commands'
 import { t, tk } from '../../lib/i18n'
 
@@ -716,6 +717,8 @@ export function MasksPane(): React.JSX.Element | null {
   const setAddMode = useDevelop((s) => s.setAddMode)
   const addMode = useDevelop((s) => s.addMode)
   const open = useUi((s) => s.masksWin.open)
+  // Resolve's node view, where it is asked for (Settings → Interface).
+  const nodes = useUi((s) => s.nodeView && s.colourTools === 'resolve')
   const [picker, setPicker] = useState(false)
   const masks = useReorder((from, to) => {
     const l = useDevelop.getState().recipe?.layers[from]
@@ -764,24 +767,28 @@ export function MasksPane(): React.JSX.Element | null {
       </div>
       <NameChips />
       <div className="mf-body">
-        <div className={`mf-list${masks.drag ? ' sorting' : ''}`}>
-          {layers.length === 0 && (
-            <p className="mf-hint">{t('No masks yet. New limits edits to part of the photo.')}</p>
-          )}
-          {layers.map((l, i) => (
-            <MaskRow
-              key={l.id}
-              layer={l}
-              index={i}
-              count={layers.length}
-              selected={l.id === layerId}
-              offset={masks.offset(i)}
-              dragging={masks.drag?.from === i}
-              onGrip={(e) => masks.start(e, i)}
-              onPick={openPicker}
-            />
-          ))}
-        </div>
+        {nodes ? (
+          <NodeView />
+        ) : (
+          <div className={`mf-list${masks.drag ? ' sorting' : ''}`}>
+            {layers.length === 0 && (
+              <p className="mf-hint">{t('No masks yet. New limits edits to part of the photo.')}</p>
+            )}
+            {layers.map((l, i) => (
+              <MaskRow
+                key={l.id}
+                layer={l}
+                index={i}
+                count={layers.length}
+                selected={l.id === layerId}
+                offset={masks.offset(i)}
+                dragging={masks.drag?.from === i}
+                onGrip={(e) => masks.start(e, i)}
+                onPick={openPicker}
+              />
+            ))}
+          </div>
+        )}
         <SelectedMask />
       </div>
       <OverlayControls />

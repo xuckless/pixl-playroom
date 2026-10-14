@@ -146,7 +146,14 @@ async function applyNow(p: Preset, stack: boolean): Promise<boolean> {
   if (swap) {
     useDevelop.setState({ recipe: after, previewing: null })
     seq = await now.amend(swap.seq, label)
-  } else seq = await now.replace(after, label)
+  } else {
+    // The photo before the look, a Version to step back to (a swap's was made by the first look).
+    void api.develop
+      .versionAdd(session.key, `Before look: ${label}`, before, { reason: 'look' })
+      .then((v) => v && useDevelop.setState({ snapshots: v }))
+      .catch(() => undefined)
+    seq = await now.replace(after, label)
+  }
   // A smart look's masks are its own (scaled by its Amount), not fields to blend.
   const fields = lookFields(before, after).filter(
     (f) => !plan || (f[0] !== 'layers' && f[0] !== 'pixels')

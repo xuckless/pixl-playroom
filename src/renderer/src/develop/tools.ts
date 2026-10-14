@@ -1,7 +1,7 @@
-import { CARDS, type CardId } from '../../../shared/cards'
+import { cardSpec, panelOf, panelsFor, type CardId } from '../../../shared/cards'
 import { useDevelop, type Tool } from '../state/develop'
 import { scoped } from '../state/scope'
-import { useUi, type Drawer } from '../state/ui'
+import { useUi, type Drawer, type Panel } from '../state/ui'
 
 /** A 24-unit SVG path for each canvas tool in the strip above the cards. */
 export const STRIP_ICONS = {
@@ -22,7 +22,13 @@ export const MASK_TOOLS: Tool[] = [
 ]
 
 /** Pickers that belong to a card: put down when the column changes. */
-const CARD_PICKERS: Tool[] = ['fringe-pick', 'add-pick', 'point-picker', 'wb-picker']
+const CARD_PICKERS: Tool[] = [
+  'fringe-pick',
+  'add-pick',
+  'point-picker',
+  'qualifier-pick',
+  'wb-picker'
+]
 
 /**
  * Show the cards, or Crop's or Heal's panel in their place, and keep the
@@ -51,31 +57,36 @@ export function toggleDrawer(d: Exclude<Drawer, 'adjust'>): void {
   openDrawer(useUi.getState().drawer === d ? 'adjust' : d)
 }
 
-/** The cards the column shows now: in a mask, only those a mask carries. */
-export function visibleCards(): CardId[] {
-  const inMask = scoped.layer() !== null
-  return CARDS.filter((c) => !inMask || c.inMask).map((c) => c.id)
+/** The sections the dropdown offers now (in a mask, those a mask carries), then Enhance. */
+export function visiblePanels(): Panel[] {
+  return [...panelsFor(useUi.getState().colourTools, scoped.layer() !== null), 'enhance']
 }
 
-/** Bring a card into view: the cards back if a tool's panel was up, the card open and scrolled to. */
-export function jumpToCard(id: CardId): void {
+/**
+ * Show a section: the cards back if a tool's panel was up, that section the
+ * one shown. A card shown inside Basic corrections shows Basic, scrolled to it.
+ */
+export function jumpToCard(id: Panel | CardId): void {
   openDrawer('adjust')
   const ui = useUi.getState()
-  ui.setCardOpen(id, true)
-  ui.setFocusCard(id)
-  // Once it has rendered open (and, in solo, the others have folded).
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() =>
-      document
-        .querySelector(`[data-card="${id}"]`)
-        ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-    )
-  )
+  const card = id !== 'enhance' && id !== 'basic' ? id : null
+  // A card of the colour tools not shown brings them.
+  const set = card ? cardSpec(card).set : undefined
+  if (set && set !== ui.colourTools) ui.setColourTools(set)
+  const panel = card ? panelOf(card) : (id as Panel)
+  ui.setFocusCard(panel)
+  // From the top of the section, wherever the last one was scrolled to; or at the part asked for.
+  requestAnimationFrame(() => {
+    const column = document.querySelector('.panels.adjust')
+    const part = card && panel !== card ? column?.querySelector(`[data-part="${card}"]`) : null
+    if (part) part.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    else column?.scrollTo({ top: 0, behavior: 'smooth' })
+  })
 }
 
-/** The card before or after the focused one (wrapping). */
+/** The section before or after the shown one (wrapping). */
 export function stepCard(dir: 1 | -1): void {
-  const list = visibleCards()
+  const list = visiblePanels()
   const i = list.indexOf(useUi.getState().focusCard)
   jumpToCard(list[(Math.max(0, i) + dir + list.length) % list.length])
 }

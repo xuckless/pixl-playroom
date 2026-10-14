@@ -23,7 +23,7 @@
   background: linear-gradient(
     90deg,
     var(--acc) 0px,
-    rgba(157, 139, 234, 0.3) 36px,
+    color-mix(in srgb, var(--acc) 30%, transparent) 36px,
     var(--hair) 110px,
     var(--hair) 100%
   );
@@ -90,7 +90,7 @@
 .btn:hover {
   color: var(--text);
   border-color: var(--hair3);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--fg-rgb) / 0.03);
   transform: translateY(-1px);
 }
 :where(button):active:not(:disabled) {
@@ -148,16 +148,16 @@ button.danger {
 }
 button.primary {
   background: var(--primary-grad);
-  border-color: rgba(157, 139, 234, 0.6);
+  border-color: color-mix(in srgb, var(--acc) 60%, transparent);
   color: #fff;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 1px 0 rgb(var(--fg-rgb) / 0.22),
     0 6px 22px -8px var(--glow);
   overflow: hidden;
 }
 button.primary:hover:not(:disabled) {
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 1px 0 rgb(var(--fg-rgb) / 0.28),
     0 10px 28px -8px var(--glow);
   border-color: var(--acc);
   background: var(--primary-grad);
@@ -170,8 +170,8 @@ button.primary::before {
   background: linear-gradient(
     105deg,
     transparent 35%,
-    rgba(255, 255, 255, 0.28) 48%,
-    rgba(255, 255, 255, 0.05) 56%,
+    rgb(var(--fg-rgb) / 0.28) 48%,
+    rgb(var(--fg-rgb) / 0.05) 56%,
     transparent 66%
   );
   background-size: 260% 100%;
@@ -186,9 +186,13 @@ button.on,
 .btn.on {
   color: var(--text);
   border-color: var(--acc-a55);
-  background: linear-gradient(180deg, rgba(157, 139, 234, 0.16), rgba(157, 139, 234, 0.06));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--acc) 16%, transparent),
+    color-mix(in srgb, var(--acc) 6%, transparent)
+  );
   box-shadow:
-    inset 0 0 0 1px rgba(157, 139, 234, 0.12),
+    inset 0 0 0 1px color-mix(in srgb, var(--acc) 12%, transparent),
     0 0 16px -6px var(--glow);
 }
 button.toggle.on::after,
@@ -222,10 +226,10 @@ button.on:not(.icon):not(.chip)::after {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--acc);
-  border: 1px solid rgba(157, 139, 234, 0.45);
+  border: 1px solid color-mix(in srgb, var(--acc) 45%, transparent);
   padding: 2px 7px;
   border-radius: var(--r);
-  background: rgba(157, 139, 234, 0.08);
+  background: color-mix(in srgb, var(--acc) 8%, transparent);
   white-space: nowrap;
 }
 .chip {
@@ -245,8 +249,8 @@ button.on:not(.icon):not(.chip)::after {
   height: 28px;
   border: 1px solid var(--hair2);
   border-radius: var(--r);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.04), rgb(var(--fg-rgb) / 0.01));
+  box-shadow: inset 0 1px 0 rgb(var(--fg-rgb) / 0.06);
   overflow: hidden;
   flex: none;
 }
@@ -268,14 +272,18 @@ button.on:not(.icon):not(.chip)::after {
 .tabs button:hover:not(:disabled),
 .seg button:hover:not(:disabled) {
   color: var(--text2);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgb(var(--fg-rgb) / 0.02);
   transform: none;
   border-color: var(--hair);
 }
 .tabs button.on,
 .seg button.on {
   color: #fff;
-  background: linear-gradient(180deg, rgba(157, 139, 234, 0.32), rgba(123, 104, 216, 0.16));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--acc) 32%, transparent),
+    rgba(123, 104, 216, 0.16)
+  );
   text-shadow: 0 0 12px var(--glow);
   box-shadow: none;
 }
@@ -296,7 +304,7 @@ button.on:not(.icon):not(.chip)::after {
 .seg .k {
   margin-left: 7px;
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgb(var(--fg-rgb) / 0.35);
 }
 
 /* ── inputs ────────────────────────────────────────────────────── */
@@ -332,9 +340,9 @@ textarea {
 :where(input:not([type='range']):not([type='checkbox'])):focus,
 :where(select):focus,
 :where(textarea):focus {
-  border-color: rgba(157, 139, 234, 0.7);
+  border-color: color-mix(in srgb, var(--acc) 70%, transparent);
   box-shadow:
-    0 0 0 1px rgba(157, 139, 234, 0.25),
+    0 0 0 1px color-mix(in srgb, var(--acc) 25%, transparent),
     0 0 20px -6px var(--glow);
 }
 input::placeholder {
@@ -453,7 +461,7 @@ input[type='checkbox']:disabled {
   height: 26px;
   margin: 3px 0;
   border-radius: var(--r);
-  background: rgba(255, 255, 255, 0.035);
+  background: rgb(var(--fg-rgb) / 0.035);
   box-shadow: inset 0 0 0 1px var(--hair);
   cursor: ew-resize;
   touch-action: none;
@@ -464,7 +472,7 @@ input[type='checkbox']:disabled {
     box-shadow 0.25s var(--ease);
 }
 .slider:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--fg-rgb) / 0.05);
 }
 .slider:focus-visible {
   box-shadow:
@@ -582,7 +590,7 @@ input[type='checkbox']:disabled {
   left: calc(var(--knob) / 2 + var(--travel) * var(--lo));
   width: calc(var(--travel) * var(--span));
   background: linear-gradient(180deg, var(--acc-a35), var(--acc-a20));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgb(var(--fg-rgb) / 0.08);
   pointer-events: none;
   transition:
     left 0.45s var(--spring),
@@ -595,12 +603,12 @@ input[type='checkbox']:disabled {
   left: calc(var(--travel) * var(--at));
   width: var(--knob);
   border-radius: var(--r);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.04));
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.17), rgb(var(--fg-rgb) / 0.04));
+  border: 1px solid rgb(var(--fg-rgb) / 0.2);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 -1px 0 rgba(157, 139, 234, 0.35),
-    0 2px 8px -2px rgba(0, 0, 0, 0.6);
+    inset 0 1px 0 rgb(var(--fg-rgb) / 0.3),
+    inset 0 -1px 0 color-mix(in srgb, var(--acc) 35%, transparent),
+    0 2px 8px -2px rgb(var(--shade-rgb) / 0.6);
   backdrop-filter: blur(6px) saturate(1.6) brightness(1.15);
   -webkit-backdrop-filter: blur(6px) saturate(1.6) brightness(1.15);
   pointer-events: none;
@@ -611,14 +619,14 @@ input[type='checkbox']:disabled {
     box-shadow var(--dur-toggle) var(--ease);
 }
 .slider:hover .sl-knob {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.07));
-  border-color: rgba(255, 255, 255, 0.3);
+  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.24), rgb(var(--fg-rgb) / 0.07));
+  border-color: rgb(var(--fg-rgb) / 0.3);
 }
 .slider.dragging .sl-knob {
   border-color: rgba(190, 178, 245, 0.55);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    inset 0 -1px 0 rgba(157, 139, 234, 0.6),
+    inset 0 1px 0 rgb(var(--fg-rgb) / 0.35),
+    inset 0 -1px 0 color-mix(in srgb, var(--acc) 60%, transparent),
     0 0 14px -2px var(--glow);
 }
 .slider.dragging .sl-knob,
@@ -633,7 +641,7 @@ input[type='checkbox']:disabled {
   gap: 5px;
   padding: 0 8px 0 9px;
   pointer-events: none;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  text-shadow: 0 1px 2px rgb(var(--shade-rgb) / 0.55);
 }
 .sl-label {
   min-width: 0;
@@ -670,7 +678,7 @@ input[type='checkbox']:disabled {
   padding: 0 4px;
   text-align: right;
   background: var(--s1);
-  border-color: rgba(157, 139, 234, 0.7);
+  border-color: color-mix(in srgb, var(--acc) 70%, transparent);
   color: var(--text);
   text-shadow: none;
 }
@@ -746,7 +754,12 @@ input[type='checkbox']:disabled {
   flex: 1;
   height: 1px;
   min-width: 12px;
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.45), var(--hair) 40%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 45%, transparent),
+    var(--hair) 40%,
+    transparent
+  );
 }
 .section > header .caret {
   width: 10px;
@@ -784,10 +797,12 @@ input[type='checkbox']:disabled {
 .card {
   position: relative;
   margin: 0 0 6px;
-  border: 1px solid var(--hair);
+  /* A step lighter than the panel and a clear edge: beside a bright HDR
+     picture (far above the interface's white) a near-black card sinks. */
+  border: 1px solid var(--hair2);
   border-radius: var(--r);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.06), rgb(var(--fg-rgb) / 0.035));
+  box-shadow: inset 0 1px 0 rgb(var(--fg-rgb) / 0.08);
   transition:
     border-color 0.25s var(--ease),
     background 0.25s var(--ease);
@@ -824,7 +839,7 @@ input[type='checkbox']:disabled {
   stroke: var(--acc);
 }
 .card > header .title {
-  color: var(--text2);
+  color: var(--text);
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -979,8 +994,8 @@ input[type='checkbox']:disabled {
   gap: 8px;
   min-width: 0;
   padding: 0 8px 0 10px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.05), rgb(var(--fg-rgb) / 0.015));
+  box-shadow: inset 0 1px 0 rgb(var(--fg-rgb) / 0.06);
 }
 .glass-select .gs-prefix {
   color: var(--muted);
@@ -1011,19 +1026,19 @@ input[type='checkbox']:disabled {
 .glass {
   background: linear-gradient(
     155deg,
-    rgba(255, 255, 255, 0.075),
-    rgba(255, 255, 255, 0.02) 45%,
-    rgba(157, 139, 234, 0.05)
+    rgb(var(--fg-rgb) / 0.075),
+    rgb(var(--fg-rgb) / 0.02) 45%,
+    color-mix(in srgb, var(--acc) 5%, transparent)
   );
   backdrop-filter: blur(22px) saturate(1.5);
-  border: 1px solid rgba(255, 255, 255, 0.11);
+  border: 1px solid rgb(var(--fg-rgb) / 0.11);
   border-radius: var(--r);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 1px 0 0 rgba(255, 255, 255, 0.06),
-    inset 0 -1px 0 rgba(157, 139, 234, 0.22),
-    inset -1px 0 0 rgba(157, 139, 234, 0.1),
-    0 20px 50px -20px rgba(0, 0, 0, 0.8);
+    inset 0 1px 0 rgb(var(--fg-rgb) / 0.16),
+    inset 1px 0 0 rgb(var(--fg-rgb) / 0.06),
+    inset 0 -1px 0 color-mix(in srgb, var(--acc) 22%, transparent),
+    inset -1px 0 0 color-mix(in srgb, var(--acc) 10%, transparent),
+    0 20px 50px -20px rgb(var(--shade-rgb) / 0.8);
 }
 
 /* stars */
@@ -1033,7 +1048,7 @@ input[type='checkbox']:disabled {
   letter-spacing: 0;
 }
 .stars span {
-  color: rgba(255, 255, 255, 0.18);
+  color: rgb(var(--fg-rgb) / 0.18);
   cursor: pointer;
   font-size: 11px;
   transition:
@@ -1059,9 +1074,9 @@ input[type='checkbox']:disabled {
 .liquid.refracting {
   background: linear-gradient(
     155deg,
-    rgba(255, 255, 255, 0.06),
-    rgba(255, 255, 255, 0.015) 45%,
-    rgba(157, 139, 234, 0.045)
+    rgb(var(--fg-rgb) / 0.06),
+    rgb(var(--fg-rgb) / 0.015) 45%,
+    color-mix(in srgb, var(--acc) 4.5%, transparent)
   );
 }
 /* A live edit re-renders the photo every frame; the lens over it would be
@@ -1080,9 +1095,9 @@ input[type='checkbox']:disabled {
   background: linear-gradient(
     115deg,
     transparent 30%,
-    rgba(255, 255, 255, 0.07) 45%,
-    rgba(255, 255, 255, 0.12) 50%,
-    rgba(255, 255, 255, 0.05) 55%,
+    rgb(var(--fg-rgb) / 0.07) 45%,
+    rgb(var(--fg-rgb) / 0.12) 50%,
+    rgb(var(--fg-rgb) / 0.05) 55%,
     transparent 70%
   );
   background-size: 250% 100%;
@@ -1124,4 +1139,65 @@ input[type='checkbox']:disabled {
   animation-iteration-count: 1 !important;
   transition-duration: 0s !important;
   transition-delay: 0s !important;
+}
+
+/* ── a part of Basic corrections: a card's header inside the card ──── */
+.card-part {
+  position: relative;
+  scroll-margin-top: 8px;
+}
+.card-part + .card-part,
+.adjust-head + .card-part {
+  margin-top: 6px;
+}
+.card-part > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+.card-part > header .title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--acc);
+  white-space: nowrap;
+}
+.card-part > header .line {
+  flex: 1;
+  height: 1px;
+  min-width: 12px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 45%, transparent),
+    var(--hair) 40%,
+    transparent
+  );
+}
+.card-part > header .card-acts {
+  margin-left: 0;
+}
+.card-part > header:hover .card-eye,
+.card-part > header:hover .card-reset,
+.card-part > header:focus-within .card-eye,
+.card-part > header:focus-within .card-reset,
+.card-part.off .card-eye {
+  opacity: 1;
+}
+.card-part.off .card-eye {
+  color: var(--warn);
+}
+.card-part > header:hover .card-reset:disabled {
+  opacity: 0.3;
+}
+.card-part.off > header .title {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.card-part.off .card-part-body {
+  opacity: 0.45;
 }

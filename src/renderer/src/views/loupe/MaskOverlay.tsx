@@ -55,19 +55,6 @@ export const MaskPlane = memo(function MaskPlane({
 }): React.JSX.Element {
   const a = opacity / 100
   switch (mode) {
-    // Frosted glass without the loupe's own drawing: the photo blurred and
-    // lifted where the mask is, faintly tinted.
-    case 'glass':
-      return (
-        <div
-          className="mask-overlay glass"
-          style={{
-            ...maskStyle(url),
-            background: `hsl(${hue} 90% 55% / ${Math.min(0.3, a * 0.5)})`,
-            opacity: 1
-          }}
-        />
-      )
     // The outline needs the loupe's own drawing; CSS shows the colour instead.
     case 'color':
     case 'color-bw':
@@ -174,10 +161,26 @@ function HoverOverlay(): React.JSX.Element | null {
     <div className="mask-hover">
       <MaskPlane
         url={url}
-        mode={o.mode === 'glass' ? 'glass' : 'color'}
+        mode="color"
         hue={l.overlayHue ?? (hoverLayer === layerId ? o.hue : hueFor(i + 1, o.hue))}
         opacity={Math.max(o.opacity, 55)}
       />
+    </div>
+  )
+}
+
+/**
+ * Resolve's key view: the selected qualifier's key, white where it selects
+ * and black where it does not, over the whole picture (the engine's own
+ * key, its layer's mask). Shown while the Qualifier card asks for it.
+ */
+export function KeyView(): React.JSX.Element | null {
+  const on = useDevelop((s) => s.keyView && s.qualifierId !== null)
+  const keyMask = useDevelop((s) => s.keyMask)
+  if (!on || !keyMask) return null
+  return (
+    <div className="key-view">
+      <MaskPlane url={keyMask.url} mode="white-black" hue={0} opacity={100} />
     </div>
   )
 }

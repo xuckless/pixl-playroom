@@ -1,18 +1,17 @@
 import { create } from 'zustand'
 import { useLibrary } from './library'
 
-export type ScopesTab = 'histogram' | 'colours' | 'cie' | 'metrics'
-
-/** Which tab the expanded scopes open at. The dialog itself is `dialog === 'scopes'`. */
+/**
+ * The expanded scopes (`dialog === 'scopes'`): what it shows is the ui
+ * store's `scopes` (layout and the scope in each place), so it opens as it
+ * was left.
+ */
 interface ScopesViewState {
-  tab: ScopesTab
-  open(tab: ScopesTab): void
+  open(): void
 }
 
-export const useScopesView = create<ScopesViewState>((set) => ({
-  tab: 'histogram',
-  open(tab) {
-    set({ tab })
+export const useScopesView = create<ScopesViewState>(() => ({
+  open() {
     useLibrary.getState().setDialog('scopes')
   }
 }))

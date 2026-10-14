@@ -90,3 +90,16 @@ test('the words: the camera by PIXL’s name, and why a body has no PIXL colour'
   assert.match(rawColourReason(cam([]))!, /not in PIXL’s database/)
   assert.match(rawColourReason({ camera_colour: null })!, /Only camera RAW/)
 })
+
+test('a default “container” moves to PIXL’s colour once the database holds the body; a chosen one stays', async () => {
+  const { upgradesToPixl } = await import('../src/shared/rawcolour')
+  assert.equal(upgradesToPixl('container', false, cam([1])), true)
+  assert.equal(upgradesToPixl('container', true, cam([1])), false, 'the person chose it')
+  assert.equal(upgradesToPixl('container', false, cam([])), false, 'a body the database lacks')
+  assert.equal(upgradesToPixl('pixl:1', false, cam([1])), false)
+  assert.equal(
+    upgradesToPixl(null, false, cam([1])),
+    false,
+    'nothing recorded: the first probe’s default'
+  )
+})

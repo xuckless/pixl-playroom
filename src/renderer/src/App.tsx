@@ -1,3 +1,5 @@
+import { startOverflowTitles } from './lib/overflowTitles'
+import { watchPipeline } from './lib/pipeline'
 import { EditingSpaceDialog } from './views/EditingSpace'
 import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect, useState } from 'react'
@@ -13,7 +15,7 @@ import { AdjustStack } from './develop/AdjustStack'
 import { ToolStrip } from './develop/ToolStrip'
 import { startDrawerSync } from './develop/tools'
 import { startDisplayUpkeep, useDisplay, renderDisplay } from './state/display'
-import { useUi } from './state/ui'
+import { FLAT_THEMES, useUi, type Theme } from './state/ui'
 import { startDenoiseUpkeep, startStaleUpkeep } from './lib/denoise'
 import { startHdrUpkeep } from './lib/hdr'
 import { setAlwaysFlat, startEfficientUpkeep, useStill } from './lib/efficient'
@@ -52,6 +54,7 @@ import { InfoDrawer } from './views/library/InfoDrawer'
 import { Sidebar } from './views/library/Sidebar'
 import { FloatingToolbar } from './views/loupe/FloatingToolbar'
 import { Loupe } from './views/loupe/Loupe'
+import { onMaster, onPixlDemosaic } from './views/loupe/mastering'
 import { setSpace } from './views/loupe/zoom'
 
 /**
@@ -290,6 +293,12 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
     const s = await api.develop.open(e.key)
     if (useDevelop.getState().session?.key !== e.key) return
     useDevelop.getState().replace(s.recipe, r.label)
+    // What it is told by now (a rebuild: today's develop, nothing older left).
+    const open = useDevelop.getState().session
+    if (open?.key === e.key)
+      useDevelop.setState({
+        session: { ...open, developMark: s.developMark, rebuild: s.rebuild }
+      })
     return
   }
   if (r?.kind !== 'mask') return
@@ -451,11 +460,15 @@ export default function App(): React.JSX.Element {
   const still = useStill()
   // The efficient UI, from the first frame: unfocused, or "Always flat".
   useEffect(() => {
-    setAlwaysFlat(useUi.getState().alwaysFlat)
+    // Signature, Studio and High contrast are flat by nature: no glass to draw.
+    const flat = (s: { alwaysFlat: boolean; theme: Theme }): boolean =>
+      s.alwaysFlat || FLAT_THEMES.includes(s.theme)
+    setAlwaysFlat(flat(useUi.getState()))
     const offs = [
       startEfficientUpkeep(),
       useUi.subscribe((s, prev) => {
-        if (s.alwaysFlat !== prev.alwaysFlat) setAlwaysFlat(s.alwaysFlat)
+        if (s.alwaysFlat !== prev.alwaysFlat || s.theme !== prev.theme) setAlwaysFlat(flat(s))
+        if (s.theme !== prev.theme) document.documentElement.dataset.theme = s.theme
       })
     ]
     return () => offs.forEach((off) => off())
@@ -522,6 +535,10 @@ export default function App(): React.JSX.Element {
           useDevelop.setState({ session, shown: session })
         }
       }),
+      api.develop.onMaster(onMaster),
+      api.develop.onPixlDemosaic(onPixlDemosaic),
+      watchPipeline(),
+      startOverflowTitles(),
       api.develop.onRenderError((e) => {
         // A failed save is said whichever photo is open: it may be the one just left.
         if (e.code === 'Save') return useLibrary.getState().say(e.message, 'error')

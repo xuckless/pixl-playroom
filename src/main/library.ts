@@ -9,6 +9,7 @@
  * until it has been edited, the photo's own pixels otherwise, and the graded
  * picture (from its proxy) once it has a recipe.
  */
+import { activeSteps } from '../shared/pixels'
 import { t } from '../shared/i18n'
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
@@ -23,10 +24,12 @@ import {
   type HdrKind,
   type LibraryItem,
   type LibrarySource,
+  type Snapshot,
   type SourceListing
 } from '../shared/ipc'
 import { orientedFrame } from '../shared/compile'
-import { defaultRecipe, hash32, type Recipe } from '../shared/recipe'
+import { defaultRecipe, hash32, isEdited, newId, type Recipe } from '../shared/recipe'
+import type { VersionReason } from '../shared/versions'
 import {
   asShotFor,
   defaultRawColour,
@@ -34,6 +37,7 @@ import {
   parseRawColour,
   rawColourLabel,
   resolveRawColour,
+  upgradesToPixl,
   type RawColour
 } from '../shared/rawcolour'
 import { EngineError, type EngineClient } from './engine/client'
@@ -169,8 +173,31 @@ export class Library {
         this.adopting.set(photo.id, p)
       }
       photo.raw_colour = await p
+    } else if (upgradesToPixl(photo.raw_colour, photo.raw_colour_chosen === 1, info)) {
+      // A default from before PIXL's database held this body: PIXL's colour
+      // now, its whites carried as a first probe would (once; never a chosen one).
+      let p = this.adopting.get(photo.id)
+      if (!p) {
+        p = this.upgradeColour(photo.id, info).finally(() => this.adopting.delete(photo.id))
+        this.adopting.set(photo.id, p)
+      }
+      photo.raw_colour = await p
     }
     return effectiveInfo(info, resolveRawColour(photo.raw_colour, info))
+  }
+
+  /** A default `container` moved to PIXL's colour (`upgradesToPixl`): recorded, whites carried. */
+  private async upgradeColour(photoId: number, info: SourceInfo): Promise<RawColour> {
+    await this.index.setRawColour(photoId, 'pixl:1')
+    await this.index.carryWhite(
+      photoId,
+      { isRaw: true, asShot: asShotFor(info, 'container') },
+      { isRaw: true, asShot: asShotFor(info, 'pixl:1') },
+      t('Camera colour: {{colour}}', { colour: rawColourLabel(info, 'pixl:1') })
+    )
+    this.queueThumb(photoId, null, true)
+    log.info('camera colour moved to PIXL’s (its body is in the database now)', photoId)
+    return 'pixl:1'
   }
 
   private async adoptColour(photoId: number, info: SourceInfo): Promise<RawColour> {
@@ -437,6 +464,37 @@ export class Library {
     return this.planes.hydrate(await this.index.recipe(key))
   }
 
+  /**
+   * A Version of a photo (shared/versions.ts): named (the user's), or
+   * automatic, made only when the photo has an edit to keep. Its planes go
+   * by reference. Returns the photo's versions after (null: none made).
+   */
+  async addVersion(
+    key: string,
+    v: { name: string; recipe: Recipe; kind?: 'named' | 'auto'; reason?: VersionReason }
+  ): Promise<Snapshot[] | null> {
+    const kind = v.kind ?? 'named'
+    if (kind === 'auto') {
+      const row = await this.index.sourceRow(key)
+      if (!isEdited(v.recipe, row.is_raw === 1)) return null
+    }
+    try {
+      return await this.index.addVersion(key, {
+        id: newId(),
+        name: v.name,
+        at: new Date().toISOString(),
+        kind,
+        ...(v.reason ? { reason: v.reason } : {}),
+        recipe: this.planes.slim(v.recipe)
+      })
+    } catch (err) {
+      // An automatic version never stops what it was made before.
+      if (kind === 'named') throw err
+      log.warn('automatic version not kept', key, (err as Error).message)
+      return null
+    }
+  }
+
   /** Save a key's recipe; its planes cross by reference. */
   saveRecipe(key: string, recipe: Recipe): Promise<void> {
     return this.index.saveRecipe(key, this.planes.slim(recipe))
@@ -684,17 +742,17 @@ export class Library {
     // though, are laid on the proxies, which the editor then finds made.
     const plain =
       hdr?.px ??
-      (recipe.pixels.length > 0
+      (activeSteps(recipe.pixels).length > 0
         ? await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
         : await ensureThumbSource(this.engine, row, info, BACKGROUND_THREADS))
     const px =
-      !hdr && recipe.pixels.length > 0
+      !hdr && activeSteps(recipe.pixels).length > 0
         ? (
             await ensureWorking(
               pixelDeps(this.engine, this.index, row),
               versionStamp(row),
               plain,
-              recipe.pixels,
+              activeSteps(recipe.pixels),
               null
             )
           ).px

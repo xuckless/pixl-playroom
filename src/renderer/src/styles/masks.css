@@ -89,13 +89,13 @@
   background: rgba(14, 14, 20, 0.96);
   border-color: var(--acc);
   box-shadow:
-    0 10px 28px -8px rgba(0, 0, 0, 0.8),
+    0 10px 28px -8px rgb(var(--shade-rgb) / 0.8),
     0 0 18px -6px var(--glow);
   cursor: grabbing;
 }
 .mf-mask.on {
   border-color: var(--acc-a55);
-  background: linear-gradient(180deg, rgba(157, 139, 234, 0.1), rgba(157, 139, 234, 0.02));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 10%, transparent), color-mix(in srgb, var(--acc) 2%, transparent));
 }
 .mf-mask.off .mf-name,
 .mf-mask.off .mf-thumb {
@@ -275,7 +275,7 @@ input.mf-rename {
     border-color 0.2s;
 }
 .mf-comp:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--fg-rgb) / 0.04);
 }
 .mf-comp button.mf-select {
   height: 24px;
@@ -287,11 +287,11 @@ input.mf-rename {
   height: 14px;
 }
 .mf-comp:focus-within:not(.on) {
-  border-color: rgba(157, 139, 234, 0.35);
+  border-color: color-mix(in srgb, var(--acc) 35%, transparent);
 }
 .mf-comp.on {
-  border-color: rgba(157, 139, 234, 0.4);
-  background: rgba(157, 139, 234, 0.1);
+  border-color: color-mix(in srgb, var(--acc) 40%, transparent);
+  background: color-mix(in srgb, var(--acc) 10%, transparent);
   color: var(--text);
 }
 .mf-comp-name {
@@ -432,7 +432,7 @@ button.mode-badge:disabled {
   height: 14px;
   border-radius: 50%;
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.3),
+    0 0 0 1px rgb(var(--fg-rgb) / 0.3),
     0 0 12px -2px currentColor;
 }
 
@@ -456,7 +456,7 @@ button.mode-badge:disabled {
 .popover.liquid,
 .popover.liquid.refracting {
   background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.01) 50%),
+    linear-gradient(155deg, rgb(var(--fg-rgb) / 0.08), rgb(var(--fg-rgb) / 0.01) 50%),
     rgba(10, 10, 14, 0.82);
 }
 /* Over surfaces the glass cannot bend (the library sidebar), a solid face. */
@@ -485,7 +485,7 @@ button.mode-badge:disabled {
 .menu-item:hover:not(:disabled),
 .menu-item:focus-visible {
   transform: none;
-  background: rgba(157, 139, 234, 0.14);
+  background: color-mix(in srgb, var(--acc) 14%, transparent);
   border-color: transparent;
 }
 .menu-item .mark {
@@ -738,7 +738,7 @@ button.mode-badge:disabled {
   display: block;
 }
 .band-dim {
-  fill: rgba(0, 0, 0, 0.62);
+  fill: rgb(var(--shade-rgb) / 0.62);
 }
 .band-shape {
   fill: none;
@@ -764,19 +764,19 @@ button.mode-badge:disabled {
 }
 .gl {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.9);
+  stroke: rgb(var(--fg-rgb) / 0.9);
   stroke-width: 1.2;
-  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+  filter: drop-shadow(0 0 1px rgb(var(--shade-rgb) / 0.9));
 }
 .gl.dashed {
   stroke-dasharray: 5 4;
-  stroke: rgba(255, 255, 255, 0.75);
+  stroke: rgb(var(--fg-rgb) / 0.75);
 }
 .gl.faint {
-  stroke: rgba(255, 255, 255, 0.5);
+  stroke: rgb(var(--fg-rgb) / 0.5);
 }
 .gl.axis {
-  stroke: rgba(157, 139, 234, 0.5);
+  stroke: color-mix(in srgb, var(--acc) 50%, transparent);
   stroke-dasharray: 2 4;
 }
 .grad-handle,
@@ -787,7 +787,7 @@ button.mode-badge:disabled {
   margin: -6px 0 0 -6px;
   background: #fff;
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgb(var(--shade-rgb) / 0.6),
     0 0 10px -2px var(--glow);
   pointer-events: auto;
   cursor: grab;
@@ -804,9 +804,9 @@ button.mode-badge:disabled {
   margin: -6px 0 0 -6px;
   border-radius: 50%;
   border: 2px solid #fff;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgb(var(--shade-rgb) / 0.35);
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgb(var(--shade-rgb) / 0.6),
     0 0 10px -2px var(--glow);
   pointer-events: auto;
   cursor: nesw-resize;
@@ -824,9 +824,9 @@ button.grad-other {
   margin: -6px 0 0 -6px;
   padding: 0;
   border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.85);
-  background: rgba(0, 0, 0, 0.45);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  border: 1.5px solid rgb(var(--fg-rgb) / 0.85);
+  background: rgb(var(--shade-rgb) / 0.45);
+  box-shadow: 0 0 0 1px rgb(var(--shade-rgb) / 0.5);
   pointer-events: auto;
   cursor: pointer;
   transition: transform 0.25s var(--spring);
@@ -834,7 +834,7 @@ button.grad-other {
 button.grad-other:hover:not(:disabled) {
   transform: scale(1.35);
   border-color: var(--acc);
-  background: rgba(0, 0, 0, 0.45);
+  background: rgb(var(--shade-rgb) / 0.45);
 }
 .grad-handle:hover {
   transform: rotate(45deg) scale(1.4);
@@ -851,33 +851,32 @@ button.grad-other:hover:not(:disabled) {
 .grad-knob:hover {
   transform: scale(1.4);
 }
+/* Lightroom's classic pin: a white ring round a dark centre, with a dark
+   hairline outside so it reads on a white sky as on a black coat. */
 .grad-pin {
   position: absolute;
-  width: 20px;
-  height: 20px;
-  margin: -10px 0 0 -10px;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.9);
+  border: 2px solid #fff;
+  background: #1b1b1f;
   display: grid;
   place-items: center;
   pointer-events: auto;
   cursor: move;
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.5),
-    0 0 16px -2px var(--glow);
-  animation: pinIn 0.5s var(--spring) both;
+    0 0 0 1px rgb(var(--shade-rgb) / 0.55),
+    0 1px 3px rgb(var(--shade-rgb) / 0.45);
 }
 .grad-pin i {
-  width: 7px;
-  height: 7px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background: var(--acc);
-}
-.grad-pin::after {
-  display: none;
+  background: #fff;
 }
 .grad-pin:hover {
-  transform: scale(1.2);
+  border-color: var(--acc);
 }
 .tool-layer.gradients.on-hover:not(.drawing) .grad-lines,
 .tool-layer.gradients.on-hover:not(.drawing) .grad-handle,
@@ -903,7 +902,7 @@ button.grad-other:hover:not(:disabled) {
   z-index: 6;
 }
 .lasso-edge {
-  stroke: rgba(157, 139, 234, 0.9);
+  stroke: color-mix(in srgb, var(--acc) 90%, transparent);
   stroke-width: 1.4;
   pointer-events: stroke;
   cursor: copy;

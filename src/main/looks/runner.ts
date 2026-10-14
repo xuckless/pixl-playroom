@@ -12,7 +12,8 @@
 import { t, tk } from '../../shared/i18n'
 import { isPartTarget, SKY_BY_CLICK, type AiJobEvent, type AiStartRequest } from '../../shared/ai'
 import { isFacePart } from '../../shared/faceparts'
-import { DEFAULT_ENHANCE } from '../../shared/enhance'
+import { DEFAULT_ENHANCE, withPixl } from '../../shared/enhance'
+import type { PixlLevel } from '../../shared/pixlenhance'
 import type { MaskMode } from '../../shared/engine-types'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../../shared/looks/run'
 import { opLabel, opMs } from '../../shared/looks/run'
@@ -28,6 +29,12 @@ export interface RunnerDeps {
   send(e: LookRunEvent): void
   /** The photo's size in megapixels, for the parts' expected times. */
   megapixels(key: string): Promise<number>
+  /**
+   * The roster offers PIXL Enhance (engine 0.20.0): a look's denoise and
+   * deblur are its levels then (denoise level 1, deblur level 2), the
+   * borrowed models' steps otherwise.
+   */
+  pixlEnhance?(): boolean
   /**
    * SAM2 from a prompt (a point or a box) or the detector and SAM2 from a
    * label, as a job on the queue whose mask lands in `layerId`. Absent until
@@ -60,6 +67,27 @@ interface Run {
   cancelled: boolean
   jobId: string | null
   pick: ((a: PickAnswer) => void) | null
+}
+
+/**
+ * A look's denoise or deblur as a PIXL Enhance step at that level, no
+ * upscale (it would enlarge the whole photo past the mask): its strength
+ * the op's.
+ */
+function pixlStep(
+  key: string,
+  level: PixlLevel,
+  strength: number,
+  layerId: string | null | undefined,
+  group: string
+): AiStartRequest {
+  return {
+    task: 'enhance',
+    key,
+    settings: withPixl({ ...DEFAULT_ENHANCE, upscale: 'off', pixl: level, pixlStrength: strength }),
+    layerId: layerId ?? null,
+    group
+  }
 }
 
 export class LookRuns {
@@ -266,33 +294,39 @@ export class LookRuns {
       case 'denoise': {
         await this.job(
           run,
-          this.deps.startJob({
-            task: 'denoise',
-            key,
-            model: op.model === 'nafnet' ? 'nafnet-sidd-w32' : 'drunet-color',
-            strength: op.strength,
-            layerId: op.layerId,
-            group
-          })
+          this.deps.pixlEnhance?.()
+            ? this.deps.startJob(pixlStep(key, 'denoise', op.strength, op.layerId, group))
+            : this.deps.startJob({
+                task: 'denoise',
+                key,
+                model: op.model === 'nafnet' ? 'nafnet-sidd-w32' : 'drunet-color',
+                strength: op.strength,
+                layerId: op.layerId,
+                group
+              })
         )
         return
       }
       case 'deblur':
         await this.job(
           run,
-          this.deps.startJob({
-            task: 'enhance',
-            key,
-            // Deblur alone: the default's ×2 would enlarge the whole photo past the mask.
-            settings: {
-              ...DEFAULT_ENHANCE,
-              deblur: true,
-              deblurStrength: op.strength,
-              upscale: 'off'
-            },
-            layerId: op.layerId,
-            group
-          })
+          this.deps.pixlEnhance?.()
+            ? this.deps.startJob(pixlStep(key, 'sharpen', op.strength, op.layerId, group))
+            : this.deps.startJob({
+                task: 'enhance',
+                key,
+                // Deblur alone: no upscale (it would enlarge the whole photo past
+                // the mask), and no PIXL Enhance level.
+                settings: {
+                  ...DEFAULT_ENHANCE,
+                  deblur: true,
+                  deblurStrength: op.strength,
+                  upscale: 'off',
+                  pixl: 'off'
+                },
+                layerId: op.layerId,
+                group
+              })
         )
         return
     }

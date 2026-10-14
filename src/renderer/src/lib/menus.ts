@@ -5,12 +5,13 @@
  * greyed where the key wouldn't act. The bar is sent to main again as what
  * applies changes; a right-click menu is built when it is asked for.
  */
+import { usePipeline } from './pipeline'
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import { CARDS } from '../../../shared/cards'
+import { panelsFor, panelTitle } from '../../../shared/cards'
 import { editsInHdr } from '../../../shared/recipe'
 import { SEPARATOR, tidyMenu, type MenuBarSpec, type MenuNode } from '../../../shared/appmenu'
 import type { LibraryItem } from '../../../shared/ipc'
-import { masksOpen } from '../develop/tools'
+import { jumpToCard, masksOpen } from '../develop/tools'
 import { MASK_TOOL_GROUPS, startMaskTool } from '../panels/masks/model'
 import { useConfirm } from '../state/confirm'
 import { suggestedReasons, useCull } from '../state/cull'
@@ -344,6 +345,12 @@ function editingSpaceItem(): Item {
   })
 }
 
+/** Today's pipeline has a newer develop than an edit may have been made with (a development kit's). */
+function newerDevelop(): boolean {
+  const p = usePipeline.getState()
+  return p.pixlDemosaic || p.pixlEnhance
+}
+
 function photoMenu(): Item[] {
   return [
     cmd('library.develop', t('Open in Develop')),
@@ -359,32 +366,26 @@ function photoMenu(): Item[] {
     sep,
     cmd('autoTone', t('Auto Tone')),
     cmd('autoWbBatch', t('Auto White Balance')),
+    ...(newerDevelop() ? [cmd('rebuild', t('Rebuild with the Latest Develop'))] : []),
     sep,
     cmd('cull.rejectAll', t('Reject Suggested Rejects')),
     cmd('cull.keep', t('Keep (Not a Reject)'))
   ]
 }
 
-/** Show the Enhance card (it isn't one of the adjustment cards with a key). */
+/** Show Super resolution (it isn't one of the adjustment cards with a key). */
 function showEnhance(): void {
-  const u = ui()
-  u.setDrawer('adjust')
-  u.setCardOpen('enhance' as never, true)
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() =>
-      document
-        .querySelector('[data-card="enhance"]')
-        ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-    )
-  )
+  jumpToCard('enhance')
 }
 
 function developMenu(): Item[] {
   const tool = dev().tool
   const session = !!dev().session
   return [
-    ...CARDS.map((c) => cmd(`card.${c.id}`, t(c.title))),
-    act('develop.enhance', t('Enhance'), showEnhance, {
+    ...panelsFor(useUi.getState().colourTools).map((id) =>
+      cmd(`card.${id}`, t(panelTitle(id, useUi.getState().colourTools)))
+    ),
+    act('develop.enhance', t('Super resolution'), showEnhance, {
       enabled: !modal() && inDevelop() && session
     }),
     sep,
@@ -554,6 +555,20 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
         ? tp('Auto White Balance ({{count}} Photo)', 'Auto White Balance ({{count}} Photos)', n)
         : t('Auto White Balance')
     ),
+    ...(newerDevelop()
+      ? [
+          cmd(
+            'rebuild',
+            n > 1
+              ? tp(
+                  'Rebuild {{count}} Photo with the Latest Develop',
+                  'Rebuild {{count}} Photos with the Latest Develop',
+                  n
+                )
+              : t('Rebuild with the Latest Develop')
+          )
+        ]
+      : []),
     sep,
     makeCopy(),
     ...(developing
@@ -683,6 +698,7 @@ export function startMenuUpkeep(): () => void {
     useDisplay.subscribe(soon),
     useConfirm.subscribe(soon),
     useLanguage.subscribe(soon),
+    usePipeline.subscribe(soon),
     api.menu.onRun((id) => {
       const run = id.startsWith('pop:') ? popupRuns.get(id) : barRuns.get(id)
       run?.()

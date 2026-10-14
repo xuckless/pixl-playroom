@@ -1,0 +1,71 @@
+/* Playroom Signature (Settings → Interface → Theme; id `calm`, first
+   shipped as Calm pro), the default: Lightroom and Capture One calm, in
+   blacks. Layered near-black surfaces over the OLED-black workspace, quiet
+   lines, short motion that only explains, no glass and no glow. The accent
+   is the purple every theme keeps. */
+:root[data-theme='calm'] {
+  /* Layered blacks on the OLED-black workspace: each step a whisper above
+     the one under it, slightly cool, never grey. Lines separate them. */
+  --bg: #000000;
+  --s1: #050506;
+  --s2: #08080a;
+  --s3: #0c0c0f;
+  --s4: #121216;
+
+  --hair: rgb(var(--fg-rgb) / 0.06);
+  --hair2: rgb(var(--fg-rgb) / 0.1);
+  --hair3: rgb(var(--fg-rgb) / 0.16);
+
+  /* Ink stays bright on black. */
+  --text: #e8e8ec;
+  --text2: #a8a8b0;
+  --muted: #6e6e76;
+
+  /* No glow: the accent marks, it does not shine. */
+  --glow: transparent;
+  --glow-soft: transparent;
+  --primary-grad: linear-gradient(180deg, var(--acc2), var(--acc2));
+
+  --r: 3px;
+
+  /* Motion that explains, never springs. */
+  --spring: var(--ease);
+  --spring-soft: var(--ease);
+  --dur-hover: 80ms;
+  --dur-toggle: 140ms;
+  --dur-panel: 160ms;
+  --dur-dialog: 180ms;
+
+  /* Hairlines are plain lines. */
+  --hl-x: linear-gradient(90deg, var(--hair), var(--hair));
+  --hl-x-rev: linear-gradient(270deg, var(--hair), var(--hair));
+  --hl-y: linear-gradient(180deg, var(--hair), var(--hair));
+}
+
+:root[data-theme='calm'] .card {
+  /* One step lighter than the panel it sits on, so it holds beside a bright HDR picture. */
+  background: var(--s4);
+  border-color: var(--hair2);
+  box-shadow: none;
+}
+:root[data-theme='calm'] .card.open {
+  border-color: var(--hair3);
+}
+:root[data-theme='calm'] .slider {
+  background: var(--s3);
+}
+:root[data-theme='calm'] .sl-fill {
+  background: color-mix(in srgb, var(--acc) 32%, transparent);
+  box-shadow: none;
+}
+:root[data-theme='calm'] .sl-knob {
+  background: var(--s4);
+  border-color: var(--hair3);
+  box-shadow: none;
+}
+:root[data-theme='calm'] .rail-item.on {
+  background: color-mix(in srgb, var(--acc) 12%, transparent);
+}
+:root[data-theme='calm'] .rail-item .dot {
+  box-shadow: none;
+}

@@ -6,11 +6,12 @@
 import type { ModelInfo } from '../../../shared/ipc'
 import { t, tk, tp } from '../lib/i18n'
 
-export type Purpose = Exclude<ModelInfo['role'], 'raw-denoise'>
+export type Purpose = Exclude<ModelInfo['role'], 'raw-denoise' | 'faces'>
 
 /** The group a model is listed under: a RAW's sensor denoiser with the other grain removers. */
 export function purposeOf(role: ModelInfo['role']): Purpose {
-  return role === 'raw-denoise' ? 'denoise' : role
+  // Face finders (0.20 names their role) select, as the subject finders do.
+  return role === 'raw-denoise' ? 'denoise' : role === 'faces' ? 'segment' : role
 }
 
 /** The purposes in the order the list shows them. */
@@ -44,8 +45,10 @@ export const PURPOSES: { id: Purpose; title: string; what: string }[] = [
   },
   {
     id: 'restore',
-    title: tk('Repair JPEGs'),
-    what: tk('Cleans up the blocky squares and smudged colour of heavily compressed JPEGs.')
+    title: tk('Repair and clean up'),
+    what: tk(
+      'Cleans up the blocky squares and smudged colour of compressed photos, and with PIXL Enhance their grain and mild blur too.'
+    )
   },
   {
     id: 'inpaint',
@@ -84,6 +87,30 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
       'The same for Fujifilm’s X-Trans sensors. Downloaded by itself the first time you open one.'
     ),
     where: tk('Fujifilm X-Trans RAWs, at full size')
+  },
+  // PIXL's own (engine 0.20.0).
+  'pixl-demosaic-v1-bayer': {
+    name: tk('PIXL demosaic'),
+    what: tk(
+      'PIXL’s own model: builds the full-size picture from your RAW’s sensor data and takes out its grain in the same step, cleaner than any develop before it. Downloaded by itself. On a Mac it runs on the graphics chip: about 9 seconds for a 25 MP RAW.'
+    ),
+    where: tk('Every RAW, at full size'),
+    recommended: true
+  },
+  'pixl-demosaic-v1-xtrans': {
+    name: tk('PIXL demosaic, Fujifilm'),
+    what: tk(
+      'The same for Fujifilm’s X-Trans sensors, downloaded by itself: about 7 seconds for a 16 MP RAW on a Mac.'
+    ),
+    where: tk('Fujifilm X-Trans RAWs, at full size')
+  },
+  'pixl-enhance-v1': {
+    name: tk('PIXL Enhance'),
+    what: tk(
+      'PIXL’s own model for compression damage, grain and mild blur, in one pass, on any photo: JPEG, HEIC or a developed RAW. It restores what the photo holds and invents no detail. About 8 seconds for a 12 MP photo on a Mac.'
+    ),
+    where: tk('Detail → AI sharpening, AI noise reduction and AI clean up'),
+    recommended: true
   },
   pmrid: {
     name: tk('RAW sensor denoise'),

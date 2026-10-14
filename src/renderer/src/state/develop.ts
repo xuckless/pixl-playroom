@@ -1,3 +1,5 @@
+import { qualifierLayerId } from '../../../shared/resolve'
+import { floatCanvasKnown, floatCanvasReady } from '../lib/floatcanvas'
 import { produce, setAutoFreeze } from 'immer'
 import { create } from 'zustand'
 import { t, tk } from '../lib/i18n'
@@ -10,14 +12,8 @@ import type {
   Snapshot,
   ViewState
 } from '../../../shared/ipc'
-import { amendLog, appendToLog, replay } from '../../../shared/history'
-import {
-  newId,
-  normaliseRecipe,
-  sameValue,
-  type HslBand,
-  type Recipe
-} from '../../../shared/recipe'
+import { amendLog, appendToLog, canRedo, replay } from '../../../shared/history'
+import { normaliseRecipe, sameValue, type HslBand, type Recipe } from '../../../shared/recipe'
 import { FIT, type ZoomView } from '../../../shared/view'
 import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
@@ -42,6 +38,8 @@ export type Tool =
   /** A Depth range centred on the distance clicked (panels/masks/MaskTool.tsx). */
   | 'depth-picker'
   | 'point-picker'
+  /** Resolve's Qualifier: a new key around the colour clicked (panels/resolve.tsx). */
+  | 'qualifier-pick'
   | 'add-pick'
   | 'fringe-pick'
   | 'upright-guide'
@@ -95,7 +93,6 @@ interface DevelopState {
   /** The photo's edit history: the recipe is its base with every visible step replayed. */
   history: HistoryLog
   /** Steps Undo hid, newest last: what Redo shows again. A new edit clears it. */
-  redo: number[]
   snapshots: Snapshot[]
   /** The picture on screen: the latest render for the current view. */
   picture: RenderEvent | null
@@ -103,6 +100,8 @@ interface DevelopState {
   pictures: Pictures
   before: RenderEvent | null
   mask: RenderEvent | null
+  /** The selected qualifier's key plane, while its key view is on (`keyView`). */
+  keyMask: RenderEvent | null
   report: RenderReport | null
   stats: ImageStats | null
   /** For a PQ/HLG photo, the last settled render measured as HDR (see `RenderEvent.hdrStats`). */
@@ -141,6 +140,9 @@ interface DevelopState {
   hslTab: 'hue' | 'saturation' | 'luminance' | 'all' | 'point'
   /** The selected swatch of the colour mixer's Point tab. */
   pointId: string | null
+  /** The qualifier the Qualifier card has selected, and whether its key shows white on black. */
+  qualifierId: string | null
+  keyView: boolean
   addPick: AddPick | null
   /** Upright's guides while they are drawn (tool `upright-guide`), frame fractions. */
   guides: GuideLine[]
@@ -178,9 +180,9 @@ interface DevelopState {
   /** Show the step Undo last hid. */
   redoStep(): void
   /** Hide or show steps; the caller has already added any dependents. */
-  setStepsHidden(seqs: number[], hidden: boolean): Promise<void>
+
   /** Delete steps; the caller has already added any dependents. */
-  deleteSteps(seqs: number[]): Promise<void>
+
   setTool(tool: Tool): void
   setGesture(g: Gesture): void
   setComp(id: string | null): void
@@ -194,6 +196,8 @@ interface DevelopState {
   setHslFocus(b: HslBand | null): void
   setHslTab(tab: DevelopState['hslTab']): void
   setPointId(id: string | null): void
+  setQualifier(id: string | null): void
+  setKeyView(on: boolean): void
   setGuides(g: GuideLine[]): void
   /** Start (or, with null, stop) the additive-colour picker. */
   setAddPick(p: AddPick | null): void
@@ -203,8 +207,20 @@ interface DevelopState {
   pushView(): void
   onRendered(e: RenderEvent): void
   onError(message: string, invariant?: InvariantPlace | null): void
-  saveSnapshot(name: string): Promise<void>
-  removeSnapshot(id: string): Promise<void>
+  /** Versions (History's top; shared/versions.ts): named by the user, or made automatically. */
+  addVersion(name: string): Promise<void>
+  renameVersion(id: string, name: string): Promise<void>
+  deleteVersion(id: string): Promise<void>
+  /** An automatic version kept for good (named). */
+  keepVersion(id: string): Promise<void>
+  /** The versions as stored now (main makes automatic ones as it goes). */
+  refreshVersions(): Promise<void>
+  /** The photo back to a version: a new step of History, undone like any. */
+  restoreVersion(id: string): void
+  /** Before/After against a version, or (null) the photo as it came. */
+  compareWith(id: string | null): void
+  /** The version Before/After compares with, if one. */
+  comparing: string | null
   measureNoise(): Promise<void>
 }
 
@@ -318,8 +334,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   recipe: null,
   previewing: null,
   history: { base: null, steps: [] },
-  redo: [],
   snapshots: [],
+  comparing: null,
   picture: null,
   pictures: { framed: null, crop: null },
   before: null,
@@ -346,6 +362,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   hslFocus: null,
   hslTab: 'all',
   pointId: null,
+  qualifierId: null,
+  keyView: false,
+  keyMask: null,
   addPick: null,
   guides: [],
   curveChannel: 'master',
@@ -376,6 +395,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       addMode: null,
       before: null,
       mask: null,
+      keyMask: null,
+      keyView: false,
       stats: null,
       hdrStats: null,
       headroomPlane: null,
@@ -412,8 +433,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         shown: session,
         recipe: session.recipe,
         history,
-        redo: [],
         snapshots: session.snapshots,
+        comparing: null,
         loading: false
       })
       get().pushView()
@@ -441,7 +462,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       picture: null,
       pictures: { framed: null, crop: null },
       before: null,
-      mask: null
+      mask: null,
+      keyMask: null,
+      keyView: false
     })
   },
 
@@ -479,7 +502,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         try {
           const change = await api.develop.historyAppend(session.key, label, recipe)
           if (get().session?.key === session.key)
-            set({ history: appendToLog(get().history, change), redo: [] })
+            set({ history: appendToLog(get().history, change) })
           resolve(change.step?.seq ?? null)
         } catch (err) {
           resolve(null)
@@ -511,8 +534,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
             resolve(get().commit(label))
             return
           }
-          if (get().session?.key === session.key)
-            set({ history: amendLog(get().history, change), redo: [] })
+          if (get().session?.key === session.key) set({ history: amendLog(get().history, change) })
           resolve(change.step ? change.seq : null)
         } catch (err) {
           resolve(null)
@@ -533,35 +555,19 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   undo() {
     queueHistoryOp(async () => {
       await landing
-      const last = get().history.steps.findLast((s) => !s.hidden)
-      if (!last) return
-      await get().setStepsHidden([last.seq], true)
-      set({ redo: [...get().redo, last.seq] })
+      const session = get().session
+      if (!session || !get().history.steps.some((s) => !s.hidden)) return
+      applyLog(session.key, await api.develop.historyUndo(session.key))
     })
   },
 
   redoStep() {
     queueHistoryOp(async () => {
       await landing
-      const { redo, history } = get()
-      // Skip what was shown again by hand since.
-      const stack = redo.filter((seq) => history.steps.some((s) => s.seq === seq && s.hidden))
-      const seq = stack.pop()
-      if (seq !== undefined) await get().setStepsHidden([seq], false)
-      set({ redo: stack })
+      const session = get().session
+      if (!session || !canRedo(get().history.steps)) return
+      applyLog(session.key, await api.develop.historyRedo(session.key))
     })
-  },
-
-  async setStepsHidden(seqs, hidden) {
-    const session = get().session
-    if (!session || seqs.length === 0) return
-    applyLog(session.key, await api.develop.historySetHidden(session.key, seqs, hidden))
-  },
-
-  async deleteSteps(seqs) {
-    const session = get().session
-    if (!session || seqs.length === 0) return
-    applyLog(session.key, await api.develop.historyDelete(session.key, seqs))
   },
 
   setTool(tool) {
@@ -652,6 +658,18 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     set({ guides })
   },
 
+  setQualifier(qualifierId) {
+    if (qualifierId === get().qualifierId) return
+    set({ qualifierId, keyMask: null })
+    if (get().keyView) get().pushView()
+  },
+
+  setKeyView(keyView) {
+    if (keyView === get().keyView) return
+    set({ keyView, keyMask: null })
+    get().pushView()
+  },
+
   setPointId(pointId) {
     set({ pointId })
   },
@@ -671,8 +689,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   },
 
   pushView() {
-    const { session, tool, layerId, targetEdge } = get()
+    const { session, tool, layerId, targetEdge, keyView, qualifierId } = get()
     if (!session) return
+    // The key view asks for the selected qualifier's layer instead of a mask's.
+    const keyLayer = keyView && qualifierId ? qualifierLayerId(qualifierId) : null
     const view: ViewState = {
       cropMode: wholeFrameTool(tool),
       guides: tool === 'upright-guide',
@@ -681,12 +701,12 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       before: true,
       // A selected layer's mask is rendered whether or not the overlay shows:
       // the hue chart measures inside it.
-      maskLayer: layerId,
+      maskLayer: keyLayer ?? layerId,
       // Thumbnails of every mask while the masks window is unfolded, or all show.
       maskThumbs: useUi.getState().masksWin.open || useUi.getState().maskOverlay.showAll,
       // With a range selected its mask comes with every draft: only the
       // engine knows exactly what the key selects in the graded picture.
-      maskLive: rangeSelected(get()),
+      maskLive: rangeSelected(get()) || keyLayer !== null,
       // Every photo whose editing space has light above white: a RAW or an HDR one.
       headroom: get().headroom && aboveWhite(session),
       // Full HDR for those too; an SDR photo (a gain-map one edited in SDR
@@ -694,8 +714,12 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       display: aboveWhite(session)
         ? renderDisplay(useUi.getState().fullHdr, useDisplay.getState().display)
         : null,
-      targetEdge
+      targetEdge,
+      // Settled SDR pictures in float once the window is known to draw F16
+      // frames (asked once; the view goes again when the answer comes).
+      float: floatCanvasKnown() === true
     }
+    if (floatCanvasKnown() === null) void floatCanvasReady().then((ok) => ok && get().pushView())
     set({ rendering: true })
     void api.develop.view(session.key, view)
   },
@@ -708,6 +732,15 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       if (get().headroom && Boolean(e.cropMode) === wholeFrameTool(get().tool))
         set({ headroomPlane: e })
     } else if (e.kind === 'mask') {
+      const { keyView, qualifierId } = get()
+      if (keyView && qualifierId) {
+        // The key view's plane: kept apart from the masks'.
+        if (e.layerId !== qualifierLayerId(qualifierId)) return
+        const cur = get().keyMask
+        if (cur && e.seq < cur.seq) return
+        set({ keyMask: e.url ? e : null })
+        return
+      }
       // Only the selected mask's plane, and never an older one than shown.
       if (e.layerId !== get().layerId) return
       const cur = get().mask
@@ -756,20 +789,53 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     set({ error: message, invariant, rendering: false })
   },
 
-  async saveSnapshot(name) {
-    const { session, recipe, snapshots } = get()
+  async addVersion(name) {
+    const { session, recipe } = get()
     if (!session || !recipe) return
-    const next = [...snapshots, { id: newId(), name, at: new Date().toISOString(), recipe }]
-    set({ snapshots: next })
-    await api.develop.saveSnapshots(session.key, next)
+    const v = await api.develop.versionAdd(session.key, name, recipe)
+    if (v && get().session?.key === session.key) set({ snapshots: v })
   },
 
-  async removeSnapshot(id) {
+  async renameVersion(id, name) {
+    const session = get().session
+    if (!session) return
+    const v = await api.develop.versionRename(session.key, id, name)
+    if (get().session?.key === session.key) set({ snapshots: v })
+  },
+
+  async deleteVersion(id) {
+    const session = get().session
+    if (!session) return
+    if (get().comparing === id) get().compareWith(null)
+    const v = await api.develop.versionDelete(session.key, id)
+    if (get().session?.key === session.key) set({ snapshots: v })
+  },
+
+  async keepVersion(id) {
+    const session = get().session
+    if (!session) return
+    const v = await api.develop.versionKeep(session.key, id)
+    if (get().session?.key === session.key) set({ snapshots: v })
+  },
+
+  async refreshVersions() {
+    const session = get().session
+    if (!session) return
+    const v = await api.develop.versionList(session.key)
+    if (get().session?.key === session.key) set({ snapshots: v })
+  },
+
+  restoreVersion(id) {
+    const v = get().snapshots.find((s) => s.id === id)
+    if (v) get().replace(structuredClone(v.recipe), `Version: ${v.name}`)
+  },
+
+  compareWith(id) {
     const { session, snapshots } = get()
     if (!session) return
-    const next = snapshots.filter((s) => s.id !== id)
-    set({ snapshots: next })
-    await api.develop.saveSnapshots(session.key, next)
+    const v = id ? snapshots.find((s) => s.id === id) : undefined
+    set({ comparing: v ? v.id : null })
+    void api.develop.compareWith(session.key, v ? v.recipe : null).catch(() => undefined)
   },
 
   async measureNoise() {

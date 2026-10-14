@@ -17,7 +17,7 @@ interface LanguageState {
   language: Language
   /** What "system" gives here (main reads the OS once for both). */
   system: Language
-  pseudo?: boolean
+  pseudo?: boolean | 'expand'
 }
 
 export const useLanguage = create<LanguageState>(() => ({

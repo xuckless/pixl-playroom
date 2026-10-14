@@ -24,7 +24,7 @@ import { api, errorText } from '../lib/api'
 import { openReport, takeReportFocus } from '../lib/report'
 import { chooseLanguage, rich, t, tk, tp, useLanguage } from '../lib/i18n'
 import { useLibrary } from '../state/library'
-import { useUi } from '../state/ui'
+import { useUi, COLOUR_TOOLS, FLAT_THEMES, THEMES, type ColourTools, type Theme } from '../state/ui'
 import { KeyBindingsSection } from './KeyBindings'
 import { ModelsSection } from './ModelsSection'
 import { openReleaseNotes } from '../state/whatsNew'
@@ -741,10 +741,67 @@ function InterfaceSection(): React.JSX.Element {
   const setAlwaysFlat = useUi((s) => s.setAlwaysFlat)
   const cullSuggest = useUi((s) => s.cullSuggest)
   const setCullSuggest = useUi((s) => s.setCullSuggest)
+  const theme = useUi((s) => s.theme)
+  const setTheme = useUi((s) => s.setTheme)
+  const colourTools = useUi((s) => s.colourTools)
+  const setColourTools = useUi((s) => s.setColourTools)
+  const nodeView = useUi((s) => s.nodeView)
+  const setNodeView = useUi((s) => s.setNodeView)
   return (
     <fieldset>
       <legend>{t('Interface')}</legend>
-      <label className="check">
+      <div className="pref-row">
+        <Select<Theme>
+          label={t('Theme')}
+          value={theme}
+          options={THEMES.map((x) => ({ value: x.value, label: t(x.label) }))}
+          onChange={setTheme}
+        />
+        <InfoTip
+          label={t('Theme')}
+          tip={{
+            what: t(
+              'How Playroom looks: Signature, flat and quiet in layered blacks; Modern, black, purple and electric cyan, with glow; Studio, neutral greys for judging colour; High contrast, pure black and white with strong lines.'
+            ),
+            expect: t(
+              'Only the interface changes: your photos and their edits look the same in every theme.'
+            )
+          }}
+        />
+      </div>
+      <div className="pref-row">
+        <Select<ColourTools>
+          label={t('Colour tools')}
+          value={colourTools}
+          options={COLOUR_TOOLS.map((x) => ({ value: x.value, label: t(x.label) }))}
+          onChange={setColourTools}
+        />
+        <InfoTip
+          label={t('Colour tools')}
+          tip={{
+            what: t(
+              'Which colour cards the develop panel shows: Lightroom’s (Colour, Colour mixer, Colour grading, Tone curve, Calibration) or DaVinci Resolve’s (Primaries with Lift, Gamma, Gain and Offset wheels, and more).'
+            ),
+            expect: t(
+              'Both act on the photo whichever shows: a photo edited with the other set keeps its look, and the panel says so.'
+            )
+          }}
+        />
+      </div>
+      <label className="check" hidden={colourTools !== 'resolve'}>
+        <input type="checkbox" checked={nodeView} onChange={(e) => setNodeView(e.target.checked)} />
+        {t('Node view (advanced)')}
+        <InfoTip
+          label={t('Node view')}
+          tip={{
+            what: t(
+              'The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.'
+            ),
+            expect: t('Off, the masks pane is the plain list of masks.')
+          }}
+        />
+      </label>
+      <label className="check" hidden={FLAT_THEMES.includes(theme)}>
         <input
           type="checkbox"
           checked={alwaysFlat}

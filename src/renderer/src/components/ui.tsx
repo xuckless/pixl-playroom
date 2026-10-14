@@ -99,9 +99,12 @@ export function Card({
   open: openProp,
   onOpenChange,
   defaultOpen = true,
+  fixed = false,
   children
 }: {
   id: string
+  /** Always open, no fold: the one section the column shows. */
+  fixed?: boolean
   title: string
   tip?: Tip
   changed?: boolean
@@ -117,8 +120,9 @@ export function Card({
   children: ReactNode
 }): React.JSX.Element {
   const [own, setOwn] = useState(() => storedOpen(id, defaultOpen))
-  const open = openProp ?? own
+  const open = fixed || (openProp ?? own)
   const toggle = (): void => {
+    if (fixed) return
     if (openProp === undefined) {
       rememberCardOpen(id, !open)
       setOwn(!open)
@@ -127,13 +131,15 @@ export function Card({
   }
   return (
     <section
-      className={`card${open ? ' open' : ''}${off ? ' off' : ''}${changed ? ' changed' : ''}`}
+      className={`card${open ? ' open' : ''}${fixed ? ' fixed' : ''}${off ? ' off' : ''}${changed ? ' changed' : ''}`}
       data-card={id}
     >
       <header onClick={toggle}>
-        <svg className="caret" viewBox="0 0 10 10" aria-hidden>
-          <path d="M2 3.5 5 6.5 8 3.5" />
-        </svg>
+        {!fixed && (
+          <svg className="caret" viewBox="0 0 10 10" aria-hidden>
+            <path d="M2 3.5 5 6.5 8 3.5" />
+          </svg>
+        )}
         <span className="title">{title}</span>
         {changed && <span className="card-dot" aria-label={t('Changed')} />}
         <span className="card-acts" onClick={(e) => e.stopPropagation()}>

@@ -1,12 +1,15 @@
 import { Icon, type IconName } from '../components/icons'
 import { MasksPane } from '../panels/masks/MasksPane'
-import { HistoryPane, InfoPane, PresetsActions, PresetsPane, SnapshotsPane } from '../panels/left'
+import { InfoPane, PresetsActions, PresetsPane } from '../panels/left'
+import { HistoryPane } from '../panels/HistoryPane'
+import { VersionsSection } from '../panels/VersionsSection'
+import { EditsPane } from '../panels/EditsPane'
 import { useUi, type Rail } from '../state/ui'
 import { t, tk } from '../lib/i18n'
 
 const RAILS: { id: Rail; label: string; icon: IconName }[] = [
   { id: 'presets', label: tk('Presets'), icon: 'presets' },
-  { id: 'snapshots', label: tk('Snapshots'), icon: 'snapshots' },
+  { id: 'edits', label: tk('Edits'), icon: 'stack' },
   { id: 'history', label: tk('History'), icon: 'history' },
   { id: 'info', label: tk('Info'), icon: 'info' }
 ]
@@ -56,8 +59,13 @@ export function LeftRail(): React.JSX.Element {
           </div>
           <div className="rail-body" key={rail}>
             {rail === 'presets' && <PresetsPane />}
-            {rail === 'snapshots' && <SnapshotsPane />}
-            {rail === 'history' && <HistoryPane />}
+            {rail === 'edits' && <EditsPane />}
+            {rail === 'history' && (
+              <>
+                <VersionsSection />
+                <HistoryPane />
+              </>
+            )}
             {rail === 'info' && <InfoPane />}
           </div>
         </div>

@@ -1,7 +1,8 @@
 /**
  * Enhance (the wheel's last tool): the engine's enhance chain — a JPEG
  * rebuilt from its coefficients, FBCNN's JPEG restore, NAFNet's deblur,
- * Real-ESRGAN's super-resolution, whichever are chosen, in that order — run
+ * PIXL Enhance (where the roster offers it, in their place), Real-ESRGAN's
+ * super-resolution, whichever are chosen, in that order — run
  * once over the photo's pixels as they are (its earlier steps laid on), before
  * any grade, and kept in its project as a pixel step (shared/pixels.ts): it
  * undoes, redoes and hides in History like any edit, and no file is written
@@ -9,7 +10,8 @@
  * on. Deblur and restore can keep to a mask (frozen as it is when made).
  * The steps and their numbers are `shared/enhance.ts`'s.
  */
-import { t } from '../shared/i18n'
+import { stepDevelopMark } from './developmark'
+import { t, tk } from '../shared/i18n'
 import log from 'electron-log/main'
 import { rm } from 'fs/promises'
 import { join } from 'path'
@@ -21,8 +23,7 @@ import type {
   UpscalerRef
 } from '../shared/engine-types'
 import type { AiStartRequest } from '../shared/ai'
-import { type PixelStep } from '../shared/pixels'
-import { developMark } from '../shared/rawcolour'
+import { activeSteps, type PixelStep } from '../shared/pixels'
 import { newId, type Recipe } from '../shared/recipe'
 import {
   chainSubject,
@@ -30,6 +31,7 @@ import {
   estimateMs,
   jpegRestoreRefusal,
   learnRates,
+  pixlModelStep,
   planSteps,
   reconstructParams,
   scaleOf,
@@ -47,7 +49,6 @@ import {
   BACKGROUND_THREADS,
   heavyThreads,
   blankRequest,
-  colourOf,
   seedOf,
   sourceOrientation,
   uprightFraming,
@@ -61,8 +62,11 @@ import type { DevelopSessions } from './render'
 import { askOf } from './ai/rawdevelop'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { freezeMask } from './pixels/freeze'
-import { addPixelStep, storesLossless } from './pixels/steps'
-import { ensureWorking, modelInput } from './pixels/working'
+import { addPixelStep, replacePixelStep, storesLossless } from './pixels/steps'
+import { ensureWorking, guardPatch, modelInput } from './pixels/working'
+import { levelValues, PIXL_ENHANCE } from '../shared/pixlenhance'
+import type { PhotoRow } from './db'
+import type { ProxyFile } from './proxy'
 
 const TIFF = { Tiff: { compression: 'None' } } as const
 const ICC_ONLY = { exif: false, icc: true, xmp: false, iptc: false } as const
@@ -130,6 +134,15 @@ async function chainOf(
       out.push({ Upscale: (await models.ref(id, provider)) as unknown as UpscalerRef })
       continue
     }
+    if (p.level) {
+      // PIXL Enhance: the level's planes and tiling, as the roster states them
+      // (shared/pixlenhance.ts). On CoreML the tile is fixed at 1024
+      // (modelshape.ts) and the level sets the overlap.
+      const level = levelValues(models.entry(id), p.level)
+      const ref = (await models.ref(id, provider, { ...level })) as unknown as EnhancerRef
+      out.push({ Model: pixlModelStep(ref, level, s.pixlStrength) })
+      continue
+    }
     const ref = (await models.ref(id, provider, {})) as unknown as EnhancerRef
     const strength = p.kind === 'deblur' ? s.deblurStrength : s.jpegStrength
     out.push({ Model: { ...ref, strength: Math.min(1, Math.max(0.01, strength / 100)) } })
@@ -170,7 +183,12 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
   }
 
   async run(ctx: AiContext, req: EnhanceRequest): Promise<{ kind: 'step'; label: string }> {
-    const { key, settings } = req
+    const { key } = req
+    // PIXL Enhance only where the roster offers it: a level saved on a
+    // development kit's run is not asked of a roster without the model.
+    const settings: EnhanceSettings = this.models.offered(PIXL_ENHANCE)
+      ? req.settings
+      : { ...req.settings, pixl: 'off' }
     ctx.stage('model', 0, t('Checking the models'))
     const avail = enhanceAvailability(this.status())
     if (!avail.available) throw new Error(avail.reason ?? t('unavailable'))
@@ -179,10 +197,16 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const row = await this.library.photoRow(key)
     const info = await this.library.probe(row)
     const recipe: Recipe = sessions?.liveRecipe(key) ?? (await this.library.recipe(key))
+    // Made again in its place (a rebuild): read from the steps before it, its mask kept.
+    const old = req.redo ? recipe.pixels.find((p) => p.id === req.redo) : undefined
+    if (req.redo && !old) throw new Error(t('the step is gone'))
+    const under = activeSteps(
+      old ? recipe.pixels.slice(0, recipe.pixels.indexOf(old)) : recipe.pixels
+    )
     const isJpeg = info.input === 'Jpeg'
     const refused =
       enhanceRefusal(settings, { isJpeg, isHdr: info.is_hdr }) ??
-      jpegRestoreRefusal(settings, isJpeg, recipe.pixels.length)
+      jpegRestoreRefusal(settings, isJpeg, under.length)
     if (refused) throw new Error(`${row.name}: ${refused}`)
     const steps = planSteps(settings, isJpeg)
     const ids = steps.flatMap((p) => (p.model ? [p.model] : []))
@@ -191,8 +215,17 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const k = scaleOf(settings)
     // An upscale is the whole photo; deblur and restore can keep to a mask.
     const layer =
-      req.layerId && k === 1 ? recipe.layers.find((l) => l.id === req.layerId) : undefined
-    if (req.layerId && k === 1 && !layer) throw new Error(t('the mask is gone'))
+      req.layerId && k === 1 && !old ? recipe.layers.find((l) => l.id === req.layerId) : undefined
+    if (req.layerId && k === 1 && !old && !layer) throw new Error(t('the mask is gone'))
+    // The photo before it, a Version to step back to (a smart look's part:
+    // the look made one before it began; a step made again: the rebuild did).
+    if (!req.group && !old)
+      await this.library.addVersion(key, {
+        name: tk('Before Enhance'),
+        kind: 'auto',
+        reason: 'ai',
+        recipe
+      })
     if (this.engine.getStatus().status === 'starting') {
       this.engine.start()
       await this.engine.whenStarted()
@@ -205,7 +238,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const deps = pixelDeps(this.engine, this.library.index, row)
     const restoresJpeg = steps.some((p) => p.kind === 'reconstruct' || p.kind.startsWith('fbcnn'))
     const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
-    const working = await ensureWorking(deps, versionStamp(row), plain, recipe.pixels, () =>
+    const working = await ensureWorking(deps, versionStamp(row), plain, under, () =>
       ensureBase(this.engine, row, info, askOf(recipe))
     )
     const master = working.master!
@@ -244,6 +277,9 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
         )
       }
       // A RAW's float frame is read clipped to 0..1 (laid back under its headroom guard).
+      // PIXL Enhance too, for now: its model space reaches above white, but the
+      // engine refuses any enhance chain on a float source (E70), and a step is
+      // kept and laid on in 16 bits, so its highlights stay the frame's own.
       const input = await modelInput(this.engine, dir, master, heavyThreads())
       return this.engine.convert(
         { ...blankRequest(input.path, out, input.input), ...common },
@@ -341,18 +377,32 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           lossless,
           // Everything it was run with, so a later develop can make it again.
           settings: JSON.stringify(settings),
-          ...(row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {})
+          ...(row.is_raw === 1 ? { develop: await stepDevelopMark(row, info, askOf(recipe)) } : {})
         }
       }
-      // Over the steps there were when it began, under any added while it ran.
       ctx.commit()
-      await addPixelStep(
-        this.library,
-        sessions,
-        key,
-        step,
-        recipe.pixels.map((s) => s.id)
-      )
+      if (old) {
+        // Its place, frozen mask, strength and name stay: only its pixels (and how) are today's.
+        await replacePixelStep(this.library, sessions, key, {
+          ...step,
+          id: old.id,
+          label: old.alpha
+            ? t('Enhance · {{subject}} in {{mask}}', { subject, mask: old.scope ?? '' })
+            : step.label,
+          alpha: old.alpha,
+          scope: old.scope,
+          opacity: old.opacity,
+          ...(old.off ? { off: true as const } : {})
+        })
+      } else
+        // Over the steps there were when it began, under any added while it ran.
+        await addPixelStep(
+          this.library,
+          sessions,
+          key,
+          step,
+          recipe.pixels.map((s) => s.id)
+        )
       const { photoId, copyId } = parseKey(key)
       this.library.queueThumb(photoId, copyId, true)
       return { kind: 'step', label: step.label }
@@ -362,5 +412,153 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     } finally {
       for (const f of files) await rm(f, { force: true }).catch(() => undefined)
     }
+  }
+}
+
+/** The side of the square PIXL Enhance's preview makes, in the photo's own pixels. */
+export const PREVIEW_EDGE = 1024
+
+/**
+ * PIXL Enhance's preview (the panel's "Preview at 100%"): the model run on a
+ * square of the full-size frame about `at` (the view's centre, as a fraction
+ * of the frame), with its tiles' overlap of the frame around it so the
+ * square's edges are made as the whole photo's would be, then laid back on
+ * the frame as a step is (16 bits, guarded on a RAW). The loupe's 1:1 view
+ * reads the result, graded, framed and masked as Apply's step will be. The
+ * upscale is not previewed: PIXL Enhance only.
+ */
+export async function makeEnhancePreview(
+  engine: EngineClient,
+  models: ModelStore,
+  index: IndexClient,
+  row: PhotoRow,
+  info: SourceInfo,
+  frame: ProxyFile,
+  settings: EnhanceSettings,
+  at: { x: number; y: number },
+  signal: AbortSignal = new AbortController().signal
+): Promise<ProxyFile & { square: { x: number; y: number; width: number; height: number } }> {
+  const steps = planSteps({ ...settings, upscale: 'off' }, false).filter((p) => p.level)
+  if (steps.length === 0) throw new Error(t('Choose an Enhance level to preview'))
+  if (!(await models.installed(PIXL_ENHANCE))) throw new ModelMissing(models.entry(PIXL_ENHANCE))
+  const dir = paths.photoCache(row.id)
+  const stamp = Date.now().toString(36)
+  const made: string[] = []
+  const W = frame.width
+  const H = frame.height
+  const side = Math.min(PREVIEW_EDGE, W, H)
+  const pad = levelValues(models.entry(PIXL_ENHANCE), steps[0].level!).tiling.Fixed.overlap
+  const clamp = (v: number, hi: number): number => Math.max(0, Math.min(hi, Math.round(v)))
+  const ix = clamp(at.x * W - side / 2, W - side)
+  const iy = clamp(at.y * H - side / 2, H - side)
+  const ox = Math.max(0, ix - pad)
+  const oy = Math.max(0, iy - pad)
+  const ow = Math.min(W, ix + side + pad) - ox
+  const oh = Math.min(H, iy + side + pad) - oy
+  const cut = (
+    from: ProxyFile,
+    to: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    png: boolean
+  ): Promise<ConvertReport> =>
+    engine.convert(
+      {
+        ...blankRequest(from.path, to, from.input),
+        pixel: { depth: 'Sixteen', channels: png ? 4 : 3 },
+        encode: png ? { Png: { compression: 'Fast', filter: 'Sub' } } : TIFF,
+        metadata: ICC_ONLY,
+        color: 'Preserve',
+        framing: {
+          orientation: 'Normal',
+          rotate_degrees: 0,
+          rotate_resampler: 'Lanczos3',
+          crop: {
+            x: x / from.width,
+            y: y / from.height,
+            width: w / from.width,
+            height: h / from.height
+          }
+        },
+        threads: heavyThreads()
+      },
+      { signal }
+    )
+  try {
+    // The model reads 0..1 (a RAW's frame clipped, as Apply's input is: E70).
+    const input = await modelInput(engine, dir, frame, heavyThreads())
+    const around = join(dir, `enhance-preview-${stamp}-in.tiff`)
+    made.push(around)
+    await cut(input, around, ox, oy, ow, oh, false)
+    const enhanced = join(dir, `enhance-preview-${stamp}-out.tiff`)
+    made.push(enhanced)
+    const ids = [PIXL_ENHANCE]
+    await models.withCpuFallback(
+      ids,
+      async (onCpu) =>
+        engine.convert(
+          {
+            ...blankRequest(around, enhanced, 'Tiff'),
+            enhance: await chainOf(models, steps, settings, info, onCpu),
+            pixel: { depth: 'Sixteen', channels: 3 },
+            encode: TIFF,
+            metadata: ICC_ONLY,
+            color: 'Preserve',
+            threads: heavyThreads()
+          },
+          { signal }
+        ),
+      signal
+    )
+    // The square alone (its surround was only context), as the overlay a step is.
+    const square = join(dir, `enhance-preview-${stamp}-sq.png`)
+    made.push(square)
+    const r = await cut(
+      { path: enhanced, input: 'Tiff', width: ow, height: oh },
+      square,
+      ix - ox,
+      iy - oy,
+      side,
+      side,
+      true
+    )
+    const deps = pixelDeps(engine, index, row)
+    const src = await guardPatch(deps, frame, square, { x: ix, y: iy })
+    if (src !== square) made.push(src)
+    const out = join(dir, `enhance-preview-${stamp}.tiff`)
+    await engine.convert(
+      {
+        ...blankRequest(frame.path, out, frame.input),
+        pixel: { depth: frame.float ? 'F32' : 'Sixteen', channels: 3 },
+        encode: TIFF,
+        metadata: ICC_ONLY,
+        color: 'Preserve',
+        overlays: [
+          {
+            source: { Png: src },
+            rect: { x: ix / W, y: iy / H, width: r.width / W },
+            opacity: 1,
+            // As a step is laid on: in linear light.
+            blend: { mode: 'Normal', space: 'LinearWorking' },
+            resampler: 'Lanczos3'
+          }
+        ],
+        threads: heavyThreads()
+      },
+      { signal }
+    )
+    log.info('enhance preview made', `${r.width}×${r.height} at ${ix},${iy}`, row.name)
+    return {
+      path: out,
+      input: 'Tiff',
+      width: W,
+      height: H,
+      ...(frame.float ? { float: true } : {}),
+      square: { x: ix / W, y: iy / H, width: r.width / W, height: r.height / H }
+    }
+  } finally {
+    for (const f of made) void rm(f, { force: true }).catch(() => undefined)
   }
 }

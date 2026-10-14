@@ -20,14 +20,14 @@
  * result decoded, never the model's output itself: what the photo shows now
  * is what it shows after a reload, on another machine, from the project alone.
  */
-import { t } from '../../shared/i18n'
+import { stepDevelopMark } from '../developmark'
+import { t, tk } from '../../shared/i18n'
 import { readFile, rm } from 'fs/promises'
 import { dirname, join } from 'path'
 import type { AiStartRequest } from '../../shared/ai'
 import { estimate } from '../../shared/ai'
 import type { EnhancerRef } from '../../shared/engine-types'
-import { pixelStepRefusal, type PixelStep } from '../../shared/pixels'
-import { developMark } from '../../shared/rawcolour'
+import { activeSteps, pixelStepRefusal, type PixelStep } from '../../shared/pixels'
 import {
   aiDenoiseModel,
   hash32,
@@ -44,14 +44,7 @@ import type { Library } from '../library'
 import { paths } from '../paths'
 import { ensureProxies, type ProxyFile } from '../proxy'
 import type { DevelopSessions } from '../render'
-import {
-  BACKGROUND_THREADS,
-  blankRequest,
-  colourOf,
-  heavyThreads,
-  seedOf,
-  versionStamp
-} from '../source'
+import { BACKGROUND_THREADS, blankRequest, heavyThreads, seedOf, versionStamp } from '../source'
 import { askOf } from './rawdevelop'
 import { ensureBase, pixelDeps } from '../pixels/base'
 import { freezeMask } from '../pixels/freeze'
@@ -200,9 +193,21 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       ? recipe.pixels.find((p) => p.id === req.redo && p.kind === 'denoise')
       : undefined
     if (req.redo && !old) throw new Error(t('the step is gone'))
-    const before = old ? recipe.pixels.slice(0, recipe.pixels.indexOf(old)) : recipe.pixels
+    // What it is laid on: the steps before it that are switched on.
+    const before = activeSteps(
+      old ? recipe.pixels.slice(0, recipe.pixels.indexOf(old)) : recipe.pixels
+    )
     const layer = req.layerId && !old ? recipe.layers.find((l) => l.id === req.layerId) : undefined
     if (req.layerId && !old && !layer) throw new Error(t('the mask is gone'))
+    // The photo before it, a Version to step back to (not for a step made
+    // again, nor a smart look's part: the look made one before it began).
+    if (!old && !req.group)
+      await this.library.addVersion(req.key, {
+        name: tk('Before AI Denoise'),
+        kind: 'auto',
+        reason: 'ai',
+        recipe
+      })
     ctx.stage(
       'model',
       0,
@@ -339,7 +344,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       }
       const name = DENOISE_SHORT[req.model]
       const develop: Record<string, string> =
-        row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {}
+        row.is_raw === 1 ? { develop: await stepDevelopMark(row, info, askOf(recipe)) } : {}
       if (old) {
         // Its place, mask, strength and name stay: only its pixels are today's.
         const again: PixelStep = {

@@ -1,3 +1,5 @@
+import { rebuild, usePipeline } from '../lib/pipeline'
+import { olderDevelop } from '../../../shared/rebuild'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { DuplicateGroup, LibraryItem } from '../../../shared/ipc'
@@ -6,7 +8,7 @@ import { LiquidGlass } from '../components/glass/LiquidGlass'
 import { Icon } from '../components/icons'
 import { Stars } from '../components/ui'
 import { Ambient, Spinner } from '../fx'
-import { api } from '../lib/api'
+import { api, errorText } from '../lib/api'
 import { autoWbBatch } from '../lib/autowb'
 import { choosePhotos } from '../lib/openPhotos'
 import { LABEL_COLOURS } from '../lib/helpers'
@@ -69,6 +71,8 @@ const Thumb = memo(function Thumb({
   const toggleStack = useLibrary((s) => s.toggleStack)
   // A suggested reject (Pass 115): dimmed and grey, its colour and reason back on hover.
   const cull = useCull((s) => suggestedReasons(item, s.reasons))
+  // Edited with an earlier develop, where today's pipeline has a newer one (shared/rebuild.ts).
+  const older = usePipeline((p) => !!item.legacy && olderDevelop(item.legacy, item.isRaw, p))
   const ref = useRef<HTMLDivElement>(null)
   useThumbFirst(ref, item.key, !item.thumbUrl && !item.unreadable && !item.offline)
   const cls = [
@@ -132,6 +136,24 @@ const Thumb = memo(function Thumb({
           </span>
         )}
         {item.edited && <span className="edited" title={t('Edited')} />}
+        {older && (
+          <button
+            type="button"
+            className="older-badge"
+            title={t(
+              'Edited with an earlier develop: rebuild it with the PIXL demosaic and PIXL Enhance (a Version of it as it is is kept)'
+            )}
+            onClick={(e) => {
+              e.stopPropagation()
+              void rebuild([item.key]).catch((err) =>
+                useLibrary.getState().say(errorText(err), 'error')
+              )
+            }}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            {t('Older develop')}
+          </button>
+        )}
         {cull && (
           <div className="cull-why" onDoubleClick={(e) => e.stopPropagation()}>
             <span className="cull-label micro">{t('Suggested reject')}</span>

@@ -102,8 +102,9 @@ const MAX_TAGS = 24
 const MAX_TEXT = 400
 
 /** A curve a look may carry: 2–16 points, x rising within 0…1, y within 0…1. */
-function curveOk(v: unknown): boolean {
-  if (!Array.isArray(v) || v.length < 2 || v.length > 16) return false
+/** A point curve: x rising, every point in 0…1; a vs curve (Resolve's) may be empty (flat). */
+function curveOk(v: unknown, vs = false): boolean {
+  if (!Array.isArray(v) || v.length < (vs ? 0 : 2) || v.length > 16) return false
   let last = -1
   for (const p of v) {
     if (!isObj(p) || typeof p.x !== 'number' || typeof p.y !== 'number') return false
@@ -166,7 +167,7 @@ export function lookFromFile(
     }
     let v: unknown = value
     if (CURVE_PATHS.includes(dotted)) {
-      if (!curveOk(v)) {
+      if (!curveOk(v, dotted.startsWith('curvesVs.'))) {
         dropped.push(dotted)
         continue
       }

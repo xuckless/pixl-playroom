@@ -77,10 +77,21 @@ export const TIPS = {
 
   // ── Presence ───────────────────────────────────────────────────────
   presence: {
-    what: tk('Local contrast at three scales: fine texture, midtone punch and haze.'),
+    what: tk(
+      'Local contrast at three scales (fine texture, midtone punch and haze), then how strong colour is.'
+    ),
     expect: tk(
-      'These change how sharp and deep a picture feels without moving its overall brightness.'
+      'Texture, Clarity and Dehaze change how sharp and deep a picture feels without moving its brightness; Vibrance protects skin and already-strong colours, Saturation treats every colour alike.'
     )
+  },
+  basic: {
+    what: tk(
+      'The first corrections nearly every photo gets: its treatment and profile, white balance, light and presence.'
+    ),
+    expect: tk(
+      'Work top to bottom: set the colour, then the brightness and contrast, then texture and colour strength.'
+    ),
+    tip: tk('The reset and eye at the top act on all of it; each part has its own too.')
   },
   'presence.texture': {
     what: tk('Brings out or smooths fine detail: skin pores, foliage, fabric.'),
@@ -117,13 +128,7 @@ export const TIPS = {
     tip: tk('Turn it down only if you want each pixel to follow an adjustment exactly.')
   },
 
-  // ── Colour ─────────────────────────────────────────────────────────
-  colour: {
-    what: tk('How strong colour is overall.'),
-    expect: tk(
-      'Vibrance protects skin and already-strong colours; Saturation treats every colour alike.'
-    )
-  },
+  // ── Presence's colour sliders ─────────────────────────────────────
   'colour.vibrance': {
     what: tk('Boosts muted colours more than strong ones, and protects skin.'),
     expect: tk('A natural lift that rarely looks overdone.'),
@@ -222,23 +227,36 @@ export const TIPS = {
     what: tk('Removes coloured speckles from noise.'),
     expect: tk('Safe to raise to 25 or so; very high values bleed colour at edges.')
   },
-  'detail.ai': {
+
+  'detail.ai.sharpen': {
     what: tk(
-      'A trained model removes the noise once; Strength then blends its result with the original.'
+      'PIXL Enhance, our own model, sharpens what is soft from slight shake, missed focus or the lens, and takes out noise and compression damage on the way.'
     ),
     expect: tk(
-      'Much cleaner than classic noise reduction at high ISO. The result is kept with the photo, so undo, redo and Strength never run the model again.'
+      'It restores what the photo holds and invents no detail. It runs once, in the background, and is kept with the photo: the sliders above still work on top, and unticking takes it away.'
     ),
-    tip: tk('Run it once, then fine-tune with Strength.')
+    tip: tk('Judge it at 100% (Z). It includes AI noise reduction and clean up.')
   },
-  'detail.ai.raw': {
+  'detail.ai.noise': {
     what: tk(
-      'On a RAW, the model works on the developed, linear pixels: white balance, profile and tone stay as editable as before.'
+      'Our model removes the noise once, in the background, and keeps the result with the photo.'
     ),
     expect: tk(
-      'The result is kept losslessly, so pushing it later shows no compression; undo, redo and Strength never run the model again.'
+      'Much cleaner than the sliders at high ISO, with texture kept. Undo, redo and History never run it again; unticking takes it away.'
     ),
-    tip: tk('Run it once the exposure is roughly right, before fine colour work.')
+    tip: tk('A RAW that PIXL demosaic develops is already clean: it rarely needs this.')
+  },
+  'detail.clean': {
+    what: tk(
+      'Repairs the blocks, ringing and halos that compression and over-sharpening leave, as in photos saved from the web or messaging apps.'
+    ),
+    expect: tk('A clean photo comes back as it was.')
+  },
+  'detail.ai.clean': {
+    what: tk('PIXL Enhance at its lightest: compression damage only, noise and softness left.'),
+    expect: tk(
+      'It runs once, in the background, and is kept with the photo; unticking takes it away.'
+    )
   },
   'detail.rawDenoise': {
     what: tk(
@@ -336,6 +354,192 @@ export const TIPS = {
   },
 
   // ── Calibration ────────────────────────────────────────────────────
+  primaries: {
+    what: tk(
+      'DaVinci Resolve’s primary correction. Lift moves the blacks, Gamma the midtones, Gain the whites, Offset everything alike; each wheel’s disc sets its colour, the ring under it its brightness.'
+    ),
+    expect: tk(
+      'The numbers are Resolve’s: Y for all three channels, then R, G and B. Contrast turns about the Pivot; Sat and Hue are at 50 untouched.'
+    ),
+    tip: tk(
+      'Balance with Offset first, then shape with Lift, Gamma and Gain while watching the parade. Shift makes any drag finer; double-click a wheel’s name to reset it.'
+    )
+  },
+  logwheels: {
+    what: tk(
+      'DaVinci Resolve’s Log wheels: Shadow, Midtone and Highlight each move only their part of the tones, Offset all of them. Low and High range say where the parts meet.'
+    ),
+    expect: tk('Small, contained moves: warming only the shadows, cooling only the highlights.'),
+    tip: tk(
+      'Use them after the Primaries, for the finer split; they add colour rather than scale it.'
+    )
+  },
+  qualifier: {
+    what: tk(
+      'DaVinci Resolve’s qualifier: pick a colour in the photo and the correction here (Gain, Sat, Hue) changes only what is like it, by hue, saturation and luminance.'
+    ),
+    expect: tk(
+      'Key shows what it selects, white on black. Widen a band or soften its edge until the key is clean, then correct.'
+    ),
+    tip: tk('Blur smooths a noisy key; Invert corrects everything except the colour.')
+  },
+  rcurves: {
+    what: tk(
+      'DaVinci Resolve’s curves. Custom is the tone curve (Y, R, G, B); the others change one thing by another: Hue vs Hue turns a colour, Hue vs Sat and Lum vs Sat make colours richer or quieter by hue or by brightness.'
+    ),
+    expect: tk('The line in the middle changes nothing. Click it to add a point, then drag.'),
+    tip: tk(
+      'On a hue curve, the colour dots add three points at that hue: drag the middle one to change only that colour.'
+    )
+  },
+  // ── Resolve: Primaries ─────────────────────────────────────────────
+  'primaries.lift': {
+    what: tk(
+      'Lift raises or lowers the blacks. White stays where it is, and everything between moves less the brighter it is. Its disc tints the shadows.'
+    ),
+    expect: tk(
+      'The ring to the right lifts the blacks toward a faded, matte look; to the left deepens them. Push the disc away from a cast in the shadows to make them neutral.'
+    ),
+    tip: tk('Watch the bottom of the parade: neutral shadows put red, green and blue level.')
+  },
+  'primaries.gamma': {
+    what: tk(
+      'Gamma bends the midtones: black and white stay put, the middle gets brighter or darker. Its disc tints the midtones.'
+    ),
+    expect: tk(
+      'The gentlest way to change brightness or colour, because the ends do not move: skin, foliage and walls live here.'
+    ),
+    tip: tk('Most colour balance is done on Gamma; small numbers go a long way.')
+  },
+  'primaries.gain': {
+    what: tk(
+      'Gain scales everything toward white: black stays put and the brightest parts move the most. Its disc tints the highlights.'
+    ),
+    expect: tk('The ring to the right brightens (watch the highlights clip), to the left dims.'),
+    tip: tk('Neutralise a cast in the whites here, checking the top of the parade.')
+  },
+  'primaries.offset': {
+    what: tk(
+      'Offset adds the same amount to every value: shadows, midtones and highlights move together, so the whole picture shifts in brightness or colour.'
+    ),
+    expect: tk('Shown about 25, as Resolve shows it: above 25 brighter, below darker.'),
+    tip: tk(
+      'Balance the colour here first, like a white balance, then shape with Lift, Gamma and Gain.'
+    )
+  },
+  'primaries.contrast': {
+    what: tk('Spreads the values apart from the Pivot (above 1) or draws them together (below 1).'),
+    expect: tk('Darks get darker and brights brighter about the pivot; 1.000 changes nothing.')
+  },
+  'primaries.pivot': {
+    what: tk('The brightness Contrast turns about: a value at the pivot does not move.'),
+    expect: tk(
+      'A lower pivot makes added contrast brighten the picture overall; a higher one darkens it.'
+    ),
+    tip: tk('0.435, Resolve’s default, is about middle grey.')
+  },
+  'primaries.sat': {
+    what: tk('How colourful everything is: 50 untouched, 0 grey, 100 twice the colour.'),
+    expect: tk('Every colour alike, unlike Vibrance, which spares what is already rich.')
+  },
+  'primaries.hue': {
+    what: tk(
+      'Turns every colour around the colour wheel together: 50 untouched, 0 and 100 half a turn either way.'
+    ),
+    expect: tk('Small moves shift the whole palette; big ones are an effect.')
+  },
+  'primaries.temp': {
+    what: tk('Warmer or cooler, on top of the white balance.'),
+    expect: tk(
+      'Like Resolve’s Temp. Here it is a white balance in linear light until the engine has it with the primaries.'
+    )
+  },
+  'primaries.tint': {
+    what: tk('Toward magenta or toward green, on top of the white balance.'),
+    expect: tk('For the green of fluorescent light, or a magenta cast.')
+  },
+
+  // ── Resolve: Log wheels ────────────────────────────────────────────
+  'log.shadow': {
+    what: tk('Adds colour or brightness only to the tones below Low range.'),
+    expect: tk('Contained: the midtones and highlights do not move.')
+  },
+  'log.midtone': {
+    what: tk('Adds colour or brightness only between Low and High range.'),
+    expect: tk('A warmer or cooler middle with the ends left alone.')
+  },
+  'log.highlight': {
+    what: tk('Adds colour or brightness only above High range.'),
+    expect: tk('Cool skies or warm lamps without touching the shadows.')
+  },
+  'log.offset': {
+    what: tk('Adds the same colour or brightness to every tone.'),
+    expect: tk('The Primaries’ Offset, kept here so a log grade is all in one place.')
+  },
+  'log.low': {
+    what: tk('Where the shadows end: the Shadow wheel works below it, the Midtone wheel above.'),
+    expect: tk('Higher gives the Shadow wheel more of the picture.')
+  },
+  'log.high': {
+    what: tk('Where the highlights begin: the Highlight wheel works above it.'),
+    expect: tk('Lower gives the Highlight wheel more of the picture.')
+  },
+
+  // ── Resolve: Curves ────────────────────────────────────────────────
+  'rcurves.custom': {
+    what: tk(
+      'The tone curve: input brightness along the bottom, output up the side. Y moves all three channels, R, G and B one each.'
+    ),
+    expect: tk('An S makes contrast; lifting the bottom-left end fades the blacks.')
+  },
+  'rcurves.hueHue': {
+    what: tk(
+      'Turns one colour into another: points along the hues, and pulling one up or down turns that hue around the wheel.'
+    ),
+    expect: tk('Greens toward teal, oranges toward red, without touching the rest.')
+  },
+  'rcurves.hueSat': {
+    what: tk('Makes one colour richer or quieter: up for more saturation, down for less.'),
+    expect: tk('Quiet a loud green, deepen a sky.')
+  },
+  'rcurves.hueLum': {
+    what: tk('Makes one colour brighter or darker.'),
+    expect: tk('Waiting for the engine: the curve is kept and applies once it can.')
+  },
+  'rcurves.lumSat': {
+    what: tk('Saturation by brightness: shadows along the left, highlights along the right.'),
+    expect: tk('Pull the ends down for clean blacks and whites without colour noise.')
+  },
+  'rcurves.satSat': {
+    what: tk(
+      'Saturation by saturation: lift the dull colours without pushing the already rich ones.'
+    ),
+    expect: tk('Waiting for the engine: the curve is kept and applies once it can.')
+  },
+
+  // ── Resolve: Qualifier ─────────────────────────────────────────────
+  'qualifier.hue': {
+    what: tk('Which hues the key takes: its centre on the strip, its width, and its soft edge.'),
+    expect: tk('Off, every hue counts and the key goes by saturation and luminance alone.')
+  },
+  'qualifier.sat': {
+    what: tk('How saturated a colour must be to be keyed: from grey on the left to full colour.'),
+    expect: tk('Raise the centre to leave out greys and pale versions of the colour.')
+  },
+  'qualifier.lum': {
+    what: tk('How bright a colour must be to be keyed: from black on the left to white.'),
+    expect: tk('Narrow it to take only the sunlit or only the shaded part.')
+  },
+  'qualifier.blur': {
+    what: tk('Softens the key’s edge, so a correction blends in rather than cutting out.'),
+    expect: tk('Raise it when Key shows speckle or a hard edge.')
+  },
+  'qualifier.correction': {
+    what: tk(
+      'What the key lets through: Gain brightens or tints what it selects, Sat and Hue change its colour (50 untouched).'
+    ),
+    expect: tk('Only the white of the key changes; the black stays as it was.')
+  },
   calibration: {
     what: tk('Shifts how the camera’s red, green and blue primaries are read.'),
     expect: tk('Broad, subtle colour changes across the whole palette.'),
@@ -344,26 +548,11 @@ export const TIPS = {
 
   // ── Enhance ────────────────────────────────────────────────────────
   enhance: {
-    what: tk('One-off AI steps on the pixels: JPEG repair, deblur and upscaling.'),
-    expect: tk('They run once and are kept with the photo; undo takes them away.')
+    what: tk('Makes the photo larger, ×2 or ×4, with a model that adds believable detail.'),
+    expect: tk('It runs once and is kept with the photo; undo takes it away.'),
+    tip: tk('AI sharpening, noise reduction and clean up are in Detail.')
   },
-  'enhance.jpeg': {
-    what: tk('Repairs the blocks and colour smearing of heavily compressed JPEGs.'),
-    expect: tk(
-      'Rebuild works from the file’s own compressed data, changing nothing it states; the AI methods repaint the damage.'
-    ),
-    tip: tk('Rebuild first; the AI suits pictures saved from the web or messaging apps.')
-  },
-  'enhance.deblur': {
-    what: tk('Reduces motion blur from camera shake or a moving subject.'),
-    expect: tk('It cannot bring back focus that was missed.')
-  },
-  'enhance.apply': {
-    what: tk('Runs the steps above once and keeps the result in the photo’s project as a step.'),
-    expect: tk(
-      'Undo, redo and History never run the models again, and no file is written beside the photo. An upscale makes the photo larger from this step on; crop, masks and spots keep their places.'
-    )
-  },
+
   'enhance.upscale': {
     what: tk('Makes the photo larger with a model that adds believable detail.'),
     expect: tk(

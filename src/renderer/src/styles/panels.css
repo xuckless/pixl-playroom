@@ -13,7 +13,7 @@
   width: 100%;
   height: 104px;
   display: block;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), rgba(0, 0, 0, 0.3));
+  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.015), rgb(var(--shade-rgb) / 0.3));
   border: 1px solid var(--hair);
 }
 .histogram path {
@@ -26,7 +26,7 @@
   height: 16px;
   padding: 0;
   font-size: 10px;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgb(var(--shade-rgb) / 0.55);
   color: var(--muted);
   border: 1px solid transparent;
   backdrop-filter: blur(6px);
@@ -43,7 +43,7 @@
 }
 .clip-marker.on {
   color: var(--acc);
-  border-color: rgba(157, 139, 234, 0.5);
+  border-color: color-mix(in srgb, var(--acc) 50%, transparent);
   box-shadow: 0 0 12px -4px var(--glow);
 }
 .histogram-foot {
@@ -110,7 +110,7 @@
   transition: background 0.2s;
 }
 .hue-bar:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--fg-rgb) / 0.05);
 }
 .hue-bar .fill {
   width: 100%;
@@ -130,7 +130,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  border-top: 1px dashed rgba(255, 255, 255, 0.45);
+  border-top: 1px dashed rgb(var(--fg-rgb) / 0.45);
   z-index: 2;
   pointer-events: none;
   transition: height 0.7s var(--spring);
@@ -199,7 +199,7 @@
   display: block;
   touch-action: none;
   border: 1px solid var(--hair);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.2));
+  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.02), rgb(var(--shade-rgb) / 0.2));
   margin: 6px 0;
 }
 .curve circle {
@@ -247,10 +247,10 @@
       hsl(0 70% 55%)
     );
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.15),
+    inset 0 0 0 1px rgb(var(--fg-rgb) / 0.15),
     0 0 0 4px #000,
     0 0 0 5px var(--hair),
-    0 10px 30px -14px rgba(0, 0, 0, 0.9);
+    0 10px 30px -14px rgb(var(--shade-rgb) / 0.9);
   cursor: crosshair;
   touch-action: none;
   transition: transform 0.4s var(--spring);
@@ -266,7 +266,7 @@
   border: 2px solid #fff;
   box-shadow:
     0 0 0 1px #000,
-    0 0 10px rgba(255, 255, 255, 0.6);
+    0 0 10px rgb(var(--fg-rgb) / 0.6);
   pointer-events: none;
 }
 .wheel-values {
@@ -294,17 +294,14 @@
   background: radial-gradient(
     circle at 35% 30%,
     #fff,
-    rgba(255, 255, 255, 0.4) 50%,
-    rgba(157, 139, 234, 0.3)
+    rgb(var(--fg-rgb) / 0.4) 50%,
+    color-mix(in srgb, var(--acc) 30%, transparent)
   );
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  border: 1px solid rgb(var(--fg-rgb) / 0.6);
   box-shadow: 0 0 10px -2px var(--glow);
 }
 
 /* ── detail, advanced ──────────────────────────────────────────── */
-.noise-tabs {
-  justify-content: space-between;
-}
 .popover.noise-pop {
   width: 300px;
 }
@@ -324,7 +321,7 @@
   font-size: 10.5px;
   line-height: 1.55;
   color: var(--text2);
-  background: rgba(0, 0, 0, 0.5);
+  background: rgb(var(--shade-rgb) / 0.5);
   border: 1px solid var(--hair);
   padding: 10px 12px;
   white-space: pre-wrap;
@@ -386,7 +383,7 @@ fieldset::before {
 }
 .preset:hover,
 .history-row:hover {
-  background: rgba(255, 255, 255, 0.035);
+  background: rgb(var(--fg-rgb) / 0.035);
   color: var(--text);
   padding-left: 14px;
 }
@@ -401,8 +398,8 @@ fieldset::before {
 }
 .history-row.on {
   color: var(--text);
-  border-color: rgba(157, 139, 234, 0.35);
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.14), transparent);
+  border-color: color-mix(in srgb, var(--acc) 35%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 14%, transparent), transparent);
 }
 .history-row.future {
   opacity: 0.4;
@@ -415,7 +412,7 @@ fieldset::before {
 .history-row.hidden .rail-label {
   opacity: 0.45;
   text-decoration: line-through;
-  text-decoration-color: rgba(255, 255, 255, 0.25);
+  text-decoration-color: rgb(var(--fg-rgb) / 0.25);
 }
 .history-row.base {
   cursor: default;
@@ -434,9 +431,9 @@ fieldset::before {
 .history-ask {
   margin: 4px 2px 10px;
   padding: 10px 12px;
-  border: 1px solid rgba(157, 139, 234, 0.35);
+  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent);
   border-radius: var(--r);
-  background: rgba(157, 139, 234, 0.08);
+  background: color-mix(in srgb, var(--acc) 8%, transparent);
   font-size: 12px;
   line-height: 1.45;
   color: var(--text2);
@@ -501,7 +498,7 @@ fieldset::before {
 }
 .layer-row.on {
   border-color: var(--acc-a55);
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.14), transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 14%, transparent), transparent);
   color: var(--text);
 }
 .layer-name {
@@ -551,8 +548,8 @@ fieldset::before {
   height: 30px;
   gap: 6px;
   padding: 0 8px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.04), rgb(var(--fg-rgb) / 0.01));
+  box-shadow: inset 0 1px 0 rgb(var(--fg-rgb) / 0.05);
   font-size: 12.5px;
 }
 .ts-tool svg {
@@ -564,7 +561,7 @@ fieldset::before {
   border-color: var(--acc-a55);
   background: linear-gradient(180deg, var(--acc-a20), var(--acc-a10));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 1px 0 rgb(var(--fg-rgb) / 0.12),
     0 0 16px -6px var(--glow);
 }
 .ts-count {
@@ -578,17 +575,14 @@ fieldset::before {
   line-height: 16px;
   font-variant-numeric: tabular-nums;
 }
-.ts-jump {
+/* The one dropdown that picks the section shown (develop/AdjustStack.tsx). */
+.section-picker {
   display: flex;
-  gap: 6px;
+  margin: 2px 0 10px;
 }
-.ts-jump .glass-select {
+.section-picker .glass-select {
   flex: 1;
-  height: 28px;
-}
-.ts-solo.on {
-  color: var(--acc);
-  border-color: var(--acc-a55);
+  height: 32px;
 }
 
 /* ── the stack of cards under it ──────────────────────────────────── */
@@ -704,7 +698,7 @@ aside.right .panels.adjust {
   height: 22px;
   border-radius: var(--r);
   border: 1px solid var(--hair2);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgb(var(--fg-rgb) / 0.18);
 }
 .match-pop {
   display: flex;
@@ -760,21 +754,22 @@ aside.right .panels.adjust {
   justify-content: flex-start;
   text-align: left;
 }
-.ai-denoise {
-  display: flex;
-  flex-direction: column;
+.ai-check {
   gap: 8px;
-  margin-top: 10px;
-}
-.ai-denoise-status {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
+  margin-top: 8px;
   min-height: 26px;
-  font-size: 11.5px;
-  color: var(--text2);
+  flex-wrap: wrap;
   font-variant-numeric: tabular-nums;
+}
+.ai-check .ai-check-state {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-check.waiting .check {
+  opacity: 0.5;
 }
 .model-get {
   display: flex;
@@ -806,7 +801,7 @@ aside.right .panels.adjust {
   padding: 8px 10px;
   border: 1px solid var(--hair);
   border-radius: var(--r);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgb(var(--fg-rgb) / 0.02);
 }
 .hdr-ai-note p {
   margin: 0;
@@ -914,7 +909,7 @@ aside.right .panels.adjust {
 }
 .lens-pick li button:hover,
 .lens-pick li button.on {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--fg-rgb) / 0.05);
 }
 .lens-pick li.muted {
   padding: 8px;
@@ -930,7 +925,7 @@ aside.right .panels.adjust {
   padding: 6px 8px 2px;
   border: 1px solid var(--hair);
   border-radius: var(--r);
-  background: rgba(157, 139, 234, 0.04);
+  background: color-mix(in srgb, var(--acc) 4%, transparent);
 }
 .pixel-step-head {
   display: flex;
@@ -951,4 +946,433 @@ aside.right .panels.adjust {
   white-space: nowrap;
   color: var(--text);
   font-size: 12px;
+}
+
+/* ── DaVinci Resolve's wheels (components/grading/GradeWheel.tsx) ──── */
+.gwheels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 10px;
+  margin: 12px 0 4px;
+}
+.gwheel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.gw-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text2);
+  cursor: default;
+  user-select: none;
+}
+.gw-disc {
+  position: relative;
+  border-radius: 50%;
+  background-size: 100% 100%;
+  box-shadow:
+    0 0 0 1px var(--hair2),
+    inset 0 0 0 1px rgb(var(--shade-rgb) / 0.4);
+  cursor: crosshair;
+  touch-action: none;
+}
+.gw-disc.dragging {
+  box-shadow:
+    0 0 0 1px var(--acc),
+    0 0 14px var(--glow-soft);
+}
+.gw-cross::before,
+.gw-cross::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: rgb(var(--fg-rgb) / 0.35);
+  pointer-events: none;
+}
+.gw-cross::before {
+  width: 9px;
+  height: 1px;
+  transform: translate(-50%, -50%);
+}
+.gw-cross::after {
+  width: 1px;
+  height: 9px;
+  transform: translate(-50%, -50%);
+}
+.gw-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 8px rgb(var(--fg-rgb) / 0.5);
+  pointer-events: none;
+}
+.gw-ring {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, rgb(var(--fg-rgb) / 0.06), rgb(var(--fg-rgb) / 0.22));
+  border: 1px solid var(--hair);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.gw-ring.dragging {
+  border-color: var(--acc);
+}
+.gw-ring-knob {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--text);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.gw-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  width: 100%;
+}
+.gw-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+.gw-ch {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+.gw-r .gw-ch {
+  color: var(--ch-r);
+}
+.gw-g .gw-ch {
+  color: var(--ch-g);
+}
+.gw-b .gw-ch {
+  color: var(--ch-b);
+}
+.gw-field input {
+  width: 100%;
+  min-width: 0;
+  height: 18px;
+  padding: 0 2px;
+  font-size: 10px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  background: rgb(var(--shade-rgb) / 0.35);
+  border: 1px solid var(--hair);
+  border-radius: 3px;
+  color: var(--text);
+}
+
+/* The colour tools not shown hold edits (develop/AdjustStack.tsx). */
+.tools-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent);
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--acc) 10%, transparent);
+  font-size: 12px;
+  color: var(--text2);
+}
+.tools-chip span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Resolve's Curves card ───────────────────────────────────────── */
+.tabs.rc-tabs {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  height: auto;
+  gap: 2px;
+}
+.tabs.rc-tabs button {
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rc-channels {
+  justify-content: flex-end;
+}
+.curve-strip {
+  width: 100%;
+  height: 100%;
+  opacity: 0.75;
+}
+.rc-waiting {
+  margin: 4px 0;
+  padding: 6px 8px;
+  border-radius: var(--r);
+  border: 1px dashed color-mix(in srgb, var(--acc) 45%, transparent);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text2);
+}
+.rc-foot {
+  align-items: center;
+  gap: 6px;
+}
+.rc-foot .spacer {
+  flex: 1;
+}
+.rc-swatch {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgb(var(--shade-rgb) / 0.6);
+  box-shadow: 0 0 0 1px var(--hair2);
+}
+.rc-swatch:hover {
+  transform: scale(1.15);
+}
+
+/* ── Resolve's Qualifier card ────────────────────────────────────── */
+.q-head {
+  align-items: center;
+  gap: 6px;
+}
+.q-head .spacer {
+  flex: 1;
+}
+.q-list {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.q-list li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--r);
+  border: 1px solid transparent;
+}
+.q-list li.on {
+  border-color: color-mix(in srgb, var(--acc) 50%, transparent);
+  background: color-mix(in srgb, var(--acc) 10%, transparent);
+}
+.q-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 6px;
+  border: none;
+  background: none;
+  text-align: left;
+}
+.q-swatch {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--hair3);
+}
+.q-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.q-band {
+  margin: 8px 0 4px;
+}
+.q-band .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.band-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--hair2);
+  margin-bottom: 4px;
+}
+.band-bar svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  mix-blend-mode: multiply;
+}
+.band-bar.off {
+  opacity: 0.35;
+}
+.q-correction {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 10px;
+}
+.q-correction .q-sliders {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Resolve's node view (panels/masks/NodeView.tsx) ─────────────── */
+.node-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 6px 6px 8px;
+}
+.node-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 6px;
+  border: 1px solid var(--hair2);
+  border-radius: 8px;
+  background: var(--s3);
+  transition: border-color 0.2s var(--ease);
+}
+/* The serial link from the node above. */
+.node-link {
+  position: absolute;
+  left: 50%;
+  top: -15px;
+  width: 1px;
+  height: 14px;
+  background: var(--hair3);
+}
+.node-view > .node:first-child .node-link {
+  display: none;
+}
+.node.on {
+  border-color: var(--acc);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--acc) 35%, transparent);
+}
+.node.off .node-body {
+  opacity: 0.45;
+}
+.node.dragging {
+  z-index: 2;
+  box-shadow: 0 6px 18px rgb(var(--shade-rgb) / 0.5);
+}
+.node-grip {
+  cursor: grab;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: -2px;
+  user-select: none;
+  touch-action: none;
+}
+.node-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  text-align: left;
+}
+.node-n {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.node-thumb {
+  width: 40px;
+  height: 28px;
+  flex: none;
+  border-radius: 4px;
+  background: rgb(var(--shade-rgb) / 0.6);
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 0 0 1px var(--hair2);
+}
+.node-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.node-name {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.node-kind {
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gw-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rc-about,
+.q-correction-head {
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+.rc-channels .spacer {
+  flex: 1;
+}
+
+/* A section with changes, in the dropdown and its menu. */
+.menu-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  margin: 0 6px;
+  border-radius: 50%;
+  background: var(--acc);
+  box-shadow: 0 0 8px var(--glow);
+}
+/* The section shown: open for good, its header not a fold. */
+.card.fixed > header {
+  cursor: default;
+  padding-left: 12px;
 }

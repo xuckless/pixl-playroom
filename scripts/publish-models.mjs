@@ -109,6 +109,34 @@ const roster = JSON.parse(
   readFileSync(join(ROOT, 'node_modules', '@xuckless', 'pixl-models', 'roster.json'), 'utf8')
 )
 const models = roster.models.filter((m) => m.ship && (!only || only.includes(m.id)))
+// A development kit laid over node_modules (`pnpm dev:kit`) brings its own
+// roster, whose models are unreleased versions no package holds: say so,
+// rather than a registry's "no matching version".
+const unreleased = models.filter((m) => /-dev\b/.test(m.version))
+if (unreleased.length > 0) {
+  console.error(
+    `publish-models: the installed roster is a development kit's (${unreleased
+      .map((m) => `${m.id} ${m.version}`)
+      .join(
+        ', '
+      )}): nothing of it is published. Run \`pnpm engine:dev --restore\` and \`pnpm install\` for the released roster first.`
+  )
+  process.exit(1)
+}
+const asked = only?.filter((id) => !models.some((m) => m.id === id)) ?? []
+if (asked.length > 0 && !dry) {
+  // Not in this roster (or on-demand, handled below): named so a typo or an old roster shows.
+  const { onDemand: od } = await import(
+    pathToFileURL(join(ROOT, 'node_modules', '@xuckless', 'pixl-models', 'index.js')).href
+  ).then((mod) => mod.default ?? mod)
+  const missing = asked.filter((id) => !od().some((m) => m.id === id))
+  if (missing.length > 0) {
+    console.error(
+      `publish-models: not shipped by the installed roster (@xuckless/pixl-models ${JSON.parse(readFileSync(join(ROOT, 'node_modules', '@xuckless', 'pixl-models', 'package.json'), 'utf8')).version}): ${missing.join(', ')}`
+    )
+    process.exit(1)
+  }
+}
 const HELD = new Set(['sam3'])
 const { onDemand } = await import(
   pathToFileURL(join(ROOT, 'node_modules', '@xuckless', 'pixl-models', 'index.js')).href

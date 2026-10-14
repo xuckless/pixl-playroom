@@ -59,6 +59,28 @@ import {
 } from './recipe'
 import { opFromAbsolute, opFromRelative, type OpWhite } from './wb'
 import { tk } from './i18n'
+import { effective } from './edits'
+import {
+  curvesVsOp,
+  logWheelsOps,
+  primariesOp,
+  primariesWhite,
+  qualifierCorrection,
+  qualifierKey,
+  qualifierLayerId,
+  scaleQualifier,
+  type QualifierSetting,
+  scaleCurvesVs,
+  scaleLogWheels,
+  scalePrimaries,
+  type VsCurve
+} from './resolve'
+
+/** What a waiting vs curve says in the render's notes. */
+const VS_WAITING_NOTE: Partial<Record<VsCurve, string>> = {
+  hueLum: tk('Hue vs Lum waits for the engine (E71): kept, not applied yet'),
+  satSat: tk('Sat vs Sat waits for the engine (E72): kept, not applied yet')
+}
 
 // ── Spaces ───────────────────────────────────────────────────────────────────
 
@@ -849,6 +871,11 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
       shiftSat: m(p.shiftSat),
       shiftLum: m(p.shiftLum)
     })),
+    primaries: scalePrimaries(s.primaries, k),
+    curvesVs: scaleCurvesVs(s.curvesVs, k),
+    logWheels: scaleLogWheels(s.logWheels, k),
+    // Scaled where they compile, as their own layers (`qualifierLayer`).
+    qualifiers: s.qualifiers,
     colorGrade: {
       ...cg,
       shadows: wheel(cg.shadows),
@@ -1276,6 +1303,12 @@ function settingsStages(
   const wb = base ? baseWhite(r, ctx) : layerWhite(r.wb)
   if (wb)
     linear.push({ WhiteBalance: { temperature_kelvin: round4(wb.kelvin), tint: round4(wb.tint) } })
+  // Resolve's Temp and Tint, on top of the white balance (until E75 puts them with the primaries).
+  const rw = primariesWhite(r.primaries)
+  if (rw) {
+    const w = opFromRelative(rw.temperature, rw.tint)
+    linear.push({ WhiteBalance: { temperature_kelvin: round4(w.kelvin), tint: round4(w.tint) } })
+  }
   const mix = calibrationMatrix(r.calibration)
   if (mix) linear.push({ ChannelMixer: { red: mix[0], green: mix[1], blue: mix[2] } })
   if (r.basic.exposure !== 0)
@@ -1413,6 +1446,15 @@ function settingsStages(
     tail.push({ Primary: primary({ hue_shift: round4(clamp(p.hue, -100, 100) * 0.6) }) })
   const cg = colorGradeOp(r.colorGrade, smoothing)
   if (cg) tail.push(cg)
+  // Resolve's primaries, after Lightroom's grading (shared/resolve.ts); on a
+  // B&W photo after its mono conversion, so Lift and Gain tints tone it.
+  const prim = primariesOp(r.primaries)
+  if (prim) tail.push(prim)
+  tail.push(...logWheelsOps(r.logWheels))
+  // Resolve's vs curves; the two the engine lacks wait, said in the notes.
+  const vs = curvesVsOp(r.curvesVs)
+  if (vs.op && !bw) tail.push(vs.op)
+  for (const w of vs.waiting) notes.push(VS_WAITING_NOTE[w] ?? '')
   if (r.calibration.shadowsTint !== 0) {
     const a = round4((r.calibration.shadowsTint / 100) * 0.02)
     tail.push({ Primary: primary({ lift: { r: a / 2, g: -a, b: a / 2 } }) })
@@ -1487,7 +1529,49 @@ function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vig
  * Compile a recipe. `grade` is null when nothing moves a pixel, so an
  * untouched photo takes the engine's fast path.
  */
-export function compile(r: Recipe, given: CompileContext): Compiled {
+/**
+ * A qualifier as its own engine layer: its key a Range mask (inside `within`,
+ * a mask layer's own mask, when it is a mask's), its correction in the look
+ * stage. Null when no band of its key is on.
+ */
+function qualifierLayer(
+  q: QualifierSetting,
+  within: Mask | null,
+  opacity: number
+): GradeLayer | null {
+  const key = qualifierKey(q)
+  if (!key) return null
+  const inverted = within?.invert === true
+  const range: Mask['components'][number] = {
+    shape: { Range: key },
+    // Inside an inverted mask: NOT(mask ∪ NOT key) is the key where the mask is not.
+    mode: within && !inverted ? 'Intersect' : 'Add',
+    opacity: 1,
+    invert: inverted,
+    feather: { radius: round4(smoothnessFeather(q.blur)), edge: 'Zero' },
+    refine: null,
+    smooth: 0,
+    contrast: 0,
+    shift: 0
+  }
+  return {
+    name: 'qualifier',
+    enabled: q.enabled,
+    opacity,
+    mask: {
+      components: [...(within?.components ?? []), range],
+      invert: within ? inverted !== q.invert : q.invert,
+      space: LOOK_SPACE,
+      edge: within?.edge ?? null
+    },
+    blend: { mode: 'Normal', space: 'LinearWorking' },
+    stages: lookStage([{ Primary: qualifierCorrection(q) ?? primary({}) }])
+  }
+}
+
+export function compile(recipe: Recipe, given: CompileContext): Compiled {
+  // What is rendered: sections switched off at the photo's defaults, steps switched off left out.
+  const r = effective(recipe, given.isRaw)
   // The photo's Tone base reaches its masks' Tone too.
   const ctx: CompileContext = { ...given, toneBase: r.toneBase ?? 'none' }
   const notes: string[] = []
@@ -1511,6 +1595,14 @@ export function compile(r: Recipe, given: CompileContext): Compiled {
       blend: { mode: 'Normal', space: 'LinearWorking' },
       stages: base
     })
+  }
+  // Resolve's qualifiers: each its own layer after the photo's grade, its key
+  // a Range mask, so the key view (Inspect::LayerMask) is the engine's key.
+  for (const q of r.qualifiers) {
+    const layer = qualifierLayer(q, null, 1)
+    if (!layer) continue
+    layerIndex[qualifierLayerId(q.id)] = layers.length
+    layers.push(layer)
   }
   for (const l of r.layers) {
     const mask = layerMask(l, oriented.user, ctx.brushPaths, oriented, ctx.smoothing === false)
@@ -1536,6 +1628,15 @@ export function compile(r: Recipe, given: CompileContext): Compiled {
       blend: blendFor(l.blend, ctx.hdr === true),
       stages
     })
+    // A mask's own qualifiers: each keys only inside the mask (Resolve's
+    // qualifier within a window), right after the mask's own layer.
+    for (const q of l.settings.qualifiers ?? []) {
+      const scaled = scaleQualifier(q, clamp(l.amount ?? 100, 0, 200) / 100)
+      const ql = qualifierLayer(scaled, mask, clamp(l.opacity / 100, 0, 1))
+      if (!ql) continue
+      layerIndex[qualifierLayerId(q.id)] = layers.length
+      layers.push({ ...ql, enabled: l.enabled && q.enabled })
+    }
   }
   if (finish && finish.length > 0) {
     layers.push({

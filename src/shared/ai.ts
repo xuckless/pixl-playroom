@@ -21,7 +21,7 @@ import {
 } from './faceparts'
 import { tk } from './i18n'
 
-export type AiTask = 'enhance' | 'segment' | 'denoise' | 'prompt'
+export type AiTask = 'enhance' | 'segment' | 'denoise' | 'prompt' | 'rebuild'
 
 /**
  * Before engine 0.19's sky plane (DINOv2-S+ADE), the Sky tool and smart
@@ -121,7 +121,7 @@ export type AiResult =
       height: number
       label: string
       /** Into this mask, joined this way; else a new mask. */
-      into?: { layerId: string; mode: MaskMode }
+      into?: MaskInto
       /** What made it, kept on the mask (`BrushComponent.source`). */
       source?: BrushSource
       /** A depth map, not a selection: it lands as a Depth range (`DepthComponent`). */
@@ -154,6 +154,17 @@ export interface AiJobEvent {
   group?: string
 }
 
+/**
+ * Where a model's mask lands: into this mask, joined this way, or (with
+ * `replace`) in place of that component, its own settings kept (a rebuild
+ * finding it again on a new develop).
+ */
+export interface MaskInto {
+  layerId: string
+  mode: MaskMode
+  replace?: string
+}
+
 export type AiStartRequest = (
   | {
       task: 'enhance'
@@ -161,12 +172,18 @@ export type AiStartRequest = (
       settings: EnhanceSettings
       /** Deblur and JPEG restore inside this mask (frozen as it is now); an upscale is the whole photo. */
       layerId?: string | null
+      /**
+       * Make this step again in its place (a rebuild: an old Enhance, or an
+       * old AI Denoise as PIXL Enhance): its mask, strength and place kept,
+       * read from the steps before it.
+       */
+      redo?: string
     }
   | {
       task: 'segment'
       key: string
       target: SegmentTarget
-      into?: { layerId: string; mode: MaskMode }
+      into?: MaskInto
       /** The subject or background with BiRefNet lite (fine edges, ~5 s), not U²-Netp. */
       fine?: boolean
       /** With target `phrase`: what to find ("red car", "the dog"). */
@@ -182,7 +199,7 @@ export type AiStartRequest = (
       label?: string
       prompt: PromptGeometry
       via: PromptVia
-      into?: { layerId: string; mode: MaskMode }
+      into?: MaskInto
     }
   | {
       task: 'denoise'
@@ -203,6 +220,11 @@ export type AiStartRequest = (
        * develop, `staleRawStep`). `model`, `strength` and `layerId` are its own.
        */
       redo?: string
+    }
+  | {
+      /** Rebuild with the latest develop (main/rebuild.ts, shared/rebuild.ts). */
+      task: 'rebuild'
+      key: string
     }
 ) & {
   /** A look run's id (`AiJobEvent.group`). */

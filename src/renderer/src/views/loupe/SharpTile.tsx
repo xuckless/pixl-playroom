@@ -7,6 +7,7 @@ import { isFrame, whenFrame } from '../../lib/frames'
 import { Picture } from './DecodedImage'
 import { isInteracting } from '../../lib/interacting'
 import { useDevelop } from '../../state/develop'
+import { useLibrary } from '../../state/library'
 import { useUi } from '../../state/ui'
 import { renderDisplay, useDisplay } from '../../state/display'
 
@@ -59,6 +60,8 @@ export const SharpTile = memo(function SharpTile({
     () =>
       api.develop.onTileStale((e) => {
         if (e.key !== useDevelop.getState().session?.key) return
+        // A development kit's run says what developed the master ("PIXL demosaic · 8.4 s").
+        if (e.note) useLibrary.getState().say(e.note)
         asked.current = null
         setBetter((n) => n + 1)
       }),

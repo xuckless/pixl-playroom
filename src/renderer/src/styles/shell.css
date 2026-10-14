@@ -85,7 +85,7 @@
 .vsep {
   width: 1px;
   height: 16px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(var(--fg-rgb) / 0.1);
   flex: none;
 }
 .badge.ghost {
@@ -240,8 +240,8 @@ aside.right .panels {
 }
 .spine button.on {
   color: var(--acc);
-  border-color: rgba(157, 139, 234, 0.4);
-  background: linear-gradient(160deg, rgba(157, 139, 234, 0.16), rgba(157, 139, 234, 0.03));
+  border-color: color-mix(in srgb, var(--acc) 40%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--acc) 16%, transparent), color-mix(in srgb, var(--acc) 3%, transparent));
   box-shadow: 0 0 18px -8px var(--glow);
 }
 .spine button.on::after {
@@ -325,7 +325,7 @@ aside.right .panels {
 .rail-group .line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.45), var(--hair) 40%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 45%, transparent), var(--hair) 40%, transparent);
 }
 .rail-item {
   display: flex;
@@ -350,14 +350,14 @@ aside.right .panels {
 }
 .rail-item:hover,
 .rail-item:focus-visible {
-  background: rgba(255, 255, 255, 0.035);
+  background: rgb(var(--fg-rgb) / 0.035);
   color: var(--text);
   padding-left: 14px;
 }
 .rail-item.on {
   color: var(--text);
-  border-color: rgba(157, 139, 234, 0.35);
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.14), transparent);
+  border-color: color-mix(in srgb, var(--acc) 35%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 14%, transparent), transparent);
 }
 .rail-item.future {
   opacity: 0.4;
@@ -391,6 +391,103 @@ aside.right .panels {
 .rail-item.on .dot {
   opacity: 1;
 }
+/* The Edits list (panels/EditsPane.tsx): a name over its net change, and an eye. */
+.edit-row {
+  min-height: 44px;
+  padding-block: 6px;
+}
+.edit-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.edit-name,
+.edit-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-summary {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.edit-row .edit-eye {
+  flex: none;
+  color: var(--muted);
+  opacity: 0.55;
+}
+.edit-row:hover .edit-eye,
+.edit-row:focus-visible .edit-eye,
+.edit-row .edit-eye.on {
+  opacity: 1;
+}
+.edit-row .edit-eye.on {
+  color: var(--acc);
+}
+.edit-row.off .edit-name,
+.edit-row.off .edit-summary {
+  opacity: 0.45;
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklab, var(--muted) 60%, transparent);
+}
+/* Versions (panels/VersionsSection.tsx): a row with its actions on hover. */
+.version-row .version-acts {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.version-row:hover .version-acts,
+.version-row:focus-within .version-acts,
+.version-row.on .version-acts {
+  opacity: 1;
+}
+.version-row .version-acts .on {
+  color: var(--acc);
+}
+.version-rename {
+  flex: 1;
+  min-width: 0;
+}
+button.versions-auto {
+  width: calc(100% - 12px);
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  cursor: pointer;
+}
+/* History's timeline (panels/HistoryPane.tsx): sessions of a few rows. */
+button.timeline-head {
+  width: calc(100% - 12px);
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  cursor: pointer;
+}
+.timeline-count {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.timeline-time {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.timeline-row.base {
+  cursor: default;
+  color: var(--muted);
+}
+.timeline-note {
+  margin: 4px 6px 8px;
+}
 .rail-grip {
   width: 5px;
   flex: none;
@@ -419,9 +516,9 @@ aside.right .panels {
 .applied-look {
   margin: 8px 2px 4px;
   padding: 8px 10px 4px;
-  border: 1px solid rgba(157, 139, 234, 0.35);
+  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent);
   border-radius: var(--r);
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.12), transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 12%, transparent), transparent);
 }
 .applied-look-head {
   display: flex;
@@ -518,12 +615,12 @@ aside.right .panels {
 .film-toggle.liquid,
 .film-toggle.liquid.refracting {
   background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.01) 50%),
+    linear-gradient(155deg, rgb(var(--fg-rgb) / 0.07), rgb(var(--fg-rgb) / 0.01) 50%),
     rgba(6, 6, 10, 0.55);
 }
 .film-toggle:hover:not(:disabled) {
   color: #fff;
-  border-color: rgba(157, 139, 234, 0.6);
+  border-color: color-mix(in srgb, var(--acc) 60%, transparent);
   transform: translateX(-50%) translateY(-2px);
   box-shadow: 0 0 22px -6px var(--glow);
 }
@@ -566,7 +663,7 @@ aside.right .panels {
 .floating-toolbar.liquid,
 .floating-toolbar.liquid.refracting {
   background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.01) 50%),
+    linear-gradient(155deg, rgb(var(--fg-rgb) / 0.08), rgb(var(--fg-rgb) / 0.01) 50%),
     rgba(8, 8, 12, 0.6);
 }
 .floating-toolbar .bar-title {
@@ -637,10 +734,10 @@ aside.right .panels {
   background: radial-gradient(
     circle at 35% 30%,
     #fff,
-    rgba(255, 255, 255, 0.4) 50%,
-    rgba(157, 139, 234, 0.3)
+    rgb(var(--fg-rgb) / 0.4) 50%,
+    color-mix(in srgb, var(--acc) 30%, transparent)
   );
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  border: 1px solid rgb(var(--fg-rgb) / 0.6);
   box-shadow: 0 0 12px -2px var(--glow);
   transition: transform 0.3s var(--spring);
 }
@@ -662,7 +759,7 @@ aside.right .panels {
   transform: translateX(-50%);
   padding: 10px 16px;
   background: rgba(10, 10, 12, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgb(var(--fg-rgb) / 0.14);
   backdrop-filter: blur(16px) saturate(1.4);
   font-family: var(--font-body);
   font-size: 12.5px;
@@ -674,8 +771,8 @@ aside.right .panels {
   z-index: 60;
   max-width: min(720px, 80vw);
   box-shadow:
-    0 20px 40px -20px rgba(0, 0, 0, 0.9),
-    inset 0 -1px 0 rgba(157, 139, 234, 0.3);
+    0 20px 40px -20px rgb(var(--shade-rgb) / 0.9),
+    inset 0 -1px 0 color-mix(in srgb, var(--acc) 30%, transparent);
 }
 .toast::before {
   content: '';
@@ -692,7 +789,7 @@ aside.right .panels {
 }
 .toast.error {
   box-shadow:
-    0 20px 40px -20px rgba(0, 0, 0, 0.9),
+    0 20px 40px -20px rgb(var(--shade-rgb) / 0.9),
     inset 0 -1px 0 rgba(255, 107, 122, 0.5);
 }
 .toast.error::before {
@@ -855,4 +952,16 @@ aside.right .panels.scoped {
 }
 .hint-pop .hint-now {
   color: var(--muted);
+}
+
+/* A History row's delete (panels/HistoryPane.tsx): there on hover or focus. */
+.timeline-row .timeline-delete {
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.15s var(--ease);
+}
+.timeline-row:hover .timeline-delete,
+.timeline-row:focus-within .timeline-delete,
+.timeline-row .timeline-delete:focus-visible {
+  opacity: 1;
 }

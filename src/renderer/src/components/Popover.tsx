@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react'
+import { t } from '../lib/i18n'
 import { createPortal } from 'react-dom'
 import { placePopover } from '../../../shared/placement'
 import { LiquidGlass } from './glass/LiquidGlass'
@@ -200,6 +201,8 @@ export interface MenuItem {
   checked?: boolean
   disabled?: boolean
   hint?: string
+  /** A small accent dot after the label (a section with changes). */
+  dot?: boolean
 }
 
 /**
@@ -266,6 +269,7 @@ export function Menu({
             >
               <span className="mark">{it.checked ? '●' : ''}</span>
               <span>{it.label}</span>
+              {it.dot && <span className="menu-dot" aria-label={t('Changed')} />}
               {it.hint && <span className="hint">{it.hint}</span>}
             </button>
           )

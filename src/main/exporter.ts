@@ -5,6 +5,7 @@
  * progress; cancelling stops the file being written at the engine's next
  * stage (a cancelled conversion writes nothing) and the rest are not begun.
  */
+import { activeSteps } from '../shared/pixels'
 import { BrowserWindow, shell } from 'electron'
 import log from 'electron-log/main'
 import { constants as fsConstants } from 'fs'
@@ -47,6 +48,7 @@ import { EngineError, isCancelled, type EngineClient } from './engine/client'
 import type { Library } from './library'
 import { ensureProxies, type ProxyFile } from './proxy'
 import { askOf, scenePlan, withScene } from './ai/rawdevelop'
+import { standInNote } from '../shared/develops'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking } from './pixels/working'
 import { editsHdr, ensureHdrSource } from './hdrsource'
@@ -56,7 +58,7 @@ import type { PhotoRow } from './db'
 import type { SourceInfo } from '../shared/engine-types'
 import type { Recipe } from '../shared/recipe'
 import type { DevelopSessions } from './render'
-import { t, tp } from '../shared/i18n'
+import { t, tp, tk } from '../shared/i18n'
 import {
   BACKGROUND_THREADS,
   heavyThreads,
@@ -203,13 +205,13 @@ export class Exporter {
     info: SourceInfo,
     recipe: Recipe
   ): Promise<ProxyFile | null> {
-    if (recipe.pixels.length === 0) return null
+    if (activeSteps(recipe.pixels).length === 0) return null
     const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
     const set = await ensureWorking(
       pixelDeps(this.engine, this.library.index, row),
       versionStamp(row),
       plain,
-      recipe.pixels,
+      activeSteps(recipe.pixels),
       () => ensureBase(this.engine, row, info, askOf(recipe))
     )
     return set.master
@@ -251,6 +253,14 @@ export class Exporter {
     const file = await this.library.probe(row)
     const item = await this.library.item(key)
     const recipe = this.sessions.liveRecipe(key) ?? (await this.library.recipe(key))
+    // The state an export was made from, a Version to come back to (not for a preview).
+    if (!preview)
+      void this.library.addVersion(key, {
+        name: tk('Exported'),
+        kind: 'auto',
+        reason: 'export',
+        recipe
+      })
     // The engine's own HDR path (`ColorPolicy::Master`) where the settings
     // and the photo allow it: it reads a gain map itself and grades with
     // headroom, so the rendition below is not made for it.
@@ -476,9 +486,17 @@ export class Exporter {
       const done = await withScene(
         plan,
         (scene) => convert({ ...request, raw: rawMaster(colourOf(row), scene, isLinearRaw(info)) }),
-        signal
+        signal,
+        { camera: row.camera, iso: row.iso }
       )
-      log.info('export RAW develop', key, done.classic ? 'classic' : plan.tag)
+      log.info(
+        'export RAW develop',
+        key,
+        done.classic ? `${done.ran} (stood in for ${plan.tag})` : plan.tag
+      )
+      // Another develop stood in: the receipt says which, and why (the engine's words).
+      if (done.classic && (done.refused || done.declined))
+        warn(standInNote(plan.tag, done.ran, done.declined ? null : (done.refused ?? '')))
       report = done.value
     } else report = await convert(request)
 

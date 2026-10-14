@@ -22,14 +22,17 @@ import { Section, Select, Slider, Tabs, Toggle, ToolPanel } from '../components/
 import { api, errorText } from '../lib/api'
 import { useDevelop, type CurveChannel } from '../state/develop'
 import { useLibrary } from '../state/library'
+import { askConfirm } from '../state/confirm'
 import { runJob } from '../state/busy'
 import { ASPECTS, aspectValue } from '../lib/aspects'
 import { setAspect } from '../lib/geometry'
 import { Icon, PathIcon } from '../components/icons'
 import { Popover } from '../components/Popover'
 import { CurvePresets } from './CurvePresets'
-import { AiDenoise } from './AiDenoise'
+import { AiCheck } from './DetailAi'
 import { useModels } from '../lib/models'
+import { useSwitches } from '../lib/switches'
+import { pixlDemosaicActive } from '../../../shared/pixldemosaic'
 import { askModel } from '../state/modelPrompt'
 import { applyUpright, startGuides } from '../lib/upright'
 import type { UprightMode } from '../../../shared/upright'
@@ -46,7 +49,7 @@ type Read = (r: Recipe) => number
 type Write = (r: Recipe, v: number) => void
 
 /** A slider bound to one number in the recipe; `label` in English (`tk`), shown translated, the History step's label. */
-function RS({
+export function RS({
   label,
   read,
   write,
@@ -600,7 +603,9 @@ function ToneBaseRow(): React.JSX.Element | null {
   )
 }
 
+/** Lightroom's Presence: local contrast, then how strong colour is (Hue in a mask), then Smoothing. */
 export function PresenceBody(): React.JSX.Element {
+  const { layer } = useScope()
   return (
     <>
       <RS
@@ -622,23 +627,6 @@ export function PresenceBody(): React.JSX.Element {
         write={(r, v) => (r.presence.dehaze = v)}
       />
       <RS
-        label={tk('Smoothing')}
-        tip={TIPS['presence.smoothing']}
-        read={(r) => r.presence.smoothing}
-        write={(r, v) => (r.presence.smoothing = v)}
-        min={0}
-        max={100}
-        def={100}
-      />
-    </>
-  )
-}
-
-export function ColourBody(): React.JSX.Element {
-  const { layer } = useScope()
-  return (
-    <>
-      <RS
         label={tk('Vibrance')}
         tip={TIPS['colour.vibrance']}
         read={(r) => r.presence.vibrance}
@@ -659,6 +647,15 @@ export function ColourBody(): React.JSX.Element {
           track="linear-gradient(90deg,#2df,#f2d,#fd2,#2f8,#2df)"
         />
       )}
+      <RS
+        label={tk('Smoothing')}
+        tip={TIPS['presence.smoothing']}
+        read={(r) => r.presence.smoothing}
+        write={(r, v) => (r.presence.smoothing = v)}
+        min={0}
+        max={100}
+        def={100}
+      />
     </>
   )
 }
@@ -830,9 +827,13 @@ const AXIS_TITLE: Record<'hue' | 'saturation' | 'luminance', string> = {
   luminance: tk('Luminance')
 }
 
-export function MixerBody(): React.JSX.Element | null {
+export function MixerBody({
+  compact = false
+}: { compact?: boolean } = {}): React.JSX.Element | null {
   const { recipe, layer } = useScope()
-  const tab = useDevelop((s) => s.hslTab)
+  const kept = useDevelop((s) => s.hslTab)
+  // Compact (the Resolve tools' HSL): no Point tab; a tab left on it shows Hue.
+  const tab = compact && kept === 'point' ? 'hue' : kept
   const setTab = useDevelop((s) => s.setHslTab)
   const focus = useDevelop((s) => s.hslFocus)
   // A band chosen from the colour-concentration chart scrolls into view.
@@ -892,7 +893,7 @@ export function MixerBody(): React.JSX.Element | null {
               { value: 'saturation', label: 'S' },
               { value: 'luminance', label: 'L' },
               { value: 'all', label: t('All') },
-              { value: 'point', label: t('Point') }
+              ...(compact ? [] : [{ value: 'point' as const, label: t('Point') }])
             ]}
           />
         </>
@@ -1171,15 +1172,10 @@ function NoiseAnalysis(): React.JSX.Element {
 }
 
 export function DetailBody(): React.JSX.Element | null {
-  const { recipe } = useScope()
-  // AI first, as Lightroom's Denoise: Classic only for a photo that already
-  // uses it (and has no AI steps), until the user turns away.
-  const [noiseTab, setNoiseTab] = useState<'classic' | 'ai'>(() => {
-    const r = useDevelop.getState().recipe
-    const classic = !!r && (r.detail.noiseLuminance > 0 || r.detail.noiseColor > 0)
-    return classic && (r?.pixels.length ?? 0) === 0 ? 'classic' : 'ai'
-  })
+  const { recipe, layer } = useScope()
   if (!recipe) return null
+  // The AI boxes act on the whole photo: in a mask, the sliders alone.
+  const ai = !layer
   return (
     <ToolPanel>
       <Section id="detail.sharpen" title={t('Sharpening')}>
@@ -1216,61 +1212,104 @@ export function DetailBody(): React.JSX.Element | null {
           max={100}
         />
         <LeftOut note={LEFT_OUT.sharpen} />
+        {ai && (
+          <AiCheck want="sharpen" label={tk('AI sharpening')} tip={TIPS['detail.ai.sharpen']} />
+        )}
       </Section>
-      <Section id="detail.noise" title={t('Noise reduction')}>
-        {/* Classic is a setting; AI makes pixel steps (both can apply, inside a mask too). */}
-        <div className="row noise-tabs">
-          <Tabs
-            value={noiseTab}
-            tabs={[
-              { value: 'ai', label: 'AI' },
-              { value: 'classic', label: t('Classic') }
-            ]}
-            onChange={setNoiseTab}
-          />
-          <NoiseAnalysis />
-        </div>
-        {noiseTab === 'ai' ? (
+      <Section id="detail.noise" title={t('Noise reduction')} right={<NoiseAnalysis />}>
+        <RS
+          label={tk('Luminance')}
+          read={(r) => r.detail.noiseLuminance}
+          write={(r, v) => (r.detail.noiseLuminance = v)}
+          min={0}
+          max={100}
+        />
+        <RS
+          label={tk('Detail')}
+          read={(r) => r.detail.noiseLuminanceDetail}
+          write={(r, v) => (r.detail.noiseLuminanceDetail = v)}
+          min={0}
+          max={100}
+          def={50}
+        />
+        <RS
+          label={tk('Colour')}
+          read={(r) => r.detail.noiseColor}
+          write={(r, v) => (r.detail.noiseColor = v)}
+          min={0}
+          max={100}
+        />
+        <RS
+          label={tk('Detail')}
+          read={(r) => r.detail.noiseColorDetail}
+          write={(r, v) => (r.detail.noiseColorDetail = v)}
+          min={0}
+          max={100}
+          def={50}
+        />
+        {ai && (
           <>
+            <AiCheck
+              want="denoise"
+              label={tk('AI noise reduction')}
+              tip={TIPS['detail.ai.noise']}
+            />
             <RawDenoise />
-            <AiDenoise />
-          </>
-        ) : (
-          <>
-            <RS
-              label={tk('Luminance')}
-              read={(r) => r.detail.noiseLuminance}
-              write={(r, v) => (r.detail.noiseLuminance = v)}
-              min={0}
-              max={100}
-            />
-            <RS
-              label={tk('Detail')}
-              read={(r) => r.detail.noiseLuminanceDetail}
-              write={(r, v) => (r.detail.noiseLuminanceDetail = v)}
-              min={0}
-              max={100}
-              def={50}
-            />
-            <RS
-              label={tk('Colour')}
-              read={(r) => r.detail.noiseColor}
-              write={(r, v) => (r.detail.noiseColor = v)}
-              min={0}
-              max={100}
-            />
-            <RS
-              label={tk('Detail')}
-              read={(r) => r.detail.noiseColorDetail}
-              write={(r, v) => (r.detail.noiseColorDetail = v)}
-              min={0}
-              max={100}
-              def={50}
-            />
           </>
         )}
       </Section>
+      {ai && (
+        <Section id="detail.clean" title={t('Clean up artefacts')} tip={TIPS['detail.clean']}>
+          <AiCheck want="clean" label={tk('AI clean up')} tip={TIPS['detail.ai.clean']} />
+          <LosslessRow />
+        </Section>
+      )}
     </ToolPanel>
+  )
+}
+
+const LOSSLESS_KEY = 'pixels.lossless'
+
+/** How AI results are kept in a non-RAW's project (a RAW's always losslessly). */
+function LosslessRow(): React.JSX.Element | null {
+  const isRaw = useDevelop((s) => s.session?.isRaw === true)
+  const frame = useDevelop((s) =>
+    s.session ? (s.session.frameWidth * s.session.frameHeight) / 1e6 : 0
+  )
+  const say = useLibrary((s) => s.say)
+  const [lossless, setLossless] = useState(false)
+  useEffect(() => {
+    void api.app.getSetting<boolean>(LOSSLESS_KEY).then((v) => setLossless(v === true))
+  }, [])
+  if (isRaw) return null
+  const setStorage = async (on: boolean): Promise<void> => {
+    if (on) {
+      const mb = (x: number): string => `${Math.max(1, Math.round(x))} MB`
+      const yes = await askConfirm({
+        title: t('Store AI results losslessly?'),
+        body: t(
+          'Each denoise step of a photo this size would take about {{lossless}} in its project, instead of about {{near}} near-losslessly.\n\nLossless keeps the most room for editing afterwards: pushing exposure or shadows far shows nothing of compression. Steps already made keep how they were stored. RAW photos are always stored losslessly.',
+          { lossless: mb(frame * 2.3), near: mb(frame * 0.4) }
+        ),
+        confirm: t('Store losslessly')
+      })
+      if (!yes) return
+    }
+    setLossless(on)
+    void api.app.setSetting(LOSSLESS_KEY, on).catch((e) => say(errorText(e), 'error'))
+  }
+  return (
+    <div className="row ai-lossless">
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={lossless}
+          onChange={(e) => void setStorage(e.target.checked)}
+        />
+        {t('Store results losslessly')}
+      </label>
+      <InfoTip tip={TIPS['detail.ai.lossless']} label={t('Store results losslessly')} />
+    </div>
   )
 }
 
@@ -1282,8 +1321,13 @@ export function DetailBody(): React.JSX.Element | null {
 function RawDenoise(): React.JSX.Element | null {
   const { recipe, edit, commit, layer } = useScope()
   const bayer = useDevelop((s) => s.session?.isRaw === true && s.session.info.raw_cfa === 'Bayer')
-  const installed = useModels().find((m) => m.id === 'pmrid')?.installed === true
+  const models = useModels()
+  const switches = useSwitches()
+  const installed = models.find((m) => m.id === 'pmrid')?.installed === true
   if (!recipe || !bayer || layer) return null
+  // The PIXL demosaic (an engine development kit's) denoises as it develops:
+  // nothing to choose while it is this photo's develop. The edit keeps its choice.
+  if (pixlDemosaicActive('Bayer', models, switches?.pixlDemosaic !== false)) return null
   const set = (on: boolean): void => {
     edit((r) => (r.detail.rawDenoise = on))
     commit(on ? tk('RAW data denoise on') : tk('RAW data denoise off'))

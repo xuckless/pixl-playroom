@@ -1,29 +1,41 @@
 import { useRef, useState } from 'react'
 import { monotone } from '../../../shared/curves'
+import { vsPoints } from '../../../shared/resolve'
 import type { CurvePointSetting, WheelSetting } from '../../../shared/recipe'
 import { t } from '../lib/i18n'
 
 /**
  * A point curve: click to add, drag to move, double-click a point (or drag it
  * off the side) to remove it. The first and last points stay at the ends.
+ *
+ * `vs`: one of Resolve's vs curves instead: flat at the middle untouched, a
+ * click puts a point on the line where it is (drag it to bend), every point
+ * moves and goes, and a hue curve (`periodic`) wraps across red. A
+ * `background` (a CSS gradient) runs under it: the hues, or a ramp.
  */
 export function CurveEditor({
   points,
   colour,
   histogram,
   onChange,
-  onCommit
+  onCommit,
+  vs = false,
+  periodic = false,
+  background
 }: {
   points: CurvePointSetting[]
   colour: string
   histogram?: number[]
   onChange: (p: CurvePointSetting[], live: boolean) => void
   onCommit: () => void
+  vs?: boolean
+  periodic?: boolean
+  background?: string
 }): React.JSX.Element {
   const size = 240
   const ref = useRef<SVGSVGElement>(null)
   const [drag, setDrag] = useState<number | null>(null)
-  const f = monotone(points)
+  const f = monotone(vs ? vsPoints(points, periodic) : points)
   const path: string[] = []
   for (let i = 0; i <= 96; i++) {
     const x = i / 96
@@ -49,6 +61,8 @@ export function CurveEditor({
         const hit = sorted.findIndex((q) => Math.hypot(q.x - p.x, q.y - p.y) < 0.04)
         if (hit >= 0) setDrag(hit)
         else {
+          // A vs curve's new point lands on the line, so the click alone bends nothing.
+          if (vs) p.y = Math.min(1, Math.max(0, f(p.x)))
           const next = [...sorted, p].sort((a, b) => a.x - b.x)
           setDrag(next.indexOf(p))
           onChange(next, true)
@@ -61,7 +75,8 @@ export function CurveEditor({
         const next = [...sorted]
         const lo = drag === 0 ? 0 : next[drag - 1].x + 0.01
         const hi = drag === next.length - 1 ? 1 : next[drag + 1].x - 0.01
-        const x = drag === 0 ? 0 : drag === next.length - 1 ? 1 : Math.min(hi, Math.max(lo, p.x))
+        const pinned = !vs && (drag === 0 || drag === next.length - 1)
+        const x = pinned ? (drag === 0 ? 0 : 1) : Math.min(hi, Math.max(lo, p.x))
         next[drag] = { x, y: p.y }
         onChange(next, true)
       }}
@@ -74,7 +89,7 @@ export function CurveEditor({
       onDoubleClick={(e) => {
         const p = at(e as unknown as React.PointerEvent)
         const hit = sorted.findIndex((q) => Math.hypot(q.x - p.x, q.y - p.y) < 0.04)
-        if (hit > 0 && hit < sorted.length - 1) {
+        if (vs ? hit >= 0 : hit > 0 && hit < sorted.length - 1) {
           onChange(
             sorted.filter((_, i) => i !== hit),
             false
@@ -103,11 +118,16 @@ export function CurveEditor({
           <line y1={g * size} y2={g * size} x1={0} x2={size} />
         </g>
       ))}
+      {background && (
+        <foreignObject x={0} y={size - 10} width={size} height={10}>
+          <div className="curve-strip" style={{ background }} />
+        </foreignObject>
+      )}
       <line
         x1={0}
-        y1={size}
+        y1={vs ? size / 2 : size}
         x2={size}
-        y2={0}
+        y2={vs ? size / 2 : 0}
         stroke="rgba(255,255,255,0.16)"
         strokeDasharray="3 3"
       />

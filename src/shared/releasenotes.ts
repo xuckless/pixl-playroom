@@ -18,6 +18,154 @@ export interface ReleaseNotes {
 }
 
 export const RELEASE_NOTES: ReleaseNotes[] = [
+  // Engine 0.20.0 (PIXL's own models), the Resolve colour tools and
+  // scopes, History and Versions, the themes (branch feat/engine-dev-demosaic).
+  {
+    version: '0.5.0-beta',
+    headline: tk(
+      'Our own AI models, colour tools borrowed from Hollywood, scopes that actually scope, and a History you can read without a magnifying glass.'
+    ),
+    sections: [
+      {
+        title: tk('PIXL’s own models'),
+        items: [
+          tk(
+            'PIXL demosaic: RAW files are now built by a model we trained ourselves, and it takes the grain out in the same step. Cleaner than anything Playroom used before, about 9 seconds for a 25 MP RAW on a Mac. It downloads by itself; Settings → AI models turns it off if you miss the old grain.'
+          ),
+          tk(
+            'PIXL Enhance: our other model, for compression mush, noise and mild blur. It lives in Detail now, as a little AI box beside Sharpening, Noise reduction and the new Clean up artefacts. Tick one and it works quietly in the background; untick it and it’s gone. No Apply buttons, no ceremony.'
+          ),
+          tk(
+            'The boxes stack sensibly: AI sharpening includes the noise reduction and the clean-up, so ticking it ticks the others for you. One step on the photo, never three fighting each other.'
+          ),
+          tk(
+            'An HDR photo asks before AI touches it: the models work on its SDR picture, so we say so and switch it with your blessing instead of quietly flattening your highlights.'
+          ),
+          tk(
+            'On a computer whose graphics chip can’t run them, Playroom asks once before using the processor, because a RAW then takes about 40 seconds and we’d rather you decide than find out. Change your mind in Settings → AI models.'
+          ),
+          tk(
+            'When our demosaic can’t develop a photo and another one stands in, the photo says so, in the engine’s own words. No silent swaps.'
+          ),
+          tk('Enhance is now just Super resolution, which is what it was mostly for anyway.')
+        ]
+      },
+      {
+        title: tk('Colour like a colourist'),
+        items: [
+          tk(
+            'Settings → Interface → Colour tools: Lightroom or Resolve. Pick Resolve and you get DaVinci Resolve’s way of grading in Playroom’s clothes: Lift, Gamma, Gain and Offset wheels with numbers you can type, Log wheels, Curves with Hue vs Hue, Hue vs Sat and Lum vs Sat, and a Qualifier that picks a colour and grades just that, inside a mask too.'
+          ),
+          tk(
+            'The friendly Lightroom HSL sits right under the Primaries, because sometimes you just want the greens a bit less green.'
+          ),
+          tk(
+            'Every Resolve control has an (i) that explains it in plain words. Nobody is born knowing what Pivot does.'
+          ),
+          tk(
+            'A node view of your masks, for the brave: Settings → Interface → Node view (advanced). Off by default; it won’t ambush anyone.'
+          ),
+          tk(
+            'Curves presets in both worlds: the tone curve’s Medium and Strong contrast are now as gentle as the ones you know from Lightroom (the old ones were about twice as strong, sorry), and Resolve’s curves have starting points like Even skin tones, Teal skies and Clean shadows.'
+          ),
+          tk(
+            'The Essentials, Creative and B&W looks were rebuilt on the new colour tools. Same names, same spirit, better bones.'
+          )
+        ]
+      },
+      {
+        title: tk('Scopes'),
+        items: [
+          tk(
+            'Histogram, Colours, Waveform, RGB Parade, Vectorscope and a CIE chart, one at a time with ◀ ▶ (or Alt+[ and Alt+]), or up to four at once in the big view. They follow the picture while you drag.'
+          ),
+          tk('“In mask” shows only what the selected mask covers. Very handy, very nerdy.')
+        ]
+      },
+      {
+        title: tk('A tidier right column'),
+        items: [
+          tk(
+            'One section at a time, picked from one dropdown, instead of a tower of folding cards. A dot says which sections hold changes.'
+          ),
+          tk(
+            'Basic corrections: Treatment, Profile, White balance, Light and Presence together, as Lightroom’s Basic panel has them. Vibrance and Saturation moved into Presence, where they always secretly belonged.'
+          ),
+          tk(
+            'Then the curves, then HSL, then the other colour tools, in both Lightroom and Resolve mode. ⌘1 to ⌘9 now jump like they do in Lightroom Classic.'
+          )
+        ]
+      },
+      {
+        title: tk('History, Versions and Edits'),
+        items: [
+          tk(
+            'The Edits list shows what you changed, not how many times you nudged it, and every edit has an eye to switch it off and on.'
+          ),
+          tk(
+            'History is a short timeline grouped by editing session, with plain Undo and Redo. Changed your mind about one change from twenty steps ago? Delete just that one; everything after it stays.'
+          ),
+          tk(
+            'Versions sit at the top of History: name your own, and Playroom keeps some for you, at the start of each session, before a look or an AI step, when you paste settings and when you export. Restoring one is a new step, so you can always come back.'
+          ),
+          tk(
+            'Rebuild with the latest develop: an older project is redeveloped with today’s methods, its AI steps made again, in one undoable step. Playroom suggests it when it’s worth it.'
+          )
+        ]
+      },
+      {
+        title: tk('Masks'),
+        items: [
+          tk(
+            'The classic overlay is back, with handles on the photo, because the glass looked lovely and showed the feather badly. Function wins.'
+          )
+        ]
+      },
+      {
+        title: tk('Looks and feel'),
+        items: [
+          tk(
+            'Themes, in Settings → Interface: Playroom Signature (the new default, in layered blacks that melt into the dark workspace), Playroom Modern (black, purple and electric cyan, with a glow), Playroom Studio (neutral greys, for colour-critical work) and High contrast. The purple stays in every one; we have principles.'
+          ),
+          tk('Panels hold their own beside a bright HDR picture instead of disappearing into it.'),
+          tk(
+            'Text that doesn’t fit ends in “…”, and hovering it shows the whole thing. German, we see you.'
+          )
+        ]
+      },
+      {
+        title: tk('Small but honest'),
+        items: [
+          tk(
+            'Before now always starts from the Neutral profile, so you compare against the photo, not against our taste.'
+          ),
+          tk(
+            'A RAW whose camera is in PIXL’s colour database uses PIXL’s colour unless you chose otherwise.'
+          ),
+          tk(
+            'Some RAWs whose noise the engine couldn’t measure used to fall back to the old develop, and then kept every RAW after them on it too. Now it’s that one photo at most, and usually not even that.'
+          )
+        ]
+      }
+    ],
+    next: [
+      {
+        title: tk('AI in HDR'),
+        text: tk('PIXL Enhance on HDR photos and on a RAW’s highlights, without the SDR detour.')
+      },
+      {
+        title: tk('The last two curves'),
+        text: tk(
+          'Hue vs Lum and Sat vs Sat already keep what you draw; they start working as soon as the engine catches up.'
+        )
+      },
+      {
+        title: tk('Sharper models'),
+        text: tk('A fine-tuned PIXL Enhance, and scopes read from the full-size picture.')
+      },
+      { title: tk('And another cookie'), text: tk('You read the whole thing again. Respect. 🍪🍪') }
+    ]
+  },
   // Engines 0.18 and 0.19 together (TODO.md Phases N and O). Gemma, its
   // llama.cpp server and SAM 3 are held out of this release (the owner).
   {

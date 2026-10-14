@@ -327,7 +327,7 @@ export function HueChart({
 }
 
 /** The small corner button that opens a scope's expanded view. */
-function ExpandButton({
+export function ExpandButton({
   label,
   onClick
 }: {

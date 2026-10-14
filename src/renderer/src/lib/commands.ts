@@ -4,6 +4,8 @@
  * commands, the first whose `when` holds runs — so a tool's own use of a key
  * (Delete in Heal, [ ] for the heal brush) comes before the general one.
  */
+import { rebuild, usePipeline } from './pipeline'
+import { effective } from '../../../shared/edits'
 import { suggestedReasons, useCull } from '../state/cull'
 import { useSyncExternalStore } from 'react'
 import { nextOf } from '../../../shared/masks'
@@ -17,7 +19,7 @@ import {
   toggleDrawer,
   toggleMasks
 } from '../develop/tools'
-import { CARDS } from '../../../shared/cards'
+import { CARDS, panelTitle, RESOLVE_TWIN, type PanelId } from '../../../shared/cards'
 import {
   componentLabel,
   deleteComponent,
@@ -34,6 +36,7 @@ import { scoped } from '../state/scope'
 import { useLibrary } from '../state/library'
 import { choosePhotos } from './openPhotos'
 import { OVERLAY_MODES, useUi } from '../state/ui'
+import { cycleScope } from '../../../shared/scopes'
 import { flashHud } from '../views/loupe/hudNote'
 import { loupeZoom, setSpace } from '../views/loupe/zoom'
 import { api, errorText } from './api'
@@ -82,9 +85,9 @@ const dev = (): ReturnType<typeof useDevelop.getState> => useDevelop.getState()
 const ui = (): ReturnType<typeof useUi.getState> => useUi.getState()
 
 const healOpen = (): boolean => ui().drawer === 'heal'
-/** Whether a card is showing open in the column (the cards up, it unfolded). */
+/** Whether a card is the section the column shows. */
 const cardShown = (id: 'mixer' | 'curve'): boolean =>
-  ui().drawer === 'adjust' && !!ui().cardsOpen[id]
+  ui().drawer === 'adjust' && ui().focusCard === id
 const notInField = (e: KeyboardEvent): boolean => (e.target as HTMLElement)?.tagName !== 'INPUT'
 const focusedItem = (): ReturnType<typeof lib>['items'][number] | undefined =>
   lib().items.find((i) => i.key === lib().focus)
@@ -159,17 +162,37 @@ const labels = (['red', 'yellow', 'green', 'blue'] as const).map<KeyCommand>((la
   }
 }))
 
-const cards = CARDS.map<KeyCommand>((c, i) => ({
-  id: `card.${c.id}`,
+/**
+ * ⌘1…⌘9 as in Lightroom Classic: Basic, Tone curve, HSL, Colour grading,
+ * Detail, Optics, Geometry, Effects, Calibration. With Resolve's tools the
+ * curve's and the grading's keys show their Resolve twins.
+ */
+const PANEL_KEYS: Partial<Record<PanelId, number>> = {
+  basic: 1,
+  curve: 2,
+  mixer: 3,
+  grading: 4,
+  detail: 5,
+  optics: 6,
+  geometry: 7,
+  effects: 8,
+  calibration: 9
+}
+/** The panel a key's command shows with the colour tools in force. */
+const keyedPanel = (id: PanelId): PanelId =>
+  (ui().colourTools === 'resolve' && RESOLVE_TWIN[id]) || id
+const PANELS: PanelId[] = ['basic', ...CARDS.filter((c) => !c.basic).map((c) => c.id)]
+const cards = PANELS.map<KeyCommand>((id) => ({
+  id: `card.${id}`,
   // Made when read, in the language in force (`t()` of it where it is shown changes nothing).
   get label() {
-    return t('Show {{card}}', { card: t(c.title) })
+    return t('Show {{card}}', { card: t(panelTitle(keyedPanel(id), ui().colourTools)) })
   },
   group: 'Tools',
   context: 'develop',
-  keys: i < 9 ? [`Mod+${i + 1}`] : [],
+  keys: PANEL_KEYS[id] ? [`Mod+${PANEL_KEYS[id]}`] : [],
   run: (e) => {
-    jumpToCard(c.id)
+    jumpToCard(keyedPanel(id))
     stop(e)
   }
 }))
@@ -266,6 +289,19 @@ export const COMMANDS: KeyCommand[] = [
     context: 'global',
     keys: ['Mod+Shift+U'],
     run: () => void autoWbBatch(lib().targets())
+  },
+  {
+    id: 'rebuild',
+    label: tk('Rebuild with the latest develop'),
+    group: 'Library',
+    context: 'global',
+    keys: [],
+    // With a newer develop than an edit could have been made with (shared/rebuild.ts).
+    when: () => {
+      const p = usePipeline.getState()
+      return (p.pixlDemosaic || p.pixlEnhance) && lib().targets().length > 0
+    },
+    run: () => void rebuild(lib().targets()).catch((err) => lib().say(errorText(err), 'error'))
   },
   {
     id: 'nav.next',
@@ -506,7 +542,8 @@ export const COMMANDS: KeyCommand[] = [
           g !== 'retouch'
       )
       lib().setClipboard({
-        recipe: structuredClone(d.recipe),
+        // What is seen: a section switched off goes as its defaults.
+        recipe: structuredClone(effective(d.recipe, d.session?.isRaw ?? false)),
         groups: [...groups],
         source: d.session?.key ?? null
       })
@@ -645,6 +682,28 @@ export const COMMANDS: KeyCommand[] = [
     context: 'develop',
     keys: ['J'],
     run: () => dev().setClipping(!dev().clipping)
+  },
+  {
+    id: 'scopes.next',
+    label: tk('Next scope'),
+    group: 'View',
+    context: 'develop',
+    keys: ['Alt+BracketRight'],
+    run: () => {
+      const u = useUi.getState()
+      u.setScopes({ inline: cycleScope(u.scopes.inline, 1) })
+    }
+  },
+  {
+    id: 'scopes.prev',
+    label: tk('Previous scope'),
+    group: 'View',
+    context: 'develop',
+    keys: ['Alt+BracketLeft'],
+    run: () => {
+      const u = useUi.getState()
+      u.setScopes({ inline: cycleScope(u.scopes.inline, -1) })
+    }
   },
   {
     id: 'zoom.toggle',

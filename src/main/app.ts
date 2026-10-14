@@ -1,3 +1,9 @@
+import { keepNoiseIn } from './ai/noisebook'
+import { RebuildRunner } from './rebuild'
+import { setPipeline } from './pipeline'
+import { PIXL_ENHANCE } from '../shared/pixlenhance'
+import type { AiJobEvent } from '../shared/ai'
+import type { AiRunner } from './ai/jobs'
 import { t } from '../shared/i18n'
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import log from 'electron-log/main'
@@ -27,7 +33,10 @@ import { DenoiseRunner } from './ai/denoise'
 import { DISPLAY_SETTING_KEY, watchDisplayHdr } from './hdrdisplay'
 import { INPAINTER_MODEL, setInpainter } from './ai/inpainter'
 import { DEMOSAIC_MODEL, setRawModels } from './ai/rawdevelop'
+import { PIXL_DEMOSAIC } from '../shared/pixldemosaic'
+import { DEV_KIT } from './devkit'
 import { AiSwitchStore, setSwitchStore } from './ai/switches'
+import { setPixlCpuStore } from './ai/pixlcpu'
 import { BrainStore } from './ai/brain'
 import { ModelStore } from './ai/models'
 import { EnhanceRunner } from './enhance'
@@ -289,13 +298,31 @@ app.whenReady().then(() => {
   // The killswitch and the heavy models' switches (shared/heavy.ts), and Gemma.
   const switches = new AiSwitchStore(index)
   setSwitchStore(switches)
+  // PIXL's models on the CPU: asked once per computer, kept with the switches.
+  setPixlCpuStore(switches)
   const brain = new BrainStore(models, switches)
   // A Remove bakes with MI-GAN once it is downloaded (pixels/heal.ts).
   setInpainter(async () =>
     (await models.installed(INPAINTER_MODEL)) ? models.ref(INPAINTER_MODEL) : null
   )
-  // A RAW's full-size develop: DemosaicNet once it is here, PMRID when asked.
+  // A development kit's run says at once whether its roster is the one installed
+  // (a `pnpm install` since would have put the released one back).
+  if (DEV_KIT) {
+    const offered = Object.values(PIXL_DEMOSAIC).every((id) => models.offered(id))
+    console.log(
+      `[dev kit] ${DEV_KIT}:`,
+      offered
+        ? 'the installed roster offers the PIXL demosaic'
+        : 'the installed roster does NOT offer the PIXL demosaic: run `pnpm engine:dev` again'
+    )
+  }
+  // A RAW's full-size develop: the PIXL demosaic where the roster offers it
+  // and its switch is on, else DemosaicNet once it is here, PMRID when asked.
+  keepNoiseIn(join(paths.models(), 'raw-noise.json'))
   setRawModels({
+    offered: (id) => models.offered(id),
+    pixlDemosaic: async () => (await switches.get()).pixlDemosaic,
+    pixlDeclined: (id) => models.pixlDeclined(id),
     installed: (id) => models.installed(id),
     ref: (id, provider) => models.ref(id, provider),
     withCpuFallback: (ids, make, signal) => models.withCpuFallback(ids, make, signal),
@@ -311,12 +338,16 @@ app.whenReady().then(() => {
   })
   // Off the launch's path: retired models' files off the disk, the
   // thumbnails 0.3's before/after (the previous engine's) kept, and the
-  // Bayer DemosaicNet (2 MB) fetched for RAWs.
+  // Bayer DemosaicNet (2 MB) fetched for RAWs; the PIXL demosaic's two too
+  // where a development kit's roster offers them (`autoFetch` passes over
+  // an id the roster lacks).
   setTimeout(() => {
     void models
       .prune()
       .catch((err) => log.warn('model clean-up failed', (err as Error).message))
-      .then(() => models.autoFetch([DEMOSAIC_MODEL.Bayer]))
+      .then(() =>
+        models.autoFetch([DEMOSAIC_MODEL.Bayer, PIXL_DEMOSAIC.Bayer, PIXL_DEMOSAIC.XTrans])
+      )
     void rm(paths.legacyPreviews(), { recursive: true, force: true }).catch(() => undefined)
   }, 20_000).unref()
   const lenses = new LensProfileStore()
@@ -329,23 +360,48 @@ app.whenReady().then(() => {
     object: (key, lens, stroke) => select.objectUnder(key, lens, stroke)
   })
   const segment = new SegmentRunner(library, planes, aiEngine, models, () => sessions)
-  const ai = new AiJobs(
-    {
-      prompt: new PromptRunner(select, models),
-      enhance: new EnhanceRunner(
-        library,
-        aiEngine,
-        () => bgEngine.getStatus(),
-        models,
-        index,
-        () => sessions
-      ),
-      segment,
-      denoise: new DenoiseRunner(library, aiEngine, models, index, () => sessions)
-    },
-    async (key) => (await library.photoRow(key)).name,
-    (e) => applyMaskResult(e, { library, sessions: sessions!, planes })
+  const runners = {
+    prompt: new PromptRunner(select, models),
+    enhance: new EnhanceRunner(
+      library,
+      aiEngine,
+      () => bgEngine.getStatus(),
+      models,
+      index,
+      () => sessions
+    ),
+    segment,
+    denoise: new DenoiseRunner(library, aiEngine, models, index, () => sessions)
+  }
+  const applyResult = (e: AiJobEvent): Promise<void> =>
+    applyMaskResult(e, { library, sessions: sessions!, planes })
+  // A rebuild runs the others' work in turn, each result applied as its job's would be.
+  const rebuild = new RebuildRunner(
+    library,
+    bgEngine,
+    () => sessions,
+    async (req, ctx) => {
+      const runner = runners[req.task as keyof typeof runners] as AiRunner | undefined
+      if (!runner) throw new Error(t('{{task}} is not available in this build', { task: req.task }))
+      const result = await runner.run(ctx, req as never)
+      // As its own job's end would apply it (a mask into the recipe).
+      await applyResult({ jobId: ctx.jobId, key: req.key, result } as AiJobEvent)
+      return result
+    }
   )
+  const ai = new AiJobs(
+    { ...runners, rebuild },
+    async (key) => (await library.photoRow(key)).name,
+    applyResult
+  )
+  // What today's pipeline has (shared/rebuild.ts): the PIXL demosaic offered
+  // and switched on, PIXL Enhance offered.
+  setPipeline(async () => ({
+    pixlDemosaic:
+      Object.values(PIXL_DEMOSAIC).some((id) => models.offered(id)) &&
+      (await switches.get()).pixlDemosaic,
+    pixlEnhance: models.offered(PIXL_ENHANCE)
+  }))
   // AI switched off in Settings: no job starts (a RAW's develop keeps its models).
   ai.gate = () => switches.enabled()
   // With no brain (Gemma shelved), the open photo's named planes and subject

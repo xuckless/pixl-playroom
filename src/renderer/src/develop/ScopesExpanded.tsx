@@ -1,52 +1,58 @@
 /**
- * The scopes at full size, in a window like the preset browser's: the
- * histogram with every channel (overlay, parade, one at a time), the colour
- * chart, the CIE 1976 chromaticity chart, and the metrics (tone, colour,
- * colour vision, palette). Opened from the corner of either scope in the
- * panel; the tab is the one it was opened from.
+ * The scopes at full size, as DaVinci Resolve shows them: one, two or four
+ * at once, each place with its own ◀ ▶ through the histogram, RGB parade,
+ * waveform, vectorscope, colour chart, CIE 1976 chart and the metrics. The
+ * layout and what each place shows are kept (the ui store's `scopes`).
  */
-import { useState } from 'react'
-import { readable } from '../lib/frames'
-import { t, tk } from '../lib/i18n'
-import { Modal, Tabs } from '../components/ui'
-import { HueChart } from '../components/charts'
-import { VISION_LABEL, type VisionKind } from '../../../shared/scopemetrics'
-import { useDevelop } from '../state/develop'
+import { t } from '../lib/i18n'
+import { Modal } from '../components/ui'
+import { Icon } from '../components/icons'
+import { cycleExpanded, type ExpandedScope } from '../../../shared/scopes'
 import { useLibrary } from '../state/library'
-import { useScopesView, type ScopesTab } from '../state/scopesView'
-import { BigHistogram } from './scopes/BigHistogram'
-import { CieChart } from './scopes/CieChart'
-import { MetricsPanel } from './scopes/MetricsPanel'
-import { pickHue } from './huePick'
+import { useUi } from '../state/ui'
+import { ScopeOptions, ScopeView } from './scopes/ScopeView'
+import { SCOPE_LABEL } from './scopes/labels'
 
-const TABS: { value: ScopesTab; label: string }[] = [
-  { value: 'histogram', label: tk('Histogram') },
-  { value: 'colours', label: tk('Colours') },
-  { value: 'cie', label: 'CIE 1976' },
-  { value: 'metrics', label: tk('Metrics') }
-]
+function Place({ index }: { index: number }): React.JSX.Element {
+  const kind = useUi((s) => s.scopes.slots[index])
+  const slots = useUi((s) => s.scopes.slots)
+  const setScopes = useUi((s) => s.setScopes)
+  const step = (d: 1 | -1): void => {
+    const next = [...slots]
+    next[index] = cycleExpanded(kind, d)
+    setScopes({ slots: next })
+  }
+  return (
+    <section className={`se-place se-${kind}`}>
+      <div className="scope-head">
+        <button className="icon sm" aria-label={t('Previous scope')} onClick={() => step(-1)}>
+          <Icon name="chevronLeft" />
+        </button>
+        <span className="scope-name">{t(SCOPE_LABEL[kind as ExpandedScope])}</span>
+        <button className="icon sm" aria-label={t('Next scope')} onClick={() => step(1)}>
+          <Icon name="chevronRight" />
+        </button>
+        <span className="spacer" />
+        <ScopeOptions kind={kind} />
+      </div>
+      <div className="se-body">
+        <ScopeView kind={kind} expanded />
+      </div>
+    </section>
+  )
+}
 
 export function ScopesExpandedDialog(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
-  const opened = useScopesView((s) => s.tab)
-  const [tab, setTab] = useState<ScopesTab>(opened)
-  const [vision, setVision] = useState<VisionKind | null>(null)
-  const stats = useDevelop((s) => s.stats)
-  const hdrStats = useDevelop((s) => s.hdrStats)
-  const before = useDevelop((s) => s.before)
-  const mask = useDevelop((s) => s.mask)
-  const layerId = useDevelop((s) => s.layerId)
-  const clipping = useDevelop((s) => s.clipping)
-  const setClipping = useDevelop((s) => s.setClipping)
-  const picture = useDevelop((s) => s.picture)
+  const layout = useUi((s) => s.scopes.layout)
+  const setScopes = useUi((s) => s.setScopes)
   const close = (): void => setDialog(null)
-
   return (
     <Modal
       title={t('Scopes')}
       onClose={close}
       icon="info"
-      className="scopes-expanded"
+      className={`scopes-expanded se-layout-${layout}`}
       footer={
         <button className="primary" autoFocus onClick={close}>
           {t('Done')}
@@ -54,60 +60,24 @@ export function ScopesExpandedDialog(): React.JSX.Element {
       }
     >
       <div className="se-tabs">
-        <Tabs value={tab} tabs={TABS.map((x) => ({ ...x, label: t(x.label) }))} onChange={setTab} />
-      </div>
-      {tab === 'histogram' && (
-        <BigHistogram
-          stats={stats}
-          hdr={hdrStats}
-          before={before?.stats ?? null}
-          clipping={clipping}
-          onClipping={setClipping}
-        />
-      )}
-      {tab === 'colours' && (
-        <div className="se-colours">
-          <div className="seg" role="group" aria-label={t('How the colours look to')}>
-            <button className={vision === null ? 'on' : ''} onClick={() => setVision(null)}>
-              {t('Normal')}
+        <div className="seg" role="group" aria-label={t('Scopes at once')}>
+          {([1, 2, 4] as const).map((n) => (
+            <button
+              key={n}
+              className={layout === n ? 'on' : ''}
+              aria-pressed={layout === n}
+              onClick={() => setScopes({ layout: n })}
+            >
+              {n === 1 ? t('One') : n === 2 ? t('Two') : t('Four')}
             </button>
-            {(['protan', 'deutan', 'tritan'] as VisionKind[]).map((k) => (
-              <button
-                key={k}
-                className={vision === k ? 'on' : ''}
-                onClick={() => setVision(k)}
-                title={t(VISION_LABEL[k])}
-              >
-                {k === 'protan' ? t('Protan') : k === 'deutan' ? t('Deutan') : t('Tritan')}
-              </button>
-            ))}
-          </div>
-          <HueChart
-            stats={stats}
-            before={before?.stats ?? null}
-            masked={layerId ? (mask?.maskStats ?? null) : null}
-            vision={vision}
-            onPick={(hue, band, newMask) => {
-              close()
-              pickHue(hue, band, newMask)
-            }}
-          />
-          <p className="muted small">
-            {t(
-              'Click a bar to open that colour in the Colour mixer; Shift-click makes a mask of it. The faint bars are the photo before your edits.'
-            )}
-          </p>
+          ))}
         </div>
-      )}
-      {tab === 'cie' && <CieChart />}
-      {tab === 'metrics' && (
-        <MetricsPanel
-          stats={stats}
-          hdr={hdrStats}
-          before={before?.stats ?? null}
-          pictureUrl={picture ? readable(picture) : null}
-        />
-      )}
+      </div>
+      <div className="se-grid">
+        {Array.from({ length: layout }, (_, i) => (
+          <Place key={i} index={i} />
+        ))}
+      </div>
     </Modal>
   )
 }

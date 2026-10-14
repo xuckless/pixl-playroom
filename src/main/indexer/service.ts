@@ -9,6 +9,8 @@
  * from it). Folder scans and the exif fill are the only long work; they run
  * in chunks and give other requests a turn between them.
  */
+import { legacyBits } from '../../shared/rebuild'
+import { withVersion } from '../../shared/versions'
 import { tk } from '../../shared/i18n'
 import { exportLocationFromLast, LOCATION_SETTING } from '../../shared/locations'
 import { createHash } from 'crypto'
@@ -1052,7 +1054,8 @@ export class IndexService {
       flag: p.flag,
       label: p.label,
       edited: p.recipe !== null && isEdited(p.recipe, raw),
-      recipeKey: thumbRecipeKey(p.recipe, raw)
+      recipeKey: thumbRecipeKey(p.recipe, raw),
+      legacy: legacyBits(p.recipe, raw)
     })
     this.store.replaceCopies(
       row.id,
@@ -1063,12 +1066,14 @@ export class IndexService {
         flag: c.flag,
         label: c.label,
         edited: c.recipe !== null && isEdited(c.recipe, raw),
-        recipeKey: thumbRecipeKey(c.recipe, raw)
+        recipeKey: thumbRecipeKey(c.recipe, raw),
+        legacy: legacyBits(c.recipe, raw)
       }))
     )
     this.store.setStack(row.id, sidecar.stack?.id ?? null, sidecar.stack?.position ?? null)
     // The truth where one is written; a photo with none keeps what the index recorded.
-    if (sidecar.rawColour) this.store.setRawColour(row.id, sidecar.rawColour)
+    if (sidecar.rawColour)
+      this.store.setRawColour(row.id, sidecar.rawColour, sidecar.rawColourChosen === true)
     if (sidecar.names) this.store.setNames(row.id, JSON.stringify(sidecar.names))
     if (sidecar.cullKeep) this.store.setCullKeep(row.id, true)
     if (from === 'project') {
@@ -1346,6 +1351,7 @@ export class IndexService {
       flag: ((copy ? copy.flag : row.flag) as Flag) ?? null,
       label: ((copy ? copy.label : row.label) as ColorLabel) ?? null,
       edited: (copy ? copy.edited : row.edited) === 1,
+      legacy: (copy ? copy.legacy : row.legacy) ?? 0,
       thumbUrl:
         thumbPath && !ctx.bare && existsSync(thumbPath)
           ? cacheUrlIn(this.cacheRoot, thumbPath, thumbKey ?? '')
@@ -2158,15 +2164,44 @@ export class IndexService {
     this.store.removeCopyFromCollections(photoId, copyId)
   }
 
-  saveSnapshots(key: string, snapshots: Snapshot[]): void {
+  /**
+   * A photo's versions changed by `fn` in one write (main owns them: an
+   * automatic version and the user's rename never race), returned as they
+   * are after. A photo without a project gets one only when it has versions.
+   */
+  private editVersions(key: string, fn: (list: Snapshot[]) => Snapshot[]): Snapshot[] {
     const { copyId } = parseKey(key)
+    let out: Snapshot[] = []
     this.update(
       key,
       (s) => {
         const it = itemOf(s, copyId)
-        if (it) it.snapshots = snapshots
+        if (!it) return
+        it.snapshots = fn(it.snapshots ?? [])
+        out = it.snapshots
       },
-      () => snapshots.length > 0
+      () => out.length > 0
+    )
+    return out
+  }
+
+  /** A version added (an automatic one thinned with the rest: shared/versions.ts). */
+  addVersion(key: string, v: Snapshot): Snapshot[] {
+    return this.editVersions(key, (list) => withVersion(list, v, Date.now()))
+  }
+
+  renameVersion(key: string, id: string, name: string): Snapshot[] {
+    return this.editVersions(key, (list) => list.map((v) => (v.id === id ? { ...v, name } : v)))
+  }
+
+  deleteVersion(key: string, id: string): Snapshot[] {
+    return this.editVersions(key, (list) => list.filter((v) => v.id !== id))
+  }
+
+  /** An automatic version kept for good: it becomes a named one. */
+  keepVersion(key: string, id: string): Snapshot[] {
+    return this.editVersions(key, (list) =>
+      list.map((v) => (v.id === id ? { ...v, kind: 'named' as const, reason: undefined } : v))
     )
   }
 
@@ -2226,11 +2261,12 @@ export class IndexService {
     const c = parseRawColour(colour)
     const row = this.store.photo(photoId)
     if (!c || !row) return
-    this.store.setRawColour(photoId, c)
+    this.store.setRawColour(photoId, c, explicit)
     const kept = !!this.projectOf(row) || existsSync(sidecarPath(row.path))
     if (explicit || kept)
       this.updateRow(row, (s) => {
         s.rawColour = c
+        s.rawColourChosen = explicit
       })
   }
 
@@ -2498,6 +2534,24 @@ export class IndexService {
         if (change) this.saveRecipe(key, recipe)
         return change
       }
+    )
+  }
+
+  /** Undo: the newest step in effect taken back (linear, like any editor's). */
+  undoHistory(key: string): HistoryLog {
+    return this.inHistory(
+      key,
+      (p, k) => p.history.undo(k),
+      () => this.store.undoHistory(key)
+    )
+  }
+
+  /** Redo: the oldest step Undo took back since the last edit, brought back. */
+  redoHistory(key: string): HistoryLog {
+    return this.inHistory(
+      key,
+      (p, k) => p.history.redo(k),
+      () => this.store.redoHistory(key)
     )
   }
 

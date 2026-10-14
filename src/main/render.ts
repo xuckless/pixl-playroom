@@ -15,6 +15,9 @@
  * next stage; a draft in flight finishes, so a moving slider keeps showing
  * frames. Both are JPEGs, quick to write and for the loupe to read.
  */
+import { stepDevelopMark } from './developmark'
+import { pipeline } from './pipeline'
+import { rebuildReasons } from '../shared/rebuild'
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { mkdir, readdir, rm, writeFile } from 'fs/promises'
@@ -39,13 +42,15 @@ import {
   type RetouchSpot,
   type SpotRefine
 } from '../shared/retouch'
-import { stackSignature, type PixelStep } from '../shared/pixels'
-import { developMark, pixlSupported, resolveRawColour } from '../shared/rawcolour'
+import { activeSteps, stackSignature, type PixelStep } from '../shared/pixels'
+import { effective } from '../shared/edits'
+import { pixlSupported, resolveRawColour } from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
-import { askOf, scenePlan } from './ai/rawdevelop'
+import { askOf, scenePlan, type ScenePlan } from './ai/rawdevelop'
+import { takeDevelopedNote } from './devkit'
 import { ensureBase, pixelDeps } from './pixels/base'
-import { ensureWorking, workingKey, type WorkingSet } from './pixels/working'
+import { ensureWorking, frameOf, layStepsOn, workingKey, type WorkingSet } from './pixels/working'
 import { defaultUpright, uprightTransform, type GuideLine } from '../shared/upright'
 import type {
   ColorPolicy,
@@ -74,6 +79,8 @@ import {
   type CaMeasurement,
   type DevelopSession,
   type LookThumbEvent,
+  type MasterEvent,
+  type PixlDemosaicState,
   type RegionRequest,
   type RegionResult,
   type RenderEvent,
@@ -81,7 +88,7 @@ import {
   type SampleResult,
   type ViewState
 } from '../shared/ipc'
-import { defaultRecipe, hash32, normaliseRecipe, sameValue, type Recipe } from '../shared/recipe'
+import { beforeRecipe, hash32, normaliseRecipe, sameValue, type Recipe } from '../shared/recipe'
 import { LookThumbQueue, type LookThumb, type ThumbJob } from './lookthumbs'
 import type { Vec3 } from '../shared/wb'
 import {
@@ -116,8 +123,12 @@ import { pixels } from './workers/pool'
 import { traceRegion } from './trace'
 import { cacheUrl } from './protocol'
 import {
+  cutTo,
+  ensureDevelopedProxies,
   ensureLensedProxies,
+  lensOn,
   ensureMaster,
+  onMasterWork,
   ensureProxies,
   ensureQuickMaster,
   masterCached,
@@ -128,7 +139,7 @@ import {
 import { editsHdr, ensureHdrSource } from './hdrsource'
 import { READ_LIMITS } from '../shared/limits'
 import type { LensShot } from './lensprofiles'
-import { t } from '../shared/i18n'
+import { t, tk } from '../shared/i18n'
 import {
   blankRequest,
   BACKGROUND_THREADS,
@@ -192,6 +203,15 @@ const SAVE_MS = 600
 const MASK_THUMB_EDGE = 512
 /** How long editing pauses before an open photo's thumbnail is made again. */
 const THUMB_IDLE_MS = 4000
+/** The settled picture is made screen-sized once the loupe wants this much more than the proxy. */
+const SCREEN_GAIN = 1.1
+/** The screen-sized level's largest edge, and the steps its edge is rounded up to. */
+const SCREEN_EDGE_MAX = 6144
+const SCREEN_STEP = 512
+/** Past this share of the frame, the full-size frame itself is the screen-sized level. */
+const SCREEN_WHOLE = 0.92
+/** How long a RAW stays open before the PIXL demosaic's master is made for it. */
+const DEVELOP_ON_OPEN_MS = 1200
 /** The middle proxy serves a view up to 1/MID_SHORTFALL its size. */
 const MID_SHORTFALL = 0.8
 /** Picture files of each kind kept on disk besides any a kept event names. */
@@ -212,6 +232,20 @@ const LOOK_KEEP = 600
  * this display (`Ceiling::Display`), F16 linear Display P3 with 1.0 = SDR
  * white, and an 8-bit SDR companion for what reads the picture.
  */
+/**
+ * An SDR picture in float (the settled picture and the 1:1 tiles on a
+ * window that draws F16 frames): the same Display P3 picture, linear, so
+ * its gradients are not cut into 256 steps. Values stop at 1, as the 8-bit
+ * picture's do, and match it within one step of 255 once encoded.
+ */
+const LINEAR_P3: ColorPolicy = {
+  ConvertTo: {
+    to: 'LinearDisplayP3',
+    intent: 'RelativeColorimetric',
+    black_point_compensation: false
+  }
+}
+
 function masterFor(
   display: { whiteNits: number; peakNits: number },
   /** The whole picture's figures, for a part of it (a region measures neither). */
@@ -470,7 +504,8 @@ class Session {
     readonly key: string,
     readonly row: PhotoRow,
     readonly info: SourceInfo,
-    readonly px: Proxies,
+    /** The proxies renders start from: the plain ones, or (`adoptDeveloped`) those cut from the master. */
+    public px: Proxies,
     public recipe: Recipe,
     private readonly owner: DevelopSessions,
     /** The file as probed; `info` is what is graded (a gain map's HDR master, when edited so). */
@@ -480,7 +515,20 @@ class Session {
   ) {
     this.dir = rendersDir(row.id)
     this.heldSlot = new HeldSlot(owner.engine, `${key}#held`)
+    this.opened = recipe
     void this.clearEarlier()
+  }
+
+  /** The recipe the photo opened with: an editing session that changed it ends in a Version. */
+  private readonly opened: Recipe
+
+  /** Before/After's other side: a Version's recipe, or null for the photo as it came. */
+  private compareRecipe: Recipe | null = null
+
+  compareWith(recipe: Recipe | null): void {
+    this.compareRecipe = recipe
+    this.beforeKey = ''
+    if (this.view.before) this.schedule('full')
   }
 
   /** An earlier session's picture files: nothing names them now. */
@@ -563,7 +611,116 @@ class Session {
   workingJob: Promise<void> = Promise.resolve()
 
   private stepsKey(recipe: Recipe): string {
-    return workingKey(versionStamp(this.row), recipe.pixels)
+    return workingKey(this.workingVersion(), activeSteps(recipe.pixels))
+  }
+
+  /** The develop the proxies were cut from, once they are the master's (`adoptDeveloped`). */
+  private developedTag: string | null = null
+
+  /** What the working pixels are kept by: the photo's version, and the develop its proxies are of. */
+  private workingVersion(): string {
+    const v = versionStamp(this.row)
+    return this.developedTag ? `${v}-${this.developedTag}` : v
+  }
+
+  /** Whether this RAW's full-size develop is the PIXL demosaic (a development kit's), now. */
+  private async pixlPlan(): Promise<ScenePlan | null> {
+    if (!this.isRaw || isLinearRaw(this.file)) return null
+    const plan = await scenePlan(this.file.raw_cfa, askOf(this.recipe))
+    return plan.demosaic === 'pixl' ? plan : null
+  }
+
+  /**
+   * A RAW the PIXL demosaic develops: its master is made as it opens (after
+   * a moment's rest, so flicking through photos starts none), and the
+   * zoomed-out picture is cut from it once it is there (`adoptDeveloped`),
+   * so what is edited is what the 1:1 view and the export show. The bar in
+   * the loupe's badge says how far meanwhile.
+   */
+  async developOnOpen(): Promise<void> {
+    try {
+      if (this.developedTag || !(await this.pixlPlan())) return
+      const ask = askOf(this.recipe)
+      // Made on an earlier visit: at once.
+      if (!(await masterCached(this.row, this.file, ask))) {
+        await new Promise((r) => setTimeout(r, DEVELOP_ON_OPEN_MS))
+        if (this.closed || this.developedTag || !(await this.pixlPlan())) return
+        this.setPixl('developing')
+        await ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+      }
+      // The engine refused the model: the released develop stood in, and is planned from now on.
+      if (!(await this.pixlPlan())) return this.setPixl('refused')
+      await this.adoptDeveloped()
+    } catch (err) {
+      if (this.closed) return
+      this.setPixl('refused')
+      this.masterRefused(err)
+    }
+  }
+
+  /** The PIXL demosaic's part in this RAW, as the loupe's badge says it (`PixlDemosaicEvent`). */
+  private pixl: PixlDemosaicState | null = null
+
+  private setPixl(state: PixlDemosaicState | null): void {
+    if (this.pixl === state || this.closed) return
+    this.pixl = state
+    this.owner.send(IPC.develop.pixlDemosaic, { key: this.key, state })
+  }
+
+  /** The proxies before `adoptDeveloped`: back to them when the PIXL demosaic is turned off. */
+  private plainPx: Proxies | null = null
+
+  /**
+   * The PIXL demosaic's switch turned (Settings → AI models): the picture
+   * follows it, from the master's proxies or back to the plain ones.
+   */
+  async pixlSwitched(): Promise<void> {
+    if (this.closed) return
+    if (await this.pixlPlan()) return void this.developOnOpen()
+    this.setPixl(null)
+    if (!this.developedTag || !this.plainPx) return
+    this.px = this.plainPx
+    this.plainPx = null
+    this.developedTag = null
+    this.working = null
+    if (activeSteps(this.recipe.pixels).length > 0) await this.refreshWorking()
+    else this.schedule('full')
+  }
+
+  /**
+   * Once the PIXL demosaic's master is made (on open, a 1:1 view, a pixel
+   * step or an earlier visit), the develop view's proxies are cut from it
+   * and everything renders again from them: the zoomed-out picture is the
+   * model's too (denoised), not the half-size develop's. A master another
+   * develop stood in for (one the engine refused the model for) is not.
+   */
+  async adoptDeveloped(): Promise<void> {
+    if (this.developedTag || this.closed) return
+    try {
+      const plan = await this.pixlPlan()
+      const ask = askOf(this.recipe)
+      if (!plan || !(await masterCached(this.row, this.file, ask))) return
+      const master = await ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+      const px = await ensureDevelopedProxies(
+        this.owner.bgEngine,
+        this.row,
+        this.px,
+        master,
+        plan.tag
+      )
+      if (this.closed || this.developedTag) return
+      this.plainPx = this.px
+      this.px = px
+      this.developedTag = plan.tag
+      this.setPixl('on')
+      // Steps laid on the plain proxies are laid again on these.
+      this.working = null
+      if (activeSteps(this.recipe.pixels).length > 0) await this.refreshWorking()
+      else this.schedule('full')
+      log.info('develop view now from the master', plan.tag, this.row.name)
+    } catch (err) {
+      log.warn('proxies from the master not made', (err as Error).message)
+    }
   }
 
   /**
@@ -572,7 +729,7 @@ class Session {
    */
   private basePx(): Proxies {
     if (this.preview) return this.preview
-    if (this.recipe.pixels.length === 0) return this.px
+    if (activeSteps(this.recipe.pixels).length === 0) return this.px
     return this.working?.px ?? this.px
   }
 
@@ -584,7 +741,7 @@ class Session {
   async refreshWorking(): Promise<void> {
     const key = this.stepsKey(this.recipe)
     if (this.working?.key === key) return
-    if (this.recipe.pixels.length === 0) {
+    if (activeSteps(this.recipe.pixels).length === 0) {
       const was = this.frameSize()
       this.working = null
       this.frameChanged(was)
@@ -594,9 +751,9 @@ class Session {
     try {
       const set = await ensureWorking(
         pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row),
-        versionStamp(this.row),
+        this.workingVersion(),
         this.px,
-        this.recipe.pixels,
+        activeSteps(this.recipe.pixels),
         null
       )
       if (this.closed || this.stepsKey(this.recipe) !== set.key) return
@@ -619,18 +776,64 @@ class Session {
    * the recipe) the steps'. What a 1:1 view and the renderer measure in.
    */
   frameSize(): { width: number; height: number } {
-    const px = this.recipe.pixels.length > 0 ? (this.working?.px ?? this.px) : this.px
+    const px = activeSteps(this.recipe.pixels).length > 0 ? (this.working?.px ?? this.px) : this.px
     return { width: px.frameWidth, height: px.frameHeight }
+  }
+
+  /**
+   * The photo's full-size frame as the next step would read it: the steps
+   * laid on, else its own pixels (a RAW's master). PIXL Enhance's preview is
+   * made from it.
+   */
+  async fullFrame(): Promise<ProxyFile> {
+    return (
+      (await this.workingMaster()) ??
+      ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
+    )
+  }
+
+  /**
+   * PIXL Enhance's preview (main/enhance.ts `makeEnhancePreview`): the
+   * full-size frame with a square enhanced, which the 1:1 view reads while
+   * it is shown; made for these steps only, so gone when they change.
+   */
+  private enhancePreview: { file: ProxyFile; steps: string; shown: boolean } | null = null
+
+  setEnhancePreview(file: ProxyFile | null): void {
+    const was = this.enhancePreview
+    if (was && was.file.path !== file?.path) dropFiles([was.file.path])
+    this.enhancePreview =
+      file && !this.closed ? { file, steps: this.stepsKey(this.recipe), shown: true } : null
+    if (file && this.closed) dropFiles([file.path])
+    if (was || file) this.owner.send(IPC.develop.tileStale, { key: this.key })
+  }
+
+  /** The preview shown, or the 1:1 view without it, to compare. */
+  showEnhancePreview(on: boolean): void {
+    if (!this.enhancePreview || this.enhancePreview.shown === on) return
+    this.enhancePreview.shown = on
+    this.owner.send(IPC.develop.tileStale, { key: this.key })
+  }
+
+  /** The preview the 1:1 view reads now: shown, and made for the steps the recipe has. */
+  private previewFrame(): ProxyFile | null {
+    const p = this.enhancePreview
+    if (!p) return null
+    if (p.steps !== this.stepsKey(this.recipe)) {
+      this.setEnhancePreview(null)
+      return null
+    }
+    return p.shown ? p.file : null
   }
 
   /** The full-resolution working frame (the recipe's steps on the photo at full size): 1:1 and export. */
   async workingMaster(): Promise<ProxyFile | null> {
-    if (this.recipe.pixels.length === 0) return null
+    if (activeSteps(this.recipe.pixels).length === 0) return null
     const set = await ensureWorking(
       pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row),
-      versionStamp(this.row),
+      this.workingVersion(),
       this.px,
-      this.recipe.pixels,
+      activeSteps(this.recipe.pixels),
       () => ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
     )
     return set.master
@@ -670,11 +873,13 @@ class Session {
     /** The proxies they are prepared from: the plain ones or the working pixels (steps laid on). */
     base: string
   } {
+    // Optics or the heal spots switched off are not baked in either (`effective`).
+    const shown = effective(recipe, this.isRaw)
     return {
       base: this.basePx().proxy.path,
-      lens: lensCorrection(recipe.lens),
+      lens: lensCorrection(shown.lens),
       retouch: compileRetouch(
-        recipe.retouch,
+        shown.retouch,
         'Normal',
         this.basePx().frameWidth,
         this.basePx().frameHeight
@@ -763,7 +968,7 @@ class Session {
   }
 
   update(next: Recipe, interactive: boolean, rev?: number): void {
-    const stepsWere = stackSignature(this.recipe.pixels)
+    const stepsWere = stackSignature(activeSteps(this.recipe.pixels))
     // Whatever the renderer replayed (an old history base can lack fields
     // added since), the session only ever holds a complete recipe.
     const recipe = normaliseRecipe(next, this.isRaw)
@@ -775,7 +980,8 @@ class Session {
     if (rev !== undefined) this.rev = rev
     // A pixel step added, undone, hidden or its strength changed: the working
     // pixels for the steps now (made already, for an undo or a redo).
-    if (stackSignature(recipe.pixels) !== stepsWere) this.workingJob = this.refreshWorking()
+    if (stackSignature(activeSteps(recipe.pixels)) !== stepsWere)
+      this.workingJob = this.refreshWorking()
     // A settled render of the old recipe is only in the way; so is anything
     // in flight when the slider is let go (the full render follows at once).
     if (this.inflight && (this.inflightKind === 'full' || !interactive)) this.abort?.abort()
@@ -892,7 +1098,9 @@ class Session {
           else this.endDrag()
         }, HELD_SETTLE_MS)
       } else {
-        const wait = this.source('full') === this.viewPx().proxy ? SETTLE_LARGE_MS : SETTLE_MS
+        const src = this.source('full')
+        const large = src === this.viewPx().proxy || src === this.screen?.file
+        const wait = large ? SETTLE_LARGE_MS : SETTLE_MS
         this.settle = setTimeout(() => this.schedule('full'), wait)
       }
     }
@@ -934,10 +1142,21 @@ class Session {
       const extras =
         !this.closed && !this.pending && !this.bakePending() && !this.previewing && !this.holding()
       if (kind === 'full' && extras) {
-        if (this.view.maskLayer) await this.renderMask('full', signal)
-        if (this.view.before) await this.renderBefore(signal)
-        if (this.view.headroom) await this.renderHeadroom(signal)
-        if (this.view.maskThumbs) await this.renderMaskThumbs(signal)
+        // The picture is shown: what goes beside it failing is logged, not
+        // said over it (the picture is fine, and the next edit tries again).
+        const beside = async (what: string, run: () => Promise<void>): Promise<void> => {
+          try {
+            await run()
+          } catch (err) {
+            if (isCancelled(err)) throw err
+            const e = err as EngineError
+            log.warn(`${what} render failed`, e.code, e.message)
+          }
+        }
+        if (this.view.maskLayer) await beside('mask', () => this.renderMask('full', signal))
+        if (this.view.before) await beside('before', () => this.renderBefore(signal))
+        if (this.view.headroom) await beside('headroom', () => this.renderHeadroom(signal))
+        if (this.view.maskThumbs) await beside('mask thumbs', () => this.renderMaskThumbs(signal))
       }
     } catch (err) {
       // Stopped for a newer edit, which renders next: nothing went wrong.
@@ -971,10 +1190,150 @@ class Session {
     return this.loupeSource(px)
   }
 
+  /**
+   * The screen-sized level: the settled picture at the loupe's own pixels
+   * where they are more than the proxy's (a large window, a 5K or 6K
+   * screen), cut from the full-size frame (a RAW's master once it is made,
+   * else the photo decoded) with the steps and the baked lens correction laid
+   * on as on the proxies. Until it is there the proxy serves, and the sharp
+   * tile over it as before.
+   */
+  private screen: { key: string; file: ProxyFile; made: string[] } | null = null
+  private screening: string | null = null
+  /** A level that could not be made (or has no full-size frame yet): not asked again. */
+  private screenFailed: string | null = null
+
+  /**
+   * Whether a settled SDR picture (or a 1:1 tile) goes as an F16 frame: the
+   * window draws float frames (`ViewState.float`), and the photo has no light
+   * above white to tone map (that keeps its 8-bit path).
+   */
+  private floatSdr(kind: Kind, display: unknown): boolean {
+    return kind === 'full' && !display && this.view.float === true && !this.info.is_hdr
+  }
+
+  /** The edge the loupe wants past the proxy's, or null when the proxy serves. */
+  private screenEdge(px: Proxies): number | null {
+    if (this.hdrMaster || this.info.is_hdr) return null
+    const long = Math.max(px.proxy.width, px.proxy.height)
+    const target = this.view.targetEdge
+    if (target <= long * SCREEN_GAIN) return null
+    // An upscale step makes another frame: the proxies show it, as before.
+    const frame = frameOf(activeSteps(this.recipe.pixels), this.px.frameWidth, this.px.frameHeight)
+    if (frame.width !== this.px.frameWidth || frame.height !== this.px.frameHeight) return null
+    const whole = Math.max(this.px.frameWidth, this.px.frameHeight)
+    const edge = Math.min(whole, SCREEN_EDGE_MAX, Math.ceil(target / SCREEN_STEP) * SCREEN_STEP)
+    return edge > long * SCREEN_GAIN ? edge : null
+  }
+
+  /** What a screen-sized level is of: its edge, the develop, the steps, and the lens baked or live. */
+  private screenKey(edge: number): string {
+    const lens = this.lensKey(this.recipe)
+    return [
+      edge,
+      this.developedTag ?? '',
+      activeSteps(this.recipe.pixels).length > 0 ? this.stepsKey(this.recipe) : '',
+      lens && this.lensed?.key === lens ? lens : 'live'
+    ].join(':')
+  }
+
+  /** A master made since: a level that waited for one is asked for again. */
+  screenAgain(): void {
+    this.screenFailed = null
+    this.schedule('full')
+  }
+
+  private makeScreen(edge: number, key: string): void {
+    if (this.screening === key || this.screenFailed === key || this.closed) return
+    this.screening = key
+    void this.buildScreen(edge, key).then(
+      (made) => {
+        if (this.screening === key) this.screening = null
+        if (!made) return void (this.screenFailed = key)
+        const now = this.screenEdge(this.viewPx())
+        if (this.closed || now === null || this.screenKey(now) !== key) {
+          dropFiles(made.made)
+          if (!this.closed && now !== null) this.makeScreen(now, this.screenKey(now))
+          return
+        }
+        const was = this.screen
+        this.screen = { key, ...made }
+        if (was) dropFiles(was.made)
+        this.schedule('full')
+      },
+      (err: unknown) => {
+        if (this.screening === key) this.screening = null
+        this.screenFailed = key
+        log.warn('screen-sized picture not made', (err as Error).message)
+      }
+    )
+  }
+
+  private async buildScreen(
+    edge: number,
+    key: string
+  ): Promise<{ file: ProxyFile; made: string[] } | null> {
+    const engine = this.owner.bgEngine
+    const ask = askOf(this.recipe)
+    // A RAW's full-size frame is its master, once made (on open for the PIXL demosaic).
+    if (this.isRaw && !(await masterCached(this.row, this.file, ask))) return null
+    const full = this.isRaw
+      ? await ensureMaster(engine, this.row, this.file, ask)
+      : await ensureBase(engine, this.row, this.file)
+    const dir = paths.photoCache(this.row.id)
+    const name = `screen-${versionStamp(this.row)}-${hash32(key).toString(36)}`
+    const made: string[] = []
+    const k = edge / Math.max(this.px.frameWidth, this.px.frameHeight)
+    let file = full
+    if (k < SCREEN_WHOLE) {
+      file = await cutTo(
+        engine,
+        full,
+        join(dir, `${name}-cut.tiff`),
+        Math.round(this.px.frameWidth * k),
+        Math.round(this.px.frameHeight * k)
+      )
+      made.push(file.path)
+    }
+    if (activeSteps(this.recipe.pixels).length > 0) {
+      const deps = pixelDeps(engine, this.owner.library.index, this.row)
+      file = await layStepsOn(
+        deps,
+        file,
+        join(dir, `${name}-steps.tiff`),
+        activeSteps(this.recipe.pixels)
+      )
+      made.push(file.path)
+    }
+    // The lensed set's correction, baked as on its proxies; a live one is the render's.
+    if (key.endsWith(':live') === false) {
+      const { lens, retouch } = this.prepared(this.recipe)
+      file = await lensOn(
+        engine,
+        file,
+        join(dir, `${name}-lens.tiff`),
+        lens,
+        retouch,
+        this.hdrWorking
+      )
+      made.push(file.path)
+    }
+    // Only the last is read: what came before it goes.
+    dropFiles(made.slice(0, -1))
+    log.info('screen-sized picture made', `${file.width}×${file.height}`, this.row.name)
+    return { file, made: made.slice(-1) }
+  }
+
   /** The proxy the loupe's own size asks for. */
   private loupeSource(px: Proxies): ProxyFile {
     const long = (f: ProxyFile): number => Math.max(f.width, f.height)
     if (this.view.targetEdge <= long(px.draft)) return px.draft
+    const edge = this.screenEdge(px)
+    if (edge !== null) {
+      const key = this.screenKey(edge)
+      if (this.screen?.key === key) return this.screen.file
+      this.makeScreen(edge, key)
+    }
     // The middle size up to a little short of the view (the screen scales it
     // the last stretch): a 1200 pt loupe on a Retina screen grades 44% fewer
     // pixels than from the full proxy.
@@ -1039,6 +1398,7 @@ class Session {
           src.path,
           cropMode,
           display,
+          this.floatSdr(kind, display),
           compiled.grade,
           compiled.framing,
           compiled.lens,
@@ -1059,9 +1419,10 @@ class Session {
       }
       // In Full HDR the picture a thumbnail shrinks from is the companion,
       // whose size is its own.
-      const shown = display
-        ? this.lastCompanion
-        : { path: this.lastFull, width: last.width, height: last.height }
+      const shown =
+        display || this.floatSdr(kind, display)
+          ? this.lastCompanion
+          : { path: this.lastFull, width: last.width, height: last.height }
       if (whole && shown) this.fullPicture = { recipe, picture: shown }
       if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq, rev })
       return
@@ -1077,7 +1438,11 @@ class Session {
     // AVIF with a gain map (the A/B's other arm; no alpha, so not a warp
     // shown whole).
     const avif = display !== null && kind === 'full' && !alpha && SETTLED_ARM === 'avif'
-    const frame = kind === 'draft' || (display && !avif) ? `${this.tag}-${seq}` : undefined
+    // An SDR settled picture in float too, where the window draws F16 frames
+    // (an HDR photo shown in SDR is tone mapped as before, in 8 bits).
+    const floatSdr = this.floatSdr(kind, display)
+    const frame =
+      kind === 'draft' || (display && !avif) || floatSdr ? `${this.tag}-${seq}` : undefined
     const out = frame ? '' : this.nextFile('view', avif ? 'avif' : alpha ? 'png' : 'jpg')
     const hdrStats =
       kind === 'full' ? this.measureHdr(cropMode, signal) : Promise.resolve(undefined)
@@ -1092,11 +1457,11 @@ class Session {
         ...blankRequest(src.path, out, src.input),
         ...(frame ? { sink: 'Bytes' as const } : {}),
         pixel: {
-          depth: display && frame ? 'F32' : 'Eight',
+          depth: (display || floatSdr) && frame ? 'F32' : 'Eight',
           channels: alpha || frame ? 4 : 3
         },
         encode: frame
-          ? { Pixels: { sample: display ? 'F16' : 'U8' } }
+          ? { Pixels: { sample: display || floatSdr ? 'F16' : 'U8' } }
           : avif
             ? SETTLED_AVIF
             : alpha
@@ -1113,7 +1478,9 @@ class Session {
         metadata: { exif: false, icc: true, xmp: false, iptc: false },
         color: display
           ? masterFor(display, undefined, kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE)
-          : displayPolicy(this.info, 'DisplayP3'),
+          : floatSdr
+            ? LINEAR_P3
+            : displayPolicy(this.info, 'DisplayP3'),
         // The master reads a gain map itself, and refuses the field.
         ...(display ? { gain_map: null } : {}),
         grade: compiled.grade,
@@ -1125,7 +1492,7 @@ class Session {
         // risk measuring nothing when little of the picture is left.
         measure: measureOf(kind === 'draft' ? 2 : 1)
       },
-      { signal, frame },
+      { signal, frame, ...(floatSdr ? { native: { sdrCompanion: COMPANION_EDGE } } : {}) },
       keyHeld
     ).catch(named(compiled))
     // The engine had no way to the window (it was reloading): main passes the frame on.
@@ -1135,17 +1502,18 @@ class Session {
         width: report.width,
         height: report.height,
         data: report.output,
-        sample: display ? 'F16' : 'U8',
+        sample: display || floatSdr ? 'F16' : 'U8',
         ...(report.companion ? { companion: companionOf(report.companion) } : {})
       })
     const stats = statsOf(report)
     // Full HDR's settled picture, either arm: what measures it (inside a
     // mask) and what reads its pixels take its SDR companion, kept as a PNG.
     let readUrl: string | undefined
-    if (kind === 'full' && display) {
+    if (kind === 'full' && (display || floatSdr)) {
       const m = report.color.master
-      this.hdrFigures =
-        m && m.gamut ? { peakNits: m.peak_nits, reach: m.gamut.reach } : this.hdrFigures
+      if (display)
+        this.hdrFigures =
+          m && m.gamut ? { peakNits: m.peak_nits, reach: m.gamut.reach } : this.hdrFigures
       const c = report.companion
       if (c) {
         const file = this.nextFile('companion', 'png')
@@ -1531,7 +1899,7 @@ class Session {
    */
   private async convertHeld(
     request: ConvertRequest,
-    opts: { signal: AbortSignal; frame?: string },
+    opts: { signal: AbortSignal; frame?: string; native?: NativeRefs },
     keyHeld: string | null
   ): Promise<ConvertReport> {
     if (!keyHeld) return this.owner.engine.convert(request, opts)
@@ -1539,7 +1907,7 @@ class Session {
     try {
       const report = await this.owner.engine.convert(request, {
         ...opts,
-        native: { keepHeld: this.heldSlot.id, ...(held ? { held } : {}) }
+        native: { ...opts.native, keepHeld: this.heldSlot.id, ...(held ? { held } : {}) }
       })
       this.heldSlot.kept(report, keyHeld)
       return report
@@ -1929,12 +2297,17 @@ class Session {
 
   /** The default recipe with the same framing: the "before", and the ghost bars. */
   private async renderBefore(signal: AbortSignal): Promise<void> {
-    const before = defaultRecipe(this.isRaw)
-    before.geometry = structuredClone(this.recipe.geometry)
+    // The photo as it came, or a Version chosen to compare with (as it renders).
+    const before = this.compareRecipe
+      ? structuredClone(effective(this.compareRecipe, this.isRaw))
+      : beforeRecipe(this.isRaw)
+    // As the picture beside it is framed (a crop or optics switched off included).
+    const shown = effective(this.recipe, this.isRaw)
+    before.geometry = structuredClone(shown.geometry)
     // The lens's geometry too, so before and after line up; not its defringe.
-    before.lens = { ...structuredClone(this.recipe.lens), defringe: before.lens.defringe }
+    before.lens = { ...structuredClone(shown.lens), defringe: before.lens.defringe }
     // Spots too: they are repairs, not a look, and the prepared proxies carry them.
-    before.retouch = structuredClone(this.recipe.retouch)
+    before.retouch = structuredClone(shown.retouch)
     // The photo as it came: never the pixel steps the edit renders from (the
     // plain proxy then, with the lens and spots applied live).
     const view = this.source('full')
@@ -1943,7 +2316,7 @@ class Session {
     // Full HDR: the before in HDR too, as an AVIF with the master's gain map
     // (a file: a frame would be let go as the drafts stream past it).
     const display = this.view.display ?? null
-    const compiled = await this.compileFor(
+    let compiled = await this.compileFor(
       before,
       src,
       !this.view.cropMode,
@@ -1951,6 +2324,13 @@ class Session {
       true,
       display !== null
     )
+    // PNG only where it has transparent corners to keep (the crop tool's
+    // warp); else a JPEG, as the picture beside it is.
+    const alpha = framingTransparent(compiled.framing)
+    // That PNG is SDR even in Full HDR: its grade compiles as SDR too (a
+    // curve carried past 1 into a Display P3 picture is refused).
+    if (alpha && display !== null)
+      compiled = await this.compileFor(before, src, !this.view.cropMode, false, true, false)
     // Keyed on what the engine is asked for, not on the raw geometry: a
     // straighten in the crop tool changes the recipe but not this picture.
     const key = JSON.stringify([
@@ -1959,12 +2339,11 @@ class Session {
       compiled.retouch,
       src.path,
       this.view.cropMode,
-      display
+      display,
+      // A Version compared with grades otherwise than the photo's defaults.
+      this.compareRecipe ? compiled.grade : null
     ])
     if (key === this.beforeKey) return
-    // PNG only where it has transparent corners to keep (the crop tool's
-    // warp); else a JPEG, as the picture beside it is.
-    const alpha = framingTransparent(compiled.framing)
     const hdr = display && !alpha ? hdrFile(display) : null
     const ext = hdr ? 'avif' : alpha ? 'png' : 'jpg'
     const out = join(this.dir, `before-${hash32(key).toString(16)}.${ext}`)
@@ -2009,13 +2388,20 @@ class Session {
    * The RAW master a 1:1 view reads: the plan's (DemosaicNet) once it is
    * made; until then a quick classic one (PPG, about 1.2 s) at once, the
    * plan's made in the background, and the window told to ask again when it
-   * is (the engine's viewing guide, 2026-10-09).
+   * is (the engine's viewing guide, 2026-10-09). The PIXL demosaic has no
+   * quick one before it: the view waits for its master (the bar in the
+   * badge says how far), or says in the window why there is none.
    */
   private async rawMasterForView(): Promise<ProxyFile> {
     const ask = askOf(this.recipe)
     const plan = await scenePlan(this.file.raw_cfa, ask)
     const plain = (): Promise<ProxyFile> =>
       ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+    if (plan.demosaic === 'pixl')
+      return plain().catch((err: unknown) => {
+        this.masterRefused(err)
+        throw err
+      })
     // A linear DNG has no demosaic to wait for (`isLinearRaw`): its one master, at once.
     if (
       plan.demosaic === 'classic' ||
@@ -2026,11 +2412,21 @@ class Session {
     const key = this.key
     void plain().then(
       () => {
-        if (!this.closed) this.owner.send(IPC.develop.tileStale, { key })
+        // With a development kit, what developed it and how long it took (devkit.ts).
+        const note = takeDevelopedNote(this.row.id) ?? undefined
+        if (!this.closed) this.owner.send(IPC.develop.tileStale, { key, note })
       },
       (err: unknown) => log.warn('RAW master for 1:1 not made', (err as Error).message)
     )
     return ensureQuickMaster(this.owner.bgEngine, this.row)
+  }
+
+  /** A RAW master that could not be made, said in the window (the 1:1 tile keeps what it had). */
+  private masterRefused(err: unknown): void {
+    if (this.closed) return
+    const message = (err as Error).message
+    log.error('RAW master not made', message)
+    this.owner.send(IPC.develop.renderError, { key: this.key, message, code: 'Master' })
   }
 
   /** A 1:1 (or smaller) render of part of the full-resolution frame. */
@@ -2045,7 +2441,8 @@ class Session {
     // (pixel steps at full size) or the RAW master, made or found.
     const tMaster = performance.now()
     // The pixel steps laid on at full size: the same pixels an export uses.
-    const stepsMaster = await this.workingMaster()
+    // PIXL Enhance's preview (the steps' frame with a square enhanced) while it is shown.
+    const stepsMaster = this.previewFrame() ?? (await this.workingMaster())
     const raw = this.isRaw
     const src: ProxyFile = stepsMaster
       ? stepsMaster
@@ -2104,7 +2501,9 @@ class Session {
     this.regionSlot = (this.regionSlot + 1) % 4
     // A JPEG at full chroma: as sharp at 1:1 as the PNG it was, a fraction
     // of the time to write and decode at the screen's size.
-    const frame = hdr ? `${this.tag}-tile${++this.tileSeq}` : undefined
+    // An SDR tile in float too, where the window draws F16 frames.
+    const floatSdr = !hdr && this.floatSdr('full', display)
+    const frame = hdr || floatSdr ? `${this.tag}-tile${++this.tileSeq}` : undefined
     const out = frame ? '' : join(this.dir, `region-${this.regionSlot}.jpg`)
     // The original (not a RAW's master) states its gain-map rendition.
     const original = raw || stepsMaster || this.hdrMaster ? null : this.file
@@ -2126,7 +2525,9 @@ class Session {
       color:
         frame && display && figures
           ? masterFor(display, figures, TILE_COMPANION_EDGE)
-          : displayPolicy(this.info, 'DisplayP3'),
+          : floatSdr
+            ? LINEAR_P3
+            : displayPolicy(this.info, 'DisplayP3'),
       // The master reads a gain map itself, and refuses the field.
       ...(hdr ? { gain_map: null } : {}),
       grade: compiled.grade,
@@ -2140,7 +2541,11 @@ class Session {
     }
     const tConvert = performance.now()
     const report = await this.owner.engine
-      .convert(request, { signal, frame })
+      .convert(request, {
+        signal,
+        frame,
+        ...(floatSdr ? { native: { sdrCompanion: TILE_COMPANION_EDGE } } : {})
+      })
       .catch(named(compiled))
     // The margin fell short of what the grade read: its edges may not meet a neighbour's.
     if (report.region?.short_by)
@@ -2563,7 +2968,7 @@ class Session {
     steps: PixelStep[]
   ): Promise<PixelStep | null> {
     const deps = pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row)
-    const set = await ensureWorking(deps, versionStamp(this.row), this.px, steps, () =>
+    const set = await ensureWorking(deps, this.workingVersion(), this.px, steps, () =>
       ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
     )
     const key = keyOf(this.row.id, null)
@@ -2596,11 +3001,12 @@ class Session {
       layerId
     )
     // Made from today's RAW develop (see `staleRawStep`).
-    if (step && this.isRaw) step.params.develop = developMark(colourOf(this.row))
+    if (step && this.isRaw)
+      step.params.develop = await stepDevelopMark(this.row, this.file, askOf(this.recipe))
     // The full-size frame with this stroke, started now: a 1:1 view wants it
     // the moment the step lands, and it is the last one plus a small patch.
     if (step)
-      void ensureWorking(deps, versionStamp(this.row), this.px, [...steps, step], () =>
+      void ensureWorking(deps, this.workingVersion(), this.px, [...steps, step], () =>
         ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
       ).catch(() => undefined)
     return step
@@ -2704,6 +3110,10 @@ class Session {
   /** Stop, writing a pending edit; resolves once it is saved. */
   close(): Promise<void> {
     this.closed = true
+    if (this.enhancePreview) dropFiles([this.enhancePreview.file.path])
+    this.enhancePreview = null
+    if (this.screen) dropFiles(this.screen.made)
+    this.screen = null
     // The photo's GPU frame and held measurements let go (Phase A §4.3 step 5).
     this.heldSlot.drop()
     this.owner.gpu.close(this.key)
@@ -2719,6 +3129,14 @@ class Session {
     const saved = (this.save ? this.persist() : Promise.resolve()).then(() => {
       // A thumbnail still waiting for a pause is made now.
       if (this.thumbTimer) this.thumbLater(true)
+      // An editing session that changed the photo ends in a Version of it.
+      if (!sameValue(this.recipe, this.opened))
+        void this.owner.library.addVersion(this.key, {
+          name: tk('Editing session'),
+          kind: 'auto',
+          reason: 'session',
+          recipe: this.recipe
+        })
     })
     // Its project may close when idle again, once its last edit is saved.
     return saved.then(() =>
@@ -2760,10 +3178,48 @@ export class DevelopSessions {
     readonly bgEngine: EngineClient
   ) {
     this.gpu = new GpuDrag(engine, library.index)
+    // The open RAW's full-size develop, said in the window while it runs.
+    onMasterWork((e) => {
+      for (const [key, s] of this.sessions)
+        if (s.row.id === e.photoId) {
+          this.send(IPC.develop.master, {
+            key,
+            expectedMs: e.phase === 'start' ? e.expectedMs : null
+          } satisfies MasterEvent)
+          if (e.phase !== 'end') continue
+          // With a development kit, what developed it and how long it took (devkit.ts).
+          const note = takeDevelopedNote(e.photoId)
+          if (note) this.send(IPC.develop.tileStale, { key, note })
+          // The PIXL demosaic's master, just made: the zoomed-out picture is cut from it,
+          // and a screen-sized picture that waited for a full-size frame has one.
+          void s.adoptDeveloped()
+          s.screenAgain()
+        }
+    })
   }
 
   send(channel: string, payload: unknown): void {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload)
+  }
+
+  /** The open photo's 1:1 tile is asked for again: its RAW develop changed. */
+  tilesStale(): void {
+    for (const key of this.sessions.keys()) this.send(IPC.develop.tileStale, { key })
+  }
+
+  /** An open photo's session, for what works on it from outside (PIXL Enhance's preview). */
+  session(key: string): Session {
+    return this.get(key)
+  }
+
+  /** Before/After against a Version's recipe (null: the photo as it came). */
+  compareWith(key: string, recipe: Recipe | null): void {
+    this.get(key).compareWith(recipe)
+  }
+
+  /** The PIXL demosaic's switch turned: the open RAW's picture follows it. */
+  pixlSwitched(): void {
+    for (const s of this.sessions.values()) void s.pixlSwitched()
   }
 
   private get(key: string): Session {
@@ -2797,7 +3253,8 @@ export class DevelopSessions {
     let info = await this.library.probe(row, this.engine)
     // A RAW's camera colour is chosen the first time it is probed, and its
     // saved white balance moves with it: what was read before is read again.
-    if (data.row.is_raw === 1 && !data.row.raw_colour && row.raw_colour) {
+    // (Or moved since, to PIXL's colour once its database holds the body.)
+    if (data.row.is_raw === 1 && row.raw_colour && data.row.raw_colour !== row.raw_colour) {
       data = await this.library.index.openData(key)
       row = await this.library.readable(data.row)
       info = await this.library.probe(row, this.engine)
@@ -2823,7 +3280,12 @@ export class DevelopSessions {
       // A photo with pixel steps opens on them.
       session.workingJob = session.refreshWorking()
       await session.workingJob
+      // A RAW the PIXL demosaic develops: its master now, the picture cut from it.
+      void session.developOnOpen()
     }
+    // Today's develop mark and pipeline: what an older edit is told by (shared/rebuild.ts).
+    const mark = row.is_raw === 1 ? await stepDevelopMark(row, info, askOf(session.recipe)) : null
+    const today = await pipeline()
     return {
       key,
       item,
@@ -2848,7 +3310,9 @@ export class DevelopSessions {
       proxyHeight: px.proxy.height,
       recipe: session.recipe,
       snapshots,
-      seed: seedOf(row)
+      seed: seedOf(row),
+      developMark: mark,
+      rebuild: rebuildReasons(session.recipe, row.is_raw === 1, today, mark)
     }
   }
 
@@ -3019,3 +3483,8 @@ export class DevelopSessions {
 }
 
 export { RAW_DEVELOP }
+
+/** Files a screen-sized picture made, off the disk (they are hundreds of MB at 5K in float). */
+function dropFiles(files: string[]): void {
+  for (const f of files) void rm(f, { force: true }).catch(() => undefined)
+}

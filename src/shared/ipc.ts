@@ -1,3 +1,4 @@
+import type { RebuildReason } from './rebuild'
 import type { ResolvedProfile } from './lens'
 import type { HeavyBenchmark } from './heavy'
 import type { ModelSpeed } from './modelSpeed'
@@ -195,7 +196,6 @@ export const IPC = {
     /** A painted plane (grey PNG, base64) into the plane store; its reference back. */
     putPlane: 'develop:put-plane',
     getPlane: 'develop:get-plane',
-    saveSnapshots: 'develop:save-snapshots',
     historyList: 'develop:history-list',
     historyAppend: 'develop:history-append',
     historyAmend: 'develop:history-amend',
@@ -204,10 +204,28 @@ export const IPC = {
     previewPort: 'develop:preview-port',
     /** main → renderer: a preview frame main relays (when the engine had no port) */
     previewFrame: 'develop:preview-frame',
-    /** main → renderer: the 1:1 tile's source got better (the plan's RAW master after the quick one): ask again. */
+    /**
+     * main → renderer: the 1:1 tile's source got better (the plan's RAW master after the quick
+     * one), or its develop changed: ask again. `note`, with a development kit, says what
+     * developed it ("PIXL demosaic · 8.4 s").
+     */
     tileStale: 'develop:tile-stale',
-    historySetHidden: 'develop:history-set-hidden',
-    historyDelete: 'develop:history-delete',
+    /** main → renderer: the open RAW's full-size develop started or ended (`MasterEvent`). */
+    master: 'develop:master',
+    /** main → renderer: the open RAW's PIXL demosaic state changed (`PixlDemosaicEvent`). */
+    pixlDemosaic: 'develop:pixl-demosaic',
+    /** Linear Undo and Redo on the photo's history (main/historytable.ts). */
+    /** Versions (shared/versions.ts): each returns the photo's versions after it. */
+    versionList: 'develop:version-list',
+    versionAdd: 'develop:version-add',
+    versionRename: 'develop:version-rename',
+    versionDelete: 'develop:version-delete',
+    versionKeep: 'develop:version-keep',
+    /** Before/After against a version (null: the photo as it came). */
+    compareWith: 'develop:compare-with',
+    historyUndo: 'develop:history-undo',
+    historyRedo: 'develop:history-redo',
+
     noise: 'develop:noise',
     /** Measure the photo's lateral chromatic aberration (Lens → Remove CA). */
     measureCa: 'develop:measure-ca',
@@ -287,7 +305,12 @@ export const IPC = {
     progress: 'export:progress'
   },
   enhance: {
-    rates: 'enhance:rates'
+    rates: 'enhance:rates',
+    /** PIXL Enhance's preview: a square about the view's centre, read by the 1:1 view. */
+    preview: 'enhance:preview',
+    /** The preview shown or not (to compare), or let go. */
+    previewShow: 'enhance:preview-show',
+    previewClear: 'enhance:preview-clear'
   },
   ai: {
     start: 'ai:start',
@@ -300,6 +323,11 @@ export const IPC = {
     switches: 'ai:switches',
     setEnabled: 'ai:set-enabled',
     setHeavy: 'ai:set-heavy',
+    /** The PIXL demosaic's switch (a development kit; shared/pixldemosaic.ts). */
+    setPixlDemosaic: 'ai:set-pixl-demosaic',
+    setPixlCpu: 'ai:set-pixl-cpu',
+    /** What today's pipeline has (shared/rebuild.ts `Pipeline`): the PIXL demosaic, PIXL Enhance. */
+    pipeline: 'ai:pipeline',
     /** A heavy model's sustained-load benchmark; resolves with its result. */
     benchmark: 'ai:benchmark',
     /** main → renderer: the switches changed. */
@@ -447,6 +475,8 @@ export interface LibraryItem {
   flag: Flag
   label: ColorLabel
   edited: boolean
+  /** What of the earlier pipeline its recipe holds (shared/rebuild.ts `legacyBits`). */
+  legacy?: number
   thumbUrl: string | null
   /** Its thumbnail failed: the file cannot be read (until it changes). */
   unreadable?: boolean
@@ -571,11 +601,21 @@ export interface ProjectInfo {
   bytes: number | null
 }
 
+/**
+ * A Version (History's top; shared/versions.ts): the recipe as it was. The
+ * name is the user's for a named one, English for an automatic one (shown
+ * translated). Stored as `snapshots`: a snapshot from before Versions is a
+ * named one.
+ */
 export interface Snapshot {
   id: string
   name: string
   at: string
   recipe: Recipe
+  /** Absent: named (the user's, kept for good). */
+  kind?: 'named' | 'auto'
+  /** What made an automatic one. */
+  reason?: 'session' | 'look' | 'ai' | 'export' | 'paste' | 'rebuild'
 }
 
 /** Where a photo's history starts: the recipe it had when first opened. */
@@ -648,6 +688,10 @@ export interface DevelopSession {
   seed: number
   /** The 35 mm-equivalent focal length (`equivalentFocal`): what Upright's perspective assumes. */
   focal35?: number | null
+  /** A RAW's develop mark today (`main/developmark.ts`): what its steps' marks are told against. */
+  developMark?: string | null
+  /** Why it is on the earlier pipeline (shared/rebuild.ts); empty when it is on today's. */
+  rebuild?: RebuildReason[]
 }
 
 export interface ViewState {
@@ -675,6 +719,12 @@ export interface ViewState {
    * `Ceiling::Display`); null renders SDR, as before.
    */
   display?: { whiteNits: number; peakNits: number } | null
+  /**
+   * The window draws F16 frames (WebGPU's float canvas): a settled SDR
+   * picture and the 1:1 tiles go as linear Display P3 half floats, not
+   * 8-bit files. Absent or false: as before.
+   */
+  float?: boolean
 }
 
 export interface RenderReport {
@@ -735,6 +785,31 @@ export interface RenderEvent {
  * A part of the picture as the loupe shows it (straightened, cropped,
  * warped, or the crop tool's whole frame), rendered at full resolution.
  */
+/** PIXL Enhance's preview made: where its square is, in fractions of the frame. */
+export interface EnhancePreview {
+  square: { x: number; y: number; width: number; height: number }
+}
+
+/** The open RAW's full-size develop (its master) under way: how long it should take, or over. */
+export interface MasterEvent {
+  key: string
+  /** Milliseconds the develop is expected to take; null once it is over. */
+  expectedMs: number | null
+}
+
+/**
+ * The PIXL demosaic's part in the open RAW (a development kit's), for the
+ * loupe's badge: its master being developed, the picture developed by it,
+ * or the engine refused it and the released develop stood in.
+ */
+export type PixlDemosaicState = 'developing' | 'on' | 'refused'
+
+export interface PixlDemosaicEvent {
+  key: string
+  /** Null: not the PIXL demosaic's (its switch turned off). */
+  state: PixlDemosaicState | null
+}
+
 export interface RegionRequest {
   key: string
   /** Fractions (0…1) of the picture as shown. */
@@ -981,6 +1056,7 @@ export interface ModelInfo {
     | 'depth'
     | 'demosaic'
     | 'raw-denoise'
+    | 'faces'
   bytes: number
   licence: string
   holder: string
@@ -992,6 +1068,8 @@ export interface ModelInfo {
   error?: string
   /** How long it takes on this computer, for one photo (see `modelSpeed.ts`). */
   speed: ModelSpeed | null
+  /** Settings lists it: false for a borrowed model PIXL's own replaces (shared/borrowed.ts). */
+  listed: boolean
 }
 
 /** Gemma, the local assistant: its files, its server, its switch and benchmark. */

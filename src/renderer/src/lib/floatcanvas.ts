@@ -68,9 +68,18 @@ function gpuOnce(): Promise<Gpu | null> {
   return gpu
 }
 
+/** What `floatCanvasReady` last found: null before it is asked. */
+let known: boolean | null = null
+
 /** Whether Full HDR frames can be drawn here (WebGPU up). */
 export async function floatCanvasReady(): Promise<boolean> {
-  return (await gpuOnce()) !== null
+  known = (await gpuOnce()) !== null
+  return known
+}
+
+/** Whether F16 frames are known to draw here, without waiting (false until asked once). */
+export function floatCanvasKnown(): boolean | null {
+  return known
 }
 
 /**

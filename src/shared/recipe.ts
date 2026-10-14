@@ -8,6 +8,19 @@
  * Every recipe is complete: no field is optional, so an old sidecar is
  * brought up to date by `normaliseRecipe` rather than by `?.` everywhere.
  */
+import {
+  defaultCurvesVs,
+  defaultLogWheels,
+  defaultPrimaries,
+  normaliseCurvesVs,
+  normaliseLogWheels,
+  normalisePrimaries,
+  normaliseQualifiers,
+  type CurvesVsSetting,
+  type LogWheelsSetting,
+  type PrimariesSetting,
+  type QualifierSetting
+} from './resolve'
 import { NO_ADD, type AddColourSetting } from './addcolor'
 import type { BlendMode, CropRect, KeyBand, MaskMode } from './engine-types'
 import { defaultLens, type LensSetting } from './lens'
@@ -546,12 +559,50 @@ export const SETTINGS_KEYS = [
   'hsl',
   'pointColors',
   'colorGrade',
+  'primaries',
+  'logWheels',
+  'curvesVs',
+  'qualifiers',
   'detail',
   'effects',
   'calibration'
 ] as const
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number]
+
+/**
+ * What can be switched off as a whole (the Edits list, a card's eye): every
+ * card of the right column (`cards.ts` CARD_IDS, kept the same here: cards.ts
+ * reads this module as it loads), the profile, the crop and straighten, and
+ * the heal spots. A section switched off keeps its values and is compiled as
+ * the photo's defaults (`edits.ts` `effective`). The turns and flips never
+ * are: everything is placed by them.
+ */
+export const EDIT_SECTIONS = [
+  'profile',
+  'wb',
+  'light',
+  'presence',
+  'curve',
+  'rcurves',
+  'mixer',
+  'grading',
+  'calibration',
+  'primaries',
+  'logwheels',
+  'qualifier',
+  'detail',
+  'effects',
+  'optics',
+  'geometry',
+  'crop',
+  'heal'
+] as const
+
+export type EditSection = (typeof EDIT_SECTIONS)[number]
+
+/** The sections switched off: each one `true`, absent when on. */
+export type OffSections = Partial<Record<EditSection, true>>
 export type LayerSettings = Pick<Recipe, SettingsKey>
 
 export interface Recipe {
@@ -575,6 +626,14 @@ export interface Recipe {
   bwMix: Record<HslBand, number>
   pointColors: PointColorSetting[]
   colorGrade: ColorGradeSetting
+  /** DaVinci Resolve's primaries (shared/resolve.ts): the Resolve colour tools' first card. */
+  primaries: PrimariesSetting
+  /** Resolve's vs curves (Hue vs Hue, Hue vs Sat, …); its Custom curve is `toneCurve`. */
+  curvesVs: CurvesVsSetting
+  /** Resolve's Log wheels (Shadow, Midtone, Highlight, Offset). */
+  logWheels: LogWheelsSetting
+  /** Resolve's qualifiers, the photo's own (a mask has none): each a key and its correction. */
+  qualifiers: QualifierSetting[]
   detail: DetailSetting
   /** Lens corrections: profile, manual, chromatic aberration, defringe (see `lens.ts`). */
   lens: LensSetting
@@ -597,6 +656,8 @@ export interface Recipe {
    * picture the file stores (Photo → Edit as SDR). Other photos ignore it.
    */
   gainMap: GainMapEdit
+  /** Sections switched off, their values kept (see `EDIT_SECTIONS`). */
+  off: OffSections
 }
 
 export type GainMapEdit = 'base' | 'hdr'
@@ -703,6 +764,10 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       balance: 0,
       add: { ...NO_ADD }
     },
+    primaries: defaultPrimaries(),
+    curvesVs: defaultCurvesVs(),
+    logWheels: defaultLogWheels(),
+    qualifiers: [],
     detail: {
       sharpenAmount: isRaw ? 40 : 0,
       sharpenRadius: 1,
@@ -749,8 +814,21 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     retouch: [],
     pixels: [],
     layers: [],
-    custom: []
+    custom: [],
+    off: {}
   }
+}
+
+/**
+ * The photo as it came, for Before/After and the hue chart's ghost bars: its
+ * defaults on the Neutral profile, whatever the default profile (a RAW's
+ * Playroom Standard is already a look; the owner, 2026-10-14).
+ */
+export function beforeRecipe(isRaw: boolean): Recipe {
+  const r = defaultRecipe(isRaw)
+  r.profile = { kind: 'neutral' }
+  r.profileAmount = 100
+  return r
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -798,6 +876,19 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     r.profile = base.profile
   }
   r.toneCurve = normaliseToneCurve(r.toneCurve)
+  r.primaries = normalisePrimaries(r.primaries)
+  r.curvesVs = normaliseCurvesVs(r.curvesVs)
+  r.logWheels = normaliseLogWheels(r.logWheels)
+  r.qualifiers = normaliseQualifiers(r.qualifiers)
+  // Only sections there are, each switched off by `true` (`fill` keeps any key).
+  // Colour (Vibrance, Saturation, Hue) joined Presence: off, it keeps them off.
+  const off: Record<string, unknown> = { ...(r.off ?? {}) }
+  if (off.colour === true) off.presence = true
+  r.off = Object.fromEntries(
+    Object.entries(off).filter(
+      ([k, v]) => v === true && (EDIT_SECTIONS as readonly string[]).includes(k)
+    )
+  ) as OffSections
   if (!TONE_BASES.includes(r.toneBase)) r.toneBase = 'none'
   r.calibration = normaliseCalibration(r.calibration)
   d.ai.model = aiDenoiseModel(d.ai.model)
@@ -1146,6 +1237,7 @@ export const RECIPE_GROUPS = [
   'toneCurve',
   'hsl',
   'colorGrade',
+  'primaries',
   'detailSharpen',
   'detailNoise',
   'lens',
@@ -1170,6 +1262,7 @@ export const GROUP_LABELS: Record<RecipeGroup, string> = {
   toneCurve: tk('Tone curve'),
   hsl: tk('HSL / B&W mix'),
   colorGrade: tk('Colour grading'),
+  primaries: tk('Primaries'),
   detailSharpen: tk('Sharpening'),
   detailNoise: tk('Noise reduction'),
   lens: tk('Lens corrections'),
@@ -1207,6 +1300,7 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         break
       case 'toneCurve':
         r.toneCurve = f.toneCurve
+        r.curvesVs = f.curvesVs
         break
       case 'hsl':
         r.hsl = f.hsl
@@ -1215,6 +1309,11 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         break
       case 'colorGrade':
         r.colorGrade = f.colorGrade
+        break
+      case 'primaries':
+        r.primaries = f.primaries
+        r.logWheels = f.logWheels
+        r.qualifiers = f.qualifiers
         break
       case 'detailSharpen':
         r.detail.sharpenAmount = f.detail.sharpenAmount
@@ -1363,11 +1462,13 @@ function groupValues(r: Recipe, g: RecipeGroup): unknown[] {
     case 'presence':
       return [r.presence]
     case 'toneCurve':
-      return [r.toneCurve]
+      return [r.toneCurve, r.curvesVs]
     case 'hsl':
       return [r.hsl, r.bwMix, r.pointColors]
     case 'colorGrade':
       return [r.colorGrade]
+    case 'primaries':
+      return [r.primaries, r.logWheels, r.qualifiers]
     case 'detailSharpen':
       return [d.sharpenAmount, d.sharpenRadius, d.sharpenDetail, d.sharpenMasking]
     case 'detailNoise':

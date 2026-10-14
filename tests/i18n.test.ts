@@ -95,3 +95,11 @@ test('every language has every line, with the same placeholders', () => {
     assert.deepEqual(r.placeholders.slice(0, 10), [], `${code}: placeholders differ`)
   }
 })
+
+test('the expanding pseudo-locale lengthens text, keeping its placeholders', async () => {
+  const { pseudoExpand } = await import('../src/shared/i18n/pseudo')
+  const out = pseudoExpand('Exposure {{value}} of {{count}} photos')
+  assert.ok(out.includes('{{value}}') && out.includes('{{count}}'))
+  assert.ok(out.length >= Math.ceil('Exposure {{value}} of {{count}} photos'.length * 1.4))
+  assert.match(out, /^⟦Ëxpösürë/)
+})

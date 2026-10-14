@@ -12,10 +12,12 @@ import {
   benchmarkHolds,
   heavyAllowed,
   machineKey,
+  pixlCpuAnswer,
   readSwitches,
   type AiSwitches,
   type HeavyBenchmark,
-  type HeavyModel
+  type HeavyModel,
+  type PixlCpuAnswer
 } from '../../shared/heavy'
 
 const KEY = 'ai.switches'
@@ -68,6 +70,21 @@ export class AiSwitchStore {
     if (on && !benchmarkHolds(h.benchmark, this.machine))
       throw new Error(t('Run the benchmark first: it has to pass on this computer'))
     return this.save({ ...s, heavy: { ...s.heavy, [model]: { ...h, on } } })
+  }
+
+  /** The PIXL demosaic for RAWs at full size, or the develop of before. */
+  async setPixlDemosaic(on: boolean): Promise<AiSwitches> {
+    return this.save({ ...(await this.get()), pixlDemosaic: on })
+  }
+
+  /** Whether PIXL's models may run on this computer's CPU: `ask` until answered here. */
+  async pixlCpu(): Promise<PixlCpuAnswer> {
+    return pixlCpuAnswer(await this.get(), this.machine)
+  }
+
+  /** The answer about PIXL's models on the CPU, kept for this computer. */
+  async setPixlCpu(answer: PixlCpuAnswer): Promise<AiSwitches> {
+    return this.save({ ...(await this.get()), pixlCpu: { answer, machine: this.machine } })
   }
 
   /** A benchmark's result kept; one that failed turns the model off. */

@@ -14,7 +14,12 @@ export const LOOK_ALLOWED_ROOTS = [
   'colorGrade',
   'effects',
   'calibration',
-  'treatment'
+  'treatment',
+  // DaVinci Resolve's tools (shared/resolve.ts); qualifiers are keyed to a
+  // photo's own colours, so a look never carries one.
+  'primaries',
+  'logWheels',
+  'curvesVs'
 ] as const
 
 /**
@@ -55,7 +60,20 @@ export const LOOK_RANGES: [string, [number, number]][] = [
   ['effects.grainAmount', UNIT],
   ['effects.grainSize', UNIT],
   ['effects.grainRoughness', UNIT],
-  ['calibration.*', BIPOLAR]
+  ['calibration.*', BIPOLAR],
+  ['primaries.lift.*', [-1, 1]],
+  ['primaries.gamma.*', [-1, 1]],
+  ['primaries.gain.*', [0, 4]],
+  ['primaries.offset.*', [-1, 1]],
+  ['primaries.contrast', [0, 2]],
+  ['primaries.pivot', [0, 1]],
+  ['primaries.saturation', UNIT],
+  ['primaries.hue', UNIT],
+  ['primaries.temp', BIPOLAR],
+  ['primaries.tint', BIPOLAR],
+  ['logWheels.low', [0, 1]],
+  ['logWheels.high', [0, 1]],
+  ['logWheels.*.*', [-1, 1]]
 ]
 
 function matches(pattern: string, path: string[]): boolean {
@@ -80,7 +98,12 @@ export const CURVE_PATHS = [
   'toneCurve.master',
   'toneCurve.red',
   'toneCurve.green',
-  'toneCurve.blue'
+  'toneCurve.blue',
+  'curvesVs.hueHue',
+  'curvesVs.hueSat',
+  'curvesVs.hueLum',
+  'curvesVs.lumSat',
+  'curvesVs.satSat'
 ]
 
 /**

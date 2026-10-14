@@ -1,0 +1,178 @@
+/* Playroom Modern (Settings → Interface → Theme; id `bold`, first shipped as
+   Bolder modern): contrast and personality.
+   OLED black, purple-tinted panels, bright ink, and a duo: purple (the
+   accent, as in every theme: what is selected, pressed, focused or chosen)
+   with electric cyan beside it, in gradients and blooms. Glows are still
+   light, never animation; what is at rest and not chosen does not glow. */
+:root[data-theme='bold'] {
+  --bg: #000000;
+  --s1: #07050d;
+  --s2: #0c0818;
+  --s3: #130d24;
+  --s4: #1b1330;
+
+  /* Lavender lines, crisp on black. */
+  --hair: rgb(196 186 255 / 0.1);
+  --hair2: rgb(196 186 255 / 0.18);
+  --hair3: rgb(196 186 255 / 0.3);
+
+  --text: #f7f5ff;
+  --text2: #c9c2ec;
+  --muted: #8d84b8;
+
+  /* The duo: purple, and cyan beside it. */
+  --acc: #a593ff;
+  --acc2: #8b78f0;
+  --acc-deep: #5444b8;
+  --acc-b: #3ee6ff;
+  --duo: linear-gradient(90deg, var(--acc), var(--acc-b));
+  --primary-grad: linear-gradient(135deg, #a593ff 0%, #7f6be6 55%, #3fb6e8 100%);
+
+  /* Bloom. */
+  --glow: color-mix(in srgb, var(--acc) 65%, transparent);
+  --glow-soft: color-mix(in srgb, var(--acc) 30%, transparent);
+  --glow-b: color-mix(in srgb, var(--acc-b) 45%, transparent);
+
+  /* Hairline lights: purple at the start, cyan a step on. */
+  --hl-x: linear-gradient(
+    90deg,
+    var(--acc) 0px,
+    color-mix(in srgb, var(--acc-b) 55%, transparent) 40px,
+    var(--hair) 140px,
+    var(--hair) 100%
+  );
+  --hl-x-rev: linear-gradient(
+    270deg,
+    var(--acc) 0px,
+    color-mix(in srgb, var(--acc-b) 55%, transparent) 40px,
+    var(--hair) 140px,
+    var(--hair) 100%
+  );
+  --hl-y: linear-gradient(
+    180deg,
+    var(--acc) 0px,
+    color-mix(in srgb, var(--acc-b) 55%, transparent) 40px,
+    var(--hair) 160px,
+    var(--hair) 100%
+  );
+
+  --r: 8px;
+  --dur-panel: 320ms;
+  --dur-dialog: 420ms;
+}
+
+/* ── shapes and type: larger, softer, more contrast ─────────────────── */
+:root[data-theme='bold'] .card {
+  border-radius: 14px;
+  margin-bottom: 8px;
+  background: linear-gradient(180deg, var(--s3), var(--s2));
+  border-color: var(--hair2);
+}
+:root[data-theme='bold'] .card > header {
+  height: 40px;
+  padding-left: 12px;
+}
+:root[data-theme='bold'] .card > header .title {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0;
+  color: var(--text);
+}
+:root[data-theme='bold'] .slider {
+  height: 28px;
+  border-radius: 8px;
+}
+:root[data-theme='bold'] .sl-knob {
+  border-radius: 7px;
+}
+:root[data-theme='bold'] .sl-label {
+  color: var(--text2);
+}
+
+/* ── the duo and its bloom ─────────────────────────────────────────── */
+
+/* An open card: a purple-to-cyan line along its top, a soft bloom under it. */
+:root[data-theme='bold'] .card.open {
+  border-color: var(--hair3);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--acc-b) 35%, transparent),
+    0 10px 30px -18px var(--glow);
+}
+:root[data-theme='bold'] .card.open::before {
+  content: '';
+  position: absolute;
+  inset: -1px 14px auto;
+  height: 1px;
+  background: var(--duo);
+  box-shadow:
+    0 0 10px var(--glow),
+    0 0 18px var(--glow-b);
+  pointer-events: none;
+}
+
+/* A slider's fill: the duo; dragged, it blooms. */
+:root[data-theme='bold'] .sl-fill {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 45%, transparent),
+    color-mix(in srgb, var(--acc-b) 35%, transparent)
+  );
+}
+:root[data-theme='bold'] .slider.dragging .sl-fill {
+  box-shadow:
+    0 0 12px var(--glow),
+    0 0 20px var(--glow-b);
+}
+:root[data-theme='bold'] .slider.dragging .sl-knob {
+  box-shadow: 0 0 14px var(--glow);
+}
+
+/* The primary action: the duo, blooming. */
+:root[data-theme='bold'] button.primary {
+  border-color: color-mix(in srgb, var(--acc-b) 45%, var(--acc));
+  box-shadow:
+    inset 0 1px 0 rgb(var(--fg-rgb) / 0.28),
+    0 8px 26px -8px var(--glow),
+    0 6px 22px -12px var(--glow-b);
+}
+
+/* Focus: a 2 px purple ring with its glow. */
+:root[data-theme='bold'] :focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+  box-shadow: 0 0 14px var(--glow);
+}
+
+/* What is chosen glows: tabs and segments, the rail's glyph, accent badges. */
+:root[data-theme='bold'] .tabs button.on,
+:root[data-theme='bold'] .seg button.on {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--acc) 42%, transparent),
+    color-mix(in srgb, var(--acc-b) 16%, transparent)
+  );
+  text-shadow: 0 0 12px var(--glow);
+}
+:root[data-theme='bold'] .spine button.on {
+  color: var(--text);
+  filter: drop-shadow(0 0 6px var(--glow)) drop-shadow(0 0 10px var(--glow-b));
+}
+:root[data-theme='bold'] .hud-item.accent {
+  text-shadow: 0 0 10px var(--glow);
+}
+:root[data-theme='bold'] .pixl-chip.on .pixl-dot {
+  box-shadow: 0 0 8px var(--acc-b);
+}
+:root[data-theme='bold'] .activity-track i {
+  background: var(--duo);
+  box-shadow: 0 0 8px var(--glow-b);
+}
+:root[data-theme='bold'] .rail-item.on {
+  border-color: color-mix(in srgb, var(--acc) 45%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 22%, transparent),
+    color-mix(in srgb, var(--acc-b) 8%, transparent) 70%,
+    transparent
+  );
+}

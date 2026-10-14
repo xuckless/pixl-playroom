@@ -6,8 +6,10 @@
  *   history(item_key, seq, label, at, recipe, patch, hidden)
  *
  * The first row is the base (a whole recipe), every later one a step (the
- * patch it made, which can be hidden). Past HISTORY_LIMIT rows the oldest
- * steps fold into the base.
+ * patch it made). `hidden` says whether a step is in effect: 0 it is, 2 Undo
+ * took it back (Redo brings it back while nothing came after it), 1 hidden
+ * by hand (History's eye before linear Undo; old projects keep it). Past
+ * HISTORY_LIMIT rows the oldest steps fold into the base.
  *
  * Every KEYFRAME_EVERY steps, a step row also keeps the whole recipe the
  * history describes as of that step (in `recipe`, '' otherwise): the head is
@@ -20,7 +22,10 @@ import type { HistoryAmend, HistoryAppend, HistoryBase, HistoryLog } from '../sh
 import { diffRecipe, replay, type Patch, type Step } from '../shared/history'
 import type { Recipe } from '../shared/recipe'
 
-export const HISTORY_LIMIT = 200
+/** Every change is kept (the record of what was done); past this many rows the oldest fold. */
+export const HISTORY_LIMIT = 2000
+/** `hidden` of a step Undo took back (1 is one hidden by hand, before linear Undo). */
+const UNDONE = 2
 /** A step row keeps the whole recipe every this many steps. */
 export const KEYFRAME_EVERY = 25
 
@@ -135,7 +140,8 @@ export class HistoryTable {
       label: r.label,
       at: r.at,
       patch: JSON.parse(r.patch ?? '[]') as Patch,
-      hidden: r.hidden !== 0
+      hidden: r.hidden !== 0,
+      ...(r.hidden === UNDONE ? { undone: true as const } : {})
     }))
     const k = rest.findLastIndex((r) => r.patch !== null && r.recipe !== '')
     const head =
@@ -351,6 +357,57 @@ export class HistoryTable {
   private logAndHead(itemKey: string): HistoryLog {
     this.head(itemKey, true)
     return this.history(itemKey)
+  }
+
+  /**
+   * Undo: the newest step in effect is taken back (marked undone, still
+   * stored). Nothing to take back leaves the history as it is.
+   */
+  undo(itemKey: string): HistoryLog {
+    return this.db.tx(() => {
+      this.ensureSteps(itemKey)
+      const last = this.db
+        .prepare(
+          `SELECT seq FROM history WHERE item_key = ? AND patch IS NOT NULL AND hidden = 0
+           ORDER BY seq DESC LIMIT 1`
+        )
+        .get(itemKey) as { seq: number } | undefined
+      if (last) {
+        this.db
+          .prepare('UPDATE history SET hidden = ? WHERE item_key = ? AND seq = ?')
+          .run(UNDONE, itemKey, last.seq)
+        this.dropKeyframes(itemKey, last.seq)
+      }
+      return this.logAndHead(itemKey)
+    })
+  }
+
+  /**
+   * Redo: the oldest step Undo took back after the last one in effect comes
+   * back. One made before a later edit cannot (that edit was made without it).
+   */
+  redo(itemKey: string): HistoryLog {
+    return this.db.tx(() => {
+      this.ensureSteps(itemKey)
+      const shown = this.db
+        .prepare(
+          'SELECT MAX(seq) AS seq FROM history WHERE item_key = ? AND patch IS NOT NULL AND hidden = 0'
+        )
+        .get(itemKey) as { seq: number | null }
+      const next = this.db
+        .prepare(
+          `SELECT seq FROM history WHERE item_key = ? AND patch IS NOT NULL AND hidden = ? AND seq > ?
+           ORDER BY seq LIMIT 1`
+        )
+        .get(itemKey, UNDONE, shown.seq ?? 0) as { seq: number } | undefined
+      if (next) {
+        this.db
+          .prepare('UPDATE history SET hidden = 0 WHERE item_key = ? AND seq = ?')
+          .run(itemKey, next.seq)
+        this.dropKeyframes(itemKey, next.seq)
+      }
+      return this.logAndHead(itemKey)
+    })
   }
 
   /** Hide or show steps (never the base). */

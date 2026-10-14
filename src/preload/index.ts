@@ -1,3 +1,4 @@
+import type { Pipeline } from '../shared/rebuild'
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { NoiseEstimate, PreviewFrame, Transform } from '../shared/engine-types'
 import type { GuideLine } from '../shared/upright'
@@ -49,6 +50,9 @@ import {
   type Prefs,
   type RegionRequest,
   type RegionResult,
+  type EnhancePreview,
+  type MasterEvent,
+  type PixlDemosaicEvent,
   type RenderEvent,
   type RenderScale,
   type SampleResult,
@@ -66,12 +70,12 @@ import type { ReleaseNotes } from '../shared/releasenotes'
 import type { ProblemInput } from '../shared/crash'
 import type { Recipe, RecipeGroup } from '../shared/recipe'
 import type { AiCapabilities, AiJobEvent, AiStartRequest } from '../shared/ai'
-import type { AiSwitches, HeavyBenchmark, HeavyModel } from '../shared/heavy'
+import type { AiSwitches, HeavyBenchmark, HeavyModel, PixlCpuAnswer } from '../shared/heavy'
 import type { FoundThing, PhotoNames } from '../shared/naming'
 import type { CullReason } from '../shared/cullsuggest'
 import type { PromptSourceAsk, SelectCommit, SelectDecode, SelectPlane } from '../shared/prompt'
 import type { LookRunEvent, LookRunRequest, PickAnswer } from '../shared/looks/run'
-import type { EnhanceRates } from '../shared/enhance'
+import type { EnhanceRates, EnhanceSettings } from '../shared/enhance'
 import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
 import type { Language, LanguageSetting } from '../shared/i18n'
 
@@ -80,7 +84,7 @@ interface LanguageState {
   language: Language
   /** What "system" gives here (main reads the OS once for both). */
   system: Language
-  pseudo?: boolean
+  pseudo?: boolean | 'expand'
 }
 
 async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -265,8 +269,24 @@ const api = {
       call<Transform>(IPC.develop.uprightFromLines, key, lines, focal),
     putPlane: (png: string) => call<string>(IPC.develop.putPlane, png),
     getPlane: (ref: string) => call<string>(IPC.develop.getPlane, ref),
-    saveSnapshots: (key: string, snapshots: Snapshot[]) =>
-      call<void>(IPC.develop.saveSnapshots, key, snapshots),
+    /** The photo's versions as stored now (main makes automatic ones as it goes). */
+    versionList: (key: string) => call<Snapshot[]>(IPC.develop.versionList, key),
+    /** A version of the recipe (named, or automatic with its reason); the photo's versions after (null: none made). */
+    versionAdd: (
+      key: string,
+      name: string,
+      recipe: Recipe,
+      auto?: { reason: 'look' | 'paste' | 'rebuild' }
+    ) => call<Snapshot[] | null>(IPC.develop.versionAdd, key, name, recipe, auto),
+    versionRename: (key: string, id: string, name: string) =>
+      call<Snapshot[]>(IPC.develop.versionRename, key, id, name),
+    versionDelete: (key: string, id: string) =>
+      call<Snapshot[]>(IPC.develop.versionDelete, key, id),
+    /** An automatic version kept for good (it becomes a named one). */
+    versionKeep: (key: string, id: string) => call<Snapshot[]>(IPC.develop.versionKeep, key, id),
+    /** Before/After against this recipe (a version's), or null for the photo as it came. */
+    compareWith: (key: string, recipe: Recipe | null) =>
+      call<void>(IPC.develop.compareWith, key, recipe),
     historyList: (key: string) => call<HistoryLog>(IPC.develop.historyList, key),
     warm: (keys: string[]) => call<void>(IPC.develop.warm, keys),
     historyAppend: (key: string, label: string, recipe: Recipe) =>
@@ -275,13 +295,16 @@ const api = {
       call<HistoryAmend | null>(IPC.develop.historyAmend, key, seq, label, recipe),
     /** Show `recipe` on the loupe without making it the photo's (null: the photo's again). */
     preview: (key: string, recipe: Recipe | null) => call<void>(IPC.develop.preview, key, recipe),
-    historySetHidden: (key: string, seqs: number[], hidden: boolean) =>
-      call<HistoryLog>(IPC.develop.historySetHidden, key, seqs, hidden),
-    historyDelete: (key: string, seqs: number[]) =>
-      call<HistoryLog>(IPC.develop.historyDelete, key, seqs),
+    historyUndo: (key: string) => call<HistoryLog>(IPC.develop.historyUndo, key),
+    historyRedo: (key: string) => call<HistoryLog>(IPC.develop.historyRedo, key),
+
     onRendered: (cb: (e: RenderEvent) => void) => on(IPC.develop.rendered, cb),
     /** The 1:1 tile's source got better (the plan's RAW master after the quick one): ask again. */
-    onTileStale: (cb: (e: { key: string }) => void) => on(IPC.develop.tileStale, cb),
+    onTileStale: (cb: (e: { key: string; note?: string }) => void) => on(IPC.develop.tileStale, cb),
+    /** The open RAW's full-size develop started (how long it should take) or ended. */
+    onMaster: (cb: (e: MasterEvent) => void) => on(IPC.develop.master, cb),
+    /** The open RAW's PIXL demosaic: developing, on, or refused (a development kit's). */
+    onPixlDemosaic: (cb: (e: PixlDemosaicEvent) => void) => on(IPC.develop.pixlDemosaic, cb),
     onRenderError: (
       cb: (e: {
         key: string
@@ -355,7 +378,12 @@ const api = {
   },
   enhance: {
     /** How fast each step has run here (ms per megapixel), for the panel's estimate. */
-    rates: () => call<EnhanceRates>(IPC.enhance.rates)
+    rates: () => call<EnhanceRates>(IPC.enhance.rates),
+    /** PIXL Enhance on a square about `at` (a fraction of the frame), for the 1:1 view. */
+    preview: (key: string, settings: EnhanceSettings, at: { x: number; y: number }) =>
+      call<EnhancePreview>(IPC.enhance.preview, key, settings, at),
+    previewShow: (key: string, on: boolean) => call<void>(IPC.enhance.previewShow, key, on),
+    previewClear: (key: string) => call<void>(IPC.enhance.previewClear, key)
   },
   ai: {
     start: (req: AiStartRequest) => call<string>(IPC.ai.start, req),
@@ -366,6 +394,10 @@ const api = {
     switches: () => call<AiSwitches>(IPC.ai.switches),
     setEnabled: (on: boolean) => call<AiSwitches>(IPC.ai.setEnabled, on),
     setHeavy: (model: HeavyModel, on: boolean) => call<AiSwitches>(IPC.ai.setHeavy, model, on),
+    setPixlDemosaic: (on: boolean) => call<AiSwitches>(IPC.ai.setPixlDemosaic, on),
+    setPixlCpu: (answer: PixlCpuAnswer) => call<AiSwitches>(IPC.ai.setPixlCpu, answer),
+    /** What today's pipeline has (shared/rebuild.ts): the PIXL demosaic, PIXL Enhance. */
+    pipeline: () => call<Pipeline>(IPC.ai.pipeline),
     benchmark: (model: HeavyModel) => call<HeavyBenchmark>(IPC.ai.benchmark, model),
     onSwitches: (cb: (s: AiSwitches) => void) => on(IPC.ai.switchesEvent, cb),
     onBenchmark: (cb: (p: { model: HeavyModel; progress: number; note: string }) => void) =>

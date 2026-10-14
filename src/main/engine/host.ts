@@ -29,6 +29,7 @@ import type {
 } from '../../shared/engine-types'
 import { pickBySize } from '../../shared/concepts'
 import { toRgba } from '../../shared/gpudrag'
+import { sdrCompanion } from '../../shared/sdrcompanion'
 
 const ENGINE_PACKAGE = '@xuckless/pixl-engine'
 /** What Playroom cannot run without. The rest (lens, upright, AI…) are looked up per call. */
@@ -430,7 +431,7 @@ let previews: MessagePortMain | undefined
  * main gets. Without a port (none yet, the window reloading) the report
  * keeps them and main relays them.
  */
-function deliver(frame: string, result: unknown): void {
+function deliver(frame: string, result: unknown, companionEdge?: number): void {
   const r = result as {
     output?: Uint8Array | null
     width: number
@@ -443,9 +444,12 @@ function deliver(frame: string, result: unknown): void {
   r.output = toRgba(r.output, r.width, r.height)
   if (r.companion)
     r.companion.data = toRgba(r.companion.data, r.companion.width, r.companion.height)
-  if (!previews) return
-  // Four bytes a pixel is RGBA U8; eight is RGBA half floats (Full HDR).
+  // Four bytes a pixel is RGBA U8; eight is RGBA half floats (Full HDR, or an SDR picture in float).
   const f16 = r.output.byteLength === r.width * r.height * 8
+  // An SDR picture in float: its companion made here (main's relay takes it too).
+  if (f16 && !r.companion && companionEdge)
+    r.companion = sdrCompanion(r.output, r.width, r.height, companionEdge)
+  if (!previews) return
   const msg: PreviewFrame = {
     frame,
     width: r.width,
@@ -571,7 +575,7 @@ process.parentPort.on('message', (e) => {
         // A render made only for its measurements: its pixels stay here.
         if (native?.discardOutput && result && typeof result === 'object')
           (result as { output?: unknown }).output = null
-        else if (frame) deliver(frame, result)
+        else if (frame) deliver(frame, result, native?.sdrCompanion)
         stripHeld(result, native)
         send({ kind: 'response', id, ok: true, result })
       },

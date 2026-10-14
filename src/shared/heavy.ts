@@ -174,11 +174,32 @@ export interface AiSwitches {
   /** "Use AI models": false is the killswitch. */
   enabled: boolean
   heavy: Record<HeavyModel, { on: boolean; benchmark: HeavyBenchmark | null }>
+  /**
+   * "Use PIXL demosaic": a RAW's full-size develop with PIXL's own model
+   * where the roster offers it (shared/pixldemosaic.ts). On unless turned
+   * off; off is the develop of before.
+   */
+  pixlDemosaic: boolean
+  /**
+   * Whether PIXL's models may run on this computer's CPU (engine 0.20.0,
+   * decisions 35 and 37): asked once per computer, never moved there
+   * silently. An answer given on another computer reads as `ask`.
+   */
+  pixlCpu: { answer: PixlCpuAnswer; machine: string }
 }
+
+export type PixlCpuAnswer = 'ask' | 'yes' | 'no'
 
 export const DEFAULT_SWITCHES: AiSwitches = {
   enabled: true,
-  heavy: { gemma: { on: false, benchmark: null }, sam3: { on: false, benchmark: null } }
+  heavy: { gemma: { on: false, benchmark: null }, sam3: { on: false, benchmark: null } },
+  pixlDemosaic: true,
+  pixlCpu: { answer: 'ask', machine: '' }
+}
+
+/** The answer about PIXL's models on the CPU, for this computer. */
+export function pixlCpuAnswer(s: AiSwitches, machine: string): PixlCpuAnswer {
+  return s.pixlCpu.machine === machine ? s.pixlCpu.answer : 'ask'
 }
 
 /** The switches read back from settings: anything missing or odd is the default. */
@@ -196,7 +217,18 @@ export function readSwitches(v: unknown): AiSwitches {
       typeof b.passed === 'boolean'
     return { on: h.on === true && valid && b.passed, benchmark: valid ? b : null }
   }
-  return { enabled: o.enabled !== false, heavy: { gemma: one('gemma'), sam3: one('sam3') } }
+  return {
+    enabled: o.enabled !== false,
+    heavy: { gemma: one('gemma'), sam3: one('sam3') },
+    pixlDemosaic: o.pixlDemosaic !== false,
+    pixlCpu: readPixlCpu(o.pixlCpu)
+  }
+}
+
+function readPixlCpu(v: unknown): AiSwitches['pixlCpu'] {
+  const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>
+  const answer = o.answer === 'yes' || o.answer === 'no' ? o.answer : 'ask'
+  return { answer, machine: typeof o.machine === 'string' ? o.machine : '' }
 }
 
 /** Whether a heavy model may run now: AI on, the model on, its benchmark this computer's. */

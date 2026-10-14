@@ -7,8 +7,9 @@ import { create } from 'zustand'
 import { DEFAULT_ENHANCE, normaliseEnhance, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind, SpotRefineChoice } from '../../../shared/retouch'
 import { aiDenoiseModel, type AiDenoiseModel } from '../../../shared/recipe'
-import { isCardId, type CardId } from '../../../shared/cards'
+import { cardSpec, isCardId, isPanelId, panelOf, type PanelId } from '../../../shared/cards'
 import { migrateUi } from './uiMigrate'
+import { DEFAULT_SCOPES, normaliseScopes, type ScopePrefs } from '../../../shared/scopes'
 import { tk } from '../lib/i18n'
 import type { Bindings, Chord } from '../lib/keys'
 import { createJSONStorage, persist } from 'zustand/middleware'
@@ -22,13 +23,54 @@ export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
   { value: 'none', label: tk('None') }
 ]
 
-export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
+export type Rail = 'presets' | 'edits' | 'history' | 'info'
+
+/**
+ * The interface's look (Settings → Interface → Theme), for A/B testing. The
+ * accent is purple in every one. `:root[data-theme]`, styles/themes/; the
+ * ids stay as first shipped, so a saved choice carries over.
+ *
+ * - `calm`, Playroom Signature (the default, 2026-10-14): flat and quiet,
+ *   layered blacks on the OLED-black workspace.
+ * - `bold`, Playroom Modern: black, purple and electric cyan, with bloom.
+ * - `studio`, Playroom Studio: neutral greys around the photo, nothing
+ *   tinted, for judging colour (the surround a print is viewed in).
+ * - `contrast`, High contrast: pure black and white, strong lines and focus
+ *   rings, for eyes or rooms that need them.
+ *
+ * `original` (the purple OLED look with glass and glow) is retired: its
+ * values are still the base every theme builds on (styles/tokens.css), but it
+ * is not offered, and a layout that chose it shows Signature.
+ */
+export type Theme = 'calm' | 'bold' | 'studio' | 'contrast'
+export const THEMES: { value: Theme; label: string }[] = [
+  { value: 'calm', label: tk('Playroom Signature') },
+  { value: 'bold', label: tk('Playroom Modern') },
+  { value: 'studio', label: tk('Playroom Studio') },
+  { value: 'contrast', label: tk('High contrast') }
+]
+export const DEFAULT_THEME: Theme = 'calm'
+/** The themes with no glass to draw: flat by nature, whatever "Always flat" says. */
+export const FLAT_THEMES: readonly Theme[] = ['calm', 'studio', 'contrast']
+
+/**
+ * Which colour tools the right column shows (Settings → Interface): the
+ * Lightroom-style cards, or DaVinci Resolve's (Primaries, Log wheels, Curves,
+ * Qualifier). One set shows at a time; both act on the photo.
+ */
+export type ColourTools = 'lightroom' | 'resolve'
+export const COLOUR_TOOLS: { value: ColourTools; label: string }[] = [
+  { value: 'lightroom', label: tk('Lightroom') },
+  { value: 'resolve', label: tk('Resolve') }
+]
+
+/** What the right column can show: Basic corrections, another adjustment card, or Enhance. */
+export type Panel = PanelId | 'enhance'
 
 /** How a mask is shown over the photo (Lightroom's overlay modes). */
 export type OverlayMode =
-  'glass' | 'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
+  'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
 export const OVERLAY_MODES: { value: OverlayMode; label: string }[] = [
-  { value: 'glass', label: tk('Glass') },
   { value: 'color', label: tk('Colour overlay') },
   { value: 'color-bw', label: tk('Colour overlay on B&W') },
   { value: 'image-black', label: tk('Image on black') },
@@ -68,8 +110,9 @@ export interface MaskOverlaySettings {
   autoToggle: boolean
 }
 
+/** Lightroom's classic: a red tint at 45%. */
 export const DEFAULT_MASK_OVERLAY: MaskOverlaySettings = {
-  mode: 'glass',
+  mode: 'color',
   hue: 350,
   opacity: 45,
   showAll: false,
@@ -110,7 +153,7 @@ export interface HealSettings {
 export type Drawer = 'adjust' | 'crop' | 'heal'
 
 /** The cards that start unfolded: the ones nearly every edit touches. */
-const DEFAULT_CARDS_OPEN: Partial<Record<CardId, boolean>> = {
+const DEFAULT_CARDS_OPEN: Partial<Record<string, boolean>> = {
   wb: true,
   light: true,
   presence: true,
@@ -129,6 +172,19 @@ export interface MasksWindow {
 const DEFAULT_MASKS_WIN: MasksWindow = { open: false }
 
 interface UiState {
+  theme: Theme
+  setTheme(theme: Theme): void
+  /** The scopes: the one in the right column, the expanded viewer's layout and options. */
+  scopes: ScopePrefs
+  setScopes(p: Partial<ScopePrefs>): void
+  colourTools: ColourTools
+  setColourTools(c: ColourTools): void
+  /** Resolve's node view of the layers in the masks pane (advanced; off until asked for). */
+  nodeView: boolean
+  setNodeView(on: boolean): void
+  /** Photos whose "Rebuild with the latest develop?" was answered "Don't ask" (shared/rebuild.ts). */
+  rebuildQuiet: string[]
+  setRebuildQuiet(key: string): void
   /** Which pane the left rail shows, and whether it is open or folded to its spine. */
   rail: Rail
   railOpen: boolean
@@ -181,14 +237,22 @@ interface UiState {
   /** The adjustment cards, or Crop's or Heal's panel in their place (not remembered). */
   drawer: Drawer
   setDrawer(d: Drawer): void
-  /** Which cards are unfolded, and solo mode (opening one folds the rest). */
-  cardsOpen: Partial<Record<CardId, boolean>>
-  setCardOpen(id: CardId, open: boolean): void
+  /**
+   * Older layouts' unfolded cards and solo switch: kept for what reads them,
+   * no longer shown (the column shows one section, `focusCard`).
+   */
+  cardsOpen: Partial<Record<string, boolean>>
+  /** Opening a card shows it: it becomes the section shown. */
+  setCardOpen(id: Panel, open: boolean): void
   cardSolo: boolean
   setCardSolo(on: boolean): void
-  /** The card last opened or jumped to: Jump to shows it, the previous / next keys step from it. */
-  focusCard: CardId
-  setFocusCard(id: CardId): void
+  /**
+   * The section the right column shows, under its dropdown: Basic
+   * corrections, one card, or Enhance. The dropdown picks it; the previous /
+   * next keys step.
+   */
+  focusCard: Panel
+  setFocusCard(id: Panel): void
   /** A spine glyph: open its pane, or fold the rail when it is already showing. */
   pickRail(r: Rail): void
   setRailOpen(open: boolean): void
@@ -247,9 +311,41 @@ const storage = createJSONStorage(() => ({
   }
 }))
 
+/**
+ * A saved section as one the column offers: White balance, Light, Presence
+ * and Colour (Colour's sliders joined Presence) show inside Basic corrections.
+ */
+function savedPanel(v: unknown): Panel | undefined {
+  if (v === 'enhance') return v
+  if (v === 'colour') return 'basic'
+  if (isCardId(v)) return panelOf(v)
+  return isPanelId(v) ? v : undefined
+}
+
 export const useUi = create<UiState>()(
   persist(
     (set, get) => ({
+      theme: DEFAULT_THEME,
+      setTheme: (theme) => set({ theme }),
+      scopes: DEFAULT_SCOPES,
+      setScopes: (p) => set((s) => ({ scopes: normaliseScopes({ ...s.scopes, ...p }) })),
+      colourTools: 'lightroom',
+      setColourTools: (colourTools) =>
+        set((s) => {
+          // The focused card stays in view: one of the set going away gives way to Basic.
+          const away =
+            s.focusCard === 'enhance' || s.focusCard === 'basic'
+              ? undefined
+              : cardSpec(s.focusCard).set
+          return { colourTools, ...(away && away !== colourTools ? { focusCard: 'basic' } : {}) }
+        }),
+      nodeView: false,
+      setNodeView: (nodeView) => set({ nodeView }),
+      rebuildQuiet: [],
+      setRebuildQuiet: (key) =>
+        set((s) => ({
+          rebuildQuiet: [...s.rebuildQuiet.filter((k) => k !== key), key].slice(-500)
+        })),
       rail: 'presets',
       railOpen: true,
       filmstrip: false,
@@ -290,15 +386,13 @@ export const useUi = create<UiState>()(
       drawer: 'adjust',
       setDrawer: (drawer) => set({ drawer }),
       cardsOpen: DEFAULT_CARDS_OPEN,
-      setCardOpen: (id, open) =>
-        set((s) => ({
-          cardsOpen: s.cardSolo && open ? { [id]: true } : { ...s.cardsOpen, [id]: open },
-          ...(open ? { focusCard: id } : {})
-        })),
+      setCardOpen: (id, open) => {
+        if (open) set({ focusCard: id })
+      },
       cardSolo: false,
       setCardSolo: (cardSolo) =>
         set((s) => ({ cardSolo, ...(cardSolo ? { cardsOpen: { [s.focusCard]: true } } : {}) })),
-      focusCard: 'light',
+      focusCard: 'basic',
       setFocusCard: (focusCard) => set({ focusCard }),
       pickRail: (rail) => {
         const s = get()
@@ -325,7 +419,7 @@ export const useUi = create<UiState>()(
     {
       name: 'playroom.ui',
       storage,
-      version: 8,
+      version: 10,
       migrate: (persisted, version) => migrateUi(persisted, version),
       // Crop or Heal is never in hand when the app opens.
       partialize: (s) => {
@@ -340,6 +434,11 @@ export const useUi = create<UiState>()(
           ...p,
           // Settings saved before a field existed take its default.
           enhance: normaliseEnhance(p.enhance),
+          // The retired Original, and anything unknown, is Signature.
+          theme: THEMES.some((x) => x.value === p.theme) ? p.theme! : DEFAULT_THEME,
+          scopes: normaliseScopes(p.scopes),
+          colourTools: p.colourTools === 'resolve' ? 'resolve' : 'lightroom',
+          nodeView: p.nodeView === true,
           masksWin: { open: p.masksWin?.open === true },
           maskOverlay: withoutPins({ ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay }),
           // SCUNet, retired with engine 0.19, is NAFNet SIDD now.
@@ -351,7 +450,7 @@ export const useUi = create<UiState>()(
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
           cardsOpen:
             p.cardsOpen && typeof p.cardsOpen === 'object' ? p.cardsOpen : current.cardsOpen,
-          focusCard: isCardId(p.focusCard) ? p.focusCard : current.focusCard,
+          focusCard: savedPanel(p.focusCard) ?? current.focusCard,
           drawer: 'adjust'
         }
       }

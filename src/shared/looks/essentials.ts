@@ -1,22 +1,30 @@
 /**
  * Everyday starting points: the looks Playroom has always shipped (their ids
- * and numbers unchanged, so My Looks and old notes still find them) and a
- * few more general ones.
+ * unchanged, so My Looks and old notes still find them) and a few more
+ * general ones. Version 2 (2026-10-14) builds them on DaVinci Resolve's
+ * tools: Lift, Gamma, Gain and Offset tints for the toning, the Primaries'
+ * Contrast and Sat, the hue curves for a colour moved on its own, HSL for
+ * its brightness; every one of them shows in the Resolve colour tools.
  */
 import {
   collection,
-  fade,
+  gain,
+  gamma,
   grain,
   hsl,
+  hueCurve,
+  lift,
   look,
+  master,
+  matte,
+  mono,
+  offset,
+  prim,
   presence,
   raw,
-  rolloff,
   sCurve,
-  split,
   tone,
-  vignette,
-  wheel
+  vignette
 } from './dsl'
 import { tk } from '../i18n'
 
@@ -26,143 +34,134 @@ export const ESSENTIALS = collection('essentials', [
     tk('High-contrast B&W'),
     {
       tags: ['bw', 'mono', 'contrast', 'punchy'],
-      description: tk('Deep blacks, bright skies held back.')
+      description: tk('Deep blacks, bright skies held back.'),
+      version: 2
     },
-    raw((r) => {
-      r.treatment = 'bw'
-      r.bwMix = {
-        red: 20,
-        orange: 25,
-        yellow: 10,
-        green: -20,
-        aqua: -25,
-        blue: -40,
-        purple: -10,
-        magenta: 10
-      }
-      r.basic.contrast = 35
-      r.basic.whites = 15
-      r.basic.blacks = -20
-      r.presence.clarity = 20
-    })
+    mono({
+      red: 20,
+      orange: 25,
+      yellow: 10,
+      green: -20,
+      aqua: -25,
+      blue: -40,
+      purple: -10,
+      magenta: 10
+    }),
+    prim({ contrast: 1.3 }),
+    tone({ whites: 15, blacks: -20 }),
+    presence({ clarity: 20 })
   ),
   look(
     'bw-soft',
     tk('Soft B&W'),
     {
       tags: ['bw', 'mono', 'soft', 'gentle'],
-      description: tk('Open shadows and quiet highlights.')
+      description: tk('Open shadows and quiet highlights.'),
+      version: 2
     },
-    raw((r) => {
-      r.treatment = 'bw'
-      r.basic.contrast = -15
-      r.basic.highlights = -30
-      r.basic.shadows = 30
-      r.presence.clarity = -10
-    })
+    mono(),
+    prim({ contrast: 0.88 }),
+    tone({ highlights: -30, shadows: 30 }),
+    presence({ clarity: -10 })
   ),
   look(
     'warm-film',
     tk('Warm film'),
     {
       tags: ['film', 'warm', 'grain', 'analog'],
-      description: tk('A warm print with soft blacks and fine grain.')
+      description: tk('A warm print with soft blacks and fine grain.'),
+      version: 2
     },
-    raw((r) => {
-      r.toneCurve.master = [
-        { x: 0, y: 0.05 },
-        { x: 0.25, y: 0.24 },
-        { x: 0.75, y: 0.78 },
-        { x: 1, y: 0.95 }
-      ]
-      r.colorGrade.shadows = { hue: 200, saturation: 12, luminance: 0 }
-      r.colorGrade.highlights = { hue: 40, saturation: 18, luminance: 0 }
-      r.presence.vibrance = 10
-      r.effects.grainAmount = 18
-      r.effects.grainSize = 30
-      r.hsl.green = { hue: 15, saturation: -20, luminance: 0 }
-    })
+    sCurve(8),
+    matte(0.05, 0.05),
+    lift(200, 12),
+    gain(40, 18),
+    prim({ sat: 4 }),
+    // Greens toward olive and quieter: a print's, not a screen's.
+    hueCurve('hueHue', [[115, -10]]),
+    hueCurve('hueSat', [[115, 0.8]]),
+    grain(18, 30)
   ),
   look(
     'cool-matte',
     tk('Cool matte'),
     {
       tags: ['film', 'cool', 'matte', 'faded'],
-      description: tk('Lifted blacks and cool, quiet colour.')
+      description: tk('Lifted blacks and cool, quiet colour.'),
+      version: 2
     },
-    raw((r) => {
-      r.toneCurve.master = [
-        { x: 0, y: 0.08 },
-        { x: 0.3, y: 0.3 },
-        { x: 0.7, y: 0.72 },
-        { x: 1, y: 0.94 }
-      ]
-      r.colorGrade.shadows = { hue: 220, saturation: 15, luminance: 0 }
-      r.colorGrade.midtones = { hue: 190, saturation: 6, luminance: 0 }
-      r.presence.saturation = -15
-    })
+    sCurve(10),
+    matte(0.08, 0.06),
+    lift(220, 15),
+    gamma(190, 6),
+    prim({ sat: -15 })
   ),
   look(
     'vivid',
     tk('Vivid'),
     {
       tags: ['colour', 'vivid', 'saturated', 'punchy'],
-      description: tk('More contrast and colour, skin kept in check.')
+      description: tk('More contrast and colour, skin kept in check.'),
+      version: 2
     },
-    raw((r) => {
-      r.basic.contrast = 20
-      r.presence.vibrance = 35
-      r.presence.saturation = 8
-      r.presence.clarity = 10
-    })
+    prim({ contrast: 1.15, sat: 20 }),
+    // Skin kept where it was: orange and red back down a little.
+    hueCurve('hueSat', [[25, 0.88]], 25),
+    presence({ clarity: 10 })
   ),
   look(
     'teal-orange',
     tk('Teal & orange'),
     {
       tags: ['colour', 'cinematic', 'teal', 'orange', 'blockbuster'],
-      description: tk('Teal shadows against warm skin.')
+      description: tk('Teal shadows against warm skin.'),
+      version: 2
     },
-    raw((r) => {
-      r.colorGrade.shadows = { hue: 190, saturation: 30, luminance: -5 }
-      r.colorGrade.highlights = { hue: 35, saturation: 25, luminance: 0 }
-      r.colorGrade.balance = -10
-      r.hsl.orange = { hue: 0, saturation: 10, luminance: 5 }
-      r.hsl.blue = { hue: -15, saturation: 10, luminance: 0 }
-      r.presence.vibrance = 10
-    })
+    lift(190, 30),
+    master('lift', -0.01),
+    gain(35, 25),
+    // Greens and blues fold toward teal; skin a touch richer.
+    hueCurve('hueHue', [
+      [120, 30],
+      [225, -15]
+    ]),
+    hueCurve('hueSat', [
+      [30, 1.12],
+      [200, 1.12]
+    ]),
+    prim({ sat: 3 })
   ),
   look(
     'landscape',
     tk('Landscape pop'),
     {
       tags: ['landscape', 'nature', 'sky', 'clarity'],
-      description: tk('Held highlights, open shadows, deeper skies.')
+      description: tk('Held highlights, open shadows, deeper skies.'),
+      version: 2
     },
-    raw((r) => {
-      r.basic.highlights = -40
-      r.basic.shadows = 30
-      r.presence.dehaze = 15
-      r.presence.clarity = 15
-      r.presence.vibrance = 25
-      r.hsl.blue = { hue: 0, saturation: 15, luminance: -15 }
-      r.hsl.green = { hue: 10, saturation: 10, luminance: 0 }
-    })
+    tone({ highlights: -40, shadows: 30 }),
+    presence({ dehaze: 15, clarity: 15 }),
+    prim({ sat: 10 }),
+    hueCurve('hueSat', [
+      [215, 1.2],
+      [100, 1.12]
+    ]),
+    hueCurve('hueHue', [[100, 6]]),
+    hsl({ blue: [0, 0, -15] })
   ),
   look(
     'portrait',
     tk('Soft portrait'),
     {
       tags: ['portrait', 'skin', 'soft', 'people'],
-      description: tk('Smoother skin and lifted shadows.')
+      description: tk('Smoother skin and lifted shadows.'),
+      version: 2
     },
-    raw((r) => {
-      r.presence.texture = -20
-      r.presence.clarity = -10
-      r.basic.shadows = 15
-      r.hsl.orange = { hue: 0, saturation: -8, luminance: 10 }
-      r.hsl.red = { hue: 5, saturation: -5, luminance: 5 }
-    })
+    presence({ texture: -20, clarity: -10 }),
+    tone({ shadows: 15 }),
+    // Skin a little lighter and calmer; a whisper of warmth in the middle.
+    hsl({ orange: [0, -8, 10], red: [5, -5, 5] }),
+    gamma(30, 5)
   ),
   look(
     'vignette',
@@ -181,48 +180,67 @@ export const ESSENTIALS = collection('essentials', [
     tk('Clean pop'),
     {
       tags: ['colour', 'clean', 'bright', 'everyday'],
-      description: tk('A gentle S-curve and clean colour.')
+      description: tk('A gentle S-curve and clean colour.'),
+      version: 2
     },
     sCurve(30),
     tone({ highlights: -15, shadows: 10 }),
-    presence({ vibrance: 25, clarity: 8 }),
-    hsl({ blue: [0, 10, -6] })
+    prim({ sat: 10 }),
+    presence({ clarity: 8 }),
+    hueCurve('hueSat', [[215, 1.1]]),
+    hsl({ blue: [0, 0, -6] })
   ),
   look(
     'matte-fade',
     tk('Matte fade'),
     {
       tags: ['matte', 'faded', 'soft', 'film'],
-      description: tk('Faded blacks and softened whites.')
+      description: tk('Faded blacks and softened whites.'),
+      version: 2
     },
     sCurve(15),
-    fade(0.07),
-    rolloff(0.04),
-    presence({ saturation: -10 })
+    matte(0.07, 0.04),
+    prim({ sat: -10 })
   ),
   look(
     'golden-hour',
     tk('Golden hour'),
     {
       tags: ['warm', 'sunset', 'golden', 'glow'],
-      description: tk('Low sun warmth, honeyed highlights.')
+      description: tk('Low sun warmth, honeyed highlights.'),
+      version: 2
     },
-    split(30, 8, 42, 22),
-    wheel('global', 38, 6),
+    lift(30, 8),
+    gain(42, 22),
+    offset(38, 6),
     tone({ highlights: -10, shadows: 10 }),
-    hsl({ orange: [0, 8, 4], yellow: [-6, 5, 0], blue: [0, -15, 0] }),
-    presence({ vibrance: 10 })
+    hueCurve('hueHue', [[60, -6]]),
+    hueCurve('hueSat', [
+      [30, 1.08],
+      [215, 0.85]
+    ]),
+    prim({ sat: 4 })
   ),
   look(
     'moody-blue',
     tk('Moody blue'),
-    { tags: ['moody', 'cool', 'dark', 'blue'], description: tk('Cool, dark and quiet.') },
+    {
+      tags: ['moody', 'cool', 'dark', 'blue'],
+      description: tk('Cool, dark and quiet.'),
+      version: 2
+    },
     sCurve(25),
-    fade(0.03),
+    matte(0.03),
     tone({ highlights: -20, whites: -10 }),
-    split(215, 20, 200, 6),
-    presence({ saturation: -20 }),
-    hsl({ orange: [0, -5, -5], blue: [-5, 10, -10] }),
+    lift(215, 20),
+    gain(200, 6),
+    prim({ sat: -20 }),
+    hueCurve('hueHue', [[220, -5]]),
+    hueCurve('hueSat', [
+      [220, 1.1],
+      [30, 0.95]
+    ]),
+    hsl({ orange: [0, 0, -5], blue: [0, 0, -10] }),
     vignette(-15, { feather: 70 })
   ),
   look(
@@ -240,12 +258,15 @@ export const ESSENTIALS = collection('essentials', [
     tk('Soft pastel'),
     {
       tags: ['pastel', 'airy', 'soft', 'bright'],
-      description: tk('Bright, low-contrast and pastel.')
+      description: tk('Bright, low-contrast and pastel.'),
+      version: 2
     },
-    tone({ contrast: -20, shadows: 25, highlights: -10 }),
-    fade(0.05),
-    presence({ saturation: -12, clarity: -8 }),
-    split(190, 8, 330, 8),
+    prim({ contrast: 0.85, sat: -12 }),
+    tone({ shadows: 25, highlights: -10 }),
+    matte(0.05),
+    presence({ clarity: -8 }),
+    lift(190, 8),
+    gain(330, 8),
     grain(6, 20, 40)
   )
 ])

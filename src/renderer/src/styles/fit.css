@@ -1,0 +1,76 @@
+/* Text that does not fit (any language: German and Vietnamese run long).
+   A label keeps its column, so a stack of rows stays aligned, and ends in
+   an ellipsis rather than overflowing; lib/overflowTitles.ts puts the whole
+   text in a tooltip wherever it is cut. Panes are containers, so what is in
+   them adapts to their width rather than the window's. */
+
+/* One line, an ellipsis. */
+.select > span,
+.field > span,
+.op-row > span,
+.kv dt,
+.card > header .title,
+.section > header .title,
+.mf-overlay-btn .mf-overlay-mode,
+.menu-item > .label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card > header .title,
+.section > header .title {
+  flex: 0 1 auto;
+}
+
+/* Tabs and segments share their row, each cut rather than pushed out. */
+.tabs,
+.seg {
+  max-width: 100%;
+}
+.tabs button,
+.seg button {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The panes are containers: a narrow one stacks a label over its control. */
+.left-rail .rail-pane,
+.masks-win,
+aside.right {
+  container-type: inline-size;
+}
+@container (max-width: 240px) {
+  .select,
+  .select.with-tip,
+  .field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    min-height: 0;
+    padding-block: 4px;
+  }
+}
+
+/* Headings break evenly; notes and tips break without a lone last word. */
+h1,
+h2,
+h3,
+legend,
+.drawer-title,
+.rebuild-text strong {
+  text-wrap: balance;
+}
+p,
+.note,
+.rail-empty,
+.muted.small {
+  text-wrap: pretty;
+}
+
+/* A card or a section opening to its content's height animates there. */
+:root {
+  interpolate-size: allow-keywords;
+}

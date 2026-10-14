@@ -1,6 +1,11 @@
 /* Near-black OLED surfaces, one matte purple accent, hairlines that end in
    light. Surfaces have square corners; controls round by at most 2px. */
 :root {
+  /* A colour channel's own colour: the R, G and B of numbers and scopes. */
+  --ch-r: #ff6b7d;
+  --ch-g: #6be38f;
+  --ch-b: #7b9cff;
+
   color-scheme: dark;
 
   /* surfaces, darkest first */
@@ -10,10 +15,15 @@
   --s3: #151518;
   --s4: #1c1c21;
 
+  /* the channels white and black light come from: rgb(var(--fg-rgb) / a) is a
+     white overlay, rgb(var(--shade-rgb) / a) a dark one (a theme moves them) */
+  --fg-rgb: 255 255 255;
+  --shade-rgb: 0 0 0;
+
   /* hairlines */
-  --hair: rgba(255, 255, 255, 0.08);
-  --hair2: rgba(255, 255, 255, 0.14);
-  --hair3: rgba(255, 255, 255, 0.22);
+  --hair: rgb(var(--fg-rgb) / 0.08);
+  --hair2: rgb(var(--fg-rgb) / 0.14);
+  --hair3: rgb(var(--fg-rgb) / 0.22);
 
   /* ink */
   --text: #ebe9f3;
@@ -25,12 +35,12 @@
   --acc2: #7b68d8;
   --acc-deep: #4c3d9e;
   --acc-ink: #17122b;
-  --acc-a10: rgba(157, 139, 234, 0.1);
-  --acc-a20: rgba(157, 139, 234, 0.2);
-  --acc-a35: rgba(157, 139, 234, 0.35);
-  --acc-a55: rgba(157, 139, 234, 0.55);
-  --glow: rgba(157, 139, 234, 0.55);
-  --glow-soft: rgba(157, 139, 234, 0.22);
+  --acc-a10: color-mix(in srgb, var(--acc) 10%, transparent);
+  --acc-a20: color-mix(in srgb, var(--acc) 20%, transparent);
+  --acc-a35: color-mix(in srgb, var(--acc) 35%, transparent);
+  --acc-a55: color-mix(in srgb, var(--acc) 55%, transparent);
+  --glow: color-mix(in srgb, var(--acc) 55%, transparent);
+  --glow-soft: color-mix(in srgb, var(--acc) 22%, transparent);
   --primary-grad: linear-gradient(180deg, #8b78e6, #6c5ad0);
 
   /* signals */
@@ -62,21 +72,21 @@
   --hl-x: linear-gradient(
     90deg,
     var(--acc) 0px,
-    rgba(157, 139, 234, 0.35) 40px,
+    color-mix(in srgb, var(--acc) 35%, transparent) 40px,
     var(--hair) 120px,
     var(--hair) 100%
   );
   --hl-x-rev: linear-gradient(
     270deg,
     var(--acc) 0px,
-    rgba(157, 139, 234, 0.35) 40px,
+    color-mix(in srgb, var(--acc) 35%, transparent) 40px,
     var(--hair) 120px,
     var(--hair) 100%
   );
   --hl-y: linear-gradient(
     180deg,
     var(--acc) 0px,
-    rgba(157, 139, 234, 0.35) 40px,
+    color-mix(in srgb, var(--acc) 35%, transparent) 40px,
     var(--hair) 140px,
     var(--hair) 100%
   );
