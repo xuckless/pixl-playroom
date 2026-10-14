@@ -36,6 +36,7 @@ import { scoped } from '../state/scope'
 import { useLibrary } from '../state/library'
 import { choosePhotos } from './openPhotos'
 import { OVERLAY_MODES, useUi } from '../state/ui'
+import { cycleScope } from '../../../shared/scopes'
 import { flashHud } from '../views/loupe/hudNote'
 import { loupeZoom, setSpace } from '../views/loupe/zoom'
 import { api, errorText } from './api'
@@ -661,6 +662,28 @@ export const COMMANDS: KeyCommand[] = [
     context: 'develop',
     keys: ['J'],
     run: () => dev().setClipping(!dev().clipping)
+  },
+  {
+    id: 'scopes.next',
+    label: tk('Next scope'),
+    group: 'View',
+    context: 'develop',
+    keys: ['Alt+BracketRight'],
+    run: () => {
+      const u = useUi.getState()
+      u.setScopes({ inline: cycleScope(u.scopes.inline, 1) })
+    }
+  },
+  {
+    id: 'scopes.prev',
+    label: tk('Previous scope'),
+    group: 'View',
+    context: 'develop',
+    keys: ['Alt+BracketLeft'],
+    run: () => {
+      const u = useUi.getState()
+      u.setScopes({ inline: cycleScope(u.scopes.inline, -1) })
+    }
   },
   {
     id: 'zoom.toggle',

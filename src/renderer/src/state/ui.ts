@@ -9,6 +9,7 @@ import type { SpotKind, SpotRefineChoice } from '../../../shared/retouch'
 import { aiDenoiseModel, type AiDenoiseModel } from '../../../shared/recipe'
 import { isCardId, type CardId } from '../../../shared/cards'
 import { migrateUi } from './uiMigrate'
+import { DEFAULT_SCOPES, normaliseScopes, type ScopePrefs } from '../../../shared/scopes'
 import { tk } from '../lib/i18n'
 import type { Bindings, Chord } from '../lib/keys'
 import { createJSONStorage, persist } from 'zustand/middleware'
@@ -26,15 +27,26 @@ export type Rail = 'presets' | 'edits' | 'history' | 'info'
 
 /**
  * The interface's look (Settings → Interface → Theme), for A/B testing:
- * Original (the purple OLED look), Calm pro (flat, quiet, no glass) and
- * Bolder modern (larger, softer, a touch of colour per tool). The accent is
- * purple in all three. `:root[data-theme]`, styles/themes/.
+ * Original (the purple OLED look), Calm pro (flat and quiet, in layered
+ * blacks) and Bolder modern (black, purple and electric cyan, with bloom).
+ * The accent is purple in all three. `:root[data-theme]`, styles/themes/.
  */
 export type Theme = 'original' | 'calm' | 'bold'
 export const THEMES: { value: Theme; label: string }[] = [
   { value: 'original', label: tk('Original') },
   { value: 'calm', label: tk('Calm pro') },
   { value: 'bold', label: tk('Bolder modern') }
+]
+
+/**
+ * Which colour tools the right column shows (Settings → Interface): the
+ * Lightroom-style cards, or DaVinci Resolve's (Primaries, Log wheels, Curves,
+ * Qualifier). One set shows at a time; both act on the photo.
+ */
+export type ColourTools = 'lightroom' | 'resolve'
+export const COLOUR_TOOLS: { value: ColourTools; label: string }[] = [
+  { value: 'lightroom', label: tk('Lightroom') },
+  { value: 'resolve', label: tk('Resolve') }
 ]
 
 /** How a mask is shown over the photo (Lightroom's overlay modes). */
@@ -144,6 +156,14 @@ const DEFAULT_MASKS_WIN: MasksWindow = { open: false }
 interface UiState {
   theme: Theme
   setTheme(theme: Theme): void
+  /** The scopes: the one in the right column, the expanded viewer's layout and options. */
+  scopes: ScopePrefs
+  setScopes(p: Partial<ScopePrefs>): void
+  colourTools: ColourTools
+  setColourTools(c: ColourTools): void
+  /** Resolve's node view of the layers in the masks pane (advanced; off until asked for). */
+  nodeView: boolean
+  setNodeView(on: boolean): void
   /** Photos whose "Rebuild with the latest develop?" was answered "Don't ask" (shared/rebuild.ts). */
   rebuildQuiet: string[]
   setRebuildQuiet(key: string): void
@@ -270,6 +290,12 @@ export const useUi = create<UiState>()(
     (set, get) => ({
       theme: 'original',
       setTheme: (theme) => set({ theme }),
+      scopes: DEFAULT_SCOPES,
+      setScopes: (p) => set((s) => ({ scopes: normaliseScopes({ ...s.scopes, ...p }) })),
+      colourTools: 'lightroom',
+      setColourTools: (colourTools) => set({ colourTools }),
+      nodeView: false,
+      setNodeView: (nodeView) => set({ nodeView }),
       rebuildQuiet: [],
       setRebuildQuiet: (key) =>
         set((s) => ({
@@ -366,6 +392,9 @@ export const useUi = create<UiState>()(
           // Settings saved before a field existed take its default.
           enhance: normaliseEnhance(p.enhance),
           theme: THEMES.some((x) => x.value === p.theme) ? p.theme! : 'original',
+          scopes: normaliseScopes(p.scopes),
+          colourTools: p.colourTools === 'resolve' ? 'resolve' : 'lightroom',
+          nodeView: p.nodeView === true,
           masksWin: { open: p.masksWin?.open === true },
           maskOverlay: withoutPins({ ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay }),
           // SCUNet, retired with engine 0.19, is NAFNet SIDD now.

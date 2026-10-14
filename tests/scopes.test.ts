@@ -102,3 +102,21 @@ test('headroom raises the waveform’s top; the scopes cycle round', async () =>
   assert.equal(cycleScope(SCOPE_KINDS[SCOPE_KINDS.length - 1], 1), SCOPE_KINDS[0])
   assert.equal(cycleScope(SCOPE_KINDS[0], -1), SCOPE_KINDS[SCOPE_KINDS.length - 1])
 })
+
+test('saved scope preferences are made whole, unknown values taking their defaults', async () => {
+  const { normaliseScopes, DEFAULT_SCOPES, cycleExpanded } = await import('../src/shared/scopes')
+  assert.deepEqual(normaliseScopes(undefined), DEFAULT_SCOPES)
+  const p = normaliseScopes({
+    inline: 'waveform',
+    layout: 3,
+    slots: ['cie', 'nope'],
+    vectorZoom: 2
+  })
+  assert.equal(p.inline, 'waveform')
+  assert.equal(p.layout, DEFAULT_SCOPES.layout)
+  assert.deepEqual(p.slots, ['cie', DEFAULT_SCOPES.slots[1], ...DEFAULT_SCOPES.slots.slice(2)])
+  assert.equal(p.vectorZoom, 2)
+  // The expanded viewer's places also reach the metrics.
+  assert.equal(cycleExpanded('cie', 1), 'metrics')
+  assert.equal(cycleExpanded('metrics', 1), 'histogram')
+})

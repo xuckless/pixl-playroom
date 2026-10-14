@@ -332,3 +332,56 @@ export function paintDensity(
       out[j + 3] = 255
     }
 }
+
+// ── What the scopes show (the ui store, Settings) ───────────────────────────
+
+/** The expanded viewer also has the metrics. */
+export type ExpandedScope = ScopeKind | 'metrics'
+export const EXPANDED_SCOPES: readonly ExpandedScope[] = [...SCOPE_KINDS, 'metrics']
+
+export interface ScopePrefs {
+  /** The one at the top of the right column. */
+  inline: ScopeKind
+  /** The expanded viewer: one, two or four at once. */
+  layout: 1 | 2 | 4
+  /** The expanded viewer's four places, in reading order. */
+  slots: ExpandedScope[]
+  /** The waveform as luma, or the three channels laid over one another. */
+  waveform: 'luma' | 'rgb'
+  /** The vectorscope at 1× or 2× (the middle of it, for skin and pastels). */
+  vectorZoom: 1 | 2
+  skinLine: boolean
+}
+
+export const DEFAULT_SCOPES: ScopePrefs = {
+  inline: 'histogram',
+  layout: 2,
+  slots: ['parade', 'vectorscope', 'waveform', 'histogram'],
+  waveform: 'luma',
+  vectorZoom: 1,
+  skinLine: true
+}
+
+/** Saved preferences made whole: what is missing or unknown takes its default. */
+export function normaliseScopes(p: unknown): ScopePrefs {
+  const o = (p && typeof p === 'object' ? p : {}) as Partial<Record<keyof ScopePrefs, unknown>>
+  const kind = (v: unknown, d: ScopeKind): ScopeKind =>
+    SCOPE_KINDS.includes(v as ScopeKind) ? (v as ScopeKind) : d
+  const slot = (v: unknown, d: ExpandedScope): ExpandedScope =>
+    EXPANDED_SCOPES.includes(v as ExpandedScope) ? (v as ExpandedScope) : d
+  const slots = Array.isArray(o.slots) ? o.slots : []
+  return {
+    inline: kind(o.inline, DEFAULT_SCOPES.inline),
+    layout: o.layout === 1 || o.layout === 2 || o.layout === 4 ? o.layout : DEFAULT_SCOPES.layout,
+    slots: DEFAULT_SCOPES.slots.map((d, i) => slot(slots[i], d)),
+    waveform: o.waveform === 'rgb' ? 'rgb' : 'luma',
+    vectorZoom: o.vectorZoom === 2 ? 2 : 1,
+    skinLine: o.skinLine !== false
+  }
+}
+
+/** A slot's scope after or before its own, round the expanded viewer's list. */
+export function cycleExpanded(kind: ExpandedScope, step: 1 | -1): ExpandedScope {
+  const i = EXPANDED_SCOPES.indexOf(kind)
+  return EXPANDED_SCOPES[(i + step + EXPANDED_SCOPES.length) % EXPANDED_SCOPES.length]
+}

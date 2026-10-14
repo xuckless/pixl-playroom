@@ -4,10 +4,9 @@
  * always drawn: its primaries enclose the whole locus. The Reference tab lays
  * the other gamuts over it (off until chosen).
  *
- * The photo's own chromaticity (its cloud and hull, before and after) needs
- * the engine to measure it, which Playroom has asked for (TODO.md, ENGINE
- * REQUEST: u′v′ and gamut coverage metrics); until then the Image tab shows
- * the chart and says so, and draws nothing that is not measured.
+ * The photo's own colours are a density over it, binned from the preview's
+ * pixels (shared/scopes.ts): Display P3 at preview resolution. The exact,
+ * full-resolution version is engine request E76.
  */
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -22,6 +21,7 @@ import {
   type Uv
 } from '../../../../shared/cie'
 import { t } from '../../lib/i18n'
+import { paintDensity, type ScopeBins } from '../../../../shared/scopes'
 
 const SIZE = 560
 const B = chartBounds()
@@ -86,13 +86,38 @@ function paintHorseshoe(canvas: HTMLCanvasElement): void {
 
 type Sub = 'image' | 'reference'
 
-export function CieChart(): React.JSX.Element {
+/** The photo's colours over the chart: bright where many pixels share a chromaticity. */
+function paintCloud(canvas: HTMLCanvasElement, bins: ScopeBins | null): void {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  const n = bins?.cieSize ?? 1
+  canvas.width = n
+  canvas.height = n
+  const img = ctx.createImageData(n, n)
+  if (bins?.cie) paintDensity(img.data, bins.cie, n, n, [255, 255, 255], { gain: 1.2 })
+  ctx.putImageData(img, 0, 0)
+}
+
+export function CieChart({
+  density = null,
+  compact = false
+}: {
+  /** The binned picture (lib/scopes/live.ts), or null before any arrive. */
+  density?: ScopeBins | null
+  /** The chart alone, small (the right column's scope): no side panel. */
+  compact?: boolean
+} = {}): React.JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null)
+  const cloud = useRef<HTMLCanvasElement>(null)
   const [sub, setSub] = useState<Sub>('image')
-  const [shown, setShown] = useState<Set<Gamut['id']>>(new Set())
+  const [shown, setShown] = useState<Set<Gamut['id']>>(new Set(compact ? ['p3'] : []))
+  const [showCloud, setShowCloud] = useState(true)
   useEffect(() => {
     if (canvas.current) paintHorseshoe(canvas.current)
   }, [])
+  useEffect(() => {
+    if (cloud.current) paintCloud(cloud.current, showCloud ? density : null)
+  }, [density, showCloud])
   const grid: number[] = []
   for (let g = Math.ceil(B.u0 * 10) / 10; g <= B.u1; g += 0.1) grid.push(Math.round(g * 10) / 10)
   const gridV: number[] = []
@@ -107,61 +132,55 @@ export function CieChart(): React.JSX.Element {
     })
 
   return (
-    <div className="cie">
-      <div className="cie-side">
-        <div className="seg" role="group" aria-label={t('Chart contents')}>
-          <button className={sub === 'image' ? 'on' : ''} onClick={() => setSub('image')}>
-            {t('Image')}
-          </button>
-          <button className={sub === 'reference' ? 'on' : ''} onClick={() => setSub('reference')}>
-            {t('Reference')}
-          </button>
-        </div>
-        {sub === 'image' ? (
-          <>
-            <div
-              className="seg cie-ba"
-              role="group"
-              aria-label={t('Before or after')}
-              title={t('Waiting for the engine')}
-            >
-              <button disabled>{t('Before')}</button>
-              <button disabled className="on">
-                {t('After')}
-              </button>
-            </div>
-            <label className="check">
-              <input type="checkbox" disabled /> {t('Before as a ghost')}
-            </label>
-            <label className="check">
-              <input type="checkbox" disabled /> {t('The photo’s hull')}
-            </label>
-            <p className="cie-note">
-              {t(
-                'The photo’s own colours will plot here once the engine reports them in u′v′. Playroom has asked for that, and for how much of the photo each gamut covers; nothing is estimated in the meantime.'
-              )}
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="micro">{t('Lay over the chart')}</p>
-            {REFERENCE_GAMUTS.map((g) => (
-              <label key={g.id} className="check">
-                <input type="checkbox" checked={shown.has(g.id)} onChange={() => toggle(g.id)} />{' '}
-                <span className="cie-key" style={{ background: GAMUT_COLOUR[g.id] }} />
-                {g.name}
+    <div className={compact ? 'cie compact' : 'cie'}>
+      {!compact && (
+        <div className="cie-side">
+          <div className="seg" role="group" aria-label={t('Chart contents')}>
+            <button className={sub === 'image' ? 'on' : ''} onClick={() => setSub('image')}>
+              {t('Image')}
+            </button>
+            <button className={sub === 'reference' ? 'on' : ''} onClick={() => setSub('reference')}>
+              {t('Reference')}
+            </button>
+          </div>
+          {sub === 'image' ? (
+            <>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={showCloud}
+                  onChange={(e) => setShowCloud(e.target.checked)}
+                />{' '}
+                {t('The photo’s colours')}
               </label>
-            ))}
-            <p className="cie-note">
-              {t(
-                'PixlRGB is always drawn: its primaries enclose the whole visible range, so it is the chart’s frame. Rec.2020 and Display P3 reach beyond sRGB; the horseshoe is every colour the eye sees.'
-              )}
-            </p>
-          </>
-        )}
-      </div>
+              <p className="cie-note">
+                {t(
+                  'Where the photo’s colours fall, from the picture on screen (Display P3, preview resolution): brighter where more of the photo shares a colour. Exact, full-resolution figures wait on the engine.'
+                )}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="micro">{t('Lay over the chart')}</p>
+              {REFERENCE_GAMUTS.map((g) => (
+                <label key={g.id} className="check">
+                  <input type="checkbox" checked={shown.has(g.id)} onChange={() => toggle(g.id)} />{' '}
+                  <span className="cie-key" style={{ background: GAMUT_COLOUR[g.id] }} />
+                  {g.name}
+                </label>
+              ))}
+              <p className="cie-note">
+                {t(
+                  'PixlRGB is always drawn: its primaries enclose the whole visible range, so it is the chart’s frame. Rec.2020 and Display P3 reach beyond sRGB; the horseshoe is every colour the eye sees.'
+                )}
+              </p>
+            </>
+          )}
+        </div>
+      )}
       <figure className="cie-plot">
         <canvas ref={canvas} width={SIZE} height={SIZE} aria-hidden />
+        <canvas ref={cloud} className="cie-cloud" aria-hidden />
         <svg
           viewBox={`0 0 ${SIZE} ${SIZE}`}
           role="img"
@@ -196,7 +215,7 @@ export function CieChart(): React.JSX.Element {
             </g>
           ))}
           <path d={path(SPECTRAL_LOCUS)} className="cie-locus" />
-          {sub === 'reference' &&
+          {(sub === 'reference' || compact) &&
             REFERENCE_GAMUTS.filter((g) => shown.has(g.id)).map((g) => (
               <g key={g.id}>
                 <path
