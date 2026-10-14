@@ -77,70 +77,45 @@ export interface CurvePreset {
   curve: Partial<ToneCurveSetting>
 }
 
-/** The curves every photo can start from, on the RGB point curve. */
+/** Points given on Lightroom's 0…255 scale, as its point-curve presets are written. */
+const at255 = (...p: [number, number][]): CurvePointSetting[] =>
+  p.map(([x, y]) => ({
+    x: Math.round((x / 255) * 1e4) / 1e4,
+    y: Math.round((y / 255) * 1e4) / 1e4
+  }))
+
+/**
+ * The curves every photo can start from, on the RGB point curve. Medium and
+ * Strong contrast are Lightroom's own points (the curve runs per channel on
+ * the same sRGB-tone values Lightroom's does), so they do what someone coming
+ * from it expects; the earlier ones were about twice as strong and crushed a
+ * darker photo's shadows (the owner, 2026-10-14). The rest are as gentle.
+ * A curve made with an earlier preset keeps its points, and its look.
+ */
 export const BUILTIN_CURVES: CurvePreset[] = [
   { name: tk('Linear'), curve: {} },
   {
     name: tk('Medium contrast'),
-    curve: {
-      master: [
-        { x: 0, y: 0 },
-        { x: 0.25, y: 0.21 },
-        { x: 0.5, y: 0.5 },
-        { x: 0.75, y: 0.79 },
-        { x: 1, y: 1 }
-      ]
-    }
+    curve: { master: at255([0, 0], [32, 22], [64, 56], [128, 128], [192, 196], [255, 255]) }
   },
   {
     name: tk('Strong contrast'),
-    curve: {
-      master: [
-        { x: 0, y: 0 },
-        { x: 0.25, y: 0.17 },
-        { x: 0.5, y: 0.5 },
-        { x: 0.75, y: 0.84 },
-        { x: 1, y: 1 }
-      ]
-    }
+    curve: { master: at255([0, 0], [32, 16], [64, 50], [128, 128], [192, 202], [255, 255]) }
+  },
+  {
+    // Half of Medium: a touch of snap that leaves the shadows open.
+    name: tk('Soft film S'),
+    curve: { master: at255([0, 4], [32, 28], [64, 60], [128, 128], [192, 194], [255, 251]) }
   },
   {
     // Lifted blacks and a slightly dimmed white: the faded print look.
     name: tk('Matte'),
-    curve: {
-      master: [
-        { x: 0, y: 0.09 },
-        { x: 0.22, y: 0.24 },
-        { x: 0.5, y: 0.5 },
-        { x: 0.8, y: 0.8 },
-        { x: 1, y: 0.96 }
-      ]
-    }
+    curve: { master: at255([0, 20], [48, 54], [128, 128], [204, 204], [255, 246]) }
   },
   {
-    // A gentle S with both ends eased off, as a film stock's toe and shoulder.
-    name: tk('Soft film S'),
-    curve: {
-      master: [
-        { x: 0, y: 0.04 },
-        { x: 0.2, y: 0.17 },
-        { x: 0.5, y: 0.5 },
-        { x: 0.8, y: 0.83 },
-        { x: 1, y: 0.97 }
-      ]
-    }
-  },
-  {
+    // Shadows opened, the rest as it was.
     name: tk('Lifted shadows'),
-    curve: {
-      master: [
-        { x: 0, y: 0 },
-        { x: 0.15, y: 0.22 },
-        { x: 0.4, y: 0.46 },
-        { x: 0.7, y: 0.72 },
-        { x: 1, y: 1 }
-      ]
-    }
+    curve: { master: at255([0, 0], [40, 52], [100, 108], [180, 182], [255, 255]) }
   }
 ]
 
