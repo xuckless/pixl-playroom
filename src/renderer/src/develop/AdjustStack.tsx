@@ -5,7 +5,8 @@ import {
   cardChanged,
   cardFields,
   CARDS,
-  cardShows,
+  cardsFor,
+  cardTitle,
   type CardId,
   type CardSpec
 } from '../../../shared/cards'
@@ -57,6 +58,9 @@ const BODIES: Record<CardId, ComponentType> = {
   geometry: GeometryBody,
   calibration: CalibrationBody
 }
+
+/** The mixer with the Resolve tools: Lightroom's H, S, L and All, no point colour (the Qualifier is there). */
+const CompactHsl = (): React.JSX.Element | null => <MixerBody compact />
 
 /** What a card carries in its header beside the (i), eye and reset. */
 const HEADER: Partial<Record<CardId, ComponentType>> = { light: AutoTone }
@@ -147,12 +151,13 @@ function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
     scoped.edit((r) => assignFields(r, cardBase(r, isRaw, !!layer), cardFields(spec, !!layer)))
     scoped.commit(`Reset ${spec.title}`)
   }
-  const Body = BODIES[spec.id]
+  const tools = useUi((s) => s.colourTools)
+  const Body = spec.id === 'mixer' && tools === 'resolve' ? CompactHsl : BODIES[spec.id]
   const Right = HEADER[spec.id]
   return (
     <Card
       id={spec.id}
-      title={t(spec.title)}
+      title={t(cardTitle(spec, tools))}
       tip={TIPS[spec.id]}
       changed={changed}
       off={off}
@@ -203,7 +208,7 @@ export function AdjustStack(): React.JSX.Element {
   const layer = useScope().layer
   const overlayHue = useUi((s) => s.maskOverlay.hue)
   const tools = useUi((s) => s.colourTools)
-  const cards = CARDS.filter((c) => (!layer || c.inMask) && cardShows(c, tools))
+  const cards = cardsFor(tools).filter((c) => !layer || c.inMask)
   return (
     <div
       className={`panels adjust${layer ? ' scoped' : ''}`}

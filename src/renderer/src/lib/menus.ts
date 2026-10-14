@@ -7,7 +7,7 @@
  */
 import { usePipeline } from './pipeline'
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import { CARDS, cardShows } from '../../../shared/cards'
+import { cardsFor, cardTitle } from '../../../shared/cards'
 import { editsInHdr } from '../../../shared/recipe'
 import { SEPARATOR, tidyMenu, type MenuBarSpec, type MenuNode } from '../../../shared/appmenu'
 import type { LibraryItem } from '../../../shared/ipc'
@@ -391,8 +391,8 @@ function developMenu(): Item[] {
   const tool = dev().tool
   const session = !!dev().session
   return [
-    ...CARDS.filter((c) => cardShows(c, useUi.getState().colourTools)).map((c) =>
-      cmd(`card.${c.id}`, t(c.title))
+    ...cardsFor(useUi.getState().colourTools).map((c) =>
+      cmd(`card.${c.id}`, t(cardTitle(c, useUi.getState().colourTools)))
     ),
     act('develop.enhance', t('Enhance'), showEnhance, {
       enabled: !modal() && inDevelop() && session

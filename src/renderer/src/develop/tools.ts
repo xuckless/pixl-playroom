@@ -1,4 +1,4 @@
-import { CARDS, cardShows, cardSpec, type CardId } from '../../../shared/cards'
+import { cardsFor, cardSpec, type CardId } from '../../../shared/cards'
 import { useDevelop, type Tool } from '../state/develop'
 import { scoped } from '../state/scope'
 import { useUi, type Drawer } from '../state/ui'
@@ -60,8 +60,9 @@ export function toggleDrawer(d: Exclude<Drawer, 'adjust'>): void {
 /** The cards the column shows now: in a mask, only those a mask carries. */
 export function visibleCards(): CardId[] {
   const inMask = scoped.layer() !== null
-  const tools = useUi.getState().colourTools
-  return CARDS.filter((c) => (!inMask || c.inMask) && cardShows(c, tools)).map((c) => c.id)
+  return cardsFor(useUi.getState().colourTools)
+    .filter((c) => !inMask || c.inMask)
+    .map((c) => c.id)
 }
 
 /** Bring a card into view: the cards back if a tool's panel was up, the card open and scrolled to. */

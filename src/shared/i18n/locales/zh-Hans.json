@@ -3435,5 +3435,6 @@
   "The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.": "蒙版面板以 Resolve 节点的形式显示调色：照片本身的校正，然后是每个限定器、每个蒙版和任何高级图层，按运行顺序排列。可关闭节点、选中以编辑、在其组内拖动。",
   "In mask": "蒙版内",
   "Read only what the selected mask holds": "只读取所选蒙版覆盖的部分",
-  "Qualifier in {{mask}}": "{{mask}} 中的限定器"
+  "Qualifier in {{mask}}": "{{mask}} 中的限定器",
+  "HSL": "HSL"
 }

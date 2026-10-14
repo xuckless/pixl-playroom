@@ -3495,5 +3495,6 @@
   "The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.": "Das Maskenfeld zeigt das Grading als Resolve-Nodes: die eigene Korrektur des Fotos, dann jeden Qualifier, jede Maske und jede erweiterte Ebene in der Reihenfolge, in der sie laufen. Schalten Sie einen Node aus, wählen Sie ihn zum Bearbeiten, ziehen Sie ihn innerhalb seiner Gruppe.",
   "In mask": "In der Maske",
   "Read only what the selected mask holds": "Nur lesen, was die ausgewählte Maske enthält",
-  "Qualifier in {{mask}}": "Qualifier in {{mask}}"
+  "Qualifier in {{mask}}": "Qualifier in {{mask}}",
+  "HSL": "HSL"
 }

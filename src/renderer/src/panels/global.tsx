@@ -832,9 +832,13 @@ const AXIS_TITLE: Record<'hue' | 'saturation' | 'luminance', string> = {
   luminance: tk('Luminance')
 }
 
-export function MixerBody(): React.JSX.Element | null {
+export function MixerBody({
+  compact = false
+}: { compact?: boolean } = {}): React.JSX.Element | null {
   const { recipe, layer } = useScope()
-  const tab = useDevelop((s) => s.hslTab)
+  const kept = useDevelop((s) => s.hslTab)
+  // Compact (the Resolve tools' HSL): no Point tab; a tab left on it shows Hue.
+  const tab = compact && kept === 'point' ? 'hue' : kept
   const setTab = useDevelop((s) => s.setHslTab)
   const focus = useDevelop((s) => s.hslFocus)
   // A band chosen from the colour-concentration chart scrolls into view.
@@ -894,7 +898,7 @@ export function MixerBody(): React.JSX.Element | null {
               { value: 'saturation', label: 'S' },
               { value: 'luminance', label: 'L' },
               { value: 'all', label: t('All') },
-              { value: 'point', label: t('Point') }
+              ...(compact ? [] : [{ value: 'point' as const, label: t('Point') }])
             ]}
           />
         </>

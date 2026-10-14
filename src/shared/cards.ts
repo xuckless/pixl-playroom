@@ -41,6 +41,8 @@ export interface CardSpec {
    * shown only with them; absent, with both. Hidden, it still acts.
    */
   set?: ColourToolSet
+  /** Its name among the Resolve tools, where that differs (the mixer is HSL there). */
+  resolveTitle?: string
 }
 
 /** Lightroom's colour cards, or DaVinci Resolve's. */
@@ -49,6 +51,37 @@ export type ColourToolSet = 'lightroom' | 'resolve'
 /** Whether a card shows with `tools`. */
 export const cardShows = (card: CardSpec, tools: ColourToolSet): boolean =>
   !card.set || card.set === tools
+
+/**
+ * The Resolve tools' order: the photo's tone, then Primaries with the
+ * Lightroom-style HSL right under it (the one Lightroom tool kept there:
+ * quick and familiar), the log wheels, curves and qualifier, then the rest.
+ */
+const RESOLVE_ORDER: CardId[] = [
+  'wb',
+  'light',
+  'presence',
+  'primaries',
+  'mixer',
+  'logwheels',
+  'rcurves',
+  'qualifier',
+  'detail',
+  'effects',
+  'optics',
+  'geometry'
+]
+
+/** The cards `tools` shows, in the order the column shows them. */
+export function cardsFor(tools: ColourToolSet): CardSpec[] {
+  const shown = CARDS.filter((c) => cardShows(c, tools))
+  if (tools === 'lightroom') return shown
+  return [...shown].sort((a, b) => RESOLVE_ORDER.indexOf(a.id) - RESOLVE_ORDER.indexOf(b.id))
+}
+
+/** A card's name with `tools`. */
+export const cardTitle = (card: CardSpec, tools: ColourToolSet): string =>
+  tools === 'resolve' && card.resolveTitle ? card.resolveTitle : card.title
 
 export const CARDS: CardSpec[] = [
   { id: 'wb', title: tk('White balance'), fields: [['wb']], inMask: true },
@@ -80,7 +113,8 @@ export const CARDS: CardSpec[] = [
     title: tk('Colour mixer'),
     fields: [['hsl'], ['bwMix'], ['pointColors']],
     inMask: true,
-    set: 'lightroom'
+    // Both sets: with Resolve's it is the compact HSL, under the Primaries.
+    resolveTitle: tk('HSL')
   },
   {
     id: 'grading',

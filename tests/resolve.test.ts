@@ -254,3 +254,17 @@ test('a mask’s qualifier keys only inside the mask, inverted masks too', async
   assert.equal(ki.invert, true)
   assert.equal(mi.invert, true)
 })
+
+test('with the Resolve tools the HSL sits right under the Primaries, named HSL', async () => {
+  const { cardsFor, cardTitle, cardSpec } = await import('../src/shared/cards')
+  const ids = cardsFor('resolve').map((c) => c.id)
+  assert.equal(ids[ids.indexOf('primaries') + 1], 'mixer')
+  assert.ok(!ids.includes('grading') && !ids.includes('colour'))
+  assert.equal(cardTitle(cardSpec('mixer'), 'resolve'), 'HSL')
+  assert.equal(cardTitle(cardSpec('mixer'), 'lightroom'), 'Colour mixer')
+  // Lightroom's order is the catalog's own.
+  assert.deepEqual(
+    cardsFor('lightroom').map((c) => c.id),
+    CARDS.filter((c) => cardShows(c, 'lightroom')).map((c) => c.id)
+  )
+})

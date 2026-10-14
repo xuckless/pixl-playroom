@@ -1545,6 +1545,7 @@
   "How the colours look to": "How the colours look to",
   "How this camera’s colours are read. PIXL’s is fitted to the body; the file’s own is the maker’s matrix.": "How this camera’s colours are read. PIXL’s is fitted to the body; the file’s own is the maker’s matrix.",
   "How wide the sharpened edge is.": "How wide the sharpened edge is.",
+  "HSL": "HSL",
   "HSL / B&W mix": "HSL / B&W mix",
   "Hue": "Hue",
   "Hue around the circle and saturation outwards from the middle. The boxes are 75% red, yellow, green, cyan, blue and magenta; the line is where skin falls.": "Hue around the circle and saturation outwards from the middle. The boxes are 75% red, yellow, green, cyan, blue and magenta; the line is where skin falls.",
