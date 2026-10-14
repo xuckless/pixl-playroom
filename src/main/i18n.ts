@@ -16,11 +16,14 @@ export interface LanguageState {
   language: Language
   /** What "system" gives on this computer: Settings names it, so choosing it brings no surprise. */
   system: Language
-  /** Checking: every translated string shown ⟦bracketed⟧, so what isn't stands out. */
-  pseudo?: boolean
+  /** Checking: every translated string shown ⟦bracketed⟧ (and, `expand`, 1.4 times as long). */
+  pseudo?: boolean | 'expand'
 }
 
-const PSEUDO = process.env.PLAYROOM_PSEUDO_LOCALE === '1'
+const PSEUDO: boolean | 'expand' =
+  process.env.PLAYROOM_PSEUDO_LOCALE === 'expand'
+    ? 'expand'
+    : process.env.PLAYROOM_PSEUDO_LOCALE === '1'
 
 let inst: i18n | null = null
 let state: LanguageState | null = null
@@ -49,7 +52,7 @@ function stateFor(setting: LanguageSetting): LanguageState {
     setting,
     language: setting === 'system' ? system : setting,
     system,
-    ...(PSEUDO ? { pseudo: true } : {})
+    ...(PSEUDO ? { pseudo: PSEUDO } : {})
   }
 }
 

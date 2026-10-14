@@ -84,7 +84,7 @@ interface LanguageState {
   language: Language
   /** What "system" gives here (main reads the OS once for both). */
   system: Language
-  pseudo?: boolean
+  pseudo?: boolean | 'expand'
 }
 
 async function call<T>(channel: string, ...args: unknown[]): Promise<T> {

@@ -1,3 +1,4 @@
+import { startOverflowTitles } from './lib/overflowTitles'
 import { watchPipeline } from './lib/pipeline'
 import { EditingSpaceDialog } from './views/EditingSpace'
 import { AnimatePresence, MotionConfig } from 'motion/react'
@@ -537,6 +538,7 @@ export default function App(): React.JSX.Element {
       api.develop.onMaster(onMaster),
       api.develop.onPixlDemosaic(onPixlDemosaic),
       watchPipeline(),
+      startOverflowTitles(),
       api.develop.onRenderError((e) => {
         // A failed save is said whichever photo is open: it may be the one just left.
         if (e.code === 'Save') return useLibrary.getState().say(e.message, 'error')
