@@ -583,3 +583,17 @@ export function scaleQualifier(q: QualifierSetting, k: number): QualifierSetting
     hue: 50 + (q.hue - 50) * k
   }
 }
+
+/**
+ * The disc push toward a hue (degrees, as a colour wheel names them: 0 red,
+ * 120 green, 240 blue), `amount` along the disc: the R, G, B it moves.
+ */
+export function discToward(hue: number, amount: number): { r: number; g: number; b: number } {
+  const f = (n: number): number => {
+    const k = (n + hue / 60) % 6
+    return 1 - Math.max(0, Math.min(k, 4 - k, 1))
+  }
+  const d = rgbToDisc(f(5), f(3), f(1))
+  const n = Math.hypot(d.x, d.y) || 1
+  return discToRgb((d.x / n) * amount, (d.y / n) * amount)
+}

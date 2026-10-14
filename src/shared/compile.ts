@@ -1446,10 +1446,11 @@ function settingsStages(
     tail.push({ Primary: primary({ hue_shift: round4(clamp(p.hue, -100, 100) * 0.6) }) })
   const cg = colorGradeOp(r.colorGrade, smoothing)
   if (cg) tail.push(cg)
-  // Resolve's primaries, after Lightroom's grading (shared/resolve.ts).
-  const prim = bw ? null : primariesOp(r.primaries)
+  // Resolve's primaries, after Lightroom's grading (shared/resolve.ts); on a
+  // B&W photo after its mono conversion, so Lift and Gain tints tone it.
+  const prim = primariesOp(r.primaries)
   if (prim) tail.push(prim)
-  if (!bw) tail.push(...logWheelsOps(r.logWheels))
+  tail.push(...logWheelsOps(r.logWheels))
   // Resolve's vs curves; the two the engine lacks wait, said in the notes.
   const vs = curvesVsOp(r.curvesVs)
   if (vs.op && !bw) tail.push(vs.op)

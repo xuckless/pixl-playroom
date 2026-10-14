@@ -81,13 +81,15 @@ test('every curve a look draws runs left to right and never falls', () => {
   for (const l of LOOKS) {
     for (const p of CURVE_PATHS) {
       const pts = at(l.recipe, p.split('.')) as { x: number; y: number }[]
-      assert.ok(pts.length >= 2 && pts.length <= 16, `${l.name} ${p}`)
+      // Resolve's vs curves are flat at the middle untouched: they may be empty, and they may fall.
+      const vs = p.startsWith('curvesVs.')
+      assert.ok(pts.length >= (vs ? 0 : 2) && pts.length <= 16, `${l.name} ${p}`)
       for (let i = 0; i < pts.length; i++) {
         const { x, y } = pts[i]
         assert.ok(x >= 0 && x <= 1 && y >= 0 && y <= 1, `${l.name} ${p} point ${i}`)
         if (i > 0) {
           assert.ok(x > pts[i - 1].x, `${l.name} ${p} x not increasing at ${i}`)
-          assert.ok(y >= pts[i - 1].y, `${l.name} ${p} falls at ${i}`)
+          if (!vs) assert.ok(y >= pts[i - 1].y, `${l.name} ${p} falls at ${i}`)
         }
       }
     }
@@ -216,4 +218,31 @@ test('the catalog is large and every collection is stocked', () => {
       LOOKS.some((l) => l.meta.collection === c.id),
       `${c.label} is empty`
     )
+})
+
+test('the rebuilt looks set only what the Resolve colour tools show', async () => {
+  const { LOOKS } = await import('../src/shared/looks/catalog')
+  const { cardsFor } = await import('../src/shared/cards')
+  // The Curves card's Custom tab is the tone curve's own point curve.
+  const shown = [
+    ...cardsFor('resolve').flatMap((c) => c.fields.map((f) => f.join('.'))),
+    'toneCurve.master',
+    'toneCurve.red',
+    'toneCurve.green',
+    'toneCurve.blue'
+  ]
+  const rebuilt = LOOKS.filter(
+    (l) => ['essentials', 'creative', 'bw'].includes(l.meta.collection) && l.meta.version >= 2
+  )
+  assert.equal(rebuilt.length, 44)
+  for (const l of rebuilt)
+    for (const f of l.fields) {
+      const path = f.join('.')
+      // B&W is the treatment (the panel's head), shown with either set.
+      if (path === 'treatment') continue
+      assert.ok(
+        shown.some((s) => path === s || path.startsWith(`${s}.`)),
+        `${l.name}: ${path} is not shown with the Resolve tools`
+      )
+    }
 })
