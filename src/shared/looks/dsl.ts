@@ -4,10 +4,15 @@
  * those sliders and leaves the photo's others alone:
  *
  *   look('chrome-reportage', 'Chrome Reportage', { tags: [...], inspiredBy: '…' },
- *     tone({ contrast: 15, shadows: -10 }),
- *     presence({ saturation: -20 }),
- *     split(200, 8, 50, 8),
- *     hsl({ green: [-10, -25, 0] }))
+ *     prim({ contrast: 1.09, sat: -20 }),
+ *     tone({ shadows: -10 }),
+ *     lift(200, 8),
+ *     gain(50, 8),
+ *     hueCurve('hueSat', [[120, 0.75]]))
+ *
+ * Looks are built on Playroom's colour tools (the Primaries' wheels and bar,
+ * the hue and Lum vs Sat curves, HSL for brightness by colour), never on
+ * Lightroom's retired Colour grading wheels.
  *
  * Steps add to what is there, so two steps on one slider sum. `fade` and
  * `rolloff` work on the finished master curve, whatever shaped it.
@@ -235,10 +240,19 @@ export const hueCurve =
       curve === 'hueHue' ? round(0.5 + v / 360) : round(Math.min(1, Math.max(0, v / 2)))
     const pts = new Map<number, number>()
     const wrap = (h: number): number => round((((h % 360) + 360) % 360) / 360)
+    // Each bump eases back to none at its sides; a side that would land
+    // within 12° of another bump or side is left out (one point there is
+    // enough, and a curve keeps at most 16).
+    const apart = (a: number, b: number): number => {
+      const d = Math.abs((((a - b) % 360) + 360) % 360)
+      return Math.min(d, 360 - d)
+    }
+    const placed = at.map(([h]) => h)
     for (const [h] of at) {
       for (const side of [-width, width]) {
-        const x = wrap(h + side)
-        if (!pts.has(x)) pts.set(x, 0.5)
+        if (placed.some((o) => apart(h + side, o) < 12)) continue
+        placed.push(h + side)
+        pts.set(wrap(h + side), 0.5)
       }
     }
     for (const [h, v] of at) pts.set(wrap(h), y(v))
@@ -289,24 +303,6 @@ export const hsl =
       r.hsl[b].saturation += s
       r.hsl[b].luminance += l
     }
-  }
-
-/**
- * Foliage, as [hue, saturation, luminance]. Leaves sit mostly in the yellow
- * band (yellow-greens, 60–100°) and only partly in green, so "mute the
- * greens" moves green fully and yellow at 60%; a bare `hsl({ green })` barely
- * touches a tree.
- */
-export const foliage =
-  (h: number, s: number, l: number): LookStep =>
-  (r) => {
-    const k = 0.6
-    r.hsl.green.hue += h
-    r.hsl.green.saturation += s
-    r.hsl.green.luminance += l
-    r.hsl.yellow.hue += Math.round(h * k)
-    r.hsl.yellow.saturation += Math.round(s * k)
-    r.hsl.yellow.luminance += Math.round(l * k)
   }
 
 /**
@@ -365,33 +361,6 @@ export const parametric =
   (p: Partial<Record<'highlights' | 'lights' | 'darks' | 'shadows', number>>): LookStep =>
   (r) => {
     for (const [k, v] of Object.entries(p)) r.toneCurve[k as keyof typeof p] += v
-  }
-
-type Region = 'shadows' | 'midtones' | 'highlights' | 'global'
-
-/** One grading wheel: hue 0…360, saturation 0…100, luminance −100…100. */
-export const wheel =
-  (region: Region, hue: number, saturation: number, luminance = 0): LookStep =>
-  (r) => {
-    r.colorGrade[region] = { hue, saturation, luminance }
-  }
-
-/** Split toning: a shadow colour and a highlight colour. */
-export const split =
-  (
-    shadowHue: number,
-    shadowSat: number,
-    highlightHue: number,
-    highlightSat: number,
-    opts: { balance?: number; blending?: number } = {}
-  ): LookStep =>
-  (r) => {
-    if (shadowSat > 0)
-      r.colorGrade.shadows = { hue: shadowHue, saturation: shadowSat, luminance: 0 }
-    if (highlightSat > 0)
-      r.colorGrade.highlights = { hue: highlightHue, saturation: highlightSat, luminance: 0 }
-    if (opts.balance !== undefined) r.colorGrade.balance = opts.balance
-    if (opts.blending !== undefined) r.colorGrade.blending = opts.blending
   }
 
 /** Calibration primaries and the shadows' tint, −100…100. */
@@ -454,18 +423,15 @@ export const addLight =
   }
 
 /**
- * Halation as the sliders can suggest it: a warm red in the highlights, a
+ * Halation as the sliders can suggest it: Gain warmed toward red, a
  * faint red wash, a little less local contrast. Marked, so the look can be
  * redone when the engine has the real thing.
  */
 export const halationApprox =
   (k: number): LookStep =>
   (r, s) => {
-    r.colorGrade.highlights = {
-      hue: 12,
-      saturation: Math.round(Math.max(r.colorGrade.highlights.saturation, k * 0.18)),
-      luminance: r.colorGrade.highlights.luminance
-    }
+    // Gain's disc toward red-orange: the highlights warm, the blacks untouched.
+    push('gain', 12, k * 0.18)(r, s)
     r.effects.wash = { hue: 8, saturation: 70, amount: Math.round(k * 0.05) }
     r.presence.clarity -= Math.round(k * 0.08)
     s.approximates.add('halation')

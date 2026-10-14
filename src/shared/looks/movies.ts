@@ -7,20 +7,23 @@ import {
   approximates,
   bloomApprox,
   collection,
-  fade,
-  foliage,
+  gain,
+  gamma,
   grain,
   halationApprox,
   hsl,
+  hueCurve,
+  lift,
   look,
+  matte,
   mono,
+  offset,
   presence,
-  rolloff,
+  prim,
   sCurve,
-  split,
   tone,
   vignette,
-  wheel
+  lumSat
 } from './dsl'
 import { tk } from '../i18n'
 
@@ -31,16 +34,25 @@ export const MOVIES = collection('movies', [
     {
       tags: ['noir', 'dark', 'moody', 'amber', 'rain', 'the batman', 'batman'],
       inspiredBy: 'The Batman (2022)',
-      description: tk('Crushed blacks and amber-red light in a drowned, blue-less city.')
+      description: tk('Crushed blacks and amber-red light in a drowned, blue-less city.'),
+      version: 2
     },
     sCurve(45),
     tone({ whites: -25, highlights: -25, shadows: -20, blacks: -15 }),
-    rolloff(0.04),
+    matte(0, 0.04),
     presence({ saturation: -30 }),
-    wheel('midtones', 28, 25),
-    wheel('shadows', 20, 15),
-    hsl({ red: [0, 25, -5], orange: [-4, 5, -5], aqua: [0, -60, 0], blue: [0, -60, -10] }),
-    foliage(0, -50, 0),
+    gamma(28, 25),
+    lift(20, 15),
+    hueCurve('hueHue', [[30, -1.2]]),
+    hueCurve('hueSat', [
+      [0, 1.25],
+      [30, 1.05],
+      [180, 0.4],
+      [240, 0.4],
+      [120, 0.5],
+      [60, 0.7]
+    ]),
+    hsl({ red: [0, 0, -5], orange: [0, 0, -5], blue: [0, 0, -10] }),
     vignette(-20, { feather: 70 }),
     grain(12, 22, 45)
   ),
@@ -52,17 +64,27 @@ export const MOVIES = collection('movies', [
       inspiredBy: 'The Odyssey (2026), shot on IMAX 65mm film',
       description: tk(
         'Large-format film printed warm: open highlights, rich fire-lit interiors, fine grain.'
-      )
+      ),
+      version: 2
     },
     sCurve(25),
-    rolloff(0.02),
+    matte(0, 0.02),
     tone({ highlights: -12 }),
     presence({ saturation: -5 }),
-    wheel('midtones', 30, 20),
-    wheel('highlights', 40, 16),
-    wheel('shadows', 20, 8),
-    hsl({ orange: [0, 5, 0], blue: [-5, -15, 0] }),
-    foliage(5, -15, 0),
+    gamma(30, 20),
+    gain(40, 16),
+    lift(20, 8),
+    hueCurve('hueHue', [
+      [240, -1.5],
+      [120, 1.5],
+      [60, 0.9]
+    ]),
+    hueCurve('hueSat', [
+      [30, 1.05],
+      [240, 0.85],
+      [120, 0.85],
+      [60, 0.91]
+    ]),
     grain(4, 12, 25)
   ),
   look(
@@ -71,14 +93,19 @@ export const MOVIES = collection('movies', [
     {
       tags: ['desert', 'ochre', 'muted', 'epic', 'dune'],
       inspiredBy: 'Dune (2021)',
-      description: tk('Ochre haze over muted colour: no green, little blue, soft film texture.')
+      description: tk('Ochre haze over muted colour: no green, little blue, soft film texture.'),
+      version: 2
     },
-    tone({ contrast: -5 }),
-    fade(0.02),
+    prim({ contrast: 0.97 }),
+    matte(0.02),
     presence({ saturation: -28 }),
-    wheel('global', 35, 18),
-    hsl({ orange: [0, 0, 5], blue: [0, -30, 0] }),
-    foliage(0, -50, 0),
+    offset(35, 18),
+    hueCurve('hueSat', [
+      [240, 0.7],
+      [120, 0.5],
+      [60, 0.7]
+    ]),
+    hsl({ orange: [0, 0, 5] }),
     grain(10, 20, 40)
   ),
   look(
@@ -87,14 +114,18 @@ export const MOVIES = collection('movies', [
     {
       tags: ['desert', 'golden', 'warm', 'epic', 'dune', 'part two'],
       inspiredBy: 'Dune: Part Two (2024)',
-      description: tk('Hot, golden sand light with firmer contrast.')
+      description: tk('Hot, golden sand light with firmer contrast.'),
+      version: 2
     },
-    tone({ contrast: 15 }),
+    prim({ contrast: 1.09 }),
     presence({ saturation: -10 }),
-    wheel('global', 35, 20),
-    wheel('highlights', 40, 15),
-    hsl({ blue: [0, -30, 0] }),
-    foliage(0, -50, 0)
+    offset(35, 20),
+    gain(40, 15),
+    hueCurve('hueSat', [
+      [240, 0.7],
+      [120, 0.5],
+      [60, 0.7]
+    ])
   ),
   look(
     'infrared-arena',
@@ -102,10 +133,11 @@ export const MOVIES = collection('movies', [
     {
       tags: ['bw', 'mono', 'infrared', 'stark', 'dune', 'part two', 'giedi prime'],
       inspiredBy: 'Dune: Part Two (2024), the infrared arena',
-      description: tk('Infrared-style mono: glowing skin and foliage, black skies.')
+      description: tk('Infrared-style mono: glowing skin and foliage, black skies.'),
+      version: 2
     },
     mono({ green: 80, yellow: 60, red: 40, orange: 40, blue: -70, aqua: -50 }),
-    tone({ contrast: 35 }),
+    prim({ contrast: 1.21 }),
     bloomApprox(20)
   ),
   look(
@@ -114,20 +146,22 @@ export const MOVIES = collection('movies', [
     {
       tags: ['orange', 'haze', 'dystopia', 'sci-fi', 'blade runner 2049'],
       inspiredBy: 'Blade Runner 2049 (2017), the abandoned city',
-      description: tk('Everything drowned in orange dust; only warm colour survives.')
+      description: tk('Everything drowned in orange dust; only warm colour survives.'),
+      version: 2
     },
-    tone({ contrast: -20 }),
-    fade(0.06),
-    wheel('global', 35, 40),
-    wheel('shadows', 30, 30),
-    hsl({
-      red: [0, -30, 0],
-      aqua: [0, -60, 0],
-      blue: [0, -60, 0],
-      purple: [0, -60, 0],
-      magenta: [0, -60, 0]
-    }),
-    foliage(0, -60, 0),
+    prim({ contrast: 0.88 }),
+    matte(0.06),
+    offset(35, 40),
+    lift(30, 30),
+    hueCurve('hueSat', [
+      [0, 0.7],
+      [180, 0.4],
+      [240, 0.4],
+      [275, 0.4],
+      [315, 0.4],
+      [120, 0.4],
+      [60, 0.64]
+    ]),
     bloomApprox(30)
   ),
   look(
@@ -136,14 +170,18 @@ export const MOVIES = collection('movies', [
     {
       tags: ['cold', 'smog', 'neon', 'sci-fi', 'blade runner 2049'],
       inspiredBy: 'Blade Runner 2049 (2017), the city at night',
-      description: tk('Cold, smoggy and drained, with neon magentas left alive.')
+      description: tk('Cold, smoggy and drained, with neon magentas left alive.'),
+      version: 2
     },
-    tone({ contrast: -10 }),
-    fade(0.05),
+    prim({ contrast: 0.94 }),
+    matte(0.05),
     presence({ saturation: -40 }),
-    wheel('shadows', 200, 20),
-    wheel('midtones', 210, 8),
-    hsl({ magenta: [0, 40, 0], purple: [0, 30, 0] }),
+    lift(200, 20),
+    gamma(210, 8),
+    hueCurve('hueSat', [
+      [315, 1.4],
+      [275, 1.3]
+    ]),
     bloomApprox(20),
     grain(6, 15, 30)
   ),
@@ -153,11 +191,19 @@ export const MOVIES = collection('movies', [
     {
       tags: ['teal', 'orange', 'saturated', 'desert', 'action', 'mad max', 'fury road'],
       inspiredBy: 'Mad Max: Fury Road (2015)',
-      description: tk('Blazing orange desert against hard teal sky, everything turned up.')
+      description: tk('Blazing orange desert against hard teal sky, everything turned up.'),
+      version: 2
     },
-    tone({ contrast: 30, blacks: -5 }),
-    presence({ saturation: 35, clarity: 15 }),
-    hsl({ orange: [0, 30, -5], aqua: [0, 25, 0], blue: [-20, 30, 0] })
+    prim({ contrast: 1.18, sat: 35 }),
+    tone({ blacks: -5 }),
+    presence({ clarity: 15 }),
+    hueCurve('hueHue', [[240, -6]]),
+    hueCurve('hueSat', [
+      [30, 1.3],
+      [180, 1.25],
+      [240, 1.3]
+    ]),
+    hsl({ orange: [0, 0, -5] })
   ),
   look(
     'black-and-chrome-wasteland',
@@ -165,10 +211,11 @@ export const MOVIES = collection('movies', [
     {
       tags: ['bw', 'mono', 'desert', 'contrast', 'mad max', 'fury road', 'black and chrome'],
       inspiredBy: 'Mad Max: Fury Road — Black & Chrome Edition',
-      description: tk('Bright sand and skin against black skies, hard and bright.')
+      description: tk('Bright sand and skin against black skies, hard and bright.'),
+      version: 2
     },
     mono({ orange: 30, yellow: 20, blue: -50, aqua: -40 }),
-    tone({ contrast: 50 }),
+    prim({ contrast: 1.3 }),
     presence({ clarity: 20 })
   ),
   look(
@@ -177,14 +224,19 @@ export const MOVIES = collection('movies', [
     {
       tags: ['green', 'sci-fi', 'cyberpunk', 'the matrix', 'matrix'],
       inspiredBy: 'The Matrix (1999), inside the code',
-      description: tk('A sickly green cast over hard contrast, reds and blues drained.')
+      description: tk('A sickly green cast over hard contrast, reds and blues drained.'),
+      version: 2
     },
-    tone({ contrast: 25, blacks: -10 }),
+    prim({ contrast: 1.15 }),
+    tone({ blacks: -10 }),
     presence({ saturation: -35 }),
-    wheel('global', 120, 12),
-    wheel('midtones', 115, 30),
-    wheel('shadows', 125, 25),
-    hsl({ red: [0, -40, 0], blue: [0, -40, 0] })
+    offset(120, 12),
+    gamma(115, 30),
+    lift(125, 25),
+    hueCurve('hueSat', [
+      [0, 0.6],
+      [240, 0.6]
+    ])
   ),
   look(
     'steel-blue-reality',
@@ -192,11 +244,12 @@ export const MOVIES = collection('movies', [
     {
       tags: ['blue', 'cold', 'sci-fi', 'the matrix', 'matrix'],
       inspiredBy: 'The Matrix (1999), the real world',
-      description: tk('Cold steel blue over muted colour.')
+      description: tk('Cold steel blue over muted colour.'),
+      version: 2
     },
-    tone({ contrast: 15 }),
+    prim({ contrast: 1.09 }),
     presence({ saturation: -30 }),
-    wheel('global', 215, 20)
+    offset(215, 20)
   ),
   look(
     'sickly-stairway',
@@ -204,12 +257,17 @@ export const MOVIES = collection('movies', [
     {
       tags: ['sickly', 'green', 'yellow', 'gritty', 'joker'],
       inspiredBy: 'Joker (2019)',
-      description: tk('Sodium-lit city: green-teal shadows and nicotine highlights.')
+      description: tk('Sodium-lit city: green-teal shadows and nicotine highlights.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: -15 }),
-    split(165, 15, 55, 12),
-    hsl({ green: [0, 5, 0], yellow: [0, 5, 0] }),
+    lift(165, 15),
+    gain(55, 12),
+    hueCurve('hueSat', [
+      [120, 1.05],
+      [60, 1.05]
+    ]),
     grain(15, 25, 50)
   ),
   look(
@@ -218,13 +276,14 @@ export const MOVIES = collection('movies', [
     {
       tags: ['film', 'warm', 'large format', 'period', 'oppenheimer', 'nolan'],
       inspiredBy: 'Oppenheimer (2023), the colour sequences',
-      description: tk('Warm large-format print with dense blacks.')
+      description: tk('Warm large-format print with dense blacks.'),
+      version: 2
     },
     sCurve(30),
     tone({ blacks: -5 }),
     presence({ saturation: 5 }),
-    wheel('highlights', 40, 10),
-    hsl({ orange: [0, 5, 0] }),
+    gain(40, 10),
+    hueCurve('hueSat', [[30, 1.05]]),
     grain(4, 12, 25)
   ),
   look(
@@ -233,11 +292,13 @@ export const MOVIES = collection('movies', [
     {
       tags: ['bw', 'mono', 'contrast', 'large format', 'oppenheimer', 'nolan'],
       inspiredBy: 'Oppenheimer (2023), the black-and-white sequences',
-      description: tk('Hard, bright, large-format black and white.')
+      description: tk('Hard, bright, large-format black and white.'),
+      version: 2
     },
     mono({ red: -6, orange: -4, blue: 6 }),
     sCurve(50),
-    tone({ contrast: 20, whites: 25, highlights: 10, blacks: -5 }),
+    prim({ contrast: 1.12 }),
+    tone({ whites: 25, highlights: 10, blacks: -5 }),
     presence({ clarity: 10 }),
     grain(8, 12, 25)
   ),
@@ -247,14 +308,22 @@ export const MOVIES = collection('movies', [
     {
       tags: ['dust', 'film', 'sci-fi', 'muted', 'interstellar', 'nolan'],
       inspiredBy: 'Interstellar (2014)',
-      description: tk('Dusty, warm and slightly muted, on film.')
+      description: tk('Dusty, warm and slightly muted, on film.'),
+      version: 2
     },
     sCurve(20),
     presence({ saturation: -15 }),
-    wheel('global', 40, 12),
-    wheel('shadows', 200, 10),
-    hsl({ blue: [0, -20, 0] }),
-    foliage(10, -20, 0),
+    offset(40, 12),
+    lift(200, 10),
+    hueCurve('hueHue', [
+      [120, 3],
+      [60, 1.8]
+    ]),
+    hueCurve('hueSat', [
+      [240, 0.8],
+      [120, 0.8],
+      [60, 0.88]
+    ]),
     grain(8, 18, 35)
   ),
   look(
@@ -263,12 +332,14 @@ export const MOVIES = collection('movies', [
     {
       tags: ['desert', 'thriller', 'hard', 'muted', 'sicario'],
       inspiredBy: 'Sicario (2015)',
-      description: tk('Hard desert light, deep blacks and muted warmth.')
+      description: tk('Hard desert light, deep blacks and muted warmth.'),
+      version: 2
     },
-    tone({ contrast: 25, blacks: -10 }),
+    prim({ contrast: 1.15 }),
+    tone({ blacks: -10 }),
     presence({ saturation: -25 }),
-    wheel('global', 35, 10),
-    wheel('shadows', 30, 8)
+    offset(35, 10),
+    lift(30, 8)
   ),
   look(
     'neon-drive',
@@ -276,11 +347,17 @@ export const MOVIES = collection('movies', [
     {
       tags: ['neon', 'night', 'magenta', 'teal', 'synthwave', 'drive'],
       inspiredBy: 'Drive (2011)',
-      description: tk('Teal night and hot magenta neon, warm skin.')
+      description: tk('Teal night and hot magenta neon, warm skin.'),
+      version: 2
     },
-    tone({ contrast: 15 }),
-    wheel('shadows', 190, 20),
-    hsl({ magenta: [10, 30, 0], purple: [0, 20, 0], orange: [0, 5, 0] }),
+    prim({ contrast: 1.09 }),
+    lift(190, 20),
+    hueCurve('hueHue', [[315, 3]]),
+    hueCurve('hueSat', [
+      [315, 1.3],
+      [275, 1.2],
+      [30, 1.05]
+    ]),
     bloomApprox(20)
   ),
   look(
@@ -289,14 +366,24 @@ export const MOVIES = collection('movies', [
     {
       tags: ['whimsical', 'green', 'gold', 'red', 'paris', 'amelie'],
       inspiredBy: 'Amélie (2001)',
-      description: tk('Green and gold everywhere, bright reds, the blues all but gone.')
+      description: tk('Green and gold everywhere, bright reds, the blues all but gone.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: 10 }),
-    wheel('midtones', 70, 20),
-    wheel('highlights', 45, 15),
-    hsl({ red: [0, 20, 0], blue: [-25, -30, 0] }),
-    foliage(-10, 15, 0)
+    gamma(70, 20),
+    gain(45, 15),
+    hueCurve('hueHue', [
+      [240, -7.5],
+      [120, -3],
+      [60, -1.8]
+    ]),
+    hueCurve('hueSat', [
+      [0, 1.2],
+      [240, 0.7],
+      [120, 1.15],
+      [60, 1.09]
+    ])
   ),
   look(
     'crimson-melancholy',
@@ -304,12 +391,22 @@ export const MOVIES = collection('movies', [
     {
       tags: ['red', 'romantic', 'moody', 'hong kong', 'in the mood for love', 'wong kar-wai'],
       inspiredBy: 'In the Mood for Love (2000)',
-      description: tk('Deep reds and emerald greens under warm lamplight.')
+      description: tk('Deep reds and emerald greens under warm lamplight.'),
+      version: 2
     },
-    tone({ contrast: 25, blacks: -5 }),
-    wheel('global', 35, 12),
-    hsl({ red: [0, 30, -10] }),
-    foliage(10, 10, 0),
+    prim({ contrast: 1.15 }),
+    tone({ blacks: -5 }),
+    offset(35, 12),
+    hueCurve('hueHue', [
+      [120, 3],
+      [60, 1.8]
+    ]),
+    hueCurve('hueSat', [
+      [0, 1.3],
+      [120, 1.1],
+      [60, 1.06]
+    ]),
+    hsl({ red: [0, 0, -10] }),
     bloomApprox(15),
     grain(20, 25, 50)
   ),
@@ -319,11 +416,12 @@ export const MOVIES = collection('movies', [
     {
       tags: ['neon', 'night', 'grain', 'hong kong', 'chungking express', 'wong kar-wai'],
       inspiredBy: 'Chungking Express (1994) and Fallen Angels (1995)',
-      description: tk('Green-cast night, smeared neon reds and rough grain.')
+      description: tk('Green-cast night, smeared neon reds and rough grain.'),
+      version: 2
     },
-    tone({ contrast: 30 }),
-    wheel('shadows', 160, 20),
-    hsl({ red: [0, 20, 0] }),
+    prim({ contrast: 1.18 }),
+    lift(160, 20),
+    hueCurve('hueSat', [[0, 1.2]]),
     bloomApprox(15),
     grain(45, 40, 75)
   ),
@@ -333,17 +431,18 @@ export const MOVIES = collection('movies', [
     {
       tags: ['pastel', 'pink', 'symmetry', 'whimsical', 'grand budapest', 'wes anderson'],
       inspiredBy: 'The Grand Budapest Hotel (2014)',
-      description: tk('Candy pinks and lavender, bright and storybook.')
+      description: tk('Candy pinks and lavender, bright and storybook.'),
+      version: 2
     },
-    tone({ contrast: -5 }),
+    prim({ contrast: 0.97 }),
     presence({ saturation: 15 }),
-    wheel('global', 35, 6),
-    hsl({
-      red: [10, 0, 10],
-      aqua: [0, 0, 10],
-      purple: [0, 30, 10],
-      magenta: [0, 30, 10]
-    })
+    offset(35, 6),
+    hueCurve('hueHue', [[0, 3]]),
+    hueCurve('hueSat', [
+      [275, 1.3],
+      [315, 1.3]
+    ]),
+    hsl({ red: [0, 0, 10], aqua: [0, 0, 10], purple: [0, 0, 10], magenta: [0, 0, 10] })
   ),
   look(
     'rain-rot',
@@ -351,12 +450,14 @@ export const MOVIES = collection('movies', [
     {
       tags: ['dark', 'gritty', 'rain', 'thriller', 'silver retention', 'se7en', 'fincher'],
       inspiredBy: 'Se7en (1995)',
-      description: tk('Silver-retained: crushed blacks, drained colour, a sour yellow-green.')
+      description: tk('Silver-retained: crushed blacks, drained colour, a sour yellow-green.'),
+      version: 2
     },
     sCurve(45),
-    tone({ contrast: 20, blacks: -10 }),
+    prim({ contrast: 1.12 }),
+    tone({ blacks: -10 }),
     presence({ saturation: -40 }),
-    wheel('midtones', 70, 12),
+    gamma(70, 12),
     grain(25, 28, 55)
   ),
   look(
@@ -365,11 +466,13 @@ export const MOVIES = collection('movies', [
     {
       tags: ['cyan', 'green', 'grimy', 'fight club', 'fincher'],
       inspiredBy: 'Fight Club (1999)',
-      description: tk('Grimy cyan-green shadows and dirty yellow highlights.')
+      description: tk('Grimy cyan-green shadows and dirty yellow highlights.'),
+      version: 2
     },
-    tone({ contrast: 30 }),
+    prim({ contrast: 1.18 }),
     presence({ saturation: -30 }),
-    split(160, 20, 60, 10),
+    lift(160, 20),
+    gain(60, 10),
     grain(20, 25, 50)
   ),
   look(
@@ -378,12 +481,14 @@ export const MOVIES = collection('movies', [
     {
       tags: ['amber', 'warm', 'dim', 'drama', 'the social network', 'fincher'],
       inspiredBy: 'The Social Network (2010)',
-      description: tk('Dim amber interiors with the blues held right down.')
+      description: tk('Dim amber interiors with the blues held right down.'),
+      version: 2
     },
     tone({ whites: -20, highlights: -15 }),
-    rolloff(0.02),
-    wheel('midtones', 50, 22),
-    hsl({ blue: [-10, -40, 0] })
+    matte(0, 0.02),
+    gamma(50, 22),
+    hueCurve('hueHue', [[240, -3]]),
+    hueCurve('hueSat', [[240, 0.6]])
   ),
   look(
     'interrogation-olive',
@@ -391,12 +496,13 @@ export const MOVIES = collection('movies', [
     {
       tags: ['olive', 'muted', 'period', 'crime', 'mindhunter', 'zodiac', 'fincher'],
       inspiredBy: 'Mindhunter (2017–2019) and Zodiac (2007)',
-      description: tk('Muted olive-yellow period tone, blues pulled back.')
+      description: tk('Muted olive-yellow period tone, blues pulled back.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: -25 }),
-    wheel('midtones', 75, 15),
-    hsl({ blue: [0, -30, 0] })
+    gamma(75, 15),
+    hueCurve('hueSat', [[240, 0.7]])
   ),
   look(
     'miami-cyan',
@@ -404,12 +510,18 @@ export const MOVIES = collection('movies', [
     {
       tags: ['cyan', 'saturated', 'skin', 'night', 'moonlight'],
       inspiredBy: 'Moonlight (2016)',
-      description: tk('Saturated cyans and teals with rich, deep skin.')
+      description: tk('Saturated cyans and teals with rich, deep skin.'),
+      version: 2
     },
-    tone({ contrast: 20 }),
+    prim({ contrast: 1.12 }),
     presence({ saturation: 15 }),
-    split(185, 20, 40, 8),
-    hsl({ orange: [0, 10, -8], aqua: [0, 20, 0] })
+    lift(185, 20),
+    gain(40, 8),
+    hueCurve('hueSat', [
+      [30, 1.1],
+      [180, 1.2]
+    ]),
+    hsl({ orange: [0, 0, -8] })
   ),
   look(
     'coral-warmth',
@@ -417,12 +529,22 @@ export const MOVIES = collection('movies', [
     {
       tags: ['coral', 'warm', 'soft', 'romantic', 'her'],
       inspiredBy: 'Her (2013)',
-      description: tk('Soft coral reds and peaches, no blue at all.')
+      description: tk('Soft coral reds and peaches, no blue at all.'),
+      version: 2
     },
-    tone({ contrast: -15 }),
-    fade(0.03),
-    wheel('global', 25, 10),
-    hsl({ red: [5, 15, 0], orange: [5, 15, 0], blue: [0, -60, 0], aqua: [0, -40, 0] }),
+    prim({ contrast: 0.91 }),
+    matte(0.03),
+    offset(25, 10),
+    hueCurve('hueHue', [
+      [0, 1.5],
+      [30, 1.5]
+    ]),
+    hueCurve('hueSat', [
+      [0, 1.15],
+      [30, 1.15],
+      [240, 0.4],
+      [180, 0.6]
+    ]),
     bloomApprox(25)
   ),
   look(
@@ -431,11 +553,14 @@ export const MOVIES = collection('movies', [
     {
       tags: ['golden hour', 'action', 'warm', 'teal sky', 'top gun', 'maverick'],
       inspiredBy: 'Top Gun: Maverick (2022)',
-      description: tk('Big golden-hour warmth against teal sky.')
+      description: tk('Big golden-hour warmth against teal sky.'),
+      version: 2
     },
-    tone({ contrast: 20 }),
-    split(205, 12, 40, 22),
-    hsl({ orange: [0, 20, 0], blue: [-10, 0, 0] })
+    prim({ contrast: 1.12 }),
+    lift(205, 12),
+    gain(40, 22),
+    hueCurve('hueHue', [[240, -3]]),
+    hueCurve('hueSat', [[30, 1.2]])
   ),
   look(
     'neon-assassin',
@@ -443,11 +568,18 @@ export const MOVIES = collection('movies', [
     {
       tags: ['neon', 'night', 'action', 'teal', 'magenta', 'john wick'],
       inspiredBy: 'John Wick: Chapters 2–4',
-      description: tk('Inky blacks, teal shadows and saturated neon.')
+      description: tk('Inky blacks, teal shadows and saturated neon.'),
+      version: 2
     },
-    tone({ contrast: 30, blacks: -10 }),
-    wheel('shadows', 190, 25),
-    hsl({ magenta: [0, 30, 0], purple: [0, 20, 0], blue: [-15, 0, 0], orange: [0, -10, 0] })
+    prim({ contrast: 1.18 }),
+    tone({ blacks: -10 }),
+    lift(190, 25),
+    hueCurve('hueHue', [[240, -4.5]]),
+    hueCurve('hueSat', [
+      [315, 1.3],
+      [275, 1.2],
+      [30, 0.9]
+    ])
   ),
   look(
     'club-purple',
@@ -455,12 +587,17 @@ export const MOVIES = collection('movies', [
     {
       tags: ['purple', 'neon', 'party', 'teen', 'euphoria'],
       inspiredBy: 'Euphoria (2019–)',
-      description: tk('Purple and magenta club light, saturated and grainy.')
+      description: tk('Purple and magenta club light, saturated and grainy.'),
+      version: 2
     },
-    tone({ contrast: 20 }),
+    prim({ contrast: 1.12 }),
     presence({ saturation: 20 }),
-    split(275, 20, 320, 10),
-    hsl({ purple: [0, 30, 0], magenta: [0, 30, 0] }),
+    lift(275, 20),
+    gain(320, 10),
+    hueCurve('hueSat', [
+      [275, 1.3],
+      [315, 1.3]
+    ]),
     halationApprox(20),
     grain(15, 22, 45)
   ),
@@ -470,11 +607,20 @@ export const MOVIES = collection('movies', [
     {
       tags: ['pink', 'saturated', 'bright', 'plastic', 'barbie'],
       inspiredBy: 'Barbie (2023)',
-      description: tk('Bright, saturated and very, very pink.')
+      description: tk('Bright, saturated and very, very pink.'),
+      version: 2
     },
-    tone({ contrast: 10, whites: 10 }),
-    presence({ saturation: 30 }),
-    hsl({ red: [15, 20, 0], magenta: [0, 35, 0], purple: [10, 20, 0] })
+    prim({ contrast: 1.06, sat: 30 }),
+    tone({ whites: 10 }),
+    hueCurve('hueHue', [
+      [0, 4.5],
+      [275, 3]
+    ]),
+    hueCurve('hueSat', [
+      [0, 1.2],
+      [315, 1.35],
+      [275, 1.2]
+    ])
   ),
   look(
     'eighties-small-town',
@@ -482,14 +628,15 @@ export const MOVIES = collection('movies', [
     {
       tags: ['80s', 'nostalgic', 'warm', 'night blue', 'stranger things'],
       inspiredBy: 'Stranger Things (2016–2025)',
-      description: tk('Warm interiors, blue nights and soft film blacks.')
+      description: tk('Warm interiors, blue nights and soft film blacks.'),
+      version: 2
     },
-    fade(0.03),
-    tone({ contrast: 10 }),
+    matte(0.03),
+    prim({ contrast: 1.06 }),
     presence({ saturation: 8 }),
-    wheel('midtones', 40, 16),
-    wheel('shadows', 215, 22),
-    hsl({ red: [0, 12, 0] }),
+    gamma(40, 16),
+    lift(215, 22),
+    hueCurve('hueSat', [[0, 1.12]]),
     grain(15, 22, 45)
   ),
   look(
@@ -498,12 +645,14 @@ export const MOVIES = collection('movies', [
     {
       tags: ['yellow', 'desert', 'warm', 'crime', 'breaking bad'],
       inspiredBy: 'Breaking Bad (2008–2013)',
-      description: tk('Heavy tobacco yellow under vivid desert-blue sky.')
+      description: tk('Heavy tobacco yellow under vivid desert-blue sky.'),
+      version: 2
     },
-    tone({ contrast: 20 }),
-    wheel('midtones', 48, 35),
-    wheel('highlights', 50, 25),
-    hsl({ blue: [-5, 20, 0] })
+    prim({ contrast: 1.12 }),
+    gamma(48, 35),
+    gain(50, 25),
+    hueCurve('hueHue', [[240, -1.5]]),
+    hueCurve('hueSat', [[240, 1.2]])
   ),
   look(
     'sepia-dust-bowl',
@@ -511,13 +660,22 @@ export const MOVIES = collection('movies', [
     {
       tags: ['sepia', 'dust', 'yellow', 'period', 'o brother'],
       inspiredBy: 'O Brother, Where Art Thou? (2000)',
-      description: tk('Green foliage turned to dry gold under a sepia cast.')
+      description: tk('Green foliage turned to dry gold under a sepia cast.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: -15 }),
-    wheel('global', 45, 25),
-    hsl({ aqua: [-20, -40, 0] }),
-    foliage(-40, -60, 0)
+    offset(45, 25),
+    hueCurve('hueHue', [
+      [180, -6],
+      [120, -12],
+      [60, -7.2]
+    ]),
+    hueCurve('hueSat', [
+      [180, 0.6],
+      [120, 0.4],
+      [60, 0.64]
+    ])
   ),
   look(
     'yellow-border',
@@ -525,11 +683,12 @@ export const MOVIES = collection('movies', [
     {
       tags: ['yellow', 'hot', 'grainy', 'crime', 'traffic'],
       inspiredBy: 'Traffic (2000)',
-      description: tk('Blown, burning yellow and heavy grain.')
+      description: tk('Blown, burning yellow and heavy grain.'),
+      version: 2
     },
-    tone({ contrast: 40 }),
+    prim({ contrast: 1.24 }),
     presence({ saturation: -20 }),
-    wheel('global', 50, 40),
+    offset(50, 40),
     grain(40, 38, 70)
   ),
   look(
@@ -538,12 +697,13 @@ export const MOVIES = collection('movies', [
     {
       tags: ['cold', 'natural light', 'winter', 'wilderness', 'the revenant'],
       inspiredBy: 'The Revenant (2015)',
-      description: tk('Cold natural light, muted colour, blue-steel shadows.')
+      description: tk('Cold natural light, muted colour, blue-steel shadows.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: -30 }),
-    wheel('shadows', 210, 12),
-    hsl({ orange: [0, -10, 0] })
+    lift(210, 12),
+    hueCurve('hueSat', [[30, 0.9]])
   ),
   look(
     'bleach-war',
@@ -551,13 +711,22 @@ export const MOVIES = collection('movies', [
     {
       tags: ['war', 'bleach bypass', 'gritty', 'desaturated', 'saving private ryan'],
       inspiredBy: 'Saving Private Ryan (1998)',
-      description: tk('Drained, harsh and grainy: colour almost gone.')
+      description: tk('Drained, harsh and grainy: colour almost gone.'),
+      version: 2
     },
     sCurve(45),
-    tone({ contrast: 20, whites: 15, blacks: -5 }),
+    prim({ contrast: 1.12 }),
+    tone({ whites: 15, blacks: -5 }),
     presence({ saturation: -60 }),
-    wheel('shadows', 190, 8),
-    grain(35, 32, 65)
+    lift(190, 8),
+    grain(35, 32, 65),
+    // Silver left in: the ends lose colour first.
+    lumSat([
+      [0, 0.7],
+      [0.35, 1],
+      [0.65, 1],
+      [1, 0.7]
+    ])
   ),
   look(
     'wartime-mono',
@@ -567,12 +736,14 @@ export const MOVIES = collection('movies', [
       inspiredBy: "Schindler's List (1993)",
       description: tk(
         'Documentary black and white. (The film’s single red coat needs a colour mask.)'
-      )
+      ),
+      version: 2
     },
     mono({ red: -10, orange: -6 }),
     sCurve(25),
-    tone({ contrast: 10, highlights: -15, shadows: -8 }),
-    fade(0.02),
+    prim({ contrast: 1.06 }),
+    tone({ highlights: -15, shadows: -8 }),
+    matte(0.02),
     grain(25, 28, 55),
     approximates('selectiveColour')
   ),
@@ -582,12 +753,13 @@ export const MOVIES = collection('movies', [
     {
       tags: ['western', 'dust', 'sci-fi', 'warm', 'the mandalorian'],
       inspiredBy: 'The Mandalorian (2019–)',
-      description: tk('A dusty, warm western with soft blacks.')
+      description: tk('A dusty, warm western with soft blacks.'),
+      version: 2
     },
-    tone({ contrast: 5 }),
-    fade(0.02),
+    prim({ contrast: 1.03 }),
+    matte(0.02),
     presence({ saturation: -15 }),
-    wheel('global', 35, 12),
+    offset(35, 12),
     grain(8, 18, 35)
   ),
   look(
@@ -596,11 +768,13 @@ export const MOVIES = collection('movies', [
     {
       tags: ['amber', 'dark', 'period', 'crime', 'the godfather'],
       inspiredBy: 'The Godfather (1972)',
-      description: tk('Dark amber interiors and deep, falling-off shadows.')
+      description: tk('Dark amber interiors and deep, falling-off shadows.'),
+      version: 2
     },
-    tone({ contrast: 25, whites: -20, highlights: -15, blacks: -10 }),
+    prim({ contrast: 1.15 }),
+    tone({ whites: -20, highlights: -15, blacks: -10 }),
     presence({ saturation: -10 }),
-    wheel('midtones', 45, 25),
+    gamma(45, 25),
     grain(20, 25, 50)
   ),
   look(
@@ -609,11 +783,12 @@ export const MOVIES = collection('movies', [
     {
       tags: ['grey', 'desaturated', 'dystopia', 'bleak', 'children of men'],
       inspiredBy: 'Children of Men (2006)',
-      description: tk('Bleak, grey and almost colourless.')
+      description: tk('Bleak, grey and almost colourless.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: -45 }),
-    wheel('shadows', 170, 10),
+    lift(170, 10),
     grain(20, 25, 50)
   ),
   look(
@@ -622,12 +797,15 @@ export const MOVIES = collection('movies', [
     {
       tags: ['soft', 'night', 'city', 'dreamy', 'lost in translation'],
       inspiredBy: 'Lost in Translation (2003)',
-      description: tk('Soft, hushed city nights with pink and blue neon.')
+      description: tk('Soft, hushed city nights with pink and blue neon.'),
+      version: 2
     },
-    tone({ contrast: -15 }),
-    fade(0.03),
-    presence({ saturation: -5 }),
-    hsl({ magenta: [0, 15, 0], blue: [0, 15, 0] }),
+    prim({ contrast: 0.91, sat: -5 }),
+    matte(0.03),
+    hueCurve('hueSat', [
+      [315, 1.15],
+      [240, 1.15]
+    ]),
     bloomApprox(20),
     grain(12, 20, 40)
   ),
@@ -637,13 +815,13 @@ export const MOVIES = collection('movies', [
     {
       tags: ['overcast', 'muted', 'soft', 'sci-fi', 'arrival'],
       inspiredBy: 'Arrival (2016)',
-      description: tk('Milky, overcast and nearly colourless.')
+      description: tk('Milky, overcast and nearly colourless.'),
+      version: 2
     },
-    tone({ contrast: -25 }),
-    fade(0.07),
-    rolloff(0.03),
+    prim({ contrast: 0.85 }),
+    matte(0.07, 0.03),
     presence({ saturation: -35 }),
-    wheel('global', 180, 5)
+    offset(180, 5)
   ),
   look(
     'kitchen-heat',
@@ -651,13 +829,14 @@ export const MOVIES = collection('movies', [
     {
       tags: ['kitchen', 'warm', 'fluorescent', 'gritty', 'the bear'],
       inspiredBy: 'The Bear (2022–)',
-      description: tk('Hot, greenish-yellow kitchen light and hard contrast.')
+      description: tk('Hot, greenish-yellow kitchen light and hard contrast.'),
+      version: 2
     },
-    tone({ contrast: 20 }),
+    prim({ contrast: 1.12 }),
     presence({ saturation: -12 }),
-    wheel('midtones', 60, 20),
-    wheel('highlights', 50, 10),
-    hsl({ yellow: [0, 10, 0] }),
+    gamma(60, 20),
+    gain(50, 10),
+    hueCurve('hueSat', [[60, 1.1]]),
     grain(10, 20, 40)
   ),
   look(
@@ -666,11 +845,12 @@ export const MOVIES = collection('movies', [
     {
       tags: ['muted', 'corporate', 'cool', 'drama', 'succession'],
       inspiredBy: 'Succession (2018–2023)',
-      description: tk('Expensive, muted and slightly cool.')
+      description: tk('Expensive, muted and slightly cool.'),
+      version: 2
     },
-    tone({ contrast: -5 }),
+    prim({ contrast: 0.97 }),
     presence({ saturation: -15 }),
-    wheel('shadows', 200, 5),
+    lift(200, 5),
     grain(6, 15, 30)
   ),
   look(
@@ -679,12 +859,23 @@ export const MOVIES = collection('movies', [
     {
       tags: ['candy', 'mint', 'pink', 'saturated', 'squid game'],
       inspiredBy: 'Squid Game (2021–2025)',
-      description: tk('Mint greens and candy pinks, clean and bright.')
+      description: tk('Mint greens and candy pinks, clean and bright.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: 15 }),
-    wheel('shadows', 170, 8),
-    hsl({ red: [10, 15, 0], green: [25, 25, 0], aqua: [0, 20, 5], magenta: [0, 40, 5] })
+    lift(170, 8),
+    hueCurve('hueHue', [
+      [0, 3],
+      [120, 7.5]
+    ]),
+    hueCurve('hueSat', [
+      [0, 1.15],
+      [120, 1.25],
+      [180, 1.2],
+      [315, 1.4]
+    ]),
+    hsl({ aqua: [0, 0, 5], magenta: [0, 0, 5] })
   ),
   look(
     'sterile-office',
@@ -692,12 +883,15 @@ export const MOVIES = collection('movies', [
     {
       tags: ['sterile', 'office', 'green', 'cold', 'severance'],
       inspiredBy: 'Severance (2022–)',
-      description: tk('Clinical green-tinged whites and muted colour, greens kept.')
+      description: tk('Clinical green-tinged whites and muted colour, greens kept.'),
+      version: 2
     },
-    tone({ contrast: 5, whites: 10 }),
+    prim({ contrast: 1.03 }),
+    tone({ whites: 10 }),
     presence({ saturation: -25 }),
-    split(170, 15, 165, 5),
-    hsl({ green: [0, 25, 0] })
+    lift(170, 15),
+    gain(165, 5),
+    hueCurve('hueSat', [[120, 1.25]])
   ),
   look(
     'orthochromatic-mono',
@@ -705,10 +899,11 @@ export const MOVIES = collection('movies', [
     {
       tags: ['bw', 'mono', 'orthochromatic', 'vintage', 'gritty', 'the lighthouse'],
       inspiredBy: 'The Lighthouse (2019)',
-      description: tk('Old orthochromatic stock: dark reds and skin, pale blues, heavy grain.')
+      description: tk('Old orthochromatic stock: dark reds and skin, pale blues, heavy grain.'),
+      version: 2
     },
     mono({ red: -80, orange: -50, yellow: -20, blue: 60, aqua: 40 }),
-    tone({ contrast: 35 }),
+    prim({ contrast: 1.21 }),
     vignette(-20),
     grain(40, 38, 70)
   ),
@@ -718,10 +913,12 @@ export const MOVIES = collection('movies', [
     {
       tags: ['bw', 'mono', 'clean', 'wide', 'roma'],
       inspiredBy: 'Roma (2018)',
-      description: tk('A clean, wide-range digital black and white.')
+      description: tk('A clean, wide-range digital black and white.'),
+      version: 2
     },
     mono({ blue: -8, aqua: -4, yellow: 6 }),
-    tone({ contrast: 5, shadows: 22, highlights: -25, whites: 10 }),
+    prim({ contrast: 1.03 }),
+    tone({ shadows: 22, highlights: -25, whites: 10 }),
     presence({ clarity: 8 })
   ),
   look(
@@ -730,11 +927,13 @@ export const MOVIES = collection('movies', [
     {
       tags: ['bw', 'mono', 'vintage', 'hollywood', '1930s', 'mank'],
       inspiredBy: 'Mank (2020)',
-      description: tk('Classic studio-era black and white with a soft glow.')
+      description: tk('Classic studio-era black and white with a soft glow.'),
+      version: 2
     },
     mono({ red: 6, orange: 6 }),
-    tone({ contrast: 15, highlights: -12 }),
-    fade(0.03),
+    prim({ contrast: 1.09 }),
+    tone({ highlights: -12 }),
+    matte(0.03),
     vignette(-25, { feather: 70 }),
     bloomApprox(25),
     grain(30, 30, 55)
@@ -745,11 +944,16 @@ export const MOVIES = collection('movies', [
     {
       tags: ['musical', 'primaries', 'dusk', 'purple', 'la la land'],
       inspiredBy: 'La La Land (2016)',
-      description: tk('Bold primaries against a purple dusk.')
+      description: tk('Bold primaries against a purple dusk.'),
+      version: 2
     },
     presence({ saturation: 20 }),
-    wheel('shadows', 260, 15),
-    hsl({ blue: [0, 25, 0], yellow: [0, 25, 0], red: [0, 25, 0] })
+    lift(260, 15),
+    hueCurve('hueSat', [
+      [240, 1.25],
+      [60, 1.25],
+      [0, 1.25]
+    ])
   ),
   look(
     'crimson-chapter',
@@ -757,11 +961,12 @@ export const MOVIES = collection('movies', [
     {
       tags: ['red', 'wuxia', 'monochromatic', 'epic', 'hero'],
       inspiredBy: 'Hero (2002), the red chapter',
-      description: tk('A whole world washed in red.')
+      description: tk('A whole world washed in red.'),
+      version: 2
     },
     presence({ saturation: -20 }),
-    wheel('global', 0, 40),
-    hsl({ red: [0, 30, 0] })
+    offset(0, 40),
+    hueCurve('hueSat', [[0, 1.3]])
   ),
   look(
     'muted-16mm-romance',
@@ -769,11 +974,19 @@ export const MOVIES = collection('movies', [
     {
       tags: ['16mm', 'muted', 'romance', 'period', 'grain', 'carol'],
       inspiredBy: 'Carol (2015)',
-      description: tk('Muted, olive-leaning period colour on grainy 16mm.')
+      description: tk('Muted, olive-leaning period colour on grainy 16mm.'),
+      version: 2
     },
-    fade(0.04),
-    presence({ saturation: -20 }),
-    foliage(-10, -30, 0),
+    matte(0.04),
+    prim({ sat: -20 }),
+    hueCurve('hueHue', [
+      [120, -3],
+      [60, -1.8]
+    ]),
+    hueCurve('hueSat', [
+      [120, 0.7],
+      [60, 0.82]
+    ]),
     grain(35, 35, 60)
   ),
   look(
@@ -782,11 +995,13 @@ export const MOVIES = collection('movies', [
     {
       tags: ['day for night', 'night', 'blue', 'horror', 'nope'],
       inspiredBy: 'Nope (2022)',
-      description: tk('Daylight turned to clear blue night.')
+      description: tk('Daylight turned to clear blue night.'),
+      version: 2
     },
-    tone({ contrast: 20, highlights: -45, whites: -45, shadows: -25 }),
+    prim({ contrast: 1.12 }),
+    tone({ highlights: -45, whites: -45, shadows: -25 }),
     presence({ saturation: -50 }),
-    wheel('global', 215, 30)
+    offset(215, 30)
   ),
   look(
     'bright-folk-horror',
@@ -794,11 +1009,13 @@ export const MOVIES = collection('movies', [
     {
       tags: ['bright', 'pastel', 'summer', 'horror', 'midsommar'],
       inspiredBy: 'Midsommar (2019)',
-      description: tk('Relentless bright daylight in soft pastels.')
+      description: tk('Relentless bright daylight in soft pastels.'),
+      version: 2
     },
-    tone({ contrast: -10, whites: 20, shadows: 20 }),
+    prim({ contrast: 0.94 }),
+    tone({ whites: 20, shadows: 20 }),
     presence({ saturation: 10 }),
-    wheel('global', 60, 8)
+    offset(60, 8)
   ),
   look(
     'shanghai-neon',
@@ -806,11 +1023,17 @@ export const MOVIES = collection('movies', [
     {
       tags: ['neon', 'night', 'cyan', 'spy', 'skyfall', 'bond'],
       inspiredBy: 'Skyfall (2012), the Shanghai tower',
-      description: tk('Silhouettes against cyan and blue neon.')
+      description: tk('Silhouettes against cyan and blue neon.'),
+      version: 2
     },
-    tone({ contrast: 25, blacks: -15 }),
-    split(195, 25, 190, 10),
-    hsl({ aqua: [0, 25, 0], blue: [0, 20, 0] })
+    prim({ contrast: 1.15 }),
+    tone({ blacks: -15 }),
+    lift(195, 25),
+    gain(190, 10),
+    hueCurve('hueSat', [
+      [180, 1.25],
+      [240, 1.2]
+    ])
   ),
   look(
     'overgrown-ruin',
@@ -818,13 +1041,19 @@ export const MOVIES = collection('movies', [
     {
       tags: ['post-apocalyptic', 'green', 'muted', 'the last of us'],
       inspiredBy: 'The Last of Us (2023–)',
-      description: tk('Muted, cool ruins overrun with soft greens.')
+      description: tk('Muted, cool ruins overrun with soft greens.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
-    fade(0.02),
+    prim({ contrast: 1.06 }),
+    matte(0.02),
     presence({ saturation: -22 }),
-    split(190, 15, 50, 6),
-    hsl({ green: [-5, 15, 0], yellow: [-15, 0, 0] }),
+    lift(190, 15),
+    gain(50, 6),
+    hueCurve('hueHue', [
+      [120, -1.5],
+      [60, -4.5]
+    ]),
+    hueCurve('hueSat', [[120, 1.15]]),
     grain(10, 20, 40)
   )
 ])

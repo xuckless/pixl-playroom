@@ -3,20 +3,22 @@ import {
   approximates,
   calib,
   collection,
-  fade,
-  foliage,
+  gain,
+  gamma,
   grain,
   halationApprox,
   hsl,
+  hueCurve,
+  lift,
   look,
+  matte,
+  offset,
   presence,
+  prim,
   rgb,
-  rolloff,
   sCurve,
-  split,
   tone,
-  vignette,
-  wheel
+  vignette
 } from './dsl'
 import { tk } from '../i18n'
 
@@ -27,15 +29,26 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'portrait', 'skin', 'soft', 'kodak', 'portra', '160'],
       inspiredBy: 'Kodak Portra 160',
-      description: tk('Low contrast, gentle saturation and creamy skin; fine grain.')
+      description: tk('Low contrast, gentle saturation and creamy skin; fine grain.'),
+      version: 2
     },
-    tone({ contrast: -10, highlights: -15 }),
-    fade(0.02),
-    rolloff(0.02),
+    prim({ contrast: 0.94 }),
+    tone({ highlights: -15 }),
+    matte(0.02, 0.02),
     presence({ saturation: -12 }),
-    split(180, 5, 45, 6),
-    hsl({ orange: [0, -5, 5], blue: [0, -15, 0] }),
-    foliage(5, -15, 0),
+    lift(180, 5),
+    gain(45, 6),
+    hueCurve('hueHue', [
+      [120, 1.5],
+      [60, 0.9]
+    ]),
+    hueCurve('hueSat', [
+      [30, 0.95],
+      [240, 0.85],
+      [120, 0.85],
+      [60, 0.91]
+    ]),
+    hsl({ orange: [0, 0, 5] }),
     grain(8, 18, 35)
   ),
   look(
@@ -44,15 +57,27 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'portrait', 'warm', 'wedding', 'kodak', 'portra', '400'],
       inspiredBy: 'Kodak Portra 400',
-      description: tk('The classic portrait negative: warm skin, soft greens, long highlights.')
+      description: tk('The classic portrait negative: warm skin, soft greens, long highlights.'),
+      version: 2
     },
-    tone({ contrast: -5, highlights: -15 }),
-    fade(0.03),
-    rolloff(0.02),
+    prim({ contrast: 0.97 }),
+    tone({ highlights: -15 }),
+    matte(0.03, 0.02),
     presence({ saturation: -5 }),
-    split(170, 6, 42, 10),
-    hsl({ orange: [-2, 0, 6], blue: [-10, -10, 0] }),
-    foliage(10, -15, 0),
+    lift(170, 6),
+    gain(42, 10),
+    hueCurve('hueHue', [
+      [30, -0.6],
+      [240, -3],
+      [120, 3],
+      [60, 1.8]
+    ]),
+    hueCurve('hueSat', [
+      [240, 0.9],
+      [120, 0.85],
+      [60, 0.91]
+    ]),
+    hsl({ orange: [0, 0, 6] }),
     grain(15, 22, 40)
   ),
   look(
@@ -61,13 +86,25 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'portrait', 'warm', 'low light', 'kodak', 'portra', '800'],
       inspiredBy: 'Kodak Portra 800',
-      description: tk('Richer, warmer and grainier, with a green lean in the shadows.')
+      description: tk('Richer, warmer and grainier, with a green lean in the shadows.'),
+      version: 2
     },
-    tone({ contrast: 8, highlights: -12 }),
-    fade(0.03),
+    prim({ contrast: 1.05 }),
+    tone({ highlights: -12 }),
+    matte(0.03),
     presence({ saturation: 8 }),
-    split(150, 12, 40, 16),
-    hsl({ red: [0, 8, 0], orange: [-2, 10, 4], green: [8, -10, 0] }),
+    lift(150, 12),
+    gain(40, 16),
+    hueCurve('hueHue', [
+      [30, -0.6],
+      [120, 2.4]
+    ]),
+    hueCurve('hueSat', [
+      [0, 1.08],
+      [30, 1.1],
+      [120, 0.9]
+    ]),
+    hsl({ orange: [0, 0, 4] }),
     grain(28, 30, 55)
   ),
   look(
@@ -76,11 +113,17 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'landscape', 'saturated', 'fine grain', 'kodak', 'ektar', '100'],
       inspiredBy: 'Kodak Ektar 100',
-      description: tk('Saturated, fine-grained landscape negative; skin runs red.')
+      description: tk('Saturated, fine-grained landscape negative; skin runs red.'),
+      version: 2
     },
-    tone({ contrast: 20 }),
-    presence({ saturation: 25 }),
-    hsl({ red: [0, 20, 0], orange: [-4, 20, 0], blue: [0, 20, -10] }),
+    prim({ contrast: 1.12, sat: 25 }),
+    hueCurve('hueHue', [[30, -1.2]]),
+    hueCurve('hueSat', [
+      [0, 1.2],
+      [30, 1.2],
+      [240, 1.2]
+    ]),
+    hsl({ blue: [0, 0, -10] }),
     grain(5, 15, 30)
   ),
   look(
@@ -89,14 +132,18 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'warm', 'golden', 'nostalgic', 'kodak', 'gold', '200'],
       inspiredBy: 'Kodak Gold 200',
-      description: tk('Golden, sunny consumer film with yellowed greens.')
+      description: tk('Golden, sunny consumer film with yellowed greens.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: 10 }),
-    wheel('midtones', 45, 10),
-    wheel('highlights', 50, 18),
-    hsl({ blue: [0, -10, 0] }),
-    foliage(-10, 0, 0),
+    gamma(45, 10),
+    gain(50, 18),
+    hueCurve('hueHue', [
+      [120, -3],
+      [60, -1.8]
+    ]),
+    hueCurve('hueSat', [[240, 0.9]]),
     grain(22, 28, 50)
   ),
   look(
@@ -105,12 +152,14 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'punchy', 'saturated', 'everyday', 'kodak', 'ultramax', '400'],
       inspiredBy: 'Kodak UltraMax 400',
-      description: tk('Punchy everyday colour with strong reds.')
+      description: tk('Punchy everyday colour with strong reds.'),
+      version: 2
     },
-    tone({ contrast: 15 }),
+    prim({ contrast: 1.09 }),
     presence({ saturation: 15 }),
-    split(150, 8, 45, 10),
-    hsl({ red: [0, 15, 0] }),
+    lift(150, 8),
+    gain(45, 10),
+    hueCurve('hueSat', [[0, 1.15]]),
     grain(25, 30, 55)
   ),
   look(
@@ -119,12 +168,13 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'warm', 'budget', 'soft', 'kodak', 'colorplus', '200'],
       inspiredBy: 'Kodak ColorPlus 200',
-      description: tk('Warm, soft and a little grainy, with muted blues.')
+      description: tk('Warm, soft and a little grainy, with muted blues.'),
+      version: 2
     },
-    tone({ contrast: 5 }),
+    prim({ contrast: 1.03 }),
     presence({ saturation: 5, texture: -10 }),
-    wheel('global', 45, 12),
-    hsl({ blue: [0, -15, 0] }),
+    offset(45, 12),
+    hueCurve('hueSat', [[240, 0.85]]),
     grain(28, 32, 55)
   ),
   look(
@@ -133,12 +183,14 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['slide', 'film', 'clean', 'cool', 'kodak', 'ektachrome', 'e100'],
       inspiredBy: 'Kodak Ektachrome E100',
-      description: tk('Clean, slightly cool slide film with crisp blues.')
+      description: tk('Clean, slightly cool slide film with crisp blues.'),
+      version: 2
     },
-    tone({ contrast: 20, blacks: -5 }),
+    prim({ contrast: 1.12 }),
+    tone({ blacks: -5 }),
     presence({ saturation: 10 }),
-    wheel('global', 210, 6),
-    hsl({ blue: [0, 15, 0] }),
+    offset(210, 6),
+    hueCurve('hueSat', [[240, 1.15]]),
     grain(5, 15, 30)
   ),
   look(
@@ -147,18 +199,25 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['slide', 'film', 'vintage', 'rich', 'kodak', 'kodachrome', '64'],
       inspiredBy: 'Kodak Kodachrome 64',
-      description: tk('Rich reds and yellows, deep blue skies and dense blacks.')
+      description: tk('Rich reds and yellows, deep blue skies and dense blacks.'),
+      version: 2
     },
     sCurve(40),
     tone({ blacks: -5 }),
     presence({ saturation: 10 }),
-    split(200, 6, 45, 8),
-    hsl({
-      red: [0, 20, -5],
-      yellow: [0, 15, 0],
-      green: [-5, -10, 0],
-      blue: [-8, 10, -15]
-    }),
+    lift(200, 6),
+    gain(45, 8),
+    hueCurve('hueHue', [
+      [120, -1.5],
+      [240, -2.4]
+    ]),
+    hueCurve('hueSat', [
+      [0, 1.2],
+      [60, 1.15],
+      [120, 0.9],
+      [240, 1.1]
+    ]),
+    hsl({ red: [0, 0, -5], blue: [0, 0, -15] }),
     grain(8, 18, 35)
   ),
   look(
@@ -167,14 +226,20 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['slide', 'film', 'saturated', 'landscape', 'fuji', 'velvia', '50'],
       inspiredBy: 'Fujifilm Velvia 50 (film)',
-      description: tk('Maximum saturation, magenta shadows and dark skies.')
+      description: tk('Maximum saturation, magenta shadows and dark skies.'),
+      version: 2
     },
     sCurve(40),
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: 40 }),
-    wheel('shadows', 300, 10),
-    hsl({ red: [-8, 20, 0], blue: [0, 0, -20] }),
-    foliage(0, 30, 0),
+    lift(300, 10),
+    hueCurve('hueHue', [[0, -2.4]]),
+    hueCurve('hueSat', [
+      [0, 1.2],
+      [120, 1.3],
+      [60, 1.18]
+    ]),
+    hsl({ blue: [0, 0, -20] }),
     grain(4, 12, 25)
   ),
   look(
@@ -183,13 +248,15 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['slide', 'film', 'neutral', 'fuji', 'provia', '100f'],
       inspiredBy: 'Fujifilm Provia 100F (film)',
-      description: tk('An honest, neutral slide film.')
+      description: tk('An honest, neutral slide film.'),
+      version: 2
     },
     sCurve(30),
     tone({ blacks: -10 }),
     presence({ saturation: 6 }),
-    wheel('global', 210, 7),
-    hsl({ blue: [0, 10, -10] }),
+    offset(210, 7),
+    hueCurve('hueSat', [[240, 1.1]]),
+    hsl({ blue: [0, 0, -10] }),
     grain(5, 15, 30)
   ),
   look(
@@ -198,13 +265,21 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'green', 'consumer', 'fuji', 'superia', '400'],
       inspiredBy: 'Fujifilm Superia X-TRA 400',
-      description: tk('Everyday film with green shadows and vivid greens.')
+      description: tk('Everyday film with green shadows and vivid greens.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: 10 }),
-    wheel('shadows', 155, 12),
-    hsl({ orange: [-3, 0, 0] }),
-    foliage(10, 10, 0),
+    lift(155, 12),
+    hueCurve('hueHue', [
+      [30, -0.9],
+      [120, 3],
+      [60, 1.8]
+    ]),
+    hueCurve('hueSat', [
+      [120, 1.1],
+      [60, 1.06]
+    ]),
     grain(25, 30, 55)
   ),
   look(
@@ -213,14 +288,24 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'pastel', 'airy', 'wedding', 'mint', 'fuji', '400h'],
       inspiredBy: 'Fujifilm Pro 400H',
-      description: tk('Bright, airy pastels with mint greens.')
+      description: tk('Bright, airy pastels with mint greens.'),
+      version: 2
     },
-    tone({ contrast: -20, shadows: 15, whites: 10 }),
-    fade(0.04),
+    prim({ contrast: 0.88 }),
+    tone({ shadows: 15, whites: 10 }),
+    matte(0.04),
     presence({ saturation: -10 }),
-    split(180, 10, 60, 5),
+    lift(180, 10),
+    gain(60, 5),
+    hueCurve('hueHue', [
+      [120, 6],
+      [60, 3.6]
+    ]),
+    hueCurve('hueSat', [
+      [120, 0.9],
+      [60, 0.94]
+    ]),
     hsl({ orange: [0, 0, 5] }),
-    foliage(20, -10, 0),
     grain(15, 22, 40)
   ),
   look(
@@ -229,14 +314,25 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'portrait', 'cool', 'fuji', 'pro 160ns'],
       inspiredBy: 'Fujifilm Pro 160NS',
-      description: tk('Cool, low-contrast portrait negative.')
+      description: tk('Cool, low-contrast portrait negative.'),
+      version: 2
     },
-    tone({ contrast: -15, highlights: -10 }),
-    fade(0.02),
+    prim({ contrast: 0.91 }),
+    tone({ highlights: -10 }),
+    matte(0.02),
     presence({ saturation: -12 }),
-    split(170, 12, 60, 5),
-    hsl({ orange: [0, -5, 6] }),
-    foliage(12, -5, 0),
+    lift(170, 12),
+    gain(60, 5),
+    hueCurve('hueHue', [
+      [120, 3.6],
+      [60, 2.1]
+    ]),
+    hueCurve('hueSat', [
+      [30, 0.95],
+      [120, 0.95],
+      [60, 0.97]
+    ]),
+    hsl({ orange: [0, 0, 6] }),
     grain(8, 18, 35)
   ),
   look(
@@ -245,13 +341,22 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'cool', 'green', 'budget', 'fuji', 'c200'],
       inspiredBy: 'Fujicolor C200',
-      description: tk('Cool, green-leaning budget film.')
+      description: tk('Cool, green-leaning budget film.'),
+      version: 2
     },
     sCurve(15),
     presence({ saturation: 5 }),
-    wheel('global', 150, 10),
-    wheel('shadows', 170, 12),
-    hsl({ yellow: [8, 5, 0], green: [10, 10, 0], blue: [0, -10, 0] }),
+    offset(150, 10),
+    lift(170, 12),
+    hueCurve('hueHue', [
+      [60, 2.4],
+      [120, 3]
+    ]),
+    hueCurve('hueSat', [
+      [60, 1.05],
+      [120, 1.1],
+      [240, 0.9]
+    ]),
     grain(25, 30, 55)
   ),
   look(
@@ -260,12 +365,15 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'low light', 'soft', 'grain', 'fuji', 'natura', '1600'],
       inspiredBy: 'Fujifilm Natura 1600',
-      description: tk('Soft, natural low-light colour with generous grain.')
+      description: tk('Soft, natural low-light colour with generous grain.'),
+      version: 2
     },
-    tone({ contrast: -10, shadows: 12 }),
-    fade(0.04),
+    prim({ contrast: 0.94 }),
+    tone({ shadows: 12 }),
+    matte(0.04),
     presence({ saturation: -8 }),
-    split(150, 12, 40, 10),
+    lift(150, 12),
+    gain(40, 10),
     grain(35, 35, 60)
   ),
   look(
@@ -274,12 +382,17 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'red', 'consumer', 'agfa', 'vista', '200'],
       inspiredBy: 'Agfa Vista 200',
-      description: tk('Punchy reds and deep blue skies.')
+      description: tk('Punchy reds and deep blue skies.'),
+      version: 2
     },
-    tone({ contrast: 15 }),
+    prim({ contrast: 1.09 }),
     presence({ saturation: 15 }),
-    wheel('global', 15, 6),
-    hsl({ red: [0, 20, 0], blue: [0, 15, -10] }),
+    offset(15, 6),
+    hueCurve('hueSat', [
+      [0, 1.2],
+      [240, 1.15]
+    ]),
+    hsl({ blue: [0, 0, -10] }),
     grain(22, 28, 50)
   ),
   look(
@@ -288,13 +401,15 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'night', 'tungsten', 'neon', 'halation', 'cinestill', '800t'],
       inspiredBy: 'CineStill 800T',
-      description: tk('Tungsten night film: cool light, teal shadows and red-glowing highlights.')
+      description: tk('Tungsten night film: cool light, teal shadows and red-glowing highlights.'),
+      version: 2
     },
-    tone({ contrast: 12 }),
+    prim({ contrast: 1.07 }),
     presence({ saturation: -5 }),
-    split(190, 22, 30, 10),
-    wheel('global', 215, 14),
-    hsl({ red: [0, 12, 0] }),
+    lift(190, 22),
+    gain(30, 10),
+    offset(215, 14),
+    hueCurve('hueSat', [[0, 1.12]]),
     halationApprox(60),
     grain(30, 30, 55)
   ),
@@ -304,12 +419,18 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'daylight', 'clean', 'fine grain', 'cinestill', '50d'],
       inspiredBy: 'CineStill 50D',
-      description: tk('Clean, saturated, very fine-grained daylight film.')
+      description: tk('Clean, saturated, very fine-grained daylight film.'),
+      version: 2
     },
     sCurve(28),
     presence({ saturation: 15 }),
-    wheel('global', 205, 6),
-    hsl({ blue: [-5, 15, -8], aqua: [0, 10, 0] }),
+    offset(205, 6),
+    hueCurve('hueHue', [[240, -1.5]]),
+    hueCurve('hueSat', [
+      [240, 1.15],
+      [180, 1.1]
+    ]),
+    hsl({ blue: [0, 0, -8] }),
     halationApprox(25),
     grain(6, 15, 30)
   ),
@@ -319,12 +440,14 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'daylight', 'warm', 'cinestill', '400d'],
       inspiredBy: 'CineStill 400D',
-      description: tk('Warm daylight film with a soft glow.')
+      description: tk('Warm daylight film with a soft glow.'),
+      version: 2
     },
     sCurve(20),
     presence({ saturation: 6 }),
-    split(195, 8, 40, 18),
-    hsl({ orange: [0, 8, 0] }),
+    lift(195, 8),
+    gain(40, 18),
+    hueCurve('hueSat', [[30, 1.08]]),
     halationApprox(35),
     grain(22, 28, 50)
   ),
@@ -334,11 +457,12 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'lomo', 'saturated', 'vignette', 'lomography', '800'],
       inspiredBy: 'Lomography Color Negative 800',
-      description: tk('Loud, warm colour, dark corners and plenty of grain.')
+      description: tk('Loud, warm colour, dark corners and plenty of grain.'),
+      version: 2
     },
-    tone({ contrast: 20 }),
+    prim({ contrast: 1.12 }),
     presence({ saturation: 20 }),
-    wheel('global', 20, 8),
+    offset(20, 8),
     vignette(-20),
     grain(30, 32, 60)
   ),
@@ -350,11 +474,17 @@ export const FILM_COLOUR = collection('film/colour', [
       inspiredBy: 'LomoChrome Purple',
       description: tk(
         'Greens pushed toward purple and blues toward green: an approximation of the full swap.'
-      )
+      ),
+      version: 2
     },
-    fade(0.03),
+    matte(0.03),
     calib({ greenHue: 100, blueHue: -80 }),
-    hsl({ green: [100, 10, 0], aqua: [60, 0, 0], blue: [-80, 0, 0] }),
+    hueCurve('hueHue', [
+      [120, 30],
+      [180, 18],
+      [240, -24]
+    ]),
+    hueCurve('hueSat', [[120, 1.1]]),
     approximates('hueSwap'),
     grain(20, 28, 50)
   ),
@@ -364,11 +494,14 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'desaturated', 'urban', 'contrast', 'lomochrome', 'metropolis'],
       inspiredBy: 'LomoChrome Metropolis',
-      description: tk('Drained urban colour with warm tones kept.')
+      description: tk('Drained urban colour with warm tones kept.'),
+      version: 2
     },
-    tone({ contrast: 25 }),
-    presence({ saturation: -50 }),
-    hsl({ red: [0, 20, 0], yellow: [0, 20, 0] }),
+    prim({ contrast: 1.15, sat: -50 }),
+    hueCurve('hueSat', [
+      [0, 1.2],
+      [60, 1.2]
+    ]),
     grain(25, 30, 55)
   ),
   look(
@@ -377,10 +510,21 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'infrared', 'false colour', 'creative', 'kodak', 'aerochrome'],
       inspiredBy: 'Kodak Aerochrome infrared film',
-      description: tk('Foliage turned red-magenta: an approximation of infrared colour.')
+      description: tk('Foliage turned red-magenta: an approximation of infrared colour.'),
+      version: 2
     },
     calib({ redHue: -60, greenHue: -100, greenSaturation: 40 }),
-    hsl({ green: [-100, 50, 10], yellow: [-100, 30, 0], blue: [-30, 10, 0] }),
+    hueCurve('hueHue', [
+      [120, -30],
+      [60, -30],
+      [240, -9]
+    ]),
+    hueCurve('hueSat', [
+      [120, 1.5],
+      [60, 1.3],
+      [240, 1.1]
+    ]),
+    hsl({ green: [0, 0, 10] }),
     approximates('hueSwap')
   ),
   look(
@@ -389,11 +533,13 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'cross process', 'creative', 'saturated'],
       inspiredBy: 'Slide film cross-processed in C-41',
-      description: tk('Blown contrast, cyan shadows and yellow highlights.')
+      description: tk('Blown contrast, cyan shadows and yellow highlights.'),
+      version: 2
     },
     tone({ contrast: 35 }),
     presence({ saturation: 25 }),
-    split(210, 25, 70, 30),
+    lift(210, 25),
+    gain(70, 30),
     rgb({
       g: [
         [0, 0],
@@ -413,13 +559,14 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'expired', 'faded', 'vintage', 'magenta'],
       inspiredBy: 'Expired colour negative film',
-      description: tk('Fogged blacks, shifted colour and heavy grain.')
+      description: tk('Fogged blacks, shifted colour and heavy grain.'),
+      version: 2
     },
-    tone({ contrast: -15 }),
-    fade(0.08),
-    rolloff(0.04),
+    prim({ contrast: 0.91 }),
+    matte(0.08, 0.04),
     presence({ saturation: -20 }),
-    split(160, 15, 330, 10),
+    lift(160, 15),
+    gain(330, 10),
     grain(40, 38, 70)
   ),
   look(
@@ -428,12 +575,14 @@ export const FILM_COLOUR = collection('film/colour', [
     {
       tags: ['film', 'print', 'nostalgic', '90s', 'warm'],
       inspiredBy: 'One-hour lab prints from the 1990s',
-      description: tk('Bright, warm, slightly green-shadowed prints from the minilab.')
+      description: tk('Bright, warm, slightly green-shadowed prints from the minilab.'),
+      version: 2
     },
     sCurve(25),
     tone({ whites: 10 }),
     presence({ saturation: 10 }),
-    split(150, 10, 45, 12),
+    lift(150, 10),
+    gain(45, 12),
     grain(20, 28, 50)
   )
 ])

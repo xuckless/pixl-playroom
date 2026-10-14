@@ -1,5 +1,5 @@
 /** Warm, friendly colour and flattering skin, in the spirit of Canon's Picture Styles. */
-import { collection, foliage, hsl, look, mono, presence, tone, wheel } from './dsl'
+import { collection, gain, hsl, hueCurve, look, mono, offset, presence, prim, tone } from './dsl'
 import { tk } from '../i18n'
 
 const insp = (style: string): string => `Canon Picture Style ${style}`
@@ -11,12 +11,16 @@ export const CANON = collection('camera/canon', [
     {
       tags: ['standard', 'warm', 'everyday', 'canon'],
       inspiredBy: insp('Standard'),
-      description: tk('Warm, punchy everyday colour with rich reds.')
+      description: tk('Warm, punchy everyday colour with rich reds.'),
+      version: 2
     },
-    tone({ contrast: 12 }),
+    prim({ contrast: 1.07 }),
     presence({ saturation: 10, texture: 10 }),
-    wheel('global', 40, 3),
-    hsl({ red: [0, 10, 0], orange: [0, 10, 0] })
+    offset(40, 3),
+    hueCurve('hueSat', [
+      [0, 1.1],
+      [30, 1.1]
+    ])
   ),
   look(
     'gentle-portrait',
@@ -24,13 +28,20 @@ export const CANON = collection('camera/canon', [
     {
       tags: ['portrait', 'skin', 'soft', 'warm', 'canon'],
       inspiredBy: insp('Portrait'),
-      description: tk('Rosy, smooth skin and a soft touch.')
+      description: tk('Rosy, smooth skin and a soft touch.'),
+      version: 2
     },
-    tone({ contrast: -8, highlights: -12, shadows: 8 }),
+    prim({ contrast: 0.95 }),
+    tone({ highlights: -12, shadows: 8 }),
     presence({ texture: -18, clarity: -6 }),
-    wheel('global', 15, 7),
-    wheel('highlights', 25, 10),
-    hsl({ orange: [-6, -8, 12], red: [0, -6, 6] })
+    offset(15, 7),
+    gain(25, 10),
+    hueCurve('hueHue', [[30, -1.8]]),
+    hueCurve('hueSat', [
+      [30, 0.92],
+      [0, 0.94]
+    ]),
+    hsl({ orange: [0, 0, 12], red: [0, 0, 6] })
   ),
   look(
     'lush-landscape',
@@ -38,12 +49,21 @@ export const CANON = collection('camera/canon', [
     {
       tags: ['landscape', 'nature', 'green', 'blue sky', 'canon'],
       inspiredBy: insp('Landscape'),
-      description: tk('Vivid greens and blues with crisp detail.')
+      description: tk('Vivid greens and blues with crisp detail.'),
+      version: 2
     },
-    tone({ contrast: 15 }),
-    presence({ saturation: 15, clarity: 10 }),
-    hsl({ blue: [0, 25, -10] }),
-    foliage(-5, 25, 0)
+    prim({ contrast: 1.09, sat: 15 }),
+    presence({ clarity: 10 }),
+    hueCurve('hueHue', [
+      [120, -1.5],
+      [60, -0.9]
+    ]),
+    hueCurve('hueSat', [
+      [240, 1.25],
+      [120, 1.25],
+      [60, 1.15]
+    ]),
+    hsl({ blue: [0, 0, -10] })
   ),
   look(
     'faithful-colour',
@@ -51,11 +71,15 @@ export const CANON = collection('camera/canon', [
     {
       tags: ['faithful', 'accurate', 'colorimetric', 'product', 'canon'],
       inspiredBy: insp('Faithful'),
-      description: tk('Colour as measured, contrast held low.')
+      description: tk('Colour as measured, contrast held low.'),
+      version: 2
     },
-    tone({ contrast: -15, highlights: -12, shadows: 10 }),
-    presence({ saturation: -6 }),
-    hsl({ red: [0, -6, 0], yellow: [0, -6, 0] })
+    prim({ contrast: 0.91, sat: -6 }),
+    tone({ highlights: -12, shadows: 10 }),
+    hueCurve('hueSat', [
+      [0, 0.94],
+      [60, 0.94]
+    ])
   ),
   look(
     'neutral-base',
@@ -63,11 +87,13 @@ export const CANON = collection('camera/canon', [
     {
       tags: ['neutral', 'flat', 'grading', 'canon'],
       inspiredBy: insp('Neutral'),
-      description: tk('A low-contrast, low-saturation base to grade from.')
+      description: tk('A low-contrast, low-saturation base to grade from.'),
+      version: 2
     },
-    tone({ contrast: -25, shadows: 10 }),
+    prim({ contrast: 0.85 }),
+    tone({ shadows: 10 }),
     presence({ saturation: -15 }),
-    wheel('global', 35, 4)
+    offset(35, 4)
   ),
   look(
     'fine-detail',
@@ -75,12 +101,15 @@ export const CANON = collection('camera/canon', [
     {
       tags: ['detail', 'texture', 'sharp', 'canon'],
       inspiredBy: insp('Fine Detail'),
-      description: tk('Fine texture brought forward, colour as standard.')
+      description: tk('Fine texture brought forward, colour as standard.'),
+      version: 2
     },
-    tone({ contrast: 12, whites: 8, blacks: -8 }),
+    prim({ contrast: 1.07 }),
+    tone({ whites: 8, blacks: -8 }),
     presence({ saturation: 6, texture: 45, clarity: 15 }),
-    wheel('global', 40, 3),
-    hsl({ blue: [0, 8, -5] })
+    offset(40, 3),
+    hueCurve('hueSat', [[240, 1.08]]),
+    hsl({ blue: [0, 0, -5] })
   ),
   look(
     'plain-mono',
@@ -88,10 +117,11 @@ export const CANON = collection('camera/canon', [
     {
       tags: ['bw', 'mono', 'canon'],
       inspiredBy: insp('Monochrome'),
-      description: tk('A straightforward black and white.')
+      description: tk('A straightforward black and white.'),
+      version: 2
     },
-    // Canon renders skin bright in mono: warm bands lifted, blue held down.
     mono({ red: 12, orange: 18, yellow: 8, blue: -12 }),
-    tone({ contrast: 15, blacks: -6 })
+    prim({ contrast: 1.09 }),
+    tone({ blacks: -6 })
   )
 ])

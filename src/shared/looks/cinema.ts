@@ -5,19 +5,22 @@
 import {
   approximates,
   collection,
-  fade,
+  gain,
   grain,
   halationApprox,
   hsl,
+  hueCurve,
+  lift,
   look,
+  matte,
   mono,
+  offset,
   presence,
-  rolloff,
+  prim,
   sCurve,
-  split,
   tone,
   vignette,
-  wheel
+  lumSat
 } from './dsl'
 import { tk } from '../i18n'
 
@@ -30,14 +33,31 @@ export const CINEMA = collection('cinema', [
       inspiredBy: 'ARRI ALEXA LogC to Rec.709 (K1S1)',
       description: tk(
         'A moderate S with a very long, desaturating highlight shoulder and kind skin.'
-      )
+      ),
+      version: 2
     },
     sCurve(25),
-    rolloff(0.03),
+    matte(0, 0.03),
     tone({ whites: -18, highlights: -15 }),
     presence({ saturation: -6 }),
-    wheel('global', 35, 4),
-    hsl({ orange: [-3, 6, 2], yellow: [0, -10, 0], green: [-8, -18, 0] })
+    offset(35, 4),
+    hueCurve('hueHue', [
+      [30, -0.9],
+      [120, -2.4]
+    ]),
+    hueCurve('hueSat', [
+      [30, 1.06],
+      [60, 0.9],
+      [120, 0.82]
+    ]),
+    hsl({ orange: [0, 0, 2] }),
+    // The shoulder drains colour as it rolls off, as the description says.
+    lumSat([
+      [0, 1],
+      [0.55, 1],
+      [0.85, 0.82],
+      [1, 0.6]
+    ])
   ),
   look(
     'modern-cine-camera',
@@ -45,14 +65,21 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['cinema', 'cine camera', 'accurate', 'arri', 'reveal'],
       inspiredBy: 'ARRI REVEAL colour science',
-      description: tk('The classic cine curve with cleaner, truer hues.')
+      description: tk('The classic cine curve with cleaner, truer hues.'),
+      version: 2
     },
     sCurve(25),
-    rolloff(0.02),
+    matte(0, 0.02),
     tone({ whites: -12, highlights: -12 }),
     presence({ vibrance: 10 }),
-    wheel('global', 200, 3),
-    hsl({ red: [0, 5, -4], blue: [-5, 10, -5], aqua: [0, 10, 0] })
+    offset(200, 3),
+    hueCurve('hueHue', [[240, -1.5]]),
+    hueCurve('hueSat', [
+      [0, 1.05],
+      [240, 1.1],
+      [180, 1.1]
+    ]),
+    hsl({ red: [0, 0, -4], blue: [0, 0, -5] })
   ),
   look(
     'cine-print-look',
@@ -62,13 +89,16 @@ export const CINEMA = collection('cinema', [
       inspiredBy: 'ARRI Look Library film-print styles',
       description: tk(
         'A cine camera printed to film: teal shadows, warm highlights, a little grain.'
-      )
+      ),
+      version: 2
     },
     sCurve(30),
-    fade(0.01),
+    matte(0.01),
     presence({ saturation: -12 }),
-    split(185, 16, 40, 14),
-    hsl({ green: [5, -12, 0] }),
+    lift(185, 16),
+    gain(40, 14),
+    hueCurve('hueHue', [[120, 1.5]]),
+    hueCurve('hueSat', [[120, 0.88]]),
     grain(8, 20, 40)
   ),
   look(
@@ -77,13 +107,20 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['cinema', 'neutral', 'soft', 'red', 'ipp2'],
       inspiredBy: 'RED IPP2 (medium contrast, soft roll-off)',
-      description: tk('Neutral, slightly cool, with a very soft highlight roll-off.')
+      description: tk('Neutral, slightly cool, with a very soft highlight roll-off.'),
+      version: 2
     },
     sCurve(12),
-    rolloff(0.04),
+    matte(0, 0.04),
     tone({ highlights: -22, shadows: 8 }),
     presence({ saturation: -10 }),
-    wheel('global', 210, 6)
+    offset(210, 6),
+    // Colour eases off with the highlights.
+    lumSat([
+      [0, 1],
+      [0.65, 1],
+      [1, 0.8]
+    ])
   ),
   look(
     'full-frame-cine',
@@ -91,12 +128,20 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['cinema', 'warm skin', 'sony', 'venice'],
       inspiredBy: 'Sony VENICE Rec.709',
-      description: tk('Rich reds, cyan skies and warm skin.')
+      description: tk('Rich reds, cyan skies and warm skin.'),
+      version: 2
     },
-    tone({ contrast: 15 }),
+    prim({ contrast: 1.09 }),
     presence({ saturation: 5 }),
-    wheel('global', 35, 3),
-    hsl({ red: [0, 10, 0], green: [-5, -10, 0], blue: [-8, 0, 0] })
+    offset(35, 3),
+    hueCurve('hueHue', [
+      [120, -1.5],
+      [240, -2.4]
+    ]),
+    hueCurve('hueSat', [
+      [0, 1.1],
+      [120, 0.9]
+    ])
   ),
   look(
     'indie-cine',
@@ -104,12 +149,16 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['cinema', 'indie', 'warm', 'blackmagic', 'gen5'],
       inspiredBy: 'Blackmagic Design Gen 5 colour science',
-      description: tk('Warm reds and a faint magenta lean.')
+      description: tk('Warm reds and a faint magenta lean.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: 5 }),
-    wheel('global', 330, 3),
-    hsl({ red: [0, 8, 0], orange: [0, 8, 0] })
+    offset(330, 3),
+    hueCurve('hueSat', [
+      [0, 1.08],
+      [30, 1.08]
+    ])
   ),
   look(
     'creamy-cine',
@@ -117,13 +166,21 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['cinema', 'creamy', 'skin', 'soft', 'panavision', 'light iron'],
       inspiredBy: 'Panavision / Light Iron colour',
-      description: tk('Creamy skin and soft highlights over a gentle split.')
+      description: tk('Creamy skin and soft highlights over a gentle split.'),
+      version: 2
     },
-    tone({ contrast: 5, highlights: -18 }),
-    rolloff(0.03),
+    prim({ contrast: 1.03 }),
+    tone({ highlights: -18 }),
+    matte(0, 0.03),
     presence({ texture: -10 }),
-    split(190, 10, 45, 14),
-    hsl({ orange: [-2, -5, 8], red: [0, -5, 0] }),
+    lift(190, 10),
+    gain(45, 14),
+    hueCurve('hueHue', [[30, -0.6]]),
+    hueCurve('hueSat', [
+      [30, 0.95],
+      [0, 0.95]
+    ]),
+    hsl({ orange: [0, 0, 8] }),
     grain(5, 15, 30)
   ),
   look(
@@ -132,14 +189,30 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['print film', 'cinema', 'warm', 'dense', 'kodak', '2383'],
       inspiredBy: 'Kodak Vision Color Print Film 2383',
-      description: tk('Dense blacks, a strong shoulder and the warm-teal split of a theatre print.')
+      description: tk(
+        'Dense blacks, a strong shoulder and the warm-teal split of a theatre print.'
+      ),
+      version: 2
     },
     sCurve(45),
-    rolloff(0.03),
+    matte(0, 0.03),
     tone({ blacks: -5 }),
     presence({ saturation: 5 }),
-    split(185, 18, 40, 15),
-    hsl({ red: [0, 15, 0], yellow: [0, 10, 0], green: [0, -10, 0], blue: [-15, 0, 0] })
+    lift(185, 18),
+    gain(40, 15),
+    hueCurve('hueHue', [[240, -4.5]]),
+    hueCurve('hueSat', [
+      [0, 1.15],
+      [60, 1.1],
+      [120, 0.9]
+    ]),
+    // Dense blacks and a strong shoulder, both quieter in colour.
+    lumSat([
+      [0, 0.85],
+      [0.2, 1],
+      [0.7, 1],
+      [1, 0.75]
+    ])
   ),
   look(
     'cool-theatre-print',
@@ -147,11 +220,16 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['print film', 'cinema', 'cool', 'fuji', '3513'],
       inspiredBy: 'Fujifilm Eterna-CP 3513 print film',
-      description: tk('A cooler, greener print with more neutral skin.')
+      description: tk('A cooler, greener print with more neutral skin.'),
+      version: 2
     },
     sCurve(35),
-    split(170, 12, 50, 6),
-    hsl({ red: [0, 5, 0], orange: [0, -5, 0] })
+    lift(170, 12),
+    gain(50, 6),
+    hueCurve('hueSat', [
+      [0, 1.05],
+      [30, 0.95]
+    ])
   ),
   look(
     'silver-retention-print',
@@ -159,11 +237,13 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['bleach bypass', 'enr', 'cinema', 'gritty', 'technicolor'],
       inspiredBy: 'Technicolor ENR / bleach-bypass print processing',
-      description: tk('Silver left in the print: heavy contrast, deep blacks, muted colour.')
+      description: tk('Silver left in the print: heavy contrast, deep blacks, muted colour.'),
+      version: 2
     },
     sCurve(50),
-    tone({ contrast: 20, blacks: -10 }),
-    presence({ saturation: -45, clarity: 10 }),
+    prim({ contrast: 1.12, sat: -45 }),
+    tone({ blacks: -10 }),
+    presence({ clarity: 10 }),
     grain(15, 25, 50)
   ),
   look(
@@ -172,12 +252,19 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['technicolor', 'dye transfer', 'saturated', 'classic hollywood'],
       inspiredBy: 'Three-strip Technicolor dye-transfer prints',
-      description: tk('Rich primaries and inky blacks of classic dye-transfer prints.')
+      description: tk('Rich primaries and inky blacks of classic dye-transfer prints.'),
+      version: 2
     },
     sCurve(30),
     tone({ blacks: -8 }),
-    presence({ saturation: 25 }),
-    hsl({ red: [0, 20, -5], yellow: [0, 15, 0], blue: [0, 20, -10], green: [0, 10, -5] })
+    prim({ sat: 25 }),
+    hueCurve('hueSat', [
+      [0, 1.2],
+      [60, 1.15],
+      [240, 1.2],
+      [120, 1.1]
+    ]),
+    hsl({ red: [0, 0, -5], blue: [0, 0, -10], green: [0, 0, -5] })
   ),
   look(
     'two-strip-colour',
@@ -185,16 +272,24 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['technicolor', 'two strip', 'vintage', 'red cyan'],
       inspiredBy: 'Two-colour Technicolor (1920s)',
-      description: tk('Only reds and cyans: greens and blues fold into teal, yellows into peach.')
+      description: tk('Only reds and cyans: greens and blues fold into teal, yellows into peach.'),
+      version: 2
     },
-    presence({ saturation: -10 }),
-    hsl({
-      yellow: [-60, -40, 0],
-      green: [60, -30, 0],
-      blue: [-60, -20, 0],
-      purple: [-60, -40, 0],
-      magenta: [60, -30, 0]
-    }),
+    prim({ sat: -10 }),
+    hueCurve('hueHue', [
+      [60, -18],
+      [120, 18],
+      [240, -18],
+      [275, -18],
+      [315, 18]
+    ]),
+    hueCurve('hueSat', [
+      [60, 0.6],
+      [120, 0.7],
+      [240, 0.8],
+      [275, 0.6],
+      [315, 0.7]
+    ]),
     approximates('hueSwap')
   ),
   look(
@@ -203,12 +298,14 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['day for night', 'night', 'blue', 'dark', 'cinema'],
       inspiredBy: 'The classic day-for-night film technique',
-      description: tk('Daylight made to read as moonlight: dark, blue and drained.')
+      description: tk('Daylight made to read as moonlight: dark, blue and drained.'),
+      version: 2
     },
-    tone({ contrast: 15, highlights: -50, whites: -40, shadows: -20 }),
+    prim({ contrast: 1.09 }),
+    tone({ highlights: -50, whites: -40, shadows: -20 }),
     presence({ saturation: -50 }),
-    wheel('global', 220, 30),
-    wheel('shadows', 225, 20)
+    offset(220, 30),
+    lift(225, 20)
   ),
   look(
     'tungsten-cine-neg-500',
@@ -216,13 +313,15 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['cinema', 'negative', 'tungsten', 'night', 'grain', 'kodak', 'vision3', '500t'],
       inspiredBy: 'Kodak Vision3 500T 5219, printed',
-      description: tk('Fast tungsten negative: soft blacks, teal shadows, visible grain.')
+      description: tk('Fast tungsten negative: soft blacks, teal shadows, visible grain.'),
+      version: 2
     },
     sCurve(18),
-    fade(0.03),
+    matte(0.03),
     tone({ highlights: -12 }),
     presence({ saturation: -8 }),
-    split(175, 18, 35, 12),
+    lift(175, 18),
+    gain(35, 12),
     halationApprox(40),
     grain(32, 30, 55)
   ),
@@ -232,14 +331,17 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['cinema', 'negative', 'tungsten', 'kodak', 'vision3', '200t'],
       inspiredBy: 'Kodak Vision3 200T 5213, printed',
-      description: tk('Tungsten negative with finer grain and the same teal-warm split.')
+      description: tk('Tungsten negative with finer grain and the same teal-warm split.'),
+      version: 2
     },
     sCurve(28),
-    fade(0.015),
+    matte(0.015),
     tone({ highlights: -10 }),
     presence({ saturation: -4 }),
-    split(180, 18, 40, 12),
-    hsl({ green: [8, -10, 0] }),
+    lift(180, 18),
+    gain(40, 12),
+    hueCurve('hueHue', [[120, 2.4]]),
+    hueCurve('hueSat', [[120, 0.9]]),
     grain(18, 25, 45)
   ),
   look(
@@ -248,14 +350,17 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['cinema', 'negative', 'daylight', 'kodak', 'vision3', '250d'],
       inspiredBy: 'Kodak Vision3 250D 5207, printed',
-      description: tk('Daylight negative with a very long highlight range.')
+      description: tk('Daylight negative with a very long highlight range.'),
+      version: 2
     },
     sCurve(20),
-    rolloff(0.03),
+    matte(0, 0.03),
     tone({ highlights: -18, shadows: 8 }),
     presence({ saturation: -4 }),
-    split(190, 12, 45, 12),
-    hsl({ green: [5, -10, 0] }),
+    lift(190, 12),
+    gain(45, 12),
+    hueCurve('hueHue', [[120, 1.5]]),
+    hueCurve('hueSat', [[120, 0.9]]),
     grain(18, 25, 45)
   ),
   look(
@@ -264,11 +369,12 @@ export const CINEMA = collection('cinema', [
     {
       tags: ['cinema', 'negative', 'daylight', 'fine grain', 'kodak', 'vision3', '50d'],
       inspiredBy: 'Kodak Vision3 50D 5203, printed',
-      description: tk('Crisp, clean, fine-grained daylight negative.')
+      description: tk('Crisp, clean, fine-grained daylight negative.'),
+      version: 2
     },
     sCurve(30),
     presence({ saturation: 10 }),
-    wheel('shadows', 190, 6),
+    lift(190, 6),
     grain(6, 15, 30)
   ),
   look(

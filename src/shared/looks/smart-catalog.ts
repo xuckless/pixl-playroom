@@ -9,22 +9,23 @@ import {
   collection,
   deblur,
   denoise,
-  fade,
-  foliage,
+  gain,
+  gamma,
   grain,
   hsl,
+  hueCurve,
   inverted,
+  lift,
   look,
   mask,
+  matte,
   minus,
   part,
   presence,
-  rolloff,
+  prim,
   sCurve,
-  split,
   tone,
   vignette,
-  wheel,
   within
 } from './dsl'
 import { tk } from '../i18n'
@@ -55,9 +56,10 @@ export const SMART = collection('smart', [
     tk('Subject Pop'),
     {
       tags: ['smart', 'subject', 'pop', 'separation', 'portrait', 'product'],
-      description: tk('The subject brighter and crisper; the background a step darker.')
+      description: tk('The subject brighter and crisper; the background a step darker.'),
+      version: 2
     },
-    tone({ contrast: 8 }),
+    prim({ contrast: 1.05 }),
     mask('subject', tk('Subject'), [part.subject()], {
       'basic.exposure': 0.2,
       'presence.clarity': 15,
@@ -73,7 +75,8 @@ export const SMART = collection('smart', [
     tk('Quiet Background'),
     {
       tags: ['smart', 'background', 'product', 'clean', 'muted', 'subject'],
-      description: tk('The background drained and softened so the subject carries the picture.')
+      description: tk('The background drained and softened so the subject carries the picture.'),
+      version: 2
     },
     mask('background', tk('Background'), [part.background()], {
       'presence.saturation': -60,
@@ -84,16 +87,17 @@ export const SMART = collection('smart', [
       'presence.vibrance': 15,
       'presence.clarity': 10
     }),
-    tone({ contrast: 5 })
+    prim({ contrast: 1.03 })
   ),
   look(
     'teal-water',
     tk('Teal Water'),
     {
       tags: ['smart', 'water', 'sea', 'teal', 'colour range', 'travel'],
-      description: tk('Water and sea pushed toward clear teal, the rest left alone.')
+      description: tk('Water and sea pushed toward clear teal, the rest left alone.'),
+      version: 2
     },
-    tone({ contrast: 6 }),
+    prim({ contrast: 1.04 }),
     mask(
       'water',
       tk('Water'),
@@ -118,9 +122,11 @@ export const SMART = collection('smart', [
     tk('Autumn Turn'),
     {
       tags: ['smart', 'foliage', 'autumn', 'fall', 'colour range', 'landscape'],
-      description: tk('Green leaves turned to amber and rust; skies and skin untouched.')
+      description: tk('Green leaves turned to amber and rust; skies and skin untouched.'),
+      version: 2
     },
-    split(200, 8, 40, 12),
+    lift(200, 8),
+    gain(40, 12),
     mask(
       'leaves',
       tk('Leaves'),
@@ -145,7 +151,8 @@ export const SMART = collection('smart', [
     tk('Lush Greens'),
     {
       tags: ['smart', 'foliage', 'green', 'colour range', 'landscape', 'nature'],
-      description: tk('Deeper, richer foliage; everything else as it was.')
+      description: tk('Deeper, richer foliage; everything else as it was.'),
+      version: 2
     },
     mask(
       'leaves',
@@ -165,7 +172,7 @@ export const SMART = collection('smart', [
         'hsl.yellow.luminance': -10
       }
     ),
-    tone({ contrast: 6 })
+    prim({ contrast: 1.04 })
   ),
   look(
     'graduated-sky',
@@ -186,7 +193,8 @@ export const SMART = collection('smart', [
     tk('Sunset Grad'),
     {
       tags: ['smart', 'sky', 'gradient', 'sunset', 'warm', 'golden'],
-      description: tk('A warm graduated filter from the top, as a sunset filter would.')
+      description: tk('A warm graduated filter from the top, as a sunset filter would.'),
+      version: 2
     },
     mask('grad', tk('Top gradient'), [part.linear([0.5, 0], [0.5, 0.55])], {
       'wb.temperature': 30,
@@ -194,20 +202,21 @@ export const SMART = collection('smart', [
       'basic.exposure': -0.3,
       'presence.saturation': 20
     }),
-    tone({ contrast: 8 })
+    prim({ contrast: 1.05 })
   ),
   look(
     'spotlight',
     tk('Spotlight'),
     {
       tags: ['smart', 'vignette', 'light', 'focus', 'radial', 'moody'],
-      description: tk('Light falling off around the middle of the frame, as from a spot.')
+      description: tk('Light falling off around the middle of the frame, as from a spot.'),
+      version: 2
     },
     mask('edge', tk('Around the light'), [inverted(part.radial([0.5, 0.48], 0.75, 0.6, 70))], {
       'basic.exposure': -0.55,
       'presence.saturation': -10
     }),
-    tone({ contrast: 10 })
+    prim({ contrast: 1.06 })
   ),
   look(
     'clean-whites',
@@ -230,29 +239,39 @@ export const SMART = collection('smart', [
       tags: ['smart', 'shadows', 'teal', 'cinematic', 'luminance range'],
       description: tk(
         'Teal laid into the deep tones only, where a split tone would tint the mids too.'
-      )
+      ),
+      version: 2
     },
     sCurve(15),
     mask(
       'shadows',
       tk('Deep tones'),
       [part.range({ luma: { centre: 0.1, width: 0.25, softness: 0.15 }, smoothness: 20 })],
-      { 'colorGrade.global.hue': 190, 'colorGrade.global.saturation': 35 }
+      // Offset pushed toward teal (190°) at the strength Lightroom's Global wheel had at 35.
+      { 'primaries.offset.r': -0.0583, 'primaries.offset.g': 0.0158, 'primaries.offset.b': 0.0306 }
     ),
-    wheel('highlights', 40, 8)
+    gain(40, 8)
   ),
   look(
     'night-city-clean',
     tk('Night City Clean'),
     {
       tags: ['smart', 'night', 'city', 'neon', 'denoise', 'ai', 'high iso'],
-      description: tk('AI denoise for a high-ISO night shot, then a cool neon grade.')
+      description: tk('AI denoise for a high-ISO night shot, then a cool neon grade.'),
+      version: 2
     },
     denoise(60),
     sCurve(20),
-    split(195, 22, 320, 10),
+    lift(195, 22),
+    gain(320, 10),
     presence({ vibrance: 15, clarity: 8 }),
-    hsl({ magenta: [0, 20, 0], purple: [0, 15, 0], blue: [-8, 10, -10] })
+    hueCurve('hueHue', [[240, -2.4]]),
+    hueCurve('hueSat', [
+      [315, 1.2],
+      [275, 1.15],
+      [240, 1.1]
+    ]),
+    hsl({ blue: [0, 0, -10] })
   ),
   look(
     'high-iso-rescue',
@@ -269,11 +288,12 @@ export const SMART = collection('smart', [
     tk('Crisp Restore'),
     {
       tags: ['smart', 'deblur', 'sharpen', 'ai', 'restore', 'detail'],
-      description: tk('AI deblur for a soft or shaken shot, with gentle local contrast.')
+      description: tk('AI deblur for a soft or shaken shot, with gentle local contrast.'),
+      version: 2
     },
     deblur(50),
     presence({ clarity: 8 }),
-    tone({ contrast: 5 })
+    prim({ contrast: 1.03 })
   ),
   look(
     'subject-denoise',
@@ -293,7 +313,8 @@ export const SMART = collection('smart', [
     tk('Moody Sky'),
     {
       tags: ['smart', 'sky', 'moody', 'dramatic', 'landscape', 'storm'],
-      description: tk('The sky (not the subject against it) darkened, deepened and given weight.')
+      description: tk('The sky (not the subject against it) darkened, deepened and given weight.'),
+      version: 2
     },
     mask(
       'sky',
@@ -308,7 +329,7 @@ export const SMART = collection('smart', [
       },
       { required: true }
     ),
-    tone({ contrast: 8 })
+    prim({ contrast: 1.05 })
   ),
   look(
     'blue-sky-pop',
@@ -398,16 +419,25 @@ export const SMART = collection('smart', [
       inspiredBy: 'The Batman (2022)',
       description: tk(
         'Rain City Noir, with faces lifted out of the crushed dark and the background pressed down.'
-      )
+      ),
+      version: 2
     },
     sCurve(45),
     tone({ whites: -25, highlights: -25, shadows: -20, blacks: -15 }),
-    rolloff(0.04),
+    matte(0, 0.04),
     presence({ saturation: -30 }),
-    wheel('midtones', 28, 25),
-    wheel('shadows', 20, 15),
-    hsl({ red: [0, 25, -5], orange: [-4, 5, -5], aqua: [0, -60, 0], blue: [0, -60, -10] }),
-    foliage(0, -50, 0),
+    gamma(28, 25),
+    lift(20, 15),
+    hueCurve('hueHue', [[30, -1.2]]),
+    hueCurve('hueSat', [
+      [0, 1.25],
+      [30, 1.05],
+      [180, 0.4],
+      [240, 0.4],
+      [120, 0.5],
+      [60, 0.7]
+    ]),
+    hsl({ red: [0, 0, -5], orange: [0, 0, -5], blue: [0, 0, -10] }),
     mask(
       'skin',
       tk('Faces'),
@@ -423,7 +453,8 @@ export const SMART = collection('smart', [
     tk('Golden Hour Skin'),
     {
       tags: ['smart', 'portrait', 'skin', 'golden hour', 'warm', 'glow'],
-      description: tk('A warm, glowing light on skin only, as late sun would give.')
+      description: tk('A warm, glowing light on skin only, as late sun would give.'),
+      version: 2
     },
     mask(
       'skin',
@@ -432,7 +463,8 @@ export const SMART = collection('smart', [
       { 'wb.temperature': 18, 'basic.exposure': 0.1, 'basic.highlights': -15 },
       { required: true }
     ),
-    split(210, 6, 40, 10),
-    fade(0.01)
+    lift(210, 6),
+    gain(40, 10),
+    matte(0.01)
   )
 ])

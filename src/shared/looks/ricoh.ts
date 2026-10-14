@@ -1,16 +1,20 @@
 /** Street looks in the spirit of Ricoh GR's image controls. */
 import {
   collection,
-  fade,
+  gain,
+  gamma,
   grain,
+  lift,
   look,
+  matte,
   mono,
+  offset,
   presence,
+  prim,
   rgb,
-  split,
   tone,
   vignette,
-  wheel
+  lumSat
 } from './dsl'
 import { tk } from '../i18n'
 
@@ -23,11 +27,12 @@ export const RICOH = collection('camera/ricoh', [
     {
       tags: ['positive', 'slide', 'street', 'ricoh'],
       inspiredBy: gr('Positive Film'),
-      description: tk('Contrasty slide colour with a faint yellow-green.')
+      description: tk('Contrasty slide colour with a faint yellow-green.'),
+      version: 2
     },
-    tone({ contrast: 15 }),
+    prim({ contrast: 1.09 }),
     presence({ saturation: 20 }),
-    wheel('global', 75, 6)
+    offset(75, 6)
   ),
   look(
     'negative-film',
@@ -35,12 +40,14 @@ export const RICOH = collection('camera/ricoh', [
     {
       tags: ['negative', 'cool', 'street', 'blue', 'ricoh'],
       inspiredBy: gr('Negative Film'),
-      description: tk('Cool, low-saturation negative with blue shadows.')
+      description: tk('Cool, low-saturation negative with blue shadows.'),
+      version: 2
     },
-    tone({ contrast: 25, whites: 10 }),
+    prim({ contrast: 1.15 }),
+    tone({ whites: 10 }),
     presence({ saturation: -25 }),
-    wheel('shadows', 210, 20),
-    wheel('global', 205, 10)
+    lift(210, 20),
+    offset(205, 10)
   ),
   look(
     'street-bleach',
@@ -48,11 +55,19 @@ export const RICOH = collection('camera/ricoh', [
     {
       tags: ['bleach bypass', 'gritty', 'street', 'ricoh'],
       inspiredBy: gr('Bleach Bypass'),
-      description: tk('Hard and drained.')
+      description: tk('Hard and drained.'),
+      version: 2
     },
-    tone({ contrast: 40 }),
+    prim({ contrast: 1.24 }),
     presence({ saturation: -50 }),
-    wheel('shadows', 200, 5)
+    lift(200, 5),
+    // Silver left in: the ends lose colour first.
+    lumSat([
+      [0, 0.7],
+      [0.35, 1],
+      [0.65, 1],
+      [1, 0.7]
+    ])
   ),
   look(
     'retro-print',
@@ -60,12 +75,13 @@ export const RICOH = collection('camera/ricoh', [
     {
       tags: ['retro', 'vintage', 'faded', 'warm', 'ricoh'],
       inspiredBy: gr('Retro'),
-      description: tk('Faded, warm and vignetted.')
+      description: tk('Faded, warm and vignetted.'),
+      version: 2
     },
-    tone({ contrast: -10 }),
-    fade(0.05),
+    prim({ contrast: 0.94 }),
+    matte(0.05),
     presence({ saturation: -30 }),
-    wheel('global', 45, 20),
+    offset(45, 20),
     vignette(-25)
   ),
   look(
@@ -74,10 +90,12 @@ export const RICOH = collection('camera/ricoh', [
     {
       tags: ['bw', 'mono', 'street', 'gritty', 'contrast', 'ricoh'],
       inspiredBy: gr('Hi-Contrast B&W'),
-      description: tk('Inky blacks, blown whites and heavy grain.')
+      description: tk('Inky blacks, blown whites and heavy grain.'),
+      version: 2
     },
     mono(),
-    tone({ contrast: 80, blacks: -20, whites: 20 }),
+    prim({ contrast: 1.48 }),
+    tone({ blacks: -20, whites: 20 }),
     presence({ clarity: 30 }),
     grain(60, 45, 80),
     vignette(-40)
@@ -88,11 +106,13 @@ export const RICOH = collection('camera/ricoh', [
     {
       tags: ['cross process', 'creative', 'saturated', 'ricoh'],
       inspiredBy: gr('Cross Process'),
-      description: tk('Cyan shadows, yellow highlights, loud colour.')
+      description: tk('Cyan shadows, yellow highlights, loud colour.'),
+      version: 2
     },
     tone({ contrast: 25 }),
     presence({ saturation: 20 }),
-    split(200, 25, 65, 25),
+    lift(200, 25),
+    gain(65, 25),
     rgb({
       b: [
         [0, 0.06],
@@ -107,13 +127,14 @@ export const RICOH = collection('camera/ricoh', [
     {
       tags: ['cinema', 'yellow', 'warm', 'ricoh'],
       inspiredBy: gr('Cinema (Yellow)'),
-      description: tk('Muted cinema colour with yellow mids.')
+      description: tk('Muted cinema colour with yellow mids.'),
+      version: 2
     },
-    tone({ contrast: 12 }),
+    prim({ contrast: 1.07 }),
     presence({ saturation: -18 }),
-    wheel('midtones', 50, 22),
-    wheel('highlights', 45, 16),
-    wheel('shadows', 190, 8)
+    gamma(50, 22),
+    gain(45, 16),
+    lift(190, 8)
   ),
   look(
     'cinema-green',
@@ -121,12 +142,13 @@ export const RICOH = collection('camera/ricoh', [
     {
       tags: ['cinema', 'green', 'teal', 'ricoh'],
       inspiredBy: gr('Cinema (Green)'),
-      description: tk('Muted cinema colour with green mids.')
+      description: tk('Muted cinema colour with green mids.'),
+      version: 2
     },
-    tone({ contrast: 10 }),
+    prim({ contrast: 1.06 }),
     presence({ saturation: -15 }),
-    wheel('midtones', 150, 12),
-    wheel('shadows', 175, 10)
+    gamma(150, 12),
+    lift(175, 10)
   ),
   look(
     'soft-monotone',
@@ -134,12 +156,14 @@ export const RICOH = collection('camera/ricoh', [
     {
       tags: ['bw', 'mono', 'soft', 'ricoh'],
       inspiredBy: gr('Soft Monotone'),
-      description: tk('A soft, faded mono.')
+      description: tk('A soft, faded mono.'),
+      version: 2
     },
     mono({ red: 6, orange: 6 }),
-    tone({ contrast: -25, shadows: 10 }),
-    fade(0.04),
-    wheel('global', 30, 5)
+    prim({ contrast: 0.85 }),
+    tone({ shadows: 10 }),
+    matte(0.04),
+    offset(30, 5)
   ),
   look(
     'hard-monotone',
@@ -147,10 +171,12 @@ export const RICOH = collection('camera/ricoh', [
     {
       tags: ['bw', 'mono', 'hard', 'ricoh'],
       inspiredBy: gr('Hard Monotone'),
-      description: tk('A punchy, crisp mono.')
+      description: tk('A punchy, crisp mono.'),
+      version: 2
     },
     mono({ blue: -12, aqua: -6 }),
-    tone({ contrast: 35, highlights: -15, blacks: -12 }),
+    prim({ contrast: 1.21 }),
+    tone({ highlights: -15, blacks: -12 }),
     presence({ clarity: 25, texture: 10 })
   )
 ])

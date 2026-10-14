@@ -360,7 +360,15 @@ export interface SmartPhoto {
 }
 
 /** Mask settings a smart look may set: colour and tone, the mask's white, never its noise or lens. */
-const ADJUST_ROOTS = ['basic', 'presence', 'toneCurve', 'hsl', 'colorGrade']
+const ADJUST_ROOTS = [
+  'basic',
+  'presence',
+  'toneCurve',
+  'hsl',
+  'colorGrade',
+  'primaries',
+  'logWheels'
+]
 const ADJUST_EXTRA: Record<string, [number, number]> = {
   'basic.exposure': [-5, 5],
   'wb.temperature': [-100, 100],
