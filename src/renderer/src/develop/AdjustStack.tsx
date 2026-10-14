@@ -5,6 +5,7 @@ import {
   cardChanged,
   cardFields,
   CARDS,
+  cardShows,
   type CardId,
   type CardSpec
 } from '../../../shared/cards'
@@ -29,6 +30,7 @@ import {
   WhiteBalanceBody
 } from '../panels/global'
 import { HealPanel } from '../panels/heal'
+import { PrimariesBody } from '../panels/resolve'
 import { rich, t, tk } from '../lib/i18n'
 import { LensPanel } from '../panels/lens'
 import { TIPS } from '../panels/tips'
@@ -45,6 +47,7 @@ const BODIES: Record<CardId, ComponentType> = {
   mixer: MixerBody,
   grading: GradingBody,
   curve: CurveBody,
+  primaries: PrimariesBody,
   detail: DetailBody,
   effects: EffectsBody,
   optics: LensPanel,
@@ -77,6 +80,39 @@ function ScopeChip(): React.JSX.Element | null {
         onClick={() => useDevelop.getState().setLayer(null)}
       >
         <Icon name="close" />
+      </button>
+    </div>
+  )
+}
+
+/**
+ * When the colour tools not shown hold edits (a photo graded with the other
+ * set): they still act, and the chip says so and switches over.
+ */
+function OtherToolsChip(): React.JSX.Element | null {
+  const tools = useUi((s) => s.colourTools)
+  const setTools = useUi((s) => s.setColourTools)
+  const masksOpen = useUi((s) => s.masksWin.open)
+  const other = tools === 'lightroom' ? 'resolve' : 'lightroom'
+  const held = useDevelop((s) => {
+    if (!s.recipe) return false
+    const layer = scopeLayer(s.recipe, s.layerId, masksOpen)
+    const view = scopedView(s.recipe, layer)
+    const base = cardBase(view, s.session?.isRaw ?? false, !!layer)
+    return CARDS.some(
+      (c) => c.set === other && (!layer || c.inMask) && cardChanged(c, view, base, !!layer)
+    )
+  })
+  if (!held) return null
+  return (
+    <div className="tools-chip">
+      <span>
+        {other === 'resolve'
+          ? t('Resolve colour edits are on this photo')
+          : t('Lightroom colour edits are on this photo')}
+      </span>
+      <button className="sm" onClick={() => setTools(other)}>
+        {t('Show')}
       </button>
     </div>
   )
@@ -163,7 +199,8 @@ export function AdjustStack(): React.JSX.Element {
   const drawer = useUi((s) => s.drawer)
   const layer = useScope().layer
   const overlayHue = useUi((s) => s.maskOverlay.hue)
-  const cards = CARDS.filter((c) => !layer || c.inMask)
+  const tools = useUi((s) => s.colourTools)
+  const cards = CARDS.filter((c) => (!layer || c.inMask) && cardShows(c, tools))
   return (
     <div
       className={`panels adjust${layer ? ' scoped' : ''}`}
@@ -173,6 +210,7 @@ export function AdjustStack(): React.JSX.Element {
       {drawer === 'adjust' ? (
         <>
           <AdjustHead />
+          <OtherToolsChip />
           {cards.map((c) => (
             <AdjustCard key={c.id} spec={c} />
           ))}

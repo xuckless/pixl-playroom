@@ -48,7 +48,7 @@ type Read = (r: Recipe) => number
 type Write = (r: Recipe, v: number) => void
 
 /** A slider bound to one number in the recipe; `label` in English (`tk`), shown translated, the History step's label. */
-function RS({
+export function RS({
   label,
   read,
   write,

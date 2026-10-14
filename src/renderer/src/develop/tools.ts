@@ -1,4 +1,4 @@
-import { CARDS, type CardId } from '../../../shared/cards'
+import { CARDS, cardShows, cardSpec, type CardId } from '../../../shared/cards'
 import { useDevelop, type Tool } from '../state/develop'
 import { scoped } from '../state/scope'
 import { useUi, type Drawer } from '../state/ui'
@@ -54,13 +54,17 @@ export function toggleDrawer(d: Exclude<Drawer, 'adjust'>): void {
 /** The cards the column shows now: in a mask, only those a mask carries. */
 export function visibleCards(): CardId[] {
   const inMask = scoped.layer() !== null
-  return CARDS.filter((c) => !inMask || c.inMask).map((c) => c.id)
+  const tools = useUi.getState().colourTools
+  return CARDS.filter((c) => (!inMask || c.inMask) && cardShows(c, tools)).map((c) => c.id)
 }
 
 /** Bring a card into view: the cards back if a tool's panel was up, the card open and scrolled to. */
 export function jumpToCard(id: CardId): void {
   openDrawer('adjust')
   const ui = useUi.getState()
+  // A card of the colour tools not shown brings them.
+  const set = cardSpec(id).set
+  if (set && set !== ui.colourTools) ui.setColourTools(set)
   ui.setCardOpen(id, true)
   ui.setFocusCard(id)
   // Once it has rendered open (and, in solo, the others have folded).

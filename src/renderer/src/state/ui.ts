@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import { DEFAULT_ENHANCE, normaliseEnhance, type EnhanceSettings } from '../../../shared/enhance'
 import type { SpotKind, SpotRefineChoice } from '../../../shared/retouch'
 import { aiDenoiseModel, type AiDenoiseModel } from '../../../shared/recipe'
-import { isCardId, type CardId } from '../../../shared/cards'
+import { cardSpec, isCardId, type CardId } from '../../../shared/cards'
 import { migrateUi } from './uiMigrate'
 import { DEFAULT_SCOPES, normaliseScopes, type ScopePrefs } from '../../../shared/scopes'
 import { tk } from '../lib/i18n'
@@ -293,7 +293,12 @@ export const useUi = create<UiState>()(
       scopes: DEFAULT_SCOPES,
       setScopes: (p) => set((s) => ({ scopes: normaliseScopes({ ...s.scopes, ...p }) })),
       colourTools: 'lightroom',
-      setColourTools: (colourTools) => set({ colourTools }),
+      setColourTools: (colourTools) =>
+        set((s) => {
+          // The focused card stays in view: one of the set going away gives way to Light.
+          const away = cardSpec(s.focusCard).set
+          return { colourTools, ...(away && away !== colourTools ? { focusCard: 'light' } : {}) }
+        }),
       nodeView: false,
       setNodeView: (nodeView) => set({ nodeView }),
       rebuildQuiet: [],

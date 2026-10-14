@@ -8,6 +8,7 @@
  * Every recipe is complete: no field is optional, so an old sidecar is
  * brought up to date by `normaliseRecipe` rather than by `?.` everywhere.
  */
+import { defaultPrimaries, normalisePrimaries, type PrimariesSetting } from './resolve'
 import { NO_ADD, type AddColourSetting } from './addcolor'
 import type { BlendMode, CropRect, KeyBand, MaskMode } from './engine-types'
 import { defaultLens, type LensSetting } from './lens'
@@ -546,6 +547,7 @@ export const SETTINGS_KEYS = [
   'hsl',
   'pointColors',
   'colorGrade',
+  'primaries',
   'detail',
   'effects',
   'calibration'
@@ -569,6 +571,7 @@ export const EDIT_SECTIONS = [
   'mixer',
   'grading',
   'curve',
+  'primaries',
   'detail',
   'effects',
   'optics',
@@ -606,6 +609,8 @@ export interface Recipe {
   bwMix: Record<HslBand, number>
   pointColors: PointColorSetting[]
   colorGrade: ColorGradeSetting
+  /** DaVinci Resolve's primaries (shared/resolve.ts): the Resolve colour tools' first card. */
+  primaries: PrimariesSetting
   detail: DetailSetting
   /** Lens corrections: profile, manual, chromatic aberration, defringe (see `lens.ts`). */
   lens: LensSetting
@@ -736,6 +741,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       balance: 0,
       add: { ...NO_ADD }
     },
+    primaries: defaultPrimaries(),
     detail: {
       sharpenAmount: isRaw ? 40 : 0,
       sharpenRadius: 1,
@@ -844,6 +850,7 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     r.profile = base.profile
   }
   r.toneCurve = normaliseToneCurve(r.toneCurve)
+  r.primaries = normalisePrimaries(r.primaries)
   // Only sections there are, each switched off by `true` (`fill` keeps any key).
   r.off = Object.fromEntries(
     Object.entries(r.off ?? {}).filter(
@@ -1198,6 +1205,7 @@ export const RECIPE_GROUPS = [
   'toneCurve',
   'hsl',
   'colorGrade',
+  'primaries',
   'detailSharpen',
   'detailNoise',
   'lens',
@@ -1222,6 +1230,7 @@ export const GROUP_LABELS: Record<RecipeGroup, string> = {
   toneCurve: tk('Tone curve'),
   hsl: tk('HSL / B&W mix'),
   colorGrade: tk('Colour grading'),
+  primaries: tk('Primaries'),
   detailSharpen: tk('Sharpening'),
   detailNoise: tk('Noise reduction'),
   lens: tk('Lens corrections'),
@@ -1267,6 +1276,9 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         break
       case 'colorGrade':
         r.colorGrade = f.colorGrade
+        break
+      case 'primaries':
+        r.primaries = f.primaries
         break
       case 'detailSharpen':
         r.detail.sharpenAmount = f.detail.sharpenAmount
@@ -1420,6 +1432,8 @@ function groupValues(r: Recipe, g: RecipeGroup): unknown[] {
       return [r.hsl, r.bwMix, r.pointColors]
     case 'colorGrade':
       return [r.colorGrade]
+    case 'primaries':
+      return [r.primaries]
     case 'detailSharpen':
       return [d.sharpenAmount, d.sharpenRadius, d.sharpenDetail, d.sharpenMasking]
     case 'detailNoise':

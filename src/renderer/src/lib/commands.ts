@@ -162,7 +162,9 @@ const labels = (['red', 'yellow', 'green', 'blue'] as const).map<KeyCommand>((la
   }
 }))
 
-const cards = CARDS.map<KeyCommand>((c, i) => ({
+// ⌘1…⌘9 stay on the cards they always had: the Resolve cards came later and take none.
+const KEYED = CARDS.filter((c) => c.set !== 'resolve').map((c) => c.id)
+const cards = CARDS.map<KeyCommand>((c) => ({
   id: `card.${c.id}`,
   // Made when read, in the language in force (`t()` of it where it is shown changes nothing).
   get label() {
@@ -170,7 +172,8 @@ const cards = CARDS.map<KeyCommand>((c, i) => ({
   },
   group: 'Tools',
   context: 'develop',
-  keys: i < 9 ? [`Mod+${i + 1}`] : [],
+  keys:
+    KEYED.indexOf(c.id) >= 0 && KEYED.indexOf(c.id) < 9 ? [`Mod+${KEYED.indexOf(c.id) + 1}`] : [],
   run: (e) => {
     jumpToCard(c.id)
     stop(e)

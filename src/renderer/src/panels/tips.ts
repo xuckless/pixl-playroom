@@ -336,6 +336,17 @@ export const TIPS = {
   },
 
   // ── Calibration ────────────────────────────────────────────────────
+  primaries: {
+    what: tk(
+      'DaVinci Resolve’s primary correction. Lift moves the blacks, Gamma the midtones, Gain the whites, Offset everything alike; each wheel’s disc sets its colour, the ring under it its brightness.'
+    ),
+    expect: tk(
+      'The numbers are Resolve’s: Y for all three channels, then R, G and B. Contrast turns about the Pivot; Sat and Hue are at 50 untouched.'
+    ),
+    tip: tk(
+      'Balance with Offset first, then shape with Lift, Gamma and Gain while watching the parade. Shift makes any drag finer; double-click a wheel’s name to reset it.'
+    )
+  },
   calibration: {
     what: tk('Shifts how the camera’s red, green and blue primaries are read.'),
     expect: tk('Broad, subtle colour changes across the whole palette.'),

@@ -952,3 +952,154 @@ aside.right .panels.adjust {
   color: var(--text);
   font-size: 12px;
 }
+
+/* ── DaVinci Resolve's wheels (components/grading/GradeWheel.tsx) ──── */
+.gwheels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 10px;
+  margin: 12px 0 4px;
+}
+.gwheel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.gw-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text2);
+  cursor: default;
+  user-select: none;
+}
+.gw-disc {
+  position: relative;
+  border-radius: 50%;
+  background-size: 100% 100%;
+  box-shadow:
+    0 0 0 1px var(--hair2),
+    inset 0 0 0 1px rgb(var(--shade-rgb) / 0.4);
+  cursor: crosshair;
+  touch-action: none;
+}
+.gw-disc.dragging {
+  box-shadow:
+    0 0 0 1px var(--acc),
+    0 0 14px var(--glow-soft);
+}
+.gw-cross::before,
+.gw-cross::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: rgb(var(--fg-rgb) / 0.35);
+  pointer-events: none;
+}
+.gw-cross::before {
+  width: 9px;
+  height: 1px;
+  transform: translate(-50%, -50%);
+}
+.gw-cross::after {
+  width: 1px;
+  height: 9px;
+  transform: translate(-50%, -50%);
+}
+.gw-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 8px rgb(var(--fg-rgb) / 0.5);
+  pointer-events: none;
+}
+.gw-ring {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, rgb(var(--fg-rgb) / 0.06), rgb(var(--fg-rgb) / 0.22));
+  border: 1px solid var(--hair);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.gw-ring.dragging {
+  border-color: var(--acc);
+}
+.gw-ring-knob {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--text);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.gw-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  width: 100%;
+}
+.gw-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+.gw-ch {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+.gw-r .gw-ch {
+  color: var(--ch-r);
+}
+.gw-g .gw-ch {
+  color: var(--ch-g);
+}
+.gw-b .gw-ch {
+  color: var(--ch-b);
+}
+.gw-field input {
+  width: 100%;
+  min-width: 0;
+  height: 18px;
+  padding: 0 2px;
+  font-size: 10px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  background: rgb(var(--shade-rgb) / 0.35);
+  border: 1px solid var(--hair);
+  border-radius: 3px;
+  color: var(--text);
+}
+
+/* The colour tools not shown hold edits (develop/AdjustStack.tsx). */
+.tools-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent);
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--acc) 10%, transparent);
+  font-size: 12px;
+  color: var(--text2);
+}
+.tools-chip span {
+  flex: 1;
+  min-width: 0;
+}

@@ -1,6 +1,11 @@
 /* Near-black OLED surfaces, one matte purple accent, hairlines that end in
    light. Surfaces have square corners; controls round by at most 2px. */
 :root {
+  /* A colour channel's own colour: the R, G and B of numbers and scopes. */
+  --ch-r: #ff6b7d;
+  --ch-g: #6be38f;
+  --ch-b: #7b9cff;
+
   color-scheme: dark;
 
   /* surfaces, darkest first */

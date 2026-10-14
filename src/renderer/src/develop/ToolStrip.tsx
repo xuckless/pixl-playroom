@@ -1,4 +1,4 @@
-import { CARDS } from '../../../shared/cards'
+import { CARDS, cardShows } from '../../../shared/cards'
 import { GlassSelect } from '../components/GlassSelect'
 import { Icon, PathIcon } from '../components/icons'
 import { useKeyHint } from '../lib/commands'
@@ -30,7 +30,8 @@ export function ToolStrip(): React.JSX.Element {
     const k = key(id)
     return k ? `${name} (${k})` : name
   }
-  const options = CARDS.filter((c) => !inMask || c.inMask).map((c) => ({
+  const tools = useUi((s) => s.colourTools)
+  const options = CARDS.filter((c) => (!inMask || c.inMask) && cardShows(c, tools)).map((c) => ({
     value: c.id,
     label: t(c.title),
     hint: key(`card.${c.id}`)

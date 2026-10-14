@@ -60,6 +60,7 @@ import {
 import { opFromAbsolute, opFromRelative, type OpWhite } from './wb'
 import { tk } from './i18n'
 import { effective } from './edits'
+import { primariesOp, primariesWhite, scalePrimaries } from './resolve'
 
 // ── Spaces ───────────────────────────────────────────────────────────────────
 
@@ -850,6 +851,7 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
       shiftSat: m(p.shiftSat),
       shiftLum: m(p.shiftLum)
     })),
+    primaries: scalePrimaries(s.primaries, k),
     colorGrade: {
       ...cg,
       shadows: wheel(cg.shadows),
@@ -1277,6 +1279,12 @@ function settingsStages(
   const wb = base ? baseWhite(r, ctx) : layerWhite(r.wb)
   if (wb)
     linear.push({ WhiteBalance: { temperature_kelvin: round4(wb.kelvin), tint: round4(wb.tint) } })
+  // Resolve's Temp and Tint, on top of the white balance (until E75 puts them with the primaries).
+  const rw = primariesWhite(r.primaries)
+  if (rw) {
+    const w = opFromRelative(rw.temperature, rw.tint)
+    linear.push({ WhiteBalance: { temperature_kelvin: round4(w.kelvin), tint: round4(w.tint) } })
+  }
   const mix = calibrationMatrix(r.calibration)
   if (mix) linear.push({ ChannelMixer: { red: mix[0], green: mix[1], blue: mix[2] } })
   if (r.basic.exposure !== 0)
@@ -1414,6 +1422,9 @@ function settingsStages(
     tail.push({ Primary: primary({ hue_shift: round4(clamp(p.hue, -100, 100) * 0.6) }) })
   const cg = colorGradeOp(r.colorGrade, smoothing)
   if (cg) tail.push(cg)
+  // Resolve's primaries, after Lightroom's grading (shared/resolve.ts).
+  const prim = bw ? null : primariesOp(r.primaries)
+  if (prim) tail.push(prim)
   if (r.calibration.shadowsTint !== 0) {
     const a = round4((r.calibration.shadowsTint / 100) * 0.02)
     tail.push({ Primary: primary({ lift: { r: a / 2, g: -a, b: a / 2 } }) })

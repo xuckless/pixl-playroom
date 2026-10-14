@@ -17,6 +17,7 @@ export const CARD_IDS = [
   'mixer',
   'grading',
   'curve',
+  'primaries',
   'detail',
   'effects',
   'optics',
@@ -32,7 +33,19 @@ export interface CardSpec {
   fields: string[][]
   /** Whether a mask carries it (its fields are among a mask's settings). */
   inMask: boolean
+  /**
+   * The colour tools it belongs to (Settings → Interface → Colour tools):
+   * shown only with them; absent, with both. Hidden, it still acts.
+   */
+  set?: ColourToolSet
 }
+
+/** Lightroom's colour cards, or DaVinci Resolve's. */
+export type ColourToolSet = 'lightroom' | 'resolve'
+
+/** Whether a card shows with `tools`. */
+export const cardShows = (card: CardSpec, tools: ColourToolSet): boolean =>
+  !card.set || card.set === tools
 
 export const CARDS: CardSpec[] = [
   { id: 'wb', title: tk('White balance'), fields: [['wb']], inMask: true },
@@ -56,21 +69,42 @@ export const CARDS: CardSpec[] = [
       ['presence', 'saturation'],
       ['presence', 'hue']
     ],
-    inMask: true
+    inMask: true,
+    set: 'lightroom'
   },
   {
     id: 'mixer',
     title: tk('Colour mixer'),
     fields: [['hsl'], ['bwMix'], ['pointColors']],
-    inMask: true
+    inMask: true,
+    set: 'lightroom'
   },
-  { id: 'grading', title: tk('Colour grading'), fields: [['colorGrade']], inMask: true },
-  { id: 'curve', title: tk('Tone curve'), fields: [['toneCurve']], inMask: true },
+  {
+    id: 'grading',
+    title: tk('Colour grading'),
+    fields: [['colorGrade']],
+    inMask: true,
+    set: 'lightroom'
+  },
+  { id: 'curve', title: tk('Tone curve'), fields: [['toneCurve']], inMask: true, set: 'lightroom' },
+  {
+    id: 'primaries',
+    title: tk('Primaries'),
+    fields: [['primaries']],
+    inMask: true,
+    set: 'resolve'
+  },
   { id: 'detail', title: tk('Detail'), fields: [['detail']], inMask: true },
   { id: 'effects', title: tk('Effects'), fields: [['effects']], inMask: true },
   { id: 'optics', title: tk('Optics'), fields: [['lens']], inMask: false },
   { id: 'geometry', title: tk('Geometry'), fields: [['geometry', 'upright']], inMask: false },
-  { id: 'calibration', title: tk('Calibration'), fields: [['calibration']], inMask: true }
+  {
+    id: 'calibration',
+    title: tk('Calibration'),
+    fields: [['calibration']],
+    inMask: true,
+    set: 'lightroom'
+  }
 ]
 
 export const cardSpec = (id: CardId): CardSpec => CARDS.find((c) => c.id === id) ?? CARDS[0]

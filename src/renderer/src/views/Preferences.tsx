@@ -24,7 +24,7 @@ import { api, errorText } from '../lib/api'
 import { openReport, takeReportFocus } from '../lib/report'
 import { chooseLanguage, rich, t, tk, tp, useLanguage } from '../lib/i18n'
 import { useLibrary } from '../state/library'
-import { useUi, THEMES, type Theme } from '../state/ui'
+import { useUi, COLOUR_TOOLS, THEMES, type ColourTools, type Theme } from '../state/ui'
 import { KeyBindingsSection } from './KeyBindings'
 import { ModelsSection } from './ModelsSection'
 import { openReleaseNotes } from '../state/whatsNew'
@@ -743,6 +743,8 @@ function InterfaceSection(): React.JSX.Element {
   const setCullSuggest = useUi((s) => s.setCullSuggest)
   const theme = useUi((s) => s.theme)
   const setTheme = useUi((s) => s.setTheme)
+  const colourTools = useUi((s) => s.colourTools)
+  const setColourTools = useUi((s) => s.setColourTools)
   return (
     <fieldset>
       <legend>{t('Interface')}</legend>
@@ -757,10 +759,29 @@ function InterfaceSection(): React.JSX.Element {
           label={t('Theme')}
           tip={{
             what: t(
-              'How Playroom looks: Original, purple on near black; Calm pro, flat and quiet like a darkroom; Bolder modern, larger and softer, with a touch of colour per tool.'
+              'How Playroom looks: Original, purple on near black; Calm pro, flat and quiet in layered blacks; Bolder modern, black, purple and electric cyan, with glow.'
             ),
             expect: t(
               'Only the interface changes: your photos and their edits look the same in all three.'
+            )
+          }}
+        />
+      </div>
+      <div className="pref-row">
+        <Select<ColourTools>
+          label={t('Colour tools')}
+          value={colourTools}
+          options={COLOUR_TOOLS.map((x) => ({ value: x.value, label: t(x.label) }))}
+          onChange={setColourTools}
+        />
+        <InfoTip
+          label={t('Colour tools')}
+          tip={{
+            what: t(
+              'Which colour cards the develop panel shows: Lightroom’s (Colour, Colour mixer, Colour grading, Tone curve, Calibration) or DaVinci Resolve’s (Primaries with Lift, Gamma, Gain and Offset wheels, and more).'
+            ),
+            expect: t(
+              'Both act on the photo whichever shows: a photo edited with the other set keeps its look, and the panel says so.'
             )
           }}
         />
