@@ -354,6 +354,17 @@ export const TIPS = {
     ),
     tip: tk('Rebuild first; the AI suits pictures saved from the web or messaging apps.')
   },
+  'enhance.pixl': {
+    what: tk(
+      'PIXL’s own model repairs compression damage, noise and mild blur in one pass, on any photo: JPEG, HEIC, AVIF or a developed RAW.'
+    ),
+    expect: tk(
+      'Each level does what the one before does and more. It restores what the photo holds and invents no detail; a clean photo comes back as it was.'
+    ),
+    tip: tk(
+      'Clean up + denoise suits most phone photos; + sharpen for slight shake, missed focus or a soft lens.'
+    )
+  },
   'enhance.deblur': {
     what: tk('Reduces motion blur from camera shake or a moving subject.'),
     expect: tk('It cannot bring back focus that was missed.')

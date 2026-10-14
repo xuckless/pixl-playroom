@@ -283,12 +283,14 @@ export class LookRuns {
           this.deps.startJob({
             task: 'enhance',
             key,
-            // Deblur alone: the default's ×2 would enlarge the whole photo past the mask.
+            // Deblur alone: no upscale (it would enlarge the whole photo past
+            // the mask), and not the default's PIXL Enhance level.
             settings: {
               ...DEFAULT_ENHANCE,
               deblur: true,
               deblurStrength: op.strength,
-              upscale: 'off'
+              upscale: 'off',
+              pixl: 'off'
             },
             layerId: op.layerId,
             group

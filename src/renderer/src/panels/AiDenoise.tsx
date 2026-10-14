@@ -4,6 +4,9 @@
  * and kept in the photo's project; from then on it undoes, redoes and hides
  * in History, and its Strength changes, without the model running again.
  * With a mask selected the step is made inside it (the mask frozen as it is).
+ * Where the roster offers PIXL Enhance (shared/pixlenhance.ts), denoising is
+ * its job: the panel shows greyed, saying so, and steps already made keep
+ * their Strength and their remove.
  */
 import { HdrAiNote } from './HdrAiNote'
 import { useEffect, useState } from 'react'
@@ -25,6 +28,7 @@ import { askConfirm } from '../state/confirm'
 import { useScope } from '../state/scope'
 import { useUi } from '../state/ui'
 import { t, tk } from '../lib/i18n'
+import { PIXL_ENHANCE } from '../../../shared/pixlenhance'
 
 const ALL_MODELS: { value: AiDenoiseModel; label: string; hint: string }[] = [
   {
@@ -135,6 +139,7 @@ export function AiDenoise(): React.JSX.Element | null {
     Object.values(s.jobs).findLast((j) => j.key === key && j.task === 'denoise')
   )
   const models = useModels()
+  const moved = models.some((m) => m.id === PIXL_ENHANCE)
   const [lossless, setLossless] = useState(false)
   useEffect(() => {
     void api.app.getSetting<boolean>(LOSSLESS_KEY).then((v) => setLossless(v === true))
@@ -177,53 +182,68 @@ export function AiDenoise(): React.JSX.Element | null {
 
   return (
     <div className="ai-denoise">
-      <Select
-        label={t('Model')}
-        value={prefs.model}
-        options={MODELS.map((m) => ({ value: m.value, label: t(m.label) }))}
-        onChange={(v) => setPrefs({ model: v })}
-        title={modelHint && t(modelHint)}
-      />
-      <Slider
-        label={t('Strength')}
-        value={prefs.strength}
-        min={1}
-        max={100}
-        def={100}
-        format={(v) => `${Math.round(v)}%`}
-        tip={isRaw ? TIPS['detail.ai.raw'] : TIPS['detail.ai']}
-        onChange={(v) => setPrefs({ strength: v })}
-        onCommit={() => undefined}
-      />
-      <HdrAiNote />
-      <div className="ai-denoise-status">
-        {status && (
-          <span className={job?.phase === 'error' && !running ? 'error' : undefined}>{status}</span>
-        )}
-        {!isHdr &&
-          (running ? (
-            <button className="sm ghost" onClick={() => void api.ai.cancel(job.jobId)}>
-              {t('Cancel')}
-            </button>
-          ) : (
-            <button
-              className="sm primary"
-              onClick={() =>
-                void (async () => {
-                  // Its model first, offered there and then when it is not here yet.
-                  if (
-                    !(await ensureModelId(prefs.model, model?.installed === true, t('AI denoise')))
-                  )
-                    return
-                  await applyDenoise()
-                })().catch((e) => say(errorText(e), 'error'))
-              }
-            >
-              {layer
-                ? t('Denoise inside {{layer}}', { layer: layer.name })
-                : t('Denoise the photo')}
-            </button>
-          ))}
+      {moved && (
+        <p className="note small enhance-held">
+          {t(
+            'AI denoise is now part of Enhance: choose PIXL Enhance, Clean up + denoise. Steps already made here keep working.'
+          )}
+        </p>
+      )}
+      <div className={moved ? 'enhance-held-body' : undefined} inert={moved} aria-disabled={moved}>
+        <Select
+          label={t('Model')}
+          value={prefs.model}
+          options={MODELS.map((m) => ({ value: m.value, label: t(m.label) }))}
+          onChange={(v) => setPrefs({ model: v })}
+          title={modelHint && t(modelHint)}
+        />
+        <Slider
+          label={t('Strength')}
+          value={prefs.strength}
+          min={1}
+          max={100}
+          def={100}
+          format={(v) => `${Math.round(v)}%`}
+          tip={isRaw ? TIPS['detail.ai.raw'] : TIPS['detail.ai']}
+          onChange={(v) => setPrefs({ strength: v })}
+          onCommit={() => undefined}
+        />
+        <HdrAiNote />
+        <div className="ai-denoise-status">
+          {status && (
+            <span className={job?.phase === 'error' && !running ? 'error' : undefined}>
+              {status}
+            </span>
+          )}
+          {!isHdr &&
+            (running ? (
+              <button className="sm ghost" onClick={() => void api.ai.cancel(job.jobId)}>
+                {t('Cancel')}
+              </button>
+            ) : (
+              <button
+                className="sm primary"
+                onClick={() =>
+                  void (async () => {
+                    // Its model first, offered there and then when it is not here yet.
+                    if (
+                      !(await ensureModelId(
+                        prefs.model,
+                        model?.installed === true,
+                        t('AI denoise')
+                      ))
+                    )
+                      return
+                    await applyDenoise()
+                  })().catch((e) => say(errorText(e), 'error'))
+                }
+              >
+                {layer
+                  ? t('Denoise inside {{layer}}', { layer: layer.name })
+                  : t('Denoise the photo')}
+              </button>
+            ))}
+        </div>
       </div>
       {steps.length > 0 && (
         <div className="pixel-steps">

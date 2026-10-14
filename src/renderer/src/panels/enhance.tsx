@@ -21,8 +21,16 @@ import {
   type EnhanceRates,
   type JpegRestore,
   type UpscaleChoice,
-  type UpscaleSource
+  type UpscaleSource,
+  withPixl
 } from '../../../shared/enhance'
+import {
+  LEVEL_HINT,
+  LEVEL_LABEL,
+  PIXL_ENHANCE,
+  PIXL_LEVELS,
+  type PixlLevel
+} from '../../../shared/pixlenhance'
 import { ModelGet } from '../components/ModelGet'
 import { staleRawStep } from '../../../shared/pixels'
 import { developMark } from '../../../shared/rawcolour'
@@ -57,6 +65,12 @@ const SOURCE_OPTIONS: { value: UpscaleSource; label: string }[] = [
   { value: 'texture', label: tk('Keep texture · leaves the grain') }
 ]
 
+/** PIXL Enhance's level: off, or one of its three (each does what the one before does, and more). */
+const PIXL_OPTIONS: { value: PixlLevel | 'off'; label: string }[] = [
+  { value: 'off', label: tk('Off') },
+  ...PIXL_LEVELS.map((l) => ({ value: l, label: LEVEL_LABEL[l] }))
+]
+
 /** Why JPEG restore is skipped, by the photo's format. */
 const SKIPPED: Record<string, string> = {
   Raw: tk('Skipped: this photo is a RAW.'),
@@ -82,9 +96,12 @@ const duration = (ms: number): string =>
 const bytes = (b: number): string =>
   b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`
 
-/** Enhance is held until Playroom's own models: the panel shows, greyed, and runs nothing. */
-const ENHANCE_HELD = true
-
+/**
+ * Enhance is held until Playroom's own model, PIXL Enhance, is in the roster
+ * (a development kit's is): until then the panel shows, greyed, and runs
+ * nothing. With it, the panel is PIXL Enhance and the upscaler; JPEG restore
+ * and Deblur are its job (`withPixl`).
+ */
 /** The jobs started from this panel, newest batch last (kept across the panel's remounts). */
 let batch: string[] = []
 
@@ -98,10 +115,13 @@ export function EnhancePanel(): React.JSX.Element | null {
     return d.recipe.pixels.filter((p) => p.kind === 'enhance' && staleRawStep(p, true, mark)).length
   })
   const { layer } = useScope()
-  const s = useUi((u) => u.enhance)
+  const saved = useUi((u) => u.enhance)
   const set = useUi((u) => u.setEnhance)
   const targets = useTargets()
   const models = useModels()
+  const pixl = models.some((m) => m.id === PIXL_ENHANCE)
+  const held = !pixl
+  const s = pixl ? withPixl(saved) : saved
   const say = useLibrary((l) => l.say)
   const capable = useAiJobs((j) => j.capabilities)
   const jobs = useAiJobs((j) => j.jobs)
@@ -160,15 +180,17 @@ export function EnhancePanel(): React.JSX.Element | null {
 
   return (
     <ToolPanel>
-      {/* Held until Playroom's own models (the owner, 0.4.x): greyed, not
+      {/* Held until Playroom's own model (the owner, 0.4.x): greyed, not
           gone, and the steps already made keep rendering. */}
-      <p className="note small enhance-held">
-        {t(
-          'Enhance is coming back in a future update, with models we’re training ourselves. Photos you’ve already enhanced keep their result.'
-        )}
-      </p>
+      {held && (
+        <p className="note small enhance-held">
+          {t(
+            'Enhance is coming back in a future update, with models we’re training ourselves. Photos you’ve already enhanced keep their result.'
+          )}
+        </p>
+      )}
       <HdrAiNote offer={false} />
-      <div className="enhance-held-body" inert aria-disabled>
+      <div className={held ? 'enhance-held-body' : undefined} inert={held} aria-disabled={held}>
         {stale > 0 && (
           <p className="pixel-step-stale">
             {tp(
@@ -178,74 +200,104 @@ export function EnhancePanel(): React.JSX.Element | null {
             )}
           </p>
         )}
-        <Section id="enhance.jpeg" title={t('JPEG restore')} tip={TIPS['enhance.jpeg']}>
-          <Select
-            label={t('Method')}
-            value={s.jpeg}
-            options={shown(JPEG_OPTIONS)}
-            onChange={(jpeg) => set({ jpeg })}
-          />
-          {!isJpeg && s.jpeg !== 'off' && (
-            <p className="muted small">
-              {t(SKIPPED[info.input] ?? 'Skipped: this photo is not a JPEG.')}
-            </p>
-          )}
-          {s.jpeg === 'reconstruct' && (
-            <>
-              <Slider
-                label={t('Smoothing')}
-                value={s.smoothing}
-                min={0}
-                max={100}
-                def={50}
-                onChange={(smoothing) => set({ smoothing })}
-                onCommit={() => undefined}
-                title={t(
-                  "How far the blocks and banding are smoothed: only ever into what the file's own coefficients allow"
-                )}
-              />
-              {subsampled && (
-                <Toggle on={s.guidedChroma} onChange={(guidedChroma) => set({ guidedChroma })}>
-                  {t('Colour follows edges')}
-                </Toggle>
-              )}
-            </>
-          )}
-          {s.jpeg === 'fbcnn' && (
-            <>
-              <Slider
-                label={t('Strength')}
-                value={s.jpegStrength}
-                min={1}
-                max={100}
-                def={100}
-                onChange={(jpegStrength) => set({ jpegStrength })}
-                onCommit={() => undefined}
-              />
-              <ModelGet id="fbcnn-color-blind" models={models} />
-            </>
-          )}
-        </Section>
+        {pixl && (
+          <Section id="enhance.pixl" title={t('PIXL Enhance')} tip={TIPS['enhance.pixl']}>
+            <Select
+              label={t('Enhance level')}
+              value={s.pixl}
+              options={shown(PIXL_OPTIONS)}
+              onChange={(level) => set({ pixl: level })}
+            />
+            {s.pixl !== 'off' && (
+              <>
+                <p className="muted small">{t(LEVEL_HINT[s.pixl])}</p>
+                <Slider
+                  label={t('Strength')}
+                  value={s.pixlStrength}
+                  min={1}
+                  max={100}
+                  def={100}
+                  onChange={(pixlStrength) => set({ pixlStrength })}
+                  onCommit={() => undefined}
+                />
+                <ModelGet id={PIXL_ENHANCE} models={models} />
+              </>
+            )}
+          </Section>
+        )}
 
-        <Section id="enhance.deblur" title={t('Deblur')} tip={TIPS['enhance.deblur']}>
-          <Toggle on={s.deblur} onChange={(deblur) => set({ deblur })}>
-            {t('Remove motion blur')}
-          </Toggle>
-          {s.deblur && (
-            <>
-              <Slider
-                label={t('Strength')}
-                value={s.deblurStrength}
-                min={1}
-                max={100}
-                def={100}
-                onChange={(deblurStrength) => set({ deblurStrength })}
-                onCommit={() => undefined}
-              />
-              <ModelGet id="nafnet-gopro-w32" models={models} />
-            </>
-          )}
-        </Section>
+        {!pixl && (
+          <Section id="enhance.jpeg" title={t('JPEG restore')} tip={TIPS['enhance.jpeg']}>
+            <Select
+              label={t('Method')}
+              value={s.jpeg}
+              options={shown(JPEG_OPTIONS)}
+              onChange={(jpeg) => set({ jpeg })}
+            />
+            {!isJpeg && s.jpeg !== 'off' && (
+              <p className="muted small">
+                {t(SKIPPED[info.input] ?? 'Skipped: this photo is not a JPEG.')}
+              </p>
+            )}
+            {s.jpeg === 'reconstruct' && (
+              <>
+                <Slider
+                  label={t('Smoothing')}
+                  value={s.smoothing}
+                  min={0}
+                  max={100}
+                  def={50}
+                  onChange={(smoothing) => set({ smoothing })}
+                  onCommit={() => undefined}
+                  title={t(
+                    "How far the blocks and banding are smoothed: only ever into what the file's own coefficients allow"
+                  )}
+                />
+                {subsampled && (
+                  <Toggle on={s.guidedChroma} onChange={(guidedChroma) => set({ guidedChroma })}>
+                    {t('Colour follows edges')}
+                  </Toggle>
+                )}
+              </>
+            )}
+            {s.jpeg === 'fbcnn' && (
+              <>
+                <Slider
+                  label={t('Strength')}
+                  value={s.jpegStrength}
+                  min={1}
+                  max={100}
+                  def={100}
+                  onChange={(jpegStrength) => set({ jpegStrength })}
+                  onCommit={() => undefined}
+                />
+                <ModelGet id="fbcnn-color-blind" models={models} />
+              </>
+            )}
+          </Section>
+        )}
+
+        {!pixl && (
+          <Section id="enhance.deblur" title={t('Deblur')} tip={TIPS['enhance.deblur']}>
+            <Toggle on={s.deblur} onChange={(deblur) => set({ deblur })}>
+              {t('Remove motion blur')}
+            </Toggle>
+            {s.deblur && (
+              <>
+                <Slider
+                  label={t('Strength')}
+                  value={s.deblurStrength}
+                  min={1}
+                  max={100}
+                  def={100}
+                  onChange={(deblurStrength) => set({ deblurStrength })}
+                  onCommit={() => undefined}
+                />
+                <ModelGet id="nafnet-gopro-w32" models={models} />
+              </>
+            )}
+          </Section>
+        )}
 
         <Section id="enhance.upscale" title={t('Super resolution')} tip={TIPS['enhance.upscale']}>
           <Select
@@ -299,11 +351,7 @@ export function EnhancePanel(): React.JSX.Element | null {
           )}
           {refusal && <p className="muted small">{refusal}</p>}
           <div className="enhance-run">
-            <button
-              className="primary"
-              disabled={!ready || ENHANCE_HELD}
-              onClick={() => void run()}
-            >
+            <button className="primary" disabled={!ready || held} onClick={() => void run()}>
               {many
                 ? tp('Enhance {{count}} photo', 'Enhance {{count}} photos', targets.length)
                 : layer && k === 1

@@ -24,8 +24,12 @@ export const STATIC_TILE: Readonly<Record<string, StaticTile>> = {
   'demosaicnet-xtrans': { size: 516, overlap: 36 },
   // PIXL's own demosaic (a development kit's roster; shared/pixldemosaic.ts), at its
   // roster's `Fixed` 576: a 25 MP Bayer frame in 8.6 s on an M2 Pro, 16 MP X-Trans 7.3 s.
-  'pixl-demosaic-bayer': { size: 576, overlap: 32 },
-  'pixl-demosaic-xtrans': { size: 576, overlap: 48 },
+  'pixl-demosaic-v1-bayer': { size: 576, overlap: 32 },
+  'pixl-demosaic-v1-xtrans': { size: 576, overlap: 48 },
+  // PIXL Enhance (shared/pixlenhance.ts) at 1024: a 12 MP HEIC at level 1 in
+  // 8.1 s on an M2 Pro. The overlap is its level's (the roster's `levels`:
+  // 128, or 256 for level 2, whose reach is wider); main/enhance.ts sets it.
+  'pixl-enhance-v1': { size: 1024, overlap: 128 },
   // A multiple of its 32 (the roster's Dynamic tiling): 0.56 s for a 24 MP mosaic, 3.3 s on the CPU.
   pmrid: { size: 512, overlap: 32 }
 }

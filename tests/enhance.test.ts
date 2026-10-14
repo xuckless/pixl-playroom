@@ -11,11 +11,16 @@ import {
   planSteps,
   reconstructParams,
   scaleOf,
-  type EnhanceSettings
+  type EnhanceSettings,
+  withPixl
 } from '../src/shared/enhance'
+import { levelValues, PIXL_ENHANCE } from '../src/shared/pixlenhance'
+
+/** The settings as they were before PIXL Enhance: no level, ×2. */
+const PLAIN: EnhanceSettings = { ...DEFAULT_ENHANCE, pixl: 'off', upscale: 'x2' }
 
 const all: EnhanceSettings = {
-  ...DEFAULT_ENHANCE,
+  ...PLAIN,
   jpeg: 'fbcnn',
   deblur: true,
   upscale: 'x4',
@@ -47,30 +52,30 @@ test('JPEG restore is left out for any other format', () => {
     planSteps(all, false).map((p) => p.kind),
     ['deblur', 'texture']
   )
-  const only = { ...DEFAULT_ENHANCE, jpeg: 'fbcnn' as const, upscale: 'off' as const }
+  const only = { ...PLAIN, jpeg: 'fbcnn' as const, upscale: 'off' as const }
   assert.match(enhanceRefusal(only, { isJpeg: false, isHdr: false }) ?? '', /JPEG files/)
   assert.equal(enhanceRefusal(only, { isJpeg: true, isHdr: false }), null)
 })
 
 test('nothing chosen, or an HDR photo, is refused', () => {
-  const none = { ...DEFAULT_ENHANCE, upscale: 'off' as const }
+  const none = { ...PLAIN, upscale: 'off' as const }
   assert.match(enhanceRefusal(none, { isJpeg: true, isHdr: false }) ?? '', /at least one/)
   assert.match(enhanceRefusal(all, { isJpeg: true, isHdr: true }) ?? '', /HDR/)
 })
 
 test('×2 is SPAN ×4 brought down: engine 0.18 retired its own ×2 model', () => {
-  assert.deepEqual(neededModels({ ...DEFAULT_ENHANCE, upscale: 'x2' }, false), ['span-x4-ch48'])
+  assert.deepEqual(neededModels({ ...PLAIN, upscale: 'x2' }, false), ['span-x4-ch48'])
   assert.ok(!neededModels(all, true).includes('real-esrgan-x2plus'))
 })
 
 test('Source picks the ×4 model; ×2 and ×4 run the same one', () => {
   const at = (upscale: 'x2' | 'x4', upscaleSource: 'clean' | 'damaged' | 'texture'): string[] =>
-    neededModels({ ...DEFAULT_ENHANCE, upscale, upscaleSource }, false)
+    neededModels({ ...PLAIN, upscale, upscaleSource }, false)
   assert.deepEqual(at('x2', 'clean'), ['span-x4-ch48'])
   assert.deepEqual(at('x4', 'clean'), ['span-x4-ch48'])
   assert.deepEqual(at('x2', 'damaged'), ['realesr-general-x4v3'])
   assert.deepEqual(at('x4', 'texture'), ['realesr-general-wdn-x4v3'])
-  assert.equal(chainSubject(planSteps({ ...DEFAULT_ENHANCE, upscale: 'x4' }, false)), '×4')
+  assert.equal(chainSubject(planSteps({ ...PLAIN, upscale: 'x4' }, false)), '×4')
 })
 
 test('an upscale saved before Source keeps the model it ran', () => {
@@ -110,11 +115,67 @@ test('a saved FBCNN-at-a-quality (retired in engine 0.17) reads as FBCNN', () =>
 })
 
 test('the estimate sums each step over the input’s megapixels, and learns from a run', () => {
-  const steps = planSteps({ ...DEFAULT_ENHANCE, deblur: true, upscale: 'x2' }, true)
+  const steps = planSteps({ ...PLAIN, deblur: true, upscale: 'x2' }, true)
   const rates = { deblur: 1000, clean: 3000 }
   assert.equal(estimateMs(steps, 2000, 1000, rates), 2 * 4000)
   const slower = learnRates(steps, rates, 16000, 8000)
   assert.equal(slower.deblur, 1600)
   assert.equal(slower.clean, 4800)
   assert.equal(chainSubject(steps), 'Deblur + ×2')
+})
+
+test('PIXL Enhance is the default: its denoise level, no upscale', () => {
+  const steps = planSteps(DEFAULT_ENHANCE, true)
+  assert.deepEqual(
+    steps.map((p) => [p.kind, p.model, p.level]),
+    [['pixl', PIXL_ENHANCE, 'denoise']]
+  )
+  assert.equal(scaleOf(DEFAULT_ENHANCE), 1)
+})
+
+test('PIXL Enhance runs before the upscaler; its sharpen level is its own speed', () => {
+  const s = { ...DEFAULT_ENHANCE, pixl: 'sharpen' as const, upscale: 'x2' as const }
+  assert.deepEqual(
+    planSteps(s, false).map((p) => p.kind),
+    ['pixl-sharpen', 'clean']
+  )
+  assert.deepEqual(neededModels(s, false), [PIXL_ENHANCE, 'span-x4-ch48'])
+  const mp = estimateMs(planSteps(s, false), 1000, 1000, {})
+  assert.equal(mp, 1400 + 6500)
+})
+
+test('where PIXL Enhance is offered, a saved JPEG restore or deblur is not run beside it', () => {
+  const saved = { ...DEFAULT_ENHANCE, jpeg: 'fbcnn' as const, deblur: true }
+  assert.deepEqual(
+    planSteps(withPixl(saved), true).map((p) => p.kind),
+    ['pixl']
+  )
+})
+
+test('settings saved before PIXL Enhance take its default; an unknown level is off', () => {
+  assert.equal(normaliseEnhance({ upscale: 'x4' }).pixl, 'denoise')
+  assert.equal(normaliseEnhance({ pixl: 'clean' }).pixl, 'clean')
+  const odd = { pixl: 'extreme' } as unknown as Partial<EnhanceSettings>
+  assert.equal(normaliseEnhance(odd).pixl, 'off')
+})
+
+test('a level is the roster entry’s planes and tiling, and only those', () => {
+  const plane = (v: number): unknown => ({ Channel: { value: { Stated: { value: v } } } })
+  const fixed = (overlap: number): unknown => ({
+    Fixed: { width: 1024, height: 1024, overlap }
+  })
+  const entry = {
+    levels: [
+      { level: 0, conditioning: [plane(0), plane(0)], tiling: fixed(128) },
+      { level: 1, conditioning: [plane(1), plane(0)], tiling: fixed(128) },
+      { level: 2, conditioning: [plane(1), plane(1)], tiling: fixed(256) }
+    ]
+  }
+  assert.deepEqual(levelValues(entry, 'denoise'), {
+    conditioning: [plane(1), plane(0)],
+    tiling: fixed(128)
+  })
+  assert.deepEqual(levelValues(entry, 'sharpen').tiling, fixed(256))
+  assert.throws(() => levelValues({ levels: entry.levels.slice(0, 2) }, 'sharpen'), /no level 2/)
+  assert.throws(() => levelValues({}, 'clean'), /no level 0/)
 })

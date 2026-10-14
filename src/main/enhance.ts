@@ -1,7 +1,8 @@
 /**
  * Enhance (the wheel's last tool): the engine's enhance chain — a JPEG
  * rebuilt from its coefficients, FBCNN's JPEG restore, NAFNet's deblur,
- * Real-ESRGAN's super-resolution, whichever are chosen, in that order — run
+ * PIXL Enhance (where the roster offers it, in their place), Real-ESRGAN's
+ * super-resolution, whichever are chosen, in that order — run
  * once over the photo's pixels as they are (its earlier steps laid on), before
  * any grade, and kept in its project as a pixel step (shared/pixels.ts): it
  * undoes, redoes and hides in History like any edit, and no file is written
@@ -63,6 +64,7 @@ import { ensureBase, pixelDeps } from './pixels/base'
 import { freezeMask } from './pixels/freeze'
 import { addPixelStep, storesLossless } from './pixels/steps'
 import { ensureWorking, modelInput } from './pixels/working'
+import { levelValues } from '../shared/pixlenhance'
 
 const TIFF = { Tiff: { compression: 'None' } } as const
 const ICC_ONLY = { exif: false, icc: true, xmp: false, iptc: false } as const
@@ -128,6 +130,21 @@ async function chainOf(
     const provider = onCpu.has(id) ? ('Cpu' as const) : undefined
     if (p.scale) {
       out.push({ Upscale: (await models.ref(id, provider)) as unknown as UpscalerRef })
+      continue
+    }
+    if (p.level) {
+      // PIXL Enhance: the level's planes and tiling, as the roster states them
+      // (shared/pixlenhance.ts). On CoreML the tile is fixed at 1024
+      // (modelshape.ts) and the level sets the overlap.
+      const level = levelValues(models.entry(id), p.level)
+      const ref = (await models.ref(id, provider, { ...level })) as unknown as EnhancerRef
+      out.push({
+        Model: {
+          ...ref,
+          tiling: level.tiling,
+          strength: Math.min(1, Math.max(0.01, s.pixlStrength / 100))
+        }
+      })
       continue
     }
     const ref = (await models.ref(id, provider, {})) as unknown as EnhancerRef
@@ -243,8 +260,13 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           { signal: ctx.signal }
         )
       }
-      // A RAW's float frame is read clipped to 0..1 (laid back under its headroom guard).
-      const input = await modelInput(this.engine, dir, master, heavyThreads())
+      // A RAW's float frame is read clipped to 0..1 (laid back under its headroom guard),
+      // except by PIXL Enhance alone: it works in linear PixlRGB through a log curve
+      // and is shown the frame as it is, light over white included; its result is
+      // written and guarded as any step's.
+      const input = steps.every((p) => p.level)
+        ? master
+        : await modelInput(this.engine, dir, master, heavyThreads())
       return this.engine.convert(
         { ...blankRequest(input.path, out, input.input), ...common },
         { signal: ctx.signal }
