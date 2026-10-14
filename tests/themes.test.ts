@@ -41,3 +41,12 @@ test('each theme is a :root[data-theme] block, loaded after every other layer', 
     )
   }
 })
+
+test('Bolder modern pairs the purple with a second colour, for its gradients and bloom', () => {
+  const css = readFileSync(join(STYLES, 'themes', 'bold.css'), 'utf8')
+  const b = css.match(/--acc-b:\s*(#[0-9a-fA-F]{6})/)?.[1]
+  assert.ok(b, 'bold.css defines --acc-b')
+  // Cyan: well away from the purple, so the duo reads as two colours.
+  const h = hue(b!)
+  assert.ok(h >= 170 && h <= 200, `--acc-b ${b} is hue ${Math.round(h)}°, not cyan`)
+})
