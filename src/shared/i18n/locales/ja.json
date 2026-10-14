@@ -3421,5 +3421,16 @@
   "Show the key: white where the qualifier selects, black where it does not": "キーを表示：クオリファイアーが選択する部分は白、それ以外は黒",
   "Soft": "ソフト",
   "Switch off": "オフにする",
-  "Switch on": "オンにする"
+  "Switch on": "オンにする",
+  "Advanced layer": "詳細レイヤー",
+  "Advanced layer: on/off": "詳細レイヤー：オン/オフ",
+  "Node view": "ノードビュー",
+  "Node view (advanced)": "ノードビュー（詳細）",
+  "Nodes": "ノード",
+  "Off, the masks pane is the plain list of masks.": "オフのときは、マスクパネルは通常のマスク一覧です。",
+  "Primaries, curves and the rest": "プライマリー、カーブなど",
+  "Qualifier: on/off": "クオリファイアー：オン/オフ",
+  "Reorder advanced layers": "詳細レイヤーを並べ替え",
+  "Reorder qualifiers": "クオリファイアーを並べ替え",
+  "The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.": "マスクパネルにグレーディングを Resolve のノードとして表示します。写真自体の補正、続いて各クオリファイアー、各マスク、詳細レイヤーが実行順に並びます。ノードはオフにしたり、選んで編集したり、グループ内でドラッグしたりできます。"
 }

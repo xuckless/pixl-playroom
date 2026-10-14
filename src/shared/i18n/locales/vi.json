@@ -3421,5 +3421,16 @@
   "Show the key: white where the qualifier selects, black where it does not": "Hiển thị vùng chọn: trắng ở nơi bộ lọc chọn, đen ở nơi không chọn",
   "Soft": "Mềm",
   "Switch off": "Tắt",
-  "Switch on": "Bật"
+  "Switch on": "Bật",
+  "Advanced layer": "Lớp nâng cao",
+  "Advanced layer: on/off": "Lớp nâng cao: bật/tắt",
+  "Node view": "Chế độ nút",
+  "Node view (advanced)": "Chế độ nút (nâng cao)",
+  "Nodes": "Các nút",
+  "Off, the masks pane is the plain list of masks.": "Khi tắt, bảng mặt nạ là danh sách mặt nạ thông thường.",
+  "Primaries, curves and the rest": "Hiệu chỉnh cơ bản, đường cong và phần còn lại",
+  "Qualifier: on/off": "Bộ lọc màu: bật/tắt",
+  "Reorder advanced layers": "Sắp xếp lại các lớp nâng cao",
+  "Reorder qualifiers": "Sắp xếp lại các bộ lọc màu",
+  "The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.": "Bảng mặt nạ hiển thị quá trình chỉnh màu dưới dạng các nút của Resolve: chỉnh sửa riêng của ảnh, rồi từng bộ lọc màu, từng mặt nạ và mọi lớp nâng cao, theo thứ tự chúng chạy. Tắt một nút, chọn để chỉnh sửa, kéo nó trong nhóm của nó."
 }

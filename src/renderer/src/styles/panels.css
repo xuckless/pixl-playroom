@@ -1249,3 +1249,105 @@ aside.right .panels.adjust {
   flex: 1;
   min-width: 0;
 }
+
+/* ── Resolve's node view (panels/masks/NodeView.tsx) ─────────────── */
+.node-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 6px 6px 8px;
+}
+.node-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 6px;
+  border: 1px solid var(--hair2);
+  border-radius: 8px;
+  background: var(--s3);
+  transition: border-color 0.2s var(--ease);
+}
+/* The serial link from the node above. */
+.node-link {
+  position: absolute;
+  left: 50%;
+  top: -15px;
+  width: 1px;
+  height: 14px;
+  background: var(--hair3);
+}
+.node-view > .node:first-child .node-link {
+  display: none;
+}
+.node.on {
+  border-color: var(--acc);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--acc) 35%, transparent);
+}
+.node.off .node-body {
+  opacity: 0.45;
+}
+.node.dragging {
+  z-index: 2;
+  box-shadow: 0 6px 18px rgb(var(--shade-rgb) / 0.5);
+}
+.node-grip {
+  cursor: grab;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: -2px;
+  user-select: none;
+  touch-action: none;
+}
+.node-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  text-align: left;
+}
+.node-n {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.node-thumb {
+  width: 40px;
+  height: 28px;
+  flex: none;
+  border-radius: 4px;
+  background: rgb(var(--shade-rgb) / 0.6);
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 0 0 1px var(--hair2);
+}
+.node-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.node-name {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.node-kind {
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

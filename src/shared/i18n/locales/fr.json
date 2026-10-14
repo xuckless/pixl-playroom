@@ -3541,5 +3541,16 @@
   "Show the key: white where the qualifier selects, black where it does not": "Afficher la clé : blanc là où le qualificateur sélectionne, noir ailleurs",
   "Soft": "Doux",
   "Switch off": "Désactiver",
-  "Switch on": "Activer"
+  "Switch on": "Activer",
+  "Advanced layer": "Calque avancé",
+  "Advanced layer: on/off": "Calque avancé : activer/désactiver",
+  "Node view": "Vue nodale",
+  "Node view (advanced)": "Vue nodale (avancé)",
+  "Nodes": "Nœuds",
+  "Off, the masks pane is the plain list of masks.": "Désactivée, le panneau des masques est la simple liste des masques.",
+  "Primaries, curves and the rest": "Primaires, courbes et le reste",
+  "Qualifier: on/off": "Qualificateur : activer/désactiver",
+  "Reorder advanced layers": "Réordonner les calques avancés",
+  "Reorder qualifiers": "Réordonner les qualificateurs",
+  "The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.": "Le panneau des masques affiche l’étalonnage sous forme de nœuds Resolve : la correction propre à la photo, puis chaque qualificateur, chaque masque et tout calque avancé, dans l’ordre où ils s’appliquent. Désactivez un nœud, sélectionnez-le pour le modifier, faites-le glisser au sein de son groupe."
 }

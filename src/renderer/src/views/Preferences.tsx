@@ -745,6 +745,8 @@ function InterfaceSection(): React.JSX.Element {
   const setTheme = useUi((s) => s.setTheme)
   const colourTools = useUi((s) => s.colourTools)
   const setColourTools = useUi((s) => s.setColourTools)
+  const nodeView = useUi((s) => s.nodeView)
+  const setNodeView = useUi((s) => s.setNodeView)
   return (
     <fieldset>
       <legend>{t('Interface')}</legend>
@@ -786,6 +788,19 @@ function InterfaceSection(): React.JSX.Element {
           }}
         />
       </div>
+      <label className="check" hidden={colourTools !== 'resolve'}>
+        <input type="checkbox" checked={nodeView} onChange={(e) => setNodeView(e.target.checked)} />
+        {t('Node view (advanced)')}
+        <InfoTip
+          label={t('Node view')}
+          tip={{
+            what: t(
+              'The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.'
+            ),
+            expect: t('Off, the masks pane is the plain list of masks.')
+          }}
+        />
+      </label>
       <label className="check" hidden={theme === 'calm'}>
         <input
           type="checkbox"

@@ -3421,5 +3421,16 @@
   "Show the key: white where the qualifier selects, black where it does not": "显示键：限定器选中处为白色，未选中处为黑色",
   "Soft": "柔和",
   "Switch off": "关闭",
-  "Switch on": "开启"
+  "Switch on": "开启",
+  "Advanced layer": "高级图层",
+  "Advanced layer: on/off": "高级图层：开/关",
+  "Node view": "节点视图",
+  "Node view (advanced)": "节点视图（高级）",
+  "Nodes": "节点",
+  "Off, the masks pane is the plain list of masks.": "关闭时，蒙版面板为普通的蒙版列表。",
+  "Primaries, curves and the rest": "一级校色、曲线及其余",
+  "Qualifier: on/off": "限定器：开/关",
+  "Reorder advanced layers": "重新排列高级图层",
+  "Reorder qualifiers": "重新排列限定器",
+  "The masks pane shows the grade as Resolve’s nodes: the photo’s own correction, then each qualifier, each mask and any advanced layer, in the order they run. Switch a node off, pick it to edit it, drag it within its group.": "蒙版面板以 Resolve 节点的形式显示调色：照片本身的校正，然后是每个限定器、每个蒙版和任何高级图层，按运行顺序排列。可关闭节点、选中以编辑、在其组内拖动。"
 }
