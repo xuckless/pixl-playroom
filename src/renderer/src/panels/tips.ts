@@ -374,6 +374,154 @@ export const TIPS = {
       'On a hue curve, the colour dots add three points at that hue: drag the middle one to change only that colour.'
     )
   },
+  // ── Resolve: Primaries ─────────────────────────────────────────────
+  'primaries.lift': {
+    what: tk(
+      'Lift raises or lowers the blacks. White stays where it is, and everything between moves less the brighter it is. Its disc tints the shadows.'
+    ),
+    expect: tk(
+      'The ring to the right lifts the blacks toward a faded, matte look; to the left deepens them. Push the disc away from a cast in the shadows to make them neutral.'
+    ),
+    tip: tk('Watch the bottom of the parade: neutral shadows put red, green and blue level.')
+  },
+  'primaries.gamma': {
+    what: tk(
+      'Gamma bends the midtones: black and white stay put, the middle gets brighter or darker. Its disc tints the midtones.'
+    ),
+    expect: tk(
+      'The gentlest way to change brightness or colour, because the ends do not move: skin, foliage and walls live here.'
+    ),
+    tip: tk('Most colour balance is done on Gamma; small numbers go a long way.')
+  },
+  'primaries.gain': {
+    what: tk(
+      'Gain scales everything toward white: black stays put and the brightest parts move the most. Its disc tints the highlights.'
+    ),
+    expect: tk('The ring to the right brightens (watch the highlights clip), to the left dims.'),
+    tip: tk('Neutralise a cast in the whites here, checking the top of the parade.')
+  },
+  'primaries.offset': {
+    what: tk(
+      'Offset adds the same amount to every value: shadows, midtones and highlights move together, so the whole picture shifts in brightness or colour.'
+    ),
+    expect: tk('Shown about 25, as Resolve shows it: above 25 brighter, below darker.'),
+    tip: tk(
+      'Balance the colour here first, like a white balance, then shape with Lift, Gamma and Gain.'
+    )
+  },
+  'primaries.contrast': {
+    what: tk('Spreads the values apart from the Pivot (above 1) or draws them together (below 1).'),
+    expect: tk('Darks get darker and brights brighter about the pivot; 1.000 changes nothing.')
+  },
+  'primaries.pivot': {
+    what: tk('The brightness Contrast turns about: a value at the pivot does not move.'),
+    expect: tk(
+      'A lower pivot makes added contrast brighten the picture overall; a higher one darkens it.'
+    ),
+    tip: tk('0.435, Resolve’s default, is about middle grey.')
+  },
+  'primaries.sat': {
+    what: tk('How colourful everything is: 50 untouched, 0 grey, 100 twice the colour.'),
+    expect: tk('Every colour alike, unlike Vibrance, which spares what is already rich.')
+  },
+  'primaries.hue': {
+    what: tk(
+      'Turns every colour around the colour wheel together: 50 untouched, 0 and 100 half a turn either way.'
+    ),
+    expect: tk('Small moves shift the whole palette; big ones are an effect.')
+  },
+  'primaries.temp': {
+    what: tk('Warmer or cooler, on top of the white balance.'),
+    expect: tk(
+      'Like Resolve’s Temp. Here it is a white balance in linear light until the engine has it with the primaries.'
+    )
+  },
+  'primaries.tint': {
+    what: tk('Toward magenta or toward green, on top of the white balance.'),
+    expect: tk('For the green of fluorescent light, or a magenta cast.')
+  },
+
+  // ── Resolve: Log wheels ────────────────────────────────────────────
+  'log.shadow': {
+    what: tk('Adds colour or brightness only to the tones below Low range.'),
+    expect: tk('Contained: the midtones and highlights do not move.')
+  },
+  'log.midtone': {
+    what: tk('Adds colour or brightness only between Low and High range.'),
+    expect: tk('A warmer or cooler middle with the ends left alone.')
+  },
+  'log.highlight': {
+    what: tk('Adds colour or brightness only above High range.'),
+    expect: tk('Cool skies or warm lamps without touching the shadows.')
+  },
+  'log.offset': {
+    what: tk('Adds the same colour or brightness to every tone.'),
+    expect: tk('The Primaries’ Offset, kept here so a log grade is all in one place.')
+  },
+  'log.low': {
+    what: tk('Where the shadows end: the Shadow wheel works below it, the Midtone wheel above.'),
+    expect: tk('Higher gives the Shadow wheel more of the picture.')
+  },
+  'log.high': {
+    what: tk('Where the highlights begin: the Highlight wheel works above it.'),
+    expect: tk('Lower gives the Highlight wheel more of the picture.')
+  },
+
+  // ── Resolve: Curves ────────────────────────────────────────────────
+  'rcurves.custom': {
+    what: tk(
+      'The tone curve: input brightness along the bottom, output up the side. Y moves all three channels, R, G and B one each.'
+    ),
+    expect: tk('An S makes contrast; lifting the bottom-left end fades the blacks.')
+  },
+  'rcurves.hueHue': {
+    what: tk(
+      'Turns one colour into another: points along the hues, and pulling one up or down turns that hue around the wheel.'
+    ),
+    expect: tk('Greens toward teal, oranges toward red, without touching the rest.')
+  },
+  'rcurves.hueSat': {
+    what: tk('Makes one colour richer or quieter: up for more saturation, down for less.'),
+    expect: tk('Quiet a loud green, deepen a sky.')
+  },
+  'rcurves.hueLum': {
+    what: tk('Makes one colour brighter or darker.'),
+    expect: tk('Waiting for the engine: the curve is kept and applies once it can.')
+  },
+  'rcurves.lumSat': {
+    what: tk('Saturation by brightness: shadows along the left, highlights along the right.'),
+    expect: tk('Pull the ends down for clean blacks and whites without colour noise.')
+  },
+  'rcurves.satSat': {
+    what: tk(
+      'Saturation by saturation: lift the dull colours without pushing the already rich ones.'
+    ),
+    expect: tk('Waiting for the engine: the curve is kept and applies once it can.')
+  },
+
+  // ── Resolve: Qualifier ─────────────────────────────────────────────
+  'qualifier.hue': {
+    what: tk('Which hues the key takes: its centre on the strip, its width, and its soft edge.'),
+    expect: tk('Off, every hue counts and the key goes by saturation and luminance alone.')
+  },
+  'qualifier.sat': {
+    what: tk('How saturated a colour must be to be keyed: from grey on the left to full colour.'),
+    expect: tk('Raise the centre to leave out greys and pale versions of the colour.')
+  },
+  'qualifier.lum': {
+    what: tk('How bright a colour must be to be keyed: from black on the left to white.'),
+    expect: tk('Narrow it to take only the sunlit or only the shaded part.')
+  },
+  'qualifier.blur': {
+    what: tk('Softens the key’s edge, so a correction blends in rather than cutting out.'),
+    expect: tk('Raise it when Key shows speckle or a hard edge.')
+  },
+  'qualifier.correction': {
+    what: tk(
+      'What the key lets through: Gain brightens or tints what it selects, Sat and Hue change its colour (50 untouched).'
+    ),
+    expect: tk('Only the white of the key changes; the black stays as it was.')
+  },
   calibration: {
     what: tk('Shifts how the camera’s red, green and blue primaries are read.'),
     expect: tk('Broad, subtle colour changes across the whole palette.'),

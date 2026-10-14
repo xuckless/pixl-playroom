@@ -10,6 +10,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { discToRgb, rgbToDisc, type Yrgb } from '../../../../shared/resolve'
 import { t } from '../../lib/i18n'
+import { InfoTip, type Tip } from '../InfoTip'
 
 export interface WheelScale {
   /** The untouched value of every channel (0 for Lift, Gamma, Offset; 1 for Gain). */
@@ -138,9 +139,12 @@ export function GradeWheel({
   scale,
   onChange,
   onCommit,
-  size = 104
+  size = 104,
+  tip
 }: {
   label: string
+  /** What the wheel does, behind an (i) beside its name. */
+  tip?: Tip
   value: Yrgb
   scale: WheelScale
   onChange: (v: Yrgb, live: boolean) => void
@@ -180,8 +184,11 @@ export function GradeWheel({
   const ringPos = Math.max(0, Math.min(1, (value.y - scale.min) / (scale.max - scale.min)))
   return (
     <div className="gwheel">
-      <div className="gw-label" title={t('Double-click to reset')} onDoubleClick={reset}>
-        {label}
+      <div className="gw-head">
+        <span className="gw-label" title={t('Double-click to reset')} onDoubleClick={reset}>
+          {label}
+        </span>
+        {tip && <InfoTip tip={tip} label={label} />}
       </div>
       <div
         ref={ref}

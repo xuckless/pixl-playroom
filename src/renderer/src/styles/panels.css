@@ -1351,3 +1351,17 @@ aside.right .panels.adjust {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.gw-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rc-about,
+.q-correction-head {
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+.rc-channels .spacer {
+  flex: 1;
+}

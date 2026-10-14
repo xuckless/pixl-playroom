@@ -11,6 +11,8 @@ import { useDevelop, type CurveChannel } from '../state/develop'
 import { t, tk } from '../lib/i18n'
 import { useScope } from '../state/scope'
 import { RS } from './global'
+import { TIPS } from './tips'
+import { InfoTip } from '../components/InfoTip'
 import {
   MAX_QUALIFIERS,
   VS_WAITING,
@@ -64,6 +66,7 @@ export function PrimariesBody(): React.JSX.Element | null {
       value={p[key]}
       scale={SCALES[key]}
       size={96}
+      tip={TIPS[`primaries.${key}`]}
       onChange={(v: Yrgb, live) => edit((r) => (r.primaries[key] = v), live)}
       onCommit={() => commit(`Primaries: ${NAMES[key]}`)}
     />
@@ -72,6 +75,7 @@ export function PrimariesBody(): React.JSX.Element | null {
     <ToolPanel>
       <RS
         label={tk('Contrast')}
+        tip={TIPS['primaries.contrast']}
         read={(r) => r.primaries.contrast}
         write={(r, v) => (r.primaries.contrast = v)}
         min={0}
@@ -82,6 +86,7 @@ export function PrimariesBody(): React.JSX.Element | null {
       />
       <RS
         label={tk('Pivot')}
+        tip={TIPS['primaries.pivot']}
         read={(r) => r.primaries.pivot}
         write={(r, v) => (r.primaries.pivot = v)}
         min={0}
@@ -92,6 +97,7 @@ export function PrimariesBody(): React.JSX.Element | null {
       />
       <RS
         label={tk('Sat')}
+        tip={TIPS['primaries.sat']}
         read={(r) => r.primaries.saturation}
         write={(r, v) => (r.primaries.saturation = v)}
         min={0}
@@ -102,6 +108,7 @@ export function PrimariesBody(): React.JSX.Element | null {
       />
       <RS
         label={tk('Hue')}
+        tip={TIPS['primaries.hue']}
         read={(r) => r.primaries.hue}
         write={(r, v) => (r.primaries.hue = v)}
         min={0}
@@ -112,12 +119,14 @@ export function PrimariesBody(): React.JSX.Element | null {
       />
       <RS
         label={tk('Temp')}
+        tip={TIPS['primaries.temp']}
         read={(r) => r.primaries.temp}
         write={(r, v) => (r.primaries.temp = v)}
         track={TEMP_TRACK}
       />
       <RS
         label={tk('Tint')}
+        tip={TIPS['primaries.tint']}
         read={(r) => r.primaries.tint}
         write={(r, v) => (r.primaries.tint = v)}
         track={TINT_TRACK}
@@ -183,6 +192,8 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
       <ToolPanel>
         <Tabs value={tab} onChange={setTab} className="rc-tabs" tabs={tabsOf()} />
         <div className="row rc-channels">
+          <InfoTip tip={TIPS['rcurves.custom']} label={t('Custom')} />
+          <span className="spacer" />
           <Tabs
             value={channel}
             onChange={setChannel}
@@ -219,6 +230,10 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
   return (
     <ToolPanel>
       <Tabs value={tab} onChange={setTab} className="rc-tabs" tabs={tabsOf()} />
+      <div className="row rc-about">
+        <span className="micro">{t(label)}</span>
+        <InfoTip tip={TIPS[`rcurves.${vs}`]} label={t(label)} />
+      </div>
       {waiting && (
         <p className="rc-waiting">
           {t('Waiting for the engine')} ({waiting}):{' '}
@@ -291,6 +306,7 @@ export function LogWheelsBody(): React.JSX.Element | null {
       value={l[key]}
       scale={LOG_SCALE}
       size={96}
+      tip={TIPS[`log.${key}`]}
       onChange={(v: Yrgb, live) => edit((r) => (r.logWheels[key] = v), live)}
       onCommit={() => commit(`Log wheels: ${LOG_NAMES[key]}`)}
     />
@@ -305,6 +321,7 @@ export function LogWheelsBody(): React.JSX.Element | null {
       </div>
       <RS
         label={tk('Low range')}
+        tip={TIPS['log.low']}
         read={(r) => r.logWheels.low}
         write={(r, v) => (r.logWheels.low = Math.min(v, r.logWheels.high - 0.05))}
         min={0.02}
@@ -315,6 +332,7 @@ export function LogWheelsBody(): React.JSX.Element | null {
       />
       <RS
         label={tk('High range')}
+        tip={TIPS['log.high']}
         read={(r) => r.logWheels.high}
         write={(r, v) => (r.logWheels.high = Math.max(v, r.logWheels.low + 0.05))}
         min={0.07}
@@ -335,6 +353,12 @@ export function LogWheelsBody(): React.JSX.Element | null {
 // ── Qualifier ────────────────────────────────────────────────────────────────
 
 type BandKey = 'keyHue' | 'keySat' | 'keyLum'
+
+const BAND_TIP = {
+  keyHue: 'qualifier.hue',
+  keySat: 'qualifier.sat',
+  keyLum: 'qualifier.lum'
+} as const
 
 const BANDS: { key: BandKey; label: string; top: number; strip: string; step: number }[] = [
   {
@@ -530,6 +554,7 @@ export function QualifierBody(): React.JSX.Element | null {
                   }}
                 />
                 {t(b.label)}
+                <InfoTip tip={TIPS[BAND_TIP[b.key]]} label={t(b.label)} />
               </label>
               <BandBar band={q[b.key]} top={b.top} strip={b.strip} />
               {q[b.key].on && (
@@ -579,6 +604,7 @@ export function QualifierBody(): React.JSX.Element | null {
           ))}
           <RS
             label={tk('Blur')}
+            tip={TIPS['qualifier.blur']}
             read={(r) => at(r)?.blur ?? 0}
             write={(r, v) => {
               const y = at(r)
@@ -602,6 +628,10 @@ export function QualifierBody(): React.JSX.Element | null {
             />
             {t('Invert the key')}
           </label>
+          <div className="row q-correction-head">
+            <span className="micro">{t('Correction')}</span>
+            <InfoTip tip={TIPS['qualifier.correction']} label={t('Correction')} />
+          </div>
           <div className="q-correction">
             <GradeWheel
               label={t('Gain')}
