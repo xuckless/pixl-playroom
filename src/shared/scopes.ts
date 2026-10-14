@@ -79,7 +79,9 @@ export function areaPath(
 // full-resolution scopes are engine request E76.
 
 /** The scopes the right column and the expanded viewer cycle through. */
-export const SCOPE_KINDS = ['histogram', 'parade', 'waveform', 'vectorscope', 'hue', 'cie'] as const
+// The colour chart is Playroom's own highlight: next to the histogram, one
+// click from the default (the owner, 2026-10-14), before Resolve's scopes.
+export const SCOPE_KINDS = ['histogram', 'hue', 'parade', 'waveform', 'vectorscope', 'cie'] as const
 export type ScopeKind = (typeof SCOPE_KINDS)[number]
 /** The scopes binned here from pixels (the others are the engine's stats). */
 export const BINNED_SCOPES: readonly ScopeKind[] = ['parade', 'waveform', 'vectorscope', 'cie']
