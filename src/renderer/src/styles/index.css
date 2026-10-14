@@ -1,7 +1,7 @@
 /* Pixl Playroom — the stylesheet, in cascade layers so later layers win
    without specificity games: tokens and base first, then shared primitives,
    the app's shell, each view, effects and the reduced-motion overrides. */
-@layer tokens, base, primitives, shell, views, fx, motion;
+@layer tokens, base, primitives, shell, views, fx, motion, themes;
 
 @import './tokens.css' layer(tokens);
 @import './base.css' layer(base);
@@ -19,3 +19,6 @@
 @import './fx.css' layer(fx);
 @import './aperture.css' layer(fx);
 @import './motion.css' layer(motion);
+/* The themes last (Settings → Interface → Theme): over every layer. Original is tokens.css itself. */
+@import './themes/calm.css' layer(themes);
+@import './themes/bold.css' layer(themes);

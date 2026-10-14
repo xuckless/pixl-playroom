@@ -24,7 +24,7 @@ import { api, errorText } from '../lib/api'
 import { openReport, takeReportFocus } from '../lib/report'
 import { chooseLanguage, rich, t, tk, tp, useLanguage } from '../lib/i18n'
 import { useLibrary } from '../state/library'
-import { useUi } from '../state/ui'
+import { useUi, THEMES, type Theme } from '../state/ui'
 import { KeyBindingsSection } from './KeyBindings'
 import { ModelsSection } from './ModelsSection'
 import { openReleaseNotes } from '../state/whatsNew'
@@ -741,10 +741,31 @@ function InterfaceSection(): React.JSX.Element {
   const setAlwaysFlat = useUi((s) => s.setAlwaysFlat)
   const cullSuggest = useUi((s) => s.cullSuggest)
   const setCullSuggest = useUi((s) => s.setCullSuggest)
+  const theme = useUi((s) => s.theme)
+  const setTheme = useUi((s) => s.setTheme)
   return (
     <fieldset>
       <legend>{t('Interface')}</legend>
-      <label className="check">
+      <div className="pref-row">
+        <Select<Theme>
+          label={t('Theme')}
+          value={theme}
+          options={THEMES.map((x) => ({ value: x.value, label: t(x.label) }))}
+          onChange={setTheme}
+        />
+        <InfoTip
+          label={t('Theme')}
+          tip={{
+            what: t(
+              'How Playroom looks: Original, purple on near black; Calm pro, flat and quiet like a darkroom; Bolder modern, larger and softer, with a touch of colour per tool.'
+            ),
+            expect: t(
+              'Only the interface changes: your photos and their edits look the same in all three.'
+            )
+          }}
+        />
+      </div>
+      <label className="check" hidden={theme === 'calm'}>
         <input
           type="checkbox"
           checked={alwaysFlat}

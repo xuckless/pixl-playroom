@@ -1028,3 +1028,15 @@ button.keybind-key.waiting {
   flex: 1 1 100%;
   overflow-wrap: anywhere;
 }
+
+/* A Settings row of a control and its tip (the theme). */
+.pref-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.pref-row > .select {
+  flex: 1;
+  min-width: 0;
+}

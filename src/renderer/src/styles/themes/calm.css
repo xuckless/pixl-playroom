@@ -1,0 +1,64 @@
+/* Calm pro (Settings → Interface → Theme): Lightroom and Capture One calm.
+   Flat solid surfaces, quiet lines, short motion that only explains, no
+   glass and no glow. The accent is today's purple, unchanged. */
+:root[data-theme='calm'] {
+  --bg: #0e0e10;
+  --s1: #141416;
+  --s2: #1a1a1d;
+  --s3: #212125;
+  --s4: #2a2a2f;
+
+  --hair: rgb(var(--fg-rgb) / 0.07);
+  --hair2: rgb(var(--fg-rgb) / 0.11);
+  --hair3: rgb(var(--fg-rgb) / 0.18);
+
+  --text: #e4e4e7;
+  --text2: #a6a6ae;
+  --muted: #74747c;
+
+  /* No glow: the accent marks, it does not shine. */
+  --glow: transparent;
+  --glow-soft: transparent;
+  --primary-grad: linear-gradient(180deg, var(--acc2), var(--acc2));
+
+  --r: 3px;
+
+  /* Motion that explains, never springs. */
+  --spring: var(--ease);
+  --spring-soft: var(--ease);
+  --dur-hover: 80ms;
+  --dur-toggle: 140ms;
+  --dur-panel: 160ms;
+  --dur-dialog: 180ms;
+
+  /* Hairlines are plain lines. */
+  --hl-x: linear-gradient(90deg, var(--hair), var(--hair));
+  --hl-x-rev: linear-gradient(270deg, var(--hair), var(--hair));
+  --hl-y: linear-gradient(180deg, var(--hair), var(--hair));
+}
+
+:root[data-theme='calm'] .card {
+  background: var(--s2);
+  box-shadow: none;
+}
+:root[data-theme='calm'] .card.open {
+  border-color: var(--hair2);
+}
+:root[data-theme='calm'] .slider {
+  background: var(--s3);
+}
+:root[data-theme='calm'] .sl-fill {
+  background: color-mix(in srgb, var(--acc) 32%, transparent);
+  box-shadow: none;
+}
+:root[data-theme='calm'] .sl-knob {
+  background: var(--s4);
+  border-color: var(--hair3);
+  box-shadow: none;
+}
+:root[data-theme='calm'] .rail-item.on {
+  background: color-mix(in srgb, var(--acc) 12%, transparent);
+}
+:root[data-theme='calm'] .rail-item .dot {
+  box-shadow: none;
+}

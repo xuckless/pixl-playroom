@@ -31,6 +31,8 @@ import { useLooks } from './state/looks'
 // Windows draws its own at the right, beside the menu names (WindowMenus).
 {
   const root = document.documentElement
+  // The theme from the first frame (Settings → Interface → Theme).
+  root.dataset.theme = useUi.getState().theme
   root.dataset.platform = /Mac/.test(navigator.platform)
     ? 'mac'
     : /Win/.test(navigator.platform)

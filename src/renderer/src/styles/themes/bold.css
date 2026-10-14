@@ -1,0 +1,84 @@
+/* Bolder modern (Settings → Interface → Theme): Arc and Linear. Larger type,
+   softer larger corners, richer motion, and a touch of colour per tool on
+   its card's rule and its sliders' fill. The accent stays purple: what is
+   selected, pressed, focused or chosen is purple in every theme. */
+:root[data-theme='bold'] {
+  --bg: #0a0a0f;
+  --s1: #12121a;
+  --s2: #191923;
+  --s3: #21212d;
+  --s4: #2b2b3a;
+
+  --text: #f3f2f8;
+  --text2: #c4c1d6;
+  --muted: #8b88a3;
+
+  /* Today's purple, a little brighter. */
+  --acc: #a593ff;
+  --acc2: #8b78f0;
+  --acc-deep: #5444b8;
+  --primary-grad: linear-gradient(180deg, #a593ff, #7f6be6);
+
+  --r: 8px;
+  --dur-panel: 320ms;
+  --dur-dialog: 420ms;
+}
+
+/* Softer, larger shapes. */
+:root[data-theme='bold'] .card {
+  border-radius: 14px;
+  margin-bottom: 8px;
+}
+:root[data-theme='bold'] .card > header {
+  height: 38px;
+  padding-left: 12px;
+}
+:root[data-theme='bold'] .card > header .title {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+:root[data-theme='bold'] .slider {
+  height: 28px;
+  border-radius: 8px;
+}
+:root[data-theme='bold'] .sl-knob {
+  border-radius: 7px;
+}
+
+/* A touch of colour per tool: its card's rule and its sliders' fill. */
+:root[data-theme='bold'] .card[data-card='wb'] {
+  --tool-acc: #7cc4ff;
+}
+:root[data-theme='bold'] .card[data-card='light'] {
+  --tool-acc: #f2c14e;
+}
+:root[data-theme='bold'] .card[data-card='presence'],
+:root[data-theme='bold'] .card[data-card='curve'] {
+  --tool-acc: #e9e6f5;
+}
+:root[data-theme='bold'] .card[data-card='colour'],
+:root[data-theme='bold'] .card[data-card='mixer'],
+:root[data-theme='bold'] .card[data-card='grading'] {
+  --tool-acc: #ff7a9c;
+}
+:root[data-theme='bold'] .card[data-card='detail'] {
+  --tool-acc: #5ec8ff;
+}
+:root[data-theme='bold'] .card[data-card='optics'],
+:root[data-theme='bold'] .card[data-card='geometry'] {
+  --tool-acc: #7be0b0;
+}
+:root[data-theme='bold'] .card[data-card='effects'],
+:root[data-theme='bold'] .card[data-card='calibration'] {
+  --tool-acc: #b79bff;
+}
+:root[data-theme='bold'] .card.open > header {
+  box-shadow: inset 3px 0 0 var(--tool-acc, var(--acc));
+}
+:root[data-theme='bold'] .card .sl-fill {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--tool-acc, var(--acc)) 38%, transparent),
+    color-mix(in srgb, var(--tool-acc, var(--acc)) 20%, transparent)
+  );
+}

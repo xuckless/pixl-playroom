@@ -24,6 +24,19 @@ export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
 
 export type Rail = 'presets' | 'edits' | 'history' | 'info'
 
+/**
+ * The interface's look (Settings → Interface → Theme), for A/B testing:
+ * Original (the purple OLED look), Calm pro (flat, quiet, no glass) and
+ * Bolder modern (larger, softer, a touch of colour per tool). The accent is
+ * purple in all three. `:root[data-theme]`, styles/themes/.
+ */
+export type Theme = 'original' | 'calm' | 'bold'
+export const THEMES: { value: Theme; label: string }[] = [
+  { value: 'original', label: tk('Original') },
+  { value: 'calm', label: tk('Calm pro') },
+  { value: 'bold', label: tk('Bolder modern') }
+]
+
 /** How a mask is shown over the photo (Lightroom's overlay modes). */
 export type OverlayMode =
   'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
@@ -129,6 +142,8 @@ export interface MasksWindow {
 const DEFAULT_MASKS_WIN: MasksWindow = { open: false }
 
 interface UiState {
+  theme: Theme
+  setTheme(theme: Theme): void
   /** Photos whose "Rebuild with the latest develop?" was answered "Don't ask" (shared/rebuild.ts). */
   rebuildQuiet: string[]
   setRebuildQuiet(key: string): void
@@ -253,6 +268,8 @@ const storage = createJSONStorage(() => ({
 export const useUi = create<UiState>()(
   persist(
     (set, get) => ({
+      theme: 'original',
+      setTheme: (theme) => set({ theme }),
       rebuildQuiet: [],
       setRebuildQuiet: (key) =>
         set((s) => ({
@@ -348,6 +365,7 @@ export const useUi = create<UiState>()(
           ...p,
           // Settings saved before a field existed take its default.
           enhance: normaliseEnhance(p.enhance),
+          theme: THEMES.some((x) => x.value === p.theme) ? p.theme! : 'original',
           masksWin: { open: p.masksWin?.open === true },
           maskOverlay: withoutPins({ ...DEFAULT_MASK_OVERLAY, ...p.maskOverlay }),
           // SCUNet, retired with engine 0.19, is NAFNet SIDD now.

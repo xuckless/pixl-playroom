@@ -459,11 +459,15 @@ export default function App(): React.JSX.Element {
   const still = useStill()
   // The efficient UI, from the first frame: unfocused, or "Always flat".
   useEffect(() => {
-    setAlwaysFlat(useUi.getState().alwaysFlat)
+    // Calm pro is flat by nature: no glass to draw.
+    const flat = (s: { alwaysFlat: boolean; theme: string }): boolean =>
+      s.alwaysFlat || s.theme === 'calm'
+    setAlwaysFlat(flat(useUi.getState()))
     const offs = [
       startEfficientUpkeep(),
       useUi.subscribe((s, prev) => {
-        if (s.alwaysFlat !== prev.alwaysFlat) setAlwaysFlat(s.alwaysFlat)
+        if (s.alwaysFlat !== prev.alwaysFlat || s.theme !== prev.theme) setAlwaysFlat(flat(s))
+        if (s.theme !== prev.theme) document.documentElement.dataset.theme = s.theme
       })
     ]
     return () => offs.forEach((off) => off())

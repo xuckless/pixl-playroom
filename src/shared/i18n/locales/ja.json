@@ -3337,5 +3337,10 @@
   "Rebuild with the latest develop": "最新の現像で再構築",
   "Rebuild with the Latest Develop": "最新の現像で再構築",
   "Rebuilding with the latest develop": "最新の現像で再構築中",
-  "steps made on the earlier develop": "以前の現像で作られたステップ"
+  "steps made on the earlier develop": "以前の現像で作られたステップ",
+  "Bolder modern": "モダン（大胆）",
+  "Calm pro": "プロ（落ち着き）",
+  "How Playroom looks: Original, purple on near black; Calm pro, flat and quiet like a darkroom; Bolder modern, larger and softer, with a touch of colour per tool.": "Playroom の見た目：オリジナルはほぼ黒地に紫、プロ（落ち着き）は暗室のようにフラットで静か、モダン（大胆）は大きく柔らかく、ツールごとに少し色が付きます。",
+  "Only the interface changes: your photos and their edits look the same in all three.": "変わるのはインターフェイスだけです。写真と編集内容は 3 つとも同じに見えます。",
+  "Theme": "テーマ"
 }
