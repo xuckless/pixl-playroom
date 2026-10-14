@@ -65,7 +65,7 @@ a {
 /* scrollbars: a hairline that lights purple under the pointer */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  scrollbar-color: rgb(var(--fg-rgb) / 0.12) transparent;
 }
 ::-webkit-scrollbar {
   width: 6px;
@@ -75,7 +75,7 @@ a {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgb(var(--fg-rgb) / 0.12);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--acc-a55);
@@ -162,5 +162,5 @@ a {
   fill: currentColor;
 }
 .icon-svg .fill-acc {
-  fill: rgba(157, 139, 234, 0.35);
+  fill: color-mix(in srgb, var(--acc) 35%, transparent);
 }

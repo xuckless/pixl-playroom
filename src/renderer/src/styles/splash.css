@@ -43,15 +43,15 @@
 .splash-track {
   position: relative;
   height: 1px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgb(var(--fg-rgb) / 0.08);
 }
 .splash-fill {
   position: absolute;
   left: 0;
   top: 0;
   height: 1px;
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.2), var(--acc) 85%, #fff);
-  box-shadow: 0 0 12px rgba(157, 139, 234, 0.8);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 20%, transparent), var(--acc) 85%, #fff);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--acc) 80%, transparent);
   transition: width 0.4s var(--ease);
 }
 .splash-row {

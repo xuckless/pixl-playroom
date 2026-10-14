@@ -13,7 +13,7 @@
   width: 100%;
   height: 104px;
   display: block;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), rgba(0, 0, 0, 0.3));
+  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.015), rgb(var(--shade-rgb) / 0.3));
   border: 1px solid var(--hair);
 }
 .histogram path {
@@ -26,7 +26,7 @@
   height: 16px;
   padding: 0;
   font-size: 10px;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgb(var(--shade-rgb) / 0.55);
   color: var(--muted);
   border: 1px solid transparent;
   backdrop-filter: blur(6px);
@@ -43,7 +43,7 @@
 }
 .clip-marker.on {
   color: var(--acc);
-  border-color: rgba(157, 139, 234, 0.5);
+  border-color: color-mix(in srgb, var(--acc) 50%, transparent);
   box-shadow: 0 0 12px -4px var(--glow);
 }
 .histogram-foot {
@@ -110,7 +110,7 @@
   transition: background 0.2s;
 }
 .hue-bar:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--fg-rgb) / 0.05);
 }
 .hue-bar .fill {
   width: 100%;
@@ -130,7 +130,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  border-top: 1px dashed rgba(255, 255, 255, 0.45);
+  border-top: 1px dashed rgb(var(--fg-rgb) / 0.45);
   z-index: 2;
   pointer-events: none;
   transition: height 0.7s var(--spring);
@@ -199,7 +199,7 @@
   display: block;
   touch-action: none;
   border: 1px solid var(--hair);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.2));
+  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.02), rgb(var(--shade-rgb) / 0.2));
   margin: 6px 0;
 }
 .curve circle {
@@ -247,10 +247,10 @@
       hsl(0 70% 55%)
     );
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.15),
+    inset 0 0 0 1px rgb(var(--fg-rgb) / 0.15),
     0 0 0 4px #000,
     0 0 0 5px var(--hair),
-    0 10px 30px -14px rgba(0, 0, 0, 0.9);
+    0 10px 30px -14px rgb(var(--shade-rgb) / 0.9);
   cursor: crosshair;
   touch-action: none;
   transition: transform 0.4s var(--spring);
@@ -266,7 +266,7 @@
   border: 2px solid #fff;
   box-shadow:
     0 0 0 1px #000,
-    0 0 10px rgba(255, 255, 255, 0.6);
+    0 0 10px rgb(var(--fg-rgb) / 0.6);
   pointer-events: none;
 }
 .wheel-values {
@@ -294,10 +294,10 @@
   background: radial-gradient(
     circle at 35% 30%,
     #fff,
-    rgba(255, 255, 255, 0.4) 50%,
-    rgba(157, 139, 234, 0.3)
+    rgb(var(--fg-rgb) / 0.4) 50%,
+    color-mix(in srgb, var(--acc) 30%, transparent)
   );
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  border: 1px solid rgb(var(--fg-rgb) / 0.6);
   box-shadow: 0 0 10px -2px var(--glow);
 }
 
@@ -324,7 +324,7 @@
   font-size: 10.5px;
   line-height: 1.55;
   color: var(--text2);
-  background: rgba(0, 0, 0, 0.5);
+  background: rgb(var(--shade-rgb) / 0.5);
   border: 1px solid var(--hair);
   padding: 10px 12px;
   white-space: pre-wrap;
@@ -386,7 +386,7 @@ fieldset::before {
 }
 .preset:hover,
 .history-row:hover {
-  background: rgba(255, 255, 255, 0.035);
+  background: rgb(var(--fg-rgb) / 0.035);
   color: var(--text);
   padding-left: 14px;
 }
@@ -401,8 +401,8 @@ fieldset::before {
 }
 .history-row.on {
   color: var(--text);
-  border-color: rgba(157, 139, 234, 0.35);
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.14), transparent);
+  border-color: color-mix(in srgb, var(--acc) 35%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 14%, transparent), transparent);
 }
 .history-row.future {
   opacity: 0.4;
@@ -415,7 +415,7 @@ fieldset::before {
 .history-row.hidden .rail-label {
   opacity: 0.45;
   text-decoration: line-through;
-  text-decoration-color: rgba(255, 255, 255, 0.25);
+  text-decoration-color: rgb(var(--fg-rgb) / 0.25);
 }
 .history-row.base {
   cursor: default;
@@ -434,9 +434,9 @@ fieldset::before {
 .history-ask {
   margin: 4px 2px 10px;
   padding: 10px 12px;
-  border: 1px solid rgba(157, 139, 234, 0.35);
+  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent);
   border-radius: var(--r);
-  background: rgba(157, 139, 234, 0.08);
+  background: color-mix(in srgb, var(--acc) 8%, transparent);
   font-size: 12px;
   line-height: 1.45;
   color: var(--text2);
@@ -501,7 +501,7 @@ fieldset::before {
 }
 .layer-row.on {
   border-color: var(--acc-a55);
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.14), transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 14%, transparent), transparent);
   color: var(--text);
 }
 .layer-name {
@@ -551,8 +551,8 @@ fieldset::before {
   height: 30px;
   gap: 6px;
   padding: 0 8px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, rgb(var(--fg-rgb) / 0.04), rgb(var(--fg-rgb) / 0.01));
+  box-shadow: inset 0 1px 0 rgb(var(--fg-rgb) / 0.05);
   font-size: 12.5px;
 }
 .ts-tool svg {
@@ -564,7 +564,7 @@ fieldset::before {
   border-color: var(--acc-a55);
   background: linear-gradient(180deg, var(--acc-a20), var(--acc-a10));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 1px 0 rgb(var(--fg-rgb) / 0.12),
     0 0 16px -6px var(--glow);
 }
 .ts-count {
@@ -704,7 +704,7 @@ aside.right .panels.adjust {
   height: 22px;
   border-radius: var(--r);
   border: 1px solid var(--hair2);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgb(var(--fg-rgb) / 0.18);
 }
 .match-pop {
   display: flex;
@@ -806,7 +806,7 @@ aside.right .panels.adjust {
   padding: 8px 10px;
   border: 1px solid var(--hair);
   border-radius: var(--r);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgb(var(--fg-rgb) / 0.02);
 }
 .hdr-ai-note p {
   margin: 0;
@@ -914,7 +914,7 @@ aside.right .panels.adjust {
 }
 .lens-pick li button:hover,
 .lens-pick li button.on {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--fg-rgb) / 0.05);
 }
 .lens-pick li.muted {
   padding: 8px;
@@ -930,7 +930,7 @@ aside.right .panels.adjust {
   padding: 6px 8px 2px;
   border: 1px solid var(--hair);
   border-radius: var(--r);
-  background: rgba(157, 139, 234, 0.04);
+  background: color-mix(in srgb, var(--acc) 4%, transparent);
 }
 .pixel-step-head {
   display: flex;

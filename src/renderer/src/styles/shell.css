@@ -85,7 +85,7 @@
 .vsep {
   width: 1px;
   height: 16px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(var(--fg-rgb) / 0.1);
   flex: none;
 }
 .badge.ghost {
@@ -240,8 +240,8 @@ aside.right .panels {
 }
 .spine button.on {
   color: var(--acc);
-  border-color: rgba(157, 139, 234, 0.4);
-  background: linear-gradient(160deg, rgba(157, 139, 234, 0.16), rgba(157, 139, 234, 0.03));
+  border-color: color-mix(in srgb, var(--acc) 40%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--acc) 16%, transparent), color-mix(in srgb, var(--acc) 3%, transparent));
   box-shadow: 0 0 18px -8px var(--glow);
 }
 .spine button.on::after {
@@ -325,7 +325,7 @@ aside.right .panels {
 .rail-group .line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.45), var(--hair) 40%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 45%, transparent), var(--hair) 40%, transparent);
 }
 .rail-item {
   display: flex;
@@ -350,14 +350,14 @@ aside.right .panels {
 }
 .rail-item:hover,
 .rail-item:focus-visible {
-  background: rgba(255, 255, 255, 0.035);
+  background: rgb(var(--fg-rgb) / 0.035);
   color: var(--text);
   padding-left: 14px;
 }
 .rail-item.on {
   color: var(--text);
-  border-color: rgba(157, 139, 234, 0.35);
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.14), transparent);
+  border-color: color-mix(in srgb, var(--acc) 35%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 14%, transparent), transparent);
 }
 .rail-item.future {
   opacity: 0.4;
@@ -516,9 +516,9 @@ button.timeline-head {
 .applied-look {
   margin: 8px 2px 4px;
   padding: 8px 10px 4px;
-  border: 1px solid rgba(157, 139, 234, 0.35);
+  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent);
   border-radius: var(--r);
-  background: linear-gradient(90deg, rgba(157, 139, 234, 0.12), transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 12%, transparent), transparent);
 }
 .applied-look-head {
   display: flex;
@@ -615,12 +615,12 @@ button.timeline-head {
 .film-toggle.liquid,
 .film-toggle.liquid.refracting {
   background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.01) 50%),
+    linear-gradient(155deg, rgb(var(--fg-rgb) / 0.07), rgb(var(--fg-rgb) / 0.01) 50%),
     rgba(6, 6, 10, 0.55);
 }
 .film-toggle:hover:not(:disabled) {
   color: #fff;
-  border-color: rgba(157, 139, 234, 0.6);
+  border-color: color-mix(in srgb, var(--acc) 60%, transparent);
   transform: translateX(-50%) translateY(-2px);
   box-shadow: 0 0 22px -6px var(--glow);
 }
@@ -663,7 +663,7 @@ button.timeline-head {
 .floating-toolbar.liquid,
 .floating-toolbar.liquid.refracting {
   background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.01) 50%),
+    linear-gradient(155deg, rgb(var(--fg-rgb) / 0.08), rgb(var(--fg-rgb) / 0.01) 50%),
     rgba(8, 8, 12, 0.6);
 }
 .floating-toolbar .bar-title {
@@ -734,10 +734,10 @@ button.timeline-head {
   background: radial-gradient(
     circle at 35% 30%,
     #fff,
-    rgba(255, 255, 255, 0.4) 50%,
-    rgba(157, 139, 234, 0.3)
+    rgb(var(--fg-rgb) / 0.4) 50%,
+    color-mix(in srgb, var(--acc) 30%, transparent)
   );
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  border: 1px solid rgb(var(--fg-rgb) / 0.6);
   box-shadow: 0 0 12px -2px var(--glow);
   transition: transform 0.3s var(--spring);
 }
@@ -759,7 +759,7 @@ button.timeline-head {
   transform: translateX(-50%);
   padding: 10px 16px;
   background: rgba(10, 10, 12, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgb(var(--fg-rgb) / 0.14);
   backdrop-filter: blur(16px) saturate(1.4);
   font-family: var(--font-body);
   font-size: 12.5px;
@@ -771,8 +771,8 @@ button.timeline-head {
   z-index: 60;
   max-width: min(720px, 80vw);
   box-shadow:
-    0 20px 40px -20px rgba(0, 0, 0, 0.9),
-    inset 0 -1px 0 rgba(157, 139, 234, 0.3);
+    0 20px 40px -20px rgb(var(--shade-rgb) / 0.9),
+    inset 0 -1px 0 color-mix(in srgb, var(--acc) 30%, transparent);
 }
 .toast::before {
   content: '';
@@ -789,7 +789,7 @@ button.timeline-head {
 }
 .toast.error {
   box-shadow:
-    0 20px 40px -20px rgba(0, 0, 0, 0.9),
+    0 20px 40px -20px rgb(var(--shade-rgb) / 0.9),
     inset 0 -1px 0 rgba(255, 107, 122, 0.5);
 }
 .toast.error::before {

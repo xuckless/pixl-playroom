@@ -59,7 +59,7 @@
   color: var(--muted);
 }
 .looks-shelf:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--fg-rgb) / 0.04);
   color: var(--text);
 }
 .looks-shelf.on {
@@ -127,7 +127,7 @@
     transform var(--dur-toggle) var(--spring);
 }
 .look-card:hover {
-  background: rgba(255, 255, 255, 0.035);
+  background: rgb(var(--fg-rgb) / 0.035);
 }
 .look-card.on {
   border-color: var(--acc-a35);
@@ -154,7 +154,7 @@
   background: linear-gradient(
     100deg,
     transparent 30%,
-    rgba(255, 255, 255, 0.05) 50%,
+    rgb(var(--fg-rgb) / 0.05) 50%,
     transparent 70%
   );
   background-size: 200% 100%;
@@ -272,7 +272,7 @@
   border: 1.5px solid var(--acc);
   border-radius: 3px;
   background: var(--acc-a10);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 1px rgb(var(--shade-rgb) / 0.35);
   pointer-events: none;
 }
 .look-pick-note {
@@ -386,7 +386,7 @@
   padding: 10px 12px;
   border: 1px solid var(--hair2);
   border-radius: var(--r);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgb(var(--fg-rgb) / 0.02);
 }
 .smart-convert p {
   margin: 0 0 6px;

@@ -8,7 +8,7 @@
   z-index: 7;
   pointer-events: none;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.42);
+  background: rgb(var(--shade-rgb) / 0.42);
   animation: fadeIn 0.4s var(--ease) both;
   transition: opacity 0.6s var(--ease);
 }
@@ -25,9 +25,9 @@
   margin-top: -56px;
   background:
     linear-gradient(0deg, var(--acc) 0 2px, transparent 2px),
-    repeating-linear-gradient(90deg, transparent 0 7px, rgba(0, 0, 0, 0.55) 7px 8px),
-    repeating-linear-gradient(0deg, transparent 0 7px, rgba(0, 0, 0, 0.55) 7px 8px),
-    linear-gradient(0deg, var(--acc-a35, rgba(157, 139, 234, 0.35)), transparent 90%);
+    repeating-linear-gradient(90deg, transparent 0 7px, rgb(var(--shade-rgb) / 0.55) 7px 8px),
+    repeating-linear-gradient(0deg, transparent 0 7px, rgb(var(--shade-rgb) / 0.55) 7px 8px),
+    linear-gradient(0deg, var(--acc-a35, color-mix(in srgb, var(--acc) 35%, transparent)), transparent 90%);
   box-shadow: 0 2px 18px 0 var(--glow);
   mix-blend-mode: screen;
   animation: aiScan 2.8s steps(48) infinite alternate;
@@ -89,7 +89,7 @@
 .ai-card.liquid,
 .ai-card.liquid.refracting {
   background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.01) 50%),
+    linear-gradient(155deg, rgb(var(--fg-rgb) / 0.08), rgb(var(--fg-rgb) / 0.01) 50%),
     rgba(8, 8, 12, 0.78);
 }
 .ai-card::after {
@@ -134,7 +134,7 @@
 .ai-stage i {
   width: 6px;
   height: 6px;
-  border: 1px solid var(--hair3, rgba(255, 255, 255, 0.3));
+  border: 1px solid var(--hair3, rgb(var(--fg-rgb) / 0.3));
 }
 .ai-stage.done {
   color: var(--text2);

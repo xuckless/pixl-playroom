@@ -59,7 +59,7 @@ pixl-aperture .ap-svg[data-state='progress'] .ap-core {
 
 /* splash and the panel loader */
 pixl-aperture[glow] .ap-svg {
-  filter: drop-shadow(0 0 24px rgba(157, 139, 234, 0.45));
+  filter: drop-shadow(0 0 24px color-mix(in srgb, var(--acc) 45%, transparent));
 }
 
 /* the shutter the splash leaves through (shell/Splash.tsx): over everything,

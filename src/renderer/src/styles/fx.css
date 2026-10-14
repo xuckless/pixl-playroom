@@ -17,7 +17,7 @@
   align-items: center;
   justify-content: center;
   gap: 16px;
-  background: radial-gradient(ellipse at center, rgba(8, 6, 16, 0.55), rgba(0, 0, 0, 0.72));
+  background: radial-gradient(ellipse at center, rgba(8, 6, 16, 0.55), rgb(var(--shade-rgb) / 0.72));
   backdrop-filter: blur(8px) saturate(0.8);
   pointer-events: none;
   animation: fadeIn 0.5s var(--ease) both;
@@ -65,7 +65,7 @@
 .ambient .vignette {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse 70% 60% at 50% 50%, transparent 40%, rgba(0, 0, 0, 0.85));
+  background: radial-gradient(ellipse 70% 60% at 50% 50%, transparent 40%, rgb(var(--shade-rgb) / 0.85));
 }
 .css-ambient {
   position: absolute;
