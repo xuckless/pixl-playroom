@@ -3391,5 +3391,15 @@
   "Zoom to 100%": "100%にズーム",
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "100% にズームし、写真の 1 ピクセルを画面の 1 ピクセルで表示して、ピントとノイズを確認します。ピンチまたはスクロールでズーム、{{key}} を押しながらドラッグでパンします。",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ 輝度 {{luma}} · 色差 {{chroma}}",
-  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各プレーンのホワイトノイズの σ̂（ノイズ除去機能自体の推定値、8ビットのコード値）"
+  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各プレーンのホワイトノイズの σ̂（ノイズ除去機能自体の推定値、8ビットのコード値）",
+  "Close to Resolve’s, not the same: each range is keyed on brightness with a soft edge until the engine grades in log (it has been asked to).": "Resolve に近いものの同じではありません。エンジンがログでグレーディングできるようになるまで（要望済み）、各範囲は明るさで柔らかい境界をつけて選択されます。",
+  "DaVinci Resolve’s Log wheels: Shadow, Midtone and Highlight each move only their part of the tones, Offset all of them. Low and High range say where the parts meet.": "DaVinci Resolve の Log ホイールです。Shadow・Midtone・Highlight はそれぞれ自分の階調範囲だけを、Offset はすべてを動かします。Low と High range で各範囲の境目を決めます。",
+  "High range": "ハイレンジ",
+  "Highlight": "ハイライト",
+  "Log wheels": "Log ホイール",
+  "Low range": "ローレンジ",
+  "Midtone": "ミッドトーン",
+  "Shadow": "シャドウ",
+  "Small, contained moves: warming only the shadows, cooling only the highlights.": "小さく限定的な調整に：シャドウだけを暖かく、ハイライトだけを冷たく。",
+  "Use them after the Primaries, for the finer split; they add colour rather than scale it.": "プライマリーの後、より細かな振り分けに使います。色を掛け合わせるのではなく加えます。"
 }

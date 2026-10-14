@@ -3511,5 +3511,15 @@
   "Zoom to 100%": "Zoom à 100 %",
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "Zoome à 100 %, un pixel de la photo par pixel de l’écran, pour vérifier la netteté et le bruit. Pincez ou faites défiler pour zoomer ; maintenez {{key}} et faites glisser pour déplacer la vue.",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ luma {{luma}} · chroma {{chroma}}",
-  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ du bruit blanc sur chaque plan, selon l'estimateur du débruiteur, en valeurs de code 8 bits"
+  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ du bruit blanc sur chaque plan, selon l'estimateur du débruiteur, en valeurs de code 8 bits",
+  "Close to Resolve’s, not the same: each range is keyed on brightness with a soft edge until the engine grades in log (it has been asked to).": "Proche de Resolve, sans être identique : chaque plage est isolée par la luminosité avec un bord doux, jusqu’à ce que le moteur étalonne en log (c’est demandé).",
+  "DaVinci Resolve’s Log wheels: Shadow, Midtone and Highlight each move only their part of the tones, Offset all of them. Low and High range say where the parts meet.": "Les roues Log de DaVinci Resolve : Shadow, Midtone et Highlight n’agissent chacune que sur leur partie des tons, Offset sur tous. Low et High range indiquent où ces parties se rejoignent.",
+  "High range": "Plage haute",
+  "Highlight": "Hautes lumières",
+  "Log wheels": "Roues Log",
+  "Low range": "Plage basse",
+  "Midtone": "Tons moyens",
+  "Shadow": "Ombres",
+  "Small, contained moves: warming only the shadows, cooling only the highlights.": "Des retouches petites et ciblées : réchauffer seulement les ombres, refroidir seulement les hautes lumières.",
+  "Use them after the Primaries, for the finer split; they add colour rather than scale it.": "Utilisez-les après les Primaires, pour un partage plus fin ; elles ajoutent de la couleur plutôt que de la multiplier."
 }

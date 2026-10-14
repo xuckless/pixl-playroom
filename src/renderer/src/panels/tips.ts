@@ -347,6 +347,15 @@ export const TIPS = {
       'Balance with Offset first, then shape with Lift, Gamma and Gain while watching the parade. Shift makes any drag finer; double-click a wheel’s name to reset it.'
     )
   },
+  logwheels: {
+    what: tk(
+      'DaVinci Resolve’s Log wheels: Shadow, Midtone and Highlight each move only their part of the tones, Offset all of them. Low and High range say where the parts meet.'
+    ),
+    expect: tk('Small, contained moves: warming only the shadows, cooling only the highlights.'),
+    tip: tk(
+      'Use them after the Primaries, for the finer split; they add colour rather than scale it.'
+    )
+  },
   rcurves: {
     what: tk(
       'DaVinci Resolve’s curves. Custom is the tone curve (Y, R, G, B); the others change one thing by another: Hue vs Hue turns a colour, Hue vs Sat and Lum vs Sat make colours richer or quieter by hue or by brightness.'

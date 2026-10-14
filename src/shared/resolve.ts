@@ -330,3 +330,114 @@ export function scaleCurvesVs(c: CurvesVsSetting, k: number): CurvesVsSetting {
     out[v] = c[v].map((p) => ({ x: p.x, y: clamp(0.5 + (p.y - 0.5) * k, 0, 1) }))
   return out
 }
+
+// ── Log wheels ─────────────────────────────────────────────────────────────
+
+/**
+ * Resolve's Log wheels: Shadow, Midtone and Highlight each move only their
+ * part of the tonal range (below Low, between, above High), Offset all of
+ * it; each adds to the values (an offset, not a gain), so a small push stays
+ * small. Until the engine has a log grading space and its own op (E73, E74)
+ * each part is a Qualifier keyed on luma with a soft edge: close to Resolve,
+ * not the same, and the card says so.
+ */
+export interface LogWheelsSetting {
+  shadow: Yrgb
+  midtone: Yrgb
+  highlight: Yrgb
+  offset: Yrgb
+  /** 0…1, where the shadows end (Resolve's Low Range, 0.333). */
+  low: number
+  /** 0…1, where the highlights begin (Resolve's High Range, 0.550). */
+  high: number
+}
+
+export const LOG_LOW = 0.333
+export const LOG_HIGH = 0.55
+/** How far past its range a part's push fades out. */
+const LOG_SOFT = 0.12
+
+export function defaultLogWheels(): LogWheelsSetting {
+  return {
+    shadow: zero(),
+    midtone: zero(),
+    highlight: zero(),
+    offset: zero(),
+    low: LOG_LOW,
+    high: LOG_HIGH
+  }
+}
+
+export function normaliseLogWheels(v: unknown): LogWheelsSetting {
+  const o = (v && typeof v === 'object' ? v : {}) as Partial<
+    Record<keyof LogWheelsSetting, unknown>
+  >
+  const low = clamp(num(o.low, LOG_LOW), 0.02, 0.9)
+  return {
+    shadow: yrgbOf(o.shadow, zero(), -1, 1),
+    midtone: yrgbOf(o.midtone, zero(), -1, 1),
+    highlight: yrgbOf(o.highlight, zero(), -1, 1),
+    offset: yrgbOf(o.offset, zero(), -1, 1),
+    low,
+    high: clamp(num(o.high, LOG_HIGH), low + 0.05, 0.98)
+  }
+}
+
+const isZero = (w: Yrgb): boolean => w.y === 0 && w.r === 0 && w.g === 0 && w.b === 0
+
+/** A wheel's push as a Primary that adds it: `v + o` is `lift o, gain 1 + o`. */
+function offsetPrimary(w: Yrgb): Primary {
+  const lift = { r: 0, g: 0, b: 0 }
+  const gain = { r: 1, g: 1, b: 1 }
+  for (const c of CH) {
+    const o = w.y + w[c]
+    lift[c] = r4(o)
+    gain[c] = r4(1 + o)
+  }
+  return { ...IDENTITY, lift, gain }
+}
+
+/** The luma band a part keys: centre, width and the soft edge past it. */
+export function logBand(
+  part: 'shadow' | 'midtone' | 'highlight',
+  low: number,
+  high: number
+): { centre: number; width: number; softness: number } {
+  if (part === 'shadow') return { centre: 0, width: r4(2 * low), softness: LOG_SOFT }
+  if (part === 'highlight') return { centre: 1, width: r4(2 * (1 - high)), softness: LOG_SOFT }
+  return { centre: r4((low + high) / 2), width: r4(high - low), softness: LOG_SOFT }
+}
+
+/** The log wheels as engine ops for the look stage (empty when untouched). */
+export function logWheelsOps(l: LogWheelsSetting): GradeOp[] {
+  const out: GradeOp[] = []
+  for (const part of ['shadow', 'midtone', 'highlight'] as const) {
+    if (isZero(l[part])) continue
+    out.push({
+      Qualifier: {
+        key: {
+          hue: null,
+          saturation: null,
+          luma: logBand(part, l.low, l.high),
+          blur_radius: 0,
+          invert: false
+        },
+        correction: offsetPrimary(l[part]),
+        smoothing: null
+      }
+    })
+  }
+  if (!isZero(l.offset)) out.push({ Primary: offsetPrimary(l.offset) })
+  return out
+}
+
+export function scaleLogWheels(l: LogWheelsSetting, k: number): LogWheelsSetting {
+  const lin = (w: Yrgb): Yrgb => ({ y: w.y * k, r: w.r * k, g: w.g * k, b: w.b * k })
+  return {
+    ...l,
+    shadow: lin(l.shadow),
+    midtone: lin(l.midtone),
+    highlight: lin(l.highlight),
+    offset: lin(l.offset)
+  }
+}

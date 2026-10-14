@@ -261,3 +261,69 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
 function tabsOf(): { value: CurvesTab; label: string }[] {
   return CURVE_TABS.map((x) => ({ ...x, label: t(x.label) }))
 }
+
+// ── Log wheels ───────────────────────────────────────────────────────────────
+
+type LogKey = 'shadow' | 'midtone' | 'highlight' | 'offset'
+
+const LOG_NAMES: Record<LogKey, string> = {
+  shadow: tk('Shadow'),
+  midtone: tk('Midtone'),
+  highlight: tk('Highlight'),
+  offset: tk('Offset')
+}
+
+/** Log wheels add small amounts: the disc and ring reach less far than the primaries'. */
+const LOG_SCALE: WheelScale = { neutral: 0, reach: 0.08, ringStep: 0.0015, min: -1, max: 1 }
+
+export function LogWheelsBody(): React.JSX.Element | null {
+  const { recipe, edit, commit } = useScope()
+  if (!recipe) return null
+  const l = recipe.logWheels
+  const wheel = (key: LogKey): React.JSX.Element => (
+    <GradeWheel
+      key={key}
+      label={t(LOG_NAMES[key])}
+      value={l[key]}
+      scale={LOG_SCALE}
+      size={96}
+      onChange={(v: Yrgb, live) => edit((r) => (r.logWheels[key] = v), live)}
+      onCommit={() => commit(`Log wheels: ${LOG_NAMES[key]}`)}
+    />
+  )
+  return (
+    <ToolPanel>
+      <div className="gwheels">
+        {wheel('shadow')}
+        {wheel('midtone')}
+        {wheel('highlight')}
+        {wheel('offset')}
+      </div>
+      <RS
+        label={tk('Low range')}
+        read={(r) => r.logWheels.low}
+        write={(r, v) => (r.logWheels.low = Math.min(v, r.logWheels.high - 0.05))}
+        min={0.02}
+        max={0.9}
+        step={0.001}
+        def={0.333}
+        format={(v) => v.toFixed(3)}
+      />
+      <RS
+        label={tk('High range')}
+        read={(r) => r.logWheels.high}
+        write={(r, v) => (r.logWheels.high = Math.max(v, r.logWheels.low + 0.05))}
+        min={0.07}
+        max={0.98}
+        step={0.001}
+        def={0.55}
+        format={(v) => v.toFixed(3)}
+      />
+      <p className="muted small">
+        {t(
+          'Close to Resolve’s, not the same: each range is keyed on brightness with a soft edge until the engine grades in log (it has been asked to).'
+        )}
+      </p>
+    </ToolPanel>
+  )
+}

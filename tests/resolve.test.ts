@@ -152,3 +152,30 @@ test('the vs curves compile to one Curves op; the two the engine lacks wait in t
   )
   assert.ok(ops(r).some((o) => 'Curves' in o && o.Curves.hue_vs_hue))
 })
+
+test('log wheels key their own part of the tones, and add rather than scale', async () => {
+  const { logBand, logWheelsOps, normaliseLogWheels } = await import('../src/shared/resolve')
+  const l = normaliseLogWheels({})
+  assert.deepEqual(logWheelsOps(l), [])
+  // Each band covers its range fully, within low/high.
+  const s = logBand('shadow', 0.333, 0.55)
+  assert.ok(Math.abs(s.centre + s.width / 2 - 0.333) < 1e-3)
+  const m = logBand('midtone', 0.333, 0.55)
+  assert.ok(Math.abs(m.centre - m.width / 2 - 0.333) < 1e-3)
+  assert.ok(Math.abs(m.centre + m.width / 2 - 0.55) < 1e-3)
+  const h = logBand('highlight', 0.333, 0.55)
+  assert.ok(Math.abs(h.centre - h.width / 2 - 0.55) < 1e-3)
+
+  l.shadow = { y: 0, r: 0.02, g: 0, b: -0.02 }
+  l.offset = { y: 0.01, r: 0, g: 0, b: 0 }
+  const ops = logWheelsOps(l)
+  assert.equal(ops.length, 2)
+  const q = (ops[0] as { Qualifier: { correction: Primary } }).Qualifier.correction
+  // v + o: lift o and gain 1 + o.
+  assert.equal(q.lift.r, 0.02)
+  assert.equal(q.gain.r, 1.02)
+  assert.equal(q.gain.b, 0.98)
+  // The range sliders keep low under high.
+  const n = normaliseLogWheels({ low: 0.8, high: 0.5 })
+  assert.ok(n.high > n.low)
+})

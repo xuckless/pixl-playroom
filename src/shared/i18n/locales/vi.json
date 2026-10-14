@@ -3391,5 +3391,15 @@
   "Zoom to 100%": "Phóng to 100%",
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "Phóng to 100%, mỗi điểm ảnh của ảnh ứng với một điểm ảnh màn hình, để kiểm tra độ nét và nhiễu. Chụm hoặc cuộn để thu phóng; giữ {{key}} và kéo để di chuyển khung nhìn.",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ luma {{luma}} · chroma {{chroma}}",
-  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ của nhiễu trắng trên từng mặt phẳng, theo bộ ước lượng riêng của bộ khử nhiễu, tính bằng giá trị mã 8 bit"
+  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ của nhiễu trắng trên từng mặt phẳng, theo bộ ước lượng riêng của bộ khử nhiễu, tính bằng giá trị mã 8 bit",
+  "Close to Resolve’s, not the same: each range is keyed on brightness with a soft edge until the engine grades in log (it has been asked to).": "Gần giống Resolve nhưng không hoàn toàn: mỗi dải được chọn theo độ sáng với viền mềm cho đến khi engine chỉnh màu trong không gian log (đã được yêu cầu).",
+  "DaVinci Resolve’s Log wheels: Shadow, Midtone and Highlight each move only their part of the tones, Offset all of them. Low and High range say where the parts meet.": "Các bánh xe Log của DaVinci Resolve: Shadow, Midtone và Highlight mỗi bánh chỉ chỉnh phần tông của mình, Offset chỉnh tất cả. Low và High range cho biết các phần gặp nhau ở đâu.",
+  "High range": "Dải cao",
+  "Highlight": "Vùng sáng",
+  "Log wheels": "Bánh xe Log",
+  "Low range": "Dải thấp",
+  "Midtone": "Vùng trung tính",
+  "Shadow": "Vùng tối",
+  "Small, contained moves: warming only the shadows, cooling only the highlights.": "Những thay đổi nhỏ, có giới hạn: chỉ làm ấm vùng tối, chỉ làm lạnh vùng sáng.",
+  "Use them after the Primaries, for the finer split; they add colour rather than scale it.": "Dùng sau Hiệu chỉnh cơ bản, để chia tách tinh hơn; chúng cộng thêm màu thay vì nhân màu."
 }

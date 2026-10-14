@@ -62,9 +62,11 @@ import { tk } from './i18n'
 import { effective } from './edits'
 import {
   curvesVsOp,
+  logWheelsOps,
   primariesOp,
   primariesWhite,
   scaleCurvesVs,
+  scaleLogWheels,
   scalePrimaries,
   type VsCurve
 } from './resolve'
@@ -866,6 +868,7 @@ export function scaleSettings(s: LayerSettings, amount: number): LayerSettings {
     })),
     primaries: scalePrimaries(s.primaries, k),
     curvesVs: scaleCurvesVs(s.curvesVs, k),
+    logWheels: scaleLogWheels(s.logWheels, k),
     colorGrade: {
       ...cg,
       shadows: wheel(cg.shadows),
@@ -1439,6 +1442,7 @@ function settingsStages(
   // Resolve's primaries, after Lightroom's grading (shared/resolve.ts).
   const prim = bw ? null : primariesOp(r.primaries)
   if (prim) tail.push(prim)
+  if (!bw) tail.push(...logWheelsOps(r.logWheels))
   // Resolve's vs curves; the two the engine lacks wait, said in the notes.
   const vs = curvesVsOp(r.curvesVs)
   if (vs.op && !bw) tail.push(vs.op)

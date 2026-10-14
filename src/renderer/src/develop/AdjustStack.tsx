@@ -30,7 +30,7 @@ import {
   WhiteBalanceBody
 } from '../panels/global'
 import { HealPanel } from '../panels/heal'
-import { PrimariesBody, ResolveCurvesBody } from '../panels/resolve'
+import { LogWheelsBody, PrimariesBody, ResolveCurvesBody } from '../panels/resolve'
 import { rich, t, tk } from '../lib/i18n'
 import { LensPanel } from '../panels/lens'
 import { TIPS } from '../panels/tips'
@@ -48,6 +48,7 @@ const BODIES: Record<CardId, ComponentType> = {
   grading: GradingBody,
   curve: CurveBody,
   primaries: PrimariesBody,
+  logwheels: LogWheelsBody,
   rcurves: ResolveCurvesBody,
   detail: DetailBody,
   effects: EffectsBody,

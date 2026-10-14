@@ -3391,5 +3391,15 @@
   "Zoom to 100%": "缩放到 100%",
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "缩放到 100%，照片的一个像素对应屏幕的一个像素，用于检查对焦和噪点。捏合或滚动以缩放；按住 {{key}} 并拖动以平移。",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ 亮度 {{luma}} · 色度 {{chroma}}",
-  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各平面白噪声的 σ̂，由降噪器自身估算，以 8 位代码值表示"
+  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各平面白噪声的 σ̂，由降噪器自身估算，以 8 位代码值表示",
+  "Close to Resolve’s, not the same: each range is keyed on brightness with a soft edge until the engine grades in log (it has been asked to).": "接近 Resolve，但不完全相同：在引擎支持对数调色之前（已提出请求），每个范围按亮度以柔和边缘选取。",
+  "DaVinci Resolve’s Log wheels: Shadow, Midtone and Highlight each move only their part of the tones, Offset all of them. Low and High range say where the parts meet.": "DaVinci Resolve 的 Log 色轮：Shadow、Midtone 和 Highlight 各自只调整自己那部分色调，Offset 调整全部。Low 和 High range 决定各部分的分界。",
+  "High range": "高范围",
+  "Highlight": "高光",
+  "Log wheels": "Log 色轮",
+  "Low range": "低范围",
+  "Midtone": "中间调",
+  "Shadow": "阴影",
+  "Small, contained moves: warming only the shadows, cooling only the highlights.": "小而有限的调整：只让阴影变暖，只让高光变冷。",
+  "Use them after the Primaries, for the finer split; they add colour rather than scale it.": "在一级校色之后用于更细的划分；它们是叠加颜色而非缩放颜色。"
 }

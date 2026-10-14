@@ -18,6 +18,7 @@ export const CARD_IDS = [
   'grading',
   'curve',
   'primaries',
+  'logwheels',
   'rcurves',
   'detail',
   'effects',
@@ -92,6 +93,13 @@ export const CARDS: CardSpec[] = [
     id: 'primaries',
     title: tk('Primaries'),
     fields: [['primaries']],
+    inMask: true,
+    set: 'resolve'
+  },
+  {
+    id: 'logwheels',
+    title: tk('Log wheels'),
+    fields: [['logWheels']],
     inMask: true,
     set: 'resolve'
   },
