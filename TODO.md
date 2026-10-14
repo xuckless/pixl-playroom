@@ -30,6 +30,90 @@ from the old TODO and a full performance and bug sweep.
 
 ---
 
+## Next: Phase P, engine 0.21.0 (passes 118–124)
+
+**Prepared 2026-10-14, before the engine's guide exists.** The engine's
+0.21.0 is to carry many of Playroom's requests; what Playroom asks for, in
+order and with the shapes it expects, is
+`~/fedora-data/pixl-engine-requests/playroom-0.21.0-asks.md`. When the
+engine publishes `docs/playroom/0.21.0.md` and `docs/migration-0.21.0.md`,
+they win over this plan: re-check each item against them, drop what 0.21.0
+does not carry back to "Waiting on the engine", and take the rest in this
+order. Try a pre-release engine with a development kit (`pnpm engine:dev`,
+`PLAYROOM_DEV_KIT`) before the packages are published.
+
+Where Playroom stands (0.5.0-beta and after): one set of colour tools
+(f9cc086), every built-in look on them (4512e88), so the Resolve requests
+are the main grading path now.
+
+### Pass 118 — Run on 0.21.0 · 3 pts
+
+- [ ] **M** · Both packages (and `pixl-models`) at 0.21.0; the migration
+      notes' required fields; `pnpm run notices` after a build; new models
+      onto the mirror (`publish-models.mjs --only … --bucket pixl-models`,
+      then `--check`). Types restated from the guide.
+- [ ] **S** · `src/shared/engine-types.ts` diffed against the binding's
+      `index.d.ts`; the dev kit restored (`pnpm engine:dev --restore`) so
+      `node_modules` holds the published roster.
+
+### Pass 119 — The workarounds go (E70, E53, E63, E64) · 5 pts
+
+- [ ] **M** · E70: PIXL Enhance on a RAW's float frame. `main/enhance.ts`
+      stops clipping (`modelInput`) and the headroom guard (`guardPatch`)
+      lays nothing back; a RAW step kept as F32. Checked on a RAW with
+      highlights above white.
+- [ ] **M** · E53 and E63: `compile.ts` drops `withFloors` / `P3_FLOOR`
+      and sets `TONE_SMOOTHING = true` if the engine says smoothing is sane;
+      `tests/e53.test.ts`, `tests/e63.test.ts` re-run on the owner's RAWs
+      (`PIXL_E53_RAWS`).
+- [ ] **S** · E64: the stated-noise path (`ai/rawdevelop.ts`,
+      `ai/noisebook.ts`) only for a frame no plane of which fits.
+
+### Pass 120 — Develops: cancel, progress, regions (B5, E68, E66, E67) · 5 pts
+
+- [ ] **M** · A RAW master develop cancelled when the photo is left; the
+      loupe's bar from tiles done of tiles instead of the clock.
+- [ ] **L** · If E66 lands: the first 1:1 look develops only its region;
+      the whole master waits for an export or a pixel step. If E67 lands:
+      proxies and thumbnails from the model's own preview, not cut from the
+      master.
+
+### Pass 121 — The colour tools made exact (E71–E75, E77, E78) · 5 pts
+
+- [ ] **M** · E71, E72: `resolve.ts` `VS_WAITING` emptied, `curvesVsOp`
+      emits Hue vs Lum and Sat vs Sat; the "Waiting for the engine" badge
+      and `VS_WAITING_NOTE` go; tests in `tests/resolve.test.ts`.
+- [ ] **L** · E73, E74: Log wheels as the engine's op in its log space
+      (`logWheelsOps`); Primaries' Contrast and Pivot there too if the
+      guide says so. The looks re-measured old against new (the ΔE harness:
+      render each look's v-current and v-next on a RAW proxy, mean ΔE per
+      look) and any above 3 retuned.
+- [ ] **S** · E75: Temp/Tint on the `Primary` (`primariesWhite` moves).
+- [ ] **S** · E77: qualifiers no longer forced first in their own layer;
+      the key view from the engine's inspect. E78: the wheel rings move
+      luminance alone.
+
+### Pass 122 — Speed (E59, E7, E62, E37, B6) · 4 pts
+
+- [ ] **M** · `shared/gpudrag.ts`: the GPU allow-list grows with what the
+      engine takes; a RAW at its defaults drags on the GPU (measured on the
+      M2 Pro: fps and ms a frame, before and after).
+- [ ] **M** · 1:1 pans of refined masks and many-mask drags re-measured;
+      `ModelSession` for develops if offered.
+
+### Pass 123 — Scopes and looks from the engine (E76, E41–E44) · 4 pts
+
+- [ ] **M** · E76: the settled picture's scopes (waveform, parade, vector,
+      CIE) from `analyze`, the GPU bins kept for drags; "In mask" through
+      the engine's mask weight.
+- [ ] **M** · E41–E44: `halationApprox` and `bloomApprox` replaced by the
+      real ops; the looks marked `approximates` re-made and the marks gone.
+
+### Pass 124 — Release · 2 pts
+
+- [ ] **S** · What's new for the release (`shared/releasenotes.ts`, the
+      house style), translations, Release-As, the PR.
+
 ## Top priority — Phase N: engine 0.18.0 (passes 85–103)
 
 **Status (2026-10-08)**: passes 85–103 are done and tested on the branch; what
