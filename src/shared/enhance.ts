@@ -175,8 +175,9 @@ export function reconstructParams(smoothing: number): {
  * Saved settings brought up to date: a retired JPEG restore reads as its
  * successor; an upscale saved before the Source choice keeps the model it
  * ran (×4 general is Damaged, ×4 keep texture is Texture; ×2's own model is
- * retired, so it is Clean); settings saved before PIXL Enhance take its
- * default level, and a level it does not have reads as off.
+ * retired, so it is Clean), and one it does not know reads as off (Super
+ * resolution is never chosen for the user); settings saved before PIXL
+ * Enhance take its default level, and a level it does not have reads as off.
  */
 export function normaliseEnhance(p: Partial<EnhanceSettings> | undefined): EnhanceSettings {
   const { jpeg, upscale, upscaleSource, pixl: level, ...rest } = { ...DEFAULT_ENHANCE, ...p }
@@ -192,7 +193,7 @@ export function normaliseEnhance(p: Partial<EnhanceSettings> | undefined): Enhan
   return {
     ...rest,
     jpeg: (jpeg as string) === 'fbcnn-qf' ? 'fbcnn' : jpeg,
-    upscale: was === 'x4-wdn' ? 'x4' : ['off', 'x2', 'x4'].includes(was) ? upscale : 'x2',
+    upscale: was === 'x4-wdn' ? 'x4' : ['off', 'x2', 'x4'].includes(was) ? upscale : 'off',
     upscaleSource: source,
     pixl: ['clean', 'denoise', 'sharpen'].includes(level) ? level : 'off'
   }

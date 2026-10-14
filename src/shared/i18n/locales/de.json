@@ -3365,5 +3365,6 @@
   "Zoom to 100%": "Auf 100 % zoomen",
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "Zoomt auf 100 %, ein Fotopixel pro Bildschirmpixel, um Schärfe und Rauschen zu prüfen. Zum Zoomen zusammenziehen oder scrollen; {{key}} halten und ziehen zum Verschieben.",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ Luma {{luma}} · Chroma {{chroma}}",
-  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ des weißen Rauschens je Ebene, der eigene Schätzer des Entrauschers, in 8-Bit-Codewerten"
+  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ des weißen Rauschens je Ebene, der eigene Schätzer des Entrauschers, in 8-Bit-Codewerten",
+  "Developing RAW": "RAW wird entwickelt"
 }

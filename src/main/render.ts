@@ -43,7 +43,7 @@ import { stackSignature, type PixelStep } from '../shared/pixels'
 import { developMark, pixlSupported, resolveRawColour } from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
-import { askOf, scenePlan } from './ai/rawdevelop'
+import { askOf, scenePlan, type ScenePlan } from './ai/rawdevelop'
 import { takeDevelopedNote } from './devkit'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { ensureWorking, workingKey, type WorkingSet } from './pixels/working'
@@ -75,6 +75,7 @@ import {
   type CaMeasurement,
   type DevelopSession,
   type LookThumbEvent,
+  type MasterEvent,
   type RegionRequest,
   type RegionResult,
   type RenderEvent,
@@ -117,8 +118,10 @@ import { pixels } from './workers/pool'
 import { traceRegion } from './trace'
 import { cacheUrl } from './protocol'
 import {
+  ensureDevelopedProxies,
   ensureLensedProxies,
   ensureMaster,
+  onMasterWork,
   ensureProxies,
   ensureQuickMaster,
   masterCached,
@@ -193,6 +196,8 @@ const SAVE_MS = 600
 const MASK_THUMB_EDGE = 512
 /** How long editing pauses before an open photo's thumbnail is made again. */
 const THUMB_IDLE_MS = 4000
+/** How long a RAW stays open before the PIXL demosaic's master is made for it. */
+const DEVELOP_ON_OPEN_MS = 1200
 /** The middle proxy serves a view up to 1/MID_SHORTFALL its size. */
 const MID_SHORTFALL = 0.8
 /** Picture files of each kind kept on disk besides any a kept event names. */
@@ -471,7 +476,8 @@ class Session {
     readonly key: string,
     readonly row: PhotoRow,
     readonly info: SourceInfo,
-    readonly px: Proxies,
+    /** The proxies renders start from: the plain ones, or (`adoptDeveloped`) those cut from the master. */
+    public px: Proxies,
     public recipe: Recipe,
     private readonly owner: DevelopSessions,
     /** The file as probed; `info` is what is graded (a gain map's HDR master, when edited so). */
@@ -564,7 +570,75 @@ class Session {
   workingJob: Promise<void> = Promise.resolve()
 
   private stepsKey(recipe: Recipe): string {
-    return workingKey(versionStamp(this.row), recipe.pixels)
+    return workingKey(this.workingVersion(), recipe.pixels)
+  }
+
+  /** The develop the proxies were cut from, once they are the master's (`adoptDeveloped`). */
+  private developedTag: string | null = null
+
+  /** What the working pixels are kept by: the photo's version, and the develop its proxies are of. */
+  private workingVersion(): string {
+    const v = versionStamp(this.row)
+    return this.developedTag ? `${v}-${this.developedTag}` : v
+  }
+
+  /** Whether this RAW's full-size develop is the PIXL demosaic (a development kit's), now. */
+  private async pixlPlan(): Promise<ScenePlan | null> {
+    if (!this.isRaw || isLinearRaw(this.file)) return null
+    const plan = await scenePlan(this.file.raw_cfa, askOf(this.recipe))
+    return plan.demosaic === 'pixl' ? plan : null
+  }
+
+  /**
+   * A RAW the PIXL demosaic develops: its master is made as it opens (after
+   * a moment's rest, so flicking through photos starts none), and the
+   * zoomed-out picture is cut from it once it is there (`adoptDeveloped`),
+   * so what is edited is what the 1:1 view and the export show. The bar in
+   * the loupe's badge says how far meanwhile.
+   */
+  async developOnOpen(): Promise<void> {
+    try {
+      await new Promise((r) => setTimeout(r, DEVELOP_ON_OPEN_MS))
+      if (this.closed || this.developedTag || !(await this.pixlPlan())) return
+      await ensureMaster(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
+      await this.adoptDeveloped()
+    } catch (err) {
+      if (!this.closed) this.masterRefused(err)
+    }
+  }
+
+  /**
+   * Once the PIXL demosaic's master is made (on open, a 1:1 view, a pixel
+   * step or an earlier visit), the develop view's proxies are cut from it
+   * and everything renders again from them: the zoomed-out picture is the
+   * model's too (denoised), not the half-size develop's. A master another
+   * develop stood in for (one the engine refused the model for) is not.
+   */
+  async adoptDeveloped(): Promise<void> {
+    if (this.developedTag || this.closed) return
+    try {
+      const plan = await this.pixlPlan()
+      const ask = askOf(this.recipe)
+      if (!plan || !(await masterCached(this.row, this.file, ask))) return
+      const master = await ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+      const px = await ensureDevelopedProxies(
+        this.owner.bgEngine,
+        this.row,
+        this.px,
+        master,
+        plan.tag
+      )
+      if (this.closed || this.developedTag) return
+      this.px = px
+      this.developedTag = plan.tag
+      // Steps laid on the plain proxies are laid again on these.
+      this.working = null
+      if (this.recipe.pixels.length > 0) await this.refreshWorking()
+      else this.schedule('full')
+      log.info('develop view now from the master', plan.tag, this.row.name)
+    } catch (err) {
+      log.warn('proxies from the master not made', (err as Error).message)
+    }
   }
 
   /**
@@ -595,7 +669,7 @@ class Session {
     try {
       const set = await ensureWorking(
         pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row),
-        versionStamp(this.row),
+        this.workingVersion(),
         this.px,
         this.recipe.pixels,
         null
@@ -629,7 +703,7 @@ class Session {
     if (this.recipe.pixels.length === 0) return null
     const set = await ensureWorking(
       pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row),
-      versionStamp(this.row),
+      this.workingVersion(),
       this.px,
       this.recipe.pixels,
       () => ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
@@ -2010,13 +2084,20 @@ class Session {
    * The RAW master a 1:1 view reads: the plan's (DemosaicNet) once it is
    * made; until then a quick classic one (PPG, about 1.2 s) at once, the
    * plan's made in the background, and the window told to ask again when it
-   * is (the engine's viewing guide, 2026-10-09).
+   * is (the engine's viewing guide, 2026-10-09). The PIXL demosaic has no
+   * quick one before it: the view waits for its master (the bar in the
+   * badge says how far), or says in the window why there is none.
    */
   private async rawMasterForView(): Promise<ProxyFile> {
     const ask = askOf(this.recipe)
     const plan = await scenePlan(this.file.raw_cfa, ask)
     const plain = (): Promise<ProxyFile> =>
       ensureMaster(this.owner.bgEngine, this.row, this.file, ask)
+    if (plan.demosaic === 'pixl')
+      return plain().catch((err: unknown) => {
+        this.masterRefused(err)
+        throw err
+      })
     // A linear DNG has no demosaic to wait for (`isLinearRaw`): its one master, at once.
     if (
       plan.demosaic === 'classic' ||
@@ -2034,6 +2115,14 @@ class Session {
       (err: unknown) => log.warn('RAW master for 1:1 not made', (err as Error).message)
     )
     return ensureQuickMaster(this.owner.bgEngine, this.row)
+  }
+
+  /** A RAW master that could not be made, said in the window (the 1:1 tile keeps what it had). */
+  private masterRefused(err: unknown): void {
+    if (this.closed) return
+    const message = (err as Error).message
+    log.error('RAW master not made', message)
+    this.owner.send(IPC.develop.renderError, { key: this.key, message, code: 'Master' })
   }
 
   /** A 1:1 (or smaller) render of part of the full-resolution frame. */
@@ -2566,7 +2655,7 @@ class Session {
     steps: PixelStep[]
   ): Promise<PixelStep | null> {
     const deps = pixelDeps(this.owner.bgEngine, this.owner.library.index, this.row)
-    const set = await ensureWorking(deps, versionStamp(this.row), this.px, steps, () =>
+    const set = await ensureWorking(deps, this.workingVersion(), this.px, steps, () =>
       ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
     )
     const key = keyOf(this.row.id, null)
@@ -2603,7 +2692,7 @@ class Session {
     // The full-size frame with this stroke, started now: a 1:1 view wants it
     // the moment the step lands, and it is the last one plus a small patch.
     if (step)
-      void ensureWorking(deps, versionStamp(this.row), this.px, [...steps, step], () =>
+      void ensureWorking(deps, this.workingVersion(), this.px, [...steps, step], () =>
         ensureBase(this.owner.bgEngine, this.row, this.file, askOf(this.recipe))
       ).catch(() => undefined)
     return step
@@ -2763,6 +2852,22 @@ export class DevelopSessions {
     readonly bgEngine: EngineClient
   ) {
     this.gpu = new GpuDrag(engine, library.index)
+    // The open RAW's full-size develop, said in the window while it runs.
+    onMasterWork((e) => {
+      for (const [key, s] of this.sessions)
+        if (s.row.id === e.photoId) {
+          this.send(IPC.develop.master, {
+            key,
+            expectedMs: e.phase === 'start' ? e.expectedMs : null
+          } satisfies MasterEvent)
+          if (e.phase !== 'end') continue
+          // With a development kit, what developed it and how long it took (devkit.ts).
+          const note = takeDevelopedNote(e.photoId)
+          if (note) this.send(IPC.develop.tileStale, { key, note })
+          // The PIXL demosaic's master, just made: the zoomed-out picture is cut from it.
+          void s.adoptDeveloped()
+        }
+    })
   }
 
   send(channel: string, payload: unknown): void {
@@ -2831,6 +2936,8 @@ export class DevelopSessions {
       // A photo with pixel steps opens on them.
       session.workingJob = session.refreshWorking()
       await session.workingJob
+      // A RAW the PIXL demosaic develops: its master now, the picture cut from it.
+      void session.developOnOpen()
     }
     return {
       key,

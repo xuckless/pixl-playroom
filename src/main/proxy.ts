@@ -511,6 +511,104 @@ export async function pruneLensed(
 
 const mastering = new Map<string, Promise<ProxyFile>>()
 
+const developed = new Map<string, Promise<Proxies>>()
+
+/**
+ * A RAW's proxies cut from its full-size master instead of the half-size
+ * develop (the PIXL demosaic, demosaic and denoise in one: the half-size
+ * develop the plain proxies come from has neither). The same sizes and frame
+ * as the plain ones, which they stand in for, so the zoomed-out picture is
+ * what the 1:1 view and the export are. Named by the master's develop (`tag`).
+ */
+export function ensureDevelopedProxies(
+  engine: EngineClient,
+  photo: PhotoRow,
+  plain: Proxies,
+  master: ProxyFile,
+  tag: string,
+  threads = BACKGROUND_THREADS
+): Promise<Proxies> {
+  const s = stamp(photo)
+  const key = `${photo.id}:${s}:${tag}`
+  let p = developed.get(key)
+  if (!p) {
+    p = (async (): Promise<Proxies> => {
+      const dir = paths.photoCache(photo.id)
+      const meta = join(dir, `proxies-${s}-${tag}.json`)
+      if (await exists(meta)) {
+        const known = JSON.parse(await readFile(meta, 'utf8')) as Proxies
+        if ((await exists(known.proxy.path)) && (await exists(known.draft.path))) return known
+      }
+      const cut = async (from: ProxyFile, like: ProxyFile, name: string): Promise<ProxyFile> => {
+        const path = join(dir, `${name}-${s}-${tag}.tiff`)
+        const report = await engine.convert({
+          ...blankRequest(from.path, path, 'Tiff'),
+          resize: { Exact: { width: like.width, height: like.height } },
+          resampler: 'Lanczos3',
+          // The master is scene-linear float: averaged as light.
+          linear_resample: true,
+          pixel: { depth: 'F32', channels: 3 },
+          encode: { Tiff: { compression: 'None' } },
+          metadata: { exif: false, icc: true, xmp: false, iptc: false },
+          color: 'Preserve',
+          threads
+        })
+        return { path, input: 'Tiff', width: report.width, height: report.height, float: true }
+      }
+      const proxy = await cut(master, plain.proxy, 'proxy')
+      const mid = plain.mid ? await cut(proxy, plain.mid, 'mid') : undefined
+      const draft = await cut(proxy, plain.draft, 'draft')
+      const out: Proxies = {
+        proxy,
+        ...(mid ? { mid } : {}),
+        draft,
+        frameWidth: plain.frameWidth,
+        frameHeight: plain.frameHeight
+      }
+      await writeFile(meta, JSON.stringify(out))
+      return out
+    })().finally(() => developed.delete(key))
+    developed.set(key, p)
+  }
+  return p
+}
+
+/** A RAW's full-size develop starting or ending, for the window's progress (`MasterEvent`). */
+export interface MasterWork {
+  photoId: number
+  phase: 'start' | 'end'
+  /** How long it is expected to take: what the last one of its kind took for its size here. */
+  expectedMs: number
+}
+
+let masterWork: ((e: MasterWork) => void) | null = null
+/** Masters being developed for each photo: over when the last one is. */
+const developing = new Map<number, number>()
+
+function masterStarted(photoId: number, expectedMs: number): void {
+  developing.set(photoId, (developing.get(photoId) ?? 0) + 1)
+  masterWork?.({ photoId, phase: 'start', expectedMs })
+}
+
+function masterEnded(photoId: number): void {
+  const left = (developing.get(photoId) ?? 1) - 1
+  if (left > 0) return void developing.set(photoId, left)
+  developing.delete(photoId)
+  masterWork?.({ photoId, phase: 'end', expectedMs: 0 })
+}
+
+/** Who is told when a master is developed (the open photo's session, which tells the window). */
+export function onMasterWork(listener: (e: MasterWork) => void): void {
+  masterWork = listener
+}
+
+/** What a develop took for each megapixel, by its tag: the last one's, this run. */
+const masterRate = new Map<string, number>()
+/** Before the first: about what an M2 Pro takes (the PIXL demosaic, DemosaicNet, AHD, the classic). */
+function firstRate(demosaic: string): number {
+  return demosaic === 'pixl' ? 350 : demosaic === 'model' ? 240 : demosaic === 'ahd' ? 135 : 50
+}
+
 /**
  * Whether a RAW's full-size master for this develop is made already (its
  * file and its record there): what the 1:1 view asks before it decides to
@@ -589,7 +687,8 @@ export function ensureQuickMaster(engine: EngineClient, photo: PhotoRow): Promis
 export async function ensureMaster(
   engine: EngineClient,
   photo: PhotoRow,
-  info: Pick<SourceInfo, 'raw_cfa' | 'input' | 'dng'>,
+  info: Pick<SourceInfo, 'raw_cfa' | 'input' | 'dng'> &
+    Partial<Pick<SourceInfo, 'width' | 'height'>>,
   ask: RawDevelopAsk = PLAIN_DEVELOP
 ): Promise<ProxyFile> {
   const plan = await scenePlan(info.raw_cfa, ask)
@@ -597,6 +696,8 @@ export async function ensureMaster(
   const key = `${photo.id}:${s}:${plan.tag}`
   let p = mastering.get(key)
   if (!p) {
+    // Said over only once the master's record is written: what hears it finds the master made.
+    let said = false
     p = (async (): Promise<ProxyFile> => {
       // F32 (engine 0.18: a RAW's master is Scene in float): twice a 16-bit
       // TIFF's size, nothing clipped at 1.0.
@@ -619,6 +720,10 @@ export async function ensureMaster(
       }
       const t0 = Date.now()
       let request: unknown = null
+      // The engine says nothing while it develops: the window shows how far by the clock.
+      const megapixels = ((info.width ?? 0) * (info.height ?? 0)) / 1e6 || 24
+      masterStarted(photo.id, (masterRate.get(plan.tag) ?? firstRate(plan.demosaic)) * megapixels)
+      said = true
       const {
         value: report,
         classic,
@@ -637,6 +742,7 @@ export async function ensureMaster(
         return engine.convert(req)
       })
       const ms = Date.now() - t0
+      if (!classic) masterRate.set(plan.tag, ms / megapixels)
       log.info('RAW master developed', plan.tag, classic ? `(${ran} stood in)` : '', ms, 'ms')
       // A development kit's trial: what ran, where and how long, for every master.
       noteDeveloped(photo.id, {
@@ -686,7 +792,10 @@ export async function ensureMaster(
         if (f.startsWith('master-') && !kept.some((k) => f.startsWith(k)))
           await unlink(join(dir, f)).catch(() => undefined)
       return out
-    })().finally(() => mastering.delete(key))
+    })().finally(() => {
+      mastering.delete(key)
+      if (said) masterEnded(photo.id)
+    })
     mastering.set(key, p)
   }
   return p

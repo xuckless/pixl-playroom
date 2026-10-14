@@ -3426,5 +3426,6 @@
   "PIXL’s own model, not released yet: builds the full-size picture from your RAW’s sensor data and takes out its grain in the same step. For trying out in a development build. On a Mac it runs on the graphics chip: about 9 seconds for a 25 MP RAW.": "Le modèle de PIXL, pas encore publié : construit l’image en pleine taille à partir des données du capteur de votre RAW et en retire le grain dans la même étape. À essayer dans une version de développement. Sur un Mac, il s’exécute sur la puce graphique : environ 9 secondes pour un RAW de 25 MP.",
   "RAW files develop as in the released Playroom. On, PIXL’s own model develops them at full size and takes out the grain as it goes.": "Les fichiers RAW se développent comme dans la version publiée de Playroom. Activé, le modèle de PIXL les développe en pleine taille et retire le grain au passage.",
   "The same for Fujifilm’s X-Trans sensors: about 7 seconds for a 16 MP RAW on a Mac.": "La même chose pour les capteurs X-Trans de Fujifilm : environ 7 secondes pour un RAW de 16 MP sur un Mac.",
-  "Use PIXL demosaic (development)": "Utiliser le dématriçage PIXL (développement)"
+  "Use PIXL demosaic (development)": "Utiliser le dématriçage PIXL (développement)",
+  "Developing RAW": "Développement du RAW"
 }

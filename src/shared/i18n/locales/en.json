@@ -3365,5 +3365,6 @@
   "Zoom to 100%": "Zoom to 100%",
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ luma {{luma}} · chroma {{chroma}}",
-  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values"
+  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values",
+  "Developing RAW": "Developing RAW"
 }

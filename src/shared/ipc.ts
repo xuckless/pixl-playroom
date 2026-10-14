@@ -210,6 +210,8 @@ export const IPC = {
      * developed it ("PIXL demosaic · 8.4 s").
      */
     tileStale: 'develop:tile-stale',
+    /** main → renderer: the open RAW's full-size develop started or ended (`MasterEvent`). */
+    master: 'develop:master',
     historySetHidden: 'develop:history-set-hidden',
     historyDelete: 'develop:history-delete',
     noise: 'develop:noise',
@@ -741,6 +743,13 @@ export interface RenderEvent {
  * A part of the picture as the loupe shows it (straightened, cropped,
  * warped, or the crop tool's whole frame), rendered at full resolution.
  */
+/** The open RAW's full-size develop (its master) under way: how long it should take, or over. */
+export interface MasterEvent {
+  key: string
+  /** Milliseconds the develop is expected to take; null once it is over. */
+  expectedMs: number | null
+}
+
 export interface RegionRequest {
   key: string
   /** Fractions (0…1) of the picture as shown. */

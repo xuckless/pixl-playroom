@@ -49,6 +49,7 @@ import {
   type Prefs,
   type RegionRequest,
   type RegionResult,
+  type MasterEvent,
   type RenderEvent,
   type RenderScale,
   type SampleResult,
@@ -282,6 +283,8 @@ const api = {
     onRendered: (cb: (e: RenderEvent) => void) => on(IPC.develop.rendered, cb),
     /** The 1:1 tile's source got better (the plan's RAW master after the quick one): ask again. */
     onTileStale: (cb: (e: { key: string; note?: string }) => void) => on(IPC.develop.tileStale, cb),
+    /** The open RAW's full-size develop started (how long it should take) or ended. */
+    onMaster: (cb: (e: MasterEvent) => void) => on(IPC.develop.master, cb),
     onRenderError: (
       cb: (e: {
         key: string

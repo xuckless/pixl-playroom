@@ -3304,5 +3304,6 @@
   "Zoom to 100%": "100%にズーム",
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "100% にズームし、写真の 1 ピクセルを画面の 1 ピクセルで表示して、ピントとノイズを確認します。ピンチまたはスクロールでズーム、{{key}} を押しながらドラッグでパンします。",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ 輝度 {{luma}} · 色差 {{chroma}}",
-  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各プレーンのホワイトノイズの σ̂（ノイズ除去機能自体の推定値、8ビットのコード値）"
+  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各プレーンのホワイトノイズの σ̂（ノイズ除去機能自体の推定値、8ビットのコード値）",
+  "Developing RAW": "RAW を現像中"
 }

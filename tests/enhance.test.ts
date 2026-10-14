@@ -90,7 +90,7 @@ test('an upscale saved before Source keeps the model it ran', () => {
     ['x4', 'texture']
   )
   assert.equal(normaliseEnhance(old('x2')).upscaleSource, 'clean')
-  assert.equal(normaliseEnhance(old('nonsense')).upscale, 'x2')
+  assert.equal(normaliseEnhance(old('nonsense')).upscale, 'off')
   assert.equal(normaliseEnhance({ upscale: 'x4', upscaleSource: 'clean' }).upscaleSource, 'clean')
 })
 

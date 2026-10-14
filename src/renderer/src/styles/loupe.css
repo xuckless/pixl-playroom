@@ -151,6 +151,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* a RAW's full-size develop under way: its bar fills by the clock */
+.hud-track {
+  width: 56px;
+}
+.hud-track i {
+  transition: width 0.25s linear;
+}
 .loupe-status {
   left: 14px;
   bottom: 14px;
