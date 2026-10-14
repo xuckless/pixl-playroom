@@ -1,7 +1,7 @@
 import { cardsFor, cardSpec, type CardId } from '../../../shared/cards'
 import { useDevelop, type Tool } from '../state/develop'
 import { scoped } from '../state/scope'
-import { useUi, type Drawer } from '../state/ui'
+import { useUi, type Drawer, type Panel } from '../state/ui'
 
 /** A 24-unit SVG path for each canvas tool in the strip above the cards. */
 export const STRIP_ICONS = {
@@ -65,28 +65,28 @@ export function visibleCards(): CardId[] {
     .map((c) => c.id)
 }
 
-/** Bring a card into view: the cards back if a tool's panel was up, the card open and scrolled to. */
-export function jumpToCard(id: CardId): void {
+/** The sections the dropdown offers now: the visible cards, then Enhance. */
+export function visiblePanels(): Panel[] {
+  return [...visibleCards(), 'enhance']
+}
+
+/** Show a section: the cards back if a tool's panel was up, that section the one shown. */
+export function jumpToCard(id: Panel): void {
   openDrawer('adjust')
   const ui = useUi.getState()
   // A card of the colour tools not shown brings them.
-  const set = cardSpec(id).set
+  const set = id === 'enhance' ? undefined : cardSpec(id).set
   if (set && set !== ui.colourTools) ui.setColourTools(set)
-  ui.setCardOpen(id, true)
   ui.setFocusCard(id)
-  // Once it has rendered open (and, in solo, the others have folded).
+  // From the top of the section, wherever the last one was scrolled to.
   requestAnimationFrame(() =>
-    requestAnimationFrame(() =>
-      document
-        .querySelector(`[data-card="${id}"]`)
-        ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-    )
+    document.querySelector('.panels.adjust')?.scrollTo({ top: 0, behavior: 'smooth' })
   )
 }
 
-/** The card before or after the focused one (wrapping). */
+/** The section before or after the shown one (wrapping). */
 export function stepCard(dir: 1 | -1): void {
-  const list = visibleCards()
+  const list = visiblePanels()
   const i = list.indexOf(useUi.getState().focusCard)
   jumpToCard(list[(Math.max(0, i) + dir + list.length) % list.length])
 }

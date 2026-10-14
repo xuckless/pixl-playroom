@@ -11,7 +11,7 @@ import { cardsFor, cardTitle } from '../../../shared/cards'
 import { editsInHdr } from '../../../shared/recipe'
 import { SEPARATOR, tidyMenu, type MenuBarSpec, type MenuNode } from '../../../shared/appmenu'
 import type { LibraryItem } from '../../../shared/ipc'
-import { masksOpen } from '../develop/tools'
+import { jumpToCard, masksOpen } from '../develop/tools'
 import { MASK_TOOL_GROUPS, startMaskTool } from '../panels/masks/model'
 import { useConfirm } from '../state/confirm'
 import { suggestedReasons, useCull } from '../state/cull'
@@ -375,16 +375,7 @@ function photoMenu(): Item[] {
 
 /** Show the Enhance card (it isn't one of the adjustment cards with a key). */
 function showEnhance(): void {
-  const u = ui()
-  u.setDrawer('adjust')
-  u.setCardOpen('enhance' as never, true)
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() =>
-      document
-        .querySelector('[data-card="enhance"]')
-        ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-    )
-  )
+  jumpToCard('enhance')
 }
 
 function developMenu(): Item[] {

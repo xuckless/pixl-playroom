@@ -578,17 +578,14 @@ fieldset::before {
   line-height: 16px;
   font-variant-numeric: tabular-nums;
 }
-.ts-jump {
+/* The one dropdown that picks the section shown (develop/AdjustStack.tsx). */
+.section-picker {
   display: flex;
-  gap: 6px;
+  margin: 2px 0 10px;
 }
-.ts-jump .glass-select {
+.section-picker .glass-select {
   flex: 1;
-  height: 28px;
-}
-.ts-solo.on {
-  color: var(--acc);
-  border-color: var(--acc-a55);
+  height: 32px;
 }
 
 /* ── the stack of cards under it ──────────────────────────────────── */
@@ -1364,4 +1361,20 @@ aside.right .panels.adjust {
 }
 .rc-channels .spacer {
   flex: 1;
+}
+
+/* A section with changes, in the dropdown and its menu. */
+.menu-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  margin: 0 6px;
+  border-radius: 50%;
+  background: var(--acc);
+  box-shadow: 0 0 8px var(--glow);
+}
+/* The section shown: open for good, its header not a fold. */
+.card.fixed > header {
+  cursor: default;
+  padding-left: 12px;
 }

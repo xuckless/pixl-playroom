@@ -7,6 +7,8 @@ export interface GlassOption<T extends string> {
   label: string
   /** Shown on the right of the item (a shortcut). */
   hint?: string
+  /** A small accent dot after it (a section with changes). */
+  dot?: boolean
 }
 
 /**
@@ -56,6 +58,7 @@ export function GlassSelect<T extends string>({
       >
         {prefix && <span className="gs-prefix">{prefix}</span>}
         <span className="gs-value">{current?.label ?? '—'}</span>
+        {current?.dot && <span className="menu-dot" aria-hidden />}
         <Icon name="chevronDown" />
       </button>
       {open && (
@@ -66,6 +69,7 @@ export function GlassSelect<T extends string>({
           items={options.map((o) => ({
             label: o.label,
             hint: o.hint,
+            dot: o.dot,
             checked: o.value === value,
             onSelect: () => onChange(o.value)
           }))}

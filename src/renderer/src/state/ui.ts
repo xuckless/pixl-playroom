@@ -49,6 +49,9 @@ export const COLOUR_TOOLS: { value: ColourTools; label: string }[] = [
   { value: 'resolve', label: tk('Resolve') }
 ]
 
+/** What the right column can show: an adjustment card, or Enhance. */
+export type Panel = CardId | 'enhance'
+
 /** How a mask is shown over the photo (Lightroom's overlay modes). */
 export type OverlayMode =
   'color' | 'color-bw' | 'image-black' | 'image-white' | 'white-black' | 'outline'
@@ -219,14 +222,21 @@ interface UiState {
   /** The adjustment cards, or Crop's or Heal's panel in their place (not remembered). */
   drawer: Drawer
   setDrawer(d: Drawer): void
-  /** Which cards are unfolded, and solo mode (opening one folds the rest). */
+  /**
+   * Older layouts' unfolded cards and solo switch: kept for what reads them,
+   * no longer shown (the column shows one section, `focusCard`).
+   */
   cardsOpen: Partial<Record<CardId, boolean>>
-  setCardOpen(id: CardId, open: boolean): void
+  /** Opening a card shows it: it becomes the section shown. */
+  setCardOpen(id: Panel, open: boolean): void
   cardSolo: boolean
   setCardSolo(on: boolean): void
-  /** The card last opened or jumped to: Jump to shows it, the previous / next keys step from it. */
-  focusCard: CardId
-  setFocusCard(id: CardId): void
+  /**
+   * The section the right column shows, under Treatment and Profile: one
+   * card, or Enhance. The dropdown picks it; the previous / next keys step.
+   */
+  focusCard: Panel
+  setFocusCard(id: Panel): void
   /** A spine glyph: open its pane, or fold the rail when it is already showing. */
   pickRail(r: Rail): void
   setRailOpen(open: boolean): void
@@ -296,7 +306,7 @@ export const useUi = create<UiState>()(
       setColourTools: (colourTools) =>
         set((s) => {
           // The focused card stays in view: one of the set going away gives way to Light.
-          const away = cardSpec(s.focusCard).set
+          const away = s.focusCard === 'enhance' ? undefined : cardSpec(s.focusCard).set
           return { colourTools, ...(away && away !== colourTools ? { focusCard: 'light' } : {}) }
         }),
       nodeView: false,
@@ -346,11 +356,9 @@ export const useUi = create<UiState>()(
       drawer: 'adjust',
       setDrawer: (drawer) => set({ drawer }),
       cardsOpen: DEFAULT_CARDS_OPEN,
-      setCardOpen: (id, open) =>
-        set((s) => ({
-          cardsOpen: s.cardSolo && open ? { [id]: true } : { ...s.cardsOpen, [id]: open },
-          ...(open ? { focusCard: id } : {})
-        })),
+      setCardOpen: (id, open) => {
+        if (open) set({ focusCard: id })
+      },
       cardSolo: false,
       setCardSolo: (cardSolo) =>
         set((s) => ({ cardSolo, ...(cardSolo ? { cardsOpen: { [s.focusCard]: true } } : {}) })),
@@ -411,7 +419,8 @@ export const useUi = create<UiState>()(
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
           cardsOpen:
             p.cardsOpen && typeof p.cardsOpen === 'object' ? p.cardsOpen : current.cardsOpen,
-          focusCard: isCardId(p.focusCard) ? p.focusCard : current.focusCard,
+          focusCard:
+            isCardId(p.focusCard) || p.focusCard === 'enhance' ? p.focusCard : current.focusCard,
           drawer: 'adjust'
         }
       }

@@ -85,9 +85,9 @@ const dev = (): ReturnType<typeof useDevelop.getState> => useDevelop.getState()
 const ui = (): ReturnType<typeof useUi.getState> => useUi.getState()
 
 const healOpen = (): boolean => ui().drawer === 'heal'
-/** Whether a card is showing open in the column (the cards up, it unfolded). */
+/** Whether a card is the section the column shows. */
 const cardShown = (id: 'mixer' | 'curve'): boolean =>
-  ui().drawer === 'adjust' && !!ui().cardsOpen[id]
+  ui().drawer === 'adjust' && ui().focusCard === id
 const notInField = (e: KeyboardEvent): boolean => (e.target as HTMLElement)?.tagName !== 'INPUT'
 const focusedItem = (): ReturnType<typeof lib>['items'][number] | undefined =>
   lib().items.find((i) => i.key === lib().focus)
