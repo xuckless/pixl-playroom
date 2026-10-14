@@ -10,8 +10,8 @@
 import type { RawCfa } from './engine-types'
 
 export const PIXL_DEMOSAIC: Record<RawCfa, string> = {
-  Bayer: 'pixl-demosaic-bayer',
-  XTrans: 'pixl-demosaic-xtrans'
+  Bayer: 'pixl-demosaic-v1-bayer',
+  XTrans: 'pixl-demosaic-v1-xtrans'
 }
 
 /** Whether a roster offers it at all: its switch shows in Settings only then. */

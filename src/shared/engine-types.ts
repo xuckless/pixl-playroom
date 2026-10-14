@@ -187,7 +187,7 @@ export interface DemosaickerRef extends Record<string, unknown> {
  * Scene's demosaic (0.19.0): `Classic` (PPG / Markesteijn, 0.18's bytes),
  * `Ahd` (Bayer, no model), or a learned one (`demosaicnet-bayer` /
  * `-xtrans`, by `SourceInfo.raw_cfa`; `resolution` must be `Full`). With a
- * development kit, PIXL's own (`pixl-demosaic-bayer` / `-xtrans`), which
+ * development kit, PIXL's own (`pixl-demosaic-v1-bayer` / `-v1-xtrans`), which
  * denoises as it develops: `mosaic_denoise` stays null beside it.
  */
 export type SceneDemosaic = 'Classic' | 'Ahd' | { Model: DemosaickerRef }

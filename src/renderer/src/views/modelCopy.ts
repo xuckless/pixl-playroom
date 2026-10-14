@@ -86,14 +86,14 @@ export const MODEL_COPY: Record<string, ModelCopy> = {
     where: tk('Fujifilm X-Trans RAWs, at full size')
   },
   // PIXL's own, from an engine development kit's roster (shared/pixldemosaic.ts).
-  'pixl-demosaic-bayer': {
+  'pixl-demosaic-v1-bayer': {
     name: tk('PIXL demosaic (development)'),
     what: tk(
       'PIXL’s own model, not released yet: builds the full-size picture from your RAW’s sensor data and takes out its grain in the same step. For trying out in a development build. On a Mac it runs on the graphics chip: about 9 seconds for a 25 MP RAW.'
     ),
     where: tk('Every RAW, at full size')
   },
-  'pixl-demosaic-xtrans': {
+  'pixl-demosaic-v1-xtrans': {
     name: tk('PIXL demosaic, Fujifilm (development)'),
     what: tk('The same for Fujifilm’s X-Trans sensors: about 7 seconds for a 16 MP RAW on a Mac.'),
     where: tk('Fujifilm X-Trans RAWs, at full size')

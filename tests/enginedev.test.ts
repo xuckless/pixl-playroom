@@ -59,14 +59,14 @@ function fakeKit(root: string, plat: string, version = '0.19.2'): string {
   const files: Record<string, string> = {
     [`engine/${plat}/pixl-engine.${plat}.node`]: 'the kit’s addon',
     [`engine/${plat}/libpixl_libraw.dylib`]: 'the kit’s libraw',
-    'pixl-models/roster.json': '{"models":["released","pixl-demosaic-bayer"]}',
+    'pixl-models/roster.json': '{"models":["released","pixl-demosaic-v1-bayer"]}',
     'pixl-models/index.js': 'module.exports = "the same in both"',
     'pixl-models/index.d.ts': 'export declare const kit: true',
     'pixl-models/package.json': '{"name":"@xuckless/pixl-models","version":"0.19.2"}',
     'pixl-models/README.md': 'the kit’s readme',
     'pixl-models/licences/demosaicnet.txt': 'MIT',
     'pixl-models/licences/pixl-dev.txt': 'not released',
-    'models/pixl-demosaic-bayer/0.1.0-dev.1/pixl_demosaic_bayer.onnx': 'weights'
+    'models/pixl-demosaic-v1-bayer/0.1.0-dev.1/pixl_demosaic_v1_bayer.onnx': 'weights'
   }
   for (const [rel, text] of Object.entries(files)) put(kit, rel, text)
   // What browsing the folder on a Mac leaves: not the kit's, never installed.
@@ -81,7 +81,7 @@ function fakeKit(root: string, plat: string, version = '0.19.2'): string {
       made: '2026-10-13T18:43:29.954Z',
       engine: { commit: '9e368c379efb', version, platforms: [plat] },
       models: [
-        { id: 'pixl-demosaic-bayer', version: '0.1.0-dev.1', files: ['pixl_demosaic_bayer.onnx'] }
+        { id: 'pixl-demosaic-v1-bayer', version: '0.1.0-dev.1', files: ['pixl_demosaic_v1_bayer.onnx'] }
       ],
       files: Object.fromEntries(
         Object.entries(files).map(([rel, text]) => [
@@ -225,7 +225,7 @@ test('install, check and restore: byte for byte, the store never written through
     // The addon sits beside the loader; the roster is the kit's; the released one is kept.
     const addon = join(dirs.engine, `pixl-engine.${plat}.node`)
     assert.equal(readFileSync(addon, 'utf8'), 'the kit’s addon')
-    assert.match(readFileSync(join(dirs.models, 'roster.json'), 'utf8'), /pixl-demosaic-bayer/)
+    assert.match(readFileSync(join(dirs.models, 'roster.json'), 'utf8'), /pixl-demosaic-v1-bayer/)
     assert.equal(
       readFileSync(join(dirs.models, 'roster.json.released'), 'utf8'),
       '{"models":["released"]}'

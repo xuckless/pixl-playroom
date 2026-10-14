@@ -220,7 +220,7 @@ test('the RAW data denoise is off unless chosen, and travels with the noise sett
 
 // ── The PIXL demosaic (an engine development kit's roster) ───────────────────
 
-const PIXL = ['pixl-demosaic-bayer', 'pixl-demosaic-xtrans']
+const PIXL = ['pixl-demosaic-v1-bayer', 'pixl-demosaic-v1-xtrans']
 
 /** `console.error` kept aside while `run` runs: a refusal is said there, once. */
 async function errorsOf<T>(run: () => Promise<T>): Promise<{ said: string[]; value: T }> {
@@ -265,10 +265,10 @@ test('the PIXL demosaic is the plan where it is offered, downloaded and switched
   setRawModels(b.m)
   assert.equal((await scenePlan('Bayer')).tag, 'dn')
   assert.equal((await scenePlan('Bayer')).tag, 'dn')
-  assert.deepEqual(b.fetched, ['pixl-demosaic-bayer'])
+  assert.deepEqual(b.fetched, ['pixl-demosaic-v1-bayer'])
   // Its X-Trans one beside DemosaicNet's, each when a Fujifilm RAW first opens.
   assert.equal((await scenePlan('XTrans')).tag, 'ppg')
-  assert.deepEqual(b.fetched, ['pixl-demosaic-bayer', 'demosaicnet-xtrans', 'pixl-demosaic-xtrans'])
+  assert.deepEqual(b.fetched, ['pixl-demosaic-v1-bayer', 'demosaicnet-xtrans', 'pixl-demosaic-v1-xtrans'])
 
   // The engine without its model build: nothing learned, the PIXL demosaic included.
   const c = fakeModels(['demosaicnet-bayer', ...PIXL], { offers: PIXL, runs: false })
@@ -291,8 +291,8 @@ test('the PIXL demosaic’s switch off is today’s develop', async () => {
 test('a PIXL demosaic develop runs its model alone, PMRID never before it', async () => {
   const { scenePlan, setRawModels, withScene } = await import('../src/main/ai/rawdevelop')
   for (const [cfa, id] of [
-    ['Bayer', 'pixl-demosaic-bayer'],
-    ['XTrans', 'pixl-demosaic-xtrans']
+    ['Bayer', 'pixl-demosaic-v1-bayer'],
+    ['XTrans', 'pixl-demosaic-v1-xtrans']
   ] as const) {
     const a = fakeModels(['demosaicnet-bayer', 'demosaicnet-xtrans', 'pmrid', ...PIXL], {
       offers: PIXL
@@ -326,7 +326,7 @@ test('a refused PIXL demosaic says so, and the released develop stands in', asyn
     withScene(plan, async (scene) => {
       scenes.push(scene)
       const model = (scene.demosaic as { Model?: { id: string } }).Model?.id
-      if (model === 'pixl-demosaic-bayer')
+      if (model === 'pixl-demosaic-v1-bayer')
         throw Object.assign(
           new Error('invalid request field `raw.demosaic.noise.noise`: not on this sensor'),
           { code: 'InvalidRequest' }
@@ -344,7 +344,7 @@ test('a refused PIXL demosaic says so, and the released develop stands in', asyn
   assert.notEqual(scenes[1].mosaic_denoise, null)
   // One line, with the model, the engine's message and its code.
   assert.equal(said.length, 1)
-  assert.match(said[0], /pixl-demosaic-bayer/)
+  assert.match(said[0], /pixl-demosaic-v1-bayer/)
   assert.match(said[0], /raw\.demosaic\.noise\.noise/)
   assert.match(said[0], /InvalidRequest/)
 
@@ -372,7 +372,7 @@ test('X-Trans: the PIXL demosaic is refused for its noise, DemosaicNet develops'
   )
   // Not the accelerator's trouble: the CPU is not tried. A model CoreML won't load still is.
   assert.equal(acceleratorTrouble(refusal), false)
-  assert.equal(acceleratorTrouble(new Error('load-model: /m/pixl-demosaic-xtrans/x.onnx')), true)
+  assert.equal(acceleratorTrouble(new Error('load-model: /m/pixl-demosaic-v1-xtrans/x.onnx')), true)
   assert.equal(acceleratorTrouble(new Error('the CoreML provider is not in this build')), true)
   const static576 = Object.assign(new Error('provider: static shapes'), {
     code: 'InvalidRequest',
@@ -410,12 +410,12 @@ test('X-Trans: the PIXL demosaic is refused for its noise, DemosaicNet develops'
       const id = (scene.demosaic as { Model: { id: string } }).Model.id
       ran.push(id)
       assert.equal(scene.mosaic_denoise, null)
-      if (id === 'pixl-demosaic-xtrans') throw refusal
+      if (id === 'pixl-demosaic-v1-xtrans') throw refusal
       return id
     })
   )
   // Asked once, on the accelerator; then today's learned develop, once.
-  assert.deepEqual(ran, ['pixl-demosaic-xtrans', 'demosaicnet-xtrans'])
+  assert.deepEqual(ran, ['pixl-demosaic-v1-xtrans', 'demosaicnet-xtrans'])
   assert.deepEqual(movedToCpu, [])
   assert.deepEqual(
     a.refs.map((r) => r.provider),
@@ -428,7 +428,7 @@ test('X-Trans: the PIXL demosaic is refused for its noise, DemosaicNet develops'
   assert.equal(done.ran, 'dn')
   // The one line: the model, that it was refused, and the engine's reason and code.
   assert.equal(said.length, 1)
-  assert.match(said[0], /pixl-demosaic-xtrans/)
+  assert.match(said[0], /pixl-demosaic-v1-xtrans/)
   assert.match(said[0], /refused/)
   assert.match(said[0], /raw\.demosaic\.noise\.noise/)
   assert.match(said[0], /MosaicNoise::Measured reads a Bayer mosaic/)
@@ -499,12 +499,12 @@ test('the PIXL demosaic runs on CoreML with its roster’s 576 tiles', async () 
   const coreml = {
     CoreMl: { units: 'All', format: 'MlProgram', static_shapes: false, low_precision_gpu: false }
   } as const
-  const bayer = staticPlan('pixl-demosaic-bayer', ['height', 'width'], coreml)
+  const bayer = staticPlan('pixl-demosaic-v1-bayer', ['height', 'width'], coreml)
   assert.deepEqual(bayer?.tiling, { Fixed: { width: 576, height: 576, overlap: 32 } })
   // The graphics chip, with its shape fixed.
   const onGpu = { units: 'CpuAndGpu', format: 'MlProgram', static_shapes: true }
   assert.deepEqual(bayer?.provider, { CoreMl: { ...onGpu, low_precision_gpu: false } })
-  const xtrans = staticPlan('pixl-demosaic-xtrans', ['height', 'width'], coreml)
+  const xtrans = staticPlan('pixl-demosaic-v1-xtrans', ['height', 'width'], coreml)
   assert.deepEqual(xtrans?.tiling, { Fixed: { width: 576, height: 576, overlap: 48 } })
   assert.deepEqual(xtrans?.dimensions, [
     { name: 'height', value: 576 },
@@ -515,7 +515,7 @@ test('the PIXL demosaic runs on CoreML with its roster’s 576 tiles', async () 
   assert.equal((576 - 2 * 32) % 2, 0)
   assert.equal((576 - 2 * 48) % 6, 0)
   assert.equal(48 % 6, 0)
-  assert.equal(staticPlan('pixl-demosaic-bayer', ['height', 'width'], 'Cpu'), null)
+  assert.equal(staticPlan('pixl-demosaic-v1-bayer', ['height', 'width'], 'Cpu'), null)
 })
 
 test('the panels know when the PIXL demosaic is a photo’s develop', async () => {
@@ -523,8 +523,8 @@ test('the panels know when the PIXL demosaic is a photo’s develop', async () =
   const { DEFAULT_SWITCHES, readSwitches } = await import('../src/shared/heavy')
   const kit = [
     { id: 'demosaicnet-bayer', installed: true },
-    { id: 'pixl-demosaic-bayer', installed: true },
-    { id: 'pixl-demosaic-xtrans', installed: false }
+    { id: 'pixl-demosaic-v1-bayer', installed: true },
+    { id: 'pixl-demosaic-v1-xtrans', installed: false }
   ]
   assert.equal(offersPixlDemosaic(kit), true)
   assert.equal(offersPixlDemosaic([{ id: 'demosaicnet-bayer' }]), false)
