@@ -11,7 +11,8 @@
  */
 
 import { t, tk } from './i18n'
-import { LEVEL_LABEL, PIXL_ENHANCE, type PixlLevel } from './pixlenhance'
+import { LEVEL_LABEL, LEVEL_NUMBER, PIXL_ENHANCE, PIXL_LEVELS, type PixlLevel } from './pixlenhance'
+import type { PixelStep } from './pixels'
 
 /**
  * JPEG restore: off; rebuilt from the file's DCT coefficients (no model);
@@ -279,4 +280,45 @@ export function jpegRestoreRefusal(
         'JPEG restore reads the file itself, so it must come first: undo the other pixel steps, or leave it off'
       )
     : null
+}
+
+// ── Detail's AI boxes ───────────────────────────────────────────────────────
+
+/** The settings a step was made with (`params.settings`), or null. */
+function settingsOf(step: PixelStep): Partial<EnhanceSettings> | null {
+  try {
+    const v = JSON.parse(String(step.params.settings ?? ''))
+    return v && typeof v === 'object' ? (v as Partial<EnhanceSettings>) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The photo's PIXL Enhance step over the whole photo, no upscale: the one
+ * Detail's AI boxes show (renderer panels/DetailAi.tsx).
+ */
+export function pixlStepOf(pixels: readonly PixelStep[]): PixelStep | null {
+  for (let i = pixels.length - 1; i >= 0; i--) {
+    const p = pixels[i]
+    if (p.kind !== 'enhance' || p.alpha || p.off) continue
+    const s = settingsOf(p)
+    if (s && s.pixl && s.pixl !== 'off' && (s.upscale ?? 'off') === 'off') return p
+  }
+  return null
+}
+
+/** The PIXL Enhance level a step was made at, or null. */
+export const levelOfStep = (step: PixelStep | null): PixlLevel | null => {
+  const l = step ? settingsOf(step)?.pixl : null
+  return l && l !== 'off' ? l : null
+}
+
+/** What ticking (or unticking) `want` makes the photo's level: null takes the step away. */
+export function nextLevel(now: PixlLevel | null, want: PixlLevel, on: boolean): PixlLevel | null {
+  const n = now ? LEVEL_NUMBER[now] : -1
+  const w = LEVEL_NUMBER[want]
+  if (on) return w > n ? want : now
+  // Unticked: the level under it (a lower box ticked inside it stays ticked).
+  return w > 0 ? PIXL_LEVELS[w - 1] : null
 }

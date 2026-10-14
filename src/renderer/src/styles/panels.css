@@ -302,9 +302,6 @@
 }
 
 /* ── detail, advanced ──────────────────────────────────────────── */
-.noise-tabs {
-  justify-content: space-between;
-}
 .popover.noise-pop {
   width: 300px;
 }
@@ -757,21 +754,22 @@ aside.right .panels.adjust {
   justify-content: flex-start;
   text-align: left;
 }
-.ai-denoise {
-  display: flex;
-  flex-direction: column;
+.ai-check {
   gap: 8px;
-  margin-top: 10px;
-}
-.ai-denoise-status {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
+  margin-top: 8px;
   min-height: 26px;
-  font-size: 11.5px;
-  color: var(--text2);
+  flex-wrap: wrap;
   font-variant-numeric: tabular-nums;
+}
+.ai-check .ai-check-state {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-check.waiting .check {
+  opacity: 0.5;
 }
 .model-get {
   display: flex;

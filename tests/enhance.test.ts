@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import type { PixelStep } from '../src/shared/pixels'
 import {
   DEFAULT_ENHANCE,
   chainSubject,
@@ -178,4 +179,38 @@ test('a level is the roster entry’s planes and tiling, and only those', () => 
   assert.deepEqual(levelValues(entry, 'sharpen').tiling, fixed(256))
   assert.throws(() => levelValues({ levels: entry.levels.slice(0, 2) }, 'sharpen'), /no level 2/)
   assert.throws(() => levelValues({}, 'clean'), /no level 0/)
+})
+
+test('Detail’s AI boxes: one PIXL step, at the highest level ticked', async () => {
+  const { nextLevel, pixlStepOf, levelOfStep } = await import('../src/shared/enhance')
+  // Ticking asks for its level, or keeps a higher one.
+  assert.equal(nextLevel(null, 'denoise', true), 'denoise')
+  assert.equal(nextLevel('denoise', 'sharpen', true), 'sharpen')
+  assert.equal(nextLevel('sharpen', 'clean', true), 'sharpen')
+  // Unticking steps down one level; the last takes the step away.
+  assert.equal(nextLevel('sharpen', 'sharpen', false), 'denoise')
+  assert.equal(nextLevel('denoise', 'denoise', false), 'clean')
+  assert.equal(nextLevel('clean', 'clean', false), null)
+  const step = (id: string, settings: object, extra: object = {}): PixelStep => ({
+    id,
+    kind: 'enhance' as const,
+    label: id,
+    blob: 'a'.repeat(64),
+    alpha: null,
+    scope: null,
+    opacity: 100,
+    width: 10,
+    height: 10,
+    rect: null,
+    params: { settings: JSON.stringify(settings) },
+    ...extra
+  })
+  const pixl = step('p', { pixl: 'denoise', upscale: 'off' })
+  // An upscale, a step in a mask and one switched off are not the boxes'.
+  const up = step('u', { pixl: 'off', upscale: 'x2' })
+  const masked = step('m', { pixl: 'sharpen', upscale: 'off' }, { alpha: 'b'.repeat(64) })
+  const off = step('o', { pixl: 'sharpen', upscale: 'off' }, { off: true })
+  assert.equal(pixlStepOf([pixl, up, masked, off])?.id, 'p')
+  assert.equal(levelOfStep(pixlStepOf([pixl])), 'denoise')
+  assert.equal(pixlStepOf([up]), null)
 })

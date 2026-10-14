@@ -16,13 +16,18 @@ import { staleRawStep, type PixelStep } from '../../../shared/pixels'
 import { developMark } from '../../../shared/rawcolour'
 import { aiDenoiseModel, RETIRED_DENOISE } from '../../../shared/recipe'
 
-/** Start a denoise step for the open photo: in the selected mask when the panels edit one. */
-export async function applyDenoise(): Promise<void> {
+/**
+ * Start a denoise step for the open photo: in the selected mask when the
+ * panels edit one, unless `whole` (Detail's AI box: always the whole photo).
+ */
+export async function applyDenoise({ whole = false }: { whole?: boolean } = {}): Promise<
+  string | null
+> {
   const { session } = useDevelop.getState()
-  if (!session) return
+  if (!session) return null
   const { model, strength } = useUi.getState().denoise
-  const layer = scoped.layer()
-  await api.ai.start({
+  const layer = whole ? null : scoped.layer()
+  return api.ai.start({
     task: 'denoise',
     key: session.key,
     model,

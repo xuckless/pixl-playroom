@@ -363,7 +363,7 @@ function SectionPicker({ panels, shown }: { panels: PanelId[]; shown: Panel }): 
       hint: key(`card.${keyedAs(p)}`),
       dot: dots[i] === '1'
     })),
-    { value: 'enhance' as Panel, label: t('Enhance'), hint: key('develop.enhance') }
+    { value: 'enhance' as Panel, label: t('Super resolution'), hint: key('develop.enhance') }
   ]
   return (
     <div className="section-picker">
@@ -407,7 +407,7 @@ export function AdjustStack(): React.JSX.Element {
           {shown === 'enhance' ? (
             <Card
               id="enhance"
-              title={t('Enhance')}
+              title={t('Super resolution')}
               tip={TIPS.enhance}
               fixed
               right={<span className="ai-badge">{t('AI')}</span>}

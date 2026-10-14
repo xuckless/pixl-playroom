@@ -373,7 +373,7 @@ function photoMenu(): Item[] {
   ]
 }
 
-/** Show the Enhance card (it isn't one of the adjustment cards with a key). */
+/** Show Super resolution (it isn't one of the adjustment cards with a key). */
 function showEnhance(): void {
   jumpToCard('enhance')
 }
@@ -385,7 +385,7 @@ function developMenu(): Item[] {
     ...panelsFor(useUi.getState().colourTools).map((id) =>
       cmd(`card.${id}`, t(panelTitle(id, useUi.getState().colourTools)))
     ),
-    act('develop.enhance', t('Enhance'), showEnhance, {
+    act('develop.enhance', t('Super resolution'), showEnhance, {
       enabled: !modal() && inDevelop() && session
     }),
     sep,

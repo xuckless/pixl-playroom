@@ -227,23 +227,36 @@ export const TIPS = {
     what: tk('Removes coloured speckles from noise.'),
     expect: tk('Safe to raise to 25 or so; very high values bleed colour at edges.')
   },
-  'detail.ai': {
+
+  'detail.ai.sharpen': {
     what: tk(
-      'A trained model removes the noise once; Strength then blends its result with the original.'
+      'PIXL Enhance, our own model, sharpens what is soft from slight shake, missed focus or the lens, and takes out noise and compression damage on the way.'
     ),
     expect: tk(
-      'Much cleaner than classic noise reduction at high ISO. The result is kept with the photo, so undo, redo and Strength never run the model again.'
+      'It restores what the photo holds and invents no detail. It runs once, in the background, and is kept with the photo: the sliders above still work on top, and unticking takes it away.'
     ),
-    tip: tk('Run it once, then fine-tune with Strength.')
+    tip: tk('Judge it at 100% (Z). It includes AI noise reduction and clean up.')
   },
-  'detail.ai.raw': {
+  'detail.ai.noise': {
     what: tk(
-      'On a RAW, the model works on the developed, linear pixels: white balance, profile and tone stay as editable as before.'
+      'Our model removes the noise once, in the background, and keeps the result with the photo.'
     ),
     expect: tk(
-      'The result is kept losslessly, so pushing it later shows no compression; undo, redo and Strength never run the model again.'
+      'Much cleaner than the sliders at high ISO, with texture kept. Undo, redo and History never run it again; unticking takes it away.'
     ),
-    tip: tk('Run it once the exposure is roughly right, before fine colour work.')
+    tip: tk('A RAW that PIXL demosaic develops is already clean: it rarely needs this.')
+  },
+  'detail.clean': {
+    what: tk(
+      'Repairs the blocks, ringing and halos that compression and over-sharpening leave, as in photos saved from the web or messaging apps.'
+    ),
+    expect: tk('A clean photo comes back as it was.')
+  },
+  'detail.ai.clean': {
+    what: tk('PIXL Enhance at its lightest: compression damage only, noise and softness left.'),
+    expect: tk(
+      'It runs once, in the background, and is kept with the photo; unticking takes it away.'
+    )
   },
   'detail.rawDenoise': {
     what: tk(
@@ -535,37 +548,11 @@ export const TIPS = {
 
   // ── Enhance ────────────────────────────────────────────────────────
   enhance: {
-    what: tk('One-off AI steps on the pixels: JPEG repair, deblur and upscaling.'),
-    expect: tk('They run once and are kept with the photo; undo takes them away.')
+    what: tk('Makes the photo larger, ×2 or ×4, with a model that adds believable detail.'),
+    expect: tk('It runs once and is kept with the photo; undo takes it away.'),
+    tip: tk('AI sharpening, noise reduction and clean up are in Detail.')
   },
-  'enhance.jpeg': {
-    what: tk('Repairs the blocks and colour smearing of heavily compressed JPEGs.'),
-    expect: tk(
-      'Rebuild works from the file’s own compressed data, changing nothing it states; the AI methods repaint the damage.'
-    ),
-    tip: tk('Rebuild first; the AI suits pictures saved from the web or messaging apps.')
-  },
-  'enhance.pixl': {
-    what: tk(
-      'PIXL’s own model repairs compression damage, noise and mild blur in one pass, on any photo: JPEG, HEIC, AVIF or a developed RAW.'
-    ),
-    expect: tk(
-      'Each level does what the one before does and more. It restores what the photo holds and invents no detail; a clean photo comes back as it was.'
-    ),
-    tip: tk(
-      'Clean up + denoise suits most phone photos; + sharpen for slight shake, missed focus or a soft lens.'
-    )
-  },
-  'enhance.deblur': {
-    what: tk('Reduces motion blur from camera shake or a moving subject.'),
-    expect: tk('It cannot bring back focus that was missed.')
-  },
-  'enhance.apply': {
-    what: tk('Runs the steps above once and keeps the result in the photo’s project as a step.'),
-    expect: tk(
-      'Undo, redo and History never run the models again, and no file is written beside the photo. An upscale makes the photo larger from this step on; crop, masks and spots keep their places.'
-    )
-  },
+
   'enhance.upscale': {
     what: tk('Makes the photo larger with a model that adds believable detail.'),
     expect: tk(
