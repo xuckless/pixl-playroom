@@ -52,6 +52,20 @@ export function resolveRawColour(
   return c === 'pixl:1' && !pixlSupported(info) ? 'container' : c
 }
 
+/**
+ * Whether a RAW's recorded colour moves to PIXL's: the file's own
+ * (`container`) recorded as a default (not chosen) on a body PIXL's database
+ * now holds (the owner, 2026-10-14: PIXL's colour whenever it has the body).
+ * A `container` the person chose stays.
+ */
+export function upgradesToPixl(
+  recorded: string | null | undefined,
+  chosen: boolean,
+  info: Colourable | null | undefined
+): boolean {
+  return parseRawColour(recorded) === 'container' && !chosen && pixlSupported(info)
+}
+
 export function cameraColourOf(c: RawColour): CameraColour {
   return c === 'pixl:1' ? { Pixl: { version: PIXL_COLOUR_VERSION } } : 'Container'
 }

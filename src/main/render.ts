@@ -3253,7 +3253,8 @@ export class DevelopSessions {
     let info = await this.library.probe(row, this.engine)
     // A RAW's camera colour is chosen the first time it is probed, and its
     // saved white balance moves with it: what was read before is read again.
-    if (data.row.is_raw === 1 && !data.row.raw_colour && row.raw_colour) {
+    // (Or moved since, to PIXL's colour once its database holds the body.)
+    if (data.row.is_raw === 1 && row.raw_colour && data.row.raw_colour !== row.raw_colour) {
       data = await this.library.index.openData(key)
       row = await this.library.readable(data.row)
       info = await this.library.probe(row, this.engine)

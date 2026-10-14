@@ -1072,7 +1072,8 @@ export class IndexService {
     )
     this.store.setStack(row.id, sidecar.stack?.id ?? null, sidecar.stack?.position ?? null)
     // The truth where one is written; a photo with none keeps what the index recorded.
-    if (sidecar.rawColour) this.store.setRawColour(row.id, sidecar.rawColour)
+    if (sidecar.rawColour)
+      this.store.setRawColour(row.id, sidecar.rawColour, sidecar.rawColourChosen === true)
     if (sidecar.names) this.store.setNames(row.id, JSON.stringify(sidecar.names))
     if (sidecar.cullKeep) this.store.setCullKeep(row.id, true)
     if (from === 'project') {
@@ -2260,11 +2261,12 @@ export class IndexService {
     const c = parseRawColour(colour)
     const row = this.store.photo(photoId)
     if (!c || !row) return
-    this.store.setRawColour(photoId, c)
+    this.store.setRawColour(photoId, c, explicit)
     const kept = !!this.projectOf(row) || existsSync(sidecarPath(row.path))
     if (explicit || kept)
       this.updateRow(row, (s) => {
         s.rawColour = c
+        s.rawColourChosen = explicit
       })
   }
 

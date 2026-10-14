@@ -636,6 +636,7 @@ export class PixlFile {
         .map((r) => ({ ...itemOf(r), id: r.item_id, name: r.name })),
       stack: stack ? (JSON.parse(stack) as SidecarStack) : null,
       rawColour: parseRawColour(this.meta('rawColour')),
+      rawColourChosen: this.meta('rawColourChosen') === '1',
       names: readNames(this.meta('names')),
       cullKeep: this.meta('cullKeep') === '1'
     }
@@ -713,6 +714,7 @@ export class PixlFile {
       }
       this.setMeta('stack', s.stack ? JSON.stringify(s.stack) : null)
       this.setMeta('rawColour', s.rawColour ?? null)
+      this.setMeta('rawColourChosen', s.rawColour && s.rawColourChosen ? '1' : null)
       this.setMeta('names', s.names ? JSON.stringify(s.names) : null)
       this.setMeta('cullKeep', s.cullKeep ? '1' : null)
     })

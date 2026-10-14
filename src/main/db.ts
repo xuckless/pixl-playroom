@@ -63,6 +63,8 @@ export interface PhotoRow {
   hdr_key: string | null
   /** A RAW's camera colour ('container' or 'pixl:1'); null until it is first developed. */
   raw_colour: string | null
+  /** 1: the person chose `raw_colour` (migration 18). */
+  raw_colour_chosen?: number
   /** When the file arrived on this disk (ms): its birth time, else its modification time. */
   added?: number | null
   /** What Gemma named in it (shared/naming.ts `PhotoNames`, JSON); null until named. */
@@ -360,7 +362,11 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   (db) => {
     addColumns(db, 'photos', { legacy: 'INTEGER NOT NULL DEFAULT 0' })
     addColumns(db, 'copies', { legacy: 'INTEGER NOT NULL DEFAULT 0' })
-  }
+  },
+  // 18. A RAW's camera colour the person chose (not a default worked out
+  // again): a default "container" moves to PIXL's colour once the database
+  // holds the body (shared/rawcolour.ts `upgradesToPixl`); a chosen one never.
+  (db) => addColumns(db, 'photos', { raw_colour_chosen: 'INTEGER NOT NULL DEFAULT 0' })
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -910,8 +916,15 @@ export class Store {
     }[]
   }
 
-  setRawColour(photoId: number, colour: string | null): void {
-    this.prepare('UPDATE photos SET raw_colour = ? WHERE id = ?').run(colour, photoId)
+  setRawColour(photoId: number, colour: string | null, chosen?: boolean): void {
+    if (chosen === undefined)
+      this.prepare('UPDATE photos SET raw_colour = ? WHERE id = ?').run(colour, photoId)
+    else
+      this.prepare('UPDATE photos SET raw_colour = ?, raw_colour_chosen = ? WHERE id = ?').run(
+        colour,
+        chosen ? 1 : 0,
+        photoId
+      )
   }
 
   setHdr(photoId: number, kind: string, key: string): void {

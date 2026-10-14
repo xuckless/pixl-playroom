@@ -37,6 +37,7 @@ import {
   parseRawColour,
   rawColourLabel,
   resolveRawColour,
+  upgradesToPixl,
   type RawColour
 } from '../shared/rawcolour'
 import { EngineError, type EngineClient } from './engine/client'
@@ -172,8 +173,31 @@ export class Library {
         this.adopting.set(photo.id, p)
       }
       photo.raw_colour = await p
+    } else if (upgradesToPixl(photo.raw_colour, photo.raw_colour_chosen === 1, info)) {
+      // A default from before PIXL's database held this body: PIXL's colour
+      // now, its whites carried as a first probe would (once; never a chosen one).
+      let p = this.adopting.get(photo.id)
+      if (!p) {
+        p = this.upgradeColour(photo.id, info).finally(() => this.adopting.delete(photo.id))
+        this.adopting.set(photo.id, p)
+      }
+      photo.raw_colour = await p
     }
     return effectiveInfo(info, resolveRawColour(photo.raw_colour, info))
+  }
+
+  /** A default `container` moved to PIXL's colour (`upgradesToPixl`): recorded, whites carried. */
+  private async upgradeColour(photoId: number, info: SourceInfo): Promise<RawColour> {
+    await this.index.setRawColour(photoId, 'pixl:1')
+    await this.index.carryWhite(
+      photoId,
+      { isRaw: true, asShot: asShotFor(info, 'container') },
+      { isRaw: true, asShot: asShotFor(info, 'pixl:1') },
+      t('Camera colour: {{colour}}', { colour: rawColourLabel(info, 'pixl:1') })
+    )
+    this.queueThumb(photoId, null, true)
+    log.info('camera colour moved to PIXL’s (its body is in the database now)', photoId)
+    return 'pixl:1'
   }
 
   private async adoptColour(photoId: number, info: SourceInfo): Promise<RawColour> {
