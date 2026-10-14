@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.5.0-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.6-beta...v0.5.0-beta) (2026-10-14)
+
+
+### Features
+
+* added a way to upgrade and redevelop old projects with the new tech. Probably a temporary feature ([e296a41](https://github.com/xuckless/pixl-playroom/commit/e296a410bf152fc5b08efd61805c1f98e2a59012))
+* added better integration of our models including the pixl enhance, added proper png support, and finally fixed some quality of life UI changes ([ac4234c](https://github.com/xuckless/pixl-playroom/commit/ac4234cef71e94c98220be46cded425ca827366a))
+* **colour:** an (i) on every Resolve control ([609e8a3](https://github.com/xuckless/pixl-playroom/commit/609e8a3c7bf7827b1dca069249f79b8c3e121365))
+* **colour:** DaVinci Resolve's Primaries, and a Lightroom | Resolve switch ([c8d373f](https://github.com/xuckless/pixl-playroom/commit/c8d373f78d054eaf7de52420060c11ccb6b951a1))
+* **colour:** Lightroom's HSL under the Resolve Primaries ([cf71808](https://github.com/xuckless/pixl-playroom/commit/cf7180864cb09528ac0b2524a6b591b734358b61))
+* **colour:** qualifiers inside masks ([c12c651](https://github.com/xuckless/pixl-playroom/commit/c12c6513b4dda4825de98da0e751e22ce1c0bf6b))
+* **colour:** Resolve's Curves: Custom and the vs curves ([87a8a9f](https://github.com/xuckless/pixl-playroom/commit/87a8a9f0438a32103c149feb12f6728c778241ff))
+* **colour:** Resolve's Log wheels ([fae4751](https://github.com/xuckless/pixl-playroom/commit/fae4751ea13f930de4f2bbe1710add62cdad4cfc))
+* **colour:** Resolve's node view, behind its own switch ([7269325](https://github.com/xuckless/pixl-playroom/commit/7269325ad21300f927d20922fbef918e80ddec0e))
+* **colour:** Resolve's Qualifier as a tool, with its key view ([be88b0a](https://github.com/xuckless/pixl-playroom/commit/be88b0a97b8767b80f4ff82bc613e644cb3db49b))
+* **curves:** presets in Resolve's Curves, as the tone curve has them ([59b5790](https://github.com/xuckless/pixl-playroom/commit/59b57900c8c9134060ff848119401f13e934bf88))
+* **detail:** AI sharpening, noise reduction and clean up as Detail's boxes ([94c1ec0](https://github.com/xuckless/pixl-playroom/commit/94c1ec00ed9355f545580d487aa64fbc373346c9))
+* **develop:** Basic corrections, then curves, HSL and the other colour tools ([2bc3b00](https://github.com/xuckless/pixl-playroom/commit/2bc3b00f97a424a6b8d358b0e414e74974ac23ef))
+* **develop:** one section at a time, picked from one dropdown ([d8fb008](https://github.com/xuckless/pixl-playroom/commit/d8fb00837e7cde0e9e887e0a77304f7856943a65))
+* **engine:** pixl-engine 0.20.0's Playroom guide and audit, ahead of the release ([0d143bc](https://github.com/xuckless/pixl-playroom/commit/0d143bc5fbd963d75650bd335cc7891399136659))
+* **enhance:** Super resolution offers Edit as SDR on a gain-map HDR photo ([5c2611e](https://github.com/xuckless/pixl-playroom/commit/5c2611e4f737c362334f8898ca85cc86192c9f32))
+* f16 settled settled picture ([c1246c0](https://github.com/xuckless/pixl-playroom/commit/c1246c093b6726b0270daa7e47a2a01a1ae7fd5d))
+* going back to the old style masks, and retiring the glass based masks because the feather isnt proprly displayed ([551feec](https://github.com/xuckless/pixl-playroom/commit/551feec28a4f9c5aed2c97948fe08b7818d169cb))
+* History as a short timeline of sessions ([176e7ba](https://github.com/xuckless/pixl-playroom/commit/176e7ba57967e337e1794a37c52b4f476ffc76bd))
+* **history:** delete a change from History, everything after it kept ([dcf98a3](https://github.com/xuckless/pixl-playroom/commit/dcf98a34b37585f8c7b16e5ae0da3462f85d97ba))
+* linear Undo and Redo on the history, every change kept ([90e4cc8](https://github.com/xuckless/pixl-playroom/commit/90e4cc8fba3db18b6696086420950c63e7d1407d))
+* **looks:** the Essentials, Creative and B&W looks rebuilt on the Resolve tools ([d5234e1](https://github.com/xuckless/pixl-playroom/commit/d5234e1f1e7ece6a3a242af82888ba2128f271d3))
+* PIXL's camera colour whenever its database holds the body ([3155f80](https://github.com/xuckless/pixl-playroom/commit/3155f80d22ffbd375f3e188112541aabf748cc96))
+* Rebuild with the latest develop ([0252ce9](https://github.com/xuckless/pixl-playroom/commit/0252ce9d00780ded2195790ac2b4bd051b6ca0da))
+* **scopes:** Resolve's scopes, one at a time with ◀ ▶ or up to four at once ([038fc6a](https://github.com/xuckless/pixl-playroom/commit/038fc6a2667c0be373ef324f90a425700796d747))
+* **scopes:** the binned scopes read only the selected mask, when asked ([92a3247](https://github.com/xuckless/pixl-playroom/commit/92a324786a6ca26174061590d68b41d0eb19b928))
+* **scopes:** the colour chart next to the histogram in the scopes' ◀ ▶ ([b6f9592](https://github.com/xuckless/pixl-playroom/commit/b6f95928c98cbca03bc08597f79b708e55609082))
+* **scopes:** the scopes follow the picture on screen, off the main thread ([c00b4e5](https://github.com/xuckless/pixl-playroom/commit/c00b4e5b480a5f4299efc7c562a1f0749ff972fa))
+* **scopes:** waveform, parade, vectorscope and CIE density from the preview's pixels ([a9c205c](https://github.com/xuckless/pixl-playroom/commit/a9c205ca130b42136d1be689e6ad1c327c34ec6f))
+* screen sized settled picture ([75dbadb](https://github.com/xuckless/pixl-playroom/commit/75dbadb4e3e9a08412e1e60bf5369078dbf57431))
+* text that does not fit ends in an ellipsis, its whole in a tooltip ([a660d32](https://github.com/xuckless/pixl-playroom/commit/a660d32107e2d9c401be7aedf609a305e545f0a9))
+* the Edits list and card eyes switch an edit off and on ([00f7061](https://github.com/xuckless/pixl-playroom/commit/00f706114e5fb5f8834f067db9cfe153ac489235))
+* **themes:** Playroom Signature by default, Modern, Studio and High contrast ([3bffead](https://github.com/xuckless/pixl-playroom/commit/3bffead20b3b53c9832d71bea27c229ace2f9420))
+* three themes in Settings → Interface (Original, Calm pro, Bolder modern) ([9e65781](https://github.com/xuckless/pixl-playroom/commit/9e657818be097e16dae63881a4f1a7d3bed81e90))
+* Versions at the top of History, named and automatic ([3b80f2f](https://github.com/xuckless/pixl-playroom/commit/3b80f2fd6212172105d9f16d9ca224c6553bc7c9))
+
+
+### Bug Fixes
+
+* Before always starts from the Neutral profile ([e8897b5](https://github.com/xuckless/pixl-playroom/commit/e8897b5e7e50a23681b71045dbecb76b45b1cfcf))
+* curve presets as gentle as the ones people know ([da7eb07](https://github.com/xuckless/pixl-playroom/commit/da7eb073df0539cd9f633e0e7b36d09cc07ca500))
+* pixl enhance was falilin on every raw, added pixl enhance previews ([47dcad6](https://github.com/xuckless/pixl-playroom/commit/47dcad673ca81a87e46bc9a951a4bfa15fc48df2))
+* **raw:** PIXL demosaic states a frame's noise when the engine cannot read it ([42a4a60](https://github.com/xuckless/pixl-playroom/commit/42a4a60fbe4cb073408b7a23a0de11cbc7559f9d))
+
+
+### Maintenance
+
+* release 0.5.0-beta ([32d70a5](https://github.com/xuckless/pixl-playroom/commit/32d70a5f5ece392cb4162299ba4e06e1fa233023))
+
 ## [0.4.6-beta](https://github.com/xuckless/pixl-playroom/compare/v0.4.5-beta...v0.4.6-beta) (2026-10-13)
 
 
