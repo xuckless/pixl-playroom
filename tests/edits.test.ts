@@ -211,3 +211,14 @@ test('a look or a paste that writes a switched-off section switches it on', asyn
   setSectionOff(after, 'curve', false)
   assert.deepEqual(after.off, { light: true })
 })
+
+test('Before is the photo as it came on the Neutral profile, RAW or not', async () => {
+  const { beforeRecipe } = await import('../src/shared/recipe')
+  for (const raw of [true, false]) {
+    const b = beforeRecipe(raw)
+    assert.deepEqual(b.profile, { kind: 'neutral' })
+    assert.equal(b.profileAmount, 100)
+    // Everything else is the photo's defaults (a RAW's sharpening included).
+    assert.deepEqual({ ...b, profile: null }, { ...defaultRecipe(raw), profile: null })
+  }
+})

@@ -88,7 +88,7 @@ import {
   type SampleResult,
   type ViewState
 } from '../shared/ipc'
-import { defaultRecipe, hash32, normaliseRecipe, sameValue, type Recipe } from '../shared/recipe'
+import { beforeRecipe, hash32, normaliseRecipe, sameValue, type Recipe } from '../shared/recipe'
 import { LookThumbQueue, type LookThumb, type ThumbJob } from './lookthumbs'
 import type { Vec3 } from '../shared/wb'
 import {
@@ -2300,7 +2300,7 @@ class Session {
     // The photo as it came, or a Version chosen to compare with (as it renders).
     const before = this.compareRecipe
       ? structuredClone(effective(this.compareRecipe, this.isRaw))
-      : defaultRecipe(this.isRaw)
+      : beforeRecipe(this.isRaw)
     // As the picture beside it is framed (a crop or optics switched off included).
     const shown = effective(this.recipe, this.isRaw)
     before.geometry = structuredClone(shown.geometry)

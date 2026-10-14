@@ -787,6 +787,18 @@ export function defaultRecipe(isRaw: boolean): Recipe {
   }
 }
 
+/**
+ * The photo as it came, for Before/After and the hue chart's ghost bars: its
+ * defaults on the Neutral profile, whatever the default profile (a RAW's
+ * Playroom Standard is already a look; the owner, 2026-10-14).
+ */
+export function beforeRecipe(isRaw: boolean): Recipe {
+  const r = defaultRecipe(isRaw)
+  r.profile = { kind: 'neutral' }
+  r.profileAmount = 100
+  return r
+}
+
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
