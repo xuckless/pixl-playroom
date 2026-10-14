@@ -162,7 +162,8 @@ export function EnhancePanel(): React.JSX.Element | null {
           )}
         </p>
       )}
-      <HdrAiNote offer={false} />
+      {/* A gain-map photo can be edited as SDR and upscaled there (0.20.0 guide §4). */}
+      <HdrAiNote offer={!held} />
       <div className={held ? 'enhance-held-body' : undefined} inert={held} aria-disabled={held}>
         {stale > 0 && (
           <p className="pixel-step-stale">
