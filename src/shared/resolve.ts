@@ -11,7 +11,7 @@
  * lift and gain (`lift + o`, `gain + o`). Temp and Tint are a relative white
  * balance in linear light until the engine has them with the primaries (E75).
  */
-import type { GradeOp, Primary } from './engine-types'
+import type { GradeOp, HslKey, Primary } from './engine-types'
 
 /** A wheel's four numbers: Y moves all three channels, R/G/B each its own. */
 export interface Yrgb {
@@ -441,3 +441,133 @@ export function scaleLogWheels(l: LogWheelsSetting, k: number): LogWheelsSetting
     offset: lin(l.offset)
   }
 }
+
+// ── Qualifiers ─────────────────────────────────────────────────────────────
+
+/** One band of a qualifier's key: on or off, where, how wide, how soft its edge. */
+export interface KeyBandSetting {
+  on: boolean
+  centre: number
+  width: number
+  soft: number
+}
+
+/**
+ * Resolve's qualifier as a tool: a key on hue, saturation and luminance
+ * (an HSL key, as the eyedropper samples it), blurred and perhaps inverted,
+ * and the correction it lets through: a Gain wheel, Sat and Hue. Each runs
+ * as its own engine layer after the photo's own grade and before the
+ * masks, its key a Range mask, so the key view is the engine's own key.
+ */
+export interface QualifierSetting {
+  id: string
+  enabled: boolean
+  /** Hue in degrees: centre 0…360, width and soft 0…180. */
+  keyHue: KeyBandSetting
+  /** Saturation and luminance 0…1. */
+  keySat: KeyBandSetting
+  keyLum: KeyBandSetting
+  /** 0…100: the key's edge softened (a range mask's smoothness). */
+  blur: number
+  invert: boolean
+  gain: Yrgb
+  /** 0…100, 50 untouched. */
+  sat: number
+  /** 0…100, 50 untouched. */
+  hue: number
+}
+
+export const MAX_QUALIFIERS = 8
+
+const band = (on: boolean, centre: number, width: number, soft: number): KeyBandSetting => ({
+  on,
+  centre,
+  width,
+  soft
+})
+
+/** A qualifier keyed around a sampled colour (hue in degrees, saturation and luma 0…1). */
+export function qualifierFromSample(
+  id: string,
+  s: { hue: number; saturation: number; luminance: number }
+): QualifierSetting {
+  return {
+    id,
+    enabled: true,
+    // A grey has no hue to key on.
+    keyHue: band(s.saturation >= 0.08, ((s.hue % 360) + 360) % 360, 30, 20),
+    keySat: band(true, clamp(s.saturation, 0, 1), 0.5, 0.2),
+    keyLum: band(true, clamp(s.luminance, 0, 1), 0.6, 0.2),
+    blur: 20,
+    invert: false,
+    gain: one(),
+    sat: 50,
+    hue: 50
+  }
+}
+
+function bandOf(v: unknown, d: KeyBandSetting, top: number, half: number): KeyBandSetting {
+  const o = (v && typeof v === 'object' ? v : {}) as Partial<Record<keyof KeyBandSetting, unknown>>
+  return {
+    on: typeof o.on === 'boolean' ? o.on : d.on,
+    centre: clamp(num(o.centre, d.centre), 0, top),
+    width: clamp(num(o.width, d.width), 0, 2 * half),
+    soft: clamp(num(o.soft, d.soft), 0, half)
+  }
+}
+
+export function normaliseQualifiers(v: unknown): QualifierSetting[] {
+  if (!Array.isArray(v)) return []
+  const seen = new Set<string>()
+  const out: QualifierSetting[] = []
+  for (const x of v) {
+    if (!x || typeof x !== 'object') continue
+    const o = x as Partial<Record<keyof QualifierSetting, unknown>>
+    const id = typeof o.id === 'string' && o.id && !seen.has(o.id) ? o.id : null
+    if (!id) continue
+    seen.add(id)
+    const d = qualifierFromSample(id, { hue: 0, saturation: 0.5, luminance: 0.5 })
+    out.push({
+      id,
+      enabled: o.enabled !== false,
+      keyHue: bandOf(o.keyHue, d.keyHue, 360, 180),
+      keySat: bandOf(o.keySat, d.keySat, 1, 0.5),
+      keyLum: bandOf(o.keyLum, d.keyLum, 1, 0.5),
+      blur: clamp(num(o.blur, d.blur), 0, 100),
+      invert: o.invert === true,
+      gain: yrgbOf(o.gain, one(), 0, 4),
+      sat: clamp(num(o.sat, 50), 0, 100),
+      hue: clamp(num(o.hue, 50), 0, 100)
+    })
+    if (out.length >= MAX_QUALIFIERS) break
+  }
+  return out
+}
+
+/** A qualifier's key as the engine's HSL key, or null when no band is on (it keys nothing). */
+export function qualifierKey(q: QualifierSetting): HslKey | null {
+  const b = (k: KeyBandSetting): { centre: number; width: number; softness: number } | null =>
+    k.on ? { centre: r4(k.centre), width: r4(k.width), softness: r4(k.soft) } : null
+  const hue = b(q.keyHue)
+  const saturation = b(q.keySat)
+  const luma = b(q.keyLum)
+  if (!hue && !saturation && !luma) return null
+  return { hue, saturation, luma, blur_radius: 0, invert: false }
+}
+
+/** What a qualifier lets through: its Gain wheel, Sat and Hue as a Primary (null when untouched). */
+export function qualifierCorrection(q: QualifierSetting): Primary | null {
+  const gain = { r: 1, g: 1, b: 1 }
+  for (const c of CH) gain[c] = r4(q.gain.y * q.gain[c])
+  const p: Primary = {
+    ...IDENTITY,
+    gain,
+    saturation: r4(q.sat / 50),
+    hue_shift: r4((q.hue - 50) * 3.6)
+  }
+  const same = CH.every((c) => gain[c] === 1) && p.saturation === 1 && p.hue_shift === 0
+  return same ? null : p
+}
+
+/** The engine layer a qualifier compiles to, by name in `Compiled.layerIndex` (its key view's). */
+export const qualifierLayerId = (id: string): string => `q:${id}`

@@ -169,6 +169,22 @@ function HoverOverlay(): React.JSX.Element | null {
   )
 }
 
+/**
+ * Resolve's key view: the selected qualifier's key, white where it selects
+ * and black where it does not, over the whole picture (the engine's own
+ * key, its layer's mask). Shown while the Qualifier card asks for it.
+ */
+export function KeyView(): React.JSX.Element | null {
+  const on = useDevelop((s) => s.keyView && s.qualifierId !== null)
+  const keyMask = useDevelop((s) => s.keyMask)
+  if (!on || !keyMask) return null
+  return (
+    <div className="key-view">
+      <MaskPlane url={keyMask.url} mode="white-black" hue={0} opacity={100} />
+    </div>
+  )
+}
+
 function SelectedOverlay(): React.JSX.Element | null {
   const mask = useDevelop((s) => s.mask)
   const layerId = useDevelop((s) => s.layerId)

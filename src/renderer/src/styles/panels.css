@@ -1157,3 +1157,95 @@ aside.right .panels.adjust {
 .rc-swatch:hover {
   transform: scale(1.15);
 }
+
+/* ── Resolve's Qualifier card ────────────────────────────────────── */
+.q-head {
+  align-items: center;
+  gap: 6px;
+}
+.q-head .spacer {
+  flex: 1;
+}
+.q-list {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.q-list li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--r);
+  border: 1px solid transparent;
+}
+.q-list li.on {
+  border-color: color-mix(in srgb, var(--acc) 50%, transparent);
+  background: color-mix(in srgb, var(--acc) 10%, transparent);
+}
+.q-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 6px;
+  border: none;
+  background: none;
+  text-align: left;
+}
+.q-swatch {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--hair3);
+}
+.q-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.q-band {
+  margin: 8px 0 4px;
+}
+.q-band .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.band-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--hair2);
+  margin-bottom: 4px;
+}
+.band-bar svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  mix-blend-mode: multiply;
+}
+.band-bar.off {
+  opacity: 0.35;
+}
+.q-correction {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 10px;
+}
+.q-correction .q-sliders {
+  flex: 1;
+  min-width: 0;
+}

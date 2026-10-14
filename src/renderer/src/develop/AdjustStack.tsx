@@ -30,7 +30,7 @@ import {
   WhiteBalanceBody
 } from '../panels/global'
 import { HealPanel } from '../panels/heal'
-import { LogWheelsBody, PrimariesBody, ResolveCurvesBody } from '../panels/resolve'
+import { LogWheelsBody, PrimariesBody, QualifierBody, ResolveCurvesBody } from '../panels/resolve'
 import { rich, t, tk } from '../lib/i18n'
 import { LensPanel } from '../panels/lens'
 import { TIPS } from '../panels/tips'
@@ -50,6 +50,7 @@ const BODIES: Record<CardId, ComponentType> = {
   primaries: PrimariesBody,
   logwheels: LogWheelsBody,
   rcurves: ResolveCurvesBody,
+  qualifier: QualifierBody,
   detail: DetailBody,
   effects: EffectsBody,
   optics: LensPanel,

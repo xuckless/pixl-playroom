@@ -22,7 +22,13 @@ export const MASK_TOOLS: Tool[] = [
 ]
 
 /** Pickers that belong to a card: put down when the column changes. */
-const CARD_PICKERS: Tool[] = ['fringe-pick', 'add-pick', 'point-picker', 'wb-picker']
+const CARD_PICKERS: Tool[] = [
+  'fringe-pick',
+  'add-pick',
+  'point-picker',
+  'qualifier-pick',
+  'wb-picker'
+]
 
 /**
  * Show the cards, or Crop's or Heal's panel in their place, and keep the

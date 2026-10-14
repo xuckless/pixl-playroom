@@ -20,6 +20,7 @@ export const CARD_IDS = [
   'primaries',
   'logwheels',
   'rcurves',
+  'qualifier',
   'detail',
   'effects',
   'optics',
@@ -109,6 +110,13 @@ export const CARDS: CardSpec[] = [
     title: tk('Curves'),
     fields: [['curvesVs']],
     inMask: true,
+    set: 'resolve'
+  },
+  {
+    id: 'qualifier',
+    title: tk('Qualifier'),
+    fields: [['qualifiers']],
+    inMask: false,
     set: 'resolve'
   },
   { id: 'detail', title: tk('Detail'), fields: [['detail']], inMask: true },

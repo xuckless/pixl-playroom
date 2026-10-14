@@ -2,22 +2,26 @@
  * DaVinci Resolve's colour tools as cards (Settings → Interface → Colour
  * tools: Resolve). The recipe and the engine's side are shared/resolve.ts.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { GradeWheel, type WheelScale } from '../components/grading/GradeWheel'
 import { CurveEditor } from '../components/editors'
-import { Tabs, ToolPanel } from '../components/ui'
+import { Tabs, Toggle, ToolPanel } from '../components/ui'
+import { Icon } from '../components/icons'
 import { useDevelop, type CurveChannel } from '../state/develop'
 import { t, tk } from '../lib/i18n'
 import { useScope } from '../state/scope'
 import { RS } from './global'
 import {
+  MAX_QUALIFIERS,
   VS_WAITING,
   vsPeriodic,
+  type KeyBandSetting,
   type PrimariesSetting,
+  type QualifierSetting,
   type VsCurve,
   type Yrgb
 } from '../../../shared/resolve'
-import type { CurvePointSetting } from '../../../shared/recipe'
+import type { CurvePointSetting, Recipe } from '../../../shared/recipe'
 
 type WheelKey = 'lift' | 'gamma' | 'gain' | 'offset'
 
@@ -324,6 +328,325 @@ export function LogWheelsBody(): React.JSX.Element | null {
           'Close to Resolve’s, not the same: each range is keyed on brightness with a soft edge until the engine grades in log (it has been asked to).'
         )}
       </p>
+    </ToolPanel>
+  )
+}
+
+// ── Qualifier ────────────────────────────────────────────────────────────────
+
+type BandKey = 'keyHue' | 'keySat' | 'keyLum'
+
+const BANDS: { key: BandKey; label: string; top: number; strip: string; step: number }[] = [
+  {
+    key: 'keyHue',
+    label: tk('Hue'),
+    top: 360,
+    strip: 'linear-gradient(90deg,#f33,#fd3,#3f5,#3ff,#36f,#f3f,#f33)',
+    step: 1
+  },
+  {
+    key: 'keySat',
+    label: tk('Sat'),
+    top: 1,
+    strip: 'linear-gradient(90deg,#888,#f44)',
+    step: 0.01
+  },
+  {
+    key: 'keyLum',
+    label: tk('Lum'),
+    top: 1,
+    strip: 'linear-gradient(90deg,#000,#fff)',
+    step: 0.01
+  }
+]
+
+/** Where a band selects along its strip: fully inside, fading over its soft edge (a hue band wraps). */
+function BandBar({
+  band,
+  top,
+  strip
+}: {
+  band: KeyBandSetting
+  top: number
+  strip: string
+}): React.JSX.Element {
+  const pct = (v: number): number => (v / top) * 100
+  const lo = band.centre - band.width / 2
+  const hi = band.centre + band.width / 2
+  const copies = top === 360 ? [-360, 0, 360] : [0]
+  return (
+    <div className={`band-bar${band.on ? '' : ' off'}`} style={{ background: strip }}>
+      <svg viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden>
+        <defs>
+          <linearGradient id="bb-in" x1="0" x2="1">
+            <stop offset="0" stopColor="#fff" stopOpacity="0" />
+            <stop offset="1" stopColor="#fff" stopOpacity="0.9" />
+          </linearGradient>
+          <linearGradient id="bb-out" x1="0" x2="1">
+            <stop offset="0" stopColor="#fff" stopOpacity="0.9" />
+            <stop offset="1" stopColor="#fff" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <rect x={0} y={0} width={100} height={10} fill="rgba(0,0,0,0.55)" />
+        {copies.map((o) => (
+          <g key={o}>
+            <rect
+              x={pct(lo - band.soft + o)}
+              y={0}
+              width={pct(band.soft)}
+              height={10}
+              fill="url(#bb-in)"
+            />
+            <rect
+              x={pct(lo + o)}
+              y={0}
+              width={pct(band.width)}
+              height={10}
+              fill="rgba(255,255,255,0.9)"
+            />
+            <rect x={pct(hi + o)} y={0} width={pct(band.soft)} height={10} fill="url(#bb-out)" />
+          </g>
+        ))}
+      </svg>
+    </div>
+  )
+}
+
+/** The colour at a qualifier's key centre, for its swatch. */
+function swatchOf(q: QualifierSetting): string {
+  const l = Math.round(q.keyLum.on ? 25 + q.keyLum.centre * 50 : 50)
+  const s = Math.round(q.keyHue.on ? (q.keySat.on ? 40 + q.keySat.centre * 60 : 80) : 0)
+  return `hsl(${Math.round(q.keyHue.centre)} ${s}% ${l}%)`
+}
+
+export function QualifierBody(): React.JSX.Element | null {
+  const { recipe, edit, commit, replace } = useScope()
+  const tool = useDevelop((s) => s.tool)
+  const setTool = useDevelop((s) => s.setTool)
+  const selectedId = useDevelop((s) => s.qualifierId)
+  const select = useDevelop((s) => s.setQualifier)
+  const keyView = useDevelop((s) => s.keyView)
+  const setKeyView = useDevelop((s) => s.setKeyView)
+  // The eyedropper goes down, and the key view off, with the card.
+  useEffect(
+    () => () => {
+      const d = useDevelop.getState()
+      if (d.tool === 'qualifier-pick') d.setTool('none')
+      d.setKeyView(false)
+    },
+    []
+  )
+  if (!recipe) return null
+  const qs = recipe.qualifiers
+  const q = qs.find((x) => x.id === selectedId) ?? qs[qs.length - 1]
+  const at = (r: Recipe): QualifierSetting | undefined => r.qualifiers.find((x) => x.id === q?.id)
+  const full = qs.length >= MAX_QUALIFIERS
+  const remove = (id: string): void => {
+    const next = structuredClone(recipe)
+    next.qualifiers = next.qualifiers.filter((x) => x.id !== id)
+    void replace(next, 'Qualifier: remove')
+    if (id === selectedId) select(null)
+  }
+  return (
+    <ToolPanel>
+      <div className="row q-head">
+        <Toggle
+          on={tool === 'qualifier-pick'}
+          onChange={(on) => setTool(on ? 'qualifier-pick' : 'none')}
+          title={
+            full
+              ? t('At most {{count}} qualifiers: picking keys the selected one again', {
+                  count: MAX_QUALIFIERS
+                })
+              : t('Click a colour in the photo to key it')
+          }
+        >
+          ⌖ {t('Pick a colour')}
+        </Toggle>
+        <span className="spacer" />
+        <Toggle
+          on={keyView}
+          onChange={(on) => {
+            if (q) select(q.id)
+            setKeyView(on)
+          }}
+          title={t('Show the key: white where the qualifier selects, black where it does not')}
+        >
+          ◐ {t('Key')}
+        </Toggle>
+      </div>
+      {qs.length === 0 ? (
+        <p className="muted small">
+          {t('Pick a colour in the photo: the correction below then changes only what is like it.')}
+        </p>
+      ) : (
+        <ul className="q-list">
+          {qs.map((x, i) => (
+            <li key={x.id} className={x.id === q?.id ? 'on' : ''}>
+              <button className="q-pick" onClick={() => select(x.id)}>
+                <span className="q-swatch" style={{ background: swatchOf(x) }} />
+                <span className="q-name">{t('Qualifier {{n}}', { n: i + 1 })}</span>
+              </button>
+              <button
+                className="icon sm ghost"
+                aria-label={x.enabled ? t('Switch off') : t('Switch on')}
+                title={x.enabled ? t('Switch off') : t('Switch on')}
+                onClick={() => {
+                  edit((r) => {
+                    const y = r.qualifiers.find((z) => z.id === x.id)
+                    if (y) y.enabled = !y.enabled
+                  })
+                  commit(`Qualifier: ${x.enabled ? 'Off' : 'On'}`)
+                }}
+              >
+                <Icon name={x.enabled ? 'eye' : 'eyeOff'} />
+              </button>
+              <button
+                className="icon sm ghost"
+                aria-label={t('Remove')}
+                title={t('Remove')}
+                onClick={() => remove(x.id)}
+              >
+                <Icon name="close" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {q && (
+        <>
+          {BANDS.map((b) => (
+            <div key={b.key} className="q-band">
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={q[b.key].on}
+                  onChange={(e) => {
+                    edit((r) => {
+                      const y = at(r)
+                      if (y) y[b.key].on = e.target.checked
+                    })
+                    commit(`Qualifier: ${b.label}`)
+                  }}
+                />
+                {t(b.label)}
+              </label>
+              <BandBar band={q[b.key]} top={b.top} strip={b.strip} />
+              {q[b.key].on && (
+                <>
+                  <RS
+                    label={tk('Centre')}
+                    read={(r) => at(r)?.[b.key].centre ?? 0}
+                    write={(r, v) => {
+                      const y = at(r)
+                      if (y) y[b.key].centre = v
+                    }}
+                    min={0}
+                    max={b.top}
+                    step={b.step}
+                    def={q[b.key].centre}
+                    format={(v) => (b.top === 360 ? `${Math.round(v)}°` : v.toFixed(2))}
+                  />
+                  <RS
+                    label={tk('Width')}
+                    read={(r) => at(r)?.[b.key].width ?? 0}
+                    write={(r, v) => {
+                      const y = at(r)
+                      if (y) y[b.key].width = v
+                    }}
+                    min={0}
+                    max={b.top}
+                    step={b.step}
+                    def={q[b.key].width}
+                    format={(v) => (b.top === 360 ? `${Math.round(v)}°` : v.toFixed(2))}
+                  />
+                  <RS
+                    label={tk('Soft')}
+                    read={(r) => at(r)?.[b.key].soft ?? 0}
+                    write={(r, v) => {
+                      const y = at(r)
+                      if (y) y[b.key].soft = v
+                    }}
+                    min={0}
+                    max={b.top / 2}
+                    step={b.step}
+                    def={q[b.key].soft}
+                    format={(v) => (b.top === 360 ? `${Math.round(v)}°` : v.toFixed(2))}
+                  />
+                </>
+              )}
+            </div>
+          ))}
+          <RS
+            label={tk('Blur')}
+            read={(r) => at(r)?.blur ?? 0}
+            write={(r, v) => {
+              const y = at(r)
+              if (y) y.blur = v
+            }}
+            min={0}
+            max={100}
+            def={20}
+          />
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={q.invert}
+              onChange={(e) => {
+                edit((r) => {
+                  const y = at(r)
+                  if (y) y.invert = e.target.checked
+                })
+                commit('Qualifier: Invert')
+              }}
+            />
+            {t('Invert the key')}
+          </label>
+          <div className="q-correction">
+            <GradeWheel
+              label={t('Gain')}
+              value={q.gain}
+              scale={SCALES.gain}
+              size={96}
+              onChange={(v: Yrgb, live) =>
+                edit((r) => {
+                  const y = at(r)
+                  if (y) y.gain = v
+                }, live)
+              }
+              onCommit={() => commit('Qualifier: Gain')}
+            />
+            <div className="q-sliders">
+              <RS
+                label={tk('Sat')}
+                read={(r) => at(r)?.sat ?? 50}
+                write={(r, v) => {
+                  const y = at(r)
+                  if (y) y.sat = v
+                }}
+                min={0}
+                max={100}
+                step={0.1}
+                def={50}
+                format={pct}
+              />
+              <RS
+                label={tk('Hue')}
+                read={(r) => at(r)?.hue ?? 50}
+                write={(r, v) => {
+                  const y = at(r)
+                  if (y) y.hue = v
+                }}
+                min={0}
+                max={100}
+                step={0.1}
+                def={50}
+                format={pct}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </ToolPanel>
   )
 }

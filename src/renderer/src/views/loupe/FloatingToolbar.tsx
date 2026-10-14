@@ -215,6 +215,10 @@ const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
     hint: tk('Click the colour or tone the mask should select')
   },
   'point-picker': { title: tk('Point colour'), hint: tk('Click the colour to shift on its own') },
+  'qualifier-pick': {
+    title: tk('Qualifier'),
+    hint: tk('Click the colour to key: the correction changes only what it selects')
+  },
   heal: {
     title: tk('Heal'),
     hint: tk(

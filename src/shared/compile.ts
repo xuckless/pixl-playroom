@@ -65,6 +65,9 @@ import {
   logWheelsOps,
   primariesOp,
   primariesWhite,
+  qualifierCorrection,
+  qualifierKey,
+  qualifierLayerId,
   scaleCurvesVs,
   scaleLogWheels,
   scalePrimaries,
@@ -1546,6 +1549,38 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
       mask: null,
       blend: { mode: 'Normal', space: 'LinearWorking' },
       stages: base
+    })
+  }
+  // Resolve's qualifiers: each its own layer after the photo's grade, its key
+  // a Range mask, so the key view (Inspect::LayerMask) is the engine's key.
+  for (const q of r.qualifiers) {
+    const key = qualifierKey(q)
+    if (!key) continue
+    layerIndex[qualifierLayerId(q.id)] = layers.length
+    layers.push({
+      name: 'qualifier',
+      enabled: q.enabled,
+      opacity: 1,
+      mask: {
+        components: [
+          {
+            shape: { Range: key },
+            mode: 'Add',
+            opacity: 1,
+            invert: false,
+            feather: { radius: round4(smoothnessFeather(q.blur)), edge: 'Zero' },
+            refine: null,
+            smooth: 0,
+            contrast: 0,
+            shift: 0
+          }
+        ],
+        invert: q.invert,
+        space: LOOK_SPACE,
+        edge: null
+      },
+      blend: { mode: 'Normal', space: 'LinearWorking' },
+      stages: lookStage([{ Primary: qualifierCorrection(q) ?? primary({}) }])
     })
   }
   for (const l of r.layers) {

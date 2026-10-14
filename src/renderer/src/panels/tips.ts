@@ -356,6 +356,15 @@ export const TIPS = {
       'Use them after the Primaries, for the finer split; they add colour rather than scale it.'
     )
   },
+  qualifier: {
+    what: tk(
+      'DaVinci Resolve’s qualifier: pick a colour in the photo and the correction here (Gain, Sat, Hue) changes only what is like it, by hue, saturation and luminance.'
+    ),
+    expect: tk(
+      'Key shows what it selects, white on black. Widen a band or soften its edge until the key is clean, then correct.'
+    ),
+    tip: tk('Blur smooths a noisy key; Invert corrects everything except the colour.')
+  },
   rcurves: {
     what: tk(
       'DaVinci Resolve’s curves. Custom is the tone curve (Y, R, G, B); the others change one thing by another: Hue vs Hue turns a colour, Hue vs Sat and Lum vs Sat make colours richer or quieter by hue or by brightness.'

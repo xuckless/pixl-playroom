@@ -15,9 +15,11 @@ import {
   normaliseCurvesVs,
   normaliseLogWheels,
   normalisePrimaries,
+  normaliseQualifiers,
   type CurvesVsSetting,
   type LogWheelsSetting,
-  type PrimariesSetting
+  type PrimariesSetting,
+  type QualifierSetting
 } from './resolve'
 import { NO_ADD, type AddColourSetting } from './addcolor'
 import type { BlendMode, CropRect, KeyBand, MaskMode } from './engine-types'
@@ -586,6 +588,7 @@ export const EDIT_SECTIONS = [
   'primaries',
   'logwheels',
   'rcurves',
+  'qualifier',
   'detail',
   'effects',
   'optics',
@@ -629,6 +632,8 @@ export interface Recipe {
   curvesVs: CurvesVsSetting
   /** Resolve's Log wheels (Shadow, Midtone, Highlight, Offset). */
   logWheels: LogWheelsSetting
+  /** Resolve's qualifiers, the photo's own (a mask has none): each a key and its correction. */
+  qualifiers: QualifierSetting[]
   detail: DetailSetting
   /** Lens corrections: profile, manual, chromatic aberration, defringe (see `lens.ts`). */
   lens: LensSetting
@@ -762,6 +767,7 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     primaries: defaultPrimaries(),
     curvesVs: defaultCurvesVs(),
     logWheels: defaultLogWheels(),
+    qualifiers: [],
     detail: {
       sharpenAmount: isRaw ? 40 : 0,
       sharpenRadius: 1,
@@ -873,6 +879,7 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   r.primaries = normalisePrimaries(r.primaries)
   r.curvesVs = normaliseCurvesVs(r.curvesVs)
   r.logWheels = normaliseLogWheels(r.logWheels)
+  r.qualifiers = normaliseQualifiers(r.qualifiers)
   // Only sections there are, each switched off by `true` (`fill` keeps any key).
   r.off = Object.fromEntries(
     Object.entries(r.off ?? {}).filter(
@@ -1303,6 +1310,7 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
       case 'primaries':
         r.primaries = f.primaries
         r.logWheels = f.logWheels
+        r.qualifiers = f.qualifiers
         break
       case 'detailSharpen':
         r.detail.sharpenAmount = f.detail.sharpenAmount
@@ -1457,7 +1465,7 @@ function groupValues(r: Recipe, g: RecipeGroup): unknown[] {
     case 'colorGrade':
       return [r.colorGrade]
     case 'primaries':
-      return [r.primaries, r.logWheels]
+      return [r.primaries, r.logWheels, r.qualifiers]
     case 'detailSharpen':
       return [d.sharpenAmount, d.sharpenRadius, d.sharpenDetail, d.sharpenMasking]
     case 'detailNoise':

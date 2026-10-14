@@ -1,3 +1,4 @@
+import { qualifierLayerId } from '../../../shared/resolve'
 import { floatCanvasKnown, floatCanvasReady } from '../lib/floatcanvas'
 import { produce, setAutoFreeze } from 'immer'
 import { create } from 'zustand'
@@ -37,6 +38,8 @@ export type Tool =
   /** A Depth range centred on the distance clicked (panels/masks/MaskTool.tsx). */
   | 'depth-picker'
   | 'point-picker'
+  /** Resolve's Qualifier: a new key around the colour clicked (panels/resolve.tsx). */
+  | 'qualifier-pick'
   | 'add-pick'
   | 'fringe-pick'
   | 'upright-guide'
@@ -97,6 +100,8 @@ interface DevelopState {
   pictures: Pictures
   before: RenderEvent | null
   mask: RenderEvent | null
+  /** The selected qualifier's key plane, while its key view is on (`keyView`). */
+  keyMask: RenderEvent | null
   report: RenderReport | null
   stats: ImageStats | null
   /** For a PQ/HLG photo, the last settled render measured as HDR (see `RenderEvent.hdrStats`). */
@@ -135,6 +140,9 @@ interface DevelopState {
   hslTab: 'hue' | 'saturation' | 'luminance' | 'all' | 'point'
   /** The selected swatch of the colour mixer's Point tab. */
   pointId: string | null
+  /** The qualifier the Qualifier card has selected, and whether its key shows white on black. */
+  qualifierId: string | null
+  keyView: boolean
   addPick: AddPick | null
   /** Upright's guides while they are drawn (tool `upright-guide`), frame fractions. */
   guides: GuideLine[]
@@ -188,6 +196,8 @@ interface DevelopState {
   setHslFocus(b: HslBand | null): void
   setHslTab(tab: DevelopState['hslTab']): void
   setPointId(id: string | null): void
+  setQualifier(id: string | null): void
+  setKeyView(on: boolean): void
   setGuides(g: GuideLine[]): void
   /** Start (or, with null, stop) the additive-colour picker. */
   setAddPick(p: AddPick | null): void
@@ -352,6 +362,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   hslFocus: null,
   hslTab: 'all',
   pointId: null,
+  qualifierId: null,
+  keyView: false,
+  keyMask: null,
   addPick: null,
   guides: [],
   curveChannel: 'master',
@@ -382,6 +395,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       addMode: null,
       before: null,
       mask: null,
+      keyMask: null,
+      keyView: false,
       stats: null,
       hdrStats: null,
       headroomPlane: null,
@@ -447,7 +462,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       picture: null,
       pictures: { framed: null, crop: null },
       before: null,
-      mask: null
+      mask: null,
+      keyMask: null,
+      keyView: false
     })
   },
 
@@ -641,6 +658,18 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     set({ guides })
   },
 
+  setQualifier(qualifierId) {
+    if (qualifierId === get().qualifierId) return
+    set({ qualifierId, keyMask: null })
+    if (get().keyView) get().pushView()
+  },
+
+  setKeyView(keyView) {
+    if (keyView === get().keyView) return
+    set({ keyView, keyMask: null })
+    get().pushView()
+  },
+
   setPointId(pointId) {
     set({ pointId })
   },
@@ -660,8 +689,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   },
 
   pushView() {
-    const { session, tool, layerId, targetEdge } = get()
+    const { session, tool, layerId, targetEdge, keyView, qualifierId } = get()
     if (!session) return
+    // The key view asks for the selected qualifier's layer instead of a mask's.
+    const keyLayer = keyView && qualifierId ? qualifierLayerId(qualifierId) : null
     const view: ViewState = {
       cropMode: wholeFrameTool(tool),
       guides: tool === 'upright-guide',
@@ -670,12 +701,12 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       before: true,
       // A selected layer's mask is rendered whether or not the overlay shows:
       // the hue chart measures inside it.
-      maskLayer: layerId,
+      maskLayer: keyLayer ?? layerId,
       // Thumbnails of every mask while the masks window is unfolded, or all show.
       maskThumbs: useUi.getState().masksWin.open || useUi.getState().maskOverlay.showAll,
       // With a range selected its mask comes with every draft: only the
       // engine knows exactly what the key selects in the graded picture.
-      maskLive: rangeSelected(get()),
+      maskLive: rangeSelected(get()) || keyLayer !== null,
       // Every photo whose editing space has light above white: a RAW or an HDR one.
       headroom: get().headroom && aboveWhite(session),
       // Full HDR for those too; an SDR photo (a gain-map one edited in SDR
@@ -701,6 +732,15 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       if (get().headroom && Boolean(e.cropMode) === wholeFrameTool(get().tool))
         set({ headroomPlane: e })
     } else if (e.kind === 'mask') {
+      const { keyView, qualifierId } = get()
+      if (keyView && qualifierId) {
+        // The key view's plane: kept apart from the masks'.
+        if (e.layerId !== qualifierLayerId(qualifierId)) return
+        const cur = get().keyMask
+        if (cur && e.seq < cur.seq) return
+        set({ keyMask: e.url ? e : null })
+        return
+      }
       // Only the selected mask's plane, and never an older one than shown.
       if (e.layerId !== get().layerId) return
       const cur = get().mask

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { compile, scaleSettings, type CompileContext } from '../src/shared/compile'
-import { defaultRecipe, neutralSettings } from '../src/shared/recipe'
+import { defaultRecipe, neutralSettings, newLocalLayer } from '../src/shared/recipe'
 import { CARDS, cardShows } from '../src/shared/cards'
 import { effective, setSectionOff } from '../src/shared/edits'
 import {
@@ -178,4 +178,34 @@ test('log wheels key their own part of the tones, and add rather than scale', as
   // The range sliders keep low under high.
   const n = normaliseLogWheels({ low: 0.8, high: 0.5 })
   assert.ok(n.high > n.low)
+})
+
+test('each qualifier is its own layer after the photo’s grade, its key the layer’s Range mask', async () => {
+  const { qualifierFromSample, qualifierKey, qualifierLayerId, normaliseQualifiers } =
+    await import('../src/shared/resolve')
+  const r = defaultRecipe(false)
+  r.presence.saturation = 10
+  const q = qualifierFromSample('q1', { hue: 210, saturation: 0.5, luminance: 0.6 })
+  q.gain = { y: 1, r: 1, g: 1, b: 1.2 }
+  const grey = qualifierFromSample('q2', { hue: 0, saturation: 0.02, luminance: 0.5 })
+  r.qualifiers = [q, grey]
+  r.layers.push(newLocalLayer('Mask'))
+  const c = compile(r, ctx)
+  const i = c.layerIndex[qualifierLayerId('q1')]
+  assert.equal(i, 1, 'right after the base layer')
+  const layer = c.grade!.layers[i]
+  const shape = layer.mask!.components[0].shape
+  assert.ok('Range' in shape)
+  assert.deepEqual(shape.Range, qualifierKey(q))
+  assert.ok(
+    layer.stages.flatMap((s) => s.ops).some((o) => 'Primary' in o && o.Primary.gain.b === 1.2)
+  )
+  // A grey has no hue to key on; it is still a layer, to look at its key.
+  assert.equal(qualifierKey(grey)!.hue, null)
+  assert.equal(c.layerIndex[qualifierLayerId('q2')], 2)
+  // Switched off, it is still there (its key can be looked at), only not applied.
+  r.qualifiers[0].enabled = false
+  assert.equal(compile(r, ctx).grade!.layers[1].enabled, false)
+  // Saved ones are made whole; duplicates and strays dropped.
+  assert.equal(normaliseQualifiers([q, q, { nope: 1 }]).length, 1)
 })

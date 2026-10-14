@@ -1,3 +1,4 @@
+import { MAX_QUALIFIERS, qualifierFromSample } from '../../../../shared/resolve'
 import { RebuildPrompt } from './RebuildPrompt'
 import { aboveWhite } from '../../state/display'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -59,7 +60,7 @@ import { LoupeHud } from './LoupeHud'
 import { GradientTools } from './GradientTools'
 import { LookPick } from './LookPick'
 import { AiScan } from '../../fx/AiScan'
-import { MaskOverlay } from './MaskOverlay'
+import { KeyView, MaskOverlay } from './MaskOverlay'
 import { useGreyUnderOverlay } from './useGreyUnderOverlay'
 import { SharpTile } from './SharpTile'
 import { useSize } from './useSize'
@@ -504,6 +505,26 @@ export function Loupe(): React.JSX.Element {
         // The picture as shown, in its own Display P3: what the complement
         // has to turn white (or into the second colour).
         pickAdd(await samplePatch(readable(picture), p.x, p.y, 5, 'display-p3'))
+      } else if (tool === 'qualifier-pick' && picture) {
+        // Resolve's qualifier: a new key around the colour clicked (or, all
+        // eight in use, the selected one keyed again there).
+        const s = hsvOf(...(await samplePatch(readable(picture), p.x, p.y)))
+        const sample = { hue: s.hue, saturation: s.saturation, luminance: s.luma }
+        const next = structuredClone(useDevelop.getState().recipe ?? recipe)
+        const dev = useDevelop.getState()
+        const qs = next.qualifiers
+        if (qs.length < MAX_QUALIFIERS) {
+          const q = qualifierFromSample(newId(), sample)
+          qs.push(q)
+          dev.setQualifier(q.id)
+          dev.replace(next, tk('Qualifier: add'))
+        } else {
+          const sel = qs.find((x) => x.id === dev.qualifierId) ?? qs[qs.length - 1]
+          const keyed = qualifierFromSample(sel.id, sample)
+          Object.assign(sel, { keyHue: keyed.keyHue, keySat: keyed.keySat, keyLum: keyed.keyLum })
+          dev.replace(next, tk('Qualifier: re-sample'))
+        }
+        setTool('none')
       } else if (tool === 'point-picker' && picture) {
         const s = hsvOf(...(await samplePatch(readable(picture), p.x, p.y)))
         const sample = {
@@ -585,6 +606,7 @@ export function Loupe(): React.JSX.Element {
           tool === 'range-picker' ||
           tool === 'depth-picker' ||
           tool === 'point-picker' ||
+          tool === 'qualifier-pick' ||
           tool === 'add-pick' ||
           tool === 'fringe-pick'
         )
@@ -621,6 +643,7 @@ export function Loupe(): React.JSX.Element {
               </div>
             )}
             <MaskOverlay g={g ?? null} w={vrect.w} h={vrect.h} />
+            <KeyView />
             {clipping && picture && (
               <ClippingOverlay
                 url={readable(picture)}

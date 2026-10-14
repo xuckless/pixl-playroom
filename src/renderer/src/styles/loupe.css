@@ -16,6 +16,7 @@
 .loupe.tool-range-picker,
 .loupe.tool-depth-picker,
 .loupe.tool-point-picker,
+.loupe.tool-qualifier-pick,
 .loupe.tool-add-pick,
 .loupe.tool-fringe-pick {
   cursor: crosshair;
@@ -724,4 +725,12 @@
   display: flex;
   flex: none;
   gap: 6px;
+}
+
+/* Resolve's key view (views/loupe/MaskOverlay.tsx KeyView): over the picture, opaque. */
+.key-view {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
 }
