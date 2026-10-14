@@ -1,4 +1,5 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
+import { keepWrittenOn } from '../shared/edits'
 import {
   DISPLAY_SETTING_KEY,
   displayHdr,
@@ -441,7 +442,8 @@ export function registerIpc(s: Services): void {
         const live = s.sessions.liveRecipe(key)
         const base = live ?? saved.get(key)
         if (!base) continue
-        const next = applyGroups(base, from, groups)
+        // What was pasted is meant to show: a section it wrote is on again.
+        const next = keepWrittenOn(base, applyGroups(base, from, groups))
         // A crop locked to an aspect keeps it on a photo of another shape:
         // the same centre and share of the frame, the aspect's shape.
         const g = next.geometry

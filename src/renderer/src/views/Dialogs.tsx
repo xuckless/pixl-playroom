@@ -1,3 +1,4 @@
+import { effective } from '../../../shared/edits'
 import { useMemo, useState } from 'react'
 import {
   changedGroups,
@@ -42,7 +43,8 @@ export function SyncDialog(): React.JSX.Element {
   const developRecipe = useDevelop((s) => s.recipe)
   const developKey = useDevelop((s) => s.session?.key)
   const developRaw = useDevelop((s) => s.session?.isRaw ?? false)
-  const source = clipboard?.recipe ?? developRecipe
+  // What is seen: a section switched off goes as its defaults.
+  const source = clipboard?.recipe ?? (developRecipe ? effective(developRecipe, developRaw) : null)
   // What differs from the photo's own defaults (a RAW's profile, sharpening
   // and noise reduction are not edits).
   const initial = new Set<RecipeGroup>(
@@ -181,8 +183,13 @@ export function SyncDialog(): React.JSX.Element {
 export function SavePresetDialog(): React.JSX.Element {
   const setDialog = useLibrary((s) => s.setDialog)
   const say = useLibrary((s) => s.say)
-  const recipe = useDevelop((s) => s.recipe)
   const session = useDevelop((s) => s.session)
+  // What is seen: a section switched off is saved as its defaults.
+  const edited = useDevelop((s) => s.recipe)
+  const recipe = useMemo(
+    () => (edited ? effective(edited, session?.isRaw ?? false) : null),
+    [edited, session?.isRaw]
+  )
   const [name, setName] = useState('')
   const [group, setGroup] = useState(() => t('User presets'))
   const [withSteps, setWithSteps] = useState(true)

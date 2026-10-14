@@ -35,7 +35,7 @@ test('a tool that is not a card (Crop, Heal, Enhance) leaves the cards be', () =
 
 test('a current layout passes through', () => {
   const saved = { focusCard: 'detail', cardsOpen: { detail: true } }
-  assert.deepEqual(migrateUi(saved, 9), saved)
+  assert.deepEqual(migrateUi(saved, 10), saved)
 })
 
 test('AI denoise left at the old default (SCUNet) moves to DRUNet, once', () => {
@@ -67,4 +67,9 @@ test('version 7: every layout takes the flat UI once', () => {
   assert.equal(migrateUi({}, 6).alwaysFlat, true)
   // Turned back to glass after: kept.
   assert.equal(migrateUi({ alwaysFlat: false }, 7).alwaysFlat, false)
+})
+
+test('the Snapshots pane, gone into History, opens History', () => {
+  assert.equal(migrateUi({ rail: 'snapshots' }, 9).rail, 'history')
+  assert.equal(migrateUi({ rail: 'presets' }, 9).rail, 'presets')
 })

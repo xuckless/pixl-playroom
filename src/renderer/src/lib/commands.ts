@@ -4,6 +4,7 @@
  * commands, the first whose `when` holds runs — so a tool's own use of a key
  * (Delete in Heal, [ ] for the heal brush) comes before the general one.
  */
+import { effective } from '../../../shared/edits'
 import { suggestedReasons, useCull } from '../state/cull'
 import { useSyncExternalStore } from 'react'
 import { nextOf } from '../../../shared/masks'
@@ -506,7 +507,8 @@ export const COMMANDS: KeyCommand[] = [
           g !== 'retouch'
       )
       lib().setClipboard({
-        recipe: structuredClone(d.recipe),
+        // What is seen: a section switched off goes as its defaults.
+        recipe: structuredClone(effective(d.recipe, d.session?.isRaw ?? false)),
         groups: [...groups],
         source: d.session?.key ?? null
       })

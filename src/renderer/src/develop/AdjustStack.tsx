@@ -1,3 +1,4 @@
+import { setSectionOff } from '../../../shared/edits'
 import type { ComponentType } from 'react'
 import {
   cardBase,
@@ -93,6 +94,14 @@ function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
     const view = scopedView(s.recipe, layer)
     return cardChanged(spec, view, cardBase(view, s.session?.isRaw ?? false, !!layer), !!layer)
   })
+  // The whole photo's card can be switched off (a mask's has its own eye in the masks pane).
+  const inMask = useDevelop((s) => !!s.recipe && !!scopeLayer(s.recipe, s.layerId, masksOpen))
+  const off = useDevelop((s) => !inMask && s.recipe?.off?.[spec.id] === true)
+  const switchOff = (): void => {
+    const d = useDevelop.getState()
+    d.edit((r) => setSectionOff(r, spec.id, !off))
+    d.commit(`${spec.title}: ${off ? 'On' : 'Off'}`)
+  }
   const reset = (): void => {
     const layer = scoped.layer()
     const isRaw = useDevelop.getState().session?.isRaw ?? false
@@ -107,6 +116,8 @@ function AdjustCard({ spec }: { spec: CardSpec }): React.JSX.Element {
       title={t(spec.title)}
       tip={TIPS[spec.id]}
       changed={changed}
+      off={off}
+      onToggle={inMask ? undefined : switchOff}
       open={open}
       onOpenChange={(o) => setOpen(spec.id, o)}
       onReset={reset}

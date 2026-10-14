@@ -391,6 +391,47 @@ aside.right .panels {
 .rail-item.on .dot {
   opacity: 1;
 }
+/* The Edits list (panels/EditsPane.tsx): a name over its net change, and an eye. */
+.edit-row {
+  min-height: 44px;
+  padding-block: 6px;
+}
+.edit-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.edit-name,
+.edit-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-summary {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.edit-row .edit-eye {
+  flex: none;
+  color: var(--muted);
+  opacity: 0.55;
+}
+.edit-row:hover .edit-eye,
+.edit-row:focus-visible .edit-eye,
+.edit-row .edit-eye.on {
+  opacity: 1;
+}
+.edit-row .edit-eye.on {
+  color: var(--acc);
+}
+.edit-row.off .edit-name,
+.edit-row.off .edit-summary {
+  opacity: 0.45;
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklab, var(--muted) 60%, transparent);
+}
 .rail-grip {
   width: 5px;
   flex: none;

@@ -59,5 +59,7 @@ export function migrateUi(persisted: unknown, version: number): Saved {
   // opacity kept.
   const shown = p.maskOverlay as Saved | undefined
   if (version < 9 && shown?.mode === 'glass') p.maskOverlay = { ...shown, mode: 'color' }
+  // 10: the Snapshots pane went into History (the Edits list took its place).
+  if (version < 10 && p.rail === 'snapshots') p.rail = 'history'
   return p
 }

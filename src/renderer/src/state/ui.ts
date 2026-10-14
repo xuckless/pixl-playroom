@@ -22,7 +22,7 @@ export const CROP_GUIDES: { value: CropGuide; label: string }[] = [
   { value: 'none', label: tk('None') }
 ]
 
-export type Rail = 'presets' | 'snapshots' | 'history' | 'info'
+export type Rail = 'presets' | 'edits' | 'history' | 'info'
 
 /** How a mask is shown over the photo (Lightroom's overlay modes). */
 export type OverlayMode =
@@ -325,7 +325,7 @@ export const useUi = create<UiState>()(
     {
       name: 'playroom.ui',
       storage,
-      version: 9,
+      version: 10,
       migrate: (persisted, version) => migrateUi(persisted, version),
       // Crop or Heal is never in hand when the app opens.
       partialize: (s) => {

@@ -4,6 +4,7 @@
  * groups it was saved with. The rail, the browser's thumbnails and the hover
  * preview all go through here, so what they show is what applying does.
  */
+import { keepWrittenOn } from '../edits'
 import type { Preset } from '../ipc'
 import type { ResolvedProfile } from '../lens'
 import { applyFields, applyGroups, changedFields, type Recipe } from '../recipe'
@@ -35,7 +36,8 @@ export function applyLook(to: Recipe, p: Preset, ctx: ApplyContext): Recipe {
     next.lens.ca = to.lens.ca
     if (needsLens(p) && ctx.lensResolved !== 'keep') next.lens.profile.resolved = ctx.lensResolved
   }
-  return next
+  // What the look put there is meant to show: a section it wrote is on again.
+  return keepWrittenOn(to, next)
 }
 
 /** The fields applying a look changed on a photo: what its Amount scales. */

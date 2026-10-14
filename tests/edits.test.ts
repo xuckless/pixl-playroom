@@ -155,3 +155,59 @@ test('switching a section or a step off and on is a small patch that replays', a
   assert.deepEqual(applyPatch(structuredClone(on), patch), off)
   assert.deepEqual(applyPatch(structuredClone(off), diffRecipe(off, on)), on)
 })
+
+test('the Edits list: a row per section changed, mask, layer and step, with its net change', async () => {
+  const { editRows } = await import('../src/shared/edits')
+  const { newLocalLayer } = await import('../src/shared/recipe')
+  const r = defaultRecipe(false)
+  assert.deepEqual(editRows(r, false), [], 'an untouched photo has nothing to list')
+  r.basic.exposure = 0.6
+  r.basic.contrast = 12
+  r.toneCurve.master = [
+    { x: 0, y: 0.1 },
+    { x: 1, y: 1 }
+  ]
+  r.off = { curve: true }
+  r.retouch = [{ id: 's', kind: 'heal', points: [], radius: 10 } as never]
+  const mask = newLocalLayer('Sky')
+  mask.settings.basic.exposure = -0.4
+  r.layers = [mask]
+  r.pixels = [step('e', true)]
+  const rows = editRows(r, false)
+  assert.deepEqual(
+    rows.map((x) => [x.id, x.on]),
+    [
+      ['section:light', true],
+      ['section:curve', false],
+      ['section:heal', true],
+      [`mask:${mask.id}`, true],
+      ['step:e', false]
+    ]
+  )
+  assert.deepEqual(rows[0].changes, [
+    { label: 'Exposure', value: 0.6 },
+    { label: 'Contrast', value: 12 }
+  ])
+  // A curve has no one value to name: it counts.
+  assert.ok(rows[1].more > 0)
+  assert.equal(rows[2].count, 1)
+  assert.deepEqual(rows[3].changes, [{ label: 'Exposure', value: -0.4 }])
+  // A RAW's own defaults (its profile, its sharpening) are not edits.
+  assert.deepEqual(editRows(defaultRecipe(true), true), [])
+})
+
+test('a look or a paste that writes a switched-off section switches it on', async () => {
+  const { keepWrittenOn, setSectionOff } = await import('../src/shared/edits')
+  const before = defaultRecipe(false)
+  before.basic.exposure = 0.6
+  setSectionOff(before, 'light', true)
+  setSectionOff(before, 'curve', true)
+  const after = structuredClone(before)
+  after.basic.exposure = 1
+  const kept = keepWrittenOn(before, after)
+  assert.deepEqual(kept.off, { curve: true }, 'what it did not write stays off')
+  // Nothing written: the same recipe back.
+  assert.equal(keepWrittenOn(before, before), before)
+  setSectionOff(after, 'curve', false)
+  assert.deepEqual(after.off, { light: true })
+})
