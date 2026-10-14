@@ -5,6 +5,7 @@
  * translated a side at a time.
  */
 import { t, tk } from './i18n'
+import { shownLabel } from '../../../shared/history'
 
 /** The words before a label's colon, where the label carries a name or a value after it. */
 const STEP_HEADS = [
@@ -20,11 +21,13 @@ const STEP_HEADS = [
   tk('Camera colour'),
   tk('Look'),
   tk('Upright'),
-  tk('Targeted')
+  tk('Targeted'),
+  tk('Delete')
 ]
 void STEP_HEADS
 
-export function stepLabel(label: string): string {
+export function stepLabel(stored: string): string {
+  const label = shownLabel(stored)
   const whole = t(label)
   if (whole !== label) return whole
   const i = label.indexOf(': ')

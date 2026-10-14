@@ -3495,5 +3495,8 @@
   "What the key lets through: Gain brightens or tints what it selects, Sat and Hue change its colour (50 untouched).": "Những gì vùng chọn cho qua: Gain làm sáng hoặc nhuộm phần được chọn, Bão hòa và Sắc độ đổi màu của nó (50 là chưa chỉnh).",
   "Where the highlights begin: the Highlight wheel works above it.": "Nơi vùng sáng bắt đầu: bánh xe Highlight tác động phía trên nó.",
   "Where the shadows end: the Shadow wheel works below it, the Midtone wheel above.": "Nơi vùng tối kết thúc: bánh xe Shadow tác động bên dưới, bánh xe Midtone bên trên.",
-  "Which hues the key takes: its centre on the strip, its width, and its soft edge.": "Những sắc độ vùng chọn lấy: tâm trên dải, độ rộng và viền mềm."
+  "Which hues the key takes: its centre on the strip, its width, and its soft edge.": "Những sắc độ vùng chọn lấy: tâm trên dải, độ rộng và viền mềm.",
+  "A later change already replaced that one: nothing to delete.": "Một thay đổi sau đã thay thế nó: không có gì để xóa.",
+  "Delete this change": "Xóa thay đổi này",
+  "Delete this change: the photo loses it, everything after stays (Undo brings it back)": "Xóa thay đổi này: ảnh bỏ nó đi, mọi thứ sau đó vẫn giữ (Hoàn tác để lấy lại)"
 }

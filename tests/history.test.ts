@@ -476,3 +476,42 @@ test('an amended keyframe step keeps its keyframe, of the step as it is now', ()
     assert.deepEqual(log.head, replay(log.base!.recipe, log.steps))
   })
 })
+
+test('deleting a row takes its change out, keeps what came after, and leaves the timeline', async () => {
+  const { withoutSteps, deleteLabel, deletedSeqs, groupTimeline, shownLabel } =
+    await import('../src/shared/history')
+  const { defaultRecipe } = await import('../src/shared/recipe')
+  const { diffRecipe } = await import('../src/shared/history')
+  const base = defaultRecipe(false)
+  const a = structuredClone(base)
+  a.basic.exposure = 0.5
+  const b = structuredClone(a)
+  b.basic.contrast = 20
+  const at = (m: number): string => new Date(Date.UTC(2026, 9, 14, 10, m)).toISOString()
+  const log = {
+    base: { recipe: base, at: at(0) },
+    steps: [
+      { seq: 1, label: 'Exposure', at: at(1), patch: diffRecipe(base, a), hidden: false },
+      { seq: 2, label: 'Contrast', at: at(2), patch: diffRecipe(a, b), hidden: false }
+    ]
+  }
+  const out = withoutSteps(log as never, [1])!
+  assert.equal(out.recipe.basic.exposure, 0)
+  assert.equal(out.recipe.basic.contrast, 20)
+  const label = deleteLabel('Exposure', out.removed)
+  assert.deepEqual(deletedSeqs(label), [1])
+  assert.equal(shownLabel(label), 'Delete: Exposure')
+  const withDelete = {
+    ...log,
+    steps: [
+      ...log.steps,
+      { seq: 3, label, at: at(3), patch: diffRecipe(b, out.recipe), hidden: false }
+    ]
+  }
+  const rows = groupTimeline(withDelete as never).flatMap((s) => s.rows.map((r) => r.label))
+  assert.deepEqual(rows, ['Contrast', label])
+  // Undone (hidden), the delete lets the row back.
+  withDelete.steps[2].hidden = true
+  const back = groupTimeline(withDelete as never).flatMap((s) => s.rows.map((r) => r.label))
+  assert.deepEqual(back, ['Exposure', 'Contrast'])
+})

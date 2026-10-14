@@ -3615,5 +3615,8 @@
   "What the key lets through: Gain brightens or tints what it selects, Sat and Hue change its colour (50 untouched).": "Ce que la clé laisse passer : Gain éclaircit ou teinte ce qu’elle sélectionne, Sat et Hue changent sa couleur (50 sans changement).",
   "Where the highlights begin: the Highlight wheel works above it.": "Où commencent les hautes lumières : la roue Highlight agit au-dessus.",
   "Where the shadows end: the Shadow wheel works below it, the Midtone wheel above.": "Où finissent les ombres : la roue Shadow agit en dessous, la roue Midtone au-dessus.",
-  "Which hues the key takes: its centre on the strip, its width, and its soft edge.": "Les teintes que prend la clé : son centre sur la bande, sa largeur et son bord doux."
+  "Which hues the key takes: its centre on the strip, its width, and its soft edge.": "Les teintes que prend la clé : son centre sur la bande, sa largeur et son bord doux.",
+  "A later change already replaced that one: nothing to delete.": "Une modification ultérieure l’a déjà remplacée : rien à supprimer.",
+  "Delete this change": "Supprimer cette modification",
+  "Delete this change: the photo loses it, everything after stays (Undo brings it back)": "Supprimer cette modification : la photo la perd, tout ce qui suit reste (Annuler la rétablit)"
 }

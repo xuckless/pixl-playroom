@@ -3495,5 +3495,8 @@
   "What the key lets through: Gain brightens or tints what it selects, Sat and Hue change its colour (50 untouched).": "键所放行的内容：Gain 提亮或着色所选部分，饱和度和色相改变其颜色（50 为不变）。",
   "Where the highlights begin: the Highlight wheel works above it.": "高光的起点：Highlight 色轮作用于其上方。",
   "Where the shadows end: the Shadow wheel works below it, the Midtone wheel above.": "阴影的终点：Shadow 色轮作用于其下方，Midtone 色轮作用于其上方。",
-  "Which hues the key takes: its centre on the strip, its width, and its soft edge.": "键选取哪些色相：色带上的中心、宽度和柔和边缘。"
+  "Which hues the key takes: its centre on the strip, its width, and its soft edge.": "键选取哪些色相：色带上的中心、宽度和柔和边缘。",
+  "A later change already replaced that one: nothing to delete.": "之后的更改已替代了它：没有可删除的内容。",
+  "Delete this change": "删除此更改",
+  "Delete this change: the photo loses it, everything after stays (Undo brings it back)": "删除此更改：照片去掉这一更改，之后的编辑保留（撤销可恢复）"
 }

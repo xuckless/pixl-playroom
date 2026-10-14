@@ -9,14 +9,19 @@
  */
 import { useMemo, useRef, useState } from 'react'
 import {
+  deleteLabel,
+  deletedSeqs,
   groupTimeline,
   recipeAt,
+  withoutSteps,
   type TimelineRow,
   type TimelineSession
 } from '../../../shared/history'
 import { activeSteps, stackSignature } from '../../../shared/pixels'
 import { Icon } from '../components/icons'
 import { useDevelop } from '../state/develop'
+import { useLibrary } from '../state/library'
+import { sameValue } from '../../../shared/recipe'
 import { t, tp } from '../lib/i18n'
 import { stepLabel } from '../lib/stepLabel'
 
@@ -42,12 +47,16 @@ function num(v: number): string {
 function Row({
   row,
   onHover,
-  onRestore
+  onRestore,
+  onDelete
 }: {
   row: TimelineRow
   onHover: (row: TimelineRow | null) => void
   onRestore: (row: TimelineRow) => void
+  onDelete: (row: TimelineRow) => void
 }): React.JSX.Element {
+  // A delete is taken back with Undo, not deleted in turn.
+  const deletable = deletedSeqs(row.label) === null
   const label = stepLabel(row.label)
   const change =
     row.from !== undefined && row.to !== undefined ? `${num(row.from)} → ${num(row.to)}` : ''
@@ -74,6 +83,23 @@ function Row({
         )}
       </span>
       <span className="timeline-time">{clock(row.at)}</span>
+      {deletable && (
+        <button
+          type="button"
+          className="icon sm ghost timeline-delete"
+          aria-label={t('Delete this change')}
+          title={t(
+            'Delete this change: the photo loses it, everything after stays (Undo brings it back)'
+          )}
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete(row)
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Icon name="trash" />
+        </button>
+      )}
     </div>
   )
 }
@@ -83,13 +109,15 @@ function Session({
   open,
   onToggle,
   onHover,
-  onRestore
+  onRestore,
+  onDelete
 }: {
   session: TimelineSession
   open: boolean
   onToggle: () => void
   onHover: (row: TimelineRow | null) => void
   onRestore: (row: TimelineRow) => void
+  onDelete: (row: TimelineRow) => void
 }): React.JSX.Element {
   const n = session.rows.reduce((k, r) => k + r.seqs.length, 0)
   return (
@@ -110,7 +138,13 @@ function Session({
       {open && (
         <>
           {[...session.rows].reverse().map((row) => (
-            <Row key={row.seqs[0]} row={row} onHover={onHover} onRestore={onRestore} />
+            <Row
+              key={row.seqs[0]}
+              row={row}
+              onHover={onHover}
+              onRestore={onRestore}
+              onDelete={onDelete}
+            />
           ))}
           {session.opened && (
             <div className="rail-item timeline-row base" aria-disabled>
@@ -149,6 +183,19 @@ export function HistoryPane(): React.JSX.Element {
     d.preview('', null)
     d.replace(r, `Back to: ${clock(row.at)}`)
   }
+  const remove = (row: TimelineRow): void => {
+    clearTimeout(timer.current)
+    const d = useDevelop.getState()
+    const out = withoutSteps(d.history, row.seqs)
+    if (!out || !d.recipe) return
+    d.preview('', null)
+    // Overwritten since (a later change to the same slider): nothing of it is left to take out.
+    if (sameValue(out.recipe, d.recipe)) {
+      useLibrary.getState().say(t('A later change already replaced that one: nothing to delete.'))
+      return
+    }
+    d.replace(out.recipe, deleteLabel(row.label, out.removed))
+  }
   // The pixel steps (AI, heals) then and now differ: hover grades over today's pixels.
   const now = useDevelop.getState().recipe
   const stepsNow = now ? stackSignature(activeSteps(now.pixels)) : ''
@@ -172,6 +219,7 @@ export function HistoryPane(): React.JSX.Element {
             onToggle={() => setToggled({ ...toggled, [id]: !open })}
             onHover={hover}
             onRestore={restore}
+            onDelete={remove}
           />
         )
       })}

@@ -953,3 +953,15 @@ aside.right .panels.scoped {
 .hint-pop .hint-now {
   color: var(--muted);
 }
+
+/* A History row's delete (panels/HistoryPane.tsx): there on hover or focus. */
+.timeline-row .timeline-delete {
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.15s var(--ease);
+}
+.timeline-row:hover .timeline-delete,
+.timeline-row:focus-within .timeline-delete,
+.timeline-row .timeline-delete:focus-visible {
+  opacity: 1;
+}

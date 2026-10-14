@@ -383,8 +383,15 @@ export function groupTimeline(
     { start: log.base.at, end: log.base.at, rows: [], opened: true }
   ]
   let lastKey = ''
+  // Rows a delete in effect took out: applied (later values follow them), not shown.
+  const gone = new Set<number>()
+  for (const s of log.steps) if (!s.hidden) for (const d of deletedSeqs(s.label) ?? []) gone.add(d)
   for (const s of log.steps) {
     if (s.hidden) continue
+    if (gone.has(s.seq)) {
+      for (const op of s.patch) applyOp(running, op)
+      continue
+    }
     const session = sessions[sessions.length - 1]
     const t = Date.parse(s.at)
     if (t - Date.parse(session.end) > opts.gapMs)
@@ -416,6 +423,52 @@ export function groupTimeline(
     here.end = s.at
   }
   return sessions
+}
+
+// ── Deleting a change ────────────────────────────────────────────────────────
+//
+// Deleting a row of History takes its change out of the photo and keeps
+// everything after it: a new step ("Delete: Exposure") whose recipe is the
+// history replayed without the row's steps (and the later steps that reach
+// into what they made, a deleted mask's own edits). Undo takes the delete
+// back; while it is in effect the timeline leaves the deleted rows out. The
+// steps it names ride in its label, after the words shown.
+
+const DELETED = /\s\[#([\d,]+)\]$/
+
+/** The label of the step that deletes `seqs` (shown as "Delete: <label>"). */
+export function deleteLabel(label: string, seqs: readonly number[]): string {
+  return `Delete: ${label.replace(DELETED, '')} [#${seqs.join(',')}]`
+}
+
+/** The steps a delete step's label names, or null for any other label. */
+export function deletedSeqs(label: string): number[] | null {
+  if (!label.startsWith('Delete: ')) return null
+  const m = DELETED.exec(label)
+  return m ? m[1].split(',').map(Number) : null
+}
+
+/** A label without the steps a delete names: what is shown. */
+export const shownLabel = (label: string): string => label.replace(DELETED, '')
+
+/**
+ * The photo with `seqs` (the steps of a timeline row) taken out, and every
+ * step that goes with them: the later ones reaching into what they made.
+ */
+export function withoutSteps(
+  log: Pick<HistoryLog, 'base' | 'steps'>,
+  seqs: readonly number[]
+): { recipe: Recipe; removed: number[] } | null {
+  if (!log.base) return null
+  const removed = new Set(seqs)
+  for (const s of seqs) for (const d of dependents(log.steps, s, (x) => !x.hidden)) removed.add(d)
+  return {
+    recipe: replay(
+      log.base.recipe,
+      log.steps.filter((s) => !removed.has(s.seq))
+    ),
+    removed: [...removed].sort((a, b) => a - b)
+  }
 }
 
 /** The recipe as it was right after step `seq` (the steps in effect up to it; the base for 0). */

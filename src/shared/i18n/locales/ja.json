@@ -3495,5 +3495,8 @@
   "What the key lets through: Gain brightens or tints what it selects, Sat and Hue change its colour (50 untouched).": "キーが通すもの：Gain は選択部分を明るくしたり色を付けたりし、彩度と色相はその色を変えます（50 で無調整）。",
   "Where the highlights begin: the Highlight wheel works above it.": "ハイライトの始まり：Highlight ホイールはこれより上に効きます。",
   "Where the shadows end: the Shadow wheel works below it, the Midtone wheel above.": "シャドウの終わり：Shadow ホイールはこれより下に、Midtone ホイールは上に効きます。",
-  "Which hues the key takes: its centre on the strip, its width, and its soft edge.": "キーが選ぶ色相：帯上の中心、幅、柔らかい境界。"
+  "Which hues the key takes: its centre on the strip, its width, and its soft edge.": "キーが選ぶ色相：帯上の中心、幅、柔らかい境界。",
+  "A later change already replaced that one: nothing to delete.": "後の変更ですでに置き換えられています。削除するものはありません。",
+  "Delete this change": "この変更を削除",
+  "Delete this change: the photo loses it, everything after stays (Undo brings it back)": "この変更を削除：写真からこの変更だけが外れ、その後の編集は残ります（取り消しで元に戻せます）"
 }
