@@ -57,7 +57,7 @@ import type { PhotoRow } from './db'
 import type { SourceInfo } from '../shared/engine-types'
 import type { Recipe } from '../shared/recipe'
 import type { DevelopSessions } from './render'
-import { t, tp } from '../shared/i18n'
+import { t, tp, tk } from '../shared/i18n'
 import {
   BACKGROUND_THREADS,
   heavyThreads,
@@ -252,6 +252,14 @@ export class Exporter {
     const file = await this.library.probe(row)
     const item = await this.library.item(key)
     const recipe = this.sessions.liveRecipe(key) ?? (await this.library.recipe(key))
+    // The state an export was made from, a Version to come back to (not for a preview).
+    if (!preview)
+      void this.library.addVersion(key, {
+        name: tk('Exported'),
+        kind: 'auto',
+        reason: 'export',
+        recipe
+      })
     // The engine's own HDR path (`ColorPolicy::Master`) where the settings
     // and the photo allow it: it reads a gain map itself and grades with
     // headroom, so the rendition below is not made for it.

@@ -10,7 +10,7 @@
  * on. Deblur and restore can keep to a mask (frozen as it is when made).
  * The steps and their numbers are `shared/enhance.ts`'s.
  */
-import { t } from '../shared/i18n'
+import { t, tk } from '../shared/i18n'
 import log from 'electron-log/main'
 import { rm } from 'fs/promises'
 import { join } from 'path'
@@ -217,6 +217,15 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const layer =
       req.layerId && k === 1 ? recipe.layers.find((l) => l.id === req.layerId) : undefined
     if (req.layerId && k === 1 && !layer) throw new Error(t('the mask is gone'))
+    // The photo before it, a Version to step back to (a smart look's part:
+    // the look made one before it began).
+    if (!req.group)
+      await this.library.addVersion(key, {
+        name: tk('Before Enhance'),
+        kind: 'auto',
+        reason: 'ai',
+        recipe
+      })
     if (this.engine.getStatus().status === 'starting') {
       this.engine.start()
       await this.engine.whenStarted()

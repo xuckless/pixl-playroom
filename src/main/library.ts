@@ -24,10 +24,12 @@ import {
   type HdrKind,
   type LibraryItem,
   type LibrarySource,
+  type Snapshot,
   type SourceListing
 } from '../shared/ipc'
 import { orientedFrame } from '../shared/compile'
-import { defaultRecipe, hash32, type Recipe } from '../shared/recipe'
+import { defaultRecipe, hash32, isEdited, newId, type Recipe } from '../shared/recipe'
+import type { VersionReason } from '../shared/versions'
 import {
   asShotFor,
   defaultRawColour,
@@ -436,6 +438,37 @@ export class Library {
   /** A key's saved recipe, its planes filled in. */
   async recipe(key: string): Promise<Recipe> {
     return this.planes.hydrate(await this.index.recipe(key))
+  }
+
+  /**
+   * A Version of a photo (shared/versions.ts): named (the user's), or
+   * automatic, made only when the photo has an edit to keep. Its planes go
+   * by reference. Returns the photo's versions after (null: none made).
+   */
+  async addVersion(
+    key: string,
+    v: { name: string; recipe: Recipe; kind?: 'named' | 'auto'; reason?: VersionReason }
+  ): Promise<Snapshot[] | null> {
+    const kind = v.kind ?? 'named'
+    if (kind === 'auto') {
+      const row = await this.index.sourceRow(key)
+      if (!isEdited(v.recipe, row.is_raw === 1)) return null
+    }
+    try {
+      return await this.index.addVersion(key, {
+        id: newId(),
+        name: v.name,
+        at: new Date().toISOString(),
+        kind,
+        ...(v.reason ? { reason: v.reason } : {}),
+        recipe: this.planes.slim(v.recipe)
+      })
+    } catch (err) {
+      // An automatic version never stops what it was made before.
+      if (kind === 'named') throw err
+      log.warn('automatic version not kept', key, (err as Error).message)
+      return null
+    }
   }
 
   /** Save a key's recipe; its planes cross by reference. */

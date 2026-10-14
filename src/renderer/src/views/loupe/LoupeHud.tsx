@@ -5,6 +5,8 @@ import { Spinner } from '../../fx'
 import { useDevelop } from '../../state/develop'
 import { t, tk } from '../../lib/i18n'
 import { useHudNote } from './hudNote'
+import { isNamed } from '../../../../shared/versions'
+import { stepLabel } from '../../lib/stepLabel'
 import { useMastering, usePixlDemosaic } from './mastering'
 import type { PixlDemosaicState } from '../../../../shared/ipc'
 
@@ -65,11 +67,27 @@ export function LoupeHud({ scale }: { scale: number | null }): React.JSX.Element
   const error = useDevelop((s) => s.error)
   const straightened = useDevelop((s) => (s.recipe?.geometry.straighten ?? 0) !== 0)
   const { note, n } = useHudNote()
+  // Before/After against a Version (History's top): its name.
+  const versus = useDevelop((s) => {
+    const v = s.comparing ? s.snapshots.find((x) => x.id === s.comparing) : undefined
+    return v ? (isNamed(v) ? v.name : stepLabel(v.name)) : null
+  })
   const mastering = useMastering()
   const developing = useDevelop((s) => mastering.key !== null && s.session?.key === mastering.key)
   const key = useDevelop((s) => s.session?.key)
   const pixl = usePixlDemosaic((s) => (key ? s.states[key] : undefined))
-  if (!rendering && compare !== 'before' && !error && scale === null && !note && !developing)
+  // Nothing to say: no badge (the PIXL chip and a compared version are things to say).
+  const comparingVersion = compare !== 'off' && versus !== null
+  if (
+    !rendering &&
+    compare !== 'before' &&
+    !comparingVersion &&
+    !error &&
+    scale === null &&
+    !note &&
+    !developing &&
+    !pixl
+  )
     return null
   return (
     <LiquidGlass className={`hud loupe-status${error ? ' bad' : ''}`} radius={2} bezel={8}>
@@ -89,7 +107,10 @@ export function LoupeHud({ scale }: { scale: number | null }): React.JSX.Element
       )}
       {pixl && <PixlChip state={pixl} />}
       {developing && <Developing since={mastering.since} expectedMs={mastering.expectedMs} />}
-      {compare === 'before' && <span className="hud-item accent">{t('Before')}</span>}
+      {comparingVersion && (
+        <span className="hud-item accent">{t('Comparing with {{name}}', { name: versus })}</span>
+      )}
+      {compare === 'before' && !versus && <span className="hud-item accent">{t('Before')}</span>}
       {note && (
         <span key={n} className="hud-item accent hud-note">
           {note}

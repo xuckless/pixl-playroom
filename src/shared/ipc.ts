@@ -195,7 +195,6 @@ export const IPC = {
     /** A painted plane (grey PNG, base64) into the plane store; its reference back. */
     putPlane: 'develop:put-plane',
     getPlane: 'develop:get-plane',
-    saveSnapshots: 'develop:save-snapshots',
     historyList: 'develop:history-list',
     historyAppend: 'develop:history-append',
     historyAmend: 'develop:history-amend',
@@ -215,6 +214,14 @@ export const IPC = {
     /** main → renderer: the open RAW's PIXL demosaic state changed (`PixlDemosaicEvent`). */
     pixlDemosaic: 'develop:pixl-demosaic',
     /** Linear Undo and Redo on the photo's history (main/historytable.ts). */
+    /** Versions (shared/versions.ts): each returns the photo's versions after it. */
+    versionList: 'develop:version-list',
+    versionAdd: 'develop:version-add',
+    versionRename: 'develop:version-rename',
+    versionDelete: 'develop:version-delete',
+    versionKeep: 'develop:version-keep',
+    /** Before/After against a version (null: the photo as it came). */
+    compareWith: 'develop:compare-with',
     historyUndo: 'develop:history-undo',
     historyRedo: 'develop:history-redo',
     historySetHidden: 'develop:history-set-hidden',
@@ -589,11 +596,21 @@ export interface ProjectInfo {
   bytes: number | null
 }
 
+/**
+ * A Version (History's top; shared/versions.ts): the recipe as it was. The
+ * name is the user's for a named one, English for an automatic one (shown
+ * translated). Stored as `snapshots`: a snapshot from before Versions is a
+ * named one.
+ */
 export interface Snapshot {
   id: string
   name: string
   at: string
   recipe: Recipe
+  /** Absent: named (the user's, kept for good). */
+  kind?: 'named' | 'auto'
+  /** What made an automatic one. */
+  reason?: 'session' | 'look' | 'ai' | 'export' | 'paste' | 'rebuild'
 }
 
 /** Where a photo's history starts: the recipe it had when first opened. */

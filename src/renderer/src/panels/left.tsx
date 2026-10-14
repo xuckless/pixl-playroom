@@ -30,36 +30,7 @@ import { useMaskPresets, useSelectedMask } from './masks/presets'
 import { TechInfo } from '../components/TechInfo'
 import { useReorder } from './masks/useReorder'
 import { t, tk, tp } from '../lib/i18n'
-
-/**
- * The words before a History label's colon, where the label carries a name
- * or a value after it ("White balance: Auto", "Sky: Exposure").
- */
-const STEP_HEADS = [
-  tk('White balance'),
-  tk('Curve preset'),
-  tk('Profile'),
-  tk('Colour grade'),
-  tk('Snapshot'),
-  tk('Mask mode'),
-  tk('Camera colour'),
-  tk('Look'),
-  tk('Upright'),
-  tk('Targeted')
-]
-void STEP_HEADS
-
-/**
- * A History label in the language shown now. Labels are stored in English
- * (a history outlives a change of language); one made of a name and a
- * setting ("Sky: Exposure") is translated a side at a time.
- */
-function stepLabel(label: string): string {
-  const whole = t(label)
-  if (whole !== label) return whole
-  const i = label.indexOf(': ')
-  return i > 0 ? `${t(label.slice(0, i))}: ${t(label.slice(i + 2))}` : whole
-}
+import { stepLabel } from '../lib/stepLabel'
 
 /**
  * The left rail's panes. Each shows one list at a time under the rail's
@@ -461,72 +432,6 @@ function MaskPresetsGroup(): React.JSX.Element | null {
             />
           </div>
         )}
-      </div>
-    </div>
-  )
-}
-
-export function SnapshotsPane(): React.JSX.Element {
-  const snapshots = useDevelop((s) => s.snapshots)
-  const save = useDevelop((s) => s.saveSnapshot)
-  const remove = useDevelop((s) => s.removeSnapshot)
-  const replace = useDevelop((s) => s.replace)
-  const session = useDevelop((s) => s.session)
-  const [name, setName] = useState('')
-  const add = (): void => {
-    void save(name.trim() || new Date().toLocaleString())
-    setName('')
-  }
-  return (
-    <div className="rail-list">
-      <div className="rail-form">
-        <input
-          className="name"
-          placeholder={t('Snapshot name')}
-          value={name}
-          disabled={!session}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            e.stopPropagation()
-            if (e.key === 'Enter') add()
-          }}
-        />
-        <button className="sm" disabled={!session} onClick={add} title={t('Save a snapshot')}>
-          <Icon name="plus" />
-          {t('Save')}
-        </button>
-      </div>
-      {snapshots.length === 0 && (
-        <p className="rail-empty">
-          {t('A snapshot keeps the recipe as it is now, to come back to.')}
-        </p>
-      )}
-      <div className="stagger">
-        {snapshots.map((s) => (
-          <div
-            key={s.id}
-            role="button"
-            tabIndex={0}
-            className="preset rail-item"
-            onClick={() => replace(structuredClone(s.recipe), `Snapshot: ${s.name}`)}
-            title={new Date(s.at).toLocaleString()}
-          >
-            <span className="rail-label">
-              <i className="dot" />
-              {s.name}
-            </span>
-            <button
-              className="icon sm"
-              title={t('Delete snapshot')}
-              onClick={(e) => {
-                e.stopPropagation()
-                void remove(s.id)
-              }}
-            >
-              <Icon name="trash" />
-            </button>
-          </div>
-        ))}
       </div>
     </div>
   )

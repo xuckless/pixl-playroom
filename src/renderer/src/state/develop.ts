@@ -12,13 +12,7 @@ import type {
   ViewState
 } from '../../../shared/ipc'
 import { amendLog, appendToLog, canRedo, replay } from '../../../shared/history'
-import {
-  newId,
-  normaliseRecipe,
-  sameValue,
-  type HslBand,
-  type Recipe
-} from '../../../shared/recipe'
+import { normaliseRecipe, sameValue, type HslBand, type Recipe } from '../../../shared/recipe'
 import { FIT, type ZoomView } from '../../../shared/view'
 import { api, errorText } from '../lib/api'
 import { touchInteracting } from '../lib/interacting'
@@ -203,8 +197,20 @@ interface DevelopState {
   pushView(): void
   onRendered(e: RenderEvent): void
   onError(message: string, invariant?: InvariantPlace | null): void
-  saveSnapshot(name: string): Promise<void>
-  removeSnapshot(id: string): Promise<void>
+  /** Versions (History's top; shared/versions.ts): named by the user, or made automatically. */
+  addVersion(name: string): Promise<void>
+  renameVersion(id: string, name: string): Promise<void>
+  deleteVersion(id: string): Promise<void>
+  /** An automatic version kept for good (named). */
+  keepVersion(id: string): Promise<void>
+  /** The versions as stored now (main makes automatic ones as it goes). */
+  refreshVersions(): Promise<void>
+  /** The photo back to a version: a new step of History, undone like any. */
+  restoreVersion(id: string): void
+  /** Before/After against a version, or (null) the photo as it came. */
+  compareWith(id: string | null): void
+  /** The version Before/After compares with, if one. */
+  comparing: string | null
   measureNoise(): Promise<void>
 }
 
@@ -319,6 +325,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   previewing: null,
   history: { base: null, steps: [] },
   snapshots: [],
+  comparing: null,
   picture: null,
   pictures: { framed: null, crop: null },
   before: null,
@@ -412,6 +419,7 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         recipe: session.recipe,
         history,
         snapshots: session.snapshots,
+        comparing: null,
         loading: false
       })
       get().pushView()
@@ -753,20 +761,53 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     set({ error: message, invariant, rendering: false })
   },
 
-  async saveSnapshot(name) {
-    const { session, recipe, snapshots } = get()
+  async addVersion(name) {
+    const { session, recipe } = get()
     if (!session || !recipe) return
-    const next = [...snapshots, { id: newId(), name, at: new Date().toISOString(), recipe }]
-    set({ snapshots: next })
-    await api.develop.saveSnapshots(session.key, next)
+    const v = await api.develop.versionAdd(session.key, name, recipe)
+    if (v && get().session?.key === session.key) set({ snapshots: v })
   },
 
-  async removeSnapshot(id) {
+  async renameVersion(id, name) {
+    const session = get().session
+    if (!session) return
+    const v = await api.develop.versionRename(session.key, id, name)
+    if (get().session?.key === session.key) set({ snapshots: v })
+  },
+
+  async deleteVersion(id) {
+    const session = get().session
+    if (!session) return
+    if (get().comparing === id) get().compareWith(null)
+    const v = await api.develop.versionDelete(session.key, id)
+    if (get().session?.key === session.key) set({ snapshots: v })
+  },
+
+  async keepVersion(id) {
+    const session = get().session
+    if (!session) return
+    const v = await api.develop.versionKeep(session.key, id)
+    if (get().session?.key === session.key) set({ snapshots: v })
+  },
+
+  async refreshVersions() {
+    const session = get().session
+    if (!session) return
+    const v = await api.develop.versionList(session.key)
+    if (get().session?.key === session.key) set({ snapshots: v })
+  },
+
+  restoreVersion(id) {
+    const v = get().snapshots.find((s) => s.id === id)
+    if (v) get().replace(structuredClone(v.recipe), `Version: ${v.name}`)
+  },
+
+  compareWith(id) {
     const { session, snapshots } = get()
     if (!session) return
-    const next = snapshots.filter((s) => s.id !== id)
-    set({ snapshots: next })
-    await api.develop.saveSnapshots(session.key, next)
+    const v = id ? snapshots.find((s) => s.id === id) : undefined
+    set({ comparing: v ? v.id : null })
+    void api.develop.compareWith(session.key, v ? v.recipe : null).catch(() => undefined)
   },
 
   async measureNoise() {

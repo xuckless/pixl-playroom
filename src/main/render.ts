@@ -136,7 +136,7 @@ import {
 import { editsHdr, ensureHdrSource } from './hdrsource'
 import { READ_LIMITS } from '../shared/limits'
 import type { LensShot } from './lensprofiles'
-import { t } from '../shared/i18n'
+import { t, tk } from '../shared/i18n'
 import {
   blankRequest,
   BACKGROUND_THREADS,
@@ -512,7 +512,20 @@ class Session {
   ) {
     this.dir = rendersDir(row.id)
     this.heldSlot = new HeldSlot(owner.engine, `${key}#held`)
+    this.opened = recipe
     void this.clearEarlier()
+  }
+
+  /** The recipe the photo opened with: an editing session that changed it ends in a Version. */
+  private readonly opened: Recipe
+
+  /** Before/After's other side: a Version's recipe, or null for the photo as it came. */
+  private compareRecipe: Recipe | null = null
+
+  compareWith(recipe: Recipe | null): void {
+    this.compareRecipe = recipe
+    this.beforeKey = ''
+    if (this.view.before) this.schedule('full')
   }
 
   /** An earlier session's picture files: nothing names them now. */
@@ -2281,7 +2294,10 @@ class Session {
 
   /** The default recipe with the same framing: the "before", and the ghost bars. */
   private async renderBefore(signal: AbortSignal): Promise<void> {
-    const before = defaultRecipe(this.isRaw)
+    // The photo as it came, or a Version chosen to compare with (as it renders).
+    const before = this.compareRecipe
+      ? structuredClone(effective(this.compareRecipe, this.isRaw))
+      : defaultRecipe(this.isRaw)
     // As the picture beside it is framed (a crop or optics switched off included).
     const shown = effective(this.recipe, this.isRaw)
     before.geometry = structuredClone(shown.geometry)
@@ -2320,7 +2336,9 @@ class Session {
       compiled.retouch,
       src.path,
       this.view.cropMode,
-      display
+      display,
+      // A Version compared with grades otherwise than the photo's defaults.
+      this.compareRecipe ? compiled.grade : null
     ])
     if (key === this.beforeKey) return
     const hdr = display && !alpha ? hdrFile(display) : null
@@ -3107,6 +3125,14 @@ class Session {
     const saved = (this.save ? this.persist() : Promise.resolve()).then(() => {
       // A thumbnail still waiting for a pause is made now.
       if (this.thumbTimer) this.thumbLater(true)
+      // An editing session that changed the photo ends in a Version of it.
+      if (!sameValue(this.recipe, this.opened))
+        void this.owner.library.addVersion(this.key, {
+          name: tk('Editing session'),
+          kind: 'auto',
+          reason: 'session',
+          recipe: this.recipe
+        })
     })
     // Its project may close when idle again, once its last edit is saved.
     return saved.then(() =>
@@ -3180,6 +3206,11 @@ export class DevelopSessions {
   /** An open photo's session, for what works on it from outside (PIXL Enhance's preview). */
   session(key: string): Session {
     return this.get(key)
+  }
+
+  /** Before/After against a Version's recipe (null: the photo as it came). */
+  compareWith(key: string, recipe: Recipe | null): void {
+    this.get(key).compareWith(recipe)
   }
 
   /** The PIXL demosaic's switch turned: the open RAW's picture follows it. */

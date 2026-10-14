@@ -9,6 +9,7 @@
  * from it). Folder scans and the exif fill are the only long work; they run
  * in chunks and give other requests a turn between them.
  */
+import { withVersion } from '../../shared/versions'
 import { tk } from '../../shared/i18n'
 import { exportLocationFromLast, LOCATION_SETTING } from '../../shared/locations'
 import { createHash } from 'crypto'
@@ -2158,15 +2159,44 @@ export class IndexService {
     this.store.removeCopyFromCollections(photoId, copyId)
   }
 
-  saveSnapshots(key: string, snapshots: Snapshot[]): void {
+  /**
+   * A photo's versions changed by `fn` in one write (main owns them: an
+   * automatic version and the user's rename never race), returned as they
+   * are after. A photo without a project gets one only when it has versions.
+   */
+  private editVersions(key: string, fn: (list: Snapshot[]) => Snapshot[]): Snapshot[] {
     const { copyId } = parseKey(key)
+    let out: Snapshot[] = []
     this.update(
       key,
       (s) => {
         const it = itemOf(s, copyId)
-        if (it) it.snapshots = snapshots
+        if (!it) return
+        it.snapshots = fn(it.snapshots ?? [])
+        out = it.snapshots
       },
-      () => snapshots.length > 0
+      () => out.length > 0
+    )
+    return out
+  }
+
+  /** A version added (an automatic one thinned with the rest: shared/versions.ts). */
+  addVersion(key: string, v: Snapshot): Snapshot[] {
+    return this.editVersions(key, (list) => withVersion(list, v, Date.now()))
+  }
+
+  renameVersion(key: string, id: string, name: string): Snapshot[] {
+    return this.editVersions(key, (list) => list.map((v) => (v.id === id ? { ...v, name } : v)))
+  }
+
+  deleteVersion(key: string, id: string): Snapshot[] {
+    return this.editVersions(key, (list) => list.filter((v) => v.id !== id))
+  }
+
+  /** An automatic version kept for good: it becomes a named one. */
+  keepVersion(key: string, id: string): Snapshot[] {
+    return this.editVersions(key, (list) =>
+      list.map((v) => (v.id === id ? { ...v, kind: 'named' as const, reason: undefined } : v))
     )
   }
 

@@ -268,8 +268,24 @@ const api = {
       call<Transform>(IPC.develop.uprightFromLines, key, lines, focal),
     putPlane: (png: string) => call<string>(IPC.develop.putPlane, png),
     getPlane: (ref: string) => call<string>(IPC.develop.getPlane, ref),
-    saveSnapshots: (key: string, snapshots: Snapshot[]) =>
-      call<void>(IPC.develop.saveSnapshots, key, snapshots),
+    /** The photo's versions as stored now (main makes automatic ones as it goes). */
+    versionList: (key: string) => call<Snapshot[]>(IPC.develop.versionList, key),
+    /** A version of the recipe (named, or automatic with its reason); the photo's versions after (null: none made). */
+    versionAdd: (
+      key: string,
+      name: string,
+      recipe: Recipe,
+      auto?: { reason: 'look' | 'paste' | 'rebuild' }
+    ) => call<Snapshot[] | null>(IPC.develop.versionAdd, key, name, recipe, auto),
+    versionRename: (key: string, id: string, name: string) =>
+      call<Snapshot[]>(IPC.develop.versionRename, key, id, name),
+    versionDelete: (key: string, id: string) =>
+      call<Snapshot[]>(IPC.develop.versionDelete, key, id),
+    /** An automatic version kept for good (it becomes a named one). */
+    versionKeep: (key: string, id: string) => call<Snapshot[]>(IPC.develop.versionKeep, key, id),
+    /** Before/After against this recipe (a version's), or null for the photo as it came. */
+    compareWith: (key: string, recipe: Recipe | null) =>
+      call<void>(IPC.develop.compareWith, key, recipe),
     historyList: (key: string) => call<HistoryLog>(IPC.develop.historyList, key),
     warm: (keys: string[]) => call<void>(IPC.develop.warm, keys),
     historyAppend: (key: string, label: string, recipe: Recipe) =>

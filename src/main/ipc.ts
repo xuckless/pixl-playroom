@@ -1,4 +1,5 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
+import type { VersionReason } from '../shared/versions'
 import { keepWrittenOn } from '../shared/edits'
 import {
   DISPLAY_SETTING_KEY,
@@ -101,7 +102,7 @@ import { appPage } from './guard'
 import { gate, gateRefuses } from './gate'
 import { openTopMenu, popupMenu, setMenuSpec, topMenus } from './menu'
 import { languageState, setLanguage } from './i18n'
-import { isLanguageSetting, t, type LanguageSetting } from '../shared/i18n'
+import { isLanguageSetting, t, type LanguageSetting, tk } from '../shared/i18n'
 import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
 import { accountStatus, cancelSignIn, signIn, signOut } from './account'
 import { AccountError } from './account/api'
@@ -442,6 +443,13 @@ export function registerIpc(s: Services): void {
         const live = s.sessions.liveRecipe(key)
         const base = live ?? saved.get(key)
         if (!base) continue
+        // What it had before the settings came over it, a Version to step back to.
+        await s.library.addVersion(key, {
+          name: tk('Before pasted settings'),
+          kind: 'auto',
+          reason: 'paste',
+          recipe: base
+        })
         // What was pasted is meant to show: a section it wrote is on again.
         const next = keepWrittenOn(base, applyGroups(base, from, groups))
         // A crop locked to an aspect keeps it on a photo of another shape:
@@ -674,12 +682,35 @@ export function registerIpc(s: Services): void {
     if (png === undefined) throw new Error('a painted mask is missing from the plane store')
     return png
   })
-  // Snapshots come and go by reference: the index keeps the planes they name.
-  handle(IPC.develop.saveSnapshots, (key: string, snapshots: Snapshot[]) =>
-    s.index.saveSnapshots(
-      key,
-      snapshots.map((sn) => ({ ...sn, recipe: s.planes.slim(sn.recipe) }))
-    )
+  // Versions come and go by reference (the index keeps the planes they name),
+  // and cross to the window slim, as the session's own do.
+  const slimVersions = (list: Snapshot[] | null): Snapshot[] | null =>
+    list && list.map((v) => ({ ...v, recipe: s.planes.slim(v.recipe) }))
+  handle(
+    IPC.develop.versionAdd,
+    async (key: string, name: string, slim: Recipe, auto?: { reason: VersionReason }) =>
+      slimVersions(
+        await s.library.addVersion(key, {
+          name,
+          recipe: await s.planes.hydrate(slim),
+          ...(auto ? { kind: 'auto' as const, reason: auto.reason } : {})
+        })
+      )
+  )
+  handle(IPC.develop.versionList, async (key: string) =>
+    slimVersions((await s.index.openData(key)).snapshots)
+  )
+  handle(IPC.develop.versionRename, async (key: string, id: string, name: string) =>
+    slimVersions(await s.index.renameVersion(key, id, name))
+  )
+  handle(IPC.develop.versionDelete, async (key: string, id: string) =>
+    slimVersions(await s.index.deleteVersion(key, id))
+  )
+  handle(IPC.develop.versionKeep, async (key: string, id: string) =>
+    slimVersions(await s.index.keepVersion(key, id))
+  )
+  handle(IPC.develop.compareWith, async (key: string, slim: Recipe | null) =>
+    s.sessions.compareWith(key, slim && (await s.planes.hydrate(slim)))
   )
   // Stored recipes and patches hold planes by reference; the base crosses slim.
   const slimLog = (log: HistoryLog): HistoryLog => ({

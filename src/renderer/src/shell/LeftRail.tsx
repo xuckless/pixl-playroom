@@ -1,6 +1,7 @@
 import { Icon, type IconName } from '../components/icons'
 import { MasksPane } from '../panels/masks/MasksPane'
-import { HistoryPane, InfoPane, PresetsActions, PresetsPane, SnapshotsPane } from '../panels/left'
+import { HistoryPane, InfoPane, PresetsActions, PresetsPane } from '../panels/left'
+import { VersionsSection } from '../panels/VersionsSection'
 import { EditsPane } from '../panels/EditsPane'
 import { useUi, type Rail } from '../state/ui'
 import { t, tk } from '../lib/i18n'
@@ -60,7 +61,7 @@ export function LeftRail(): React.JSX.Element {
             {rail === 'edits' && <EditsPane />}
             {rail === 'history' && (
               <>
-                <SnapshotsPane />
+                <VersionsSection />
                 <HistoryPane />
               </>
             )}

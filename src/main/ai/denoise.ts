@@ -20,7 +20,7 @@
  * result decoded, never the model's output itself: what the photo shows now
  * is what it shows after a reload, on another machine, from the project alone.
  */
-import { t } from '../../shared/i18n'
+import { t, tk } from '../../shared/i18n'
 import { readFile, rm } from 'fs/promises'
 import { dirname, join } from 'path'
 import type { AiStartRequest } from '../../shared/ai'
@@ -206,6 +206,15 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
     )
     const layer = req.layerId && !old ? recipe.layers.find((l) => l.id === req.layerId) : undefined
     if (req.layerId && !old && !layer) throw new Error(t('the mask is gone'))
+    // The photo before it, a Version to step back to (not for a step made
+    // again, nor a smart look's part: the look made one before it began).
+    if (!old && !req.group)
+      await this.library.addVersion(req.key, {
+        name: tk('Before AI Denoise'),
+        kind: 'auto',
+        reason: 'ai',
+        recipe
+      })
     ctx.stage(
       'model',
       0,

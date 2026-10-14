@@ -432,6 +432,34 @@ aside.right .panels {
   text-decoration: line-through;
   text-decoration-color: color-mix(in oklab, var(--muted) 60%, transparent);
 }
+/* Versions (panels/VersionsSection.tsx): a row with its actions on hover. */
+.version-row .version-acts {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.version-row:hover .version-acts,
+.version-row:focus-within .version-acts,
+.version-row.on .version-acts {
+  opacity: 1;
+}
+.version-row .version-acts .on {
+  color: var(--acc);
+}
+.version-rename {
+  flex: 1;
+  min-width: 0;
+}
+button.versions-auto {
+  width: calc(100% - 12px);
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  cursor: pointer;
+}
 .rail-grip {
   width: 5px;
   flex: none;
