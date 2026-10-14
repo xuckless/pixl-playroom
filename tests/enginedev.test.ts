@@ -81,7 +81,11 @@ function fakeKit(root: string, plat: string, version = '0.19.2'): string {
       made: '2026-10-13T18:43:29.954Z',
       engine: { commit: '9e368c379efb', version, platforms: [plat] },
       models: [
-        { id: 'pixl-demosaic-v1-bayer', version: '0.1.0-dev.1', files: ['pixl_demosaic_v1_bayer.onnx'] }
+        {
+          id: 'pixl-demosaic-v1-bayer',
+          version: '0.1.0-dev.1',
+          files: ['pixl_demosaic_v1_bayer.onnx']
+        }
       ],
       files: Object.fromEntries(
         Object.entries(files).map(([rel, text]) => [

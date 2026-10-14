@@ -268,7 +268,11 @@ test('the PIXL demosaic is the plan where it is offered, downloaded and switched
   assert.deepEqual(b.fetched, ['pixl-demosaic-v1-bayer'])
   // Its X-Trans one beside DemosaicNet's, each when a Fujifilm RAW first opens.
   assert.equal((await scenePlan('XTrans')).tag, 'ppg')
-  assert.deepEqual(b.fetched, ['pixl-demosaic-v1-bayer', 'demosaicnet-xtrans', 'pixl-demosaic-v1-xtrans'])
+  assert.deepEqual(b.fetched, [
+    'pixl-demosaic-v1-bayer',
+    'demosaicnet-xtrans',
+    'pixl-demosaic-v1-xtrans'
+  ])
 
   // The engine without its model build: nothing learned, the PIXL demosaic included.
   const c = fakeModels(['demosaicnet-bayer', ...PIXL], { offers: PIXL, runs: false })

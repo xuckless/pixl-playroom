@@ -209,7 +209,7 @@ export function sha256Of(file) {
   const fd = openSync(file, 'r')
   try {
     const buf = Buffer.allocUnsafe(1 << 20)
-    for (let n; (n = readSync(fd, buf, 0, buf.length, null)) > 0; ) h.update(buf.subarray(0, n))
+    for (let n; (n = readSync(fd, buf, 0, buf.length, null)) > 0;) h.update(buf.subarray(0, n))
   } finally {
     closeSync(fd)
   }
@@ -277,7 +277,9 @@ export function status(dirs) {
       const s = statSync(file, { throwIfNoEntry: false })
       return !s?.isFile() || s.size !== f.bytes || sha256Of(file) !== f.sha256
     })
-    .map((f) => `${f.pkg === 'engine' ? '@xuckless/pixl-engine' : '@xuckless/pixl-models'}/${f.path}`)
+    .map(
+      (f) => `${f.pkg === 'engine' ? '@xuckless/pixl-engine' : '@xuckless/pixl-models'}/${f.path}`
+    )
   return { installed: changed.length === 0, marker, changed }
 }
 
@@ -480,7 +482,9 @@ function main(argv) {
 
   const kitDir = kitDirOf(args.kit)
   const kit = readKit(kitDir)
-  say(`kit ${kitDir}: engine ${kit.engine.version} at commit ${kit.engine.commit}, made ${kit.made}`)
+  say(
+    `kit ${kitDir}: engine ${kit.engine.version} at commit ${kit.engine.commit}, made ${kit.made}`
+  )
   const marker = install(kit, kitDir, platform, dirs, say)
   say(`installed for ${platform} (${marker.files.length} files); \`--restore\` takes it off`)
   if (args.load) loadCheck(appDir)

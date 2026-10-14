@@ -12,8 +12,12 @@
  */
 import type { ExecutionProvider } from '../shared/engine-types'
 
-/** The kit's folder, or null without one. */
-export const DEV_KIT = process.env.PLAYROOM_DEV_KIT || null
+/**
+ * The kit's folder, or null without one. Never in a packaged app
+ * (`defaultApp`: Electron started on a folder or a script, which a packaged
+ * app never is), whatever its environment says.
+ */
+export const DEV_KIT = (process.defaultApp && process.env.PLAYROOM_DEV_KIT) || null
 
 /** Where a model ran, in a word or two: `CoreMl (CpuAndGpu, static shapes)`, `Cpu`. */
 export function providerName(p: ExecutionProvider | null | undefined): string {

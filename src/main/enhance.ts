@@ -64,7 +64,7 @@ import { ensureBase, pixelDeps } from './pixels/base'
 import { freezeMask } from './pixels/freeze'
 import { addPixelStep, storesLossless } from './pixels/steps'
 import { ensureWorking, modelInput } from './pixels/working'
-import { levelValues } from '../shared/pixlenhance'
+import { levelValues, PIXL_ENHANCE } from '../shared/pixlenhance'
 
 const TIFF = { Tiff: { compression: 'None' } } as const
 const ICC_ONLY = { exif: false, icc: true, xmp: false, iptc: false } as const
@@ -187,7 +187,12 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
   }
 
   async run(ctx: AiContext, req: EnhanceRequest): Promise<{ kind: 'step'; label: string }> {
-    const { key, settings } = req
+    const { key } = req
+    // PIXL Enhance only where the roster offers it: a level saved on a
+    // development kit's run is not asked of a roster without the model.
+    const settings: EnhanceSettings = this.models.offered(PIXL_ENHANCE)
+      ? req.settings
+      : { ...req.settings, pixl: 'off' }
     ctx.stage('model', 0, t('Checking the models'))
     const avail = enhanceAvailability(this.status())
     if (!avail.available) throw new Error(avail.reason ?? t('unavailable'))

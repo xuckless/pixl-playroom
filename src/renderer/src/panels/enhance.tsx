@@ -105,6 +105,11 @@ const bytes = (b: number): string =>
 /** The jobs started from this panel, newest batch last (kept across the panel's remounts). */
 let batch: string[] = []
 
+/** The batch just started, kept for the panel's next mount. */
+function keepBatch(ids: string[]): void {
+  batch = ids
+}
+
 export function EnhancePanel(): React.JSX.Element | null {
   const session = useDevelop((s) => s.session)
   const stepsBefore = useDevelop((s) => s.recipe?.pixels.length ?? 0)
@@ -121,7 +126,8 @@ export function EnhancePanel(): React.JSX.Element | null {
   const models = useModels()
   const pixl = models.some((m) => m.id === PIXL_ENHANCE)
   const held = !pixl
-  const s = pixl ? withPixl(saved) : saved
+  // Without the model, a level saved on a development kit's run is not planned.
+  const s = pixl ? withPixl(saved) : { ...saved, pixl: 'off' as const }
   const say = useLibrary((l) => l.say)
   const capable = useAiJobs((j) => j.capabilities)
   const jobs = useAiJobs((j) => j.jobs)
@@ -171,7 +177,7 @@ export function EnhancePanel(): React.JSX.Element | null {
           })
         )
       )
-      batch = started
+      keepBatch(started)
       setIds(started)
     } catch (err) {
       say(errorText(err), 'error')

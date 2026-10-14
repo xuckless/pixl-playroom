@@ -619,7 +619,12 @@ export async function ensureMaster(
       }
       const t0 = Date.now()
       let request: unknown = null
-      const { value: report, classic, ran, refused } = await withScene(plan, (scene) => {
+      const {
+        value: report,
+        classic,
+        ran,
+        refused
+      } = await withScene(plan, (scene) => {
         const req = {
           ...blankRequest(photo.path, path, 'Raw'),
           raw: rawMaster(colourOf(photo), scene, isLinearRaw(info)),

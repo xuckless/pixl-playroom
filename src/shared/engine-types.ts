@@ -162,8 +162,7 @@ export interface MosaicDenoise {
  * demosaic: `Log`, `ln(1 + gain·x) / ln(1 + gain·peak)`).
  */
 export type MosaicEncoding =
-  | 'Demosaicnet'
-  | { Curve: { encoding: { Log: { gain: number; peak: number } } } }
+  'Demosaicnet' | { Curve: { encoding: { Log: { gain: number; peak: number } } } }
 
 /** Whether a learned demosaic is told the frame's noise (0.20): a fourth plane, or none. */
 export type DemosaicNoise = 'None' | { Map: { noise: MosaicDenoise['noise'] } }
