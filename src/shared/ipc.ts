@@ -1,3 +1,4 @@
+import type { RebuildReason } from './rebuild'
 import type { ResolvedProfile } from './lens'
 import type { HeavyBenchmark } from './heavy'
 import type { ModelSpeed } from './modelSpeed'
@@ -324,6 +325,8 @@ export const IPC = {
     setHeavy: 'ai:set-heavy',
     /** The PIXL demosaic's switch (a development kit; shared/pixldemosaic.ts). */
     setPixlDemosaic: 'ai:set-pixl-demosaic',
+    /** What today's pipeline has (shared/rebuild.ts `Pipeline`): the PIXL demosaic, PIXL Enhance. */
+    pipeline: 'ai:pipeline',
     /** A heavy model's sustained-load benchmark; resolves with its result. */
     benchmark: 'ai:benchmark',
     /** main → renderer: the switches changed. */
@@ -471,6 +474,8 @@ export interface LibraryItem {
   flag: Flag
   label: ColorLabel
   edited: boolean
+  /** What of the earlier pipeline its recipe holds (shared/rebuild.ts `legacyBits`). */
+  legacy?: number
   thumbUrl: string | null
   /** Its thumbnail failed: the file cannot be read (until it changes). */
   unreadable?: boolean
@@ -682,6 +687,10 @@ export interface DevelopSession {
   seed: number
   /** The 35 mm-equivalent focal length (`equivalentFocal`): what Upright's perspective assumes. */
   focal35?: number | null
+  /** A RAW's develop mark today (`main/developmark.ts`): what its steps' marks are told against. */
+  developMark?: string | null
+  /** Why it is on the earlier pipeline (shared/rebuild.ts); empty when it is on today's. */
+  rebuild?: RebuildReason[]
 }
 
 export interface ViewState {

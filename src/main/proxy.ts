@@ -610,6 +610,27 @@ export function ensureDevelopedProxies(
   return p
 }
 
+/**
+ * The proxies a photo is seen from: a RAW's cut from its PIXL demosaic
+ * master once one is made (the develop view adopts them), else the plain
+ * ones. The models that find masks read these, so a mask is found on the
+ * picture it is drawn over.
+ */
+export async function viewProxies(
+  engine: EngineClient,
+  photo: PhotoRow,
+  info: SourceInfo,
+  ask: RawDevelopAsk,
+  threads = BACKGROUND_THREADS
+): Promise<Proxies> {
+  const plain = await ensureProxies(engine, photo, info, threads)
+  if (info.input !== 'Raw' || isLinearRaw(info)) return plain
+  const plan = await scenePlan(info.raw_cfa, ask)
+  if (plan.demosaic !== 'pixl' || !(await masterCached(photo, info, ask))) return plain
+  const master = await ensureMaster(engine, photo, info, ask)
+  return ensureDevelopedProxies(engine, photo, plain, master, plan.tag, threads)
+}
+
 /** A RAW's full-size develop starting or ending, for the window's progress (`MasterEvent`). */
 export interface MasterWork {
   photoId: number

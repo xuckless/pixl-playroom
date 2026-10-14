@@ -68,6 +68,17 @@ export async function applyMaskResult(
     ...(r.source ? { source: r.source } : {})
   }
   const comp = depth ?? brush
+  // Found again (a rebuild): the component keeps its place and settings, its plane is new.
+  if (r.into?.replace) {
+    const layer = recipe.layers.find((l) => l.id === r.into!.layerId)
+    const old = layer?.components.find((c) => c.id === r.into!.replace)
+    if (!layer || !old || (old.kind !== 'brush' && old.kind !== 'depth')) return
+    layer.components = layer.components.map((c) =>
+      c.id === old.id ? { ...c, png, width: r.width, height: r.height, ref: undefined } : c
+    ) as typeof layer.components
+    await keepRecipe(e.key, recipe, live !== undefined, deps)
+    return
+  }
   const into = r.into && recipe.layers.find((l) => l.id === r.into!.layerId)
   if (into) into.components.push({ ...comp, mode: into.components.length ? r.into!.mode : 'Add' })
   else {

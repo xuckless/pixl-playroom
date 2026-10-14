@@ -9,6 +9,7 @@
  * from it). Folder scans and the exif fill are the only long work; they run
  * in chunks and give other requests a turn between them.
  */
+import { legacyBits } from '../../shared/rebuild'
 import { withVersion } from '../../shared/versions'
 import { tk } from '../../shared/i18n'
 import { exportLocationFromLast, LOCATION_SETTING } from '../../shared/locations'
@@ -1053,7 +1054,8 @@ export class IndexService {
       flag: p.flag,
       label: p.label,
       edited: p.recipe !== null && isEdited(p.recipe, raw),
-      recipeKey: thumbRecipeKey(p.recipe, raw)
+      recipeKey: thumbRecipeKey(p.recipe, raw),
+      legacy: legacyBits(p.recipe, raw)
     })
     this.store.replaceCopies(
       row.id,
@@ -1064,7 +1066,8 @@ export class IndexService {
         flag: c.flag,
         label: c.label,
         edited: c.recipe !== null && isEdited(c.recipe, raw),
-        recipeKey: thumbRecipeKey(c.recipe, raw)
+        recipeKey: thumbRecipeKey(c.recipe, raw),
+        legacy: legacyBits(c.recipe, raw)
       }))
     )
     this.store.setStack(row.id, sidecar.stack?.id ?? null, sidecar.stack?.position ?? null)
@@ -1347,6 +1350,7 @@ export class IndexService {
       flag: ((copy ? copy.flag : row.flag) as Flag) ?? null,
       label: ((copy ? copy.label : row.label) as ColorLabel) ?? null,
       edited: (copy ? copy.edited : row.edited) === 1,
+      legacy: (copy ? copy.legacy : row.legacy) ?? 0,
       thumbUrl:
         thumbPath && !ctx.bare && existsSync(thumbPath)
           ? cacheUrlIn(this.cacheRoot, thumbPath, thumbKey ?? '')

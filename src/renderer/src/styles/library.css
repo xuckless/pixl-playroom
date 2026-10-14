@@ -720,6 +720,30 @@
   opacity: 0.3;
   filter: grayscale(1);
 }
+/* Edited with an earlier develop (shared/rebuild.ts): a click rebuilds it. */
+.older-badge {
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  max-width: calc(100% - 64px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  color: var(--text);
+  background: color-mix(in oklab, var(--acc-deep) 70%, transparent);
+  border: 1px solid color-mix(in oklab, var(--acc) 55%, transparent);
+  border-radius: var(--r);
+  cursor: pointer;
+  opacity: 0.85;
+}
+.older-badge:hover {
+  opacity: 1;
+  background: var(--acc-deep);
+}
 .offline-badge {
   position: absolute;
   left: 50%;

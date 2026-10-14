@@ -35,6 +35,8 @@ export interface PhotoRow {
   flag: string | null
   label: string | null
   edited: number
+  /** What of the earlier pipeline its recipe holds (shared/rebuild.ts `legacyBits`). */
+  legacy?: number
   camera_json: string | null
   thumb_path: string | null
   thumb_key: string | null
@@ -99,6 +101,8 @@ export interface CopyRow {
   flag: string | null
   label: string | null
   edited: number
+  /** What of the earlier pipeline its recipe holds (shared/rebuild.ts `legacyBits`). */
+  legacy?: number
   thumb_path: string | null
   thumb_key: string | null
   /** Its recipe as its thumbnail knows it (see `PhotoRow.recipe_key`). */
@@ -350,7 +354,13 @@ CREATE INDEX IF NOT EXISTS photos_stack ON photos(stack_id);
   (db) => addColumns(db, 'photos', { cull: 'TEXT', cull_key: 'TEXT' }),
   // 16. The user's "Keep" on a suggested reject (shared/cullsuggest.ts):
   // never suggested again.
-  (db) => addColumns(db, 'photos', { cull_keep: 'INTEGER NOT NULL DEFAULT 0' })
+  (db) => addColumns(db, 'photos', { cull_keep: 'INTEGER NOT NULL DEFAULT 0' }),
+  // 17. What of the earlier pipeline an item's recipe holds (shared/rebuild.ts
+  // `legacyBits`): the library's "Older develop" badge.
+  (db) => {
+    addColumns(db, 'photos', { legacy: 'INTEGER NOT NULL DEFAULT 0' })
+    addColumns(db, 'copies', { legacy: 'INTEGER NOT NULL DEFAULT 0' })
+  }
 ]
 
 /** The searchable columns of a photo's camera info, in `UPDATE … SET` order. */
@@ -738,11 +748,26 @@ export class Store {
 
   setPhotoMeta(
     id: number,
-    meta: { rating: number; flag: Flag; label: ColorLabel; edited: boolean; recipeKey?: string }
+    meta: {
+      rating: number
+      flag: Flag
+      label: ColorLabel
+      edited: boolean
+      recipeKey?: string
+      legacy?: number
+    }
   ): void {
     this.prepare(
-      'UPDATE photos SET rating = ?, flag = ?, label = ?, edited = ?, recipe_key = ? WHERE id = ?'
-    ).run(meta.rating, meta.flag, meta.label, meta.edited ? 1 : 0, meta.recipeKey ?? null, id)
+      'UPDATE photos SET rating = ?, flag = ?, label = ?, edited = ?, recipe_key = ?, legacy = ? WHERE id = ?'
+    ).run(
+      meta.rating,
+      meta.flag,
+      meta.label,
+      meta.edited ? 1 : 0,
+      meta.recipeKey ?? null,
+      meta.legacy ?? 0,
+      id
+    )
   }
 
   /** Remember a project and the photo it names (see migration 5). */
@@ -931,12 +956,13 @@ export class Store {
       label: ColorLabel
       edited: boolean
       recipeKey?: string
+      legacy?: number
     }[]
   ): void {
     const existing = new Map(this.copiesOf(photoId).map((c) => [c.copy_id, c]))
     this.prepare('DELETE FROM copies WHERE photo_id = ?').run(photoId)
     const ins = this.prepare(
-      'INSERT INTO copies(photo_id, copy_id, name, rating, flag, label, edited, thumb_path, thumb_key, recipe_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO copies(photo_id, copy_id, name, rating, flag, label, edited, thumb_path, thumb_key, recipe_key, legacy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
     for (const c of copies) {
       const old = existing.get(c.id)
@@ -950,7 +976,8 @@ export class Store {
         c.edited ? 1 : 0,
         old?.thumb_path ?? null,
         old?.thumb_key ?? null,
-        c.recipeKey ?? null
+        c.recipeKey ?? null,
+        c.legacy ?? 0
       )
     }
   }

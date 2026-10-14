@@ -15,6 +15,9 @@
  * next stage; a draft in flight finishes, so a moving slider keeps showing
  * frames. Both are JPEGs, quick to write and for the loupe to read.
  */
+import { stepDevelopMark } from './developmark'
+import { pipeline } from './pipeline'
+import { rebuildReasons } from '../shared/rebuild'
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { mkdir, readdir, rm, writeFile } from 'fs/promises'
@@ -41,7 +44,7 @@ import {
 } from '../shared/retouch'
 import { activeSteps, stackSignature, type PixelStep } from '../shared/pixels'
 import { effective } from '../shared/edits'
-import { developMark, pixlSupported, resolveRawColour } from '../shared/rawcolour'
+import { pixlSupported, resolveRawColour } from '../shared/rawcolour'
 import { bakeSpot } from './pixels/heal'
 import { freezeMask } from './pixels/freeze'
 import { askOf, scenePlan, type ScenePlan } from './ai/rawdevelop'
@@ -2998,7 +3001,8 @@ class Session {
       layerId
     )
     // Made from today's RAW develop (see `staleRawStep`).
-    if (step && this.isRaw) step.params.develop = developMark(colourOf(this.row))
+    if (step && this.isRaw)
+      step.params.develop = await stepDevelopMark(this.row, this.file, askOf(this.recipe))
     // The full-size frame with this stroke, started now: a 1:1 view wants it
     // the moment the step lands, and it is the last one plus a small patch.
     if (step)
@@ -3278,6 +3282,9 @@ export class DevelopSessions {
       // A RAW the PIXL demosaic develops: its master now, the picture cut from it.
       void session.developOnOpen()
     }
+    // Today's develop mark and pipeline: what an older edit is told by (shared/rebuild.ts).
+    const mark = row.is_raw === 1 ? await stepDevelopMark(row, info, askOf(session.recipe)) : null
+    const today = await pipeline()
     return {
       key,
       item,
@@ -3302,7 +3309,9 @@ export class DevelopSessions {
       proxyHeight: px.proxy.height,
       recipe: session.recipe,
       snapshots,
-      seed: seedOf(row)
+      seed: seedOf(row),
+      developMark: mark,
+      rebuild: rebuildReasons(session.recipe, row.is_raw === 1, today, mark)
     }
   }
 

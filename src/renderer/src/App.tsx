@@ -1,3 +1,4 @@
+import { watchPipeline } from './lib/pipeline'
 import { EditingSpaceDialog } from './views/EditingSpace'
 import { AnimatePresence, MotionConfig } from 'motion/react'
 import { memo, useEffect, useState } from 'react'
@@ -291,6 +292,12 @@ async function aiJobEnded(e: AiJobEvent): Promise<void> {
     const s = await api.develop.open(e.key)
     if (useDevelop.getState().session?.key !== e.key) return
     useDevelop.getState().replace(s.recipe, r.label)
+    // What it is told by now (a rebuild: today's develop, nothing older left).
+    const open = useDevelop.getState().session
+    if (open?.key === e.key)
+      useDevelop.setState({
+        session: { ...open, developMark: s.developMark, rebuild: s.rebuild }
+      })
     return
   }
   if (r?.kind !== 'mask') return
@@ -525,6 +532,7 @@ export default function App(): React.JSX.Element {
       }),
       api.develop.onMaster(onMaster),
       api.develop.onPixlDemosaic(onPixlDemosaic),
+      watchPipeline(),
       api.develop.onRenderError((e) => {
         // A failed save is said whichever photo is open: it may be the one just left.
         if (e.code === 'Save') return useLibrary.getState().say(e.message, 'error')

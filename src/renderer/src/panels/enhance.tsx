@@ -198,7 +198,7 @@ export function EnhancePanel(): React.JSX.Element | null {
   // Enhance steps made from an older RAW develop (`staleRawStep`).
   const stale = useDevelop((d) => {
     if (!d.session?.isRaw || !d.recipe) return 0
-    const mark = developMark(d.session.rawColour ?? 'container')
+    const mark = d.session.developMark ?? developMark(d.session.rawColour ?? 'container')
     return d.recipe.pixels.filter((p) => p.kind === 'enhance' && staleRawStep(p, true, mark)).length
   })
   const { layer } = useScope()

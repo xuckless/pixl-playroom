@@ -3321,5 +3321,21 @@
   "Zoom to 100%": "缩放到 100%",
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "缩放到 100%，照片的一个像素对应屏幕的一个像素，用于检查对焦和噪点。捏合或滚动以缩放；按住 {{key}} 并拖动以平移。",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ 亮度 {{luma}} · 色度 {{chroma}}",
-  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各平面白噪声的 σ̂，由降噪器自身估算，以 8 位代码值表示"
+  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "各平面白噪声的 σ̂，由降噪器自身估算，以 8 位代码值表示",
+  "Before rebuild": "重建之前",
+  "Don’t ask for this photo": "此照片不再询问",
+  "Edited with an earlier develop": "使用较早的显影编辑",
+  "Edited with an earlier develop: rebuild it with the PIXL demosaic and PIXL Enhance (a Version of it as it is is kept)": "使用较早的显影编辑：用 PIXL 去马赛克和 PIXL Enhance 重建（会保留当前状态的一个版本）",
+  "Enhance steps from before PIXL Enhance": "PIXL Enhance 之前的增强步骤",
+  "Finding the masks again": "正在重新识别蒙版",
+  "its AI Denoise steps": "其 AI 降噪步骤",
+  "its RAW denoise": "其 RAW 降噪",
+  "Making the steps again": "正在重新生成步骤",
+  "Older develop": "旧版显影",
+  "Rebuild": "重建",
+  "Rebuild {{count}} Photos with the Latest Develop_other": "用最新显影重建 {{count}} 张照片",
+  "Rebuild with the latest develop": "用最新显影重建",
+  "Rebuild with the Latest Develop": "用最新显影重建",
+  "Rebuilding with the latest develop": "正在用最新显影重建",
+  "steps made on the earlier develop": "在较早显影上生成的步骤"
 }

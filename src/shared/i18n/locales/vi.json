@@ -3321,5 +3321,21 @@
   "Zoom to 100%": "Phóng to 100%",
   "Zooms to 100%, one photo pixel per screen pixel, to check focus and noise. Pinch or scroll to zoom; hold {{key}} and drag to pan.": "Phóng to 100%, mỗi điểm ảnh của ảnh ứng với một điểm ảnh màn hình, để kiểm tra độ nét và nhiễu. Chụm hoặc cuộn để thu phóng; giữ {{key}} và kéo để di chuyển khung nhìn.",
   "σ̂ luma {{luma}} · chroma {{chroma}}": "σ̂ luma {{luma}} · chroma {{chroma}}",
-  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ của nhiễu trắng trên từng mặt phẳng, theo bộ ước lượng riêng của bộ khử nhiễu, tính bằng giá trị mã 8 bit"
+  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values": "σ̂ của nhiễu trắng trên từng mặt phẳng, theo bộ ước lượng riêng của bộ khử nhiễu, tính bằng giá trị mã 8 bit",
+  "Before rebuild": "Trước khi dựng lại",
+  "Don’t ask for this photo": "Không hỏi lại cho ảnh này",
+  "Edited with an earlier develop": "Đã chỉnh sửa bằng cách xử lý cũ",
+  "Edited with an earlier develop: rebuild it with the PIXL demosaic and PIXL Enhance (a Version of it as it is is kept)": "Đã chỉnh sửa bằng cách xử lý cũ: dựng lại bằng giải khảm PIXL và PIXL Enhance (một phiên bản của trạng thái hiện tại được giữ lại)",
+  "Enhance steps from before PIXL Enhance": "các bước cải thiện có từ trước PIXL Enhance",
+  "Finding the masks again": "Đang tìm lại các mặt nạ",
+  "its AI Denoise steps": "các bước khử nhiễu AI của ảnh",
+  "its RAW denoise": "khử nhiễu RAW của ảnh",
+  "Making the steps again": "Đang tạo lại các bước",
+  "Older develop": "Xử lý cũ",
+  "Rebuild": "Dựng lại",
+  "Rebuild {{count}} Photos with the Latest Develop_other": "Dựng lại {{count}} ảnh bằng cách xử lý mới nhất",
+  "Rebuild with the latest develop": "Dựng lại bằng cách xử lý mới nhất",
+  "Rebuild with the Latest Develop": "Dựng lại bằng cách xử lý mới nhất",
+  "Rebuilding with the latest develop": "Đang dựng lại bằng cách xử lý mới nhất",
+  "steps made on the earlier develop": "các bước được làm trên cách xử lý cũ"
 }

@@ -5,6 +5,7 @@
  * greyed where the key wouldn't act. The bar is sent to main again as what
  * applies changes; a right-click menu is built when it is asked for.
  */
+import { usePipeline } from './pipeline'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { CARDS } from '../../../shared/cards'
 import { editsInHdr } from '../../../shared/recipe'
@@ -344,6 +345,12 @@ function editingSpaceItem(): Item {
   })
 }
 
+/** Today's pipeline has a newer develop than an edit may have been made with (a development kit's). */
+function newerDevelop(): boolean {
+  const p = usePipeline.getState()
+  return p.pixlDemosaic || p.pixlEnhance
+}
+
 function photoMenu(): Item[] {
   return [
     cmd('library.develop', t('Open in Develop')),
@@ -359,6 +366,7 @@ function photoMenu(): Item[] {
     sep,
     cmd('autoTone', t('Auto Tone')),
     cmd('autoWbBatch', t('Auto White Balance')),
+    ...(newerDevelop() ? [cmd('rebuild', t('Rebuild with the Latest Develop'))] : []),
     sep,
     cmd('cull.rejectAll', t('Reject Suggested Rejects')),
     cmd('cull.keep', t('Keep (Not a Reject)'))
@@ -554,6 +562,20 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
         ? tp('Auto White Balance ({{count}} Photo)', 'Auto White Balance ({{count}} Photos)', n)
         : t('Auto White Balance')
     ),
+    ...(newerDevelop()
+      ? [
+          cmd(
+            'rebuild',
+            n > 1
+              ? tp(
+                  'Rebuild {{count}} Photo with the Latest Develop',
+                  'Rebuild {{count}} Photos with the Latest Develop',
+                  n
+                )
+              : t('Rebuild with the Latest Develop')
+          )
+        ]
+      : []),
     sep,
     makeCopy(),
     ...(developing
@@ -683,6 +705,7 @@ export function startMenuUpkeep(): () => void {
     useDisplay.subscribe(soon),
     useConfirm.subscribe(soon),
     useLanguage.subscribe(soon),
+    usePipeline.subscribe(soon),
     api.menu.onRun((id) => {
       const run = id.startsWith('pop:') ? popupRuns.get(id) : barRuns.get(id)
       run?.()

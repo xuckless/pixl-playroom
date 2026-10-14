@@ -1,3 +1,8 @@
+import { RebuildRunner } from './rebuild'
+import { setPipeline } from './pipeline'
+import { PIXL_ENHANCE } from '../shared/pixlenhance'
+import type { AiJobEvent } from '../shared/ai'
+import type { AiRunner } from './ai/jobs'
 import { t } from '../shared/i18n'
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import log from 'electron-log/main'
@@ -349,23 +354,48 @@ app.whenReady().then(() => {
     object: (key, lens, stroke) => select.objectUnder(key, lens, stroke)
   })
   const segment = new SegmentRunner(library, planes, aiEngine, models, () => sessions)
-  const ai = new AiJobs(
-    {
-      prompt: new PromptRunner(select, models),
-      enhance: new EnhanceRunner(
-        library,
-        aiEngine,
-        () => bgEngine.getStatus(),
-        models,
-        index,
-        () => sessions
-      ),
-      segment,
-      denoise: new DenoiseRunner(library, aiEngine, models, index, () => sessions)
-    },
-    async (key) => (await library.photoRow(key)).name,
-    (e) => applyMaskResult(e, { library, sessions: sessions!, planes })
+  const runners = {
+    prompt: new PromptRunner(select, models),
+    enhance: new EnhanceRunner(
+      library,
+      aiEngine,
+      () => bgEngine.getStatus(),
+      models,
+      index,
+      () => sessions
+    ),
+    segment,
+    denoise: new DenoiseRunner(library, aiEngine, models, index, () => sessions)
+  }
+  const applyResult = (e: AiJobEvent): Promise<void> =>
+    applyMaskResult(e, { library, sessions: sessions!, planes })
+  // A rebuild runs the others' work in turn, each result applied as its job's would be.
+  const rebuild = new RebuildRunner(
+    library,
+    bgEngine,
+    () => sessions,
+    async (req, ctx) => {
+      const runner = runners[req.task as keyof typeof runners] as AiRunner | undefined
+      if (!runner) throw new Error(t('{{task}} is not available in this build', { task: req.task }))
+      const result = await runner.run(ctx, req as never)
+      // As its own job's end would apply it (a mask into the recipe).
+      await applyResult({ jobId: ctx.jobId, key: req.key, result } as AiJobEvent)
+      return result
+    }
   )
+  const ai = new AiJobs(
+    { ...runners, rebuild },
+    async (key) => (await library.photoRow(key)).name,
+    applyResult
+  )
+  // What today's pipeline has (shared/rebuild.ts): the PIXL demosaic offered
+  // and switched on, PIXL Enhance offered.
+  setPipeline(async () => ({
+    pixlDemosaic:
+      Object.values(PIXL_DEMOSAIC).some((id) => models.offered(id)) &&
+      (await switches.get()).pixlDemosaic,
+    pixlEnhance: models.offered(PIXL_ENHANCE)
+  }))
   // AI switched off in Settings: no job starts (a RAW's develop keeps its models).
   ai.gate = () => switches.enabled()
   // With no brain (Gemma shelved), the open photo's named planes and subject

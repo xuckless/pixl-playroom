@@ -1,3 +1,4 @@
+import { RebuildPrompt } from './RebuildPrompt'
 import { aboveWhite } from '../../state/display'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { loupeContextMenu } from '../../lib/menus'
@@ -688,6 +689,7 @@ export function Loupe(): React.JSX.Element {
         )}
       </div>
       <LoupeHud scale={scale} />
+      <RebuildPrompt />
     </div>
   )
 }

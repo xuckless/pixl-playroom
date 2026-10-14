@@ -20,6 +20,7 @@
  * result decoded, never the model's output itself: what the photo shows now
  * is what it shows after a reload, on another machine, from the project alone.
  */
+import { stepDevelopMark } from '../developmark'
 import { t, tk } from '../../shared/i18n'
 import { readFile, rm } from 'fs/promises'
 import { dirname, join } from 'path'
@@ -27,7 +28,6 @@ import type { AiStartRequest } from '../../shared/ai'
 import { estimate } from '../../shared/ai'
 import type { EnhancerRef } from '../../shared/engine-types'
 import { activeSteps, pixelStepRefusal, type PixelStep } from '../../shared/pixels'
-import { developMark } from '../../shared/rawcolour'
 import {
   aiDenoiseModel,
   hash32,
@@ -44,14 +44,7 @@ import type { Library } from '../library'
 import { paths } from '../paths'
 import { ensureProxies, type ProxyFile } from '../proxy'
 import type { DevelopSessions } from '../render'
-import {
-  BACKGROUND_THREADS,
-  blankRequest,
-  colourOf,
-  heavyThreads,
-  seedOf,
-  versionStamp
-} from '../source'
+import { BACKGROUND_THREADS, blankRequest, heavyThreads, seedOf, versionStamp } from '../source'
 import { askOf } from './rawdevelop'
 import { ensureBase, pixelDeps } from '../pixels/base'
 import { freezeMask } from '../pixels/freeze'
@@ -351,7 +344,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
       }
       const name = DENOISE_SHORT[req.model]
       const develop: Record<string, string> =
-        row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {}
+        row.is_raw === 1 ? { develop: await stepDevelopMark(row, info, askOf(recipe)) } : {}
       if (old) {
         // Its place, mask, strength and name stay: only its pixels are today's.
         const again: PixelStep = {

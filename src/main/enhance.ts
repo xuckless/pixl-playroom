@@ -10,6 +10,7 @@
  * on. Deblur and restore can keep to a mask (frozen as it is when made).
  * The steps and their numbers are `shared/enhance.ts`'s.
  */
+import { stepDevelopMark } from './developmark'
 import { t, tk } from '../shared/i18n'
 import log from 'electron-log/main'
 import { rm } from 'fs/promises'
@@ -23,7 +24,6 @@ import type {
 } from '../shared/engine-types'
 import type { AiStartRequest } from '../shared/ai'
 import { activeSteps, type PixelStep } from '../shared/pixels'
-import { developMark } from '../shared/rawcolour'
 import { newId, type Recipe } from '../shared/recipe'
 import {
   chainSubject,
@@ -48,7 +48,6 @@ import {
   BACKGROUND_THREADS,
   heavyThreads,
   blankRequest,
-  colourOf,
   seedOf,
   sourceOrientation,
   uprightFraming,
@@ -62,7 +61,7 @@ import type { DevelopSessions } from './render'
 import { askOf } from './ai/rawdevelop'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { freezeMask } from './pixels/freeze'
-import { addPixelStep, storesLossless } from './pixels/steps'
+import { addPixelStep, replacePixelStep, storesLossless } from './pixels/steps'
 import { ensureWorking, guardPatch, modelInput } from './pixels/working'
 import { levelValues, PIXL_ENHANCE } from '../shared/pixlenhance'
 import type { PhotoRow } from './db'
@@ -203,10 +202,16 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const row = await this.library.photoRow(key)
     const info = await this.library.probe(row)
     const recipe: Recipe = sessions?.liveRecipe(key) ?? (await this.library.recipe(key))
+    // Made again in its place (a rebuild): read from the steps before it, its mask kept.
+    const old = req.redo ? recipe.pixels.find((p) => p.id === req.redo) : undefined
+    if (req.redo && !old) throw new Error(t('the step is gone'))
+    const under = activeSteps(
+      old ? recipe.pixels.slice(0, recipe.pixels.indexOf(old)) : recipe.pixels
+    )
     const isJpeg = info.input === 'Jpeg'
     const refused =
       enhanceRefusal(settings, { isJpeg, isHdr: info.is_hdr }) ??
-      jpegRestoreRefusal(settings, isJpeg, recipe.pixels.length)
+      jpegRestoreRefusal(settings, isJpeg, under.length)
     if (refused) throw new Error(`${row.name}: ${refused}`)
     const steps = planSteps(settings, isJpeg)
     const ids = steps.flatMap((p) => (p.model ? [p.model] : []))
@@ -215,11 +220,11 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const k = scaleOf(settings)
     // An upscale is the whole photo; deblur and restore can keep to a mask.
     const layer =
-      req.layerId && k === 1 ? recipe.layers.find((l) => l.id === req.layerId) : undefined
-    if (req.layerId && k === 1 && !layer) throw new Error(t('the mask is gone'))
+      req.layerId && k === 1 && !old ? recipe.layers.find((l) => l.id === req.layerId) : undefined
+    if (req.layerId && k === 1 && !old && !layer) throw new Error(t('the mask is gone'))
     // The photo before it, a Version to step back to (a smart look's part:
-    // the look made one before it began).
-    if (!req.group)
+    // the look made one before it began; a step made again: the rebuild did).
+    if (!req.group && !old)
       await this.library.addVersion(key, {
         name: tk('Before Enhance'),
         kind: 'auto',
@@ -238,12 +243,8 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
     const deps = pixelDeps(this.engine, this.library.index, row)
     const restoresJpeg = steps.some((p) => p.kind === 'reconstruct' || p.kind.startsWith('fbcnn'))
     const plain = await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
-    const working = await ensureWorking(
-      deps,
-      versionStamp(row),
-      plain,
-      activeSteps(recipe.pixels),
-      () => ensureBase(this.engine, row, info, askOf(recipe))
+    const working = await ensureWorking(deps, versionStamp(row), plain, under, () =>
+      ensureBase(this.engine, row, info, askOf(recipe))
     )
     const master = working.master!
     const dir = paths.photoCache(row.id)
@@ -381,18 +382,32 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
           lossless,
           // Everything it was run with, so a later develop can make it again.
           settings: JSON.stringify(settings),
-          ...(row.is_raw === 1 ? { develop: developMark(colourOf(row)) } : {})
+          ...(row.is_raw === 1 ? { develop: await stepDevelopMark(row, info, askOf(recipe)) } : {})
         }
       }
-      // Over the steps there were when it began, under any added while it ran.
       ctx.commit()
-      await addPixelStep(
-        this.library,
-        sessions,
-        key,
-        step,
-        recipe.pixels.map((s) => s.id)
-      )
+      if (old) {
+        // Its place, frozen mask, strength and name stay: only its pixels (and how) are today's.
+        await replacePixelStep(this.library, sessions, key, {
+          ...step,
+          id: old.id,
+          label: old.alpha
+            ? t('Enhance · {{subject}} in {{mask}}', { subject, mask: old.scope ?? '' })
+            : step.label,
+          alpha: old.alpha,
+          scope: old.scope,
+          opacity: old.opacity,
+          ...(old.off ? { off: true as const } : {})
+        })
+      } else
+        // Over the steps there were when it began, under any added while it ran.
+        await addPixelStep(
+          this.library,
+          sessions,
+          key,
+          step,
+          recipe.pixels.map((s) => s.id)
+        )
       const { photoId, copyId } = parseKey(key)
       this.library.queueThumb(photoId, copyId, true)
       return { kind: 'step', label: step.label }

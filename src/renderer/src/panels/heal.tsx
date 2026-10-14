@@ -98,7 +98,9 @@ export function HealPanel(): React.JSX.Element | null {
   const recipe = useDevelop((s) => s.recipe)
   const isHdr = useDevelop((s) => s.session?.isHdr === true)
   const isRaw = useDevelop((s) => s.session?.isRaw === true)
-  const mark = useDevelop((s) => developMark(s.session?.rawColour ?? 'container'))
+  const mark = useDevelop(
+    (s) => s.session?.developMark ?? developMark(s.session?.rawColour ?? 'container')
+  )
   const heal = useUi((s) => s.heal)
   const setHeal = useUi((s) => s.setHeal)
   const { layer } = useScope()

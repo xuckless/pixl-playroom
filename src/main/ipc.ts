@@ -1,4 +1,5 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
+import { pipeline } from './pipeline'
 import type { VersionReason } from '../shared/versions'
 import { keepWrittenOn } from '../shared/edits'
 import {
@@ -989,6 +990,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.ai.setHeavy, (model: HeavyModel, on: boolean) =>
     s.switches.setHeavy(model, on === true)
   )
+  handle(IPC.ai.pipeline, () => pipeline())
   handle(IPC.ai.setPixlDemosaic, async (on: boolean) => {
     const switches = await s.switches.setPixlDemosaic(on === true)
     // A RAW's full-size develop is another now: the open photo's 1:1 tile is asked for again.

@@ -129,6 +129,9 @@ export interface MasksWindow {
 const DEFAULT_MASKS_WIN: MasksWindow = { open: false }
 
 interface UiState {
+  /** Photos whose "Rebuild with the latest develop?" was answered "Don't ask" (shared/rebuild.ts). */
+  rebuildQuiet: string[]
+  setRebuildQuiet(key: string): void
   /** Which pane the left rail shows, and whether it is open or folded to its spine. */
   rail: Rail
   railOpen: boolean
@@ -250,6 +253,11 @@ const storage = createJSONStorage(() => ({
 export const useUi = create<UiState>()(
   persist(
     (set, get) => ({
+      rebuildQuiet: [],
+      setRebuildQuiet: (key) =>
+        set((s) => ({
+          rebuildQuiet: [...s.rebuildQuiet.filter((k) => k !== key), key].slice(-500)
+        })),
       rail: 'presets',
       railOpen: true,
       filmstrip: false,

@@ -1,3 +1,4 @@
+import type { Pipeline } from '../shared/rebuild'
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { NoiseEstimate, PreviewFrame, Transform } from '../shared/engine-types'
 import type { GuideLine } from '../shared/upright'
@@ -394,6 +395,8 @@ const api = {
     setEnabled: (on: boolean) => call<AiSwitches>(IPC.ai.setEnabled, on),
     setHeavy: (model: HeavyModel, on: boolean) => call<AiSwitches>(IPC.ai.setHeavy, model, on),
     setPixlDemosaic: (on: boolean) => call<AiSwitches>(IPC.ai.setPixlDemosaic, on),
+    /** What today's pipeline has (shared/rebuild.ts): the PIXL demosaic, PIXL Enhance. */
+    pipeline: () => call<Pipeline>(IPC.ai.pipeline),
     benchmark: (model: HeavyModel) => call<HeavyBenchmark>(IPC.ai.benchmark, model),
     onSwitches: (cb: (s: AiSwitches) => void) => on(IPC.ai.switchesEvent, cb),
     onBenchmark: (cb: (p: { model: HeavyModel; progress: number; note: string }) => void) =>

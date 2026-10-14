@@ -4,6 +4,7 @@
  * commands, the first whose `when` holds runs — so a tool's own use of a key
  * (Delete in Heal, [ ] for the heal brush) comes before the general one.
  */
+import { rebuild, usePipeline } from './pipeline'
 import { effective } from '../../../shared/edits'
 import { suggestedReasons, useCull } from '../state/cull'
 import { useSyncExternalStore } from 'react'
@@ -267,6 +268,19 @@ export const COMMANDS: KeyCommand[] = [
     context: 'global',
     keys: ['Mod+Shift+U'],
     run: () => void autoWbBatch(lib().targets())
+  },
+  {
+    id: 'rebuild',
+    label: tk('Rebuild with the latest develop'),
+    group: 'Library',
+    context: 'global',
+    keys: [],
+    // With a newer develop than an edit could have been made with (shared/rebuild.ts).
+    when: () => {
+      const p = usePipeline.getState()
+      return (p.pixlDemosaic || p.pixlEnhance) && lib().targets().length > 0
+    },
+    run: () => void rebuild(lib().targets()).catch((err) => lib().say(errorText(err), 'error'))
   },
   {
     id: 'nav.next',

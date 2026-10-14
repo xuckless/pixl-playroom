@@ -87,7 +87,7 @@ export function startStaleUpkeep(): () => void {
   return useDevelop.subscribe((s, prev) => {
     if (!s.session || !s.recipe || s.session === prev.session || !s.session.isRaw) return
     const key = s.session.key
-    const mark = developMark(s.session.rawColour ?? 'container')
+    const mark = s.session.developMark ?? developMark(s.session.rawColour ?? 'container')
     const stale = s.recipe.pixels.filter(
       (p) => staleRawStep(p, true, mark) && redoesQuietly(p) && !tried.has(`${key}/${p.id}`)
     )
