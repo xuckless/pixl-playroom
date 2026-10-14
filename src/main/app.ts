@@ -1,3 +1,4 @@
+import { keepNoiseIn } from './ai/noisebook'
 import { RebuildRunner } from './rebuild'
 import { setPipeline } from './pipeline'
 import { PIXL_ENHANCE } from '../shared/pixlenhance'
@@ -314,6 +315,7 @@ app.whenReady().then(() => {
   }
   // A RAW's full-size develop: DemosaicNet once it is here, PMRID when asked;
   // with a development kit, the PIXL demosaic while its switch is on.
+  keepNoiseIn(join(paths.models(), 'raw-noise.json'))
   setRawModels({
     offered: (id) => models.offered(id),
     pixlDemosaic: async () => (await switches.get()).pixlDemosaic,

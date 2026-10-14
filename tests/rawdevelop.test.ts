@@ -565,3 +565,76 @@ test('a development kit’s run says what developed a master, where and how long
   assert.match(developedLine(stood), /RAW master dn \(planned pd: no \[InvalidRequest\]\)/)
   assert.equal(developedNote(stood), 'PIXL demosaic refused: DemosaicNet instead · 5.2 s')
 })
+
+test('a frame whose noise cannot be read is told its camera’s measured noise; the model stays planned', async () => {
+  const { scenePlan, setRawModels, withScene } = await import('../src/main/ai/rawdevelop')
+  setRawModels(fakeModels(['demosaicnet-bayer', 'pmrid', ...PIXL], { offers: PIXL }).m)
+  const plan = await scenePlan('Bayer')
+  assert.equal(plan.tag, 'pd')
+  const unread = Object.assign(
+    new Error(
+      'invalid request field `raw.demosaic.noise.noise`: the frame’s noise cannot be read: the B plane has 2 brightness levels with enough flat area — state it with MosaicNoise::Stated'
+    ),
+    { code: 'InvalidRequest' }
+  )
+  type Told = { Model?: { id: string; noise?: { Map: { noise: unknown } } } }
+  const stated = (scene: { demosaic: unknown }): { k: number; sigma2: number } | null =>
+    ((scene.demosaic as Told).Model?.noise?.Map.noise as { Stated?: { k: number; sigma2: number } })
+      ?.Stated ?? null
+  // A frame it reads: its planes are kept for the camera at ISO 400.
+  const fit = { bins: 25, r2: 0.9 }
+  const read = await withScene(
+    plan,
+    async () => ({
+      raw: {
+        demosaic_model: {
+          noise_planes: [
+            { plane: 'R', k: 4e-4, sigma2: 1e-5, fit },
+            { plane: 'Gr', k: 4e-4, sigma2: 1e-5, fit },
+            { plane: 'Gb', k: 4e-4, sigma2: 1e-5, fit },
+            { plane: 'B', k: 4e-4, sigma2: 1e-5, fit }
+          ]
+        }
+      }
+    }),
+    undefined,
+    { camera: 'Canon Test', iso: 400 }
+  )
+  assert.equal(read.classic, false)
+  // A sibling at ISO 800 it cannot read: developed again with the noise stated, scaled.
+  const told: ({ k: number; sigma2: number } | null)[] = []
+  const done = await withScene(
+    plan,
+    async (scene) => {
+      const s = stated(scene)
+      told.push(s)
+      if (!s) throw unread
+      return 'pd'
+    },
+    undefined,
+    { camera: 'Canon Test', iso: 800 }
+  )
+  assert.equal(done.value, 'pd')
+  assert.equal(done.classic, false)
+  assert.equal(done.ran, 'pd')
+  assert.match(done.statedFrom ?? '', /Canon Test at ISO 400, scaled to 800/)
+  assert.equal(told.length, 2)
+  assert.ok(Math.abs(told[1]!.k - 8e-4) < 1e-12 && Math.abs(told[1]!.sigma2 - 4e-5) < 1e-12)
+
+  // Nothing to state (no ISO): this photo falls back, said once…
+  const { said, value: fell } = await errorsOf(() =>
+    withScene(
+      plan,
+      async (scene) => {
+        if ((scene.demosaic as Told).Model?.id?.startsWith('pixl-')) throw unread
+        return 'dn'
+      },
+      undefined,
+      { camera: 'Canon Test', iso: null }
+    )
+  )
+  assert.equal(fell.classic, true)
+  assert.match(said[0], /for this photo/)
+  // …and every other photo still gets the PIXL demosaic.
+  assert.equal((await scenePlan('Bayer')).tag, 'pd')
+})

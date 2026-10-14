@@ -485,7 +485,8 @@ export class Exporter {
       const done = await withScene(
         plan,
         (scene) => convert({ ...request, raw: rawMaster(colourOf(row), scene, isLinearRaw(info)) }),
-        signal
+        signal,
+        { camera: row.camera, iso: row.iso }
       )
       log.info(
         'export RAW develop',

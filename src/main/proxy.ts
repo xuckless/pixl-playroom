@@ -786,22 +786,35 @@ export async function ensureMaster(
         value: report,
         classic,
         ran,
-        refused
-      } = await withScene(plan, (scene) => {
-        const req = {
-          ...blankRequest(photo.path, path, 'Raw'),
-          raw: rawMaster(colourOf(photo), scene, isLinearRaw(info)),
-          pixel: { depth: 'F32', channels: 3 } as const,
-          encode: { Tiff: { compression: 'None' } } as const,
-          metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: 'Preserve' as const
-        }
-        request = req
-        return engine.convert(req)
-      })
+        refused,
+        statedFrom
+      } = await withScene(
+        plan,
+        (scene) => {
+          const req = {
+            ...blankRequest(photo.path, path, 'Raw'),
+            raw: rawMaster(colourOf(photo), scene, isLinearRaw(info)),
+            pixel: { depth: 'F32', channels: 3 } as const,
+            encode: { Tiff: { compression: 'None' } } as const,
+            metadata: { exif: false, icc: true, xmp: false, iptc: false },
+            color: 'Preserve' as const
+          }
+          request = req
+          return engine.convert(req)
+        },
+        undefined,
+        { camera: photo.camera, iso: photo.iso }
+      )
       const ms = Date.now() - t0
       if (!classic) masterRate.set(plan.tag, ms / megapixels)
-      log.info('RAW master developed', plan.tag, classic ? `(${ran} stood in)` : '', ms, 'ms')
+      log.info(
+        'RAW master developed',
+        plan.tag,
+        classic ? `(${ran} stood in)` : '',
+        statedFrom ? `(noise stated from ${statedFrom})` : '',
+        ms,
+        'ms'
+      )
       // A development kit's trial: what ran, where and how long, for every master.
       noteDeveloped(photo.id, {
         planned: plan.tag,

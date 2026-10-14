@@ -26,6 +26,7 @@
  * Playroom starts again (a develop refused at every 1:1 view would be made
  * again at every one).
  */
+import { remember, statedNoiseFor, type NoisePlane, type Shot, type StatedNoise } from './noisebook'
 import log from 'electron-log/main'
 import { traceRegion } from '../trace'
 import type {
@@ -188,14 +189,30 @@ export async function scenePlan(
   return { cfa, demosaic: 'pixl', pmrid: false, tag: developTag('pixl', false), then: released }
 }
 
-/** Scene's `demosaic` and `mosaic_denoise` for a plan, its models on the CPU where asked. */
-async function fill(plan: ScenePlan, onCpu: ReadonlySet<string>): Promise<SceneModels> {
+/**
+ * Scene's `demosaic` and `mosaic_denoise` for a plan, its models on the CPU
+ * where asked; `stated`, the frame's noise told to PIXL's demosaic instead of
+ * read from the frame (E64).
+ */
+async function fill(
+  plan: ScenePlan,
+  onCpu: ReadonlySet<string>,
+  stated?: StatedNoise
+): Promise<SceneModels> {
   const ref = (id: string): Promise<Record<string, unknown>> =>
     models!.ref(id, onCpu.has(id) ? 'Cpu' : undefined)
   const model = demosaicModel(plan)
   // The roster's ref as it is: a 0.20 engine's `encoding` and `noise` come with it.
-  const demosaic: SceneDemosaic = model
-    ? { Model: (await ref(model)) as DemosaickerRef }
+  const own = model ? ((await ref(model)) as DemosaickerRef) : null
+  const demosaic: SceneDemosaic = own
+    ? {
+        Model: stated
+          ? {
+              ...own,
+              noise: { Map: { noise: { Stated: { k: stated.k, sigma2: stated.sigma2 } } } }
+            }
+          : own
+      }
     : plan.demosaic === 'ahd'
       ? 'Ahd'
       : 'Classic'
@@ -221,6 +238,20 @@ const NEVER = new AbortController().signal
 /** What a develop refused for its models says (anything else is the file's, and stands). */
 const MODEL_TROUBLE = /raw\.(demosaic|mosaic_denoise)|model|onnx|session|provider|coreml/i
 
+/**
+ * The engine could not read this frame's noise (E64): the photo's own
+ * trouble, not the model's. Its noise can be stated instead, and the model
+ * stays planned for every other photo.
+ */
+const NOISE_UNREAD = /noise cannot be read|state it with MosaicNoise::Stated/i
+
+/** A develop's own account of the noise its demosaic was told, where one ran. */
+function planesOf(value: unknown): NoisePlane[] | null {
+  const raw = (value as { raw?: { demosaic_model?: { noise_planes?: unknown } } } | null)?.raw
+  const planes = raw?.demosaic_model?.noise_planes
+  return Array.isArray(planes) ? (planes as NoisePlane[]) : null
+}
+
 export type SceneModels = { demosaic: SceneDemosaic; mosaic_denoise: MosaicDenoise | null }
 
 /** A develop as it ran. */
@@ -232,6 +263,8 @@ export interface SceneRun<T> {
   ran: string
   /** Why the plan's did not, when one stood in: the engine's words. */
   refused?: string
+  /** The plan's ran with the frame's noise stated, not read (E64): from what. */
+  statedFrom?: string
 }
 
 /** An engine error's message and code, for a line in the log. */
@@ -256,17 +289,22 @@ function inWords(err: unknown): string {
 export async function withScene<T>(
   plan: ScenePlan,
   run: (scene: SceneModels) => Promise<T>,
-  signal: AbortSignal = NEVER
+  signal: AbortSignal = NEVER,
+  /** The frame's camera and ISO: what its noise is kept under, and stated from (E64). */
+  shot: Shot = { camera: null, iso: null }
 ): Promise<SceneRun<T>> {
   const ids = modelsOf(plan)
   const plain: SceneModels = { demosaic: 'Classic', mosaic_denoise: null }
   if (plan.demosaic === 'classic' && ids.length === 0)
     return { value: await run(plain), classic: false, ran: plan.tag }
+  const attempt = (stated?: StatedNoise): Promise<T> =>
+    ids.length === 0
+      ? fill(plan, new Set(), stated).then(run)
+      : models!.withCpuFallback(ids, async (onCpu) => run(await fill(plan, onCpu, stated)), signal)
   try {
-    const value =
-      ids.length === 0
-        ? await run(await fill(plan, new Set()))
-        : await models!.withCpuFallback(ids, async (onCpu) => run(await fill(plan, onCpu)), signal)
+    const value = await attempt()
+    // What PIXL's demosaic read of this frame's noise: kept for a sibling it cannot read.
+    if (plan.demosaic === 'pixl') remember(shot, planesOf(value))
     return { value, classic: false, ran: plan.tag }
   } catch (err) {
     if (signal.aborted) throw err
@@ -278,19 +316,43 @@ export async function withScene<T>(
         console.error(`PIXL demosaic: the develop with ${id} failed: ${inWords(err)}`)
         throw err
       }
-      const why = inWords(err)
+      let why = inWords(err)
+      // This frame's noise could not be read (E64): stated from what its
+      // camera's other frames were measured to have, and developed again.
+      const unread = NOISE_UNREAD.test(why)
+      const stated = unread ? statedNoiseFor(shot) : null
+      if (stated) {
+        try {
+          const value = await attempt(stated.noise)
+          log.info(
+            'PIXL demosaic: noise not readable from the frame; stated from',
+            stated.source,
+            `k ${stated.noise.k.toExponential(3)}, σ² ${stated.noise.sigma2.toExponential(3)}`
+          )
+          traceRegion({ step: 'stated', tag: plan.tag, from: stated.source })
+          return { value, classic: false, ran: plan.tag, statedFrom: stated.source }
+        } catch (again) {
+          if (signal.aborted) throw again
+          why = `${why}; with its noise stated from ${stated.source}: ${inWords(again)}`
+        }
+      }
       const next: ScenePlan = plan.then ?? {
         cfa: plan.cfa,
         demosaic: 'classic',
         pmrid: false,
         tag: developTag('classic', false)
       }
+      // A frame whose noise cannot be read is this photo's trouble: the model
+      // stays planned for the rest. Anything else is the model's, for the run.
+      const scope = unread
+        ? 'for this photo (no noise measured yet to state for it)'
+        : 'now and for the rest of this run (its switch off and on tries again)'
       console.error(
-        `PIXL demosaic: ${id} was planned (${plan.tag}) but the engine refused it; developing ${next.tag} instead, now and for the rest of this run (its switch off and on tries again): ${why}`
+        `PIXL demosaic: ${id} was planned (${plan.tag}) but the engine refused it; developing ${next.tag} instead, ${scope}: ${why}`
       )
       log.warn('RAW develop with', plan.tag, 'refused; developing', next.tag, why)
       traceRegion({ step: 'refused', tag: plan.tag, then: next.tag, message: why })
-      pixlRefused.set(id, why)
+      if (!unread) pixlRefused.set(id, why)
       const stood = await withScene(next, run, signal)
       return { ...stood, classic: true, refused: why }
     }
