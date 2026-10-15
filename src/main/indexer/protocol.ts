@@ -22,7 +22,11 @@ export type IndexResponse =
  * keywords, collections or descriptive metadata changed (the sidebar's lists).
  */
 export type IndexEvent =
-  | { name: 'changed'; folder: string }
+  /**
+   * `photos`: only these photos' facts changed (their EXIF or sidecar read
+   * in), not what the folder holds; without it, the listing itself.
+   */
+  | { name: 'changed'; folder: string; photos?: number[] }
   | { name: 'sources' }
   /** A photo got its project: its original can now be embedded in it (main's job). */
   | { name: 'project'; key: string }

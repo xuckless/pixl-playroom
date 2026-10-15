@@ -1116,7 +1116,7 @@ export class IndexService {
       return
     }
     this.filling.add(folder)
-    let filled = 0
+    const filled: number[] = []
     try {
       do {
         this.fillAgain.delete(folder)
@@ -1127,13 +1127,13 @@ export class IndexService {
           // Gone while its exif was read.
           if (!this.store.photo(row.id)) continue
           this.store.setCamera(row.id, camera)
-          filled++
+          filled.push(row.id)
         }
       } while (this.fillAgain.has(folder))
     } finally {
       this.filling.delete(folder)
     }
-    if (filled > 0) this.emit({ name: 'changed', folder })
+    if (filled.length > 0) this.emit({ name: 'changed', folder, photos: filled })
   }
 
   /**
@@ -1142,7 +1142,7 @@ export class IndexService {
    */
   private async fillXmp(folder: string): Promise<void> {
     const changed = await this.xmpSerial(async () => {
-      let n = 0
+      const n: number[] = []
       let i = 0
       for (const row of this.store.photosIn(folder)) {
         // A stat each: a big folder yields between chunks, as the scan does.
@@ -1162,12 +1162,12 @@ export class IndexService {
         // Gone while its sidecar was read.
         if (!this.store.photo(row.id)) continue
         this.store.tx(() => this.store.setXmp(row.id, meta, meta.keywords, mtime))
-        n++
+        n.push(row.id)
       }
       return n
     })
-    if (changed > 0 && !this.closed) {
-      this.emit({ name: 'changed', folder })
+    if (changed.length > 0 && !this.closed) {
+      this.emit({ name: 'changed', folder, photos: changed })
       this.emit({ name: 'sources' })
     }
   }
@@ -1408,6 +1408,11 @@ export class IndexService {
   /** These photos' items and their copies' (what a stack change touched). */
   private itemsOfPhotos(ids: Iterable<number>): LibraryItem[] {
     return this.itemsOf(this.store.photosByIds([...ids]))
+  }
+
+  /** These photos' items (and their copies'), as a listing has them: what a fill changed. */
+  itemsOfIds(ids: number[]): LibraryItem[] {
+    return this.itemsOfPhotos(ids)
   }
 
   private itemFrom(row: PhotoRow, copy: CopyRow | undefined, ctx: ListingContext): LibraryItem {

@@ -150,7 +150,10 @@ export const IPC = {
     hdr: 'library:hdr',
     /** main → renderer: a photo's search words from its names (every copy shares them). */
     names: 'library:names',
-    /** main → renderer: the folder's items changed (new file, new copy) */
+    /**
+     * main → renderer: the folder's items changed (new file, new copy), or
+     * with `items`, only those items' facts (their EXIF or sidecar read in).
+     */
     changed: 'library:changed',
     /** The items of any source: a folder, a collection, a keyword, the duplicates. */
     openSource: 'library:open-source',

@@ -100,7 +100,8 @@ interface LibraryState {
   chooseFolder(): Promise<void>
   refresh(): Promise<void>
   /** A folder's files changed (main says which). */
-  onChanged(folder: string): void
+  /** A folder changed: `items`, those whose facts did (patched in); without, list it again. */
+  onChanged(folder: string, items?: LibraryItem[]): void
   /** Collections, keywords or metadata changed: the sidebar reloads, a derived source re-lists. */
   onSourcesChanged(): Promise<void>
   loadSources(): Promise<void>
@@ -249,9 +250,11 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     }))
   },
 
-  onChanged(folder) {
+  onChanged(folder, items) {
     const src = get().source
     if (!src) return
+    // Facts read in (EXIF, a sidecar): those items, wherever they show.
+    if (items) return get().patchItems(items)
     const mine =
       src.kind === 'folder'
         ? src.path === folder || (src.deep === true && isUnder(folder, src.path))
