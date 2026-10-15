@@ -41,6 +41,8 @@ import type {
   WhitePoint
 } from './engine-types'
 import { addColorOp, hsvToRgb } from './addcolor'
+import { pq } from './export'
+import { REFERENCE_WHITE } from './hdrdisplay'
 import { defringeOp, lensCorrection } from './lens'
 import { compileRetouch } from './retouch'
 import { canvasToFrame, cropFitsWarp, uprightTransform } from './upright'
@@ -1609,12 +1611,8 @@ function decodeShown(v: number): number {
   return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
 }
 
-/** PQ's inverse EOTF, of cd/m² (SMPTE ST 2084). */
-function pqEncode(nits: number): number {
-  const y = Math.max(0, nits) / 10000
-  const p = Math.pow(y, 0.1593017578125)
-  return Math.pow((0.8359375 + 18.8515625 * p) / (1 + 18.6875 * p), 78.84375)
-}
+/** The master's peak on the effects' tone scale (the engine's `EFFECTS_PEAK_NITS`). */
+const EFFECTS_PEAK_NITS = 1000
 
 /**
  * A brightness as shown (a code value, 0…1, 1 is white) on the scale a
@@ -1624,7 +1622,7 @@ function pqEncode(nits: number): number {
  */
 export function effectsTone(shown: number, hdr: boolean): number {
   const y = decodeShown(Math.max(0, shown))
-  return hdr ? clamp(pqEncode(y * 203) / pqEncode(1000), 0, 1) : clamp(y, 0, 1)
+  return hdr ? clamp(pq(y * REFERENCE_WHITE) / pq(EFFECTS_PEAK_NITS), 0, 1) : clamp(y, 0, 1)
 }
 
 /** A knee from a threshold as shown, `soft` above it, on the effects' tone. */
