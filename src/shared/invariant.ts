@@ -48,7 +48,10 @@ const OP_LABEL: Partial<Record<GradeOpKind, string>> = {
   Vignette: tk('Vignette'),
   Grain: tk('Grain'),
   AddColor: tk('Add color'),
-  Defringe: tk('Defringe')
+  Defringe: tk('Defringe'),
+  Halation: tk('Halation'),
+  Bloom: tk('Bloom'),
+  Density: tk('Density')
 }
 
 /**
@@ -87,7 +90,10 @@ const OP_FIELDS: Partial<Record<GradeOpKind, string[]>> = {
   ],
   LocalContrast: ['presence.texture', 'presence.clarity'],
   Vignette: ['effects.vignette*'],
-  Grain: ['effects.grain*']
+  Grain: ['effects.grain*'],
+  Halation: ['effects.halation.'],
+  Bloom: ['effects.bloom.'],
+  Density: ['density.']
 }
 
 const PATH =

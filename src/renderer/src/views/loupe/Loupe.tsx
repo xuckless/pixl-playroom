@@ -358,6 +358,10 @@ export function Loupe(): React.JSX.Element {
         tat.current = null
         return say(t('The targeted tool moves the H, S and L tabs, not Point'))
       }
+      if (dev.hslTab === 'density') {
+        tat.current = null
+        return say(t('The targeted tool moves the H, S and L tabs, not Density'))
+      }
       const s = hsvOf(...rgb)
       if (s.saturation < 0.05) {
         tat.current = null

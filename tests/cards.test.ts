@@ -90,8 +90,8 @@ test('in a mask, a card reads the mask’s settings against neutral', () => {
 })
 
 test('in a mask, a card holds only what a mask carries', () => {
-  // A mask has no B&W mix of its own.
-  assert.deepEqual(cardFields(cardSpec('mixer'), true), [['hsl'], ['pointColors']])
+  // A mask has no B&W mix of its own; its Density is its own.
+  assert.deepEqual(cardFields(cardSpec('mixer'), true), [['hsl'], ['pointColors'], ['density']])
   // Lens and Upright are the photo's own.
   assert.deepEqual(
     CARDS.filter((c) => !c.inMask).map((c) => c.id),

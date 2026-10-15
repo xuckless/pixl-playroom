@@ -252,6 +252,59 @@ export interface EffectsSetting {
   grainAmount: number
   grainSize: number
   grainRoughness: number
+  /** 0…100: a colour grain beside the grey one, the dye clouds of a colour film. */
+  grainColour: number
+  /** Where in the tones the grain is strongest (`GRAIN_RESPONSES`). */
+  grainResponse: GrainResponseKind
+  /** A red glow around the highlights, as light bounces back through colour film. The photo's own: a mask has none. */
+  halation: HalationSetting
+  /** A diffusion filter's veil or a glow off the highlights. The photo's own: a mask has none. */
+  bloom: BloomSetting
+}
+
+/**
+ * Grain by tone: `film` strongest in the midtones (the engine's own, as
+ * grain always was), `flat` the same everywhere, `negative` strongest in
+ * the shadows, as a scanned colour negative's.
+ */
+export type GrainResponseKind = 'film' | 'flat' | 'negative'
+export const GRAIN_RESPONSES: GrainResponseKind[] = ['film', 'flat', 'negative']
+
+export interface HalationSetting {
+  /** 0…100 */
+  amount: number
+  /** 0…100: how bright a highlight must be (as shown) before it glows. */
+  threshold: number
+  /** 0…100: how far the glow spreads (`glowRadius`). */
+  size: number
+  /** 0…45 degrees: from red to amber. */
+  hue: number
+}
+
+/** `diffusion` veils the whole picture (a Pro-Mist); `glow` spreads only the highlights. */
+export type BloomStyle = 'diffusion' | 'glow'
+export const BLOOM_STYLES: BloomStyle[] = ['diffusion', 'glow']
+
+export interface BloomSetting {
+  style: BloomStyle
+  /** 0…100 */
+  amount: number
+  /** 0…100: how far it spreads (`glowRadius`). */
+  size: number
+  /** 0…100: where Glow's highlights start (as shown); Diffusion has none. */
+  threshold: number
+  /** −100…100: cool to warm; 0 is white. */
+  warmth: number
+}
+
+/**
+ * Colour made denser, not greyer, as a slide film's dyes are (engine 0.21's
+ * `Density`): `amount` −100…100 darkens saturated colour (lightens it below
+ * 0); each band's weight −100…100 says how much of it that hue takes.
+ */
+export interface DensitySetting {
+  amount: number
+  bands: Record<HslBand, number>
 }
 
 export interface CalibrationSetting {
@@ -563,6 +616,7 @@ export const SETTINGS_KEYS = [
   'logWheels',
   'curvesVs',
   'qualifiers',
+  'density',
   'detail',
   'effects',
   'calibration'
@@ -624,6 +678,8 @@ export interface Recipe {
   hsl: Record<HslBand, BandSetting>
   bwMix: Record<HslBand, number>
   pointColors: PointColorSetting[]
+  /** HSL's Density tab. */
+  density: DensitySetting
   colorGrade: ColorGradeSetting
   /** DaVinci Resolve's primaries (shared/resolve.ts): the Resolve colour tools' first card. */
   primaries: PrimariesSetting
@@ -754,6 +810,11 @@ export function defaultRecipe(isRaw: boolean): Recipe {
     hsl: zeroBands(),
     bwMix: zeroMix(),
     pointColors: [],
+    // Every band whole, so the overall amount works by itself.
+    density: {
+      amount: 0,
+      bands: Object.fromEntries(HSL_BANDS.map((b) => [b, 100])) as Record<HslBand, number>
+    },
     colorGrade: {
       shadows: zeroWheel(),
       midtones: zeroWheel(),
@@ -791,7 +852,11 @@ export function defaultRecipe(isRaw: boolean): Recipe {
       wash: { ...NO_ADD },
       grainAmount: 0,
       grainSize: 25,
-      grainRoughness: 50
+      grainRoughness: 50,
+      grainColour: 0,
+      grainResponse: 'film',
+      halation: { amount: 0, threshold: 80, size: 50, hue: 12 },
+      bloom: { style: 'diffusion', amount: 0, size: 65, threshold: 75, warmth: 0 }
     },
     calibration: {
       shadowsTint: 0,
@@ -941,8 +1006,13 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     .filter((p): p is PointColorSetting => p !== null)
     .slice(0, MAX_POINT_COLORS)
   r.presence.smoothing = num(r.presence.smoothing, 100, 0, 100)
-  for (const l of r.layers)
+  r.effects = normaliseEffects(r.effects)
+  r.density = normaliseDensity(r.density)
+  for (const l of r.layers) {
     l.settings.presence.smoothing = num(l.settings.presence.smoothing, 100, 0, 100)
+    l.settings.effects = normaliseEffects(l.settings.effects)
+    l.settings.density = normaliseDensity(l.settings.density)
+  }
   // An edit made before Smoothing keeps its look: none, in the photo and its
   // masks. An untouched photo takes the new default (it has nothing to smooth).
   if (saved < 4 && isEdited(r, isRaw)) {
@@ -961,6 +1031,44 @@ function normaliseCalibration(c: CalibrationSetting): CalibrationSetting {
   return Object.fromEntries(
     Object.entries(c).map(([k, v]) => [k, num(v, 0, -100, 100)])
   ) as unknown as CalibrationSetting
+}
+
+/**
+ * Engine 0.21's film effects held to their sliders (an edit from before
+ * them has their defaults, from `fill`): the grain's colour and response,
+ * halation and bloom.
+ */
+function normaliseEffects(e: EffectsSetting): EffectsSetting {
+  const h = e.halation
+  const b = e.bloom
+  return {
+    ...e,
+    grainColour: num(e.grainColour, 0, 0, 100),
+    grainResponse: GRAIN_RESPONSES.includes(e.grainResponse) ? e.grainResponse : 'film',
+    halation: {
+      amount: num(h.amount, 0, 0, 100),
+      threshold: num(h.threshold, 80, 0, 100),
+      size: num(h.size, 50, 0, 100),
+      hue: num(h.hue, 12, 0, 45)
+    },
+    bloom: {
+      style: BLOOM_STYLES.includes(b.style) ? b.style : 'diffusion',
+      amount: num(b.amount, 0, 0, 100),
+      size: num(b.size, 65, 0, 100),
+      threshold: num(b.threshold, 75, 0, 100),
+      warmth: num(b.warmth, 0, -100, 100)
+    }
+  }
+}
+
+function normaliseDensity(d: DensitySetting): DensitySetting {
+  return {
+    amount: num(d.amount, 0, -100, 100),
+    bands: Object.fromEntries(HSL_BANDS.map((b) => [b, num(d.bands[b], 100, -100, 100)])) as Record<
+      HslBand,
+      number
+    >
+  }
 }
 
 const BLEND_MODES: BlendMode[] = [
@@ -1307,6 +1415,7 @@ export function applyGroups(to: Recipe, from: Recipe, groups: Iterable<RecipeGro
         r.hsl = f.hsl
         r.bwMix = f.bwMix
         r.pointColors = f.pointColors
+        r.density = f.density
         break
       case 'colorGrade':
         r.colorGrade = f.colorGrade
@@ -1465,7 +1574,7 @@ function groupValues(r: Recipe, g: RecipeGroup): unknown[] {
     case 'toneCurve':
       return [r.toneCurve, r.curvesVs]
     case 'hsl':
-      return [r.hsl, r.bwMix, r.pointColors]
+      return [r.hsl, r.bwMix, r.pointColors, r.density]
     case 'colorGrade':
       return [r.colorGrade]
     case 'primaries':

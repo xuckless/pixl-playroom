@@ -141,6 +141,9 @@ export const FIELD_LABELS: Record<string, string> = {
   'detail.noiseLuminance': tk('Noise reduction'),
   'effects.vignetteAmount': tk('Vignette'),
   'effects.grainAmount': tk('Grain'),
+  'effects.halation.amount': tk('Halation'),
+  'effects.bloom.amount': tk('Bloom'),
+  'density.amount': tk('Density'),
   profileAmount: tk('Amount'),
   'geometry.straighten': tk('Straighten'),
   'geometry.crop': tk('Crop')
