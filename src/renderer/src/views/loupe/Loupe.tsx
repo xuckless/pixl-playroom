@@ -59,7 +59,7 @@ import { DecodedImage } from './DecodedImage'
 import { Guides } from './Guides'
 import { LassoEditor, PolygonLayer } from './LassoTool'
 import { ObjectsTool } from './ObjectsTool'
-import { LoupeHud } from './LoupeHud'
+import { LoupeHud, ProofHud } from './LoupeHud'
 import { FirstLook } from './FirstLook'
 import { GradientTools } from './GradientTools'
 import { LookPick } from './LookPick'
@@ -71,6 +71,7 @@ import { useSize } from './useSize'
 import { loupeZoom, setLoupeElement, setPointer, setViewport, spaceHeld } from './zoom'
 import { Ambient } from '../../fx'
 import { t, tk } from '../../lib/i18n'
+import { surroundColour } from '../../../../shared/proof'
 
 /** How long the loupe must keep a size before the renderer is asked for that many pixels. */
 const EDGE_SETTLE_MS = 250
@@ -179,6 +180,14 @@ export function Loupe(): React.JSX.Element {
   const hdrShown = useHdrShown()
   const gamut = useDevelop((s) => s.gamut)
   const gamutPlane = useDevelop((s) => s.gamutPlane)
+  // Soft proofing: the surround (paper, grey or black) and Screen | Proof's screen side.
+  const proofing = useDevelop((s) => s.proof)
+  const screenPic = useDevelop((s) => s.screen)
+  const surround = surroundColour(
+    useUi((s) => s.proofSurround),
+    useDevelop((s) => s.proofPaper),
+    useUi((s) => s.proof.simulate)
+  )
   const zoom = useDevelop((s) => s.zoom)
   const layerId = useDevelop((s) => s.layerId)
   const loading = useDevelop((s) => s.loading)
@@ -615,10 +624,14 @@ export function Loupe(): React.JSX.Element {
       ? `rotate(${geometry.straighten}deg)`
       : undefined
   const scale = viewport && zoom.scale !== 'fit' ? scaleOf(viewport, zoom) : null
+  // Split's other side: the before, or (Screen | Proof) the picture unproofed.
+  const other = compare === 'proof' ? screenPic : compare === 'split' ? before : null
+  const tags = compare === 'proof' ? [t('Screen|proof'), t('Proof')] : [t('Before'), t('After')]
   return (
     <div
       ref={boxRef}
-      className={`loupe tool-${tool}${scale ? ' zoomed' : ''}`}
+      className={`loupe tool-${tool}${scale ? ' zoomed' : ''}${proofing ? ' proofing' : ''}`}
+      style={proofing ? ({ '--proof-surround': surround } as React.CSSProperties) : undefined}
       onContextMenu={loupeContextMenu}
       onPointerDownCapture={(e) => {
         if (spaceHeld()) startPan(e)
@@ -678,12 +691,12 @@ export function Loupe(): React.JSX.Element {
             {scale && g && picture && compare === 'off' && (
               <SharpTile rect={vrect} box={size} g={g} scale={scale} previewWidth={picture.width} />
             )}
-            {compare === 'split' && before && (
+            {other && (
               <div
                 className="split-before"
                 style={{ clipPath: `inset(0 ${(1 - split) * 100}% 0 0)` }}
               >
-                <DecodedImage src={before.url} />
+                <DecodedImage src={other.url} />
               </div>
             )}
             <MaskOverlay g={g ?? null} w={vrect.w} h={vrect.h} />
@@ -704,10 +717,10 @@ export function Loupe(): React.JSX.Element {
             )}
           </div>
         )}
-        {compare === 'split' && vrect && (
+        {(compare === 'split' || compare === 'proof') && vrect && (
           <>
             <span className="split-tag" style={{ left: vrect.x + 14, top: vrect.y + 14 }}>
-              Before
+              {tags[0]}
             </span>
             <span
               className="split-tag"
@@ -717,11 +730,11 @@ export function Loupe(): React.JSX.Element {
                 transform: 'translateX(-100%)'
               }}
             >
-              After
+              {tags[1]}
             </span>
           </>
         )}
-        {compare === 'split' && vrect && (
+        {(compare === 'split' || compare === 'proof') && vrect && (
           <div
             className="split-handle"
             style={{ left: vrect.x + vrect.w * split, top: vrect.y, height: vrect.h }}
@@ -760,6 +773,7 @@ export function Loupe(): React.JSX.Element {
       </div>
       <FirstLook />
       <LoupeHud scale={scale} />
+      <ProofHud />
       <RebuildPrompt />
     </div>
   )

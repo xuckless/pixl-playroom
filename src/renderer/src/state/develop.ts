@@ -7,11 +7,14 @@ import type { ImageStats, MaskMode, NoiseEstimate } from '../../../shared/engine
 import type {
   DevelopSession,
   HistoryLog,
+  ProofCheck,
+  ProofIssue,
   RenderEvent,
   RenderReport,
   Snapshot,
   ViewState
 } from '../../../shared/ipc'
+import { checkedProof, profileName, proofKey, type ProofSettings } from '../../../shared/proof'
 import { amendLog, appendToLog, canRedo, replay } from '../../../shared/history'
 import { normaliseRecipe, sameValue, type HslBand, type Recipe } from '../../../shared/recipe'
 import { FIT, maskPlacementKey, type ZoomView } from '../../../shared/view'
@@ -65,7 +68,8 @@ export type Tool =
   | 'tat'
   /** A smart look's run asks the user to point at an object (views/loupe/LookPick.tsx). */
   | 'look-pick'
-export type Compare = 'off' | 'before' | 'split'
+/** `proof`: Screen | Proof, the settled picture unproofed beside its proof (soft proofing). */
+export type Compare = 'off' | 'before' | 'split' | 'proof'
 
 /**
  * The tools that work on the whole frame rather than the framed picture:
@@ -174,6 +178,20 @@ interface DevelopState {
   gamut: boolean
   /** The engine's gamut warning plane for the view on screen. */
   gamutPlane: RenderEvent | null
+  /**
+   * Soft proofing (S): the settled picture, the before and the 1:1 tiles as
+   * the proof (`useUi.proof`) makes them. Off for each photo opened, but a
+   * proof copy, which opens proofed.
+   */
+  proof: boolean
+  /** The proof setup's popover is open (⌥S, the Proof button's chevron). */
+  proofSetup: boolean
+  /** Why proofing turned itself off (its profile not found, or refused). */
+  proofIssue: ProofIssue | null
+  /** The paper's white (0…255 Display P3) of the proof in force, for the surround while simulating. */
+  proofPaper: [number, number, number] | null
+  /** The settled picture unproofed: Screen | Proof's other side. */
+  screen: RenderEvent | null
   /** How the loupe looks at the picture: fitted, or zoomed about a point. */
   zoom: ZoomView
   hslFocus: HslBand | null
@@ -233,6 +251,19 @@ interface DevelopState {
   setCompare(c: Compare): void
   setClipping(on: boolean): void
   setGamut(on: boolean): void
+  /**
+   * Proofing on or off. Turned on, its settings are tried on the engine
+   * first: a profile not found or refused leaves it off, and says why.
+   */
+  setProof(on: boolean): Promise<void>
+  /**
+   * New proof settings (the setup), tried on the engine first: used (and
+   * proofing turned on) when it takes them; the issue back when it does not,
+   * the settings in force kept. `opening`: a proof copy's own, as it opens
+   * (shown unproofed when the engine will not take them).
+   */
+  applyProof(s: ProofSettings, opening?: boolean): Promise<ProofIssue | null>
+  setProofSetup(open: boolean): void
   setZoom(z: ZoomView): void
   setHslFocus(b: HslBand | null): void
   setHslTab(tab: DevelopState['hslTab']): void
@@ -406,6 +437,11 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   headroomPlane: null,
   gamut: false,
   gamutPlane: null,
+  proof: false,
+  proofSetup: false,
+  proofIssue: null,
+  proofPaper: null,
+  screen: null,
   zoom: FIT,
   hslFocus: null,
   hslTab: 'all',
@@ -464,6 +500,11 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       hdrStats: null,
       headroomPlane: null,
       gamutPlane: null,
+      // Each photo opens unproofed (a proof copy proofed, below).
+      proof: false,
+      proofIssue: null,
+      screen: null,
+      ...(get().compare === 'proof' ? { compare: 'off' as const } : {}),
       report: null,
       noise: null,
       layerId: null,
@@ -507,7 +548,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
         comparing: null,
         loading: false
       })
-      get().pushView()
+      // A proof copy brings its proof: it opens proofed with it.
+      if (session.proof) void get().applyProof(session.proof, true)
+      else get().pushView()
       warmNeighbours(key)
     } catch (err) {
       if (stale()) return
@@ -535,7 +578,9 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       before: null,
       mask: null,
       keyMask: null,
-      keyView: false
+      keyView: false,
+      proof: false,
+      screen: null
     })
   },
 
@@ -718,7 +763,10 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   },
 
   setCompare(compare) {
+    const was = get().compare
     set({ compare })
+    // Screen | Proof asks main for the unproofed picture beside the proof.
+    if ((was === 'proof') !== (compare === 'proof')) get().pushView()
   },
 
   setClipping(clipping) {
@@ -733,6 +781,56 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   setGamut(gamut) {
     set({ gamut, gamutPlane: gamut ? get().gamutPlane : null })
     get().pushView()
+  },
+
+  async setProof(on) {
+    if (!on) {
+      set({ proof: false, ...(get().compare === 'proof' ? { compare: 'off' as const } : {}) })
+      return get().pushView()
+    }
+    const issue = await get().applyProof(useUi.getState().proof)
+    if (issue) set({ proofIssue: issue })
+  },
+
+  async applyProof(settings, opening = false) {
+    const session = get().session
+    if (!session) return null
+    const check = await api.develop
+      .proofCheck(session.key, settings)
+      .catch((err: unknown): ProofCheck => ({
+        ok: false,
+        issue: {
+          kind: 'unusable',
+          key: proofKey(settings),
+          name: profileName(settings.profile),
+          why: errorText(err)
+        }
+      }))
+    // Another photo opened meanwhile: it starts unproofed.
+    if (get().session?.key !== session.key) return null
+    const checked = checkedProof(check, opening)
+    if (!checked.use) {
+      // A proof copy whose profile is gone or refused: shown unproofed, saying why.
+      if (checked.show) {
+        set({ proofIssue: checked.issue })
+        get().pushView()
+      }
+      return checked.issue
+    }
+    useUi.getState().setProofSettings(settings)
+    set({
+      proof: true,
+      proofIssue: null,
+      proofPaper: checked.paper,
+      // A CMYK or grey profile: engine 0.21 warns against it, with no preview.
+      ...(checked.gamut ? { gamut: true } : {})
+    })
+    get().pushView()
+    return null
+  },
+
+  setProofSetup(proofSetup) {
+    set({ proofSetup })
   },
 
   async reopen() {
@@ -804,6 +902,8 @@ export const useDevelop = create<DevelopState>((set, get) => ({
     if (!session) return
     // The key view asks for the selected qualifier's layer instead of a mask's.
     const keyLayer = keyView && qualifierId ? qualifierLayerId(qualifierId) : null
+    // Proofing shows an SDR picture: paper has no light above white.
+    const proof = get().proof ? useUi.getState().proof : null
     const view: ViewState = {
       cropMode: wholeFrameTool(tool),
       guides: tool === 'upright-guide',
@@ -819,19 +919,22 @@ export const useDevelop = create<DevelopState>((set, get) => ({
       // engine knows exactly what the key selects in the graded picture.
       maskLive: rangeSelected(get()) || keyLayer !== null,
       // Every photo whose editing space has light above white: a RAW or an HDR one.
-      headroom: get().headroom && aboveWhite(session),
+      headroom: get().headroom && aboveWhite(session) && !proof,
       // Full HDR for those too; an SDR photo (a gain-map one edited in SDR
       // among them) shows its SDR picture, which has nothing above white.
-      display: aboveWhite(session)
-        ? renderDisplay(useUi.getState().fullHdr, useDisplay.getState().display)
-        : null,
+      display:
+        aboveWhite(session) && !proof
+          ? renderDisplay(useUi.getState().fullHdr, useDisplay.getState().display)
+          : null,
       targetEdge,
       // Settled SDR pictures in float once the window is known to draw F16
       // frames (asked once; the view goes again when the answer comes).
       float: floatCanvasKnown() === true,
       // The engine measures the gamut warning on an SDR picture only: main
       // renders none while Full HDR shows the photo.
-      gamut: get().gamut
+      gamut: get().gamut,
+      proof,
+      proofScreen: proof !== null && get().compare === 'proof'
     }
     if (floatCanvasKnown() === null) void floatCanvasReady().then((ok) => ok && get().pushView())
     set({ rendering: true })
@@ -841,8 +944,21 @@ export const useDevelop = create<DevelopState>((set, get) => ({
   onRendered(e) {
     const { session } = get()
     if (!session || e.key !== session.key) return
+    // Proofing asked for and refused (its profile gone, the engine refusing
+    // it): off, saying why, never another profile in its place.
+    const issue = e.proofIssue
+    if (issue && get().proof && issue.key === proofKey(useUi.getState().proof)) {
+      set({
+        proof: false,
+        proofIssue: issue,
+        ...(get().compare === 'proof' ? { compare: 'off' as const } : {})
+      })
+      get().pushView()
+    }
     if (e.kind === 'before') set({ before: e })
-    else if (e.kind === 'headroom') {
+    else if (e.kind === 'screen') {
+      if (Boolean(e.cropMode) === wholeFrameTool(get().tool)) set({ screen: e })
+    } else if (e.kind === 'headroom') {
       if (get().headroom && Boolean(e.cropMode) === wholeFrameTool(get().tool))
         set({ headroomPlane: e })
     } else if (e.kind === 'gamut') {

@@ -11,6 +11,7 @@ import { cycleExpanded, type ExpandedScope } from '../../../shared/scopes'
 import { useLibrary } from '../state/library'
 import { useUi } from '../state/ui'
 import { ScopeOptions, ScopeView } from './scopes/ScopeView'
+import { ProofTag } from './Scopes'
 import { SCOPE_LABEL } from './scopes/labels'
 
 function Place({ index }: { index: number }): React.JSX.Element {
@@ -32,6 +33,7 @@ function Place({ index }: { index: number }): React.JSX.Element {
         <button className="icon sm" aria-label={t('Next scope')} onClick={() => step(1)}>
           <Icon name="chevronRight" />
         </button>
+        <ProofTag />
         <span className="spacer" />
         <ScopeOptions kind={kind} />
       </div>

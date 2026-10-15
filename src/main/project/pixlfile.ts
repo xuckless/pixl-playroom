@@ -33,6 +33,7 @@ import { basename, dirname, isAbsolute, win32 } from 'path'
 import type { ColorLabel, Flag, Snapshot } from '../../shared/ipc'
 import { dcpIdOf, parseRawColour, readProfile } from '../../shared/rawcolour'
 import { readNames } from '../../shared/naming'
+import { normaliseProof, type ProofSettings } from '../../shared/proof'
 import { hydrateRecipe, normaliseRecipe, slimRecipe, type Recipe } from '../../shared/recipe'
 import { HISTORY_SCHEMA, HistoryTable, type HistoryRow } from '../historytable'
 import { isBlobHash, isPlainExt, isSafeId } from '../../shared/ids'
@@ -119,6 +120,22 @@ export interface Origin {
   path: string
   isRaw: boolean
   sha1: string | null
+}
+
+/** The `proofs` meta: proof copies' proofs by copy id, each read as settings (shared/proof.ts). */
+export function proofsOf(json: string | null): Record<string, ProofSettings> {
+  if (!json) return {}
+  try {
+    const o = JSON.parse(json) as Record<string, unknown>
+    if (typeof o !== 'object' || o === null || Array.isArray(o)) return {}
+    return Object.fromEntries(
+      Object.entries(o)
+        .filter(([id, v]) => isSafeId(id) && typeof v === 'object' && v !== null)
+        .map(([id, v]) => [id, normaliseProof(v)])
+    )
+  } catch {
+    return {}
+  }
 }
 
 /**
@@ -665,6 +682,7 @@ export class PixlFile {
     })
     const photo = rows.find((r) => r.item_id === PHOTO)
     const stack = this.meta('stack')
+    const proofs = proofsOf(this.meta('proofs') ?? null)
     return {
       app: 'pixl-playroom',
       version: 1,
@@ -675,7 +693,12 @@ export class PixlFile {
       // Playroom made (a crafted project) is left out (shared/ids.ts).
       copies: rows
         .filter((r) => r.item_id !== PHOTO && isSafeId(r.item_id))
-        .map((r) => ({ ...itemOf(r), id: r.item_id, name: r.name })),
+        .map((r) => ({
+          ...itemOf(r),
+          id: r.item_id,
+          name: r.name,
+          ...(proofs[r.item_id] ? { proof: proofs[r.item_id] } : {})
+        })),
       stack: stack ? (JSON.parse(stack) as SidecarStack) : null,
       rawColour: parseRawColour(this.meta('rawColour')),
       rawColourChosen: this.meta('rawColourChosen') === '1',
@@ -758,6 +781,9 @@ export class PixlFile {
         this.history.remove(item_id)
       }
       this.setMeta('stack', s.stack ? JSON.stringify(s.stack) : null)
+      // Proof copies' proofs, by copy (the items' table predates them).
+      const proofs = Object.fromEntries(s.copies.flatMap((c) => (c.proof ? [[c.id, c.proof]] : [])))
+      this.setMeta('proofs', Object.keys(proofs).length > 0 ? JSON.stringify(proofs) : null)
       this.setMeta('rawColour', s.rawColour ?? null)
       this.setMeta('rawColourChosen', s.rawColour && s.rawColourChosen ? '1' : null)
       this.setMeta(

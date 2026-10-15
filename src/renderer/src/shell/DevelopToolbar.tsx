@@ -1,4 +1,6 @@
+import { Fragment } from 'react'
 import { canRedo } from '../../../shared/history'
+import { ProofButton } from './ProofSetup'
 import { LiquidGlass } from '../components/glass/LiquidGlass'
 import { Icon } from '../components/icons'
 import { api, errorText } from '../lib/api'
@@ -9,8 +11,11 @@ import { useUi } from '../state/ui'
 import { aboveWhite, canShowHdr, useDisplay, useHdrShown } from '../state/display'
 import { SPACE_NAME } from '../../../shared/gamutwarning'
 import { useKeyHint, withKey, withChord } from '../lib/commands'
-import { t } from '../lib/i18n'
+import { t, tk } from '../lib/i18n'
 import { HoverHint, type Hint } from '../components/HoverHint'
+
+/** Why Full HDR and Headroom are greyed while proofing. */
+const OFF_WHILE_PROOFING = tk('Off while proofing: paper has no light above white.')
 
 /** Whether the open photo has light above white (state/display `aboveWhite`), and if not why. */
 function useAboveWhite(): { above: boolean; why: string } {
@@ -37,7 +42,9 @@ function FullHdrToggle(): React.JSX.Element {
   const set = useUi((s) => s.setFullHdr)
   const display = useDisplay((s) => s.display)
   const { above, why } = useAboveWhite()
-  const able = canShowHdr(display)
+  // Off while proofing (the setting itself is kept, and back when proofing ends).
+  const proofing = useDevelop((s) => s.proof)
+  const able = canShowHdr(display) && !proofing
   const lit = on && able
   return (
     <HoverHint
@@ -46,13 +53,15 @@ function FullHdrToggle(): React.JSX.Element {
         what: t(
           'Shows the photo with its highlights brighter than white, as far as this screen can go. It changes only how the photo looks here: never the edit, never the export.'
         ),
-        now: !able
-          ? t('This screen shows SDR. Full HDR needs an HDR screen (Settings → Display).')
-          : !above
-            ? why
-            : lit
-              ? t('On: click to show the photo in SDR.')
-              : t('Off: click to show the light above white.')
+        now: proofing
+          ? t(OFF_WHILE_PROOFING)
+          : !able
+            ? t('This screen shows SDR. Full HDR needs an HDR screen (Settings → Display).')
+            : !above
+              ? why
+              : lit
+                ? t('On: click to show the photo in SDR.')
+                : t('Off: click to show the light above white.')
       }}
     >
       <button
@@ -78,6 +87,8 @@ export function DevelopToolbar(): React.JSX.Element {
   const gamut = useDevelop((s) => s.gamut)
   const setGamut = useDevelop((s) => s.setGamut)
   const gamutTo = useDevelop((s) => s.gamutPlane?.gamutTo)
+  const gamutProof = useDevelop((s) => s.gamutPlane?.gamutProof)
+  const proofing = useDevelop((s) => s.proof)
   const hdrShown = useHdrShown()
   const zoomed = useDevelop((s) => s.zoom.scale !== 'fit')
   const undo = useDevelop((s) => s.undo)
@@ -133,7 +144,8 @@ export function DevelopToolbar(): React.JSX.Element {
         keys: k('view.clipping'),
         what: t(
           'Marks detail that is lost: warm where highlights blow out to pure white, cool where shadows crush to pure black.'
-        )
+        ),
+        now: proofing ? t('Measuring the proof.') : undefined
       }
     },
     {
@@ -152,23 +164,25 @@ export function DevelopToolbar(): React.JSX.Element {
           ? t(
               'Full HDR is showing this photo: the gamut warning reads its SDR picture, so turn Full HDR off to see it.'
             )
-          : gamut && gamutTo
-            ? t('Proofing against {{space}}.', { space: SPACE_NAME[gamutTo] })
-            : undefined
+          : gamut && gamutProof
+            ? t('Proofing against {{space}}.', { space: gamutProof })
+            : gamut && gamutTo
+              ? t('Proofing against {{space}}.', { space: SPACE_NAME[gamutTo] })
+              : undefined
       }
     },
     {
       label: t('Headroom'),
       k: '',
-      on: headroom && above,
-      able: above,
+      on: headroom && above && !proofing,
+      able: above && !proofing,
       toggle: () => setHeadroom(!headroom),
       hint: {
         title: t('Headroom'),
         what: t(
           'Marks the light above white that Full HDR and an HDR export keep: amber just above white, magenta at the brightest.'
         ),
-        now: above ? undefined : why
+        now: proofing ? t(OFF_WHILE_PROOFING) : above ? undefined : why
       }
     },
     {
@@ -219,17 +233,21 @@ export function DevelopToolbar(): React.JSX.Element {
       <FullHdrToggle />
       <div className="seg lg" role="group" aria-label={t('View')}>
         {views.map((v) => (
-          <HoverHint key={v.label} hint={v.hint}>
-            <button
-              className={v.on ? 'on' : ''}
-              aria-pressed={v.on}
-              aria-disabled={v.able === false}
-              onClick={() => v.able !== false && v.toggle()}
-            >
-              {v.label}
-              {v.k && <span className="k">{v.k}</span>}
-            </button>
-          </HoverHint>
+          <Fragment key={v.label}>
+            {/* Soft proofing beside the overlays, before the zoom. */}
+            {v.label === '1:1' && <ProofButton />}
+            <HoverHint hint={v.hint}>
+              <button
+                className={v.on ? 'on' : ''}
+                aria-pressed={v.on}
+                aria-disabled={v.able === false}
+                onClick={() => v.able !== false && v.toggle()}
+              >
+                {v.label}
+                {v.k && <span className="k">{v.k}</span>}
+              </button>
+            </HoverHint>
+          </Fragment>
         ))}
       </div>
       <span className="spacer" />

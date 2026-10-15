@@ -177,6 +177,18 @@ function makeCopy(): Item {
   )
 }
 
+/** A proof copy of the open photo (Develop), or of each photo selected (Library). */
+function proofCopies(): Item {
+  if (inDevelop()) return cmd('proof.copy', t('Make Proof Copy'))
+  const n = lib().targets().length
+  return cmd(
+    'library.proofCopies',
+    n > 1
+      ? tp('Make {{count}} Proof Copy…', 'Make {{count}} Proof Copies…', n)
+      : t('Make Proof Copy…')
+  )
+}
+
 function stackMenu(): Item {
   return {
     label: t('Stacking'),
@@ -236,7 +248,7 @@ function revealItems(): Item[] {
 function compareItems(): Item[] {
   const d = dev()
   const display = useDisplay.getState().display
-  const hdrShown = ui().fullHdr && canShowHdr(display) && aboveWhite(d.session)
+  const hdrShown = ui().fullHdr && canShowHdr(display) && aboveWhite(d.session) && !d.proof
   return [
     cmd('view.before', t('Before'), { checked: d.compare === 'before' }),
     cmd('view.split', t('Before / After Split'), { checked: d.compare === 'split' }),
@@ -246,9 +258,13 @@ function compareItems(): Item[] {
       checked: d.gamut && !hdrShown,
       enabled: available('view.gamut') && !hdrShown
     }),
+    cmd('view.proof', t('Soft Proofing'), { checked: d.proof }),
+    cmd('view.proofSplit', t('Screen / Proof Split'), { checked: d.compare === 'proof' }),
+    cmd('view.proofSetup', t('Proof Setup…')),
+    // Off while proofing: paper has no light above white.
     act('view.fullHdr', t('Full HDR'), () => ui().setFullHdr(!ui().fullHdr), {
-      checked: ui().fullHdr && canShowHdr(display),
-      enabled: !modal() && canShowHdr(display)
+      checked: ui().fullHdr && canShowHdr(display) && !d.proof,
+      enabled: !modal() && canShowHdr(display) && !d.proof
     })
   ]
 }
@@ -371,6 +387,7 @@ function photoMenu(): Item[] {
     labelMenu(),
     sep,
     makeCopy(),
+    proofCopies(),
     stackMenu(),
     collectionMenu(),
     sep,
@@ -581,6 +598,7 @@ export function photoContextMenu(e: ReactMouseEvent, key: string): void {
       : []),
     sep,
     makeCopy(),
+    ...(developing ? [] : [proofCopies()]),
     ...(developing
       ? []
       : [

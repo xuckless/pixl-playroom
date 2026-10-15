@@ -11,6 +11,7 @@ import { useDevelop } from '../../state/develop'
 import { useLibrary } from '../../state/library'
 import { useUi } from '../../state/ui'
 import { renderDisplay, useDisplay } from '../../state/display'
+import { proofKey } from '../../../../shared/proof'
 
 /** How long the view and the recipe must rest before a tile is asked for. */
 const SETTLE_MS = 180
@@ -74,12 +75,15 @@ export const SharpTile = memo(function SharpTile({
     []
   )
   // Full HDR on or off, or another display: the tile is made again for it.
-  const hdr = JSON.stringify(
-    renderDisplay(
-      useUi((s) => s.fullHdr),
-      useDisplay((s) => s.display)
-    )
+  // So is a proof turned on or set up otherwise (a tile is proofed too, and
+  // never in HDR: paper has no light above white).
+  const proofing = useDevelop((s) => s.proof)
+  const proof = useUi((s) => (proofing ? proofKey(s.proof) : ''))
+  const shownOn = renderDisplay(
+    useUi((s) => s.fullHdr),
+    useDisplay((s) => s.display)
   )
+  const hdr = JSON.stringify([proofing ? null : shownOn, proof])
   const request = useRef(0)
   /** The ask in flight or shown, by what it is of: the same again is not asked (it would cancel it). */
   const asked = useRef<string | null>(null)
@@ -178,7 +182,9 @@ export const SharpTile = memo(function SharpTile({
     // A drag's tile while the drag runs; else the tile of the recipe as it is.
     (tile.recipe !== recipe && !(tile.live && isInteracting())) ||
     tile.whole !== (g.whole === true) ||
-    tile.hdr !== hdr
+    tile.hdr !== hdr ||
+    // Never the screen's pixels over a proof.
+    (tile.proof ?? '') !== proof
   )
     return null
   const place = (t: Tile): React.CSSProperties => ({

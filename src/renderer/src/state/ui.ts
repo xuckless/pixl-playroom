@@ -10,6 +10,17 @@ import { aiDenoiseModel, type AiDenoiseModel } from '../../../shared/recipe'
 import { isCardId, isPanelId, panelOf, type PanelId } from '../../../shared/cards'
 import { migrateUi } from './uiMigrate'
 import { DEFAULT_SCOPES, normaliseScopes, type ScopePrefs } from '../../../shared/scopes'
+import {
+  DEFAULT_PROOF,
+  normaliseProfile,
+  normaliseProof,
+  PROOF_SURROUNDS,
+  pushRecent,
+  RECENT_PROOFS,
+  type ProofProfile,
+  type ProofSettings,
+  type ProofSurround
+} from '../../../shared/proof'
 import { tk } from '../lib/i18n'
 import type { Bindings, Chord } from '../lib/keys'
 import { createJSONStorage, persist } from 'zustand/middleware'
@@ -225,6 +236,19 @@ interface UiState {
   /** The Library suggests rejects (dimmed, with the reason on hover): Pass 115. */
   cullSuggest: boolean
   setCullSuggest(on: boolean): void
+  /**
+   * Soft proofing's setup (shared/proof.ts): the profile, intent, black
+   * point and paper simulation, remembered for every photo (a proof copy
+   * opens with its own). Whether a photo is proofed is not kept: each opens
+   * unproofed.
+   */
+  proof: ProofSettings
+  setProofSettings(s: ProofSettings): void
+  /** The proof profiles chosen last, newest first (the picker's Recent). */
+  proofRecent: ProofProfile[]
+  /** What surrounds a proof in the loupe. */
+  proofSurround: ProofSurround
+  setProofSurround(s: ProofSurround): void
   setMasksWin(p: Partial<MasksWindow>): void
   /** AI denoise's model and strength for the next step (Detail → AI). */
   denoise: { model: AiDenoiseModel; strength: number }
@@ -355,6 +379,12 @@ export const useUi = create<UiState>()(
       setAlwaysFlat: (alwaysFlat) => set({ alwaysFlat }),
       cullSuggest: true,
       setCullSuggest: (cullSuggest) => set({ cullSuggest }),
+      proof: DEFAULT_PROOF,
+      setProofSettings: (proof) =>
+        set((s) => ({ proof, proofRecent: pushRecent(s.proofRecent, proof.profile) })),
+      proofRecent: [],
+      proofSurround: 'paper',
+      setProofSurround: (proofSurround) => set({ proofSurround }),
       setHeal: (p) => set((s) => ({ heal: { ...s.heal, ...p } })),
       enhance: DEFAULT_ENHANCE,
       setEnhance: (p) => set((s) => ({ enhance: { ...s.enhance, ...p } })),
@@ -430,6 +460,16 @@ export const useUi = create<UiState>()(
             model: p.denoise ? aiDenoiseModel(p.denoise.model) : 'drunet-color'
           },
           keyBindings: p.keyBindings && typeof p.keyBindings === 'object' ? p.keyBindings : {},
+          proof: normaliseProof(p.proof),
+          proofRecent: Array.isArray(p.proofRecent)
+            ? p.proofRecent
+                .map(normaliseProfile)
+                .filter((x): x is ProofProfile => x !== null)
+                .slice(0, RECENT_PROOFS)
+            : [],
+          proofSurround: PROOF_SURROUNDS.some((x) => x.value === p.proofSurround)
+            ? p.proofSurround!
+            : 'paper',
           cardsOpen:
             p.cardsOpen && typeof p.cardsOpen === 'object' ? p.cardsOpen : current.cardsOpen,
           focusCard: savedPanel(p.focusCard) ?? current.focusCard,

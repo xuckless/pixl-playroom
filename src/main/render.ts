@@ -98,6 +98,9 @@ import {
   type LookThumbEvent,
   type MasterEvent,
   type PixlDemosaicState,
+  type ProofCheck,
+  type ProofIssue,
+  type ProofShown,
   type RegionRequest,
   type RegionResult,
   type RenderEvent,
@@ -109,7 +112,23 @@ import {
 import { engineBins, engineScopeSpec, type ScopeBins } from '../shared/scopes'
 import { gamutCoverage, type GamutCoverage } from '../shared/scopemetrics'
 import { softProofTarget } from '../shared/gamutwarning'
-import { COVERAGE_SIZE, coverageRequest, gamutWarningRequest } from './proofing'
+import {
+  checkRequests,
+  COVERAGE_SIZE,
+  coverageRequest,
+  gamutOnFile,
+  gamutWarningRequest,
+  paperPng,
+  probePng,
+  proofSteps,
+  resolveProof,
+  toFile,
+  toneMapped,
+  type GamutTarget,
+  type ProofPlan,
+  type ProofTarget
+} from './proofing'
+import { isBuiltin, proofKey, type ProofSettings } from '../shared/proof'
 import { beforeRecipe, hash32, normaliseRecipe, sameValue, type Recipe } from '../shared/recipe'
 import { LookThumbQueue, type LookThumb, type ThumbJob } from './lookthumbs'
 import type { Vec3 } from '../shared/wb'
@@ -154,7 +173,7 @@ import {
 } from '../shared/gpudrag'
 import { keyOf, parseKey } from './keys'
 import type { Library, Picture } from './library'
-import { CICP_DISPLAY_P3, encodeGreyPng, encodePng8, grey8, pngToFloats } from './pngio'
+import { CICP_DISPLAY_P3, decodePng, encodeGreyPng, encodePng8, grey8, pngToFloats } from './pngio'
 import { pixels } from './workers/pool'
 import { traceRegion } from './trace'
 import { cacheUrl } from './protocol'
@@ -404,6 +423,29 @@ function named(compiled: Pick<Compiled, 'grade' | 'layerIndex'>): (err: unknown)
   }
 }
 
+/** What a picture says the proof it shows is. */
+function shownProof(p: Extract<ProofTarget, { ok: true }>): ProofShown {
+  return { key: p.key, name: p.name, ...(p.warnOnly ? { warnOnly: true } : {}) }
+}
+
+/** What a picture says of its proof: the proof shown (or a CMYK one warned against), or why none is. */
+function proofFields(
+  proof: ProofTarget | null,
+  made: boolean,
+  issue: ProofIssue | undefined
+): Pick<RenderEvent, 'proof' | 'proofIssue'> {
+  return {
+    proof: proof?.ok && (made || proof.warnOnly) ? shownProof(proof) : undefined,
+    proofIssue: issue
+  }
+}
+
+/** The engine (Little CMS) refused the proof's profile: building its transform, or the profile itself. */
+function proofRefused(err: unknown): boolean {
+  if (!(err instanceof EngineError) || err.cancelled) return false
+  return err.code === 'Color' || /^color/.test(err.field ?? '')
+}
+
 /**
  * What the histogram, the hue chart and auto tone read, measured by the
  * engine on the pixels it hands the encoder: `analyze`'s numbers without
@@ -592,7 +634,10 @@ class Session {
   /** An earlier session's picture files: nothing names them now. */
   private async clearEarlier(): Promise<void> {
     for (const name of await readdir(this.dir).catch(() => [] as string[])) {
-      if (/^(view|mask|headroom|gamut|look)-/.test(name) && !name.includes(`-${this.tag}-`))
+      if (
+        /^(view|mask|headroom|gamut|look|proofmid|unproofed)-/.test(name) &&
+        !name.includes(`-${this.tag}-`)
+      )
         await rm(join(this.dir, name), { force: true }).catch(() => undefined)
     }
   }
@@ -1307,6 +1352,8 @@ class Session {
         if (this.view.before) await beside('before', () => this.renderBefore(signal))
         if (this.view.headroom) await beside('headroom', () => this.renderHeadroom(signal))
         if (this.view.gamut) await beside('gamut', () => this.renderGamut(signal))
+        if (this.view.proof && this.view.proofScreen)
+          await beside('unproofed', () => this.renderUnproofed(signal))
         if (this.view.maskThumbs) await beside('mask thumbs', () => this.renderMaskThumbs(signal))
       }
     } catch (err) {
@@ -1541,10 +1588,16 @@ class Session {
       kind !== 'draft',
       display !== null
     )
+    // Soft proofing: the settled picture is the proof itself (never shown
+    // unproofed first); a drag's frames stay the screen's.
+    const proof = kind === 'full' ? await this.proofTarget() : null
+    const plan = proof?.ok && !proof.warnOnly ? proof.plan : null
     const seq = ++this.seq
     // A whole picture of this recipe (framed, no corners left empty): what
-    // the library's thumbnail can be shrunk from. A preview is never that.
-    const whole = kind === 'full' && !cropMode && !preview && !framingTransparent(compiled.framing)
+    // the library's thumbnail can be shrunk from. A preview is never that,
+    // nor a proof.
+    const whole =
+      kind === 'full' && !cropMode && !preview && !plan && !framingTransparent(compiled.framing)
     const sig = String(
       hash32(
         gradeKey([
@@ -1552,6 +1605,7 @@ class Session {
           cropMode,
           display,
           this.floatSdr(kind, display),
+          plan && proof?.ok ? proof.key : null,
           compiled.grade,
           compiled.framing,
           compiled.lens,
@@ -1579,7 +1633,10 @@ class Session {
           ? this.lastCompanion
           : { path: this.lastFull, width: last.width, height: last.height }
       if (whole && shown) this.fullPicture = { recipe, picture: shown }
-      if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, seq, rev })
+      // What it says of the proof is said as things stand now (a profile
+      // gone since, a CMYK profile's warning, which leaves the pixels alone).
+      const now = proofFields(proof, plan !== null, proof && !proof.ok ? proof.issue : undefined)
+      if (!this.closed) this.owner.send(IPC.develop.rendered, { ...last, ...now, seq, rev })
       return
     }
     // A warp shown whole (the crop tool) keeps its empty corners: PNG with alpha.
@@ -1611,74 +1668,83 @@ class Session {
         ? heldKey(src.path, compiled.framing)
         : null
     const planes = await this.planesFor(compiled, src)
+    const request = (beside: { probe: MaskProbe } | null): ConvertRequest => ({
+      ...blankRequest(src.path, out, src.input),
+      ...(frame ? { sink: 'Bytes' as const } : {}),
+      pixel: {
+        depth: (display || floatSdr) && frame ? 'F32' : 'Eight',
+        channels: alpha || frame ? 4 : 3
+      },
+      encode: frame
+        ? { Pixels: { sample: display || floatSdr ? 'F16' : 'U8' } }
+        : avif
+          ? SETTLED_AVIF
+          : alpha
+            ? { Png: { compression: 'Fast', filter: 'Sub' } }
+            : {
+                // A settled picture is a few MB less as 4:2:0, which a screen
+                // shows the same; the draft keeps full chroma at its lower quality.
+                Jpeg: {
+                  quality: kind === 'draft' ? 92 : 95,
+                  subsampling: kind === 'draft' ? 'None' : 'Quarter',
+                  optimize: false
+                }
+              },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      color: display
+        ? masterFor(display, undefined, kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE)
+        : floatSdr
+          ? LINEAR_P3
+          : displayPolicy(this.info, 'DisplayP3'),
+      // The master reads a gain map itself, and refuses the field.
+      ...(display ? { gain_map: null } : {}),
+      grade: compiled.grade,
+      framing: compiled.framing,
+      lens: compiled.lens,
+      retouch: compiled.retouch,
+      threads: interactiveThreads(),
+      // A warp shown whole counts its empty corners (as black) rather than
+      // risk measuring nothing when little of the picture is left.
+      measure: measureOf(kind === 'draft' ? 2 : 1),
+      ...(beside ? { inspect: { Beside: { mask: beside.probe, depth: 'Eight' as const } } } : {})
+    })
+    const opts = (native: NativeRefs | undefined) => ({
+      signal,
+      frame,
+      ...(floatSdr || native
+        ? { native: { ...native, ...(floatSdr ? { sdrCompanion: COMPANION_EDGE } : {}) } }
+        : {})
+    })
+    // A profile the engine refuses as it is used: the picture as the screen
+    // shows it, and the window told why (never another profile in its place).
+    let proofIssue = proof && !proof.ok ? proof.issue : undefined
+    // A proof carries no mask beside it: `renderMask` draws the overlay after.
+    if (plan && proof?.ok) besideProbe = null
+    const proofed =
+      plan && proof?.ok
+        ? await this.withPlanes(planes, (native) => this.proofed(request(null), plan, opts(native)))
+            .catch((err: unknown) => {
+              if (!proofRefused(err)) throw err
+              proofIssue = this.refuseProof(proof, err as EngineError)
+              return null
+            })
+            .catch(named(compiled))
+        : null
     const picture = (beside: { probe: MaskProbe } | null): Promise<ConvertReport> =>
-      this.withPlanes(planes, (native) =>
-        this.convertHeld(
-          {
-            ...blankRequest(src.path, out, src.input),
-            ...(frame ? { sink: 'Bytes' as const } : {}),
-            pixel: {
-              depth: (display || floatSdr) && frame ? 'F32' : 'Eight',
-              channels: alpha || frame ? 4 : 3
-            },
-            encode: frame
-              ? { Pixels: { sample: display || floatSdr ? 'F16' : 'U8' } }
-              : avif
-                ? SETTLED_AVIF
-                : alpha
-                  ? { Png: { compression: 'Fast', filter: 'Sub' } }
-                  : {
-                      // A settled picture is a few MB less as 4:2:0, which a screen
-                      // shows the same; the draft keeps full chroma at its lower quality.
-                      Jpeg: {
-                        quality: kind === 'draft' ? 92 : 95,
-                        subsampling: kind === 'draft' ? 'None' : 'Quarter',
-                        optimize: false
-                      }
-                    },
-            metadata: { exif: false, icc: true, xmp: false, iptc: false },
-            color: display
-              ? masterFor(
-                  display,
-                  undefined,
-                  kind === 'draft' ? DRAFT_COMPANION_EDGE : COMPANION_EDGE
-                )
-              : floatSdr
-                ? LINEAR_P3
-                : displayPolicy(this.info, 'DisplayP3'),
-            // The master reads a gain map itself, and refuses the field.
-            ...(display ? { gain_map: null } : {}),
-            grade: compiled.grade,
-            framing: compiled.framing,
-            lens: compiled.lens,
-            retouch: compiled.retouch,
-            threads: interactiveThreads(),
-            // A warp shown whole counts its empty corners (as black) rather than
-            // risk measuring nothing when little of the picture is left.
-            measure: measureOf(kind === 'draft' ? 2 : 1),
-            ...(beside ? { inspect: { Beside: { mask: beside.probe, depth: 'Eight' } } } : {})
-          },
-          {
-            signal,
-            frame,
-            ...(floatSdr || native
-              ? { native: { ...native, ...(floatSdr ? { sdrCompanion: COMPANION_EDGE } : {}) } }
-              : {})
-          },
-          keyHeld
-        )
-      )
+      this.withPlanes(planes, (native) => this.convertHeld(request(beside), opts(native), keyHeld))
     // The overlay's plane refused (the inspection, not the picture): the
     // picture renders on its own, and `renderMask` draws the plane after it.
-    const report = await picture(besideProbe)
-      .catch((err) => {
-        if (!besideProbe || !(err instanceof EngineError) || !err.field?.startsWith('inspect'))
-          throw err
-        log.warn('the mask beside the picture was refused', err.field, err.message)
-        besideProbe = null
-        return picture(null)
-      })
-      .catch(named(compiled))
+    const report =
+      proofed ??
+      (await picture(besideProbe)
+        .catch((err) => {
+          if (!besideProbe || !(err instanceof EngineError) || !err.field?.startsWith('inspect'))
+            throw err
+          log.warn('the mask beside the picture was refused', err.field, err.message)
+          besideProbe = null
+          return picture(null)
+        })
+        .catch(named(compiled)))
     // The engine had no way to the window (it was reloading): main passes the frame on.
     if (frame && report.output)
       this.owner.send(IPC.develop.previewFrame, {
@@ -1746,6 +1812,7 @@ class Session {
       ...(display && report.color.master?.display
         ? { ceiling: report.color.master.display.headroom }
         : {}),
+      ...proofFields(proof, proofed !== null, proofIssue),
       report: reportOf(
         report,
         Math.round(performance.now() - t0),
@@ -2379,8 +2446,10 @@ class Session {
    * The gamut warning (E22, soft proofing's first part): beside a settled SDR
    * picture, the engine's plane of how far (ΔE2000, `GAMUT_SCALE` at full
    * scale) each pixel's colour lies from what the export's colour space
-   * makes of it. The engine measures it only on an SDR render: none while
-   * Full HDR shows the photo (the toolbar says why).
+   * makes of it, or (proofing) the proof's profile, by its intent. The
+   * engine measures it only on an SDR render: none while Full HDR shows the
+   * photo (the toolbar says why). An HDR source's SDR picture is a tone map,
+   * which it measures none through: that picture is made first, as a file.
    */
   private async renderGamut(signal: AbortSignal): Promise<void> {
     if (this.view.display) return
@@ -2389,14 +2458,18 @@ class Session {
     const compiled = await this.compileFor(this.recipe, src, !cropMode, false, true, false)
     // A plane has one channel, so a warp's transparent corners cannot be said.
     if (framingTransparent(compiled.framing)) return
-    const last = await this.owner.library.index.getSetting('export.last').catch(() => null)
-    const target = softProofTarget(last)
+    const proof = await this.proofTarget()
+    const exported = proof?.ok
+      ? null
+      : softProofTarget(await this.owner.library.index.getSetting('export.last').catch(() => null))
+    const target: GamutTarget = proof?.ok ? proof.plan : (exported as GamutTarget)
     const sig = String(
       hash32(
         gradeKey([
           src.path,
           cropMode,
-          target,
+          // A profile's bytes go by their key, not hashed again each settle.
+          proof?.ok ? proof.key : exported,
           compiled.grade,
           compiled.framing,
           compiled.lens,
@@ -2410,11 +2483,20 @@ class Session {
       return
     }
     const out = this.nextFile('gamut', 'png')
-    const r = await this.owner.engine
-      .convert(gamutWarningRequest(src, out, this.info, compiled, target, interactiveThreads()), {
-        signal
-      })
-      .catch(named(compiled))
+    const threads = interactiveThreads()
+    const plane = gamutWarningRequest(src, out, this.info, compiled, target, threads)
+    let r: ConvertReport
+    if (toneMapped(plane)) {
+      const mid = this.midFile()
+      try {
+        await this.owner.engine
+          .convert(toFile({ ...plane, inspect: null }, mid, plane.color), { signal })
+          .catch(named(compiled))
+        r = await this.owner.engine.convert(gamutOnFile(mid, out, target, threads), { signal })
+      } finally {
+        void rm(mid, { force: true }).catch(() => undefined)
+      }
+    } else r = await this.owner.engine.convert(plane, { signal }).catch(named(compiled))
     if (this.closed) return
     this.gamutSig = sig
     this.lastGamut = {
@@ -2425,9 +2507,180 @@ class Session {
       url: cacheUrl(out, `${Date.now()}`),
       width: r.width,
       height: r.height,
-      gamutTo: target.to
+      ...(exported ? { gamutTo: exported.to } : {}),
+      ...(proof?.ok ? { gamutProof: proof.name } : {})
     }
     this.owner.send(IPC.develop.rendered, this.lastGamut)
+  }
+
+  // ── soft proofing (shared/proof.ts, main/proofing.ts) ──
+
+  /** The proof the view asks for, resolved once for its settings (a file's bytes read once). */
+  private proofMemo: { key: string; target: Promise<ProofTarget> } | null = null
+  /** Proofs the engine refused this session, by key: not asked for again. */
+  private proofRefusals = new Map<string, ProofIssue>()
+
+  /**
+   * The proof the view asks for, or null: none asked, or Full HDR showing
+   * the photo (the window asks for none then: paper has no light above white).
+   */
+  private async proofTarget(): Promise<ProofTarget | null> {
+    const s = this.view.proof
+    if (!s || this.view.display) return null
+    const key = proofKey(s)
+    const refused = this.proofRefusals.get(key)
+    if (refused) return { ok: false, issue: refused }
+    if (this.proofMemo?.key !== key) this.proofMemo = { key, target: resolveProof(s) }
+    const target = await this.proofMemo.target
+    // A profile not found is looked for again next time (its volume mounted since).
+    if (!target.ok && this.proofMemo?.key === key) this.proofMemo = null
+    return target
+  }
+
+  private refuseProof(p: Extract<ProofTarget, { ok: true }>, err: EngineError): ProofIssue {
+    const issue: ProofIssue = { kind: 'unusable', key: p.key, name: p.name, why: err.message }
+    this.proofRefusals.set(p.key, issue)
+    log.warn('proof profile refused', p.name, err.code, err.message)
+    return issue
+  }
+
+  /** A file between a proof's steps, dropped once the step after it has read it. */
+  private midFile(): string {
+    return join(this.dir, `proofmid-${this.tag}-${++this.fileSeq}.tiff`)
+  }
+
+  /**
+   * A picture's request made as a soft proof (`proofSteps`). Held refines
+   * go with the grade (the first step), the frame and its companion with
+   * the picture (the last); the report is the picture's, with what the
+   * grade said (its layers, region, frame and held refines).
+   */
+  private async proofed(
+    req: ConvertRequest,
+    plan: ProofPlan,
+    opts: { signal: AbortSignal; frame?: string; native?: NativeRefs }
+  ): Promise<ConvertReport> {
+    const mids: [string, string] = [this.midFile(), this.midFile()]
+    const { sdrCompanion, ...gradeRefs } = opts.native ?? {}
+    const { signal } = opts
+    try {
+      const steps = proofSteps(req, plan, mids)
+      const graded = await this.owner.engine.convert(steps[0], {
+        signal,
+        ...(Object.keys(gradeRefs).length > 0 ? { native: gradeRefs } : {})
+      })
+      for (const step of steps.slice(1, -1)) await this.owner.engine.convert(step, { signal })
+      const shown = await this.owner.engine.convert(steps[steps.length - 1], {
+        signal,
+        ...(opts.frame ? { frame: opts.frame } : {}),
+        ...(sdrCompanion !== undefined ? { native: { sdrCompanion } } : {})
+      })
+      return {
+        ...shown,
+        color: { ...shown.color, graded: graded.color.graded },
+        frame_width: graded.frame_width,
+        frame_height: graded.frame_height,
+        framing: graded.framing,
+        lens: graded.lens,
+        region: graded.region,
+        raw: graded.raw,
+        held: graded.held
+      }
+    } finally {
+      for (const m of mids) void rm(m, { force: true }).catch(() => undefined)
+    }
+  }
+
+  /** The settled picture unproofed, beside a proof (Screen | Proof), and what it was made of. */
+  private unproofedSig = ''
+  private lastUnproofed: RenderEvent | null = null
+
+  private async renderUnproofed(signal: AbortSignal): Promise<void> {
+    if (this.view.display) return
+    const src = this.source('full')
+    const cropMode = this.view.cropMode
+    const compiled = await this.compileFor(this.recipe, src, !cropMode, false, true, false)
+    const alpha = framingTransparent(compiled.framing)
+    const sig = String(
+      hash32(
+        gradeKey([
+          src.path,
+          cropMode,
+          compiled.grade,
+          compiled.framing,
+          compiled.lens,
+          compiled.retouch
+        ])
+      )
+    )
+    if (sig === this.unproofedSig && this.lastUnproofed) {
+      this.lastUnproofed = { ...this.lastUnproofed, seq: this.seq }
+      if (!this.closed) this.owner.send(IPC.develop.rendered, this.lastUnproofed)
+      return
+    }
+    const out = this.nextFile('unproofed', alpha ? 'png' : 'jpg')
+    const r = await this.owner.engine
+      .convert(
+        {
+          ...blankRequest(src.path, out, src.input),
+          pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
+          encode: alpha
+            ? { Png: { compression: 'Fast', filter: 'Sub' } }
+            : { Jpeg: { quality: 95, subsampling: 'Quarter', optimize: false } },
+          metadata: { exif: false, icc: true, xmp: false, iptc: false },
+          color: displayPolicy(this.info, 'DisplayP3'),
+          grade: compiled.grade,
+          framing: compiled.framing,
+          lens: compiled.lens,
+          retouch: compiled.retouch,
+          threads: interactiveThreads()
+        },
+        { signal }
+      )
+      .catch(named(compiled))
+    if (this.closed) return
+    this.unproofedSig = sig
+    this.lastUnproofed = {
+      key: this.key,
+      seq: this.seq,
+      kind: 'screen',
+      cropMode,
+      url: cacheUrl(out, `${Date.now()}`),
+      width: r.width,
+      height: r.height
+    }
+    this.owner.send(IPC.develop.rendered, this.lastUnproofed)
+  }
+
+  /**
+   * A proof's settings tried on the engine before the window uses them
+   * (`checkRequests`): the profile found and read, Little CMS's transforms
+   * built, and the paper's white as Simulate paper and ink shows it. Any
+   * refusal is said, in the engine's words, as an unusable profile.
+   */
+  async proofCheck(s: ProofSettings): Promise<ProofCheck> {
+    const target = await resolveProof(s)
+    if (!target.ok) return target
+    if (isBuiltin(s.profile)) return { ok: true, warnOnly: false, paper: null }
+    const icc = (target.plan.to as { Icc: number[] }).Icc
+    const stem = join(this.dir, `proofmid-${this.tag}-check-${++this.fileSeq}`)
+    const [png, mid, out] = [`${stem}.png`, `${stem}.tiff`, `${stem}-out.png`]
+    try {
+      await writeFile(png, target.warnOnly ? probePng() : paperPng(icc))
+      for (const r of checkRequests(target, png, mid, out)) await this.owner.engine.convert(r)
+      if (target.warnOnly) return { ok: true, warnOnly: true, paper: null }
+      const px = decodePng(await readFile(out)).rows
+      return { ok: true, warnOnly: false, paper: [px[0], px[1], px[2]] }
+    } catch (err) {
+      if (!(err instanceof EngineError)) throw err
+      log.info('proof profile refused on check', target.name, err.code, err.message)
+      return {
+        ok: false,
+        issue: { kind: 'unusable', key: target.key, name: target.name, why: err.message }
+      }
+    } finally {
+      for (const f of [png, mid, out]) void rm(f, { force: true }).catch(() => undefined)
+    }
   }
 
   // ── the settled picture's exact scopes and gamut coverage (E76) ──
@@ -2900,6 +3153,9 @@ class Session {
     // curve carried past 1 into a Display P3 picture is refused).
     if (alpha && display !== null)
       compiled = await this.compileFor(before, src, !this.view.cropMode, false, true, false)
+    // Proofing: the before drawn through the proof too (\ keeps its meaning).
+    const proof = await this.proofTarget()
+    const plan = proof?.ok && !proof.warnOnly ? proof.plan : null
     // Keyed on what the engine is asked for, not on the raw geometry: a
     // straighten in the crop tool changes the recipe but not this picture.
     const key = JSON.stringify([
@@ -2909,6 +3165,7 @@ class Session {
       src.path,
       this.view.cropMode,
       display,
+      plan && proof?.ok ? proof.key : null,
       // A Version compared with grades otherwise than the photo's defaults.
       this.compareRecipe ? compiled.grade : null
     ])
@@ -2916,28 +3173,25 @@ class Session {
     const hdr = display && !alpha ? hdrFile(display) : null
     const ext = hdr ? 'avif' : alpha ? 'png' : 'jpg'
     const out = join(this.dir, `before-${hash32(key).toString(16)}.${ext}`)
-    const report = await this.owner.engine
-      .convert(
-        {
-          ...blankRequest(src.path, out, src.input),
-          pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
-          encode: hdr
-            ? hdr.encode
-            : alpha
-              ? { Png: { compression: 'Fast', filter: 'Sub' } }
-              : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
-          metadata: { exif: false, icc: true, xmp: false, iptc: false },
-          color: hdr ? hdr.color : displayPolicy(this.info, 'DisplayP3'),
-          ...(hdr ? { gain_map: null } : {}),
-          grade: compiled.grade,
-          framing: compiled.framing,
-          lens: compiled.lens,
-          retouch: compiled.retouch,
-          measure: measureOf(1)
-        },
-        { signal }
-      )
-      .catch(named(compiled))
+    const convert = (r: ConvertRequest): Promise<ConvertReport> =>
+      plan ? this.proofed(r, plan, { signal }) : this.owner.engine.convert(r, { signal })
+    const report = await convert({
+      ...blankRequest(src.path, out, src.input),
+      pixel: { depth: 'Eight', channels: alpha ? 4 : 3 },
+      encode: hdr
+        ? hdr.encode
+        : alpha
+          ? { Png: { compression: 'Fast', filter: 'Sub' } }
+          : { Jpeg: { quality: 95, subsampling: 'None', optimize: false } },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      color: hdr ? hdr.color : displayPolicy(this.info, 'DisplayP3'),
+      ...(hdr ? { gain_map: null } : {}),
+      grade: compiled.grade,
+      framing: compiled.framing,
+      lens: compiled.lens,
+      retouch: compiled.retouch,
+      measure: measureOf(1)
+    }).catch(named(compiled))
     const stats = statsOf(report)
     this.beforeKey = key
     if (this.closed) return
@@ -2949,7 +3203,8 @@ class Session {
       url: cacheUrl(out, hash32(key)),
       width: report.width,
       height: report.height,
-      stats
+      stats,
+      ...(plan && proof?.ok ? { proof: shownProof(proof) } : {})
     } satisfies RenderEvent)
   }
 
@@ -3184,13 +3439,16 @@ class Session {
       ...(floatSdr ? { sdrCompanion: TILE_COMPANION_EDGE } : {}),
       ...(hold ? { keepHeld: this.refineSlot.id } : held ? { held: this.refineSlot.id } : {})
     }
+    // Proofing: the tile is the proof's too, so 1:1 never shows the screen's
+    // pixels over a proof (an engine refusal of the profile leaves it unproofed).
+    const proof = hdr ? null : await this.proofTarget()
+    const plan = proof?.ok && !proof.warnOnly ? proof.plan : null
     const convert = async (r: ConvertRequest): Promise<ConvertReport> => {
       try {
-        const made = await this.owner.engine.convert(r, {
-          signal,
-          frame,
-          ...(Object.keys(native).length > 0 ? { native } : {})
-        })
+        const opts = { signal, frame, ...(Object.keys(native).length > 0 ? { native } : {}) }
+        const made = plan
+          ? await this.proofed(r, plan, opts)
+          : await this.owner.engine.convert(r, opts)
         if (hold) this.refineSlot.kept(made, tileKey)
         return made
       } catch (err) {
@@ -3299,7 +3557,9 @@ class Session {
       y: y / framed.height,
       width: w / framed.width,
       height: h / framed.height,
-      ms: Math.round(performance.now() - t0)
+      ms: Math.round(performance.now() - t0),
+      // As the proof shows it (a CMYK one, warned against, shows the screen's pixels).
+      ...(proof?.ok ? { proof: proof.key } : {})
     }
   }
 
@@ -4052,8 +4312,14 @@ export class DevelopSessions {
       snapshots,
       seed: seedOf(row),
       developMark: mark,
-      rebuild: rebuildReasons(session.recipe, row.is_raw === 1, today, mark)
+      rebuild: rebuildReasons(session.recipe, row.is_raw === 1, today, mark),
+      proof: data.proof ?? null
     }
+  }
+
+  /** A proof's settings tried on the engine (`Session.proofCheck`), on the open photo's session. */
+  proofCheck(key: string, s: ProofSettings): Promise<ProofCheck> {
+    return this.get(key).proofCheck(s)
   }
 
   close(key: string): Promise<void> {

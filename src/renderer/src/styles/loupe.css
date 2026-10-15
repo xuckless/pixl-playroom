@@ -5,6 +5,12 @@
   background: #000;
   min-height: 0;
 }
+/* soft proofing: the photo surrounded as a print is seen (paper, grey or
+   black, set on the loupe itself: no theme's) */
+.loupe.proofing {
+  background: var(--proof-surround);
+  transition: background-color 0.3s ease;
+}
 .loupe.empty {
   display: flex;
   align-items: center;
@@ -191,6 +197,28 @@
   .pixl-chip.developing .pixl-dot {
     animation: none;
   }
+}
+/* the soft proof: what it is, on its way, or why it went off (Locate… is pressable) */
+.proof-chip.dim {
+  color: var(--muted);
+}
+.proof-chip.off {
+  color: var(--warn);
+}
+.hud .proof-chip button {
+  pointer-events: auto;
+  font-size: 11px;
+}
+/* its own badge, at the corner the render status leaves free */
+.proof-status {
+  right: 14px;
+  bottom: 14px;
+  max-width: calc(50% - 100px);
+}
+.proof-status .proof-chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .loupe-status {
   left: 14px;

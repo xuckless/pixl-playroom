@@ -12,6 +12,7 @@
 import { legacyBits } from '../../shared/rebuild'
 import { withVersion } from '../../shared/versions'
 import { tk } from '../../shared/i18n'
+import { normaliseProof, type ProofSettings } from '../../shared/proof'
 import { exportLocationFromLast, LOCATION_SETTING } from '../../shared/locations'
 import { createHash } from 'crypto'
 import { homedir } from 'os'
@@ -78,6 +79,7 @@ import {
   sidecarPath,
   writeSidecar,
   type Sidecar,
+  type SidecarCopy,
   type SidecarItem,
   type SidecarStack
 } from '../sidecar'
@@ -157,6 +159,23 @@ export interface OpenData {
   recipe: Recipe
   item: LibraryItem
   snapshots: Snapshot[]
+  /** A proof copy's proof: it opens proofed. */
+  proof: ProofSettings | null
+}
+
+/** How a virtual copy is made: its name (or a numbered template) and, for a proof copy, its proof. */
+export interface CopyOptions {
+  name?: string
+  /** "Copy {{n}}", translated by main (this process speaks no language). */
+  template?: string
+  proof?: ProofSettings
+}
+
+/** A new copy's name: as given, else the template (or "Copy {{n}}") numbered `n`. */
+export function copyName(opts: CopyOptions, n: number): string {
+  const name = opts.name?.trim()
+  if (name) return name.slice(0, 200)
+  return (opts.template || 'Copy {{n}}').replace('{{n}}', String(n))
 }
 
 export interface IndexOptions {
@@ -2129,7 +2148,8 @@ export class IndexService {
       row: this.withOriginal(row),
       recipe: it?.recipe ?? defaultRecipe(row.is_raw === 1),
       item,
-      snapshots: it?.snapshots ?? []
+      snapshots: it?.snapshots ?? [],
+      proof: it && 'proof' in it ? ((it as SidecarCopy).proof ?? null) : null
     }
   }
 
@@ -2245,8 +2265,13 @@ export class IndexService {
     return this.itemsFor(keys)
   }
 
-  /** A virtual copy of `key` with its saved recipe. Returns the new copy's item. */
-  createCopy(key: string): LibraryItem {
+  /**
+   * A virtual copy of `key` with its saved recipe. Returns the new copy's
+   * item. Named `name`, else `template` ("Copy {{n}}" in the language main
+   * speaks) numbered after the copies there are; a proof copy carries its
+   * proof (shared/proof.ts), which nothing but opening it reads.
+   */
+  createCopy(key: string, opts: CopyOptions = {}): LibraryItem {
     const { photoId } = parseKey(key)
     const id = newId()
     const source = this.recipe(key)
@@ -2255,12 +2280,13 @@ export class IndexService {
       (s) => {
         s.copies.push({
           id,
-          name: `Copy ${s.copies.length + 1}`,
+          name: copyName(opts, s.copies.length + 1),
           rating: 0,
           flag: null,
           label: null,
           recipe: structuredClone(source),
-          snapshots: []
+          snapshots: [],
+          ...(opts.proof ? { proof: normaliseProof(opts.proof) } : {})
         })
       },
       () => true

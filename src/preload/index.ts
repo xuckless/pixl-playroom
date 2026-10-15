@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import type { NoiseEstimate, PreviewFrame, Transform } from '../shared/engine-types'
 import type { ScopeBins } from '../shared/scopes'
 import type { GamutCoverage } from '../shared/scopemetrics'
+import type { FoundProfile, ProofSettings } from '../shared/proof'
 import type { GuideLine } from '../shared/upright'
 import type { P as SpotPoint, RetouchSpot, SpotRefine } from '../shared/retouch'
 import type { PixelStep } from '../shared/pixels'
@@ -55,6 +56,8 @@ import {
   type Preset,
   type ExportPreview,
   type Prefs,
+  type ProofBrowsed,
+  type ProofCheck,
   type RegionRequest,
   type ScopesRequest,
   type RegionResult,
@@ -193,7 +196,9 @@ const api = {
     forgetFolder: (folder: string) => call<void>(IPC.library.forgetFolder, folder),
     setMeta: (keys: string[], patch: MetaPatch) =>
       call<(LibraryItem | undefined)[]>(IPC.library.setMeta, keys, patch),
-    createCopy: (key: string) => call<LibraryItem>(IPC.library.createCopy, key),
+    /** A virtual copy (a proof copy named and carrying its proof). */
+    createCopy: (key: string, opts?: { name?: string; proof?: ProofSettings }) =>
+      call<LibraryItem>(IPC.library.createCopy, key, opts),
     deleteCopy: (key: string) => call<void>(IPC.library.deleteCopy, key),
     /** `sourceKey` is the photo the recipe came from, so a white balance can change units. */
     applyRecipe: (keys: string[], recipe: Recipe, groups: RecipeGroup[], sourceKey?: string) =>
@@ -258,6 +263,11 @@ const api = {
     autoTone: (key: string) => call<BasicSetting>(IPC.develop.autoTone, key),
     scopes: (req: ScopesRequest) => call<ScopeBins | null>(IPC.develop.scopes, req),
     gamutCoverage: (key: string) => call<GamutCoverage | null>(IPC.develop.gamutCoverage, key),
+    /** `named`: profiles' paths to list wherever they are (Recent's, the proof in force). */
+    proofProfiles: (named: string[] = []) => call<FoundProfile[]>(IPC.develop.proofProfiles, named),
+    proofBrowse: () => call<ProofBrowsed | null>(IPC.develop.proofBrowse),
+    proofCheck: (key: string, settings: ProofSettings) =>
+      call<ProofCheck>(IPC.develop.proofCheck, key, settings),
     autoWb: (key: string) => call<SampleResult['wb']>(IPC.develop.autoWb, key),
     noise: (key: string) => call<NoiseEstimate | null>(IPC.develop.noise, key),
     measureCa: (key: string) => call<CaMeasurement>(IPC.develop.measureCa, key),

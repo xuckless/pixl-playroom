@@ -31,6 +31,7 @@ import {
   type MetaPatch,
   type MetaTextPatch,
   type Preset,
+  type ProofBrowsed,
   type RegionRequest,
   type ScopesRequest,
   type Prefs,
@@ -109,6 +110,9 @@ import { gate, gateRefuses } from './gate'
 import { openTopMenu, popupMenu, setMenuSpec, topMenus } from './menu'
 import { languageState, setLanguage } from './i18n'
 import { isLanguageSetting, t, type LanguageSetting, tk } from '../shared/i18n'
+import { normaliseProof } from '../shared/proof'
+import { chooseProfile, proofProfiles, readProfile } from './iccprofiles'
+import type { CopyOptions } from './indexer/service'
 import type { MenuBarSpec, MenuNode } from '../shared/appmenu'
 import { accountStatus, cancelSignIn, signIn, signOut } from './account'
 import { AccountError } from './account/api'
@@ -441,9 +445,14 @@ export function registerIpc(s: Services): void {
   handle(IPC.library.forgetFolder, (folder: string) => s.index.forgetFolder(folder))
   handle(IPC.library.subfolders, (folder: string) => s.index.subfolders(folder))
   handle(IPC.library.setMeta, (keys: string[], patch: MetaPatch) => s.index.setMeta(keys, patch))
-  handle(IPC.library.createCopy, async (key: string) => {
+  handle(IPC.library.createCopy, async (key: string, opts?: CopyOptions) => {
     await s.sessions.flush(key)
-    const item = await s.index.createCopy(key)
+    // Named in the language main speaks (the index's process speaks none).
+    const item = await s.index.createCopy(key, {
+      ...(typeof opts?.name === 'string' ? { name: opts.name } : {}),
+      ...(opts?.proof ? { proof: opts.proof } : {}),
+      template: t('Copy {{n}}')
+    })
     s.library.queueThumb(item.photoId, item.copyId)
     return item
   })
@@ -725,6 +734,32 @@ export function registerIpc(s: Services): void {
   handle(IPC.develop.autoTone, (key: string) => s.sessions.autoTone(key))
   handle(IPC.develop.scopes, (req: ScopesRequest) => s.sessions.scopes(req))
   handle(IPC.develop.gamutCoverage, (key: string) => s.sessions.gamutCoverage(key))
+  // Soft proofing: the profiles found (scanned again as the setup opens), one
+  // chosen from a file, and settings tried on the engine before they are used.
+  handle(IPC.develop.proofProfiles, (named: unknown) =>
+    proofProfiles(
+      Array.isArray(named)
+        ? named.filter((p): p is string => typeof p === 'string').slice(0, 16)
+        : []
+    )
+  )
+  handle(IPC.develop.proofBrowse, async (): Promise<ProofBrowsed | null> => {
+    const w = win()
+    const opts = {
+      title: t('Choose an ICC profile'),
+      properties: ['openFile'] as 'openFile'[],
+      filters: [{ name: t('ICC profile'), extensions: ['icc', 'icm'] }]
+    }
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    if (r.canceled || !r.filePaths[0]) return null
+    const read = await readProfile(r.filePaths[0])
+    if (!('found' in read)) return { error: read.error }
+    chooseProfile(read.found.path)
+    return { profile: read.found }
+  })
+  handle(IPC.develop.proofCheck, (key: string, settings: unknown) =>
+    s.sessions.proofCheck(key, normaliseProof(settings))
+  )
   handle(IPC.develop.autoWb, (key: string) => s.sessions.autoWb(key))
   handle(IPC.develop.noise, (key: string) => s.sessions.noise(key))
   handle(IPC.develop.putPlane, (png: string) => {

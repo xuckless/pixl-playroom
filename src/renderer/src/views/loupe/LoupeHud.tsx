@@ -8,6 +8,15 @@ import { stepLabel } from '../../lib/stepLabel'
 import { duration } from '../modelCopy'
 import { useMastering, usePixlDemosaic } from './mastering'
 import type { PixlDemosaicState } from '../../../../shared/ipc'
+import {
+  intentShort,
+  profileName,
+  proofChip,
+  proofKey,
+  type ProofChip as ProofChipState
+} from '../../../../shared/proof'
+import { useUi } from '../../state/ui'
+import { issueText, locateProfile } from '../../lib/proofing'
 
 const PIXL_HINT: Record<PixlDemosaicState, string> = {
   developing: tk('PIXL demosaic: developing this RAW at full size'),
@@ -26,6 +35,65 @@ function PixlChip({ state }: { state: PixlDemosaicState }): React.JSX.Element {
       <i className="pixl-dot" aria-hidden />
       {t('PIXL demosaic')}
     </span>
+  )
+}
+
+/**
+ * The soft proof, said: what it is (profile, intent, paper and ink), that
+ * it is on its way, that a drag shows the screen's picture until let go, or
+ * why proofing went off (with Locate… for a profile not found).
+ */
+function ProofChip({ chip }: { chip: NonNullable<ProofChipState> }): React.JSX.Element {
+  const settings = useUi((s) => s.proof)
+  const issue = useDevelop((s) => s.proofIssue)
+  const name = profileName(settings.profile)
+  if (chip === 'missing' || chip === 'unusable')
+    return (
+      <span className="hud-item proof-chip off" title={issue ? issueText(issue) : undefined}>
+        {chip === 'missing'
+          ? t('Proof off · {{name}} not found', { name: issue?.name ?? name })
+          : t('Proof off · {{name}} can’t be used', { name: issue?.name ?? name })}
+        <button type="button" className="link" onClick={() => void locateProfile()}>
+          {t('Locate…')}
+        </button>
+      </span>
+    )
+  if (chip === 'proofing') return <span className="hud-item proof-chip">{t('Proofing…')}</span>
+  if (chip === 'drag')
+    return <span className="hud-item proof-chip dim">{t('Proof when you let go')}</span>
+  if (chip === 'warn')
+    return (
+      <span className="hud-item proof-chip" title={t('Warning only: preview needs a newer engine')}>
+        {t('Gamut only · {{name}}', { name })}
+      </span>
+    )
+  return (
+    <span className="hud-item proof-chip">
+      {[
+        t('Proof'),
+        name,
+        intentShort(settings.intent),
+        ...(settings.simulate ? [t('paper and ink')] : [])
+      ].join(' · ')}
+    </span>
+  )
+}
+
+/**
+ * The soft proof's own badge, at the loupe's other corner (clear of the
+ * render status and the filmstrip's chip). Only the chip is followed, not
+ * every frame of a drag.
+ */
+export function ProofHud(): React.JSX.Element | null {
+  const want = useUi((s) => proofKey(s.proof))
+  const chip = useDevelop((s) =>
+    proofChip({ on: s.proof, issue: s.proofIssue, want, picture: s.picture })
+  )
+  if (!chip) return null
+  return (
+    <LiquidGlass className="hud proof-status" radius={2} bezel={8}>
+      <ProofChip chip={chip} />
+    </LiquidGlass>
   )
 }
 

@@ -15,6 +15,7 @@ import { dcpIdOf, parseRawColour, readProfile, type RawColour } from '../shared/
 import type { DcpProfile } from '../shared/engine-types'
 import { readNames, type PhotoNames } from '../shared/naming'
 import { isSafeId } from '../shared/ids'
+import { normaliseProof, type ProofSettings } from '../shared/proof'
 
 export const SIDECAR_SUFFIX = '.playroom.json'
 
@@ -29,6 +30,12 @@ export interface SidecarItem {
 export interface SidecarCopy extends SidecarItem {
   id: string
   name: string
+  /**
+   * A proof copy's proof (shared/proof.ts): it opens proofed with it. Added
+   * without a version bump: older builds ignore it. View setup, never part
+   * of the recipe, so Sync settings never carries it.
+   */
+  proof?: ProofSettings
 }
 
 /** The photo's place in a stack of photos from one folder (its copies go with it). */
@@ -114,7 +121,8 @@ export function readSidecar(
           .map((c) => ({
             ...item(c, isRaw),
             id: String(c.id),
-            name: String(c.name ?? 'Copy')
+            name: String(c.name ?? 'Copy'),
+            ...(c.proof ? { proof: normaliseProof(c.proof) } : {})
           }))
       : []
     return {

@@ -375,6 +375,17 @@
   flex: 0 1 auto;
   padding: 0 2px;
 }
+/* while proofing the scopes read the proof (develop/Scopes.tsx ProofTag) */
+.scope-head .proof-tag {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--acc-a55);
+  border-radius: var(--r);
+  color: var(--acc);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
 .scope-head .spacer {
   flex: 1;
 }
