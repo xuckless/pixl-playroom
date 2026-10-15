@@ -476,6 +476,41 @@ test('a refusal is the model’s or the file’s by the engine’s code and fiel
     noiseUnread(err('x', { code: 'InvalidRequest', field: 'raw.demosaic.input' })),
     false
   )
+  // Engine 0.21's words, for an error without a field (E64): the greens have no line, or a
+  // filter that is neither Bayer nor X-Trans.
+  assert.equal(
+    noiseUnread(
+      err(
+        "the frame's noise cannot be read: the green planes have too few flat tiles — state it with MosaicNoise::Stated",
+        {}
+      )
+    ),
+    true
+  )
+  assert.equal(
+    noiseUnread(
+      err(
+        'a measured noise (MosaicNoise::Measured, MeasuredFloor, MeasuredGreenFloor) reads a Bayer mosaic’s four planes or an X-Trans mosaic’s green blocks, and this sensor’s filter is `Other` — state the noise (MosaicNoise::Stated), or use a DNG’s NoiseProfile',
+        {}
+      )
+    ),
+    true
+  )
+})
+
+test('under 0.21’s MeasuredGreenFloor the frame’s noise is the greens’ line', async () => {
+  const { noiseOfPlanes } = await import('../src/shared/rawnoise')
+  // A Bayer develop's noise_planes: Gr and Gb carry the fit, R and B were told green's line.
+  const fit = { tiles: 40 }
+  const n = noiseOfPlanes([
+    { plane: 'R', k: 9e-4, sigma2: 8e-6, fit: null },
+    { plane: 'Gr', k: 3e-4, sigma2: 2e-6, fit },
+    { plane: 'Gb', k: 5e-4, sigma2: 4e-6, fit },
+    { plane: 'B', k: 9e-4, sigma2: 8e-6, fit: null }
+  ])
+  assert.ok(n)
+  assert.ok(Math.abs(n.k - 4e-4) < 1e-12)
+  assert.ok(Math.abs(n.sigma2 - 3e-6) < 1e-15)
 })
 
 test('a "no" to the processor: the develop of before, by choice, and PIXL planned around', async () => {

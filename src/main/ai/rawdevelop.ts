@@ -25,9 +25,9 @@
  * view's note, the export's receipt). A refusal that is the model's own (it
  * will not load, the provider fails) plans around it until its switch is
  * turned off and on, or Playroom starts again; one that is the frame's (its
- * noise cannot be read, E64) is that photo's alone. Which is which is read
- * from the engine's error code and field, never its words alone (the 0.20.0
- * audit's B1 and B4).
+ * noise cannot be read, E64: since 0.21.0 only when its greens have no line)
+ * is that photo's alone. Which is which is read from the engine's error
+ * code and field, never its words alone (the 0.20.0 audit's B1 and B4).
  */
 import { remember, statedNoiseFor, type NoisePlane, type Shot, type StatedNoise } from './noisebook'
 import log from 'electron-log/main'
@@ -285,12 +285,15 @@ export function modelTrouble(err: unknown): boolean {
 /**
  * The engine could not read this frame's noise (E64): the photo's own
  * trouble, not the model's. Its noise can be stated instead, and the model
- * stays planned for every other photo.
+ * stays planned for every other photo. Since 0.21.0 the roster's
+ * `MeasuredGreenFloor` refuses a Bayer frame only when its greens have no
+ * line ('the green planes have …'), and a filter that is neither Bayer nor
+ * X-Trans is told to state the noise (`MosaicNoise::Stated`).
  */
 export function noiseUnread(err: unknown): boolean {
   const { field } = codeOf(err)
   if (field) return field === 'raw.demosaic.noise.noise'
-  return /noise cannot be read|state it with MosaicNoise::Stated/i.test(
+  return /noise cannot be read|green planes have|MosaicNoise::Stated/i.test(
     String((err as Error)?.message)
   )
 }

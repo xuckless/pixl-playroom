@@ -119,13 +119,50 @@ export interface Region {
   margin: number
 }
 
+/** A grade's plane, as the inspection of the same name outputs it (0.21.0: `Beside`'s `mask`). */
+export type MaskProbe =
+  | { LayerMask: { layer: number } }
+  | { GroupMask: { layer: number; group: number } }
+  /** The n-th Qualifier op's key in the layer, a masked group's own counted in place (E77). */
+  | { QualifierKey: { layer: number; qualifier: number } }
+
+/**
+ * Output a plane instead of the picture, or (`Beside`) with it: one grey
+ * channel, 0 nothing, full scale all. The mask inspections take any colour
+ * policy since 0.21.0 (E39), keyed on the layer's input in that pipeline.
+ */
 export type Inspect =
-  /** 0.19.2: the grade's input (everything before the grade), for a GPU frame's upload. */
+  /**
+   * 0.19.2: the grade's input (everything before the grade), for a GPU
+   * frame's upload. 0.21.0 (E61): `pixel.channels` is honoured, 4 adding an
+   * opaque alpha, 3 dropping one, either expanding grey; `null` as before.
+   */
   | 'GradeInput'
   | { LayerMask: { layer: number } }
   | { GroupMask: { layer: number; group: number } }
+  /** 0.21.0 (E77): the n-th Qualifier op's key in the layer, wherever it sits. */
+  | { QualifierKey: { layer: number; qualifier: number } }
   /** Where HDR output sits above its white: `clamp(log2(Y / white) / stops, 0, 1)`. */
   | { Headroom: { stops: number } }
+  /**
+   * 0.21.0 (E22), soft proofing: `clamp(ΔE2000(pixel, to's rendition of it)
+   * / scale, 0, 1)` on the working buffer before the egress. `to` is never
+   * PQ/HLG; SDR renders only (refused with `hdr`, `Expand`, a `Master`, an
+   * HDR `ToneMap`/`Assign`).
+   */
+  | {
+      GamutWarning: {
+        to: ColorSpaceRef
+        intent: RenderingIntent
+        black_point_compensation: boolean
+        scale: number
+      }
+    }
+  /**
+   * 0.21.0 (E38): the picture as with no inspection, and `mask`'s plane in
+   * `report.beside` at `depth`. Refused on the GPU and with `Resampler::Ai`.
+   */
+  | { Beside: { mask: MaskProbe; depth: Depth } }
 
 // ── RAW ──────────────────────────────────────────────────────────────────────
 
@@ -155,11 +192,21 @@ export interface MosaicDenoise {
   model: RawDenoiserRef
   /**
    * `MeasuredFloor` (0.20): measured, with the read-noise floor taken from
-   * the frame's darkest tiles (the PIXL demosaic's roster ref states it).
+   * the frame's darkest tiles. `MeasuredGreenFloor` (0.21.0, E64; the PIXL
+   * demosaic's roster ref, 1.0.1, states it): `MeasuredFloor` read from
+   * green alone, its line told to red and blue, so a Bayer frame is refused
+   * only when its greens have no line (X-Trans: `MeasuredFloor`'s bytes).
    */
-  noise:
-    'Measured' | 'MeasuredFloor' | 'DngNoiseProfile' | { Stated: { k: number; sigma2: number } }
+  noise: MosaicNoise
 }
+
+/** How a mosaic's noise is known: read from the frame, a DNG's NoiseProfile, or stated. */
+export type MosaicNoise =
+  | 'Measured'
+  | 'MeasuredFloor'
+  | 'MeasuredGreenFloor'
+  | 'DngNoiseProfile'
+  | { Stated: { k: number; sigma2: number } }
 
 /**
  * What a learned demosaic reads and answers (the engine's 0.20 work, not
@@ -170,7 +217,7 @@ export type MosaicEncoding =
   'Demosaicnet' | { Curve: { encoding: { Log: { gain: number; peak: number } } } }
 
 /** Whether a learned demosaic is told the frame's noise (0.20): a fourth plane, or none. */
-export type DemosaicNoise = 'None' | { Map: { noise: MosaicDenoise['noise'] } }
+export type DemosaicNoise = 'None' | { Map: { noise: MosaicNoise } }
 
 /**
  * A learned demosaic's ref (`@xuckless/pixl-models`' `ref(id, host)` for a
@@ -199,8 +246,50 @@ export type SceneDemosaic = 'Classic' | 'Ahd' | { Model: DemosaickerRef }
 /** A RAW's colour filter when PIXL demosaics it (0.19.0). */
 export type RawCfa = 'Bayer' | 'XTrans'
 
-/** What a RAW says about its colour. `Pixl` is refused on a body the version does not hold. */
-export type CameraColour = 'Container' | { Pixl: { version: number } } | { Stated: unknown }
+/**
+ * What a RAW says about its colour. `Pixl` is refused on a body the version
+ * does not hold. `Dcp` (0.21.0, E21): a DNG camera profile as
+ * `readCameraProfile` reads it, three-colour sensors only; its tables and
+ * tone curve are `Scene`'s, the tone curve on an SDR `Master` with `look:
+ * 'Colorimetric'` only (state `tone_curve: null` otherwise).
+ */
+export type CameraColour =
+  'Container' | { Pixl: { version: number } } | { Stated: unknown } | { Dcp: DcpProfile }
+
+/**
+ * A ProfileHueSatMap or ProfileLookTable: value slowest, then hue, then
+ * saturation; each entry `[hue shift °, saturation scale, value scale]`.
+ */
+export interface HueSatTable {
+  hue_divisions: number
+  sat_divisions: number
+  val_divisions: number
+  entries: [number, number, number][]
+}
+
+export type TableEncoding = 'Linear' | 'Srgb'
+
+/**
+ * A DNG camera profile (`.dcp`), as `readCameraProfile` reads it and
+ * `CameraColour.Dcp` states it (0.21.0, E21). `camera` is a `Stated`
+ * profile (`analog_balance` null). The engine never matches it to a camera
+ * (compare `unique_camera_model` with the probe's) and never adds
+ * `baseline_exposure_offset` (stops): the host does.
+ */
+export interface DcpProfile {
+  name: string | null
+  unique_camera_model: string | null
+  calibration_signature: string | null
+  copyright: string | null
+  camera: unknown
+  hue_sat_maps: HueSatTable[]
+  hue_sat_map_encoding: TableEncoding
+  look_table: HueSatTable | null
+  look_table_encoding: TableEncoding
+  tone_curve: [number, number][] | null
+  baseline_exposure_offset: number
+}
+
 export type OpcodeUse = 'Apply' | 'Skip'
 export interface DngOpcodes {
   list1: OpcodeUse
@@ -255,10 +344,31 @@ export type ExecutionProvider =
         format: CoreMlFormat
         static_shapes: boolean
         low_precision_gpu: boolean
+        /** 0.21.0 (OBS-4): a compile cache the host owns; absent or `null` compiles at every load. */
+        cache?: CoreMlCache | null
       }
     }
   | { Cuda: { device: number } }
   | { DirectMl: { device: number } }
+
+/**
+ * A CoreML compile cache (0.21.0, OBS-4): `dir` an existing, writable,
+ * absolute directory; `sha256` the model file's (the roster's), checked at
+ * every load. Each load compiles into `<dir>/<sha256>-<16 hex>`, keyed by
+ * everything that changes the compile.
+ */
+export interface CoreMlCache {
+  dir: string
+  sha256: string
+}
+
+/** What a load did with its CoreML cache: the keyed folder, and whether a compile was there. */
+export interface CoreMlCacheUse {
+  key: string
+  path: string
+  existed: boolean
+  hash_ms: number
+}
 
 export type GraphOptimisation = 'Disable' | 'Basic' | 'Extended' | 'All'
 
@@ -352,7 +462,13 @@ export interface JpegReconstruct {
   chroma: ChromaUpsample | null
 }
 
-/** One step of `ConvertRequest.enhance`, run straight after decode and orientation. */
+/**
+ * One step of `ConvertRequest.enhance`, run straight after decode and
+ * orientation. 0.21.0 (E70): a float source goes through when every step is
+ * a `PixlRgb` `Model` step (kept above white up to the curve's peak); any
+ * other step on one is refused by its own field, `enhance[i]` or
+ * `enhance[i].model_space`.
+ */
 export type EnhanceStep =
   { JpegReconstruct: JpegReconstruct } | { Model: EnhancerRef } | { Upscale: UpscalerRef }
 
@@ -363,7 +479,14 @@ export type Chroma = 'Half' | 'Wide' | 'Full'
 export type PngCompression = 'Fast' | 'Balanced' | 'Best'
 export type PngFilter = 'NoFilter' | 'Sub' | 'Up' | 'Average' | 'Paeth' | 'Adaptive'
 export type TiffCompression = 'None' | 'Lzw' | 'Deflate'
-export type DngCompression = 'Uncompressed' | 'Lossless'
+/**
+ * `JxlLossless` (0.21.0, E46): lossless JPEG XL tiles (DNG 1.7), `effort`
+ * 1–9, `interleave` 1 or the CFA's repeat (2 Bayer, 6 X-Trans); read back
+ * by PIXL's DNG reader only, and `interleave: 1` for files other readers
+ * must open.
+ */
+export type DngCompression =
+  'Uncompressed' | 'Lossless' | { JxlLossless: { effort: number; interleave: number } }
 export type LinearDngCompression = 'Uncompressed' | { Lossless: { predictor: number } } | 'Deflate'
 
 export type Encode =
@@ -479,6 +602,20 @@ export type ColorSpaceRef =
   | { Icc: number[] }
   /** Linear Display P3 (CICP 12/8), built in (0.18). */
   | 'LinearDisplayP3'
+  | LogSpace
+
+/**
+ * The log grading spaces (0.21.0, E73), entered from the working space and
+ * left for it by their published formulas:
+ * - `AcesCct`: ACES AP1, the ACEScct curve (18% grey 0.4135884, white 0.5547945).
+ * - `DavinciIntermediate`: DaVinci Wide Gamut (grey 0.336043, white 0.513837).
+ * - `PixlLog`: PixlRGB, the models' log curve (gain 64, peak 8), unclamped
+ *   (grey 0.405, white 0.669, 8× white 1).
+ * Grading only: refused as `color.to` and `sdr.to`. A log stage refuses
+ * WhiteBalance, a parametric curve, a paint-overlay vignette and the
+ * display-range blend modes, and `'Gpu'` refuses it by its `space`.
+ */
+export type LogSpace = 'AcesCct' | 'DavinciIntermediate' | 'PixlLog'
 
 export type RenderingIntent =
   'Perceptual' | 'RelativeColorimetric' | 'Saturation' | 'AbsoluteColorimetric'
@@ -629,8 +766,9 @@ export interface HslKey {
 }
 
 /**
- * `smoothing` on Tone, Vibrance, Dehaze, ColorGrade, HslBands and Qualifier
- * (0.18): the op's change smoothed where the picture is flat. `radius` is
+ * `smoothing` on Tone, Vibrance, Dehaze, ColorGrade, HslBands, Qualifier
+ * (0.18) and LogWheels (0.21.0): the op's change smoothed where the picture
+ * is flat. `radius` is
  * 0.001–0.1 of the shorter side, `strength` 0–1; `null` is the op as it
  * always ran. Sent on release, never while a slider drags.
  */
@@ -691,6 +829,14 @@ export interface Curves {
   luma_vs_saturation: Curve | null
   hue_vs_saturation: Curve | null
   hue_vs_hue: Curve | null
+  /**
+   * 0.21.0 (E71): `x` hue/360, `y` a luminance move in stops (0 none),
+   * weighed by saturation so a neutral is untouched. Periodic: the first and
+   * last `y` equal.
+   */
+  hue_vs_luma: Curve | null
+  /** 0.21.0 (E72): `x` HSV saturation 0…1, `y` a saturation multiplier (1 none). */
+  saturation_vs_saturation: Curve | null
   /** 0…1: keep saturation as the master curve changes contrast. Needs `master`. */
   refine_saturation: number | null
 }
@@ -705,7 +851,17 @@ export interface ParametricCurve {
   lights: number
   highlights: number
   splits: { low: number; mid: number; high: number }
+  /** Required since 0.21.0 (E19). */
+  reach: CurveReach
 }
+
+/**
+ * How far a region slider at ±1 moves its region (0.21.0, E19): `HalfGap`
+ * is the curve before 0.21.0, bit for bit (half the room to the next
+ * point); `{ Range: r }` moves it by `r` of the whole range, `0 < r ≤ 0.5`
+ * (0.25 for a 17-point slider curve's reach), held monotone and pinned.
+ */
+export type CurveReach = 'HalfGap' | { Range: number }
 
 export interface BandAdjust {
   hue: number
@@ -769,8 +925,13 @@ export interface Point {
   y: number
 }
 
-/** `Exposure` darkens like light falling off; `PaintOverlay` paints black or white over. */
-export type VignetteStyle = { Exposure: { highlights: number } } | 'PaintOverlay'
+/**
+ * `Exposure` darkens like light falling off; `PaintOverlay` paints black or
+ * white over. `ColorPriority` (0.21.0, E24): the gain with no protection, a
+ * lightening held per pixel so its largest channel stops at white (hue and
+ * saturation kept); a lightening is refused in a pipeline with headroom.
+ */
+export type VignetteStyle = { Exposure: { highlights: number } } | 'ColorPriority' | 'PaintOverlay'
 
 export interface Vignette {
   amount: number
@@ -783,11 +944,31 @@ export interface Vignette {
   rotation_degrees: number
 }
 
+/**
+ * Film grain. 0.21.0 (E43): `response` and `chroma` are required;
+ * `response: 'Midtones', chroma: { amount: 0, size: 1 }` is 0.20's grain
+ * byte for byte. A `chroma.amount` above 0 is refused on one channel, and
+ * colour grain is CPU only.
+ */
 export interface Grain {
   amount: number
   size: number
   roughness: number
   seed: number
+  response: GrainResponse
+  chroma: ChromaGrain
+}
+
+/**
+ * How strong the grain is at each tone `l`: `Midtones` is `4l(1 − l)`
+ * (0.20's), a `Curve` the caller's monotone weights (`x` 0…1, `y` 0…2).
+ */
+export type GrainResponse = 'Midtones' | { Curve: Curve }
+
+/** A colour grain beside the luminance grain: `amount` 0…1 (0 none), `size` 1…4 × the grain's cell. */
+export interface ChromaGrain {
+  amount: number
+  size: number
 }
 
 export interface Wheel {
@@ -846,6 +1027,110 @@ export interface Fill {
   space: ColorSpaceRef
 }
 
+/**
+ * A master (Y) lift, gamma and gain moving luminance alone (0.21.0, E78):
+ * `mix` 1 keeps hue and saturation, 0 is the per-channel lift/gamma/gain (a
+ * `Primary` with the same value on each channel). `(0, 1, 1)` is none.
+ */
+export interface LumaPrimary {
+  lift: number
+  gamma: number
+  gain: number
+  mix: number
+}
+
+/**
+ * Temperature and tint as one gain per channel on the stage's values as
+ * they stand (0.21.0, E75): a grading panel's Temp/Tint, in an encoded
+ * stage beside the primaries. The white of `temperature_kelvin`/`tint`
+ * (the WhiteBalance locus, 1667–25000 K, ±0.1 Δuv) goes to 6504 K in the
+ * stage's primaries; `hold_luminance` keeps a grey's luma. Refused in an
+ * ICC profile's stage and on one channel.
+ */
+export interface GainBalance {
+  temperature_kelvin: number
+  tint: number
+  hold_luminance: boolean
+}
+
+/**
+ * Resolve's Log wheels (0.21.0, E74), meant for a log stage (refused in
+ * linear light). With `y` the stage's luma and `t` the transition, shadow
+ * weight `1 − smoothstep(low − t, low + t, y)`, highlight weight
+ * `smoothstep(high − t, high + t, y)`, the midtone the rest; each channel
+ * gains `offset + midtone + w_s (shadow − midtone) + w_h (highlight −
+ * midtone)`. Refused by field: `transition < 0`, or `low_range + transition
+ * > high_range − transition` (by `high_range`). Every field at zero is none.
+ */
+export interface LogWheels {
+  shadow: Rgb
+  midtone: Rgb
+  highlight: Rgb
+  offset: Rgb
+  low_range: number
+  high_range: number
+  transition: number
+  smoothing: AdjustmentSmoothing | null
+}
+
+/**
+ * A coloured glow spread around the highlights (0.21.0, E41): `amount` 0…1
+ * (0 none); `threshold` and `softness` 0…1 on the effects' tone (the
+ * knee); `radius` 0.001…0.1 of the shorter side; `color` (each ≥ 0) stated
+ * in `space`. Light in a linear stage, a softer glow in an encoded one.
+ * CPU only.
+ */
+export interface Halation {
+  amount: number
+  threshold: number
+  softness: number
+  radius: number
+  color: Rgb
+  space: ColorSpaceRef
+}
+
+/**
+ * Where a Bloom's light comes from: `All` mixes a blurred copy back (a
+ * Pro-Mist: a flat field keeps its level); `Highlights` adds the blurred
+ * highlights (a glow).
+ */
+export type BloomSource = 'All' | { Highlights: { threshold: number; softness: number } }
+
+/**
+ * A diffusion on Halation's kernel (0.21.0, E42): `amount` 0…1 (0 none),
+ * `radius` 0.001…0.1 of the shorter side, `color` its warmth (white for
+ * none) in `space`. CPU only.
+ */
+export interface Bloom {
+  amount: number
+  radius: number
+  source: BloomSource
+  color: Rgb
+  space: ColorSpaceRef
+}
+
+/** Density's eight band weights, each −1…1. */
+export interface DensityBands {
+  red: number
+  orange: number
+  yellow: number
+  green: number
+  aqua: number
+  blue: number
+  purple: number
+  magenta: number
+}
+
+/**
+ * A colour made denser, not greyer (0.21.0, E44): darkened in proportion to
+ * its ICtCp chroma (one stop at chroma 0.25 for `amount` × band 1), its hue
+ * kept. `amount` −1…1 (0 none); refused on one channel. Any stage, CPU only.
+ */
+export interface Density {
+  amount: number
+  bands: DensityBands
+}
+
 export type GradeOp =
   | { Lut: { lut: LutRef; amount: number; out_of_domain: LutOutOfDomain } }
   | { Primary: Primary }
@@ -869,6 +1154,18 @@ export type GradeOp =
   | { AddColor: AddColor }
   | { Fill: Fill }
   | { Masked: { mask: Mask; opacity: number; ops: GradeOp[] } }
+  /** 0.21.0 (E78). */
+  | { LumaPrimary: LumaPrimary }
+  /** 0.21.0 (E75). */
+  | { GainBalance: GainBalance }
+  /** 0.21.0 (E41). */
+  | { Halation: Halation }
+  /** 0.21.0 (E42). */
+  | { Bloom: Bloom }
+  /** 0.21.0 (E44). */
+  | { Density: Density }
+  /** 0.21.0 (E74). */
+  | { LogWheels: LogWheels }
 
 export type GradeOpKind = GradeOp extends infer T ? (T extends object ? keyof T : never) : never
 
@@ -915,7 +1212,21 @@ export interface Polygon {
   fill_rule: FillRule
 }
 
-export type RasterRef = { Png: string } | { PngBytes: number[] }
+/**
+ * Where a raster's pixels come from (a mask's, a depth range's map, an
+ * overlay, a flat field). 0.21.0 (E33, E47) adds TIFF (one page, any
+ * compression; uncompressed is the cheap one) and lossless JPEG XL: 8- or
+ * 16-bit integer samples read exactly, so the same pixels render the same
+ * bytes from each. One the engine cannot read (float samples among them) is
+ * refused as `InvalidRequest` by the variant's field (`….source.Tiff`).
+ */
+export type RasterRef =
+  | { Png: string }
+  | { PngBytes: number[] }
+  | { Tiff: string }
+  | { TiffBytes: number[] }
+  | { Jxl: string }
+  | { JxlBytes: number[] }
 
 export interface RasterMask {
   source: RasterRef
@@ -988,6 +1299,39 @@ export type MaskShape =
   | { RadialGradient: RadialGradient }
   | { BidirectionalGradient: BidirectionalGradient }
   | { DepthRange: DepthRange }
+  /** 0.21.0 (E36). */
+  | { Strokes: BrushStrokes }
+
+/**
+ * Brush strokes as vectors, rasterised at the frame's own size (0.21.0,
+ * E36). Flow is per stroke and a stroke never builds up over itself;
+ * strokes combine by screen; pressure scales a dab's flow. An eraser is a
+ * stroke in a `Subtract` component. At most 100,000 dabs a component, and
+ * strokes whose boxes add up past 256 frames are refused (paint them into a
+ * `Raster`).
+ */
+export interface BrushStrokes {
+  strokes: BrushStroke[]
+}
+
+export interface BrushStroke {
+  /** At least one, in the order laid down. */
+  dabs: Dab[]
+  /** 0…1 of a dab's radius, the falloff from its edge inward; 0 is hard. */
+  softness: number
+  /** 0…1, the stroke's strength. */
+  flow: number
+}
+
+export interface Dab {
+  /** Fractions of the frame, −1…2. */
+  x: number
+  y: number
+  /** (0, 1] of the frame's shorter side. */
+  radius: number
+  /** 0…1, a scale on the stroke's flow at this dab (1 for a mouse). */
+  pressure: number
+}
 
 /** What a guided refine reads its edges from: the luminance, or colour edges too. */
 export type RefineGuide = 'Luma' | 'Colour'
@@ -1074,6 +1418,7 @@ export interface MaskReport {
   coverage: number
   weighted_coverage: number
   bounds: MaskBounds | null
+  /** 0.21.0 (E37): a masked layer's counts only inside the crop rectangle. */
   ran_over: MaskBounds
 }
 
@@ -1093,6 +1438,7 @@ export interface GradeLayerReport {
   layer_ms: number
 }
 
+/** 0.21.0 (E37): `clamped_samples` and `qualifier_coverage` count only inside the crop. */
 export interface GradeReport {
   layers: GradeLayerReport[]
   clamped_samples: number
@@ -1398,6 +1744,67 @@ export interface Measure {
   stride: number
   transparent: TransparentPixels
   noise: boolean
+  /**
+   * 0.21.0 (E76): the scopes of the buffer measured; absent or `null`
+   * measures none. Checked before the render (a waveform's `columns`
+   * against the output's width), and a refused one refuses the whole render.
+   */
+  scopes?: ScopeSpec | null
+}
+
+/**
+ * What scopes to measure (0.21.0, E76), on `analyze` or `measure`: each
+ * absent (or `null`) or its grid, at least one named.
+ */
+export interface ScopeSpec {
+  /**
+   * `columns` 1…65536 and at most the measured frame's width (`⌈width /
+   * stride⌉`); `levels` 2…65536; `columns × levels ≤ 2²⁴`.
+   */
+  waveform?: WaveformSpec | null
+  vectorscope?: VectorscopeSpec | null
+  /** Over u′, v′ in 0…0.65; `domain: 'Linear'` only. */
+  chromaticity?: { size: number } | null
+}
+
+export interface WaveformSpec {
+  columns: number
+  levels: number
+  planes: 'Luma' | 'Channels' | 'LumaAndChannels'
+}
+
+/**
+ * `size` 2…1024; `extent` the half-width of the Cb and Cr axes in the
+ * domain's units (0.5 holds every encoded colour). No P3 matrix.
+ */
+export interface VectorscopeSpec {
+  size: number
+  matrix: Exclude<YCbCrMatrix, 'Identity'>
+  extent: number
+}
+
+/**
+ * The scopes' grids (0.21.0, E76): whole counts, row-major, row 0 at the
+ * bottom of the vertical axis (a waveform's `[level * columns + column]`,
+ * level 0 black; a vectorscope's `[crRow * size + cbColumn]`, row 0 at Cr =
+ * −extent; a chromaticity's `[vRow * size + uColumn]`, row 0 at v′ = 0).
+ * `Float64Array`s from the binding.
+ */
+export interface ScopeReport {
+  waveform: {
+    columns: number
+    levels: number
+    luma: Float64Array | null
+    /** One per colour channel (R, G, B; one for grey): side by side, a parade. */
+    channels: Float64Array[]
+  } | null
+  vectorscope: { size: number; counts: Float64Array; outside: number } | null
+  chromaticity: {
+    size: number
+    counts: Float64Array
+    outside: number
+    undefined: number
+  } | null
 }
 
 /** Sharpening for the output's size, after the resize; `radius` in output pixels. */
@@ -1447,9 +1854,27 @@ export interface ConvertRequest {
    * request without it is refused, naming `grade_device`.
    */
   grade_device: GradeDevice
+  /**
+   * Required (0.21.0, E62): `true` on a CPU render of the whole frame that
+   * carries no `held` also keeps each mask refine that reads the whole
+   * frame (EdgeSnap, BilateralSolver, Matting) in `report.held`, so a 1:1
+   * tile given it is the full render, cut (up to 4 bytes a pixel of the
+   * refine's box). Refused on `'Gpu'`. `false` keeps none, as before.
+   */
+  hold_refines: boolean
+  /**
+   * 0.21.0 (OBS-1): a JPEG (`input: 'Jpeg'`, or a camera format's JPEG
+   * preview under `raw: 'EmbeddedPreview'`) decoded at 1/2, 1/4 or 1/8 of
+   * its size, `⌈w / d⌉ × ⌈h / d⌉`. Refused by `decode_reduce` for every
+   * other decoder; absent or `null` decodes at full size.
+   */
+  decode_reduce?: DecodeReduce | null
 }
 
 export type GradeDevice = 'Cpu' | 'Gpu'
+
+/** How far `decode_reduce` reduces a JPEG's decode, per side. */
+export type DecodeReduce = 'Half' | 'Quarter' | 'Eighth'
 
 export type AnalysisDomain = 'Encoded' | 'Linear'
 export type TransparentPixels = 'Include' | 'Exclude'
@@ -1513,6 +1938,39 @@ export interface AnalyzeRequest {
    */
   hdr: HdrSignal | null
   gain_map: GainMapMode | null
+  /** 0.21.0 (E76): the scopes on stated grids; absent or `null` measures none. */
+  scopes?: ScopeSpec | null
+}
+
+/**
+ * `rawNoise`'s request (0.21.0, E65): the RAW, the area a `Scene` develop
+ * with the same `crop` and `dng_opcodes` reads, and how its noise is read
+ * (`Stated` is refused by `noise`). Nothing is developed.
+ */
+export interface RawNoiseRequest {
+  source: Source
+  crop: DngCrop
+  dng_opcodes: DngOpcodes
+  noise: Exclude<MosaicNoise, { Stated: unknown }>
+  threads: number
+  limits: Limits | null
+}
+
+/** One plane's line (`variance = k·x + σ²`), as a develop's `noise_planes` holds it. */
+export interface MosaicPlaneNoise {
+  plane: string
+  k: number
+  sigma2: number
+  fit: Record<string, unknown> | null
+}
+
+/** Each plane's line, or why it has none (`unread`): the call is not refused for a plane. */
+export interface RawNoiseReport {
+  cfa: RawCfa
+  area: MaskBounds
+  noise_from: string
+  planes: { plane: string; noise: MosaicPlaneNoise | null; unread: string | null }[]
+  read_ms: number
 }
 
 // ── Reports ──────────────────────────────────────────────────────────────────
@@ -1658,6 +2116,14 @@ export interface RegionReport {
   reach?: ReachReport
   /** 0.19.2: how far the margin fell short of `reach`; non-zero means tiles may disagree at their edges. */
   short_by?: number
+  /** 0.21.0: the canvas rectangle the render read for the region. */
+  source?: MaskBounds
+  /**
+   * 0.21.0 (E66): the canvas rectangle a RAW develop with a learned
+   * demosaic made for this region alone; `null` when the frame was
+   * developed whole.
+   */
+  developed?: MaskBounds | null
 }
 
 /**
@@ -1690,7 +2156,11 @@ export interface ReachReport {
  * Dehaze's and Denoise's whole-photo measurements (0.19.2, Phase A §4.4),
  * returned by a whole-frame render that ran one. Passed back on a drag, the
  * measurement is reused, and a region is then the full render, cut, exactly.
- * A native handle: it lives in the engine host that made it.
+ * Since 0.21.0 (E62) also the refined planes of masks refined over the
+ * whole frame, from a render with `hold_refines: true` (their `fields` are
+ * the refine paths, `grade.layers[0].mask.components[0].refine`); a plane
+ * made for another mask is refused by `held`. A native handle: it lives in
+ * the engine host that made it.
  */
 export interface HeldMeasurements {
   fields: string[]
@@ -1721,12 +2191,77 @@ export interface GpuFrame {
   close(): void
 }
 
-/** What `convert` takes beside the request (0.19.2 adds the GPU frame and the held measurements). */
+/**
+ * A raster mask's plane decoded and resampled to one frame size once
+ * (0.21.0, E37, `prepareRaster`), named beside every render of that frame
+ * (`maskPlanes`). Native memory V8 does not see (`bytes`): `close()` it when
+ * the photo or the size changes.
+ */
+export interface PreparedRaster {
+  readonly width: number
+  readonly height: number
+  /** The SHA-256 of the file's bytes, lower-case hex. */
+  readonly sha256: string
+  readonly bytes: number
+  readonly closed: boolean
+  close(): void
+}
+
+/**
+ * `prepareRaster`'s request: `source` and `resampler` exactly the
+ * component's, `width` × `height` the frame its mask is planned on.
+ */
+export interface PreparedRasterRequest {
+  source: RasterRef
+  resampler: Exclude<Resampler, 'Ai'>
+  width: number
+  height: number
+  /** 1…1024, for the resample; the plane is the same at any count. */
+  threads: number
+  limits: Limits | null
+}
+
+/**
+ * What a call holding a token has counted so far (0.21.0, E68): `done` of
+ * the `total` steps it has laid out (a model's windows, a RAW develop's
+ * bands). `total` grows as the call reaches each stage that loops, so
+ * `done / total` can step back; nothing of that kind counts `0 / 0`.
+ */
+export interface Progress {
+  done: number
+  total: number
+}
+
+/**
+ * The engine's cancel flag and step counter for one call (0.21.0, E6,
+ * E68), passed as `token`: read `progress` on a timer while the call runs
+ * (nothing is pushed). A call's rejection with `Cancelled` comes once the
+ * engine has stopped.
+ */
+export interface CancelToken {
+  cancel(): void
+  readonly cancelled: boolean
+  readonly progress: Progress
+}
+
+/**
+ * What `convert` takes beside the request (0.19.2 adds the GPU frame and the
+ * held measurements; 0.21.0 the token and prepared mask planes).
+ */
 export interface ConvertOptions {
   signal?: AbortSignal
+  /** 0.21.0: the caller's own token, for its `progress`; a `signal` given too cancels it. */
+  token?: CancelToken
   gpu?: GpuSession
   frame?: GpuFrame
   held?: HeldMeasurements
+  /**
+   * 0.21.0 (E37): raster masks prepared for this render's frame. Refused by
+   * `mask_planes[i]`: a plane no raster component of the request reads, two
+   * of one source, resampler and size, one at another size, a changed file,
+   * a closed plane.
+   */
+  maskPlanes?: PreparedRaster[]
 }
 
 export interface ConvertReport {
@@ -1777,6 +2312,8 @@ export interface ConvertReport {
   dng: DngWritten | null
   /** `Master.companion`'s SDR picture of the same render (0.18). */
   companion: Companion | null
+  /** 0.21.0 (E38): under `inspect: { Beside }`, the mask's plane from the same render. */
+  beside?: InspectPlane | null
   /**
    * Every check of the pixels between stages that ran (0.18). A failed one
    * is never here: it rejects with code `Invariant`.
@@ -1793,6 +2330,20 @@ export interface ConvertReport {
    * GPU frame is uploaded from is described by it (Phase A §4.3).
    */
   pixels?: PixelsReport | null
+}
+
+/**
+ * `report.beside` (0.21.0, E38): one grey channel, `width × height` samples,
+ * no padding; 16-bit and F32 samples in the machine's byte order.
+ */
+export interface InspectPlane {
+  inspected: string
+  width: number
+  height: number
+  depth: Depth
+  quantisations: number
+  /** A Buffer from the binding. */
+  data: Uint8Array
 }
 
 /** A `Pixels` output's layout (0.19.2). */
@@ -1848,16 +2399,27 @@ export interface RawReport {
   demosaic_model?: {
     model: string
     provider: ExecutionProvider
+    /** The model passes made (0.21.0: only those under a region developed alone, E66). */
     tiles: number
+    /** 0.21.0 (E66): the passes a develop of the whole frame makes. */
+    frame_tiles?: number
     model_load_ms: number
     model_ms: number
-    /** 0.20: where the noise it was told came from (`measured, with the floor`, `stated`). */
+    /**
+     * 0.20: where the noise it was told came from (`measured, with the
+     * floor`, `stated`; 0.21.0's roster: `measured from green, with the floor`).
+     */
     noise_from?: string
-    /** 0.20: the noise read of each plane (`variance = k·x + σ²`). */
+    /**
+     * 0.20: the noise read of each plane (`variance = k·x + σ²`). Under
+     * 0.21.0's `MeasuredGreenFloor` on a Bayer frame, R and B carry `fit: null`.
+     */
     noise_planes?: unknown
   } | null
   /** What decoded the file: `"LibRaw 0.22.2"` or `"PIXL DNG reader (DNG 1.7.1)"`. */
   decoder: string
+  /** 0.21.0 (E21): present when a DCP's tables ran; which, their sizes and encodings. */
+  profile_tables?: string | null
 }
 
 /** What a DNG PIXL wrote holds, and what it left out. */
@@ -2009,6 +2571,32 @@ export interface SourceInfo {
   lens: ShotLens | null
   /** A DNG's own description (PIXL reads DNG itself since 0.16). */
   dng: DngInfo | null
+  /**
+   * 0.21.0 (OBS-1): a RAW's embedded previews, in the order `raw:
+   * 'EmbeddedPreview'` tries them (the first `decodable` one is the frame it
+   * makes, at the upright size stated); empty for any other format. Size a
+   * preview thumbnail's `resize` from it, not from the sensor's size.
+   */
+  raw_previews?: RawPreview[]
+}
+
+/** How a RAW's embedded preview is stored. */
+export type RawPreviewFormat = 'Jpeg' | 'Bitmap' | 'JpegXl' | 'Other'
+
+/** One embedded preview of a RAW (0.21.0), read from the container without decoding a pixel. */
+export interface RawPreview {
+  format: RawPreviewFormat
+  /** The upright frame `raw: 'EmbeddedPreview'` makes of it. */
+  width: number
+  height: number
+  /** The EXIF orientation (1–8) the preview is turned by. */
+  orientation: number
+  /** Its stored length in the file. */
+  bytes: number
+  /** `raw: 'EmbeddedPreview'` accepts it before decoding. */
+  decodable: boolean
+  /** `decode_reduce` can read it: a camera format's JPEG preview, never a DNG's. */
+  reducible: boolean
 }
 
 export interface ShotLens {
@@ -2075,6 +2663,8 @@ export interface ImageStats {
   hue_histogram: HueBin[]
   neutral_pixels: number
   noise: NoiseEstimate | null
+  /** 0.21.0 (E76): the grids asked for with `scopes`; `null` without. */
+  scopes?: ScopeReport | null
   decode_ms: number
   analyze_ms: number
 }
@@ -2185,6 +2775,13 @@ export interface SegmentReport {
   /** Every plane's size: the frame's, or `plane_longest`'s. */
   plane_width: number
   plane_height: number
+  /**
+   * 0.21.0 (OBS-6): the rectangle of the frame the model was shown (the
+   * request's `region`, or the whole frame), frame pixels.
+   */
+  shown?: MaskBounds
+  /** 0.21.0: the plane pixels that rectangle covers; every sample outside it is 0. */
+  shown_in_plane?: MaskBounds
   model_load_ms: number
   session_wait_ms: number | null
 }
@@ -2262,6 +2859,8 @@ export interface EmbeddingProvenance {
 export interface ModelSession {
   readonly model: ModelRef
   readonly loadMs: number
+  /** 0.21.0 (OBS-4): how the load used its CoreML cache; `null` without one. */
+  readonly coremlCache?: CoreMlCacheUse | null
   readonly closed: boolean
   close(): void
 }
@@ -2277,7 +2876,23 @@ export interface PromptEmbedding {
 /** What the model calls take beside the request. */
 export interface ModelCallOptions {
   signal?: AbortSignal
+  /** 0.21.0: the caller's own token, for its `progress`. */
+  token?: CancelToken
   sessions?: ModelSession[]
+}
+
+/** Which build the loaded addon is (0.21.0, E69): two addons of one version differ by `commit`. */
+export interface BuildInfo {
+  engine: string
+  binding: string
+  /** The commit it was built from, or `'unknown'`. */
+  commit: string
+  /** Changes to tracked files when it was built; `null` when not known. */
+  dirty: boolean | null
+  /** `'release'` only for the release workflow's builds. */
+  kind: 'release' | 'development'
+  /** Cargo features compiled in: `'enhance'`, `'gpu'`, `'vendored'`. */
+  features: string[]
 }
 
 // ── The binding ──────────────────────────────────────────────────────────────
@@ -2288,6 +2903,10 @@ export interface PixlEngineModule {
   engineVersion(): string
   /** The binding's own version; equal to `engineVersion()`, or the load fails. */
   bindingVersion(): string
+  /** 0.21.0 (E69): which build the addon is (its commit, release or development). */
+  buildInfo?(): BuildInfo
+  /** 0.21.0 (E6, E68): a call's cancel flag and step counter, passed as `token`. */
+  CancelToken?: new () => CancelToken
   hasEnhance(): boolean
   probe(path: string): Promise<SourceInfo>
   convert(request: ConvertRequest, options?: ConvertOptions): Promise<ConvertReport>
@@ -2297,7 +2916,19 @@ export interface PixlEngineModule {
   hasGpu?(): boolean
   openGpuSession?(spec: GpuSessionSpec): Promise<GpuSession>
   uploadGpuFrame?(gpu: GpuSession, spec: GpuFrameSpec, bytes: Uint8Array): Promise<GpuFrame>
-  analyze(request: AnalyzeRequest, options?: { signal?: AbortSignal }): Promise<ImageStats>
+  analyze(
+    request: AnalyzeRequest,
+    options?: { signal?: AbortSignal; token?: CancelToken }
+  ): Promise<ImageStats>
+  /** 0.21.0 (E65): a RAW mosaic's noise per plane, read as a learned demosaic reads it. */
+  rawNoise?(
+    request: RawNoiseRequest,
+    options?: { signal?: AbortSignal; token?: CancelToken }
+  ): Promise<RawNoiseReport>
+  /** 0.21.0 (E21): a `.dcp`'s bytes as `CameraColour.Dcp` states it; refused by `bytes`. */
+  readCameraProfile?(bytes: Uint8Array): DcpProfile
+  /** 0.21.0 (E37): a raster mask's plane at one frame size, for `maskPlanes`. */
+  prepareRaster?(request: PreparedRasterRequest): Promise<PreparedRaster>
   suggestEncode(info: SourceInfo, threads: number): Encode
   whiteBalanceFromPixel(rgb: Rgb, space: GradeSpace): WhiteBalance
   lensFrame(lens: LensCorrection, width: number, height: number, threads: number): LensReport
@@ -2331,8 +2962,15 @@ export interface PixlEngineModule {
     request: Record<string, unknown>,
     options?: { signal?: AbortSignal }
   ): Promise<Record<string, unknown>>
-  /** Load a model once, for the calls that name it in `sessions`. */
-  loadModelSession(model: ModelRef): Promise<ModelSession>
+  /**
+   * Load a model once, for the calls that name it in `sessions`. 0.21.0
+   * (OBS-5): `signal` or `token` stops the load between its steps; ONNX
+   * Runtime's build of the session (a CoreML compile) runs to its end first.
+   */
+  loadModelSession(
+    model: ModelRef,
+    options?: { signal?: AbortSignal; token?: CancelToken }
+  ): Promise<ModelSession>
   /** SAM's encoder over one frame: the embedding every `segmentPrompt` on it takes. */
   promptEmbedding(
     request: PromptEmbeddingRequest,

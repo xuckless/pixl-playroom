@@ -154,6 +154,8 @@ test('the grade input is the guide’s exact request', async () => {
     limits: null
   })
   assert.equal(r.grade_device, 'Cpu')
+  // Engine 0.21 (E62): required, and no refine planes held for an upload.
+  assert.equal(r.hold_refines, false)
   assert.equal(r.sink, 'Bytes')
   assert.equal(r.grade, null)
   assert.equal(r.inspect, 'GradeInput')
@@ -220,6 +222,8 @@ test('a drag frame nulls what is before the grade and names a display space', as
   assert.deepEqual(r.source, { GpuFrame: null })
   assert.equal(r.input, 'GpuFrame')
   assert.equal(r.grade_device, 'Gpu')
+  // The GPU refuses `hold_refines: true` (E62).
+  assert.equal(r.hold_refines, false)
   for (const k of [
     'raw',
     'lens',
@@ -241,6 +245,24 @@ test('a drag frame nulls what is before the grade and names a display space', as
   const h = gpuDragRequest({ grade: g, color, hdr: true, region: null, measure: null, threads: 6 })
   assert.deepEqual(h.encode, { Pixels: { sample: 'F16' } })
   assert.deepEqual(h.pixel, { depth: 'F32', channels: null })
+})
+
+test('a convert made without the builders states the required fields', async () => {
+  const { withRequiredFields } = await import('../src/main/engine/required')
+  const [made] = withRequiredFields('convert', [{ input: 'Jpeg' }]) as Record<string, unknown>[]
+  assert.equal(made.grade_device, 'Cpu')
+  assert.equal(made.hold_refines, false)
+  // What a request states is kept; other calls pass as they are.
+  const stated = { grade_device: 'Gpu', hold_refines: false }
+  assert.equal(withRequiredFields('convert', [stated])[0], stated)
+  const [gpu] = withRequiredFields('convert', [{ grade_device: 'Gpu' }]) as Record<
+    string,
+    unknown
+  >[]
+  assert.equal(gpu.grade_device, 'Gpu')
+  assert.equal(gpu.hold_refines, false)
+  const probe = ['/p/a.jpg']
+  assert.equal(withRequiredFields('probe', probe), probe)
 })
 
 test('a drag’s RGB pixels are laid out RGBA for the window', async () => {

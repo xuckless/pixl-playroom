@@ -282,6 +282,11 @@ test('added light ends the linear stage; the wash comes just before the grain', 
   assert.equal(linear.space, 'LinearWorking')
   assert.equal(kinds(linear.ops).at(-1), 'AddColor')
   assert.deepEqual(kinds(look.ops).slice(-2), ['AddColor', 'Grain'])
+  // Engine 0.21 (E43): the response and colour grain it requires, as 0.20's grain was.
+  const grain = look.ops.at(-1)
+  assert.ok(grain && 'Grain' in grain)
+  assert.equal(grain.Grain.response, 'Midtones')
+  assert.deepEqual(grain.Grain.chroma, { amount: 0, size: 1 })
 })
 
 test('a mask adds its colour in linear light', () => {
@@ -422,6 +427,43 @@ test('a custom layer’s Denoise saved before 0.18 gets the reach; a stated one 
   assert.equal(ops[1].Denoise.reach, 0.1)
   const inner = (ops[2].Masked.ops as Record<string, Record<string, unknown>>[])[0]
   assert.equal(inner.Denoise.reach, DENOISE_REACH)
+})
+
+test('a custom layer saved before engine 0.21 gets its clean breaks’ fields; stated ones are kept', async () => {
+  const { withLutDomains } = await import('../src/shared/compile')
+  const curve = {
+    shadows: 0.2,
+    darks: 0,
+    lights: -0.1,
+    highlights: 0,
+    splits: { low: 0.25, mid: 0.5, high: 0.75 }
+  }
+  const grain = { amount: 0.3, size: 0.002, roughness: 0.5, seed: 7 }
+  const layer = {
+    stages: [
+      {
+        ops: [
+          { ParametricCurve: curve },
+          { ParametricCurve: { ...curve, reach: { Range: 0.25 } } },
+          { Grain: grain },
+          { Grain: { ...grain, response: 'Midtones', chroma: { amount: 0.2, size: 2 } } },
+          { Masked: { mask: null, opacity: 1, ops: [{ Grain: grain }] } }
+        ]
+      }
+    ]
+  }
+  const ops = (withLutDomains(layer) as typeof layer).stages[0].ops as Record<
+    string,
+    Record<string, unknown>
+  >[]
+  // The same bytes as 0.20: HalfGap, Midtones and no colour grain.
+  assert.equal(ops[0].ParametricCurve.reach, 'HalfGap')
+  assert.deepEqual(ops[1].ParametricCurve.reach, { Range: 0.25 })
+  assert.equal(ops[2].Grain.response, 'Midtones')
+  assert.deepEqual(ops[2].Grain.chroma, { amount: 0, size: 1 })
+  assert.deepEqual(ops[3].Grain.chroma, { amount: 0.2, size: 2 })
+  const inner = (ops[4].Masked.ops as Record<string, Record<string, unknown>>[])[0]
+  assert.deepEqual(inner.Grain.chroma, { amount: 0, size: 1 })
 })
 
 test('a RAW the engine refuses by name is said plainly', async () => {

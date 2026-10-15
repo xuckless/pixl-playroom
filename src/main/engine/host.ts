@@ -30,6 +30,7 @@ import type {
 import { pickBySize } from '../../shared/concepts'
 import { toRgba } from '../../shared/gpudrag'
 import { sdrCompanion } from '../../shared/sdrcompanion'
+import { withRequiredFields } from './required'
 
 const ENGINE_PACKAGE = '@xuckless/pixl-engine'
 /** What Playroom cannot run without. The rest (lens, upright, AI…) are looked up per call. */
@@ -139,18 +140,6 @@ if (engine) {
     reason: 'reason' in loaded ? loaded.reason : '',
     code: 'code' in loaded ? loaded.code : undefined
   })
-}
-
-/**
- * Every convert names where its grade runs (0.19.2, Phase A §1.1: one
- * without is refused). The request builders send it; a request made before
- * them is the CPU's, as 0.19 was.
- */
-function withGradeDevice(method: EngineMethod, args: unknown[]): unknown[] {
-  if (method !== 'convert') return args
-  const [request, ...rest] = args
-  if (!request || typeof request !== 'object' || 'grade_device' in request) return args
-  return [{ ...request, grade_device: 'Cpu' }, ...rest]
 }
 
 /**
@@ -555,7 +544,7 @@ process.parentPort.on('message', (e) => {
   }
   // A signal goes after the request (the engine checks it between stages),
   // in one options object with any native objects main named (`NativeRefs`).
-  const callArgs = withGradeDevice(method, args)
+  const callArgs = withRequiredFields(method, args)
   const { native } = msg
   let options: Record<string, unknown> = {}
   if (msg.cancellable) {

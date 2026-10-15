@@ -317,6 +317,8 @@ export function curvesVsOp(c: CurvesVsSetting): { op: GradeOp | null; waiting: V
         luma_vs_saturation: lumSat,
         hue_vs_saturation: hueSat,
         hue_vs_hue: hueHue,
+        hue_vs_luma: null,
+        saturation_vs_saturation: null,
         refine_saturation: null
       }
     },

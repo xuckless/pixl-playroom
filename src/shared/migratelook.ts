@@ -1,6 +1,7 @@
 /**
- * Engine 0.19.2's one-time migration for engine-shaped JSON a 0.19 Playroom
- * saved (Phase A §1.6): the guide's `migrateLook`, as it gives it. A look or
+ * The engine's one-time migrations for engine-shaped JSON an older Playroom
+ * saved: 0.19.2's (Phase A §1.6, the guide's `migrateLook`, as it gives it)
+ * and 0.21.0's clean breaks. A look or
  * mask that still has the old shapes is refused when read, naming the field
  * that changed, so this runs on everything engine-shaped Playroom stores as
  * it loads: the Advanced view's custom layers (`Recipe.custom`), in a
@@ -17,6 +18,11 @@
  *   `{ Guided: { radius, epsilon, guide: 'Luma' } }`, its `contract: c` the
  *   component's `shift: -c`.
  * - Tone's `base` (`{ radius, epsilon }`) becomes `{ Guided: { … } }`.
+ *
+ * Engine 0.21.0's clean breaks, the same bytes as before:
+ *
+ * - A `ParametricCurve` gets `reach: 'HalfGap'` (E19).
+ * - A `Grain` gets `response: 'Midtones'` and `chroma: { amount: 0, size: 1 }` (E43).
  */
 export function migrateLook<T>(v: T): T {
   migrate(v)
@@ -49,6 +55,15 @@ function migrate(v: unknown): void {
   const b = o.base as Record<string, unknown> | null | undefined
   if (b && typeof b === 'object' && 'radius' in b && 'epsilon' in b && !('Guided' in b))
     o.base = { Guided: { radius: b.radius, epsilon: b.epsilon } }
+
+  // 0.21.0: a parametric curve's reach, a grain's response and colour grain.
+  const pc = o.ParametricCurve as Record<string, unknown> | null | undefined
+  if (pc && typeof pc === 'object' && !('reach' in pc)) pc.reach = 'HalfGap'
+  const g = o.Grain as Record<string, unknown> | null | undefined
+  if (g && typeof g === 'object') {
+    if (!('response' in g)) g.response = 'Midtones'
+    if (!('chroma' in g)) g.chroma = { amount: 0, size: 1 }
+  }
 
   for (const k of Object.keys(o)) migrate(o[k])
 }

@@ -314,6 +314,8 @@ function curvesOp(c: Partial<Curves>): GradeOp {
       luma_vs_saturation: null,
       hue_vs_saturation: null,
       hue_vs_hue: null,
+      hue_vs_luma: null,
+      saturation_vs_saturation: null,
       refine_saturation: null,
       ...c
     }
@@ -793,7 +795,11 @@ export function smoothnessFeather(smoothness: number): number {
 /**
  * A custom layer as written before 0.16, brought up to it: every `Lut`
  * states what a value past its table gets (0.15 clamped it, so `Clamp`),
- * wherever it sits (a stage, a `Masked` op). Everything else passes as it is.
+ * wherever it sits (a stage, a `Masked` op). Engine 0.21's required fields
+ * too, as `migrateLook` adds them on load, for a layer that never went
+ * through it: a `ParametricCurve` without a reach gets `'HalfGap'` and a
+ * `Grain` without a response and colour grain gets 0.20's (the same bytes).
+ * Everything else passes as it is.
  */
 export function withLutDomains(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(withLutDomains)
@@ -805,6 +811,14 @@ export function withLutDomains(v: unknown): unknown {
     } else if (k === 'Denoise' && x && typeof x === 'object' && !Array.isArray(x)) {
       // Saved before engine 0.18, which requires a reach: the one Playroom sends everywhere.
       out[k] = { reach: DENOISE_REACH, ...(x as Record<string, unknown>) }
+    } else if (k === 'ParametricCurve' && x && typeof x === 'object' && !Array.isArray(x)) {
+      out[k] = { reach: 'HalfGap', ...(x as Record<string, unknown>) }
+    } else if (k === 'Grain' && x && typeof x === 'object' && !Array.isArray(x)) {
+      out[k] = {
+        response: 'Midtones',
+        chroma: { amount: 0, size: 1 },
+        ...(x as Record<string, unknown>)
+      }
     } else out[k] = withLutDomains(x)
   }
   return out
@@ -1503,7 +1517,10 @@ function settingsStages(
         amount: clamp(e.grainAmount / 100, 0, 1),
         size: round4(0.0004 + (clamp(e.grainSize, 0, 100) / 100) * 0.004),
         roughness: clamp(e.grainRoughness / 100, 0, 1),
-        seed: ctx.seed
+        seed: ctx.seed,
+        // Engine 0.21's required pair, as 0.20's grain was byte for byte.
+        response: 'Midtones',
+        chroma: { amount: 0, size: 1 }
       }
     })
   }

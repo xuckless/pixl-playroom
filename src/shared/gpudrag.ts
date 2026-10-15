@@ -217,7 +217,8 @@ export function gradeInputRequest(p: GradeInputParts): ConvertRequest {
     output_sharpen: null,
     limits: p.limits,
     measure: null,
-    grade_device: 'Cpu'
+    grade_device: 'Cpu',
+    hold_refines: false
   }
 }
 
@@ -281,7 +282,9 @@ export function gpuDragRequest(p: DragParts): ConvertRequest {
     output_sharpen: null,
     limits: null,
     measure: p.measure,
-    grade_device: 'Gpu'
+    grade_device: 'Gpu',
+    // The GPU refuses held refines (E62).
+    hold_refines: false
   }
 }
 
