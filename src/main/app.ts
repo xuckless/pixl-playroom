@@ -76,6 +76,10 @@ import { IPC, type EngineStatus } from '../shared/ipc'
 
 log.initialize()
 log.transports.file.level = 'info'
+// Lines queue and are written off the main thread's back (a write a line,
+// four engine hosts' output among them, blocked the thread that relays a
+// drag). Set before the first line: the file keeps the mode it opens with.
+log.transports.file.sync = false
 
 registerSchemePrivileges()
 
@@ -451,6 +455,9 @@ app.whenReady().then(() => {
   )
   // Quitting: Gemma's server goes with Playroom, never left running.
   app.on('will-quit', () => {
+    // What is logged from here on lands before the process ends.
+    const file = log.transports.file.getFile() as { writeAsync?: boolean }
+    file.writeAsync = false
     namer.stop()
     cull.stop()
     brain.killNow()

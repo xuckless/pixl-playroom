@@ -70,6 +70,7 @@ import { lutsFor } from './lutfile'
 import { cacheFile } from './contain'
 import { maskFramesFor } from './maskframe'
 import { keyOf } from './keys'
+import { rateLimited } from './lograte'
 import { paths } from './paths'
 import { pixelDeps } from './pixels/base'
 import { ensureWorking } from './pixels/working'
@@ -97,6 +98,17 @@ export const THUMB_EDGE = 400
 export const NAMING_EDGE = 1024
 /** The most photos whose proxies are made ahead at once (see `warm`). */
 const WARM_MAX = 3
+
+/**
+ * A failed thumbnail, logged: a folder of unreadable files logs the first
+ * few and then one count, not a line a photo.
+ */
+const warnThumb = rateLimited(
+  5,
+  10_000,
+  (...args) => log.warn(...args),
+  (n) => `${n} more thumbnails failed`
+)
 
 /** A file's version: its path, size and modification time. */
 const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.size}`
@@ -729,7 +741,7 @@ export class Library {
       this.running++
       this.thumb(job)
         .catch((err) => {
-          log.warn('thumbnail failed', job, err?.message ?? err)
+          warnThumb('thumbnail failed', job, err?.message ?? err)
           // Only the engine failing to read the file says the photo is
           // unreadable (once per version of it: not tried again until it
           // changes). Anything else (the index stopping at quit, a plane not
