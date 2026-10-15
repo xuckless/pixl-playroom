@@ -43,7 +43,15 @@ import type { Library } from '../library'
 import { paths } from '../paths'
 import { ensureProxies, type ProxyFile } from '../proxy'
 import type { DevelopSessions } from '../render'
-import { BACKGROUND_THREADS, blankRequest, heavyThreads, seedOf, versionStamp } from '../source'
+import {
+  BACKGROUND_THREADS,
+  blankRequest,
+  colourOf,
+  heavyThreads,
+  seedOf,
+  versionStamp
+} from '../source'
+import { exposureOffsetOf } from '../../shared/rawcolour'
 import { askOf } from './rawdevelop'
 import { ensureBase, pixelDeps } from '../pixels/base'
 import { freezeMask } from '../pixels/freeze'
@@ -344,6 +352,7 @@ export class DenoiseRunner implements AiRunner<DenoiseRequest> {
             photoId: row.id,
             isRaw: row.is_raw === 1,
             asShot: info.as_shot_white,
+            exposureOffset: exposureOffsetOf(colourOf(row)),
             seed: seedOf(row),
             master
           },

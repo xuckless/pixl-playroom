@@ -738,3 +738,33 @@
   pointer-events: none;
   z-index: 3;
 }
+
+/* the photo while it opens (views/loupe/FirstLook.tsx): fitted as the
+   picture is, fading out over the develop's first picture */
+.first-look {
+  position: absolute;
+  inset: 4px;
+  z-index: 5;
+  pointer-events: none;
+  transition: opacity 150ms var(--ease);
+}
+.first-look img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.first-look.leaving {
+  opacity: 0;
+}
+.first-look-chip {
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%);
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .first-look {
+    transition: none;
+  }
+}

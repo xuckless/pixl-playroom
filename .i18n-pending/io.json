@@ -1,0 +1,250 @@
+{
+  "Powered by PIXL Engine {{version}} (development build, {{commit}})": {
+    "en": "Powered by PIXL Engine {{version}} (development build, {{commit}})",
+    "fr": "Propulsé par le moteur PIXL {{version}} (version de développement, {{commit}})",
+    "de": "Powered by PIXL Engine {{version}} (Entwicklungsversion, {{commit}})",
+    "ja": "PIXL Engine {{version}} 搭載（開発ビルド、{{commit}}）",
+    "vi": "Vận hành bởi PIXL Engine {{version}} (bản phát triển, {{commit}})",
+    "zh-Hans": "由 PIXL 引擎 {{version}} 驱动（开发版本，{{commit}}）"
+  },
+  "PIXL engine {{version}} (development build, {{commit}})": {
+    "en": "PIXL engine {{version}} (development build, {{commit}})",
+    "fr": "Moteur PIXL {{version}} (version de développement, {{commit}})",
+    "de": "PIXL Engine {{version}} (Entwicklungsversion, {{commit}})",
+    "ja": "PIXL エンジン {{version}}（開発ビルド、{{commit}}）",
+    "vi": "PIXL engine {{version}} (bản phát triển, {{commit}})",
+    "zh-Hans": "PIXL 引擎 {{version}}（开发版本，{{commit}}）"
+  },
+  "features: {{list}}": {
+    "en": "features: {{list}}",
+    "fr": "fonctions : {{list}}",
+    "de": "Funktionen: {{list}}",
+    "ja": "機能：{{list}}",
+    "vi": "tính năng: {{list}}",
+    "zh-Hans": "功能：{{list}}"
+  },
+  "Colour priority": {
+    "en": "Colour priority",
+    "fr": "Priorité aux couleurs",
+    "de": "Farbpriorität",
+    "ja": "カラー優先",
+    "vi": "Ưu tiên màu sắc",
+    "zh-Hans": "颜色优先"
+  },
+  "Colour priority lightening needs an SDR picture; this HDR photo keeps highlight priority": {
+    "en": "Colour priority lightening needs an SDR picture; this HDR photo keeps highlight priority",
+    "fr": "L’éclaircissement avec priorité aux couleurs nécessite une image SDR ; cette photo HDR garde la priorité aux hautes lumières",
+    "de": "Aufhellen mit Farbpriorität braucht ein SDR-Bild; dieses HDR-Foto behält die Lichterpriorität",
+    "ja": "カラー優先で明るくするには SDR 画像が必要です。この HDR 写真ではハイライト優先のままになります",
+    "vi": "Làm sáng với ưu tiên màu sắc cần ảnh SDR; ảnh HDR này giữ chế độ ưu tiên vùng sáng",
+    "zh-Hans": "颜色优先的提亮需要 SDR 图片；此 HDR 照片保持高光优先"
+  },
+  "Colour priority lightening needs an SDR picture: this HDR photo keeps highlight priority": {
+    "en": "Colour priority lightening needs an SDR picture: this HDR photo keeps highlight priority",
+    "fr": "L’éclaircissement avec priorité aux couleurs nécessite une image SDR : cette photo HDR garde la priorité aux hautes lumières",
+    "de": "Aufhellen mit Farbpriorität braucht ein SDR-Bild: Dieses HDR-Foto behält die Lichterpriorität",
+    "ja": "カラー優先で明るくするには SDR 画像が必要です。この HDR 写真ではハイライト優先のままになります",
+    "vi": "Làm sáng với ưu tiên màu sắc cần ảnh SDR: ảnh HDR này giữ chế độ ưu tiên vùng sáng",
+    "zh-Hans": "颜色优先的提亮需要 SDR 图片：此 HDR 照片保持高光优先"
+  },
+  "Highlight priority darkens like light falling off; colour priority lightens without washing colours toward white; paint overlay mixes toward black or white": {
+    "en": "Highlight priority darkens like light falling off; colour priority lightens without washing colours toward white; paint overlay mixes toward black or white",
+    "fr": "Priorité aux hautes lumières assombrit comme une lumière qui décroît ; Priorité aux couleurs éclaircit sans délaver les couleurs vers le blanc ; Incrustation peinte mélange vers le noir ou le blanc",
+    "de": "Lichterpriorität dunkelt ab wie abfallendes Licht; Farbpriorität hellt auf, ohne Farben zu Weiß auszuwaschen; Malüberlagerung mischt in Richtung Schwarz oder Weiß",
+    "ja": "ハイライト優先は光が落ちるように暗くし、カラー優先は色を白に褪せさせずに明るくし、ペイントオーバーレイは黒または白に向かって混ぜます",
+    "vi": "Ưu tiên vùng sáng làm tối như ánh sáng suy giảm; ưu tiên màu sắc làm sáng mà không làm màu bạc về phía trắng; lớp phủ tô màu pha về phía đen hoặc trắng",
+    "zh-Hans": "高光优先的压暗如同光线衰减；颜色优先提亮时不会让颜色褪向白色；绘画叠加会向黑色或白色混合"
+  },
+  "Developing…": {
+    "en": "Developing…",
+    "fr": "Développement…",
+    "de": "Wird entwickelt…",
+    "ja": "現像中…",
+    "vi": "Đang xử lý…",
+    "zh-Hans": "正在显影…"
+  },
+  "The camera’s own preview, shown until PIXL’s develop is ready": {
+    "en": "The camera’s own preview, shown until PIXL’s develop is ready",
+    "fr": "L’aperçu de l’appareil lui-même, affiché jusqu’à ce que le développement PIXL soit prêt",
+    "de": "Die eigene Vorschau der Kamera, angezeigt, bis PIXLs Entwicklung fertig ist",
+    "ja": "カメラ自身のプレビュー。PIXL の現像ができるまで表示されます",
+    "vi": "Ảnh xem trước của chính máy ảnh, hiển thị cho đến khi bản xử lý của PIXL sẵn sàng",
+    "zh-Hans": "相机自带的预览，在 PIXL 显影完成前显示"
+  },
+  "The library thumbnail, shown until the develop is ready": {
+    "en": "The library thumbnail, shown until the develop is ready",
+    "fr": "La vignette de la bibliothèque, affichée jusqu’à ce que le développement soit prêt",
+    "de": "Das Miniaturbild der Bibliothek, angezeigt, bis die Entwicklung fertig ist",
+    "ja": "ライブラリのサムネイル。現像ができるまで表示されます",
+    "vi": "Ảnh thu nhỏ trong thư viện, hiển thị cho đến khi bản xử lý sẵn sàng",
+    "zh-Hans": "图库缩略图，在显影完成前显示"
+  },
+  "{{name}} (Adobe)": {
+    "en": "{{name}} (Adobe)",
+    "fr": "{{name}} (Adobe)",
+    "de": "{{name}} (Adobe)",
+    "ja": "{{name}}（Adobe）",
+    "vi": "{{name}} (Adobe)",
+    "zh-Hans": "{{name}}（Adobe）"
+  },
+  "Import .dcp…": {
+    "en": "Import .dcp…",
+    "fr": "Importer un .dcp…",
+    "de": ".dcp importieren…",
+    "ja": ".dcp を読み込む…",
+    "vi": "Nhập .dcp…",
+    "zh-Hans": "导入 .dcp…"
+  },
+  "This profile is for the {{camera}}, not this photo’s camera: it is kept, and offered for that camera.": {
+    "en": "This profile is for the {{camera}}, not this photo’s camera: it is kept, and offered for that camera.",
+    "fr": "Ce profil est pour le {{camera}}, pas pour l’appareil de cette photo : il est conservé et proposé pour cet appareil.",
+    "de": "Dieses Profil ist für die {{camera}}, nicht für die Kamera dieses Fotos: Es wird behalten und für diese Kamera angeboten.",
+    "ja": "このプロファイルは {{camera}} 用で、この写真のカメラ用ではありません。保存され、そのカメラで選べるようになります。",
+    "vi": "Hồ sơ này dành cho {{camera}}, không phải máy ảnh của ảnh này: hồ sơ được giữ lại và đề xuất cho máy ảnh đó.",
+    "zh-Hans": "此配置文件适用于 {{camera}}，而不是这张照片的相机：它会被保留，并在该相机的照片中提供。"
+  },
+  "another camera": {
+    "en": "another camera",
+    "fr": "un autre appareil",
+    "de": "eine andere Kamera",
+    "ja": "別のカメラ",
+    "vi": "một máy ảnh khác",
+    "zh-Hans": "另一台相机"
+  },
+  "How this camera’s colours are read. PIXL’s is fitted to the body; the file’s own is the maker’s matrix; a camera profile (.dcp) is Adobe’s or your own.": {
+    "en": "How this camera’s colours are read. PIXL’s is fitted to the body; the file’s own is the maker’s matrix; a camera profile (.dcp) is Adobe’s or your own.",
+    "fr": "La façon dont les couleurs de cet appareil sont lues. Celle de PIXL est ajustée au boîtier ; celle du fichier est la matrice du fabricant ; un profil d’appareil (.dcp) est celui d’Adobe ou le vôtre.",
+    "de": "Wie die Farben dieser Kamera gelesen werden. Die von PIXL ist auf das Gehäuse abgestimmt; die der Datei ist die Matrix des Herstellers; ein Kameraprofil (.dcp) ist das von Adobe oder Ihr eigenes.",
+    "ja": "このカメラの色の読み取り方です。PIXL のものはボディに合わせて調整され、ファイル自体のものはメーカーのマトリクスです。カメラプロファイル（.dcp）は Adobe のもの、またはご自身のものです。",
+    "vi": "Cách đọc màu của máy ảnh này. Màu của PIXL được tinh chỉnh cho thân máy; màu của tệp là ma trận của nhà sản xuất; hồ sơ máy ảnh (.dcp) là của Adobe hoặc của bạn.",
+    "zh-Hans": "读取这台相机颜色的方式。PIXL 的为该机身拟合；文件自带的是厂商的矩阵；相机配置文件（.dcp）来自 Adobe 或你自己。"
+  },
+  "Its tone curve is not applied: Playroom’s tone tools shape the picture.": {
+    "en": "Its tone curve is not applied: Playroom’s tone tools shape the picture.",
+    "fr": "Sa courbe de tonalité n’est pas appliquée : ce sont les outils de tonalité de Playroom qui façonnent l’image.",
+    "de": "Seine Tonkurve wird nicht angewendet: Die Tonwerkzeuge von Playroom formen das Bild.",
+    "ja": "トーンカーブは適用されません。画像の階調は Playroom のトーンツールで整えます。",
+    "vi": "Đường cong tông màu của hồ sơ không được áp dụng: các công cụ tông màu của Playroom định hình bức ảnh.",
+    "zh-Hans": "不应用其色调曲线：由 Playroom 的色调工具塑造画面。"
+  },
+  "A linear DNG takes its matrices only: its tables need a camera RAW.": {
+    "en": "A linear DNG takes its matrices only: its tables need a camera RAW.",
+    "fr": "Un DNG linéaire n’en prend que les matrices : ses tables ont besoin d’un RAW d’appareil.",
+    "de": "Ein lineares DNG übernimmt nur seine Matrizen: Seine Tabellen brauchen ein Kamera-RAW.",
+    "ja": "リニア DNG にはマトリクスのみが適用されます。テーブルにはカメラ RAW が必要です。",
+    "vi": "DNG tuyến tính chỉ nhận các ma trận của hồ sơ: các bảng của nó cần ảnh RAW từ máy ảnh.",
+    "zh-Hans": "线性 DNG 只采用其矩阵：其表格需要相机 RAW。"
+  },
+  "Its exposure offset ({{stops}} EV) is added, as Lightroom adds it.": {
+    "en": "Its exposure offset ({{stops}} EV) is added, as Lightroom adds it.",
+    "fr": "Son décalage d’exposition ({{stops}} IL) est ajouté, comme le fait Lightroom.",
+    "de": "Sein Belichtungsversatz ({{stops}} LW) wird hinzugefügt, wie Lightroom es tut.",
+    "ja": "露出オフセット（{{stops}} EV）は Lightroom と同じく加算されます。",
+    "vi": "Độ lệch phơi sáng của hồ sơ ({{stops}} EV) được cộng thêm, như Lightroom vẫn làm.",
+    "zh-Hans": "其曝光偏移（{{stops}} EV）会像 Lightroom 那样加上。"
+  },
+  "{{name}} · its tables ran": {
+    "en": "{{name}} · its tables ran",
+    "fr": "{{name}} · ses tables appliquées",
+    "de": "{{name}} · seine Tabellen angewendet",
+    "ja": "{{name}} · テーブル適用済み",
+    "vi": "{{name}} · đã áp dụng các bảng",
+    "zh-Hans": "{{name}} · 已应用其表格"
+  },
+  "{{name}} · matrices": {
+    "en": "{{name}} · matrices",
+    "fr": "{{name}} · matrices",
+    "de": "{{name}} · Matrizen",
+    "ja": "{{name}} · マトリクス",
+    "vi": "{{name}} · ma trận",
+    "zh-Hans": "{{name}} · 矩阵"
+  },
+  "Import a camera profile": {
+    "en": "Import a camera profile",
+    "fr": "Importer un profil d’appareil",
+    "de": "Kameraprofil importieren",
+    "ja": "カメラプロファイルを読み込む",
+    "vi": "Nhập hồ sơ máy ảnh",
+    "zh-Hans": "导入相机配置文件"
+  },
+  "DNG camera profile": {
+    "en": "DNG camera profile",
+    "fr": "Profil d’appareil DNG",
+    "de": "DNG-Kameraprofil",
+    "ja": "DNG カメラプロファイル",
+    "vi": "Hồ sơ máy ảnh DNG",
+    "zh-Hans": "DNG 相机配置文件"
+  },
+  "Camera profiles are not available": {
+    "en": "Camera profiles are not available",
+    "fr": "Les profils d’appareil ne sont pas disponibles",
+    "de": "Kameraprofile sind nicht verfügbar",
+    "ja": "カメラプロファイルは利用できません",
+    "vi": "Không có hồ sơ máy ảnh",
+    "zh-Hans": "相机配置文件不可用"
+  },
+  "{{name}} is not a DNG camera profile Playroom can read.": {
+    "en": "{{name}} is not a DNG camera profile Playroom can read.",
+    "fr": "{{name}} n’est pas un profil d’appareil DNG que Playroom peut lire.",
+    "de": "{{name}} ist kein DNG-Kameraprofil, das Playroom lesen kann.",
+    "ja": "{{name}} は Playroom が読み込める DNG カメラプロファイルではありません。",
+    "vi": "{{name}} không phải là hồ sơ máy ảnh DNG mà Playroom đọc được.",
+    "zh-Hans": "{{name}} 不是 Playroom 能读取的 DNG 相机配置文件。"
+  },
+  "Camera profile": {
+    "en": "Camera profile",
+    "fr": "Profil d’appareil",
+    "de": "Kameraprofil",
+    "ja": "カメラプロファイル",
+    "vi": "Hồ sơ máy ảnh",
+    "zh-Hans": "相机配置文件"
+  },
+  "How the camera’s colours are read before anything else: PIXL’s fit for the body, the file’s own matrix, or a DNG camera profile (.dcp).": {
+    "en": "How the camera’s colours are read before anything else: PIXL’s fit for the body, the file’s own matrix, or a DNG camera profile (.dcp).",
+    "fr": "La façon dont les couleurs de l’appareil sont lues avant tout le reste : l’ajustement de PIXL pour le boîtier, la matrice du fichier ou un profil d’appareil DNG (.dcp).",
+    "de": "Wie die Farben der Kamera vor allem anderen gelesen werden: PIXLs Anpassung an das Gehäuse, die eigene Matrix der Datei oder ein DNG-Kameraprofil (.dcp).",
+    "ja": "何よりも先にカメラの色をどう読み取るか：ボディに合わせた PIXL のもの、ファイル自体のマトリクス、または DNG カメラプロファイル（.dcp）。",
+    "vi": "Cách đọc màu của máy ảnh trước mọi thứ khác: bản tinh chỉnh của PIXL cho thân máy, ma trận của chính tệp, hoặc hồ sơ máy ảnh DNG (.dcp).",
+    "zh-Hans": "在一切之前如何读取相机的颜色：PIXL 为该机身的拟合、文件自带的矩阵，或 DNG 相机配置文件（.dcp）。"
+  },
+  "A camera profile, Adobe’s or one you made (a ColorChecker, dcamprof), matches the colour another app gave the photo; its tone curve is left to Playroom’s tone tools.": {
+    "en": "A camera profile, Adobe’s or one you made (a ColorChecker, dcamprof), matches the colour another app gave the photo; its tone curve is left to Playroom’s tone tools.",
+    "fr": "Un profil d’appareil, celui d’Adobe ou le vôtre (ColorChecker, dcamprof), reproduit la couleur qu’une autre application donnait à la photo ; sa courbe de tonalité est laissée aux outils de tonalité de Playroom.",
+    "de": "Ein Kameraprofil, das von Adobe oder Ihr eigenes (ColorChecker, dcamprof), trifft die Farbe, die eine andere App dem Foto gab; seine Tonkurve bleibt den Tonwerkzeugen von Playroom überlassen.",
+    "ja": "Adobe のもの、またはご自身で作ったもの（ColorChecker、dcamprof）のカメラプロファイルで、他のアプリでの写真の色に合わせられます。トーンカーブは Playroom のトーンツールに任せます。",
+    "vi": "Hồ sơ máy ảnh, của Adobe hoặc do bạn tạo (ColorChecker, dcamprof), khớp với màu mà một ứng dụng khác đã cho bức ảnh; đường cong tông màu của nó được để cho các công cụ tông màu của Playroom.",
+    "zh-Hans": "相机配置文件（Adobe 的或你自己制作的，如 ColorChecker、dcamprof）能匹配其他应用给照片的颜色；其色调曲线交给 Playroom 的色调工具。"
+  },
+  "Choose it before editing: the white balance is carried across, but heals and AI steps are made again on the new colour.": {
+    "en": "Choose it before editing: the white balance is carried across, but heals and AI steps are made again on the new colour.",
+    "fr": "Choisissez-le avant de retoucher : la balance des blancs est reportée, mais les corrections et les étapes d’IA sont refaites sur la nouvelle couleur.",
+    "de": "Wählen Sie es vor dem Bearbeiten: Der Weißabgleich wird übernommen, aber Reparaturen und KI-Schritte werden auf der neuen Farbe neu erstellt.",
+    "ja": "編集の前に選んでください。ホワイトバランスは引き継がれますが、修復と AI ステップは新しい色で作り直されます。",
+    "vi": "Hãy chọn trước khi chỉnh sửa: cân bằng trắng được chuyển sang, nhưng các bước sửa vết và AI sẽ được làm lại trên màu mới.",
+    "zh-Hans": "请在编辑前选择：白平衡会随之转换，但修复和 AI 步骤会在新颜色上重新生成。"
+  },
+  "How the corners change: Highlight priority darkens like light falling off, Colour priority lightens without washing colours out, Paint overlay mixes toward black or white.": {
+    "en": "How the corners change: Highlight priority darkens like light falling off, Colour priority lightens without washing colours out, Paint overlay mixes toward black or white.",
+    "fr": "La façon dont les coins changent : Priorité aux hautes lumières assombrit comme une lumière qui décroît, Priorité aux couleurs éclaircit sans délaver les couleurs, Incrustation peinte mélange vers le noir ou le blanc.",
+    "de": "Wie sich die Ecken ändern: Lichterpriorität dunkelt ab wie abfallendes Licht, Farbpriorität hellt auf, ohne Farben auszuwaschen, Malüberlagerung mischt in Richtung Schwarz oder Weiß.",
+    "ja": "四隅の変化のしかた：ハイライト優先は光が落ちるように暗くし、カラー優先は色を褪せさせずに明るくし、ペイントオーバーレイは黒または白に向かって混ぜます。",
+    "vi": "Cách các góc thay đổi: Ưu tiên vùng sáng làm tối như ánh sáng suy giảm, Ưu tiên màu sắc làm sáng mà không làm bạc màu, Lớp phủ tô màu pha về phía đen hoặc trắng.",
+    "zh-Hans": "四角如何变化：高光优先如同光线衰减般压暗，颜色优先提亮而不使颜色褪白，绘画叠加向黑色或白色混合。"
+  },
+  "Colour priority keeps hue and saturation: a lightening stops each pixel at white.": {
+    "en": "Colour priority keeps hue and saturation: a lightening stops each pixel at white.",
+    "fr": "Priorité aux couleurs garde la teinte et la saturation : un éclaircissement arrête chaque pixel au blanc.",
+    "de": "Farbpriorität behält Farbton und Sättigung: Ein Aufhellen stoppt jedes Pixel bei Weiß.",
+    "ja": "カラー優先は色相と彩度を保ちます。明るくする際は各ピクセルが白で止まります。",
+    "vi": "Ưu tiên màu sắc giữ nguyên sắc độ và độ bão hòa: khi làm sáng, mỗi điểm ảnh dừng lại ở màu trắng.",
+    "zh-Hans": "颜色优先保留色相和饱和度：提亮时每个像素在白色处停止。"
+  },
+  "On an HDR photo a lightening keeps highlight priority: there is no white to stop at.": {
+    "en": "On an HDR photo a lightening keeps highlight priority: there is no white to stop at.",
+    "fr": "Sur une photo HDR, un éclaircissement garde la priorité aux hautes lumières : il n’y a pas de blanc où s’arrêter.",
+    "de": "Bei einem HDR-Foto behält ein Aufhellen die Lichterpriorität: Es gibt kein Weiß, bei dem es stoppen könnte.",
+    "ja": "HDR 写真では明るくする場合ハイライト優先のままになります。止まるべき白がないためです。",
+    "vi": "Trên ảnh HDR, việc làm sáng giữ chế độ ưu tiên vùng sáng: không có màu trắng để dừng lại.",
+    "zh-Hans": "在 HDR 照片上提亮会保持高光优先：没有可停止的白色。"
+  }
+}

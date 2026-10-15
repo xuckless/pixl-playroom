@@ -31,7 +31,7 @@ import {
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { basename, dirname, isAbsolute, win32 } from 'path'
 import type { ColorLabel, Flag, Snapshot } from '../../shared/ipc'
-import { parseRawColour } from '../../shared/rawcolour'
+import { dcpIdOf, parseRawColour, readProfile } from '../../shared/rawcolour'
 import { readNames } from '../../shared/naming'
 import { hydrateRecipe, normaliseRecipe, slimRecipe, type Recipe } from '../../shared/recipe'
 import { HISTORY_SCHEMA, HistoryTable, type HistoryRow } from '../historytable'
@@ -679,6 +679,9 @@ export class PixlFile {
       stack: stack ? (JSON.parse(stack) as SidecarStack) : null,
       rawColour: parseRawColour(this.meta('rawColour')),
       rawColourChosen: this.meta('rawColourChosen') === '1',
+      cameraProfile: dcpIdOf(this.meta('rawColour'))
+        ? readProfile(this.meta('cameraProfile'))
+        : null,
       names: readNames(this.meta('names')),
       cullKeep: this.meta('cullKeep') === '1'
     }
@@ -757,6 +760,10 @@ export class PixlFile {
       this.setMeta('stack', s.stack ? JSON.stringify(s.stack) : null)
       this.setMeta('rawColour', s.rawColour ?? null)
       this.setMeta('rawColourChosen', s.rawColour && s.rawColourChosen ? '1' : null)
+      this.setMeta(
+        'cameraProfile',
+        dcpIdOf(s.rawColour) && s.cameraProfile ? JSON.stringify(s.cameraProfile) : null
+      )
       this.setMeta('names', s.names ? JSON.stringify(s.names) : null)
       this.setMeta('cullKeep', s.cullKeep ? '1' : null)
     })

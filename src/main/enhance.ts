@@ -50,11 +50,13 @@ import {
   BACKGROUND_THREADS,
   heavyThreads,
   blankRequest,
+  colourOf,
   seedOf,
   sourceOrientation,
   uprightFraming,
   versionStamp
 } from './source'
+import { exposureOffsetOf } from '../shared/rawcolour'
 import { LOSSLESS_KEY } from './ai/denoise'
 import { keyOf, parseKey } from './keys'
 import { paths } from './paths'
@@ -64,7 +66,7 @@ import { askOf } from './ai/rawdevelop'
 import { ensureBase, pixelDeps } from './pixels/base'
 import { freezeMask } from './pixels/freeze'
 import { addPixelStep, replacePixelStep, storesLossless } from './pixels/steps'
-import { ensureWorking, guardPatch, modelInput } from './pixels/working'
+import { ensureWorking, guardPatch, modelInput, rasterOf } from './pixels/working'
 import { levelValues, PIXL_ENHANCE } from '../shared/pixlenhance'
 import type { PhotoRow } from './db'
 import type { ProxyFile } from './proxy'
@@ -347,6 +349,7 @@ export class EnhanceRunner implements AiRunner<EnhanceRequest> {
             photoId: row.id,
             isRaw: row.is_raw === 1,
             asShot: info.as_shot_white,
+            exposureOffset: exposureOffsetOf(colourOf(row)),
             seed: seedOf(row),
             master
           },
@@ -482,14 +485,14 @@ export async function makeEnhancePreview(
     y: number,
     w: number,
     h: number,
-    png: boolean
+    channels: 3 | 4
   ): Promise<ConvertReport> =>
     engine.convert(
       {
         ...blankRequest(from.path, to, from.input),
         // The square's surround from a float frame stays float: the model reads it whole.
-        pixel: { depth: !png && from.float ? 'F32' : 'Sixteen', channels: png ? 4 : 3 },
-        encode: png ? { Png: { compression: 'Fast', filter: 'Sub' } } : TIFF,
+        pixel: { depth: channels === 3 && from.float ? 'F32' : 'Sixteen', channels },
+        encode: TIFF,
         metadata: ICC_ONLY,
         color: 'Preserve',
         framing: {
@@ -512,7 +515,7 @@ export async function makeEnhancePreview(
     const input = readsFloat(steps) ? frame : await modelInput(engine, dir, frame, heavyThreads())
     const around = join(dir, `enhance-preview-${stamp}-in.tiff`)
     made.push(around)
-    await cut(input, around, ox, oy, ow, oh, false)
+    await cut(input, around, ox, oy, ow, oh, 3)
     const enhanced = join(dir, `enhance-preview-${stamp}-out.tiff`)
     made.push(enhanced)
     const ids = [PIXL_ENHANCE]
@@ -534,7 +537,8 @@ export async function makeEnhancePreview(
       signal
     )
     // The square alone (its surround was only context), as the overlay a step is.
-    const square = join(dir, `enhance-preview-${stamp}-sq.png`)
+    // Uncompressed (engine 0.21, E33): nothing to deflate, then inflate again.
+    const square = join(dir, `enhance-preview-${stamp}-sq.tiff`)
     made.push(square)
     const r = await cut(
       { path: enhanced, input: 'Tiff', width: ow, height: oh },
@@ -543,7 +547,7 @@ export async function makeEnhancePreview(
       iy - oy,
       side,
       side,
-      true
+      4
     )
     const deps = pixelDeps(engine, index, row)
     const src = await guardPatch(deps, frame, square, { x: ix, y: iy })
@@ -558,7 +562,7 @@ export async function makeEnhancePreview(
         color: 'Preserve',
         overlays: [
           {
-            source: { Png: src },
+            source: rasterOf(src),
             rect: { x: ix / W, y: iy / H, width: r.width / W },
             opacity: 1,
             // As a step is laid on: in linear light.

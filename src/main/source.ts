@@ -22,7 +22,13 @@ import { fromExif } from '../shared/orientation'
 import { READ_LIMITS } from '../shared/limits'
 import { hash32 } from '../shared/recipe'
 import type { PhotoRow } from './db'
-import { cameraColourOf, developMark, parseRawColour, type RawColour } from '../shared/rawcolour'
+import {
+  cameraColourOf,
+  developMark,
+  parseRawColour,
+  usableColour,
+  type RawColour
+} from '../shared/rawcolour'
 import { execFileSync } from 'child_process'
 import { cpus } from 'os'
 
@@ -85,7 +91,7 @@ export function rawDevelop(colour: RawColour): RawMode {
       srgb_gamma: false,
       crop: 'Best',
       resolution: 'Full',
-      colour: cameraColourOf(colour),
+      colour: cameraColourOf(colour, 'develop'),
       dng_opcodes: DNG_OPCODES
     }
   }
@@ -134,7 +140,7 @@ export function rawMaster(
       mosaic_denoise: scene.mosaic_denoise,
       demosaic: scene.demosaic,
       resolution: 'Full',
-      colour: cameraColourOf(colour),
+      colour: cameraColourOf(colour, 'scene'),
       dng_opcodes: DNG_OPCODES
     }
   }
@@ -178,13 +184,39 @@ export function binFactor(probeLong: number, cell: number, edge: number): number
   return Math.min(Math.floor(64 / cell) * cell, Math.max(cell, f))
 }
 
+/**
+ * A small binned develop of a RAW under `colour`, read for its report only:
+ * the white (`white_temperature_kelvin`, `white_tint`) a camera profile's
+ * matrices find for the file's as-shot neutral (main/library.ts). Pixels in
+ * float, whose colour the report states (the engine wants leave to: ICC).
+ */
+export function profileWhiteRequest(
+  path: string,
+  info: Pick<SourceInfo, 'input' | 'width' | 'height' | 'gain_map'>,
+  colour: RawColour,
+  cell: number
+): ConvertRequest {
+  return {
+    ...blankRequest(path, '', info.input, info),
+    sink: 'Bytes',
+    raw: rawBinnedMaster(colour, binFactor(Math.max(info.width, info.height), cell, 256)),
+    pixel: { depth: 'F32', channels: 3 },
+    encode: { Pixels: { sample: 'F32' } },
+    metadata: { exif: false, icc: true, xmp: false, iptc: false },
+    threads: BACKGROUND_THREADS
+  }
+}
+
 /** The file's own colour: what a RAW was developed with before engine 0.17 named one. */
 export const RAW_DEVELOP: RawMode = rawDevelop('container')
 export const RAW_PROXY_DEVELOP: RawMode = rawProxyDevelop('container')
 
-/** A photo's camera colour as recorded; the file's own until it is (shared/rawcolour.ts). */
+/**
+ * A photo's camera colour as recorded; the file's own until it is, or while
+ * its camera profile is not known here (shared/rawcolour.ts `usableColour`).
+ */
 export const colourOf = (photo: { raw_colour?: string | null }): RawColour =>
-  parseRawColour(photo.raw_colour) ?? 'container'
+  usableColour(parseRawColour(photo.raw_colour) ?? 'container')
 
 /**
  * How many photosites across a RAW's colour filter array cell is: 3 for

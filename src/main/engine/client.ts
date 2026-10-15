@@ -33,6 +33,7 @@ import type {
   ReachReport,
   ReachRequest,
   Rgb,
+  DcpProfile,
   SamOp,
   SamResult,
   SegmentReport,
@@ -457,6 +458,13 @@ export class EngineClient {
   suggestLateralCa(request: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.call('suggestLateralCa', [request]) as Promise<Record<string, unknown>>
   }
+  /**
+   * A `.dcp` file's bytes as `CameraColour.Dcp` states it (engine 0.21, E21);
+   * refused (`InvalidRequest`, field `bytes`) when it is not a camera profile.
+   */
+  readCameraProfile(bytes: Uint8Array): Promise<DcpProfile> {
+    return this.call('readCameraProfile', [bytes]) as Promise<DcpProfile>
+  }
   /** The white that makes a linear sample neutral, as the `WhiteBalance` op names it. */
   whiteBalanceFromPixel(rgb: Rgb, space: GradeSpace): Promise<WhiteBalance> {
     return this.call('whiteBalanceFromPixel', [rgb, space]) as Promise<WhiteBalance>
@@ -522,6 +530,7 @@ export class EngineClient {
               runtime: msg.runtime,
               prompt: msg.prompt,
               gpu: msg.gpu === true,
+              build: msg.build,
               restarts: this.status.restarts
             }
           : {

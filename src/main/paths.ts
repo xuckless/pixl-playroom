@@ -59,6 +59,8 @@ export const paths = {
   luts: (): string => dir('luts'),
   /** Imported lens profiles, one JSON file per lens (`shared/lens.ts`). */
   lensProfiles: (): string => dir('lens-profiles'),
+  /** Imported DNG camera profiles, one JSON file each (`cameraprofiles.ts`), not made until one is. */
+  cameraProfiles: (): string => join(app.getPath('userData'), 'camera-profiles'),
   /** The lens catalogue downloaded from the models server (`lensprofiles.ts`). */
   lensCatalog: (): string => dir('lens-profiles', 'catalog'),
   /** The lens catalogue the app ships: beside its resources when packaged, in resources/ in a checkout. */

@@ -224,6 +224,12 @@ export interface CompileContext {
   /** A RAW's as-shot white, which makes its temperature slider absolute. */
   asShot: WhitePoint | null
   /**
+   * Stops added to a RAW's exposure under the photo's own: a camera
+   * profile's BaselineExposureOffset (engine 0.21, E21; `exposureOffsetOf`),
+   * which Adobe's renderer adds and the engine leaves to the host.
+   */
+  exposureOffset?: number
+  /**
    * The source's own orientation as the engine should apply it: a file's EXIF
    * orientation, `Normal` for a developed RAW (already upright) and for a
    * proxy (built upright).
@@ -1426,15 +1432,16 @@ function settingsStages(
   }
   const mix = calibrationMatrix(r.calibration)
   if (mix) linear.push({ ChannelMixer: { red: mix[0], green: mix[1], blue: mix[2] } })
-  if (r.basic.exposure !== 0)
-    linear.push({ Primary: primary({ exposure: round4(r.basic.exposure), contrast_pivot: 0.18 }) })
+  const exposure = r.basic.exposure + (base && ctx.isRaw ? (ctx.exposureOffset ?? 0) : 0)
+  if (exposure !== 0)
+    linear.push({ Primary: primary({ exposure: round4(exposure), contrast_pivot: 0.18 }) })
   // An SDR picture's highlights are rolled onto white; an HDR one has room
   // above white for them (and a shoulder there would flatten it). A RAW's
   // Scene master (engine 0.18) is over white before any exposure, by up to
   // RAW_SCENE_STOPS: its shoulder is always there and reaches that far.
   const room = base && ctx.isRaw ? RAW_SCENE_STOPS : 0
-  if (base && !ctx.hdr && (r.basic.exposure > 0 || room > 0)) {
-    const stops = round4(Math.max(0, r.basic.exposure) + room)
+  if (base && !ctx.hdr && (exposure > 0 || room > 0)) {
+    const stops = round4(Math.max(0, exposure) + room)
     linear.push({
       Lut: { lut: { Cube: shoulderCube(stops) }, amount: 1, out_of_domain: 'Clamp' }
     })
@@ -1810,6 +1817,15 @@ export function densityOp(d: DensitySetting): GradeOp | null {
  */
 function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vignette['style'] {
   const exposure = { Exposure: { highlights: clamp(e.vignetteHighlights / 100, 0, 1) } }
+  if (e.vignetteStyle === 'colour') {
+    // Engine 0.21 (E24): darkening is highlight priority's at 0; lightening
+    // stops each pixel at white, which a picture with headroom has none of.
+    if (!hdr || e.vignetteAmount <= 0) return 'ColorPriority'
+    notes.push(
+      tk('Colour priority lightening needs an SDR picture; this HDR photo keeps highlight priority')
+    )
+    return { Exposure: { highlights: 0 } }
+  }
   if (e.vignetteStyle !== 'paint') return exposure
   if (hdr) {
     notes.push(tk('Paint overlay needs an SDR picture; this HDR photo keeps highlight priority'))

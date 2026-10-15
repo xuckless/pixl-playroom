@@ -121,6 +121,15 @@ function hasGpu(e: PixlEngineModule): boolean {
   }
 }
 
+/** Which build the addon is (0.21.0, E69); absent from an older one. */
+function buildInfo(e: PixlEngineModule): EngineHelloMessage['build'] {
+  try {
+    return typeof e.buildInfo === 'function' ? e.buildInfo() : undefined
+  } catch {
+    return undefined
+  }
+}
+
 const loaded = loadNative()
 const engine = 'engine' in loaded ? loaded.engine : undefined
 
@@ -132,7 +141,8 @@ if (engine) {
     enhance: engine.hasEnhance(),
     runtime: bundledRuntime(engine),
     prompt: typeof engine.segmentPrompt === 'function',
-    gpu: hasGpu(engine)
+    gpu: hasGpu(engine),
+    build: buildInfo(engine)
   })
 } else {
   send({

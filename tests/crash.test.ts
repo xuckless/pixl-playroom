@@ -1,6 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { errorPayload, MAX_PROBLEM_LOG, problemPayload, scrub } from '../src/shared/crash'
+import {
+  buildCommit,
+  developmentCommit,
+  engineBuildFields,
+  errorPayload,
+  MAX_PROBLEM_LOG,
+  problemPayload,
+  scrub
+} from '../src/shared/crash'
 
 test('a report never carries the home folder, in either slash direction', () => {
   const mac = 'Error: ENOENT /Users/alex/Pictures/IMG_1.CR2\n    at open (/Users/alex/app.js:1:2)'
@@ -73,4 +81,28 @@ test("a problem report's log is the scrubbed end of the file, from a whole line"
   assert.ok(p.log.length <= MAX_PROBLEM_LOG)
   assert.ok(p.log.startsWith('opened ~/Photos/IMG_1.CR3'))
   assert.ok(!p.log.includes('/Users/sam'))
+})
+
+test('a problem report names the engine’s build; a development build’s commit is shown short', () => {
+  const commit = '1ae941f3e8d37d5bc2818b4ab5cf1c1e96f5bcc0'
+  const release = { commit, dirty: false, kind: 'release' as const }
+  const dev = { commit, dirty: true, kind: 'development' as const }
+  assert.deepEqual(engineBuildFields(undefined), {})
+  assert.deepEqual(engineBuildFields(release), { engineCommit: commit, engineKind: 'release' })
+  assert.deepEqual(engineBuildFields(dev), {
+    engineCommit: `${commit}+changes`,
+    engineKind: 'development'
+  })
+  const p = problemPayload(
+    { message: 'x', includeLog: false },
+    { ...ABOUT, ...engineBuildFields(dev) },
+    null,
+    [],
+    'T'
+  )
+  assert.equal(p.engineCommit, `${commit}+changes`)
+  assert.equal(p.engineKind, 'development')
+  assert.equal(developmentCommit(release), null)
+  assert.equal(developmentCommit(dev), '1ae941f+changes')
+  assert.equal(buildCommit({ commit: 'unknown', dirty: null }), 'unknown')
 })

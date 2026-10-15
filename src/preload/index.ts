@@ -25,7 +25,10 @@ import {
   type Collection,
   type CrashConsent,
   type ErrorReport,
+  type CameraProfileAdded,
+  type CameraProfileChoices,
   type DevelopSession,
+  type FirstLookPicture,
   type EngineStatus,
   type GpuDragState,
   type ExportPreset,
@@ -237,6 +240,9 @@ const api = {
     open: (key: string) => call<DevelopSession>(IPC.develop.open, key),
     setRawColour: (key: string, colour: RawColour) =>
       call<RawColour>(IPC.develop.setRawColour, key, colour),
+    cameraProfiles: (key: string) => call<CameraProfileChoices>(IPC.develop.cameraProfiles, key),
+    addCameraProfile: (key: string, path: string | null) =>
+      call<CameraProfileAdded | null>(IPC.develop.addCameraProfile, key, path),
     close: (key: string) => call<void>(IPC.develop.close, key),
     update: (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
       call<void>(IPC.develop.update, key, recipe, interactive, rev),
@@ -294,6 +300,8 @@ const api = {
       call<void>(IPC.develop.compareWith, key, recipe),
     historyList: (key: string) => call<HistoryLog>(IPC.develop.historyList, key),
     warm: (keys: string[]) => call<void>(IPC.develop.warm, keys),
+    firstLook: (key: string, edge: number) =>
+      call<FirstLookPicture | null>(IPC.develop.firstLook, key, edge),
     historyAppend: (key: string, label: string, recipe: Recipe) =>
       call<HistoryAppend>(IPC.develop.historyAppend, key, label, recipe),
     historyAmend: (key: string, seq: number, label: string, recipe: Recipe) =>

@@ -4,6 +4,8 @@
  * (their name is usually in it) or the photo paths under it.
  */
 
+import type { BuildInfo } from './engine-types'
+
 /** Where crash reports go: kept in R2 for the privacy policy's period (pixl-web worker/api.ts). */
 export const CRASH_ENDPOINT = 'https://pixlfoundation.com/api/crash'
 /** Where problem reports the user writes (Settings → Report a problem) go. */
@@ -79,6 +81,9 @@ export interface ProblemPayload {
   log?: string
   version: string
   engine?: string
+  /** The commit the engine was built from (engine 0.21's `buildInfo`), `+changes` when dirty. */
+  engineCommit?: string
+  engineKind?: 'release' | 'development'
   platform: string
   arch: string
   /** The OS release (Darwin, Windows NT version). */
@@ -93,7 +98,10 @@ export interface ProblemPayload {
  */
 export function problemPayload(
   input: ProblemInput,
-  about: Pick<ProblemPayload, 'version' | 'engine' | 'platform' | 'arch' | 'os'>,
+  about: Pick<
+    ProblemPayload,
+    'version' | 'engine' | 'engineCommit' | 'engineKind' | 'platform' | 'arch' | 'os'
+  >,
   log: string | null,
   homes: string[],
   at = new Date().toISOString()
@@ -114,4 +122,28 @@ export function problemPayload(
     ...about,
     at
   }
+}
+
+/** What a report says of the engine's build (engine 0.21, E69): its commit and kind, when known. */
+export function engineBuildFields(
+  build: Pick<BuildInfo, 'commit' | 'dirty' | 'kind'> | null | undefined
+): Pick<ProblemPayload, 'engineCommit' | 'engineKind'> {
+  if (!build) return {}
+  return { engineCommit: buildCommit(build, 40), engineKind: build.kind }
+}
+
+/**
+ * A build's commit as people read it: the first `length` characters, with
+ * `+changes` when the tree it was built from had changes; `unknown` kept.
+ */
+export function buildCommit(build: Pick<BuildInfo, 'commit' | 'dirty'>, length = 7): string {
+  const commit = build.commit === 'unknown' ? build.commit : build.commit.slice(0, length)
+  return build.dirty ? `${commit}+changes` : commit
+}
+
+/** A development build's commit for the About box and the Engine report; null for a release. */
+export function developmentCommit(
+  build: Pick<BuildInfo, 'commit' | 'dirty' | 'kind'> | null | undefined
+): string | null {
+  return build && build.kind === 'development' ? buildCommit(build) : null
 }

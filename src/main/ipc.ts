@@ -367,9 +367,7 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.restart, () => restart())
 
   handle(IPC.app.reportError, (e: ErrorReport) => reportRendererError(e))
-  handle(IPC.app.reportProblem, (r: ProblemInput) =>
-    sendProblemReport(r, s.engine.getStatus().version)
-  )
+  handle(IPC.app.reportProblem, (r: ProblemInput) => sendProblemReport(r, s.engine.getStatus()))
   handle(IPC.app.openNotices, async () => {
     const err = await shell.openPath(paths.notices())
     if (err)
@@ -641,6 +639,21 @@ export function registerIpc(s: Services): void {
     await s.sessions.close(key)
     return now
   })
+  handle(IPC.develop.cameraProfiles, (key: string) => s.library.cameraProfiles(key))
+  handle(IPC.develop.addCameraProfile, async (key: string, path: string | null) => {
+    // A path from the renderer is one of Adobe's profiles it was offered
+    // (checked against that list); any other file the person picks here.
+    if (typeof path === 'string') return s.library.addCameraProfile(key, path, 'adobe')
+    const w = win()
+    const opts = {
+      title: t('Import a camera profile'),
+      properties: ['openFile'] as 'openFile'[],
+      filters: [{ name: t('DNG camera profile'), extensions: ['dcp'] }]
+    }
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+    if (r.canceled || !r.filePaths[0]) return null
+    return s.library.addCameraProfile(key, r.filePaths[0])
+  })
   handle(
     IPC.develop.update,
     async (key: string, recipe: Recipe, interactive: boolean, rev?: number) =>
@@ -759,6 +772,9 @@ export function registerIpc(s: Services): void {
     ...(log.head ? { head: s.planes.slim(log.head) } : {})
   })
   handle(IPC.develop.warm, (keys: string[]) => s.library.warm(keys))
+  handle(IPC.develop.firstLook, (key: string, edge: number) =>
+    s.library.firstLook(key, edge, s.engine)
+  )
   handle(IPC.develop.historyList, async (key: string) => slimLog(await s.index.history(key)))
   handle(IPC.develop.historyAppend, async (key: string, label: string, recipe: Recipe) => {
     // The step and the recipe the photo has now go into its project together.

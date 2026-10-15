@@ -16,6 +16,17 @@ export const TIPS = {
     expect: tk('The whole picture shifts warmer or cooler, greener or pinker.'),
     tip: tk('Pick a grey or white with the eyedropper first, then season by eye.')
   },
+  'wb.colour': {
+    what: tk(
+      'How the camera’s colours are read before anything else: PIXL’s fit for the body, the file’s own matrix, or a DNG camera profile (.dcp).'
+    ),
+    expect: tk(
+      'A camera profile, Adobe’s or one you made (a ColorChecker, dcamprof), matches the colour another app gave the photo; its tone curve is left to Playroom’s tone tools.'
+    ),
+    tip: tk(
+      'Choose it before editing: the white balance is carried across, but heals and AI steps are made again on the new colour.'
+    )
+  },
   'wb.temp': {
     what: tk('Cools (left) or warms (right) the picture.'),
     expect: tk('Daylight sits near 5500 K; tungsten rooms want around 3200 K.'),
@@ -284,6 +295,13 @@ export const TIPS = {
     what: tk('Darkens (left) or brightens (right) the corners after the crop.'),
     expect: tk('A small negative amount draws the eye to the centre.'),
     tip: tk('Raise Feather for a vignette nobody notices but everybody feels.')
+  },
+  'effects.vignette.style': {
+    what: tk(
+      'How the corners change: Highlight priority darkens like light falling off, Colour priority lightens without washing colours out, Paint overlay mixes toward black or white.'
+    ),
+    expect: tk('Colour priority keeps hue and saturation: a lightening stops each pixel at white.'),
+    tip: tk('On an HDR photo a lightening keeps highlight priority: there is no white to stop at.')
   },
   'effects.grain': {
     what: tk('Adds film-like grain.'),

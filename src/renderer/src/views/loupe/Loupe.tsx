@@ -58,6 +58,7 @@ import { Guides } from './Guides'
 import { LassoEditor, PolygonLayer } from './LassoTool'
 import { ObjectsTool } from './ObjectsTool'
 import { LoupeHud } from './LoupeHud'
+import { FirstLook } from './FirstLook'
 import { GradientTools } from './GradientTools'
 import { LookPick } from './LookPick'
 import { AiScan } from '../../fx/AiScan'
@@ -562,8 +563,14 @@ export function Loupe(): React.JSX.Element {
     [session, recipe, g, vrect, tool, picture, layerId, replace, setTool]
   )
 
-  // Opening: the processing sphere covers the stage; the loupe waits under it.
-  if (loading) return <div className="loupe" />
+  // Opening: the photo's first look (its thumbnail, an unedited RAW's
+  // embedded preview), or without one the processing sphere over the stage.
+  if (loading)
+    return (
+      <div className="loupe">
+        <FirstLook />
+      </div>
+    )
   if (!session || !recipe)
     return (
       <div className="loupe-idle">
@@ -724,6 +731,7 @@ export function Loupe(): React.JSX.Element {
           <HealTool rect={vrect} g={g} />
         )}
       </div>
+      <FirstLook />
       <LoupeHud scale={scale} />
       <RebuildPrompt />
     </div>

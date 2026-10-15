@@ -50,9 +50,9 @@ import type {
   Snapshot,
   SourceListing
 } from '../../shared/ipc'
-import { ENGINE_RENDER_REV } from '../../shared/pixels'
+import { ENGINE_RENDER_REV, PREVIEW_THUMB_REV } from '../../shared/pixels'
 import { groupNear } from '../../shared/dupes'
-import { parseRawColour } from '../../shared/rawcolour'
+import { dcpIdOf, parseRawColour, readProfile, registerDcp } from '../../shared/rawcolour'
 import { readNames, searchWords } from '../../shared/naming'
 import { CULL_VERSION, cullKey, type CullModels } from '../../shared/cull'
 import { convertAsShot, type WbContext } from '../../shared/wbconvert'
@@ -326,6 +326,12 @@ export class IndexService {
           ? opts.freshLocation
           : exportLocationFromLast(this.store.getSetting('export.last'))
       )
+    // The camera profiles photos' colours name (engine 0.21, E21): the
+    // thumbnails' stamps name the develop by them, as main's caches do.
+    for (const { id, json } of this.store.cameraProfiles()) {
+      const profile = readProfile(json)
+      if (profile) registerDcp(id, profile)
+    }
     this.home = opts.home ?? homedir()
     this.cacheRoot = join(opts.userData, 'cache')
     this.emit = opts.emit
@@ -1088,6 +1094,13 @@ export class IndexService {
     // The truth where one is written; a photo with none keeps what the index recorded.
     if (sidecar.rawColour)
       this.store.setRawColour(row.id, sidecar.rawColour, sidecar.rawColourChosen === true)
+    // The camera profile it names, carried in (from another machine, say).
+    // One the index holds already stands: an id is a file's, kept as read.
+    const profileId = dcpIdOf(sidecar.rawColour)
+    if (profileId && sidecar.cameraProfile && !this.store.cameraProfile(profileId)) {
+      this.store.setCameraProfile(profileId, JSON.stringify(sidecar.cameraProfile))
+      registerDcp(profileId, sidecar.cameraProfile)
+    }
     if (sidecar.names) this.store.setNames(row.id, JSON.stringify(sidecar.names))
     if (sidecar.cullKeep) this.store.setCullKeep(row.id, true)
     if (from === 'project') {
@@ -2142,6 +2155,13 @@ export class IndexService {
     const apply = (s: Sidecar): void => {
       change(s)
       if (colour && !s.rawColour) s.rawColour = colour
+      // A camera profile goes with the colour that names it, and only then:
+      // the index's for that id (one carried for a colour since changed is
+      // another profile), else what the file carried in.
+      const profileId = dcpIdOf(s.rawColour)
+      s.cameraProfile = profileId
+        ? (readProfile(this.store.cameraProfile(profileId)) ?? s.cameraProfile ?? null)
+        : null
       if (names && !s.names) s.names = names
       if (row.cull_keep === 1 && !s.cullKeep) s.cullKeep = true
     }
@@ -2313,7 +2333,10 @@ export class IndexService {
     const edited = recipeKey !== 'plain'
     // An unedited RAW's thumbnail is its embedded preview, which no develop makes.
     // An edited photo's thumbnail is of the engine that graded it (`ENGINE_RENDER_REV`).
-    const stamp = `${versionStamp(row, !raw || edited)}${edited ? `-e${ENGINE_RENDER_REV}` : ''}-${recipeKey}`
+    // An unedited RAW's since engine 0.21 is sized from its preview, not the
+    // sensor (`PREVIEW_THUMB_REV`): those made before, often far too small, again.
+    const mark = edited ? `-e${ENGINE_RENDER_REV}` : raw ? `-t${PREVIEW_THUMB_REV}` : ''
+    const stamp = `${versionStamp(row, !raw || edited)}${mark}-${recipeKey}`
     const have = existing.thumb_path && existsSync(existing.thumb_path)
     if (existing.thumb_key === stamp && have) return null
     return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp }
@@ -2347,6 +2370,19 @@ export class IndexService {
    * (`explicit`): an untouched RAW gets no sidecar for a default that is
    * worked out the same way again.
    */
+  /** Keep a camera profile (its JSON) by the id a `dcp:<id>` colour names (engine 0.21, E21). */
+  setCameraProfile(id: string, json: string): void {
+    const profile = /^[0-9a-f]{8}$/.test(id) ? readProfile(json) : null
+    if (!profile) return
+    this.store.setCameraProfile(id, json)
+    registerDcp(id, profile)
+  }
+
+  /** A camera profile's JSON, by id; null when the index holds none. */
+  cameraProfile(id: string): string | null {
+    return this.store.cameraProfile(id)
+  }
+
   setRawColour(photoId: number, colour: string, explicit = false): void {
     const c = parseRawColour(colour)
     const row = this.store.photo(photoId)

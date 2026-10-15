@@ -539,8 +539,18 @@ export function InfoPane(): React.JSX.Element {
           <>
             <dt>{t('Camera colour')}</dt>
             <dd title={rawColourReason(info) ?? undefined}>
-              {rawColourLabel(info, session.rawColour)}
+              {session.cameraProfile?.name ?? rawColourLabel(info, session.rawColour)}
               {session.rawColour === 'container' && rawColourReason(info) ? ' *' : ''}
+            </dd>
+          </>
+        )}
+        {session.cameraProfile && (
+          <>
+            <dt>{t('Profile')}</dt>
+            <dd title={session.cameraProfile.tables ?? undefined}>
+              {session.cameraProfile.tables
+                ? t('{{name}} · its tables ran', { name: session.cameraProfile.name })
+                : t('{{name}} · matrices', { name: session.cameraProfile.name })}
             </dd>
           </>
         )}

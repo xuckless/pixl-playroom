@@ -32,7 +32,8 @@ import { replacePixelStep } from './pixels/steps'
 import { ensureWorking } from './pixels/working'
 import { ensureMaster, viewProxies } from './proxy'
 import type { DevelopSessions } from './render'
-import { isLinearRaw, seedOf, versionStamp } from './source'
+import { colourOf, isLinearRaw, seedOf, versionStamp } from './source'
+import { exposureOffsetOf } from '../shared/rawcolour'
 
 type RebuildRequest = Extract<AiStartRequest, { task: 'rebuild' }>
 
@@ -191,6 +192,7 @@ export class RebuildRunner implements AiRunner<RebuildRequest> {
       photoId: row.id,
       isRaw,
       asShot: info.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(row)),
       seed: seedOf(row),
       master
     }
