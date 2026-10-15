@@ -1,9 +1,7 @@
 /**
  * CIE 1976 u'v' chromaticity geometry for the expanded colour scope: the
  * spectral locus, the working space's primaries and the reference gamuts, all
- * as u'v' points. Pure, for the chart and the tests. The image's own
- * chromaticity (its cloud and hull) is not drawn here: it needs the engine to
- * measure it (TODO.md, ENGINE REQUEST: u'v' and gamut coverage metrics).
+ * as u'v' points. Pure, for the chart, the gamut coverage and the tests.
  */
 
 export interface Uv {
@@ -110,6 +108,22 @@ export function inTriangle(p: Uv, t: Uv[]): boolean {
   const neg = d1 < 0 || d2 < 0 || d3 < 0
   const pos = d1 > 0 || d2 > 0 || d3 > 0
   return !(neg && pos)
+}
+
+/**
+ * Whether `p` is a real colour: inside the spectral locus closed by the line
+ * of purples (its ends joined), by an even-odd crossing count.
+ */
+export function inLocus(p: Uv): boolean {
+  const pts = SPECTRAL_LOCUS
+  let inside = false
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i]
+    const b = pts[j]
+    if (a.v > p.v !== b.v > p.v && p.u < ((b.u - a.u) * (p.v - a.v)) / (b.v - a.v) + a.u)
+      inside = !inside
+  }
+  return inside
 }
 
 /** The chart's frame in u'v': PixlRGB's triangle with a margin, so nothing sits on the edge. */

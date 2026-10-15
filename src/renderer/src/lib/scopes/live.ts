@@ -1,14 +1,21 @@
 /**
  * The scopes binned from the picture on screen, kept up with it: every new
- * picture (a draft while a slider moves, the settled one after) goes to the
- * scopes worker, the newest only (one in flight, the latest waiting), so the
- * scopes follow a drag as fast as they can be binned and never fall behind.
- * Full HDR's frames are read as their F16 pixels, so the waveform shows the
- * headroom above white; everything else as its Display P3 bitmap.
+ * picture (a draft while a slider moves, the settled one after) is binned,
+ * the newest only (one in flight, the latest waiting), so the scopes follow
+ * a drag as fast as they can and never fall behind. A draft goes to the
+ * scopes worker; a settled SDR picture is measured by the engine instead
+ * (E76): its waveform, parade and vectorscope over every pixel shown, on
+ * the worker's grids, so letting go of a slider sharpens them in place.
+ * The CIE chart, and Full HDR's frames (whose headroom only their F16
+ * pixels hold, sampled here on the main thread: a bounded 200k-pixel copy,
+ * PERF-14), stay the worker's. Everything else is read as its Display P3
+ * bitmap.
  */
 import { useEffect, useState } from 'react'
+import type { RenderEvent } from '../../../../shared/ipc'
 import type { ScopeBins, ScopeKind } from '../../../../shared/scopes'
-import { oetf, BINNED_SCOPES } from '../../../../shared/scopes'
+import { oetf, BINNED_SCOPES, ENGINE_SCOPES } from '../../../../shared/scopes'
+import { api } from '../api'
 import { useDevelop } from '../../state/develop'
 import { useUi } from '../../state/ui'
 import { frameFloat, isFrame, pictureBitmap, readable, whenFrame } from '../frames'
@@ -80,6 +87,8 @@ interface Source {
   /** What reads it as a bitmap: Full HDR's companion, else the picture. */
   read: string
   width: number
+  /** A settled SDR picture: the engine measures its scopes (E76). Not a draft, nor Full HDR's. */
+  settled: boolean
 }
 
 /** The mask plane the scopes read through: "in mask" on, a mask selected and its plane here. */
@@ -89,11 +98,12 @@ function maskNow(): string | null {
   return d.mask.url
 }
 
-const sourceOf = (p: { url: string; readUrl?: string; width: number }): Source => ({
+const sourceOf = (p: RenderEvent): Source => ({
   url: p.url,
   mask: maskNow(),
   read: readable(p),
-  width: p.width
+  width: p.width,
+  settled: p.kind === 'full' && p.ceiling === undefined
 })
 
 const listeners = new Set<(b: ScopeBins | null) => void>()
@@ -112,53 +122,80 @@ function want(): ScopeKind[] {
   return BINNED_SCOPES.filter((k) => all.has(k))
 }
 
-async function run(src: Source): Promise<void> {
+/** The engine's scopes of a settled picture, or null where it measured none (the worker bins then). */
+async function engineScopes(src: Source, kinds: ScopeKind[]): Promise<ScopeBins | null> {
+  const key = useDevelop.getState().session?.key
+  if (!key) return null
+  try {
+    return await api.develop.scopes({ key, url: src.url, mask: src.mask, want: kinds })
+  } catch {
+    return null
+  }
+}
+
+/** The worker's bins of the picture for `kinds`, or null where it can't. */
+async function workerBins(src: Source, kinds: ScopeKind[]): Promise<ScopeBins | null> {
   const w = scopesWorker()
+  if (!w) return null
+  // A frame's event can come before its pixels: a Full HDR one is read as
+  // its floats once they are here.
+  const float = isFrame(src.url)
+    ? (frameFloat(src.url) ?? ((await whenFrame(src.url)) ? frameFloat(src.url) : undefined))
+    : undefined
+  const id = ++nextId
+  const reply = await new Promise<Reply>((resolve) => {
+    const on = (e: MessageEvent<Reply>): void => {
+      if (e.data.id !== id) return
+      w.removeEventListener('message', on)
+      resolve(e.data)
+    }
+    w.addEventListener('message', on)
+    const mask = src.mask ? pictureBitmap(src.mask).catch(() => null) : Promise.resolve(null)
+    if (float) {
+      const floats = sampleFloat(float)
+      void mask.then((m) =>
+        w.postMessage(
+          { id, want: kinds, floats, ...(m ? { mask: m } : {}) },
+          m ? [floats.data.buffer, m] : [floats.data.buffer]
+        )
+      )
+    } else {
+      void Promise.all([pictureBitmap(src.read, Math.min(READ_EDGE, src.width)), mask]).then(
+        ([bitmap, m]) =>
+          w.postMessage(
+            { id, want: kinds, bitmap, ...(m ? { mask: m } : {}) },
+            m ? [bitmap, m] : [bitmap]
+          ),
+        (err) => resolve({ id, error: String(err) })
+      )
+    }
+  })
+  if (!slowLogged && (reply.ms ?? 0) > 40) {
+    slowLogged = true
+    console.info(`scopes: ${reply.ms!.toFixed(1)} ms to bin ${kinds.join(', ')}`)
+  }
+  return reply.bins ?? null
+}
+
+/** The engine's scopes with the worker's CIE density beside them: one set for every chart. */
+function merged(exact: ScopeBins | null, binned: ScopeBins | null): ScopeBins | null {
+  if (!exact || !binned) return exact ?? binned
+  return { ...exact, cieSize: binned.cieSize, cie: binned.cie }
+}
+
+async function run(src: Source): Promise<void> {
   const kinds = want()
-  if (!w || kinds.length === 0) return
+  if (kinds.length === 0) return
   busy = true
   try {
-    // A frame's event can come before its pixels: a Full HDR one is read as
-    // its floats once they are here.
-    const float = isFrame(src.url)
-      ? (frameFloat(src.url) ?? ((await whenFrame(src.url)) ? frameFloat(src.url) : undefined))
-      : undefined
-    const id = ++nextId
-    const reply = await new Promise<Reply>((resolve) => {
-      const on = (e: MessageEvent<Reply>): void => {
-        if (e.data.id !== id) return
-        w.removeEventListener('message', on)
-        resolve(e.data)
-      }
-      w.addEventListener('message', on)
-      const mask = src.mask ? pictureBitmap(src.mask).catch(() => null) : Promise.resolve(null)
-      if (float) {
-        const floats = sampleFloat(float)
-        void mask.then((m) =>
-          w.postMessage(
-            { id, want: kinds, floats, ...(m ? { mask: m } : {}) },
-            m ? [floats.data.buffer, m] : [floats.data.buffer]
-          )
-        )
-      } else {
-        void Promise.all([pictureBitmap(src.read, Math.min(READ_EDGE, src.width)), mask]).then(
-          ([bitmap, m]) =>
-            w.postMessage(
-              { id, want: kinds, bitmap, ...(m ? { mask: m } : {}) },
-              m ? [bitmap, m] : [bitmap]
-            ),
-          (err) => resolve({ id, error: String(err) })
-        )
-      }
-    })
-    if (reply.bins) {
-      last = reply.bins
+    const measured = src.settled ? kinds.filter((k) => ENGINE_SCOPES.includes(k)) : []
+    const exact = measured.length > 0 ? await engineScopes(src, measured) : null
+    const rest = exact ? kinds.filter((k) => !ENGINE_SCOPES.includes(k)) : kinds
+    const bins = merged(exact, rest.length > 0 ? await workerBins(src, rest) : null)
+    if (bins) {
+      last = bins
       lastUrl = src.url
       for (const l of listeners) l(last)
-      if (!slowLogged && (reply.ms ?? 0) > 40) {
-        slowLogged = true
-        console.info(`scopes: ${reply.ms!.toFixed(1)} ms to bin ${kinds.join(', ')}`)
-      }
     }
   } finally {
     busy = false

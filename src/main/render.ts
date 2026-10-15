@@ -68,6 +68,7 @@ import type {
   Measure,
   NativeRefs,
   NoiseEstimate,
+  ScopeReport,
   SourceInfo
 } from '../shared/engine-types'
 import { STRIP_ALL } from '../shared/engine-types'
@@ -86,8 +87,12 @@ import {
   type RenderEvent,
   type RenderReport,
   type SampleResult,
+  type ScopesRequest,
   type ViewState
 } from '../shared/ipc'
+import { engineBins, engineScopeSpec, type ScopeBins } from '../shared/scopes'
+import { gamutCoverage, type GamutCoverage } from '../shared/scopemetrics'
+import { COVERAGE_SIZE, coverageRequest } from './proofing'
 import { beforeRecipe, hash32, normaliseRecipe, sameValue, type Recipe } from '../shared/recipe'
 import { LookThumbQueue, type LookThumb, type ThumbJob } from './lookthumbs'
 import type { Vec3 } from '../shared/wb'
@@ -1505,10 +1510,12 @@ class Session {
         sample: display || floatSdr ? 'F16' : 'U8',
         ...(report.companion ? { companion: companionOf(report.companion) } : {})
       })
-    const stats = statsOf(report)
+    let stats = statsOf(report)
     // Full HDR's settled picture, either arm: what measures it (inside a
     // mask) and what reads its pixels take its SDR companion, kept as a PNG.
     let readUrl: string | undefined
+    /** The file the engine's scopes read for this picture (E76): an SDR one's, not Full HDR's. */
+    let scopeFile: { path: string; width: number } | null = null
     if (kind === 'full' && (display || floatSdr)) {
       const m = report.color.master
       if (display)
@@ -1524,12 +1531,20 @@ class Session {
         // Full HDR the master's SDR rendition of it, not a second SDR grade.
         this.lastCompanion = { path: file, width: c.width, height: c.height }
         if (!preview) this.fullPicture = whole ? { recipe, picture: this.lastCompanion } : null
+        if (floatSdr) {
+          // The engine measures a float output's values as they are, linear
+          // light; the histogram, the hue chart and the metrics read encoded
+          // ones, as the 8-bit picture's were. The companion is that picture.
+          stats = (await this.measureFile(file, signal)) ?? stats
+          scopeFile = { path: file, width: c.width }
+        }
       } else {
         this.lastFull = ''
         this.lastCompanion = null
       }
     } else if (kind === 'full' && out) {
       this.lastFull = out
+      scopeFile = { path: out, width: report.width }
       if (!preview)
         this.fullPicture = whole
           ? { recipe, picture: { path: out, width: report.width, height: report.height } }
@@ -1563,6 +1578,7 @@ class Session {
     this.lastEvent[kind] = event
     this.lastSent = event
     this.lastOut[kind] = out
+    if (scopeFile) this.keepScopeFile(event.url, scopeFile)
     // A frame is kept by the window only a moment: a file alone can be shown
     // again (and Full HDR's AVIF arm, which stays a dev switch, is not kept).
     // Nor is a held slider's stand-in (the draft's size) one to go back to.
@@ -2047,6 +2063,136 @@ class Session {
     } catch (err) {
       if (isCancelled(err)) throw err
       log.info('headroom overlay unavailable', (err as Error).message)
+    }
+  }
+
+  // ── the settled picture's exact scopes and gamut coverage (E76) ──
+
+  /**
+   * Settled SDR pictures' files by the url the window shows them at (a
+   * frame's, its companion): what `scopes` reads. The last few, as the
+   * window may still be asking for one just replaced.
+   */
+  private scopeFiles = new Map<string, { path: string; width: number }>()
+
+  private keepScopeFile(url: string, file: { path: string; width: number }): void {
+    this.scopeFiles.delete(url)
+    this.scopeFiles.set(url, file)
+    while (this.scopeFiles.size > RECENT_FULL + 2)
+      this.scopeFiles.delete(this.scopeFiles.keys().next().value as string)
+  }
+
+  /** A written picture measured as the histogram reads it (encoded), or undefined where it can't be. */
+  private async measureFile(path: string, signal: AbortSignal): Promise<ImageStats | undefined> {
+    try {
+      return await this.owner.engine.analyze(
+        analyzeRequest(path, path.endsWith('.png') ? 'Png' : 'Jpeg', 1),
+        { signal }
+      )
+    } catch (err) {
+      if (isCancelled(err)) throw err
+      log.info('settled picture unmeasured', (err as Error).message)
+      return undefined
+    }
+  }
+
+  /** The window's last ask for scopes: a newer one stops it. */
+  private scopesAbort: AbortController | null = null
+
+  /**
+   * The settled picture's waveform, parade and vectorscope as the engine
+   * measures them (E76): every pixel of the picture shown, binned on the
+   * same grids and by the same rules as the preview's bins, and in a mask
+   * weighed by its plane as the hue chart's numbers are. Null where there is
+   * nothing to measure (a draft, a Full HDR frame, whose headroom only the
+   * preview's float bins show; a plane no longer the selected mask's) or a
+   * newer ask stopped it: the window bins the preview instead.
+   */
+  async scopes(req: ScopesRequest): Promise<ScopeBins | null> {
+    const file = this.scopeFiles.get(req.url)
+    const spec = file ? engineScopeSpec(req.want, file.width) : null
+    if (!file || !spec) return null
+    const plane = req.mask && this.lastMask?.url === req.mask ? this.lastMaskOut : null
+    if (req.mask && !plane) return null
+    this.scopesAbort?.abort()
+    const abort = new AbortController()
+    this.scopesAbort = abort
+    try {
+      const stats = await this.owner.engine.analyze(
+        {
+          ...analyzeRequest(file.path, file.path.endsWith('.png') ? 'Png' : 'Jpeg', 1),
+          ...(plane ? { weights: { source: { Png: plane }, resampler: 'Bilinear' as const } } : {}),
+          scopes: spec
+        },
+        { signal: abort.signal }
+      )
+      return stats.scopes ? engineBins(stats.scopes, stats.pixels_measured) : null
+    } catch (err) {
+      if (!isCancelled(err)) log.info('engine scopes unavailable', (err as Error).message)
+      return null
+    } finally {
+      if (this.scopesAbort === abort) this.scopesAbort = null
+    }
+  }
+
+  /** The last gamut coverage, by what it was measured from: a settle that changed nothing asks nothing. */
+  private coverage: { sig: string; value: GamutCoverage } | null = null
+  private coverageAbort: AbortController | null = null
+
+  /**
+   * How much of the graded photo each colour space holds (the Metrics tab's
+   * Gamut coverage): the engine's u′v′ density of the float buffer before
+   * its egress (`measure.at: 'Working'`), so colours past the screen's
+   * gamut count where they really are. A render of its own from the draft
+   * proxy, its pixels left in the host, asked only while the Metrics tab
+   * shows and the picture has settled. The grade is the SDR picture's.
+   */
+  async gamutCoverage(): Promise<GamutCoverage | null> {
+    const src = this.viewPx().draft
+    const compiled = await this.compileFor(this.recipe, src, true, false, true, false)
+    const sig = String(
+      hash32(
+        gradeKey([src.path, compiled.grade, compiled.framing, compiled.lens, compiled.retouch])
+      )
+    )
+    if (this.coverage?.sig === sig) return this.coverage.value
+    this.coverageAbort?.abort()
+    const abort = new AbortController()
+    this.coverageAbort = abort
+    const { signal } = abort
+    try {
+      const alpha = framingTransparent(compiled.framing)
+      let density: NonNullable<ScopeReport['chromaticity']> | null | undefined
+      try {
+        const r = await this.owner.engine.convert(
+          coverageRequest(src, this.info, compiled, alpha, interactiveThreads()),
+          { signal, native: { discardOutput: true } }
+        )
+        density = r.stats?.scopes?.chromaticity
+      } catch (err) {
+        // Nothing to do in float (no grade, the proxy already Display P3):
+        // the picture is the proxy, measured as it is.
+        if (!(err instanceof EngineError) || err.field !== 'measure.at') throw err
+        const stats = await this.owner.engine.analyze(
+          {
+            ...analyzeRequest(src.path, src.input as 'Png' | 'Jpeg' | 'Tiff', 1),
+            domain: 'Linear',
+            transparent: 'Exclude',
+            scopes: { chromaticity: { size: COVERAGE_SIZE } }
+          },
+          { signal }
+        )
+        density = stats.scopes?.chromaticity
+      }
+      if (!density) return null
+      const value = gamutCoverage(density)
+      this.coverage = { sig, value }
+      return value
+    } catch (err) {
+      if (!isCancelled(err)) log.info('gamut coverage unavailable', (err as Error).message)
+      return null
+    } finally {
+      if (this.coverageAbort === abort) this.coverageAbort = null
     }
   }
 
@@ -3390,6 +3536,16 @@ export class DevelopSessions {
 
   autoTone(key: string): Promise<BasicSetting> {
     return this.get(key).autoTone()
+  }
+
+  /** The settled picture's scopes from the engine; null for a photo since closed. */
+  scopes(req: ScopesRequest): Promise<ScopeBins | null> {
+    return this.sessions.get(req.key)?.scopes(req) ?? Promise.resolve(null)
+  }
+
+  /** The open photo's gamut coverage (Metrics); null for a photo since closed. */
+  gamutCoverage(key: string): Promise<GamutCoverage | null> {
+    return this.sessions.get(key)?.gamutCoverage() ?? Promise.resolve(null)
   }
 
   autoWb(key: string): Promise<SampleResult['wb']> {

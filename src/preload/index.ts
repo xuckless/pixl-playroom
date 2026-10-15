@@ -1,6 +1,8 @@
 import type { Pipeline } from '../shared/rebuild'
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { NoiseEstimate, PreviewFrame, Transform } from '../shared/engine-types'
+import type { ScopeBins } from '../shared/scopes'
+import type { GamutCoverage } from '../shared/scopemetrics'
 import type { GuideLine } from '../shared/upright'
 import type { P as SpotPoint, RetouchSpot, SpotRefine } from '../shared/retouch'
 import type { PixelStep } from '../shared/pixels'
@@ -49,6 +51,7 @@ import {
   type ExportPreview,
   type Prefs,
   type RegionRequest,
+  type ScopesRequest,
   type RegionResult,
   type EnhancePreview,
   type MasterEvent,
@@ -243,6 +246,8 @@ const api = {
     sample: (key: string, x: number, y: number) =>
       call<SampleResult>(IPC.develop.sample, key, x, y),
     autoTone: (key: string) => call<BasicSetting>(IPC.develop.autoTone, key),
+    scopes: (req: ScopesRequest) => call<ScopeBins | null>(IPC.develop.scopes, req),
+    gamutCoverage: (key: string) => call<GamutCoverage | null>(IPC.develop.gamutCoverage, key),
     autoWb: (key: string) => call<SampleResult['wb']>(IPC.develop.autoWb, key),
     noise: (key: string) => call<NoiseEstimate | null>(IPC.develop.noise, key),
     measureCa: (key: string) => call<CaMeasurement>(IPC.develop.measureCa, key),

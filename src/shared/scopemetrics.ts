@@ -1,11 +1,12 @@
 /**
  * The expanded scope's numbers, from the measurements the engine already
  * returns (`ImageStats`): dynamic range, contrast, clipping, colour cast,
- * and how a colour-vision deficiency would see the photo's hues. Pure, for
- * the Metrics tab and the tests. Gamut coverage and the u'v' cloud need the
- * engine to measure them (TODO.md, ENGINE REQUEST).
+ * and how a colour-vision deficiency would see the photo's hues; and the
+ * gamut coverage from the engine's u′v′ density of the graded picture
+ * (E76). Pure, for the Metrics tab and the tests.
  */
 import type { ImageStats } from './engine-types'
+import { PIXLRGB, REFERENCE_GAMUTS, gamutPoints, inLocus, inTriangle, type Uv } from './cie'
 import { chromaDiff, hslToRgb, linearToSrgb, rgbToLab, srgbToLinear, type Rgb8 } from './palette'
 import { t, tk } from './i18n'
 
@@ -167,6 +168,66 @@ export function scopeMetrics(stats: ImageStats): ScopeMetrics {
     meanSaturation: stats.mean_saturation,
     channelMeans: stats.channel_mean,
     cast
+  }
+}
+
+// ── Gamut coverage (E76's chromaticity) ─────────────────────────────────────
+
+/**
+ * How much of the photo each space holds: the share of its coloured pixels
+ * (black has no chromaticity) whose colour lies inside sRGB, Display P3,
+ * Rec.2020 and PixlRGB, and the share outside the spectral locus, light no
+ * real colour has (a grade pushed past the working space's edge).
+ */
+export interface GamutCoverage {
+  srgb: number
+  p3: number
+  rec2020: number
+  pixlrgb: number
+  outside: number
+  /** The weight measured with a chromaticity. */
+  pixels: number
+}
+
+/**
+ * The engine's u′v′ density (`size²` cells over 0…`span` on both axes, row 0
+ * at v′ = 0; `outside` past that span) into shares: each cell's centre
+ * tested against each space's triangle and the locus. A cell is 0.0025
+ * wide at 256 a side, well inside what a boundary's position means.
+ */
+export function gamutCoverage(
+  d: { size: number; counts: ArrayLike<number>; outside: number },
+  span = 0.65
+): GamutCoverage {
+  const tri = (id: string): Uv[] => gamutPoints(REFERENCE_GAMUTS.find((g) => g.id === id)!)
+  const spaces = {
+    srgb: tri('srgb'),
+    p3: tri('p3'),
+    rec2020: tri('rec2020'),
+    pixlrgb: gamutPoints(PIXLRGB)
+  }
+  const held = { srgb: 0, p3: 0, rec2020: 0, pixlrgb: 0 }
+  let outside = d.outside
+  let total = d.outside
+  const n = d.size
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const c = d.counts[y * n + x]
+      if (!c) continue
+      total += c
+      const p = { u: ((x + 0.5) / n) * span, v: ((y + 0.5) / n) * span }
+      if (!inLocus(p)) outside += c
+      for (const k of Object.keys(held) as (keyof typeof held)[])
+        if (inTriangle(p, spaces[k])) held[k] += c
+    }
+  const share = (v: number): number => (total > 0 ? v / total : 0)
+  return {
+    srgb: share(held.srgb),
+    p3: share(held.p3),
+    rec2020: share(held.rec2020),
+    pixlrgb: share(held.pixlrgb),
+    outside: share(outside),
+    pixels: total
   }
 }
 

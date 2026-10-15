@@ -13,6 +13,7 @@ import type {
   WhitePoint
 } from './engine-types'
 import type { ExportSettings } from './export'
+import type { ScopeKind } from './scopes'
 import type { Step } from './history'
 import type { BasicSetting, Recipe, RecipeGroup } from './recipe'
 import type { SmartGroup } from './smart'
@@ -192,6 +193,10 @@ export const IPC = {
     region: 'develop:region',
     sample: 'develop:sample',
     autoTone: 'develop:auto-tone',
+    /** The settled picture's waveform, parade and vectorscope, measured by the engine (E76). */
+    scopes: 'develop:scopes',
+    /** The graded picture's gamut coverage (Metrics), measured before its egress (E76). */
+    gamutCoverage: 'develop:gamut-coverage',
     autoWb: 'develop:auto-wb',
     /** A painted plane (grey PNG, base64) into the plane store; its reference back. */
     putPlane: 'develop:put-plane',
@@ -779,6 +784,18 @@ export interface RenderEvent {
    */
   ceiling?: number
   report?: RenderReport
+}
+
+/**
+ * The settled picture's scopes from the engine (E76): which picture (its
+ * `url`, as the window shows it), read through which mask plane (a mask
+ * event's `url`, the scopes "in mask"), for which scopes.
+ */
+export interface ScopesRequest {
+  key: string
+  url: string
+  mask: string | null
+  want: ScopeKind[]
 }
 
 /**
