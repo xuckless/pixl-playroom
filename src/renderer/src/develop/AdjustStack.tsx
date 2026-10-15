@@ -17,8 +17,7 @@ import {
 import { sameValue, type Recipe } from '../../../shared/recipe'
 import { assignFields } from '../../../shared/recipe'
 import { Icon } from '../components/icons'
-import { Card } from '../components/ui'
-import { InfoTip } from '../components/InfoTip'
+import { Card, CardHeader } from '../components/ui'
 import { EnhancePanel } from '../panels/enhance'
 import {
   AdjustHead,
@@ -156,41 +155,16 @@ function CardPart({ spec }: { spec: CardSpec }): React.JSX.Element {
   const title = t(spec.title)
   return (
     <section className={`card-part${off ? ' off' : ''}`} data-part={spec.id}>
-      <header>
-        <span className="title">{title}</span>
-        {changed && <span className="card-dot" aria-label={t('Changed')} />}
-        <span className="line" />
-        <span className="card-acts">
-          {Right && <Right />}
-          <InfoTip tip={TIPS[spec.id]} label={title} />
-          {!inMask && (
-            <button
-              type="button"
-              className={`icon card-eye${off ? ' on' : ''}`}
-              aria-pressed={off}
-              aria-label={
-                off
-                  ? t('Turn {{name}} on', { name: title })
-                  : t('Turn {{name}} off', { name: title })
-              }
-              title={off ? t('Turn on') : t('Turn off')}
-              onClick={switchOff}
-            >
-              <Icon name={off ? 'eyeOff' : 'eye'} />
-            </button>
-          )}
-          <button
-            type="button"
-            className="icon card-reset"
-            aria-label={t('Reset {{name}}', { name: title })}
-            title={t('Reset')}
-            disabled={!changed}
-            onClick={reset}
-          >
-            <Icon name="reset" />
-          </button>
-        </span>
-      </header>
+      <CardHeader
+        title={title}
+        tip={TIPS[spec.id]}
+        changed={changed}
+        off={off}
+        onToggle={inMask ? undefined : switchOff}
+        onReset={reset}
+        right={Right && <Right />}
+        line
+      />
       <div className="card-part-body">
         <Body />
       </div>

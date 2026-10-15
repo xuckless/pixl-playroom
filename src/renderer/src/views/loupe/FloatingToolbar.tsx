@@ -1,5 +1,6 @@
 import { LiquidGlass } from '../../components/glass/LiquidGlass'
-import { Slider } from '../../components/ui'
+import { Segmented, Slider } from '../../components/ui'
+import { GlassSelect } from '../../components/GlassSelect'
 import { Icon } from '../../components/icons'
 import { ASPECTS, aspectValue } from '../../lib/aspects'
 import { flip, resetCrop, rotateLeft, rotateRight, setAspect } from '../../lib/geometry'
@@ -8,7 +9,7 @@ import { CROP_GUIDES, DEFAULT_BRUSHES, useUi, type BrushSlot } from '../../state
 import { addLabel, addPickHint } from '../../lib/addpick'
 import { applyGuides } from '../../lib/upright'
 import { MAX_GUIDES } from './UprightGuides'
-import { withKey } from '../../lib/commands'
+import { withKey, modName, withChord } from '../../lib/commands'
 import { conceptOf } from '../../../../shared/concepts'
 import { cancelObjects, commitObjects } from '../../lib/objects'
 import { useObjects, type ObjectsMode } from '../../state/objects'
@@ -62,34 +63,20 @@ function CropBar(): React.JSX.Element | null {
   return (
     <>
       <span className="bar-title micro">{t('Crop')}</span>
-      <select
+      <GlassSelect
         value={aspectValue(aspect)}
-        onChange={(e) => setAspect(e.target.value)}
+        onChange={setAspect}
         title={t('Aspect')}
-        aria-label={t('Aspect')}
-      >
-        {ASPECTS.map((a) => (
-          <option key={a.value} value={a.value}>
-            {t(a.label)}
-          </option>
-        ))}
-      </select>
-      <div
-        className="seg"
-        role="group"
-        aria-label={withKey(t('Guides'), 'crop.guides')}
+        label={t('Aspect')}
+        options={ASPECTS.map((a) => ({ value: a.value, label: t(a.label) }))}
+      />
+      <Segmented
+        label={t('Guides')}
         title={withKey(t('Guides'), 'crop.guides')}
-      >
-        {CROP_GUIDES.map((g) => (
-          <button
-            key={g.value}
-            className={guide === g.value ? 'on' : ''}
-            onClick={() => setGuide(g.value)}
-          >
-            {t(g.label)}
-          </button>
-        ))}
-      </div>
+        value={guide}
+        onChange={setGuide}
+        options={CROP_GUIDES.map((g) => ({ value: g.value, label: t(g.label) }))}
+      />
       <span className="vsep" />
       <button className="icon" title={t('Rotate left')} onClick={rotateLeft}>
         <Icon name="rotateLeft" />
@@ -121,18 +108,19 @@ function BrushBar(): React.JSX.Element {
   return (
     <>
       <span className="bar-title micro">{t('Brush')}</span>
-      <div className="seg" role="group" aria-label={t('Brush')}>
-        {(['A', 'B', 'erase'] as BrushSlot[]).map((b) => (
-          <button
-            key={b}
-            className={slot === b ? 'on' : ''}
-            onClick={() => setSlot(b)}
-            title={b === 'erase' ? t('Erase (or hold Alt)') : t('Brush {{slot}}', { slot: b })}
-          >
-            {b === 'erase' ? t('Erase') : b}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        label={t('Brush')}
+        value={slot}
+        onChange={setSlot}
+        options={(['A', 'B', 'erase'] as BrushSlot[]).map((b) => ({
+          value: b,
+          label: b === 'erase' ? t('Erase') : b,
+          title:
+            b === 'erase'
+              ? t('Erase (or hold {{alt}})', { alt: modName('alt') })
+              : t('Brush {{slot}}', { slot: b })
+        }))}
+      />
       <BarRange
         label={t('Size')}
         value={brush.size}
@@ -180,10 +168,14 @@ function BrushBar(): React.JSX.Element {
         {t('Pressure')}
       </button>
       <span className="bar-hint">
-        {rich('{{open}} {{close}} size · Alt erases', {
-          open: <span className="kbd">[</span>,
-          close: <span className="kbd">]</span>
-        })}
+        {rich(
+          '{{open}} {{close}} size · {{alt}} erases',
+          {
+            open: <span className="kbd">[</span>,
+            close: <span className="kbd">]</span>
+          },
+          { alt: modName('alt') }
+        )}
       </span>
     </>
   )
@@ -192,7 +184,7 @@ function BrushBar(): React.JSX.Element {
 const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
   polygon: {
     title: tk('Lasso'),
-    hint: tk('Click corners or drag freehand · ⌫ undo point · Alt subtracts · Esc cancels')
+    hint: tk('Click corners or drag freehand · ⌫ undo point · {{alt}} subtracts · Esc cancels')
   },
   linear: {
     title: tk('Linear gradient'),
@@ -228,7 +220,7 @@ const HINTS: Partial<Record<string, { title: string; hint: string }>> = {
   heal: {
     title: tk('Heal'),
     hint: tk(
-      'Click or paint · drag the spot to its source · Alt-click sets a source · ⌫ deletes · [ ] size'
+      'Click or paint · drag the spot to its source · {{alt}}-click sets a source · ⌫ deletes · [ ] size'
     )
   },
   'fringe-pick': {
@@ -263,7 +255,11 @@ function ObjectsBar(): React.JSX.Element {
         <span className="bar-hint">
           {t(concept.ask)} · {t('SAM 2.1 selects it')}
         </span>
-        <button className="sm ghost" onClick={cancelObjects} title="Esc">
+        <button
+          className="sm ghost"
+          onClick={cancelObjects}
+          title={withChord(concept.many ? t('Done') : t('Cancel'), 'Escape')}
+        >
           {concept.many ? t('Done') : t('Cancel')}
         </button>
       </>
@@ -271,27 +267,23 @@ function ObjectsBar(): React.JSX.Element {
   return (
     <>
       <span className="bar-title micro">{t('Objects')}</span>
-      <div className="seg">
-        {OBJECT_MODES.map((m) => (
-          <button
-            key={m.mode}
-            className={mode === m.mode ? 'on' : ''}
-            title={t(m.title)}
-            onClick={() => setMode(m.mode)}
-          >
-            {t(m.label)}
-          </button>
-        ))}
-      </div>
-      <span className="bar-hint">{t('Shift-click adds · Alt-click removes')}</span>
-      <button className="sm ghost" onClick={cancelObjects} title="Esc">
+      <Segmented
+        label={t('How it points')}
+        value={mode}
+        onChange={setMode}
+        options={OBJECT_MODES.map((m) => ({ value: m.mode, label: t(m.label), title: t(m.title) }))}
+      />
+      <span className="bar-hint">
+        {t('Shift-click adds · {{alt}}-click removes', { alt: modName('alt') })}
+      </span>
+      <button className="sm ghost" onClick={cancelObjects} title={withChord(t('Cancel'), 'Escape')}>
         {t('Cancel')}
       </button>
       <button
         className="sm primary"
         disabled={!selected || busy}
         onClick={() => void commitObjects()}
-        title="Enter"
+        title={withChord(t('Done'), 'Enter')}
       >
         {t('Done')}
       </button>
@@ -308,15 +300,19 @@ function GuideBar(): React.JSX.Element {
     <>
       <span className="bar-title micro">{t('Guided Upright')}</span>
       <span className="bar-hint">
-        {t('Drag along edges that should be upright or level · {{n}}/{{max}} · Alt-click removes', {
-          n: guides.length,
-          max: MAX_GUIDES
-        })}
+        {t(
+          'Drag along edges that should be upright or level · {{n}}/{{max}} · {{alt}}-click removes',
+          { n: guides.length, max: MAX_GUIDES, alt: modName('alt') }
+        )}
       </span>
       <button className="sm ghost" disabled={guides.length === 0} onClick={() => setGuides([])}>
         {t('Clear')}
       </button>
-      <button className="sm ghost" onClick={() => setTool('none')} title="Esc">
+      <button
+        className="sm ghost"
+        onClick={() => setTool('none')}
+        title={withChord(t('Cancel'), 'Escape')}
+      >
         {t('Cancel')}
       </button>
       <button
@@ -347,7 +343,10 @@ export function FloatingToolbar(): React.JSX.Element | null {
           title: addLabel(recipe, addPick.target),
           hint: addPickHint(addPick.mode, addPick.first !== null, addPick.goalHex ?? null)
         }
-      : HINTS[tool] && { title: t(HINTS[tool].title), hint: t(HINTS[tool].hint) }
+      : HINTS[tool] && {
+          title: t(HINTS[tool].title),
+          hint: t(HINTS[tool].hint, { alt: modName('alt') })
+        }
   return (
     <LiquidGlass className="floating-toolbar" radius={2} bezel={10} key={tool}>
       {tool === 'crop' && <CropBar />}
@@ -358,7 +357,11 @@ export function FloatingToolbar(): React.JSX.Element | null {
         <>
           <span className="bar-title micro">{hint.title}</span>
           <span className="bar-hint">{hint.hint}</span>
-          <button className="sm ghost" onClick={() => setTool('none')} title="Esc">
+          <button
+            className="sm ghost"
+            onClick={() => setTool('none')}
+            title={withChord(t('Cancel'), 'Escape')}
+          >
             {t('Cancel')}
           </button>
         </>

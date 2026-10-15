@@ -41,12 +41,6 @@ export function useLegacyHeld(): (c: CardSpec) => boolean {
   return heldBy(useDevelop((s) => legacyHeldIds(s, masksOpen)))
 }
 
-/** A 24-unit SVG path for each canvas tool in the strip above the cards. */
-export const STRIP_ICONS = {
-  crop: 'M6 2v16h16M2 6h16v16',
-  heal: 'M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z'
-} as const
-
 /** Canvas tools that belong to the masks window. */
 export const MASK_TOOLS: Tool[] = [
   'brush',

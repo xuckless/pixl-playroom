@@ -6,6 +6,7 @@
  * photo it can draw the HDR measurement in stops.
  */
 import { useMemo, useState } from 'react'
+import { Segmented } from '../../components/ui'
 import type { ImageStats } from '../../../../shared/engine-types'
 import { HDR_FLOOR_STOPS, areaPath, stopsBins, stopsX } from '../../../../shared/scopes'
 import { t, tk } from '../../lib/i18n'
@@ -187,18 +188,12 @@ export function BigHistogram({
   return (
     <div className="big-histogram">
       <div className="bh-bar">
-        <div className="seg" role="group" aria-label={t('Channels')}>
-          {MODES.map((m) => (
-            <button
-              key={m.value}
-              className={mode === m.value ? 'on' : ''}
-              aria-pressed={mode === m.value}
-              onClick={() => setMode(m.value)}
-            >
-              {t(m.label)}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label={t('Channels')}
+          value={mode}
+          onChange={setMode}
+          options={MODES.map((m) => ({ value: m.value, label: t(m.label) }))}
+        />
         <label className="check">
           <input type="checkbox" checked={log} onChange={(e) => setLog(e.target.checked)} />{' '}
           {t('Log')}

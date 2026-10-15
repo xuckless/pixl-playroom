@@ -5,6 +5,7 @@
  * (`shared/watermark.ts`).
  */
 import { useEffect, useState } from 'react'
+import { GlassSelect } from '../components/GlassSelect'
 import type { WatermarkFile } from '../../../shared/ipc'
 import {
   placeMark,
@@ -197,14 +198,15 @@ export function WatermarkSection({
               title={t('Multiply suits a dark mark on light pictures, Screen a light one on dark')}
             >
               <span>{t('Blend')}</span>
-              <select
+              <GlassSelect<WatermarkBlend>
                 value={w.blend}
-                onChange={(e) => set({ blend: e.target.value as WatermarkBlend })}
-              >
-                <option value="Normal">{t('Normal')}</option>
-                <option value="Multiply">{t('Multiply · darkens')}</option>
-                <option value="Screen">{t('Screen · lightens')}</option>
-              </select>
+                onChange={(blend) => set({ blend })}
+                options={[
+                  { value: 'Normal', label: t('Normal') },
+                  { value: 'Multiply', label: t('Multiply · darkens') },
+                  { value: 'Screen', label: t('Screen · lightens') }
+                ]}
+              />
             </label>
           </div>
         </div>

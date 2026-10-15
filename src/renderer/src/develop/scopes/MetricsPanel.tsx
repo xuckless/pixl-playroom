@@ -8,6 +8,7 @@
  * shows a settled picture.
  */
 import { useEffect, useMemo, useState } from 'react'
+import { Segmented } from '../../components/ui'
 import type { ImageStats } from '../../../../shared/engine-types'
 import { dominantColours, type Swatch as SwatchData } from '../../../../shared/palette'
 import {
@@ -198,21 +199,19 @@ export function MetricsPanel({
 
       <section className="metrics-card wide">
         <h4>{t('Colour vision')}</h4>
-        <div className="seg" role="group" aria-label={t('How it looks to')}>
-          <button className={vision === null ? 'on' : ''} onClick={() => setVision(null)}>
-            {t('Normal')}
-          </button>
-          {KINDS.map((k) => (
-            <button
-              key={k}
-              className={vision === k ? 'on' : ''}
-              onClick={() => setVision(k)}
-              title={t(VISION_LABEL[k])}
-            >
-              {k === 'protan' ? t('Protan') : k === 'deutan' ? t('Deutan') : t('Tritan')}
-            </button>
-          ))}
-        </div>
+        <Segmented<VisionKind | null>
+          label={t('How it looks to')}
+          value={vision}
+          onChange={setVision}
+          options={[
+            { value: null, label: t('Normal') },
+            ...KINDS.map((k) => ({
+              value: k,
+              title: t(VISION_LABEL[k]),
+              label: k === 'protan' ? t('Protan') : k === 'deutan' ? t('Deutan') : t('Tritan')
+            }))
+          ]}
+        />
         <svg width="0" height="0" aria-hidden className="cvd-defs">
           {KINDS.map((k) => (
             <filter key={k} id={`cvd-${k}`} colorInterpolationFilters="linearRGB">

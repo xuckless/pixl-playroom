@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import type { MaskMode } from '../../../../shared/engine-types'
+import { modName } from '../../lib/commands'
 import { newId, type PolygonComponent } from '../../../../shared/recipe'
 import { simplifyPath } from '../../../../shared/simplify'
 import {
@@ -363,7 +364,7 @@ export const LassoEditor = memo(function LassoEditor({
             drag.current = { i, moved: false }
           }}
         >
-          <title>{t('Drag to move · Alt-click to remove')}</title>
+          <title>{t('Drag to move · {{alt}}-click to remove', { alt: modName('alt') })}</title>
         </circle>
       ))}
     </svg>

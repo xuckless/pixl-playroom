@@ -200,6 +200,24 @@ export function keyName(
   return code
 }
 
+export type Modifier = 'alt' | 'shift' | 'mod'
+
+/**
+ * A modifier as a sentence names it ("Option-click removes"): Option, Shift
+ * and Command on a Mac, Alt, Shift and Ctrl elsewhere.
+ */
+export function modifierName(m: Modifier, mac: boolean): string {
+  if (m === 'shift') return 'Shift'
+  if (m === 'alt') return mac ? 'Option' : 'Alt'
+  return mac ? 'Command' : 'Ctrl'
+}
+
+/** A modifier ahead of a key, as a chord shows it: `⌥` on a Mac, `Alt+` elsewhere. */
+export function modifierKey(m: Modifier, mac: boolean): string {
+  if (mac) return m === 'alt' ? '⌥' : m === 'shift' ? '⇧' : '⌘'
+  return m === 'alt' ? 'Alt+' : m === 'shift' ? 'Shift+' : 'Ctrl+'
+}
+
 /** How a chord reads: `⇧⌘Z` on a Mac, `Ctrl+Shift+Z` elsewhere. */
 export function chordLabel(
   c: Chord,

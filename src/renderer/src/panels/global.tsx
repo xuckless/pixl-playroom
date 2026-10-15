@@ -22,7 +22,7 @@ import { WB_PRESETS } from '../../../shared/wb'
 import { opOf, wbFromSaved } from '../../../shared/wbconvert'
 import { AddColourControl } from '../components/AddColour'
 import { ColorWheel, CurveEditor } from '../components/editors'
-import { Section, Select, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
+import { Section, Segmented, Select, Slider, Tabs, Toggle, ToolPanel } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { useDevelop, type CurveChannel } from '../state/develop'
 import { useLibrary } from '../state/library'
@@ -1884,19 +1884,17 @@ export function GeometryBody(): React.JSX.Element | null {
   return (
     <ToolPanel>
       <Section id="crop.upright" title={t('Upright')} tip={TIPS['geometry.upright']}>
-        <div className="seg upright-modes" role="group" aria-label={t('Upright')}>
-          {UPRIGHT_MODES.map((m) => (
-            <button
-              key={m.value}
-              className={g.upright.mode === m.value ? 'on' : ''}
-              aria-pressed={g.upright.mode === m.value}
-              title={t(m.title)}
-              onClick={() => void applyUpright(m.value)}
-            >
-              {t(m.label)}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          className="upright-modes"
+          label={t('Upright')}
+          value={g.upright.mode}
+          onChange={(m) => void applyUpright(m)}
+          options={UPRIGHT_MODES.map((m) => ({
+            value: m.value,
+            label: t(m.label),
+            title: t(m.title)
+          }))}
+        />
         {g.upright.mode === 'guided' && tool !== 'upright-guide' && (
           <div className="row">
             <button className="sm" onClick={startGuides}>

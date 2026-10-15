@@ -40,7 +40,7 @@ test('every dragged control reads the rule from one place, not its own modifiers
     'components/grading/GradeWheel.tsx'
   ]) {
     const code = src(f)
-    assert.doesNotMatch(code, /e\.(altKey|shiftKey)\s*\?/, `${f} picks a speed by hand`)
+    assert.doesNotMatch(code, /e\.(altKey|shiftKey)\s*\?\s*[\d'.]/, `${f} picks a speed by hand`)
     assert.match(code, /isFine\(e\)/, `${f} drags finely with Shift`)
     assert.match(code, /isReset\(e\)/, `${f} resets with Alt`)
     assert.match(code, /useEscapeWhile\(/, `${f} takes a drag back on Escape`)

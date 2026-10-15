@@ -9,6 +9,9 @@ const FOCUSABLE =
 
 export type PopoverAnchor = RefObject<HTMLElement | null> | HTMLElement | null
 
+/** The popovers open now, the newest last: Escape closes only the newest. */
+const stack: object[] = []
+
 /**
  * A glass popover under (or over) whatever opened it. It lives at the end of
  * the document, fixed to the viewport, so no scrolling list clips it and no
@@ -17,7 +20,9 @@ export type PopoverAnchor = RefObject<HTMLElement | null> | HTMLElement | null
  * anchor is the element the popover is written inside, unless one is given.
  *
  * A click outside it (and outside the anchor, so the anchor's own button can
- * toggle it) or Escape closes it; it keeps Escape from reaching the app's own
+ * toggle it, and outside a popover opened from inside it: a dropdown in a
+ * popover) or Escape closes it (the newest open one only); it keeps Escape
+ * from reaching the app's own
  * shortcuts, and keys and clicks inside it from reaching whatever it is
  * written inside. Opening moves keyboard focus into it (unless something
  * inside already took it), Tab cycles within it, and closing hands focus back
@@ -128,13 +133,18 @@ export function Popover({
   }, [align, side, anchor])
 
   useEffect(() => {
+    const me = {}
+    stack.push(me)
     const down = (e: PointerEvent): void => {
       const t = e.target as Node
       if (ref.current?.contains(t) || anchorEl()?.contains(t)) return
+      // In a popover opened after this one (from inside it): still this one's.
+      const other = (t as Element).closest?.('.popover')
+      if (other && stack.indexOf(me) < stack.length - 1) return
       closeRef.current()
     }
     const key = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && stack[stack.length - 1] === me) {
         e.stopImmediatePropagation()
         closeRef.current()
       }
@@ -143,6 +153,7 @@ export function Popover({
     window.addEventListener('pointerdown', down, true)
     window.addEventListener('keydown', key, true)
     return () => {
+      stack.splice(stack.indexOf(me), 1)
       window.removeEventListener('pointerdown', down, true)
       window.removeEventListener('keydown', key, true)
     }

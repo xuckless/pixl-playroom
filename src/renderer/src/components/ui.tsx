@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { DialogBackdrop } from '../fx/DialogBackdrop'
 import { touchAdjusting } from '../lib/interacting'
 import {
@@ -13,8 +13,10 @@ import {
   logFraction
 } from '../lib/sliderDrag'
 import { useEscapeWhile } from '../lib/escape'
+import { rovingNext } from '../lib/roving'
 import { LiquidGlass } from './glass/LiquidGlass'
 import { Icon, type IconName } from './icons'
+import { GlassSelect, type GlassOption } from './GlassSelect'
 import { InfoTip, type Tip } from './InfoTip'
 import { t, tp } from '../lib/i18n'
 
@@ -54,21 +56,115 @@ export function Section({
       return !o
     })
   }
+  const bodyId = useId()
   return (
     <section className={`section ${open ? 'open' : ''}`}>
+      {/* The whole header folds it to the pointer; its button is the stop for keys. */}
       <header onClick={toggle}>
-        <span className="title">{title}</span>
+        <button type="button" className="fold-btn" aria-expanded={open} aria-controls={bodyId}>
+          <span className="title">{title}</span>
+        </button>
         <span className="line" />
         <span className="right" onClick={(e) => e.stopPropagation()}>
           {right}
           {tip && <InfoTip tip={tip} label={title} />}
         </span>
-        <svg className="caret" viewBox="0 0 10 10" aria-hidden>
-          <path d="M2 3.5 5 6.5 8 3.5" />
-        </svg>
+        <Caret />
       </header>
-      {open && <div className="body">{children}</div>}
+      {open && (
+        <div className="body" id={bodyId}>
+          {children}
+        </div>
+      )}
     </section>
+  )
+}
+
+function Caret(): React.JSX.Element {
+  return (
+    <svg className="caret" viewBox="0 0 10 10" aria-hidden>
+      <path d="M2 3.5 5 6.5 8 3.5" />
+    </svg>
+  )
+}
+
+/**
+ * A card's header, shared by the folding cards and the parts of Basic
+ * corrections: its title (a button that folds it, when it folds), a dot once
+ * anything in it moved, then `right`, an (i), an eye that turns the group
+ * off and a reset. The eye's name stays put and aria-pressed says whether
+ * the group shows; the eye and reset sit quiet until the header is hovered
+ * or focused, never quite hidden.
+ */
+export function CardHeader({
+  title,
+  tip,
+  changed = false,
+  off = false,
+  onToggle,
+  onReset,
+  right,
+  fold,
+  line = false
+}: {
+  title: string
+  tip?: Tip
+  changed?: boolean
+  off?: boolean
+  onToggle?: () => void
+  onReset?: () => void
+  right?: ReactNode
+  /** A card that folds: whether it is open, what folds it, and the body it shows. */
+  fold?: { open: boolean; toggle: () => void; body: string }
+  /** A rule after the title (a part's header). */
+  line?: boolean
+}): React.JSX.Element {
+  return (
+    <header onClick={fold?.toggle}>
+      {fold ? (
+        <button
+          type="button"
+          className="fold-btn"
+          aria-expanded={fold.open}
+          aria-controls={fold.body}
+        >
+          <Caret />
+          <span className="title">{title}</span>
+        </button>
+      ) : (
+        <span className="title">{title}</span>
+      )}
+      {changed && <span className="card-dot" role="img" aria-label={t('Changed')} />}
+      {line && <span className="line" />}
+      <span className="card-acts" onClick={(e) => e.stopPropagation()}>
+        {right}
+        {tip && <InfoTip tip={tip} label={title} />}
+        {onToggle && (
+          <button
+            type="button"
+            className={`icon card-eye${off ? ' on' : ''}`}
+            aria-pressed={!off}
+            aria-label={t('Show {{name}}', { name: title })}
+            title={off ? t('Turn on') : t('Turn off')}
+            onClick={onToggle}
+          >
+            <Icon name={off ? 'eyeOff' : 'eye'} />
+          </button>
+        )}
+        {onReset && (
+          <button
+            type="button"
+            className="icon card-reset"
+            aria-label={t('Reset {{name}}', { name: title })}
+            title={t('Reset')}
+            disabled={!changed}
+            onClick={onReset}
+          >
+            <Icon name="reset" />
+          </button>
+        )}
+      </span>
+    </header>
   )
 }
 
@@ -91,11 +187,11 @@ function rememberCardOpen(id: string, open: boolean): void {
 }
 
 /**
- * One group of the adjustments, as a folding card: its title (a dot once
- * anything in it moved), an (i) saying what the group is for, and on hover
- * an eye that turns the whole group off and a reset. A card that is off
- * dims, and can still be edited. Folding is remembered per card; `open` and
- * `onOpenChange` take it over (the stack's solo mode and Jump to).
+ * One group of the adjustments, as a folding card: its header (CardHeader:
+ * the title folds it, from the keys too; a dot once anything in it moved; an
+ * (i); an eye that turns the whole group off and a reset). A card that is
+ * off dims, and can still be edited. Folding is remembered per card; `open`
+ * and `onOpenChange` take it over (the stack's solo mode and Jump to).
  */
 export function Card({
   id,
@@ -130,6 +226,7 @@ export function Card({
   children: ReactNode
 }): React.JSX.Element {
   const [own, setOwn] = useState(() => storedOpen(id, defaultOpen))
+  const bodyId = useId()
   const open = fixed || (openProp ?? own)
   const toggle = (): void => {
     if (fixed) return
@@ -144,48 +241,21 @@ export function Card({
       className={`card${open ? ' open' : ''}${fixed ? ' fixed' : ''}${off ? ' off' : ''}${changed ? ' changed' : ''}`}
       data-card={id}
     >
-      <header onClick={toggle}>
-        {!fixed && (
-          <svg className="caret" viewBox="0 0 10 10" aria-hidden>
-            <path d="M2 3.5 5 6.5 8 3.5" />
-          </svg>
-        )}
-        <span className="title">{title}</span>
-        {changed && <span className="card-dot" aria-label={t('Changed')} />}
-        <span className="card-acts" onClick={(e) => e.stopPropagation()}>
-          {right}
-          {tip && <InfoTip tip={tip} label={title} />}
-          {onToggle && (
-            <button
-              type="button"
-              className={`icon card-eye${off ? ' on' : ''}`}
-              aria-pressed={off}
-              aria-label={
-                off
-                  ? t('Turn {{name}} on', { name: title })
-                  : t('Turn {{name}} off', { name: title })
-              }
-              title={off ? t('Turn on') : t('Turn off')}
-              onClick={onToggle}
-            >
-              <Icon name={off ? 'eyeOff' : 'eye'} />
-            </button>
-          )}
-          {onReset && (
-            <button
-              type="button"
-              className="icon card-reset"
-              aria-label={t('Reset {{name}}', { name: title })}
-              title={t('Reset')}
-              disabled={!changed}
-              onClick={onReset}
-            >
-              <Icon name="reset" />
-            </button>
-          )}
-        </span>
-      </header>
-      {open && <div className="card-body">{children}</div>}
+      <CardHeader
+        title={title}
+        tip={tip}
+        changed={changed}
+        off={off}
+        onToggle={onToggle}
+        onReset={onReset}
+        right={right}
+        fold={fixed ? undefined : { open, toggle, body: bodyId }}
+      />
+      {open && (
+        <div className="card-body" id={bodyId}>
+          {children}
+        </div>
+      )}
     </section>
   )
 }
@@ -566,73 +636,194 @@ export function StepSlider<T extends string | number>({
   )
 }
 
+/**
+ * A labelled choice in a row: its name, the app's dropdown (GlassSelect),
+ * and an (i) after it when there is one.
+ */
 export function Select<T extends string>({
   value,
   options,
   onChange,
   label,
   title,
-  tip
+  tip,
+  className
 }: {
   value: T
-  options: { value: T; label: string }[]
+  options: GlassOption<T>[]
   onChange: (v: T) => void
   label?: string
   title?: string
   /** What the choice does, behind an (i) beside it. */
   tip?: Tip
+  /** On the dropdown itself. */
+  className?: string
 }): React.JSX.Element {
+  const id = useId()
   return (
-    <label className={`select${tip ? ' with-tip' : ''}`} title={title}>
-      {label && <span>{label}</span>}
-      <select value={value} onChange={(e) => onChange(e.target.value as T)}>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+    <div className={`select${tip ? ' with-tip' : ''}`} title={title}>
+      {label && <span id={id}>{label}</span>}
+      <GlassSelect
+        value={value}
+        options={options}
+        onChange={onChange}
+        labelledBy={label ? id : undefined}
+        label={label ? undefined : title}
+        className={className}
+      />
       {tip && <InfoTip tip={tip} label={label ?? title ?? ''} />}
-    </label>
+    </div>
   )
 }
 
+/** Arrow keys, Home and End choosing among the buttons of role `role` (focus follows). */
+function roveKeys(
+  e: React.KeyboardEvent<HTMLElement>,
+  role: string,
+  pick: (i: number) => void,
+  vertical = false
+): void {
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  const items = [...e.currentTarget.querySelectorAll<HTMLButtonElement>(`[role="${role}"]`)]
+  const at = items.indexOf(document.activeElement as HTMLButtonElement)
+  const next = rovingNext(
+    e.key,
+    at,
+    items.map((b) => !b.disabled && b.getAttribute('aria-disabled') !== 'true'),
+    vertical
+  )
+  if (next < 0) return
+  e.preventDefault()
+  e.stopPropagation()
+  pick(next)
+  items[next].focus()
+}
+
+export interface SegOption<T> {
+  value: T
+  label: ReactNode
+  title?: string
+  /** Its name, when the label is a glyph. */
+  ariaLabel?: string
+  disabled?: boolean
+}
+
+/**
+ * A segmented control: a few choices side by side, one of them chosen. A
+ * radio group to the keyboard: one Tab stop (the choice), arrows move the
+ * choice, Home and End go to the ends.
+ */
+export function Segmented<T extends string | number | null>({
+  value,
+  options,
+  onChange,
+  label,
+  className,
+  title
+}: {
+  value: T
+  options: SegOption<T>[]
+  onChange: (v: T) => void
+  /** The group's name, for a screen reader. */
+  label: string
+  className?: string
+  title?: string
+}): React.JSX.Element {
+  const chosen = options.findIndex((o) => o.value === value)
+  const stop = chosen >= 0 ? chosen : options.findIndex((o) => !o.disabled)
+  return (
+    <div
+      className={className ? `seg ${className}` : 'seg'}
+      role="radiogroup"
+      aria-label={label}
+      title={title}
+      onKeyDown={(e) => roveKeys(e, 'radio', (i) => onChange(options[i].value))}
+    >
+      {options.map((o, i) => (
+        <button
+          key={String(o.value)}
+          type="button"
+          role="radio"
+          aria-checked={i === chosen}
+          aria-label={o.ariaLabel}
+          tabIndex={i === stop ? 0 : -1}
+          className={i === chosen ? 'on' : ''}
+          disabled={o.disabled}
+          title={o.title}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** A button that stays in or out (an eyedropper, a view): aria-pressed says which. */
 export function Toggle({
   on,
   onChange,
   children,
-  title
+  title,
+  label
 }: {
   on: boolean
   onChange: (on: boolean) => void
   children: ReactNode
   title?: string
+  /** Its name, when the content is a glyph alone. */
+  label?: string
 }): React.JSX.Element {
   return (
-    <button className={`toggle ${on ? 'on' : ''}`} onClick={() => onChange(!on)} title={title}>
+    <button
+      type="button"
+      className={`toggle ${on ? 'on' : ''}`}
+      aria-pressed={on}
+      aria-label={label}
+      onClick={() => onChange(!on)}
+      title={title}
+    >
       {children}
     </button>
   )
 }
 
+/**
+ * Tabs over one area: a tab list to the keyboard (one Tab stop, the chosen
+ * tab; arrows choose the next, Home and End the ends).
+ */
 export function Tabs<T extends string>({
   value,
   tabs,
   onChange,
-  className
+  className,
+  label
 }: {
   value: T
   /** `disabled` greys a tab out, `title` says why. */
   tabs: { value: T; label: string; disabled?: boolean; title?: string }[]
   onChange: (v: T) => void
   className?: string
+  /** The tab list's name, for a screen reader. */
+  label?: string
 }): React.JSX.Element {
+  const chosen = tabs.findIndex((tab) => tab.value === value)
+  const stop = chosen >= 0 ? chosen : tabs.findIndex((tab) => !tab.disabled)
   return (
-    <div className={className ? `tabs ${className}` : 'tabs'}>
-      {tabs.map((tab) => (
+    <div
+      className={className ? `tabs ${className}` : 'tabs'}
+      role="tablist"
+      aria-label={label}
+      onKeyDown={(e) => roveKeys(e, 'tab', (i) => onChange(tabs[i].value))}
+    >
+      {tabs.map((tab, i) => (
         <button
           key={tab.value}
-          className={tab.value === value ? 'on' : ''}
+          type="button"
+          role="tab"
+          aria-selected={i === chosen}
+          tabIndex={i === stop ? 0 : -1}
+          className={i === chosen ? 'on' : ''}
           disabled={tab.disabled}
           title={tab.title}
           onClick={() => onChange(tab.value)}
@@ -644,6 +835,23 @@ export function Tabs<T extends string>({
   )
 }
 
+/** What Tab stops at inside a dialog. */
+const FOCUSABLE =
+  'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'
+
+/** The stops in `box` that can take focus now (shown, not inert). */
+function tabStops(box: HTMLElement): HTMLElement[] {
+  return [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (el) => el.getClientRects().length > 0 && !el.closest('[inert]')
+  )
+}
+
+/**
+ * A dialog over the app (aria-modal): it takes keyboard focus when it opens
+ * (whatever inside asks for it with autoFocus, else the dialog itself, so
+ * Return never presses a button the user did not choose), keeps Tab inside
+ * it, closes on Escape, and hands focus back to whatever had it.
+ */
 export function Modal({
   title,
   onClose,
@@ -661,13 +869,26 @@ export function Modal({
   icon?: IconName
   className?: string
 }): React.JSX.Element {
+  const box = useRef<HTMLElement>(null)
+  const titleId = useId()
   useEffect(() => {
     const k = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape' && !e.defaultPrevented) onClose()
     }
     window.addEventListener('keydown', k)
     return () => window.removeEventListener('keydown', k)
   }, [onClose])
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null
+    const el = box.current
+    // A control inside that asked for focus (autoFocus) has it already.
+    if (el && !el.contains(document.activeElement)) el.focus({ preventScroll: true })
+    return () => {
+      const now = document.activeElement
+      if (opener?.isConnected && (!now || now === document.body || el?.contains(now)))
+        opener.focus({ preventScroll: true })
+    }
+  }, [])
   return (
     <motion.div
       className="modal-backdrop"
@@ -685,6 +906,7 @@ export function Modal({
         transition={{ type: 'spring', stiffness: 360, damping: 30, mass: 0.9 }}
       >
         <LiquidGlass
+          ref={box}
           className={`modal${wide ? ' wide' : ''}${className ? ` ${className}` : ''}`}
           radius={2}
           bezel={18}
@@ -694,11 +916,29 @@ export function Modal({
           // filter that size costs every frame it animates or scrolls.
           flat
           role="dialog"
-          aria-label={title}
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
           onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key !== 'Tab') return
+            // Tab goes round the dialog, never out to the app behind it.
+            const list = tabStops(e.currentTarget)
+            if (list.length === 0) return e.preventDefault()
+            const at = list.indexOf(document.activeElement as HTMLElement)
+            const next = e.shiftKey
+              ? at <= 0
+                ? list.length - 1
+                : at - 1
+              : at < 0 || at === list.length - 1
+                ? 0
+                : at + 1
+            e.preventDefault()
+            list[next].focus()
+          }}
         >
           <header>
-            <h2>
+            <h2 id={titleId}>
               {icon && (
                 <span className="dlg-glyph">
                   <Icon name={icon} />
@@ -740,6 +980,9 @@ export function Stars({
   onChange?: (v: number) => void
   compact?: boolean
 }): React.JSX.Element {
+  // The rating the keys last asked for, from the one shown then: keys can
+  // outrun a rating's round trip, and the next press counts on from it.
+  const asked = useRef<{ v: number; from: number } | null>(null)
   const label = value > 0 ? tp('{{count}} star', '{{count}} stars', value) : t('Not rated')
   if (!onChange)
     return (
@@ -751,8 +994,10 @@ export function Stars({
         ))}
       </span>
     )
+  const now = (): number => (asked.current?.from === value ? asked.current.v : value)
   const set = (v: number, group: HTMLElement | null): void => {
     const next = Math.max(0, Math.min(5, v))
+    asked.current = { v: next, from: value }
     onChange(next)
     group?.querySelectorAll<HTMLElement>('button')[Math.max(0, next - 1)]?.focus()
   }
@@ -764,8 +1009,8 @@ export function Stars({
       onKeyDown={(e) => {
         if (e.metaKey || e.ctrlKey || e.altKey) return
         const g = e.currentTarget
-        if (e.key === 'ArrowRight' || e.key === 'ArrowUp') set(value + 1, g)
-        else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') set(value - 1, g)
+        if (e.key === 'ArrowRight' || e.key === 'ArrowUp') set(now() + 1, g)
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') set(now() - 1, g)
         else if (e.key === 'Home') set(0, g)
         else if (e.key === 'End') set(5, g)
         else if (/^[0-5]$/.test(e.key)) set(Number(e.key), g)

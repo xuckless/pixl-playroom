@@ -5,6 +5,7 @@
  * Looks in the rail.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { modName } from '../../lib/commands'
 import type { Preset } from '../../../../shared/ipc'
 import { LOOKS } from '../../../../shared/looks/catalog'
 import {
@@ -308,7 +309,10 @@ export function LooksBrowser(): React.JSX.Element | null {
               onClick={(e) => apply(focused, { stack: e.altKey })}
               title={
                 applied
-                  ? t('Takes the place of {{name}} (Alt: on top of it)', { name: appliedName })
+                  ? t('Takes the place of {{name}} ({{alt}}: on top of it)', {
+                      name: appliedName,
+                      alt: modName('alt')
+                    })
                   : undefined
               }
             >

@@ -8,7 +8,7 @@ import { loupeZoom } from '../views/loupe/zoom'
 import { useUi } from '../state/ui'
 import { aboveWhite, canShowHdr, useDisplay, useHdrShown } from '../state/display'
 import { SPACE_NAME } from '../../../shared/gamutwarning'
-import { useKeyHint, withKey } from '../lib/commands'
+import { useKeyHint, withKey, withChord } from '../lib/commands'
 import { t } from '../lib/i18n'
 import { HoverHint, type Hint } from '../components/HoverHint'
 
@@ -235,7 +235,7 @@ export function DevelopToolbar(): React.JSX.Element {
         className="icon ghost lg"
         onClick={() => setDialog('engine')}
         disabled={!session}
-        title={t('Engine report (Ctrl+Alt+E)')}
+        title={withChord(t('Engine report'), 'Mod+Alt+E')}
         aria-label={t('Engine report')}
       >
         <Icon name="engine" />

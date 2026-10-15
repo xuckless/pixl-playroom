@@ -385,7 +385,7 @@ input.name {
   color: var(--text2);
   font-weight: 500;
 }
-.select select {
+.select .glass-select {
   width: 100%;
   min-width: 0;
 }
@@ -743,6 +743,29 @@ input[type='checkbox']:disabled {
   cursor: pointer;
   user-select: none;
 }
+/* The title as the fold's button (ui.tsx Section, CardHeader): no frame of its
+   own, only the ring when the keyboard is on it. */
+.fold-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  letter-spacing: inherit;
+}
+.fold-btn:hover:not(:disabled) {
+  background: none;
+}
+:where(.fold-btn):active:not(:disabled) {
+  transform: none;
+}
 .section > header .title {
   font-size: 10.5px;
   font-weight: 600;
@@ -873,9 +896,10 @@ input[type='checkbox']:disabled {
   width: 13px;
   height: 13px;
 }
+/* Quiet until the header is hovered or focused, never hidden: where they are is seen. */
 .card-eye,
 .card-reset {
-  opacity: 0;
+  opacity: 0.35;
   transition: opacity 0.2s var(--ease);
 }
 .card > header:hover .card-eye,
@@ -1016,7 +1040,9 @@ input[type='checkbox']:disabled {
   transition: transform var(--dur-toggle) var(--spring);
 }
 .popover.gs-menu {
-  width: 260px;
+  min-width: 200px;
+  max-width: 360px;
+  overflow-y: auto;
 }
 .glass-select.on svg {
   transform: rotate(180deg);

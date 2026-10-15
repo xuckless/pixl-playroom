@@ -519,8 +519,9 @@ export function QualifierBody(): React.JSX.Element | null {
               </button>
               <button
                 className="icon sm ghost"
-                aria-label={x.enabled ? t('Switch off') : t('Switch on')}
-                title={x.enabled ? t('Switch off') : t('Switch on')}
+                aria-pressed={x.enabled}
+                aria-label={t('Show {{name}}', { name: t('Qualifier {{n}}', { n: i + 1 }) })}
+                title={x.enabled ? t('Turn off') : t('Turn on')}
                 onClick={() => {
                   edit((r) => {
                     const y = r.qualifiers.find((z) => z.id === x.id)

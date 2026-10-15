@@ -60,7 +60,6 @@
   padding-left: 84px;
 }
 .identity-bar button,
-.identity-bar select,
 .identity-bar input {
   -webkit-app-region: no-drag;
 }
@@ -162,7 +161,7 @@
 .toolbar .search {
   width: 240px;
 }
-.toolbar select {
+.toolbar .glass-select {
   max-width: 260px;
 }
 
@@ -261,6 +260,12 @@ aside.right .panels {
   background: var(--acc);
   box-shadow: 0 0 8px var(--acc);
   animation: segIn 0.4s var(--spring);
+}
+.spine-tabs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 .spine .gap {
   flex: 1;
@@ -679,7 +684,7 @@ button.timeline-head {
   color: var(--acc);
   letter-spacing: 0.2em;
 }
-.floating-toolbar select {
+.floating-toolbar .glass-select {
   height: 28px;
 }
 .floating-toolbar .seg {

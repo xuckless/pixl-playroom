@@ -95,7 +95,11 @@
 }
 .mf-mask.on {
   border-color: var(--acc-a55);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 10%, transparent), color-mix(in srgb, var(--acc) 2%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--acc) 10%, transparent),
+    color-mix(in srgb, var(--acc) 2%, transparent)
+  );
 }
 .mf-mask.off .mf-name,
 .mf-mask.off .mf-thumb {
@@ -482,16 +486,34 @@ button.mode-badge:disabled {
   color: var(--text2);
   font-family: var(--font-body);
 }
-.menu-item:hover:not(:disabled),
-.menu-item:focus-visible {
+.menu-item:hover:not(:disabled):not(.disabled),
+.menu-item:focus-visible,
+.menu-item.active {
   transform: none;
   background: color-mix(in srgb, var(--acc) 14%, transparent);
   border-color: transparent;
 }
 .menu-item .mark {
+  display: inline-grid;
+  place-items: center;
   width: 10px;
-  font-size: 7px;
+  flex: none;
   color: var(--acc);
+}
+.menu-item .mark svg {
+  width: 11px;
+  height: 11px;
+}
+/* A dropdown's choices (GlassSelect): options in a listbox, not buttons. */
+.menu [role='option'] {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.menu [role='option'].disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .menu-item .hint {
   margin-left: auto;
@@ -517,7 +539,7 @@ button.mode-badge:disabled {
   gap: 8px;
   padding: 12px;
 }
-.overlay-pop select {
+.overlay-pop .glass-select {
   width: 100%;
 }
 .op-row {

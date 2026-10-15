@@ -598,7 +598,7 @@
   min-height: 36px;
   grid-template-columns: 84px minmax(0, 1fr);
 }
-.filter-pop select {
+.filter-pop .glass-select {
   width: 100%;
   max-width: none;
 }
@@ -1079,7 +1079,7 @@
   color: var(--text2);
   font-size: 12.5px;
 }
-.rule-group-head select {
+.rule-group-head .glass-select {
   width: 82px;
 }
 .rule-row {
@@ -1089,11 +1089,11 @@
   min-height: 32px;
   animation: rowIn 0.4s var(--spring) both;
 }
-.rule-row select.rule-field {
+.rule-row .glass-select.rule-field {
   width: 148px;
   flex: none;
 }
-.rule-row select.rule-op {
+.rule-row .glass-select.rule-op {
   width: 158px;
   flex: none;
 }
@@ -1103,7 +1103,7 @@
   gap: 7px;
   min-width: 0;
 }
-select.rule-value {
+.glass-select.rule-value {
   width: 180px;
 }
 .rule-row input.rule-text {

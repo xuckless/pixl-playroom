@@ -11,6 +11,7 @@
  * screen shows.
  */
 import { useEffect, useRef, useState } from 'react'
+import { Segmented } from '../../components/ui'
 import {
   PIXLRGB,
   REFERENCE_GAMUTS,
@@ -137,14 +138,15 @@ export function CieChart({
     <div className={compact ? 'cie compact' : 'cie'}>
       {!compact && (
         <div className="cie-side">
-          <div className="seg" role="group" aria-label={t('Chart contents')}>
-            <button className={sub === 'image' ? 'on' : ''} onClick={() => setSub('image')}>
-              {t('Image')}
-            </button>
-            <button className={sub === 'reference' ? 'on' : ''} onClick={() => setSub('reference')}>
-              {t('Reference')}
-            </button>
-          </div>
+          <Segmented
+            label={t('Chart contents')}
+            value={sub}
+            onChange={setSub}
+            options={[
+              { value: 'image', label: t('Image') },
+              { value: 'reference', label: t('Reference') }
+            ]}
+          />
           {sub === 'image' ? (
             <>
               <label className="check">
