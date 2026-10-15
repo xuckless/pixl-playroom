@@ -945,8 +945,13 @@ export const COMMANDS: KeyCommand[] = [
   }
 ]
 
-/** The grid's keyboard moves (⇧ extends the selection), listening while the grid is up. */
+/**
+ * The grid's keyboard moves (⇧ extends the selection), listening while the
+ * grid is up and the key is not already taken (a menu or dropdown with the
+ * keyboard moves its own items with the arrows).
+ */
 function gridMoves(): KeyCommand[] {
+  const free = (e: KeyboardEvent): boolean => inGrid() && !e.defaultPrevented
   const moves: [GridMove, string, string][] = [
     ['up', tk('Up a row (⇧ extends the selection)'), 'ArrowUp'],
     ['down', tk('Down a row (⇧ extends the selection)'), 'ArrowDown'],
@@ -961,7 +966,7 @@ function gridMoves(): KeyCommand[] {
     group: 'Navigation',
     context: 'library.grid',
     keys: [key],
-    when: () => inGrid(),
+    when: free,
     run: (e) => {
       const l = lib()
       const vis = l.visible()
@@ -978,7 +983,7 @@ function gridMoves(): KeyCommand[] {
       group: 'Navigation',
       context: 'library.grid',
       keys: [key, `Shift+${key}`],
-      when: () => inGrid(),
+      when: free,
       run: (e) => {
         gridStep(move, e.shiftKey)
         stop(e)

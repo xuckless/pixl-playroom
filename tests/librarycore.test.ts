@@ -6,6 +6,7 @@ import { join } from 'path'
 import {
   afterRedo,
   afterUndo,
+  chunked,
   EMPTY_STACK,
   entrySize,
   metaRedoPlan,
@@ -15,6 +16,7 @@ import {
   pushEntry,
   RING,
   stillSet,
+  UNDO_CHUNK,
   withoutEntry,
   type MetaEntry,
   type MetaValues,
@@ -150,6 +152,18 @@ test('an undo reads what each photo has now, from the listing and then from main
   assert.deepEqual(metaUndoPlan(e, (k) => second.now.get(k)).writes, [
     { patch: { rating: 1 }, keys: ['b'] }
   ])
+})
+
+test('a big batch is taken back a chunk at a time', () => {
+  const steps = Array.from({ length: 2 * UNDO_CHUNK + 3 }, (_, i) => ({ key: String(i), seq: 1 }))
+  const parts = chunked(steps, UNDO_CHUNK)
+  assert.deepEqual(
+    parts.map((p) => p.length),
+    [UNDO_CHUNK, UNDO_CHUNK, 3]
+  )
+  assert.deepEqual(parts.flat(), steps)
+  assert.deepEqual(chunked([], UNDO_CHUNK), [])
+  assert.deepEqual(chunked(['a', 'b'], 0), [['a'], ['b']])
 })
 
 // ── moving through the grid ──

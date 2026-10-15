@@ -27,6 +27,17 @@ export const RING = 50
 /** Above this many photos, a change asks first (⌘A and a digit is a classic accident). */
 export const CONFIRM_ABOVE = 500
 
+/** Steps per call when a batch is taken back or brought back. */
+export const UNDO_CHUNK = 50
+
+/** `xs` in runs of `size` (the last may be shorter); none for none. */
+export function chunked<T>(xs: readonly T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < xs.length; i += Math.max(1, size))
+    out.push(xs.slice(i, i + Math.max(1, size)))
+  return out
+}
+
 export interface MetaValues {
   rating: number
   flag: Flag

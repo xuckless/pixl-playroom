@@ -94,6 +94,22 @@ test('conflicts only count where both commands listen', () => {
   assert.equal(conflictOf(cmds, b, 'before', parseChord('Y')), null)
 })
 
+test("the grid's keys clash with the Library's, never with Develop's", () => {
+  const cmds: CommandKey[] = [
+    { id: 'sidebar', context: 'library' },
+    { id: 'gridUp', context: 'library.grid' },
+    { id: 'curves', context: 'develop' }
+  ]
+  const b = {
+    sidebar: [parseChord('Backslash')],
+    gridUp: [parseChord('ArrowUp')],
+    curves: [parseChord('ArrowUp')]
+  }
+  assert.deepEqual(allConflicts(cmds, b), [])
+  assert.equal(conflictOf(cmds, b, 'sidebar', parseChord('ArrowUp')), 'gridUp')
+  assert.equal(conflictOf(cmds, b, 'gridUp', parseChord('Backslash')), 'sidebar')
+})
+
 test('labels follow the platform', () => {
   assert.equal(chordLabel(parseChord('Mod+Shift+Z'), true), '⇧⌘Z')
   assert.equal(chordLabel(parseChord('Mod+Shift+Z'), false), 'Ctrl+Shift+Z')

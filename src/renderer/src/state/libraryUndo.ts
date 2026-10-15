@@ -21,12 +21,14 @@ import { create } from 'zustand'
 import {
   afterRedo,
   afterUndo,
+  chunked,
   EMPTY_STACK,
   metaRedoPlan,
   metaUndoPlan,
   metaValuesOf,
   onlyKeys,
   pushEntry,
+  UNDO_CHUNK,
   withoutEntry,
   type MetaEntry,
   type MetaValues,
@@ -37,6 +39,7 @@ import {
 import type { BatchUndoResult } from '../../../shared/ipc'
 import { api, errorText } from '../lib/api'
 import { t, tp } from '../lib/i18n'
+import { useBusy } from './busy'
 import { useLibrary, type ToastAction } from './library'
 
 export const useLibraryUndo = create<UndoStack>(() => EMPTY_STACK)
@@ -88,11 +91,44 @@ export function onBatchWritten(fn: (keys: string[]) => Promise<void>): void {
   developFollows = fn
 }
 
+/**
+ * A batch taken back (or brought back) a chunk at a time, as it was written:
+ * a big one shows its progress in the identity bar and never holds the
+ * index for one long call.
+ */
 async function runRecipe(e: RecipeEntry, redo: boolean): Promise<BatchUndoResult> {
-  const r = redo ? await api.library.redoBatch(e.steps) : await api.library.undoBatch(e.steps)
-  useLibrary.getState().patchItems(r.items)
-  await developFollows(r.done).catch(() => undefined)
-  return r
+  const parts = chunked(e.steps, UNDO_CHUNK)
+  const job = `library-undo-${e.id}`
+  const busy = useBusy.getState()
+  const progress = (done: number): string =>
+    tp('{{done}} of {{count}} photo', '{{done}} of {{count}} photos', e.steps.length, { done })
+  if (parts.length > 1)
+    busy.begin({
+      id: job,
+      title: redo
+        ? t('Redoing {{what}}', { what: e.title })
+        : t('Undoing {{what}}', { what: e.title }),
+      detail: progress(0),
+      progress: 0,
+      scope: 'global'
+    })
+  const out: BatchUndoResult = { items: [], done: [], skipped: [] }
+  try {
+    let sent = 0
+    for (const part of parts) {
+      const r = redo ? await api.library.redoBatch(part) : await api.library.undoBatch(part)
+      useLibrary.getState().patchItems(r.items)
+      out.done.push(...r.done)
+      out.skipped.push(...r.skipped)
+      sent += part.length
+      if (parts.length > 1)
+        busy.update(job, { progress: sent / e.steps.length, detail: progress(sent) })
+    }
+  } finally {
+    if (parts.length > 1) busy.end(job)
+  }
+  await developFollows(out.done).catch(() => undefined)
+  return out
 }
 
 async function runMeta(

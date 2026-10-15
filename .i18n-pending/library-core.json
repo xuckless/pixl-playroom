@@ -630,5 +630,21 @@
     "ja": "ライブラリでも ⌘C で写真の設定をコピーでき、⌘V ですぐにペーストできます（取り消しも可能）。⇧⌘V ならペーストする内容を選べ、同期はコピー元の写真名を表示します。",
     "vi": "⌘C giờ cũng sao chép thiết lập của ảnh trong Thư viện, và ⌘V dán ngay, kèm Hoàn tác. ⇧⌘V cho bạn chọn dán những gì, và Đồng bộ ghi rõ ảnh nguồn được sao chép.",
     "zh-Hans": "在图库中也能用 ⌘C 拷贝照片的设置，⌘V 立即粘贴，并可撤销。⇧⌘V 可选择要粘贴的内容，“同步”会写明从哪张照片拷贝。"
+  },
+  "Undoing {{what}}": {
+    "en": "Undoing {{what}}",
+    "fr": "Annulation : {{what}}",
+    "de": "{{what}} wird widerrufen",
+    "ja": "{{what}} を取り消し中",
+    "vi": "Đang hoàn tác {{what}}",
+    "zh-Hans": "正在撤销{{what}}"
+  },
+  "Redoing {{what}}": {
+    "en": "Redoing {{what}}",
+    "fr": "Rétablissement : {{what}}",
+    "de": "{{what}} wird wiederhergestellt",
+    "ja": "{{what}} をやり直し中",
+    "vi": "Đang làm lại {{what}}",
+    "zh-Hans": "正在重做{{what}}"
   }
 }
