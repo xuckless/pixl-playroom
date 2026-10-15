@@ -34,6 +34,11 @@ import {
   type CameraProfileChoices,
   type DevelopSession,
   type FirstLookPicture,
+  type FocusPicture,
+  type FocusTile,
+  type LibraryPreview,
+  type PreviewCacheState,
+  type ShotGroup,
   type EngineStatus,
   type GpuDragState,
   type ExportFacts,
@@ -223,6 +228,21 @@ const api = {
     copyRecipe: (key: string) => call<Recipe>(IPC.library.copyRecipe, key),
     /** Photos' items by key, whether the listing shown has them or not. */
     itemsOf: (keys: string[]) => call<(LibraryItem | undefined)[]>(IPC.library.itemsOf, keys),
+    /** A photo's screen preview for the Loupe, Compare and Survey. */
+    preview: (key: string) => call<LibraryPreview>(IPC.library.preview, key),
+    /** The photos either side of those shown: their previews made ahead (and what is shown kept). */
+    warmPreviews: (keys: string[], shown: string[]) =>
+      call<void>(IPC.library.warmPreviews, keys, shown),
+    /** A photo's 1:1: a picture of it whole, or the size its regions are rendered at. */
+    focus: (key: string) => call<FocusPicture>(IPC.library.focus, key),
+    /** A part of a photo at 1:1 (fractions of its picture). */
+    focusRegion: (key: string, rect: { x: number; y: number; width: number; height: number }) =>
+      call<FocusTile>(IPC.library.focusRegion, key, rect),
+    previewCache: () => call<PreviewCacheState>(IPC.library.previewCache),
+    setPreviewCap: (bytes: number) => call<PreviewCacheState>(IPC.library.setPreviewCap, bytes),
+    clearPreviews: () => call<PreviewCacheState>(IPC.library.clearPreviews),
+    /** The shots taken with a photo (its burst, or the pictures nearly the same), or null. */
+    shotGroup: (key: string) => call<ShotGroup | null>(IPC.library.shotGroup, key),
     resetRecipe: (keys: string[]) =>
       call<(LibraryItem | undefined)[]>(IPC.library.resetRecipe, keys),
     prioritize: (keys: string[]) => call<void>(IPC.library.prioritize, keys),

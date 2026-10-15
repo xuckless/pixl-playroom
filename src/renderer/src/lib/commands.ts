@@ -43,7 +43,26 @@ import { api, errorText } from './api'
 import { autoWbBatch } from './autowb'
 import { makeProofCopies, makeProofCopy, toggleProofSplit } from './proofing'
 import { copySettings, pasteSettings } from './clipboard'
-import { developBatch, gridStep, inGrid, metaItem, metaTargets } from './librarycontext'
+import { developBatch, gridStep, inGrid, inMode, metaItem, metaTargets } from './librarycontext'
+import {
+  afterDecision,
+  developToLoupe,
+  dropFromSurvey,
+  goBack,
+  goCompare,
+  goDevelop,
+  goGrid,
+  goLoupe,
+  goSurvey,
+  promoteCandidate,
+  shownKey,
+  stepPhoto,
+  swapCompare,
+  toggleAutoAdvance,
+  toggleLoupe
+} from './librarymodes'
+import { libZoom } from '../views/library/libzoom'
+import type { MetaPatch } from '../../../shared/ipc'
 import { redoLibrary, undoAction, undoLibrary, useLibraryUndo } from '../state/libraryUndo'
 import { t, tk, tp } from './i18n'
 import {
@@ -137,6 +156,28 @@ export async function rejectSuggested(): Promise<void> {
   )
 }
 
+/**
+ * A rating, flag or label key: on the photos it acts on here (UX-13), then,
+ * with auto-advance in force, on to the next photo (lib/librarymodes.ts).
+ */
+function decide(patch: MetaPatch): void {
+  const targets = metaTargets()
+  void lib().setMeta(patch, targets)
+  afterDecision(targets)
+}
+
+/** The thumbnails' size range (the toolbar's slider), and its step for ⌘+ and ⌘−. */
+const THUMB_MIN = 100
+const THUMB_MAX = 360
+const THUMB_STEP = 40
+const THUMB_DEFAULT = 180
+
+/** E opens the Loupe now (it opened Develop): said once, the first time it is pressed. */
+function tellLoupeKey(): void {
+  if (!ui().tell('loupe-key')) return
+  lib().say(t('E now opens the Loupe; {{key}} develops', { key: keyHint('library.develop') }))
+}
+
 const RATING_LABELS = [
   tk('Clear rating'),
   tk('Rate 1 star'),
@@ -160,7 +201,7 @@ const rating = [0, 1, 2, 3, 4, 5].map<KeyCommand>((n) => ({
   context: 'global',
   keys: [String(n)],
   // The selection in the Grid; the photo shown anywhere else (UX-13).
-  run: () => void lib().setMeta({ rating: n }, metaTargets())
+  run: () => decide({ rating: n })
 }))
 
 const labels = (['red', 'yellow', 'green', 'blue'] as const).map<KeyCommand>((label, i) => ({
@@ -171,7 +212,7 @@ const labels = (['red', 'yellow', 'green', 'blue'] as const).map<KeyCommand>((la
   keys: [String(6 + i)],
   run: () => {
     const current = metaItem()?.label
-    void lib().setMeta({ label: current === label ? null : label }, metaTargets())
+    decide({ label: current === label ? null : label })
   }
 }))
 
@@ -218,7 +259,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Rating & flags',
     context: 'global',
     keys: ['P'],
-    run: () => void lib().setMeta({ flag: 'pick' }, metaTargets())
+    run: () => decide({ flag: 'pick' })
   },
   {
     id: 'flag.reject',
@@ -226,7 +267,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Rating & flags',
     context: 'global',
     keys: ['X'],
-    run: () => void lib().setMeta({ flag: 'reject' }, metaTargets())
+    run: () => decide({ flag: 'reject' })
   },
   {
     id: 'cull.rejectAll',
@@ -253,7 +294,7 @@ export const COMMANDS: KeyCommand[] = [
     group: 'Rating & flags',
     context: 'global',
     keys: ['U'],
-    run: () => void lib().setMeta({ flag: null }, metaTargets())
+    run: () => decide({ flag: null })
   },
   {
     id: 'export',
@@ -356,16 +397,176 @@ export const COMMANDS: KeyCommand[] = [
   // ── library ──
   {
     id: 'library.develop',
-    label: tk('Develop the focused photo'),
+    label: tk('Develop the photo shown'),
     group: 'Navigation',
     context: 'library',
-    keys: ['Enter', 'D', 'E'],
-    when: () => !!lib().focus,
+    keys: ['D', 'Enter'],
+    when: () => !!shownKey(),
+    run: () => goDevelop()
+  },
+  {
+    id: 'library.grid',
+    label: tk('Grid'),
+    group: 'Navigation',
+    context: 'library',
+    keys: ['G'],
+    run: () => goGrid()
+  },
+  {
+    id: 'library.loupe',
+    label: tk('Loupe: one photo, large'),
+    group: 'Navigation',
+    context: 'library',
+    keys: ['E'],
     run: () => {
-      const focus = lib().focus
-      if (!focus) return
-      lib().setView('develop')
-      void dev().open(focus)
+      goLoupe()
+      tellLoupeKey()
+    }
+  },
+  {
+    id: 'library.toggleLoupe',
+    label: tk('Grid or Loupe, in turn'),
+    group: 'Navigation',
+    context: 'library',
+    keys: ['Space'],
+    run: (e) => {
+      toggleLoupe()
+      stop(e)
+    }
+  },
+  {
+    id: 'library.compare',
+    label: tk('Compare two photos'),
+    group: 'Navigation',
+    context: 'library',
+    keys: ['C'],
+    run: () => goCompare()
+  },
+  {
+    id: 'library.survey',
+    label: tk('Survey the selection (one photo: its burst)'),
+    group: 'Navigation',
+    context: 'library',
+    keys: ['N'],
+    run: () => void goSurvey()
+  },
+  {
+    id: 'library.back',
+    label: tk('Back to the Grid; in the Grid, let go of the selection'),
+    group: 'Navigation',
+    context: 'library',
+    keys: ['Escape'],
+    // A menu or dropdown open with the keyboard closes on its own.
+    when: (e) => !e.defaultPrevented,
+    run: () => goBack()
+  },
+  {
+    id: 'library.autoAdvance',
+    label: tk('Auto advance after a rating, flag or label'),
+    group: 'Rating & flags',
+    context: 'library',
+    keys: ['Shift+A'],
+    run: () => toggleAutoAdvance()
+  },
+  {
+    id: 'library.filterBar',
+    label: tk('Show or hide the filter bar'),
+    group: 'View',
+    context: 'library',
+    keys: ['Shift+Backslash'],
+    run: (e) => {
+      ui().setFilterBar(!ui().filterBar)
+      stop(e)
+    }
+  },
+  {
+    id: 'library.zoomIn',
+    label: tk('Zoom in (in the Grid, larger thumbnails)'),
+    group: 'View',
+    context: 'library',
+    keys: ['Mod+Equal', 'Mod+Shift+Equal', 'Mod+NumpadAdd'],
+    run: (e) => {
+      if (inMode('loupe', 'compare')) void libZoom.zoomIn()
+      else lib().setThumbSize(Math.min(THUMB_MAX, lib().thumbSize + THUMB_STEP))
+      stop(e)
+    }
+  },
+  {
+    id: 'library.zoomOut',
+    label: tk('Zoom out (in the Grid, smaller thumbnails)'),
+    group: 'View',
+    context: 'library',
+    keys: ['Mod+Minus', 'Mod+Shift+Minus', 'Mod+NumpadSubtract'],
+    run: (e) => {
+      if (inMode('loupe', 'compare')) void libZoom.zoomOut()
+      else lib().setThumbSize(Math.max(THUMB_MIN, lib().thumbSize - THUMB_STEP))
+      stop(e)
+    }
+  },
+  {
+    id: 'library.zoomFit',
+    label: tk('Fit (in the Grid, thumbnails at their usual size)'),
+    group: 'View',
+    context: 'library',
+    keys: ['Mod+0'],
+    run: (e) => {
+      if (inMode('loupe', 'compare')) libZoom.fit()
+      else lib().setThumbSize(THUMB_DEFAULT)
+      stop(e)
+    }
+  },
+  {
+    id: 'loupe.zoom',
+    label: tk('Fit ↔ 1:1, to check focus'),
+    group: 'View',
+    context: 'library.loupe',
+    keys: ['Z'],
+    when: () => inMode('loupe', 'compare'),
+    run: () => void libZoom.toggle()
+  },
+  {
+    id: 'compare.swap',
+    label: tk('Compare: swap the Select and the Candidate'),
+    group: 'Navigation',
+    context: 'library.compare',
+    keys: ['Tab'],
+    when: () => inMode('compare'),
+    run: (e) => {
+      swapCompare()
+      stop(e)
+    }
+  },
+  {
+    id: 'compare.promote',
+    label: tk('Compare: the Candidate becomes the Select'),
+    group: 'Navigation',
+    context: 'library.compare',
+    keys: ['ArrowUp'],
+    when: (e) => inMode('compare') && !e.defaultPrevented,
+    run: (e) => {
+      promoteCandidate()
+      stop(e)
+    }
+  },
+  {
+    id: 'compare.link',
+    label: tk('Compare: zoom both together, or apart'),
+    group: 'View',
+    context: 'library.compare',
+    keys: ['L'],
+    when: () => inMode('compare'),
+    run: () => libZoom.toggleLink()
+  },
+  {
+    id: 'survey.drop',
+    label: tk('Survey: drop the photo picked'),
+    group: 'Navigation',
+    context: 'library.survey',
+    keys: ['Slash'],
+    when: () => inMode('survey'),
+    run: (e) => {
+      dropFromSurvey()
+      stop(e)
     }
   },
   {
@@ -509,16 +710,28 @@ export const COMMANDS: KeyCommand[] = [
       // A selected mask is what the panels edit: Esc gives them the whole photo back.
       if (scoped.layer()) return d.setLayer(null)
       if (d.zoom.scale !== 'fit') return loupeZoom.fit()
+      // Back to the Library's view it came from (the Grid, the Loupe, Compare).
       lib().setView('library')
     }
   },
   {
     id: 'develop.library',
-    label: tk('Back to the library'),
+    label: tk('Back to the Library’s Grid'),
     group: 'Navigation',
     context: 'develop',
     keys: ['G'],
-    run: () => lib().setView('library')
+    run: () => goGrid()
+  },
+  {
+    id: 'develop.toLoupe',
+    label: tk('The Library’s Loupe on this photo'),
+    group: 'Navigation',
+    context: 'develop',
+    keys: ['E'],
+    run: () => {
+      developToLoupe()
+      tellLoupeKey()
+    }
   },
   {
     id: 'zoom.in',
@@ -1065,15 +1278,9 @@ function gridMoves(): KeyCommand[] {
   ]
 }
 
+/** ← and →: the next photo as the view walks them (Compare's Candidate, Survey's tiles). */
 function step(e: KeyboardEvent, dir: 1 | -1): void {
-  const l = lib()
-  const vis = l.visible()
-  const i = vis.findIndex((it) => it.key === l.focus)
-  const next = vis[Math.min(vis.length - 1, Math.max(0, i + dir))]
-  if (!next) return
-  l.setFocus(next.key)
-  if (l.view === 'develop') void dev().open(next.key)
-  stop(e)
+  if (stepPhoto(dir)) stop(e)
 }
 
 export const DEFAULT_BINDINGS: Bindings = Object.fromEntries(
@@ -1168,7 +1375,7 @@ export function useKeyHint(): (id: string) => string {
 /** Whether a command's context is listening in this view. */
 export function listening(context: KeyContext, inDevelop: boolean): boolean {
   if (context === 'global') return true
-  if (context === 'library' || context === 'library.grid') return !inDevelop
+  if (context === 'library' || context.startsWith('library.')) return !inDevelop
   return inDevelop
 }
 

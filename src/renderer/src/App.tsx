@@ -53,7 +53,10 @@ import { startMenuUpkeep } from './lib/menus'
 import { askProjectsLocation } from './lib/batch'
 import { t, useLanguage } from './lib/i18n'
 import { FilmToggle, Filmstrip } from './views/Filmstrip'
-import { LibraryIdentity, LibraryStatus, CullBar, LibraryView, Toolbar } from './views/Library'
+import { LibraryIdentity, LibraryStatus, LibraryView, Toolbar } from './views/Library'
+import { LibraryCompare, LibraryLoupe, LibrarySurvey } from './views/library/CullViews'
+import { FilterBar } from './views/library/FilterBar'
+import { filmPick, noteCapsLock } from './lib/librarymodes'
 import { CollectionDialog } from './views/library/CollectionDialog'
 import { InfoDrawer } from './views/library/InfoDrawer'
 import { Sidebar } from './views/library/Sidebar'
@@ -105,8 +108,8 @@ const LibraryScreen = memo(function LibraryScreen(): React.JSX.Element {
       <div className="library-body">
         <Sidebar />
         <main className="library-main">
-          <CullBar />
-          <LibraryView />
+          <FilterBar />
+          <LibraryModes />
         </main>
         <InfoDrawer />
       </div>
@@ -114,6 +117,23 @@ const LibraryScreen = memo(function LibraryScreen(): React.JSX.Element {
     </div>
   )
 })
+
+/**
+ * The Library's view of its photos: the Grid, or the Loupe, Compare or
+ * Survey with the filmstrip under them (a click there picks, never opens).
+ */
+function LibraryModes(): React.JSX.Element {
+  const mode = useLibrary((s) => s.mode)
+  if (mode === 'grid') return <LibraryView />
+  return (
+    <>
+      {mode === 'loupe' && <LibraryLoupe />}
+      {mode === 'compare' && <LibraryCompare />}
+      {mode === 'survey' && <LibrarySurvey />}
+      <Filmstrip always onPick={filmPick} />
+    </>
+  )
+}
 
 function Screens(): React.JSX.Element {
   const view = useLibrary((s) => s.view)
@@ -383,6 +403,8 @@ let lostFrames = 0
 function useShortcuts(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Caps Lock flips auto-advance while it is on: the status bar's chip follows it.
+      noteCapsLock(e)
       const el = e.target as HTMLElement
       if (
         el.tagName === 'INPUT' &&
@@ -403,6 +425,7 @@ function useShortcuts(): void {
       e.preventDefault()
     }
     const onKeyUp = (e: KeyboardEvent): void => {
+      noteCapsLock(e)
       // A held command lets go when its key does, whatever else is still down.
       const code = chordOf(e).code
       const bindings = currentBindings()

@@ -53,6 +53,16 @@ import type {
 } from '../../shared/ipc'
 import { ENGINE_RENDER_REV, PREVIEW_THUMB_REV } from '../../shared/pixels'
 import { groupNear } from '../../shared/dupes'
+import {
+  BURST_SECONDS,
+  bursts,
+  groupAround,
+  NEAR_BITS,
+  nearGroups,
+  withAsked,
+  type ShotGroupKind,
+  type TimedShot
+} from '../../shared/shots'
 import { dcpIdOf, parseRawColour, readProfile, registerDcp } from '../../shared/rawcolour'
 import { readNames, searchWords } from '../../shared/naming'
 import { CULL_VERSION, cullKey, type CullModels } from '../../shared/cull'
@@ -154,6 +164,16 @@ export interface ThumbWork {
   stamp: string
 }
 
+/** What names a photo's pictures (`thumbJob`'s stamp), and the thumbnail it has now. */
+interface PictureStamp {
+  row: PhotoRow
+  key: string
+  edited: boolean
+  stamp: string
+  thumbKey: string | null
+  thumbPath: string | null
+}
+
 /** What opening a photo in develop needs from the index, in one trip. */
 export interface OpenData {
   row: PhotoRow
@@ -225,6 +245,13 @@ interface ListingContext {
 
 /** A file's content version, for its cached SHA-1. */
 const hashKeyOf = (row: PhotoRow): string => `${row.mtime}-${row.size}`
+
+/** Photos with a capture time, as the burst finder reads them (the rows themselves as keys). */
+function timedShots(rows: PhotoRow[]): TimedShot<PhotoRow>[] {
+  return rows
+    .filter((r) => r.captured_at)
+    .map((r) => ({ key: r, t: new Date(r.captured_at as string).getTime(), name: r.name }))
+}
 
 /** A folder's own modification time (null when it cannot be read). */
 function folderMtime(folder: string): number | null {
@@ -1951,26 +1978,8 @@ export class IndexService {
    * than `seconds` between one capture and the next, two or more long, the
    * first as cover. Returns how many stacks were made.
    */
-  autoStack(folder: string, seconds = 3): number {
-    const timed = this.store
-      .photosIn(folder)
-      .filter((r) => !r.stack_id && r.captured_at)
-      .map((r) => ({ r, t: new Date(r.captured_at as string).getTime() }))
-      .filter((x) => Number.isFinite(x.t))
-      .sort((a, b) => a.t - b.t || a.r.name.localeCompare(b.r.name))
-    const runs: PhotoRow[][] = []
-    let run: PhotoRow[] = []
-    let last = -Infinity
-    for (const { r, t } of timed) {
-      if (t - last > seconds * 1000 && run.length > 0) {
-        runs.push(run)
-        run = []
-      }
-      run.push(r)
-      last = t
-    }
-    if (run.length > 0) runs.push(run)
-    const made = runs.filter((g) => g.length >= 2)
+  autoStack(folder: string, seconds = BURST_SECONDS): number {
+    const made = bursts(timedShots(this.store.photosIn(folder).filter((r) => !r.stack_id)), seconds)
     if (made.length === 0) return 0
     this.store.tx(() => {
       for (const g of made) {
@@ -1980,6 +1989,33 @@ export class IndexService {
     })
     this.emit({ name: 'changed', folder })
     return made.length
+  }
+
+  /**
+   * The shots taken with a photo, for the Library's Survey of it (N): its
+   * burst in its folder, else the photos there whose picture hashes are
+   * near its own. Read only: nothing is stacked, and only hashes already
+   * made are compared (no file is read). A virtual copy is grouped by its
+   * photo's capture and picture, and shown beside it. Null when it stands
+   * alone.
+   */
+  shotGroup(
+    key: string,
+    seconds = BURST_SECONDS,
+    bits = NEAR_BITS
+  ): { kind: ShotGroupKind; keys: string[] } | null {
+    const row = this.store.photo(parseKey(key).photoId)
+    if (!row) return null
+    const rows = this.store.photosIn(row.folder)
+    const own = keyOf(row.id, null)
+    const runs = bursts(timedShots(rows), seconds).map((r) => r.map((x) => keyOf(x.id, null)))
+    const hashed = rows
+      .filter((r) => r.dhash && r.dhash_key === r.thumb_key)
+      .map((r) => ({ key: keyOf(r.id, null), hash: r.dhash as string }))
+    // The near groups only when there is no burst: comparing hashes is the slower half.
+    const near = runs.some((r) => r.includes(own)) ? [] : nearGroups(hashed, bits)
+    // A virtual copy asked about: its photo's group, with the copy beside it.
+    return withAsked(groupAround(own, runs, near), own, key)
   }
 
   // ── duplicates ──
@@ -2351,6 +2387,36 @@ export class IndexService {
 
   /** The thumbnail to render for an item, or null when the one it has is current (or it cannot be read). */
   thumbJob(photoId: number, copyId: string | null): ThumbWork | null {
+    const work = this.pictureStamp(photoId, copyId)
+    if (!work) return null
+    const have = work.thumbPath && existsSync(work.thumbPath)
+    if (work.thumbKey === work.stamp && have) return null
+    return this.pictureWork(work)
+  }
+
+  /**
+   * What a larger picture of a photo is made from (the Library's screen
+   * preview), named by the same stamp as its thumbnail: a new edit, a new
+   * file or a newer engine names a new one. Null for a photo gone or that
+   * cannot be read.
+   */
+  previewJob(photoId: number, copyId: string | null): ThumbWork | null {
+    const work = this.pictureStamp(photoId, copyId)
+    return work && this.pictureWork(work)
+  }
+
+  /** The work a stamp names: the row as the engine reads it, and the recipe. */
+  private pictureWork(w: PictureStamp): ThumbWork {
+    return {
+      row: this.withOriginal(w.row),
+      recipe: this.recipe(w.key),
+      edited: w.edited,
+      stamp: w.stamp
+    }
+  }
+
+  /** A photo's (or copy's) picture stamp, and the thumbnail it has now. */
+  private pictureStamp(photoId: number, copyId: string | null): PictureStamp | null {
     const row = this.store.photo(photoId)
     if (!row || this.isFailed(row)) return null
     const existing =
@@ -2369,9 +2435,14 @@ export class IndexService {
     // sensor (`PREVIEW_THUMB_REV`): those made before, often far too small, again.
     const mark = edited ? `-e${ENGINE_RENDER_REV}` : raw ? `-t${PREVIEW_THUMB_REV}` : ''
     const stamp = `${versionStamp(row, !raw || edited)}${mark}-${recipeKey}`
-    const have = existing.thumb_path && existsSync(existing.thumb_path)
-    if (existing.thumb_key === stamp && have) return null
-    return { row: this.withOriginal(row), recipe: this.recipe(key), edited, stamp }
+    return {
+      row,
+      key,
+      edited,
+      stamp,
+      thumbKey: existing.thumb_key ?? null,
+      thumbPath: existing.thumb_path ?? null
+    }
   }
 
   setThumb(photoId: number, copyId: string | null, path: string, stamp: string): void {

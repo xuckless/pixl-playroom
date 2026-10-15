@@ -28,8 +28,11 @@ import {
   type SortKey
 } from '../state/library'
 import { useUi } from '../state/ui'
-import { DuplicateControls, FilterButton, OrganiseMenu } from './library/ToolbarMenus'
-import { keyHint, rejectSuggested, withKey } from '../lib/commands'
+import { DuplicateControls, OrganiseMenu } from './library/ToolbarMenus'
+import { SearchField } from './library/FilterBar'
+import { goDevelop, goMode, toggleAutoAdvance, useCapsLock } from '../lib/librarymodes'
+import type { LibraryMode } from '../../../shared/cullnav'
+import { keyHint, useKeyHint, withKey } from '../lib/commands'
 import { useEntering } from '../lib/hooks'
 import { photoContextMenu } from '../lib/menus'
 import { setGridLayout } from '../lib/librarycontext'
@@ -384,9 +387,38 @@ const SORTS: { value: SortKey; label: string }[] = [
   { value: 'edited', label: tk('Edited first') }
 ]
 
+/** The Library's views of its photos, as the toolbar's segment and the View menu offer them. */
+const MODES: { mode: LibraryMode; label: string; command: string }[] = [
+  { mode: 'grid', label: tk('Grid'), command: 'library.grid' },
+  { mode: 'loupe', label: tk('Loupe'), command: 'library.loupe' },
+  { mode: 'compare', label: tk('Compare'), command: 'library.compare' },
+  { mode: 'survey', label: tk('Survey'), command: 'library.survey' }
+]
+
+/** Grid, Loupe, Compare and Survey: the toolbar's segment. */
+function ModeSegment(): React.JSX.Element {
+  const mode = useLibrary((s) => s.mode)
+  const hint = useKeyHint()
+  return (
+    <div className="seg lg mode-seg" role="radiogroup" aria-label={t('View')}>
+      {MODES.map((m) => (
+        <button
+          key={m.mode}
+          role="radio"
+          aria-checked={mode === m.mode}
+          className={mode === m.mode ? 'on' : ''}
+          title={`${t(m.label)} (${hint(m.command)})`}
+          onClick={() => goMode(m.mode)}
+        >
+          {t(m.label)}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function Toolbar(): React.JSX.Element {
-  const filter = useLibrary((s) => s.filter)
-  const setFilter = useLibrary((s) => s.setFilter)
+  const mode = useLibrary((s) => s.mode)
   const sort = useLibrary((s) => s.sort)
   const setSort = useLibrary((s) => s.setSort)
   const thumbSize = useLibrary((s) => s.thumbSize)
@@ -403,8 +435,6 @@ export function Toolbar(): React.JSX.Element {
   const info = useUi((s) => s.libraryInfo)
   const setInfo = useUi((s) => s.setLibraryInfo)
   const targets = useTargets()
-  const setView = useLibrary((s) => s.setView)
-  const open = useDevelop((s) => s.open)
   // A photo kept only while it has the focus (sticky hide) is not counted as shown.
   const count = useShownCount()
   const total = useLibrary((s) => s.items.length)
@@ -449,17 +479,7 @@ export function Toolbar(): React.JSX.Element {
         </button>
       )}
       <span className="vsep" />
-      <label className="search-field">
-        <Icon name="search" />
-        <input
-          className="search"
-          placeholder={t('Search names, titles, keywords, camera')}
-          value={filter.text}
-          onChange={(e) => setFilter({ text: e.target.value })}
-          onKeyDown={(e) => e.stopPropagation()}
-        />
-      </label>
-      <FilterButton />
+      <SearchField />
       {!dupes && (
         <GlassSelect<SortKey>
           className="lg sort-select"
@@ -471,23 +491,26 @@ export function Toolbar(): React.JSX.Element {
         />
       )}
       <span className="spacer" />
+      <ModeSegment />
       {dupes ? (
         <DuplicateControls />
       ) : (
-        <label className="bar-range size-range" title={t('Thumbnail size')}>
-          <Icon name="library" />
-          <span className="bar-track">
-            <span className="bar-fill" style={{ width: `${pct}%` }} />
-            <input
-              type="range"
-              min={100}
-              max={360}
-              value={thumbSize}
-              onChange={(e) => setThumbSize(Number(e.target.value))}
-              onKeyDown={(e) => e.stopPropagation()}
-            />
-          </span>
-        </label>
+        mode === 'grid' && (
+          <label className="bar-range size-range" title={t('Thumbnail size')}>
+            <Icon name="library" />
+            <span className="bar-track">
+              <span className="bar-fill" style={{ width: `${pct}%` }} />
+              <input
+                type="range"
+                min={100}
+                max={360}
+                value={thumbSize}
+                onChange={(e) => setThumbSize(Number(e.target.value))}
+                onKeyDown={(e) => e.stopPropagation()}
+              />
+            </span>
+          </label>
+        )
       )}
       <span className="count t-num">
         {count}
@@ -507,14 +530,10 @@ export function Toolbar(): React.JSX.Element {
       <button
         className="lg"
         disabled={!focus}
-        title={withKey(t('Develop the focused photo'), 'library.develop')}
-        onClick={() => {
-          if (!focus) return
-          setView('develop')
-          void open(focus)
-        }}
+        title={withKey(t('Develop the photo shown'), 'library.develop')}
+        onClick={goDevelop}
       >
-        {t('Develop')} <span className="kbd">D</span>
+        {t('Develop')} <span className="kbd">{keyHint('library.develop')}</span>
       </button>
       <LiquidGlass
         as="button"
@@ -853,78 +872,122 @@ export function LibraryView(): React.JSX.Element {
               : t('No duplicates match the filters.')
             : source?.kind === 'collection' && total === 0
               ? t('This collection is empty. Drag photos onto it in the sidebar to add them.')
-              : t('No photos match the filters.')}
+              : total === 0
+                ? t('No photos here')
+                : t('No photos match the filters.')}
+          {!groups && source?.kind !== 'collection' && total === 0 && (
+            <button className="sm" onClick={() => void useLibrary.getState().chooseFolder()}>
+              {t('Choose folder…')}
+            </button>
+          )}
+          {!groups && total > 0 && (
+            <button className="sm" onClick={() => useLibrary.getState().resetFilter()}>
+              {t('Reset filters')}
+            </button>
+          )}
         </p>
       )}
     </div>
   )
 }
 
-/** Counts and the keys that work here. */
-/**
- * Suggested rejects shown (Pass 115): how many, the measuring still to do,
- * and one button (or Shift+X) to flag them all rejected. Nothing is deleted.
- */
-export function CullBar(): React.JSX.Element | null {
-  const on = useLibrary((s) => s.filter.suggested === true)
-  const setFilter = useLibrary((s) => s.setFilter)
-  const measuring = useCull((s) => s.measuring)
-  const count = useVisible().length
-  if (!on) return null
+/** The keys a view answers, as the status bar names them: [command ids, what they do]. */
+const MODE_KEYS: Record<LibraryMode, [string[], string][]> = {
+  grid: [
+    [['flag.pick', 'flag.reject', 'flag.clear'], tk('flag')],
+    [['library.loupe'], tk('loupe')],
+    [['library.compare'], tk('compare')],
+    [['library.survey'], tk('survey')],
+    [['library.stack'], tk('stack')],
+    [['library.develop'], tk('develop')]
+  ],
+  loupe: [
+    [['flag.pick', 'flag.reject', 'flag.clear'], tk('flag')],
+    [['loupe.zoom'], tk('1:1')],
+    [['library.toggleLoupe'], tk('grid')],
+    [['library.develop'], tk('develop')]
+  ],
+  compare: [
+    [['nav.prev', 'nav.next'], tk('candidate')],
+    [['compare.swap'], tk('swap')],
+    [['compare.promote'], tk('make select')],
+    [['loupe.zoom'], tk('1:1')],
+    [['compare.link'], tk('link')]
+  ],
+  survey: [
+    [['nav.prev', 'nav.next'], tk('move')],
+    [['flag.reject'], tk('reject')],
+    [['survey.drop'], tk('drop')],
+    [['library.back'], tk('grid')]
+  ]
+}
+
+/** Auto-advance as it is in force (Caps Lock flips it), a click toggles it. */
+function AdvanceChip(): React.JSX.Element | null {
+  const on = useUi((s) => s.autoAdvance)
+  const caps = useCapsLock((s) => s.on)
+  const mode = useLibrary((s) => s.mode)
+  const hint = useKeyHint()
+  // Survey never moves on.
+  if (mode === 'survey') return null
+  const live = on !== caps
   return (
-    <div className="cull-bar" role="status">
-      <span>
-        {count === 0
-          ? t('No suggested rejects here.')
-          : tp(
-              '{{count}} suggested reject: hover one for why.',
-              '{{count}} suggested rejects: hover one for why.',
-              count
-            )}{' '}
-        {measuring &&
-          t('Measuring {{done}} of {{total}}…', { done: measuring.done, total: measuring.total })}
-      </span>
-      <span className="grow" />
-      {count > 0 && (
-        <button
-          className="sm"
-          onClick={() => void rejectSuggested()}
-          title={keyHint('cull.rejectAll')}
-        >
-          {t('Reject all {{count}}', { count })}
-        </button>
-      )}
-      <button className="sm ghost" onClick={() => setFilter({ suggested: false })}>
-        {t('Show all')}
-      </button>
-    </div>
+    <button
+      className={`sm ghost advance-chip${live ? ' on' : ''}`}
+      aria-pressed={on}
+      title={
+        caps
+          ? t('Auto advance, flipped while Caps Lock is on ({{key}} to change)', {
+              key: hint('library.autoAdvance')
+            })
+          : t('A rating, flag or label moves on to the next photo ({{key}}; Caps Lock flips it)', {
+              key: hint('library.autoAdvance')
+            })
+      }
+      onClick={toggleAutoAdvance}
+    >
+      {live ? t('Advance on') : t('Advance off')}
+    </button>
   )
 }
 
 export function LibraryStatus(): React.JSX.Element | null {
   const source = useLibrary((s) => s.source)
+  const mode = useLibrary((s) => s.mode)
   // A photo kept only while it has the focus (sticky hide) is not counted as shown.
   const count = useShownCount()
   const total = useLibrary((s) => s.items.length)
   const selected = useLibrary((s) => s.selection.length)
+  const hint = useKeyHint()
   if (!source) return null
+  const name = MODES.find((m) => m.mode === mode)?.label ?? ''
   return (
     <footer className="status-bar">
       <span className="t-num">
+        {mode !== 'grid' && `${t(name)} · `}
         {t('{{count}} of {{total}} shown', { count, total })}
         {selected > 1 ? ` · ${t('{{count}} selected', { count: selected })}` : ''}
       </span>
       <span className="spacer" />
       <span className="keys">
-        <span className="kbd">0–5</span> {t('rate')} <span className="kbd">6–9</span> {t('label')}{' '}
-        <span className="kbd">{keyHint('flag.pick')}</span>{' '}
-        <span className="kbd">{keyHint('flag.reject')}</span>{' '}
-        <span className="kbd">{keyHint('flag.clear')}</span> {t('flag')}{' '}
-        <span className="kbd">{keyHint('library.stack')}</span> {t('stack')}{' '}
-        <span className="kbd">{keyHint('library.info')}</span> {t('info')}{' '}
-        <span className="kbd">{keyHint('library.develop')}</span> {t('develop')}{' '}
-        <span className="kbd">{keyHint('sync')}</span> {t('sync')}
+        {mode === 'grid' && (
+          <>
+            <span className="kbd">0–5</span> {t('rate')} <span className="kbd">6–9</span>{' '}
+            {t('label')}{' '}
+          </>
+        )}
+        {MODE_KEYS[mode].map(([ids, what]) => (
+          <span key={ids.join()} className="key-pair">
+            {ids.map((id) => (
+              <span key={id} className="kbd">
+                {hint(id)}
+              </span>
+            ))}{' '}
+            {t(what)}
+          </span>
+        ))}
       </span>
+      <AdvanceChip />
     </footer>
   )
 }

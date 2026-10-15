@@ -6,7 +6,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { MAX_PROBLEM_TEXT } from '../../../shared/crash'
 import type { AccountStatus } from '../../../shared/account'
-import type { GpuDragState, Prefs, UpdateState } from '../../../shared/ipc'
+import type { GpuDragState, Prefs, PreviewCacheState, UpdateState } from '../../../shared/ipc'
+import { DEFAULT_PREVIEW_CAP, PREVIEW_CAPS } from '../../../shared/previews'
 import { ACCOUNT_URL, BUY_URL, LICENCE_RULES, type LicenceStatus } from '../../../shared/licence'
 import { latestNotes } from '../../../shared/releasenotes'
 import {
@@ -567,6 +568,7 @@ export function PreferencesDialog(): React.JSX.Element {
             <SavingSections />
             <InterfaceSection />
             <PerformanceSection />
+            <StorageSection />
           </>
         )}
         {section === 'display' && <DisplaySection platform={prefs?.platform ?? null} />}
@@ -743,6 +745,86 @@ function PerformanceSection(): React.JSX.Element | null {
           }}
         />
       </label>
+    </fieldset>
+  )
+}
+
+/** A size on disk, as people read it ("1.4 GB", "320 MB"). */
+function sizeLabel(bytes: number): string {
+  const gb = bytes / 1024 ** 3
+  const n = (v: number, digits: number): string =>
+    new Intl.NumberFormat(undefined, { maximumFractionDigits: digits }).format(v)
+  return gb >= 1
+    ? t('{{size}} GB', { size: n(gb, 1) })
+    : t('{{size}} MB', { size: n(bytes / 1024 ** 2, 0) })
+}
+
+/**
+ * The Library's previews (the Loupe's, Compare's and Survey's pictures):
+ * how much room they take, the most they may, and emptying them. Past the
+ * cap the least recently shown go; they are made again when shown.
+ */
+function StorageSection(): React.JSX.Element {
+  const say = useLibrary((s) => s.say)
+  const [state, setState] = useState<PreviewCacheState | null>(null)
+  useEffect(() => {
+    void api.library.previewCache().then(setState, () => undefined)
+  }, [])
+  const cap = state?.cap ?? DEFAULT_PREVIEW_CAP
+  // A cap set some other way is offered too, in its place.
+  const caps = PREVIEW_CAPS.includes(cap)
+    ? PREVIEW_CAPS
+    : [...PREVIEW_CAPS, cap].sort((a, b) => a - b)
+  return (
+    <fieldset>
+      <legend>{t('Storage')}</legend>
+      <div className="pref-row">
+        <Select<string>
+          label={t('Library previews')}
+          value={String(cap)}
+          options={caps.map((c) => ({
+            value: String(c),
+            label: t('Up to {{size}}', { size: sizeLabel(c) })
+          }))}
+          onChange={(v) =>
+            void api.library
+              .setPreviewCap(Number(v))
+              .then(setState)
+              .catch((err) => say(errorText(err), 'error'))
+          }
+        />
+        <InfoTip
+          label={t('Library previews')}
+          tip={{
+            what: t(
+              'The large pictures the Loupe, Compare and Survey show, kept so a photo comes up at once the next time.'
+            ),
+            expect: t(
+              'Past the limit the ones shown longest ago go first, and are made again when shown. Your photos and their edits are never touched.'
+            )
+          }}
+        />
+      </div>
+      <div className="row between">
+        <span className="muted small t-num">
+          {state ? t('{{size}} in use', { size: sizeLabel(state.bytes) }) : '…'}
+        </span>
+        <button
+          className="sm"
+          disabled={!state || state.bytes === 0}
+          onClick={() =>
+            void api.library
+              .clearPreviews()
+              .then((s) => {
+                setState(s)
+                say(t('Library previews cleared'))
+              })
+              .catch((err) => say(errorText(err), 'error'))
+          }
+        >
+          {t('Clear previews')}
+        </button>
+      </div>
     </fieldset>
   )
 }

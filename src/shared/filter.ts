@@ -108,6 +108,43 @@ export function extraFilterCount(f: Filter): number {
   ].filter(Boolean).length
 }
 
+/** The filters only "More…" holds (the filter bar shows the rest), each one a chip that clears it. */
+export type MoreFilter = 'camera' | 'lens' | 'kind' | 'iso' | 'focal' | 'taken' | 'keyword'
+
+/** The "More…" filters in force, in the bar's order. */
+export function moreFilters(f: Filter): MoreFilter[] {
+  const on: [MoreFilter, unknown][] = [
+    ['camera', f.camera],
+    ['lens', f.lens],
+    ['kind', f.kind !== 'all'],
+    ['iso', f.iso],
+    ['focal', f.focal],
+    ['taken', f.from || f.to],
+    ['keyword', f.keyword]
+  ]
+  return on.filter(([, v]) => !!v).map(([k]) => k)
+}
+
+/** A "More…" filter back at its default. */
+export function withoutMore(which: MoreFilter): Partial<Filter> {
+  if (which === 'taken') return { from: '', to: '' }
+  return { [which]: DEFAULT_FILTER[which] } as Partial<Filter>
+}
+
+/** Whether the filter (the search aside) is the default one: nothing to clear. */
+export function isDefaultFilter(f: Filter): boolean {
+  return extraFilterCount(f) === 0
+}
+
+/**
+ * Whether the filter can be kept as a smart collection: something chosen,
+ * and no suggested rejects (the renderer's suggestions, not a rule a
+ * collection could keep: it would hold every photo but the rejects).
+ */
+export function savableFilter(f: Filter): boolean {
+  return !isDefaultFilter(f) && !f.suggested
+}
+
 /** The popover's filters back at their defaults; the search text is left alone. */
 export function clearedFilters(): Partial<Filter> {
   const rest: Partial<Filter> = { ...DEFAULT_FILTER }

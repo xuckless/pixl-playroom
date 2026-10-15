@@ -95,8 +95,17 @@ interface LibraryState {
    */
   sticky: string | null
   view: 'library' | 'develop'
-  /** The Library's view of its photos (lib/librarycontext.ts); only the grid so far. */
+  /** The Library's view of its photos: Grid, Loupe, Compare or Survey (lib/librarymodes.ts). */
   mode: LibraryMode
+  /** Compare's Candidate (its Select is the focus). */
+  candidate: string | null
+  /** Compare's pane the keys act on. */
+  active: 'select' | 'candidate'
+  /**
+   * What Survey shows: the selection (at most SURVEY_MAX of `total`), or a
+   * photo's burst, near shots or stack (`group`).
+   */
+  survey: { keys: string[]; total: number; group?: 'burst' | 'near' | 'stack' } | null
   filter: Filter
   sort: SortKey
   thumbSize: number
@@ -160,6 +169,8 @@ interface LibraryState {
   selectAll(): void
   setFocus(key: string | null): void
   setView(view: 'library' | 'develop'): void
+  /** Show the Library's photos this way (Compare's and Survey's photos are set by lib/librarymodes.ts). */
+  setMode(mode: LibraryMode): void
   setFilter(f: Partial<Filter>): void
   resetFilter(): void
   setSort(s: SortKey): void
@@ -281,7 +292,11 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   anchor: null,
   sticky: null,
   view: 'library',
-  mode: 'grid',
+  // The Grid or the Loupe, as the last session left it.
+  mode: useUi.getState().libraryMode,
+  candidate: null,
+  active: 'select',
+  survey: null,
   filter: DEFAULT_FILTER,
   sort: 'name',
   thumbSize: 180,
@@ -317,7 +332,11 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         items: listing.items,
         groups: listing.groups ?? null,
         opening: null,
-        view: 'library'
+        view: 'library',
+        // Compare's and Survey's photos were the last source's: the Loupe stays.
+        ...(s.mode === 'compare' || s.mode === 'survey'
+          ? { mode: 'grid' as const, candidate: null, active: 'select' as const, survey: null }
+          : {})
       }))
       const first = get().visible()[0]?.key ?? null
       set({ selection: first ? [first] : [], focus: first, anchor: first })
@@ -499,6 +518,17 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     set({ view })
   },
 
+  setMode(mode) {
+    set((s) => ({
+      mode,
+      // Leaving Compare or Survey: what they showed goes with them.
+      ...(mode !== 'compare' ? { candidate: null, active: 'select' as const } : {}),
+      ...(mode !== 'survey' ? { survey: null } : {}),
+      ...(s.view !== 'library' ? { view: 'library' as const } : {})
+    }))
+    useUi.getState().setLibraryMode(mode)
+  },
+
   setFilter(f) {
     set((s) => ({ filter: { ...s.filter, ...f } }))
   },
@@ -525,9 +555,12 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       const it = byKey.get(k)
       if (it) before[k] = { rating: it.rating, flag: it.flag, label: it.label }
     }
-    // The focused photo stays where it is though the filter may now hide it.
-    const focus = get().focus
+    // The photo shown stays where it is though the filter may now hide it
+    // (the focus, or Compare's Candidate).
+    const { focus, candidate } = get()
     if (focus && targets.includes(focus)) set({ sticky: focus })
+    else if (candidate && targets.length === 1 && targets[0] === candidate)
+      set({ sticky: candidate })
     if (!(await get().writeMeta(patch, targets))) return
     const entry: MetaEntry = { kind: 'meta', id: nextId(), title: metaTitle(patch), patch, before }
     pushUndo(entry)
@@ -851,9 +884,10 @@ export function useShownCount(): number {
   return visible - (pinned ? 1 : 0)
 }
 
-// The focus left the pinned photo: the filter has its say again.
+// The focus (or Compare's Candidate) left the pinned photo: the filter has its say again.
 useLibrary.subscribe((s) => {
-  if (s.sticky !== null && s.sticky !== s.focus) useLibrary.setState({ sticky: null })
+  if (s.sticky !== null && s.sticky !== s.focus && s.sticky !== s.candidate)
+    useLibrary.setState({ sticky: null })
 })
 
 /** The keys an action applies to: the selection, or the focused item. */

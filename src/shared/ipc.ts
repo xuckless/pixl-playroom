@@ -187,6 +187,20 @@ export const IPC = {
     copyRecipe: 'library:copy-recipe',
     /** Photos' items by key, listed or not (the Library's undo checks what each has now). */
     itemsOf: 'library:items-of',
+    /** A photo's screen preview for the Loupe, Compare and Survey (`LibraryPreview`). */
+    preview: 'library:preview',
+    /** The photos either side of the one shown: their screen previews made ahead. */
+    warmPreviews: 'library:warm-previews',
+    /** A photo's 1:1 (`FocusPicture`). */
+    focus: 'library:focus',
+    /** A part of a photo at 1:1 (`FocusTile`), rendered once, never in a Develop session. */
+    focusRegion: 'library:focus-region',
+    /** The previews folder's size and cap; setting the cap; emptying it. */
+    previewCache: 'library:preview-cache',
+    setPreviewCap: 'library:set-preview-cap',
+    clearPreviews: 'library:clear-previews',
+    /** The shots taken with a photo, for Survey (`ShotGroup`, or null). */
+    shotGroup: 'library:shot-group',
     /** main → renderer: collections, keywords or metadata changed */
     sourcesChanged: 'library:sources-changed'
   },
@@ -455,6 +469,44 @@ export interface FirstLookPicture {
   url: string
   width: number
   height: number
+}
+
+/** A photo's picture for the Library's Loupe, Compare and Survey (shared/previews.ts). */
+export interface LibraryPreview {
+  url: string
+  width: number
+  height: number
+  /** An HDR photo shown in SDR here (Develop shows it in HDR). */
+  sdr: boolean
+}
+
+/**
+ * A photo's 1:1 (shared/previews.ts): a picture of it whole, or the size of
+ * the picture its regions are rendered from, part by part as they are seen.
+ */
+export type FocusPicture =
+  | ({ kind: 'whole' } & LibraryPreview)
+  | { kind: 'region'; width: number; height: number; sdr: boolean }
+
+/** A part of a photo at 1:1, and where it lies in the picture (fractions). */
+export interface FocusTile {
+  url: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** The Library's previews on disk, and the most they may take (bytes). */
+export interface PreviewCacheState {
+  bytes: number
+  cap: number
+}
+
+/** The shots taken with a photo (shared/shots.ts): its burst, or the pictures nearly the same. */
+export interface ShotGroup {
+  kind: 'burst' | 'near'
+  keys: string[]
 }
 
 export interface EngineStatus {

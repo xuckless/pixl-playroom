@@ -16,7 +16,7 @@ import log from 'electron-log/main'
 import { existsSync } from 'fs'
 import { mkdir, readdir, readFile, rm, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
-import { compile } from '../shared/compile'
+import { compile, type Compiled } from '../shared/compile'
 import { dhashFromGrey } from '../shared/dupes'
 import {
   noPreview,
@@ -24,10 +24,12 @@ import {
   reduceRefused,
   unreadableFile,
   type ConvertRequest,
+  type InputFormat,
   type SourceInfo,
   type WhitePoint
 } from '../shared/engine-types'
-import { previewPlan, type PreviewPlan } from '../shared/thumbsize'
+import { previewPlan, uprightSize, type PreviewPlan } from '../shared/thumbsize'
+import { focusPlan, regionPixels, type FocusPlan } from '../shared/previews'
 import {
   IPC,
   type CameraProfileAdded,
@@ -64,6 +66,7 @@ import { EngineError, type EngineClient } from './engine/client'
 import { fillNoiseBook } from './ai/noisefill'
 import type { PhotoRow } from './db'
 import type { IndexClient } from './indexer/client'
+import type { ThumbWork } from './indexer/service'
 import type { PlaneStore } from './planestore'
 import { brushPlanes } from './brushes'
 import { lutsFor } from './lutfile'
@@ -76,7 +79,7 @@ import { paths } from './paths'
 import { pixelDeps } from './pixels/base'
 import { ensureWorking } from './pixels/working'
 import { editsHdr, ensureHdrSource } from './hdrsource'
-import { ensureProxies, ensureThumbSource } from './proxy'
+import { DRAFT_EDGE, ensureProxies, ensureThumbSource } from './proxy'
 import { pngToFloats } from './pngio'
 import { cacheUrl } from './protocol'
 import {
@@ -85,8 +88,10 @@ import {
   cellFactor,
   colourOf,
   displayPolicy,
+  interactiveThreads,
   isLinearRaw,
   profileWhiteRequest,
+  rawMaster,
   seedOf,
   sourceOrientation,
   versionStamp
@@ -113,6 +118,34 @@ const warnThumb = rateLimited(
   (...args) => log.warn(...args),
   (n) => `${n} more thumbnails failed`
 )
+
+/** A 1:1 region's least margin, pixels (render.ts's floor under the grade's reach). */
+const REGION_MARGIN = 96
+/** How far short of a RAW frame stated by its proxies a region is kept (their sizes are ± 2 px). */
+const FRAME_SLACK = 4
+
+/** A picture made, its size in pixels. */
+export interface PictureSize {
+  width: number
+  height: number
+}
+
+/** What a photo's 1:1 regions are rendered from (`Library.regionSetup`). */
+export interface RegionSetup {
+  row: PhotoRow
+  info: SourceInfo
+  raw: boolean
+  compiled: Compiled
+  /**
+   * What a region is read from when it is not the file: a gain-map photo
+   * edited as HDR renders from its applied rendition (hdrsource.ts), as its
+   * screen preview does, tone mapped the same way.
+   */
+  hdr: { path: string; input: InputFormat; info: SourceInfo } | null
+  /** The framed picture at full size: what a region's fractions are of. */
+  framed: PictureSize
+  margin: number
+}
 
 /** A file's version: its path, size and modification time. */
 const versionOf = (row: PhotoRow): string => `${row.path}:${row.mtime}:${row.size}`
@@ -927,6 +960,179 @@ export class Library {
     return { url: cacheUrl(out, stamp), width: report.width, height: report.height }
   }
 
+  // ── the Library's larger pictures (main/previews.ts names, caches and queues them) ──
+
+  /**
+   * A photo's picture at most `edge` on its long side, Display P3 as
+   * Develop's are, from `work` (the index's `previewJob`): an unedited one
+   * from its embedded preview or its own pixels on `engine`, an edited one
+   * graded from its proxies on the background engine. `Infinity` keeps it
+   * whole (a 1:1 of the camera's full-size preview, or of a JPEG). `sdr`:
+   * an HDR photo, or one edited in HDR, shown here in SDR.
+   */
+  async libraryPicture(
+    work: ThumbWork,
+    edge: number,
+    out: string,
+    engine: EngineClient,
+    threads: number
+  ): Promise<PictureSize & { sdr: boolean }> {
+    const recipe = await this.planes.hydrate(work.recipe)
+    const row = await this.readable(work.row)
+    const info = await this.probe(row, engine)
+    const base = {
+      encode: { Jpeg: { quality: 90, subsampling: 'Quarter' as const, optimize: false } },
+      pixel: { depth: 'Eight' as const, channels: 3 },
+      metadata: { exif: false, icc: true, xmp: false, iptc: false },
+      threads,
+      color: displayPolicy(info, 'DisplayP3')
+    }
+    const size = work.edited
+      ? await this.graded(row, info, recipe, out, base, edge)
+      : await this.unedited(row, info, edge, out, base, recipe, engine)
+    return { ...size, sdr: hdrKindOf(info) !== '' }
+  }
+
+  /** How a photo's 1:1 is made (shared/previews.ts), from its probe. */
+  async focusPlanOf(work: ThumbWork, engine: EngineClient): Promise<FocusPlan> {
+    const row = await this.readable(work.row)
+    return focusPlan(await this.probe(row, engine), row.is_raw === 1, work.edited)
+  }
+
+  /** RAW develops' own frame sizes, learnt from a region's report (the probe states the sensor's). */
+  private rawFrames = new Map<number, { width: number; height: number }>()
+
+  /**
+   * What a 1:1 region of a photo is rendered from and how: its source (a
+   * RAW developed for the region, else the file), the recipe compiled at
+   * full size with its crop, and the framed picture's size, whose fractions
+   * a region is asked in.
+   */
+  async regionSetup(work: ThumbWork, engine: EngineClient): Promise<RegionSetup> {
+    const recipe = await this.planes.hydrate(work.recipe)
+    const row = await this.readable(work.row)
+    const info = await this.probe(row, engine)
+    const raw = row.is_raw === 1
+    // A gain-map photo edited as HDR: its applied rendition, upright, as `graded` reads it.
+    const applied =
+      !raw && editsHdr(recipe, info) ? await ensureHdrSource(this.engine, row, info) : null
+    const hdr = applied
+      ? { path: applied.master.path, input: applied.master.input, info: applied.info }
+      : null
+    const shownInfo = hdr?.info ?? info
+    // A RAW's develop is cropped to the sensor's best area: its frame is
+    // the one its proxies (or thumbnail source) state, to a pixel or two,
+    // taken a little short so a region at its edge is never refused (the
+    // first region's report says it exactly).
+    let frame: PictureSize = applied
+      ? { width: applied.master.width, height: applied.master.height }
+      : uprightSize(info, sourceOrientation(info, null))
+    if (raw) {
+      const learnt = this.rawFrames.get(row.id)
+      const px = learnt ? null : await ensureThumbSource(this.engine, row, info, BACKGROUND_THREADS)
+      frame = learnt ?? {
+        width: (px?.frameWidth ?? info.width) - FRAME_SLACK,
+        height: (px?.frameHeight ?? info.height) - FRAME_SLACK
+      }
+    }
+    const { user, width, height } = orientedFrame(recipe, frame.width, frame.height)
+    const maskFrames = await maskFramesFor(
+      pixelDeps(this.engine, this.index, row),
+      recipe,
+      raw,
+      frame.width,
+      frame.height
+    ).catch(() => null)
+    const compiled = compile(recipe, {
+      isRaw: raw,
+      asShot: shownInfo.as_shot_white,
+      exposureOffset: exposureOffsetOf(colourOf(row)),
+      sourceOrientation: raw || hdr ? 'Normal' : sourceOrientation(info, null),
+      frameWidth: frame.width,
+      frameHeight: frame.height,
+      scale: 1,
+      seed: seedOf(row),
+      brushPaths: await brushPlanes(row.id, recipe, user, { isRaw: raw, frames: maskFrames }),
+      maskFrames,
+      luts: await lutsFor(recipe, paths.luts()),
+      applyCrop: true,
+      // As the screen preview's grade (`graded`): an HDR source graded as HDR, then shown in SDR.
+      hdr: shownInfo.is_hdr
+    })
+    // The oriented frame after the lens correction's crop, then the framing's.
+    let lensed = { width, height }
+    if (compiled.lens) {
+      const f = await engine.lensFrame(compiled.lens, width, height)
+      lensed = { width: f.frame.width, height: f.frame.height }
+    }
+    let framed = lensed
+    if (compiled.framing) {
+      const r = await engine.framingCrop(
+        { ...compiled.framing, orientation: 'Normal' },
+        lensed.width,
+        lensed.height
+      )
+      framed = { width: r.width, height: r.height }
+    }
+    const margin = await engine
+      .regionReach({
+        grade: compiled.grade,
+        sdr_grade: null,
+        frame_width: lensed.width,
+        frame_height: lensed.height,
+        output_width: framed.width,
+        output_height: framed.height
+      })
+      .then(
+        (r) => Math.min(Math.ceil(r.pixels), Math.max(framed.width, framed.height)),
+        () => 0
+      )
+    return { row, info, raw, compiled, hdr, framed, margin: Math.max(REGION_MARGIN, margin) }
+  }
+
+  /**
+   * A part of a photo at 1:1 (`rect`, fractions of the framed picture), its
+   * saved edit applied, never through a Develop session: the RAW developed
+   * for it, or the file read. Where it landed comes back as fractions.
+   */
+  async regionPicture(
+    setup: RegionSetup,
+    rect: { x: number; y: number; width: number; height: number },
+    out: string,
+    engine: EngineClient,
+    signal?: AbortSignal
+  ): Promise<{ x: number; y: number; width: number; height: number }> {
+    const { row, info, raw, compiled, hdr, framed } = setup
+    const px = regionPixels(rect, framed.width, framed.height)
+    const report = await engine.convert(
+      {
+        ...(hdr
+          ? blankRequest(hdr.path, out, hdr.input)
+          : blankRequest(row.path, out, raw ? 'Raw' : info.input, raw ? null : info)),
+        raw: raw ? rawMaster(colourOf(row)) : null,
+        encode: { Jpeg: { quality: 92, subsampling: 'None', optimize: false } },
+        pixel: { depth: 'Eight', channels: 3 },
+        metadata: { exif: false, icc: true, xmp: false, iptc: false },
+        // Tone mapped as the screen preview is (`graded`), so the 1:1 lies over it unchanged.
+        color: hdr ? displayPolicy(hdr.info, 'Srgb') : displayPolicy(info, 'DisplayP3'),
+        grade: compiled.grade,
+        framing: compiled.framing,
+        lens: compiled.lens,
+        retouch: compiled.retouch,
+        region: { ...px, margin: setup.margin },
+        threads: interactiveThreads()
+      },
+      { signal }
+    )
+    if (raw) this.rawFrames.set(row.id, { width: report.frame_width, height: report.frame_height })
+    return {
+      x: px.x / framed.width,
+      y: px.y / framed.height,
+      width: px.width / framed.width,
+      height: px.height / framed.height
+    }
+  }
+
   /**
    * The photo unedited at most `edge` on its long side (`previewPlan`): a
    * RAW's embedded preview sized from the preview, a JPEG decoded at a
@@ -940,15 +1146,16 @@ export class Library {
     edge: number,
     out: string,
     base: Record<string, unknown>,
-    recipe: Recipe
-  ): Promise<void> {
+    recipe: Recipe,
+    engine: EngineClient = this.engine
+  ): Promise<PictureSize> {
     const raw = row.is_raw === 1
     const plan = previewPlan(info, raw, edge)
-    if (plan === 'develop') return this.graded(row, info, recipe, out, base)
+    if (plan === 'develop') return this.graded(row, info, recipe, out, base, edge)
     const rawMode = raw ? ('EmbeddedPreview' as const) : null
     const orientation = sourceOrientation(info, rawMode)
     const convert = ({ reduce, factor }: PreviewPlan): ReturnType<EngineClient['convert']> =>
-      this.engine.convert({
+      engine.convert({
         ...blankRequest(row.path, out, info.input, info),
         ...base,
         raw: rawMode,
@@ -960,16 +1167,17 @@ export class Library {
             : { orientation, rotate_degrees: 0, rotate_resampler: 'Lanczos3', crop: null }
       })
     try {
-      await convert(plan).catch((err) => {
+      const report = await convert(plan).catch((err) => {
         // A JPEG the scaled decode cannot read (a lossless one): whole, then.
         if (!(err instanceof EngineError) || !plan.reduce || !reduceRefused(err.code, err.detail))
           throw err
         return convert({ reduce: null, long: plan.long, factor: Math.min(1, edge / plan.long) })
       })
+      return { width: report.width, height: report.height }
     } catch (err) {
       if (!raw || !(err instanceof EngineError) || !noPreview(err.code, err.detail)) throw err
       // No usable embedded preview after all: develop instead.
-      await this.graded(row, info, recipe, out, base)
+      return this.graded(row, info, recipe, out, base, edge)
     }
   }
 
@@ -1005,15 +1213,18 @@ export class Library {
   /**
    * A thumbnail of the graded picture, from the photo's draft proxy — a
    * quarter of the proxy's pixels, and still more than a thumbnail needs —
-   * or the proxy when a tight crop leaves the draft too few.
+   * or the proxy when a tight crop leaves the draft too few. Larger than a
+   * thumbnail (`edge`, the Library's screen preview), from the proxies
+   * themselves, never a binned develop smaller than the picture.
    */
   private async graded(
     row: PhotoRow,
     file: SourceInfo,
     recipe: Recipe,
     out: string,
-    base: Record<string, unknown>
-  ): Promise<void> {
+    base: Record<string, unknown>,
+    edge = THUMB_EDGE
+  ): Promise<PictureSize> {
     // A gain-map photo edited as HDR: its applied rendition, tone mapped.
     const hdr = editsHdr(recipe, file) ? await ensureHdrSource(this.engine, row, file) : null
     const info = hdr?.info ?? file
@@ -1024,7 +1235,7 @@ export class Library {
     // though, are laid on the proxies, which the editor then finds made.
     const plain =
       hdr?.px ??
-      (activeSteps(recipe.pixels).length > 0
+      (activeSteps(recipe.pixels).length > 0 || edge > DRAFT_EDGE
         ? await ensureProxies(this.engine, row, info, BACKGROUND_THREADS)
         : await ensureThumbSource(this.engine, row, info, BACKGROUND_THREADS))
     const px =
@@ -1053,7 +1264,7 @@ export class Library {
       applyCrop: true
     }).crop
     const cropLong = Math.max((cropOf?.width ?? 1) * width, (cropOf?.height ?? 1) * height)
-    const src = cropLong * (px.draft.width / px.frameWidth) >= THUMB_EDGE ? px.draft : px.proxy
+    const src = cropLong * (px.draft.width / px.frameWidth) >= edge ? px.draft : px.proxy
     // Masks drawn under another lens than the one rendered are carried to it.
     const maskFrames = await maskFramesFor(
       pixelDeps(this.engine, this.index, row),
@@ -1085,8 +1296,8 @@ export class Library {
     })
     const cropW = (compiled.crop?.width ?? 1) * width
     const cropH = (compiled.crop?.height ?? 1) * height
-    const factor = Math.min(1, THUMB_EDGE / (Math.max(cropW, cropH) * (src.width / px.frameWidth)))
-    await this.engine.convert({
+    const factor = Math.min(1, edge / (Math.max(cropW, cropH) * (src.width / px.frameWidth)))
+    const report = await this.engine.convert({
       ...blankRequest(src.path, out, src.input),
       ...base,
       resize: factor < 1 ? { Scale: { factor } } : 'None',
@@ -1095,5 +1306,6 @@ export class Library {
       lens: compiled.lens,
       retouch: compiled.retouch
     })
+    return { width: report.width, height: report.height }
   }
 }

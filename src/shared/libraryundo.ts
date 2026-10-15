@@ -4,7 +4,7 @@
  *
  * The Library has one undo stack, ⌘Z / ⇧⌘Z while the Library is shown, and
  * the Undo of every toast that changed more than one photo. Each entry is one
- * of two kinds:
+ * of three kinds:
  *
  * - **meta**: ratings, flags and colour labels. They are not history steps,
  *   so the entry keeps what each photo had before and what was set; undo puts
@@ -15,6 +15,8 @@
  *   each photo's step seq; undo takes the step back through that photo's own
  *   history, only where it is still the newest step in effect, and says how
  *   many photos were skipped. Nothing is stored of the recipes themselves.
+ * - **drop**: photos taken out of Survey (/) and out of the selection;
+ *   nothing on disk changes, and undo puts each back where it was.
  *
  * The stack keeps the newest RING entries; a new entry ends what can be
  * redone, as any editor's does.
@@ -69,7 +71,17 @@ export interface RecipeEntry extends EntryBase {
   steps: StepRef[]
 }
 
-export type UndoEntry = MetaEntry | RecipeEntry
+/**
+ * Photos dropped from Survey (/): out of what it shows and out of the
+ * selection, nothing on disk. Undo puts each back where it was (`at`).
+ */
+export interface DropEntry extends EntryBase {
+  kind: 'drop'
+  keys: string[]
+  at: number[]
+}
+
+export type UndoEntry = MetaEntry | RecipeEntry | DropEntry
 
 export interface UndoStack {
   /** Oldest first: the last is what ⌘Z takes back. */
@@ -82,6 +94,7 @@ export const EMPTY_STACK: UndoStack = { done: [], undone: [] }
 
 /** How many photos an entry changed. */
 export function entrySize(e: UndoEntry): number {
+  if (e.kind === 'drop') return e.keys.length
   return e.kind === 'meta' ? Object.keys(e.before).length : e.steps.length
 }
 
@@ -205,6 +218,10 @@ export function metaValuesOf(
 /** The entry cut down to `keys` (what an undo or redo actually changed). */
 export function onlyKeys<E extends UndoEntry>(e: E, keys: readonly string[]): E {
   const keep = new Set(keys)
+  if (e.kind === 'drop') {
+    const i = e.keys.map((k, n) => (keep.has(k) ? n : -1)).filter((n) => n >= 0)
+    return { ...e, keys: i.map((n) => e.keys[n]), at: i.map((n) => e.at[n]) } as E
+  }
   if (e.kind === 'meta')
     return {
       ...e,

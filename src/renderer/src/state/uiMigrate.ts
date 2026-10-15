@@ -61,5 +61,11 @@ export function migrateUi(persisted: unknown, version: number): Saved {
   if (version < 9 && shown?.mode === 'glass') p.maskOverlay = { ...shown, mode: 'color' }
   // 10: the Snapshots pane went into History (the Edits list took its place).
   if (version < 10 && p.rail === 'snapshots') p.rail = 'history'
+  // 11: the Library's culling views. Auto-advance starts off and the filter
+  // bar shown (it makes the hidden rejects visible), whatever a layout held.
+  if (version < 11) {
+    p.autoAdvance = false
+    p.filterBar = true
+  }
   return p
 }
