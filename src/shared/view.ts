@@ -169,8 +169,22 @@ export function displayToBase(g: ViewGeometry, p: P): P {
 }
 
 export function baseToDisplay(g: ViewGeometry, p: P): P {
-  const b = g.lens ? gridPoint(g.lens.toRendered, g.lens.n, p) : p
-  return orientedToDisplay(g, baseToOriented(g, b))
+  return orientedToDisplay(g, baseToOriented(g, masksToRendered(g, p)))
+}
+
+/**
+ * Display → base on the frame as rendered, the masks' lens grid left out:
+ * where a model looking at the picture is pointed (SAM's clicks, boxes and
+ * strokes, a look's pick), since it sees the photo through the lens it
+ * renders with (ai/segment.ts), whatever frame the masks are recorded on.
+ */
+export function displayToRendered(g: ViewGeometry, p: P): P {
+  return orientedToBase(g, displayToOriented(g, p))
+}
+
+/** A point of the masks' frame on the frame as rendered: through the lens grid, if one. */
+export function masksToRendered(g: Pick<ViewGeometry, 'lens'>, p: P): P {
+  return g.lens ? gridPoint(g.lens.toRendered, g.lens.n, p) : p
 }
 
 // ── The map as a matrix ──────────────────────────────────────────────────────
@@ -252,6 +266,44 @@ export function displayToBaseMatrix(g: ViewGeometry): Projective {
 export function baseToDisplayMatrix(g: ViewGeometry): Projective {
   const m = displayToBaseMatrix(g)
   return positiveAt(invert3(m), applyProjective(m, { x: 0.5, y: 0.5 }))
+}
+
+/**
+ * One of the lens grid's maps about `p` to first order, as an affine
+ * `Projective`: exact at `p`, and the grid is a smooth, gentle warp.
+ */
+function gridAffine(values: number[], n: number, p: P): Projective {
+  const h = 1e-4
+  const o = gridPoint(values, n, p)
+  const x = gridPoint(values, n, { x: p.x + h, y: p.y })
+  const y = gridPoint(values, n, { x: p.x, y: p.y + h })
+  const a = (x.x - o.x) / h
+  const b = (y.x - o.x) / h
+  const c = (x.y - o.y) / h
+  const d = (y.y - o.y) / h
+  return [a, b, o.x - a * p.x - b * p.y, c, d, o.y - c * p.x - d * p.y, 0, 0, 1]
+}
+
+/**
+ * `displayToBaseMatrix` onto the masks' frame when they are on another lens
+ * than the one rendered (`ViewGeometry.lens`, which no matrix holds): its
+ * grid taken to first order about display point `p`. Exact at `p`, and
+ * close across a brush stroke from there (a pixel or so 180 px away in the
+ * far corner of a strong correction, where the matrix alone is 50 px out):
+ * for a GPU that draws on the masks' frame (the brush's stroke, its Auto
+ * Mask). The plain matrix without a grid.
+ */
+export function displayToBaseMatrixNear(g: ViewGeometry, p: P): Projective {
+  const m = displayToBaseMatrix(g)
+  if (!g.lens) return m
+  return mul3(gridAffine(g.lens.toMasks, g.lens.n, applyProjective(m, p)), m)
+}
+
+/** `baseToDisplayMatrix` from the masks' frame, likewise: exact at base point `b`. */
+export function baseToDisplayMatrixNear(g: ViewGeometry, b: P): Projective {
+  const m = baseToDisplayMatrix(g)
+  if (!g.lens) return m
+  return mul3(m, gridAffine(g.lens.toRendered, g.lens.n, b))
 }
 
 /**

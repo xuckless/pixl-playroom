@@ -28,12 +28,20 @@ export async function planePng(c: PlaneComponent): Promise<string> {
 }
 
 /**
- * A plane component's PNG on lens frame `to` (the masks'): as it is, or,
- * for one kept as drawn across a lens edit, re-warped onto it by the main
- * process, so what is painted into it lands on the same picture.
+ * A plane component's PNG on lens frame `to`: as it is, or, when it is on
+ * another (its own `lensFrame`, else the masks' frame `masks`), re-warped
+ * onto it by the main process. The brush paints on the masks' frame; the
+ * loupe shows a mask on the frame rendered.
  */
-export async function planePngOn(key: string, c: PlaneComponent, to: LensFrame): Promise<string> {
-  if (c.lensFrame === undefined || sameLensFrame(c.lensFrame, to)) return planePng(c)
-  const ref = c.ref ?? (await api.develop.putPlane(await planePng(c)))
-  return api.develop.planeOnFrame(key, ref, c.lensFrame, to)
+export async function planePngOn(
+  key: string,
+  c: PlaneComponent,
+  to: LensFrame,
+  masks: LensFrame = to
+): Promise<string> {
+  const from = c.lensFrame !== undefined ? c.lensFrame : masks
+  if (sameLensFrame(from, to)) return planePng(c)
+  // A plane held here (a selection being made) is not in the plane store yet.
+  const ref = c.png || !c.ref ? await api.develop.putPlane(await planePng(c)) : c.ref
+  return api.develop.planeOnFrame(key, ref, from, to)
 }

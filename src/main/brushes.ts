@@ -20,7 +20,7 @@ import { gradientKey, rasterGradient } from '../shared/gradients'
 import { edgeKey } from '../shared/maskedge'
 import type { LensCorrection } from '../shared/engine-types'
 import { renderedLens } from '../shared/edits'
-import { frameMap, frameOf, remapComponent, type MaskFrames } from '../shared/lensframe'
+import { frameMap, frameOf, remapComponent, warpPlane, type MaskFrames } from '../shared/lensframe'
 import { planeWarpFor } from './maskframe'
 import { planeEdge, snapsToObject } from '../shared/refine'
 import type { Recipe } from '../shared/recipe'
@@ -74,12 +74,16 @@ function snapped(
   if (running) return running
   const p = (async () => {
     if (await exists(snapFile)) return snapFile
-    const object = await snapper
-      ?.object(photoKey, lens, grey8(Buffer.from(job.png, 'base64')))
-      .catch((err) => {
-        log.warn('brush snap: no object', err)
-        return null
-      })
+    // The object is found on the picture as rendered: a stroke drawn under
+    // another lens asks for it where it now lies (once: the file is kept).
+    const drawn = grey8(Buffer.from(job.png, 'base64'))
+    const stroke = job.warp
+      ? { ...drawn, data: warpPlane(drawn.data, drawn.width, drawn.height, job.warp) }
+      : drawn
+    const object = await snapper?.object(photoKey, lens, stroke).catch((err) => {
+      log.warn('brush snap: no object', err)
+      return null
+    })
     if (!object) {
       await ensure(plainFile, job)
       return plainFile

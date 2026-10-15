@@ -1,10 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { readable } from '../../../lib/frames'
 import { maskJoins } from '../../../../../shared/maskpreview'
-import type { LocalLayer } from '../../../../../shared/recipe'
-import { displayToBaseMatrix, glMat3, type ViewGeometry } from '../../../../../shared/view'
+import type { LocalLayer, MaskComponentSetting } from '../../../../../shared/recipe'
+import {
+  displayToBaseMatrix,
+  glMat3,
+  masksToRendered,
+  type ViewGeometry
+} from '../../../../../shared/view'
 import { planePng, planePngOn } from '../../../lib/planes'
-import { lensFrameKey, sameLensFrame, type LensFrame } from '../../../../../shared/lensframe'
+import {
+  isVector,
+  lensFrameKey,
+  remapComponent,
+  sameLensFrame,
+  type LensFrame,
+  type LensGrid
+} from '../../../../../shared/lensframe'
 import { lastSentRev, useDevelop } from '../../../state/develop'
 import { useUi, type OverlayMode } from '../../../state/ui'
 import { BASE_EDGE, MaskGl, type Join, type ViewMode } from './MaskGl'
@@ -91,15 +103,29 @@ async function bitmapOf(url: string, width?: number): Promise<ImageBitmap> {
 
 /** Painted planes, decoded, by what the component holds (its reference or its PNG). */
 const brushBitmaps = new Map<string, ImageBitmap | Promise<ImageBitmap | null>>()
-function brushKey(
-  c: { ref?: string; png: string; lensFrame?: LensFrame },
-  masks: LensFrame
-): string {
+function brushKey(c: { ref?: string; png: string }, from: LensFrame, to: LensFrame): string {
   const own = c.ref ?? `png:${c.png.length}:${c.png.slice(-64)}`
-  // A plane on another lens frame than the masks' is shown re-warped onto theirs.
-  return c.lensFrame === undefined || sameLensFrame(c.lensFrame, masks)
-    ? own
-    : `${own}@${lensFrameKey(c.lensFrame)}>${lensFrameKey(masks)}`
+  // A plane on another lens frame than the one shown is shown re-warped onto it.
+  return sameLensFrame(from, to) ? own : `${own}@${lensFrameKey(from)}>${lensFrameKey(to)}`
+}
+
+/** Shapes carried onto the frame rendered, by grid and component (a lasso has many points). */
+const carried = new WeakMap<LensGrid, WeakMap<MaskComponentSetting, MaskComponentSetting>>()
+/**
+ * A shape drawn on the masks' frame where the picture shows it, when that
+ * is rendered through another lens (`ViewGeometry.lens`): the loupe draws
+ * the mask on the frame rendered, which the display ↔ base matrix maps.
+ */
+function onRendered(c: MaskComponentSetting, grid: LensGrid): MaskComponentSetting {
+  if (!isVector(c)) return c
+  let byComp = carried.get(grid)
+  if (!byComp) carried.set(grid, (byComp = new WeakMap()))
+  let out = byComp.get(c)
+  if (!out) {
+    out = remapComponent(c, (p) => masksToRendered({ lens: grid }, p))
+    byComp.set(c, out)
+  }
+  return out
 }
 
 function viewOf(mode: OverlayMode): ViewMode {
@@ -311,20 +337,27 @@ export function MaskCanvas({
     // Painted planes: decode what is missing, and come back when it is.
     const joins: Join[] = []
     let waiting = false
+    const s = useDevelop.getState()
+    const masksFrame = s.recipe?.masks?.lensFrame ?? null
+    // Masks on another lens than the one rendered: drawn on the frame
+    // rendered (shapes through the lens grid, planes re-warped onto it).
+    const grid = g.lens && g.lens.rendered !== undefined ? g.lens : null
+    const shownFrame = grid ? (grid.rendered ?? null) : masksFrame
     for (const { c: comp, mode } of maskJoins(components)) {
       if (comp.kind !== 'brush') {
-        joins.push({ c: comp, mode })
+        joins.push({ c: grid ? onRendered(comp, grid) : comp, mode })
         continue
       }
-      const s = useDevelop.getState()
-      const masksFrame = s.recipe?.masks?.lensFrame ?? null
-      const key = brushKey(comp, masksFrame)
+      const from = comp.lensFrame !== undefined ? comp.lensFrame : masksFrame
+      const key = brushKey(comp, from, shownFrame)
       const got = brushBitmaps.get(key)
       if (got instanceof ImageBitmap) joins.push({ c: comp, mode, bitmap: got })
       else {
         waiting = true
         if (!got) {
-          const p = (s.session ? planePngOn(s.session.key, comp, masksFrame) : planePng(comp))
+          const p = (
+            s.session ? planePngOn(s.session.key, comp, shownFrame, masksFrame) : planePng(comp)
+          )
             .then((b64) => {
               const bytes = Uint8Array.from(atob(b64), (x) => x.charCodeAt(0))
               return createImageBitmap(new Blob([bytes], { type: 'image/png' }), decodeOpts)

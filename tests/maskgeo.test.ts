@@ -10,16 +10,29 @@ import {
   applyProjective,
   baseToDisplay,
   baseToDisplayMatrix,
+  baseToDisplayMatrixNear,
   displayToBase,
   displayToBaseMatrix,
+  displayToBaseMatrixNear,
+  displayToRendered,
   glMat3,
   localScale,
   loupeGeometry,
   maskPlacementKey,
+  masksToRendered,
   viewGeometry,
+  type P,
   type Projective
 } from '../src/shared/view'
-import { ownLensFrame, placeMasks, retagMasks } from '../src/shared/lensframe'
+import {
+  makeGrid,
+  ownLensFrame,
+  placeMasks,
+  retagMasks,
+  stForward,
+  stInverse,
+  type StMap
+} from '../src/shared/lensframe'
 import { nextGeometryRev, planeFits } from '../src/renderer/src/state/maskplanes'
 import { nextTarget, type Watched } from '../src/renderer/src/views/loupe/maskgl/handover'
 
@@ -342,18 +355,100 @@ test('every model request and snap places its frame with the rendered lens', asy
   }
 })
 
-test('the brush worker’s Auto Mask lookup lands where the exact map puts a dab', () => {
-  // cpuDabs and the dab shader read the picture at baseToDisplayMatrix(plane point).
+// ── The masks on another lens than the one rendered (Optics switched off) ──
+
+/** A barrel-like correction about the centre: where corrected point `p` comes from. */
+const barrel =
+  (k: number) =>
+  (p: P): P => {
+    const dx = p.x - 0.5
+    const dy = (p.y - 0.5) * (2 / 3)
+    const s = 1 + k * (dx * dx + dy * dy)
+    return { x: 0.5 + dx * s * 0.96, y: 0.5 + (dy * s * 0.96) / (2 / 3) }
+  }
+
+/** An ST map sampled from `f`, as main decodes one. */
+function sampled(f: (p: P) => P, w = 300, h = 200): StMap {
+  const sx = new Float32Array(w * h)
+  const sy = new Float32Array(w * h)
+  for (let j = 0; j < h; j++)
+    for (let i = 0; i < w; i++) {
+      const q = f({ x: (i + 0.5) / w, y: (j + 0.5) / h })
+      sx[j * w + i] = q.x
+      sy[j * w + i] = q.y
+    }
+  return { w, h, sx, sy }
+}
+
+/** The loupe's grid with the masks on a +0.12 barrel and nothing rendered (Optics off). */
+function opticsOffGrid(): ReturnType<typeof makeGrid> {
+  const m = sampled(barrel(0.12))
+  return makeGrid(
+    (p) => stInverse(m, p),
+    (p) => stForward(m, p)
+  )
+}
+
+/** The Upright V30 H15… geometry, turned and flipped, with the lens grid. */
+function uprightWithGrid(): ReturnType<typeof viewGeometry> {
   const found = geometries().find(([n]) => n.startsWith('Upright V30'))
   assert.ok(found)
-  const g = viewGeometry(found[1], 6000, 4000, false)
-  const m = baseToDisplayMatrix(g)
+  return { ...viewGeometry(found[1], 6000, 4000, false), lens: opticsOffGrid() }
+}
+
+test('a model is pointed at the picture as rendered, a mask at the masks’ frame', () => {
+  const g = uprightWithGrid()
+  const plain = { ...g, lens: null }
   for (const d of [
     { x: 0.2, y: 0.3 },
-    { x: 0.5, y: 0.5 },
-    { x: 0.85, y: 0.1 }
+    { x: 0.9, y: 0.85 }
   ]) {
-    const back = applyProjective(m, displayToBase(g, d))
-    assert.ok(Math.hypot(back.x - d.x, back.y - d.y) < 1e-9)
+    // SAM's click: where the picture rendered shows it, not where the mask records it.
+    assert.deepEqual(displayToRendered(g, d), displayToBase(plain, d))
+    const b = displayToBase(g, d)
+    assert.ok(Math.hypot(b.x - displayToRendered(g, d).x, b.y - displayToRendered(g, d).y) > 1e-3)
+    // A lasso's outline (masks' frame) carried to SAM's frame lands back on the click.
+    const r = masksToRendered(g, b)
+    const want = displayToRendered(g, d)
+    assert.ok(Math.hypot(r.x - want.x, r.y - want.y) < 1e-4)
+  }
+})
+
+test('the brush’s GPU matrices follow the lens grid about the stroke: exact there, close nearby', () => {
+  // What brush.worker is given: the overlay maps display → masks' frame, Auto
+  // Mask masks' frame → display, each a matrix (no grid on the GPU).
+  const g = uprightWithGrid()
+  const plain = { ...g, lens: null }
+  assert.deepEqual(displayToBaseMatrixNear(plain, { x: 0.3, y: 0.3 }), displayToBaseMatrix(plain))
+  assert.deepEqual(baseToDisplayMatrixNear(plain, { x: 0.3, y: 0.3 }), baseToDisplayMatrix(plain))
+  for (const start of [
+    { x: 0.5, y: 0.5 },
+    { x: 0.12, y: 0.15 },
+    { x: 0.9, y: 0.8 }
+  ]) {
+    const toBase = displayToBaseMatrixNear(g, start)
+    const b0 = displayToBase(g, start)
+    const toDisplay = baseToDisplayMatrixNear(g, b0)
+    const px = (a: P, b: P): number => Math.hypot((a.x - b.x) * 6000, (a.y - b.y) * 4000)
+    assert.ok(px(applyProjective(toBase, start), b0) < 1e-6, 'exact where the stroke starts')
+    assert.ok(px(applyProjective(toDisplay, b0), baseToDisplay(g, b0)) < 1e-6)
+    // Across a stroke (180 px of 6000 either way): a small part of what the
+    // matrix alone is off by, the lens difference (up to 54 px on this strong map).
+    let near = 0
+    let alone = 0
+    for (const [dx, dy] of [
+      [0.03, 0],
+      [-0.03, 0.03],
+      [0, -0.03],
+      [0.03, 0.03]
+    ]) {
+      const d = { x: start.x + dx, y: start.y + dy }
+      const b = displayToBase(g, d)
+      near = Math.max(near, px(applyProjective(toBase, d), b))
+      near = Math.max(near, px(applyProjective(toDisplay, b), baseToDisplay(g, b)))
+      alone = Math.max(alone, px(applyProjective(displayToBaseMatrix(g), d), b))
+    }
+    assert.ok(alone > 5, `the grid matters here: ${alone} px`)
+    assert.ok(near < 2 && near < alone / 25, `${near} px about ${start.x},${start.y}`)
   }
 })

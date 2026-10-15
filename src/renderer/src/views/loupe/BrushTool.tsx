@@ -1,9 +1,10 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { newId, type BrushComponent } from '../../../../shared/recipe'
 import {
-  baseToDisplayMatrix,
+  baseToDisplayMatrixNear,
   displayToBase,
   displayToBaseMatrix,
+  displayToBaseMatrixNear,
   localScale,
   normalisedIn,
   visiblePart,
@@ -91,8 +92,9 @@ export const BrushLayer = memo(function BrushLayer({
     localScale(g, p, { w: rect.w, h: rect.h }, { w: planeW, h: planeH })
 
   // The worker's canvas covers the part of the picture in view; it learns
-  // where that is whenever the view moves.
-  useEffect(() => {
+  // where that is whenever the view moves, and where a stroke starts (the
+  // masks on another lens than the one rendered: their grid, about there).
+  const postScreen = (at: P | null): void =>
     worker.post({
       t: 'screen',
       screen: {
@@ -103,10 +105,11 @@ export const BrushLayer = memo(function BrushLayer({
         oy: vis.y,
         rw: rect.w,
         rh: rect.h,
-        toBase: displayToBaseMatrix(g)
+        toBase: at ? displayToBaseMatrixNear(g, at) : displayToBaseMatrix(g)
       }
     })
-  }, [worker, vis.x, vis.y, vis.w, vis.h, rect.w, rect.h, g])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => postScreen(null), [worker, vis.x, vis.y, vis.w, vis.h, rect.w, rect.h, g])
 
   const dab = (s: Stroke, q: P, pressure: number): void => {
     const set = s.set
@@ -190,6 +193,7 @@ export const BrushLayer = memo(function BrushLayer({
       started: false
     }
     paint(p, pressure)
+    if (g.lens) postScreen(p)
     let png: string | null = null
     try {
       // On the masks' lens frame, where the pointer's dabs land (view.ts).
@@ -213,7 +217,8 @@ export const BrushLayer = memo(function BrushLayer({
         erase,
         picture,
         ...(pictureBitmap ? { pictureBitmap } : {}),
-        toDisplay: baseToDisplayMatrix(g),
+        // Auto Mask reads the picture where the plane's pixels show.
+        toDisplay: baseToDisplayMatrixNear(g, displayToBase(g, p)),
         alpha: strokeAlpha()
       },
       pictureBitmap ? [pictureBitmap] : []

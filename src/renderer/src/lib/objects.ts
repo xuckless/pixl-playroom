@@ -6,7 +6,9 @@
  * edges, or dropped. A lasso's Find object goes the same way in one step.
  */
 import { conceptOf } from '../../../shared/concepts'
-import { sameLensFrame, type LensFrame } from '../../../shared/lensframe'
+import { renderedLens } from '../../../shared/edits'
+import { lensFrameOf, sameLensFrame, type LensFrame } from '../../../shared/lensframe'
+import { masksToRendered } from '../../../shared/view'
 import { lassoPrompt, type SelectCommit, type SelectPlane } from '../../../shared/prompt'
 import { newId, type BrushComponent, type Recipe } from '../../../shared/recipe'
 import { modelRefine } from '../../../shared/refine'
@@ -46,8 +48,14 @@ export function showDraft(plane: SelectPlane | null): void {
   }
   const d = useDevelop.getState()
   const layer = layerOf(d.recipe, d.layerId)
+  // Found on the picture as rendered: on that lens frame, which may not be the masks'.
+  const rendered =
+    d.recipe && d.session ? lensFrameOf(renderedLens(d.recipe, d.session.isRaw)) : null
   const draft: BrushComponent = {
     id: DRAFT_ID,
+    ...(d.recipe && !sameLensFrame(rendered, d.recipe.masks?.lensFrame)
+      ? { lensFrame: rendered }
+      : {}),
     kind: 'brush',
     mode: modeForNew(layer),
     opacity: 100,
@@ -141,7 +149,11 @@ export async function findObject(compId: string): Promise<void> {
   if (!session || !layer || lasso?.kind !== 'polygon') return
   const say = useLibrary.getState().say
   if (!(await ensureModel('prompt', t('Find object')))) return
-  const prompt = lassoPrompt(lasso.points, session.frameWidth / session.frameHeight)
+  // SAM sees the picture as rendered: the outline is put on it (the masks'
+  // lens grid, when they are on another lens).
+  const grid = d.maskGrid
+  const outline = grid ? lasso.points.map((p) => masksToRendered({ lens: grid }, p)) : lasso.points
+  const prompt = lassoPrompt(outline, session.frameWidth / session.frameHeight)
   if (!prompt) return say(t('Draw a larger outline around the object first'), 'error')
   say(t('Finding the object in the outline…'))
   let selId: string | null = null

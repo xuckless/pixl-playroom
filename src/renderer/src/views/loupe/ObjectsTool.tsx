@@ -22,7 +22,12 @@ import {
   type PromptGeometry,
   type SelectDecode
 } from '../../../../shared/prompt'
-import { displayToBase, normalisedIn, type Rect, type ViewGeometry } from '../../../../shared/view'
+import {
+  displayToRendered,
+  normalisedIn,
+  type Rect,
+  type ViewGeometry
+} from '../../../../shared/view'
 import { api, errorText } from '../../lib/api'
 import { conceptOf } from '../../../../shared/concepts'
 import { cancelObjects, commitObjects, showDraft } from '../../lib/objects'
@@ -131,7 +136,8 @@ export const ObjectsTool = memo(function ObjectsTool({
   }
   const toBase = (x: number, y: number): { x: number; y: number } => {
     const b = layer.current!.getBoundingClientRect()
-    return displayToBase(g, normalisedIn(b.left + x, b.top + y, b))
+    // On the picture as rendered, which the model sees (not the masks' lens frame).
+    return displayToRendered(g, normalisedIn(b.left + x, b.top + y, b))
   }
   const longest = Math.round(Math.max(rect.w, rect.h) * (window.devicePixelRatio || 1))
 

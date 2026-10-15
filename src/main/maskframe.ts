@@ -9,7 +9,8 @@
  * ENGINE-REQUESTS E85 (masks on the source frame, and `mapPoints`) would let
  * the engine place them itself: then this module goes.
  */
-import { readFile } from 'fs/promises'
+import { mkdir, readFile, rm } from 'fs/promises'
+import { join } from 'path'
 import { renderedLens } from '../shared/edits'
 import type { Distortion, LensCorrection } from '../shared/engine-types'
 import {
@@ -22,7 +23,6 @@ import {
   placeMasks,
   planeWarp,
   sameLensFrame,
-  warpPlane,
   type FrameMaps,
   type LensFrame,
   type LensGrid,
@@ -34,7 +34,7 @@ import { hash32, type Recipe } from '../shared/recipe'
 import { lensMap, rampSize } from './pixels/lensmap'
 import { rampFraction } from './pixels/ops'
 import type { PixelDeps } from './pixels/working'
-import { encodeGreyPng, grey8, pngSamples16 } from './pngio'
+import { pngSamples16 } from './pngio'
 
 /** What making a map takes: the engine, the photo's cache, and the pixels worker (the ramp). */
 export type FrameDeps = Pick<PixelDeps, 'engine' | 'cacheDir' | 'work'>
@@ -168,7 +168,7 @@ export async function maskGrid(
 ): Promise<LensGrid | null> {
   if (sameLensFrame(masks, rendered)) return null
   const maps = await mapsOf(deps, [masks, rendered], w, h)
-  return makeGrid(frameMap(maps, rendered, masks), frameMap(maps, masks, rendered))
+  return { ...makeGrid(frameMap(maps, rendered, masks), frameMap(maps, masks, rendered)), rendered }
 }
 
 /**
@@ -208,9 +208,19 @@ export async function planeOnFrame(
 ): Promise<string> {
   if (sameLensFrame(from, to)) return png
   const maps = await mapsOf(deps, [from, to], w, h)
-  const g = grey8(Buffer.from(png, 'base64'))
   const warp = planeWarp(frameMap(maps, to, from))
-  return encodeGreyPng(warpPlane(g.data, g.width, g.height, warp), g.width, g.height).toString(
-    'base64'
-  )
+  // Resampled in the pixels worker: a large plane is a third of a second
+  // of per-pixel work, which here would hold up every IPC reply.
+  const dir = join(deps.cacheDir, 'lensplanes')
+  await mkdir(dir, { recursive: true })
+  const file = join(dir, `plane-${process.pid}-${++planeSeq}.png`)
+  try {
+    await deps.work({ op: 'brush', file, png, user: 'Normal', warp })
+    return (await readFile(file)).toString('base64')
+  } finally {
+    await rm(file, { force: true }).catch(() => undefined)
+  }
 }
+
+/** Names `planeOnFrame`'s passing files apart. */
+let planeSeq = 0

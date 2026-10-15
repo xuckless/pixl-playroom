@@ -425,6 +425,8 @@ export interface LensGrid {
   n: number
   toMasks: number[]
   toRendered: number[]
+  /** The frame rendered it maps to and from (main/maskframe.ts `maskGrid` says). */
+  rendered?: LensFrame
 }
 
 export function makeGrid(toMasks: (p: P) => P, toRendered: (p: P) => P, n = GRID_N): LensGrid {

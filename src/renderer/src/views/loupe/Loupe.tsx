@@ -22,6 +22,7 @@ import {
   displaySize,
   displayToOriented,
   displayToBase,
+  displayToRendered,
   fitRect,
   normalisedIn,
   panBy,
@@ -33,6 +34,7 @@ import {
   type Viewport,
   type ZoomView
 } from '../../../../shared/view'
+import { sameLensFrame } from '../../../../shared/lensframe'
 import { api, errorText } from '../../lib/api'
 import { depthAt } from '../../lib/depth'
 import { touchInteracting } from '../../lib/interacting'
@@ -477,8 +479,17 @@ export function Loupe(): React.JSX.Element {
           [...(layer?.components ?? [])].reverse().find((x) => x.kind === 'depth')
         if (!layer || !comp || comp.kind !== 'depth')
           return useLibrary.getState().say(t('Select a Depth range first'), 'error')
-        // Where the click is on the base frame, where the depth map lives.
-        const b = displayToBase(g, p)
+        // Where the click is on the base frame, where the depth map lives: on
+        // the picture as rendered when it was found there, not on the masks'
+        // lens frame (Optics switched off since they were drawn).
+        const own = comp.lensFrame
+        const b =
+          own !== undefined &&
+          g.lens?.rendered !== undefined &&
+          sameLensFrame(own, g.lens.rendered) &&
+          !sameLensFrame(own, recipe.masks?.lensFrame)
+            ? displayToRendered(g, p)
+            : displayToBase(g, p)
         const at = await depthAt(comp, b.x, b.y)
         // Centred there, as wide as it was (a tenth of the photo's depth at least).
         const half = Math.max(5, Math.round(Math.abs(comp.far - comp.near) / 2))
