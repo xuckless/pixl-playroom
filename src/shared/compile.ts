@@ -1566,8 +1566,10 @@ function settingsStages(
   if (vs.op && !bw) tail.push(vs.op)
   for (const w of vs.waiting) notes.push(VS_WAITING_NOTE[w] ?? '')
   // Resolve's qualifiers, in place (0.21.0, E77): after the primaries and
-  // the curves, before the effects, so grain never gets into a key.
-  tail.push(
+  // the curves, before the effects, so grain never gets into a key. A
+  // black-and-white photo with masks keys its colours before the masks and
+  // the conversion, as its qualifiers' own layers did before 0.21.
+  ;(bw && finish ? look : tail).push(
     ...qualifierOps(
       r.qualifiers ?? [],
       { width: oriented.width, height: oriented.height, scale: ctx.scale },
@@ -1647,10 +1649,6 @@ function vignetteStyle(e: Recipe['effects'], hdr: boolean, notes: string[]): Vig
   return 'PaintOverlay'
 }
 
-/**
- * Compile a recipe. `grade` is null when nothing moves a pixel, so an
- * untouched photo takes the engine's fast path.
- */
 /** Each qualifier's op, by its key view's name: what `qualifierIndex` is found by. */
 const qualifierOf = new WeakMap<GradeOp, string>()
 
@@ -1707,6 +1705,10 @@ function qualifierAddresses(layers: GradeLayer[]): Record<string, QualifierAddre
   return out
 }
 
+/**
+ * Compile a recipe. `grade` is null when nothing moves a pixel, so an
+ * untouched photo takes the engine's fast path.
+ */
 export function compile(recipe: Recipe, given: CompileContext): Compiled {
   // What is rendered: sections switched off at the photo's defaults, steps switched off left out.
   const r = effective(recipe, given.isRaw)

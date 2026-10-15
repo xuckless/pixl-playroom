@@ -238,6 +238,41 @@ test('each qualifier is an op in the base layer’s look, before the effects, ad
   assert.equal(normaliseQualifiers([q, q, { nope: 1 }]).length, 1)
 })
 
+test('a black-and-white photo with masks keys its qualifiers’ colours before the masks and the conversion', async () => {
+  const { qualifierFromSample, qualifierLayerId } = await import('../src/shared/resolve')
+  const r = defaultRecipe(false)
+  r.treatment = 'bw'
+  r.effects.grainAmount = 30
+  const q = qualifierFromSample('q1', { hue: 210, saturation: 0.5, luminance: 0.6 })
+  q.gain = { y: 1, r: 1, g: 1, b: 0.8 }
+  r.qualifiers = [q]
+  const l = newLocalLayer('Sky')
+  l.components = [
+    {
+      id: 'c1',
+      kind: 'linear',
+      mode: 'add',
+      opacity: 100,
+      invert: false,
+      start: { x: 0.5, y: 0 },
+      end: { x: 0.5, y: 0.4 },
+      width: 512,
+      height: 512
+    } as never
+  ]
+  l.settings.basic.exposure = 0.5
+  r.layers = [l]
+  const c = compile(normaliseRecipe(r, false), ctx)
+  const layers = c.grade!.layers
+  // The base, the mask, then the conversion and what follows it.
+  assert.equal(layers[layers.length - 1].name, 'black & white')
+  // The qualifier is the base's: on the colours, as the B&W mix reads them.
+  assert.deepEqual(c.qualifierIndex[qualifierLayerId('q1')], { layer: 0, qualifier: 0 })
+  const finish = layers[layers.length - 1].stages.flatMap((s) => s.ops)
+  assert.ok(!finish.some((o) => 'Qualifier' in o))
+  assert.ok(finish.some((o) => 'Grain' in o))
+})
+
 test('a mask’s qualifier keys inside the mask’s own layer, scaled by its Amount', async () => {
   const { qualifierFromSample, qualifierLayerId } = await import('../src/shared/resolve')
   const { maskProbe } = await import('../src/shared/compile')
