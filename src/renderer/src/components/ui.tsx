@@ -589,7 +589,8 @@ export function Tabs<T extends string>({
   className
 }: {
   value: T
-  tabs: { value: T; label: string }[]
+  /** `disabled` greys a tab out, `title` says why. */
+  tabs: { value: T; label: string; disabled?: boolean; title?: string }[]
   onChange: (v: T) => void
   className?: string
 }): React.JSX.Element {
@@ -599,6 +600,8 @@ export function Tabs<T extends string>({
         <button
           key={tab.value}
           className={tab.value === value ? 'on' : ''}
+          disabled={tab.disabled}
+          title={tab.title}
           onClick={() => onChange(tab.value)}
         >
           {tab.label}

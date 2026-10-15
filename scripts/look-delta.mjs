@@ -6,11 +6,16 @@
  * colour tools or the engine change (TODO.md Pass 121).
  *
  *   RAW=/path/to/photo.CR2 node scripts/look-delta.mjs [--ref HEAD~1] [--only regex] [--top 25]
+ *   RAW=/path/to/photo.CR2 node scripts/look-delta.mjs --maths [--only regex] [--top 25]
  *
  * The ref's look files are copied into `tests/.look-delta/` (their imports
  * pointed at today's `src/`, their DSL the ref's own) and a throwaway test
  * renders both; the folder is removed afterwards. Nothing of the photo is
  * written into the repository.
+ *
+ * `--maths`: the same looks (the working tree's), every one, compiled with
+ * engine 0.20's colour maths (`colourForm: 'v0'`, shared/colourv0.ts) and
+ * with today's, for a change in the compile rather than in the looks.
  */
 import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdirSync, rmSync, writeFileSync, mkdtempSync } from 'node:fs'
@@ -22,6 +27,7 @@ const arg = (name, fallback) => {
   return i > 0 ? process.argv[i + 1] : fallback
 }
 const ref = arg('ref', 'HEAD')
+const maths = process.argv.includes('--maths')
 if (!process.env.RAW) {
   console.error('Set RAW to a RAW photo to render the looks on.')
   process.exit(2)
@@ -29,9 +35,11 @@ if (!process.env.RAW) {
 
 const dir = 'tests/.look-delta'
 const git = (...a) => execFileSync('git', a, { encoding: 'utf8' })
-const files = git('ls-tree', '--name-only', ref, 'src/shared/looks/')
-  .split('\n')
-  .filter((f) => f.endsWith('.ts'))
+const files = maths
+  ? []
+  : git('ls-tree', '--name-only', ref, 'src/shared/looks/')
+      .split('\n')
+      .filter((f) => f.endsWith('.ts'))
 const KEEP = new Set(['dsl.ts']) // the ref's own words; everything else is today's
 rmSync(dir, { recursive: true, force: true })
 mkdirSync(dir, { recursive: true })
@@ -64,7 +72,7 @@ import { compile } from '../../src/shared/compile'
 import { defaultRecipe } from '../../src/shared/recipe'
 import { applyLook } from '../../src/shared/looks/apply'
 import { LOOKS } from '../../src/shared/looks/catalog'
-import { LOOKS as OLD } from './catalog'
+${maths ? 'const OLD = LOOKS' : "import { LOOKS as OLD } from './catalog'"}
 
 const lab = (r: number, g: number, b: number): number[] => {
   const l = (v: number): number => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
@@ -85,9 +93,9 @@ test('look delta', async () => {
   await engine.convert({ ...blankRequest(raw, proxy, 'Raw'), raw: rawProxyMaster('pixl:1'), resize: { Scale: { factor: 0.12 } }, resampler: 'Lanczos3', linear_resample: true, pixel: { depth: 'F32', channels: 3 }, encode: { Tiff: { compression: 'None' } }, metadata: { exif: false, icc: true, xmp: false, iptc: false }, color: 'Preserve', threads: 6 })
   const asShot = info.camera_colour.as_shot_white
   const ctx = { wb: { isRaw: true, asShot } as never, lensResolved: 'keep' as const }
-  const render = async (look: (typeof LOOKS)[number]): Promise<Buffer> => {
+  const render = async (look: (typeof LOOKS)[number], before = false): Promise<Buffer> => {
     const r = applyLook(defaultRecipe(true), { ...look, smart: undefined }, ctx)
-    const c = compile(r, { isRaw: true, asShot, sourceOrientation: 'Normal', frameWidth: info.width, frameHeight: info.height, scale: 0.12, seed: 1, brushPaths: {}, applyCrop: false } as never)
+    const c = compile(r, { isRaw: true, asShot, sourceOrientation: 'Normal', frameWidth: info.width, frameHeight: info.height, scale: 0.12, seed: 1, brushPaths: {}, applyCrop: false, ...(before ? { colourForm: 'v0' } : {}) } as never)
     const o = await engine.convert({ ...blankRequest(proxy, '', 'Tiff'), sink: 'Bytes', pixel: { depth: 'Eight', channels: 3 }, encode: { Pixels: { sample: 'U8' } }, metadata: { exif: false, icc: true, xmp: false, iptc: false }, color: { ConvertTo: { to: 'Srgb', intent: 'RelativeColorimetric', black_point_compensation: false } }, grade: c.grade, framing: null, threads: 6 })
     return o.output as Buffer
   }
@@ -96,8 +104,8 @@ test('look delta', async () => {
   for (const a of OLD) {
     const b = LOOKS.find((l) => l.id === a.id)
     if (!b || (only && !only.test(a.id))) continue
-    if (JSON.stringify(a.recipe) === JSON.stringify(b.recipe)) continue
-    const x = await render(a)
+    if (!${maths} && JSON.stringify(a.recipe) === JSON.stringify(b.recipe)) continue
+    const x = await render(a, ${maths})
     const y = await render(b)
     let de = 0
     let n = 0

@@ -58,13 +58,14 @@ import {
   type ToneBaseKind
 } from './recipe'
 import { opFromAbsolute, opFromRelative, type OpWhite } from './wb'
+import { curvesVsV0, logWheelsV0, regionCurveV0 } from './colourv0'
 import { tk } from './i18n'
 import { effective } from './edits'
 import {
   curvesVsOp,
   logWheelsOps,
+  primariesBalance,
   primariesOp,
-  primariesWhite,
   qualifierCorrection,
   qualifierKey,
   qualifierLayerId,
@@ -72,8 +73,7 @@ import {
   type QualifierSetting,
   scaleCurvesVs,
   scaleLogWheels,
-  scalePrimaries,
-  type VsCurve
+  scalePrimaries
 } from './resolve'
 
 /** What the render says of a LUT profile not in Playroom's LUT folder (`CompileContext.luts`). */
@@ -149,17 +149,20 @@ export function customFiles(v: unknown, luts: Record<string, string>): unknown |
   return refused ? null : out
 }
 
-/** What a waiting vs curve says in the render's notes. */
-const VS_WAITING_NOTE: Partial<Record<VsCurve, string>> = {
-  hueLum: tk('Hue vs Lum waits for the engine (E71): kept, not applied yet'),
-  satSat: tk('Sat vs Sat waits for the engine (E72): kept, not applied yet')
-}
-
 // ── Spaces ───────────────────────────────────────────────────────────────────
 
 /** Where the look runs: display-referred, the gamut modern cameras shoot. */
 export const LOOK_SPACE: GradeSpace = {
   Encoded: { space: 'DisplayP3', intent: 'RelativeColorimetric', black_point_compensation: false }
+}
+
+/**
+ * Where the Log wheels run (engine 0.21, E73): PixlLog, the working space's
+ * own primaries through the models' log curve (grey 0.405, white 0.669),
+ * a stage of their own in the look, only where they are set.
+ */
+export const LOG_GRADE_SPACE: GradeSpace = {
+  Encoded: { space: 'PixlLog', intent: 'RelativeColorimetric', black_point_compensation: false }
 }
 
 /** 18% grey in the look space (sRGB transfer, shared by Display P3). */
@@ -185,17 +188,6 @@ export const RAW_SCENE_STOPS = 2
 
 /** The smoothing's reach, a fraction of the shorter side: the engine's calibration point. */
 export const SMOOTHING_RADIUS = 0.02
-
-/**
- * Whether Tone (Highlights, Shadows, Whites, Blacks) takes the Smoothing
- * slider. Held off, the owner's stopgap of 2026-10-12 (E63, engine 0.19.2):
- * a smoothed Tone with Shadows or Blacks moved paints patches of pure white
- * over dark and mid tones (any amount, any Smoothing above 0, a floor before
- * or after it changes nothing), blue ones in Full HDR when they are raised,
- * and the colour ops after it turn its output into magenta and green blocks.
- * Unsmoothed it is clean. `tests/e63.test.ts` says when the engine's is.
- */
-export const TONE_SMOOTHING = false
 
 /** The Smoothing slider (0–100) as the engine's field, or none for a draft or at 0. */
 export function smoothingOf(value: number, ctx: CompileContext): AdjustmentSmoothing | null {
@@ -283,6 +275,12 @@ export interface CompileContext {
    * 82 ms: the drag keeps that base (unless `dragWithoutBase`).
    */
   gpuDrag?: boolean
+  /**
+   * `'v0'`: engine 0.20's colour maths (shared/colourv0.ts), only for
+   * `scripts/look-delta.mjs --maths` to measure what 0.21's moved. Never a
+   * photo's; goes with colourv0.ts once the catalog is retuned.
+   */
+  colourForm?: 'v0'
 }
 
 /**
@@ -402,35 +400,37 @@ function curvesOp(c: Partial<Curves>): GradeOp {
   }
 }
 
+/** How far ±100 on a region slider moves its region: a quarter of the range. */
+export const REGION_REACH = 0.25
+
 /**
- * The parametric tone curve as control points: each region's slider bends the
- * curve by up to a quarter of the range with a smooth bump over its region
- * (Lightroom's Highlights/Lights/Darks/Shadows with movable splits).
+ * The tone curve's region sliders (Lightroom's Highlights, Lights, Darks and
+ * Shadows with movable splits) as the engine's parametric curve (engine
+ * 0.21, E19): ±100 moves a region's centre by a quarter of the range, held
+ * between its neighbours, so the curve stays monotone and pinned at black
+ * and white at every setting (strong opposite moves never fold the tones
+ * back). The identity outside 0…1: an HDR pipeline's highlights above white
+ * keep their room as they are. Null when no slider is moved.
  */
-export function parametricCurve(tc: Recipe['toneCurve']): CurvePointSetting[] | null {
+export function regionCurveOp(tc: Recipe['toneCurve']): GradeOp | null {
   const amounts = [tc.shadows, tc.darks, tc.lights, tc.highlights]
   if (amounts.every((a) => a === 0)) return null
-  const [s1, s2, s3] = tc.splits.map((s) => clamp(s, 5, 95) / 100)
-  const edges = [0, s1, s2, s3, 1]
-  const bump = (x: number, a: number, b: number): number => {
-    // A raised cosine over [a − w, b + w], flat-topped over [a, b].
-    const w = (b - a) * 0.5
-    if (x <= a - w || x >= b + w) return 0
-    if (x < a) return 0.5 - 0.5 * Math.cos((Math.PI * (x - (a - w))) / w)
-    if (x > b) return 0.5 + 0.5 * Math.cos((Math.PI * (x - b)) / w)
-    return 1
+  const a = (v: number): number => round4(clamp(v / 100, -1, 1))
+  // Strictly in order inside 0…1, as the engine takes them (a sidecar
+  // written elsewhere may hold any three).
+  const low = clamp(tc.splits[0], 5, 93)
+  const mid = clamp(tc.splits[1], low + 1, 94)
+  const high = clamp(tc.splits[2], mid + 1, 95)
+  return {
+    ParametricCurve: {
+      shadows: a(tc.shadows),
+      darks: a(tc.darks),
+      lights: a(tc.lights),
+      highlights: a(tc.highlights),
+      splits: { low: round4(low / 100), mid: round4(mid / 100), high: round4(high / 100) },
+      reach: { Range: REGION_REACH }
+    }
   }
-  const pts: CurvePointSetting[] = []
-  for (let i = 0; i <= 16; i++) {
-    const x = i / 16
-    let y = x
-    for (let r = 0; r < 4; r++) y += (amounts[r] / 100) * 0.25 * bump(x, edges[r], edges[r + 1])
-    // Pin the ends: a region slider bends the curve, it does not move black or white.
-    if (i === 0) y = 0
-    if (i === 16) y = 1
-    pts.push({ x, y: clamp(y, 0, 1) })
-  }
-  return pts
 }
 
 /** The profile looks, as control points on encoded values (Standard's is Monochrome's now). */
@@ -1183,23 +1183,19 @@ function stage(space: GradeSpace, ops: GradeOp[]): { space: GradeSpace; ops: Gra
 }
 
 /**
- * Negatives floored at 0, nothing else touched (a 1D identity over 0…64).
- * Before engine 0.19.2 it led the look stage and preceded every smoothed op
- * (E53: smoothed ops blobbed on out-of-gamut colours). 0.19.2 fixed that in
- * the engine, and the floor also took colour that Full HDR's gamut step
- * should compress (Phase A §2), so Playroom no longer writes it. Kept to
- * recognise one in a grade made before.
+ * The look's stages: display-referred (`LOOK_SPACE`), but the Log wheels in
+ * a log stage of their own (`LOG_GRADE_SPACE`) where they fall, the look
+ * picking up after them. A photo without them keeps its one look stage.
  */
-const P3_FLOOR = 'LUT_1D_SIZE 2\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 64 64 64\n0 0 0\n64 64 64\n'
-
-/** Whether an op is the old look stage's floor (`P3_FLOOR`). */
-export function isP3Floor(op: GradeOp): boolean {
-  return 'Lut' in op && 'Cube' in op.Lut.lut && op.Lut.lut.Cube === P3_FLOOR
-}
-
-/** The look stage (display-referred, `LOOK_SPACE`). */
-function lookStage(ops: GradeOp[]): { space: GradeSpace; ops: GradeOp[] }[] {
-  return stage(LOOK_SPACE, ops)
+function lookStages(ops: GradeOp[]): { space: GradeSpace; ops: GradeOp[] }[] {
+  const out: { space: GradeSpace; ops: GradeOp[] }[] = []
+  for (const op of ops) {
+    const space = 'LogWheels' in op ? LOG_GRADE_SPACE : LOOK_SPACE
+    const last = out[out.length - 1]
+    if (last && last.space === space) last.ops.push(op)
+    else out.push({ space, ops: [op] })
+  }
+  return out
 }
 
 function sharpenOp(
@@ -1388,8 +1384,9 @@ function settingsStages(
   const linear: GradeOp[] = []
   const look: GradeOp[] = []
   const hdr = ctx.hdr === true
-  // One value for every op that takes it (Vibrance, Dehaze, Point colour,
-  // Color grading; HSL waits for E53, Tone for E63); null in a draft.
+  const v0 = ctx.colourForm === 'v0'
+  // One value for every op that takes it (Tone, the Color Mixer, Vibrance,
+  // Dehaze, Point colour, Color grading); null in a draft.
   const smoothing = smoothingOf(r.presence.smoothing, ctx)
   const d = r.detail
   const denoise =
@@ -1412,10 +1409,8 @@ function settingsStages(
   const wb = base ? baseWhite(r, ctx) : layerWhite(r.wb)
   if (wb)
     linear.push({ WhiteBalance: { temperature_kelvin: round4(wb.kelvin), tint: round4(wb.tint) } })
-  // Resolve's Temp and Tint, on top of the white balance (until E75 puts them with the primaries).
-  const rw = primariesWhite(r.primaries)
-  if (rw) {
-    const w = opFromRelative(rw.temperature, rw.tint)
+  if (v0 && (r.primaries.temp !== 0 || r.primaries.tint !== 0)) {
+    const w = opFromRelative(r.primaries.temp, r.primaries.tint)
     linear.push({ WhiteBalance: { temperature_kelvin: round4(w.kelvin), tint: round4(w.tint) } })
   }
   const mix = calibrationMatrix(r.calibration)
@@ -1499,7 +1494,7 @@ function settingsStages(
         shadows: clamp(b.shadows / 100, -1, 1),
         whites: clamp(b.whites / 100, -1, 1),
         blacks: clamp(b.blacks / 100, -1, 1),
-        smoothing: TONE_SMOOTHING ? smoothing : null,
+        smoothing: v0 ? null : smoothing,
         // Only when one is set, so a request is 0.19's where none is.
         ...((tb) => (tb ? { base: tb } : {}))(toneBaseFor(ctx))
       }
@@ -1527,8 +1522,10 @@ function settingsStages(
       LocalContrast: { amount: clamp(p.clarity / 100, -1, 1), radius: 0.012, midtones: 0.8 }
     })
   }
-  const para = parametricCurve(r.toneCurve)
-  if (para) look.push(curvesOp({ master: tonal(para, hdr) }))
+  const region = v0 ? null : regionCurveOp(r.toneCurve)
+  if (region) look.push(region)
+  const regionV0 = v0 ? regionCurveV0(r.toneCurve) : null
+  if (regionV0) look.push(curvesOp({ master: tonal(regionV0, hdr) }))
   const tc = r.toneCurve
   const pc: Partial<Curves> = {}
   if (!isIdentityCurve(tc.master)) pc.master = tonal(tc.master, hdr)
@@ -1542,10 +1539,7 @@ function settingsStages(
   if (Object.keys(pc).length > 0) look.push(curvesOp(pc))
   const bw = !!base && (base.treatment === 'bw' || base.profile.kind === 'monochrome')
   const tail = bw && finish ? finish : look
-  // Unsmoothed until E53 (engine 0.18): a smoothed HslBands specks deep
-  // shadows cyan and, under a mask's smoothed Tone past white, blotches red
-  // and blue. The owner's stopgap, 2026-10-08: the other ops keep Smoothing.
-  const hsl = hslOp(r.hsl, bw ? base.bwMix : null, null)
+  const hsl = hslOp(r.hsl, bw ? base.bwMix : null, v0 ? null : smoothing)
   if (hsl) tail.push(hsl)
   if (!bw) {
     const keyScale = { width: oriented.width, height: oriented.height, scale: ctx.scale }
@@ -1565,14 +1559,19 @@ function settingsStages(
   const cg = colorGradeOp(r.colorGrade, smoothing)
   if (cg) tail.push(cg)
   // Resolve's primaries, after Lightroom's grading (shared/resolve.ts); on a
-  // B&W photo after its mono conversion, so Lift and Gain tints tone it.
-  const prim = primariesOp(r.primaries)
-  if (prim) tail.push(prim)
-  tail.push(...logWheelsOps(r.logWheels))
-  // Resolve's vs curves; the two the engine lacks wait, said in the notes.
-  const vs = curvesVsOp(r.curvesVs)
-  if (vs.op && !bw) tail.push(vs.op)
-  for (const w of vs.waiting) notes.push(VS_WAITING_NOTE[w] ?? '')
+  // B&W photo after its mono conversion, so Lift and Gain tints (and Temp
+  // and Tint, the gain balance just before them) tone it.
+  const balance = v0 ? null : primariesBalance(r.primaries)
+  if (balance) tail.push(balance)
+  tail.push(...primariesOp(v0 ? { ...r.primaries, lumMix: 0 } : r.primaries))
+  // Resolve's Log wheels, in log (`lookStages` gives them their stage);
+  // Contrast and Pivot stay display-referred, in the Primary before them.
+  tail.push(...(v0 ? logWheelsV0(r.logWheels) : logWheelsOps(r.logWheels)))
+  // Resolve's vs curves need colour: a black-and-white photo's are kept, not
+  // applied (its Curves card says so and points to the B&W mix). A mask's
+  // run before the mono conversion, so they feed the mix.
+  const vs = v0 ? curvesVsV0(r.curvesVs) : curvesVsOp(r.curvesVs)
+  if (vs && !bw) tail.push(vs)
   if (r.calibration.shadowsTint !== 0) {
     const a = round4((r.calibration.shadowsTint / 100) * 0.02)
     tail.push({ Primary: primary({ lift: { r: a / 2, g: -a, b: a / 2 } }) })
@@ -1628,7 +1627,7 @@ function settingsStages(
       }
     })
   }
-  return [...stage('LinearWorking', linear), ...lookStage(look)]
+  return [...stage('LinearWorking', linear), ...lookStages(look)]
 }
 
 /**
@@ -1686,7 +1685,7 @@ function qualifierLayer(
       edge: within?.edge ?? null
     },
     blend: { mode: 'Normal', space: 'LinearWorking' },
-    stages: lookStage([{ Primary: qualifierCorrection(q) ?? primary({}) }])
+    stages: lookStages([{ Primary: qualifierCorrection(q) ?? primary({}) }])
   }
 }
 
@@ -1766,7 +1765,7 @@ export function compile(recipe: Recipe, given: CompileContext): Compiled {
       opacity: 1,
       mask: null,
       blend: { mode: 'Normal', space: 'LinearWorking' },
-      stages: lookStage(finish)
+      stages: lookStages(finish)
     })
   }
   for (const c of r.custom) {

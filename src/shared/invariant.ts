@@ -48,7 +48,10 @@ const OP_LABEL: Partial<Record<GradeOpKind, string>> = {
   Vignette: tk('Vignette'),
   Grain: tk('Grain'),
   AddColor: tk('Add color'),
-  Defringe: tk('Defringe')
+  Defringe: tk('Defringe'),
+  LogWheels: tk('Log wheels'),
+  LumaPrimary: tk('Primaries'),
+  GainBalance: tk('Temp and Tint')
 }
 
 /**
@@ -56,7 +59,13 @@ const OP_LABEL: Partial<Record<GradeOpKind, string>> = {
  * whose sliders feed each op: the rows marked when it breaks.
  */
 const OP_FIELDS: Partial<Record<GradeOpKind, string[]>> = {
-  Primary: ['basic.exposure', 'basic.contrast', 'presence.saturation', 'presence.hue'],
+  Primary: [
+    'basic.exposure',
+    'basic.contrast',
+    'presence.saturation',
+    'presence.hue',
+    'primaries.'
+  ],
   Tone: ['basic.highlights', 'basic.shadows', 'basic.whites', 'basic.blacks'],
   ChannelMixer: [
     'calibration.redHue',
@@ -71,7 +80,10 @@ const OP_FIELDS: Partial<Record<GradeOpKind, string[]>> = {
   HslBands: ['hsl.', 'bwMix.'],
   ColorGrade: ['colorGrade.'],
   ParametricCurve: ['toneCurve.'],
-  Curves: ['toneCurve.'],
+  Curves: ['toneCurve.', 'curvesVs.'],
+  LogWheels: ['logWheels.'],
+  LumaPrimary: ['primaries.'],
+  GainBalance: ['primaries.temp', 'primaries.tint'],
   Lut: ['profileAmount'],
   Denoise: [
     'detail.noiseLuminance',

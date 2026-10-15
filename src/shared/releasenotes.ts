@@ -18,6 +18,41 @@ export interface ReleaseNotes {
 }
 
 export const RELEASE_NOTES: ReleaseNotes[] = [
+  // Engine 0.21.0 (TODO.md Phase P): the colour tools on the engine's exact ops.
+  {
+    version: '0.6.0-beta',
+    headline: tk(
+      'Engine 0.21: the colour tools stop approximating and start meaning it, and the last two curves finally work.'
+    ),
+    sections: [
+      {
+        title: tk('Colour, exactly'),
+        items: [
+          tk(
+            'Hue vs Lum and Sat vs Sat work. Curves you drew while they waited start to show, so a photo or two may look a little different the first time you open it. That’s them, finally doing their job.'
+          ),
+          tk(
+            'The Log wheels are the real thing now: graded in log, as Resolve’s are, with Low and High range where Resolve puts them. Edits that used them change, more than a little; they were an approximation, and the card said so.'
+          ),
+          tk(
+            'Temp and Tint in the Primaries sit beside the wheels, a gain on the graded colour that keeps greys as bright as they were, instead of a second white balance. On a black-and-white photo they tone it.'
+          ),
+          tk(
+            'Lum Mix, Resolve’s, beside Temp and Tint: raise it and the Y rings brighten or darken without touching the colour. It starts at 0, so nothing you made moves.'
+          ),
+          tk(
+            'The tone curve’s region sliders can no longer fold the tones back, however hard you pull them in opposite directions.'
+          ),
+          tk(
+            'Smoothing reaches Highlights, Shadows, Whites, Blacks and the Color Mixer again, now that the engine no longer paints white patches there. Edits with Smoothing on look a touch smoother in the shadows.'
+          ),
+          tk(
+            'Saved edits take the new maths, and edited photos’ thumbnails are made again once so the library agrees with them.'
+          )
+        ]
+      }
+    ]
+  },
   // Engine 0.20.0 (PIXL's own models), the Resolve colour tools and
   // scopes, History and Versions, the themes (branch feat/engine-dev-demosaic).
   {

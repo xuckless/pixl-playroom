@@ -61,9 +61,8 @@ function busy(): Recipe {
   return r
 }
 
-// HslBands is left unsmoothed until E53 (the owner's stopgap, 2026-10-08),
-// Tone until E63 (2026-10-12).
-const SMOOTHED = ['Dehaze', 'Vibrance', 'Qualifier', 'ColorGrade']
+// Tone and HslBands too since engine 0.21 (E63, E53: smoothing near zero fixed).
+const SMOOTHED = ['Tone', 'HslBands', 'Dehaze', 'Vibrance', 'Qualifier', 'ColorGrade']
 
 function smoothings(ops: GradeOp[]): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -77,14 +76,8 @@ function smoothings(ops: GradeOp[]): Record<string, unknown> {
 const opsOf = (r: Recipe, c: CompileContext, layer = 0): GradeOp[] =>
   compile(r, c).grade!.layers[layer].stages.flatMap((s) => s.ops)
 
-test('a new photo smooths its ops at the engine’s calibration point; HSL waits for E53, Tone for E63', () => {
+test('a new photo smooths its ops at the engine’s calibration point, Tone and the Color Mixer too', () => {
   assert.equal(defaultRecipe(false).presence.smoothing, 100)
-  const hsl = opsOf(busy(), ctx).find((o) => 'HslBands' in o) as {
-    HslBands: { smoothing: unknown }
-  }
-  assert.equal(hsl.HslBands.smoothing, null)
-  const tone = opsOf(busy(), ctx).find((o) => 'Tone' in o) as { Tone: { smoothing: unknown } }
-  assert.equal(tone.Tone.smoothing, null)
   const got = smoothings(opsOf(busy(), ctx))
   assert.deepEqual(Object.keys(got).sort(), [...SMOOTHED].sort())
   for (const v of Object.values(got)) assert.deepEqual(v, { radius: SMOOTHING_RADIUS, strength: 1 })
@@ -140,7 +133,7 @@ test('an edit made before Smoothing keeps its look (0, masks too); an untouched 
 })
 
 test('engine 0.19.2: smoothed ops run with no floor before them (withFloors is gone); a draft has none', async () => {
-  const { compile, isP3Floor } = await import('../src/shared/compile')
+  const { compile } = await import('../src/shared/compile')
   const { defaultRecipe } = await import('../src/shared/recipe')
   const r = defaultRecipe(true)
   r.presence.smoothing = 100
@@ -164,21 +157,16 @@ test('engine 0.19.2: smoothed ops run with no floor before them (withFloors is g
   }
   const ops = (g: ReturnType<typeof compile>['grade']): GradeOp[] =>
     g!.layers.flatMap((l) => l.stages.flatMap((s) => s.ops))
-  const settled = ops(compile(r, ctx).grade)
-  let smoothedOps = 0
-  settled.forEach((o, i) => {
-    const v = Object.values(o)[0] as { smoothing?: unknown }
-    if (v && typeof v === 'object' && v.smoothing != null) {
-      smoothedOps++
-      assert.ok(
-        i === 0 || !isP3Floor(settled[i - 1]),
-        `${Object.keys(o)[0]} with a floor before it`
-      )
-    }
-  })
-  assert.ok(smoothedOps >= 3, `${smoothedOps} smoothed ops`)
-  assert.equal(settled.filter(isP3Floor).length, 0)
+  // A floor was a Lut in the look stage, before the smoothed ops: none now.
+  const look = compile(r, ctx)
+    .grade!.layers.flatMap((l) => l.stages)
+    .filter((s) => s.space !== 'LinearWorking')
+    .flatMap((s) => s.ops)
+  assert.ok(!look.some((o) => 'Lut' in o), 'a floor in the look stage')
+  const smoothedOps = look.filter(
+    (o) => (Object.values(o)[0] as { smoothing?: unknown }).smoothing != null
+  ).length
+  assert.ok(smoothedOps >= 5, `${smoothedOps} smoothed ops`)
   const draft = ops(compile(r, { ...ctx, smoothing: false }).grade)
-  assert.equal(draft.filter(isP3Floor).length, 0)
   assert.ok(draft.every((o) => (Object.values(o)[0] as { smoothing?: unknown }).smoothing == null))
 })

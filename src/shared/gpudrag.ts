@@ -70,11 +70,14 @@ export function constrainedMac(platform: string, cpuModel: string, totalMb: numb
 /** What the GPU grades in this release (Phase A §4.3); every other op is refused. */
 const GPU_OPS = new Set<string>(['Primary', 'Tone', 'HslBands', 'Dehaze'])
 
-/** A stage space the GPU refuses: an HDR signal, or one through an ICC profile. */
+/** The log grading spaces (engine 0.21): the GPU has no kernel for their moves yet. */
+const LOG_SPACES = new Set<string>(['AcesCct', 'DavinciIntermediate', 'PixlLog'])
+
+/** A stage space the GPU refuses: an HDR signal, one through an ICC profile, or a log one. */
 function refusedSpace(space: GradeSpace): boolean {
   if (space === 'LinearWorking') return false
   const s = space.Encoded.space
-  return typeof s === 'object' || s === 'Rec2100Pq' || s === 'Rec2100Hlg'
+  return typeof s === 'object' || s === 'Rec2100Pq' || s === 'Rec2100Hlg' || LOG_SPACES.has(s)
 }
 
 function smoothed(s: AdjustmentSmoothing | null | undefined): boolean {
@@ -97,7 +100,7 @@ function refusedIn(op: GradeOp): string | null {
 /**
  * The first field of `grade` the GPU drag path is known to refuse (Phase A
  * §4.3's list), or null when it should take it: a layer's mask, an opacity
- * other than 1, a blend other than Normal, an HDR or ICC stage, Tone's
+ * other than 1, a blend other than Normal, an HDR, ICC or log stage, Tone's
  * Guided base, any smoothing above 0, and every op but Primary, Tone,
  * HslBands and Dehaze, and no grade at all (nothing to run on the device:
  * refused by `grade_device`). Asking first would only cost a round trip to

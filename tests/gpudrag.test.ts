@@ -111,6 +111,21 @@ test('what it refuses, by the field the engine would name', async () => {
     ]
   })
   assert.equal(gpuRefusal(grade(icc)), 'grade.layers[0].stages[0].space')
+  // A log stage (engine 0.21), such as the Log wheels': every log space, by the stage's space.
+  for (const space of ['PixlLog', 'AcesCct', 'DavinciIntermediate'] as const) {
+    const log = layer([PRIMARY], {
+      stages: [
+        { space: 'LinearWorking', ops: [PRIMARY] },
+        {
+          space: {
+            Encoded: { space, intent: 'RelativeColorimetric', black_point_compensation: false }
+          },
+          ops: [PRIMARY]
+        }
+      ]
+    })
+    assert.equal(gpuRefusal(grade(log)), 'grade.layers[0].stages[1].space')
+  }
   // A disabled layer is left to the engine (it isn't graded).
   assert.equal(gpuRefusal(grade(layer([PRIMARY]), layer([wb], { enabled: false }))), null)
 })
@@ -517,4 +532,59 @@ test('a GPU drag keeps the local-Laplacian base; the M1 drags without one', asyn
   )
   // The release: the local Laplacian, whatever dragged.
   assert.deepEqual(toneBaseFor({ ...ctx, gpuDrag: true, dragWithoutBase: true }), TEXTURE_BASE)
+})
+
+test('engine 0.21’s colour ops leave a drag to the CPU; the Primaries at Lum Mix 0 stay on the GPU', async () => {
+  const { compile } = await import('../src/shared/compile')
+  const { gpuRefusal } = await import('../src/shared/gpudrag')
+  const { defaultRecipe } = await import('../src/shared/recipe')
+  type Recipe = ReturnType<typeof defaultRecipe>
+  const ctx = {
+    isRaw: false,
+    asShot: null,
+    sourceOrientation: 'Normal' as const,
+    frameWidth: 400,
+    frameHeight: 300,
+    scale: 1,
+    seed: 1,
+    brushPaths: {},
+    applyCrop: true,
+    smoothing: false,
+    gpuDrag: true
+  }
+  const drag = (set: (r: Recipe) => void): string | null => {
+    const r = defaultRecipe(false)
+    set(r)
+    return gpuRefusal(compile(r, ctx).grade)
+  }
+  // The wheels with the Y ring folded in (Lum Mix 0), or Lum Mix with no Y ring moved: one Primary.
+  assert.equal(
+    drag((r) => (r.primaries.lift.y = 0.1)),
+    null
+  )
+  assert.equal(
+    drag((r) => {
+      r.primaries.lumMix = 50
+      r.primaries.gain.r = 1.1
+    }),
+    null
+  )
+  // No GPU kernel for these (migration-0.21.0.md): each is named, so the drag runs on the CPU.
+  const cpu: Record<string, (r: Recipe) => void> = {
+    LumaPrimary: (r) => {
+      r.primaries.lumMix = 50
+      r.primaries.lift.y = 0.1
+    },
+    GainBalance: (r) => (r.primaries.temp = 20),
+    ParametricCurve: (r) => (r.toneCurve.lights = 20),
+    'Hue vs Lum': (r) => (r.curvesVs.hueLum = [{ x: 0.3, y: 0.8 }]),
+    'Sat vs Sat': (r) => (r.curvesVs.satSat = [{ x: 0.3, y: 0.8 }])
+  }
+  for (const [name, set] of Object.entries(cpu))
+    assert.equal(drag(set), 'grade.layers[0].stages[0].ops[0]', name)
+  // The Log wheels' PixlLog stage is refused by its space, before its op.
+  assert.equal(
+    drag((r) => (r.logWheels.midtone.r = 0.02)),
+    'grade.layers[0].stages[0].space'
+  )
 })

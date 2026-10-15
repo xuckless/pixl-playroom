@@ -12,10 +12,18 @@ import {
   defaultPrimaries,
   discToRgb,
   normalisePrimaries,
+  primariesBalance,
   primariesOp,
   rgbToDisc
 } from '../src/shared/resolve'
-import type { GradeOp, Primary } from '../src/shared/engine-types'
+import { apply, invert, opFromRelative, rgbToXyz, whiteXyz, type Xy } from '../src/shared/wb'
+import type { GainBalance, GradeOp, Primary } from '../src/shared/engine-types'
+
+const P3: [Xy, Xy, Xy] = [
+  [0.68, 0.32],
+  [0.265, 0.69],
+  [0.15, 0.06]
+]
 
 const ctx: CompileContext = {
   isRaw: false,
@@ -49,7 +57,7 @@ test('the disc moves colour at constant luma, and reads back where it was put', 
 })
 
 test('untouched primaries compile to nothing', () => {
-  assert.equal(primariesOp(defaultPrimaries()), null)
+  assert.deepEqual(primariesOp(defaultPrimaries()), [])
   const before = JSON.stringify(ops(defaultRecipe(false)))
   const r = defaultRecipe(false)
   r.primaries = normalisePrimaries({})
@@ -61,7 +69,7 @@ test('Offset folds into lift and gain: the same as adding it after them', () => 
   p.lift = { y: 0.05, r: 0.02, g: 0, b: 0 }
   p.gain = { y: 1.2, r: 1, g: 0.9, b: 1 }
   p.offset = { y: 0.03, r: 0, g: 0, b: -0.01 }
-  const op = (primariesOp(p) as { Primary: Primary }).Primary
+  const op = (primariesOp(p)[0] as { Primary: Primary }).Primary
   const run = (v: number, c: 'r' | 'g' | 'b'): number => op.lift[c] + v * (op.gain[c] - op.lift[c])
   for (const c of ['r', 'g', 'b'] as const)
     for (const v of [0, 0.3, 0.8, 1]) {
@@ -72,18 +80,115 @@ test('Offset folds into lift and gain: the same as adding it after them', () => 
     }
 })
 
-test('the primaries run in the look stage after Colour grading; Temp and Tint in linear light', () => {
+test('the primaries run in the look stage after Colour grading, Temp and Tint a gain balance just before them (E75)', () => {
   const r = defaultRecipe(false)
   r.colorGrade.global = { hue: 30, saturation: 20, luminance: 0 }
   r.primaries.saturation = 60
   r.primaries.temp = 20
   const stages = compile(r, ctx).grade!.layers[0].stages
-  const look = stages.find((s) => typeof s.space !== 'string')!.ops.map((o) => Object.keys(o)[0])
+  // Nothing in linear light any more (the photo's own white is as shot).
+  assert.ok(stages.every((s) => s.space !== 'LinearWorking'))
+  const ops = stages.at(-1)!.ops
+  const look = ops.map((o) => Object.keys(o)[0])
   const grade = look.indexOf('ColorGrade')
   const prim = look.lastIndexOf('Primary')
   assert.ok(grade >= 0 && prim > grade, look.join(' '))
-  const lin = stages.find((s) => s.space === 'LinearWorking')!.ops.map((o) => Object.keys(o)[0])
-  assert.ok(lin.includes('WhiteBalance'), lin.join(' '))
+  assert.equal(look[prim - 1], 'GainBalance')
+  const gb = (ops[prim - 1] as { GainBalance: GainBalance }).GainBalance
+  const w = opFromRelative(20, 0)
+  assert.deepEqual(gb, {
+    temperature_kelvin: Math.round(w.kelvin * 1e4) / 1e4,
+    tint: 0,
+    hold_luminance: true
+  })
+  assert.equal(primariesBalance(defaultPrimaries()), null)
+})
+
+test('Temp and Tint stay inside Display P3 at a mask’s Amount of 200, pulled toward neutral as little as that takes', () => {
+  for (const temp of [-200, -100, 0, 100, 200])
+    for (const tint of [-200, -100, 0, 100, 200]) {
+      const p = { ...defaultPrimaries(), temp, tint }
+      const op = primariesBalance(p)
+      if (temp === 0 && tint === 0) {
+        assert.equal(op, null)
+        continue
+      }
+      const gb = (op as { GainBalance: GainBalance }).GainBalance
+      assert.ok(gb.temperature_kelvin >= 1667 && gb.temperature_kelvin <= 25000)
+      assert.ok(Math.abs(gb.tint) <= 0.1)
+      // Each channel of the white in P3 above 0, as the engine requires.
+      const rgb = apply(invert(rgbToXyz(P3)), whiteXyz(gb.temperature_kelvin, gb.tint))
+      assert.ok(
+        rgb.every((c) => c > 0),
+        `${temp}/${tint}: ${gb.temperature_kelvin} K ${gb.tint}`
+      )
+      // Inside the sliders' own range, the white is the white balance's own.
+      if (Math.abs(temp) <= 100 && Math.abs(tint) <= 100) {
+        const w = opFromRelative(temp, tint)
+        assert.ok(Math.abs(gb.tint - w.tint) < 2e-4, `${temp}/${tint}: tint ${gb.tint}`)
+      }
+    }
+  // The corner Display P3 cannot hold keeps its warmth and gives up tint.
+  const corner = (
+    primariesBalance({ ...defaultPrimaries(), temp: -200, tint: 200 }) as {
+      GainBalance: GainBalance
+    }
+  ).GainBalance
+  assert.ok(Math.abs(corner.temperature_kelvin - opFromRelative(-200, 0).kelvin) < 1)
+  assert.ok(corner.tint > 0.01 && corner.tint < 100 / 3000)
+})
+
+test('Lum Mix at 0 is the one Primary it always was; above 0 the Y rings are a LumaPrimary (E78)', () => {
+  const p = defaultPrimaries()
+  p.lift = { y: 0.05, r: 0.02, g: 0, b: 0 }
+  p.gamma = { y: 0.2, r: 0, g: 0, b: -0.1 }
+  p.gain = { y: 1.1, r: 1, g: 0.95, b: 1 }
+  p.offset = { y: 0.01, r: 0, g: 0, b: 0 }
+  p.contrast = 1.2
+  p.saturation = 55
+  const folded = primariesOp(p)
+  assert.equal(folded.length, 1)
+  const one = (folded[0] as { Primary: Primary }).Primary
+  assert.equal(one.lift.r, 0.08)
+  assert.equal(one.contrast, 1.2)
+  // Normalised, an old recipe has none.
+  assert.equal(normalisePrimaries({}).lumMix, 0)
+  assert.equal(normalisePrimaries({ lumMix: 250 }).lumMix, 100)
+
+  p.lumMix = 100
+  const ops = primariesOp(p)
+  assert.deepEqual(
+    ops.map((o) => Object.keys(o)[0]),
+    ['Primary', 'LumaPrimary', 'Primary']
+  )
+  const wheels = (ops[0] as { Primary: Primary }).Primary
+  // The wheels' own colour and the Offset, no Y.
+  assert.deepEqual(wheels.lift, { r: 0.03, g: 0.01, b: 0.01 })
+  assert.deepEqual(wheels.gain, { r: 1.01, g: 0.96, b: 1.01 })
+  assert.equal(wheels.gamma.r, 1)
+  assert.equal(wheels.contrast, 1)
+  assert.deepEqual(ops[1], {
+    LumaPrimary: { lift: 0.05, gamma: Math.round(2 ** 0.15 * 1e4) / 1e4, gain: 1.1, mix: 1 }
+  })
+  const after = (ops[2] as { Primary: Primary }).Primary
+  assert.equal(after.contrast, 1.2)
+  assert.equal(after.saturation, 1.1)
+  assert.deepEqual(after.lift, { r: 0, g: 0, b: 0 })
+  // No Y ring moved: Lum Mix has nothing to mix, the one Primary as at 0.
+  const noY = {
+    ...p,
+    lift: { ...p.lift, y: 0 },
+    gamma: { ...p.gamma, y: 0 },
+    gain: { ...p.gain, y: 1 }
+  }
+  assert.deepEqual(primariesOp(noY), primariesOp({ ...noY, lumMix: 0 }))
+  // A mask's Amount leaves it as set; it compiles in the look stage.
+  assert.equal(scaleSettings({ ...neutralSettings(), primaries: p }, 50).primaries.lumMix, 100)
+  const r = defaultRecipe(false)
+  r.primaries = p
+  assert.ok(
+    ops.length > 0 && ops.every((o) => JSON.stringify(compile(r, ctx)).includes(JSON.stringify(o)))
+  )
 })
 
 test('a mask carries primaries, scaled by its Amount; switched off they compile as defaults', () => {
@@ -95,7 +200,7 @@ test('a mask carries primaries, scaled by its Amount; switched off they compile 
   assert.ok(Math.abs(half.lift.y - 0.05) < 1e-9)
   assert.ok(Math.abs(half.gain.y - Math.SQRT2) < 1e-9)
   assert.equal(half.saturation, 60)
-  assert.equal(primariesOp(scaleSettings(s, 0).primaries), null)
+  assert.deepEqual(primariesOp(scaleSettings(s, 0).primaries), [])
 
   const r = defaultRecipe(false)
   r.primaries.contrast = 1.3
@@ -121,17 +226,21 @@ test('a hue curve wraps across red with no seam; the others hold level past thei
   assert.ok(vsPoints([{ x: 0, y: 0.8 }], true).every((p) => p.y === 0.8))
 })
 
-test('the vs curves compile to one Curves op; the two the engine lacks wait in the notes', async () => {
+test('the vs curves compile to one Curves op, all five (engine 0.21: E71, E72)', async () => {
   const { curvesVsOp } = await import('../src/shared/resolve')
   const r = defaultRecipe(false)
-  assert.equal(curvesVsOp(r.curvesVs).op, null)
+  assert.equal(curvesVsOp(r.curvesVs), null)
   r.curvesVs.hueHue = [{ x: 0.5, y: 0.75 }]
   r.curvesVs.lumSat = [
     { x: 0.2, y: 0.25 },
     { x: 0.8, y: 0.5 }
   ]
-  r.curvesVs.hueLum = [{ x: 0.3, y: 0.6 }]
-  const { op, waiting } = curvesVsOp(r.curvesVs)
+  r.curvesVs.hueLum = [
+    { x: 0.3, y: 0.75 },
+    { x: 0.6, y: 0.4 }
+  ]
+  r.curvesVs.satSat = [{ x: 0.5, y: 0.5 }]
+  const op = curvesVsOp(r.curvesVs)
   const c = (op as { Curves: import('../src/shared/engine-types').Curves }).Curves
   assert.ok(
     c.hue_vs_hue!.points.every((p) => p.y === 90),
@@ -139,40 +248,192 @@ test('the vs curves compile to one Curves op; the two the engine lacks wait in t
   )
   assert.equal(c.luma_vs_saturation!.points[0].y, 0.5, 'a quarter down halves saturation')
   assert.equal(c.hue_vs_saturation, null)
-  assert.deepEqual(waiting, ['hueLum'])
-  const notes = compile(r, ctx).notes
-  assert.ok(
-    notes.some((n) => n.includes('E71')),
-    notes.join(' | ')
-  )
-  assert.ok(ops(r).some((o) => 'Curves' in o && o.Curves.hue_vs_hue))
+  // Hue vs Lum in stops, ±1 at the top and bottom: a quarter up is half a
+  // stop; the curve wraps across red with its ends equal.
+  const lum = c.hue_vs_luma!.points
+  assert.equal(lum.find((p) => p.x === 0.3)!.y, 0.5)
+  assert.equal(lum.find((p) => p.x === 0.6)!.y, -0.2)
+  assert.equal(lum[0].x, 0)
+  assert.equal(lum.at(-1)!.x, 1)
+  assert.equal(lum[0].y, lum.at(-1)!.y)
+  // A flat Sat vs Sat sends none.
+  assert.equal(c.saturation_vs_saturation, null)
+  assert.deepEqual(compile(r, ctx).notes, [])
+  assert.ok(ops(r).some((o) => 'Curves' in o && o.Curves.hue_vs_hue && o.Curves.hue_vs_luma))
 })
 
-test('log wheels key their own part of the tones, and add rather than scale', async () => {
-  const { logBand, logWheelsOps, normaliseLogWheels } = await import('../src/shared/resolve')
+test('Sat vs Sat is a multiplier, its ends held level; Hue vs Lum alone makes the op', async () => {
+  const { curvesVsOp, VS_PRESETS, defaultCurvesVs } = await import('../src/shared/resolve')
+  const c = defaultCurvesVs()
+  c.satSat = VS_PRESETS.satSat.find((p) => p.name === 'Tame strong colour')!.points
+  const sat = (curvesVsOp(c) as { Curves: import('../src/shared/engine-types').Curves }).Curves
+    .saturation_vs_saturation!.points
+  assert.equal(sat.at(-1)!.y, 0.76, 'the richest colours at 0.76×')
+  assert.equal(sat[0].y, 1)
+  assert.deepEqual([sat[0].x, sat.at(-1)!.x], [0, 1])
+  const lumOnly = defaultCurvesVs()
+  lumOnly.hueLum = [{ x: 0.6, y: 0.25 }]
+  const op = curvesVsOp(lumOnly) as { Curves: import('../src/shared/engine-types').Curves }
+  assert.ok(op.Curves.hue_vs_luma!.points.every((p) => p.y === -0.5))
+  assert.equal(op.Curves.hue_vs_hue, null)
+})
+
+test('a black-and-white photo keeps its vs curves but does not apply them; a mask’s feed the mix', () => {
+  const r = defaultRecipe(false)
+  r.treatment = 'bw'
+  r.curvesVs.hueSat = [{ x: 0.6, y: 0.8 }]
+  r.curvesVs.hueLum = [{ x: 0.6, y: 0.2 }]
+  assert.ok(
+    !ops(r).some((o) => 'Curves' in o && (o.Curves.hue_vs_saturation || o.Curves.hue_vs_luma))
+  )
+  assert.equal(normaliseRecipe(r, false).curvesVs.hueLum.length, 1)
+  const l = newLocalLayer('Sky')
+  l.components = [
+    {
+      id: 'c1',
+      kind: 'linear',
+      mode: 'add',
+      opacity: 100,
+      invert: false,
+      start: { x: 0.5, y: 0 },
+      end: { x: 0.5, y: 0.4 },
+      width: 512,
+      height: 512
+    } as never
+  ]
+  l.settings.curvesVs.hueLum = [{ x: 0.6, y: 0.2 }]
+  r.layers = [l]
+  const c = compile(normaliseRecipe(r, false), ctx)
+  const mask = c.grade!.layers[c.layerIndex[l.id]].stages.flatMap((s) => s.ops)
+  assert.ok(mask.some((o) => 'Curves' in o && o.Curves.hue_vs_luma))
+  // …and run before the mono conversion, the last layer.
+  assert.equal(c.grade!.layers.at(-1)!.name, 'black & white')
+})
+
+test('log wheels are one LogWheels op in a PixlLog stage of their own, untouched none (E74, E73)', async () => {
+  const { LOG_HIGH, LOG_LOW, LOG_TRANSITION, logWheelsOps, normaliseLogWheels, toPixlLog } =
+    await import('../src/shared/resolve')
+  const { LOG_GRADE_SPACE, LOOK_SPACE } = await import('../src/shared/compile')
   const l = normaliseLogWheels({})
   assert.deepEqual(logWheelsOps(l), [])
-  // Each band covers its range fully, within low/high.
-  const s = logBand('shadow', 0.333, 0.55)
-  assert.ok(Math.abs(s.centre + s.width / 2 - 0.333) < 1e-3)
-  const m = logBand('midtone', 0.333, 0.55)
-  assert.ok(Math.abs(m.centre - m.width / 2 - 0.333) < 1e-3)
-  assert.ok(Math.abs(m.centre + m.width / 2 - 0.55) < 1e-3)
-  const h = logBand('highlight', 0.333, 0.55)
-  assert.ok(Math.abs(h.centre - h.width / 2 - 0.55) < 1e-3)
+  // Resolve's ACEScct defaults at the same stops from grey: 1.41 under, 2.39 over.
+  assert.equal(LOG_LOW, 0.268)
+  assert.equal(LOG_HIGH, 0.66)
+  assert.ok(Math.abs(toPixlLog(0.18) - 0.405) < 1e-3)
+  assert.ok(Math.abs(toPixlLog(1) - 0.669) < 1e-3)
+  assert.ok(Math.abs(toPixlLog(0.18 * 2 ** -1.4119) - LOG_LOW) < 1e-3)
 
-  l.shadow = { y: 0, r: 0.02, g: 0, b: -0.02 }
+  l.shadow = { y: 0.01, r: 0.02, g: 0, b: -0.02 }
   l.offset = { y: 0.01, r: 0, g: 0, b: 0 }
   const ops = logWheelsOps(l)
-  assert.equal(ops.length, 2)
-  const q = (ops[0] as { Qualifier: { correction: Primary } }).Qualifier.correction
-  // v + o: lift o and gain 1 + o.
-  assert.equal(q.lift.r, 0.02)
-  assert.equal(q.gain.r, 1.02)
-  assert.equal(q.gain.b, 0.98)
-  // The range sliders keep low under high.
+  assert.equal(ops.length, 1)
+  const w = (ops[0] as { LogWheels: import('../src/shared/engine-types').LogWheels }).LogWheels
+  // Y folds into each channel.
+  assert.deepEqual(w.shadow, { r: 0.03, g: 0.01, b: -0.01 })
+  assert.deepEqual(w.offset, { r: 0.01, g: 0.01, b: 0.01 })
+  assert.deepEqual(w.midtone, { r: 0, g: 0, b: 0 })
+  assert.deepEqual([w.low_range, w.high_range, w.transition], [LOG_LOW, LOG_HIGH, LOG_TRANSITION])
+  // The engine's rule, low + t ≤ high − t, holds however close the sliders go.
   const n = normaliseLogWheels({ low: 0.8, high: 0.5 })
-  assert.ok(n.high > n.low)
+  assert.ok(n.low + LOG_TRANSITION < n.high - LOG_TRANSITION)
+  const tight = logWheelsOps({ ...l, low: 0.5, high: 0.52 })[0] as {
+    LogWheels: import('../src/shared/engine-types').LogWheels
+  }
+  const t = tight.LogWheels
+  assert.ok(t.low_range + t.transition < t.high_range - t.transition, JSON.stringify(t))
+
+  // Compiled: P3, then PixlLog for the wheels, then P3 again for what follows.
+  const r = defaultRecipe(false)
+  r.primaries.contrast = 1.2
+  r.logWheels = { ...l }
+  r.curvesVs.hueSat = [{ x: 0.6, y: 0.8 }]
+  r.effects.vignetteAmount = -20
+  const stages = compile(r, ctx).grade!.layers[0].stages
+  assert.deepEqual(
+    stages.map((s) => s.space),
+    [LOOK_SPACE, LOG_GRADE_SPACE, LOOK_SPACE]
+  )
+  assert.deepEqual(
+    stages[1].ops.map((o) => Object.keys(o)[0]),
+    ['LogWheels']
+  )
+  assert.ok(stages[2].ops.some((o) => 'Curves' in o))
+  assert.ok(stages[2].ops.some((o) => 'Vignette' in o))
+  // Contrast stays display-referred, in the Primary before the wheels.
+  const prim = stages[0].ops.find((o) => 'Primary' in o) as { Primary: Primary }
+  assert.equal(prim.Primary.contrast, 1.2)
+  assert.equal(prim.Primary.contrast_pivot, 0.435)
+  // Contrast alone makes no log stage.
+  r.logWheels = normaliseLogWheels({})
+  assert.ok(compile(r, ctx).grade!.layers[0].stages.every((s) => s.space !== LOG_GRADE_SPACE))
+})
+
+test('a mask’s log wheels get their own log stage too; a black-and-white photo’s run after the mono conversion', async () => {
+  const { LOG_GRADE_SPACE, LOOK_SPACE } = await import('../src/shared/compile')
+  const r = defaultRecipe(false)
+  const l = newLocalLayer('Sky')
+  l.components = [
+    {
+      id: 'c1',
+      kind: 'linear',
+      mode: 'add',
+      opacity: 100,
+      invert: false,
+      start: { x: 0.5, y: 0 },
+      end: { x: 0.5, y: 0.4 },
+      width: 512,
+      height: 512
+    } as never
+  ]
+  l.settings.logWheels.highlight = { y: 0, r: 0, g: 0, b: 0.02 }
+  l.settings.presence.saturation = 10
+  r.layers = [l]
+  r.treatment = 'bw'
+  r.logWheels.midtone = { y: 0, r: 0.01, g: 0, b: 0 }
+  const c = compile(normaliseRecipe(r, false), ctx)
+  const mask = c.grade!.layers[c.layerIndex[l.id]]
+  assert.deepEqual(
+    mask.stages.map((s) => s.space),
+    [LOOK_SPACE, LOG_GRADE_SPACE]
+  )
+  // The photo's own, after the conversion in the black & white layer: they tone it.
+  const finish = c.grade!.layers.at(-1)!
+  assert.equal(finish.name, 'black & white')
+  const kinds = finish.stages.map((s) => s.ops.map((o) => Object.keys(o)[0]))
+  assert.deepEqual(
+    finish.stages.map((s) => s.space),
+    [LOOK_SPACE, LOG_GRADE_SPACE]
+  )
+  assert.ok(kinds[0].includes('Primary') && kinds[1][0] === 'LogWheels', JSON.stringify(kinds))
+})
+
+test('an older recipe’s log ranges are carried to the same tones; Resolve’s defaults to the new ones', async () => {
+  const { LOG_HIGH, LOG_LOW, logRangeBefore021, toPixlLog } = await import('../src/shared/resolve')
+  const old = normaliseRecipe({ version: 5, logWheels: { low: 0.333, high: 0.55 } }, false)
+  assert.deepEqual([old.logWheels.low, old.logWheels.high], [LOG_LOW, LOG_HIGH])
+  // Moved ranges: display-encoded 0.2 is 3.3% light, 0.7 is 44.8%.
+  const moved = normaliseRecipe(
+    {
+      version: 5,
+      logWheels: { low: 0.2, high: 0.7, shadow: { y: 0.01, r: 0, g: 0, b: 0 } },
+      layers: [{ id: 'm', settings: { logWheels: { low: 0.333, high: 0.55 } } }]
+    },
+    false
+  )
+  assert.ok(Math.abs(moved.logWheels.low - toPixlLog(0.0331)) < 2e-3, `${moved.logWheels.low}`)
+  assert.ok(Math.abs(moved.logWheels.high - toPixlLog(0.448)) < 2e-3, `${moved.logWheels.high}`)
+  assert.equal(moved.logWheels.shadow.y, 0.01)
+  assert.deepEqual(
+    [moved.layers[0].settings.logWheels.low, moved.layers[0].settings.logWheels.high],
+    [LOG_LOW, LOG_HIGH]
+  )
+  // None saved: the defaults; a recipe from 6 on is taken as it is.
+  assert.equal(logRangeBefore021(undefined), null)
+  assert.equal(normaliseRecipe({ version: 5 }, false).logWheels.low, LOG_LOW)
+  assert.equal(
+    normaliseRecipe({ version: 6, logWheels: { low: 0.333, high: 0.55 } }, false).logWheels.low,
+    0.333
+  )
 })
 
 test('each qualifier is its own layer after the photo’s grade, its key the layer’s Range mask', async () => {
@@ -262,8 +523,11 @@ test('the vs curves’ presets: each a curve the recipe keeps as written, Flat f
       )
     }
   }
-  // A built-in compiles into the engine's Curves op.
-  const c = defaultCurvesVs()
-  c.hueSat = VS_PRESETS.hueSat[1].points
-  assert.ok(curvesVsOp(c).op)
+  // Every built-in compiles into the engine's Curves op.
+  for (const vs of VS_CURVES)
+    for (const p of VS_PRESETS[vs].slice(1)) {
+      const c = defaultCurvesVs()
+      c[vs] = p.points
+      assert.ok(curvesVsOp(c), `${vs} ${p.name}`)
+    }
 })

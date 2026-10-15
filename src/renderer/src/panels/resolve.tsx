@@ -16,8 +16,13 @@ import { AddColourSection, RS, ToneCurveCustom } from './global'
 import { TIPS } from './tips'
 import { InfoTip } from '../components/InfoTip'
 import {
+  DEFAULT_PIVOT,
+  LOG_FLOOR,
+  LOG_HIGH,
+  LOG_LOW,
+  LOG_MIN_GAP,
+  LOG_TOP,
   MAX_QUALIFIERS,
-  VS_WAITING,
   vsPeriodic,
   type KeyBandSetting,
   type PrimariesSetting,
@@ -94,7 +99,7 @@ export function PrimariesBody(): React.JSX.Element | null {
         min={0}
         max={1}
         step={0.005}
-        def={0.435}
+        def={DEFAULT_PIVOT}
         format={(v) => v.toFixed(3)}
       />
       <RS
@@ -132,6 +137,16 @@ export function PrimariesBody(): React.JSX.Element | null {
         read={(r) => r.primaries.tint}
         write={(r, v) => (r.primaries.tint = v)}
         track={TINT_TRACK}
+      />
+      <RS
+        label={tk('Lum Mix')}
+        tip={TIPS['primaries.lumMix']}
+        read={(r) => r.primaries.lumMix}
+        write={(r, v) => (r.primaries.lumMix = v)}
+        min={0}
+        max={100}
+        step={1}
+        def={0}
       />
       <div className="gwheels">
         {wheel('lift')}
@@ -177,19 +192,29 @@ const SWATCHES = [
 ]
 
 export function ResolveCurvesBody(): React.JSX.Element | null {
-  const { recipe, edit, commit } = useScope()
-  const [tab, setTab] = useState<CurvesTab>('custom')
+  const { recipe, layer, edit, commit } = useScope()
+  const [chosen, setTab] = useState<CurvesTab>('custom')
   if (!recipe) return null
+  // The vs curves need colour: on a black-and-white photo they would change
+  // nothing (a mask's still can, before the mono conversion).
+  const mono = !layer && (recipe.treatment === 'bw' || recipe.profile.kind === 'monochrome')
+  const tab = mono ? 'custom' : chosen
   const label = CURVE_TABS.find((x) => x.value === tab)!.label
   if (tab === 'custom')
     return (
       <ToolPanel>
-        <Tabs value={tab} onChange={setTab} className="rc-tabs" tabs={tabsOf()} />
+        <Tabs value={tab} onChange={setTab} className="rc-tabs" tabs={tabsOf(mono)} />
+        {mono && (
+          <p className="muted small">
+            {t(
+              'Black and white: the vs curves need colour. To set how bright each colour turns, use the B&W mix in HSL.'
+            )}
+          </p>
+        )}
         <ToneCurveCustom />
       </ToolPanel>
     )
   const vs = tab
-  const waiting = VS_WAITING[vs]
   const periodic = vsPeriodic(vs)
   const pts = recipe.curvesVs[vs]
   const addAt = (h: number): void => {
@@ -209,12 +234,6 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
         <InfoTip tip={TIPS[`rcurves.${vs}`]} label={t(label)} />
       </div>
       <VsPresets key={vs} vs={vs} label={label} />
-      {waiting && (
-        <p className="rc-waiting">
-          {t('Waiting for the engine')} ({waiting}):{' '}
-          {t('the curve is kept with the photo and applies once the engine has it.')}
-        </p>
-      )}
       <CurveEditor
         vs
         periodic={periodic}
@@ -252,8 +271,17 @@ export function ResolveCurvesBody(): React.JSX.Element | null {
   )
 }
 
-function tabsOf(): { value: CurvesTab; label: string }[] {
-  return CURVE_TABS.map((x) => ({ ...x, label: t(x.label) }))
+/** The tabs, the vs curves greyed out on a black-and-white photo (`mono`). */
+function tabsOf(
+  mono = false
+): { value: CurvesTab; label: string; disabled?: boolean; title?: string }[] {
+  return CURVE_TABS.map((x) => ({
+    ...x,
+    label: t(x.label),
+    ...(mono && x.value !== 'custom'
+      ? { disabled: true, title: t('Black and white: use the B&W mix in HSL') }
+      : {})
+  }))
 }
 
 // ── Log wheels ───────────────────────────────────────────────────────────────
@@ -267,8 +295,11 @@ const LOG_NAMES: Record<LogKey, string> = {
   offset: tk('Offset')
 }
 
-/** Log wheels add small amounts: the disc and ring reach less far than the primaries'. */
-const LOG_SCALE: WheelScale = { neutral: 0, reach: 0.08, ringStep: 0.0015, min: -1, max: 1 }
+/**
+ * Log wheels add small amounts: the disc and ring reach less far than the
+ * primaries'. In PixlLog 0.01 is about a tenth of a stop at grey.
+ */
+const LOG_SCALE: WheelScale = { neutral: 0, reach: 0.055, ringStep: 0.001, min: -1, max: 1 }
 
 export function LogWheelsBody(): React.JSX.Element | null {
   const { recipe, edit, commit } = useScope()
@@ -298,29 +329,24 @@ export function LogWheelsBody(): React.JSX.Element | null {
         label={tk('Low range')}
         tip={TIPS['log.low']}
         read={(r) => r.logWheels.low}
-        write={(r, v) => (r.logWheels.low = Math.min(v, r.logWheels.high - 0.05))}
-        min={0.02}
-        max={0.9}
+        write={(r, v) => (r.logWheels.low = Math.min(v, r.logWheels.high - LOG_MIN_GAP))}
+        min={LOG_FLOOR}
+        max={LOG_TOP - LOG_MIN_GAP}
         step={0.001}
-        def={0.333}
+        def={LOG_LOW}
         format={(v) => v.toFixed(3)}
       />
       <RS
         label={tk('High range')}
         tip={TIPS['log.high']}
         read={(r) => r.logWheels.high}
-        write={(r, v) => (r.logWheels.high = Math.max(v, r.logWheels.low + 0.05))}
-        min={0.07}
-        max={0.98}
+        write={(r, v) => (r.logWheels.high = Math.max(v, r.logWheels.low + LOG_MIN_GAP))}
+        min={LOG_FLOOR + LOG_MIN_GAP}
+        max={LOG_TOP}
         step={0.001}
-        def={0.55}
+        def={LOG_HIGH}
         format={(v) => v.toFixed(3)}
       />
-      <p className="muted small">
-        {t(
-          'Close to Resolve’s, not the same: each range is keyed on brightness with a soft edge until the engine grades in log (it has been asked to).'
-        )}
-      </p>
     </ToolPanel>
   )
 }

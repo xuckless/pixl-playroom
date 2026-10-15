@@ -12,6 +12,7 @@ import {
   defaultCurvesVs,
   defaultLogWheels,
   defaultPrimaries,
+  logRangeBefore021,
   normaliseCurvesVs,
   normaliseLogWheels,
   normalisePrimaries,
@@ -41,9 +42,12 @@ import { isPlaneHash, safeIdOf } from './ids'
  * for edits made before it (so they look as they did). 5: a gain-map photo
  * is edited in HDR by default (Photo → Edit as SDR for the stored SDR
  * picture); one with pixel steps (AI Denoise, Enhance, baked heals and
- * removals, which an HDR photo cannot take yet) keeps its SDR base.
+ * removals, which an HDR photo cannot take yet) keeps its SDR base. 6
+ * (engine 0.21): the Log wheels grade in PixlLog, their Low and High range
+ * its code values; an older recipe's (display-encoded luma) are carried to
+ * the same tones, Resolve's defaults to the new ones.
  */
-export const RECIPE_VERSION = 5
+export const RECIPE_VERSION = 6
 
 export const HSL_BANDS = [
   'red',
@@ -878,7 +882,9 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
   r.toneCurve = normaliseToneCurve(r.toneCurve)
   r.primaries = normalisePrimaries(r.primaries)
   r.curvesVs = normaliseCurvesVs(r.curvesVs)
-  r.logWheels = normaliseLogWheels(r.logWheels)
+  // Before 6 the Log wheels' ranges were display-encoded luma.
+  const logRange = saved < 6 && isObject(value) ? logRangeBefore021(value.logWheels) : null
+  r.logWheels = normaliseLogWheels(logRange ? { ...r.logWheels, ...logRange } : r.logWheels)
   r.qualifiers = normaliseQualifiers(r.qualifiers)
   // Only sections there are, each switched off by `true` (`fill` keeps any key).
   // Colour (Vibrance, Saturation, Hue) joined Presence: off, it keeps them off.
@@ -901,6 +907,9 @@ export function normaliseRecipe(value: unknown, isRaw: boolean): Recipe {
     delete l.adjust
     const settings = layerSettingsOf(withOld as unknown as Record<string, unknown>)
     settings.toneCurve = normaliseToneCurve(settings.toneCurve)
+    const own = isObject(withOld.settings) ? withOld.settings.logWheels : undefined
+    const range = saved < 6 ? logRangeBefore021(own) : null
+    if (range) settings.logWheels = { ...settings.logWheels, ...range }
     settings.calibration = normaliseCalibration(settings.calibration)
     return {
       ...l,

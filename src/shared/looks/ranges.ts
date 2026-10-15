@@ -71,6 +71,7 @@ export const LOOK_RANGES: [string, [number, number]][] = [
   ['primaries.hue', UNIT],
   ['primaries.temp', BIPOLAR],
   ['primaries.tint', BIPOLAR],
+  ['primaries.lumMix', UNIT],
   ['logWheels.low', [0, 1]],
   ['logWheels.high', [0, 1]],
   ['logWheels.*.*', [-1, 1]]
