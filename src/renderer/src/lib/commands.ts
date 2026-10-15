@@ -1011,7 +1011,7 @@ export const COMMANDS: KeyCommand[] = [
     keys: ['Alt+BracketRight'],
     run: () => {
       const u = useUi.getState()
-      u.setScopes({ inline: cycleScope(u.scopes.inline, 1) })
+      u.setScopes({ inline: cycleScope(u.scopes.inline, 1, u.scopes.quick) })
     }
   },
   {
@@ -1022,7 +1022,7 @@ export const COMMANDS: KeyCommand[] = [
     keys: ['Alt+BracketLeft'],
     run: () => {
       const u = useUi.getState()
-      u.setScopes({ inline: cycleScope(u.scopes.inline, -1) })
+      u.setScopes({ inline: cycleScope(u.scopes.inline, -1, u.scopes.quick) })
     }
   },
   {

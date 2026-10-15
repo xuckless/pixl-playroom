@@ -92,10 +92,20 @@ export type ScopeKind = (typeof SCOPE_KINDS)[number]
 /** The scopes binned here from pixels (the others are the engine's stats). */
 export const BINNED_SCOPES: readonly ScopeKind[] = ['parade', 'waveform', 'vectorscope', 'cie']
 
-/** The scope after (`+1`) or before (`-1`) `kind`, round the list. */
-export function cycleScope(kind: ScopeKind, step: 1 | -1): ScopeKind {
-  const i = SCOPE_KINDS.indexOf(kind)
-  return SCOPE_KINDS[(i + step + SCOPE_KINDS.length) % SCOPE_KINDS.length]
+/**
+ * The scope after (`+1`) or before (`-1`) `kind`, round `among` (the right
+ * column's chosen ones, `ScopePrefs.quick`; every scope by default). A kind
+ * not among them steps to the first.
+ */
+export function cycleScope(
+  kind: ScopeKind,
+  step: 1 | -1,
+  among: readonly ScopeKind[] = SCOPE_KINDS
+): ScopeKind {
+  const list = among.length > 0 ? among : SCOPE_KINDS
+  const i = list.indexOf(kind)
+  if (i < 0) return list[0]
+  return list[(i + step + list.length) % list.length]
 }
 
 /**
@@ -456,6 +466,12 @@ export const EXPANDED_SCOPES: readonly ExpandedScope[] = [...SCOPE_KINDS, 'metri
 export interface ScopePrefs {
   /** The one at the top of the right column. */
   inline: ScopeKind
+  /**
+   * The ones the right column's ◀ ▶ step through, in the scopes' order
+   * (ticked in the expanded viewer); never empty. All of them are always in
+   * the expanded viewer.
+   */
+  quick: ScopeKind[]
   /** The expanded viewer: one, two or four at once. */
   layout: 1 | 2 | 4
   /** The expanded viewer's four places, in reading order. */
@@ -469,8 +485,12 @@ export interface ScopePrefs {
   inMask: boolean
 }
 
+/** The right column's scopes as they come: the histogram and the colour bars. */
+export const DEFAULT_QUICK: readonly ScopeKind[] = ['histogram', 'hue']
+
 export const DEFAULT_SCOPES: ScopePrefs = {
   inline: 'histogram',
+  quick: [...DEFAULT_QUICK],
   layout: 2,
   slots: ['parade', 'vectorscope', 'waveform', 'histogram'],
   waveform: 'luma',
@@ -487,8 +507,18 @@ export function normaliseScopes(p: unknown): ScopePrefs {
   const slot = (v: unknown, d: ExpandedScope): ExpandedScope =>
     EXPANDED_SCOPES.includes(v as ExpandedScope) ? (v as ExpandedScope) : d
   const slots = Array.isArray(o.slots) ? o.slots : []
+  const inline = kind(o.inline, DEFAULT_SCOPES.inline)
+  // Kept from before there was a choice: the defaults, and the one shown then.
+  const chosen = Array.isArray(o.quick)
+    ? o.quick
+    : o.inline !== undefined
+      ? [...DEFAULT_QUICK, inline]
+      : DEFAULT_QUICK
+  const picked = SCOPE_KINDS.filter((k) => chosen.includes(k))
+  const quick = picked.length > 0 ? picked : [...DEFAULT_QUICK]
   return {
-    inline: kind(o.inline, DEFAULT_SCOPES.inline),
+    inline: quick.includes(inline) ? inline : quick[0],
+    quick,
     layout: o.layout === 1 || o.layout === 2 || o.layout === 4 ? o.layout : DEFAULT_SCOPES.layout,
     slots: DEFAULT_SCOPES.slots.map((d, i) => slot(slots[i], d)),
     waveform: o.waveform === 'rgb' ? 'rgb' : 'luma',
@@ -496,6 +526,15 @@ export function normaliseScopes(p: unknown): ScopePrefs {
     skinLine: o.skinLine !== false,
     inMask: o.inMask === true
   }
+}
+
+/**
+ * The right column's scopes with `kind` ticked or not; the last one stays
+ * (an empty column would have nothing to show).
+ */
+export function withQuick(quick: readonly ScopeKind[], kind: ScopeKind, on: boolean): ScopeKind[] {
+  const next = SCOPE_KINDS.filter((k) => (k === kind ? on : quick.includes(k)))
+  return next.length > 0 ? next : [...quick]
 }
 
 /** A slot's scope after or before its own, round the expanded viewer's list. */

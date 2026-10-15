@@ -4035,5 +4035,7 @@
   "Hints name your keys the way your keyboard does: Option on a Mac, Alt everywhere else.": "提示会按你的键盘来称呼按键：Mac 上是 Option，其他地方是 Alt。",
   "Playroom Signature’s buttons and sliders sit on a deep purple, so they stay easy to find next to a bright HDR photo.": "Playroom Signature 的按钮和滑块置于深紫色底上，在明亮的 HDR 照片旁也依然好找。",
   "The scopes’ ◀ ▶ stay put whatever the scope is called, so you can click straight through them.": "示波器的 ◀ ▶ 不再随名称长短移动，你可以连续点击切换。",
-  "This very window turns pages now: older releases are a click to the left.": "这个窗口现在也能翻页了：更早的版本就在左边，点一下即可。"
+  "This very window turns pages now: older releases are a click to the left.": "这个窗口现在也能翻页了：更早的版本就在左边，点一下即可。",
+  "In the side panel": "在侧边面板中",
+  "Show this scope in the right column’s ◀ ▶": "在右栏的 ◀ ▶ 中显示此示波器"
 }

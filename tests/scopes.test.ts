@@ -352,3 +352,28 @@ test(
     }
   }
 )
+
+test('the right column steps through the scopes ticked for it, the histogram and colour bars by default', async () => {
+  const { normaliseScopes, DEFAULT_SCOPES, cycleScope, withQuick } =
+    await import('../src/shared/scopes')
+  assert.deepEqual(DEFAULT_SCOPES.quick, ['histogram', 'hue'])
+  assert.equal(cycleScope('histogram', 1, DEFAULT_SCOPES.quick), 'hue')
+  assert.equal(cycleScope('hue', 1, DEFAULT_SCOPES.quick), 'histogram')
+  assert.equal(cycleScope('histogram', -1, DEFAULT_SCOPES.quick), 'hue')
+  // One not among them steps to the first.
+  assert.equal(cycleScope('cie', 1, ['parade', 'waveform']), 'parade')
+  // Ticked in any order, kept in the scopes' own; the last one stays.
+  assert.deepEqual(withQuick(['histogram', 'hue'], 'parade', true), ['histogram', 'hue', 'parade'])
+  assert.deepEqual(withQuick(['histogram', 'hue'], 'histogram', false), ['hue'])
+  assert.deepEqual(withQuick(['hue'], 'hue', false), ['hue'])
+  // Saved before there was a choice: the defaults, and the one shown then.
+  assert.deepEqual(normaliseScopes({ inline: 'vectorscope' }).quick, [
+    'histogram',
+    'hue',
+    'vectorscope'
+  ])
+  // The one shown is always among them; nothing ticked takes the defaults.
+  const p = normaliseScopes({ inline: 'cie', quick: ['waveform'] })
+  assert.equal(p.inline, 'waveform')
+  assert.deepEqual(normaliseScopes({ quick: [] }).quick, ['histogram', 'hue'])
+})

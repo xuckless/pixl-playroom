@@ -595,7 +595,14 @@ fieldset::before {
 /* The one dropdown that picks the section shown (develop/AdjustStack.tsx). */
 .section-picker {
   display: flex;
-  margin: 2px 0 10px;
+  /* Stays at the column's top while the cards scroll under it, on the
+     column's own background so they pass behind it. */
+  position: sticky;
+  top: -8px;
+  z-index: 4;
+  margin: -8px 0 10px;
+  padding: 10px 0 8px;
+  background: var(--s2);
 }
 .section-picker .glass-select {
   flex: 1;

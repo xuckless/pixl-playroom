@@ -4035,5 +4035,7 @@
   "Hints name your keys the way your keyboard does: Option on a Mac, Alt everywhere else.": "ヒントのキー名はお使いのキーボードどおりです。Mac では Option、それ以外では Alt。",
   "Playroom Signature’s buttons and sliders sit on a deep purple, so they stay easy to find next to a bright HDR photo.": "Playroom Signature のボタンとスライダーは深い紫の上に置かれ、明るい HDR 写真の横でも見つけやすくなりました。",
   "The scopes’ ◀ ▶ stay put whatever the scope is called, so you can click straight through them.": "スコープの ◀ ▶ は名前の長さに関係なく同じ位置にとどまるので、そのままクリックで切り替えられます。",
-  "This very window turns pages now: older releases are a click to the left.": "このウインドウもページをめくれるようになりました。以前のリリースは左へ 1 クリックです。"
+  "This very window turns pages now: older releases are a click to the left.": "このウインドウもページをめくれるようになりました。以前のリリースは左へ 1 クリックです。",
+  "In the side panel": "サイドパネルに表示",
+  "Show this scope in the right column’s ◀ ▶": "このスコープを右列の ◀ ▶ に含める"
 }

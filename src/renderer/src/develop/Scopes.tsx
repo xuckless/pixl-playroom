@@ -4,7 +4,7 @@ import { InfoTip } from '../components/InfoTip'
 import { t, tk } from '../lib/i18n'
 import type { Tip } from '../components/InfoTip'
 import { withKey } from '../lib/commands'
-import { cycleScope, SCOPE_KINDS, type ScopeKind } from '../../../shared/scopes'
+import { cycleScope, type ScopeKind } from '../../../shared/scopes'
 import { useUi } from '../state/ui'
 import { useDevelop } from '../state/develop'
 import { useScopesView } from '../state/scopesView'
@@ -67,9 +67,10 @@ export function ProofTag(): React.JSX.Element | null {
  */
 export function Scopes(): React.JSX.Element {
   const kind = useUi((s) => s.scopes.inline)
+  const quick = useUi((s) => s.scopes.quick)
   const setScopes = useUi((s) => s.setScopes)
   const open = useScopesView((v) => v.open)
-  const step = (d: 1 | -1): void => setScopes({ inline: cycleScope(kind, d) })
+  const step = (d: 1 | -1): void => setScopes({ inline: cycleScope(kind, d, quick) })
   return (
     <div className="scopes">
       <div className="scope-head">
@@ -81,7 +82,7 @@ export function Scopes(): React.JSX.Element {
         >
           <Icon name="chevronLeft" />
         </button>
-        <ScopeName kind={kind} kinds={SCOPE_KINDS} />
+        <ScopeName kind={kind} kinds={quick} />
         <button
           className="icon sm"
           aria-label={withKey(t('Next scope'), 'scopes.next')}
