@@ -9,6 +9,7 @@ import {
   neutralOf,
   nudgeChannel,
   nudgeDisc,
+  typedChannel,
   type WheelScale
 } from '../src/renderer/src/lib/wheel'
 import { addPoint, nudgePoint, placePoint, resetPoint } from '../src/renderer/src/lib/curveEdit'
@@ -73,6 +74,26 @@ test('the ring and the numbers step by the drag’s step, inside the range', () 
   assert.equal(nudgeChannel(0, LIFT, 1, 'none'), 0.01)
   assert.equal(nudgeChannel(0, LIFT, -1, 'fine'), -0.001)
   assert.equal(nudgeChannel(0.99, LIFT, 1, 'coarse'), 1)
+})
+
+test('a number field sets only what was typed: tabbing through or stepping never rounds it', () => {
+  // Stepped by a key to 0.005: shown as 0.01 (or 0.00), and left as it is on the way out.
+  assert.equal(typedChannel('0.01', 0.005, LIFT), null)
+  assert.equal(typedChannel(' 1.00 ', 1.002, GAIN), null)
+  // Typed: set, inside the range; a comma is a decimal point.
+  assert.equal(typedChannel('0,25', 0, LIFT), 0.25)
+  assert.equal(typedChannel('9', 1, GAIN), 4)
+  // Cleared, or not a number: nothing (never 0).
+  assert.equal(typedChannel('', 0.3, LIFT), null)
+  assert.equal(typedChannel('abc', 0.3, LIFT), null)
+  // Offset shows 25 + 100·o and reads it back.
+  const OFFSET: WheelScale = {
+    ...LIFT,
+    show: (v) => 25 + 100 * v,
+    read: (n) => (n - 25) / 100
+  }
+  assert.equal(typedChannel('25.00', 0, OFFSET), null)
+  assert.equal(typedChannel('35', 0, OFFSET), 0.1)
 })
 
 const TONE = [

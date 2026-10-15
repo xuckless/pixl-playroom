@@ -68,3 +68,21 @@ export const neutralOf = (s: WheelScale): Yrgb => ({
   g: s.neutral,
   b: s.neutral
 })
+
+/** A channel as its number field shows it (Offset's 25 + 100·o), to two places. */
+export const channelText = (value: number, s: WheelScale): string =>
+  (s.show ?? ((v: number) => v))(value).toFixed(2)
+
+/**
+ * The channel a number field's text sets, or null when it sets nothing: text
+ * that is not a number, or still the value as shown (a field tabbed through,
+ * or stepped by the keys, must not round the value to two places).
+ */
+export function typedChannel(text: string, value: number, s: WheelScale): number | null {
+  const typed = text.trim()
+  if (typed === '' || typed === channelText(value, s)) return null
+  const n = Number(typed.replace(',', '.'))
+  if (!Number.isFinite(n)) return null
+  const v = (s.read ?? ((x: number) => x))(n)
+  return Math.min(s.max, Math.max(s.min, v))
+}

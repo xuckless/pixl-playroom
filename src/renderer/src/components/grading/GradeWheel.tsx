@@ -21,10 +21,12 @@ import { useEscapeWhile } from '../../lib/escape'
 import { FINE, isFine, isReset, keyStep } from '../../lib/sliderDrag'
 import {
   atDisc,
+  channelText,
   discPoint,
   neutralOf,
   nudgeChannel,
   nudgeDisc,
+  typedChannel,
   type WheelScale
 } from '../../lib/wheel'
 import { InfoTip, type Tip } from '../InfoTip'
@@ -96,8 +98,6 @@ function NumberField({
   /** Escape took a scrub back to this. */
   onCancel: (v: number) => void
 }): React.JSX.Element {
-  const show = scale.show ?? ((v: number) => v)
-  const read = scale.read ?? ((n: number) => n)
   const [text, setText] = useState<string | null>(null)
   const [scrubbing, setScrubbing] = useState(false)
   const grab = useRef<{
@@ -118,10 +118,10 @@ function NumberField({
       setText(null)
       return
     }
-    const n = Number(text.replace(',', '.'))
+    const v = typedChannel(text, value, scale)
     setText(null)
-    if (!Number.isFinite(n)) return
-    onSet(clamp(read(n)))
+    if (v === null) return
+    onSet(v)
     onCommit()
   }
   const resetChannel = (): void => {
@@ -184,9 +184,9 @@ function NumberField({
       </span>
       <input
         inputMode="decimal"
-        value={text ?? show(value).toFixed(2)}
+        value={text ?? channelText(value, scale)}
         onFocus={(e) => {
-          setText(show(value).toFixed(2))
+          setText(channelText(value, scale))
           e.target.select()
         }}
         onChange={(e) => setText(e.target.value)}
@@ -202,7 +202,7 @@ function NumberField({
             const next = nudgeChannel(value, scale, k.dir, k.mod)
             onSet(next)
             onCommit()
-            setText(show(next).toFixed(2))
+            setText(channelText(next, scale))
             return
           }
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
