@@ -372,11 +372,11 @@ export function registerIpc(s: Services): void {
   handle(IPC.app.openNotices, async () => {
     const err = await shell.openPath(paths.notices())
     if (err)
-      throw new Error(t("Couldn't open the third-party notices: {{reason}}", { reason: err }))
+      throw new Error(t('Couldn’t open the third-party notices: {{reason}}', { reason: err }))
   })
   handle(IPC.app.openBetaTerms, async () => {
     const err = await shell.openPath(paths.betaTerms())
-    if (err) throw new Error(t("Couldn't open the beta terms: {{reason}}", { reason: err }))
+    if (err) throw new Error(t('Couldn’t open the beta terms: {{reason}}', { reason: err }))
   })
 
   // ── the account, updates and preferences ──

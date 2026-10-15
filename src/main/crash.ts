@@ -119,7 +119,7 @@ export async function sendProblemReport(
     })
   } catch (err) {
     log.warn('problem report not sent', err)
-    throw new Error(t("Couldn't send the report. Check your connection and try again."))
+    throw new Error(t('Couldn’t send the report. Check your connection and try again.'))
   }
   if (res.status === 429) throw new Error(t('Too many reports just now. Try again in a minute.'))
   const answer = (await res.json().catch(() => null)) as { reference?: string } | null

@@ -58,8 +58,18 @@
   --font-body: 'Manrope Variable', 'Manrope', 'Space Grotesk Variable', system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
 
+  /* type: the sizes text takes, smallest first (a size between two is a
+     step still to settle onto one of them) */
+  --fs-micro: 10px;
+  --fs-small: 11px;
+  --fs-body: 12px;
+  --fs-title: 13px;
+  --fs-large: 15px;
+
   /* shape */
   --r: 2px;
+  /* a pill (a toggle's track, a look's bar): round ends, by intent */
+  --r-pill: 999px;
 
   /* motion */
   --spring: cubic-bezier(0.22, 1.25, 0.36, 1);

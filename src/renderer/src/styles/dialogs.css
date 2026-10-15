@@ -276,7 +276,7 @@ legend {
   align-items: center;
   padding: 0;
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: var(--fs-title);
   font-weight: 600;
   letter-spacing: 0.01em;
   text-transform: none;
@@ -426,7 +426,7 @@ button.link:hover {
   border: 1px solid var(--acc-a35);
   border-radius: var(--r);
   color: var(--acc);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.06em;
 }
@@ -441,7 +441,7 @@ button.link:hover {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0 6px;
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
 }
 .model-pace {
@@ -463,7 +463,7 @@ button.link:hover {
 }
 .model-tech {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   cursor: help;
 }
 .model-act {
@@ -656,7 +656,7 @@ button.keybind-key {
   height: auto;
   min-width: 28px;
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--text);
   background: rgb(var(--fg-rgb) / 0.03);
   cursor: pointer;
@@ -730,7 +730,7 @@ button.keybind-key.waiting {
 }
 .gate-card .gate-status {
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-title);
 }
 .gate-bar {
   height: 4px;
@@ -759,13 +759,13 @@ button.keybind-key.waiting {
 }
 .gate-card .gate-error {
   color: var(--danger);
-  font-size: 13px;
+  font-size: var(--fs-title);
 }
 .gate-card .prefs-devices {
   margin: 4px 0;
 }
 .gate-card .gate-fine {
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--muted);
 }
 .gate-card .gate-fine .link {
@@ -791,7 +791,7 @@ button.keybind-key.waiting {
 .whats-new .wn-headline {
   margin: 0 0 16px;
   font-family: var(--font);
-  font-size: 15px;
+  font-size: var(--fs-large);
   line-height: 1.45;
   color: var(--text);
 }
@@ -855,7 +855,7 @@ button.keybind-key.waiting {
 }
 .whats-new .wn-next-card strong {
   font-family: var(--font);
-  font-size: 13px;
+  font-size: var(--fs-title);
   font-weight: 600;
   color: var(--text);
 }
@@ -909,7 +909,7 @@ button.keybind-key.waiting {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: var(--fs-small);
   border: 1px solid var(--hair2);
 }
 .export-wizard .ew-step.on .ew-n {
@@ -996,7 +996,7 @@ button.keybind-key.waiting {
 .export-wizard .ew-chip {
   height: 26px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--fs-body);
   border-radius: 13px;
   margin-right: auto;
 }
@@ -1030,7 +1030,7 @@ button.keybind-key.waiting {
   background: var(--bg2);
 }
 .export-wizard .ew-preview figcaption {
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
 }
 

@@ -11,7 +11,7 @@ import { pixlCpuAnswer, type AiSwitches, type PixlCpuAnswer } from '../../../sha
 import { TYPICAL_MP } from '../../../shared/modelSpeed'
 import { offersPixlDemosaic } from '../../../shared/pixldemosaic'
 import { GlassSelect } from '../components/GlassSelect'
-import { Tabs } from '../components/ui'
+import { Tabs, Progress } from '../components/ui'
 import { api, errorText } from '../lib/api'
 import { useLibrary } from '../state/library'
 import { copyOf, duration, pace, PURPOSES, purposeOf, type Purpose } from './modelCopy'
@@ -72,14 +72,16 @@ function ModelRow({ m }: { m: ModelInfo }): React.JSX.Element {
         <div className="model-tech muted" title={m.caveat}>
           {m.title.split(':')[0]} · {mb(m.bytes)} · {m.licence}
         </div>
-        {m.error && <div className="error micro">{m.error}</div>}
+        {m.error && (
+          <div className="error micro" role="alert">
+            {m.error}
+          </div>
+        )}
       </div>
       <div className="model-act">
         {m.progress !== null ? (
           <>
-            <div className="model-bar" aria-label={t('Downloading')}>
-              <span style={{ width: `${Math.round(m.progress * 100)}%` }} />
-            </div>
+            <Progress value={m.progress} label={t('Downloading')} />
             <button className="sm ghost" onClick={() => void api.models.cancel(m.id)}>
               {t('Cancel')}
             </button>

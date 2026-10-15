@@ -78,16 +78,36 @@ function CropBar(): React.JSX.Element | null {
         options={CROP_GUIDES.map((g) => ({ value: g.value, label: t(g.label) }))}
       />
       <span className="vsep" />
-      <button className="icon" title={t('Rotate left')} onClick={rotateLeft}>
+      <button
+        className="icon"
+        title={t('Rotate left')}
+        aria-label={t('Rotate left')}
+        onClick={rotateLeft}
+      >
         <Icon name="rotateLeft" />
       </button>
-      <button className="icon" title={t('Rotate right')} onClick={rotateRight}>
+      <button
+        className="icon"
+        title={t('Rotate right')}
+        aria-label={t('Rotate right')}
+        onClick={rotateRight}
+      >
         <Icon name="rotateRight" />
       </button>
-      <button className="icon" title={t('Flip horizontal')} onClick={flip}>
+      <button
+        className="icon"
+        title={t('Flip horizontal')}
+        aria-label={t('Flip horizontal')}
+        onClick={flip}
+      >
         <Icon name="flip" />
       </button>
-      <button className="icon" title={t('Reset crop and straighten')} onClick={resetCrop}>
+      <button
+        className="icon"
+        title={t('Reset crop and straighten')}
+        aria-label={t('Reset crop and straighten')}
+        onClick={resetCrop}
+      >
         <Icon name="reset" />
       </button>
       <span className="vsep" />
@@ -163,7 +183,7 @@ function BrushBar(): React.JSX.Element {
       <button
         className={brush.pressure ? 'on sm' : 'sm'}
         onClick={() => setBrush({ pressure: !brush.pressure })}
-        title={t("A pen's pressure sets size and flow")}
+        title={t('A pen’s pressure sets size and flow')}
       >
         {t('Pressure')}
       </button>

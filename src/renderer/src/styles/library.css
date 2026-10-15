@@ -182,7 +182,7 @@
 .cull-why .cull-acts button {
   height: 22px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 /* Suggested rejects shown: the line above the grid. */
 .cull-bar {
@@ -191,7 +191,7 @@
   gap: 10px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--hair);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
 }
 .cull-bar .grow {
@@ -217,7 +217,7 @@
 .thumb-wait {
   color: var(--muted);
   letter-spacing: 0.14em;
-  font-size: 11px;
+  font-size: var(--fs-small);
   animation: statusPulse 1.6s ease-in-out infinite;
 }
 .thumb-wait.unreadable {
@@ -299,7 +299,7 @@
   background: var(--s1);
   border-top: 1px solid transparent;
   border-image: var(--hl-x) 1;
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--text2);
   flex: none;
 }
@@ -383,7 +383,7 @@
   padding: 0 4px;
   display: inline-grid;
   place-items: center;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--acc-ink);
   background: var(--acc);
   border-radius: 8px;
@@ -612,7 +612,7 @@
 }
 .seg-star {
   margin-left: 2px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--acc);
 }
 .label-pick {
@@ -765,7 +765,7 @@
   height: 22px;
   padding: 0 7px;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: #fff;
   background: rgb(var(--shade-rgb) / 0.6);
   border-color: rgb(var(--fg-rgb) / 0.22);
@@ -835,7 +835,7 @@
   gap: 10px;
   padding: 10px 0 16px;
   color: var(--text2);
-  font-size: 12px;
+  font-size: var(--fs-body);
   font-family: var(--font-body);
   animation: rowIn 0.55s var(--spring) both;
 }
@@ -865,7 +865,7 @@
   gap: 14px;
   color: var(--text2);
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: var(--fs-title);
 }
 
 /* ── info drawer and the metadata editor ───────────────────────── */
@@ -1008,7 +1008,7 @@
   border: none;
   background: transparent;
   box-shadow: none;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .kw-offers {
   position: absolute;
@@ -1028,7 +1028,7 @@
 .kw-offer {
   padding: 6px 8px;
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
   border-radius: var(--r);
   cursor: pointer;
@@ -1118,19 +1118,19 @@
   width: 150px;
 }
 .rule-value .stars button {
-  font-size: 15px;
+  font-size: var(--fs-large);
 }
 .rule-and {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .rule-empty {
   margin: 2px 0 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .rule-preview {
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .rule-preview .big {
   font-size: 20px;

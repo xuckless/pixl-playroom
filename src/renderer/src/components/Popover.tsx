@@ -3,6 +3,7 @@ import { t } from '../lib/i18n'
 import { createPortal } from 'react-dom'
 import { placePopover } from '../../../shared/placement'
 import { LiquidGlass } from './glass/LiquidGlass'
+import { Icon } from './icons'
 
 const FOCUSABLE =
   'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
@@ -209,6 +210,7 @@ export interface MenuItem {
   label: string
   onSelect: () => void
   danger?: boolean
+  /** A choice that is on or off (a ✓ beside it; a screen reader hears which). */
   checked?: boolean
   disabled?: boolean
   hint?: string
@@ -218,7 +220,8 @@ export interface MenuItem {
 
 /**
  * A list of actions in a popover. Arrow keys, Home and End move between the
- * items (wrapping); Enter or Space runs the focused one.
+ * items (wrapping); Enter or Space runs the focused one. An item that is on
+ * or off is a menuitemcheckbox with the app's check.
  */
 export function Menu({
   items,
@@ -251,7 +254,7 @@ export function Menu({
           e.preventDefault()
           e.stopPropagation()
           const list = [
-            ...e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)')
+            ...e.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')
           ]
           if (list.length === 0) return
           const at = list.indexOf(document.activeElement as HTMLElement)
@@ -270,7 +273,8 @@ export function Menu({
           ) : (
             <button
               key={i}
-              role="menuitem"
+              role={it.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+              aria-checked={it.checked}
               className={`menu-item${it.danger ? ' danger' : ''}${it.checked ? ' checked' : ''}`}
               disabled={it.disabled}
               onClick={() => {
@@ -278,7 +282,9 @@ export function Menu({
                 it.onSelect()
               }}
             >
-              <span className="mark">{it.checked ? '●' : ''}</span>
+              <span className="mark" aria-hidden>
+                {it.checked && <Icon name="check" />}
+              </span>
               <span>{it.label}</span>
               {it.dot && <span className="menu-dot" aria-label={t('Changed')} />}
               {it.hint && <span className="hint">{it.hint}</span>}

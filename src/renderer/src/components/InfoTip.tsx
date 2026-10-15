@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Popover } from './Popover'
+import { TIP_MS } from './Tooltip'
 import { t } from '../lib/i18n'
 
 /**
@@ -12,20 +13,21 @@ export interface Tip {
   tip?: string
 }
 
-/** How long a pointer rests on the (i) before its note opens. */
-const HOVER_MS = 350
 /** How long a note opened by hover waits for the pointer to come into it. */
 const LEAVE_MS = 180
 
 /**
- * An (i) that opens a short glass note: on hover (after a moment), on focus,
- * or on a click, which pins it until a click elsewhere or Escape.
+ * An (i) that opens a short glass note, one of the app's tooltips
+ * (components/Tooltip.tsx): on hover (after a moment), when the keyboard
+ * reaches it, or on a click, which pins it until a click elsewhere or Escape.
+ * Its note can be pointed into and read; it is the (i)'s description.
  */
 export function InfoTip({ tip, label }: { tip: Tip; label: string }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const pinned = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const btn = useRef<HTMLButtonElement>(null)
+  const noteId = useId()
   useEffect(() => () => clearTimeout(timer.current), [])
 
   const later = (fn: () => void, ms: number): void => {
@@ -54,8 +56,15 @@ export function InfoTip({ tip, label }: { tip: Tip; label: string }): React.JSX.
         className={`info-tip${open ? ' on' : ''}`}
         aria-label={t('About {{name}}', { name })}
         aria-expanded={open}
-        onPointerEnter={() => later(() => setOpen(true), HOVER_MS)}
+        aria-describedby={open ? noteId : undefined}
+        onPointerEnter={() => later(() => setOpen(true), TIP_MS)}
         onPointerLeave={leave}
+        onFocus={(e) => {
+          if (e.currentTarget.matches(':focus-visible')) setOpen(true)
+        }}
+        onBlur={() => {
+          if (!pinned.current) close()
+        }}
         onPointerDown={keep}
         onDoubleClick={keep}
         onKeyDown={keep}
@@ -78,6 +87,7 @@ export function InfoTip({ tip, label }: { tip: Tip; label: string }): React.JSX.
             onPointerEnter={() => clearTimeout(timer.current)}
             onPointerLeave={leave}
             role="note"
+            id={noteId}
           >
             <div className="tip-title">{name}</div>
             <p>{t(tip.what)}</p>

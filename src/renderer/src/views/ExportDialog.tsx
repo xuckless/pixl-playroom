@@ -318,7 +318,7 @@ export function ExportDialog(): React.JSX.Element {
                     ? `· ${t('done')}`
                     : ''}
                 {failed.length > 0 && (
-                  <span className="error">
+                  <span className="error" role="alert">
                     {' '}
                     ·{' '}
                     {t('{{count}} failed: {{message}}', {
@@ -1076,7 +1076,11 @@ export function ExportDialog(): React.JSX.Element {
                 <span className="muted small">{t('Settings changed since: preview again.')}</span>
               )}
             </div>
-            {shown.state === 'error' && <p className="error small">{shown.error}</p>}
+            {shown.state === 'error' && (
+              <p className="error small" role="alert">
+                {shown.error}
+              </p>
+            )}
             {shown.state === 'ready' && shown.preview && (
               <figure className="ew-preview">
                 <img src={shown.preview.url} alt={t('The first photo as it will be exported')} />

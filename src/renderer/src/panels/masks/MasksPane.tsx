@@ -236,6 +236,7 @@ function ComponentRow({
           <button
             className={`icon sm${c.invert ? ' on' : ''}`}
             title={c.invert ? t('Inverted — click to un-invert') : t('Invert this component')}
+            aria-label={t('Invert this component')}
             aria-pressed={c.invert}
             onClick={() =>
               patchComponent(c.id, tk('Invert component'), (x) => (x.invert = !x.invert))
@@ -247,6 +248,7 @@ function ComponentRow({
             <button
               className="icon sm"
               title={t('Component options')}
+              aria-label={t('Component options')}
               aria-expanded={menu}
               onClick={() => setMenu(!menu)}
             >
@@ -320,12 +322,18 @@ function AddBar({ onMore }: { onMore: (mode: MaskMode) => void }): React.JSX.Ele
             key={tool.kind}
             className="icon sm"
             title={t(JOIN_TOOL[join], { tool: t(tool.label) })}
+            aria-label={t(JOIN_TOOL[join], { tool: t(tool.label) })}
             onClick={() => add(tool.kind)}
           >
             <Icon name={tool.icon} />
           </button>
         ))}
-        <button className="icon sm" title={t(JOIN_EVERY[join])} onClick={() => onMore(join)}>
+        <button
+          className="icon sm"
+          title={t(JOIN_EVERY[join])}
+          aria-label={t(JOIN_EVERY[join])}
+          onClick={() => onMore(join)}
+        >
           <Icon name="more" />
         </button>
       </div>
@@ -439,7 +447,7 @@ function MaskRow({
           <span className="mf-menu-anchor">
             <button
               className="mf-swatch-btn"
-              title={t("This mask's overlay colour")}
+              title={t('This mask’s overlay colour')}
               aria-label={t('Overlay colour')}
               aria-expanded={colour}
               onClick={() => setColour(!colour)}
@@ -474,7 +482,7 @@ function MaskRow({
                       })
                     }
                   >
-                    {t("Use the overlay's colour")}
+                    {t('Use the overlay’s colour')}
                   </button>
                 )}
               </Popover>
@@ -483,6 +491,7 @@ function MaskRow({
           <button
             className={`icon sm mf-act${layer.invert ? ' on' : ''}`}
             title={layer.invert ? t('Inverted — click to un-invert') : t('Invert this mask')}
+            aria-label={t('Invert this mask')}
             aria-pressed={layer.invert}
             onClick={invert}
           >
@@ -501,6 +510,7 @@ function MaskRow({
             <button
               className="icon sm"
               title={t('Mask options')}
+              aria-label={t('Mask options')}
               aria-expanded={menu}
               onClick={() => setMenu(!menu)}
             >
@@ -677,7 +687,7 @@ function OverlayControls(): React.JSX.Element {
             <label
               className="check"
               title={t(
-                "The overlay steps aside while a slider that changes the photo moves (Lightroom's auto toggle)"
+                'The overlay steps aside while a slider that changes the photo moves (Lightroom’s auto toggle)'
               )}
             >
               <input

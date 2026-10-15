@@ -59,7 +59,7 @@
   margin: 6px 4px;
   color: var(--muted);
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--fs-body);
   line-height: 1.5;
 }
 .mf-mask {
@@ -272,7 +272,7 @@ input.mf-rename {
   border: 1px solid transparent;
   border-radius: var(--r);
   color: var(--text2);
-  font-size: 12px;
+  font-size: var(--fs-body);
   font-family: var(--font-body);
   transition:
     background 0.2s,
@@ -284,7 +284,7 @@ input.mf-rename {
 .mf-comp button.mf-select {
   height: 24px;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .mf-comp button.mf-select .icon-svg {
   width: 14px;
@@ -312,7 +312,7 @@ input.mf-rename {
   flex: none;
   display: grid;
   place-items: center;
-  font-size: 12px;
+  font-size: var(--fs-body);
   font-weight: 700;
   border: 1px solid var(--hair2);
   border-radius: var(--r);
@@ -353,7 +353,7 @@ button.mode-badge:disabled {
 .mf-add .seg button {
   width: 24px;
   padding: 0;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .mf-join {
   font-weight: 700;
@@ -518,7 +518,7 @@ button.mode-badge:disabled {
 .menu-item .hint {
   margin-left: auto;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 .menu-item.danger {
   color: var(--danger);
@@ -548,7 +548,7 @@ button.mode-badge:disabled {
   align-items: center;
   gap: 8px;
   color: var(--text2);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .op-row input[type='range'] {
   width: 100%;
@@ -619,7 +619,7 @@ button.mode-badge:disabled {
   outline: none;
   color: var(--text);
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .tp-group {
   display: flex;
@@ -637,7 +637,7 @@ button.mode-badge:disabled {
   height: 36px;
   padding: 0 8px;
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
   border-color: var(--hair);
 }
@@ -677,7 +677,7 @@ button.mode-badge:disabled {
 }
 .mask-title {
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--fs-large);
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -718,7 +718,7 @@ button.mode-badge:disabled {
   padding: 2px 2px 2px 8px;
   border: 1px dashed var(--hair2);
   border-radius: var(--r);
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--muted);
 }
 
@@ -1012,7 +1012,7 @@ button.grad-other:hover:not(:disabled) {
   border: 0;
   color: var(--text);
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--fs-body);
   cursor: pointer;
 }
 .name-chip .nc-star {
@@ -1062,12 +1062,12 @@ button.grad-other:hover:not(:disabled) {
   background: none;
   color: var(--text);
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--fs-body);
   outline: none;
 }
 .name-chips .nc-name {
   height: 24px;
   padding: 0 10px;
   border-radius: 12px;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }

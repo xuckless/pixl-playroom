@@ -75,7 +75,7 @@ function ReportSection(): React.JSX.Element {
       <legend>{t('Report a problem')}</legend>
       <p className="muted small">
         {t(
-          "Found a bug? Say what you did, what happened and what you expected. It goes to the Playroom team only; add an email if you'd like a reply."
+          'Found a bug? Say what you did, what happened and what you expected. It goes to the Playroom team only; add an email if you’d like a reply.'
         )}
       </p>
       <textarea
@@ -107,7 +107,7 @@ function ReportSection(): React.JSX.Element {
           onChange={(e) => setIncludeLog(e.target.checked)}
         />
         {t(
-          "Include Playroom's recent log (it names the files it worked on; your home folder is hidden)"
+          'Include Playroom’s recent log (it names the files it worked on; your home folder is hidden)'
         )}
       </label>
       <div className="prefs-row">
@@ -120,7 +120,11 @@ function ReportSection(): React.JSX.Element {
           </span>
         )}
       </div>
-      {error && <p className="error small">{error}</p>}
+      {error && (
+        <p className="error small" role="alert">
+          {error}
+        </p>
+      )}
     </fieldset>
   )
 }
@@ -149,7 +153,7 @@ function updateLine(s: UpdateState): string {
     case 'not-available':
       return t('Playroom is up to date.')
     case 'error':
-      return t("Couldn't check for updates: {{error}}", { error: s.error ?? t('unknown error') })
+      return t('Couldn’t check for updates: {{error}}', { error: s.error ?? t('unknown error') })
     default:
       return t('Playroom checks for updates at launch and every few hours.')
   }
@@ -218,7 +222,11 @@ function AccountSection(): React.JSX.Element | null {
           </button>
         )}
       </div>
-      {error && <p className="error small">{error}</p>}
+      {error && (
+        <p className="error small" role="alert">
+          {error}
+        </p>
+      )}
     </fieldset>
   )
 }
@@ -317,7 +325,7 @@ function LicenceSection(): React.JSX.Element | null {
       {!status.enforced && (
         <p className="muted small">
           {t(
-            "Licences aren't required yet: every feature works either way. Once they are, an ended trial stops exporting only; editing keeps working."
+            'Licences aren’t required yet: every feature works either way. Once they are, an ended trial stops exporting only; editing keeps working.'
           )}
         </p>
       )}
@@ -363,7 +371,11 @@ function LicenceSection(): React.JSX.Element | null {
           )}
         </div>
       )}
-      {error && <p className="error small">{error}</p>}
+      {error && (
+        <p className="error small" role="alert">
+          {error}
+        </p>
+      )}
     </fieldset>
   )
 }
@@ -723,10 +735,10 @@ function PerformanceSection(): React.JSX.Element | null {
             ),
             expect: state.constrained
               ? t(
-                  'It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, the Colour mixer and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. On this Mac only the open photo keeps its copy on the graphics chip, and Highlights, Shadows, Whites and Blacks drag without Keep texture until you let go. Turn it off if a drag looks different from the picture you let go on.'
+                  'It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, HSL and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. On this Mac only the open photo keeps its copy on the graphics chip, and Highlights, Shadows, Whites and Blacks drag without Keep texture until you let go. Turn it off if a drag looks different from the picture you let go on.'
                 )
               : t(
-                  'It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, the Colour mixer and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. The open photo keeps a copy on the graphics chip (about 130–250 MB). Turn it off if a drag looks different from the picture you let go on.'
+                  'It takes an edit made only of Contrast, Highlights, Shadows, Whites, Blacks, Saturation, HSL and Dehaze, on a photo that is not a RAW. A RAW, and an edit with anything else (white balance, curves, a profile, effects, masks, smoothing), drags on the processor, as before. The open photo keeps a copy on the graphics chip (about 130–250 MB). Turn it off if a drag looks different from the picture you let go on.'
                 )
           }}
         />
@@ -1004,7 +1016,7 @@ export function CrashConsentDialog(): React.JSX.Element {
       icon="settings"
       footer={
         <>
-          <button onClick={() => answer(false)}>{t("Don't send")}</button>
+          <button onClick={() => answer(false)}>{t('Don’t send')}</button>
           <button className="primary" onClick={() => answer(true)}>
             {t('Send crash reports')}
           </button>

@@ -210,6 +210,8 @@ export function LooksBrowser(): React.JSX.Element | null {
           <button
             className={`icon sm look-keep${kept(p.id) ? ' kept' : ''}`}
             title={kept(p.id) ? t('In My Looks: remove') : t('Add to My Looks')}
+            aria-label={t('In My Looks')}
+            aria-pressed={kept(p.id)}
             onClick={(e) => {
               e.stopPropagation()
               toggleKeep(p)
@@ -340,7 +342,7 @@ export function LooksBrowser(): React.JSX.Element | null {
         ) : (
           <p className="looks-disclaimer">
             {t(
-              "PIXL's own looks, made with Playroom's sliders. Cameras, film stocks and films are named only as what inspired a look; PIXL is not affiliated with or endorsed by their owners."
+              'PIXL’s own looks, made with Playroom’s sliders. Cameras, film stocks and films are named only as what inspired a look; PIXL is not affiliated with or endorsed by their owners.'
             )}
           </p>
         )

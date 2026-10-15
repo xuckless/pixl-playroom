@@ -169,7 +169,7 @@ export function SyncDialog(): React.JSX.Element {
               role="radio"
               aria-checked={wbMode === 'auto'}
               onClick={() => setWbMode('auto')}
-              title={withKey(t("Measure each photo's own white"), 'autoWbBatch')}
+              title={withKey(t('Measure each photo’s own white'), 'autoWbBatch')}
             >
               {t('Auto per photo')}
             </button>

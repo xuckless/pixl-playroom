@@ -55,7 +55,7 @@
 .looks-shelf.sub {
   min-height: 26px;
   padding-left: 22px;
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--muted);
 }
 .looks-shelf:hover {
@@ -70,7 +70,7 @@
 .looks-shelf .t {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 
 /* search and grid */
@@ -88,7 +88,7 @@
 }
 .looks-search .t {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-variant-numeric: tabular-nums;
 }
 .looks-grid {
@@ -183,7 +183,7 @@
 }
 .look-badge {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .look-badge.applied {
   display: grid;
@@ -232,7 +232,7 @@
   flex-direction: column;
   gap: 2px;
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
 }
 .looks-detail-text strong {
@@ -285,7 +285,7 @@
   gap: 10px;
   max-width: calc(100% - 32px);
   padding: 6px 6px 6px 14px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: rgba(10, 10, 14, 0.78);
   backdrop-filter: blur(12px);
   border: 1px solid var(--hair2);
@@ -353,7 +353,7 @@
   align-items: center;
   gap: 6px;
   margin: 2px 22px 0;
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
   cursor: pointer;
   user-select: none;
@@ -363,10 +363,10 @@
 }
 .look-badge.smart {
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--acc-a35);
   color: var(--acc);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -377,7 +377,7 @@
 }
 .looks-needs {
   color: var(--warn);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 
 /* the Save Preset dialog: masks and AI steps saved as instructions */

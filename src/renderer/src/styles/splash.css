@@ -50,7 +50,12 @@
   left: 0;
   top: 0;
   height: 1px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 20%, transparent), var(--acc) 85%, #fff);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--acc) 20%, transparent),
+    var(--acc) 85%,
+    #fff
+  );
   box-shadow: 0 0 12px color-mix(in srgb, var(--acc) 80%, transparent);
   transition: width 0.4s var(--ease);
 }
@@ -70,7 +75,7 @@
 }
 .splash-version {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: #6d6985;
 }
 

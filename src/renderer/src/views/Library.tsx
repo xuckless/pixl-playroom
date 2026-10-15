@@ -494,7 +494,7 @@ export function Toolbar(): React.JSX.Element {
         title={withKey(t('Export selected'), 'export')}
       >
         <Icon name="export" />
-        {t('Export')}
+        {t('Export…')}
       </LiquidGlass>
       <button
         className={`icon lg${info ? ' on' : ''}`}

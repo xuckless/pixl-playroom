@@ -75,7 +75,7 @@ export function VsPresets({ vs, label }: { vs: VsCurve; label: string }): React.
     if (!name || !recipe) return
     const entry: VsPreset = { name, points: structuredClone(recipe.curvesVs[vs]) }
     void store([...mineList.filter((p) => p.name !== name), entry]).then(() =>
-      useLibrary.getState().say(t('Saved curve preset "{{name}}"', { name }))
+      useLibrary.getState().say(t('Saved curve preset “{{name}}”', { name }))
     )
   }
   const mine = pts && mineList.find((p) => sameVs(pointsOf(vs, p), pts))
@@ -97,7 +97,7 @@ export function VsPresets({ vs, label }: { vs: VsCurve; label: string }): React.
             { value: 'save', label: t('Save this curve as a preset…') },
             ...mineList.map((p) => ({
               value: `del:${p.name}`,
-              label: t('Delete "{{name}}"', { name: p.name })
+              label: t('Delete “{{name}}”', { name: p.name })
             }))
           ]}
         />

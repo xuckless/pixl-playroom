@@ -1428,7 +1428,7 @@ export const GROUP_LABELS: Record<RecipeGroup, string> = {
   whiteBalance: tk('White balance'),
   basicTone: tk('Exposure & tone'),
   presence: tk('Presence'),
-  toneCurve: tk('Tone curve'),
+  toneCurve: tk('Curves'),
   hsl: tk('HSL / B&W mix'),
   colorGrade: tk('Colour grading'),
   primaries: tk('Primaries'),

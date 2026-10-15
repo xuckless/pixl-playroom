@@ -835,6 +835,36 @@ export function Tabs<T extends string>({
   )
 }
 
+/**
+ * How far along something is (a download, a benchmark): the app's thin bar,
+ * a progressbar to a screen reader with its name and the percent.
+ */
+export function Progress({
+  value,
+  label,
+  className
+}: {
+  /** 0…1. */
+  value: number
+  label: string
+  className?: string
+}): React.JSX.Element {
+  const pct = Math.round(Math.min(1, Math.max(0, value)) * 100)
+  return (
+    <span
+      className={`model-bar${className ? ` ${className}` : ''}`}
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={pct}
+      aria-valuetext={`${pct}%`}
+    >
+      <span style={{ width: `${pct}%` }} />
+    </span>
+  )
+}
+
 /** What Tab stops at inside a dialog. */
 const FOCUSABLE =
   'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'

@@ -124,7 +124,7 @@ button.lg {
 button.sm {
   height: 24px;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 button.icon {
   width: 28px;
@@ -210,7 +210,7 @@ button.on:not(.icon):not(.chip)::after {
 }
 .kbd {
   font-family: var(--font);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--muted);
   border: 1px solid var(--hair);
   border-radius: var(--r);
@@ -222,7 +222,7 @@ button.on:not(.icon):not(.chip)::after {
 .copy-badge {
   display: inline-flex;
   align-items: center;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--acc);
@@ -235,7 +235,7 @@ button.on:not(.icon):not(.chip)::after {
 .chip {
   height: 26px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .chip.on {
   color: var(--acc);
@@ -303,7 +303,7 @@ button.on:not(.icon):not(.chip)::after {
 }
 .seg .k {
   margin-left: 7px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: rgb(var(--fg-rgb) / 0.35);
 }
 
@@ -328,7 +328,7 @@ textarea {
   padding: 7px 9px;
   width: 100%;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   resize: vertical;
 }
@@ -514,7 +514,7 @@ input[type='checkbox']:disabled {
   align-items: center;
   gap: 6px;
   margin-bottom: 2px;
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text2);
 }
 .step-slider .ss-value {
@@ -545,7 +545,7 @@ input[type='checkbox']:disabled {
   border: none;
   background: transparent;
   box-shadow: none;
-  font-size: 11px;
+  font-size: var(--fs-small);
   letter-spacing: 0.02em;
   color: var(--muted);
   white-space: nowrap;
@@ -864,7 +864,7 @@ input[type='checkbox']:disabled {
 }
 .card > header .title {
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-title);
   font-weight: 600;
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -963,6 +963,22 @@ input[type='checkbox']:disabled {
   padding: 10px 12px 11px;
   pointer-events: auto;
 }
+/* A tooltip (components/Tooltip.tsx) is read, never pointed at. */
+.popover.tooltip {
+  z-index: 80;
+  pointer-events: none;
+}
+/* A title's note: one line or a few, as wide as its words. */
+.popover.tooltip.title-tip {
+  width: auto;
+  max-width: 280px;
+  padding: 6px 9px;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+  white-space: pre-line;
+}
 .tip-pop .tip-title {
   margin-bottom: 4px;
   color: var(--text);
@@ -973,7 +989,7 @@ input[type='checkbox']:disabled {
 .tip-pop p {
   margin: 0;
   color: var(--text2);
-  font-size: 12px;
+  font-size: var(--fs-body);
   line-height: 1.45;
 }
 .tip-pop p + p {
@@ -983,7 +999,7 @@ input[type='checkbox']:disabled {
   display: inline-block;
   margin-right: 6px;
   color: var(--acc);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1076,7 +1092,7 @@ input[type='checkbox']:disabled {
 .stars > span,
 .stars button {
   color: rgb(var(--fg-rgb) / 0.4);
-  font-size: 11px;
+  font-size: var(--fs-small);
 }
 .stars button {
   display: inline-grid;

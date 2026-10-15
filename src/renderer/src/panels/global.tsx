@@ -402,7 +402,7 @@ function WhiteBalanceRows(): React.JSX.Element | null {
     const next = [...saved.filter((p) => !(p.name === name && (p.op || p.absolute === abs))), entry]
     setSaved(next)
     await api.app.setSetting(WB_PRESETS_KEY, next)
-    useLibrary.getState().say(t('Saved white balance "{{name}}"', { name }))
+    useLibrary.getState().say(t('Saved white balance “{{name}}”', { name }))
   }
   const shot = session.asShot
   const shownTemp =
@@ -484,7 +484,8 @@ function WhiteBalanceRows(): React.JSX.Element | null {
             onChange={(on) => setTool(on ? 'wb-picker' : 'none')}
             title={withKey(t('Pick a neutral in the photo'), 'tool.wb')}
           >
-            ⌖ {t('Pick')}
+            <Icon name="picker" />
+            {t('Pick')}
           </Toggle>
         </div>
       )}
@@ -1130,7 +1131,8 @@ function PointColorSection(): React.JSX.Element | null {
               : t('Pick a colour in the photo')
           }
         >
-          ⌖ {t('Pick')}
+          <Icon name="picker" />
+          {t('Pick')}
         </Toggle>
       }
     >
@@ -1143,6 +1145,8 @@ function PointColorSection(): React.JSX.Element | null {
             key={p.id}
             className={`icon mf-swatch-btn${p.id === sel?.id ? ' on' : ''}`}
             title={t('Colour {{n}}', { n: i + 1 })}
+            aria-label={t('Colour {{n}}', { n: i + 1 })}
+            aria-pressed={p.id === sel?.id}
             onClick={() => setPointId(p.id)}
           >
             <span
@@ -1152,7 +1156,12 @@ function PointColorSection(): React.JSX.Element | null {
           </button>
         ))}
         {sel && (
-          <button className="icon" title={t('Remove this colour')} onClick={remove}>
+          <button
+            className="icon"
+            title={t('Remove this colour')}
+            aria-label={t('Remove this colour')}
+            onClick={remove}
+          >
             <Icon name="trash" />
           </button>
         )}
@@ -1297,7 +1306,7 @@ function NoiseAnalysis(): React.JSX.Element {
             {noise && (
               <span
                 title={t(
-                  "σ̂ of white noise on each plane, the denoiser's own estimator, in 8-bit code values"
+                  'σ̂ of white noise on each plane, the denoiser’s own estimator, in 8-bit code values'
                 )}
               >
                 {t('σ̂ luma {{luma}} · chroma {{chroma}}', {

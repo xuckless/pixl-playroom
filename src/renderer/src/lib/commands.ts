@@ -391,7 +391,7 @@ export const COMMANDS: KeyCommand[] = [
   },
   {
     id: 'library.makeCover',
-    label: tk("Make the focused photo its stack's cover"),
+    label: tk('Make the focused photo its stack’s cover'),
     group: 'Library',
     context: 'library',
     keys: ['Shift+S'],
@@ -733,6 +733,14 @@ export const COMMANDS: KeyCommand[] = [
       setSpace(true)
       stop(e)
     }
+  },
+  {
+    id: 'view.messages',
+    label: tk('Recent messages'),
+    group: 'View',
+    context: 'global',
+    keys: ['Mod+Shift+M'],
+    run: () => lib().setDialog('messages')
   },
   {
     id: 'tool.crop',

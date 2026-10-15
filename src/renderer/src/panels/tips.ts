@@ -54,7 +54,7 @@ export const TIPS = {
     expect: tk(
       'More contrast deepens shadows, brightens highlights and saturates colour a little.'
     ),
-    tip: tk('Keep it modest here; the Tone curve gives finer control.')
+    tip: tk('Keep it modest here; Curves give finer control.')
   },
   'light.highlights': {
     what: tk('Darkens or brightens only the bright parts of the picture.'),
@@ -120,7 +120,7 @@ export const TIPS = {
       'Hazy areas regain depth and detail and keep their own brightness and colour; it does not darken the whole picture.'
     ),
     tip: tk(
-      'For a denser, darker look add Contrast or a Tone Curve. Go negative for a soft, misty look.'
+      'For a denser, darker look add Contrast or a curve. Go negative for a soft, misty look.'
     )
   },
   'hsl.luminance': {
@@ -143,7 +143,7 @@ export const TIPS = {
       'Keeps colour and tone changes smooth across flat areas such as sea, sky and skin, so they don’t go blotchy or show the file’s compression blocks.'
     ),
     expect: tk(
-      'Works on Highlights, Shadows, Whites and Blacks, the Color Mixer, Dehaze, Vibrance, Point Color and Color Grading. It shows when you let go of a slider, not while you drag.'
+      'Works on Highlights, Shadows, Whites and Blacks, HSL, Dehaze, Vibrance, Point colour and Colour grading. It shows when you let go of a slider, not while you drag.'
     ),
     tip: tk('Turn it down only if you want each pixel to follow an adjustment exactly.')
   },

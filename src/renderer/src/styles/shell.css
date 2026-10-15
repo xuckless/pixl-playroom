@@ -424,7 +424,7 @@ aside.right .panels {
 }
 .edit-summary {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-variant-numeric: tabular-nums;
 }
 .edit-row .edit-eye {
@@ -486,13 +486,13 @@ button.timeline-head {
 .timeline-count {
   flex: none;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-variant-numeric: tabular-nums;
 }
 .timeline-time {
   flex: none;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-small);
   font-variant-numeric: tabular-nums;
 }
 .timeline-row.base {
@@ -554,7 +554,7 @@ button.timeline-head {
   height: 13px;
 }
 .rail-item .t {
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   flex: none;
@@ -580,7 +580,7 @@ button.timeline-head {
   margin: 16px;
   color: var(--muted);
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--fs-body);
   line-height: 1.5;
 }
 .rail-list .kv {
@@ -692,12 +692,12 @@ button.timeline-head {
 }
 .floating-toolbar .seg button {
   padding: 0 9px;
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .bar-hint {
   color: var(--text2);
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--fs-body);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -815,6 +815,28 @@ button.timeline-head {
   background: var(--danger);
   box-shadow: 0 0 10px var(--danger);
 }
+.toast button.toast-close {
+  width: 24px;
+  margin-left: 0;
+  color: var(--muted);
+}
+/* View → Recent Messages (components/Toasts.tsx). */
+.messages {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.messages li {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  color: var(--text2);
+}
+.messages li.error span {
+  color: var(--danger);
+}
 .engine-banner {
   position: fixed;
   top: 44px;
@@ -871,7 +893,7 @@ button.timeline-head {
     ),
     var(--s2);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-body);
   animation: floatIn 0.35s var(--spring) both;
 }
 .scope-dot {

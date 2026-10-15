@@ -52,7 +52,7 @@ export function CurvePresets(): React.JSX.Element {
     if (!recipe) return
     const entry: SavedCurve = { name, curve: structuredClone(recipe.toneCurve) }
     await store([...saved.filter((p) => p.name !== name), entry])
-    useLibrary.getState().say(t('Saved curve preset "{{name}}"', { name }))
+    useLibrary.getState().say(t('Saved curve preset “{{name}}”', { name }))
   }
   const choose = (v: string): void => {
     if (v === 'save') return setNaming('')
@@ -93,7 +93,7 @@ export function CurvePresets(): React.JSX.Element {
             { value: 'save', label: t('Save this curve as a preset…') },
             ...saved.map((p) => ({
               value: `del:${p.name}`,
-              label: t('Delete "{{name}}"', { name: p.name })
+              label: t('Delete “{{name}}”', { name: p.name })
             }))
           ]}
         />

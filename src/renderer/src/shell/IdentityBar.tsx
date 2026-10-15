@@ -153,7 +153,12 @@ export function BackgroundJobs(): React.JSX.Element | null {
                         : `${Math.round(a.progress * 100)}%`}
                   </span>
                   {a.stop && (
-                    <button className="icon sm" title={t('Stop')} onClick={() => stop(a)}>
+                    <button
+                      className="icon sm"
+                      title={t('Stop')}
+                      aria-label={t('Stop')}
+                      onClick={() => stop(a)}
+                    >
                       <Icon name="close" />
                     </button>
                   )}

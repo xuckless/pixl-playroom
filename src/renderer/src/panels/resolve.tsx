@@ -474,7 +474,7 @@ export function QualifierBody(): React.JSX.Element | null {
   const remove = (id: string): void => {
     const next = structuredClone(recipe)
     next.qualifiers = next.qualifiers.filter((x) => x.id !== id)
-    void replace(next, 'Qualifier: remove')
+    void replace(next, tk('Qualifier: remove'))
     if (id === selectedId) select(null)
   }
   return (
@@ -491,7 +491,8 @@ export function QualifierBody(): React.JSX.Element | null {
               : t('Click a colour in the photo to key it')
           }
         >
-          ⌖ {t('Pick a colour')}
+          <Icon name="picker" />
+          {t('Pick a colour')}
         </Toggle>
         <span className="spacer" />
         <Toggle
@@ -502,7 +503,8 @@ export function QualifierBody(): React.JSX.Element | null {
           }}
           title={t('Show the key: white where the qualifier selects, black where it does not')}
         >
-          ◐ {t('Key')}
+          <Icon name="matte" />
+          {t('Key')}
         </Toggle>
       </div>
       {qs.length === 0 ? (

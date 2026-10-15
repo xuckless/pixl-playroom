@@ -28,18 +28,22 @@ export interface InvariantPlace {
   sdr: boolean
 }
 
-/** Each op in the user's words. */
-const OP_LABEL: Partial<Record<GradeOpKind, string>> = {
+/**
+ * Each op in the user's words: the card (or the sliders) it comes from, as
+ * the column names them. The engine's Qualifier op is Point colour (in HSL)
+ * or the Log wheels; a Qualifier card's own layer is named apart.
+ */
+export const OP_LABEL: Partial<Record<GradeOpKind, string>> = {
   Primary: tk('Exposure, Contrast or Saturation'),
   Tone: tk('Highlights, Shadows, Whites or Blacks'),
   ChannelMixer: tk('Calibration'),
   WhiteBalance: tk('White balance'),
   Dehaze: tk('Dehaze'),
-  HslBands: tk('Color mixer'),
-  Qualifier: tk('Point color'),
-  ColorGrade: tk('Color grading'),
-  Curves: tk('Tone curve'),
-  ParametricCurve: tk('Tone curve'),
+  HslBands: tk('HSL'),
+  Qualifier: tk('Point colour or Log wheels'),
+  ColorGrade: tk('Colour grading'),
+  Curves: tk('Curves'),
+  ParametricCurve: tk('Curves'),
   Lut: tk('Profile'),
   Denoise: tk('Noise reduction'),
   Sharpen: tk('Sharpening'),
@@ -47,7 +51,7 @@ const OP_LABEL: Partial<Record<GradeOpKind, string>> = {
   LocalContrast: tk('Texture or Clarity'),
   Vignette: tk('Vignette'),
   Grain: tk('Grain'),
-  AddColor: tk('Add color'),
+  AddColor: tk('Add colour'),
   Defringe: tk('Defringe'),
   LogWheels: tk('Log wheels'),
   LumaPrimary: tk('Primaries'),
@@ -154,16 +158,27 @@ export function invariantPlace(
   return { layer: id, layerName: layer.name, op: op ? opKind(op) : null, sdr }
 }
 
+/** The name compile gives a Qualifier card's layer. */
+const QUALIFIER_LAYER = 'qualifier'
+
 /** What to tell the user. */
 export function describeInvariant(place: InvariantPlace | null, stage: string): string {
   if (!place)
     return t('The picture could not be rendered after {{stage}}. Undo the last change.', { stage })
   const where =
-    place.layer === 'base'
+    place.layer === 'base' || place.layerName === QUALIFIER_LAYER
       ? t('the photo’s settings')
       : t('“{{name}}”', { name: place.layerName ?? t('a layer') })
   const label = place.op ? OP_LABEL[place.op] : undefined
-  const what = place.op ? (label ? t(label) : place.op) : t('The layer’s blend')
+  // A Qualifier card's own layer (compile's 'qualifier'): whatever it ran, the card.
+  const what =
+    place.layerName === QUALIFIER_LAYER
+      ? t('Qualifier')
+      : place.op
+        ? label
+          ? t(label)
+          : place.op
+        : t('The layer’s blend')
   return t('{{what}} in {{where}} made pixels that are not numbers. Lower it, or undo.', {
     what,
     where

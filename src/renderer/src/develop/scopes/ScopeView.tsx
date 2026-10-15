@@ -193,7 +193,7 @@ function ColoursExpanded(): React.JSX.Element {
       />
       <p className="muted small">
         {t(
-          'Click a bar to open that colour in the Colour mixer; Shift-click makes a mask of it. The faint bars are the photo before your edits.'
+          'Click a bar to open that colour in HSL; Shift-click makes a mask of it. The faint bars are the photo before your edits.'
         )}
       </p>
     </div>

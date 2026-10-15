@@ -28,7 +28,7 @@ const HUE_TIP: Tip = {
   what: tk(
     'How much of each colour the photo holds; the faint bars are the photo before your edits.'
   ),
-  expect: tk('Click a bar to open that colour in the Colour mixer.'),
+  expect: tk('Click a bar to open that colour in HSL.'),
   tip: tk('Shift-click a bar to make a mask of that colour.')
 }
 
@@ -160,7 +160,7 @@ export function Histogram({
       {shown && (
         <div className="histogram-foot">
           {showHdr ? (
-            <span title={t("Headroom above reference white (203 nits) up to the photo's peak")}>
+            <span title={t('Headroom above reference white (203 nits) up to the photo’s peak')}>
               {t('+{{ev}} EV headroom', { ev: Math.log2(peak).toFixed(1) })}
             </span>
           ) : (

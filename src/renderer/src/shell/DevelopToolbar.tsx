@@ -202,6 +202,7 @@ export function DevelopToolbar(): React.JSX.Element {
         onClick={undo}
         disabled={!canUndo}
         title={withKey(t('Undo'), 'undo')}
+        aria-label={t('Undo')}
       >
         <Icon name="undo" />
       </button>
@@ -210,6 +211,7 @@ export function DevelopToolbar(): React.JSX.Element {
         onClick={redo}
         disabled={!redoable}
         title={withKey(t('Redo'), 'redo')}
+        aria-label={t('Redo')}
       >
         <Icon name="redo" />
       </button>
@@ -265,7 +267,7 @@ export function DevelopToolbar(): React.JSX.Element {
         title={withKey(t('Export'), 'export')}
       >
         <Icon name="export" />
-        {t('Export')}
+        {t('Export…')}
       </LiquidGlass>
     </nav>
   )

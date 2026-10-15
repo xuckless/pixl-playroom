@@ -32,6 +32,19 @@ export interface ToastAction {
   run: () => void
 }
 
+/** Something the app said (a toast), kept for View → Recent Messages. */
+export interface Message {
+  id: number
+  text: string
+  tone: 'info' | 'error'
+  /** When, in ms since the epoch. */
+  at: number
+}
+
+/** How many of the latest messages are kept. */
+const MESSAGES_KEPT = 50
+let messageSeq = 0
+
 /** A collection being made or changed in its dialog. */
 export interface CollectionDraft {
   id?: string
@@ -70,7 +83,10 @@ interface LibraryState {
   /** Photos opened on their own (File → Open Photo…), the latest first. */
   recentPhotos: string[]
   engine: EngineStatus | null
-  toast: { text: string; tone: 'info' | 'error'; action?: ToastAction } | null
+  /** The message shown now (components/Toasts.tsx times it out). */
+  toast: { id: number; text: string; tone: 'info' | 'error'; action?: ToastAction } | null
+  /** What was said this session, oldest first. */
+  messages: Message[]
   dialog:
     | null
     | 'export'
@@ -89,6 +105,8 @@ interface LibraryState {
     | 'update'
     /** Photo → Edit as SDR: the open gain-map photo's editing space. */
     | 'editing-space'
+    /** View → Recent Messages: what the app said this session. */
+    | 'messages'
   /** The collection the 'collection' dialog edits. */
   editing: CollectionDraft | null
   clipboard: { recipe: Recipe; groups: RecipeGroup[]; source: string | null } | null
@@ -133,7 +151,7 @@ interface LibraryState {
   addToCollection(id: string, keys: string[]): Promise<void>
   removeFromCollection(id: string, keys: string[]): Promise<void>
   editCollection(draft: CollectionDraft | null): void
-  /** A toast; one with an action stays until it is used or replaced. */
+  /** A toast (and a line in Recent messages); one with an action stays until it is used or replaced. */
   say(text: string, tone?: 'info' | 'error', action?: ToastAction): void
   setDialog(d: LibraryState['dialog']): void
   setClipboard(c: LibraryState['clipboard']): void
@@ -168,6 +186,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   recentPhotos: [],
   engine: null,
   toast: null,
+  messages: [],
   dialog: null,
   editing: null,
   clipboard: null,
@@ -524,14 +543,11 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   },
 
   say(text, tone = 'info', action) {
-    set({ toast: { text, tone, action } })
-    if (action) return
-    setTimeout(
-      () => {
-        if (get().toast?.text === text) set({ toast: null })
-      },
-      tone === 'error' ? 8000 : 3500
-    )
+    const id = ++messageSeq
+    set({
+      toast: { id, text, tone, action },
+      messages: [...get().messages, { id, text, tone, at: Date.now() }].slice(-MESSAGES_KEPT)
+    })
   },
 
   setDialog(dialog) {

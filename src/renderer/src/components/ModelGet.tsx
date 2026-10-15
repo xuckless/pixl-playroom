@@ -8,6 +8,7 @@ import { api, errorText } from '../lib/api'
 import { mb } from '../lib/models'
 import { useLibrary } from '../state/library'
 import { t } from '../lib/i18n'
+import { Progress } from './ui'
 
 export function ModelGet({
   id,
@@ -23,12 +24,15 @@ export function ModelGet({
     <div className="model-get">
       <span className="muted" title={m.caveat}>
         {m.title}
-        {m.error && <span className="error"> · {m.error}</span>}
+        {m.error && (
+          <span className="error" role="alert">
+            {' '}
+            · {m.error}
+          </span>
+        )}
       </span>
       {m.progress !== null ? (
-        <span className="model-bar" aria-label={t('Downloading')}>
-          <span style={{ width: `${Math.round(m.progress * 100)}%` }} />
-        </span>
+        <Progress value={m.progress} label={t('Downloading')} />
       ) : (
         <button
           className="sm"

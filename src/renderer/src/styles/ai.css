@@ -27,7 +27,11 @@
     linear-gradient(0deg, var(--acc) 0 2px, transparent 2px),
     repeating-linear-gradient(90deg, transparent 0 7px, rgb(var(--shade-rgb) / 0.55) 7px 8px),
     repeating-linear-gradient(0deg, transparent 0 7px, rgb(var(--shade-rgb) / 0.55) 7px 8px),
-    linear-gradient(0deg, var(--acc-a35, color-mix(in srgb, var(--acc) 35%, transparent)), transparent 90%);
+    linear-gradient(
+      0deg,
+      var(--acc-a35, color-mix(in srgb, var(--acc) 35%, transparent)),
+      transparent 90%
+    );
   box-shadow: 0 2px 18px 0 var(--glow);
   mix-blend-mode: screen;
   animation: aiScan 2.8s steps(48) infinite alternate;
@@ -122,7 +126,7 @@
 .ai-stages {
   display: flex;
   gap: 12px;
-  font-size: 11px;
+  font-size: var(--fs-small);
   color: var(--muted);
 }
 .ai-stage {
@@ -325,7 +329,7 @@ button.bg-job-link {
 
 /* Settings → AI models: the killswitch and the heavy models (views/HeavyModels.tsx). */
 .model-kill .check {
-  font-size: 13px;
+  font-size: var(--fs-title);
 }
 .model-row.heavy .model-act {
   flex-direction: column;
@@ -337,7 +341,7 @@ button.bg-job-link {
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--hair);
-  font-size: 12px;
+  font-size: var(--fs-body);
 }
 .heavy-result.ok {
   border-color: color-mix(in srgb, var(--ok, #4ade80) 50%, transparent);

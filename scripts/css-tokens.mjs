@@ -6,6 +6,7 @@
  *   node scripts/css-tokens.mjs           count the literals left, per file and per value
  *   node scripts/css-tokens.mjs --fix     move the three families onto tokens (no visual change)
  *   node scripts/css-tokens.mjs --json    the per-file counts, as tests/fixtures/css-literals.json holds them
+ *   node scripts/css-tokens.mjs --type    font sizes written as numbers, per file, as tests/fixtures/css-type.json holds them
  *
  * The renderer's components (.tsx) are counted too, under `tsx:<path>`: a
  * colour drawn from code (an SVG's fill, a chart's line) takes a token's
@@ -78,6 +79,24 @@ export function counts() {
   return out
 }
 
+/**
+ * Font sizes written as numbers, not the type scale's tokens (--fs-micro …
+ * --fs-large in tokens.css), per stylesheet: a ratchet as the colours are, so
+ * the in-between sizes (10.5px, 11.5px, 12.5px) settle onto the scale over time.
+ */
+const RAW_SIZE = /font-size:\s*[\d.]+px/g
+
+export function typeCounts() {
+  const out = {}
+  for (const f of readdirSync(STYLES)
+    .filter((f) => f.endsWith('.css'))
+    .sort()) {
+    if (EXEMPT.has(f)) continue
+    out[f] = (code(readFileSync(join(STYLES, f), 'utf8')).match(RAW_SIZE) ?? []).length
+  }
+  return out
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const args = process.argv.slice(2)
   if (args.includes('--fix')) {
@@ -89,8 +108,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       if (after !== before) writeFileSync(path, after)
     }
   }
-  const c = counts()
-  if (args.includes('--json')) console.log(JSON.stringify(c, null, 2))
+  const c = args.includes('--type') ? typeCounts() : counts()
+  if (args.includes('--json') || args.includes('--type')) console.log(JSON.stringify(c, null, 2))
   else {
     for (const [f, n] of Object.entries(c)) console.log(`${String(n).padStart(4)}  ${f}`)
     console.log(`${String(Object.values(c).reduce((a, b) => a + b, 0)).padStart(4)}  in all`)
