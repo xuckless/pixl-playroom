@@ -16,6 +16,7 @@ import { useAiJobs } from './state/jobs'
 import { useLooks } from './state/looks'
 import { useConfirm } from './state/confirm'
 import { useExports } from './state/exports'
+import { useLibraryUndo } from './state/libraryUndo'
 
 // The stores, for automation and the devtools console.
 ;(window as unknown as { __playroom: unknown }).__playroom = {
@@ -27,7 +28,8 @@ import { useExports } from './state/exports'
   useLooks,
   useCull,
   useConfirm,
-  useExports
+  useExports,
+  useLibraryUndo
 }
 
 // No title bar: macOS draws its window buttons at the top bar's left (room

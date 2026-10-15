@@ -1,7 +1,7 @@
 /** Every renderer-facing handler. Results are `{ ok: true, ... }` or `{ ok: false, error }`; nothing throws across the bridge. */
 import { pipeline } from './pipeline'
 import type { VersionReason } from '../shared/versions'
-import { keepWrittenOn } from '../shared/edits'
+import { effective, keepWrittenOn } from '../shared/edits'
 import {
   DISPLAY_SETTING_KEY,
   displayHdr,
@@ -22,6 +22,7 @@ import {
   type AppError,
   type Collection,
   type CrashConsent,
+  type BatchResult,
   type ErrorReport,
   type ExportPreset,
   type HistoryLog,
@@ -57,7 +58,15 @@ import { IndexError } from './indexer/client'
 import type { PlaneStore } from './planestore'
 import { renderScale, restart } from './display'
 import { EngineError, type EngineClient } from './engine/client'
-import { autoWbBatch, setWbBatch } from './autowb'
+import { autoWbBatch } from './autowb'
+import {
+  batchTagOf,
+  commitBatch,
+  currentRecipes,
+  stepRefsOf,
+  undoBatch,
+  type BatchChange
+} from './batchcommit'
 import { crashConsent, reportRendererError, sendProblemReport, setCrashConsent } from './crash'
 import { freeDevice, licence, refreshLicence, requireLicence, startTrial } from './licence'
 import {
@@ -109,7 +118,7 @@ import { appPage } from './guard'
 import { gate, gateRefuses } from './gate'
 import { openTopMenu, popupMenu, setMenuSpec, topMenus } from './menu'
 import { languageState, setLanguage } from './i18n'
-import { isLanguageSetting, t, type LanguageSetting, tk } from '../shared/i18n'
+import { isLanguageSetting, t, type LanguageSetting } from '../shared/i18n'
 import { normaliseProof } from '../shared/proof'
 import { chooseProfile, proofProfiles, readProfile } from './iccprofiles'
 import type { CopyOptions } from './indexer/service'
@@ -460,10 +469,21 @@ export function registerIpc(s: Services): void {
     await s.sessions.close(key)
     await s.index.deleteCopy(key)
   })
-  /** Copy groups of `recipe` onto every key's recipe (paste, sync, presets on a selection). */
+  /**
+   * Copy groups of `recipe` onto every key's recipe (paste, sync, presets on
+   * a selection): a chunk of the Library batch `tag`, one step in each
+   * photo's history (batchcommit.ts).
+   */
   handle(
     IPC.library.applyRecipe,
-    async (keys: string[], slim: Recipe, groups: RecipeGroup[], sourceKey?: string) => {
+    async (
+      keys: string[],
+      slim: Recipe,
+      groups: RecipeGroup[],
+      sourceKey: string | undefined,
+      batch: unknown
+    ) => {
+      const tag = batchTagOf(batch)
       const recipe = await s.planes.hydrate(slim)
       // A white balance means different numbers on a RAW (absolute Kelvin from
       // its as-shot white) and anything else (relative sliders); crossing
@@ -472,23 +492,18 @@ export function registerIpc(s: Services): void {
       if (groups.includes('whiteBalance') && recipe.wb.mode === 'custom' && sourceKey) {
         sourceWb = await wbContext(s.library, sourceKey)
       }
-      await Promise.all(keys.map((key) => s.sessions.flush(key)))
-      const saved = new Map((await s.index.recipes(keys)).map((r) => [r.key, r.recipe]))
-      const pairs: { key: string; recipe: Recipe }[] = []
-      for (const key of keys) {
+      const current = await currentRecipes(s, keys)
+      const changes: BatchChange[] = []
+      const failed: BatchResult['failed'] = []
+      // One photo that can't be read (its RAW offline, for a white balance's
+      // units) is said and left; the rest of the chunk goes on.
+      const change = async (key: string): Promise<BatchChange | null> => {
         const target = sourceWb ? await wbContext(s.library, key) : null
         const from =
           sourceWb && target ? { ...recipe, wb: convertWb(recipe.wb, sourceWb, target) } : recipe
         const live = s.sessions.liveRecipe(key)
-        const base = live ?? saved.get(key)
-        if (!base) continue
-        // What it had before the settings came over it, a Version to step back to.
-        await s.library.addVersion(key, {
-          name: tk('Before pasted settings'),
-          kind: 'auto',
-          reason: 'paste',
-          recipe: base
-        })
+        const base = current.get(key)?.recipe
+        if (!base) return null
         // What was pasted is meant to show: a section it wrote is on again.
         const next = keepWrittenOn(base, applyGroups(base, from, groups))
         // A crop locked to an aspect keeps it on a photo of another shape:
@@ -519,20 +534,29 @@ export function registerIpc(s: Services): void {
             log.info('lens profile not re-resolved for', key, (err as Error).message)
           }
         }
-        pairs.push({ key, recipe: next })
+        return { key, before: base, next }
       }
-      // One message, one transaction: a batch commits once. Planes by reference.
-      const items = await s.index.saveRecipes(
-        pairs.map((p) => ({ key: p.key, recipe: s.planes.slim(p.recipe) }))
-      )
-      for (const { key, recipe: next } of pairs) {
-        if (s.sessions.liveRecipe(key)) s.sessions.update(key, next, false)
-        const { photoId, copyId } = parseKey(key)
-        s.library.queueThumb(photoId, copyId, true)
+      for (const key of keys) {
+        try {
+          const c = await change(key)
+          if (c) changes.push(c)
+        } catch (err) {
+          failed.push({ key, message: err instanceof Error ? err.message : String(err) })
+        }
       }
-      return items
+      // Each photo's Version (paste and sync keep one) and step; planes by reference.
+      return commitBatch(s, changes, tag, failed)
     }
   )
+  handle(IPC.library.undoBatch, (steps: unknown) => undoBatch(s, stepRefsOf(steps)))
+  handle(IPC.library.redoBatch, (steps: unknown) => undoBatch(s, stepRefsOf(steps), true))
+  /** A photo's settings as seen (a section switched off goes as its defaults), for the clipboard. */
+  handle(IPC.library.copyRecipe, async (key: string) => {
+    const cur = (await currentRecipes(s, [key])).get(key)
+    if (!cur) throw new Error(t('the photo is not in the library'))
+    return s.planes.slim(effective(cur.recipe, cur.row.is_raw === 1))
+  })
+  handle(IPC.library.itemsOf, (keys: string[]) => s.index.itemsFor(keys))
   handle(IPC.library.prioritize, (keys: string[]) => s.library.prioritize(keys))
   handle(IPC.library.resetRecipe, async (keys: string[]) => {
     const { items, recipes } = await s.index.resetRecipes(keys)
@@ -611,8 +635,9 @@ export function registerIpc(s: Services): void {
   // ── batch auto white balance ── workstream B
   // Each photo measured on its own draft proxy by the background engine;
   // the renderer sends a few keys at a time so it can show progress and stop.
-  handle(IPC.library.autoWb, (keys: string[]) => autoWbBatch(s, keys))
-  handle(IPC.library.setWb, (pairs: { key: string; wb: Recipe['wb'] }[]) => setWbBatch(s, pairs))
+  handle(IPC.library.autoWb, (keys: string[], batch: unknown) =>
+    autoWbBatch(s, keys, batchTagOf(batch))
+  )
 
   // ── develop ──
   // Recipes go out with their brush planes by reference and come back in

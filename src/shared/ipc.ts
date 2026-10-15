@@ -179,8 +179,14 @@ export const IPC = {
     duplicates: 'library:duplicates',
     /** Measure and set each photo's own auto white balance. */
     autoWb: 'library:auto-wb',
-    /** Put white balances back (the undo of autoWb). */
-    setWb: 'library:set-wb',
+    /** A Library batch taken back through each photo's history (main/batchcommit.ts). */
+    undoBatch: 'library:undo-batch',
+    /** A Library batch brought back through each photo's history. */
+    redoBatch: 'library:redo-batch',
+    /** A photo's settings as seen, for the clipboard (⌘C in the Library). */
+    copyRecipe: 'library:copy-recipe',
+    /** Photos' items by key, listed or not (the Library's undo checks what each has now). */
+    itemsOf: 'library:items-of',
     /** main → renderer: collections, keywords or metadata changed */
     sourcesChanged: 'library:sources-changed'
   },
@@ -641,11 +647,36 @@ export interface Collection {
   count?: number
 }
 
-export interface AutoWbResult {
+/** Auto white balance on a chunk of a selection: a Library batch's chunk. */
+export type AutoWbResult = BatchResult
+
+/**
+ * A Library batch (main/batchcommit.ts): its id, which tags each photo's
+ * step, the step's label, and the Version kept of each photo before it
+ * (paste, sync and looks keep one; nudges and Auto none).
+ */
+export interface BatchTag {
+  id: string
+  label: string
+  version?: { name: string; reason: 'paste' | 'look' } | null
+}
+
+/**
+ * What a chunk of a batch wrote: the items after, each photo's step, and the
+ * photos that could not be written (an original offline, a project that
+ * could not be made), each with why; the rest of the chunk is written.
+ */
+export interface BatchResult {
   items: (LibraryItem | undefined)[]
-  /** Each key's white balance before, for undo. */
-  previous: Record<string, Recipe['wb']>
+  steps: { key: string; seq: number }[]
   failed: { key: string; message: string }[]
+}
+
+/** A batch taken back (or brought back): where it was, and where a later edit kept it. */
+export interface BatchUndoResult {
+  items: (LibraryItem | undefined)[]
+  done: string[]
+  skipped: string[]
 }
 
 export interface FolderListing {

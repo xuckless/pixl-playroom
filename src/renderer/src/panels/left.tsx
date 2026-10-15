@@ -57,6 +57,30 @@ export function PresetsActions(): React.JSX.Element {
   )
 }
 
+/** A saved preset deleted, its toast's Undo saving it back as it was (the same id, UX-14). */
+async function deletePreset(p: Preset): Promise<void> {
+  const lib = useLibrary.getState()
+  try {
+    await api.presets.remove(p.id)
+    presetsChanged()
+    const { builtin, ...saved } = p
+    void builtin
+    lib.say(t('Deleted preset {{name}}', { name: p.name }), 'info', {
+      label: t('Undo'),
+      run: () =>
+        void api.presets
+          .save(saved)
+          .then(() => {
+            presetsChanged()
+            lib.say(t('Preset {{name}} is back', { name: p.name }))
+          })
+          .catch((err) => lib.say(errorText(err), 'error'))
+    })
+  } catch (err) {
+    lib.say(errorText(err), 'error')
+  }
+}
+
 /** The Looks browser, searching for `query` when one is given. */
 function openLooks(query = ''): void {
   useLooks.setState({ browseQuery: query })
@@ -194,7 +218,7 @@ export function PresetsPane(): React.JSX.Element | null {
                   aria-label={t('Delete preset')}
                   onClick={(e) => {
                     e.stopPropagation()
-                    void api.presets.remove(p.id).then(presetsChanged)
+                    void deletePreset(p)
                   }}
                 >
                   <Icon name="trash" />

@@ -18,12 +18,21 @@ import { useThumbFirst } from '../lib/thumbs'
 import { IdentityBar } from '../shell/IdentityBar'
 import { useDevelop } from '../state/develop'
 import { suggestedReasons, useCull } from '../state/cull'
-import { selectionSet, useLibrary, useTargets, useVisible, type SortKey } from '../state/library'
+import {
+  selectionSet,
+  useHiddenByFilter,
+  useLibrary,
+  useShownCount,
+  useTargets,
+  useVisible,
+  type SortKey
+} from '../state/library'
 import { useUi } from '../state/ui'
 import { DuplicateControls, FilterButton, OrganiseMenu } from './library/ToolbarMenus'
 import { keyHint, rejectSuggested, withKey } from '../lib/commands'
 import { useEntering } from '../lib/hooks'
 import { photoContextMenu } from '../lib/menus'
+import { setGridLayout } from '../lib/librarycontext'
 import { t, tk, tp } from '../lib/i18n'
 import { editedCount } from '../lib/visiblepatch'
 
@@ -93,6 +102,8 @@ const Thumb = memo(function Thumb({
   const toggleStack = useLibrary((s) => s.toggleStack)
   // A suggested reject (Pass 115): dimmed and grey, its colour and reason back on hover.
   const cull = useCull((s) => suggestedReasons(item, s.reasons))
+  // The filter now hides it, but it has the focus: it stays, dimmed, until the focus moves on.
+  const hidden = useHiddenByFilter(item)
   // Edited with an earlier develop, where today's pipeline has a newer one (shared/rebuild.ts).
   const older = usePipeline((p) => !!item.legacy && olderDevelop(item.legacy, item.isRaw, p))
   const ref = useRef<HTMLDivElement>(null)
@@ -115,6 +126,7 @@ const Thumb = memo(function Thumb({
     item.flag === 'reject' && 'rejected',
     item.offline && 'offline',
     cull && 'culled',
+    hidden && 'filtered-out',
     stackId && !stackOpen && 'stack-closed',
     stackId && stackOpen && 'in-stack',
     stackId && stackOpen && stackCover && 'stack-cover'
@@ -171,6 +183,14 @@ const Thumb = memo(function Thumb({
         {item.offline && (
           <span className="offline-badge" title={t('Not found at {{path}}', { path: item.path })}>
             {t('Offline')}
+          </span>
+        )}
+        {hidden && (
+          <span
+            className="filtered-badge"
+            title={t('The filters hide this photo; it goes when you move on')}
+          >
+            {t('Hidden by filter')}
           </span>
         )}
         {item.edited && <span className="edited" title={t('Edited')} />}
@@ -385,7 +405,8 @@ export function Toolbar(): React.JSX.Element {
   const targets = useTargets()
   const setView = useLibrary((s) => s.setView)
   const open = useDevelop((s) => s.open)
-  const count = useVisible().length
+  // A photo kept only while it has the focus (sticky hide) is not counted as shown.
+  const count = useShownCount()
   const total = useLibrary((s) => s.items.length)
   const pct = ((thumbSize - 100) / 260) * 100
   return (
@@ -670,12 +691,16 @@ export function LibraryView(): React.JSX.Element {
   )
   const scroller = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
+  const [height, setHeight] = useState(0)
   const waiting = !source && !opening
   const dupesLoading = opening?.kind === 'duplicates' && source?.kind !== 'duplicates'
   useLayoutEffect(() => {
     const el = scroller.current
     if (!el) return
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth))
+    const ro = new ResizeObserver(() => {
+      setWidth(el.clientWidth)
+      setHeight(el.clientHeight)
+    })
     ro.observe(el)
     return () => ro.disconnect()
   }, [waiting, dupesLoading])
@@ -684,6 +709,13 @@ export function LibraryView(): React.JSX.Element {
   // Photos from more than one folder say which: a collection's, or a folder's with its subfolders.
   const showFolder = source?.kind !== 'folder' || !!source.deep
   const tileHeight = Math.round(size * 0.72 + (showFolder ? 48 : 34)) + 2
+  // The rows as the keyboard walks them (↑/↓, PgUp/PgDn: lib/librarycontext.ts).
+  useEffect(() => {
+    setGridLayout(
+      rows.flatMap((r) => (r.kind === 'tiles' ? [r.items.map((i) => i.key)] : [])),
+      Math.floor(height / (tileHeight + GRID_GAP))
+    )
+  }, [rows, height, tileHeight])
   // The virtualiser is mutable by design (it re-renders this on scroll): the
   // compiler lint's warning about it does not apply to a build without it.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -871,7 +903,8 @@ export function CullBar(): React.JSX.Element | null {
 
 export function LibraryStatus(): React.JSX.Element | null {
   const source = useLibrary((s) => s.source)
-  const count = useVisible().length
+  // A photo kept only while it has the focus (sticky hide) is not counted as shown.
+  const count = useShownCount()
   const total = useLibrary((s) => s.items.length)
   const selected = useLibrary((s) => s.selection.length)
   if (!source) return null

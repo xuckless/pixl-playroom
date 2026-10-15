@@ -20,11 +20,14 @@ export interface Chord {
  * Where a command listens. `global` works in both views; the develop
  * sub-contexts (`develop.heal` …) are commands that only act while that tool is
  * up, so they may share a key with a general develop command (the more specific
- * one is listed first and wins while its tool is showing).
+ * one is listed first and wins while its tool is showing). The library's
+ * sub-contexts are its views of the photos (`library.grid`; culling's loupe
+ * and compare to come), the same way.
  */
 export type KeyContext =
   | 'global'
   | 'library'
+  | 'library.grid'
   | 'develop'
   | 'develop.heal'
   | 'develop.masks'
@@ -102,9 +105,15 @@ export function isModifierCode(code: string): boolean {
   )
 }
 
-/** Two contexts can both be listening at once. */
+/**
+ * Two contexts can both be listening at once. A Library view's keys
+ * (`library.grid`) listen whenever the Library's own do, and are listed
+ * after them: a Library key on the same chord would silence the view's.
+ */
 export function overlaps(a: KeyContext, b: KeyContext): boolean {
-  return a === b || a === 'global' || b === 'global'
+  if (a === b || a === 'global' || b === 'global') return true
+  const view = (c: KeyContext): boolean => c.startsWith('library.')
+  return (a === 'library' && view(b)) || (b === 'library' && view(a))
 }
 
 /** The defaults with the user's overrides on top (an override of `[]` unbinds). */

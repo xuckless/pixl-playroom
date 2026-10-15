@@ -500,6 +500,11 @@
 .film.selected {
   border-color: var(--acc-a55);
 }
+/* Hidden by the filter but open: dimmed until the next photo opens. */
+.film.filtered-out img {
+  opacity: 0.3;
+  filter: grayscale(0.6);
+}
 .film.focus {
   border-color: var(--acc);
   box-shadow:

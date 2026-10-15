@@ -6,7 +6,7 @@ import { Icon } from '../components/icons'
 import { useEntering } from '../lib/hooks'
 import { useThumbFirst } from '../lib/thumbs'
 import { useDevelop } from '../state/develop'
-import { selectionSet, useLibrary, useVisible } from '../state/library'
+import { selectionSet, useHiddenByFilter, useLibrary, useVisible } from '../state/library'
 import { useUi } from '../state/ui'
 import { AiChip } from '../fx/AiScan'
 import { photoContextMenu } from '../lib/menus'
@@ -115,14 +115,16 @@ const FilmTile = memo(function FilmTile({
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   useThumbFirst(ref, item.key, load && !item.thumbUrl && !item.unreadable)
+  // The filter now hides it: it stays, dimmed, until the next photo opens.
+  const hidden = useHiddenByFilter(item)
   return (
     <div
       ref={ref}
-      className={`film${focus ? ' focus' : ''}${selected ? ' selected' : ''}`}
+      className={`film${focus ? ' focus' : ''}${selected ? ' selected' : ''}${hidden ? ' filtered-out' : ''}`}
       style={{ animationDelay: `${Math.min(index, 14) * 25}ms` }}
       onClick={(e) => onPick(item.key, e)}
       onContextMenu={(e) => photoContextMenu(e, item.key)}
-      title={item.name}
+      title={hidden ? `${item.name} · ${t('Hidden by filter')}` : item.name}
     >
       {load && item.thumbUrl ? (
         <img src={item.thumbUrl} loading="lazy" decoding="async" draggable={false} alt="" />

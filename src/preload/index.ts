@@ -21,6 +21,9 @@ import {
   type BrainStatus,
   type AutoWbResult,
   type BasicSetting,
+  type BatchResult,
+  type BatchTag,
+  type BatchUndoResult,
   type CaMeasurement,
   type ModelInfo,
   type ProviderInfo,
@@ -200,9 +203,26 @@ const api = {
     createCopy: (key: string, opts?: { name?: string; proof?: ProofSettings }) =>
       call<LibraryItem>(IPC.library.createCopy, key, opts),
     deleteCopy: (key: string) => call<void>(IPC.library.deleteCopy, key),
-    /** `sourceKey` is the photo the recipe came from, so a white balance can change units. */
-    applyRecipe: (keys: string[], recipe: Recipe, groups: RecipeGroup[], sourceKey?: string) =>
-      call<(LibraryItem | undefined)[]>(IPC.library.applyRecipe, keys, recipe, groups, sourceKey),
+    /**
+     * A chunk of the Library batch `batch` (lib/batch.ts). `sourceKey` is the
+     * photo the recipe came from, so a white balance can change units.
+     */
+    applyRecipe: (
+      keys: string[],
+      recipe: Recipe,
+      groups: RecipeGroup[],
+      sourceKey: string | undefined,
+      batch: BatchTag
+    ) => call<BatchResult>(IPC.library.applyRecipe, keys, recipe, groups, sourceKey, batch),
+    /** A Library batch taken back through each photo's history, where its step is still the newest. */
+    undoBatch: (steps: { key: string; seq: number }[]) =>
+      call<BatchUndoResult>(IPC.library.undoBatch, steps),
+    redoBatch: (steps: { key: string; seq: number }[]) =>
+      call<BatchUndoResult>(IPC.library.redoBatch, steps),
+    /** A photo's settings as seen (switched-off sections as their defaults), slim. */
+    copyRecipe: (key: string) => call<Recipe>(IPC.library.copyRecipe, key),
+    /** Photos' items by key, whether the listing shown has them or not. */
+    itemsOf: (keys: string[]) => call<(LibraryItem | undefined)[]>(IPC.library.itemsOf, keys),
     resetRecipe: (keys: string[]) =>
       call<(LibraryItem | undefined)[]>(IPC.library.resetRecipe, keys),
     prioritize: (keys: string[]) => call<void>(IPC.library.prioritize, keys),
@@ -240,9 +260,8 @@ const api = {
       call<number>(IPC.library.autoStack, folder, seconds),
     duplicates: (folder: string | null, threshold: number) =>
       call<SourceListing>(IPC.library.duplicates, folder, threshold),
-    autoWb: (keys: string[]) => call<AutoWbResult>(IPC.library.autoWb, keys),
-    setWb: (pairs: { key: string; wb: Recipe['wb'] }[]) =>
-      call<(LibraryItem | undefined)[]>(IPC.library.setWb, pairs),
+    autoWb: (keys: string[], batch: BatchTag) =>
+      call<AutoWbResult>(IPC.library.autoWb, keys, batch),
     onSourcesChanged: (cb: () => void) => on(IPC.library.sourcesChanged, cb)
   },
   develop: {
