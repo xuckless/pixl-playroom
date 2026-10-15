@@ -9,7 +9,7 @@
 // apart at 16 bits.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -28,7 +28,7 @@ interface Report {
   raw: { demosaic_model?: { tiles: number; frame_tiles?: number } | null } | null
 }
 
-test('a region developed from the RAW is the PIXL master’s pixels, cut', { skip }, async () => {
+test('a region developed from the RAW is the PIXL master’s pixels, cut', { skip }, async (t) => {
   const req = createRequire(import.meta.url)
   const engine = req('@xuckless/pixl-engine') as { convert(r: unknown): Promise<Report> }
   const models = req('@xuckless/pixl-models') as {
@@ -73,6 +73,8 @@ test('a region developed from the RAW is the PIXL master’s pixels, cut', { ski
   }
   const raw = rawMaster('container', { demosaic: { Model: ref } as never, mosaic_denoise: null })
   const out = mkdtempSync(join(tmpdir(), 'e66-'))
+  // A 24 MP float master is about 300 MB: gone after.
+  t.after(() => rmSync(out, { recursive: true, force: true }))
   const master = join(out, 'master.tiff')
   const whole = await engine.convert({
     ...blankRequest(RAW!, master, 'Raw'),

@@ -8,7 +8,7 @@
 // tile, 0.3–0.4 s a pan after it, 0 samples apart.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,7 +28,7 @@ const engine = await (async () => {
 test(
   'a tile that renders the whole frame keeps its refines; later tiles read them, exactly',
   { skip: engine === null ? 'the engine is not built for this platform' : false },
-  async () => {
+  async (t) => {
     const e = engine!
     const { blankRequest } = await import('../src/main/source')
     const { compile } = await import('../src/shared/compile')
@@ -43,6 +43,7 @@ test(
       for (let x = 0; x < W; x++)
         px.fill(x < 260 ? 12000 : 40000, (y * W + x) * 3, (y * W + x) * 3 + 3)
     const dir = mkdtempSync(join(tmpdir(), 'heldrefine-'))
+    t.after(() => rmSync(dir, { recursive: true, force: true }))
     const src = join(dir, 'frame.png')
     writeFileSync(src, encodePng16(px, W, H, 3))
     const recipe = defaultRecipe(false)
