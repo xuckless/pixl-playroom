@@ -63,8 +63,8 @@ import { effective } from './edits'
 import {
   curvesVsOp,
   logWheelsOps,
+  primariesBalance,
   primariesOp,
-  primariesWhite,
   qualifierCorrection,
   qualifierKey,
   qualifierLayerId,
@@ -1286,12 +1286,6 @@ function settingsStages(
   const wb = base ? baseWhite(r, ctx) : layerWhite(r.wb)
   if (wb)
     linear.push({ WhiteBalance: { temperature_kelvin: round4(wb.kelvin), tint: round4(wb.tint) } })
-  // Resolve's Temp and Tint, on top of the white balance (until E75 puts them with the primaries).
-  const rw = primariesWhite(r.primaries)
-  if (rw) {
-    const w = opFromRelative(rw.temperature, rw.tint)
-    linear.push({ WhiteBalance: { temperature_kelvin: round4(w.kelvin), tint: round4(w.tint) } })
-  }
   const mix = calibrationMatrix(r.calibration)
   if (mix) linear.push({ ChannelMixer: { red: mix[0], green: mix[1], blue: mix[2] } })
   if (r.basic.exposure !== 0)
@@ -1427,7 +1421,10 @@ function settingsStages(
   const cg = colorGradeOp(r.colorGrade, smoothing)
   if (cg) tail.push(cg)
   // Resolve's primaries, after Lightroom's grading (shared/resolve.ts); on a
-  // B&W photo after its mono conversion, so Lift and Gain tints tone it.
+  // B&W photo after its mono conversion, so Lift and Gain tints (and Temp
+  // and Tint, the gain balance just before them) tone it.
+  const balance = primariesBalance(r.primaries)
+  if (balance) tail.push(balance)
   const prim = primariesOp(r.primaries)
   if (prim) tail.push(prim)
   tail.push(...logWheelsOps(r.logWheels))

@@ -8,11 +8,12 @@
  * to the engine's `Primary` (`v = lift + v·(gain − lift)`, then `v^(1/γ)`,
  * contrast about the pivot, saturation, hue) in the display-referred look
  * stage, after Colour grading: Offset adds to every value, so it folds into
- * lift and gain (`lift + o`, `gain + o`). Temp and Tint are a relative white
- * balance in linear light until the engine has them with the primaries (E75).
+ * lift and gain (`lift + o`, `gain + o`). Temp and Tint are a gain on the
+ * graded colour beside them (the engine's `GainBalance`, E75), as Resolve's.
  */
 import type { GradeOp, HslKey, Primary } from './engine-types'
 import { tk } from './i18n'
+import { apply, invert, opFromRelative, rgbToXyz, whiteXyz, type Xy } from './wb'
 
 /** A wheel's four numbers: Y moves all three channels, R/G/B each its own. */
 export interface Yrgb {
@@ -145,7 +146,7 @@ const IDENTITY: Primary = {
 
 /**
  * The primaries as one engine `Primary` for the look stage, or null when
- * they change nothing (Temp and Tint are `primariesWhite`'s).
+ * they change nothing (Temp and Tint are `primariesBalance`'s).
  */
 export function primariesOp(p: PrimariesSetting): GradeOp | null {
   const lift = { r: 0, g: 0, b: 0 }
@@ -178,9 +179,63 @@ export function primariesOp(p: PrimariesSetting): GradeOp | null {
   return same ? null : { Primary: op }
 }
 
-/** Temp and Tint as the relative white-balance sliders (−100…100), or null when untouched. */
-export function primariesWhite(p: PrimariesSetting): { temperature: number; tint: number } | null {
-  return p.temp === 0 && p.tint === 0 ? null : { temperature: p.temp, tint: p.tint }
+/** Display P3's primaries: the look stage's, where Temp and Tint run. */
+const P3_PRIMARIES: [Xy, Xy, Xy] = [
+  [0.68, 0.32],
+  [0.265, 0.69],
+  [0.15, 0.06]
+]
+const XYZ_TO_P3 = invert(rgbToXyz(P3_PRIMARIES))
+
+/**
+ * Whether a white lies inside Display P3, with a little room: the engine
+ * refuses one with a channel at or below 0 (no gain balances it), and a
+ * strong Tint at a mask's Amount of 200 reaches past it.
+ */
+function inP3(kelvin: number, tint: number): boolean {
+  return apply(XYZ_TO_P3, whiteXyz(kelvin, tint)).every((c) => c > 0.005)
+}
+
+/**
+ * Temp and Tint (−100…100 each, Resolve's) as the engine's gain balance on
+ * the look stage's graded values, a grey kept as bright as it was (as
+ * Resolve's, so warming never fights the Gain ring), or null when untouched.
+ * The white is the white balance's own (`opFromRelative`), pulled toward
+ * neutral as little as keeps it inside Display P3: Tint first, then Temp.
+ */
+export function primariesBalance(p: PrimariesSetting): GradeOp | null {
+  if (p.temp === 0 && p.tint === 0) return null
+  const w = opFromRelative(p.temp, p.tint)
+  let mired = 1e6 / w.kelvin
+  let tint = w.tint
+  const neutral = 1e6 / 6504
+  /** The largest share of `v`'s way from neutral that stays inside. */
+  const fit = (inside: (f: number) => boolean): number => {
+    if (inside(1)) return 1
+    let lo = 0
+    let hi = 1
+    for (let i = 0; i < 24; i++) {
+      const f = (lo + hi) / 2
+      if (inside(f)) lo = f
+      else hi = f
+    }
+    return lo
+  }
+  if (!inP3(1e6 / mired, 0)) {
+    const m0 = mired
+    mired = neutral + (m0 - neutral) * fit((f) => inP3(1e6 / (neutral + (m0 - neutral) * f), 0))
+  }
+  const t0 = tint
+  tint = t0 * fit((f) => inP3(1e6 / mired, t0 * f))
+  // Toward neutral in the last place too, so rounding never steps outside.
+  const toward = (v: number): number => Math.trunc(v * 1e4) / 1e4
+  return {
+    GainBalance: {
+      temperature_kelvin: r4(1e6 / mired),
+      tint: toward(tint),
+      hold_luminance: true
+    }
+  }
 }
 
 /**

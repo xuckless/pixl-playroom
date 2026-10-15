@@ -444,7 +444,7 @@ export const TIPS = {
   'primaries.temp': {
     what: tk('Warmer or cooler, on top of the white balance.'),
     expect: tk(
-      'Like Resolve’s Temp. Here it is a white balance in linear light until the engine has it with the primaries.'
+      'Like Resolve’s Temp: a gain on the graded colour, beside the Primaries, that keeps greys as bright as they were. On a black-and-white photo it tones the grey.'
     )
   },
   'primaries.tint': {

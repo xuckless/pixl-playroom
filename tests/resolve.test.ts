@@ -12,10 +12,18 @@ import {
   defaultPrimaries,
   discToRgb,
   normalisePrimaries,
+  primariesBalance,
   primariesOp,
   rgbToDisc
 } from '../src/shared/resolve'
-import type { GradeOp, Primary } from '../src/shared/engine-types'
+import { apply, invert, opFromRelative, rgbToXyz, whiteXyz, type Xy } from '../src/shared/wb'
+import type { GainBalance, GradeOp, Primary } from '../src/shared/engine-types'
+
+const P3: [Xy, Xy, Xy] = [
+  [0.68, 0.32],
+  [0.265, 0.69],
+  [0.15, 0.06]
+]
 
 const ctx: CompileContext = {
   isRaw: false,
@@ -72,18 +80,60 @@ test('Offset folds into lift and gain: the same as adding it after them', () => 
     }
 })
 
-test('the primaries run in the look stage after Colour grading; Temp and Tint in linear light', () => {
+test('the primaries run in the look stage after Colour grading, Temp and Tint a gain balance just before them (E75)', () => {
   const r = defaultRecipe(false)
   r.colorGrade.global = { hue: 30, saturation: 20, luminance: 0 }
   r.primaries.saturation = 60
   r.primaries.temp = 20
   const stages = compile(r, ctx).grade!.layers[0].stages
-  const look = stages.find((s) => typeof s.space !== 'string')!.ops.map((o) => Object.keys(o)[0])
+  // Nothing in linear light any more (the photo's own white is as shot).
+  assert.ok(stages.every((s) => s.space !== 'LinearWorking'))
+  const ops = stages.at(-1)!.ops
+  const look = ops.map((o) => Object.keys(o)[0])
   const grade = look.indexOf('ColorGrade')
   const prim = look.lastIndexOf('Primary')
   assert.ok(grade >= 0 && prim > grade, look.join(' '))
-  const lin = stages.find((s) => s.space === 'LinearWorking')!.ops.map((o) => Object.keys(o)[0])
-  assert.ok(lin.includes('WhiteBalance'), lin.join(' '))
+  assert.equal(look[prim - 1], 'GainBalance')
+  const gb = (ops[prim - 1] as { GainBalance: GainBalance }).GainBalance
+  const w = opFromRelative(20, 0)
+  assert.deepEqual(gb, {
+    temperature_kelvin: Math.round(w.kelvin * 1e4) / 1e4,
+    tint: 0,
+    hold_luminance: true
+  })
+  assert.equal(primariesBalance(defaultPrimaries()), null)
+})
+
+test('Temp and Tint stay inside Display P3 at a mask’s Amount of 200, pulled toward neutral as little as that takes', () => {
+  for (const temp of [-200, -100, 0, 100, 200])
+    for (const tint of [-200, -100, 0, 100, 200]) {
+      const p = { ...defaultPrimaries(), temp, tint }
+      const op = primariesBalance(p)
+      if (temp === 0 && tint === 0) {
+        assert.equal(op, null)
+        continue
+      }
+      const gb = (op as { GainBalance: GainBalance }).GainBalance
+      assert.ok(gb.temperature_kelvin >= 1667 && gb.temperature_kelvin <= 25000)
+      assert.ok(Math.abs(gb.tint) <= 0.1)
+      // Each channel of the white in P3 above 0, as the engine requires.
+      const rgb = apply(invert(rgbToXyz(P3)), whiteXyz(gb.temperature_kelvin, gb.tint))
+      assert.ok(
+        rgb.every((c) => c > 0),
+        `${temp}/${tint}: ${gb.temperature_kelvin} K ${gb.tint}`
+      )
+      // Inside the sliders' own range, the white is the white balance's own.
+      if (Math.abs(temp) <= 100 && Math.abs(tint) <= 100) {
+        const w = opFromRelative(temp, tint)
+        assert.ok(Math.abs(gb.tint - w.tint) < 2e-4, `${temp}/${tint}: tint ${gb.tint}`)
+      }
+    }
+  // The corner Display P3 cannot hold keeps its warmth and gives up tint.
+  const corner = (primariesBalance({ ...defaultPrimaries(), temp: -200, tint: 200 }) as {
+    GainBalance: GainBalance
+  }).GainBalance
+  assert.ok(Math.abs(corner.temperature_kelvin - opFromRelative(-200, 0).kelvin) < 1)
+  assert.ok(corner.tint > 0.01 && corner.tint < 100 / 3000)
 })
 
 test('a mask carries primaries, scaled by its Amount; switched off they compile as defaults', () => {
